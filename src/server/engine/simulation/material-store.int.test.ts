@@ -16,6 +16,8 @@ import {
   db,
   simBodyMeters,
   simEvents,
+  simItemConditionMeters,
+  simItemConditionModifiers,
   simItemHoldings,
   simItems,
   simItemTransferFeed,
@@ -27,12 +29,14 @@ import { seedDurableActionDefinitions, submitDurableStartActivity } from "./acti
 import { submitDurableInitializeActorBody } from "./body-store";
 import {
   seedDurableMaterialBranch,
+  submitDurableApplyItemConditionSource,
   submitDurableConsumeItem,
   submitDurableDestroyItem,
   submitDurableSetItemOwnership,
   submitDurableTransferItem,
 } from "./material-store";
 import { consumeNextItemTransferOutbox } from "./outbox-store";
+import { advanceBranchStoryTime } from "./scheduler-store";
 import { seedDurableSpaceTopology } from "./space-store";
 
 async function probe(): Promise<boolean> {
@@ -844,5 +848,383 @@ describe("E5.3 slice 2 — consume_item (§26.6)", () => {
 
     const result = await submitDurableConsumeItem(consumeCommand(ids, { itemId: ids.mealId, expectedVersion: 1 }));
     expect(result).toMatchObject({ status: "rejected", code: "item_reserved" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E5.3 slice 3 — item condition (§26.7)
+// ---------------------------------------------------------------------------
+
+// Registry v1: cleanliness 10 000 → grimy at 3 000, +250/h while worn ⇒
+// (10 000 − 3 000) / 250 = 28 worn-hours (material-condition.test.ts's own
+// rearm assertion: `meta.storySecond + 28 * 3_600`).
+const GRIMY_CROSSING_SECONDS = 28 * 3_600;
+
+interface ConditionCase {
+  worldId: string;
+  branchId: string;
+  locationId: string;
+  zoneId: string;
+  actorId: string;
+  /** Co-located with actorId — the noticeable-crossing witness. */
+  witnessId: string;
+  /** conditionTracked: true, held by actorId. */
+  garmentId: string;
+  /** conditionTracked: false (the default), held by actorId — the negative control. */
+  plainItemId: string;
+}
+
+function makeConditionIds(): ConditionCase {
+  const worldId = newId();
+  const branchId = newId();
+  return {
+    worldId,
+    branchId,
+    locationId: `${worldId}-loc-condition`,
+    zoneId: `${branchId}-zone-condition`,
+    actorId: newId(),
+    witnessId: newId(),
+    garmentId: newId(),
+    plainItemId: newId(),
+  };
+}
+
+async function seedConditionCase(ids: ConditionCase): Promise<void> {
+  seededWorldIds.push(ids.worldId);
+  await seedDurableMaterialBranch({
+    worldId: ids.worldId,
+    worldTypeId: "e5-3-test-world",
+    worldSeed: `seed-${ids.worldId}`,
+    branchId: ids.branchId,
+    rulesetVersion: "e5-3-test-v1",
+    originStorySecond: SEED_SECOND,
+    actors: [
+      { id: ids.actorId, name: "Mara" },
+      { id: ids.witnessId, name: "Iris" },
+    ],
+    items: [
+      {
+        id: ids.garmentId,
+        name: "a linen shirt",
+        ownerActorId: null,
+        conditionTracked: true,
+        locus: { kind: "held", actorId: ids.actorId },
+      },
+      {
+        id: ids.plainItemId,
+        name: "a plain stone",
+        ownerActorId: null,
+        locus: { kind: "held", actorId: ids.actorId },
+      },
+    ],
+  });
+  await seedDurableSpaceTopology({
+    branchId: ids.branchId,
+    locations: [{ id: ids.locationId, worldId: ids.worldId, kind: "home", defaultAccessPolicy: "private" }],
+    zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "room", privacyPolicy: "private" }],
+    links: [],
+    loci: [
+      { kind: "at", actorId: ids.actorId, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND },
+      { kind: "at", actorId: ids.witnessId, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND },
+    ],
+  });
+}
+
+function donCommand(
+  ids: ConditionCase,
+  overrides: Partial<{ id: string; idempotencyKey: string; expectedVersion: number; itemId: string }> = {},
+): TransferItemCommand {
+  return transferItemCommandSchema.parse({
+    id: overrides.id ?? newId(),
+    branchId: ids.branchId,
+    expectedVersion: overrides.expectedVersion ?? 0,
+    idempotencyKey: overrides.idempotencyKey ?? newId(),
+    principal: { kind: "npc_policy", principalId: newId(), controlledActorIds: [ids.actorId] },
+    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+    type: "transfer_item",
+    schemaVersion: 2,
+    correlationId: newId(),
+    payload: {
+      actorId: ids.actorId,
+      itemId: overrides.itemId ?? ids.garmentId,
+      fromLocus: { kind: "held", actorId: ids.actorId },
+      toLocus: { kind: "worn", actorId: ids.actorId, slotKey: WORN_SLOT },
+    },
+  });
+}
+
+function doffCommand(
+  ids: ConditionCase,
+  overrides: Partial<{ id: string; idempotencyKey: string; expectedVersion: number; itemId: string }> = {},
+): TransferItemCommand {
+  return transferItemCommandSchema.parse({
+    id: overrides.id ?? newId(),
+    branchId: ids.branchId,
+    expectedVersion: overrides.expectedVersion ?? 1,
+    idempotencyKey: overrides.idempotencyKey ?? newId(),
+    principal: { kind: "npc_policy", principalId: newId(), controlledActorIds: [ids.actorId] },
+    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+    type: "transfer_item",
+    schemaVersion: 2,
+    correlationId: newId(),
+    payload: {
+      actorId: ids.actorId,
+      itemId: overrides.itemId ?? ids.garmentId,
+      fromLocus: { kind: "worn", actorId: ids.actorId, slotKey: WORN_SLOT },
+      toLocus: { kind: "held", actorId: ids.actorId },
+    },
+  });
+}
+
+async function itemConditionMeterRows(branchId: string, itemId: string) {
+  return db()
+    .select()
+    .from(simItemConditionMeters)
+    .where(and(eq(simItemConditionMeters.branchId, branchId), eq(simItemConditionMeters.itemId, itemId)));
+}
+
+async function itemConditionModifierRows(branchId: string, itemId: string) {
+  return db()
+    .select()
+    .from(simItemConditionModifiers)
+    .where(and(eq(simItemConditionModifiers.branchId, branchId), eq(simItemConditionModifiers.itemId, itemId)));
+}
+
+async function pendingItemConditionTriggers(branchId: string) {
+  return db()
+    .select({
+      state: simTriggers.state,
+      uniquenessKey: simTriggers.uniquenessKey,
+      dueStorySecond: simTriggers.dueStorySecond,
+    })
+    .from(simTriggers)
+    .where(and(eq(simTriggers.branchId, branchId), eq(simTriggers.kind, "item_condition_threshold_due")));
+}
+
+describe("E5.3 slice 3 — item condition (§26.7)", () => {
+  it("dons a tracked garment: meters lazily initialize, the worn-window modifier applies, and the grimy alarm arms at the exact solved second", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeConditionIds();
+    await seedConditionCase(ids);
+
+    const result = await submitDurableTransferItem(donCommand(ids));
+    expect(result).toMatchObject({ status: "accepted", branchVersion: 1, firstSequence: 1, lastSequence: 4 });
+    if (result.status !== "accepted") throw new Error("expected acceptance");
+    expect(result.eventIds).toHaveLength(4);
+
+    const events = await db()
+      .select({ type: simEvents.type, sequence: simEvents.sequence })
+      .from(simEvents)
+      .where(eq(simEvents.branchId, ids.branchId))
+      .orderBy(simEvents.sequence);
+    expect(events.map((event) => event.type)).toEqual([
+      "item_condition_initialized",
+      "item_transferred",
+      "item_condition_modifier_applied",
+      "trigger_scheduled",
+    ]);
+
+    const meters = await itemConditionMeterRows(ids.branchId, ids.garmentId);
+    expect(meters.map((meter) => meter.meterKey).sort()).toEqual(["cleanliness", "wear"]);
+    expect(meters.every((meter) => meter.lastIntegratedAt === SEED_SECOND)).toBe(true);
+    expect(meters.find((meter) => meter.meterKey === "cleanliness")).toMatchObject({ valueFixedPoint: 10_000 });
+    expect(meters.find((meter) => meter.meterKey === "wear")).toMatchObject({ valueFixedPoint: 0 });
+
+    const modifiers = await itemConditionModifierRows(ids.branchId, ids.garmentId);
+    expect(modifiers).toHaveLength(1);
+    expect(modifiers[0]).toMatchObject({
+      meterKey: "cleanliness",
+      stackingGroup: "worn-window",
+      validFrom: SEED_SECOND,
+      validUntil: null,
+    });
+
+    const triggers = await pendingItemConditionTriggers(ids.branchId);
+    expect(triggers.filter((trigger) => trigger.state === "pending")).toHaveLength(1);
+    expect(triggers[0]).toMatchObject({
+      state: "pending",
+      dueStorySecond: SEED_SECOND + GRIMY_CROSSING_SECONDS,
+    });
+  });
+
+  it("doffing ends the worn-window modifier and retires the alarm without a stale re-arm", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeConditionIds();
+    await seedConditionCase(ids);
+    const donResult = await submitDurableTransferItem(donCommand(ids));
+    expect(donResult).toMatchObject({ status: "accepted" });
+
+    // Three real worn-hours pass before doffing — advancing to a second still
+    // well short of the grimy alarm's due second, so nothing drains here.
+    const doffSecond = SEED_SECOND + 3 * 3_600;
+    const advanced = await advanceBranchStoryTime(ids.branchId, doffSecond, { workerId: "w-condition-doff" });
+    expect(advanced).toMatchObject({ status: "advanced", drained: 0 });
+
+    const doffResult = await submitDurableTransferItem(doffCommand(ids));
+    expect(doffResult).toMatchObject({ status: "accepted" });
+    if (doffResult.status !== "accepted") throw new Error("expected acceptance");
+
+    const modifiers = await itemConditionModifierRows(ids.branchId, ids.garmentId);
+    expect(modifiers).toHaveLength(1);
+    expect(modifiers[0]).toMatchObject({ validFrom: SEED_SECOND, validUntil: doffSecond });
+
+    // No live modifier remains and cleanliness's own base rate is zero, so
+    // there is nothing left to solve a future crossing against — the doff
+    // retires the seed-time alarm and re-arms nothing (an at-rest garment
+    // never fouls on its own, per the registry doc comment).
+    const triggers = await pendingItemConditionTriggers(ids.branchId);
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]).toMatchObject({ state: "completed" });
+  });
+
+  it("drains a due grimy alarm through the scheduler and witnesses the co-located actor, excluding the wearer", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeConditionIds();
+    await seedConditionCase(ids);
+    await submitDurableTransferItem(donCommand(ids));
+
+    const crossingSecond = SEED_SECOND + GRIMY_CROSSING_SECONDS;
+    const outcome = await advanceBranchStoryTime(ids.branchId, crossingSecond, { workerId: "w-condition-grimy" });
+    expect(outcome).toMatchObject({ status: "advanced", drained: 1 });
+
+    const meters = await itemConditionMeterRows(ids.branchId, ids.garmentId);
+    expect(meters.find((meter) => meter.meterKey === "cleanliness")).toMatchObject({
+      valueFixedPoint: 3_000,
+      lastIntegratedAt: crossingSecond,
+    });
+
+    const [crossedEvent] = await db()
+      .select({ payload: simEvents.payload })
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "item_condition_threshold_crossed")));
+    expect(crossedEvent?.payload).toMatchObject({
+      itemId: ids.garmentId,
+      meterKey: "cleanliness",
+      thresholdKey: "grimy",
+      direction: "falling",
+      boundaryFixedPoint: 3_000,
+      valueFixedPoint: 3_000,
+      // The wearer is excluded (they are the item's own holder, not an
+      // external witness); the co-located bystander lands in the set.
+      observerActorIds: [ids.witnessId],
+    });
+
+    const triggers = await pendingItemConditionTriggers(ids.branchId);
+    expect(triggers.every((trigger) => trigger.state === "completed")).toBe(true);
+  });
+
+  it("apply_item_condition_source cleans a worn garment, restoring cleanliness and re-arming from the new second", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeConditionIds();
+    await seedConditionCase(ids);
+    await submitDurableTransferItem(donCommand(ids));
+
+    const cleanSecond = SEED_SECOND + 14 * 3_600;
+    const advanced = await advanceBranchStoryTime(ids.branchId, cleanSecond, { workerId: "w-condition-clean" });
+    expect(advanced).toMatchObject({ status: "advanced", drained: 0 });
+
+    const cleanCommand = {
+      id: newId(),
+      branchId: ids.branchId,
+      expectedVersion: 1,
+      idempotencyKey: newId(),
+      principal: { kind: "npc_policy", principalId: newId(), controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+      correlationId: newId(),
+      type: "apply_item_condition_source",
+      schemaVersion: 1,
+      payload: {
+        actorId: ids.actorId,
+        itemId: ids.garmentId,
+        sourceKind: "clean",
+        meterKey: "cleanliness",
+        operation: { kind: "set", valueFixedPoint: 10_000 },
+      },
+    };
+    const result = await submitDurableApplyItemConditionSource(cleanCommand);
+    expect(result).toMatchObject({ status: "accepted" });
+
+    const meters = await itemConditionMeterRows(ids.branchId, ids.garmentId);
+    expect(meters.find((meter) => meter.meterKey === "cleanliness")).toMatchObject({
+      valueFixedPoint: 10_000,
+      lastIntegratedAt: cleanSecond,
+    });
+
+    const triggers = await pendingItemConditionTriggers(ids.branchId);
+    expect(triggers.map((trigger) => trigger.state).sort()).toEqual(["completed", "pending"]);
+    const rearmed = triggers.find((trigger) => trigger.state === "pending");
+    // Re-armed from the CLEANING second, not the original don second.
+    expect(rearmed?.dueStorySecond).toBe(cleanSecond + GRIMY_CROSSING_SECONDS);
+
+    // Idempotency: resubmitting the identical command replays the cached
+    // result rather than persisting a second round of events.
+    const replay = await submitDurableApplyItemConditionSource(cleanCommand);
+    expect(replay).toEqual(result);
+    const sourceAppliedEvents = await db()
+      .select()
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "item_condition_source_applied")));
+    expect(sourceAppliedEvents).toHaveLength(1);
+  });
+
+  it("rejects apply_item_condition_source against an untracked item", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeConditionIds();
+    await seedConditionCase(ids);
+
+    const result = await submitDurableApplyItemConditionSource({
+      id: newId(),
+      branchId: ids.branchId,
+      expectedVersion: 0,
+      idempotencyKey: newId(),
+      principal: { kind: "npc_policy", principalId: newId(), controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+      correlationId: newId(),
+      type: "apply_item_condition_source",
+      schemaVersion: 1,
+      payload: {
+        actorId: ids.actorId,
+        itemId: ids.plainItemId,
+        sourceKind: "adjustment",
+        meterKey: "cleanliness",
+        operation: { kind: "set", valueFixedPoint: 10_000 },
+      },
+    });
+    expect(result).toMatchObject({ status: "rejected", code: "condition_not_tracked" });
+  });
+
+  it("an untracked item's transfers never produce condition rows or events", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeConditionIds();
+    await seedConditionCase(ids);
+
+    const result = await submitDurableTransferItem(
+      transferItemCommandSchema.parse({
+        id: newId(),
+        branchId: ids.branchId,
+        expectedVersion: 0,
+        idempotencyKey: newId(),
+        principal: { kind: "npc_policy", principalId: newId(), controlledActorIds: [ids.actorId] },
+        submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+        type: "transfer_item",
+        schemaVersion: 2,
+        correlationId: newId(),
+        payload: {
+          actorId: ids.actorId,
+          itemId: ids.plainItemId,
+          fromLocus: { kind: "held", actorId: ids.actorId },
+          toLocus: { kind: "worn", actorId: ids.actorId, slotKey: WORN_SLOT },
+        },
+      }),
+    );
+    expect(result).toMatchObject({ status: "accepted", branchVersion: 1, firstSequence: 1, lastSequence: 1 });
+    if (result.status !== "accepted") throw new Error("expected acceptance");
+    expect(result.eventIds).toHaveLength(1);
+
+    expect(await itemConditionMeterRows(ids.branchId, ids.plainItemId)).toHaveLength(0);
+    expect(await itemConditionModifierRows(ids.branchId, ids.plainItemId)).toHaveLength(0);
+
+    const events = await db().select({ type: simEvents.type }).from(simEvents).where(eq(simEvents.branchId, ids.branchId));
+    expect(events.map((event) => event.type)).toEqual(["item_transferred"]);
   });
 });

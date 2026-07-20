@@ -229,6 +229,10 @@ export function deriveEventObservations(
     case "body_initialized":
     case "body_modifier_applied":
     case "item_ownership_set":
+    case "item_condition_initialized":
+    case "item_condition_source_applied":
+    case "item_condition_modifier_applied":
+    case "item_condition_modifier_ended":
       // Scheduler and commitment-ledger bookkeeping is not perceptible; an
       // actor's knowledge of an obligation rides its commitment's `observed`
       // knowledge source pointing at a perceptible event (§15.1, §20).
@@ -238,7 +242,11 @@ export function deriveEventObservations(
       // cause of a modifier (a drink, an illness onset) is witnessed through
       // its own causal event, never through the rate arithmetic it installs.
       // An ownership reassignment (§26.3) is a social-ledger entry — nothing in
-      // the world moved for anyone to see.
+      // the world moved for anyone to see. Item condition (§26.7) mirrors body
+      // modifier bookkeeping exactly — the worn-window modifier's cause (a
+      // transfer donning/doffing the item) is witnessed through its own
+      // item_transferred event; a clean/adjustment source is interoception with
+      // no subject to feel it (an item is not a witness of itself).
       return [];
     case "journey_planned":
     case "journey_delayed":
@@ -347,6 +355,12 @@ export function deriveEventObservations(
       // witnesses at commit (trusted as-is, like activity captures — a
       // private threshold stays private).
       collector.add(event.payload.actorId, DIRECT_EMBODIED);
+      for (const witnessId of event.payload.observerActorIds) collector.add(witnessId, SIGHT_WITNESS);
+      break;
+    }
+    case "item_condition_threshold_crossed": {
+      // An item has no interoceptive subject — only the captured co-located
+      // witness set (§20's noticeable capture idiom) perceives a crossing.
       for (const witnessId of event.payload.observerActorIds) collector.add(witnessId, SIGHT_WITNESS);
       break;
     }

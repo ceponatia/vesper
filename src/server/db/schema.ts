@@ -1555,6 +1555,13 @@ export const simItems = pgTable(
     /** Present iff this item is itself a container (§26.2); paired with containerAccess. */
     containerCapacityCount: bigint("container_capacity_count", { mode: "number" }),
     containerAccess: jsonb("container_access").$type<ContainerAccessPolicy>(),
+    /**
+     * E5.3 slice 3 (engine.spec §26.7): whether wear/cleanliness are tracked
+     * for this item. Meters/modifiers lazily initialize the first time a
+     * condition-touching operation reaches a tracked item — this flag alone
+     * gates whether that ever happens.
+     */
+    conditionTracked: boolean("condition_tracked").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1822,6 +1829,7 @@ export const simTriggers = pgTable(
         "body_threshold_due",
         "body_condition_expiry_due",
         "body_collapse_due",
+        "item_condition_threshold_due",
       ],
     }).notNull(),
     schemaVersion: integer("schema_version").notNull(),
@@ -2748,6 +2756,108 @@ export const simBodyModifiers = pgTable(
     index("sim_body_modifiers_branch_actor_meter_idx").on(t.branchId, t.actorId, t.meterKey),
     check(
       "sim_body_modifiers_validity_order",
+      sql`${t.validUntil} IS NULL OR ${t.validUntil} > ${t.validFrom}`,
+    ),
+  ],
+);
+
+/**
+ * E5.3 slice 3 item condition meters (engine.spec §26.7). Wear and
+ * cleanliness ride the SAME §25 fixed-point kernel `sim_body_meters` does —
+ * this is an item-scoped mirror, not a reuse of that table: one row per item
+ * × meter, value fixed-point (10 000 ≡ 1.0), `last_integrated_at` the last
+ * MATERIAL write. Queries integrate analytically from here and never
+ * persist, same partition-invariance property as bodies. Rows appear lazily
+ * — the first condition-touching operation on a tracked item initializes
+ * them (`item_condition_initialized`), there is no dedicated command.
+ */
+export const simItemConditionMeters = pgTable(
+  "sim_item_condition_meters",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    itemId: text("item_id").notNull(),
+    meterKey: text("meter_key").notNull(),
+    valueFixedPoint: integer("value_fixed_point").notNull(),
+    baselineFixedPoint: integer("baseline_fixed_point").notNull(),
+    lastIntegratedAt: bigint("last_integrated_at", { mode: "number" }).notNull(),
+    registryVersion: text("registry_version").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({
+      name: "sim_item_condition_meters_branch_item_meter_pk",
+      columns: [t.branchId, t.itemId, t.meterKey],
+    }),
+    check(
+      "sim_item_condition_meters_value_fixed_point_range",
+      sql`${t.valueFixedPoint} >= 0 AND ${t.valueFixedPoint} <= 10000`,
+    ),
+    check(
+      "sim_item_condition_meters_baseline_fixed_point_range",
+      sql`${t.baselineFixedPoint} >= 0 AND ${t.baselineFixedPoint} <= 10000`,
+    ),
+    check(
+      "sim_item_condition_meters_last_integrated_safe",
+      sql`${t.lastIntegratedAt} >= 0 AND ${t.lastIntegratedAt} <= 9007199254740991`,
+    ),
+  ],
+);
+
+/**
+ * E5.3 slice 3 item condition modifiers — the §25.3 modifier contract,
+ * item-scoped, mirroring `sim_body_modifiers` minus `condition_id` AND
+ * `visibility`: items have no categorical conditions in v1, so every
+ * modifier is applied and retired directly (engine.spec §26.7 — e.g. the
+ * worn-window cleanliness modifier `buildWornWindowTransition` builds), and
+ * every modifier this substrate ever creates is hard-coded `"obvious"`
+ * visibility (see the registry doc comment in
+ * `@/contracts/simulation/material-condition`) — so the column is dropped
+ * and the pure `ItemConditionModifier.visibility` field is reconstructed as
+ * the literal `"obvious"` at read time instead of persisted (mirrors
+ * `activity-store.ts`'s `itemConditionModifierFromRow`/
+ * `itemConditionModifierRowInsert`, the canonical row mappers). The
+ * `(branch_id, item_id)` FK is DEFERRABLE INITIALLY DEFERRED — drizzle
+ * cannot express deferrability (hand-edited in the migration, the 0069
+ * `sim_item_holdings` precedent): a branch teardown cascades `sim_items` and
+ * this table from the SAME `sim_branches` delete, and Postgres does not
+ * order sibling cascades against each other.
+ */
+export const simItemConditionModifiers = pgTable(
+  "sim_item_condition_modifiers",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    modifierId: text("modifier_id").notNull(),
+    itemId: text("item_id").notNull(),
+    meterKey: text("meter_key").notNull(),
+    operation: jsonb("operation").$type<BodyModifierOperation>().notNull(),
+    stackingGroup: text("stacking_group").notNull(),
+    priority: integer("priority").notNull().default(0),
+    validFrom: bigint("valid_from", { mode: "number" }).notNull(),
+    validUntil: bigint("valid_until", { mode: "number" }),
+    sourceEventId: text("source_event_id").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_item_condition_modifiers_branch_modifier_pk", columns: [t.branchId, t.modifierId] }),
+    foreignKey({
+      name: "sim_item_condition_modifiers_item_fk",
+      columns: [t.branchId, t.itemId],
+      foreignColumns: [simItems.branchId, simItems.itemId],
+      // Drizzle cannot express FK deferrability — hand-edited in the migration
+      // to DEFERRABLE INITIALLY DEFERRED (see the table doc comment above).
+      // "no action" (not cascade), mirroring sim_item_holdings' three deferred
+      // FKs: this row and its referenced sim_items row cascade from the SAME
+      // sim_branches delete rather than one cascading the other directly.
+    }).onDelete("no action"),
+    index("sim_item_condition_modifiers_branch_item_meter_idx").on(t.branchId, t.itemId, t.meterKey),
+    check(
+      "sim_item_condition_modifiers_validity_order",
       sql`${t.validUntil} IS NULL OR ${t.validUntil} > ${t.validFrom}`,
     ),
   ],

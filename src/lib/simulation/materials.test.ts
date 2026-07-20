@@ -23,8 +23,14 @@ import {
   bodyMeterStateSchema,
   type BodyMeterDefinition,
 } from "@/contracts/simulation/bodies";
+import {
+  itemConditionMeterStateSchema,
+  itemConditionRegistryV1,
+  itemConditionRegistryVersion,
+} from "@/contracts/simulation/material-condition";
 import { simulationHash, sortedUnique } from "./hash";
 import { applyBodyEvent, emptyBodiesSeed } from "./bodies";
+import type { ItemConditionView } from "./material-condition";
 import {
   MATERIAL_CHAIN_DEPTH_CAP,
   applyMaterialEvent,
@@ -498,9 +504,108 @@ describe("E5.3 transfer law — ownership flag", () => {
     expect(ownSelf).toMatchObject({ ok: true });
     expect(ownOther).toMatchObject({ ok: true });
     if (!unowned.ok || !ownSelf.ok || !ownOther.ok) throw new Error("expected acceptances");
-    expect(unowned.event.payload.againstOwnership).toBe(false);
-    expect(ownSelf.event.payload.againstOwnership).toBe(false);
-    expect(ownOther.event.payload.againstOwnership).toBe(true);
+    expect(unowned.events[0].payload.againstOwnership).toBe(false);
+    expect(ownSelf.events[0].payload.againstOwnership).toBe(false);
+    expect(ownOther.events[0].payload.againstOwnership).toBe(true);
+  });
+});
+
+describe("E5.3 slice 3 — worn-window transition on transfer (§26.7)", () => {
+  function trackedConditionView(overrides: Partial<ItemConditionView> = {}): ItemConditionView {
+    return {
+      itemId: "item-x",
+      registryVersion: itemConditionRegistryVersion,
+      meters: itemConditionRegistryV1.map((definition) =>
+        itemConditionMeterStateSchema.parse({
+          itemId: "item-x",
+          meterKey: definition.key,
+          valueFixedPoint: definition.initialFixedPoint,
+          baselineFixedPoint: definition.baselineFixedPoint,
+          lastIntegratedAtStorySecond: 10_000,
+          registryVersion: itemConditionRegistryVersion,
+        }),
+      ),
+      modifiers: [],
+      ...overrides,
+    };
+  }
+
+  it("dons: the item_transferred → item_condition_modifier_applied → re-arm train, in order and causation-chained", () => {
+    const result = resolveTransferItemFromView(
+      heldItemView({ conditionTracked: true }),
+      transferCmd({
+        actorId: "mara",
+        itemId: "item-x",
+        fromLocus: heldBy("mara"),
+        toLocus: wornBy("mara", "torso"),
+      }),
+      trackedConditionView(),
+    );
+    if (!result.ok) throw new Error("expected acceptance");
+    expect(result.events).toHaveLength(3);
+    const [transferred, applied, rearm] = result.events;
+    expect(transferred.type).toBe("item_transferred");
+    expect(applied?.type).toBe("item_condition_modifier_applied");
+    expect(applied?.causationId).toBe(transferred.id);
+    expect(rearm?.type).toBe("trigger_scheduled");
+    expect(rearm?.causationId).toBe(applied?.id);
+    const sequences = result.events.map((event) => event.sequence);
+    expect(sequences).toEqual([...sequences].sort((a, b) => a - b));
+    expect(new Set(sequences).size).toBe(sequences.length);
+  });
+
+  it("doffs: ends the live worn-window modifier, causation-chained to the transfer", () => {
+    const donned = resolveTransferItemFromView(
+      heldItemView({ conditionTracked: true }),
+      transferCmd({ actorId: "mara", itemId: "item-x", fromLocus: heldBy("mara"), toLocus: wornBy("mara", "torso") }),
+      trackedConditionView(),
+    );
+    if (!donned.ok) throw new Error("expected acceptance");
+    const [, applied] = donned.events;
+    if (applied?.type !== "item_condition_modifier_applied") throw new Error("expected modifier applied");
+
+    const doffed = resolveTransferItemFromView(
+      makeView({
+        items: [{ id: "item-x", name: "a thing", conditionTracked: true, locus: wornBy("mara", "torso") }],
+      }),
+      transferCmd({
+        actorId: "mara",
+        itemId: "item-x",
+        fromLocus: wornBy("mara", "torso"),
+        toLocus: heldBy("mara"),
+      }),
+      trackedConditionView({ modifiers: [applied.payload.modifier] }),
+    );
+    if (!doffed.ok) throw new Error("expected acceptance");
+    const [transferred, ended] = doffed.events;
+    expect(ended?.type).toBe("item_condition_modifier_ended");
+    expect(ended?.causationId).toBe(transferred.id);
+    if (ended?.type !== "item_condition_modifier_ended") throw new Error("expected modifier ended");
+    expect(ended.payload).toMatchObject({
+      itemId: "item-x",
+      modifierId: applied.payload.modifier.id,
+      basis: "doffed",
+    });
+  });
+
+  it("an untracked item's worn-ness change emits only the transfer — nothing else", () => {
+    const result = resolveTransferItemFromView(
+      heldItemView({ conditionTracked: false }),
+      transferCmd({ actorId: "mara", itemId: "item-x", fromLocus: heldBy("mara"), toLocus: wornBy("mara", "torso") }),
+    );
+    if (!result.ok) throw new Error("expected acceptance");
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0].type).toBe("item_transferred");
+  });
+
+  it("a worn-ness-preserving move on a tracked item emits only the transfer", () => {
+    const result = resolveTransferItemFromView(
+      heldItemView({ conditionTracked: true }),
+      transferCmd({ actorId: "mara", itemId: "item-x", fromLocus: heldBy("mara"), toLocus: heldBy("iris") }),
+      trackedConditionView(),
+    );
+    if (!result.ok) throw new Error("expected acceptance");
+    expect(result.events).toHaveLength(1);
   });
 });
 
@@ -626,7 +731,7 @@ describe("E5.3 projector, replay, seed, and invariants", () => {
       transferCmd({ actorId: "mara", itemId: "coin", fromLocus: inContainer("bag"), toLocus: heldBy("iris") }),
     );
     if (!give.ok) throw new Error("expected transfer acceptance");
-    const afterGive = applyMaterialEvent(seed, give.event);
+    const afterGive = applyMaterialEvent(seed, give.events[0]);
 
     const reassign = resolveSetItemOwnershipFromView(
       viewFor(afterGive),
@@ -638,7 +743,7 @@ describe("E5.3 projector, replay, seed, and invariants", () => {
     expect(afterReassign.items.find((item) => item.id === "coin")?.locus).toEqual(heldBy("iris"));
     expect(afterReassign.items.find((item) => item.id === "coin")?.ownerActorId).toBe("iris");
 
-    const replayed = replayMaterialsHistory({ seed, events: [give.event, reassign.event] });
+    const replayed = replayMaterialsHistory({ seed, events: [give.events[0], reassign.event] });
     // The live store bumps version per command; normalize before comparing.
     const live = materialsProjectionSchema.parse({ ...afterReassign, version: seed.version + 2 });
     expect(simulationHash(replayed)).toBe(simulationHash(live));
@@ -653,9 +758,9 @@ describe("E5.3 projector, replay, seed, and invariants", () => {
       transferCmd({ actorId: "mara", itemId: "coin", fromLocus: inContainer("bag"), toLocus: heldBy("iris") }),
     );
     if (!give.ok) throw new Error("expected acceptance");
-    const gapEvent = { ...give.event, sequence: seed.headSequence + 2 };
+    const gapEvent = { ...give.events[0], sequence: seed.headSequence + 2 };
     expect(() => applyMaterialEvent(seed, gapEvent)).toThrow(/not contiguous/u);
-    const foreign = itemTransferredEventSchema.parse({ ...give.event, branchId: "branch-other" });
+    const foreign = itemTransferredEventSchema.parse({ ...give.events[0], branchId: "branch-other" });
     expect(() => applyMaterialEvent(seed, foreign)).toThrow(/another world branch/u);
   });
 

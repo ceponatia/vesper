@@ -30,6 +30,7 @@ import {
   resolveCancelActivity,
   resolveCompleteActivity,
   resolveStartActivity,
+  type CompleteResolution,
 } from "@/lib/simulation/activities";
 import {
   BODY_THRESHOLD_HORIZON_SECONDS,
@@ -40,6 +41,13 @@ import {
   type MeterIntegrationView,
 } from "@/lib/simulation/bodies";
 import { engagementClaimsForActor } from "@/lib/simulation/engagements";
+import { compareStableText } from "@/lib/simulation/hash";
+import {
+  buildItemConditionInitializedEvent,
+  initialConditionMetersFor,
+  itemConditionThresholdUniquenessKeyPrefix,
+  type ItemConditionView,
+} from "@/lib/simulation/material-condition";
 import type { ConsumptionBodyView } from "@/lib/simulation/materials";
 import {
   bodyConditionSchema,
@@ -55,6 +63,14 @@ import {
   engagementSchema,
 } from "@/contracts/simulation/engagements";
 import {
+  itemConditionMeterStateSchema,
+  itemConditionModifierSchema,
+  itemConditionRegistryVersion,
+  type ItemConditionInitializedEvent,
+  type ItemConditionMeterState,
+  type ItemConditionModifier,
+} from "@/contracts/simulation/material-condition";
+import {
   itemLocusSchema,
   simulationMaterialItemSchema,
   type ContainerAccessPolicy,
@@ -67,6 +83,7 @@ import {
   itemTransferFeedConsumerKind,
   itemTransferFeedProjectionSchemaVersion,
 } from "@/contracts/simulation/outbox";
+import { itemConditionThresholdTriggerKind } from "@/contracts/simulation/scheduler";
 import {
   db,
   simActionDefinitions,
@@ -78,6 +95,8 @@ import {
   simBranches,
   simCharacters,
   simEngagements,
+  simItemConditionMeters,
+  simItemConditionModifiers,
   simItemHoldings,
   simItems,
   simOutbox,
@@ -314,6 +333,7 @@ const materialItemSelection = {
   ownerActorId: simItems.ownerActorId,
   containerCapacityCount: simItems.containerCapacityCount,
   containerAccess: simItems.containerAccess,
+  conditionTracked: simItems.conditionTracked,
   locusKind: simItemHoldings.locusKind,
   holdingActorId: simItemHoldings.actorId,
   slotKey: simItemHoldings.slotKey,
@@ -330,6 +350,8 @@ interface MaterialItemRow {
   ownerActorId: string | null;
   containerCapacityCount: number | null;
   containerAccess: ContainerAccessPolicy | null;
+  /** §26.7: whether this item carries item-condition (wear/cleanliness) meters. */
+  conditionTracked: boolean;
   locusKind: "held" | "worn" | "container" | "zone" | "gone";
   holdingActorId: string | null;
   slotKey: string | null;
@@ -349,6 +371,7 @@ function materialItemFromRow(row: MaterialItemRow): SimulationMaterialItem {
       ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
       : {}),
     ...(row.consumptionEffects ? { consumptionEffects: row.consumptionEffects } : {}),
+    conditionTracked: row.conditionTracked,
     locus,
   });
 }
@@ -622,6 +645,247 @@ async function retireConsumptionMeterTriggers(
   }
 }
 
+// ---------------------------------------------------------------------------
+// §26.7 item condition — completion-time use-delta reservoir (slice 3). Meters
+// and modifiers live in their OWN item-scoped tables (never the body ones);
+// this file loads/writes them directly rather than importing material-store.ts
+// — the same circular-import constraint as the consumption body view above
+// (material-store.ts imports body-store.ts, which imports this file's
+// `activityFromRow`).
+// ---------------------------------------------------------------------------
+
+function itemConditionMeterFromRow(row: typeof simItemConditionMeters.$inferSelect): ItemConditionMeterState {
+  return itemConditionMeterStateSchema.parse({
+    itemId: row.itemId,
+    meterKey: row.meterKey,
+    valueFixedPoint: row.valueFixedPoint,
+    baselineFixedPoint: row.baselineFixedPoint,
+    lastIntegratedAtStorySecond: row.lastIntegratedAt,
+    registryVersion: row.registryVersion,
+  });
+}
+
+/**
+ * Item-condition modifier rows never persist `visibility` — every modifier
+ * this substrate ever creates (the worn-window transition, `./material-
+ * condition.ts`'s `buildWornWindowTransition`) is hard-coded "obvious"; see
+ * the registry doc comment in `@/contracts/simulation/material-condition`.
+ */
+function itemConditionModifierFromRow(row: typeof simItemConditionModifiers.$inferSelect): ItemConditionModifier {
+  return itemConditionModifierSchema.parse({
+    id: row.modifierId,
+    itemId: row.itemId,
+    meterKey: row.meterKey,
+    operation: row.operation,
+    stackingGroup: row.stackingGroup,
+    priority: row.priority,
+    validFromStorySecond: row.validFrom,
+    ...(row.validUntil === null ? {} : { validUntilStorySecond: row.validUntil }),
+    visibility: "obvious",
+    sourceEventId: row.sourceEventId,
+  });
+}
+
+/**
+ * Row-insert shaping for the item-condition tables, exported for reuse by
+ * `branch-store.ts`'s fork replay (mirrors `activityRowInsert` above and
+ * body-store.ts's `bodyMeterRowInsert`/`bodyModifierRowInsert`). Kept here
+ * rather than in material-store.ts to sidestep the same circular-import
+ * constraint noted throughout this file — material-store.ts already imports
+ * body-store.ts, which imports this file's `activityFromRow`.
+ */
+export function itemConditionMeterRowInsert(
+  branchId: string,
+  meter: ItemConditionMeterState,
+  updatedSequence: number,
+): typeof simItemConditionMeters.$inferInsert {
+  return {
+    branchId,
+    itemId: meter.itemId,
+    meterKey: meter.meterKey,
+    valueFixedPoint: meter.valueFixedPoint,
+    baselineFixedPoint: meter.baselineFixedPoint,
+    lastIntegratedAt: meter.lastIntegratedAtStorySecond,
+    registryVersion: meter.registryVersion,
+    updatedSequence,
+  };
+}
+
+/** Never carries `visibility` — see `itemConditionModifierFromRow` above. */
+export function itemConditionModifierRowInsert(
+  branchId: string,
+  modifier: ItemConditionModifier,
+  updatedSequence: number,
+): typeof simItemConditionModifiers.$inferInsert {
+  return {
+    branchId,
+    modifierId: modifier.id,
+    itemId: modifier.itemId,
+    meterKey: modifier.meterKey,
+    operation: modifier.operation,
+    stackingGroup: modifier.stackingGroup,
+    priority: modifier.priority,
+    validFrom: modifier.validFromStorySecond,
+    validUntil: modifier.validUntilStorySecond ?? null,
+    sourceEventId: modifier.sourceEventId,
+    updatedSequence,
+  };
+}
+
+/**
+ * Batch-load condition state for a set of items under the lock. An item
+ * absent from the returned map has never been initialized (LAZY init — §26.7)
+ * — the caller synthesizes a fresh in-memory view and the completion path
+ * emits `item_condition_initialized` for it before any delta.
+ */
+async function loadItemConditionViews(
+  tx: SimTx,
+  branchId: string,
+  itemIds: readonly string[],
+): Promise<Map<string, ItemConditionView>> {
+  const views = new Map<string, ItemConditionView>();
+  if (itemIds.length === 0) return views;
+  const [meterRows, modifierRows] = await Promise.all([
+    tx
+      .select()
+      .from(simItemConditionMeters)
+      .where(
+        and(eq(simItemConditionMeters.branchId, branchId), inArray(simItemConditionMeters.itemId, [...itemIds])),
+      ),
+    tx
+      .select()
+      .from(simItemConditionModifiers)
+      .where(
+        and(
+          eq(simItemConditionModifiers.branchId, branchId),
+          inArray(simItemConditionModifiers.itemId, [...itemIds]),
+        ),
+      ),
+  ]);
+  const metersByItem = new Map<string, ItemConditionMeterState[]>();
+  for (const row of meterRows) {
+    const meter = itemConditionMeterFromRow(row);
+    const list = metersByItem.get(meter.itemId);
+    if (list) list.push(meter);
+    else metersByItem.set(meter.itemId, [meter]);
+  }
+  const modifiersByItem = new Map<string, ItemConditionModifier[]>();
+  for (const row of modifierRows) {
+    const modifier = itemConditionModifierFromRow(row);
+    const list = modifiersByItem.get(modifier.itemId);
+    if (list) list.push(modifier);
+    else modifiersByItem.set(modifier.itemId, [modifier]);
+  }
+  for (const [itemId, meters] of metersByItem) {
+    views.set(itemId, {
+      itemId,
+      registryVersion: meters[0]?.registryVersion ?? itemConditionRegistryVersion,
+      meters,
+      modifiers: modifiersByItem.get(itemId) ?? [],
+    });
+  }
+  return views;
+}
+
+/**
+ * Mirrors `resolveCompleteActivity`'s own use-cost matching (`lib/simulation/
+ * activities.ts`) exactly, so the store can learn — BEFORE calling the pure
+ * resolver — precisely which reserved items will receive a use-condition
+ * delta this completion. The resolver's own sequence numbering starts fresh
+ * at `activity_completed`, so any lazy-init events these items need must be
+ * built (and their sequence numbers reserved) ahead of that call; there is no
+ * other seam to learn the set without either duplicating this matching or
+ * calling the pure resolver twice.
+ */
+function wearConditionCandidateItemIds(
+  resourceCosts: readonly ActionResourceCost[],
+  reservedItemIds: readonly string[],
+  materialItemById: (itemId: string) => SimulationMaterialItem | undefined,
+): string[] {
+  const useCosts = [...resourceCosts]
+    .filter((cost) => cost.disposition === "use" && cost.useConditionDeltas.length > 0)
+    .sort((a, b) => compareStableText(a.materialKindKey, b.materialKindKey));
+  if (useCosts.length === 0) return [];
+  const reservedIdsSorted = [...reservedItemIds].sort(compareStableText);
+  const claimed = new Set<string>();
+  const trackedIds: string[] = [];
+  for (const cost of useCosts) {
+    let taken = 0;
+    for (const itemId of reservedIdsSorted) {
+      if (taken >= cost.quantity) break;
+      if (claimed.has(itemId)) continue;
+      const item = materialItemById(itemId);
+      if (!item || item.materialKindKey !== cost.materialKindKey) continue;
+      claimed.add(itemId);
+      taken += 1;
+      if (item.conditionTracked) trackedIds.push(itemId);
+    }
+  }
+  return trackedIds;
+}
+
+/** Mirrors `upsertConsumptionMeterRow` above, for the item-scoped meter table. */
+async function upsertItemConditionMeterRow(
+  tx: SimTx,
+  branchId: string,
+  itemId: string,
+  meterKey: string,
+  valueFixedPoint: number,
+  lastIntegratedAtStorySecond: number,
+  updatedSequence: number,
+): Promise<void> {
+  const [updated] = await tx
+    .update(simItemConditionMeters)
+    .set({
+      valueFixedPoint,
+      lastIntegratedAt: lastIntegratedAtStorySecond,
+      updatedSequence,
+    })
+    .where(
+      and(
+        eq(simItemConditionMeters.branchId, branchId),
+        eq(simItemConditionMeters.itemId, itemId),
+        eq(simItemConditionMeters.meterKey, meterKey),
+      ),
+    )
+    .returning({ meterKey: simItemConditionMeters.meterKey });
+  if (!updated) throw new Error("Locked item condition meter changed before its use-delta update");
+}
+
+/**
+ * Retire this item-meter's pending alarm at the REARM event itself (unlike
+ * bodies, which retire at the meter-changed event — `retireConsumptionMeter
+ * Triggers` above): wear's `driftLaw: "none"` means a delta does not always
+ * produce a rearm (no future crossing left to solve), so retiring only when a
+ * new `trigger_scheduled` actually lands avoids a needless sweep on every
+ * delta and stays exact — a stale alarm is always superseded by the very next
+ * rearm this same (item, meter) pair produces.
+ */
+async function retireItemConditionThresholdTriggers(
+  tx: SimTx,
+  branch: LockedBranchView,
+  commandId: string,
+  submittedAtWallClock: string,
+  itemId: string,
+  meterKey: string,
+): Promise<void> {
+  const prefix = itemConditionThresholdUniquenessKeyPrefix(itemId, meterKey);
+  await tx
+    .update(simTriggers)
+    .set({
+      state: "completed",
+      resultCommandId: commandId,
+      completedAt: new Date(submittedAtWallClock),
+    })
+    .where(
+      and(
+        eq(simTriggers.branchId, branch.id),
+        eq(simTriggers.state, "pending"),
+        sql`starts_with(${simTriggers.uniquenessKey}, ${prefix})`,
+      ),
+    );
+}
+
 function rejectedResult<TCode extends string>(commandId: string, code: TCode, publicReason: string) {
   return {
     status: "rejected" as const,
@@ -819,12 +1083,60 @@ export async function submitDurableCompleteActivity(
           ? await loadConsumptionBodyView(tx, branch.id, primaryActorId, branch.storySecond)
           : undefined;
 
+      // §26.7: learn — BEFORE calling the resolver — exactly which reserved
+      // items will receive a use-condition delta this completion, so any
+      // never-touched (LAZY init) ones among them get an `item_condition_
+      // initialized` event built and sequenced ahead of `activity_completed`
+      // itself (the resolver's own numbering starts fresh there and has no
+      // room to interleave a lazy-init step; see `wearConditionCandidateItemIds`).
+      const useTrackedItemIds = activity
+        ? wearConditionCandidateItemIds(resourceCosts, activity.reservedItemIds, (itemId) =>
+            materialItemsById.get(itemId),
+          )
+        : [];
+      const existingConditionViews = await loadItemConditionViews(tx, branch.id, useTrackedItemIds);
+      const uninitializedItemIds = useTrackedItemIds
+        .filter((itemId) => !existingConditionViews.has(itemId))
+        .sort(compareStableText);
+      const freshMetersByItemId = new Map(
+        uninitializedItemIds.map(
+          (itemId) => [itemId, initialConditionMetersFor({ itemId, atStorySecond: branch.storySecond })] as const,
+        ),
+      );
+      const conditionInitEvents: ItemConditionInitializedEvent[] = uninitializedItemIds.map((itemId, index) =>
+        buildItemConditionInitializedEvent({
+          view: {
+            worldId: branch.worldId,
+            branchId: branch.id,
+            rulesetVersion: branch.rulesetVersion,
+            headSequence: branch.headSequence,
+            storySecond: branch.storySecond,
+          },
+          command,
+          itemId,
+          meters: freshMetersByItemId.get(itemId) ?? [],
+          sequence: branch.headSequence + index + 1,
+        }),
+      );
+      const itemConditionViewByItemId = (itemId: string): ItemConditionView | undefined => {
+        const existing = existingConditionViews.get(itemId);
+        if (existing) return existing;
+        const fresh = freshMetersByItemId.get(itemId);
+        if (!fresh) return undefined;
+        return {
+          itemId,
+          registryVersion: fresh[0]?.registryVersion ?? itemConditionRegistryVersion,
+          meters: fresh,
+          modifiers: [],
+        };
+      };
+
       const resolution = resolveCompleteActivity(
         {
           worldId: branch.worldId,
           branchId: branch.id,
           rulesetVersion: branch.rulesetVersion,
-          headSequence: branch.headSequence,
+          headSequence: branch.headSequence + conditionInitEvents.length,
           storySecond: branch.storySecond,
           ...(activity ? { activity } : {}),
           ...(zoneRow ? { zoneLocationId: zoneRow.locationId } : {}),
@@ -832,24 +1144,46 @@ export async function submitDurableCompleteActivity(
           resourceCosts,
           materialItemById: (itemId) => materialItemsById.get(itemId),
           ...(bodyView ? { bodyView } : {}),
+          itemConditionViewByItemId,
           coLocatedActorIds,
         },
         command,
       );
       if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
 
-      // §26.5–26.6: walk the resolved events in order, applying each one's
+      // §26.5–26.7: walk the resolved events in order, applying each one's
       // side effect right after appending it — the collapse-store multi-
       // write idiom (body-store.ts's `submitDurableResolveBodyCollapse`).
       // A meter's stale alarm is retired the moment its `body_source_applied`
       // lands, strictly before that same meter's re-arm `trigger_scheduled`
-      // (its very next entry in the array) gets applied below.
+      // (its very next entry in the array) gets applied below. Any §26.7
+      // lazy-init events precede everything else — they were sequenced ahead
+      // of `activity_completed` itself, above.
+      const allEvents: (ItemConditionInitializedEvent | CompleteResolution["events"][number])[] = [
+        ...conditionInitEvents,
+        ...resolution.events,
+      ];
       let meterUpdateIndex = 0;
-      let lastSequence = resolution.events[0].sequence;
-      for (const event of resolution.events) {
+      let lastSequence = allEvents[0]?.sequence ?? resolution.events[0].sequence;
+      for (const event of allEvents) {
         await appendSimulationEvent(tx, event);
         lastSequence = event.sequence;
         switch (event.type) {
+          case "item_condition_initialized": {
+            await tx.insert(simItemConditionMeters).values(
+              event.payload.meters.map((meter) => ({
+                branchId: branch.id,
+                itemId: event.payload.itemId,
+                meterKey: meter.meterKey,
+                valueFixedPoint: meter.valueFixedPoint,
+                baselineFixedPoint: meter.baselineFixedPoint,
+                lastIntegratedAt: event.storySecond,
+                registryVersion: event.payload.registryVersion,
+                updatedSequence: event.sequence,
+              })),
+            );
+            break;
+          }
           case "activity_completed": {
             const [updated] = await tx
               .update(simActivities)
@@ -911,7 +1245,41 @@ export async function submitDurableCompleteActivity(
             );
             break;
           }
+          case "item_condition_source_applied": {
+            await upsertItemConditionMeterRow(
+              tx,
+              branch.id,
+              event.payload.itemId,
+              event.payload.meterKey,
+              event.payload.valueAfterFixedPoint,
+              event.storySecond,
+              event.sequence,
+            );
+            break;
+          }
+          case "item_condition_threshold_crossed": {
+            // Event only: an instant crossing (the only kind this completion
+            // path can ever produce — `wear`'s driftLaw is "none") always
+            // immediately follows its own `item_condition_source_applied`
+            // with the identical resulting value, so that case already wrote
+            // the current meter row.
+            break;
+          }
           case "trigger_scheduled": {
+            if (event.payload.kind === itemConditionThresholdTriggerKind) {
+              // Retired here, not at `item_condition_source_applied` (unlike
+              // bodies): wear's `driftLaw: "none"` means a delta does not
+              // always produce a rearm, so retiring only when one actually
+              // lands avoids a needless sweep on every delta.
+              await retireItemConditionThresholdTriggers(
+                tx,
+                branch,
+                command.id,
+                command.submittedAtWallClock,
+                event.payload.command.payload.itemId,
+                event.payload.command.payload.meterKey,
+              );
+            }
             await applyTriggerScheduledEvent(tx, event, { branchId: branch.id, worldId: branch.worldId });
             break;
           }
@@ -923,9 +1291,9 @@ export async function submitDurableCompleteActivity(
         status: "accepted",
         commandId: command.id,
         branchVersion: branch.version + 1,
-        firstSequence: resolution.events[0].sequence,
+        firstSequence: allEvents[0]?.sequence ?? resolution.events[0].sequence,
         lastSequence,
-        eventIds: resolution.events.map((event) => event.id),
+        eventIds: allEvents.map((event) => event.id),
       };
     },
   });

@@ -19,6 +19,7 @@ import {
   simBodyMeters,
   simBranches,
   simEvents,
+  simItemConditionMeters,
   simItemHoldings,
   simOutbox,
   simTriggers,
@@ -850,5 +851,251 @@ describe.runIf(ready)("E5.3 slice 2 — activity resource reservations and consu
       .from(simItemHoldings)
       .where(and(eq(simItemHoldings.branchId, ids.branchId), eq(simItemHoldings.itemId, ids.mealItemId)));
     expect(finalHolding?.goneBasis).toBe("consumed");
+  });
+});
+
+// -----------------------------------------------------------------------
+// E5.3 slice 3 (§26.7) — use-disposition item-condition deltas at completion.
+// -----------------------------------------------------------------------
+
+const CRAFT_SECONDS = 600;
+
+interface ItemConditionCase {
+  worldId: string;
+  branchId: string;
+  actorId: string;
+  witnessId: string;
+  zoneA: string;
+  toolId: string;
+  craftActionId: string;
+}
+
+function itemConditionBranchSeed(ids: ItemConditionCase, conditionTracked: boolean): MaterialBranchSeed {
+  return materialBranchSeedSchema.parse({
+    worldId: ids.worldId,
+    worldTypeId: "e5-3-slice3-tests",
+    worldSeed: `seed-${ids.worldId}`,
+    branchId: ids.branchId,
+    rulesetVersion: "e5-3-slice3-test-v1",
+    originStorySecond: SEED_SECOND,
+    actors: [
+      { id: ids.actorId, name: "Mara" },
+      { id: ids.witnessId, name: "Iris" },
+    ],
+    items: [
+      {
+        id: ids.toolId,
+        name: "Whittling knife",
+        materialKindKey: "tool",
+        conditionTracked,
+        locus: { kind: "held", actorId: ids.actorId },
+      },
+    ],
+  });
+}
+
+async function seedItemConditionCase(options: {
+  conditionTracked: boolean;
+  wearDeltaFixedPoint: number;
+}): Promise<ItemConditionCase> {
+  const worldId = newId();
+  const branchId = newId();
+  const ids: ItemConditionCase = {
+    worldId,
+    branchId,
+    actorId: newId(),
+    witnessId: newId(),
+    zoneA: `${branchId}-zone-a`,
+    toolId: `${branchId}-item-tool`,
+    craftActionId: `${branchId}-action-craft`,
+  };
+  const locHome = `${worldId}-loc-home`;
+  await seedDurableMaterialBranch(itemConditionBranchSeed(ids, options.conditionTracked));
+  await seedDurableSpaceTopology({
+    branchId,
+    locations: [{ id: locHome, worldId, kind: "home", defaultAccessPolicy: "private" }],
+    zones: [{ id: ids.zoneA, locationId: locHome, kind: "room", privacyPolicy: "private" }],
+    links: [],
+    loci: [
+      { kind: "at", actorId: ids.actorId, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
+      { kind: "at", actorId: ids.witnessId, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
+    ],
+  });
+  await seedDurableActionDefinitions({
+    branchId,
+    definitions: [
+      {
+        id: ids.craftActionId,
+        version: 1,
+        controllerKinds: ["player", "npc_policy"],
+        duration: { kind: "fixed", seconds: CRAFT_SECONDS },
+        preconditions: [{ kind: "at_zone_kind", zoneKind: "room" }],
+        requiredClaims: [{ kind: "body" }, { kind: "attention", weight: "full" }],
+        interruptibility: "pausable",
+        noticeability: "obvious",
+        resourceCosts: [
+          {
+            materialKindKey: "tool",
+            quantity: 1,
+            disposition: "use",
+            useConditionDeltas: [{ meterKey: "wear", deltaFixedPoint: options.wearDeltaFixedPoint }],
+          },
+        ],
+      },
+    ],
+  });
+  seededWorldIds.push(worldId);
+  return ids;
+}
+
+function startCraftCommand(ids: ItemConditionCase, overrides: Record<string, unknown> = {}) {
+  return {
+    id: `cmd-craft-${ids.branchId}`,
+    branchId: ids.branchId,
+    expectedVersion: 0,
+    idempotencyKey: `craft-key-${ids.branchId}`,
+    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+    submittedAtWallClock: "2026-07-19T20:00:00.000Z",
+    correlationId: `corr-${ids.branchId}`,
+    type: "start_activity",
+    schemaVersion: 1,
+    payload: { actionDefinitionId: ids.craftActionId, actorId: ids.actorId },
+    ...overrides,
+  };
+}
+
+async function itemConditionMeterRow(branchId: string, itemId: string, meterKey: string) {
+  const [row] = await db()
+    .select()
+    .from(simItemConditionMeters)
+    .where(
+      and(
+        eq(simItemConditionMeters.branchId, branchId),
+        eq(simItemConditionMeters.itemId, itemId),
+        eq(simItemConditionMeters.meterKey, meterKey),
+      ),
+    );
+  return row;
+}
+
+describe.runIf(ready)("E5.3 slice 3 — item condition use-deltas at completion (§26.7)", () => {
+  it("lazily initializes and moves wear on a tracked reserved tool; the driftless meter never gets a scheduled rearm", async () => {
+    const ids = await seedItemConditionCase({ conditionTracked: true, wearDeltaFixedPoint: 1_500 });
+    const start = await submitDurableStartActivity(startCraftCommand(ids));
+    expect(start.status).toBe("accepted");
+
+    const outcome = await advanceBranchStoryTime(ids.branchId, SEED_SECOND + CRAFT_SECONDS + 10, {
+      workerId: "w-craft-wear",
+    });
+    expect(outcome.status).toBe("advanced");
+
+    const eventRows = await db()
+      .select()
+      .from(simEvents)
+      .where(eq(simEvents.branchId, ids.branchId))
+      .orderBy(asc(simEvents.sequence));
+    const types = eventRows.map((row) => row.type);
+    // Full branch stream: [activity_started, trigger_scheduled] from the
+    // start command, then the completion's own train — the lazy-init event
+    // precedes activity_completed itself within THAT train (§26.7 store note).
+    const completionTypes = types.slice(2);
+    expect(completionTypes.indexOf("item_condition_initialized")).toBe(0);
+    expect(completionTypes.indexOf("activity_completed")).toBe(1);
+    expect(completionTypes).toContain("item_condition_source_applied");
+    expect(completionTypes).not.toContain("item_condition_threshold_crossed");
+
+    const initRow = eventRows.find((row) => row.type === "item_condition_initialized");
+    const initPayload = z
+      .object({
+        itemId: z.string(),
+        registryVersion: z.string(),
+        meters: z.array(z.object({ meterKey: z.string(), valueFixedPoint: z.number() })),
+      })
+      .loose()
+      .parse(initRow?.payload);
+    expect(initPayload.itemId).toBe(ids.toolId);
+    expect(initPayload.meters.map((meter) => meter.meterKey).sort()).toEqual(["cleanliness", "wear"]);
+
+    const meterRow = await itemConditionMeterRow(ids.branchId, ids.toolId, "wear");
+    expect(meterRow?.valueFixedPoint).toBe(1_500);
+    expect(meterRow?.lastIntegratedAt).toBe(SEED_SECOND + CRAFT_SECONDS);
+
+    // wear's driftLaw is "none" — a discrete delta below threshold can never
+    // produce a scheduled rearm (there is no future crossing to solve); this
+    // asserts the store does not fabricate one.
+    const [trigger] = await db()
+      .select()
+      .from(simTriggers)
+      .where(and(eq(simTriggers.branchId, ids.branchId), eq(simTriggers.kind, "item_condition_threshold_due")));
+    expect(trigger).toBeUndefined();
+  });
+
+  it("a delta crossing worn_out at completion emits the instant threshold-crossed event, witnessed by the co-located actor", async () => {
+    const ids = await seedItemConditionCase({ conditionTracked: true, wearDeltaFixedPoint: 8_500 });
+    await submitDurableStartActivity(startCraftCommand(ids));
+    const outcome = await advanceBranchStoryTime(ids.branchId, SEED_SECOND + CRAFT_SECONDS + 10, {
+      workerId: "w-craft-worn-out",
+    });
+    expect(outcome.status).toBe("advanced");
+
+    const eventRows = await db()
+      .select()
+      .from(simEvents)
+      .where(eq(simEvents.branchId, ids.branchId))
+      .orderBy(asc(simEvents.sequence));
+    const sourceEvent = eventRows.find((row) => row.type === "item_condition_source_applied");
+    const crossedEvent = eventRows.find((row) => row.type === "item_condition_threshold_crossed");
+    expect(sourceEvent).toBeDefined();
+    expect(crossedEvent).toBeDefined();
+    expect(crossedEvent?.causationId).toBe(sourceEvent?.id);
+
+    const crossedPayload = z
+      .object({
+        itemId: z.string(),
+        meterKey: z.string(),
+        thresholdKey: z.string(),
+        direction: z.string(),
+        valueFixedPoint: z.number(),
+        observerActorIds: z.array(z.string()),
+      })
+      .loose()
+      .parse(crossedEvent?.payload);
+    expect(crossedPayload).toMatchObject({
+      itemId: ids.toolId,
+      meterKey: "wear",
+      thresholdKey: "worn_out",
+      direction: "rising",
+      valueFixedPoint: 8_500,
+    });
+    // Co-located witness only — mirrors bodies' capture idiom (the acting
+    // actor is not separately listed as their own observer here).
+    expect(crossedPayload.observerActorIds).toEqual([ids.witnessId]);
+
+    const meterRow = await itemConditionMeterRow(ids.branchId, ids.toolId, "wear");
+    expect(meterRow?.valueFixedPoint).toBe(8_500);
+  });
+
+  it("an untracked used item receives no condition rows or events", async () => {
+    const ids = await seedItemConditionCase({ conditionTracked: false, wearDeltaFixedPoint: 1_500 });
+    await submitDurableStartActivity(startCraftCommand(ids));
+    const outcome = await advanceBranchStoryTime(ids.branchId, SEED_SECOND + CRAFT_SECONDS + 10, {
+      workerId: "w-craft-untracked",
+    });
+    expect(outcome.status).toBe("advanced");
+
+    const eventRows = await db()
+      .select()
+      .from(simEvents)
+      .where(eq(simEvents.branchId, ids.branchId))
+      .orderBy(asc(simEvents.sequence));
+    expect(eventRows.some((row) => row.type.startsWith("item_condition_"))).toBe(false);
+
+    const meterRows = await db()
+      .select()
+      .from(simItemConditionMeters)
+      .where(
+        and(eq(simItemConditionMeters.branchId, ids.branchId), eq(simItemConditionMeters.itemId, ids.toolId)),
+      );
+    expect(meterRows).toHaveLength(0);
   });
 });

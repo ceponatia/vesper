@@ -134,6 +134,8 @@ export const simulationMaterialItemSchema = z
     container: itemContainerConfigSchema.optional(),
     /** Authored §26.6 body effects a consumption applies, in authored order. */
     consumptionEffects: z.array(itemConsumptionEffectSchema).max(4).optional(),
+    /** §26.7: whether this item carries item-condition (wear/cleanliness) meters. */
+    conditionTracked: z.boolean().default(false),
     locus: itemLocusSchema,
   })
   .strict();

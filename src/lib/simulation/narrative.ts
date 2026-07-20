@@ -217,6 +217,11 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
       // Ownership is a social ledger entry (§26.3): nothing in the scene moved,
       // so it never surfaces as a beat.
       return null;
+    case "item_condition_threshold_crossed":
+      // Hard, unlike body_threshold_crossed's "allowed": a witnessed item
+      // limit (grimy, worn out) is a visible state change on a concrete
+      // object, not an interoceptive band slide a narrator may skip.
+      return { kind: "hard", summary: "Something's state visibly changed." };
     case "trigger_scheduled":
     case "journey_planned":
     case "commitment_created":
@@ -229,6 +234,10 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
     case "soft_canon_demoted":
     case "body_initialized":
     case "body_modifier_applied":
+    case "item_condition_initialized":
+    case "item_condition_source_applied":
+    case "item_condition_modifier_applied":
+    case "item_condition_modifier_ended":
       return null;
   }
 }

@@ -31,6 +31,10 @@ import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import { composeSimulationId } from "@/contracts/simulation/identity";
 import type { BodyMeterState, BodySourceAppliedEvent } from "@/contracts/simulation/bodies";
 import type { ItemConsumedEvent, SimulationMaterialItem } from "@/contracts/simulation/materials";
+import type {
+  ItemConditionSourceAppliedEvent,
+  ItemConditionThresholdCrossedEvent,
+} from "@/contracts/simulation/material-condition";
 import {
   activityCompletionTriggerKind,
   schedulerDerivationVersion,
@@ -44,6 +48,7 @@ import {
   resolveRootLocus,
   type ConsumptionBodyView,
 } from "./materials";
+import { buildUseConditionDeltas, type ItemConditionView, type UseConditionDeltaItem } from "./material-condition";
 
 /**
  * E3.2 pure activity kernel: start/complete/cancel resolution, claim
@@ -375,6 +380,8 @@ export interface CompleteActivityResolutionView extends ActivityBranchMeta {
   materialItemById?(itemId: string): SimulationMaterialItem | undefined;
   /** The consuming actor's body facts for the §26.6 trailing effects; absent → zero body events. */
   bodyView?: ConsumptionBodyView;
+  /** §26.7: a `use`-disposition item's condition state, when it is condition-tracked. */
+  itemConditionViewByItemId?(itemId: string): ItemConditionView | undefined;
 }
 
 interface CompleteRejection {
@@ -386,7 +393,16 @@ interface CompleteRejection {
 export interface CompleteResolution {
   ok: true;
   activity: ActivityInstance;
-  events: [ActivityCompletedEvent, ...(ItemConsumedEvent | BodySourceAppliedEvent | TriggerScheduledEvent)[]];
+  events: [
+    ActivityCompletedEvent,
+    ...(
+      | ItemConsumedEvent
+      | BodySourceAppliedEvent
+      | ItemConditionSourceAppliedEvent
+      | ItemConditionThresholdCrossedEvent
+      | TriggerScheduledEvent
+    )[],
+  ];
   /** The §26.6 body meters written by consumed items' authored effects, if any. */
   meterUpdates: BodyMeterState[];
 }
@@ -477,6 +493,34 @@ export function resolveCompleteActivity(
   }
   consumedIds.sort(compareStableText);
 
+  // §26.7: match use-disposition costs carrying authored condition deltas to
+  // reserved TRACKED items, the same deterministic materialKindKey matching
+  // consume-costs use — but every matched item receives its deltas (use
+  // items are never spent away, so there is no "claimed" defense needed
+  // against consume-side double counting).
+  const useCosts = [...(view.resourceCosts ?? [])]
+    .filter((cost) => cost.disposition === "use" && cost.useConditionDeltas.length > 0)
+    .sort((a, b) => compareStableText(a.materialKindKey, b.materialKindKey));
+  const useConditionItems: UseConditionDeltaItem[] = [];
+  if (useCosts.length > 0 && view.itemConditionViewByItemId) {
+    const itemConditionViewByItemId = view.itemConditionViewByItemId;
+    const useClaimed = new Set<string>();
+    for (const cost of useCosts) {
+      let taken = 0;
+      for (const itemId of reservedIdsSorted) {
+        if (taken >= cost.quantity) break;
+        if (useClaimed.has(itemId)) continue;
+        const item = reservedItems.get(itemId);
+        if (!item || item.materialKindKey !== cost.materialKindKey) continue;
+        useClaimed.add(itemId);
+        taken += 1;
+        if (!item.conditionTracked) continue;
+        const condition = itemConditionViewByItemId(itemId);
+        if (condition) useConditionItems.push({ itemId, condition, deltas: cost.useConditionDeltas });
+      }
+    }
+  }
+
   const event = activityCompletedEventSchema.parse({
     id: composeSimulationId("event", [view.branchId, command.id, "activity-completed"]),
     worldId: view.worldId,
@@ -503,7 +547,13 @@ export function resolveCompleteActivity(
   // One item_consumed per consumed item, each followed by its own §26.6
   // trailing body effects — causation-chained to THIS event, one running
   // sequence counter (the resolveBodyCollapse precedent).
-  const trailing: (ItemConsumedEvent | BodySourceAppliedEvent | TriggerScheduledEvent)[] = [];
+  const trailing: (
+    | ItemConsumedEvent
+    | BodySourceAppliedEvent
+    | ItemConditionSourceAppliedEvent
+    | ItemConditionThresholdCrossedEvent
+    | TriggerScheduledEvent
+  )[] = [];
   const meterUpdates: BodyMeterState[] = [];
   let nextSequence = event.sequence + 1;
   if (primaryActorId !== undefined) {
@@ -541,6 +591,22 @@ export function resolveCompleteActivity(
       meterUpdates.push(...bodyResult.meterUpdates);
       nextSequence = bodyResult.nextSequence;
     }
+  }
+
+  // §26.7: use-delta events join the events train after consumption events,
+  // causation-chained to the activity_completed event itself (there is no
+  // per-item intermediate event the way item_consumed is for consumption).
+  if (useConditionItems.length > 0) {
+    const useResult = buildUseConditionDeltas({
+      view,
+      command,
+      items: useConditionItems,
+      causationEventId: event.id,
+      startSequence: nextSequence,
+      coLocatedActorIds: view.coLocatedActorIds,
+    });
+    trailing.push(...useResult.events);
+    nextSequence = useResult.nextSequence;
   }
 
   const completed = activityInstanceSchema.parse({
@@ -909,6 +975,11 @@ export function applyActivityEvent(
     case "body_condition_ended":
     case "body_threshold_crossed":
     case "body_collapsed":
+    case "item_condition_initialized":
+    case "item_condition_source_applied":
+    case "item_condition_modifier_applied":
+    case "item_condition_modifier_ended":
+    case "item_condition_threshold_crossed":
       // Non-activity families advance the boundary without touching activities.
       return activitiesProjectionSchema.parse(bumped);
   }

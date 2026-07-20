@@ -202,6 +202,12 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
         );
       } else if (event.payload.kind === "body_collapse_due") {
         retirementIndex.set(`body_collapse_due:${event.payload.command.payload.actorId}`, entry);
+      } else if (event.payload.kind === "item_condition_threshold_due") {
+        // Re-arms overwrite: the newest alarm for an item meter is the live one.
+        retirementIndex.set(
+          `item_condition_threshold_due:${event.payload.command.payload.itemId}:${event.payload.command.payload.meterKey}`,
+          entry,
+        );
       }
     } else {
       // Every non-scheduling event may be a scheduler-dispatched firing (an
@@ -235,6 +241,24 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
       } else if (event.type === "body_collapsed") {
         retire(`body_threshold_due:${event.payload.actorId}:energy`, event.commandId);
         retire(`body_collapse_due:${event.payload.actorId}`, event.commandId);
+      } else if (
+        event.type === "item_condition_source_applied" ||
+        event.type === "item_condition_threshold_crossed"
+      ) {
+        // Mirrors the body-meter retirement above: any material write to an
+        // item meter's trajectory retires its pending alarm; a re-arm (if
+        // any) follows as a fresh trigger_scheduled with a versioned key.
+        retire(
+          `item_condition_threshold_due:${event.payload.itemId}:${event.payload.meterKey}`,
+          event.commandId,
+        );
+      } else if (event.type === "item_condition_modifier_applied") {
+        // A worn-window modifier changes the drift trajectory just as much
+        // as a source write does — retire the meter's pending alarm too.
+        retire(
+          `item_condition_threshold_due:${event.payload.itemId}:${event.payload.modifier.meterKey}`,
+          event.commandId,
+        );
       } else if (event.type === "body_condition_ended") {
         // A condition application never retires (its owned modifiers ride
         // their own body_modifier_applied events); its ending retires the

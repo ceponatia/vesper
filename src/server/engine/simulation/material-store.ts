@@ -1,4 +1,4 @@
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { composeSimulationId } from "@/contracts/simulation/identity";
 import { claimHoldingActivityPhases } from "@/contracts/simulation/activities";
 import {
@@ -26,22 +26,54 @@ import {
   type TransferItemCommandResult,
 } from "@/contracts/simulation/materials";
 import {
+  applyItemConditionSourceCommandResultSchema,
+  applyItemConditionSourceCommandSchema,
+  itemConditionMeterStateSchema,
+  itemConditionModifierSchema,
+  itemConditionRegistryVersion,
+  itemConditionRegistryVersionSchema,
+  resolveItemConditionThresholdCommandResultSchema,
+  resolveItemConditionThresholdCommandSchema,
+  type ApplyItemConditionSourceCommand,
+  type ApplyItemConditionSourceCommandResult,
+  type ItemConditionInitializedEvent,
+  type ItemConditionMeterState,
+  type ItemConditionModifier,
+  type ItemConditionModifierAppliedEvent,
+  type ItemConditionModifierEndedEvent,
+  type ItemConditionThresholdCrossedEvent,
+  type ResolveItemConditionThresholdCommand,
+  type ResolveItemConditionThresholdCommandResult,
+} from "@/contracts/simulation/material-condition";
+import {
   itemTransferFeedConsumerKind,
   itemTransferFeedProjectionSchemaVersion,
 } from "@/contracts/simulation/outbox";
+import { itemConditionThresholdTriggerKind, type TriggerScheduledEvent } from "@/contracts/simulation/scheduler";
 import {
   materialsSeedProjection,
   resolveConsumeItemFromView,
   resolveDestroyItemFromView,
+  resolveRootLocus,
   resolveSetItemOwnershipFromView,
   resolveTransferItemFromView,
   type ConsumptionBodyView,
   type MaterialResolutionView,
 } from "@/lib/simulation/materials";
+import {
+  buildItemConditionInitializedEvent,
+  initialConditionMetersFor,
+  itemConditionThresholdUniquenessKeyPrefix,
+  meterViewOfItem,
+  resolveApplyItemConditionSource,
+  resolveItemConditionThreshold,
+  type ItemConditionView,
+} from "@/lib/simulation/material-condition";
 import { bodyMeterRegistryByVersion, bodyRegistryVersionSchema } from "@/contracts/simulation/bodies";
 import {
   BODY_THRESHOLD_HORIZON_SECONDS,
   selfCareAdjustmentsBetween,
+  type BodyEventCommandContext,
   type MeterIntegrationView,
 } from "@/lib/simulation/bodies";
 import {
@@ -53,10 +85,13 @@ import {
   simBodyRhythms,
   simBranches,
   simCharacters,
+  simItemConditionMeters,
+  simItemConditionModifiers,
   simItemHoldings,
   simItems,
   simOutbox,
   simPhysicalLoci,
+  simTriggers,
   simWorlds,
   type Db,
 } from "@/server/db";
@@ -66,11 +101,13 @@ import {
   runSimulationCommand,
   type LockedBranchView,
 } from "./command-runner";
+import { itemConditionMeterRowInsert, itemConditionModifierRowInsert } from "./activity-store";
 import {
   bodyConditionFromRow,
   bodyMeterFromRow,
   bodyModifierFromRow,
   bodyRhythmFromRow,
+  loadCoLocatedActorIds,
   retirePendingThresholdTriggers,
   upsertMeterRow,
 } from "./body-store";
@@ -131,6 +168,17 @@ export interface MaterialSubmitOptions {
    * see command-runner.ts's `runSimulationCommand` doc for the trigger-replay
    * rationale (a scheduled transfer resolves under this option).
    */
+  admitAtLockedVersion?: boolean;
+}
+
+/**
+ * §26.7 item-condition commands mirror `BodyStoreOptions` (body-store.ts),
+ * not `MaterialSubmitOptions`: they have no soak crash-injection points of
+ * their own (the pre-commit failpoints above are transfer/destroy/consume-
+ * specific), matching `submitDurableResolveBodyThreshold`'s own option shape.
+ */
+export interface ItemConditionSubmitOptions {
+  database?: Db;
   admitAtLockedVersion?: boolean;
 }
 
@@ -276,6 +324,7 @@ export async function seedDurableMaterialBranch(
           ownerActorId: item.ownerActorId,
           containerCapacityCount: item.container?.capacityCount ?? null,
           containerAccess: item.container?.access ?? null,
+          conditionTracked: item.conditionTracked,
         })),
       );
       await tx.insert(simItemHoldings).values(
@@ -341,6 +390,7 @@ async function loadMaterialResolutionView(
       ownerActorId: simItems.ownerActorId,
       containerCapacityCount: simItems.containerCapacityCount,
       containerAccess: simItems.containerAccess,
+      conditionTracked: simItems.conditionTracked,
       locusKind: simItemHoldings.locusKind,
       holdingActorId: simItemHoldings.actorId,
       slotKey: simItemHoldings.slotKey,
@@ -375,6 +425,7 @@ async function loadMaterialResolutionView(
       ...(row.containerCapacityCount !== null && row.containerAccess !== null
         ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
         : {}),
+      conditionTracked: row.conditionTracked,
       locus,
     });
     itemsById.set(item.id, item);
@@ -435,6 +486,273 @@ async function loadMaterialResolutionView(
     containerOccupantCount: (containerItemId) => containerOccupantCounts.get(containerItemId) ?? 0,
     reservingActivityId: (itemId) => reservingActivityIdByItem.get(itemId) ?? null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// E5.3 slice 3 — item condition authority (engine.spec §26.7), mirroring
+// body-store.ts's threshold-alarm choreography over item-scoped tables.
+// ---------------------------------------------------------------------------
+
+export function itemConditionMeterFromRow(
+  row: typeof simItemConditionMeters.$inferSelect,
+): ItemConditionMeterState {
+  return itemConditionMeterStateSchema.parse({
+    itemId: row.itemId,
+    meterKey: row.meterKey,
+    valueFixedPoint: row.valueFixedPoint,
+    baselineFixedPoint: row.baselineFixedPoint,
+    lastIntegratedAtStorySecond: row.lastIntegratedAt,
+    registryVersion: row.registryVersion,
+  });
+}
+
+/**
+ * The row-shaping INSERT direction (`itemConditionMeterRowInsert`/
+ * `itemConditionModifierRowInsert`) is NOT duplicated here — it lives in
+ * activity-store.ts and is imported below. activity-store.ts needs its own
+ * copy regardless (it writes these tables directly for its §26.5 completion-
+ * time use-delta path without routing through this module, to avoid a
+ * material-store.ts → body-store.ts → activity-store.ts → material-store.ts
+ * cycle), and branch-store.ts's fork materialization already imports THAT
+ * copy — so reusing it here, rather than growing a second one, is the one
+ * canonical implementation instead of two that could drift apart.
+ */
+
+/**
+ * Item-condition modifier rows never persist `visibility` (see
+ * `activity-store.ts`'s `itemConditionModifierFromRow`, the canonical
+ * mirror of this same parse): every modifier this substrate ever creates
+ * (the worn-window transition) is hard-coded "obvious" — see the registry
+ * doc comment in `@/contracts/simulation/material-condition`.
+ */
+export function itemConditionModifierFromRow(
+  row: typeof simItemConditionModifiers.$inferSelect,
+): ItemConditionModifier {
+  return itemConditionModifierSchema.parse({
+    id: row.modifierId,
+    itemId: row.itemId,
+    meterKey: row.meterKey,
+    operation: row.operation,
+    stackingGroup: row.stackingGroup,
+    priority: row.priority,
+    validFromStorySecond: row.validFrom,
+    ...(row.validUntil === null ? {} : { validUntilStorySecond: row.validUntil }),
+    visibility: "obvious",
+    sourceEventId: row.sourceEventId,
+  });
+}
+
+/** One item's full condition state, or undefined when it has never been initialized. */
+async function loadItemConditionView(
+  tx: SimTx,
+  branchId: string,
+  itemId: string,
+): Promise<ItemConditionView | undefined> {
+  const meterRows = await tx
+    .select()
+    .from(simItemConditionMeters)
+    .where(and(eq(simItemConditionMeters.branchId, branchId), eq(simItemConditionMeters.itemId, itemId)))
+    .orderBy(asc(simItemConditionMeters.meterKey));
+  const [firstMeterRow] = meterRows;
+  if (!firstMeterRow) return undefined;
+  const modifierRows = await tx
+    .select()
+    .from(simItemConditionModifiers)
+    .where(and(eq(simItemConditionModifiers.branchId, branchId), eq(simItemConditionModifiers.itemId, itemId)))
+    .orderBy(asc(simItemConditionModifiers.modifierId));
+  return {
+    itemId,
+    registryVersion: itemConditionRegistryVersionSchema.parse(firstMeterRow.registryVersion),
+    meters: meterRows.map(itemConditionMeterFromRow),
+    modifiers: modifierRows.map(itemConditionModifierFromRow),
+  };
+}
+
+interface ItemConditionLazyInit {
+  /** The condition view a causing resolver should see: loaded, or freshly initialized in memory. */
+  condition: ItemConditionView;
+  /** Present only on first touch — the caller must append it and insert its meter rows before resolving. */
+  initEvent?: ItemConditionInitializedEvent;
+  /** The headSequence a causing resolver's OWN view must carry (post-init when initEvent is present). */
+  headSequence: number;
+}
+
+/**
+ * Lazy item-condition initialization (engine.spec §26.7 — "there is no
+ * dedicated command"): loaded if rows already exist, otherwise built purely
+ * in memory (registry defaults at the branch's current story second) with an
+ * `item_condition_initialized` event at `branch.headSequence + 1` for the
+ * caller to persist BEFORE calling its own causing resolver at the returned
+ * (post-init) headSequence — mirrors the composition
+ * `material-condition.test.ts`'s projector-parity fixture demonstrates.
+ */
+async function loadOrInitializeItemConditionView(
+  tx: SimTx,
+  branch: LockedBranchView,
+  command: BodyEventCommandContext,
+  itemId: string,
+): Promise<ItemConditionLazyInit> {
+  const existing = await loadItemConditionView(tx, branch.id, itemId);
+  if (existing) return { condition: existing, headSequence: branch.headSequence };
+
+  const meters = initialConditionMetersFor({ itemId, atStorySecond: branch.storySecond });
+  const initEvent = buildItemConditionInitializedEvent({
+    view: {
+      worldId: branch.worldId,
+      branchId: branch.id,
+      rulesetVersion: branch.rulesetVersion,
+      headSequence: branch.headSequence,
+      storySecond: branch.storySecond,
+    },
+    command,
+    itemId,
+    meters,
+    sequence: branch.headSequence + 1,
+  });
+  return {
+    condition: { itemId, registryVersion: itemConditionRegistryVersion, meters, modifiers: [] },
+    initEvent,
+    headSequence: initEvent.sequence,
+  };
+}
+
+/** Persist a just-built lazy-init event: the event row, then its meter rows. */
+async function commitItemConditionInit(tx: SimTx, branch: LockedBranchView, lazy: ItemConditionLazyInit): Promise<void> {
+  const initEvent = lazy.initEvent;
+  if (!initEvent) return;
+  await appendSimulationEvent(tx, initEvent);
+  await tx
+    .insert(simItemConditionMeters)
+    .values(lazy.condition.meters.map((meter) => itemConditionMeterRowInsert(branch.id, meter, initEvent.sequence)));
+}
+
+/** All actors physically at `zoneId` — the item-condition witness set (§26.7: co-location with the item's root locus). */
+async function loadCoLocatedActorIdsForZone(tx: SimTx, branchId: string, zoneId: string): Promise<string[]> {
+  const rows = await tx
+    .select({ actorId: simPhysicalLoci.actorId })
+    .from(simPhysicalLoci)
+    .where(
+      and(
+        eq(simPhysicalLoci.branchId, branchId),
+        eq(simPhysicalLoci.kind, "at"),
+        eq(simPhysicalLoci.zoneId, zoneId),
+      ),
+    );
+  return rows.map((row) => row.actorId);
+}
+
+/** Analogous to body-store.ts's `upsertMeterRow`, item-scoped. */
+async function upsertItemConditionMeterRow(
+  tx: SimTx,
+  branchId: string,
+  meter: ItemConditionMeterState,
+  updatedSequence: number,
+): Promise<void> {
+  const [updated] = await tx
+    .update(simItemConditionMeters)
+    .set({
+      valueFixedPoint: meter.valueFixedPoint,
+      baselineFixedPoint: meter.baselineFixedPoint,
+      lastIntegratedAt: meter.lastIntegratedAtStorySecond,
+      updatedSequence,
+    })
+    .where(
+      and(
+        eq(simItemConditionMeters.branchId, branchId),
+        eq(simItemConditionMeters.itemId, meter.itemId),
+        eq(simItemConditionMeters.meterKey, meter.meterKey),
+      ),
+    )
+    .returning({ meterKey: simItemConditionMeters.meterKey });
+  if (!updated) throw new Error("Locked item condition meter changed before its material update");
+}
+
+/** Analogous to body-store.ts's `retirePendingThresholdTriggers`, item-scoped. */
+async function retirePendingItemConditionThresholdTriggers(
+  tx: SimTx,
+  branch: LockedBranchView,
+  commandId: string,
+  submittedAtWallClock: string,
+  itemId: string,
+  meterKey: string,
+): Promise<void> {
+  const prefix = itemConditionThresholdUniquenessKeyPrefix(itemId, meterKey);
+  await tx
+    .update(simTriggers)
+    .set({
+      state: "completed",
+      resultCommandId: commandId,
+      completedAt: new Date(submittedAtWallClock),
+    })
+    .where(
+      and(
+        eq(simTriggers.branchId, branch.id),
+        eq(simTriggers.state, "pending"),
+        sql`starts_with(${simTriggers.uniquenessKey}, ${prefix})`,
+      ),
+    );
+}
+
+type ItemConditionTrailingEvent =
+  | ItemConditionModifierAppliedEvent
+  | ItemConditionModifierEndedEvent
+  | ItemConditionThresholdCrossedEvent
+  | TriggerScheduledEvent;
+
+/**
+ * The shared item-condition per-event write, for every event past a command's
+ * own primary/meter-carrying event (which each `submitDurableXxx` below
+ * handles itself, matching body-store.ts's `[primary, ...trailing]` shape).
+ */
+async function applyDurableItemConditionTrailingEvent(
+  tx: SimTx,
+  branch: LockedBranchView,
+  commandId: string,
+  submittedAtWallClock: string,
+  event: ItemConditionTrailingEvent,
+): Promise<void> {
+  switch (event.type) {
+    case "item_condition_modifier_applied":
+      await tx
+        .insert(simItemConditionModifiers)
+        .values(itemConditionModifierRowInsert(branch.id, event.payload.modifier, event.sequence));
+      return;
+    case "item_condition_modifier_ended": {
+      const [updated] = await tx
+        .update(simItemConditionModifiers)
+        .set({
+          // Mirror the pure projector's clamp exactly (applyItemConditionEvent).
+          validUntil: sql`greatest(${event.storySecond}, ${simItemConditionModifiers.validFrom} + 1)`,
+          updatedSequence: event.sequence,
+        })
+        .where(
+          and(
+            eq(simItemConditionModifiers.branchId, branch.id),
+            eq(simItemConditionModifiers.modifierId, event.payload.modifierId),
+          ),
+        )
+        .returning({ modifierId: simItemConditionModifiers.modifierId });
+      if (!updated) throw new Error("Locked item condition modifier changed before its ending update");
+      return;
+    }
+    case "item_condition_threshold_crossed":
+      // Nothing beyond the event append: an instant crossing carries the SAME
+      // value the causing write already persisted to the meter row.
+      return;
+    case "trigger_scheduled":
+      if (event.payload.kind === itemConditionThresholdTriggerKind) {
+        await retirePendingItemConditionThresholdTriggers(
+          tx,
+          branch,
+          commandId,
+          submittedAtWallClock,
+          event.payload.command.payload.itemId,
+          event.payload.command.payload.meterKey,
+        );
+      }
+      await applyTriggerScheduledEvent(tx, event, { branchId: branch.id, worldId: branch.worldId });
+      return;
+  }
 }
 
 /**
@@ -587,10 +905,28 @@ export async function submitDurableTransferItem(
     admitAtLockedVersion: options.admitAtLockedVersion,
     execute: async (tx, branch: LockedBranchView, command: TransferItemCommand) => {
       const view = await loadMaterialResolutionView(tx, branch, [command.payload.itemId]);
-      const resolution = resolveTransferItemFromView(view, command);
+      const item = view.itemById(command.payload.itemId);
+      // §26.7: only a worn-ness-changing move on a tracked item ever touches
+      // condition state — every other transfer skips loading/initializing it
+      // entirely, keeping "lazy" honest (a held-to-held move of a tracked-but-
+      // untouched item must not spuriously initialize its meters).
+      const wornnessChanges =
+        item?.conditionTracked === true &&
+        (command.payload.fromLocus.kind === "worn") !== (command.payload.toLocus.kind === "worn");
+      const lazy = wornnessChanges
+        ? await loadOrInitializeItemConditionView(tx, branch, command, command.payload.itemId)
+        : undefined;
+
+      const resolution = resolveTransferItemFromView(
+        { ...view, headSequence: lazy?.headSequence ?? branch.headSequence },
+        command,
+        lazy?.condition,
+      );
       if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
 
-      const event = resolution.event;
+      if (lazy) await commitItemConditionInit(tx, branch, lazy);
+
+      const [event, ...conditionEvents] = resolution.events;
       await appendSimulationEvent(tx, event);
       injectCrash(options.crashAt, "after_event_append");
 
@@ -600,16 +936,50 @@ export async function submitDurableTransferItem(
       await publishMaterialFeedObligation(tx, event);
       injectCrash(options.crashAt, "after_outbox_insert");
 
-      await advanceLockedBranch(tx, branch, event.sequence);
+      // Unconditional, like body-store's own choreography (e.g.
+      // `submitDurableEndBodyCondition` retires every affected meter's alarm
+      // BEFORE its trailing loop, never gated on a fresh rearm existing): a
+      // worn-ness change always invalidates cleanliness's prior alarm, even
+      // when the new trajectory (e.g. doffed, no longer decaying) has nothing
+      // to re-arm — leaving it pending would let a stale alarm fire later and
+      // rely solely on fire-time re-validation to reject it.
+      if (wornnessChanges) {
+        await retirePendingItemConditionThresholdTriggers(
+          tx,
+          branch,
+          command.id,
+          command.submittedAtWallClock,
+          command.payload.itemId,
+          "cleanliness",
+        );
+      }
+
+      for (const conditionEvent of conditionEvents) {
+        await appendSimulationEvent(tx, conditionEvent);
+        await applyDurableItemConditionTrailingEvent(
+          tx,
+          branch,
+          command.id,
+          command.submittedAtWallClock,
+          conditionEvent,
+        );
+      }
+
+      const lastSequence = resolution.events[resolution.events.length - 1]?.sequence ?? event.sequence;
+      await advanceLockedBranch(tx, branch, lastSequence);
       injectCrash(options.crashAt, "after_branch_advance");
 
       return {
         status: "accepted",
         commandId: command.id,
         branchVersion: branch.version + 1,
-        firstSequence: event.sequence,
-        lastSequence: event.sequence,
-        eventIds: [event.id],
+        firstSequence: lazy?.initEvent?.sequence ?? event.sequence,
+        lastSequence,
+        eventIds: [
+          ...(lazy?.initEvent ? [lazy.initEvent.id] : []),
+          event.id,
+          ...conditionEvents.map((conditionEvent) => conditionEvent.id),
+        ],
       };
     },
   });
@@ -841,4 +1211,200 @@ export async function submitDurableSetItemOwnership(
 
   if (options.crashAt === "after_commit") throw new InjectedSimulationCrash("after_commit");
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// apply_item_condition_source (v1) — §26.7 an actor cleans/adjusts a reachable item
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute one ApplyItemConditionSource: lazily initialize the item's condition
+ * state on first touch, integrate → apply → re-arm through the pure resolver,
+ * and persist every trailing event — mirrors `submitDurableApplyBodySource`'s
+ * shape (body-store.ts), item-scoped.
+ */
+export async function submitDurableApplyItemConditionSource(
+  rawCommand: unknown,
+  options: ItemConditionSubmitOptions = {},
+): Promise<ApplyItemConditionSourceCommandResult> {
+  return runSimulationCommand({
+    rawCommand,
+    commandSchema: applyItemConditionSourceCommandSchema,
+    resultSchema: applyItemConditionSourceCommandResultSchema,
+    invalidResult: () => rejectedResult("invalid", "invalid_command", "That item condition request is invalid."),
+    branchUnavailableResult: (commandId) =>
+      rejectedResult(commandId, "branch_mismatch", "That world branch is unavailable."),
+    duplicateCommandIdResult: (commandId) =>
+      rejectedResult(commandId, "duplicate_command_id", "That item condition change has already been submitted."),
+    conflictResult: (commandId, currentVersion) =>
+      applyItemConditionSourceCommandResultSchema.parse({
+        status: "conflict",
+        commandId,
+        currentVersion,
+        retryable: true,
+      }),
+    database: options.database,
+    admitAtLockedVersion: options.admitAtLockedVersion,
+    execute: async (tx, branch: LockedBranchView, command: ApplyItemConditionSourceCommand) => {
+      const view = await loadMaterialResolutionView(tx, branch, [command.payload.itemId]);
+      const item = view.itemById(command.payload.itemId);
+      const lazy = item?.conditionTracked
+        ? await loadOrInitializeItemConditionView(tx, branch, command, command.payload.itemId)
+        : undefined;
+
+      // Witness capture for a possible instant threshold crossing (§26.7 — the
+      // `wear` meter has no drift, so its crossings can only ever be detected
+      // synchronously here, unlike bodies' purely-scheduled thresholds). The
+      // acting actor's own zone join is exactly "co-located with the item":
+      // `root_not_colocated` below already requires them to be at its root zone.
+      const coLocatedActorIds = await loadCoLocatedActorIds(tx, branch.id, command.payload.actorId);
+
+      const resolution = resolveApplyItemConditionSource(
+        {
+          worldId: branch.worldId,
+          branchId: branch.id,
+          rulesetVersion: branch.rulesetVersion,
+          headSequence: lazy?.headSequence ?? branch.headSequence,
+          storySecond: branch.storySecond,
+          ...(lazy?.condition ? { condition: lazy.condition } : {}),
+          coLocatedActorIds,
+        },
+        command,
+        view,
+      );
+      if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
+
+      if (lazy) await commitItemConditionInit(tx, branch, lazy);
+
+      const [sourceEvent, ...trailing] = resolution.events;
+      await appendSimulationEvent(tx, sourceEvent);
+      await retirePendingItemConditionThresholdTriggers(
+        tx,
+        branch,
+        command.id,
+        command.submittedAtWallClock,
+        command.payload.itemId,
+        command.payload.meterKey,
+      );
+      for (const event of trailing) {
+        await appendSimulationEvent(tx, event);
+        await applyDurableItemConditionTrailingEvent(tx, branch, command.id, command.submittedAtWallClock, event);
+      }
+      await upsertItemConditionMeterRow(tx, branch.id, resolution.meter, sourceEvent.sequence);
+
+      const lastSequence = resolution.events[resolution.events.length - 1]?.sequence ?? sourceEvent.sequence;
+      await advanceLockedBranch(tx, branch, lastSequence);
+
+      return {
+        status: "accepted",
+        commandId: command.id,
+        branchVersion: branch.version + 1,
+        firstSequence: lazy?.initEvent?.sequence ?? sourceEvent.sequence,
+        lastSequence,
+        eventIds: [
+          ...(lazy?.initEvent ? [lazy.initEvent.id] : []),
+          ...resolution.events.map((event) => event.id),
+        ],
+      };
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// resolve_item_condition_threshold (v1) — §26.7 trigger-dispatched, fire-time re-validated
+// ---------------------------------------------------------------------------
+
+/** Resolve one item meter's due threshold — mirrors `submitDurableResolveBodyThreshold`'s structure, item-scoped. */
+export async function submitDurableResolveItemConditionThreshold(
+  rawCommand: unknown,
+  options: ItemConditionSubmitOptions = {},
+): Promise<ResolveItemConditionThresholdCommandResult> {
+  return runSimulationCommand({
+    rawCommand,
+    commandSchema: resolveItemConditionThresholdCommandSchema,
+    resultSchema: resolveItemConditionThresholdCommandResultSchema,
+    invalidResult: () => rejectedResult("invalid", "invalid_command", "That item condition request is invalid."),
+    branchUnavailableResult: (commandId) =>
+      rejectedResult(commandId, "branch_mismatch", "That world branch is unavailable."),
+    duplicateCommandIdResult: (commandId) =>
+      rejectedResult(commandId, "duplicate_command_id", "That item limit has already been resolved."),
+    conflictResult: (commandId, currentVersion) =>
+      resolveItemConditionThresholdCommandResultSchema.parse({
+        status: "conflict",
+        commandId,
+        currentVersion,
+        retryable: true,
+      }),
+    database: options.database,
+    admitAtLockedVersion: options.admitAtLockedVersion,
+    execute: async (tx, branch: LockedBranchView, command: ResolveItemConditionThresholdCommand) => {
+      const condition = await loadItemConditionView(tx, branch.id, command.payload.itemId);
+      const meterView = condition ? meterViewOfItem(condition, command.payload.meterKey) : undefined;
+      const threshold = meterView?.definition.thresholds.find(
+        (candidate) => candidate.key === command.payload.thresholdKey,
+      );
+
+      // §26.7: "witnessed by co-location with the item's root locus". When the
+      // root is an actor (held/worn), that actor is the item's own holder —
+      // not an external witness of their own effects, so `loadCoLocatedActorIds`
+      // (the SAME zone join `resolveApplyItemConditionSource`'s instant-crossing
+      // witnessing uses, per body-store's own subject-exclusion precedent)
+      // excludes them. A zone-resting item has no holder to exclude.
+      let coLocatedActorIds: string[] = [];
+      if (threshold?.noticeable === true) {
+        const view = await loadMaterialResolutionView(tx, branch, [command.payload.itemId]);
+        const item = view.itemById(command.payload.itemId);
+        if (item) {
+          const root = resolveRootLocus(item.locus, view.itemById);
+          if (root.kind === "actor") {
+            coLocatedActorIds = await loadCoLocatedActorIds(tx, branch.id, root.actorId);
+          } else if (root.kind === "zone") {
+            coLocatedActorIds = await loadCoLocatedActorIdsForZone(tx, branch.id, root.zoneId);
+          }
+        }
+      }
+
+      const resolution = resolveItemConditionThreshold(
+        {
+          worldId: branch.worldId,
+          branchId: branch.id,
+          rulesetVersion: branch.rulesetVersion,
+          headSequence: branch.headSequence,
+          storySecond: branch.storySecond,
+          ...(condition ? { condition } : {}),
+          coLocatedActorIds,
+        },
+        command,
+      );
+      if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
+
+      const [crossedEvent, ...trailing] = resolution.events;
+      await appendSimulationEvent(tx, crossedEvent);
+      await retirePendingItemConditionThresholdTriggers(
+        tx,
+        branch,
+        command.id,
+        command.submittedAtWallClock,
+        command.payload.itemId,
+        command.payload.meterKey,
+      );
+      for (const event of trailing) {
+        await appendSimulationEvent(tx, event);
+        await applyDurableItemConditionTrailingEvent(tx, branch, command.id, command.submittedAtWallClock, event);
+      }
+      await upsertItemConditionMeterRow(tx, branch.id, resolution.meter, crossedEvent.sequence);
+
+      const lastSequence = resolution.events[resolution.events.length - 1]?.sequence ?? crossedEvent.sequence;
+      await advanceLockedBranch(tx, branch, lastSequence);
+
+      return {
+        status: "accepted",
+        commandId: command.id,
+        branchVersion: branch.version + 1,
+        firstSequence: crossedEvent.sequence,
+        lastSequence,
+        eventIds: resolution.events.map((event) => event.id),
+      };
+    },
+  });
 }

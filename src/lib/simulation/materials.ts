@@ -26,6 +26,10 @@ import {
   type TransferItemRejectionCode,
 } from "@/contracts/simulation/materials";
 import type { BodyMeterState, BodySourceAppliedEvent } from "@/contracts/simulation/bodies";
+import type {
+  ItemConditionModifierAppliedEvent,
+  ItemConditionModifierEndedEvent,
+} from "@/contracts/simulation/material-condition";
 import type { TriggerScheduledEvent } from "@/contracts/simulation/scheduler";
 import {
   applySourceToMeter,
@@ -35,6 +39,24 @@ import {
   type MeterIntegrationView,
 } from "./bodies";
 import { compareStableText, sortedUnique } from "./hash";
+import { buildWornWindowTransition, type ItemConditionView } from "./material-condition";
+import {
+  containerAccessAllowed,
+  MATERIAL_CHAIN_DEPTH_CAP,
+  resolveRootLocus,
+  rootZoneId,
+  type MaterialResolutionView,
+  type RootLocus,
+} from "./material-locus";
+
+export {
+  containerAccessAllowed,
+  MATERIAL_CHAIN_DEPTH_CAP,
+  resolveRootLocus,
+  rootZoneId,
+  type MaterialResolutionView,
+  type RootLocus,
+} from "./material-locus";
 
 /**
  * E5.3 slice 1 pure material kernel (engine.spec §26.1–26.4): the transfer /
@@ -47,56 +69,6 @@ import { compareStableText, sortedUnique } from "./hash";
  * completion-time consumption path reuses — both drive the §25 body kernel
  * through `applySourceToMeter` (`lib/simulation/bodies.ts`).
  */
-
-/** Bounded holding-chain walk (§26.1): at most this many container hops resolve. */
-export const MATERIAL_CHAIN_DEPTH_CAP = 8;
-
-// ---------------------------------------------------------------------------
-// Root locus resolution (§26.1)
-// ---------------------------------------------------------------------------
-
-/**
- * A holding chain's root: an actor (held/worn, directly or through their
- * containers), a zone, `gone`, or `cycle` — the last standing in for both a
- * true cycle and a walk that overran the depth cap or dangled off a missing
- * container. A dangling reference fails closed as unresolvable, never as a root.
- */
-export type RootLocus =
-  | { kind: "actor"; actorId: string }
-  | { kind: "zone"; zoneId: string }
-  | { kind: "gone" }
-  | { kind: "cycle" };
-
-export function resolveRootLocus(
-  locus: ItemLocus,
-  itemById: (itemId: string) => SimulationMaterialItem | undefined,
-  depthCap: number = MATERIAL_CHAIN_DEPTH_CAP,
-): RootLocus {
-  let current: ItemLocus = locus;
-  const seen = new Set<string>();
-  for (let hops = 0; hops <= depthCap; hops += 1) {
-    switch (current.kind) {
-      case "held":
-        return { kind: "actor", actorId: current.actorId };
-      case "worn":
-        return { kind: "actor", actorId: current.actorId };
-      case "zone":
-        return { kind: "zone", zoneId: current.zoneId };
-      case "gone":
-        return { kind: "gone" };
-      case "container": {
-        if (hops >= depthCap) return { kind: "cycle" };
-        if (seen.has(current.containerItemId)) return { kind: "cycle" };
-        seen.add(current.containerItemId);
-        const container = itemById(current.containerItemId);
-        if (!container) return { kind: "cycle" };
-        current = container.locus;
-        break;
-      }
-    }
-  }
-  return { kind: "cycle" };
-}
 
 // ---------------------------------------------------------------------------
 // Locus helpers
@@ -134,67 +106,10 @@ function lociEntityIds(locus: ItemLocus): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// Authority view (DB-populated under the branch lock)
+// Authority view — MaterialResolutionView, resolveRootLocus, rootZoneId, and
+// containerAccessAllowed all live in ./material-locus (see its module doc for
+// why: material-condition.ts needs them without a materials.ts import cycle).
 // ---------------------------------------------------------------------------
-
-/**
- * The minimum authoritative facts a material command needs. Persistent adapters
- * load this under the branch lock instead of hydrating every item in the world;
- * a resolver reads only through these accessors so both paths run one resolver.
- */
-export interface MaterialResolutionView {
-  worldId: string;
-  branchId: string;
-  rulesetVersion: string;
-  version: number;
-  headSequence: number;
-  storySecond: number;
-  /** Identity of an actor, or undefined if the branch has no such actor. */
-  actorById(actorId: string): { id: string; name: string } | undefined;
-  /** The actor's current zone (§13.2 physical locus), or null if not embodied. */
-  actorZoneId(actorId: string): string | null;
-  /** The location containing the actor's current zone; for the event envelope. */
-  actorLocationId(actorId: string): string | null;
-  /** The item with its current locus, container config, and owner, or undefined. */
-  itemById(itemId: string): SimulationMaterialItem | undefined;
-  /** Count of items whose IMMEDIATE locus is this container (§26.2 capacity). */
-  containerOccupantCount(containerItemId: string): number;
-  /**
-   * The live claim-holding-phase activity currently reserving this item
-   * (§26.5), or null. A reserved item is untouchable by every command-driven
-   * material path (transfer, destroy, consume) — only the reserving
-   * activity's own completion/interruption machinery may move it.
-   */
-  reservingActivityId(itemId: string): string | null;
-}
-
-function rootZoneId(root: RootLocus, view: MaterialResolutionView): string | null {
-  if (root.kind === "actor") return view.actorZoneId(root.actorId);
-  if (root.kind === "zone") return root.zoneId;
-  return null;
-}
-
-/** Fail-closed §26.2 access check on the immediate container at a transfer end. */
-function containerAccessAllowed(
-  view: MaterialResolutionView,
-  containerItemId: string,
-  actingActorId: string,
-): boolean {
-  const container = view.itemById(containerItemId);
-  if (!container?.container) return false;
-  const access = container.container.access;
-  switch (access.kind) {
-    case "open":
-      // Root co-location was already established, which is all `open` requires.
-      return true;
-    case "holder_only": {
-      const root = resolveRootLocus(container.locus, view.itemById);
-      return root.kind === "actor" && root.actorId === actingActorId;
-    }
-    case "allow_list":
-      return access.actorIds.includes(actingActorId as never);
-  }
-}
 
 function destinationWellFormed(view: MaterialResolutionView, toLocus: ItemLocus): boolean {
   switch (toLocus.kind) {
@@ -245,7 +160,13 @@ interface TransferRejection {
 }
 interface TransferAccepted {
   ok: true;
-  event: ItemTransferredEvent;
+  /**
+   * §26.7: a worn-ness change on a condition-tracked item trails its
+   * worn-window modifier (applied or ended) plus a threshold re-arm — a
+   * breaking change from the bare `event` slice 1/2 shipped with (mirrors the
+   * `events` array `resolveCompleteActivity` gained in slice 2).
+   */
+  events: [ItemTransferredEvent, ...(ItemConditionModifierAppliedEvent | ItemConditionModifierEndedEvent | TriggerScheduledEvent)[]];
 }
 export type TransferItemResolution = TransferRejection | TransferAccepted;
 
@@ -253,10 +174,17 @@ function transferReject(code: TransferItemRejectionCode, publicReason: string): 
   return { ok: false, code, publicReason };
 }
 
-/** Pure TransferItem resolver over a lock-consistent authority view (§26.4). */
+/**
+ * Pure TransferItem resolver over a lock-consistent authority view (§26.4).
+ * `itemConditionView`, when the moved item is condition-tracked (§26.7),
+ * drives the worn-window transition: donning/doffing trails a
+ * `item_condition_modifier_applied`/`_ended` event plus cleanliness's
+ * threshold re-arm after the primary `item_transferred` event.
+ */
 export function resolveTransferItemFromView(
   view: MaterialResolutionView,
   command: TransferItemCommand,
+  itemConditionView?: ItemConditionView,
 ): TransferItemResolution {
   const { actorId, itemId, fromLocus, toLocus } = command.payload;
 
@@ -356,7 +284,19 @@ export function resolveTransferItemFromView(
     recordedAtWallClock: command.submittedAtWallClock,
     payload: { actorId, itemId, fromLocus, toLocus, againstOwnership },
   });
-  return { ok: true, event };
+
+  const wornWindow = buildWornWindowTransition({
+    view,
+    command,
+    itemId,
+    fromLocus,
+    toLocus,
+    ...(itemConditionView === undefined ? {} : { condition: itemConditionView }),
+    causationId: event.id,
+    startSequence: event.sequence + 1,
+  });
+
+  return { ok: true, events: [event, ...wornWindow.events] };
 }
 
 // ---------------------------------------------------------------------------
@@ -868,6 +808,11 @@ export function applyMaterialEvent(
     case "body_condition_ended":
     case "body_threshold_crossed":
     case "body_collapsed":
+    case "item_condition_initialized":
+    case "item_condition_source_applied":
+    case "item_condition_modifier_applied":
+    case "item_condition_modifier_ended":
+    case "item_condition_threshold_crossed":
       // Non-material families advance the boundary without touching items.
       return materialsProjectionSchema.parse(bumped);
   }

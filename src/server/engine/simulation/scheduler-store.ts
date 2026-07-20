@@ -14,6 +14,7 @@ import {
   bodyThresholdTriggerKind,
   commitmentDeadlineTriggerKind,
   commitmentNoticeTriggerKind,
+  itemConditionThresholdTriggerKind,
   journeyArrivalTriggerKind,
   scheduledTransferTriggerKind,
   schedulerDerivationVersion,
@@ -43,7 +44,7 @@ import {
   submitDurableRaisePressure,
   submitDurableResolveCommitmentDeadline,
 } from "./commitment-store";
-import { submitDurableTransferItem } from "./material-store";
+import { submitDurableResolveItemConditionThreshold, submitDurableTransferItem } from "./material-store";
 import { submitDurableJourneyArrival } from "./space-store";
 import { applyTriggerScheduledEvent } from "./trigger-projector";
 
@@ -551,6 +552,8 @@ export async function resolveNextDueTrigger(
           return submitDurableEndBodyCondition(dispatchEnvelope, dispatchOptions);
         case bodyCollapseTriggerKind:
           return submitDurableResolveBodyCollapse(dispatchEnvelope, dispatchOptions);
+        case itemConditionThresholdTriggerKind:
+          return submitDurableResolveItemConditionThreshold(dispatchEnvelope, dispatchOptions);
       }
     };
     const result = await dispatch();

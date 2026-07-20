@@ -120,6 +120,17 @@ import {
   type TransferItemCommandResult,
 } from "./materials";
 import {
+  itemConditionInitializedEventSchema,
+  itemConditionModifierAppliedEventSchema,
+  itemConditionModifierEndedEventSchema,
+  itemConditionSourceAppliedEventSchema,
+  itemConditionThresholdCrossedEventSchema,
+  type ApplyItemConditionSourceCommand,
+  type ApplyItemConditionSourceCommandResult,
+  type ResolveItemConditionThresholdCommand,
+  type ResolveItemConditionThresholdCommandResult,
+} from "./material-condition";
+import {
   triggerScheduledEventSchema,
   type ScheduleTransferTriggerCommand,
   type ScheduleTriggerCommandResult,
@@ -183,6 +194,11 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   bodyConditionEndedEventSchema,
   bodyThresholdCrossedEventSchema,
   bodyCollapsedEventSchema,
+  itemConditionInitializedEventSchema,
+  itemConditionSourceAppliedEventSchema,
+  itemConditionModifierAppliedEventSchema,
+  itemConditionModifierEndedEventSchema,
+  itemConditionThresholdCrossedEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
@@ -309,6 +325,32 @@ export function isBodyEvent(event: SimulationBranchEvent): event is SimulationBo
   return bodyEventTypes.has(event.type);
 }
 
+/**
+ * The item-condition family (E5.3 slice 3, engine.spec §26.7). A parallel
+ * family rather than folded into `materialEventTypeList`: fork replay wants
+ * its own fold (item condition state is its own projection, not the
+ * materials one), exactly the reason the body family got its own list.
+ */
+const itemConditionEventTypeList = [
+  "item_condition_initialized",
+  "item_condition_source_applied",
+  "item_condition_modifier_applied",
+  "item_condition_modifier_ended",
+  "item_condition_threshold_crossed",
+] as const;
+export type ItemConditionEventType = (typeof itemConditionEventTypeList)[number];
+export type SimulationItemConditionEvent = Extract<
+  SimulationBranchEvent,
+  { type: ItemConditionEventType }
+>;
+export const itemConditionEventTypes: ReadonlySet<string> = new Set(itemConditionEventTypeList);
+
+export function isItemConditionEvent(
+  event: SimulationBranchEvent,
+): event is SimulationItemConditionEvent {
+  return itemConditionEventTypes.has(event.type);
+}
+
 /** Access-family locus changes (E3.5): applied by the space projection. */
 const accessEventTypeList = ["zone_entered", "storyteller_relocation"] as const;
 export type AccessEventType = (typeof accessEventTypeList)[number];
@@ -348,7 +390,9 @@ export type SimulationCommandEnvelope =
   | EndBodyConditionCommand
   | ResolveBodyThresholdCommand
   | ResolveBodyCollapseCommand
-  | ResumeActivityCommand;
+  | ResumeActivityCommand
+  | ApplyItemConditionSourceCommand
+  | ResolveItemConditionThresholdCommand;
 export type SimulationCommandResultRecord =
   | TransferItemCommandResult
   | DestroyItemCommandResult
@@ -377,7 +421,9 @@ export type SimulationCommandResultRecord =
   | EndBodyConditionCommandResult
   | ResolveBodyThresholdCommandResult
   | ResolveBodyCollapseCommandResult
-  | ResumeActivityCommandResult;
+  | ResumeActivityCommandResult
+  | ApplyItemConditionSourceCommandResult
+  | ResolveItemConditionThresholdCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)

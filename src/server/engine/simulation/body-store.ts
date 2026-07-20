@@ -513,8 +513,15 @@ export async function upsertMeterRow(
   if (!updated) throw new Error("Locked body meter changed before its material update");
 }
 
-/** Co-located same-zone actors (excluding the subject) for witness capture. */
-async function loadCoLocatedActorIds(tx: SimTx, branchId: string, actorId: string): Promise<string[]> {
+/**
+ * Co-located same-zone actors (excluding the subject) for witness capture.
+ * Exported: material-store.ts's item-condition commands (E5.3 slice 3, §26.7)
+ * reuse this same zone join for their own noticeable-threshold witnessing —
+ * an item condition command's acting actor is always co-located with the
+ * item's root zone (the `root_not_colocated` check enforces it), so this is
+ * exactly "co-located with the item" for that case.
+ */
+export async function loadCoLocatedActorIds(tx: SimTx, branchId: string, actorId: string): Promise<string[]> {
   const [subject] = await tx
     .select({ kind: simPhysicalLoci.kind, zoneId: simPhysicalLoci.zoneId })
     .from(simPhysicalLoci)
