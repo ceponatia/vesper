@@ -63,8 +63,10 @@ Character chat remains the test bed. The session lane is not changed implicitly.
    repair, and upscale may use different calls.
 8. **Providers expose capabilities, not model names, to domain code.** Routing
    chooses a legal workflow at runtime.
-9. **Today's Venice/Qwen pipeline remains the fallback.** Solver, worker, or
-   provider failure never blocks a text turn.
+9. **Build alongside; cut over by evidence.** The structural path is additive
+   and feature-flagged. Today's Venice/Qwen routes remain maintained and
+   intentionally selectable—not merely emergency fallbacks—while the new route
+   is debugged. No solver, worker, or provider failure may block a text turn.
 10. **Stills ship before motion.** Contracts remain time-extensible.
 
 ## Existing foundation and gaps
@@ -88,6 +90,22 @@ Still required:
 - multi-view character identity packs and regional person binding;
 - pose/identity/contact evaluation; and
 - reproducible control and model-attempt lineage.
+
+## Parallel development and migration
+
+This is a second route through the existing job, asset, lineage, and provider
+contracts—not a rewrite or a big-bang replacement. Through Gates 0–4:
+
+- Existing Venice/Qwen generation and edit routes remain production-supported
+  and may stay the default for unsupported or unstable scene classes.
+- A per-job/chat feature flag and capability routing select old, structural, or
+  shadow/A-B execution without changing the caller's result contract.
+- Structural-route failures preserve their diagnostics and may fall back to an
+  old route within the detached job's bounded attempt/cost budget.
+- New spatial components add adapters and tests around current seams; they do not
+  destabilize working image generation while templates and models are debugged.
+- Retiring any old route requires measured quality/reliability parity, production
+  observation, and an explicit owner decision in a later plan.
 
 ## Target pipeline
 
