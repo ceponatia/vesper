@@ -131,6 +131,24 @@ import {
   type ResolveItemConditionThresholdCommandResult,
 } from "./material-condition";
 import {
+  householdCreatedEventSchema,
+  householdMembershipSetEventSchema,
+  materialLotAdjustedEventSchema,
+  materialLotInitializedEventSchema,
+  materialLotTransferredEventSchema,
+  meansBandSetEventSchema,
+  type AdjustMaterialLotCommand,
+  type AdjustMaterialLotCommandResult,
+  type CreateHouseholdCommand,
+  type CreateHouseholdCommandResult,
+  type SetHouseholdMembershipCommand,
+  type SetHouseholdMembershipCommandResult,
+  type SetMeansBandCommand,
+  type SetMeansBandCommandResult,
+  type TransferLotQuantityCommand,
+  type TransferLotQuantityCommandResult,
+} from "./households";
+import {
   triggerScheduledEventSchema,
   type ScheduleTransferTriggerCommand,
   type ScheduleTriggerCommandResult,
@@ -199,6 +217,12 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   itemConditionModifierAppliedEventSchema,
   itemConditionModifierEndedEventSchema,
   itemConditionThresholdCrossedEventSchema,
+  householdCreatedEventSchema,
+  householdMembershipSetEventSchema,
+  materialLotInitializedEventSchema,
+  materialLotAdjustedEventSchema,
+  materialLotTransferredEventSchema,
+  meansBandSetEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
@@ -351,6 +375,30 @@ export function isItemConditionEvent(
   return itemConditionEventTypes.has(event.type);
 }
 
+/**
+ * The household family (E5.4 slice 1, engine.spec §26.8–26.10): households,
+ * membership, fungible material lots, and means bands. All four row kinds
+ * fold from ONE projection (`HouseholdsProjection`), so unlike bodies/item-
+ * condition this single list spans several store-layer tables — fork replay
+ * still scans `inherited` per row kind (a lot touch names a locus, not a
+ * single scalar id), not through this predicate alone.
+ */
+const householdEventTypeList = [
+  "household_created",
+  "household_membership_set",
+  "material_lot_initialized",
+  "material_lot_adjusted",
+  "material_lot_transferred",
+  "means_band_set",
+] as const;
+export type HouseholdEventType = (typeof householdEventTypeList)[number];
+export type SimulationHouseholdEvent = Extract<SimulationBranchEvent, { type: HouseholdEventType }>;
+export const householdEventTypes: ReadonlySet<string> = new Set(householdEventTypeList);
+
+export function isHouseholdEvent(event: SimulationBranchEvent): event is SimulationHouseholdEvent {
+  return householdEventTypes.has(event.type);
+}
+
 /** Access-family locus changes (E3.5): applied by the space projection. */
 const accessEventTypeList = ["zone_entered", "storyteller_relocation"] as const;
 export type AccessEventType = (typeof accessEventTypeList)[number];
@@ -392,7 +440,12 @@ export type SimulationCommandEnvelope =
   | ResolveBodyCollapseCommand
   | ResumeActivityCommand
   | ApplyItemConditionSourceCommand
-  | ResolveItemConditionThresholdCommand;
+  | ResolveItemConditionThresholdCommand
+  | CreateHouseholdCommand
+  | SetHouseholdMembershipCommand
+  | AdjustMaterialLotCommand
+  | TransferLotQuantityCommand
+  | SetMeansBandCommand;
 export type SimulationCommandResultRecord =
   | TransferItemCommandResult
   | DestroyItemCommandResult
@@ -423,7 +476,12 @@ export type SimulationCommandResultRecord =
   | ResolveBodyCollapseCommandResult
   | ResumeActivityCommandResult
   | ApplyItemConditionSourceCommandResult
-  | ResolveItemConditionThresholdCommandResult;
+  | ResolveItemConditionThresholdCommandResult
+  | CreateHouseholdCommandResult
+  | SetHouseholdMembershipCommandResult
+  | AdjustMaterialLotCommandResult
+  | TransferLotQuantityCommandResult
+  | SetMeansBandCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)

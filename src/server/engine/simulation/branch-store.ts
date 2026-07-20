@@ -23,15 +23,19 @@ import {
   isBodyEvent,
   isCommitmentEvent,
   isEngagementEvent,
+  isHouseholdEvent,
   isItemConditionEvent,
   isMovementEvent,
 } from "@/contracts/simulation/branching";
 import {
   composeAncestryEventBounds,
+  deriveMaterialLotRowKey,
+  deriveMeansSubjectRowKey,
   emptyActivitiesSeed,
   emptyBodiesSeed,
   emptyCommitmentsSeed,
   emptyEngagementsSeed,
+  emptyHouseholdsSeed,
   emptyItemConditionSeed,
   itemHoldingsAtSequence,
   replayActivitiesHistory,
@@ -39,6 +43,7 @@ import {
   replayBranchHistory,
   replayCommitmentsHistory,
   replayEngagementsHistory,
+  replayHouseholdsHistory,
   replayItemConditionHistory,
   replayKnowledgeHistory,
   replayObservationsHistory,
@@ -65,10 +70,14 @@ import {
   simEngagements,
   simTemporalPressures,
   simEvents,
+  simHouseholdMembers,
+  simHouseholds,
   simItemConditionMeters,
   simItemConditionModifiers,
   simItemHoldings,
   simItems,
+  simMaterialLots,
+  simMeansBands,
   simSnapshots,
   simTriggers,
   simWorlds,
@@ -78,6 +87,12 @@ import { activityRowInsert, itemConditionMeterRowInsert, itemConditionModifierRo
 import { bodyConditionRowInsert, bodyMeterRowInsert, bodyModifierRowInsert } from "./body-store";
 import { commitmentRowInsert, pressureRowInsert } from "./commitment-store";
 import { engagementRowInsert } from "./engagement-store";
+import {
+  householdMemberRowInsert,
+  householdRowInsert,
+  materialLotRowInsert,
+  meansBandRowInsert,
+} from "./household-store";
 import { insertReplayedKnowledge } from "./knowledge-recorder";
 import { holdingRowFieldsForLocus, itemLocusFromHoldingRow } from "./material-store";
 import { insertReplayedObservations } from "./observation-store";
@@ -706,6 +721,95 @@ export async function forkBranch(
             input.childBranchId,
             modifier,
             itemConditionSequenceByItem.get(modifier.itemId) ?? 0,
+          ),
+        ),
+      );
+    }
+
+    // E5.4 slice 1 households (§26.8–26.10): fully evented, its own
+    // projection — replay from the empty seed, exactly like bodies/item
+    // condition. Membership/lot/means-band rows land on their last MATERIAL
+    // write; a lazily-initialized lot a later command never touched again
+    // keeps its own init sequence. No trigger kind exists yet in this slice
+    // (that's `household_restock_due`, slice 2), so nothing here rides the
+    // shared trigger ledger.
+    const childHouseholds = replayHouseholdsHistory({
+      seed: emptyHouseholdsSeed(input.childBranchId, ancestry.rootOriginStorySecond),
+      events: inherited,
+    });
+    const membershipSequenceByKey = new Map<string, number>();
+    const lotSequenceByKey = new Map<string, number>();
+    const meansBandSequenceByKey = new Map<string, number>();
+    for (const event of inherited) {
+      if (!isHouseholdEvent(event)) continue;
+      switch (event.type) {
+        case "household_created":
+          // sim_households carries no updated_sequence column (no branching
+          // discriminant to synthesize a per-row key against — see the
+          // migration note above simHouseholds) — nothing to record.
+          break;
+        case "household_membership_set":
+          membershipSequenceByKey.set(
+            `${event.payload.householdId}:${event.payload.actorId}`,
+            event.sequence,
+          );
+          break;
+        case "material_lot_initialized":
+        case "material_lot_adjusted":
+          lotSequenceByKey.set(
+            deriveMaterialLotRowKey(event.payload.locus, event.payload.materialKindKey),
+            event.sequence,
+          );
+          break;
+        case "material_lot_transferred":
+          lotSequenceByKey.set(
+            deriveMaterialLotRowKey(event.payload.fromLocus, event.payload.materialKindKey),
+            event.sequence,
+          );
+          lotSequenceByKey.set(
+            deriveMaterialLotRowKey(event.payload.toLocus, event.payload.materialKindKey),
+            event.sequence,
+          );
+          break;
+        case "means_band_set":
+          meansBandSequenceByKey.set(deriveMeansSubjectRowKey(event.payload.subject), event.sequence);
+          break;
+      }
+    }
+    if (childHouseholds.households.length > 0) {
+      await tx.insert(simHouseholds).values(
+        childHouseholds.households.map((household) => householdRowInsert(input.childBranchId, household)),
+      );
+    }
+    if (childHouseholds.memberships.length > 0) {
+      await tx.insert(simHouseholdMembers).values(
+        childHouseholds.memberships.map((membership) =>
+          householdMemberRowInsert(
+            input.childBranchId,
+            membership,
+            membershipSequenceByKey.get(`${membership.householdId}:${membership.actorId}`) ?? 0,
+          ),
+        ),
+      );
+    }
+    if (childHouseholds.lots.length > 0) {
+      await tx.insert(simMaterialLots).values(
+        childHouseholds.lots.map((lot) =>
+          materialLotRowInsert(
+            input.childBranchId,
+            lot,
+            lotSequenceByKey.get(deriveMaterialLotRowKey(lot.locus, lot.materialKindKey)) ?? 0,
+          ),
+        ),
+      );
+    }
+    if (childHouseholds.meansBands.length > 0) {
+      await tx.insert(simMeansBands).values(
+        childHouseholds.meansBands.map((band) =>
+          meansBandRowInsert(
+            input.childBranchId,
+            band,
+            meansBandSequenceByKey.get(deriveMeansSubjectRowKey(band.subject)) ?? 0,
           ),
         ),
       );

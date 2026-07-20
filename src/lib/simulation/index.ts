@@ -6,6 +6,7 @@ export * from "./commitments";
 export * from "./deliberation";
 export * from "./engagements";
 export * from "./hash";
+export * from "./households";
 export * from "./knowledge";
 export * from "./material-condition";
 export * from "./material-locus";

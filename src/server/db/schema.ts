@@ -27,10 +27,17 @@ import type { BodyModifierOperation } from "@/contracts/simulation/bodies";
 import type { CommitmentKnowledgeSource } from "@/contracts/simulation/commitments";
 import type { ContainerAccessPolicy, ItemConsumptionEffect, ItemLocus } from "@/contracts/simulation/materials";
 import type { SimulationTrigger } from "@/contracts/simulation/scheduler";
+import type { HouseholdStockAccessPolicy } from "@/contracts/simulation/households";
 import { sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
 import { principalKinds } from "@/contracts/simulation/envelopes";
 import { itemGoneBases } from "@/contracts/simulation/materials";
 import { itemMaterialFeedEventKinds } from "@/contracts/simulation/outbox";
+import {
+  householdMemberRoles,
+  householdMembershipStatuses,
+  materialQuantityKinds,
+  meansBandKeys,
+} from "@/contracts/simulation/households";
 import { newId } from "@/lib/ids";
 
 const id = () => text("id").primaryKey().$defaultFn(newId);
@@ -2859,6 +2866,210 @@ export const simItemConditionModifiers = pgTable(
     check(
       "sim_item_condition_modifiers_validity_order",
       sql`${t.validUntil} IS NULL OR ${t.validUntil} > ${t.validFrom}`,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// E5.4 slice 1 — households, fungible lots, conservation, means bands
+// (engine.spec §26.8–26.10).
+//
+// Why lots and means-bands get a synthetic persistence-layer key but
+// households and membership don't: a lot's locus is a *discriminated*
+// reference (household XOR actor XOR zone) that needs three separate
+// nullable columns so each can carry its own typed foreign key — mirroring
+// `sim_item_holdings`. But Postgres primary-key columns cannot be NULL, so
+// `(branch_id, locus_kind, household_id, actor_id, zone_id,
+// material_kind_key)` cannot be the primary key when three of those columns
+// are nullable by construction. `sim_items` sidesteps this because `item_id`
+// is a caller-supplied identity independent of locus; lots have no such
+// identity in the domain model (they're addressed by `(locus,
+// materialKindKey)` everywhere in contracts/events — see
+// `lib/simulation/households.ts`'s `deriveMaterialLotRowKey`), so the STORE
+// layer synthesizes one deterministic string purely to have a non-null PK
+// column. The same nullable-discriminant problem applies to means-band
+// subjects (`actor` XOR `household`), solved the same way
+// (`deriveMeansSubjectRowKey`). Households and membership rows have no such
+// discriminant — a household's own id is caller-supplied (like an item), and
+// a membership row's `(household_id, actor_id)` pair is always fully
+// populated (no branching) — so they use ordinary composite PKs, no
+// synthetic key needed.
+// ---------------------------------------------------------------------------
+
+/**
+ * E5.4 households (engine.spec §26.8) — a shared domestic unit. `residence_zone_ids`
+ * is a sorted-unique jsonb array (small, v1 households are small; mirrors how
+ * `container_access`'s allow-list is stored inline rather than as a join table).
+ */
+export const simHouseholds = pgTable(
+  "sim_households",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    householdId: text("household_id").notNull(),
+    name: text("name").notNull(),
+    residenceZoneIds: jsonb("residence_zone_ids").$type<string[]>().notNull(),
+    stockAccessPolicy: jsonb("stock_access_policy").$type<HouseholdStockAccessPolicy>().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_households_branch_household_pk", columns: [t.branchId, t.householdId] }),
+  ],
+);
+
+/**
+ * E5.4 household membership (§26.8). `status = 'ended'` iff `ended_at_story_second` is
+ * set (mirrors `sim_body_conditions`' end-basis-matches-status check). The
+ * household and actor FKs are DEFERRABLE INITIALLY DEFERRED (hand-edited in
+ * the migration, the 0069 precedent): a branch teardown cascades
+ * `sim_households`/`sim_characters` and this table from the SAME
+ * `sim_branches` delete.
+ */
+export const simHouseholdMembers = pgTable(
+  "sim_household_members",
+  {
+    branchId: text("branch_id").notNull(),
+    householdId: text("household_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    role: text("role", { enum: householdMemberRoles }).notNull(),
+    status: text("status", { enum: householdMembershipStatuses }).notNull(),
+    endedAtStorySecond: bigint("ended_at_story_second", { mode: "number" }),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({
+      name: "sim_household_members_branch_household_actor_pk",
+      columns: [t.branchId, t.householdId, t.actorId],
+    }),
+    foreignKey({
+      name: "sim_household_members_household_fk",
+      columns: [t.branchId, t.householdId],
+      foreignColumns: [simHouseholds.branchId, simHouseholds.householdId],
+    }).onDelete("no action"),
+    foreignKey({
+      name: "sim_household_members_actor_fk",
+      columns: [t.branchId, t.actorId],
+      foreignColumns: [simCharacters.branchId, simCharacters.characterId],
+    }).onDelete("no action"),
+    index("sim_household_members_branch_actor_idx").on(t.branchId, t.actorId),
+    check(
+      "sim_household_members_end_basis_matches_status",
+      sql`(${t.status} = 'ended') = (${t.endedAtStorySecond} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
+ * E5.4 fungible material lots (§26.9). `lot_key` is a synthetic, deterministic,
+ * content-addressed persistence-layer key (`deriveMaterialLotRowKey`,
+ * lib/simulation/households.ts) — NOT a domain id; contracts/events address a lot by
+ * `(locus, materialKindKey)` directly. It exists only because Postgres cannot make a
+ * discriminated nullable-column tuple a primary key (see the migration-note comment
+ * above `simHouseholds`). Zero quantity is NOT terminal (unlike item holdings' `gone`).
+ * The household/actor/zone FKs are DEFERRABLE INITIALLY DEFERRED (hand-edited, 0069
+ * precedent).
+ */
+export const simMaterialLots = pgTable(
+  "sim_material_lots",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    lotKey: text("lot_key").notNull(),
+    locusKind: text("locus_kind", { enum: ["household", "actor", "zone"] }).notNull(),
+    householdId: text("household_id"),
+    actorId: text("actor_id"),
+    zoneId: text("zone_id"),
+    materialKindKey: text("material_kind_key").notNull(),
+    quantityKind: text("quantity_kind", { enum: materialQuantityKinds }).notNull(),
+    quantityRaw: bigint("quantity_raw", { mode: "number" }).notNull().default(0),
+    registryVersion: text("registry_version").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_material_lots_branch_lot_pk", columns: [t.branchId, t.lotKey] }),
+    foreignKey({
+      name: "sim_material_lots_household_fk",
+      columns: [t.branchId, t.householdId],
+      foreignColumns: [simHouseholds.branchId, simHouseholds.householdId],
+    }).onDelete("no action"),
+    foreignKey({
+      name: "sim_material_lots_actor_fk",
+      columns: [t.branchId, t.actorId],
+      foreignColumns: [simCharacters.branchId, simCharacters.characterId],
+    }).onDelete("no action"),
+    foreignKey({
+      name: "sim_material_lots_zone_fk",
+      columns: [t.branchId, t.zoneId],
+      foreignColumns: [simZones.branchId, simZones.zoneId],
+    }).onDelete("no action"),
+    index("sim_material_lots_household_kind_idx").on(t.branchId, t.householdId, t.materialKindKey),
+    index("sim_material_lots_actor_kind_idx").on(t.branchId, t.actorId, t.materialKindKey),
+    index("sim_material_lots_zone_kind_idx").on(t.branchId, t.zoneId, t.materialKindKey),
+    check(
+      "sim_material_lots_quantity_safe",
+      sql`${t.quantityRaw} >= 0 AND ${t.quantityRaw} <= 9007199254740991`,
+    ),
+    check(
+      "sim_material_lots_household_shape",
+      sql`${t.locusKind} <> 'household' OR (${t.householdId} IS NOT NULL AND ${t.actorId} IS NULL AND ${t.zoneId} IS NULL)`,
+    ),
+    check(
+      "sim_material_lots_actor_shape",
+      sql`${t.locusKind} <> 'actor' OR (${t.actorId} IS NOT NULL AND ${t.householdId} IS NULL AND ${t.zoneId} IS NULL)`,
+    ),
+    check(
+      "sim_material_lots_zone_shape",
+      sql`${t.locusKind} <> 'zone' OR (${t.zoneId} IS NOT NULL AND ${t.householdId} IS NULL AND ${t.actorId} IS NULL)`,
+    ),
+  ],
+);
+
+/**
+ * E5.4 means bands (§26.10). `subject_key` is the same kind of synthetic
+ * persistence-layer key as `sim_material_lots.lot_key`, for the same reason (the
+ * actor-XOR-household discriminant cannot be a nullable primary key). The actor/
+ * household FKs are DEFERRABLE INITIALLY DEFERRED (hand-edited, 0069 precedent).
+ */
+export const simMeansBands = pgTable(
+  "sim_means_bands",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    subjectKey: text("subject_key").notNull(),
+    subjectKind: text("subject_kind", { enum: ["actor", "household"] }).notNull(),
+    actorId: text("actor_id"),
+    householdId: text("household_id"),
+    bandKey: text("band_key", { enum: meansBandKeys }).notNull(),
+    registryVersion: text("registry_version").notNull(),
+    setAtStorySecond: bigint("set_at_story_second", { mode: "number" }).notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_means_bands_branch_subject_pk", columns: [t.branchId, t.subjectKey] }),
+    foreignKey({
+      name: "sim_means_bands_actor_fk",
+      columns: [t.branchId, t.actorId],
+      foreignColumns: [simCharacters.branchId, simCharacters.characterId],
+    }).onDelete("no action"),
+    foreignKey({
+      name: "sim_means_bands_household_fk",
+      columns: [t.branchId, t.householdId],
+      foreignColumns: [simHouseholds.branchId, simHouseholds.householdId],
+    }).onDelete("no action"),
+    check(
+      "sim_means_bands_actor_shape",
+      sql`${t.subjectKind} <> 'actor' OR (${t.actorId} IS NOT NULL AND ${t.householdId} IS NULL)`,
+    ),
+    check(
+      "sim_means_bands_household_shape",
+      sql`${t.subjectKind} <> 'household' OR (${t.householdId} IS NOT NULL AND ${t.actorId} IS NULL)`,
     ),
   ],
 );

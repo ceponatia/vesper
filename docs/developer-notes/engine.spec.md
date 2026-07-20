@@ -1495,15 +1495,154 @@ rising) are registry data, alarm through an `item_condition_threshold_due` trigg
 are witnessed by co-location with the item's root locus when marked noticeable. Raw
 item meters never enter a cut; reads are perception-gated like §25.1 layer 3.
 
-### 26.8 Fungible lots and aggregate materials (E5.4)
+### 26.8 Households and membership (E5.4)
 
-Fungible resources MAY use lots and quantities. Quantities that represent conservation
-must use fixed-point integers and transactionally balance.
+A household is a branch-scoped entity representing a shared domestic unit: a named
+group of actors who share stores, a residence, and a coarse economic footprint. A
+household MUST exist only through a `household_created` event; it is never implied by
+co-residence alone.
 
-Low-detail actors MAY have aggregate means, household stock, or budget envelopes. When an
-explicit item becomes narratively relevant, promotion must consume an aggregate allowance
-and instantiate the item through a recorded event. It cannot appear solely because the
-narrator mentioned it.
+Membership is a typed relation between an actor and a household
+(`household_membership_set`), carrying a role (`resident | dependent | guest`) and a
+status (`active | ended`). Role is descriptive in v1 and does not gate stock access on
+its own (see below); status MUST be `active` for an actor to draw from the household's
+shared stores.
+
+A household declares:
+
+- a `residenceZoneIds` set — the zone(s) where its shared stores and routine live;
+- a `stockAccessPolicy` — fail-closed, checked on every command that debits or promotes
+  from the household's stores: `members_only` (any actor with an ACTIVE membership row)
+  or `allow_list` (a named actor set, for access without membership, e.g. a hired hand).
+
+Every command that debits or promotes from a household-locus material lot (§26.9) MUST
+validate, in order: the acting actor is embodied at a zone (§13.2); that zone is a
+member of the household's `residenceZoneIds`; the stock access policy admits the actor.
+Failure at any step is a rejection, never a silent no-op or partial success — a shared
+household store is handled with the same physical-presence discipline as an item
+transfer (§26.4), not a remote-banking convenience. Storyteller/system authoring
+commands (§26.9's `adjust_material_lot`) are privileged and exempt from this
+co-location check, exactly as ruling 4 exempts other privileged commands from ordinary
+movement rules.
+
+### 26.9 Fungible material lots and conservation (E5.4)
+
+A fungible material lot is a branch-scoped account: a quantity of one authored
+`materialKindKey` resting at one of three flat loci — `household` (a named household's
+shared store), `actor` (an actor's personal holding, carried with them, no co-location
+check), or `zone` (stock resting at a place, e.g. a shop's shelf). Unlike an item's
+holding locus (§26.1), a lot has no container nesting, and a zero quantity is not
+terminal — a lot MAY return from zero to a positive balance, and its row persists
+indefinitely once initialized (lazily, on first touch, mirroring §26.7's item-condition
+meter initialization).
+
+Quantities are integers and MUST NOT be floats. Each authored material kind declares a
+`quantityKind`: `fixed_point` (10 000 ≡ 1.0, the §25/§32 convention — used for currency
+and any kind whose narrative unit is fractional) or `count` (a plain non-negative
+integer — the default for any kind absent from the registry, so an unregistered kind
+degrades to the simpler, safer representation rather than failing closed). The reserved
+kind key `currency` MUST be `fixed_point`. A lot row captures the `quantityKind` and
+registry version that produced it at initialization and MUST NOT reinterpret its stored
+raw value under a later registry change (mirrors `BodyMeterState.registryVersion`).
+
+**Conservation law.** Every quantity change is an event. A movement between two lots of
+the SAME `materialKindKey` (`transfer_lot_quantity`) is one event whose payload commits
+both the source debit and the destination credit — conserved by construction, not by a
+separate reconciliation step, exactly as `item_transferred` moves one locus in one
+event rather than emitting a paired "removed"/"added" pair. A negative quantity MUST be
+impossible — enforced by both the pure resolver (insufficient balance rejects before
+any event is built) and a database CHECK on the stored column, so even a projection bug
+cannot commit a negative lot.
+
+Conservation applies **within one `materialKindKey`**. An exchange across kinds (buying
+food stock with currency) is modeled as two causally-linked boundary adjustments — a
+debit of the currency lot and a credit of the stock lot, both `material_lot_adjusted`,
+the second causation-chained to the first — not a single conserved transfer, because
+the wider market that would balance the OTHER side of the trade is not itself modeled
+as a ledger.
+
+A quantity change with no conserving counterparty at all — an authored/storyteller
+injection, a promotion's stock debit, a means-band-funded restock's stock credit — is
+`material_lot_adjusted`, carrying a `reason`
+(`authoring | promotion_cost | restock_purchase | restock_topup_unconserved`) and a
+signed delta. This is the lot analogue of a body `source` application (§25.1): an
+external application to the modeled economy, not a transfer within it.
+`restock_topup_unconserved` is the ONE reason that intentionally breaks conservation as
+a matter of design — a means-band-funded restock (§26.11) credits stock with no debited
+counterpart anywhere in the ledger, because a low-detail household's "budget" is a
+coarse band, not a tracked account. Every other reason either has a causally-linked
+counterpart event in the same transaction or is an explicit, audited authoring act.
+
+### 26.10 Means: bands and promotion (E5.4)
+
+A means SUBJECT is either an actor or a household. A subject's means read derives from
+EXACTLY ONE of two sources, never both blended into one figure:
+
+1. **Lot-tracked** — if the subject has an initialized `currency` lot, the read derives
+   from that lot's balance. This is the exact path: a promoted actor, or a household
+   whose economy is played at full detail.
+2. **Band-tracked** — otherwise, if a `means_band_set` record exists for the subject,
+   the read derives from the band alone. Bands are a closed, versioned world-type
+   vocabulary (registry-as-data, mirroring the body condition-key vocabulary), ordered
+   from least to most means; the read exposes the band and nothing numeric.
+3. Absent either, the read is the explicit degraded default `unknown` (resilience.md: a
+   diagnostic code, never a fabricated number or band).
+
+Precedence is structural, not a policy toggle: the lot wins whenever it exists. Setting
+a means band on a lot-tracked subject is legal (useful for narrative color) but MUST
+NOT be consulted by the means read while the lot exists.
+
+**Promotion (§27.2 concretized).** `promote_item_from_stock` is the ONLY way an
+aggregate material fact becomes an explicit `sim_items` row. It MUST:
+
+1. validate the acting actor's authority and, for a `household`-locus funding source,
+   the §26.8 access preconditions (an `actor`-locus source needs no co-location check
+   — the actor's own stock travels with them);
+2. resolve funding — either `stock` (debit N whole units of the SAME `materialKindKey`
+   the promoted item declares — one unit of a `clothing` stock lot becomes one shirt)
+   or `purchase` (debit an authored unit price from a `currency` lot) — and reject
+   `insufficient_balance` if the funding lot cannot cover it;
+3. sample any detail the command did not supply (e.g. a display name) from an authored
+   per-`materialKindKey` pool using a named deterministic stream keyed by the promoting
+   command's ID and a purpose label (§6.3) — the stream identity and drawn result are
+   captured on the resulting event so replay never re-samples;
+4. emit, in one transaction: a `material_lot_adjusted` event (`reason:
+   "promotion_cost"`) debiting the funding lot, and a causation-chained
+   `item_instantiated_from_promotion` event carrying the full new item shape (§26.1's
+   `SimulationMaterialItem`) and its locus;
+5. never contradict an existing observation, assertion, or belief about the promoted
+   fact — the command's caller (never the narrator directly, per invariant 3.2.4) is
+   responsible for supplying any narratively-established detail explicitly in the
+   payload, which bypasses sampling for that field entirely.
+
+An item MUST NOT come to exist in `sim_items` by any path other than the branch seed or
+this event. The narrator MAY describe an aggregate fact ("there's probably tea in the
+cupboard") without promotion; it MUST NOT hand a player or NPC command a concrete item
+reference until a `promote_item_from_stock` command has run.
+
+### 26.11 Household restock routine (E5.4)
+
+A household's replenishment of its own stock is deterministic, scheduled routine, not a
+per-consumption side effect. `configure_restock_routine` authors, per household and
+`materialKindKey`, a target quantity, a low-water threshold, a cadence in seconds, and a
+funding source (a `currency` lot purchase, or — for a band-tracked household — a
+means-band-gated non-conserved top-up, §26.9's `restock_topup_unconserved`). Configuring
+arms a `household_restock_due` trigger through the §12 scheduler at
+`now + cadenceSeconds`, keyed by a `household_restock_due:<householdId>:<materialKindKey>`
+uniqueness prefix versioned by the arming sequence (mirrors §26.7's threshold re-arm
+idiom) — reconfiguring retires any stale pending alarm unconditionally, exactly as a
+worn-ness change unconditionally retires cleanliness's prior alarm.
+
+At fire time, `run_household_restock` (system principal, trigger-dispatched) MUST
+re-validate: the routine still exists and is active (else the alarm is simply not
+re-armed — it was retired by the reconfiguration/removal that superseded it); the
+household's current stock is below target (else `household_restock_deferred`, reason
+`already_stocked`, and the next cycle re-arms); the funding source can cover the top-up
+(else `household_restock_deferred`, reason `insufficient_funds` — a household MAY run
+dry, a true and intended failure mode, not silently ignored). On success it debits the
+funding source and credits the stock lot to the target quantity in one transaction
+(`household_restock_fulfilled`), then re-arms the next cycle at
+`fireSecond + cadenceSeconds` regardless of outcome — a deferred cycle keeps trying.
 
 ## 27. Simulation LOD
 
@@ -1529,6 +1668,10 @@ Promotion from aggregate to exact MUST:
 5. preserve known observations, commitments, relationships, and causal constraints.
 
 The engine must not materialize a detail that contradicts something already observed.
+
+§26.10 concretizes this for the item-promotion case (the mechanism E5.4 builds first);
+other promotion targets (an aggregate NPC becoming exact-LOD, §27.1) reuse the same
+five-step shape but are out of E5.4's scope.
 
 ### 27.3 Demotion
 

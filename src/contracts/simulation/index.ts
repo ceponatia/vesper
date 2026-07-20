@@ -2,6 +2,7 @@ export * from "./identity";
 export * from "./envelopes";
 export * from "./materials";
 export * from "./material-condition";
+export * from "./households";
 export * from "./outbox";
 export * from "./scheduler";
 export * from "./branching";

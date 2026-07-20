@@ -118,8 +118,15 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
     case "item_condition_source_applied":
     case "item_condition_modifier_applied":
     case "item_condition_modifier_ended":
+    case "household_created":
+    case "household_membership_set":
+    case "material_lot_initialized":
+    case "material_lot_adjusted":
+    case "means_band_set":
       // Bookkeeping derives no observations (§20); unreachable in practice.
       return "world bookkeeping";
+    case "material_lot_transferred":
+      return "stock changing hands";
   }
 }
 
