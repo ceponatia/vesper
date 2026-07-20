@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import { bodyInitializedEventSchema } from "@/contracts/simulation/bodies";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import type { PrincipalKind } from "@/contracts/simulation/envelopes";
+import { composeSimulationId } from "@/contracts/simulation/identity";
 import {
   RESERVED_CURRENCY_MATERIAL_KIND,
   adjustMaterialLotCommandSchema,
   compareMeansBands,
+  configureRestockRoutineCommandSchema,
   createHouseholdCommandSchema,
   householdMembershipSchema,
+  householdRestockRoutineSchema,
   lotLocusSchema,
   materialKindRegistryVersion,
   materialLotStateSchema,
@@ -15,22 +18,34 @@ import {
   meansBandRegistryVersion,
   meansBandStateSchema,
   meansSubjectSchema,
+  promoteItemFromStockCommandSchema,
+  promotedItemInputSchema,
+  promotionFundingSchema,
+  restockFundingSchema,
+  runHouseholdRestockCommandSchema,
   setHouseholdMembershipCommandSchema,
   setMeansBandCommandSchema,
   simulationHouseholdSchema,
   transferLotQuantityCommandSchema,
   type AdjustMaterialLotCommandInput,
+  type ConfigureRestockRoutineCommandInput,
   type CreateHouseholdCommandInput,
   type HouseholdMembership,
+  type HouseholdRestockRoutine,
   type LotLocus,
   type MaterialLotState,
+  type MeansBandKey,
   type MeansBandState,
+  type MeansRead,
   type MeansSubject,
+  type PromoteItemFromStockCommandInput,
+  type RunHouseholdRestockCommandInput,
   type SetHouseholdMembershipCommandInput,
   type SetMeansBandCommandInput,
   type SimulationHousehold,
   type TransferLotQuantityCommandInput,
 } from "@/contracts/simulation/households";
+import { deterministicDrawUnit } from "@/contracts/simulation/scheduler";
 import { simulationHash, sortedUnique } from "./hash";
 import {
   applyHouseholdEvent,
@@ -41,16 +56,23 @@ import {
   deriveMeansRead,
   emptyHouseholdsSeed,
   householdStockAccessAllowed,
+  householdRestockUniquenessKey,
   initializeLot,
   lotLocusReachableFrom,
   replayHouseholdsHistory,
   resolveAdjustMaterialLotFromView,
+  resolveConfigureRestockRoutineFromView,
   resolveCreateHouseholdFromView,
+  resolvePromoteItemFromStockFromView,
   resolveQuantityKind,
+  resolveRunHouseholdRestockFromView,
   resolveSetHouseholdMembershipFromView,
   resolveSetMeansBandFromView,
   resolveTransferLotQuantityFromView,
+  type ConfigureRestockRoutineResolutionView,
   type HouseholdsResolutionView,
+  type PromoteItemFromStockResolutionView,
+  type RunHouseholdRestockResolutionView,
 } from "./households";
 
 /**
@@ -190,6 +212,76 @@ function setMeansBandCmd(
   });
 }
 
+function configureRestockRoutineCmd(
+  payload: ConfigureRestockRoutineCommandInput["payload"],
+  overrides: Partial<Omit<ConfigureRestockRoutineCommandInput, "payload">> = {},
+) {
+  return configureRestockRoutineCommandSchema.parse({
+    id: "cmd-configure-restock",
+    branchId: BRANCH,
+    expectedVersion: 0,
+    idempotencyKey: "idem-configure-restock",
+    principal: principal("storyteller"),
+    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
+    type: "configure_restock_routine",
+    schemaVersion: 1,
+    correlationId: "corr-1",
+    payload,
+    ...overrides,
+  });
+}
+
+function promoteItemFromStockCmd(
+  payload: PromoteItemFromStockCommandInput["payload"],
+  overrides: Partial<Omit<PromoteItemFromStockCommandInput, "payload">> = {},
+) {
+  return promoteItemFromStockCommandSchema.parse({
+    id: "cmd-promote",
+    branchId: BRANCH,
+    expectedVersion: 0,
+    idempotencyKey: "idem-promote",
+    principal: principal("player", [payload.actorId]),
+    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
+    type: "promote_item_from_stock",
+    schemaVersion: 1,
+    correlationId: "corr-1",
+    payload,
+    ...overrides,
+  });
+}
+
+function runHouseholdRestockCmd(
+  payload: RunHouseholdRestockCommandInput["payload"],
+  overrides: Partial<Omit<RunHouseholdRestockCommandInput, "payload">> = {},
+) {
+  return runHouseholdRestockCommandSchema.parse({
+    id: "cmd-run-restock",
+    branchId: BRANCH,
+    expectedVersion: 0,
+    idempotencyKey: "idem-run-restock",
+    principal: { kind: "system" as const, principalId: "sim-scheduler", controlledActorIds: [] },
+    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
+    type: "run_household_restock",
+    schemaVersion: 1,
+    correlationId: "corr-1",
+    payload,
+    ...overrides,
+  });
+}
+
+const stockFunding = (sourceLocus: LotLocus, quantityRaw: number) =>
+  promotionFundingSchema.parse({ kind: "stock", sourceLocus, quantityRaw });
+const purchaseFunding = (currencyLocus: LotLocus, unitPriceRaw: number, quantityRaw: number) =>
+  promotionFundingSchema.parse({ kind: "purchase", currencyLocus, unitPriceRaw, quantityRaw });
+const lotFunding = (currencyLocus: LotLocus, unitPriceRaw: number) =>
+  restockFundingSchema.parse({ kind: "lot", currencyLocus, unitPriceRaw });
+const bandFunding = (minimumBandKey: MeansBandKey) =>
+  restockFundingSchema.parse({ kind: "means_band_envelope", minimumBandKey });
+
+function promotedItem(overrides: Partial<{ name: string; materialKindKey: string }> = {}) {
+  return promotedItemInputSchema.parse(overrides);
+}
+
 // ---------------------------------------------------------------------------
 // View builders
 // ---------------------------------------------------------------------------
@@ -297,6 +389,69 @@ function meansBandView(
     storySecond: overrides.storySecond ?? 10_000,
     subjectExists: overrides.subjectExists ?? true,
     currentBand: overrides.currentBand,
+  };
+}
+
+function configureRestockView(
+  overrides: Partial<{ householdExists: boolean; headSequence: number; storySecond: number }> = {},
+): ConfigureRestockRoutineResolutionView {
+  return {
+    worldId: WORLD,
+    branchId: BRANCH,
+    rulesetVersion: RULESET,
+    headSequence: overrides.headSequence ?? 0,
+    storySecond: overrides.storySecond ?? 10_000,
+    householdExists: overrides.householdExists ?? true,
+  };
+}
+
+function promotionView(input: {
+  fixture: HouseholdsFixture;
+  actors?: Record<string, { id: string; name: string }>;
+  fundingLot: MaterialLotState;
+  namePool?: readonly string[];
+  worldSeed?: string;
+  headSequence?: number;
+  storySecond?: number;
+}): PromoteItemFromStockResolutionView {
+  const actors = input.actors ?? {};
+  const pool = input.namePool ?? [];
+  return {
+    ...resolutionView(input.fixture),
+    worldId: WORLD,
+    branchId: BRANCH,
+    rulesetVersion: RULESET,
+    headSequence: input.headSequence ?? 0,
+    storySecond: input.storySecond ?? 10_000,
+    actorById: (actorId: string) => actors[actorId],
+    fundingLot: input.fundingLot,
+    namePool: () => pool,
+    worldSeed: input.worldSeed ?? "seed-e5-4-promotion",
+  };
+}
+
+function runRestockView(
+  overrides: Partial<{
+    routine: HouseholdRestockRoutine;
+    armingIsLive: boolean;
+    stockLot: MaterialLotState;
+    currencyLot: MaterialLotState;
+    householdMeansRead: MeansRead;
+    headSequence: number;
+    storySecond: number;
+  }> = {},
+): RunHouseholdRestockResolutionView {
+  return {
+    worldId: WORLD,
+    branchId: BRANCH,
+    rulesetVersion: RULESET,
+    headSequence: overrides.headSequence ?? 0,
+    storySecond: overrides.storySecond ?? 10_000,
+    routine: overrides.routine,
+    armingIsLive: overrides.armingIsLive ?? true,
+    stockLot: overrides.stockLot,
+    currencyLot: overrides.currencyLot,
+    householdMeansRead: overrides.householdMeansRead,
   };
 }
 
@@ -950,6 +1105,591 @@ describe("E5.4 slice 1 projector, replay, and seed", () => {
     const secondHalf = events.slice(2);
     const partial = replayHouseholdsHistory({ seed, events: firstHalf });
     const stepwise = replayHouseholdsHistory({ seed: partial, events: secondHalf });
+
+    expect(simulationHash({ ...whole, version: 0 })).toBe(simulationHash({ ...stepwise, version: 0 }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E5.4 slice 2 — promotion, restock routine
+// ---------------------------------------------------------------------------
+
+describe("E5.4 slice 2 promotion determinism (§26.10/§27.2)", () => {
+  const WORLD_SEED = "seed-e5-4-promotion-determinism";
+  const fundingLocus = actorLotLocus("mara");
+  const pool = ["Copper Kettle", "Tin Cup", "Iron Skillet", "Clay Jug", "Wooden Bowl"] as const;
+
+  function expectedSample(commandId: string) {
+    const stream = composeSimulationId("promotion-detail", [commandId, "item-name"]);
+    const draw = deterministicDrawUnit({ worldSeed: WORLD_SEED, branchId: BRANCH, stream, drawIndex: 0 });
+    return { stream, name: pool[Math.floor(draw * pool.length)] };
+  }
+
+  function view(): PromoteItemFromStockResolutionView {
+    return promotionView({
+      fixture: { households: [], memberships: [], actorZones: { mara: ZONE_A } },
+      actors: { mara: { id: "mara", name: "Mara" } },
+      fundingLot: lotOf(fundingLocus, "food", 10),
+      namePool: pool,
+      worldSeed: WORLD_SEED,
+    });
+  }
+
+  it("samples byte-identical name/stream/drawIndex for identical inputs, a different stream for a different command.id, and bypasses sampling when the caller supplies a name", () => {
+    const command = promoteItemFromStockCmd({
+      actorId: "mara",
+      funding: stockFunding(fundingLocus, 1),
+      item: promotedItem({ materialKindKey: "food" }),
+    });
+    const first = resolvePromoteItemFromStockFromView(view(), command);
+    const second = resolvePromoteItemFromStockFromView(view(), command);
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(first.itemEvent.payload.sampledDetail).toEqual(second.itemEvent.payload.sampledDetail);
+    const expected = expectedSample(command.id);
+    expect(first.itemEvent.payload.sampledDetail).toMatchObject({
+      stream: expected.stream,
+      drawIndex: 0,
+      sampledName: expected.name,
+    });
+    expect(first.itemEvent.payload.item.name).toBe(expected.name);
+
+    const differentCommand = promoteItemFromStockCmd(command.payload, {
+      id: "cmd-promote-2",
+      idempotencyKey: "idem-promote-2",
+    });
+    const third = resolvePromoteItemFromStockFromView(view(), differentCommand);
+    expect(third.ok).toBe(true);
+    if (!third.ok) return;
+    expect(third.itemEvent.payload.sampledDetail?.stream).not.toBe(first.itemEvent.payload.sampledDetail?.stream);
+
+    const explicitNameCommand = promoteItemFromStockCmd(
+      { actorId: "mara", funding: stockFunding(fundingLocus, 1), item: promotedItem({ materialKindKey: "food", name: "Old Boot" }) },
+      { id: "cmd-promote-3", idempotencyKey: "idem-promote-3" },
+    );
+    const fourth = resolvePromoteItemFromStockFromView(view(), explicitNameCommand);
+    expect(fourth.ok).toBe(true);
+    if (!fourth.ok) return;
+    expect(fourth.itemEvent.payload.sampledDetail).toBeUndefined();
+    expect(fourth.itemEvent.payload.item.name).toBe("Old Boot");
+  });
+});
+
+describe("E5.4 slice 2 promotion funding (§26.10)", () => {
+  const fundingLocus = actorLotLocus("mara");
+
+  function view(fundingLot: MaterialLotState): PromoteItemFromStockResolutionView {
+    return promotionView({
+      fixture: { households: [], memberships: [], actorZones: { mara: ZONE_A } },
+      actors: { mara: { id: "mara", name: "Mara" } },
+      fundingLot,
+    });
+  }
+
+  it("stock funding debits the exact same-kind quantity requested", () => {
+    const command = promoteItemFromStockCmd({
+      actorId: "mara",
+      funding: stockFunding(fundingLocus, 3),
+      item: promotedItem({ materialKindKey: "food", name: "Camp Knife" }),
+    });
+    const result = resolvePromoteItemFromStockFromView(view(lotOf(fundingLocus, "food", 10)), command);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.lotAdjustedEvent.payload).toMatchObject({
+      materialKindKey: "food",
+      deltaRaw: -3,
+      resultingQuantityRaw: 7,
+      reason: "promotion_cost",
+    });
+    expect(result.nextFundingLot.quantityRaw).toBe(7);
+    expect(result.itemEvent.payload.sourceMaterialKindKey).toBe("food");
+  });
+
+  it("purchase funding debits unitPriceRaw x quantityRaw under the reserved currency kind, regardless of the funding lot's own materialKindKey", () => {
+    // Stage B deviation #2: purchase funding is well-formed by construction —
+    // it always debits RESERVED_CURRENCY_MATERIAL_KIND, never consulting the
+    // funding lot's own `materialKindKey` field, so it never rejects
+    // invalid_funding_kind (unlike stock funding below).
+    const command = promoteItemFromStockCmd({
+      actorId: "mara",
+      funding: purchaseFunding(fundingLocus, 250, 4),
+      item: promotedItem({ name: "Brass Compass" }),
+    });
+    const result = resolvePromoteItemFromStockFromView(
+      view(lotOf(fundingLocus, RESERVED_CURRENCY_MATERIAL_KIND, 5_000)),
+      command,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.lotAdjustedEvent.payload).toMatchObject({
+      materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
+      deltaRaw: -1_000,
+      resultingQuantityRaw: 4_000,
+      reason: "promotion_cost",
+    });
+
+    // The same non-currency-labeled lot still succeeds under purchase funding
+    // (no symmetric "is this actually currency" check exists).
+    const nonCurrencyLotResult = resolvePromoteItemFromStockFromView(
+      view(lotOf(fundingLocus, "unspecified", 5_000)),
+      promoteItemFromStockCmd(command.payload, { id: "cmd-promote-nc", idempotencyKey: "idem-promote-nc" }),
+    );
+    expect(nonCurrencyLotResult.ok).toBe(true);
+  });
+
+  it("rejects invalid_funding_kind for stock funding against an item with no declared materialKindKey", () => {
+    const command = promoteItemFromStockCmd({
+      actorId: "mara",
+      funding: stockFunding(fundingLocus, 1),
+      item: promotedItem({ name: "Mystery Box" }),
+    });
+    const result = resolvePromoteItemFromStockFromView(view(lotOf(fundingLocus, "unspecified", 10)), command);
+    expect(result).toMatchObject({ ok: false, code: "invalid_funding_kind" });
+  });
+
+  it("rejects insufficient_balance when the funding lot cannot cover the cost", () => {
+    const command = promoteItemFromStockCmd({
+      actorId: "mara",
+      funding: stockFunding(fundingLocus, 5),
+      item: promotedItem({ materialKindKey: "food", name: "Camp Knife" }),
+    });
+    const result = resolvePromoteItemFromStockFromView(view(lotOf(fundingLocus, "food", 2)), command);
+    expect(result).toMatchObject({ ok: false, code: "insufficient_balance" });
+  });
+
+  it("rejects name_required (not a throw) when the item omits a name and no name pool is authored", () => {
+    const command = promoteItemFromStockCmd({
+      actorId: "mara",
+      funding: stockFunding(fundingLocus, 1),
+      item: promotedItem({ materialKindKey: "food" }),
+    });
+    const result = resolvePromoteItemFromStockFromView(view(lotOf(fundingLocus, "food", 10)), command);
+    expect(result).toMatchObject({ ok: false, code: "name_required" });
+  });
+});
+
+describe("E5.4 slice 2 resolveConfigureRestockRoutineFromView (§26.11)", () => {
+  it("accepts an active routine and arms a fresh trigger versioned by its own arming sequence", () => {
+    const routine = householdRestockRoutineSchema.parse({
+      householdId: HOUSEHOLD,
+      materialKindKey: "food",
+      targetQuantityRaw: 30,
+      lowWaterThresholdRaw: 5,
+      cadenceSeconds: 3_600,
+      funding: lotFunding(householdLotLocus(HOUSEHOLD), 10),
+      active: true,
+    });
+    const command = configureRestockRoutineCmd(routine);
+    const result = resolveConfigureRestockRoutineFromView(configureRestockView(), command);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const [configured, trigger] = result.events;
+    expect(configured.type).toBe("household_restock_routine_configured");
+    expect(trigger?.type).toBe("trigger_scheduled");
+    if (!trigger || trigger.type !== "trigger_scheduled") return;
+    expect(trigger.payload.dueStorySecond).toBe(10_000 + 3_600);
+    expect(trigger.payload.uniquenessKey).toBe(householdRestockUniquenessKey(HOUSEHOLD, "food", configured.sequence));
+  });
+
+  it("configures an inactive routine with no trigger, and rejects an unknown household", () => {
+    const routine = householdRestockRoutineSchema.parse({
+      householdId: HOUSEHOLD,
+      materialKindKey: "food",
+      targetQuantityRaw: 30,
+      lowWaterThresholdRaw: 5,
+      cadenceSeconds: 3_600,
+      funding: lotFunding(householdLotLocus(HOUSEHOLD), 10),
+      active: false,
+    });
+    const command = configureRestockRoutineCmd(routine);
+    const result = resolveConfigureRestockRoutineFromView(configureRestockView(), command);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.events).toHaveLength(1);
+
+    const missing = resolveConfigureRestockRoutineFromView(configureRestockView({ householdExists: false }), command);
+    expect(missing).toMatchObject({ ok: false, code: "household_not_found" });
+  });
+});
+
+describe("E5.4 slice 2 resolveRunHouseholdRestockFromView (§26.11)", () => {
+  const householdLocus = householdLotLocus(HOUSEHOLD);
+  const command = () => runHouseholdRestockCmd({ householdId: HOUSEHOLD, materialKindKey: "food", armedAtSequence: 5 });
+
+  function lotFundedRoutine(): HouseholdRestockRoutine {
+    return householdRestockRoutineSchema.parse({
+      householdId: HOUSEHOLD,
+      materialKindKey: "food",
+      targetQuantityRaw: 30,
+      lowWaterThresholdRaw: 5,
+      cadenceSeconds: 3_600,
+      funding: lotFunding(householdLotLocus(HOUSEHOLD), 10),
+      active: true,
+    });
+  }
+
+  function bandFundedRoutine(): HouseholdRestockRoutine {
+    return householdRestockRoutineSchema.parse({
+      householdId: HOUSEHOLD,
+      materialKindKey: "food",
+      targetQuantityRaw: 30,
+      lowWaterThresholdRaw: 5,
+      cadenceSeconds: 3_600,
+      funding: bandFunding("modest"),
+      active: true,
+    });
+  }
+
+  it("defers already_stocked when current stock already meets target, and still re-arms under the deferred event's own sequence", () => {
+    const result = resolveRunHouseholdRestockFromView(
+      runRestockView({ routine: lotFundedRoutine(), stockLot: lotOf(householdLocus, "food", 30) }),
+      command(),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.events).toHaveLength(2);
+    const [deferred, rearm] = result.events;
+    expect(deferred).toMatchObject({ type: "household_restock_deferred", payload: { reason: "already_stocked" } });
+    expect(rearm?.type).toBe("trigger_scheduled");
+    if (!rearm || rearm.type !== "trigger_scheduled") return;
+    expect(rearm.causationId).toBe(deferred?.id);
+    expect(rearm.payload.dueStorySecond).toBe(10_000 + 3_600);
+    expect(rearm.payload.command.payload).toMatchObject({
+      householdId: HOUSEHOLD,
+      materialKindKey: "food",
+      armedAtSequence: deferred?.sequence,
+    });
+    expect(result.nextStockLot).toBeUndefined();
+  });
+
+  it("defers insufficient_funds for lot funding when the currency lot cannot cover the top-up", () => {
+    const result = resolveRunHouseholdRestockFromView(
+      runRestockView({
+        routine: lotFundedRoutine(),
+        stockLot: lotOf(householdLocus, "food", 10),
+        currencyLot: lotOf(householdLotLocus(HOUSEHOLD), RESERVED_CURRENCY_MATERIAL_KIND, 50),
+      }),
+      command(),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.events).toHaveLength(2);
+    expect(result.events[0]).toMatchObject({ type: "household_restock_deferred", payload: { reason: "insufficient_funds" } });
+  });
+
+  it("defers insufficient_funds for means_band_envelope funding below the minimum band, and fails closed for a lot-tracked or unknown means read (§26.10 structural precedence)", () => {
+    const belowBand = resolveRunHouseholdRestockFromView(
+      runRestockView({
+        routine: bandFundedRoutine(),
+        stockLot: lotOf(householdLocus, "food", 10),
+        householdMeansRead: { kind: "band_tracked", bandKey: "struggling" },
+      }),
+      command(),
+    );
+    expect(belowBand.ok).toBe(true);
+    if (belowBand.ok) {
+      expect(belowBand.events[0]).toMatchObject({ type: "household_restock_deferred", payload: { reason: "insufficient_funds" } });
+    }
+
+    const lotTracked = resolveRunHouseholdRestockFromView(
+      runRestockView({
+        routine: bandFundedRoutine(),
+        stockLot: lotOf(householdLocus, "food", 10),
+        householdMeansRead: { kind: "lot_tracked", quantityRaw: 1_000_000, quantityKind: "fixed_point" },
+      }),
+      command(),
+    );
+    expect(lotTracked.ok).toBe(true);
+    if (lotTracked.ok) {
+      expect(lotTracked.events[0]).toMatchObject({ type: "household_restock_deferred", payload: { reason: "insufficient_funds" } });
+    }
+
+    const unknown = resolveRunHouseholdRestockFromView(
+      runRestockView({ routine: bandFundedRoutine(), stockLot: lotOf(householdLocus, "food", 10) }),
+      command(),
+    );
+    expect(unknown.ok).toBe(true);
+    if (unknown.ok) {
+      expect(unknown.events[0]).toMatchObject({ type: "household_restock_deferred", payload: { reason: "insufficient_funds" } });
+    }
+  });
+
+  it("lot-funded fulfillment emits a causally-linked cross-kind debit+credit pair that assertConservedDeltasBalance correctly rejects (§26.9's two-kind exception)", () => {
+    const result = resolveRunHouseholdRestockFromView(
+      runRestockView({
+        routine: lotFundedRoutine(),
+        stockLot: lotOf(householdLocus, "food", 10),
+        currencyLot: lotOf(householdLotLocus(HOUSEHOLD), RESERVED_CURRENCY_MATERIAL_KIND, 100_000),
+      }),
+      command(),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.events).toHaveLength(4);
+    const [debit, credit, fulfilled, rearm] = result.events;
+    if (debit?.type !== "material_lot_adjusted" || credit?.type !== "material_lot_adjusted") {
+      throw new Error("expected two material_lot_adjusted events");
+    }
+    expect(debit.payload).toMatchObject({ materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND, deltaRaw: -200, reason: "restock_purchase" });
+    expect(credit.causationId).toBe(debit.id);
+    expect(credit.payload).toMatchObject({ materialKindKey: "food", deltaRaw: 20, reason: "restock_purchase" });
+    expect(fulfilled).toMatchObject({ type: "household_restock_fulfilled", payload: { resultingQuantityRaw: 30 } });
+    expect(rearm?.type).toBe("trigger_scheduled");
+    expect(result.nextStockLot?.quantityRaw).toBe(30);
+    expect(result.nextCurrencyLot?.quantityRaw).toBe(99_800);
+
+    // A cross-kind BOUNDARY exchange, not a conserved same-kind transfer:
+    // each kind's own net delta is individually nonzero, so
+    // assertConservedDeltasBalance correctly throws when handed both —
+    // unlike a same-kind material_lot_transferred pair, which balances.
+    expect(() =>
+      assertConservedDeltasBalance([
+        { materialKindKey: debit.payload.materialKindKey, deltaRaw: debit.payload.deltaRaw },
+        { materialKindKey: credit.payload.materialKindKey, deltaRaw: credit.payload.deltaRaw },
+      ]),
+    ).toThrow(/Conservation violated/u);
+  });
+
+  it("means_band_envelope-funded fulfillment emits exactly one restock_topup_unconserved credit", () => {
+    const result = resolveRunHouseholdRestockFromView(
+      runRestockView({
+        routine: bandFundedRoutine(),
+        stockLot: lotOf(householdLocus, "food", 10),
+        householdMeansRead: { kind: "band_tracked", bandKey: "comfortable" },
+      }),
+      command(),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.events).toHaveLength(3);
+    const [credit, fulfilled, rearm] = result.events;
+    expect(credit).toMatchObject({ type: "material_lot_adjusted", payload: { materialKindKey: "food", deltaRaw: 20, reason: "restock_topup_unconserved" } });
+    expect(fulfilled).toMatchObject({ type: "household_restock_fulfilled", payload: { resultingQuantityRaw: 30 } });
+    expect(rearm?.type).toBe("trigger_scheduled");
+    expect(result.nextCurrencyLot).toBeUndefined();
+  });
+
+  it("rejects an unknown/inactive routine and a stale arming", () => {
+    const missing = resolveRunHouseholdRestockFromView(runRestockView({ routine: undefined }), command());
+    expect(missing).toMatchObject({ ok: false, code: "routine_not_found" });
+
+    const inactive = resolveRunHouseholdRestockFromView(
+      runRestockView({ routine: { ...lotFundedRoutine(), active: false } }),
+      command(),
+    );
+    expect(inactive).toMatchObject({ ok: false, code: "routine_not_found" });
+
+    const stale = resolveRunHouseholdRestockFromView(
+      runRestockView({ routine: lotFundedRoutine(), armingIsLive: false }),
+      command(),
+    );
+    expect(stale).toMatchObject({ ok: false, code: "threshold_stale" });
+  });
+});
+
+describe("E5.4 slice 2 replay + partition invariance across the full slice-1+2 catalog", () => {
+  const HOUSEHOLD_2 = "household-vance-2";
+
+  function fullCatalogEvents(): SimulationBranchEvent[] {
+    const seed = emptyHouseholdsSeed(BRANCH, 10_000);
+    let projection = seed;
+    const events: SimulationBranchEvent[] = [];
+    const push = (event: SimulationBranchEvent) => {
+      events.push(event);
+      projection = applyHouseholdEvent(projection, event);
+    };
+    const meta = () => ({
+      worldId: WORLD,
+      branchId: BRANCH,
+      rulesetVersion: RULESET,
+      headSequence: projection.headSequence,
+      storySecond: projection.storySecond,
+    });
+
+    const create = resolveCreateHouseholdFromView(
+      { ...meta(), householdExists: false, zoneExists: (zoneId) => zoneId === ZONE_A },
+      createHouseholdCmd({
+        householdId: HOUSEHOLD_2,
+        name: "Vance House",
+        residenceZoneIds: [ZONE_A],
+        stockAccessPolicy: { kind: "members_only" },
+      }),
+    );
+    if (!create.ok) throw new Error("expected create");
+    push(create.event);
+
+    const membership = resolveSetHouseholdMembershipFromView(
+      { ...meta(), householdExists: true, actorExists: true, currentMembership: undefined },
+      setHouseholdMembershipCmd({ householdId: HOUSEHOLD_2, actorId: "mara", role: "resident", status: "active" }),
+    );
+    if (!membership.ok) throw new Error("expected membership");
+    push(membership.event);
+
+    const householdLocus = householdLotLocus(HOUSEHOLD_2);
+
+    const foodInit = buildMaterialLotInitializedEvent({
+      view: meta(),
+      command: { id: "cmd-food-init", correlationId: "corr-1", submittedAtWallClock: "2026-07-19T10:00:00.000Z" },
+      locus: householdLocus,
+      materialKindKey: "food",
+      quantityKind: "count",
+      sequence: projection.headSequence + 1,
+    });
+    push(foodInit);
+    const foodStock = resolveAdjustMaterialLotFromView(
+      { ...meta(), localeExists: true, lot: lotOf(householdLocus, "food", 0) },
+      adjustMaterialLotCmd({ locus: householdLocus, materialKindKey: "food", deltaRaw: 40 }, { id: "cmd-food-stock", idempotencyKey: "idem-food-stock" }),
+    );
+    if (!foodStock.ok) throw new Error("expected food stock");
+    push(foodStock.event);
+
+    const currencyInit = buildMaterialLotInitializedEvent({
+      view: meta(),
+      command: { id: "cmd-currency-init", correlationId: "corr-1", submittedAtWallClock: "2026-07-19T10:00:00.000Z" },
+      locus: householdLocus,
+      materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
+      quantityKind: "fixed_point",
+      sequence: projection.headSequence + 1,
+    });
+    push(currencyInit);
+    const currencyStock = resolveAdjustMaterialLotFromView(
+      { ...meta(), localeExists: true, lot: lotOf(householdLocus, RESERVED_CURRENCY_MATERIAL_KIND, 0) },
+      adjustMaterialLotCmd(
+        { locus: householdLocus, materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND, deltaRaw: 100_000 },
+        { id: "cmd-currency-stock", idempotencyKey: "idem-currency-stock" },
+      ),
+    );
+    if (!currencyStock.ok) throw new Error("expected currency stock");
+    push(currencyStock.event);
+
+    const band = resolveSetMeansBandFromView(
+      { ...meta(), subjectExists: true, currentBand: undefined },
+      setMeansBandCmd({ subject: householdSubject(HOUSEHOLD_2), bandKey: "comfortable" }),
+    );
+    if (!band.ok) throw new Error("expected band");
+    push(band.event);
+
+    const routine = householdRestockRoutineSchema.parse({
+      householdId: HOUSEHOLD_2,
+      materialKindKey: "food",
+      targetQuantityRaw: 40,
+      lowWaterThresholdRaw: 10,
+      cadenceSeconds: 3_600,
+      funding: lotFunding(householdLocus, 10),
+      active: true,
+    });
+    const configure = resolveConfigureRestockRoutineFromView(
+      { ...meta(), householdExists: true },
+      configureRestockRoutineCmd(routine, { id: "cmd-configure", idempotencyKey: "idem-configure" }),
+    );
+    if (!configure.ok) throw new Error("expected configure");
+    for (const event of configure.events) push(event);
+    const armedAtSequence1 = configure.events[0].sequence;
+
+    const household2 = simulationHouseholdSchema.parse({
+      id: HOUSEHOLD_2,
+      name: "Vance House",
+      residenceZoneIds: [ZONE_A],
+      stockAccessPolicy: { kind: "members_only" },
+    });
+    const membershipRow = householdMembershipSchema.parse({
+      householdId: HOUSEHOLD_2,
+      actorId: "mara",
+      role: "resident",
+      status: "active",
+    });
+    const promote = resolvePromoteItemFromStockFromView(
+      {
+        ...meta(),
+        householdById: (id) => (id === HOUSEHOLD_2 ? household2 : undefined),
+        activeMembership: (householdId, actorId) =>
+          householdId === HOUSEHOLD_2 && actorId === "mara" ? membershipRow : undefined,
+        actorZoneId: () => ZONE_A,
+        actorById: (id) => (id === "mara" ? { id: "mara", name: "Mara" } : undefined),
+        fundingLot: lotOf(householdLocus, "food", 40),
+        namePool: () => [],
+        worldSeed: "seed-e5-4-full-catalog",
+      },
+      promoteItemFromStockCmd(
+        { actorId: "mara", funding: stockFunding(householdLocus, 1), item: promotedItem({ materialKindKey: "food", name: "Camp Knife" }) },
+        { id: "cmd-promote-full", idempotencyKey: "idem-promote-full" },
+      ),
+    );
+    if (!promote.ok) throw new Error("expected promote");
+    push(promote.lotAdjustedEvent);
+    push(promote.itemEvent);
+
+    const run1 = resolveRunHouseholdRestockFromView(
+      {
+        ...meta(),
+        routine,
+        armingIsLive: true,
+        stockLot: lotOf(householdLocus, "food", 39),
+        currencyLot: lotOf(householdLocus, RESERVED_CURRENCY_MATERIAL_KIND, 100_000),
+      },
+      runHouseholdRestockCmd(
+        { householdId: HOUSEHOLD_2, materialKindKey: "food", armedAtSequence: armedAtSequence1 },
+        { id: "cmd-run-1", idempotencyKey: "idem-run-1" },
+      ),
+    );
+    if (!run1.ok) throw new Error("expected run1");
+    for (const event of run1.events) push(event);
+    const fulfilled1 = run1.events.find((event) => event.type === "household_restock_fulfilled");
+    if (!fulfilled1) throw new Error("expected a fulfilled outcome");
+    const armedAtSequence2 = fulfilled1.sequence;
+
+    const run2 = resolveRunHouseholdRestockFromView(
+      {
+        ...meta(),
+        routine,
+        armingIsLive: true,
+        stockLot: lotOf(householdLocus, "food", 40),
+        currencyLot: lotOf(householdLocus, RESERVED_CURRENCY_MATERIAL_KIND, 99_990),
+      },
+      runHouseholdRestockCmd(
+        { householdId: HOUSEHOLD_2, materialKindKey: "food", armedAtSequence: armedAtSequence2 },
+        { id: "cmd-run-2", idempotencyKey: "idem-run-2" },
+      ),
+    );
+    if (!run2.ok) throw new Error("expected run2 (already_stocked)");
+    for (const event of run2.events) push(event);
+
+    return events;
+  }
+
+  it("rebuilds from zero to the same hash as live folding across every slice-1+2 event type", () => {
+    const seed = emptyHouseholdsSeed(BRANCH, 10_000);
+    const events = fullCatalogEvents();
+    let live = seed;
+    for (const event of events) live = applyHouseholdEvent(live, event);
+
+    const eventTypes = new Set(events.map((event) => event.type));
+    for (const expectedType of [
+      "household_restock_routine_configured",
+      "item_instantiated_from_promotion",
+      "household_restock_fulfilled",
+      "household_restock_deferred",
+    ] as const) {
+      expect(eventTypes.has(expectedType)).toBe(true);
+    }
+
+    const replayed = replayHouseholdsHistory({ seed, events });
+    expect(replayed.headSequence).toBe(live.headSequence);
+    expect(simulationHash({ ...replayed, version: 0 })).toBe(simulationHash({ ...live, version: 0 }));
+  });
+
+  it("produces the same projection whether replayed as one batch or several smaller batches (partition invariance)", () => {
+    const seed = emptyHouseholdsSeed(BRANCH, 10_000);
+    const events = fullCatalogEvents();
+    const whole = replayHouseholdsHistory({ seed, events });
+
+    const third = Math.floor(events.length / 3);
+    const firstPart = events.slice(0, third);
+    const secondPart = events.slice(third, third * 2);
+    const thirdPart = events.slice(third * 2);
+    const afterFirst = replayHouseholdsHistory({ seed, events: firstPart });
+    const afterSecond = replayHouseholdsHistory({ seed: afterFirst, events: secondPart });
+    const stepwise = replayHouseholdsHistory({ seed: afterSecond, events: thirdPart });
 
     expect(simulationHash({ ...whole, version: 0 })).toBe(simulationHash({ ...stepwise, version: 0 }));
   });

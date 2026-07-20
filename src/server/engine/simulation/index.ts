@@ -94,11 +94,15 @@ export {
 } from "./material-store";
 export {
   householdMemberRowInsert,
+  householdRestockRoutineRowInsert,
   householdRowInsert,
   materialLotRowInsert,
   meansBandRowInsert,
   submitDurableAdjustMaterialLot,
+  submitDurableConfigureRestockRoutine,
   submitDurableCreateHousehold,
+  submitDurablePromoteItemFromStock,
+  submitDurableRunHouseholdRestock,
   submitDurableSetHouseholdMembership,
   submitDurableSetMeansBand,
   submitDurableTransferLotQuantity,

@@ -27,7 +27,7 @@ import type { BodyModifierOperation } from "@/contracts/simulation/bodies";
 import type { CommitmentKnowledgeSource } from "@/contracts/simulation/commitments";
 import type { ContainerAccessPolicy, ItemConsumptionEffect, ItemLocus } from "@/contracts/simulation/materials";
 import type { SimulationTrigger } from "@/contracts/simulation/scheduler";
-import type { HouseholdStockAccessPolicy } from "@/contracts/simulation/households";
+import type { HouseholdStockAccessPolicy, RestockFunding } from "@/contracts/simulation/households";
 import { sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
 import { principalKinds } from "@/contracts/simulation/envelopes";
 import { itemGoneBases } from "@/contracts/simulation/materials";
@@ -1837,6 +1837,7 @@ export const simTriggers = pgTable(
         "body_condition_expiry_due",
         "body_collapse_due",
         "item_condition_threshold_due",
+        "household_restock_due",
       ],
     }).notNull(),
     schemaVersion: integer("schema_version").notNull(),
@@ -2871,8 +2872,8 @@ export const simItemConditionModifiers = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// E5.4 slice 1 — households, fungible lots, conservation, means bands
-// (engine.spec §26.8–26.10).
+// E5.4 — households, fungible lots, conservation, means bands, and the
+// restock routine (engine.spec §26.8–26.11).
 //
 // Why lots and means-bands get a synthetic persistence-layer key but
 // households and membership don't: a lot's locus is a *discriminated*
@@ -2930,7 +2931,9 @@ export const simHouseholds = pgTable(
 export const simHouseholdMembers = pgTable(
   "sim_household_members",
   {
-    branchId: text("branch_id").notNull(),
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
     householdId: text("household_id").notNull(),
     actorId: text("actor_id").notNull(),
     role: text("role", { enum: householdMemberRoles }).notNull(),
@@ -3071,5 +3074,46 @@ export const simMeansBands = pgTable(
       "sim_means_bands_household_shape",
       sql`${t.subjectKind} <> 'household' OR (${t.householdId} IS NOT NULL AND ${t.actorId} IS NULL)`,
     ),
+  ],
+);
+
+/**
+ * E5.4 slice 2 restock routines (§26.11) — authored per household × material
+ * kind, natural composite key (no branching discriminant, so no synthetic key
+ * needed — mirrors `sim_body_rhythms`). Live/evented (unlike rhythms):
+ * `configure_restock_routine` upserts this row. The household FK is
+ * DEFERRABLE INITIALLY DEFERRED (hand-edited, 0069 precedent).
+ */
+export const simHouseholdRestockRoutines = pgTable(
+  "sim_household_restock_routines",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    householdId: text("household_id").notNull(),
+    materialKindKey: text("material_kind_key").notNull(),
+    targetQuantityRaw: bigint("target_quantity_raw", { mode: "number" }).notNull(),
+    lowWaterThresholdRaw: bigint("low_water_threshold_raw", { mode: "number" }).notNull(),
+    cadenceSeconds: integer("cadence_seconds").notNull(),
+    funding: jsonb("funding").$type<RestockFunding>().notNull(),
+    active: boolean("active").notNull().default(true),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({
+      name: "sim_household_restock_routines_branch_household_kind_pk",
+      columns: [t.branchId, t.householdId, t.materialKindKey],
+    }),
+    foreignKey({
+      name: "sim_household_restock_routines_household_fk",
+      columns: [t.branchId, t.householdId],
+      foreignColumns: [simHouseholds.branchId, simHouseholds.householdId],
+    }).onDelete("no action"),
+    check(
+      "sim_household_restock_routines_threshold_order",
+      sql`${t.lowWaterThresholdRaw} <= ${t.targetQuantityRaw}`,
+    ),
+    check("sim_household_restock_routines_cadence_positive", sql`${t.cadenceSeconds} > 0`),
   ],
 );

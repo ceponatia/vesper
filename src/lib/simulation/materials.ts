@@ -699,10 +699,13 @@ export interface ApplyMaterialEventOptions {
 }
 
 /**
- * Pure synchronous projector for the material event family. It mutates the three
- * material events and passes every other branch event through as a bare boundary
- * advance — the exhaustive passthrough (copied from `applyActivityEvent`) keeps
- * TS exhaustiveness holding so a new event type cannot ship without a ruling.
+ * Pure synchronous projector for the material event family. It mutates on the
+ * four real material events (three item-mutation events plus
+ * `item_instantiated_from_promotion`, the first event that CREATES an item
+ * rather than mutating one) and passes every other branch event through as a
+ * bare boundary advance — the exhaustive passthrough (copied from
+ * `applyActivityEvent`) keeps TS exhaustiveness holding so a new event type
+ * cannot ship without a ruling.
  */
 export function applyMaterialEvent(
   projection: MaterialsProjection,
@@ -771,6 +774,19 @@ export function applyMaterialEvent(
       assertMaterialsProjectionInvariants(next);
       return next;
     }
+    case "item_instantiated_from_promotion": {
+      // The first material event that CREATES an item rather than mutating
+      // an existing one (E5.4 §26.10/§27.2) — no pre-existing row to find.
+      if (projection.items.some((item) => item.id === event.payload.item.id)) {
+        throw new Error("Material event replay double-instantiates a promoted item");
+      }
+      const next = sortMaterialsProjection({
+        ...bumped,
+        items: [...projection.items, event.payload.item],
+      });
+      assertMaterialsProjectionInvariants(next);
+      return next;
+    }
     case "trigger_scheduled":
     case "journey_planned":
     case "actor_departed":
@@ -818,6 +834,9 @@ export function applyMaterialEvent(
     case "material_lot_adjusted":
     case "material_lot_transferred":
     case "means_band_set":
+    case "household_restock_routine_configured":
+    case "household_restock_fulfilled":
+    case "household_restock_deferred":
       // Non-material families advance the boundary without touching items.
       return materialsProjectionSchema.parse(bumped);
   }

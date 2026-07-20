@@ -23,6 +23,7 @@ import {
   bodyMeterStateSchema,
   type BodyMeterDefinition,
 } from "@/contracts/simulation/bodies";
+import { itemInstantiatedFromPromotionEventSchema } from "@/contracts/simulation/households";
 import {
   itemConditionMeterStateSchema,
   itemConditionRegistryV1,
@@ -1104,5 +1105,76 @@ describe("E5.3 slice 2 — reservation blocks transfer, destroy, and consume", (
         transferCmd({ actorId: "mara", itemId: "bread", fromLocus: heldBy("mara"), toLocus: heldBy("iris") }),
       ),
     ).toMatchObject({ ok: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E5.4 slice 2 — item_instantiated_from_promotion (materials-side fold, §7.2)
+// ---------------------------------------------------------------------------
+
+describe("E5.4 slice 2 applyMaterialEvent on item_instantiated_from_promotion", () => {
+  function promotionSeedInput() {
+    return {
+      worldId: WORLD,
+      worldTypeId: WORLD_TYPE,
+      worldSeed: "seed-token",
+      branchId: BRANCH,
+      rulesetVersion: RULESET,
+      originStorySecond: 10_000,
+      actors: [
+        { id: "mara", name: "Mara" },
+        { id: "iris", name: "Iris" },
+      ],
+      items: [],
+    };
+  }
+
+  function promotionEvent(
+    overrides: Partial<{ itemId: string; sequence: number; locus: ItemLocus }> = {},
+  ) {
+    const itemId = overrides.itemId ?? "promoted-item";
+    return itemInstantiatedFromPromotionEventSchema.parse({
+      id: `event-promoted-${overrides.sequence ?? 1}`,
+      worldId: WORLD,
+      branchId: BRANCH,
+      sequence: overrides.sequence ?? 1,
+      storySecond: 10_500,
+      type: "item_instantiated_from_promotion",
+      schemaVersion: 1,
+      rulesetVersion: RULESET,
+      commandId: "cmd-promote",
+      causationId: "event-lot-debit",
+      correlationId: "corr-1",
+      actorIds: ["mara"],
+      entityIds: sortedUnique(["mara", itemId]),
+      recordedAtWallClock: "2026-07-19T10:00:00.000Z",
+      payload: {
+        item: {
+          id: itemId,
+          name: "Camp Knife",
+          materialKindKey: "food",
+          ownerActorId: null,
+          conditionTracked: false,
+          locus: overrides.locus ?? heldBy("mara"),
+        },
+        sourceLocus: { kind: "household", householdId: "household-vance" },
+        sourceMaterialKindKey: "food",
+      },
+    });
+  }
+
+  it("adds a new item without requiring it to pre-exist, unlike the other real cases", () => {
+    const seed = materialsSeedProjection(promotionSeedInput());
+    expect(seed.items.some((item) => item.id === "promoted-item")).toBe(false);
+    const next = applyMaterialEvent(seed, promotionEvent());
+    const added = next.items.find((item) => item.id === "promoted-item");
+    expect(added).toMatchObject({ name: "Camp Knife", materialKindKey: "food", locus: heldBy("mara") });
+  });
+
+  it("throws on a duplicate-id replay", () => {
+    const seed = materialsSeedProjection(promotionSeedInput());
+    const first = applyMaterialEvent(seed, promotionEvent());
+    const duplicate = promotionEvent({ sequence: 2 });
+    expect(() => applyMaterialEvent(first, duplicate)).toThrow(/double-instantiates/u);
   });
 });

@@ -789,6 +789,10 @@ export function applySpaceEvent(
     case "material_lot_adjusted":
     case "material_lot_transferred":
     case "means_band_set":
+    case "household_restock_routine_configured":
+    case "item_instantiated_from_promotion":
+    case "household_restock_fulfilled":
+    case "household_restock_deferred":
       // Non-movement families advance the boundary without touching space.
       return spaceProjectionSchema.parse(bumped);
   }

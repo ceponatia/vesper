@@ -684,8 +684,8 @@ the same day: ruling 15 (v1 body meters = **full chat parity**, with
 semantics source) and ruling 16 (interpersonal consent = **ledger-gated fail-closed
 preconditions + a §19.3 policy escalation path**); normative wording in
 [engine.spec.md](engine.spec.md) §39. The build order lives in §"Gate 5 build order"
-below; **E5.1, E5.2, and E5.3 shipped 2026-07-19** — **E5.4 (households, means,
-and money at LOD) is next.**
+below; **E5.1, E5.2, and E5.3 shipped 2026-07-19; E5.4 shipped 2026-07-20** —
+**E5.5 (the social ledger and consent, ruling 16) is next.**
 
 Rough effort: **15–35 developer-days**.
 
@@ -921,13 +921,56 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    on use through the same modifier machinery. Transfers validate source holding,
    destination capacity, access, capability, and reservation. Fork/replay parity and
    rebuild-from-zero over the widened lane.
-4. **E5.4 — households, means, and money at LOD.** Household membership and shared
-   stores; fungible lots with fixed-point conserved quantities that transactionally
-   balance; a coarse means read for low-detail actors; §27.2 promotion — when an
-   explicit item becomes narratively relevant it consumes an aggregate allowance and
-   instantiates through a recorded event (never appearing solely because the narrator
-   mentioned it); replacement/restock as household routine; money as a conserved
-   fungible resource for promoted actors, means bands elsewhere.
+4. **E5.4 — households, means, and money at LOD.** Status: **shipped — 2026-07-20
+   (slices 1–2).**
+   **Slice 1 (shipped) — households, lots, conservation, and means bands.**
+   §26.8–§26.11 authored (households & membership, fungible lots & the conservation
+   law, means bands & the promotion contract, the restock routine); `sim_households`
+   / `sim_household_members` / `sim_material_lots` / `sim_means_bands` (migration
+   0074, seven deferrable FKs per the 0069 precedent; lots and means-band subjects
+   carry a synthetic persistence-layer row key because a discriminated nullable
+   locus/subject tuple cannot be a Postgres primary key — contracts and events
+   address both by natural key only). The pure kernel: lot arithmetic rejecting
+   below zero before any event builds (the DB CHECK is the independent backstop,
+   proven by a raw-SQL probe), fail-closed `members_only`/`allow_list` stock
+   access, flat-locus reachability (no chain walk exists in this lane by design),
+   and `deriveMeansRead` with structural lot-over-band precedence and an explicit
+   `unknown` degraded default. Five commands on the shared shell
+   (`create_household`, `set_household_membership`, `adjust_material_lot` with
+   lazy lot init that persists only after the resolver accepts,
+   `transfer_lot_quantity` under the §26.8 three-step access law,
+   `set_means_band`); forkBranch rebuilds all four row kinds from the inherited
+   stream (fully evented, empty seed — no reverse derivation needed); six event
+   types through every exhaustive switch with real memory/perception rulings.
+   35 new pure + 7 new int cases.
+   **Slice 2 (shipped — 2026-07-20) — promotion, restock routine, and money at
+   LOD.** `promote_item_from_stock` (§26.10/§27.2): stock- or purchase-funded,
+   the §26.8 access law applied to household funding loci, name sampling through
+   `deterministicDrawUnit` keyed by the command id with the drawn detail captured
+   on the event so replay never resamples, and the causation-chained
+   `material_lot_adjusted` → `item_instantiated_from_promotion` train — the
+   materials fold gains its first item-CREATING case (double-instantiation
+   guarded). `configure_restock_routine` + the `household_restock_due` alarm
+   (fixed cadence, uniqueness-keyed by arming sequence, unconditional retirement
+   on reconfigure) and the trigger-dispatched `run_household_restock` (fire-time
+   re-validation; `already_stocked`/`insufficient_funds` deferrals that still
+   re-arm; the lot-funded debit→credit causally-linked pair vs the ONE
+   sanctioned unconserved means-band top-up). `sim_household_restock_routines`
+   plus the slice-1 `sim_household_members` branch-cascade FK gap closed
+   (migration 0075). Fork/replay: `seedProjectionForReplay` excludes promoted
+   items from the reverse-derived origin seed, `lastPlacedSequence` stamps them
+   from their instantiation event, and replay recognizes restock alarm
+   retirement/re-arm. A three-lens adversarial review + refutation pass
+   confirmed 3 major findings, all fixed: the no-name/no-pool promotion path
+   rejects `name_required` (structured, resilience-conform) instead of
+   throwing, and a real claim/dispatch-window race (a reconfigure between a
+   worker's trigger claim and its dispatch left two live alarms) closed by
+   retiring `processing` rows too — the stale dispatch fails closed through
+   `threshold_stale`, and the scheduler's fenced completion write no-ops to
+   `lease_lost`. Follow-up noted: the same pending-only retirement gap may
+   exist for the body and item-condition trigger kinds — audit sweep candidate
+   for E5.6. 18 new pure + 9 new int cases. Final E5.4 totals: 2 927 pure +
+   414 int green; CI runs `test:engine-e5-4` (121 cases across four suites).
 5. **E5.5 — the social ledger: promises, favors, debts, boundaries, and consent
    (ruling 16).** The persisted §21.3 evidence ledger the E4.2 derived seam was built
    to feed: typed entries for promises made/kept/missed/repaired, boundaries

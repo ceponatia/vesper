@@ -123,10 +123,20 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
     case "material_lot_initialized":
     case "material_lot_adjusted":
     case "means_band_set":
-      // Bookkeeping derives no observations (§20); unreachable in practice.
+    case "household_restock_routine_configured":
+      // Bookkeeping derives no observations (§20); unreachable in practice
+      // (mirrors `body_initialized`/`item_ownership_set`).
       return "world bookkeeping";
     case "material_lot_transferred":
       return "stock changing hands";
+    case "item_instantiated_from_promotion":
+      // Narratively meaningful (§26.10/§27.2): a concrete item coming into
+      // being from stock — memory-eligible, mirrors `activity_completed`.
+      return "an item coming into someone's hands";
+    case "household_restock_fulfilled":
+      return "a household's stores being restocked";
+    case "household_restock_deferred":
+      return "a household's restock falling through";
   }
 }
 
