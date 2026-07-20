@@ -104,6 +104,18 @@ jobs:
       - name: E5.3 honest material lane integration
         run: pnpm test:engine-e5-3
 
+      - name: E5.4 households, means, and money-at-LOD integration
+        run: pnpm test:engine-e5-4
+
+      - name: E5.5 social ledger and consent integration
+        run: pnpm test:engine-e5-5
+
+      - name: E5.6 Gate 5 exit corpus
+        run: pnpm test:engine-e5-6
+
+      - name: E6.1 actor-LOD ledger integration
+        run: pnpm test:engine-e6-1
+
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v

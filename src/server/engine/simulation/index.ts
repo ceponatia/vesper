@@ -117,6 +117,13 @@ export {
   type KnowledgeStoreOptions,
 } from "./knowledge-store";
 export {
+  actorLodFromRow,
+  actorLodRowInsert,
+  readEffectiveActorLod,
+  submitDurableAssignActorLod,
+  type ActorLodSubmitOptions,
+} from "./lod-store";
+export {
   insertReplayedKnowledge,
   loadKnowledgeProjection,
   recordCommandKnowledge,

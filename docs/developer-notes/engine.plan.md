@@ -1125,6 +1125,14 @@ E5.5 is independent of materials but consumes E3.3/E4.2; E5.6 closes the gate.
 
 ## Gate 6 — dual LOD and autonomous background life
 
+Status: **OPEN — 2026-07-20** (owner go, given as the direct instruction to start
+implementing once all Gate 5 work was confirmed merged on `engine`). No blocking
+product rulings were identified at opening: every product-flavored knob in this gate
+(LOD defaults, utility weights, promotion sampling) lands as versioned world-type or
+registry data with documented defaults, per the ruling-14/15 precedent — tunable
+post-build, never a schema migration. The build order lives in §"Gate 6 build order"
+below.
+
 Rough effort: **10–25 developer-days**.
 
 Simulation detail and narrative attention are separate controls.
@@ -1156,6 +1164,89 @@ are recorded when sampling affects history.
 Increasing the off-screen population by an order of magnitude does not create a linear
 increase in model calls or per-minute work, and promoted actors remain causally
 consistent with their aggregate history.
+
+Per the Gate 4/5 precedent (the 2026-07-18 exit-scope ruling), the deterministic exit
+corpus plus the instrumented scaling proof close the gate; any live-model quality check
+rides the owner-gated spend list in [deferred.plan.md](deferred.plan.md) §Owner-gated
+live eval runs.
+
+### Gate 6 build order
+
+Like Gates 2–5, Gate 6 splits into dependency-ordered targets. The IDs describe order,
+not GitHub PR numbers; each stays reviewable on its own and ships to the long-lived
+`engine` branch. Leftovers carried into this gate: the E5.5 §19.3 call-site LOD stub
+(`social-store.ts` — "every NPC defaults to deliberator LOD … until Gate 6's real
+per-actor LOD field exists" — E6.1 deletes it), and the two E5.6-recorded known limits
+that this gate's work naturally exercises where its scenarios touch them (post-fork
+rhythm reconfiguration has no mutation command yet; one exit-corpus self-view literal is
+seed-pinned).
+
+1. **E6.1 — the LOD ledger: per-actor simulation and inference LOD.** Status:
+   **shipped — 2026-07-20.** The §27.1 simulation-LOD vocabulary (`exact | event |
+   aggregate | dormant`, index order IS the resolution ranking) joins the existing
+   §28 inference-LOD vocabulary as independent axes on one sparse per-actor ledger
+   row (`sim_actor_lods`, migration 0079; the composite actor FK is DEFERRABLE per
+   the 0069 precedent): branch-scoped, fully evented (`actor_lod_assigned`, whose
+   payload captures the replaced effective values + `previousWasDefault` for
+   audit-without-reads), assigned by `assign_actor_lod` (storyteller/system
+   principals only) on the shared §11.1 shell. An UNASSIGNED actor reads the
+   versioned registry defaults (`actor-lod-v1`: exact + deliberator — exactly what
+   both pre-Gate-6 §19.3 call sites hardcoded), so shipping the ledger changed no
+   outcome and background casts stay row-free. The §27.3 demotion guards are
+   evaluated fail-closed inside the command transaction, in fixed order (the
+   actor's claim-holding activities → unresolved temporal pressures →
+   claim-holding engagements), each with a structured rejection naming the
+   blocker; the inference axis never guards (a model-budget dial), and neither
+   does a simulation promotion — for a named actor whose full state exists,
+   raising resolution is bookkeeping (real aggregate promotion is E6.4). Both
+   §19.3 call sites now read the real field through the one `readEffectiveActorLod`
+   seam: the arbiter reads the ACTING NPC per departure actor (the caller-supplied
+   `PrepareTurnDeliberation.inferenceLod` field is DELETED), and the consent-
+   escalation pre-pass reads the deciding TARGET (the documented "§11 decision 4"
+   stub is deleted). Cross-domain threading: every exhaustive event switch gained
+   the type with a recorded ruling — perception derives nothing, no beat, no
+   memory document, every domain applier boundary-bumps. Fork parity:
+   `replayActorLodHistory` (fold from the empty seed) wired into `forkBranch`;
+   the child's rows replay bit-identical and unassigned actors read defaults on
+   both sides, proven in the int suite alongside idempotency and authorization.
+   Also fixed in passing: ci.yml had silently drifted — the documented
+   E5.4/E5.5/E5.6 steps were never added; they now run, plus `test:engine-e6-1`.
+   15 new pure + 2 new int cases; 3 063 pure + 456 int green across all suites.
+   Next: **E6.2**.
+2. **E6.2 — routine policy at event LOD: the background-life controller.** The
+   §19.1/§19.2 deterministic routine controller for named off-screen actors: legal
+   candidate generation over the actor's commitments, temporal pressures, body
+   reads, rhythms, and access; a versioned fixed-point utility scorer (weights as
+   registry data; the §21.3 ledger terms join here per §19.2's noted later slice);
+   resolution committed through the existing command vocabulary under the
+   `npc_policy` principal, driven only at material transitions (scheduler triggers,
+   arriving dependencies) — zero model calls, zero per-minute work. Off-screen
+   sleep-at-bedtime, wash, and meals stop being player-scene-only.
+3. **E6.3 — aggregate and dormant lanes.** Population cohorts and institutions as
+   flow-updated aggregates (extending §26.9 means bands and the §26.11 restock
+   pattern): analytic updates on demand at read or dependency time, never on a
+   tick; dormant actors provably arm no triggers and write no rows until an
+   incoming dependency or promotion boundary wakes them.
+4. **E6.4 — actor promotion and catch-up.** §27.2's five steps generalized from
+   the §26.10 item case to actors: promotion reserves conserved quantities,
+   samples missing detail from a named deterministic stream with seed and
+   derivation version captured on the event, emits `actor_materialized_from_aggregate`,
+   and preserves known observations, commitments, relationships, and causal
+   constraints — never contradicting anything observed. Catch-up jumps between
+   material triggers and integrates rates analytically (the E5.1 kernel law,
+   already partition-invariant by construction). Demotion compacts unobserved
+   routine detail per §27.3; immutable events remain.
+5. **E6.5 — the Gate 6 exit corpus and scaling proof.** Deterministic corpus
+   (zero model calls) proving promoted-actor causal consistency hop-by-hop from
+   aggregate history, plus an instrumented scaling run in the soak-harness style:
+   grow the off-screen population by 10×, measure model-call count, triggers
+   fired, rows written, and wall time — growth must be sublinear and routine
+   world progress must require zero model calls. Closes the gate per the
+   exit-scope precedent.
+
+E6.2 consumes E6.1's ledger (the controller is LOD-gated); E6.3 consumes E6.1's
+vocabulary; E6.4 consumes E6.1 + E6.3 (something must exist to promote from); E6.5
+closes the gate.
 
 ## Gate 7 — optional institutions and macro simulation
 

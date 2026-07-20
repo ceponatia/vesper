@@ -125,10 +125,13 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
     case "means_band_set":
     case "household_restock_routine_configured":
     case "pressure_acknowledged":
+    case "actor_lod_assigned":
       // Bookkeeping derives no observations (§20); unreachable in practice
       // (mirrors `body_initialized`/`item_ownership_set`). Pressure
       // acknowledgment (E5.5 slice 3) is pure turn bookkeeping, not
-      // memory-eligible — mirrors `body_initialized`.
+      // memory-eligible — mirrors `body_initialized`. An actor-LOD
+      // assignment (E6.1, §27) is an engine performance dial — no story
+      // fact exists to recall.
       return "world bookkeeping";
     case "material_lot_transferred":
       return "stock changing hands";

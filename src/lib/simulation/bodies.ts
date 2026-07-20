@@ -2488,6 +2488,7 @@ export function applyBodyEvent(
     case "relationship_change_recorded":
     case "consent_escalation_resolved":
     case "pressure_acknowledged":
+    case "actor_lod_assigned":
       // Non-body families advance the boundary without touching this projection.
       return bodiesProjectionSchema.parse(bumped);
   }

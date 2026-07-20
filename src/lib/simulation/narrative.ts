@@ -263,7 +263,11 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
       // escalation's grant/decline is a private negotiation outcome (§8) —
       // the underlying speech act, if any, is its own beat; the resolution
       // itself is not narrated as a fresh scene event. Pressure acknowledgment
-      // is pure turn bookkeeping (§8), mirrors trigger_scheduled.
+      // is pure turn bookkeeping (§8), mirrors trigger_scheduled. An
+      // actor-LOD assignment (E6.1, §27) is an engine performance dial —
+      // no scene fact exists to portray.
+      return null;
+    case "actor_lod_assigned":
       return null;
     case "material_lot_transferred":
       // An actor-driven, co-located stock movement (§26.9) — visibly witnessed

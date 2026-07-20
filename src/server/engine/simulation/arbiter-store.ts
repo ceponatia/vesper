@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { temporalPressureSchema } from "@/contracts/simulation/commitments";
-import type { DeliberationOutcome, DeliberatorRequest, InferenceLod } from "@/contracts/simulation/deliberation";
+import type { DeliberationOutcome, DeliberatorRequest } from "@/contracts/simulation/deliberation";
 import { claimHoldingEngagementStates } from "@/contracts/simulation/engagements";
 import { composeSimulationId, worldBranchIdSchema } from "@/contracts/simulation/identity";
 import {
@@ -59,6 +59,7 @@ import {
 import { engagementFromRow, submitDurableAcknowledgePressure } from "./engagement-store";
 import { assertionFromRow, beliefFromRow } from "./knowledge-recorder";
 import { loadSpeakerLiveBelief } from "./knowledge-store";
+import { readEffectiveActorLod } from "./lod-store";
 import { latestCutIdForEngagement, persistNarrativeCut, readPersistedCutRow } from "./narrative-cut-store";
 import { branchEventFromRow, loadViewpointObservations } from "./observation-store";
 import { advanceBranchStoryTime, type AdvanceStoryTimeOutcome } from "./scheduler-store";
@@ -87,8 +88,6 @@ function sortedUnique(values: readonly string[]): string[] {
 }
 
 export interface PrepareTurnDeliberation {
-  /** The acting NPC's inference LOD — admission refuses below deliberator. */
-  inferenceLod: InferenceLod;
   scoreGapThresholdFixedPoint: number;
   modelBudgetRemaining: number;
   /** The injected model seam — a stub in every test, zero live calls shipped. */
@@ -263,10 +262,14 @@ export async function prepareEngagementTurn(
           Math.min(1_000_000, horizonEnd - pressure.actBy),
         ),
       }));
+      // E6.1: the acting NPC's real per-actor inference LOD (§28) — read per
+      // actor, not per turn; unassigned actors read the registry default
+      // (deliberator), reproducing the pre-Gate-6 caller-supplied value.
+      const actorLod = await readEffectiveActorLod(database, branchId, actorId);
       const outcome = await runDeliberation({
         admissionInput: {
           actorId,
-          inferenceLod: input.deliberation.inferenceLod,
+          inferenceLod: actorLod.inferenceLod,
           candidates: scored,
           scoreGapThresholdFixedPoint: input.deliberation.scoreGapThresholdFixedPoint,
           consequential: true,

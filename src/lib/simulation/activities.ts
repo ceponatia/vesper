@@ -1047,6 +1047,7 @@ export function applyActivityEvent(
     case "relationship_change_recorded":
     case "consent_escalation_resolved":
     case "pressure_acknowledged":
+    case "actor_lod_assigned":
       // Non-activity families advance the boundary without touching activities.
       return activitiesProjectionSchema.parse(bumped);
   }

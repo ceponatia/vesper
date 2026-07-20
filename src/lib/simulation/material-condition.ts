@@ -1105,6 +1105,7 @@ export function applyItemConditionEvent(
     case "relationship_change_recorded":
     case "consent_escalation_resolved":
     case "pressure_acknowledged":
+    case "actor_lod_assigned":
       // Non-item-condition families advance the boundary without touching this projection.
       return itemConditionsProjectionSchema.parse(bumped);
   }
