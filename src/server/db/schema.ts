@@ -2722,7 +2722,7 @@ export const simBodyRhythms = pgTable(
       .notNull()
       .references(() => simBranches.id, { onDelete: "cascade" }),
     actorId: text("actor_id").notNull(),
-    kind: text("kind", { enum: ["sleep", "wash"] }).notNull(),
+    kind: text("kind", { enum: ["sleep", "wash", "meal"] }).notNull(),
     startMinuteOfDay: integer("start_minute_of_day").notNull(),
     endMinuteOfDay: integer("end_minute_of_day").notNull(),
     updatedAt: updatedAt(),

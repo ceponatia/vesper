@@ -1,12 +1,23 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import {
   runRoutinePolicyCommandResultSchema,
   runRoutinePolicyCommandSchema,
   type RunRoutinePolicyCommand,
   type RunRoutinePolicyCommandResult,
 } from "@/contracts/simulation";
-import { resolveRunRoutinePolicyFromView } from "@/lib/simulation/routine";
-import { db, simBodyConditions, simBodyModifiers, simCharacters, simTemporalPressures, type Db } from "@/server/db";
+import {
+  mealWindowCovering,
+  resolveRunRoutinePolicyFromView,
+  type RunRoutinePolicyResolutionView,
+} from "@/lib/simulation/routine";
+import {
+  simBodyConditions,
+  simBodyModifiers,
+  simCharacters,
+  simItems,
+  simTemporalPressures,
+  type Db,
+} from "@/server/db";
 import {
   bodyConditionRowInsert,
   bodyModifierRowInsert,
@@ -23,14 +34,22 @@ import {
   type LockedBranchView,
 } from "./command-runner";
 import { loadActorBusyCounts, readEffectiveActorLod } from "./lod-store";
+import {
+  loadConsumptionBodyView,
+  loadMaterialResolutionView,
+  publishMaterialFeedObligation,
+  updateItemLocus,
+} from "./material-store";
 import { applyTriggerScheduledEvent } from "./trigger-projector";
 
 /**
  * E6.2 — the durable routine controller (engine.spec §19.1–19.2, §27–28).
  * `run_routine_policy` is trigger-dispatched at an event-LOD actor's rhythm
  * boundary, re-validates everything at fire time, records the §19.2 decision,
- * and — when sleep wins — commits the identical asleep train collapse uses,
- * atomically, then re-arms the next boundary. Zero model calls.
+ * and commits the chosen outcome atomically through the ordinary law — the
+ * identical asleep train collapse uses when sleep wins, the identical §26.6
+ * consumption train `consume_item` records when a meal wins — then re-arms
+ * the next boundary. Zero model calls.
  */
 
 function rejectedResult<TCode extends string>(commandId: string, code: TCode, publicReason: string) {
@@ -86,6 +105,28 @@ export async function submitDurableRunRoutinePolicy(
         .map((condition) => condition.endedAtStorySecond ?? 0);
       const lastSleepEndedAtStorySecond = endedSleeps.length > 0 ? Math.max(...endedSleeps) : undefined;
 
+      // The eat_meal candidate's §26 facts, loaded only when a meal window
+      // covers the fire second (the resolver recomputes membership through
+      // the same pure helper, so the gate can never disagree with the score).
+      // Candidates narrow to consumable items up front; the material view
+      // still carries the whole branch for root/container resolution.
+      let materialFacts: Pick<
+        RunRoutinePolicyResolutionView,
+        "materialView" | "materialItemIds" | "consumptionBodyView"
+      > = {};
+      if (mealWindowCovering(body.rhythms, branch.storySecond) !== undefined) {
+        const consumableRows = await tx
+          .select({ itemId: simItems.itemId })
+          .from(simItems)
+          .where(and(eq(simItems.branchId, branch.id), isNotNull(simItems.consumptionEffects)));
+        const materialItemIds = consumableRows.map((row) => row.itemId);
+        materialFacts = {
+          materialView: await loadMaterialResolutionView(tx, branch, materialItemIds),
+          materialItemIds,
+          consumptionBodyView: await loadConsumptionBodyView(tx, branch.id, actorId, branch.storySecond),
+        };
+      }
+
       const resolution = resolveRunRoutinePolicyFromView(
         {
           worldId: branch.worldId,
@@ -107,6 +148,7 @@ export async function submitDurableRunRoutinePolicy(
             .filter((row) => row.resolvedAt === null)
             .map((row) => row.actBy),
           coLocatedActorIds,
+          ...materialFacts,
         },
         command,
       );
@@ -124,10 +166,40 @@ export async function submitDurableRunRoutinePolicy(
           "energy",
         );
       }
+      // A chosen meal replays `submitDurableConsumeItem`'s row effects event
+      // by event: the consumed item goes to gone/consumed with its feed
+      // obligation, and each body_source_applied retires its own meter's
+      // pending alarm before its paired meter upsert (never one retirement
+      // for the whole batch — a multi-effect item touches several meters).
+      let meterUpdateIndex = 0;
       for (const event of resolution.events) {
         await appendSimulationEvent(tx, event);
         if (event.type === "trigger_scheduled") {
           await applyTriggerScheduledEvent(tx, event, { branchId: branch.id, worldId: branch.worldId });
+        } else if (event.type === "item_consumed") {
+          await updateItemLocus(
+            tx,
+            branch.id,
+            event.payload.itemId,
+            { kind: "gone", basis: "consumed" },
+            event.sequence,
+          );
+          await publishMaterialFeedObligation(tx, event);
+        } else if (event.type === "body_source_applied") {
+          await retirePendingThresholdTriggers(
+            tx,
+            branch,
+            command.id,
+            command.submittedAtWallClock,
+            actorId,
+            event.payload.meterKey,
+          );
+          const meterUpdate = resolution.meterUpdates?.[meterUpdateIndex];
+          meterUpdateIndex += 1;
+          if (!meterUpdate) {
+            throw new Error("Routine consumption produced a body_source_applied event without a matching meter update");
+          }
+          await upsertMeterRow(tx, branch.id, meterUpdate, event.sequence);
         }
       }
       const firstEvent = resolution.events[0];

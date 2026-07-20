@@ -17,40 +17,73 @@ import { simulationLodSchema } from "./lod";
  * per-minute work.
  */
 
-export const routinePolicyDerivationVersion = "routine-policy-v1" as const;
+/**
+ * Every weights version that has ever written a decision event — history is
+ * immutable, so parsing persisted events accepts the whole list while new
+ * writes always use the current version.
+ */
+export const routinePolicyWeightsVersions = ["routine-policy-v1", "routine-policy-v2"] as const;
+export const routinePolicyWeightsVersionSchema = z.enum(routinePolicyWeightsVersions);
+export const routinePolicyDerivationVersion = "routine-policy-v2" as const;
 
 // ---------------------------------------------------------------------------
 // Candidate vocabulary + versioned weights (§19.2 — registry data)
 // ---------------------------------------------------------------------------
 
-/** The closed v1 candidate set. `hold` is the ever-legal deterministic fallback. */
-export const routineCandidateIds = ["begin_sleep", "hold"] as const;
+/**
+ * The closed v2 candidate set (`eat_meal` joined in E6.2 slice 2). The
+ * vocabulary order IS the tie order: a later candidate must STRICTLY outscore
+ * the running winner to take it, so equal non-hold scores keep the earlier
+ * candidate and anything not strictly above zero keeps `hold` — the
+ * ever-legal deterministic fallback.
+ */
+export const routineCandidateIds = ["begin_sleep", "eat_meal", "hold"] as const;
 export const routineCandidateIdSchema = z.enum(routineCandidateIds);
 export type RoutineCandidateId = z.infer<typeof routineCandidateIdSchema>;
 
 /**
- * Why `begin_sleep` was illegal at scoring time, captured on the decision
+ * Why a candidate was illegal at scoring time, captured on the decision
  * event so the audit explains itself (§19.2 — never a model's private
  * chain of thought; these are deterministic gate names).
+ * `no_eligible_item` is `eat_meal`'s §26.5 gate: the actor is inside a meal
+ * window but no eligible consumable is within reach.
  */
 export const routineIllegalReasons = [
   "already_asleep",
   "holding_claims",
   "in_engagement",
+  "no_eligible_item",
 ] as const;
 export const routineIllegalReasonSchema = z.enum(routineIllegalReasons);
 export type RoutineIllegalReason = z.infer<typeof routineIllegalReasonSchema>;
 
 /**
- * The v1 hold weight: a live obligation whose actBy falls inside the coming
- * sleep window scores `hold` at 10 000 — above the entire periodic circadian
- * range (bedtime 3 500, trough peak 8 900, `circadianCurveV1`), so an
- * obligation always outranks routine bedtime sleep. Deliberately BELOW where
- * escalation pushes the sleep score after ~21h past the actor's normal waking
- * span (312/h) — a badly sleep-deprived actor eventually sleeps through an
- * obligation, emergently, with no special case. Versioned registry data.
+ * The obligation penalty on `begin_sleep`: a live obligation whose actBy
+ * falls inside the coming sleep window subtracts 10 000 from the sleep score
+ * — above the entire periodic circadian range (bedtime 3 500, trough peak
+ * 8 900, `circadianCurveV1`), so an obligation always outranks routine
+ * bedtime sleep. Deliberately BELOW where escalation pushes the sleep score
+ * after ~21h past the actor's normal waking span (312/h) — a badly
+ * sleep-deprived actor eventually sleeps through an obligation, emergently,
+ * with no special case. (v1 scored the same 10 000 on `hold` instead; v2
+ * moved it onto sleep so an evening obligation cannot outrank an instant
+ * midday meal — the sleep-vs-hold decision boundary is unchanged.)
+ * Versioned registry data.
  */
-export const ROUTINE_HOLD_COMMITMENT_WEIGHT_FIXED_POINT = 10_000 as const;
+export const ROUTINE_SLEEP_OBLIGATION_PENALTY_FIXED_POINT = 10_000 as const;
+
+/**
+ * What `eat_meal` scores inside one of the actor's authored meal windows
+ * (outside a window it scores 0 and `hold` keeps the tie — the same
+ * due-inside-your-window law sleep follows, so disjoint windows never
+ * compete). Where an authored meal window OVERLAPS the sleep window, 6 000
+ * beats the 3 500 bedtime anchor (supper first), while escalation (312/h
+ * past the normal waking span) pushes sleep past 6 000 after ~8h of overdue
+ * sleep — a badly deprived actor sleeps through the overlap, emergently.
+ * Eating is instantaneous (§26.6: one command, one atomic record), so no
+ * obligation penalty applies. Versioned registry data.
+ */
+export const ROUTINE_MEAL_WEIGHT_FIXED_POINT = 6_000 as const;
 
 export const routineScoredCandidateSchema = z
   .object({
@@ -122,7 +155,7 @@ const routinePolicyResolvedPayloadSchema = z
     chosenCandidateId: routineCandidateIdSchema,
     /** Every candidate with its deterministic score — the audit explanation. */
     candidates: z.array(routineScoredCandidateSchema).min(1).max(8),
-    weightsVersion: z.literal(routinePolicyDerivationVersion),
+    weightsVersion: routinePolicyWeightsVersionSchema,
     /** The simulation LOD that admitted this run, captured at fire time. */
     lodSimulation: simulationLodSchema,
     /** Present exactly when `begin_sleep` was chosen: the condition this
@@ -134,11 +167,23 @@ const routinePolicyResolvedPayloadSchema = z
       })
       .strict()
       .optional(),
+    /** Present exactly when `eat_meal` was chosen: the §26.5-selected item
+     * this same command's causation-chained §26.6 consumption train eats. */
+    meal: z
+      .object({
+        itemId: z.string().min(1).max(1_024),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .refine((payload) => (payload.chosenCandidateId === "begin_sleep") === (payload.sleep !== undefined), {
     message: "sleep detail must be present exactly when begin_sleep was chosen",
     path: ["sleep"],
+  })
+  .refine((payload) => (payload.chosenCandidateId === "eat_meal") === (payload.meal !== undefined), {
+    message: "meal detail must be present exactly when eat_meal was chosen",
+    path: ["meal"],
   });
 
 export const routinePolicyResolvedEventSchema = createEventEnvelopeSchema(

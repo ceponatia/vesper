@@ -1214,7 +1214,7 @@ seed-pinned).
    15 new pure + 2 new int cases; 3 063 pure + 456 int green across all suites.
    Next: **E6.2**.
 2. **E6.2 — routine policy at event LOD: the background-life controller.** Status:
-   **slice 1 shipped — 2026-07-20.** The §19.1/§19.2 deterministic routine
+   **shipped — 2026-07-20 (slices 1–2; E6.2 complete).** The §19.1/§19.2 deterministic routine
    controller (normative wording authored as spec §19.2.1), LOD-gated end to end:
    a new `routine_policy_due` trigger kind (sequence-versioned uniqueness keys,
    the restock re-arm/retire idiom; `sim_triggers.kind` now types off the
@@ -1250,6 +1250,36 @@ seed-pinned).
    (already deterministic); **meals join the candidate set in slice 2** with the
    §26 consumption path; the §21.3 ledger terms in the general scorer stay the
    noted later slice.
+   **Slice 2 (2026-07-20): `eat_meal` joins the candidate set** (spec §19.2.1
+   updated as the normative wording; weights version `routine-policy-v2`, with
+   persisted v1 decisions parseable via the versioned weights list). The `meal`
+   rhythm kind lands as the anticipated data edit (contract + drizzle text
+   enum — no DB constraint, no migration), and the one boundary law
+   (`nextRoutineBoundarySecond`: earliest of bedtime and meal-window starts)
+   now drives both the E6.1 arm and every re-arm. Two scoring corrections the
+   extension forced, both behavior-preserving at bedtime: candidates are DUE
+   only inside their own windows (sleep scores 0 elsewhere — a bare-pantry
+   midday hold can no longer become a nap off the daytime circadian floor;
+   forced daytime sleep stays the §25.4 collapse law's job), and the v1
+   obligation weight moved from `hold`'s score onto sleep as a penalty
+   (identical sleep-vs-hold boundary; an evening obligation no longer starves
+   an instant midday meal). A chosen meal commits the §26.6 train byte-for-byte
+   as `consume_item` does — the shared `buildItemConsumedEvent` /
+   `buildConsumptionBodyEffects` builders, causation-chained decision →
+   item_consumed → body effects, the material feed obligation, per-meter
+   threshold retire/re-arm — via the exported material-store
+   loaders/appliers, so no projection or replay fold changed (no new event
+   types). Item eligibility is §26.5 adapted: meal-source consumption effect
+   required, never against ownership, unreserved, container-access
+   fail-closed, actor-rooted before zone-rooted with lexicographic tie-break —
+   else the captured `no_eligible_item` and the boundary self-heals at the
+   next window. The int arc runs assign → lunch eat (item gone, feed
+   obligation, chain re-read from rows) → same-cycle bedtime sleep → fork
+   carrying the consumed loaf; the bare-pantry hold proves the ownership gate
+   end to end. 13 new pure + 2 new int cases; 3 086 pure + 460 int green
+   across all suites. Leftovers: aggregate-stock feeding (no concrete item)
+   is E6.3's lane; the §21.3 ledger terms in the general scorer remain §9's
+   open decision 6.
 3. **E6.3 — aggregate and dormant lanes.** Population cohorts and institutions as
    flow-updated aggregates (extending §26.9 means bands and the §26.11 restock
    pattern): analytic updates on demand at read or dependency time, never on a

@@ -17,8 +17,7 @@ import {
   type BodyRhythmRow,
   type SimulationBranchEvent,
 } from "@/contracts/simulation";
-import { resolveSleepWindow } from "./body-reads";
-import { buildRoutinePolicyTrigger, nextBedtimeSecond } from "./routine";
+import { buildRoutinePolicyTrigger, nextRoutineBoundarySecond } from "./routine";
 
 /**
  * E6.1 — the pure actor-LOD kernel (engine.spec §27–§28): the effective read
@@ -190,10 +189,11 @@ export function resolveAssignActorLodFromView(
   });
 
   // E6.2: entering (or staying at) `event` simulation LOD arms the actor's
-  // routine alarm at their next bedtime — the store retires any prior arming
-  // unconditionally first (the restock-reconfigure idiom), so exactly one
-  // alarm is ever live. Actors without a tracked body arm nothing (mirrors
-  // the assumed-rhythm rule: background casts stay row-free and work-free).
+  // routine alarm at their next routine boundary (bedtime or a meal start) —
+  // the store retires any prior arming unconditionally first (the
+  // restock-reconfigure idiom), so exactly one alarm is ever live. Actors
+  // without a tracked body arm nothing (mirrors the assumed-rhythm rule:
+  // background casts stay row-free and work-free).
   const events: SimulationBranchEvent[] = [event];
   if (state.simulationLod === "event" && view.bodyInitialized) {
     events.push(
@@ -204,7 +204,7 @@ export function resolveAssignActorLodFromView(
         causationId: event.id,
         actorId: command.payload.actorId,
         suffix: "arm-routine-policy",
-        dueStorySecond: nextBedtimeSecond(resolveSleepWindow(view.rhythmRows), view.storySecond),
+        dueStorySecond: nextRoutineBoundarySecond(view.rhythmRows, view.storySecond),
       }),
     );
   }

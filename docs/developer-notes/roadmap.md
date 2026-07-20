@@ -31,9 +31,9 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   controller, aggregate/dormant lanes, and actor promotion + event-driven catch-up.
   Exit: an order-of-magnitude more off-screen actors does **not** grow model calls or
   per-minute work linearly. Build order E6.1–E6.5; **E6.1 (the per-actor LOD ledger)
-  and E6.2 slice 1 (the background-life controller: autonomous sleep/wake) shipped
-  2026-07-20 — see Shipped below. Next: E6.2 slice 2 (meals) or E6.3 (aggregate/
-  dormant lanes).**
+  and E6.2 (the background-life controller: autonomous sleep/wake, then meals via the
+  §26.6 consumption train — E6.2 complete) shipped 2026-07-20 — see Shipped below.
+  Next: E6.3 (aggregate/dormant lanes).**
 
 ## Next (queued)
 
@@ -126,6 +126,17 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine background-life controller, slice 2 (E6.2 COMPLETE)** —
+  [engine.plan.md](engine.plan.md) §"Gate 6 build order" · contract
+  [engine.spec.md](engine.spec.md) §19.2.1 — 2026-07-20 — `eat_meal` joins the
+  closed candidate set (weights `routine-policy-v2`): the `meal` rhythm kind, one
+  boundary law for bedtime + meal starts, due-inside-your-window scoring (no
+  midday naps — collapse law owns forced sleep), the obligation weight moved onto
+  sleep (lunch survives an evening obligation), and a chosen meal committing the
+  identical §26.6 consumption train `consume_item` records (ownership-safe §26.5
+  selection, captured `no_eligible_item`, feed obligation, fork parity). 3 086
+  pure + 460 int green. Aggregate-stock feeding rides E6.3; §21.3 scorer terms
+  stay §9 open decision 6. Next: **E6.3**.
 - **World-engine background-life controller, slice 1 (E6.2)** —
   [engine.plan.md](engine.plan.md) §"Gate 6 build order" · contract
   [engine.spec.md](engine.spec.md) §19.2.1 (authored this work) — 2026-07-20 —
