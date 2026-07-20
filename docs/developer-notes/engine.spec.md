@@ -1809,6 +1809,29 @@ Demotion may compact unobserved routine detail into a summary projection, but im
 material events remain. Active contested claims, named scarce items, unresolved
 commitments, and near-boundary hazards prevent demotion.
 
+### 27.4 The per-actor LOD ledger (E6.1)
+
+Simulation LOD and inference LOD (§28) are independent axes on one branch-scoped,
+fully-evented ledger row per actor (`sim_actor_lods`). The ledger is sparse: an actor
+with no row MUST read the versioned registry defaults (`actor-lod-v1`: `exact`
+simulation + `deliberator` inference — the values every pre-Gate-6 call site assumed),
+so assigning nothing changes nothing. Assignment is `assign_actor_lod` — storyteller
+and system principals only, audited through `actor_lod_assigned`, whose payload
+captures the replaced effective values so history explains itself without reads.
+
+The §27.3 demotion guards are enforced fail-closed inside the command transaction, in
+fixed order: the actor's claim-holding activities (§16.3), then unresolved temporal
+pressures (§15.2), then claim-holding engagements (§18.2) — the first blocker names
+the structured rejection. Only a simulation-axis move toward less resolution guards:
+the inference axis is a model-budget dial, and raising simulation resolution for a
+named actor whose full state already exists is bookkeeping (promotion FROM an
+aggregate is §27.2 and stays E6.4's contract). LOD bookkeeping is not a world event —
+it derives no observations, no memory documents, and no narrative beats.
+
+Every consumer resolves an actor's LOD through one read seam (the effective read:
+assigned row or defaults). The §19.3 deliberator admission consumes the acting NPC's
+inference LOD per actor; the §21.4 consent escalation consumes the deciding target's.
+
 ## 28. Inference LOD and model budget
 
 Simulation LOD and inference LOD MUST be independent. A physically exact activity may

@@ -23,9 +23,16 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-_(Empty — **Gate 5 closed 2026-07-20**, see Shipped below. The next move is the
-owner's: open Gate 6 (top of Next), or pick other queued work. Every gate opening
-so far has been an explicit owner go.)_
+- **Successor world engine — Gate 6: dual LOD & autonomous background life** —
+  [engine.plan.md](engine.plan.md) §"Gate 6" / §"Gate 6 build order" (**GATE 6 OPENED
+  2026-07-20**, owner go; ~10–25 dev-days). Separate simulation LOD (exact · event ·
+  aggregate · dormant) and inference LOD (no-model · small-model · deliberator ·
+  narrator) as independent per-actor axes, the deterministic background-life
+  controller, aggregate/dormant lanes, and actor promotion + event-driven catch-up.
+  Exit: an order-of-magnitude more off-screen actors does **not** grow model calls or
+  per-minute work linearly. Build order E6.1–E6.5; **E6.1 (the per-actor LOD ledger)
+  shipped 2026-07-20 — see Shipped below; E6.2 (the background-life controller) is
+  next.**
 
 ## Next (queued)
 
@@ -36,20 +43,14 @@ track, in sequence — each gate's exit criteria gate the next. Gates 0–5 are 
 **2026-07-19** and **2026-07-20** by their deterministic exit corpora per the
 owner's 2026-07-18 exit-scope ruling — live-model quality checks are the deferred
 human-in-the-loop items, parked in [deferred.plan.md](deferred.plan.md)
-§Owner-gated live eval runs). **Gate 6 is the next gate; opening it is an owner
-call.** Gate 5's contracts are also where the chat-lane meter-economy and
+§Owner-gated live eval runs). **Gate 6 opened 2026-07-20 — see Active above.**
+Gate 5's contracts are also where the chat-lane meter-economy and
 body-needs plans (below) eventually port through. Full plan
 [engine.plan.md](engine.plan.md) · contract [engine.spec.md](engine.spec.md).
 (Distinct build from the chat-lane
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star umbrella
 further down.)
 
-- **Successor world engine — Gate 6: dual LOD & autonomous background life** —
-  [engine.plan.md](engine.plan.md) §"Gate 6" (draft; ~10–25 dev-days). Separate simulation
-  LOD (exact · event · aggregate · dormant) and inference LOD (no-model · small-model ·
-  deliberator · narrator) controls, plus promotion + event-driven catch-up. Exit: an
-  order-of-magnitude more off-screen actors does **not** grow model calls or per-minute work
-  linearly.
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
   [engine.plan.md](engine.plan.md) §"Gate 7" (draft). **Explicitly post-foundation and
   optional** — not part of the initial 60–120+ day build; admit a package (employers,
@@ -124,6 +125,17 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine actor-LOD ledger (E6.1) — GATE 6 OPENED** —
+  [engine.plan.md](engine.plan.md) §"Gate 6 build order" · contract
+  [engine.spec.md](engine.spec.md) §27–§28 — 2026-07-20 — Gate 6 opened on the
+  owner's go; the §27.1 simulation-LOD and §28 inference-LOD vocabularies land as
+  independent axes on a sparse, fully-evented per-actor ledger (`sim_actor_lods`,
+  migration 0079) with registry defaults reproducing pre-Gate-6 behavior exactly,
+  fail-closed §27.3 demotion guards (claims → pressure → engagement), and both
+  §19.3 deliberator call sites reading the real per-actor field (the documented
+  Gate-6 stubs deleted). Fork/replay parity; ci.yml's silent E5.4–E5.6 step drift
+  fixed. 15 new pure + 2 new int cases (`test:engine-e6-1`; 3 063 pure + 456 int
+  green). Next: **E6.2**.
 - **World-engine Gate 5 exit corpus + trigger-retirement audit (E5.6) — GATE 5
   CLOSED** — [engine.plan.md](engine.plan.md) §"Gate 5 build order" — 2026-07-20 —
   ten deterministic scenarios, zero model calls (`test:engine-e5-6`): four

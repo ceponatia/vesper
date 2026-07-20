@@ -40,6 +40,8 @@ import {
   meansBandKeys,
 } from "@/contracts/simulation/households";
 import { relationshipLedgerKinds, relationshipLedgerProvenances } from "@/contracts/simulation/social";
+import { inferenceLods } from "@/contracts/simulation/deliberation";
+import { simulationLods } from "@/contracts/simulation/lod";
 import { newId } from "@/lib/ids";
 
 const id = () => text("id").primaryKey().$defaultFn(newId);
@@ -3178,5 +3180,36 @@ export const simRelationshipLedger = pgTable(
     index("sim_relationship_ledger_branch_dyad_idx").on(t.branchId, t.fromActorId, t.toActorId),
     index("sim_relationship_ledger_branch_kind_idx").on(t.branchId, t.kind),
     check("sim_relationship_ledger_distinct_actors", sql`${t.fromActorId} <> ${t.toActorId}`),
+  ],
+);
+
+/**
+ * E6.1 actor LOD ledger (engine.spec §27–§28). One row per assigned actor —
+ * an actor with no row reads the versioned registry defaults, so the table
+ * stays sparse (background casts arm nothing, mirrors `sim_body_rhythms`'
+ * assumed-rhythm rule). Live/evented: `assign_actor_lod` upserts this row and
+ * appends `actor_lod_assigned`; fork children rebuild it from inherited events.
+ */
+export const simActorLods = pgTable(
+  "sim_actor_lods",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    actorId: text("actor_id").notNull(),
+    simulationLod: text("simulation_lod", { enum: simulationLods }).notNull(),
+    inferenceLod: text("inference_lod", { enum: inferenceLods }).notNull(),
+    registryVersion: text("registry_version").notNull(),
+    assignedAtStorySecond: bigint("assigned_at_story_second", { mode: "number" }).notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_actor_lods_branch_actor_pk", columns: [t.branchId, t.actorId] }),
+    foreignKey({
+      name: "sim_actor_lods_actor_fk",
+      columns: [t.branchId, t.actorId],
+      foreignColumns: [simCharacters.branchId, simCharacters.characterId],
+    }).onDelete("no action"),
   ],
 );

@@ -15,6 +15,7 @@ import {
 import { prepareEngagementTurn, submitDurableConfirmNarratorResult } from "./arbiter-store";
 import { forkBranch } from "./branch-store";
 import { submitDurableCreateCommitment } from "./commitment-store";
+import { submitDurableAssignActorLod } from "./lod-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
 import { seedDurableMaterialBranch } from "./material-store";
 import { loadPersistedCut, NarrativeCutVersionError, persistNarrativeCut } from "./narrative-cut-store";
@@ -486,9 +487,10 @@ describe.runIf(ready)("E4.3 persisted cuts and narrator integration", () => {
       const annex = rows.find((row) => row.sourceCommitmentId === annexCommitmentId);
       return { chosenCandidateId: annex?.pressureId ?? "missing", rationaleSummary: "annex pays double" };
     };
+    // E6.1: no caller-supplied LOD — an unassigned actor reads the registry
+    // default (deliberator), so admission proceeds without a ledger row.
     const turn = await prepare(ids, engagementId, {
       deliberation: {
-        inferenceLod: "deliberator",
         scoreGapThresholdFixedPoint: 10_000,
         modelBudgetRemaining: 1,
         deliberate: chooseAnnex,
@@ -504,15 +506,27 @@ describe.runIf(ready)("E4.3 persisted cuts and narrator integration", () => {
     expect(turn.departures[0]?.result).toBe("accepted");
 
     // Case two: a too-low inference LOD never calls the model and the
-    // deterministic earliest-boundary policy stands.
+    // deterministic earliest-boundary policy stands. E6.1: the LOD now comes
+    // from the actor's real ledger row — assign small_model through the
+    // command, then prepare the turn.
     const fallbackIds = await seedNarrativeCase();
     await seedCommitment(fallbackIds, "shift-a", fallbackIds.zoneShop, SEED_SECOND + 1_500, 900);
     await seedCommitment(fallbackIds, "shift-b", fallbackIds.zoneAnnex, SEED_SECOND + 1_600, 1_000);
+    const assigned = await submitDurableAssignActorLod(
+      command(
+        fallbackIds,
+        "lod-small",
+        "assign_actor_lod",
+        { kind: "storyteller", principalId: "storyteller-1", controlledActorIds: [] },
+        { actorId: fallbackIds.mara, simulationLod: "exact", inferenceLod: "small_model" },
+      ),
+      admit,
+    );
+    expect(assigned.status).toBe("accepted");
     const fallbackEngagementId = await openChat(fallbackIds);
     let asked = 0;
     const fallbackTurn = await prepare(fallbackIds, fallbackEngagementId, {
       deliberation: {
-        inferenceLod: "small_model",
         scoreGapThresholdFixedPoint: 10_000,
         modelBudgetRemaining: 1,
         deliberate: () => {

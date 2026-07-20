@@ -841,6 +841,7 @@ export function applyMaterialEvent(
     case "relationship_change_recorded":
     case "consent_escalation_resolved":
     case "pressure_acknowledged":
+    case "actor_lod_assigned":
       // Non-material families advance the boundary without touching items.
       return materialsProjectionSchema.parse(bumped);
   }

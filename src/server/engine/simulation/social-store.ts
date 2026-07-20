@@ -4,7 +4,6 @@ import type {
   DeliberatorAdmission,
   DeliberatorAdmissionInput,
   DeliberatorRequest,
-  InferenceLod,
 } from "@/contracts/simulation/deliberation";
 import {
   CONSENT_ESCALATION_SCORE_GAP_THRESHOLD_FIXED_POINT,
@@ -40,6 +39,7 @@ import {
 } from "@/lib/simulation/social";
 import { db, simBranches, simCharacters, simCommands, simEvents, simRelationshipLedger, type Db } from "@/server/db";
 import { loadCoLocatedActorIds } from "./body-store";
+import { readEffectiveActorLod } from "./lod-store";
 import { advanceLockedBranch, appendSimulationEvent, runSimulationCommand, type LockedBranchView } from "./command-runner";
 import { InjectedSimulationCrash } from "./material-store";
 import { relationshipLedgerEntryFromRow } from "./social-recorder";
@@ -487,15 +487,17 @@ export async function submitDurableAttemptConsentEscalation(
       });
       const candidates = deriveConsentEscalationCandidates(read);
 
-      // §11 decision 4: every NPC defaults to "deliberator" LOD at this call
-      // site specifically, until Gate 6's real per-actor LOD field exists.
-      const inferenceLod: InferenceLod = "deliberator";
+      // E6.1: the deciding TARGET's real per-actor inference LOD (§28) —
+      // unassigned actors read the registry default (deliberator), which is
+      // exactly what this call site hardcoded before the ledger existed. An
+      // unlocked read, like everything else in this pre-lock pass.
+      const targetLod = await readEffectiveActorLod(database, branchId, targetActorId);
 
       const resolved = await resolveConsentEscalation({
         candidates,
         admissionInput: {
           actorId: targetActorId,
-          inferenceLod,
+          inferenceLod: targetLod.inferenceLod,
           candidates,
           scoreGapThresholdFixedPoint:
             options.scoreGapThresholdFixedPoint ?? CONSENT_ESCALATION_SCORE_GAP_THRESHOLD_FIXED_POINT,

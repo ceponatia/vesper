@@ -32,6 +32,7 @@ import {
   deriveMaterialLotRowKey,
   deriveMeansSubjectRowKey,
   emptyActivitiesSeed,
+  emptyActorLodsSeed,
   emptyBodiesSeed,
   emptyCommitmentsSeed,
   emptyEngagementsSeed,
@@ -39,6 +40,7 @@ import {
   emptyItemConditionSeed,
   itemHoldingsAtSequence,
   replayActivitiesHistory,
+  replayActorLodHistory,
   replayBodiesHistory,
   replayBranchHistory,
   replayCommitmentsHistory,
@@ -60,6 +62,7 @@ import {
   db,
   simActionDefinitions,
   simActivities,
+  simActorLods,
   simBodyConditions,
   simBodyMeters,
   simBodyModifiers,
@@ -97,6 +100,7 @@ import {
   meansBandRowInsert,
 } from "./household-store";
 import { insertReplayedKnowledge } from "./knowledge-recorder";
+import { actorLodRowInsert } from "./lod-store";
 import { holdingRowFieldsForLocus, itemLocusFromHoldingRow } from "./material-store";
 import { insertReplayedObservations } from "./observation-store";
 import { insertReplayedSocialLedger } from "./social-recorder";
@@ -877,6 +881,27 @@ export async function forkBranch(
             routine,
             restockRoutineSequenceByKey.get(`${routine.householdId}:${routine.materialKindKey}`) ?? 0,
           ),
+        ),
+      );
+    }
+
+    // E6.1 actor LODs (§27–28): fully evented, replay from the empty seed —
+    // an unassigned actor has no row on the parent and gets none on the
+    // child (both read the registry defaults purely).
+    const childActorLods = replayActorLodHistory({
+      seed: emptyActorLodsSeed(input.childBranchId, ancestry.rootOriginStorySecond),
+      events: inherited,
+    });
+    const actorLodSequenceByActor = new Map<string, number>();
+    for (const event of inherited) {
+      if (event.type === "actor_lod_assigned") {
+        actorLodSequenceByActor.set(event.payload.actorId, event.sequence);
+      }
+    }
+    if (childActorLods.lods.length > 0) {
+      await tx.insert(simActorLods).values(
+        childActorLods.lods.map((state) =>
+          actorLodRowInsert(input.childBranchId, state, actorLodSequenceByActor.get(state.actorId) ?? 0),
         ),
       );
     }
