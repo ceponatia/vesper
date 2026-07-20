@@ -5,6 +5,7 @@ import {
   actorLodStateSchema,
   claimHoldingActivityPhases,
   claimHoldingEngagementStates,
+  routinePolicyUniquenessKeyPrefix,
   type ActorLodRead,
   type ActorLodState,
   type AssignActorLodCommand,
@@ -14,18 +15,22 @@ import { effectiveActorLod, resolveAssignActorLodFromView } from "@/lib/simulati
 import {
   simActivities,
   simActorLods,
+  simBodyMeters,
+  simBodyRhythms,
   simCharacters,
   simEngagements,
   simTemporalPressures,
+  simTriggers,
   type Db,
 } from "@/server/db";
+import { bodyRhythmFromRow } from "./body-store";
 import {
   advanceLockedBranch,
   appendSimulationEvent,
   runSimulationCommand,
   type LockedBranchView,
 } from "./command-runner";
-import type { SimTx } from "./trigger-projector";
+import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
 /**
  * E6.1 durable actor-LOD authority (engine.spec §27–§28). One command on the
@@ -105,6 +110,42 @@ export async function readEffectiveActorLod(
   return effectiveActorLod(await loadActorLodRow(database, branchId, actorId));
 }
 
+/**
+ * The actor's busy-ness counts — the §27.3 claim/engagement guards, shared by
+ * `assign_actor_lod`'s demotion check and the E6.2 routine controller's
+ * begin-sleep legality gate.
+ */
+export async function loadActorBusyCounts(
+  tx: Db | SimTx,
+  branchId: string,
+  actorId: string,
+): Promise<{ claimHoldingActivityCount: number; openEngagementCount: number }> {
+  const [activityGuard] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(simActivities)
+    .where(
+      and(
+        eq(simActivities.branchId, branchId),
+        inArray(simActivities.phase, [...claimHoldingActivityPhases]),
+        sql`${simActivities.actorIds} @> ${JSON.stringify([actorId])}::jsonb`,
+      ),
+    );
+  const [engagementGuard] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(simEngagements)
+    .where(
+      and(
+        eq(simEngagements.branchId, branchId),
+        inArray(simEngagements.state, [...claimHoldingEngagementStates]),
+        sql`${simEngagements.participantIds} @> ${JSON.stringify([actorId])}::jsonb`,
+      ),
+    );
+  return {
+    claimHoldingActivityCount: activityGuard?.count ?? 0,
+    openEngagementCount: engagementGuard?.count ?? 0,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // assign_actor_lod
 // ---------------------------------------------------------------------------
@@ -143,16 +184,7 @@ export async function submitDurableAssignActorLod(
       // The §27.3 demotion guards, loaded unconditionally: three cheap counts
       // against indexed projections, and the resolver only consults them on a
       // demotion — a promotion's counts are simply unused.
-      const [activityGuard] = await tx
-        .select({ count: sql<number>`count(*)::int` })
-        .from(simActivities)
-        .where(
-          and(
-            eq(simActivities.branchId, branch.id),
-            inArray(simActivities.phase, [...claimHoldingActivityPhases]),
-            sql`${simActivities.actorIds} @> ${JSON.stringify([actorId])}::jsonb`,
-          ),
-        );
+      const busy = await loadActorBusyCounts(tx, branch.id, actorId);
       const [pressureGuard] = await tx
         .select({ count: sql<number>`count(*)::int` })
         .from(simTemporalPressures)
@@ -163,16 +195,18 @@ export async function submitDurableAssignActorLod(
             sql`${simTemporalPressures.resolvedAt} IS NULL`,
           ),
         );
-      const [engagementGuard] = await tx
-        .select({ count: sql<number>`count(*)::int` })
-        .from(simEngagements)
-        .where(
-          and(
-            eq(simEngagements.branchId, branch.id),
-            inArray(simEngagements.state, [...claimHoldingEngagementStates]),
-            sql`${simEngagements.participantIds} @> ${JSON.stringify([actorId])}::jsonb`,
-          ),
-        );
+
+      // E6.2 arming view: the routine alarm needs a tracked body and the
+      // actor's rhythm rows (the sleep window defaults when unauthored).
+      const [meterRow] = await tx
+        .select({ meterKey: simBodyMeters.meterKey })
+        .from(simBodyMeters)
+        .where(and(eq(simBodyMeters.branchId, branch.id), eq(simBodyMeters.actorId, actorId)))
+        .limit(1);
+      const rhythmRows = await tx
+        .select()
+        .from(simBodyRhythms)
+        .where(and(eq(simBodyRhythms.branchId, branch.id), eq(simBodyRhythms.actorId, actorId)));
 
       const resolution = resolveAssignActorLodFromView(
         {
@@ -184,19 +218,48 @@ export async function submitDurableAssignActorLod(
           actorExists: actorRow !== undefined,
           current,
           guards: {
-            claimHoldingActivityCount: activityGuard?.count ?? 0,
+            claimHoldingActivityCount: busy.claimHoldingActivityCount,
             openPressureCount: pressureGuard?.count ?? 0,
-            openEngagementCount: engagementGuard?.count ?? 0,
+            openEngagementCount: busy.openEngagementCount,
           },
+          bodyInitialized: meterRow !== undefined,
+          rhythmRows: rhythmRows.map(bodyRhythmFromRow),
         },
         command,
       );
       if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
 
-      await appendSimulationEvent(tx, resolution.event);
+      // Every accepted assignment retires the actor's prior routine arming
+      // unconditionally — pending AND processing, per the E5.6 lesson — and
+      // the fresh arm (if the new LOD warrants one) follows as this same
+      // command's trigger_scheduled event (the restock-reconfigure idiom).
+      await tx
+        .update(simTriggers)
+        .set({
+          state: "completed",
+          resultCommandId: command.id,
+          completedAt: new Date(command.submittedAtWallClock),
+        })
+        .where(
+          and(
+            eq(simTriggers.branchId, branch.id),
+            inArray(simTriggers.state, ["pending", "processing"]),
+            sql`starts_with(${simTriggers.uniquenessKey}, ${routinePolicyUniquenessKeyPrefix(actorId)})`,
+          ),
+        );
+
+      for (const event of resolution.events) {
+        await appendSimulationEvent(tx, event);
+        if (event.type === "trigger_scheduled") {
+          await applyTriggerScheduledEvent(tx, event, { branchId: branch.id, worldId: branch.worldId });
+        }
+      }
+      const firstEvent = resolution.events[0];
+      const lastEvent = resolution.events[resolution.events.length - 1];
+      if (!firstEvent || !lastEvent) throw new Error("Accepted LOD assignment produced no events");
       await tx
         .insert(simActorLods)
-        .values(actorLodRowInsert(branch.id, resolution.state, resolution.event.sequence))
+        .values(actorLodRowInsert(branch.id, resolution.state, firstEvent.sequence))
         .onConflictDoUpdate({
           target: [simActorLods.branchId, simActorLods.actorId],
           set: {
@@ -204,18 +267,18 @@ export async function submitDurableAssignActorLod(
             inferenceLod: resolution.state.inferenceLod,
             registryVersion: resolution.state.registryVersion,
             assignedAtStorySecond: resolution.state.assignedAtStorySecond,
-            updatedSequence: resolution.event.sequence,
+            updatedSequence: firstEvent.sequence,
           },
         });
-      await advanceLockedBranch(tx, branch, resolution.event.sequence);
+      await advanceLockedBranch(tx, branch, lastEvent.sequence);
 
       return {
         status: "accepted",
         commandId: command.id,
         branchVersion: branch.version + 1,
-        firstSequence: resolution.event.sequence,
-        lastSequence: resolution.event.sequence,
-        eventIds: [resolution.event.id],
+        firstSequence: firstEvent.sequence,
+        lastSequence: lastEvent.sequence,
+        eventIds: resolution.events.map((event) => event.id),
       };
     },
   });

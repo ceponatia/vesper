@@ -17,5 +17,6 @@ export * from "./perception";
 export * from "./soft-canon";
 export * from "./deliberation";
 export * from "./lod";
+export * from "./routine";
 export * from "./memory";
 export * from "./social";

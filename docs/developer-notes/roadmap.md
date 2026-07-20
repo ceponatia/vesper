@@ -31,8 +31,9 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   controller, aggregate/dormant lanes, and actor promotion + event-driven catch-up.
   Exit: an order-of-magnitude more off-screen actors does **not** grow model calls or
   per-minute work linearly. Build order E6.1–E6.5; **E6.1 (the per-actor LOD ledger)
-  shipped 2026-07-20 — see Shipped below; E6.2 (the background-life controller) is
-  next.**
+  and E6.2 slice 1 (the background-life controller: autonomous sleep/wake) shipped
+  2026-07-20 — see Shipped below. Next: E6.2 slice 2 (meals) or E6.3 (aggregate/
+  dormant lanes).**
 
 ## Next (queued)
 
@@ -125,6 +126,17 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine background-life controller, slice 1 (E6.2)** —
+  [engine.plan.md](engine.plan.md) §"Gate 6 build order" · contract
+  [engine.spec.md](engine.spec.md) §19.2.1 (authored this work) — 2026-07-20 —
+  autonomous sleep/wake for event-LOD actors: the `routine_policy_due` alarm arms
+  on LOD assignment, fires at the actor's own bedtime, scores the closed v1
+  candidate set deterministically (circadian pressure vs the versioned obligation
+  weight; claim/engagement legality gates captured on the decision event), and
+  commits chosen sleep through `buildSleepConditionTrain` — extracted from
+  collapse so forced and chosen sleep are identical machinery. The cycle re-arms
+  itself; zero model calls, zero per-minute work; fork-mid-sleep parity proven.
+  Meals join in slice 2. 10 new pure + 2 new int cases (`test:engine-e6-2`).
 - **World-engine actor-LOD ledger (E6.1) — GATE 6 OPENED** —
   [engine.plan.md](engine.plan.md) §"Gate 6 build order" · contract
   [engine.spec.md](engine.spec.md) §27–§28 — 2026-07-20 — Gate 6 opened on the

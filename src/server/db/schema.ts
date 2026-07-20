@@ -26,7 +26,7 @@ import type { ActivityClaim, SimulationActionDefinition } from "@/contracts/simu
 import type { BodyModifierOperation } from "@/contracts/simulation/bodies";
 import type { CommitmentKnowledgeSource } from "@/contracts/simulation/commitments";
 import type { ContainerAccessPolicy, ItemConsumptionEffect, ItemLocus } from "@/contracts/simulation/materials";
-import type { SimulationTrigger } from "@/contracts/simulation/scheduler";
+import { simulationTriggerKinds, type SimulationTrigger } from "@/contracts/simulation/scheduler";
 import type { HouseholdStockAccessPolicy, RestockFunding } from "@/contracts/simulation/households";
 import type { RelationshipLedgerPayload } from "@/contracts/simulation/social";
 import { sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
@@ -1830,20 +1830,9 @@ export const simTriggers = pgTable(
     id: text("id").primaryKey(),
     worldId: text("world_id").notNull(),
     branchId: text("branch_id").notNull(),
-    kind: text("kind", {
-      enum: [
-        "scheduled_transfer_item",
-        "journey_arrival_due",
-        "activity_completion_due",
-        "commitment_notice_due",
-        "commitment_deadline_due",
-        "body_threshold_due",
-        "body_condition_expiry_due",
-        "body_collapse_due",
-        "item_condition_threshold_due",
-        "household_restock_due",
-      ],
-    }).notNull(),
+    // The contract's kind list verbatim (type-level only — text emits no SQL),
+    // so a new trigger kind can never drift out of this column's typing.
+    kind: text("kind", { enum: [...simulationTriggerKinds] }).notNull(),
     schemaVersion: integer("schema_version").notNull(),
     dueStorySecond: bigint("due_story_second", { mode: "number" }).notNull(),
     /** Spec §12.1 queue order: lower is more urgent. No producer sets it above 0 yet. */

@@ -119,10 +119,12 @@ export {
 export {
   actorLodFromRow,
   actorLodRowInsert,
+  loadActorBusyCounts,
   readEffectiveActorLod,
   submitDurableAssignActorLod,
   type ActorLodSubmitOptions,
 } from "./lod-store";
+export { submitDurableRunRoutinePolicy, type RoutineSubmitOptions } from "./routine-store";
 export {
   insertReplayedKnowledge,
   loadKnowledgeProjection,

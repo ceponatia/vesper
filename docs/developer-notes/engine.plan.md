@@ -1213,15 +1213,43 @@ seed-pinned).
    E5.4/E5.5/E5.6 steps were never added; they now run, plus `test:engine-e6-1`.
    15 new pure + 2 new int cases; 3 063 pure + 456 int green across all suites.
    Next: **E6.2**.
-2. **E6.2 — routine policy at event LOD: the background-life controller.** The
-   §19.1/§19.2 deterministic routine controller for named off-screen actors: legal
-   candidate generation over the actor's commitments, temporal pressures, body
-   reads, rhythms, and access; a versioned fixed-point utility scorer (weights as
-   registry data; the §21.3 ledger terms join here per §19.2's noted later slice);
-   resolution committed through the existing command vocabulary under the
-   `npc_policy` principal, driven only at material transitions (scheduler triggers,
-   arriving dependencies) — zero model calls, zero per-minute work. Off-screen
-   sleep-at-bedtime, wash, and meals stop being player-scene-only.
+2. **E6.2 — routine policy at event LOD: the background-life controller.** Status:
+   **slice 1 shipped — 2026-07-20.** The §19.1/§19.2 deterministic routine
+   controller (normative wording authored as spec §19.2.1), LOD-gated end to end:
+   a new `routine_policy_due` trigger kind (sequence-versioned uniqueness keys,
+   the restock re-arm/retire idiom; `sim_triggers.kind` now types off the
+   contract's kind list verbatim so a new kind can never drift out of the column)
+   arms when an actor with a tracked body enters `event` LOD — `assign_actor_lod`'s
+   resolver emits the arm in its own event train and the store retires prior
+   armings unconditionally (pending+processing, the E5.6 lesson) — and re-arms on
+   every resolution, so the cycle sustains itself with no per-minute work and no
+   model calls (the §19.3 deliberator is structurally never consulted).
+   `run_routine_policy` (system-only, fire-time re-validated to the structured
+   `routine_stale`) scores the closed v1 candidate set — `begin_sleep` by the
+   actor's own circadian pressure (`deriveCircadianPressure`, escalation
+   included), `hold` at the versioned 10 000 weight when an unresolved pressure's
+   actBy falls inside the would-be sleep (above the whole periodic circadian
+   range; deep sleep debt eventually outranks it, emergently) — with claim/
+   engagement legality gates captured by name on the `routine_policy_resolved`
+   decision event (a §6.4 capture: every scored candidate + the admitting LOD;
+   not perceptible, not a beat, not memory-eligible). A chosen sleep commits
+   atomically through `buildSleepConditionTrain` — EXTRACTED from
+   `resolveBodyCollapse` so forced and chosen sleep are byte-identical machinery
+   (the applySourceToMeter precedent) — landing the asleep condition, energy
+   suspend, and self-expiry at the scheduled wake; the wake credit, threshold
+   re-arms, and collapse arming all follow from existing law. A hold re-arms the
+   next bedtime (a skipped night self-heals a day later). Fork/replay parity:
+   arming registration + retirement recognition in the replay trigger ledger
+   (resolution and LOD assignment both retire; re-arms follow as fresh
+   trigger_scheduled), proven by a mid-sleep fork carrying the active condition
+   and both alarms. The int arc runs assign → bedtime sleep → expiry wake with
+   sleep credit → self-sustained second cycle → fork, plus the engagement hold.
+   10 new pure + 2 new int cases (+2 pure on the lod suite); 3 075 pure +
+   458 int green across all suites; CI runs `test:engine-e6-2`. Slice
+   boundaries: wash stays §25.5 window-crossing law
+   (already deterministic); **meals join the candidate set in slice 2** with the
+   §26 consumption path; the §21.3 ledger terms in the general scorer stay the
+   noted later slice.
 3. **E6.3 — aggregate and dormant lanes.** Population cohorts and institutions as
    flow-updated aggregates (extending §26.9 means bands and the §26.11 restock
    pattern): analytic updates on demand at read or dependency time, never on a

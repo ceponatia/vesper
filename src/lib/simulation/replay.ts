@@ -214,6 +214,12 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
           `household_restock_due:${event.payload.command.payload.householdId}:${event.payload.command.payload.materialKindKey}`,
           entry,
         );
+      } else if (event.payload.kind === "routine_policy_due") {
+        // Re-arms overwrite: the newest routine alarm for an actor is the live one.
+        retirementIndex.set(
+          `routine_policy_due:${event.payload.command.payload.actorId}`,
+          entry,
+        );
       }
     } else {
       // Every non-scheduling event may be a scheduler-dispatched firing (an
@@ -293,6 +299,15 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
           `household_restock_due:${event.payload.householdId}:${event.payload.materialKindKey}`,
           event.commandId,
         );
+      } else if (event.type === "routine_policy_resolved") {
+        // A resolution always re-arms the next boundary as its own fresh
+        // trigger_scheduled (recognized above); the fired alarm retires here.
+        retire(`routine_policy_due:${event.payload.actorId}`, event.commandId);
+      } else if (event.type === "actor_lod_assigned") {
+        // An LOD assignment retires the actor's routine arming unconditionally
+        // (E6.2 — the restock-reconfigure idiom); an assignment that re-arms
+        // emits its OWN fresh trigger_scheduled, recognized above.
+        retire(`routine_policy_due:${event.payload.actorId}`, event.commandId);
       }
     }
 

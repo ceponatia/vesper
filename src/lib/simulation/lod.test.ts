@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { zoneIdSchema } from "@/contracts/simulation/identity";
 import {
   actorLodRegistryVersion,
+  actorLodStateSchema,
   assignActorLodCommandSchema,
   compareSimulationLods,
   isSimulationLodDemotion,
@@ -40,6 +41,8 @@ function view(overrides: Partial<AssignActorLodResolutionView> = {}): AssignActo
     actorExists: true,
     current: undefined,
     guards: noGuards,
+    bodyInitialized: false,
+    rhythmRows: [],
     ...overrides,
   };
 }
@@ -158,7 +161,7 @@ describe("resolveAssignActorLodFromView (E6.1)", () => {
       inferenceLod: "no_model",
       assignedAtStorySecond: 3_600,
     });
-    expect(result.event).toMatchObject({
+    expect(result.events[0]).toMatchObject({
       type: "actor_lod_assigned",
       sequence: 8,
       actorIds: [MARA],
@@ -169,6 +172,39 @@ describe("resolveAssignActorLodFromView (E6.1)", () => {
         registryVersion: actorLodRegistryVersion,
       },
     });
+    // No tracked body — entering event LOD arms nothing (E6.2).
+    expect(result.events).toHaveLength(1);
+  });
+
+  it("entering event LOD with a tracked body arms the routine alarm at the next bedtime (E6.2)", () => {
+    const result = resolveAssignActorLodFromView(
+      view({ bodyInitialized: true }),
+      assignCmd({ actorId: MARA, simulationLod: "event", inferenceLod: "no_model" }),
+    );
+    if (!result.ok) throw new Error(`expected acceptance, got ${result.code}`);
+    expect(result.events).toHaveLength(2);
+    const trigger = result.events[1];
+    if (trigger?.type !== "trigger_scheduled") throw new Error("expected a trigger arm");
+    if (trigger.payload.kind !== "routine_policy_due") throw new Error("expected the routine kind");
+    // Default sleep window (no rhythm rows): bedtime 23:00 → second 82 800.
+    expect(trigger.payload.dueStorySecond).toBe(23 * 3_600);
+    expect(trigger.payload.command.payload).toMatchObject({ actorId: MARA, armedAtSequence: 9 });
+  });
+
+  it("leaving event LOD arms nothing", () => {
+    const current = actorLodStateSchema.parse({
+      actorId: MARA,
+      simulationLod: "event",
+      inferenceLod: "no_model",
+      registryVersion: actorLodRegistryVersion,
+      assignedAtStorySecond: 1_000,
+    });
+    const result = resolveAssignActorLodFromView(
+      view({ bodyInitialized: true, current }),
+      assignCmd({ actorId: MARA, simulationLod: "exact", inferenceLod: "deliberator" }),
+    );
+    if (!result.ok) throw new Error(`expected acceptance, got ${result.code}`);
+    expect(result.events).toHaveLength(1);
   });
 
   it("checks the demotion guards in fixed order: claims, then pressure, then engagement", () => {
@@ -209,10 +245,13 @@ describe("resolveAssignActorLodFromView (E6.1)", () => {
       assignCmd({ actorId: MARA, simulationLod: "exact", inferenceLod: "small_model" }),
     );
     if (!result.ok) throw new Error(`expected acceptance, got ${result.code}`);
-    expect(result.event.payload).toMatchObject({
-      previousSimulationLod: "event",
-      previousInferenceLod: "small_model",
-      previousWasDefault: false,
+    expect(result.events[0]).toMatchObject({
+      type: "actor_lod_assigned",
+      payload: {
+        previousSimulationLod: "event",
+        previousInferenceLod: "small_model",
+        previousWasDefault: false,
+      },
     });
   });
 });
@@ -229,7 +268,9 @@ describe("actor-LOD replay (E6.1)", () => {
       assignCmd(payload, { id: commandId }),
     );
     if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
-    return resolution;
+    const event = resolution.events[0];
+    if (event?.type !== "actor_lod_assigned") throw new Error("expected the lod event first");
+    return { event, state: resolution.state };
   }
 
   it("folds assignments into one row per actor, a later assignment superseding", () => {
