@@ -130,7 +130,7 @@ export async function runSimChatExchange(input: {
     branchId,
     engagementId,
     cutId: turn.cut.id,
-    conversation: { playerUtterance: input.message, dialogueTail },
+    conversation: { playerUtterance: input.message, dialogueTail, viewpointIsPlayer: true },
   });
   if (rendered.status !== "rendered" || rendered.prose === undefined) {
     return { ok: false, code: "render_withheld", message: "the narrator could not render this turn; try again", status: 503 };
