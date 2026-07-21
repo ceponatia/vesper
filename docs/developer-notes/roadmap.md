@@ -29,10 +29,12 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   `/chat/` is the first surface, UX-test worlds are the shadow corpus, R5
   domain order by dependency, Aion 3.0 narrator default + Grok 4.5 added to
   the accepted list). The foundation (gates 0–6, closed) becomes the live
-  world authority: R0 merge `engine`→`main` · R1 per-world authority flags +
-  internal test world · R2 live narrator over committed cuts · R3 the play
-  loop inside chat · R4 shadow mode on UX-test worlds · R5 domain-by-domain
-  authority migration · R6 cleanup + legacy world/session-model retirement.
+  world authority: **R0 (engine merged to main + deployed, v93) and R1
+  (audited per-chat authority flags, migration 0081, the standing internal
+  test world + `pnpm sim:seed`/`sim:advance`) shipped 2026-07-21** · next
+  R2 live narrator over committed cuts · R3 the play loop inside chat ·
+  R4 shadow mode on UX-test worlds · R5 domain-by-domain authority
+  migration · R6 cleanup + legacy world/session-model retirement.
 
 ## Next (queued)
 

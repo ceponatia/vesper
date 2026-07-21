@@ -73,8 +73,13 @@ is the cleanup that makes the migration real.
    alarms; one story-day → 5 triggers drained, 3 routine decisions
    (eat_meal + 2× begin_sleep). The action catalog deliberately waits for R3.
    3 new int cases (`test:rollout-r1`, in CI); 3 111 pure + 470 int green.
-   Admission wiring beyond the seam deliberately trails into R2/R4 — nothing
-   consults the flag until a successor leg exists to route to.
+   **Fly-side exit verified 2026-07-21** (machine v94): `pnpm sim:seed` over
+   SSH provisioned the world on Neon (8 pending alarms), and
+   `pnpm sim:advance -- --days 3` drained three story-days — 19 triggers
+   fired, 9 routine decisions, one converged call, zero model calls — the
+   corpus behavior running on production infrastructure. Admission wiring
+   beyond the seam deliberately trails into R2/R4 — nothing consults the
+   flag until a successor leg exists to route to. Next: **R2**.
 3. **R2 — the live narrator over the committed cut.** The first real model call
    in the successor lane: one narrator leg rendering a persisted NarrativeCut
    (presentation-only — `successor_narrative_view`), the §23.1 trust boundary
