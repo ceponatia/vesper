@@ -153,7 +153,7 @@ describe("R3 buildCutRenderPrompt conversation input", () => {
     expect(system).toContain("narrator of a live scene");
     expect(prompt).toContain("MUST ENACT");
     expect(prompt).not.toContain("VIEWPOINT ACTOR'S TURN");
-    expect(prompt).not.toContain("RECENT CONVERSATION");
+    expect(prompt).not.toContain("RECENT TRANSCRIPT");
   });
 
   it("carries the player's turn and a bounded dialogue tail into the prompt", () => {
@@ -167,7 +167,7 @@ describe("R3 buildCutRenderPrompt conversation input", () => {
     });
     expect(prompt).toContain("THE VIEWPOINT ACTOR'S TURN");
     expect(prompt).toContain("I ask Ana if she slept well.");
-    expect(prompt).toContain("RECENT CONVERSATION");
+    expect(prompt).toContain("RECENT TRANSCRIPT");
     expect(prompt).toContain("Ana: You're up early.");
     expect(prompt).not.toContain("The viewpoint actor: \n");
     // The unearned-outcome guard rides with the utterance.
