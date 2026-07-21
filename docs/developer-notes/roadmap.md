@@ -23,29 +23,21 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Successor world engine — Gate 6: dual LOD & autonomous background life** —
-  [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md) (**GATE 6 OPENED
-  2026-07-20**, owner go; ~10–25 dev-days). Separate simulation LOD (exact · event ·
-  aggregate · dormant) and inference LOD (no-model · small-model · deliberator ·
-  narrator) as independent per-actor axes, the deterministic background-life
-  controller, aggregate/dormant lanes, and actor promotion + event-driven catch-up.
-  Exit: an order-of-magnitude more off-screen actors does **not** grow model calls or
-  per-minute work linearly. Build order E6.1–E6.5; **E6.1 (the per-actor LOD ledger),
-  E6.2 (the background-life controller — complete), E6.3 (dormant lane + cohort
-  aggregate lane — complete), and E6.4 (actor promotion, dependency-wake, and
-  catch-up) shipped 2026-07-20/21 — see Shipped below.
-  Next: E6.5 (the Gate 6 exit corpus and scaling proof), which closes the gate.**
+_(Nothing active — Gate 6 closed 2026-07-21, completing every committed
+successor-engine foundation gate (0–6). What runs next is the owner's call:
+Gate 7 is optional/post-foundation, and the queued chat-lane plans below are
+the standing candidates.)_
 
 ## Next (queued)
 
-**Successor world engine (`engine.plan.md`) — remaining gates.** The gated event-kernel
-track, in sequence — each gate's exit criteria gate the next. Gates 0–5 are closed
-(E2.1–E2.6 + E3.1–E3.5 + E4.1–E4.5 + E5.1–E5.6 shipped; Gate 2 verdict: **advance**,
-2026-07-17; Gate 3 verdict: **advance**, 2026-07-18; Gates 4 and 5 closed
-**2026-07-19** and **2026-07-20** by their deterministic exit corpora per the
+**Successor world engine (`engine.plan.md`) — foundation COMPLETE.** The gated
+event-kernel track: **all committed gates (0–6) are closed** (E2.1–E2.6 + E3.1–E3.5 +
+E4.1–E4.5 + E5.1–E5.6 + E6.1–E6.5 shipped; Gate 2 verdict: **advance**, 2026-07-17;
+Gate 3 verdict: **advance**, 2026-07-18; Gates 4, 5, and 6 closed **2026-07-19**,
+**2026-07-20**, and **2026-07-21** by their deterministic exit corpora per the
 owner's 2026-07-18 exit-scope ruling — live-model quality checks are the deferred
 human-in-the-loop items, parked in [deferred.plan.md](deferred.plan.md)
-§Owner-gated live eval runs). **Gate 6 opened 2026-07-20 — see Active above.**
+§Owner-gated live eval runs). Only optional Gate 7 remains (below, not committed).
 Gate 5's contracts are also where the chat-lane meter-economy and
 body-needs plans (below) eventually port through. Full plan
 [engine.plan.md](engine.plan.md) · contract [engine.spec.md](engine.spec.md).
@@ -127,6 +119,23 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine Gate 6 exit corpus + scaling proof (E6.5) — GATE 6 CLOSED; the
+  successor-engine foundation (gates 0–6) is COMPLETE** —
+  [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md) §"Gate 6 build order" —
+  2026-07-21 — three deterministic scenarios, zero model calls
+  (`test:engine-e6-5`): a promoted actor's existence walked hop-by-hop from
+  events alone (sleep → decision → embodiment-armed alarm → materialization →
+  reservation debit → the cohort's link-verified count history; conservation and
+  presence parity summed from events); the instrumented scaling run — background
+  3 003 → **300 030** people with life-phase work asserted EQUAL (same triggers
+  fired, same events, identical 12-table row deltas, flat wall time, zero model
+  calls); and routine/dormant partition invariance with a dependency-wake
+  catch-up. The corpus caught and fixed a real §12.4 defect: mid-drain-armed
+  chained alarms (sleep arming its own expiry) were invisible to the rest of
+  the drain call via the wall-clock `available_at` default — fresh arms are now
+  born eligible (epoch-pinned at the one projector insert). 3 109 pure +
+  467 int green. **Gate 7 is optional/post-foundation; its opening is the
+  owner's call.**
 - **World-engine actor promotion, dependency-wake & catch-up (E6.4)** —
   [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md) §"Gate 6 build order" · contract
   [engine.spec.md](engine.spec.md) §27.7 (authored this work) — 2026-07-21 —

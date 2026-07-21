@@ -200,7 +200,7 @@ histories. One line of status here; the full record is in the gate doc (and
 | 3 — space, action, schedules, live-scene arbitration | [engine.gate3.space-action.md](engine.gate3.space-action.md) | closed — advance, 2026-07-18 (E3.1–E3.5) |
 | 4 — perception, knowledge, narration, RAG | [engine.gate4.perception-narration.md](engine.gate4.perception-narration.md) | closed — 2026-07-19 (E4.1–E4.5) |
 | 5 — bodies, materials, households, relationships | [engine.gate5.bodies-materials.md](engine.gate5.bodies-materials.md) | closed — 2026-07-20 (E5.1–E5.6) |
-| 6 — dual LOD and autonomous background life | [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md) | **OPEN** — E6.1–E6.4 shipped; next E6.5 (the exit corpus) |
+| 6 — dual LOD and autonomous background life | [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md) | closed — 2026-07-21 (E6.1–E6.5) |
 | 7 — optional institutions and macro simulation | [engine.gate7.institutions.md](engine.gate7.institutions.md) | post-foundation, not committed |
 
 ## One-developer dependency order

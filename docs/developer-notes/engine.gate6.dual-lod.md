@@ -7,13 +7,17 @@ gate — see the hub's gate index). Sequencing and current status live in
 
 ## Gate 6 — dual LOD and autonomous background life
 
-Status: **OPEN — 2026-07-20** (owner go, given as the direct instruction to start
-implementing once all Gate 5 work was confirmed merged on `engine`). No blocking
-product rulings were identified at opening: every product-flavored knob in this gate
-(LOD defaults, utility weights, promotion sampling) lands as versioned world-type or
-registry data with documented defaults, per the ruling-14/15 precedent — tunable
-post-build, never a schema migration. The build order lives in §"Gate 6 build order"
-below.
+Status: **CLOSED — 2026-07-21** (opened 2026-07-20 on the owner's go; E6.1–E6.5 all
+shipped within two days). Closed per the Gate 4/5 exit-scope precedent: the
+deterministic exit corpus plus the instrumented scaling proof (`test:engine-e6-5`,
+detail under E6.5 below) — any live-model quality check rides the owner-gated spend
+list in [deferred.plan.md](deferred.plan.md). **With Gate 6 closed, every committed
+foundation gate (0–6) is closed; Gate 7 remains optional/post-foundation and its
+opening is the owner's call.** No blocking product rulings were identified at
+opening: every product-flavored knob in this gate (LOD defaults, utility weights,
+promotion sampling) lands as versioned world-type or registry data with documented
+defaults, per the ruling-14/15 precedent — tunable post-build, never a schema
+migration. The build order lives in §"Gate 6 build order" below.
 
 Rough effort: **10–25 developer-days**.
 
@@ -269,13 +273,45 @@ seed-pinned).
    first Gate 6 slice that needed none. 10 new pure + 2 new int cases;
    3 109 pure + 464 int green across all suites; CI runs `test:engine-e6-4`.
    Next: **E6.5**.
-5. **E6.5 — the Gate 6 exit corpus and scaling proof.** Deterministic corpus
-   (zero model calls) proving promoted-actor causal consistency hop-by-hop from
-   aggregate history, plus an instrumented scaling run in the soak-harness style:
-   grow the off-screen population by 10×, measure model-call count, triggers
-   fired, rows written, and wall time — growth must be sublinear and routine
-   world progress must require zero model calls. Closes the gate per the
-   exit-scope precedent.
+5. **E6.5 — the Gate 6 exit corpus and scaling proof.** Status: **shipped —
+   2026-07-21; GATE 6 CLOSED.** Three deterministic scenarios, zero model calls
+   (`gate6-corpus.int.test.ts`, `test:engine-e6-5`). **EXIT 1** walks a promoted
+   actor's whole existence hop-by-hop from events alone: asleep condition →
+   same-command routine decision (`begin_sleep` at event LOD) → the routine alarm
+   armed by embodiment → `body_initialized` → the one
+   `actor_materialized_from_aggregate` → its causation-chained
+   `promotion_reservation` debit → the cohort's full count history verified
+   link-by-link (`populationBefore`ᵢ₊₁ = `populationAfter`ᵢ from creation
+   forward); conservation summed from events (51 aggregate + 1 named = the 52 who
+   ever existed after 50 + 5 influx − 3 attrition), replay/live/analytic-presence
+   parity, headcount continuity at share 10 000. **EXIT 2** is the instrumented
+   scaling run: two worlds, identical one-actor active cast living three
+   story-days of routine (3 sleeps, 12 triggers fired), background 3 003 vs
+   **300 030** people (10× cohort rows AND 10× per-cohort count, plus 10× dormant
+   embodied actors — 100× people): life-phase work is asserted EQUAL, not merely
+   sublinear — same fired triggers, same appended events, identical row deltas
+   across a 12-table footprint, zero model calls (structurally — no model client
+   exists), wall time flat (measured ~121ms → ~116ms; authoring cost scales and
+   is reported as such). **EXIT 3** proves partition invariance across the
+   routine and dormant lanes: one three-day jump equals four smaller jumps —
+   bit-identical meters/conditions/modifiers (branch-derived ids scrubbed),
+   identical re-armed alarm schedules — ending with a dependency wake whose
+   catch-up lands the same state either way. **The corpus caught and fixed a
+   real defect** (the gate-corpus tradition): triggers armed MID-DRAIN by fired
+   work — sleep arming its own expiry — were invisible to the rest of that
+   drain call (wall-clock `available_at` default vs the call's entry-captured
+   eligibility clock), so one long skip silently deferred chained alarms to the
+   next drain, which stamped them at too-late story seconds — a genuine §12.4
+   partition-invariance break in the routine lane that every earlier short-hop
+   test masked. Fix: a fresh arm is born eligible (`available_at` pinned to
+   epoch at the one projector insert; retry backoff still pushes it forward),
+   falsified against the unfixed code by EXIT 3. Recorded ruling in-corpus:
+   perception is deliberately NOT LOD-gated (§27.4 — a co-present dormant
+   actor must capture truth or promotion would contradict what they plainly
+   saw); off-screen background belongs off-scene, and unnamed crowds inside a
+   scene are what cohorts are for. 3 new int cases; 3 109 pure + 467 int green
+   across all suites; CI runs `test:engine-e6-5`. **Gate 6 closed per the
+   exit-scope precedent.**
 
 E6.2 consumes E6.1's ledger (the controller is LOD-gated); E6.3 consumes E6.1's
 vocabulary; E6.4 consumes E6.1 + E6.3 (something must exist to promote from); E6.5
