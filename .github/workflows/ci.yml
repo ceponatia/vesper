@@ -72,91 +72,16 @@ jobs:
       - name: Apply migrations from zero
         run: pnpm db:migrate
 
-      # E2.2/E2.3 steps retired 2026-07-21: E5.3 slice 1 deleted the item-transfer
-      # stand-in lane (tests included) wholesale; their invariants now run under
-      # E5.3 (material lane: transfers, idempotency, crash proofs) and E2.6 (soak:
-      # outbox crash-resume, duplicate defense). The steps had pointed at the
-      # deleted file ever since — masked by the verify-chain OOM fixed above.
-      - name: E2.4 durable scheduler integration
-        run: pnpm test:engine-e2-4
-
-      - name: E2.5 forks, snapshots, and audit integration
-        run: pnpm test:engine-e2-5
-
-      - name: E2.6 Gate 2 soak (CI profile)
-        run: pnpm test:engine-e2-6
-
-      - name: E3.1 authoritative space integration
-        run: pnpm test:engine-e3-1
-
-      - name: E3.2 activities and claims integration
-        run: pnpm test:engine-e3-2
-
-      - name: E3.3 commitments and pressure integration
-        run: pnpm test:engine-e3-3
-
-      - name: E3.4 engagement substrate integration
-        run: pnpm test:engine-e3-4
-
-      - name: E3.5 arbiter, access, and Gate 3 corpus integration
-        run: pnpm test:engine-e3-5
-
-      - name: E4.1 perception and observation integration
-        run: pnpm test:engine-e4-1
-
-      - name: E4.2 assertions, beliefs, and gossip integration
-        run: pnpm test:engine-e4-2
-
-      - name: E4.3 narrative cuts, narrator boundary, and soft canon integration
-        run: pnpm test:engine-e4-3
-
-      - name: E4.4 memory indexing and eligibility-before-similarity integration
-        run: pnpm test:engine-e4-4
-
-      - name: E4.5 Gate 4 exit corpus
-        run: pnpm test:engine-e4-5
-
-      - name: E5.1 body substrate integration
-        run: pnpm test:engine-e5-1
-
-      - name: E5.2 rhythm, circadian pressure, and energy-read integration
-        run: pnpm test:engine-e5-2
-
-      - name: E5.3 honest material lane integration
-        run: pnpm test:engine-e5-3
-
-      - name: E5.4 households, means, and money-at-LOD integration
-        run: pnpm test:engine-e5-4
-
-      - name: E5.5 social ledger and consent integration
-        run: pnpm test:engine-e5-5
-
-      - name: E5.6 Gate 5 exit corpus
-        run: pnpm test:engine-e5-6
-
-      - name: E6.1 actor-LOD ledger integration
-        run: pnpm test:engine-e6-1
-
-      - name: E6.2 routine controller integration
-        run: pnpm test:engine-e6-2
-
-      - name: E6.3 dormant-lane integration
-        run: pnpm test:engine-e6-3
-
-      - name: E6.4 actor promotion and dependency-wake integration
-        run: pnpm test:engine-e6-4
-
-      - name: E6.5 Gate 6 exit corpus and scaling proof
-        run: pnpm test:engine-e6-5
-
-      - name: Rollout R1 authority flags and internal test world
-        run: pnpm test:rollout-r1
-
-      - name: Rollout R2 sim narrator over committed cuts
-        run: pnpm test:rollout-r2
-
-      - name: Rollout R3 sim routes under /chat/
-        run: pnpm test:rollout-r3
+      # One glob-driven step replaces the old per-E-package enumeration
+      # (simplified 2026-07-21, owner ruling): vitest discovers every suite
+      # under the engine + rollout surface, so a deleted or renamed file can
+      # never leave a step pointing at nothing (the E2.2/E2.3 ghost), each
+      # file runs exactly once (the per-package scripts re-ran shared suites
+      # many times), and one vitest cold-start replaces ~25. The per-package
+      # test:engine-e* / test:rollout-r* scripts remain in package.json as
+      # local conveniences only.
+      - name: Engine + rollout integration suite
+        run: pnpm test:engine
 
       - name: Stop successor-engine database
         if: always()
