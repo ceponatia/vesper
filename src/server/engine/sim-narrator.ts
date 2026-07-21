@@ -1,3 +1,4 @@
+import { deliberatorResponseSchema } from "@/contracts/simulation/deliberation";
 import {
   narratorResultSchema,
   type NarrativeCut,
@@ -13,7 +14,12 @@ import {
 } from "@/lib/simulation";
 import { generateChecked } from "@/server/ai";
 import { db, type Db } from "@/server/db";
-import { latestCutIdForEngagement, loadPersistedCut, submitDurableConfirmNarratorResult } from "./simulation";
+import {
+  latestCutIdForEngagement,
+  loadPersistedCut,
+  submitDurableConfirmNarratorResult,
+  type PrepareTurnDeliberation,
+} from "./simulation";
 
 /**
  * R2 (engine.rollout.plan.md) — the live narrator over one committed cut:
@@ -214,5 +220,51 @@ export async function renderCommittedCut(
     provider: provider ?? null,
     ...(latencyMs === undefined ? {} : { latencyMs }),
     diagnostics,
+  };
+}
+
+/**
+ * R3 (the R2 leftover) — the live §19.3 deliberator behind its budget and
+ * deterministic fallback. The arbiter admits deliberation only for a rare,
+ * consequential, ambiguous departure (score gap under the threshold); this
+ * factory supplies the one bounded model call. A timeout, budget exhaustion,
+ * or malformed reply all fall back to the deterministic policy inside the
+ * arbiter — this seam can never fail a turn.
+ */
+export function buildLiveDeliberation(options: {
+  modelId?: string;
+  timeoutMs?: number;
+  modelBudget?: number;
+  scoreGapThresholdFixedPoint?: number;
+} = {}): PrepareTurnDeliberation {
+  const modelId = resolveChatModelId(options.modelId);
+  const timeoutMs = options.timeoutMs ?? 4_000;
+  return {
+    scoreGapThresholdFixedPoint: options.scoreGapThresholdFixedPoint ?? 10_000,
+    modelBudgetRemaining: options.modelBudget ?? 1,
+    timeout: new Promise((resolve) => {
+      setTimeout(() => resolve(undefined), timeoutMs).unref?.();
+    }),
+    deliberate: async (request) => {
+      const generated = await generateChecked({
+        schema: deliberatorResponseSchema,
+        system:
+          "You choose ONE option for a character in a simulation. Reply with strict JSON " +
+          '{"chosenCandidateId": "<one of the given ids>", "rationaleSummary": "<one short sentence>"} ' +
+          "and nothing else. You cannot invent options.",
+        prompt: [
+          `CANDIDATES: ${request.candidateIds.join(" | ")}`,
+          request.evidence.length > 0 ? `EVIDENCE:\n${request.evidence.map((line) => `- ${line}`).join("\n")}` : "",
+          "Pick the candidate the evidence best supports.",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        modelId,
+        temperature: 0.2,
+        maxOutputTokens: 300,
+        code: "sim.deliberator",
+      });
+      return generated.value;
+    },
   };
 }

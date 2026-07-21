@@ -114,8 +114,8 @@ is the cleanup that makes the migration real.
    runnable against this leg on request). Exit: a full narrated turn against the
    internal test world within the latency/model-call budget, degradation paths
    observed live (a failed render withholds, never corrupts).
-4. **R3 — the product surface.** Status: **slice 1 shipped —
-   2026-07-21** (slices 2–3 remain). Slice 1, *the successor turn
+4. **R3 — the product surface.** Status: **slices 1–2 shipped —
+   2026-07-21** (slice 3, authoring + storyteller tools, remains). Slice 1, *the successor turn
    route*: chat's exchange machine (`submitChatMessage`, ~2 000 lines of
    streaming pipeline) stays untouched — the lanes-separate rule applied to
    code. Instead a parallel, non-streaming route
@@ -136,10 +136,20 @@ is the cleanup that makes the migration real.
    persisted via `persistAssistantReply` with cut/model/attempt metadata;
    a withheld render is a clean 503 with no assistant line (ruling 8).
    Gates green (3 111 pure + 471 int). Slice-1 leftover: a dedicated
-   sim-turn int test rides slice 2 alongside command admission. Slice 2,
-   *player commands*:
-   move / start-stop activity / open-close engagement / transfer as typed
-   admissions on the same route family. Slice 3, *authoring + storyteller
+   sim-turn int test rides slice 2 alongside command admission. Slice 2
+   shipped: `POST /api/chats/[chatId]/sim-command` — typed admissions
+   (`move` · `end_scene` · `give_item` · `start_activity`) under the player
+   principal via the shared `requireSimChat` gate; refusals return the §14.4
+   PUBLIC face (code, public reason, legal alternatives — proven live by the
+   claim-law refusal of moving mid-rest). The R2 leftover landed:
+   `buildLiveDeliberation` (threshold 10 000, budget 1, 4s timeout,
+   deterministic fallback) wired into the sim-turn's prepare. The rollout
+   world gained the `rollout-action-rest` catalog entry and Mara's keepsake
+   (fresh seeds only — Fly's standing world needs a delete + reseed to pick
+   them up). Slice-1 leftover closed: `test:rollout-r3` (in CI) runs the
+   full arc — gate 409 → flip → turn into the transcript (AI_FAKE fallback
+   render) → not-held refusal → keepsake handover → end scene → rest →
+   blocked move. Gates green (3 111 pure + 472 int). Slice 3, *authoring + storyteller
    tools*: topology/cohort/rhythm/action-definition CRUD plus relocate,
    promote-from-cohort, and the LOD dial as admin routes. Exit unchanged:
    a human plays a scene in the internal test world on Fly. Minimum playable seam **inside the existing

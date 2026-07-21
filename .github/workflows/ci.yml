@@ -134,6 +134,9 @@ jobs:
       - name: Rollout R2 sim narrator over committed cuts
         run: pnpm test:rollout-r2
 
+      - name: Rollout R3 sim routes under /chat/
+        run: pnpm test:rollout-r3
+
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v

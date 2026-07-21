@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { newId } from "@/lib/ids";
 import { db, simBranches, simEvents, simTriggers, simWorlds, type Db } from "@/server/db";
+import { seedDurableActionDefinitions } from "./activity-store";
 import { seedDurableBodyRhythms, submitDurableInitializeActorBody } from "./body-store";
 import { submitDurableCreateCohort } from "./cohort-store";
 import { submitDurableAssignActorLod } from "./lod-store";
@@ -47,6 +48,8 @@ export const ROLLOUT_ZONES = {
 const LOCATION_ID = "rollout-loc-town";
 const COHORT_ID = "rollout-cohort-market";
 const LOAF_ID = "rollout-item-loaf";
+export const ROLLOUT_KEEPSAKE_ID = "rollout-item-keepsake";
+export const ROLLOUT_REST_ACTION_ID = "rollout-action-rest";
 
 export interface RolloutWorldSummary {
   worldId: string;
@@ -120,6 +123,12 @@ export async function seedRolloutTestWorld(database: Db = db()): Promise<Rollout
       ],
       items: [
         {
+          id: ROLLOUT_KEEPSAKE_ID,
+          name: "a small carved keepsake",
+          ownerActorId: null,
+          locus: { kind: "held", actorId: ROLLOUT_ACTORS.mara },
+        },
+        {
           id: LOAF_ID,
           name: "a loaf of bread",
           materialKindKey: "bread",
@@ -171,6 +180,25 @@ export async function seedRolloutTestWorld(database: Db = db()): Promise<Rollout
         { actorId: ROLLOUT_ACTORS.ana, kind: "meal", startMinuteOfDay: 720, endMinuteOfDay: 780 },
         { actorId: ROLLOUT_ACTORS.ben, kind: "sleep", startMinuteOfDay: 1_380, endMinuteOfDay: 420 },
         { actorId: ROLLOUT_ACTORS.riven, kind: "sleep", startMinuteOfDay: 1_380, endMinuteOfDay: 420 },
+      ],
+    },
+    { database },
+  );
+
+  await seedDurableActionDefinitions(
+    {
+      branchId: ROLLOUT_BRANCH_ID,
+      definitions: [
+        {
+          id: ROLLOUT_REST_ACTION_ID,
+          version: 1,
+          controllerKinds: ["player", "npc_policy"],
+          duration: { kind: "fixed", seconds: 600 },
+          preconditions: [{ kind: "at_zone_kind", zoneKind: "home" }],
+          requiredClaims: [{ kind: "body" }, { kind: "attention", weight: "full" }],
+          interruptibility: "pausable",
+          noticeability: "obvious",
+        },
       ],
     },
     { database },
