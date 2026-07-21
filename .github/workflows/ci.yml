@@ -1,7 +1,11 @@
 name: CI
 
-# Runs the project's canonical gate (`pnpm verify` = lint + typecheck + test +
-# jscpd) on every PR and push to the long-lived environment branches. The job
+# Runs the project's canonical gates on every PR and push to the long-lived
+# environment branches. The gates run as SEPARATE sequential steps, never the
+# chained `pnpm verify` — the chain holds every process's memory at once and
+# OOM-killed the runner from 2026-07-20 (type-aware ESLint alone peaks ~3 GB;
+# the same reason CLAUDE.md bans `pnpm verify` locally). One process per step
+# lets each fully exit and release its heap before the next starts. The job
 # name below ("verify") is the status-check context that `prod` branch
 # protection requires before a promotion PR can merge.
 on:
@@ -38,8 +42,26 @@ jobs:
           # Skip the husky git-hook install in CI (no commits happen here).
           HUSKY: 0
 
-      - name: Verify (lint + typecheck + test + jscpd)
-        run: pnpm verify
+      - name: Lint (type-aware, max-warnings 0)
+        run: pnpm lint
+        env:
+          # Headroom for the type-aware pass — Node's default heap cap is
+          # what actually OOMed, well under the runner's ~7 GB.
+          NODE_OPTIONS: --max-old-space-size=6144
+
+      - name: Circular-import check (madge)
+        run: pnpm lint:cycles
+
+      - name: Typecheck
+        run: pnpm typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+
+      - name: Pure test suite
+        run: pnpm test
+
+      - name: Copy-paste threshold (jscpd)
+        run: pnpm jscpd
 
       - name: Gate 1 deterministic-path benchmark
         run: pnpm eval:engine-gate1
