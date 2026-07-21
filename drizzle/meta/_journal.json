@@ -568,6 +568,13 @@
       "when": 1784638854021,
       "tag": "0080_wise_madrox",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1784648546641,
+      "tag": "0081_bent_brother_voodoo",
+      "breakpoints": true
     }
   ]
 }

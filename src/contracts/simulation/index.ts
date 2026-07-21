@@ -1,3 +1,4 @@
+export * from "./authority";
 export * from "./identity";
 export * from "./envelopes";
 export * from "./materials";

@@ -131,6 +131,17 @@ export {
   submitDurablePromoteActorFromCohort,
   type PromotionSubmitOptions,
 } from "./promotion-store";
+export {
+  ROLLOUT_ACTORS,
+  ROLLOUT_BRANCH_ID,
+  ROLLOUT_ORIGIN_STORY_SECOND,
+  ROLLOUT_WORLD_ID,
+  ROLLOUT_ZONES,
+  advanceRolloutWorld,
+  seedRolloutTestWorld,
+  type AdvanceRolloutWorldResult,
+  type RolloutWorldSummary,
+} from "./rollout-world";
 export { submitDurableRunRoutinePolicy, type RoutineSubmitOptions } from "./routine-store";
 export {
   insertReplayedKnowledge,

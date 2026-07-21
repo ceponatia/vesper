@@ -1,0 +1,130 @@
+import { eq } from "drizzle-orm";
+import {
+  chatEngineAuthorityStateSchema,
+  DEFAULT_ENGINE_AUTHORITY,
+  type ChatEngineAuthorityState,
+  type EngineAuthority,
+} from "@/contracts/simulation";
+import { parseOr } from "@/lib/parse";
+import { characterChats, events, db, type Db } from "@/server/db";
+
+/**
+ * R1 (engine.rollout.plan.md) — the one seam a chat's engine authority is
+ * read and flipped through. Reads pass the fail-closed boundary (a malformed
+ * or missing value degrades to `legacy_chat`, never throws — resilience.md),
+ * and every flip lands an audit row in the app `events` table in the same
+ * transaction (the agent-health precedent: that table exists for exactly
+ * this kind of durable operational record).
+ */
+
+export interface ChatAuthorityRow {
+  engineAuthority: string;
+  successorRagEligibility: boolean;
+  simBranchId: string | null;
+}
+
+/** Pure row → state, degraded default at the boundary. */
+export function chatAuthorityStateFromRow(row: ChatAuthorityRow): ChatEngineAuthorityState {
+  return parseOr(
+    chatEngineAuthorityStateSchema,
+    {
+      authority: row.engineAuthority,
+      ragEligibility: row.successorRagEligibility,
+      simBranchId: row.simBranchId,
+    },
+    { authority: DEFAULT_ENGINE_AUTHORITY, ragEligibility: false, simBranchId: null },
+    undefined,
+    "character_chats.engine_authority",
+  );
+}
+
+/** The chat's current authority state, or null when the chat does not exist. */
+export async function readChatEngineAuthority(
+  chatId: string,
+  database: Db = db(),
+): Promise<ChatEngineAuthorityState | null> {
+  const [row] = await database
+    .select({
+      engineAuthority: characterChats.engineAuthority,
+      successorRagEligibility: characterChats.successorRagEligibility,
+      simBranchId: characterChats.simBranchId,
+    })
+    .from(characterChats)
+    .where(eq(characterChats.id, chatId))
+    .limit(1);
+  return row ? chatAuthorityStateFromRow(row) : null;
+}
+
+export interface SetChatEngineAuthorityInput {
+  chatId: string;
+  /** The acting admin — stamped on the audit row. */
+  byUserId: string;
+  authority?: EngineAuthority;
+  ragEligibility?: boolean;
+  /** Explicit null unlinks; undefined leaves the link untouched. */
+  simBranchId?: string | null;
+}
+
+export interface SetChatEngineAuthorityResult {
+  before: ChatEngineAuthorityState;
+  after: ChatEngineAuthorityState;
+}
+
+/**
+ * Flip a chat's authority state atomically with its audit record. Returns
+ * null when the chat does not exist. A no-op flip (nothing changes) still
+ * returns before/after but writes no audit row — the trail records changes,
+ * not reads.
+ */
+export async function setChatEngineAuthority(
+  input: SetChatEngineAuthorityInput,
+  database: Db = db(),
+): Promise<SetChatEngineAuthorityResult | null> {
+  return database.transaction(async (tx) => {
+    const [row] = await tx
+      .select({
+        engineAuthority: characterChats.engineAuthority,
+        successorRagEligibility: characterChats.successorRagEligibility,
+        simBranchId: characterChats.simBranchId,
+      })
+      .from(characterChats)
+      .where(eq(characterChats.id, input.chatId))
+      .limit(1)
+      .for("update");
+    if (!row) return null;
+
+    const before = chatAuthorityStateFromRow(row);
+    const after: ChatEngineAuthorityState = {
+      authority: input.authority ?? before.authority,
+      ragEligibility: input.ragEligibility ?? before.ragEligibility,
+      simBranchId: input.simBranchId === undefined ? before.simBranchId : input.simBranchId,
+    };
+    if (
+      after.authority === before.authority &&
+      after.ragEligibility === before.ragEligibility &&
+      after.simBranchId === before.simBranchId
+    ) {
+      return { before, after };
+    }
+
+    await tx
+      .update(characterChats)
+      .set({
+        engineAuthority: after.authority,
+        successorRagEligibility: after.ragEligibility,
+        simBranchId: after.simBranchId,
+      })
+      .where(eq(characterChats.id, input.chatId));
+    await tx.insert(events).values({
+      sessionId: null,
+      type: "engine_authority_changed",
+      payload: {
+        chatId: input.chatId,
+        byUserId: input.byUserId,
+        before,
+        after,
+      },
+    });
+    return { before, after };
+  });
+}
