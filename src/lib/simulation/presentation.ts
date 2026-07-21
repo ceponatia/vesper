@@ -63,6 +63,113 @@ export interface AuditPresentationOptions {
   maxBridgedBeats?: number;
 }
 
+/**
+ * R2 (engine.rollout.plan.md) — serialize one committed cut into the live
+ * narrator's system/prompt pair. Pure and deterministic: the prompt IS the
+ * §22 boundary made text — everything in it comes from the cut, and the
+ * §23.1 result contract is stated verbatim so the reply parses.
+ */
+export function buildCutRenderPrompt(cut: NarrativeCut): { system: string; prompt: string } {
+  const lines: string[] = [];
+  lines.push(
+    `VIEWPOINT: ${cut.viewpointActorId}`,
+    `STORY SPAN: second ${cut.fromStorySecond} through ${cut.throughStorySecond}`,
+  );
+  if (cut.currentLoci.length > 0) {
+    lines.push(
+      "SCENE (who is physically here):",
+      ...cut.currentLoci.map(
+        (locus) => `- ${locus.actorId}: ${locus.kind}${locus.zoneId ? ` at ${locus.zoneId}` : ""}`,
+      ),
+    );
+  }
+  if (cut.currentActivities.length > 0) {
+    lines.push(
+      "VISIBLE ACTIVITIES:",
+      ...cut.currentActivities.map(
+        (activity) => `- ${activity.actorIds.join(", ")}: ${activity.actionDefinitionId} (${activity.phase})`,
+      ),
+    );
+  }
+  lines.push(
+    "MUST ENACT (each beat exactly once; echo its event id in enactedBeatEventIds):",
+    ...(cut.mustEnact.length > 0
+      ? cut.mustEnact.map((beat) => `- [${beat.eventId}] ${beat.summary}`)
+      : ["- (none this turn)"]),
+  );
+  if (cut.allowedTransitions.length > 0) {
+    lines.push(
+      "MAY PORTRAY (already-resolved; never invent new outcomes):",
+      ...cut.allowedTransitions.map((beat) => `- [${beat.eventId}] ${beat.summary}`),
+    );
+  }
+  if (cut.speakerBeliefs.length > 0) {
+    lines.push(
+      "VIEWPOINT BELIEFS (voiceable, possibly false):",
+      ...cut.speakerBeliefs.map(
+        (belief) => `- ${belief.propositionKey} = ${JSON.stringify(belief.claimedValue)} (${belief.status})`,
+      ),
+    );
+  }
+  if (cut.relevantPressures.length > 0) {
+    lines.push(
+      "VIEWPOINT PRESSURES (their own obligations only):",
+      ...cut.relevantPressures.map((pressure) => `- ${pressure.severity}, act by second ${pressure.actBy}`),
+    );
+  }
+  if (cut.bodilyReads.self || cut.bodilyReads.observed.length > 0) {
+    lines.push(`BODILY READS: ${JSON.stringify(cut.bodilyReads)}`);
+  }
+  if (cut.failurePresentations.length > 0) {
+    lines.push(
+      "FAILED ATTEMPTS (present ONLY these public faces; never a private cause):",
+      ...cut.failurePresentations.map(
+        (failure) =>
+          `- ${failure.publicReason}${failure.legalAlternatives.length > 0 ? ` (alternatives: ${failure.legalAlternatives.join(", ")})` : ""}`,
+      ),
+    );
+  }
+  if (cut.creativeLicenses.length > 0) {
+    lines.push(
+      "CREATIVE LICENSES (bounded invention you MAY use):",
+      ...cut.creativeLicenses.map((license) => `- ${license.kind}: ${license.note}`),
+    );
+  }
+  lines.push(
+    "FORBIDDEN (never state or imply):",
+    ...(cut.forbiddenClaims.length > 0
+      ? cut.forbiddenClaims.map((claim) => `- ${claim.claim}`)
+      : ["- (no additional bans)"]),
+  );
+  if (cut.armedEffects.length > 0) {
+    lines.push(
+      "ARMED SPEECH ACTS (enact ONLY if your prose delivers it in meaning; list the ids you enacted):",
+      ...cut.armedEffects.map(
+        (effect) =>
+          `- [${effect.id}] ${effect.effectType}: ${effect.actorId} → ${effect.targetActorIds.join(", ")} — ${effect.detail}`,
+      ),
+    );
+  }
+  lines.push(
+    "",
+    "Return STRICT JSON only, no prose outside it:",
+    '{"prose": "<the scene, 100-350 words>", "enactedBeatEventIds": ["..."], "enactedArmedEffectIds": ["..."], "proposedSoftCanon": []}',
+  );
+
+  const system = [
+    "You are the narrator of a live scene in a simulated world. You render ONLY what the",
+    "committed world state below establishes — you never move anyone, create objects,",
+    "reveal knowledge, or decide outcomes. Write immersive third-person present-tense",
+    "prose from the viewpoint actor's perspective. Every MUST ENACT beat appears exactly",
+    "once, in meaning. Nothing FORBIDDEN appears in any form. Failed attempts show only",
+    "their public face. Armed speech acts are optional — enact one only when your prose",
+    "actually delivers it, and declare exactly what you enacted. Reply with the strict",
+    "JSON object requested and nothing else.",
+  ].join(" ");
+
+  return { system, prompt: lines.join("\n") };
+}
+
 /** The §23.2 audit: flags omissions and overreach, requests rerender or bridges. */
 export function auditPresentation(
   cut: NarrativeCut,

@@ -80,7 +80,28 @@ is the cleanup that makes the migration real.
    corpus behavior running on production infrastructure. Admission wiring
    beyond the seam deliberately trails into R2/R4 — nothing consults the
    flag until a successor leg exists to route to. Next: **R2**.
-3. **R2 — the live narrator over the committed cut.** The first real model call
+3. **R2 — the live narrator over the committed cut.** Status: **shipped —
+   2026-07-21** (leftover below). `renderCommittedCut`
+   (`server/engine/sim-narrator.ts`): load the persisted, hash-verified cut →
+   `buildCutRenderPrompt` (pure §22-boundary serializer in
+   lib/simulation/presentation.ts) → ONE model call (Aion 3.0 default via
+   `resolveChatModelId`; injectable seam so tests run zero live calls; demo
+   mode degrades to a deterministic compliant render) → §23.1
+   `parseNarratorResult` → §23.2 `auditPresentation` → ruling-8 hidden retry
+   from the SAME cut → withhold cleanly after the retry (nothing presented,
+   nothing reverted) → on ≥1 enacted effect/proposal,
+   `confirm_narrator_result` (system principal, hash-derived idempotent
+   command id — rerenders replay it, one speech act ever). Int-proven
+   (`test:rollout-r2`, in CI): accept + confirm (a real
+   `speech_act_delivered`), hidden retry, clean withhold with row-count
+   invariance, rerender-creates-nothing, deterministic bridging.
+   **Live exit verified 2026-07-21**: `pnpm sim:render-turn` ran one full
+   narrated turn on the internal test world — Aion 3.0 via AionLabs, ONE
+   narrator call, audit verdict `accept`, zero diagnostics, ~32s model
+   latency (Aion 3.0 reasoning; worth watching against the p95 budget).
+   Leftover: the live §19.3 deliberator factory (`PrepareTurnDeliberation`
+   remains stub-only; the deterministic fallback governs departures) trails
+   into R3, where the play loop first needs it. The first real model call
    in the successor lane: one narrator leg rendering a persisted NarrativeCut
    (presentation-only — `successor_narrative_view`), the §23.1 trust boundary
    and §23.2 structural auditor running against live output, ruling-8 hidden
