@@ -36,6 +36,8 @@ import {
   type ResolveBodyThresholdCommandResult,
 } from "@/contracts/simulation/bodies";
 import { worldBranchIdSchema } from "@/contracts/simulation/identity";
+import { actorLodStateSchema, isBelowEventLod } from "@/contracts/simulation/lod";
+import { effectiveActorLod } from "@/lib/simulation/lod";
 import {
   BODY_THRESHOLD_HORIZON_SECONDS,
   bodyCollapseUniquenessKeyPrefix,
@@ -68,6 +70,7 @@ import { claimHoldingEngagementStates, engagementSchema } from "@/contracts/simu
 import {
   db,
   simActivities,
+  simActorLods,
   simBodyConditions,
   simBodyMeters,
   simBodyModifiers,
@@ -456,7 +459,8 @@ function lastSleepEndedAtOf(conditions: readonly BodyCondition[]): number | unde
     );
 }
 
-function collapseContextOf(body: ActorBodyRows): CollapseContext {
+/** Exported for the E6.3 LOD-assignment body-alarm re-arm (lod-store.ts). */
+export function collapseContextOf(body: ActorBodyRows): CollapseContext {
   const lastSleepEndedAt = lastSleepEndedAtOf(body.conditions);
   return {
     rhythmRows: body.rhythms,
@@ -600,6 +604,26 @@ export async function submitDurableInitializeActorBody(
           ),
         ]),
       );
+      // E6.3: a body initialized for an actor already below `event` arms no
+      // alarms — the dormant no-work law holds on every path. (Read inline
+      // rather than through lod-store's seam: body-store must not import
+      // lod-store, which imports back.)
+      const [lodRow] = await tx
+        .select()
+        .from(simActorLods)
+        .where(and(eq(simActorLods.branchId, branch.id), eq(simActorLods.actorId, command.payload.actorId)))
+        .limit(1);
+      const effectiveLod = effectiveActorLod(
+        lodRow
+          ? actorLodStateSchema.parse({
+              actorId: lodRow.actorId,
+              simulationLod: lodRow.simulationLod,
+              inferenceLod: lodRow.inferenceLod,
+              registryVersion: lodRow.registryVersion,
+              assignedAtStorySecond: lodRow.assignedAtStorySecond,
+            })
+          : undefined,
+      );
       const resolution = resolveInitializeActorBody(
         {
           worldId: branch.worldId,
@@ -610,6 +634,7 @@ export async function submitDurableInitializeActorBody(
           actorExists: actorRow !== undefined,
           alreadyInitialized: existingMeter !== undefined,
           selfCareAdjustmentsByMeter,
+          armAlarms: !isBelowEventLod(effectiveLod.simulationLod),
         },
         command,
       );

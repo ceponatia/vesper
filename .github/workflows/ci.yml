@@ -119,6 +119,9 @@ jobs:
       - name: E6.2 routine controller integration
         run: pnpm test:engine-e6-2
 
+      - name: E6.3 dormant-lane integration
+        run: pnpm test:engine-e6-3
+
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v

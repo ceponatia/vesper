@@ -745,6 +745,13 @@ export interface InitializeActorBodyResolutionView extends BodyBranchMeta {
   alreadyInitialized: boolean;
   /** E5.2: rhythm crossings per meter so initial alarms see future self-care. */
   selfCareAdjustmentsByMeter?: ReadonlyMap<string, readonly ScheduledBodyAdjustment[]>;
+  /**
+   * E6.3: false when the actor's effective simulation LOD is already below
+   * `event` — the substrate still initializes (meters exist, reads stay
+   * lazy) but no alarm arms, keeping the dormant no-work law airtight on
+   * every path. Absent means true (the pre-E6.3 behavior).
+   */
+  armAlarms?: boolean;
 }
 
 export interface InitializeActorBodyResolution {
@@ -805,20 +812,22 @@ export function resolveInitializeActorBody(
   });
 
   const triggers: TriggerScheduledEvent[] = [];
-  for (const definition of registry) {
-    const meter = meters.find((candidate) => candidate.meterKey === definition.key);
-    if (!meter) continue;
-    const scheduledAdjustments = view.selfCareAdjustmentsByMeter?.get(definition.key) ?? [];
-    const trigger = rearmThresholdTrigger({
-      view,
-      command,
-      actorId: command.payload.actorId,
-      meterView: { definition, state: meter, modifiers: [], scheduledAdjustments },
-      sequence: view.headSequence + 2 + triggers.length,
-      causationId: initialized.id,
-      armedAtSequence: initialized.sequence,
-    });
-    if (trigger) triggers.push(trigger);
+  if (view.armAlarms !== false) {
+    for (const definition of registry) {
+      const meter = meters.find((candidate) => candidate.meterKey === definition.key);
+      if (!meter) continue;
+      const scheduledAdjustments = view.selfCareAdjustmentsByMeter?.get(definition.key) ?? [];
+      const trigger = rearmThresholdTrigger({
+        view,
+        command,
+        actorId: command.payload.actorId,
+        meterView: { definition, state: meter, modifiers: [], scheduledAdjustments },
+        sequence: view.headSequence + 2 + triggers.length,
+        causationId: initialized.id,
+        armedAtSequence: initialized.sequence,
+      });
+      if (trigger) triggers.push(trigger);
+    }
   }
   return { ok: true, meters, events: [initialized, ...triggers] };
 }
@@ -2149,6 +2158,60 @@ function rearmCollapseTrigger(input: {
       payload: { actorId: input.actorId, armedAtSequence: input.armedAtSequence },
     },
   });
+}
+
+/**
+ * E6.3 — re-solve and re-arm one actor's full body-alarm set (each meter's
+ * next threshold crossing, plus the collapse alarm when an energy view and
+ * context exist) from current law at `view.storySecond`. Used by the LOD
+ * assignment when the simulation axis moves and lands at `event` or `exact`:
+ * the store retires every prior body alarm unconditionally first (the
+ * restock-reconfigure idiom), and this builds the fresh set as the same
+ * command's trigger_scheduled events. A meter whose law never crosses a
+ * threshold inside the horizon arms nothing, exactly as initialization does.
+ */
+export function buildActorBodyAlarmRearms(input: {
+  view: BodyBranchMeta;
+  command: BodyEventCommandContext;
+  actorId: string;
+  meterViews: readonly MeterIntegrationView[];
+  collapseContext?: CollapseContext;
+  startSequence: number;
+  causationId: string;
+  armedAtSequence: number;
+}): TriggerScheduledEvent[] {
+  const events: TriggerScheduledEvent[] = [];
+  let sequence = input.startSequence;
+  for (const meterView of input.meterViews) {
+    const trigger = rearmThresholdTrigger({
+      view: input.view,
+      command: input.command,
+      actorId: input.actorId,
+      meterView,
+      sequence,
+      causationId: input.causationId,
+      armedAtSequence: input.armedAtSequence,
+    });
+    if (trigger) {
+      events.push(trigger);
+      sequence += 1;
+    }
+  }
+  const energyView = input.meterViews.find((candidate) => candidate.definition.key === "energy");
+  if (energyView) {
+    const collapse = rearmCollapseTrigger({
+      view: input.view,
+      command: input.command,
+      actorId: input.actorId,
+      energyView,
+      context: input.collapseContext,
+      sequence,
+      causationId: input.causationId,
+      armedAtSequence: input.armedAtSequence,
+    });
+    if (collapse) events.push(collapse);
+  }
+  return events;
 }
 
 export interface ResolveBodyCollapseResolutionView extends BodyBranchMeta {

@@ -11,19 +11,24 @@ import {
   type AssignActorLodCommand,
   type AssignActorLodCommandResult,
 } from "@/contracts/simulation";
+import { BODY_THRESHOLD_HORIZON_SECONDS } from "@/lib/simulation/bodies";
 import { effectiveActorLod, resolveAssignActorLodFromView } from "@/lib/simulation/lod";
 import {
   simActivities,
   simActorLods,
-  simBodyMeters,
-  simBodyRhythms,
   simCharacters,
   simEngagements,
   simTemporalPressures,
   simTriggers,
   type Db,
 } from "@/server/db";
-import { bodyRhythmFromRow } from "./body-store";
+import {
+  collapseContextOf,
+  loadActorBody,
+  meterViewOf,
+  retirePendingCollapseTriggers,
+  retirePendingThresholdTriggers,
+} from "./body-store";
 import {
   advanceLockedBranch,
   appendSimulationEvent,
@@ -196,17 +201,17 @@ export async function submitDurableAssignActorLod(
           ),
         );
 
-      // E6.2 arming view: the routine alarm needs a tracked body and the
-      // actor's rhythm rows (the sleep window defaults when unauthored).
-      const [meterRow] = await tx
-        .select({ meterKey: simBodyMeters.meterKey })
-        .from(simBodyMeters)
-        .where(and(eq(simBodyMeters.branchId, branch.id), eq(simBodyMeters.actorId, actorId)))
-        .limit(1);
-      const rhythmRows = await tx
-        .select()
-        .from(simBodyRhythms)
-        .where(and(eq(simBodyRhythms.branchId, branch.id), eq(simBodyRhythms.actorId, actorId)));
+      // E6.2/E6.3 body view: the routine alarm needs a tracked body and the
+      // actor's rhythm rows; the E6.3 alarm re-arm and the active-condition
+      // guard need the full body rows — one load serves all three.
+      const body = await loadActorBody(tx, branch.id, actorId);
+      const bodyInitialized = body.meters.length > 0;
+      // Views feed forward-looking alarm solves, so rhythm self-care crossings
+      // extend through the solve horizon (the loadConsumptionBodyView idiom).
+      const solveHorizon = branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS;
+      const meterViews = body.meters
+        .map((meter) => meterViewOf(body, meter.meterKey, solveHorizon))
+        .filter((view): view is NonNullable<typeof view> => view !== undefined);
 
       const resolution = resolveAssignActorLodFromView(
         {
@@ -221,9 +226,14 @@ export async function submitDurableAssignActorLod(
             claimHoldingActivityCount: busy.claimHoldingActivityCount,
             openPressureCount: pressureGuard?.count ?? 0,
             openEngagementCount: busy.openEngagementCount,
+            activeConditionCount: body.conditions.filter((condition) => condition.status === "active")
+              .length,
           },
-          bodyInitialized: meterRow !== undefined,
-          rhythmRows: rhythmRows.map(bodyRhythmFromRow),
+          bodyInitialized,
+          rhythmRows: body.rhythms,
+          ...(bodyInitialized
+            ? { bodyAlarmViews: { meterViews, collapseContext: collapseContextOf(body) } }
+            : {}),
         },
         command,
       );
@@ -247,6 +257,26 @@ export async function submitDurableAssignActorLod(
             sql`starts_with(${simTriggers.uniquenessKey}, ${routinePolicyUniquenessKeyPrefix(actorId)})`,
           ),
         );
+
+      // E6.3: when the simulation axis moves, the actor's full body-alarm set
+      // is retired the same way — thresholds per meter (energy's retirement
+      // cascades to the collapse alarm inside the helper), plus an explicit
+      // collapse retirement for meter sets without energy. The resolver's
+      // re-arm events (if the new level warrants them) follow below.
+      const simulationMoved = effectiveActorLod(current).simulationLod !== resolution.state.simulationLod;
+      if (simulationMoved && bodyInitialized) {
+        for (const meter of body.meters) {
+          await retirePendingThresholdTriggers(
+            tx,
+            branch,
+            command.id,
+            command.submittedAtWallClock,
+            actorId,
+            meter.meterKey,
+          );
+        }
+        await retirePendingCollapseTriggers(tx, branch, command.id, command.submittedAtWallClock, actorId);
+      }
 
       for (const event of resolution.events) {
         await appendSimulationEvent(tx, event);
