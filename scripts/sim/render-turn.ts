@@ -65,6 +65,7 @@ async function main() {
     branchId: ROLLOUT_BRANCH_ID,
     engagementId,
     cutId: turn.cut.id,
+    conversation: { viewpointIsPlayer: true },
     ...(modelId === undefined ? {} : { modelId }),
   });
   const wallMs = Math.round(performance.now() - started);

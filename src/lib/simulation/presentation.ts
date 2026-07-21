@@ -74,6 +74,14 @@ export interface CutRenderConversation {
   playerUtterance?: string;
   /** Recent dialogue, oldest first, for conversational continuity. */
   dialogueTail?: readonly { speaker: string; text: string }[];
+  /**
+   * True when the viewpoint actor is PLAYER-CONTROLLED: the narrator never
+   * authors their dialogue, decisions, feelings, or actions beyond what the
+   * player's turn states, and their interoception (self bodily reads) is
+   * withheld — the player's inner life belongs to the player. The spec's
+   * "viewpoint inner voice" license applies only to NPC viewpoints.
+   */
+  viewpointIsPlayer?: boolean;
 }
 
 export function buildCutRenderPrompt(
@@ -127,8 +135,11 @@ export function buildCutRenderPrompt(
       ...cut.relevantPressures.map((pressure) => `- ${pressure.severity}, act by second ${pressure.actBy}`),
     );
   }
-  if (cut.bodilyReads.self || cut.bodilyReads.observed.length > 0) {
-    lines.push(`BODILY READS: ${JSON.stringify(cut.bodilyReads)}`);
+  const bodilyReads = conversation.viewpointIsPlayer
+    ? { observed: cut.bodilyReads.observed }
+    : cut.bodilyReads;
+  if (("self" in bodilyReads && bodilyReads.self) || bodilyReads.observed.length > 0) {
+    lines.push(`BODILY READS: ${JSON.stringify(bodilyReads)}`);
   }
   if (cut.failurePresentations.length > 0) {
     lines.push(
@@ -171,9 +182,20 @@ export function buildCutRenderPrompt(
     lines.push(
       "THE VIEWPOINT ACTOR'S TURN — this drives the scene:",
       `- ${conversation.playerUtterance.trim()}`,
-      "Portray the viewpoint actor saying/doing this and have the characters",
-      "present RESPOND to it naturally (dialogue is yours under the small-talk",
-      "license). If it implies an action or outcome the committed state above",
+      ...(conversation.viewpointIsPlayer
+        ? [
+            "This is the PLAYER speaking/acting as the viewpoint actor. Treat it as",
+            "already performed exactly as stated — you may embed their words verbatim,",
+            "but NEVER add further dialogue, thoughts, feelings, decisions, or actions",
+            "for the viewpoint actor. Render how the OTHER characters and the scene",
+            "respond (their dialogue is yours under the small-talk license).",
+          ]
+        : [
+            "Portray the viewpoint actor saying/doing this and have the characters",
+            "present RESPOND to it naturally (dialogue is yours under the small-talk",
+            "license).",
+          ]),
+      "If it implies an action or outcome the committed state above",
       "does not establish, portray only the attempt or the words — never the",
       "unearned outcome.",
     );
@@ -188,7 +210,15 @@ export function buildCutRenderPrompt(
     "You are the narrator of a live scene in a simulated world. You render ONLY what the",
     "committed world state below establishes — you never move anyone, create objects,",
     "reveal knowledge, or decide outcomes. Write immersive third-person present-tense",
-    "prose from the viewpoint actor's perspective. Every MUST ENACT beat appears exactly",
+    "prose from the viewpoint actor's vantage.",
+    ...(conversation.viewpointIsPlayer
+      ? [
+          "The viewpoint actor is the PLAYER'S character: never author their dialogue,",
+          "inner monologue, emotions, or actions beyond what the player's turn states —",
+          "narrate the world around them and the other characters' responses.",
+        ]
+      : []),
+    "Every MUST ENACT beat appears exactly",
     "once, in meaning. Nothing FORBIDDEN appears in any form. Failed attempts show only",
     "their public face. The scene must ANSWER the viewpoint actor's turn when one is",
     "given — background texture supports the exchange, never replaces it. Armed speech",

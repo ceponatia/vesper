@@ -173,4 +173,16 @@ describe("R3 buildCutRenderPrompt conversation input", () => {
     // The unearned-outcome guard rides with the utterance.
     expect(prompt).toContain("never the");
   });
+
+  it("player-controlled viewpoints forbid authored interiority and drop self bodily reads", () => {
+    const { system, prompt } = buildCutRenderPrompt(fixtureCut(), {
+      playerUtterance: "\"Morning, Ana.\"",
+      viewpointIsPlayer: true,
+    });
+    expect(system).toContain("never author their dialogue");
+    expect(prompt).toContain("NEVER add further dialogue, thoughts, feelings");
+    expect(prompt).not.toContain("Portray the viewpoint actor saying");
+    // Self-interoception is withheld for a player viewpoint.
+    expect(prompt).not.toContain('"self"');
+  });
 });
