@@ -1767,8 +1767,9 @@ counterpart event in the same transaction or is an explicit, audited authoring a
 
 ### 26.10 Means: bands and promotion (E5.4)
 
-A means SUBJECT is either an actor or a household. A subject's means read derives from
-EXACTLY ONE of two sources, never both blended into one figure:
+A means SUBJECT is an actor, a household, or — E6.3 — a population cohort (§27.6; a
+cohort is always band-tracked or unknown, since lot loci never name one). A subject's
+means read derives from EXACTLY ONE of two sources, never both blended into one figure:
 
 1. **Lot-tracked** — if the subject has an initialized `currency` lot, the read derives
    from that lot's balance. This is the exact path: a promoted actor, or a household
@@ -1923,6 +1924,38 @@ back to `event`/`exact`. Waking on an INCOMING DEPENDENCY (a command or engageme
 reaching a below-event actor) is E6.4's promotion/catch-up concern; until then an
 explicit command acting on a below-event actor is an authored intervention whose own
 alarms will fire — promote the actor first.
+
+### 27.6 Population cohorts (E6.3)
+
+A cohort is a branch-scoped CONSERVED COUNT of unnamed background people — one row no
+matter how many it holds. It MUST exist only through `cohort_created`
+(storyteller/system principals; presence-window zones validated fail-closed) and
+change only through `cohort_adjusted`: integer deltas with a closed reason vocabulary
+(`authoring | influx | attrition | promotion_reservation`) capturing both the replaced
+and resulting counts (audit-without-reads). An adjustment below zero is a structured
+rejection (`insufficient_population`), never a clamp. Fork children rebuild rows from
+inherited events.
+
+Presence is ANALYTIC — the §27.1 aggregate level made concrete. Authored minute-of-day
+windows (half-open, wrapping midnight; overlaps resolve to the earliest
+(start, end, zone) triple) each place `floor(population × share / 10 000)` people at
+one zone; outside every window the cohort is dispersed. A presence read writes no
+rows, arms no triggers, and consults no model: aggregate world state is a pure
+function of authored data and the story clock, so ten times the background population
+is the same one row and the same zero per-minute work. A zero count at a zone is a
+real read ("the square is empty tonight"), not an absence. Cohort bookkeeping events
+are not perceptible, derive no observations, and never become beats or memory — a
+crowd's ebb reaches a viewpoint only through the presence read.
+
+A cohort MAY wear a §26.10 means band (the means-subject vocabulary is
+actor | household | cohort); it can never be lot-tracked — lot loci do not name
+cohorts — so its means read is band-tracked or `unknown` by construction.
+Institutions remain households + restock (§26.8–26.11) in v1; extending the restock
+routine to zone-locus shop stock is deferred until a scenario demands it.
+
+E6.4 consumes this substrate: actor promotion debits the source cohort
+(`promotion_reservation`) before materializing a named actor (§27.2 step 2), so a
+promoted actor's existence can never contradict aggregate history.
 
 ## 28. Inference LOD and model budget
 

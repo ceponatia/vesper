@@ -2599,6 +2599,8 @@ export function applyBodyEvent(
     case "pressure_acknowledged":
     case "actor_lod_assigned":
     case "routine_policy_resolved":
+    case "cohort_created":
+    case "cohort_adjusted":
       // Non-body families advance the boundary without touching this projection.
       return bodiesProjectionSchema.parse(bumped);
   }

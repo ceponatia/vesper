@@ -162,6 +162,14 @@ import {
   type TransferLotQuantityCommandResult,
 } from "./households";
 import {
+  cohortAdjustedEventSchema,
+  cohortCreatedEventSchema,
+  type AdjustCohortCommand,
+  type AdjustCohortCommandResult,
+  type CreateCohortCommand,
+  type CreateCohortCommandResult,
+} from "./cohorts";
+import {
   actorLodAssignedEventSchema,
   type AssignActorLodCommand,
   type AssignActorLodCommandResult,
@@ -267,6 +275,8 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   pressureAcknowledgedEventSchema,
   actorLodAssignedEventSchema,
   routinePolicyResolvedEventSchema,
+  cohortCreatedEventSchema,
+  cohortAdjustedEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
@@ -547,7 +557,9 @@ export type SimulationCommandEnvelope =
   | AttemptConsentEscalationCommand
   | AcknowledgePressureCommand
   | AssignActorLodCommand
-  | RunRoutinePolicyCommand;
+  | RunRoutinePolicyCommand
+  | CreateCohortCommand
+  | AdjustCohortCommand;
 export type SimulationCommandResultRecord =
   | TransferItemCommandResult
   | DestroyItemCommandResult
@@ -592,7 +604,9 @@ export type SimulationCommandResultRecord =
   | AttemptConsentEscalationCommandResult
   | AcknowledgePressureCommandResult
   | AssignActorLodCommandResult
-  | RunRoutinePolicyCommandResult;
+  | RunRoutinePolicyCommandResult
+  | CreateCohortCommandResult
+  | AdjustCohortCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)

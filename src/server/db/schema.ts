@@ -24,6 +24,7 @@ import type {
 } from "@/contracts/simulation/branching";
 import type { ActivityClaim, SimulationActionDefinition } from "@/contracts/simulation/activities";
 import type { BodyModifierOperation } from "@/contracts/simulation/bodies";
+import type { CohortPresenceWindow } from "@/contracts/simulation/cohorts";
 import type { CommitmentKnowledgeSource } from "@/contracts/simulation/commitments";
 import type { ContainerAccessPolicy, ItemConsumptionEffect, ItemLocus } from "@/contracts/simulation/materials";
 import { simulationTriggerKinds, type SimulationTrigger } from "@/contracts/simulation/scheduler";
@@ -3055,9 +3056,10 @@ export const simMeansBands = pgTable(
       .notNull()
       .references(() => simBranches.id, { onDelete: "cascade" }),
     subjectKey: text("subject_key").notNull(),
-    subjectKind: text("subject_kind", { enum: ["actor", "household"] }).notNull(),
+    subjectKind: text("subject_kind", { enum: ["actor", "household", "cohort"] }).notNull(),
     actorId: text("actor_id"),
     householdId: text("household_id"),
+    cohortId: text("cohort_id"),
     bandKey: text("band_key", { enum: meansBandKeys }).notNull(),
     registryVersion: text("registry_version").notNull(),
     setAtStorySecond: bigint("set_at_story_second", { mode: "number" }).notNull(),
@@ -3200,5 +3202,35 @@ export const simActorLods = pgTable(
       columns: [t.branchId, t.actorId],
       foreignColumns: [simCharacters.branchId, simCharacters.characterId],
     }).onDelete("no action"),
+  ],
+);
+
+/**
+ * E6.3 population cohorts (engine.spec §27.6): one branch-scoped row per
+ * conserved background count. State is fully evented (`cohort_created` /
+ * `cohort_adjusted`); fork children rebuild rows from inherited events, and
+ * presence at a zone is an analytic read over `presence_windows` — never a
+ * row write. Presence-window zones are validated at command time against
+ * live zones, not FK-enforced: zone rows are branch-seeded topology while
+ * cohorts arrive later by command, and a fail-closed resolver check keeps
+ * the integrity without coupling the two seeding orders.
+ */
+export const simCohorts = pgTable(
+  "sim_cohorts",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    cohortId: text("cohort_id").notNull(),
+    name: text("name").notNull(),
+    population: integer("population").notNull(),
+    presenceWindows: jsonb("presence_windows").$type<CohortPresenceWindow[]>().notNull(),
+    registryVersion: text("registry_version").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_cohorts_branch_cohort_pk", columns: [t.branchId, t.cohortId] }),
+    check("sim_cohorts_population_nonnegative", sql`${t.population} >= 0`),
   ],
 );

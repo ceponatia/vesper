@@ -76,6 +76,7 @@ import {
   simItemHoldings,
   simItems,
   simMaterialLots,
+  simCohorts,
   simMeansBands,
   simPhysicalLoci,
   simTriggers,
@@ -177,25 +178,34 @@ function lotLocusFromRow(row: {
 }
 
 function meansBandSubjectRowFields(subject: MeansSubject): {
-  subjectKind: "actor" | "household";
+  subjectKind: "actor" | "household" | "cohort";
   actorId: string | null;
   householdId: string | null;
+  cohortId: string | null;
 } {
-  return subject.kind === "actor"
-    ? { subjectKind: "actor", actorId: subject.actorId, householdId: null }
-    : { subjectKind: "household", actorId: null, householdId: subject.householdId };
+  switch (subject.kind) {
+    case "actor":
+      return { subjectKind: "actor", actorId: subject.actorId, householdId: null, cohortId: null };
+    case "household":
+      return { subjectKind: "household", actorId: null, householdId: subject.householdId, cohortId: null };
+    case "cohort":
+      return { subjectKind: "cohort", actorId: null, householdId: null, cohortId: subject.cohortId };
+  }
 }
 
 function meansBandSubjectFromRow(row: {
-  subjectKind: "actor" | "household";
+  subjectKind: "actor" | "household" | "cohort";
   actorId: string | null;
   householdId: string | null;
+  cohortId: string | null;
 }): MeansSubject {
   switch (row.subjectKind) {
     case "actor":
       return meansSubjectSchema.parse({ kind: "actor", actorId: row.actorId });
     case "household":
       return meansSubjectSchema.parse({ kind: "household", householdId: row.householdId });
+    case "cohort":
+      return meansSubjectSchema.parse({ kind: "cohort", cohortId: row.cohortId });
   }
 }
 
@@ -985,7 +995,15 @@ export async function submitDurableSetMeansBand(
       const subjectExists =
         subject.kind === "actor"
           ? context.actorsById.has(subject.actorId)
-          : context.householdsById.has(subject.householdId);
+          : subject.kind === "household"
+            ? context.householdsById.has(subject.householdId)
+            : (
+                await tx
+                  .select({ cohortId: simCohorts.cohortId })
+                  .from(simCohorts)
+                  .where(and(eq(simCohorts.branchId, branch.id), eq(simCohorts.cohortId, subject.cohortId)))
+                  .limit(1)
+              ).length > 0;
       const currentBand = await loadMeansBandRow(tx, branch.id, deriveMeansSubjectRowKey(subject));
 
       const resolution = resolveSetMeansBandFromView(

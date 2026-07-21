@@ -8,6 +8,7 @@ export * from "./engagements";
 export * from "./hash";
 export * from "./households";
 export * from "./knowledge";
+export * from "./cohorts";
 export * from "./lod";
 export * from "./material-condition";
 export * from "./material-locus";

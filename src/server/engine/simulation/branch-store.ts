@@ -33,6 +33,7 @@ import {
   deriveMeansSubjectRowKey,
   emptyActivitiesSeed,
   emptyActorLodsSeed,
+  emptyCohortsSeed,
   emptyBodiesSeed,
   emptyCommitmentsSeed,
   emptyEngagementsSeed,
@@ -41,6 +42,7 @@ import {
   itemHoldingsAtSequence,
   replayActivitiesHistory,
   replayActorLodHistory,
+  replayCohortHistory,
   replayBodiesHistory,
   replayBranchHistory,
   replayCommitmentsHistory,
@@ -63,6 +65,7 @@ import {
   simActionDefinitions,
   simActivities,
   simActorLods,
+  simCohorts,
   simBodyConditions,
   simBodyMeters,
   simBodyModifiers,
@@ -100,6 +103,7 @@ import {
   meansBandRowInsert,
 } from "./household-store";
 import { insertReplayedKnowledge } from "./knowledge-recorder";
+import { cohortRowInsert } from "./cohort-store";
 import { actorLodRowInsert } from "./lod-store";
 import { holdingRowFieldsForLocus, itemLocusFromHoldingRow } from "./material-store";
 import { insertReplayedObservations } from "./observation-store";
@@ -902,6 +906,29 @@ export async function forkBranch(
       await tx.insert(simActorLods).values(
         childActorLods.lods.map((state) =>
           actorLodRowInsert(input.childBranchId, state, actorLodSequenceByActor.get(state.actorId) ?? 0),
+        ),
+      );
+    }
+
+    // E6.3 cohorts (§27.6): fully evented, replay from the empty seed —
+    // conserved counts rebuild bit-identical and presence stays a pure read
+    // on the child exactly as on the parent.
+    const childCohorts = replayCohortHistory({
+      seed: emptyCohortsSeed(input.childBranchId, ancestry.rootOriginStorySecond),
+      events: inherited,
+    });
+    const cohortSequenceById = new Map<string, number>();
+    for (const event of inherited) {
+      if (event.type === "cohort_created") {
+        cohortSequenceById.set(event.payload.cohort.id, event.sequence);
+      } else if (event.type === "cohort_adjusted") {
+        cohortSequenceById.set(event.payload.cohortId, event.sequence);
+      }
+    }
+    if (childCohorts.cohorts.length > 0) {
+      await tx.insert(simCohorts).values(
+        childCohorts.cohorts.map((cohort) =>
+          cohortRowInsert(input.childBranchId, cohort, cohortSequenceById.get(cohort.id) ?? 0),
         ),
       );
     }

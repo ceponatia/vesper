@@ -269,6 +269,8 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
       return null;
     case "actor_lod_assigned":
     case "routine_policy_resolved":
+    case "cohort_created":
+    case "cohort_adjusted":
       // The routine decision (E6.2) is engine bookkeeping; its chosen
       // outcome's own events (a condition onset, later an activity) are the
       // portrayable beats, exactly as with collapse.

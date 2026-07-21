@@ -1,0 +1,299 @@
+import { describe, expect, it } from "vitest";
+import {
+  adjustCohortCommandSchema,
+  cohortPresenceWindowSchema,
+  createCohortCommandSchema,
+  simulationCohortSchema,
+  type AdjustCohortCommand,
+  type AdjustCohortCommandInput,
+  type CreateCohortCommand,
+  type CreateCohortCommandInput,
+  type SimulationCohort,
+} from "@/contracts/simulation/cohorts";
+import { storySecondAt } from "./body-reads";
+import {
+  applyCohortEvent,
+  cohortPresenceAt,
+  cohortWindowCovering,
+  emptyCohortsSeed,
+  replayCohortHistory,
+  resolveAdjustCohortFromView,
+  resolveCreateCohortFromView,
+  zonePresenceAt,
+  type AdjustCohortResolutionView,
+  type CreateCohortResolutionView,
+} from "./cohorts";
+
+const WORLD = "world-1";
+const BRANCH = "branch-1";
+const SQUARE = "zone-square";
+const TAVERN = "zone-tavern";
+
+/** Market regulars: 200 people, at the square 08:00–18:00 at 80% strength. */
+function marketCohort(overrides: Partial<Parameters<typeof simulationCohortSchema.parse>[0]> & object = {}): SimulationCohort {
+  return simulationCohortSchema.parse({
+    id: "cohort-market",
+    name: "market regulars",
+    population: 200,
+    presenceWindows: [
+      { zoneId: SQUARE, startMinuteOfDay: 480, endMinuteOfDay: 1_080, shareFixedPoint: 8_000 },
+    ],
+    registryVersion: "cohort-v1",
+    ...overrides,
+  });
+}
+
+function createView(overrides: Partial<CreateCohortResolutionView> = {}): CreateCohortResolutionView {
+  return {
+    worldId: WORLD,
+    branchId: BRANCH,
+    rulesetVersion: "ruleset-v1",
+    headSequence: 7,
+    storySecond: 3_600,
+    alreadyExists: false,
+    zoneExists: (zoneId) => zoneId === SQUARE || zoneId === TAVERN,
+    ...overrides,
+  };
+}
+
+function createCmd(
+  cohort: SimulationCohort,
+  overrides: Partial<Pick<CreateCohortCommandInput, "branchId" | "principal" | "id">> = {},
+): CreateCohortCommand {
+  return createCohortCommandSchema.parse({
+    id: overrides.id ?? "cmd-cohort-1",
+    branchId: overrides.branchId ?? BRANCH,
+    expectedVersion: 0,
+    idempotencyKey: "cohort-key-1",
+    principal: overrides.principal ?? {
+      kind: "storyteller",
+      principalId: "storyteller-1",
+      controlledActorIds: [],
+    },
+    submittedAtWallClock: "2026-07-21T12:00:00.000Z",
+    correlationId: "corr-1",
+    type: "create_cohort",
+    schemaVersion: 1,
+    payload: { cohort },
+  });
+}
+
+function adjustCmd(
+  payload: AdjustCohortCommandInput["payload"],
+  overrides: Partial<Pick<AdjustCohortCommandInput, "branchId" | "principal" | "id">> = {},
+): AdjustCohortCommand {
+  return adjustCohortCommandSchema.parse({
+    id: overrides.id ?? "cmd-adjust-1",
+    branchId: overrides.branchId ?? BRANCH,
+    expectedVersion: 0,
+    idempotencyKey: "adjust-key-1",
+    principal: overrides.principal ?? {
+      kind: "storyteller",
+      principalId: "storyteller-1",
+      controlledActorIds: [],
+    },
+    submittedAtWallClock: "2026-07-21T12:00:00.000Z",
+    correlationId: "corr-1",
+    type: "adjust_cohort",
+    schemaVersion: 1,
+    payload,
+  });
+}
+
+function adjustView(current: SimulationCohort | undefined): AdjustCohortResolutionView {
+  return {
+    worldId: WORLD,
+    branchId: BRANCH,
+    rulesetVersion: "ruleset-v1",
+    headSequence: 8,
+    storySecond: 7_200,
+    current,
+  };
+}
+
+describe("analytic presence (E6.3, §27.6)", () => {
+  it("resolves the covering window half-open, wrapping midnight, earliest on overlap", () => {
+    const windows = marketCohort().presenceWindows;
+    expect(cohortWindowCovering(windows, storySecondAt(1, 480))).toBeDefined();
+    expect(cohortWindowCovering(windows, storySecondAt(1, 1_079))).toBeDefined();
+    expect(cohortWindowCovering(windows, storySecondAt(1, 1_080))).toBeUndefined();
+    expect(cohortWindowCovering(windows, storySecondAt(1, 479))).toBeUndefined();
+
+    const nightWatch = [
+      cohortPresenceWindowSchema.parse({
+        zoneId: SQUARE,
+        startMinuteOfDay: 1_320,
+        endMinuteOfDay: 240,
+        shareFixedPoint: 10_000,
+      }),
+    ];
+    expect(cohortWindowCovering(nightWatch, storySecondAt(1, 1_380))).toBeDefined();
+    expect(cohortWindowCovering(nightWatch, storySecondAt(2, 120))).toBeDefined();
+    expect(cohortWindowCovering(nightWatch, storySecondAt(2, 300))).toBeUndefined();
+
+    const overlapping = marketCohort({
+      presenceWindows: [
+        { zoneId: TAVERN, startMinuteOfDay: 600, endMinuteOfDay: 900, shareFixedPoint: 5_000 },
+        { zoneId: SQUARE, startMinuteOfDay: 480, endMinuteOfDay: 1_080, shareFixedPoint: 8_000 },
+      ],
+    });
+    // 11:00 is inside both; the earlier start wins deterministically.
+    expect(cohortWindowCovering(overlapping.presenceWindows, storySecondAt(1, 660))).toMatchObject({
+      zoneId: SQUARE,
+    });
+  });
+
+  it("reads presence as floored share of population, zero-count included, dispersed as undefined", () => {
+    const cohort = marketCohort();
+    expect(cohortPresenceAt(cohort, storySecondAt(1, 600))).toEqual({
+      zoneId: SQUARE,
+      presentCount: 160,
+    });
+    expect(cohortPresenceAt(cohort, storySecondAt(1, 200))).toBeUndefined();
+
+    // 33% of 7 floors to 2 — integer people, never fractions.
+    const seven = marketCohort({
+      population: 7,
+      presenceWindows: [{ zoneId: SQUARE, startMinuteOfDay: 0, endMinuteOfDay: 1_439, shareFixedPoint: 3_300 }],
+    });
+    expect(cohortPresenceAt(seven, storySecondAt(1, 60))?.presentCount).toBe(2);
+
+    // An empty square is a real read, not an absence.
+    const nobody = marketCohort({ population: 0 });
+    expect(cohortPresenceAt(nobody, storySecondAt(1, 600))).toEqual({ zoneId: SQUARE, presentCount: 0 });
+  });
+
+  it("sums zone presence across cohorts", () => {
+    const market = marketCohort();
+    const drinkers = marketCohort({
+      id: "cohort-drinkers",
+      name: "tavern regulars",
+      population: 40,
+      presenceWindows: [
+        { zoneId: TAVERN, startMinuteOfDay: 480, endMinuteOfDay: 1_080, shareFixedPoint: 10_000 },
+      ],
+    });
+    const idlers = marketCohort({
+      id: "cohort-idlers",
+      name: "square idlers",
+      population: 25,
+      presenceWindows: [
+        { zoneId: SQUARE, startMinuteOfDay: 480, endMinuteOfDay: 1_080, shareFixedPoint: 10_000 },
+      ],
+    });
+    const all = [market, drinkers, idlers];
+    expect(zonePresenceAt(all, SQUARE, storySecondAt(1, 600))).toBe(185);
+    expect(zonePresenceAt(all, TAVERN, storySecondAt(1, 600))).toBe(40);
+    expect(zonePresenceAt(all, SQUARE, storySecondAt(1, 200))).toBe(0);
+  });
+});
+
+describe("resolveCreateCohortFromView (E6.3)", () => {
+  it("rejects branch mismatch, non-privileged principals, duplicates, and unknown zones", () => {
+    expect(
+      resolveCreateCohortFromView(createView(), createCmd(marketCohort(), { branchId: "branch-2" })),
+    ).toMatchObject({ ok: false, code: "branch_mismatch" });
+    expect(
+      resolveCreateCohortFromView(
+        createView(),
+        createCmd(marketCohort(), {
+          principal: { kind: "player", principalId: "player-1", controlledActorIds: [] },
+        }),
+      ),
+    ).toMatchObject({ ok: false, code: "unauthorized_principal" });
+    expect(
+      resolveCreateCohortFromView(createView({ alreadyExists: true }), createCmd(marketCohort())),
+    ).toMatchObject({ ok: false, code: "cohort_already_exists" });
+    expect(
+      resolveCreateCohortFromView(
+        createView({ zoneExists: () => false }),
+        createCmd(marketCohort()),
+      ),
+    ).toMatchObject({ ok: false, code: "zone_not_found" });
+  });
+
+  it("accepts a privileged creation, emitting the full-shape event", () => {
+    const result = resolveCreateCohortFromView(createView(), createCmd(marketCohort()));
+    if (!result.ok) throw new Error(`expected acceptance, got ${result.code}`);
+    expect(result.event).toMatchObject({
+      type: "cohort_created",
+      sequence: 8,
+      actorIds: [],
+      entityIds: ["cohort-market"],
+      payload: { cohort: { id: "cohort-market", population: 200 } },
+    });
+  });
+});
+
+describe("resolveAdjustCohortFromView (E6.3)", () => {
+  it("rejects an unknown cohort and a debit below zero; accepts an exact drain to zero", () => {
+    expect(
+      resolveAdjustCohortFromView(adjustView(undefined), adjustCmd({ cohortId: "cohort-market", deltaCount: -1, reason: "attrition" })),
+    ).toMatchObject({ ok: false, code: "cohort_not_found" });
+    expect(
+      resolveAdjustCohortFromView(
+        adjustView(marketCohort()),
+        adjustCmd({ cohortId: "cohort-market", deltaCount: -201, reason: "attrition" }),
+      ),
+    ).toMatchObject({ ok: false, code: "insufficient_population" });
+
+    const drained = resolveAdjustCohortFromView(
+      adjustView(marketCohort()),
+      adjustCmd({ cohortId: "cohort-market", deltaCount: -200, reason: "attrition" }),
+    );
+    if (!drained.ok) throw new Error(`expected acceptance, got ${drained.code}`);
+    expect(drained.cohort.population).toBe(0);
+    expect(drained.event.payload).toMatchObject({
+      deltaCount: -200,
+      reason: "attrition",
+      populationBefore: 200,
+      populationAfter: 0,
+    });
+  });
+
+  it("captures an influx with both counts on the event", () => {
+    const grown = resolveAdjustCohortFromView(
+      adjustView(marketCohort()),
+      adjustCmd({ cohortId: "cohort-market", deltaCount: 55, reason: "influx" }),
+    );
+    if (!grown.ok) throw new Error(`expected acceptance, got ${grown.code}`);
+    expect(grown.event.payload).toMatchObject({ populationBefore: 200, populationAfter: 255 });
+  });
+});
+
+describe("cohort replay (E6.3)", () => {
+  it("folds creation and adjustments into conserved rows", () => {
+    const created = resolveCreateCohortFromView(
+      createView({ headSequence: 0 }),
+      createCmd(marketCohort()),
+    );
+    if (!created.ok) throw new Error("create failed");
+    const adjusted = resolveAdjustCohortFromView(
+      { ...adjustView(created.cohort), headSequence: 1 },
+      adjustCmd({ cohortId: "cohort-market", deltaCount: -30, reason: "promotion_reservation" }),
+    );
+    if (!adjusted.ok) throw new Error("adjust failed");
+
+    const replayed = replayCohortHistory({
+      seed: emptyCohortsSeed(BRANCH, 0),
+      events: [created.event, adjusted.event],
+    });
+    expect(replayed.cohorts).toHaveLength(1);
+    expect(replayed.cohorts[0]).toMatchObject({ id: "cohort-market", population: 170 });
+    expect(replayed.headSequence).toBe(2);
+    expect(replayed.version).toBe(2);
+  });
+
+  it("advances the boundary without rows for a non-cohort event, and throws on a gap", () => {
+    const created = resolveCreateCohortFromView(createView({ headSequence: 1 }), createCmd(marketCohort()));
+    if (!created.ok) throw new Error("create failed");
+    const folded = applyCohortEvent(emptyCohortsSeed(BRANCH, 0), {
+      ...created.event,
+      type: "cohort_created",
+    });
+    expect(folded.cohorts).toHaveLength(1);
+    expect(() =>
+      replayCohortHistory({ seed: emptyCohortsSeed(BRANCH, 0), events: [created.event] }),
+    ).toThrow(/sequence gap/);
+  });
+});

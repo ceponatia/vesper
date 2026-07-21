@@ -107,9 +107,14 @@ export function deriveMaterialLotRowKey(locus: LotLocus, materialKindKey: string
 }
 
 export function deriveMeansSubjectRowKey(subject: MeansSubject): string {
-  return subject.kind === "actor"
-    ? composeSimulationId("means-subject", ["actor", subject.actorId])
-    : composeSimulationId("means-subject", ["household", subject.householdId]);
+  switch (subject.kind) {
+    case "actor":
+      return composeSimulationId("means-subject", ["actor", subject.actorId]);
+    case "household":
+      return composeSimulationId("means-subject", ["household", subject.householdId]);
+    case "cohort":
+      return composeSimulationId("means-subject", ["cohort", subject.cohortId]);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -683,10 +688,13 @@ export function resolveSetMeansBandFromView(
     return rejection("no_op", "That means band is already set.");
   }
 
+  const subject = command.payload.subject;
   const subjectEntityIds: readonly string[] =
-    command.payload.subject.kind === "actor"
-      ? [command.payload.subject.actorId]
-      : [command.payload.subject.householdId];
+    subject.kind === "actor"
+      ? [subject.actorId]
+      : subject.kind === "household"
+        ? [subject.householdId]
+        : [subject.cohortId];
   const event = meansBandSetEventSchema.parse({
     ...eventEnvelope(view, command, view.headSequence + 1, "means-band-set"),
     type: "means_band_set",
@@ -1483,6 +1491,8 @@ export function applyHouseholdEvent(
     case "pressure_acknowledged":
     case "actor_lod_assigned":
     case "routine_policy_resolved":
+    case "cohort_created":
+    case "cohort_adjusted":
       // Non-household families advance the boundary without touching this projection.
       return householdsProjectionSchema.parse(bumped);
   }
