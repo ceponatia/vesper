@@ -24,7 +24,10 @@ const variants: Record<ButtonVariant, string> = {
 };
 
 const sizes: Record<ButtonSize, string> = {
-  sm: "h-7 px-2.5 text-xs gap-1.5",
+  // `.touch-target` (globals.css) only sets a coarse-pointer min-height — desktop
+  // keeps the compact h-7 (mobile-ux W3 task 1: 40+ sm call sites were a 28px tap
+  // target on phones).
+  sm: "h-7 px-2.5 text-xs gap-1.5 touch-target",
   md: "h-9 px-3.5 text-sm gap-2",
 };
 

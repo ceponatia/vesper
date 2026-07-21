@@ -24,6 +24,8 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   { id: "deepseek/deepseek-v4-flash", label: "DeepSeek 4 Flash" },
   { id: "z-ai/glm-5.2", label: "GLM 5.2" },
   { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash" },
+  // Owner ask, 2026-07-21 (engine.rollout.plan.md ruling 4's side note).
+  { id: "x-ai/grok-4.5", label: "Grok 4.5" },
 ];
 
 /** The narrator used when neither the world nor the env override one. */

@@ -1,8 +1,10 @@
 # Successor engine — migration and rollout
 
-Status: **next** (queued 2026-07-21 by owner instruction, the same ruling that
-resequenced Gate 7 behind this work: *"schedule the migration and rollout, with
-Gate 7 as an optional todo after migration and rollout is completed and tested."*)
+Status: **active** (queued 2026-07-21 by owner instruction — the same ruling
+that resequenced Gate 7 behind this work: _"schedule the migration and rollout,
+with Gate 7 as an optional todo after migration and rollout is completed and
+tested."_ — and started the same day once the owner resolved all four opening
+questions; see §Resolved rulings).
 
 Companion to [engine.plan.md](engine.plan.md) (whose §"Migration and rollout"
 this plan turns into scheduled, sliced work) and successor to the closed
@@ -62,14 +64,17 @@ is the cleanup that makes the migration real.
    (presentation-only — `successor_narrative_view`), the §23.1 trust boundary
    and §23.2 structural auditor running against live output, ruling-8 hidden
    retry, `confirm_narrator_result` arming real effects, and the §19.3
-   deliberator live behind its budget and deterministic fallback. The
+   deliberator live behind its budget and deterministic fallback. Model
+   routing per ruling 4: Aion 3.0 default, resolved through the shared
+   `NARRATIVE_MODELS` picker. The
    owner-gated paired eval rides here ([deferred.plan.md](deferred.plan.md)
    §Owner-gated live eval runs — the Gate 4/5/6 deferred quality checks become
    runnable against this leg on request). Exit: a full narrated turn against the
    internal test world within the latency/model-call budget, degradation paths
    observed live (a failed render withholds, never corrupts).
-4. **R3 — the product surface.** Minimum playable seam, chat-lane-first per the
-   test-bed direction: API routes that admit player commands into the successor
+4. **R3 — the product surface.** Minimum playable seam **inside the existing
+   character chat UI at `/chat/`** (ruling 1 — no standalone play page): API
+   routes that admit player commands into the successor
    (movement, activities, engagement open/close, item transfer), the play loop
    driving `prepareEngagementTurn` → narrator → confirm, and admin-grade
    authoring surfaces (reusing library patterns) for topology, cohorts, rhythms,
@@ -77,7 +82,8 @@ is the cleanup that makes the migration real.
    LOD dial) surface here too. Exit: a human plays a scene in the internal test
    world on Fly — moves, talks, sleeps, is witnessed — with world life
    continuing off-screen.
-5. **R4 — shadow mode under chat.** `successor_shadow` on selected chat worlds:
+5. **R4 — shadow mode under chat.** `successor_shadow` on the UX-test
+   account's worlds (ruling 2 — never a player-owned world):
    successor calculations run alongside the chat lane with **no effects**,
    compared against fixed fixtures and live chat outcomes (events, projections,
    presence, meter reads). Divergences are diagnostics, not failures — this
@@ -111,18 +117,22 @@ only when a world type and scenario corpus justify it, per that doc's
 declaration checklist. Nothing in R0–R6 depends on Gate 7; nothing in Gate 7
 may begin before R6 exits without a new owner ruling.
 
-## Open questions
+## Resolved rulings (owner, 2026-07-21)
 
-1. **First player surface** — does R3 embed the successor play loop inside the
-   existing chat UI (a flagged world type) or stand up a separate minimal play
-   page first? (Chat-first is the default direction; the standalone page is the
-   lower-risk spike.)
-2. **Shadow comparison corpus** — which live chat worlds (if any) are safe to
-   shadow in R4, versus synthetic fixtures only? The UX-test account's worlds
-   are the obvious candidates.
-3. **Domain order in R5** — the candidate order above is the author's; the
-   owner may want wardrobe/items earlier given chat-wardrobe parity already
-   shipped in the chat lane.
-4. **Narrator model routing for R2** — which model/provider the successor
-   narrator leg uses first (the chat lane's current default vs a cheaper draft
-   model behind the same seam).
+All four opening questions were answered the day the plan was queued:
+
+1. **First player surface — the existing character chat system at `/chat/`.**
+   R3 builds no standalone play page: chat IS the surface, per the test-bed
+   direction. The successor play loop lands under the chat UI for flagged
+   worlds.
+2. **Shadow comparison corpus — the UX-test account's worlds** (the dedicated
+   `uxtest-main@vesper.local` worlds, e.g. Tsukikage Onsen). No player-owned
+   world is shadowed.
+3. **R5 domain order — author's call, sequenced by dependency.** The owner
+   expects fast iteration; the order in R5 stands unless a dependency proves
+   otherwise mid-build.
+4. **Narrator model — Aion 3.0 (`aion-labs/aion-3.0`) first**, keeping the
+   curated `NARRATIVE_MODELS` picker (`src/lib/narrative-models.ts`) so any
+   accepted model can be chosen — the successor narrator leg resolves through
+   the same list chat uses. Side ask landed with this ruling: **Grok 4.5
+   (`x-ai/grok-4.5`) added to the accepted list.**

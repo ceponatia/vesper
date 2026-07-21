@@ -47,15 +47,19 @@ export function Dialog({ open, onClose, title, children, footer, size = "md" }: 
         aria-modal="true"
         tabIndex={-1}
         className={cx(
-          "w-full rounded-card border border-ink-600 bg-ink-800 shadow-lift outline-none",
+          // max-h + flex column, title/footer pinned and the content region scrolling
+          // internally (same recipe as Sheet's bottom panel) — tall content (the
+          // portrait-review dialog, avatar-upload-dialog's crop stage) no longer pushes
+          // the footer's buttons off-screen with nothing scrollable to reach them.
+          "flex max-h-[85dvh] w-full flex-col rounded-card border border-ink-600 bg-ink-800 shadow-lift outline-none",
           sizeClasses[size],
         )}
       >
-        <div className="border-b border-ink-600 px-5 py-3">
+        <div className="shrink-0 border-b border-ink-600 px-5 py-3">
           <h2 className="prose-display text-base">{title}</h2>
         </div>
-        {children ? <div className="px-5 py-4 text-sm text-paper-300">{children}</div> : null}
-        {footer ? <div className="flex justify-end gap-2 border-t border-ink-600 px-5 py-3">{footer}</div> : null}
+        {children ? <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-sm text-paper-300">{children}</div> : null}
+        {footer ? <div className="flex shrink-0 justify-end gap-2 border-t border-ink-600 px-5 py-3">{footer}</div> : null}
       </div>
     </div>
   );

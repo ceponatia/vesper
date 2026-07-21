@@ -3,13 +3,17 @@
 import { useState } from "react";
 import {
   CHAT_PREMISE_MAX_CHARS,
+  chatGameTime,
   chatSceneModelLabels,
   chatSceneModels,
+  formatChatTime,
   parseChatSceneModel,
   type SocialReactionCard,
 } from "@/contracts";
+import { MONTHS } from "@/lib/clock";
 import { chatPresetsApi, chatsApi, personasApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { CalendarStartDialog } from "@/components/chat/calendar-start-dialog";
 import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -47,10 +51,42 @@ export function ChatScenarioModal({
   snapshot: ChatStateSnapshot;
   onSaved: (next: ChatStateSnapshot) => void;
 }) {
+  // Kept OUTSIDE the Dialog (a sibling, not a descendant): the overlay's own
+  // backdrop-blur establishes a containing block for `position: fixed`
+  // descendants (docs/ui.md's Sheet-portal note), and while this Dialog's own
+  // full-viewport overlay happens to make that harmless, a sibling sidesteps
+  // the question entirely instead of relying on that coincidence.
+  const [editingCalendar, setEditingCalendar] = useState(false);
   return (
-    <Dialog open={open} onClose={onClose} title={`Scenario setup — ${who}`} size="xl">
-      {open ? <ScenarioForm chatId={chatId} who={who} snapshot={snapshot} onSaved={onSaved} onClose={onClose} /> : null}
-    </Dialog>
+    <>
+      <Dialog open={open} onClose={onClose} title={`Scenario setup — ${who}`} size="xl">
+        {open ? (
+          <ScenarioForm
+            chatId={chatId}
+            who={who}
+            snapshot={snapshot}
+            onSaved={onSaved}
+            onClose={onClose}
+            onEditCalendar={() => setEditingCalendar(true)}
+          />
+        ) : null}
+      </Dialog>
+      {editingCalendar ? (
+        <CalendarStartDialog
+          chatId={chatId}
+          calendarStart={snapshot.calendarStart}
+          onClose={() => setEditingCalendar(false)}
+          onSaved={(next) => {
+            setEditingCalendar(false);
+            // Threads back through the SAME onSaved the form's own Save uses, so the
+            // conversation page's chatState (and every reader of it — the status
+            // strip's ambient chip, the desktop clock card) refreshes immediately;
+            // the anchor PATCHes independently of the rest of the scenario draft.
+            onSaved(next);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -60,12 +96,14 @@ function ScenarioForm({
   snapshot,
   onSaved,
   onClose,
+  onEditCalendar,
 }: {
   chatId: string;
   who: string;
   snapshot: ChatStateSnapshot;
   onSaved: (next: ChatStateSnapshot) => void;
   onClose: () => void;
+  onEditCalendar: () => void;
 }) {
   const toast = useToast();
   const [premise, setPremise] = useState(snapshot.premise);
@@ -74,6 +112,10 @@ function ScenarioForm({
   const [cards, setCards] = useState<SocialReactionCard[]>([...snapshot.activeSocialCards]);
   const [personaId, setPersonaId] = useState(snapshot.playerState.personaId);
   const [saving, setSaving] = useState(false);
+  // Read directly off the live `snapshot` prop (not a local copy): the calendar dialog
+  // saves independently and hands its fresh snapshot back through the SAME onSaved this
+  // form uses, so re-render picks up the new anchor without any state to reconcile.
+  const storyStart = chatGameTime(0, snapshot.calendarStart);
 
   // Who the player can be here (persona-library.plan.md slice 7). Chat-wide, like the
   // premise beside it. Blank ⇒ the resolver falls back to the owner's default persona,
@@ -226,6 +268,22 @@ function ScenarioForm({
         />
         <span className="text-[11px] text-paper-600">This chat only — it never touches {who}&rsquo;s saved bio or personality.</span>
       </label>
+
+      {/* The calendar anchor's editor (mobile-ux.plan.md ruling 1 — moved out of the
+          Roster sheet, which no longer shows the clock at all). Saves immediately
+          through its own dialog, independent of this form's Save. */}
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Story starts</span>
+        <div className="flex items-center justify-between gap-2 rounded-md border border-ink-600 bg-ink-850 px-3 py-2">
+          <span className="text-sm text-paper-200">
+            <strong className="font-semibold text-paper-50">{storyStart.weekday}</strong>, {MONTHS[storyStart.month - 1] ?? "January"}{" "}
+            {storyStart.day} — {formatChatTime(storyStart)}
+          </span>
+          <Button size="sm" variant="quiet" onClick={onEditCalendar}>
+            Edit
+          </Button>
+        </div>
+      </div>
 
       <label className="flex flex-col gap-1">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Playing as</span>
