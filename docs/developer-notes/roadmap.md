@@ -31,8 +31,9 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   the accepted list). The foundation (gates 0–6, closed) becomes the live
   world authority: **R0 (engine merged to main + deployed, v93) and R1
   (audited per-chat authority flags, migration 0081, the standing internal
-  test world + `pnpm sim:seed`/`sim:advance`) shipped 2026-07-21** · next
-  R2 live narrator over committed cuts · R3 the play loop inside chat ·
+  test world + `pnpm sim:seed`/`sim:advance`) shipped 2026-07-21; R2 live narrator SHIPPED same day — first live model
+  call in the successor lane, Aion 3.0, audit-accepted turn on the test
+  world** · next R3 the play loop inside chat ·
   R4 shadow mode on UX-test worlds · R5 domain-by-domain authority
   migration · R6 cleanup + legacy world/session-model retirement.
 
