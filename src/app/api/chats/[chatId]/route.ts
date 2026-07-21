@@ -279,6 +279,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
         chatId,
         userId: user.id,
         speakerCharacterId: owned.character.id,
+        speakerName: owned.character.name,
         message: (body.value.content ?? "").trim(),
       });
       if (sim.ok) {

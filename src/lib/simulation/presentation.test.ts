@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Diagnostic } from "@/contracts/diagnostics";
 import { narrativeCutSchema, type NarrativeCut } from "@/contracts/simulation/narrative";
-import { auditPresentation, emptyNarratorResult, parseNarratorResult } from "./presentation";
+import { auditPresentation, buildCutRenderPrompt, emptyNarratorResult, parseNarratorResult } from "./presentation";
 
 const NOW = 100_000;
 
@@ -144,5 +144,33 @@ describe("E4.3 auditPresentation (§23.2)", () => {
     expect(audit.verdict).toBe("accept");
     expect(audit.unknownEnactedArmedEffectIds).toEqual(["armed-invented"]);
     expect(audit.unknownEnactedBeatEventIds).toEqual(["event-invented"]);
+  });
+});
+
+describe("R3 buildCutRenderPrompt conversation input", () => {
+  it("serializes the cut alone when no conversation is given", () => {
+    const { system, prompt } = buildCutRenderPrompt(fixtureCut());
+    expect(system).toContain("narrator of a live scene");
+    expect(prompt).toContain("MUST ENACT");
+    expect(prompt).not.toContain("VIEWPOINT ACTOR'S TURN");
+    expect(prompt).not.toContain("RECENT CONVERSATION");
+  });
+
+  it("carries the player's turn and a bounded dialogue tail into the prompt", () => {
+    const { prompt } = buildCutRenderPrompt(fixtureCut(), {
+      playerUtterance: "I ask Ana if she slept well.",
+      dialogueTail: [
+        { speaker: "The viewpoint actor", text: "Morning." },
+        { speaker: "Ana", text: "You're up early." },
+        { speaker: "The viewpoint actor", text: "" }, // blank lines drop
+      ],
+    });
+    expect(prompt).toContain("THE VIEWPOINT ACTOR'S TURN");
+    expect(prompt).toContain("I ask Ana if she slept well.");
+    expect(prompt).toContain("RECENT CONVERSATION");
+    expect(prompt).toContain("Ana: You're up early.");
+    expect(prompt).not.toContain("The viewpoint actor: \n");
+    // The unearned-outcome guard rides with the utterance.
+    expect(prompt).toContain("never the");
   });
 });

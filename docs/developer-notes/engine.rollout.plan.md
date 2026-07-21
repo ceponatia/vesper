@@ -87,7 +87,18 @@ is the cleanup that makes the migration real.
    regenerate/rerun kinds, attachments, and chips stay legacy — a successor
    retake is a branch fork, never an in-place rerender (recorded boundary,
    rides R5). The `/sim-turn` route remains as the thin headless wrapper
-   over the same core. Next at the time: **R2**.
+   over the same core. First live mobile play (owner, 2026-07-21) surfaced
+   the follow-up now fixed: the player's message never reached the narrator
+   (background-only prose) — the utterance + a bounded dialogue tail are now
+   presentation-lane prompt sections with the attempt-not-outcome guard
+   (lawful per the LLM-interpret-language decision + the small-talk license;
+   no state path touched, every invariance suite unchanged). **Named
+   follow-on — input admission:** a deterministic/small-model leg mapping
+   player language onto the typed legal command set BEFORE the turn
+   prepares (the plan's "deterministic input admission" budget line), so
+   "I hand her the keepsake" executes a real transfer instead of being
+   portrayed as an attempt. Belongs early in R5's migration work. Next at
+   the time: **R2**.
 3. **R2 — the live narrator over the committed cut.** Status: **shipped —
    2026-07-21** (leftover below). `renderCommittedCut`
    (`server/engine/sim-narrator.ts`): load the persisted, hash-verified cut →

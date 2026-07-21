@@ -25,6 +25,7 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
     chatId,
     userId: user.id,
     speakerCharacterId: owned.character.id,
+    speakerName: owned.character.name,
     message: body.value.message,
   });
   if (!result.ok) return jsonError(result.code, result.message, result.status);
