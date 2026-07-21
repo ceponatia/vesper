@@ -2,6 +2,7 @@ import { simulationHash } from "@/lib/simulation/hash";
 import { deriveEngagementId } from "@/lib/simulation/engagements";
 import { newId } from "@/lib/ids";
 import { characterChatMessages, db } from "@/server/db";
+import { desc, eq } from "drizzle-orm";
 import { readChatEngineAuthority } from "./chat-authority";
 import { persistAssistantReply } from "./chat-pipeline";
 import { buildLiveDeliberation, renderCommittedCut } from "./sim-narrator";
@@ -47,6 +48,8 @@ export async function runSimChatExchange(input: {
   chatId: string;
   userId: string;
   speakerCharacterId: string;
+  /** The primary character's display name — labels the dialogue tail. */
+  speakerName?: string;
   message: string;
 }): Promise<SimChatExchangeResult> {
   const authority = await readChatEngineAuthority(input.chatId);
@@ -89,6 +92,21 @@ export async function runSimChatExchange(input: {
     return { ok: false, code: "sim_open_failed", message: `the scene could not open: ${opened.code}`, status: 409 };
   }
 
+  // The conversational context the narrator responds to: the last few
+  // transcript lines (before this turn's insert), oldest first.
+  const tailRows = await db()
+    .select({ role: characterChatMessages.role, content: characterChatMessages.content })
+    .from(characterChatMessages)
+    .where(eq(characterChatMessages.chatId, input.chatId))
+    .orderBy(desc(characterChatMessages.createdAt))
+    .limit(6);
+  const dialogueTail = tailRows
+    .reverse()
+    .map((row) => ({
+      speaker: row.role === "user" ? "The viewpoint actor" : (input.speakerName ?? "The scene"),
+      text: row.content,
+    }));
+
   const userMessageId = newId();
   await db().insert(characterChatMessages).values({
     id: userMessageId,
@@ -108,7 +126,12 @@ export async function runSimChatExchange(input: {
     deliberation: buildLiveDeliberation(),
     workerId: `sim-turn-${input.chatId}`,
   });
-  const rendered = await renderCommittedCut({ branchId, engagementId, cutId: turn.cut.id });
+  const rendered = await renderCommittedCut({
+    branchId,
+    engagementId,
+    cutId: turn.cut.id,
+    conversation: { playerUtterance: input.message, dialogueTail },
+  });
   if (rendered.status !== "rendered" || rendered.prose === undefined) {
     return { ok: false, code: "render_withheld", message: "the narrator could not render this turn; try again", status: 503 };
   }

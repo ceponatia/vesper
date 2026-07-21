@@ -11,6 +11,7 @@ import {
   buildCutRenderPrompt,
   parseNarratorResult,
   simulationHash,
+  type CutRenderConversation,
 } from "@/lib/simulation";
 import { generateChecked } from "@/server/ai";
 import { db, type Db } from "@/server/db";
@@ -47,6 +48,8 @@ export interface RenderCutInput {
   modelId?: string;
   /** Total attempts including the ruling-8 hidden retry. Default 2. */
   maxAttempts?: number;
+  /** Presentation-lane conversational input — the player's turn + dialogue tail. */
+  conversation?: CutRenderConversation;
 }
 
 export type RenderSeam = (args: {
@@ -136,7 +139,7 @@ export async function renderCommittedCut(
   }
   // Ruling 8: every attempt re-reads the SAME persisted, hash-verified cut.
   const cut = await loadPersistedCut(input.branchId, cutId, { database });
-  const { system, prompt } = buildCutRenderPrompt(cut);
+  const { system, prompt } = buildCutRenderPrompt(cut, input.conversation ?? {});
   const render = options.render ?? liveRenderSeam(cut);
 
   let attempts = 0;

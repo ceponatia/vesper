@@ -69,7 +69,17 @@ export interface AuditPresentationOptions {
  * §22 boundary made text — everything in it comes from the cut, and the
  * §23.1 result contract is stated verbatim so the reply parses.
  */
-export function buildCutRenderPrompt(cut: NarrativeCut): { system: string; prompt: string } {
+export interface CutRenderConversation {
+  /** The viewpoint actor's words/intent THIS turn — presentation input only. */
+  playerUtterance?: string;
+  /** Recent dialogue, oldest first, for conversational continuity. */
+  dialogueTail?: readonly { speaker: string; text: string }[];
+}
+
+export function buildCutRenderPrompt(
+  cut: NarrativeCut,
+  conversation: CutRenderConversation = {},
+): { system: string; prompt: string } {
   const lines: string[] = [];
   lines.push(
     `VIEWPOINT: ${cut.viewpointActorId}`,
@@ -150,6 +160,24 @@ export function buildCutRenderPrompt(cut: NarrativeCut): { system: string; promp
       ),
     );
   }
+  const tail = (conversation.dialogueTail ?? []).filter((line) => line.text.trim().length > 0).slice(-6);
+  if (tail.length > 0) {
+    lines.push(
+      "RECENT CONVERSATION (oldest first — continuity only, never new facts):",
+      ...tail.map((line) => `- ${line.speaker}: ${line.text.length > 300 ? `${line.text.slice(0, 300)}…` : line.text}`),
+    );
+  }
+  if (conversation.playerUtterance && conversation.playerUtterance.trim().length > 0) {
+    lines.push(
+      "THE VIEWPOINT ACTOR'S TURN — this drives the scene:",
+      `- ${conversation.playerUtterance.trim()}`,
+      "Portray the viewpoint actor saying/doing this and have the characters",
+      "present RESPOND to it naturally (dialogue is yours under the small-talk",
+      "license). If it implies an action or outcome the committed state above",
+      "does not establish, portray only the attempt or the words — never the",
+      "unearned outcome.",
+    );
+  }
   lines.push(
     "",
     "Return STRICT JSON only, no prose outside it:",
@@ -162,7 +190,9 @@ export function buildCutRenderPrompt(cut: NarrativeCut): { system: string; promp
     "reveal knowledge, or decide outcomes. Write immersive third-person present-tense",
     "prose from the viewpoint actor's perspective. Every MUST ENACT beat appears exactly",
     "once, in meaning. Nothing FORBIDDEN appears in any form. Failed attempts show only",
-    "their public face. Armed speech acts are optional — enact one only when your prose",
+    "their public face. The scene must ANSWER the viewpoint actor's turn when one is",
+    "given — background texture supports the exchange, never replaces it. Armed speech",
+    "acts are optional — enact one only when your prose",
     "actually delivers it, and declare exactly what you enacted. Reply with the strict",
     "JSON object requested and nothing else.",
   ].join(" ");
