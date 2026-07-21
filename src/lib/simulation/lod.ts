@@ -7,6 +7,7 @@ import {
   actorLodsProjectionSchema,
   actorLodStateSchema,
   composeSimulationId,
+  isBelowEventLod,
   isSimulationLodDemotion,
   type ActorLodRead,
   type ActorLodRegistryVersion,
@@ -17,6 +18,11 @@ import {
   type BodyRhythmRow,
   type SimulationBranchEvent,
 } from "@/contracts/simulation";
+import {
+  buildActorBodyAlarmRearms,
+  type CollapseContext,
+  type MeterIntegrationView,
+} from "./bodies";
 import { buildRoutinePolicyTrigger, nextRoutineBoundarySecond } from "./routine";
 
 /**
@@ -66,6 +72,7 @@ interface ActorLodRejection {
     | "demotion_blocked_active_claims"
     | "demotion_blocked_open_pressure"
     | "demotion_blocked_open_engagement"
+    | "demotion_blocked_active_condition"
   >;
   publicReason: string;
 }
@@ -90,6 +97,12 @@ export interface AssignActorLodGuardCounts {
   openPressureCount: number;
   /** Claim-holding engagements (§18.2) the actor participates in. */
   openEngagementCount: number;
+  /**
+   * E6.3: the actor's ACTIVE body conditions — a §27.3 near-boundary hazard
+   * that blocks only a move BELOW `event` (retiring a live expiry alarm
+   * would leave the projection lying about when the condition ends).
+   */
+  activeConditionCount: number;
 }
 
 export interface AssignActorLodResolutionView {
@@ -105,6 +118,17 @@ export interface AssignActorLodResolutionView {
   bodyInitialized: boolean;
   /** E6.2: the actor's rhythm rows; the sleep window defaults when absent. */
   rhythmRows: readonly BodyRhythmRow[];
+  /**
+   * E6.3: the tracked body's alarm-solve facts, loaded when the body is
+   * initialized. When the simulation axis moves and lands at `event` or
+   * `exact`, the resolver re-arms the full body-alarm set from these views
+   * (the store retired every prior alarm first); absent views simply arm
+   * nothing — fail-quiet, the fire-time staleness codes remain the backstop.
+   */
+  bodyAlarmViews?: {
+    meterViews: readonly MeterIntegrationView[];
+    collapseContext?: CollapseContext;
+  };
 }
 
 export type AssignActorLodResolution =
@@ -154,6 +178,11 @@ export function resolveAssignActorLodFromView(
       return rejection("demotion_blocked_open_engagement", "That actor is in a live scene.");
     }
   }
+  // E6.3: landing below `event` additionally requires no active body
+  // condition — its expiry alarm could not survive the dormant no-work law.
+  if (isBelowEventLod(command.payload.simulationLod) && view.guards.activeConditionCount > 0) {
+    return rejection("demotion_blocked_active_condition", "That actor's body is in the middle of something.");
+  }
 
   const state = actorLodStateSchema.parse({
     actorId: command.payload.actorId,
@@ -188,19 +217,49 @@ export function resolveAssignActorLodFromView(
     },
   });
 
+  const events: SimulationBranchEvent[] = [event];
+  let nextSequence = event.sequence + 1;
+
+  // E6.3: when the simulation axis MOVES, the store retires the actor's full
+  // body-alarm set unconditionally (thresholds + collapse; the
+  // restock-reconfigure idiom) — and landing at `event` or `exact` re-arms
+  // it fresh from re-solved law as this same command's events. Landing below
+  // `event` re-arms nothing: a dormant or aggregate actor performs no
+  // scheduled work at all. Inference-only changes never touch body alarms.
+  const simulationMoved = effective.simulationLod !== state.simulationLod;
+  if (
+    simulationMoved &&
+    !isBelowEventLod(state.simulationLod) &&
+    view.bodyInitialized &&
+    view.bodyAlarmViews
+  ) {
+    const rearms = buildActorBodyAlarmRearms({
+      view,
+      command,
+      actorId: command.payload.actorId,
+      meterViews: view.bodyAlarmViews.meterViews,
+      ...(view.bodyAlarmViews.collapseContext === undefined
+        ? {}
+        : { collapseContext: view.bodyAlarmViews.collapseContext }),
+      startSequence: nextSequence,
+      causationId: event.id,
+      armedAtSequence: event.sequence,
+    });
+    events.push(...rearms);
+    nextSequence += rearms.length;
+  }
+
   // E6.2: entering (or staying at) `event` simulation LOD arms the actor's
   // routine alarm at their next routine boundary (bedtime or a meal start) —
-  // the store retires any prior arming unconditionally first (the
-  // restock-reconfigure idiom), so exactly one alarm is ever live. Actors
-  // without a tracked body arm nothing (mirrors the assumed-rhythm rule:
-  // background casts stay row-free and work-free).
-  const events: SimulationBranchEvent[] = [event];
+  // the store retires any prior arming unconditionally first, so exactly one
+  // alarm is ever live. Actors without a tracked body arm nothing (mirrors
+  // the assumed-rhythm rule: background casts stay row-free and work-free).
   if (state.simulationLod === "event" && view.bodyInitialized) {
     events.push(
       buildRoutinePolicyTrigger({
         view,
         command,
-        sequence: event.sequence + 1,
+        sequence: nextSequence,
         causationId: event.id,
         actorId: command.payload.actorId,
         suffix: "arm-routine-policy",

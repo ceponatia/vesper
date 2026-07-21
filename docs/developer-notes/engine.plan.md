@@ -1280,11 +1280,40 @@ seed-pinned).
    across all suites. Leftovers: aggregate-stock feeding (no concrete item)
    is E6.3's lane; the §21.3 ledger terms in the general scorer remain §9's
    open decision 6.
-3. **E6.3 — aggregate and dormant lanes.** Population cohorts and institutions as
-   flow-updated aggregates (extending §26.9 means bands and the §26.11 restock
-   pattern): analytic updates on demand at read or dependency time, never on a
-   tick; dormant actors provably arm no triggers and write no rows until an
-   incoming dependency or promotion boundary wakes them.
+3. **E6.3 — aggregate and dormant lanes.** Status: **slice 1 shipped —
+   2026-07-20.** Population cohorts and institutions as flow-updated aggregates
+   (extending §26.9 means bands and the §26.11 restock pattern): analytic updates
+   on demand at read or dependency time, never on a tick; dormant actors provably
+   arm no triggers and write no rows until an incoming dependency or promotion
+   boundary wakes them.
+   **Slice 1 (2026-07-20): the dormant lane** (spec §27.5 authored as the
+   normative wording). Below `event`, an actor performs no scheduled work:
+   any simulation-axis move retires the actor's full body-alarm set
+   (thresholds + collapse, the restock-reconfigure idiom) and landing at
+   `event`/`exact` re-arms it fresh from re-solved law via the new pure
+   `buildActorBodyAlarmRearms` (the same command's events; inference-only
+   changes touch nothing). Landing below `event` is guarded fail-closed on
+   active body conditions (`demotion_blocked_active_condition` — a live
+   expiry alarm can't survive the no-work law), `initialize_actor_body`
+   arms nothing for an already-below-event actor, and replay mirrors the
+   retirement so forked children carry no phantom alarms. The int proof
+   advances three story-days over a dormant actor — across two would-be
+   bedtimes and both meters' would-be crossings — asserting zero events,
+   zero conditions, zero pending triggers, and untouched meter rows, then
+   wakes them by promotion and watches ordinary bedtime law resume; the
+   asleep-actor tuck-away rejection and the init-under-dormant path are
+   covered alongside. 4 new pure + 1 new int case; 3 090 pure + 461 int
+   green; CI runs `test:engine-e6-3`. Waking on an incoming dependency
+   (vs. explicit promotion) is deliberately deferred to E6.4's
+   promotion/catch-up contract.
+   **Slice 2 (next): the aggregate lane** — population cohorts as
+   branch-scoped conserved-count entities (`cohort_created` /
+   `cohort_adjusted`, integer deltas with reasons, fork-replayed), authored
+   presence windows read analytically (zero rows at read), and means-band
+   support extended to cohort subjects (§26.10) — the promotable aggregate
+   facts E6.4 materializes actors from. Institutions stay households +
+   restock (§26.8–26.11) in v1; zone-shop restock generalization is
+   deferred until a scenario demands it.
 4. **E6.4 — actor promotion and catch-up.** §27.2's five steps generalized from
    the §26.10 item case to actors: promotion reserves conserved quantities,
    samples missing detail from a named deterministic stream with seed and

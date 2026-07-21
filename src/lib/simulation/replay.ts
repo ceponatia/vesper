@@ -1,3 +1,4 @@
+import { bodyMeterRegistryByVersion } from "@/contracts/simulation/bodies";
 import {
   simulationBranchEventSchema,
   type SimulationBranchEvent,
@@ -308,6 +309,19 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
         // (E6.2 — the restock-reconfigure idiom); an assignment that re-arms
         // emits its OWN fresh trigger_scheduled, recognized above.
         retire(`routine_policy_due:${event.payload.actorId}`, event.commandId);
+        // E6.3: a simulation-axis move also retires the actor's full body-alarm
+        // set (thresholds across every registry meter + collapse) — the store's
+        // retirement mirrored here; re-arms (when the new level is event/exact)
+        // ride the same command's fresh trigger_scheduled events, recognized
+        // above.
+        if (event.payload.previousSimulationLod !== event.payload.simulationLod) {
+          for (const registry of Object.values(bodyMeterRegistryByVersion)) {
+            for (const definition of registry) {
+              retire(`body_threshold_due:${event.payload.actorId}:${definition.key}`, event.commandId);
+            }
+          }
+          retire(`body_collapse_due:${event.payload.actorId}`, event.commandId);
+        }
       }
     }
 

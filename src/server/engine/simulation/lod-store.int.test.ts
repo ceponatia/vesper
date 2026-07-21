@@ -1,14 +1,25 @@
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import { newId } from "@/lib/ids";
 import { emptyActorLodsSeed, replayActorLodHistory } from "@/lib/simulation";
-import { db, simActorLods, simBranches, simEvents, simWorlds } from "@/server/db";
+import {
+  db,
+  simActorLods,
+  simBodyConditions,
+  simBodyMeters,
+  simBranches,
+  simEvents,
+  simTriggers,
+  simWorlds,
+} from "@/server/db";
+import { seedDurableBodyRhythms, submitDurableInitializeActorBody } from "./body-store";
 import { forkBranch } from "./branch-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
 import { readEffectiveActorLod, submitDurableAssignActorLod } from "./lod-store";
 import { seedDurableMaterialBranch } from "./material-store";
 import { branchEventFromRow } from "./observation-store";
+import { advanceBranchStoryTime } from "./scheduler-store";
 import { seedDurableSpaceTopology } from "./space-store";
 
 /**
@@ -300,5 +311,149 @@ describe.runIf(ready)("E6.1 durable actor-LOD ledger", () => {
       admit,
     );
     expect(bystander.status).toBe("accepted");
+  });
+
+  it("dormant actors provably do no scheduled work, and waking re-arms life (E6.3)", async () => {
+    const DAY = 86_400;
+    const ids = await seedCase();
+
+    async function trackBody(actorId: string, name: string): Promise<void> {
+      await seedDurableBodyRhythms({
+        branchId: ids.branchId,
+        rows: [{ actorId, kind: "sleep", startMinuteOfDay: 1_380, endMinuteOfDay: 420 }],
+      });
+      const initialized = await submitDurableInitializeActorBody(
+        {
+          id: `cmd-init-${name}-${ids.branchId}`,
+          branchId: ids.branchId,
+          expectedVersion: 0,
+          idempotencyKey: `init-${name}-key-${ids.branchId}`,
+          principal: gmPrincipal,
+          submittedAtWallClock: "2026-07-20T12:00:00.000Z",
+          correlationId: `corr-${ids.branchId}`,
+          type: "initialize_actor_body",
+          schemaVersion: 1,
+          payload: { actorId, registryVersion: "body-v1", baselineOverrides: {} },
+        },
+        admit,
+      );
+      expect(initialized.status).toBe("accepted");
+    }
+    async function pendingTriggersFor(branchId: string, actorId: string) {
+      const rows = await db()
+        .select({ kind: simTriggers.kind, uniquenessKey: simTriggers.uniquenessKey })
+        .from(simTriggers)
+        .where(and(eq(simTriggers.branchId, branchId), eq(simTriggers.state, "pending")));
+      return rows.filter((row) => row.uniquenessKey.includes(actorId));
+    }
+    async function eventsNaming(actorId: string): Promise<number> {
+      const rows = await db()
+        .select({ count: sql<number>`count(*)::int` })
+        .from(simEvents)
+        .where(
+          and(
+            eq(simEvents.branchId, ids.branchId),
+            sql`${simEvents.actorIds} @> ${JSON.stringify([actorId])}::jsonb`,
+          ),
+        );
+      return rows[0]?.count ?? 0;
+    }
+
+    await trackBody(ids.ana, "ana");
+
+    // Event LOD arms the routine boundary plus the re-solved body alarms.
+    const toEvent = await submitDurableAssignActorLod(
+      assignCmd(ids, "ana-live", { actorId: ids.ana, simulationLod: "event", inferenceLod: "no_model" }),
+      admit,
+    );
+    expect(toEvent.status).toBe("accepted");
+    const live = await pendingTriggersFor(ids.branchId, ids.ana);
+    expect(live.some((row) => row.kind === "routine_policy_due")).toBe(true);
+    expect(live.some((row) => row.kind === "body_threshold_due")).toBe(true);
+
+    // Demotion to dormant retires every alarm the actor owns.
+    const toDormant = await submitDurableAssignActorLod(
+      assignCmd(ids, "ana-dormant", { actorId: ids.ana, simulationLod: "dormant", inferenceLod: "no_model" }),
+      admit,
+    );
+    expect(toDormant.status).toBe("accepted");
+    expect(await pendingTriggersFor(ids.branchId, ids.ana)).toHaveLength(0);
+
+    // Three story-days pass — across two would-be bedtimes and both meters'
+    // would-be threshold crossings — and the dormant actor writes NOTHING:
+    // no events name them, no conditions appear, no meter row moves.
+    const eventCountBefore = await eventsNaming(ids.ana);
+    const metersBefore = await db()
+      .select({ meterKey: simBodyMeters.meterKey, updatedSequence: simBodyMeters.updatedSequence })
+      .from(simBodyMeters)
+      .where(and(eq(simBodyMeters.branchId, ids.branchId), eq(simBodyMeters.actorId, ids.ana)))
+      .orderBy(asc(simBodyMeters.meterKey));
+    await advanceBranchStoryTime(ids.branchId, SEED_SECOND + 3 * DAY, { workerId: "lod-dormant-1" });
+    expect(await eventsNaming(ids.ana)).toBe(eventCountBefore);
+    expect(await pendingTriggersFor(ids.branchId, ids.ana)).toHaveLength(0);
+    const conditions = await db()
+      .select()
+      .from(simBodyConditions)
+      .where(and(eq(simBodyConditions.branchId, ids.branchId), eq(simBodyConditions.actorId, ids.ana)));
+    expect(conditions).toHaveLength(0);
+    const metersAfter = await db()
+      .select({ meterKey: simBodyMeters.meterKey, updatedSequence: simBodyMeters.updatedSequence })
+      .from(simBodyMeters)
+      .where(and(eq(simBodyMeters.branchId, ids.branchId), eq(simBodyMeters.actorId, ids.ana)))
+      .orderBy(asc(simBodyMeters.meterKey));
+    expect(metersAfter).toEqual(metersBefore);
+
+    // A fork of the sleeping-nothing branch carries no phantom alarms.
+    const [parentRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
+    if (!parentRow) throw new Error("parent branch row missing");
+    const childBranchId = newId();
+    await forkBranch({
+      parentBranchId: ids.branchId,
+      childBranchId,
+      atSequence: parentRow.headSequence,
+      principal: { kind: "storyteller", principalId: "gm-1" },
+      reason: "E6.3 dormant fork parity",
+    });
+    expect(await pendingTriggersFor(childBranchId, ids.ana)).toHaveLength(0);
+
+    // Waking by promotion re-arms the routine boundary, and life resumes:
+    // the next bedtime puts the actor to sleep through ordinary law.
+    const wake = await submitDurableAssignActorLod(
+      assignCmd(ids, "ana-wake", { actorId: ids.ana, simulationLod: "event", inferenceLod: "no_model" }),
+      admit,
+    );
+    expect(wake.status).toBe("accepted");
+    const rearmed = await pendingTriggersFor(ids.branchId, ids.ana);
+    expect(rearmed.some((row) => row.kind === "routine_policy_due")).toBe(true);
+    const nextBedtime = 5 * DAY + 1_380 * 60;
+    await advanceBranchStoryTime(ids.branchId, nextBedtime + 1, { workerId: "lod-dormant-1" });
+    const asleep = await db()
+      .select()
+      .from(simBodyConditions)
+      .where(
+        and(
+          eq(simBodyConditions.branchId, ids.branchId),
+          eq(simBodyConditions.actorId, ids.ana),
+          eq(simBodyConditions.key, "asleep"),
+        ),
+      );
+    expect(asleep.filter((row) => row.status === "active")).toHaveLength(1);
+
+    // A sleeping actor cannot be tucked below event — the active condition
+    // is a §27.3 near-boundary hazard, named in the rejection.
+    const tuckedAway = await submitDurableAssignActorLod(
+      assignCmd(ids, "ana-tuck", { actorId: ids.ana, simulationLod: "dormant", inferenceLod: "no_model" }),
+      admit,
+    );
+    expect(tuckedAway).toMatchObject({ status: "rejected", code: "demotion_blocked_active_condition" });
+
+    // A body initialized for an already-dormant actor arms nothing at all.
+    const cyDormant = await submitDurableAssignActorLod(
+      assignCmd(ids, "cy-dormant", { actorId: ids.cy, simulationLod: "dormant", inferenceLod: "no_model" }),
+      admit,
+    );
+    expect(cyDormant.status).toBe("accepted");
+    await trackBody(ids.cy, "cy");
+    expect(await pendingTriggersFor(ids.branchId, ids.cy)).toHaveLength(0);
   });
 });

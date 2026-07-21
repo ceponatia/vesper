@@ -1894,6 +1894,36 @@ Every consumer resolves an actor's LOD through one read seam (the effective read
 assigned row or defaults). The §19.3 deliberator admission consumes the acting NPC's
 inference LOD per actor; the §21.4 consent escalation consumes the deciding target's.
 
+### 27.5 The below-event alarm law (E6.3)
+
+Below `event` (aggregate | dormant) an actor performs no scheduled work at all.
+`assign_actor_lod` enforces this at the boundary:
+
+- Landing below `event` additionally requires no ACTIVE body condition
+  (`demotion_blocked_active_condition`): a live self-expiring condition is a §27.3
+  near-boundary hazard — retiring its expiry alarm would leave the projection lying
+  about when it ends — so a sleeping actor cannot be tucked into dormancy until they
+  wake.
+- Whenever the simulation axis MOVES, the actor's full body-alarm set (every meter's
+  threshold alarm plus the collapse alarm) is retired unconditionally (the
+  restock-reconfigure idiom) and, when the new level is `event` or `exact`, re-armed
+  fresh from re-solved law as the same command's trigger_scheduled events. Landing
+  below `event` re-arms nothing; inference-only changes never touch body alarms. The
+  routine alarm keeps its E6.2 law (retired on every assignment, re-armed at `event`).
+- `initialize_actor_body` for an actor already below `event` initializes the substrate
+  (meters exist, reads stay pure and lazy) but arms no alarms — the no-work law holds
+  on every path.
+- Replay mirrors the retirement (a simulation-axis-moving `actor_lod_assigned` retires
+  the actor's body-alarm keys); re-arms ride the command's own events, so forked
+  children carry no phantom alarms.
+
+Reads are untouched: a dormant actor's meters keep drifting analytically and integrate
+lazily at read time — LOD gates scheduled work, never read law. Waking is a promotion
+back to `event`/`exact`. Waking on an INCOMING DEPENDENCY (a command or engagement
+reaching a below-event actor) is E6.4's promotion/catch-up concern; until then an
+explicit command acting on a below-event actor is an authored intervention whose own
+alarms will fire — promote the actor first.
+
 ## 28. Inference LOD and model budget
 
 Simulation LOD and inference LOD MUST be independent. A physically exact activity may

@@ -10,6 +10,11 @@ import {
   type AssignActorLodCommand,
   type AssignActorLodCommandInput,
 } from "@/contracts/simulation/lod";
+import {
+  bodyDerivationVersion,
+  bodyMeterRegistryByVersion,
+  bodyMeterStateSchema,
+} from "@/contracts/simulation/bodies";
 import { buildMaterialLotInitializedEvent } from "./households";
 import {
   applyActorLodEvent,
@@ -29,7 +34,36 @@ const noGuards: AssignActorLodGuardCounts = {
   claimHoldingActivityCount: 0,
   openPressureCount: 0,
   openEngagementCount: 0,
+  activeConditionCount: 0,
 };
+
+function energyAlarmViews(): NonNullable<AssignActorLodResolutionView["bodyAlarmViews"]> {
+  const definition = bodyMeterRegistryByVersion[bodyDerivationVersion].find(
+    (candidate) => candidate.key === "energy",
+  );
+  if (!definition) throw new Error("energy definition missing");
+  return {
+    meterViews: [
+      {
+        definition,
+        state: bodyMeterStateSchema.parse({
+          actorId: MARA,
+          meterKey: "energy",
+          valueFixedPoint: 9_000,
+          baselineFixedPoint: 0,
+          lastIntegratedAtStorySecond: 3_600,
+          registryVersion: bodyDerivationVersion,
+        }),
+        modifiers: [],
+        scheduledAdjustments: [],
+      },
+    ],
+    // A real last-wake makes escalation accumulate, so a collapse crossing
+    // exists inside the solve horizon (a context without sleep history never
+    // collapses — the assume-the-rhythm-was-followed law).
+    collapseContext: { rhythmRows: [], lastSleepEndedAtStorySecond: 0 },
+  };
+}
 
 function view(overrides: Partial<AssignActorLodResolutionView> = {}): AssignActorLodResolutionView {
   return {
@@ -210,19 +244,21 @@ describe("resolveAssignActorLodFromView (E6.1)", () => {
   it("checks the demotion guards in fixed order: claims, then pressure, then engagement", () => {
     const payload = { actorId: MARA, simulationLod: "dormant", inferenceLod: "no_model" } as const;
     const allBlocked = resolveAssignActorLodFromView(
-      view({ guards: { claimHoldingActivityCount: 1, openPressureCount: 1, openEngagementCount: 1 } }),
+      view({
+        guards: { ...noGuards, claimHoldingActivityCount: 1, openPressureCount: 1, openEngagementCount: 1 },
+      }),
       assignCmd(payload),
     );
     expect(allBlocked).toMatchObject({ ok: false, code: "demotion_blocked_active_claims" });
 
     const pressureBlocked = resolveAssignActorLodFromView(
-      view({ guards: { claimHoldingActivityCount: 0, openPressureCount: 1, openEngagementCount: 1 } }),
+      view({ guards: { ...noGuards, openPressureCount: 1, openEngagementCount: 1 } }),
       assignCmd(payload),
     );
     expect(pressureBlocked).toMatchObject({ ok: false, code: "demotion_blocked_open_pressure" });
 
     const engagementBlocked = resolveAssignActorLodFromView(
-      view({ guards: { claimHoldingActivityCount: 0, openPressureCount: 0, openEngagementCount: 1 } }),
+      view({ guards: { ...noGuards, openEngagementCount: 1 } }),
       assignCmd(payload),
     );
     expect(engagementBlocked).toMatchObject({ ok: false, code: "demotion_blocked_open_engagement" });
@@ -230,7 +266,9 @@ describe("resolveAssignActorLodFromView (E6.1)", () => {
 
   it("never guards an inference-only change, even for an encumbered actor", () => {
     const result = resolveAssignActorLodFromView(
-      view({ guards: { claimHoldingActivityCount: 2, openPressureCount: 1, openEngagementCount: 1 } }),
+      view({
+        guards: { ...noGuards, claimHoldingActivityCount: 2, openPressureCount: 1, openEngagementCount: 1 },
+      }),
       assignCmd({ actorId: MARA, simulationLod: "exact", inferenceLod: "small_model" }),
     );
     expect(result).toMatchObject({ ok: true });
@@ -240,7 +278,7 @@ describe("resolveAssignActorLodFromView (E6.1)", () => {
     const result = resolveAssignActorLodFromView(
       view({
         current: assignedRow,
-        guards: { claimHoldingActivityCount: 2, openPressureCount: 1, openEngagementCount: 1 },
+        guards: { ...noGuards, claimHoldingActivityCount: 2, openPressureCount: 1, openEngagementCount: 1 },
       }),
       assignCmd({ actorId: MARA, simulationLod: "exact", inferenceLod: "small_model" }),
     );
@@ -253,6 +291,78 @@ describe("resolveAssignActorLodFromView (E6.1)", () => {
         previousWasDefault: false,
       },
     });
+  });
+
+  it("blocks landing below event with an active body condition, but never event or exact (E6.3)", () => {
+    const asleepGuards = { ...noGuards, activeConditionCount: 1 };
+    const dormantBlocked = resolveAssignActorLodFromView(
+      view({ guards: asleepGuards, bodyInitialized: true }),
+      assignCmd({ actorId: MARA, simulationLod: "dormant", inferenceLod: "no_model" }),
+    );
+    expect(dormantBlocked).toMatchObject({ ok: false, code: "demotion_blocked_active_condition" });
+
+    const aggregateBlocked = resolveAssignActorLodFromView(
+      view({ guards: asleepGuards, bodyInitialized: true }),
+      assignCmd({ actorId: MARA, simulationLod: "aggregate", inferenceLod: "no_model" }),
+    );
+    expect(aggregateBlocked).toMatchObject({ ok: false, code: "demotion_blocked_active_condition" });
+
+    // A sleeping actor may still move between exact and event freely.
+    const eventAllowed = resolveAssignActorLodFromView(
+      view({ guards: asleepGuards, bodyInitialized: true }),
+      assignCmd({ actorId: MARA, simulationLod: "event", inferenceLod: "no_model" }),
+    );
+    expect(eventAllowed).toMatchObject({ ok: true });
+  });
+
+  it("re-arms the body alarms when the simulation axis moves and lands at event (E6.3)", () => {
+    const result = resolveAssignActorLodFromView(
+      view({ bodyInitialized: true, bodyAlarmViews: energyAlarmViews() }),
+      assignCmd({ actorId: MARA, simulationLod: "event", inferenceLod: "no_model" }),
+    );
+    if (!result.ok) throw new Error(`expected acceptance, got ${result.code}`);
+    const kinds = result.events.map((event) =>
+      event.type === "trigger_scheduled" ? event.payload.kind : event.type,
+    );
+    // exact → event: lod event, threshold re-solve, collapse re-solve, routine arm.
+    expect(kinds).toEqual([
+      "actor_lod_assigned",
+      "body_threshold_due",
+      "body_collapse_due",
+      "routine_policy_due",
+    ]);
+    // Sequences run contiguously from the lod event.
+    expect(result.events.map((event) => event.sequence)).toEqual([8, 9, 10, 11]);
+  });
+
+  it("landing below event emits only the lod event — nothing arms (E6.3)", () => {
+    const result = resolveAssignActorLodFromView(
+      view({ bodyInitialized: true, bodyAlarmViews: energyAlarmViews() }),
+      assignCmd({ actorId: MARA, simulationLod: "dormant", inferenceLod: "no_model" }),
+    );
+    if (!result.ok) throw new Error(`expected acceptance, got ${result.code}`);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]?.type).toBe("actor_lod_assigned");
+  });
+
+  it("an inference-only change never touches body alarms (E6.3)", () => {
+    const current = actorLodStateSchema.parse({
+      actorId: MARA,
+      simulationLod: "event",
+      inferenceLod: "no_model",
+      registryVersion: actorLodRegistryVersion,
+      assignedAtStorySecond: 1_000,
+    });
+    const result = resolveAssignActorLodFromView(
+      view({ current, bodyInitialized: true, bodyAlarmViews: energyAlarmViews() }),
+      assignCmd({ actorId: MARA, simulationLod: "event", inferenceLod: "small_model" }),
+    );
+    if (!result.ok) throw new Error(`expected acceptance, got ${result.code}`);
+    const kinds = result.events.map((event) =>
+      event.type === "trigger_scheduled" ? event.payload.kind : event.type,
+    );
+    // Staying at event re-arms the routine alarm only.
+    expect(kinds).toEqual(["actor_lod_assigned", "routine_policy_due"]);
   });
 });
 

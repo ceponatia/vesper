@@ -36,6 +36,16 @@ export function isSimulationLodDemotion(from: SimulationLod, to: SimulationLod):
   return compareSimulationLods(to, from) > 0;
 }
 
+/**
+ * Below `event` (aggregate | dormant) an actor performs no scheduled work at
+ * all (E6.3): every per-actor alarm is retired on the way down and nothing
+ * re-arms until a promotion back to `event` or `exact`. Reads stay pure and
+ * lazy either way — LOD gates scheduled work, never read law.
+ */
+export function isBelowEventLod(lod: SimulationLod): boolean {
+  return compareSimulationLods(lod, "event") > 0;
+}
+
 // ---------------------------------------------------------------------------
 // Registry defaults — world-type versioned values (ruling 14/15 precedent)
 // ---------------------------------------------------------------------------
@@ -132,6 +142,10 @@ export const assignActorLodCommandSchema = createCommandEnvelopeSchema(
  * dial), and a simulation-axis promotion never guards either: for a named
  * actor whose full state already exists, raising resolution is bookkeeping —
  * real promotion-with-sampling from an aggregate is E6.4 (§27.2).
+ * `demotion_blocked_active_condition` (E6.3) guards only a move BELOW `event`:
+ * an active self-expiring body condition is a near-boundary hazard (§27.3) —
+ * retiring its expiry alarm would leave the projection lying about when it
+ * ends, so a sleeping actor cannot be tucked into dormancy until they wake.
  */
 export const assignActorLodRejectionCodes = [
   "invalid_command",
@@ -143,6 +157,7 @@ export const assignActorLodRejectionCodes = [
   "demotion_blocked_active_claims",
   "demotion_blocked_open_pressure",
   "demotion_blocked_open_engagement",
+  "demotion_blocked_active_condition",
 ] as const;
 export const assignActorLodRejectionCodeSchema = z.enum(assignActorLodRejectionCodes);
 export const assignActorLodCommandResultSchema = createCommandResultSchema(

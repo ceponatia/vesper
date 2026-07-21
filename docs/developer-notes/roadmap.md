@@ -30,10 +30,10 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   narrator) as independent per-actor axes, the deterministic background-life
   controller, aggregate/dormant lanes, and actor promotion + event-driven catch-up.
   Exit: an order-of-magnitude more off-screen actors does **not** grow model calls or
-  per-minute work linearly. Build order E6.1–E6.5; **E6.1 (the per-actor LOD ledger)
-  and E6.2 (the background-life controller: autonomous sleep/wake, then meals via the
-  §26.6 consumption train — E6.2 complete) shipped 2026-07-20 — see Shipped below.
-  Next: E6.3 (aggregate/dormant lanes).**
+  per-minute work linearly. Build order E6.1–E6.5; **E6.1 (the per-actor LOD ledger),
+  E6.2 (the background-life controller: autonomous sleep/wake, then meals via the
+  §26.6 consumption train — complete), and E6.3 slice 1 (the dormant lane) shipped
+  2026-07-20 — see Shipped below. Next: E6.3 slice 2 (cohorts — the aggregate lane).**
 
 ## Next (queued)
 
@@ -126,6 +126,17 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine dormant lane (E6.3, slice 1)** —
+  [engine.plan.md](engine.plan.md) §"Gate 6 build order" · contract
+  [engine.spec.md](engine.spec.md) §27.5 (authored this work) — 2026-07-20 — below
+  `event`, an actor provably does no scheduled work: simulation-axis moves retire the
+  full body-alarm set and re-arm it fresh only at `event`/`exact`; landing below
+  `event` is guarded on active conditions (`demotion_blocked_active_condition`);
+  body init under dormancy arms nothing; replay mirrors the retirement (no phantom
+  fork alarms). Int proof: three story-days over a dormant actor with zero events,
+  triggers, or row changes, then wake-by-promotion resumes bedtime law. 3 090 pure +
+  461 int green; CI runs `test:engine-e6-3`. Dependency-wake stays E6.4. Next:
+  **E6.3 slice 2 (cohorts)**.
 - **World-engine background-life controller, slice 2 (E6.2 COMPLETE)** —
   [engine.plan.md](engine.plan.md) §"Gate 6 build order" · contract
   [engine.spec.md](engine.spec.md) §19.2.1 — 2026-07-20 — `eat_meal` joins the
