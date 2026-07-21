@@ -34,6 +34,8 @@
     "eval:engine-baseline": "tsx scripts/eval/engine-baseline/run.ts",
     "eval:engine-gate1": "tsx scripts/eval/engine-gate1/run.ts",
     "eval:engine-gate2-soak": "tsx scripts/eval/engine-gate2-soak/run.ts",
+    "sim:seed": "tsx scripts/sim/seed-rollout-world.ts",
+    "sim:advance": "tsx scripts/sim/advance-rollout-world.ts",
     "eval:schedule-kind": "tsx scripts/eval/schedule-kind/run.ts",
     "eval:retrieval": "tsx scripts/eval/retrieval/run.ts",
     "test:engine-e2-3": "vitest run --no-file-parallelism --testNamePattern E2.3 src/server/engine/simulation/item-transfer-store.int.test.ts",
@@ -60,7 +62,8 @@
     "test:engine-e6-2": "vitest run --no-file-parallelism src/lib/simulation/routine.test.ts src/lib/simulation/lod.test.ts src/server/engine/simulation/routine-store.int.test.ts src/server/engine/simulation/lod-store.int.test.ts",
     "test:engine-e6-3": "vitest run --no-file-parallelism src/lib/simulation/lod.test.ts src/lib/simulation/bodies.test.ts src/lib/simulation/replay.test.ts src/lib/simulation/cohorts.test.ts src/server/engine/simulation/lod-store.int.test.ts src/server/engine/simulation/body-store.int.test.ts src/server/engine/simulation/cohort-store.int.test.ts",
     "test:engine-e6-4": "vitest run --no-file-parallelism src/lib/simulation/promotion.test.ts src/lib/simulation/cohorts.test.ts src/lib/simulation/lod.test.ts src/server/engine/simulation/promotion-store.int.test.ts src/server/engine/simulation/engagement-store.int.test.ts src/server/engine/simulation/body-store.int.test.ts",
-    "test:engine-e6-5": "vitest run --no-file-parallelism src/server/engine/simulation/gate6-corpus.int.test.ts"
+    "test:engine-e6-5": "vitest run --no-file-parallelism src/server/engine/simulation/gate6-corpus.int.test.ts",
+    "test:rollout-r1": "vitest run --no-file-parallelism src/server/engine/simulation/rollout-world.int.test.ts src/app/api/admin/engine-authority/engine-authority.int.test.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --max-warnings 0"

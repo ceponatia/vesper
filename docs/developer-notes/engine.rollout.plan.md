@@ -46,19 +46,35 @@ The IDs describe order, not PR numbers; each slice stays reviewable on its own.
 R0–R2 are prerequisites for everything after; R3–R5 are the rollout proper; R6
 is the cleanup that makes the migration real.
 
-1. **R0 — merge `engine` → `main`.** Housekeeping, not a feature: additive
-   migrations 0056–0080 land on Neon and sit idle; the app is unchanged (zero
-   product consumers). Merge `main` into `engine` first (the mobile-UX pass +
-   docs; expected conflict: `roadmap.md` only), run the five gates, then PR to
-   `main` and deploy so the schema ships ahead of any consumer. The long-lived
-   `engine` branch retires here — later slices ride ordinary feature branches.
-2. **R1 — authority flags and the internal test world.** The per-world flag
-   column(s) (default `legacy_chat` — a no-op for every existing row), admission
-   wiring so a command's lane is decided by the flag and nothing else, and one
-   seeded internal test world (topology, rhythms, cohorts, action definitions,
-   a small cast) provisioned end to end. Exit: flags flip per world with an
-   audit trail, and the test world drains story-days on Fly exactly as the
-   corpus does locally.
+1. **R0 — merge `engine` → `main`.** Status: **shipped — 2026-07-21.** `main`
+   merged into `engine` (one `roadmap.md` conflict, resolved), five gates green
+   on the merged tree (3 111 pure + 467 int), `main` fast-forwarded to the
+   merge commit (engine contained main, so no second merge), and Fly deployed
+   at machine version 93 — migrations 0056–0080 live on Neon, app unchanged.
+   The long-lived `engine` branch retires here — later slices ride ordinary
+   feature branches off `main`.
+2. **R1 — authority flags and the internal test world.** Status: **shipped —
+   2026-07-21.** `contracts/simulation/authority.ts` (the four ordered lanes +
+   orthogonal RAG flag, `consultsSuccessor`/`successorIsAuthoritative`
+   helpers); three columns on `character_chats` (migration 0081, additive:
+   `engine_authority` default `legacy_chat`, `successor_rag_eligibility`,
+   `sim_branch_id` FK SET NULL); the one read/flip seam
+   (`server/engine/chat-authority.ts` — parseOr fail-closed reads, flips
+   atomic with an `engine_authority_changed` audit row in the app `events`
+   table, no-op flips audit nothing); the audited admin dial
+   (`GET|PATCH /api/admin/engine-authority/[chatId]`, 404-hidden for
+   non-admins, owner-scoped). The standing internal test world
+   (`rollout-world.ts`, FIXED ids `rollout-test-world`/`rollout-test-branch`,
+   idempotent — found, never re-seeded): two zones + link, four-actor cast at
+   mixed LODs (Ana event+meals, Ben event, Riven dormant, Mara default-exact),
+   a 200-person cohort, bread for the meal routine; `pnpm sim:seed` /
+   `pnpm sim:advance -- --days N` wrap it locally and over Fly SSH (the drain
+   loops the bounded seam to convergence). Verified locally: seed → 8 pending
+   alarms; one story-day → 5 triggers drained, 3 routine decisions
+   (eat_meal + 2× begin_sleep). The action catalog deliberately waits for R3.
+   3 new int cases (`test:rollout-r1`, in CI); 3 111 pure + 470 int green.
+   Admission wiring beyond the seam deliberately trails into R2/R4 — nothing
+   consults the flag until a successor leg exists to route to.
 3. **R2 — the live narrator over the committed cut.** The first real model call
    in the successor lane: one narrator leg rendering a persisted NarrativeCut
    (presentation-only — `successor_narrative_view`), the §23.1 trust boundary

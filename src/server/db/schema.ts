@@ -311,6 +311,26 @@ export const characterChats = pgTable(
      * client's post-exchange transcript refetch reads it for the failure popup.
      */
     lastReplyFailure: jsonb("last_reply_failure"),
+    /**
+     * R1 (engine.rollout.plan.md): which lane owns this chat's world truth —
+     * `legacy_chat` (default; successor not consulted) · `successor_shadow` ·
+     * `successor_narrative_view` · `successor_authoritative`. Flipped only
+     * through the audited admin route; read through
+     * `readChatEngineAuthority`'s fail-closed boundary, never raw.
+     */
+    engineAuthority: text("engine_authority", {
+      enum: ["legacy_chat", "successor_shadow", "successor_narrative_view", "successor_authoritative"],
+    })
+      .notNull()
+      .default("legacy_chat"),
+    /** §24 recall routing — orthogonal to the lane (contracts/simulation/authority.ts). */
+    successorRagEligibility: boolean("successor_rag_eligibility").notNull().default(false),
+    /**
+     * The successor branch this chat's world maps onto (null until linked).
+     * SET NULL on branch teardown: authority reads then degrade to
+     * legacy-lane behavior rather than pointing at a ghost.
+     */
+    simBranchId: text("sim_branch_id").references(() => simBranches.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     /** Recency anchor for the Chats list; bumped on every exchange. */
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
