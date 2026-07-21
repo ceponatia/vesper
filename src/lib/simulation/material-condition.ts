@@ -1109,6 +1109,7 @@ export function applyItemConditionEvent(
     case "routine_policy_resolved":
     case "cohort_created":
     case "cohort_adjusted":
+    case "actor_materialized_from_aggregate":
       // Non-item-condition families advance the boundary without touching this projection.
       return itemConditionsProjectionSchema.parse(bumped);
   }

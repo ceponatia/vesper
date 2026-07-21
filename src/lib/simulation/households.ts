@@ -1493,6 +1493,7 @@ export function applyHouseholdEvent(
     case "routine_policy_resolved":
     case "cohort_created":
     case "cohort_adjusted":
+    case "actor_materialized_from_aggregate":
       // Non-household families advance the boundary without touching this projection.
       return householdsProjectionSchema.parse(bumped);
   }

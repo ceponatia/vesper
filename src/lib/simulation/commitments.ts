@@ -877,6 +877,7 @@ export function applyCommitmentEvent(
     case "routine_policy_resolved":
     case "cohort_created":
     case "cohort_adjusted":
+    case "actor_materialized_from_aggregate":
       // Non-commitment families advance the boundary without touching this projection.
       return commitmentsProjectionSchema.parse(bumped);
     case "pressure_acknowledged": {

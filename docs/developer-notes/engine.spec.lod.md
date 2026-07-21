@@ -31,8 +31,8 @@ Promotion from aggregate to exact MUST:
 The engine must not materialize a detail that contradicts something already observed.
 
 §26.10 concretizes this for the item-promotion case (the mechanism E5.4 builds first);
-other promotion targets (an aggregate NPC becoming exact-LOD, §27.1) reuse the same
-five-step shape but are out of E5.4's scope.
+§27.7 concretizes it for actors (E6.4) — a cohort member becoming a named actor
+through the same five-step shape.
 
 ### 27.3 Demotion
 
@@ -88,10 +88,10 @@ Below `event` (aggregate | dormant) an actor performs no scheduled work at all.
 
 Reads are untouched: a dormant actor's meters keep drifting analytically and integrate
 lazily at read time — LOD gates scheduled work, never read law. Waking is a promotion
-back to `event`/`exact`. Waking on an INCOMING DEPENDENCY (a command or engagement
-reaching a below-event actor) is E6.4's promotion/catch-up concern; until then an
-explicit command acting on a below-event actor is an authored intervention whose own
-alarms will fire — promote the actor first.
+back to `event`/`exact` — explicit, or E6.4's dependency wake (§27.7) when an
+engagement reaches the actor. An explicit command OTHER than an engagement acting on a
+below-event actor remains an authored intervention whose own alarms will fire —
+promote the actor first (§27.7's recorded v1 wake scope).
 
 ### 27.6 Population cohorts (E6.3)
 
@@ -124,6 +124,79 @@ routine to zone-locus shop stock is deferred until a scenario demands it.
 E6.4 consumes this substrate: actor promotion debits the source cohort
 (`promotion_reservation`) before materializing a named actor (§27.2 step 2), so a
 promoted actor's existence can never contradict aggregate history.
+
+### 27.7 Actor promotion, dependency wake, and catch-up (E6.4)
+
+**Promotion.** `promote_actor_from_cohort` (storyteller/system principals — the cohort
+authoring bar) is the ONLY path a named actor comes to exist mid-branch; every other
+actor is branch seed. It concretizes §27.2's five steps for actors, the §26.10 item
+shape generalized:
+
+1. the source cohort's committed count is the identified aggregate fact;
+2. the reservation debit comes first — a causation-chained `cohort_adjusted`
+   (`deltaCount: -1`, reason `promotion_reservation`); below zero is the ordinary
+   structured `insufficient_population`, so an actor can only exist because the
+   aggregate provably gave one up;
+3. detail the caller did not supply is sampled from a named deterministic stream
+   (`deterministicDrawUnit`, stream keyed by the command id + a purpose label) against
+   the cohort's authored name pool, with the stream identity and drawn result captured
+   on the event — replay never resamples. As with item promotion, no pool is authored
+   yet, so an omitted `name` with no pool is the structured `name_required`, never an
+   invented default;
+4. `actor_materialized_from_aggregate` records the materialization. It is the one
+   event that creates a `sim_characters` row, the actor's first physical locus (`at`
+   the named zone), and — chained after it — an `actor_lod_assigned` pinning the
+   landing detail levels (`event` or `exact` on the simulation axis, by schema: a
+   no-scheduled-work landing would be a contradiction in terms; `previousWasDefault`
+   is structurally true);
+5. the no-contradiction law is deterministic, not advisory: materialization at a zone
+   is legal only where the aggregate's own presence read admits a person — inside a
+   covering window, `presentCount ≥ 1` at that zone or a dispersed remainder ≥ 1
+   anywhere else; outside every window, anywhere (the cohort is dispersed). A zone the
+   read declares empty ("the square is empty tonight") cannot yield a person —
+   `cohort_not_present`.
+
+The promoted actor's id derives from the command id (the promoted-item precedent), so
+identity is deterministic and collision-free by construction. Exact headcount
+continuity across a promotion holds exactly at share 10 000 (`floor(n−1) + 1 = n`);
+at fractional shares the ±1 floor wobble is the aggregate approximation being honest
+(§"Feasible only with approximation"), not a conservation violation — the conserved
+count itself never wobbles.
+
+Promotion events are LOD bookkeeping under the §27.4 rule: no observation, no beat,
+no memory document — the person was already there in aggregate; witnesses perceive
+their subsequent actions through those events' own rules.
+
+**Dependency wake.** An engagement reaching a below-event participant wakes them:
+`open_engagement` promotes each such participant to `event` (inference axis untouched)
+inside its own transaction, the wake's `actor_lod_assigned` + alarm re-arms riding the
+open command's envelope ahead of the open event (the E6.2 same-command precedent).
+Attention cannot be claimed from an actor at a resolution that performs no scheduled
+work. Wake trains commit only when the open itself is legal — a rejected open wakes
+no one. **Recorded v1 scope ruling:** engagements are the one waking dependency —
+they claim attention, the resource below-event levels cannot supply. Any other
+command acting on a below-event actor keeps §27.5's promote-first law: passive facts
+(receiving an item, being disclosed about) arm no scheduled work and so wake no one.
+
+**Catch-up.** A woken or promoted actor needs no retroactive events: meters integrate
+lazily and analytically from their last boundary (the §25 kernel law, partition-
+invariant by construction), and every alarm re-solves fresh from law at wake time —
+jumping a dormant span in one hop is byte-identical to never having been dormant, for
+any state a read can reach. Body initialization for an actor already AT `event` also
+arms the routine alarm (the assign-time arm's mirror), so "event LOD + tracked body ⇒
+exactly one live routine alarm" holds on every path order — including the promoted
+actor's canonical promote-then-embody order.
+
+**Demotion compaction (recorded v1 ruling).** §27.3's "compact unobserved routine
+detail into a summary projection" is satisfied vacuously in v1: the demotion guards
+(claims → pressure → engagement → active condition) force everything open to be
+resolved BEFORE the axis moves down, so no uncompacted routine detail can exist at
+demotion time — the actor's persisted rows (meters, holdings, ledger entries) ARE the
+summary projection, and immutable events remain by construction. A dedicated summary
+artifact joins only when a scenario produces detail the guards do not already close
+out. Returning a named actor INTO a cohort (the conservation credit mirroring
+`promotion_reservation`) is likewise deferred until a scenario demands it — the
+adjustment-reason vocabulary has the headroom.
 
 ## 28. Inference LOD and model budget
 

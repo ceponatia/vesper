@@ -17,6 +17,7 @@ export * from "./memory";
 export * from "./narrative";
 export * from "./perception";
 export * from "./presentation";
+export * from "./promotion";
 export * from "./replay";
 export * from "./routine";
 export * from "./social";

@@ -83,7 +83,8 @@ export async function loadBranchCohorts(
   return rows.map(cohortFromRow).sort((left, right) => (left.id < right.id ? -1 : 1));
 }
 
-async function loadCohortRow(
+/** One cohort by id — shared with the E6.4 promotion store. */
+export async function loadCohortRow(
   tx: SimTx,
   branchId: string,
   cohortId: string,

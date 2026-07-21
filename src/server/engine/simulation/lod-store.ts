@@ -5,14 +5,21 @@ import {
   actorLodStateSchema,
   claimHoldingActivityPhases,
   claimHoldingEngagementStates,
+  isBelowEventLod,
   routinePolicyUniquenessKeyPrefix,
   type ActorLodRead,
   type ActorLodState,
   type AssignActorLodCommand,
   type AssignActorLodCommandResult,
+  type SimulationBranchEvent,
 } from "@/contracts/simulation";
 import { BODY_THRESHOLD_HORIZON_SECONDS } from "@/lib/simulation/bodies";
-import { effectiveActorLod, resolveAssignActorLodFromView } from "@/lib/simulation/lod";
+import {
+  buildDependencyWakeTrain,
+  effectiveActorLod,
+  resolveAssignActorLodFromView,
+  type LodEventCommandContext,
+} from "@/lib/simulation/lod";
 import {
   simActivities,
   simActorLods,
@@ -243,40 +250,12 @@ export async function submitDurableAssignActorLod(
       // unconditionally — pending AND processing, per the E5.6 lesson — and
       // the fresh arm (if the new LOD warrants one) follows as this same
       // command's trigger_scheduled event (the restock-reconfigure idiom).
-      await tx
-        .update(simTriggers)
-        .set({
-          state: "completed",
-          resultCommandId: command.id,
-          completedAt: new Date(command.submittedAtWallClock),
-        })
-        .where(
-          and(
-            eq(simTriggers.branchId, branch.id),
-            inArray(simTriggers.state, ["pending", "processing"]),
-            sql`starts_with(${simTriggers.uniquenessKey}, ${routinePolicyUniquenessKeyPrefix(actorId)})`,
-          ),
-        );
-
       // E6.3: when the simulation axis moves, the actor's full body-alarm set
-      // is retired the same way — thresholds per meter (energy's retirement
-      // cascades to the collapse alarm inside the helper), plus an explicit
-      // collapse retirement for meter sets without energy. The resolver's
-      // re-arm events (if the new level warrants them) follow below.
+      // is retired the same way.
       const simulationMoved = effectiveActorLod(current).simulationLod !== resolution.state.simulationLod;
-      if (simulationMoved && bodyInitialized) {
-        for (const meter of body.meters) {
-          await retirePendingThresholdTriggers(
-            tx,
-            branch,
-            command.id,
-            command.submittedAtWallClock,
-            actorId,
-            meter.meterKey,
-          );
-        }
-        await retirePendingCollapseTriggers(tx, branch, command.id, command.submittedAtWallClock, actorId);
-      }
+      await retireActorScheduledWork(tx, branch, command, actorId, {
+        meterKeys: simulationMoved && bodyInitialized ? body.meters.map((meter) => meter.meterKey) : [],
+      });
 
       for (const event of resolution.events) {
         await appendSimulationEvent(tx, event);
@@ -312,4 +291,152 @@ export async function submitDurableAssignActorLod(
       };
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Shared scheduled-work retirement — the assign path and the E6.4 dependency
+// wake retire identically (routine arming always; body alarms per meter key).
+// ---------------------------------------------------------------------------
+
+async function retireActorScheduledWork(
+  tx: SimTx,
+  branch: LockedBranchView,
+  command: { id: string; submittedAtWallClock: string },
+  actorId: string,
+  options: { meterKeys: readonly string[] },
+): Promise<void> {
+  await tx
+    .update(simTriggers)
+    .set({
+      state: "completed",
+      resultCommandId: command.id,
+      completedAt: new Date(command.submittedAtWallClock),
+    })
+    .where(
+      and(
+        eq(simTriggers.branchId, branch.id),
+        inArray(simTriggers.state, ["pending", "processing"]),
+        sql`starts_with(${simTriggers.uniquenessKey}, ${routinePolicyUniquenessKeyPrefix(actorId)})`,
+      ),
+    );
+  for (const meterKey of options.meterKeys) {
+    await retirePendingThresholdTriggers(
+      tx,
+      branch,
+      command.id,
+      command.submittedAtWallClock,
+      actorId,
+      meterKey,
+    );
+  }
+  if (options.meterKeys.length > 0) {
+    await retirePendingCollapseTriggers(tx, branch, command.id, command.submittedAtWallClock, actorId);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// E6.4 dependency wake (§27.7) — a command whose dependency reaches a
+// below-event actor promotes them to `event` inside its own transaction.
+// Prepared first (the wake events precede the reaching command's own event in
+// sequence), committed only once that command's resolution is known accepted.
+// ---------------------------------------------------------------------------
+
+export interface PreparedDependencyWake {
+  actorId: string;
+  events: SimulationBranchEvent[];
+  state: ActorLodState;
+  /** The woken actor's tracked meter keys — the retire set at commit. */
+  meterKeys: readonly string[];
+}
+
+/**
+ * Build wake trains for every below-event actor among `actorIds`, in the
+ * caller's (stable) order, numbering events from `startSequence`. Read-only:
+ * nothing is written until `commitDependencyWakes`. Actors at `event`/`exact`
+ * (or with no row — the defaults are `exact`) contribute nothing.
+ */
+export async function prepareDependencyWakes(
+  tx: SimTx,
+  branch: LockedBranchView,
+  command: LodEventCommandContext,
+  actorIds: readonly string[],
+  startSequence: number,
+): Promise<PreparedDependencyWake[]> {
+  const prepared: PreparedDependencyWake[] = [];
+  let sequence = startSequence;
+  for (const actorId of actorIds) {
+    const current = await loadActorLodRow(tx, branch.id, actorId);
+    if (!current || !isBelowEventLod(current.simulationLod)) continue;
+    const body = await loadActorBody(tx, branch.id, actorId);
+    const bodyInitialized = body.meters.length > 0;
+    const solveHorizon = branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS;
+    const meterViews = body.meters
+      .map((meter) => meterViewOf(body, meter.meterKey, solveHorizon))
+      .filter((view): view is NonNullable<typeof view> => view !== undefined);
+    const train = buildDependencyWakeTrain({
+      view: {
+        worldId: branch.worldId,
+        branchId: branch.id,
+        rulesetVersion: branch.rulesetVersion,
+        headSequence: branch.headSequence,
+        storySecond: branch.storySecond,
+        bodyInitialized,
+        rhythmRows: body.rhythms,
+        ...(bodyInitialized
+          ? { bodyAlarmViews: { meterViews, collapseContext: collapseContextOf(body) } }
+          : {}),
+      },
+      current,
+      command,
+      actorId,
+      startSequence: sequence,
+    });
+    if (!train) continue;
+    prepared.push({
+      actorId,
+      events: train.events,
+      state: train.state,
+      meterKeys: bodyInitialized ? body.meters.map((meter) => meter.meterKey) : [],
+    });
+    sequence += train.events.length;
+  }
+  return prepared;
+}
+
+/**
+ * Land prepared wakes: retire any stale scheduled work (defense in depth —
+ * the E6.3 no-work law says a below-event actor has none), append the wake
+ * events (projecting trigger arms), and upsert the ledger rows. The caller
+ * appends its own event(s) after and advances the branch once.
+ */
+export async function commitDependencyWakes(
+  tx: SimTx,
+  branch: LockedBranchView,
+  command: { id: string; submittedAtWallClock: string },
+  wakes: readonly PreparedDependencyWake[],
+): Promise<void> {
+  for (const wake of wakes) {
+    await retireActorScheduledWork(tx, branch, command, wake.actorId, { meterKeys: wake.meterKeys });
+    for (const event of wake.events) {
+      await appendSimulationEvent(tx, event);
+      if (event.type === "trigger_scheduled") {
+        await applyTriggerScheduledEvent(tx, event, { branchId: branch.id, worldId: branch.worldId });
+      }
+    }
+    const firstEvent = wake.events[0];
+    if (!firstEvent) throw new Error("A prepared dependency wake carries no events");
+    await tx
+      .insert(simActorLods)
+      .values(actorLodRowInsert(branch.id, wake.state, firstEvent.sequence))
+      .onConflictDoUpdate({
+        target: [simActorLods.branchId, simActorLods.actorId],
+        set: {
+          simulationLod: wake.state.simulationLod,
+          inferenceLod: wake.state.inferenceLod,
+          registryVersion: wake.state.registryVersion,
+          assignedAtStorySecond: wake.state.assignedAtStorySecond,
+          updatedSequence: firstEvent.sequence,
+        },
+      });
+  }
 }

@@ -105,15 +105,19 @@ export interface AssignActorLodGuardCounts {
   activeConditionCount: number;
 }
 
-export interface AssignActorLodResolutionView {
+/**
+ * The branch/body facts the shared assignment train consumes — everything an
+ * `actor_lod_assigned` event plus its alarm re-arms need. E6.4's dependency
+ * wake builds trains from exactly this view inside OTHER commands, so the
+ * assign-only fields (guards, existence, the current row) live on the
+ * extending resolution view below.
+ */
+export interface LodAssignmentTrainView {
   worldId: string;
   branchId: string;
   rulesetVersion: string;
   headSequence: number;
   storySecond: number;
-  actorExists: boolean;
-  current: ActorLodState | undefined;
-  guards: AssignActorLodGuardCounts;
   /** E6.2: whether the actor's body is tracked — arming requires one. */
   bodyInitialized: boolean;
   /** E6.2: the actor's rhythm rows; the sleep window defaults when absent. */
@@ -129,6 +133,12 @@ export interface AssignActorLodResolutionView {
     meterViews: readonly MeterIntegrationView[];
     collapseContext?: CollapseContext;
   };
+}
+
+export interface AssignActorLodResolutionView extends LodAssignmentTrainView {
+  actorExists: boolean;
+  current: ActorLodState | undefined;
+  guards: AssignActorLodGuardCounts;
 }
 
 export type AssignActorLodResolution =
@@ -184,18 +194,64 @@ export function resolveAssignActorLodFromView(
     return rejection("demotion_blocked_active_condition", "That actor's body is in the middle of something.");
   }
 
-  const state = actorLodStateSchema.parse({
+  const { events, state } = buildLodAssignmentTrain({
+    view,
+    command,
     actorId: command.payload.actorId,
+    effective,
     simulationLod: command.payload.simulationLod,
     inferenceLod: command.payload.inferenceLod,
+    startSequence: view.headSequence + 1,
+    assignedEventSuffix: "actor-lod-assigned",
+    routineArmSuffix: "arm-routine-policy",
+  });
+  return { ok: true, events, state };
+}
+
+// ---------------------------------------------------------------------------
+// The shared assignment train — extracted (the buildSleepConditionTrain
+// precedent) so an explicit `assign_actor_lod` and an E6.4 dependency wake
+// commit byte-identical machinery.
+// ---------------------------------------------------------------------------
+
+/** The enclosing command's envelope facts — structural, any command qualifies. */
+export interface LodEventCommandContext {
+  id: string;
+  correlationId: string;
+  submittedAtWallClock: string;
+}
+
+interface LodAssignmentTrainInput {
+  view: LodAssignmentTrainView;
+  command: LodEventCommandContext;
+  actorId: string;
+  /** The effective values being replaced (assigned row or registry defaults). */
+  effective: ActorLodRead;
+  simulationLod: ActorLodState["simulationLod"];
+  inferenceLod: ActorLodState["inferenceLod"];
+  startSequence: number;
+  /** Event-id suffixes — per-actor for a wake, so one command can wake many. */
+  assignedEventSuffix: string;
+  routineArmSuffix: string;
+}
+
+function buildLodAssignmentTrain(input: LodAssignmentTrainInput): {
+  events: SimulationBranchEvent[];
+  state: ActorLodState;
+} {
+  const { view, command, actorId, effective } = input;
+  const state = actorLodStateSchema.parse({
+    actorId,
+    simulationLod: input.simulationLod,
+    inferenceLod: input.inferenceLod,
     registryVersion: effective.registryVersion,
     assignedAtStorySecond: view.storySecond,
   });
   const event = actorLodAssignedEventSchema.parse({
-    id: composeSimulationId("event", [view.branchId, command.id, "actor-lod-assigned"]),
+    id: composeSimulationId("event", [view.branchId, command.id, input.assignedEventSuffix]),
     worldId: view.worldId,
     branchId: view.branchId,
-    sequence: view.headSequence + 1,
+    sequence: input.startSequence,
     storySecond: view.storySecond,
     schemaVersion: 1,
     rulesetVersion: view.rulesetVersion,
@@ -204,12 +260,12 @@ export function resolveAssignActorLodFromView(
     correlationId: command.correlationId,
     recordedAtWallClock: command.submittedAtWallClock,
     type: "actor_lod_assigned",
-    actorIds: [command.payload.actorId],
-    entityIds: [command.payload.actorId],
+    actorIds: [actorId],
+    entityIds: [actorId],
     payload: {
-      actorId: command.payload.actorId,
-      simulationLod: command.payload.simulationLod,
-      inferenceLod: command.payload.inferenceLod,
+      actorId,
+      simulationLod: input.simulationLod,
+      inferenceLod: input.inferenceLod,
       previousSimulationLod: effective.simulationLod,
       previousInferenceLod: effective.inferenceLod,
       previousWasDefault: effective.source === "default",
@@ -236,7 +292,7 @@ export function resolveAssignActorLodFromView(
     const rearms = buildActorBodyAlarmRearms({
       view,
       command,
-      actorId: command.payload.actorId,
+      actorId,
       meterViews: view.bodyAlarmViews.meterViews,
       ...(view.bodyAlarmViews.collapseContext === undefined
         ? {}
@@ -261,13 +317,44 @@ export function resolveAssignActorLodFromView(
         command,
         sequence: nextSequence,
         causationId: event.id,
-        actorId: command.payload.actorId,
-        suffix: "arm-routine-policy",
+        actorId,
+        suffix: input.routineArmSuffix,
         dueStorySecond: nextRoutineBoundarySecond(view.rhythmRows, view.storySecond),
       }),
     );
   }
-  return { ok: true, events, state };
+  return { events, state };
+}
+
+/**
+ * E6.4 dependency wake (§27.7): a below-event actor an engagement reaches is
+ * promoted to `event` — inference axis untouched — inside the reaching
+ * command's own transaction, riding that command's envelope. Body alarms
+ * re-arm from re-solved law and the routine alarm arms at the next boundary,
+ * exactly as an explicit `assign_actor_lod` would (the shared train).
+ * Returns undefined when the actor is not below `event` — nothing to wake.
+ */
+export function buildDependencyWakeTrain(input: {
+  view: LodAssignmentTrainView;
+  /** The actor's assigned row — a below-event actor always has one. */
+  current: ActorLodState | undefined;
+  command: LodEventCommandContext;
+  actorId: string;
+  startSequence: number;
+}): { events: SimulationBranchEvent[]; state: ActorLodState } | undefined {
+  const effective = effectiveActorLod(input.current);
+  if (!isBelowEventLod(effective.simulationLod)) return undefined;
+  return buildLodAssignmentTrain({
+    view: input.view,
+    command: input.command,
+    actorId: input.actorId,
+    effective,
+    simulationLod: "event",
+    inferenceLod: effective.inferenceLod,
+    startSequence: input.startSequence,
+    assignedEventSuffix: composeSimulationId("wake", [input.actorId]),
+    routineArmSuffix: composeSimulationId("wake-arm-routine", [input.actorId]),
+  });
 }
 
 // ---------------------------------------------------------------------------

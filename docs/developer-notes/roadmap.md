@@ -31,9 +31,10 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   controller, aggregate/dormant lanes, and actor promotion + event-driven catch-up.
   Exit: an order-of-magnitude more off-screen actors does **not** grow model calls or
   per-minute work linearly. Build order E6.1–E6.5; **E6.1 (the per-actor LOD ledger),
-  E6.2 (the background-life controller — complete), and E6.3 (dormant lane, then the
-  cohort aggregate lane — complete) shipped 2026-07-20/21 — see Shipped below.
-  Next: E6.4 (actor promotion and catch-up).**
+  E6.2 (the background-life controller — complete), E6.3 (dormant lane + cohort
+  aggregate lane — complete), and E6.4 (actor promotion, dependency-wake, and
+  catch-up) shipped 2026-07-20/21 — see Shipped below.
+  Next: E6.5 (the Gate 6 exit corpus and scaling proof), which closes the gate.**
 
 ## Next (queued)
 
@@ -126,6 +127,22 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine actor promotion, dependency-wake & catch-up (E6.4)** —
+  [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md) §"Gate 6 build order" · contract
+  [engine.spec.md](engine.spec.md) §27.7 (authored this work) — 2026-07-21 —
+  `promote_actor_from_cohort` is the only mid-branch path an actor comes to exist:
+  a causation-chained reservation debit (`promotion_reservation`) →
+  `actor_materialized_from_aggregate` (character + first locus; name sampled from a
+  named deterministic stream with the draw captured, or fail-closed `name_required`)
+  → the landing-LOD pin (event|exact by schema). The §27.2 step-5 no-contradiction
+  law is deterministic — materialization only where the presence read admits a
+  person (`cohort_not_present` otherwise). Engagements wake below-event
+  participants in-transaction (the one v1 waking dependency, recorded ruling);
+  the assign/wake train extracted so both are identical machinery; body init at
+  event LOD now arms the routine alarm (closes the promote-then-embody gap).
+  Demotion compaction ruled vacuous-by-guards in v1. Fork parity on both replay
+  seeds (materials + space). No migration. 3 109 pure + 464 int green;
+  CI runs `test:engine-e6-4`. Next: **E6.5**, which closes Gate 6.
 - **World-engine population cohorts (E6.3, slice 2 — E6.3 COMPLETE)** —
   [engine.plan.md](engine.plan.md) §"Gate 6 build order" · contract
   [engine.spec.md](engine.spec.md) §27.6 (authored this work) — 2026-07-21 —

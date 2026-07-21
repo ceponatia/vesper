@@ -13,6 +13,7 @@ import {
 import { storySecondAt } from "./body-reads";
 import {
   applyCohortEvent,
+  cohortCanMaterializeAt,
   cohortPresenceAt,
   cohortWindowCovering,
   emptyCohortsSeed,
@@ -161,6 +162,34 @@ describe("analytic presence (E6.3, §27.6)", () => {
     // An empty square is a real read, not an absence.
     const nobody = marketCohort({ population: 0 });
     expect(cohortPresenceAt(nobody, storySecondAt(1, 600))).toEqual({ zoneId: SQUARE, presentCount: 0 });
+  });
+
+  it("admits materialization only where the presence read admits a person (E6.4, §27.7)", () => {
+    const inWindow = storySecondAt(1, 600);
+    // 160 at the square, 40 dispersed — both admit.
+    expect(cohortCanMaterializeAt(marketCohort(), SQUARE, inWindow)).toBe(true);
+    expect(cohortCanMaterializeAt(marketCohort(), TAVERN, inWindow)).toBe(true);
+    // Outside every window: dispersed, anywhere goes.
+    expect(cohortCanMaterializeAt(marketCohort(), TAVERN, storySecondAt(1, 200))).toBe(true);
+    // Nobody at all: nowhere.
+    expect(cohortCanMaterializeAt(marketCohort({ population: 0 }), SQUARE, inWindow)).toBe(false);
+    // Fully present (share 10 000): no dispersed remainder to draw elsewhere.
+    const allIn = marketCohort({
+      presenceWindows: [
+        { zoneId: SQUARE, startMinuteOfDay: 480, endMinuteOfDay: 1_080, shareFixedPoint: 10_000 },
+      ],
+    });
+    expect(cohortCanMaterializeAt(allIn, SQUARE, inWindow)).toBe(true);
+    expect(cohortCanMaterializeAt(allIn, TAVERN, inWindow)).toBe(false);
+    // A floored-to-zero windowed count is a REAL empty read — no one there.
+    const loner = marketCohort({
+      population: 1,
+      presenceWindows: [
+        { zoneId: SQUARE, startMinuteOfDay: 480, endMinuteOfDay: 1_080, shareFixedPoint: 5_000 },
+      ],
+    });
+    expect(cohortCanMaterializeAt(loner, SQUARE, inWindow)).toBe(false);
+    expect(cohortCanMaterializeAt(loner, TAVERN, inWindow)).toBe(true);
   });
 
   it("sums zone presence across cohorts", () => {

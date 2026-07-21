@@ -271,9 +271,13 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
     case "routine_policy_resolved":
     case "cohort_created":
     case "cohort_adjusted":
+    case "actor_materialized_from_aggregate":
       // The routine decision (E6.2) is engine bookkeeping; its chosen
       // outcome's own events (a condition onset, later an activity) are the
-      // portrayable beats, exactly as with collapse.
+      // portrayable beats, exactly as with collapse. An actor materializing
+      // from a cohort (E6.4) is a resolution change — the crowd member was
+      // already present in aggregate; nothing in the scene moved for a beat
+      // to portray. Their subsequent ACTIONS are the beats.
       return null;
     case "material_lot_transferred":
       // An actor-driven, co-located stock movement (§26.9) — visibly witnessed

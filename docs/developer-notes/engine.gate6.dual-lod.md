@@ -216,15 +216,59 @@ seed-pinned).
    the cohort suites. Leftover to E6.4: the `promotion_reservation` debit
    is vocabulary today — the promoting command that emits it (and
    dependency-wake) is E6.4's contract.
-4. **E6.4 — actor promotion and catch-up.** §27.2's five steps generalized from
-   the §26.10 item case to actors: promotion reserves conserved quantities,
-   samples missing detail from a named deterministic stream with seed and
-   derivation version captured on the event, emits `actor_materialized_from_aggregate`,
-   and preserves known observations, commitments, relationships, and causal
-   constraints — never contradicting anything observed. Catch-up jumps between
-   material triggers and integrates rates analytically (the E5.1 kernel law,
-   already partition-invariant by construction). Demotion compacts unobserved
-   routine detail per §27.3; immutable events remain.
+4. **E6.4 — actor promotion and catch-up.** Status: **shipped — 2026-07-21**
+   (spec §27.7 authored as the normative wording; §27.2's concretization line
+   and §27.5's wake pointer updated). §27.2's five steps generalized from the
+   §26.10 item case to actors: `promote_actor_from_cohort` (storyteller/system —
+   the cohort authoring bar) is now the ONLY path a named actor comes to exist
+   mid-branch, committing one causation-chained train — `cohort_adjusted`
+   (`-1`, `promotion_reservation`: the step-2 conserved debit, so an actor
+   exists only because the aggregate provably gave one up) →
+   `actor_materialized_from_aggregate` (the one event creating a
+   `sim_characters` row + the actor's first physical locus; actor id derived
+   from the command id per the promoted-item precedent; name supplied or
+   sampled via `deterministicDrawUnit` with stream + draw captured on the
+   event — and `name_required` fail-closed, since no pool is authored yet,
+   §26.10 parity) → `actor_lod_assigned` (the landing pin,
+   schema-narrowed to `event | exact`; `previousWasDefault` structurally
+   true). The step-5 no-contradiction law is DETERMINISTIC: materialization is
+   legal only where the analytic presence read admits a person (windowed
+   `presentCount ≥ 1` there, or a dispersed remainder ≥ 1 elsewhere) — a
+   floored-to-zero zone is a real empty read and rejects `cohort_not_present`,
+   proven end to end at share 10 000 (49 aggregate + 1 named = the original
+   50). Materialization is LOD bookkeeping under the §27.4 rule — no
+   observation, no beat, no memory document — threaded through every
+   exhaustive fold with recorded rulings. **Dependency-wake** (the carried
+   E6.3 deferral): `open_engagement` reaching a below-event participant wakes
+   them inside its own transaction — prepare/commit two-phase, wake events
+   preceding the open event, a rejected open waking no one; landing `event`
+   with the inference axis preserved; the assignment train EXTRACTED
+   (`buildLodAssignmentTrain`, the buildSleepConditionTrain precedent) so
+   explicit assign and wake are byte-identical machinery, sharing one
+   store-side retirement helper. Recorded v1 scope ruling: engagements are
+   the one waking dependency (they claim attention); every other command on a
+   below-event actor keeps §27.5's promote-first law. **Catch-up** is the
+   already-partition-invariant lazy integration plus fresh alarm re-solve at
+   wake; the one real gap found and closed: `initialize_actor_body` for an
+   actor already AT `event` now also arms the routine alarm (before, only
+   `assign_actor_lod` armed it, so the promote-then-embody canonical order —
+   and any assign-event-then-init order since E6.2 — left an event-LOD actor
+   with a tracked body and no background life). **Demotion compaction**:
+   recorded v1 ruling in §27.7 — satisfied vacuously (the demotion guards
+   close everything compactable before the axis moves; persisted rows ARE the
+   summary; immutable events remain); return-to-cohort deferred until a
+   scenario demands it (the adjustment-reason vocabulary has headroom). Fork
+   parity mirrors promoted items on BOTH seeds: materialized actors are
+   excluded from the materials seed and the space seed (a
+   materialized-then-moved actor would otherwise reverse-derive a phantom
+   origin locus) and re-added by the forward folds' double-materialization-
+   guarded cases; a pre-promotion fork carries neither actor nor locus nor
+   count change, a post-promotion fork rebuilds all four surfaces from
+   inherited events — both proven in the int arc alongside idempotency,
+   authorization, and the rejected-open no-wake proof. No migration — the
+   first Gate 6 slice that needed none. 10 new pure + 2 new int cases;
+   3 109 pure + 464 int green across all suites; CI runs `test:engine-e6-4`.
+   Next: **E6.5**.
 5. **E6.5 — the Gate 6 exit corpus and scaling proof.** Deterministic corpus
    (zero model calls) proving promoted-actor causal consistency hop-by-hop from
    aggregate history, plus an instrumented scaling run in the soak-harness style:
