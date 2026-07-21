@@ -10,6 +10,11 @@ gate — see the hub's gate index). Sequencing and current status live in
 This is not part of the initial 60–120+ day foundation. Admit packages only when a world
 type and scenario corpus justify them.
 
+**Sequencing (owner ruling, 2026-07-21):** Gate 7 is an optional todo AFTER the
+successor engine's migration and rollout
+([engine.rollout.plan.md](engine.rollout.plan.md)) is completed and tested. It
+may not begin before that plan's R6 exits without a new owner ruling.
+
 Candidates include:
 
 - employers, schools, households, landlords, and service providers;

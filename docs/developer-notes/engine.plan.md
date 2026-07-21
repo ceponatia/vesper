@@ -310,6 +310,12 @@ failure behavior, and budget owner.
 
 ## Migration and rollout
 
+**Scheduled 2026-07-21** — this section's strategy is now sliced, sequenced
+delivery work in [engine.rollout.plan.md](engine.rollout.plan.md) (R0–R6;
+queued top of [roadmap.md](roadmap.md) §Next). Gate 7 is sequenced after that
+plan completes and is tested, per the same owner ruling. The strategy below
+remains the normative ground rules the rollout plan carries.
+
 ### Feature flags
 
 Assign authority per world or branch, never per row by accident:
