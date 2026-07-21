@@ -44,25 +44,40 @@ export function ChatPickupStrip({
     amount && clock
       ? `→ ${formatChatMoment(clock.clockMinutes + CHAT_SKIP_MINUTES[amount], clock.calendarStart)}`
       : undefined;
+  // Options that actually skip time, for the caption row below (Continue has no landing).
+  const landings = clock ? PICKUP_OPTIONS.filter((opt) => opt.amount !== null) : [];
   return (
-    <div role="group" aria-label={`Pick up with ${who}`} className="flex flex-wrap items-center gap-1.5">
-      <span className="text-xs text-paper-500">Pick up:</span>
-      {PICKUP_OPTIONS.map((opt) => (
-        <Button key={opt.label} size="sm" variant="quiet" disabled={busy} title={landing(opt.amount)} onClick={() => onPick(opt.amount)}>
-          {opt.label}
-        </Button>
-      ))}
-      {onInitiative ? (
-        <Button
-          size="sm"
-          variant="quiet"
-          disabled={busy}
-          onClick={onInitiative}
-          title={`${who} reaches out first — with their own reasons`}
-          className="text-accent-300"
-        >
-          Let {who} start <span aria-hidden>✦</span>
-        </Button>
+    <div className="flex flex-col gap-0.5">
+      <div role="group" aria-label={`Pick up with ${who}`} className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-paper-500">Pick up:</span>
+        {PICKUP_OPTIONS.map((opt) => (
+          <Button key={opt.label} size="sm" variant="quiet" disabled={busy} title={landing(opt.amount)} onClick={() => onPick(opt.amount)}>
+            {opt.label}
+          </Button>
+        ))}
+        {onInitiative ? (
+          <Button
+            size="sm"
+            variant="quiet"
+            disabled={busy}
+            onClick={onInitiative}
+            title={`${who} reaches out first — with their own reasons`}
+            className="text-accent-300"
+          >
+            Let {who} start <span aria-hidden>✦</span>
+          </Button>
+        ) : null}
+      </div>
+      {/* Landing previews visible without hover (the title tooltips above are invisible on
+          touch, so a phone tap used to commit to a skip blind — mobile-ux.plan.md). */}
+      {landings.length > 0 ? (
+        <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] text-paper-600">
+          {landings.map((opt) => (
+            <span key={opt.label}>
+              {opt.label} {landing(opt.amount)}
+            </span>
+          ))}
+        </div>
       ) : null}
     </div>
   );

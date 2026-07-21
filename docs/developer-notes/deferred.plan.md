@@ -184,29 +184,11 @@ landed — provider-capability layer + `image_references` join table, then the
 and the lustify/chroma/etc. t2i model set. Two never-built long-term items park
 back here:
 
-- **Uploaded-avatar intimate guard — a hard pre-production gate.** Not built in
-  dev (no real users / no real uploads, so the misuse path can't fire), but a
-  **launch blocker before the app accepts real user uploads in production**. The
-  rule: stamp positive `source: "generated"` provenance at generation and
-  **default-deny** the uncensored/intimate edit path to anything not provably
-  generated (`isSyntheticAvatar`), so an uploaded real likeness is never the
-  identity anchor for an intimate render. An uploaded-only scene renders through
-  **Venice text-to-image with `safe_mode` forced on** (per-request knob —
-  `veniceGenerateImage` already reads `VENICE_SAFE_MODE`) or skips the image; the
-  Flux moderating-backend the original design named is gone. Acceptance test: the
-  eval harness "safety row" must score zero. Full design in
-  [scene-images.spec.md](finished/scene-images.spec.md) §3.
-- **Self-hosted ComfyUI — the uncapped multi-character-NSFW upgrade.** The path
-  beyond Venice's hosted `/image/multi-edit` 3-reference cap: pursue when we need
-  > 3 references or premium multi-subject identity-locking (Chroma / Qwen-Edit-2511
-  > base + InstantID/InfiniteYou identity + OpenPose ControlNet + regional masks on a
-  > cloud GPU). It slots in behind the existing provider seam as one more provider,
-  > and is the GPU background worker that is the most plausible **second deployable**
-  > — decide it together with the monorepo split (§"Monorepo split" below; its
-  > standalone evaluation doc was retired 2026-07-13). Stack + hosting recommendation in
-  > [scene-images.spec.md](finished/scene-images.spec.md) §7. A cheaper interim lever
-  > for the 3+-character case (a multi-pass hosted composite) is sketched in the
-  > shipped plan before reaching for this.
+- **Uploaded-avatar intimate guard and self-hosted structural-control worker
+  graduated 2026-07-20 →
+  [spatial-scene-images.plan.md](spatial-scene-images.plan.md).** The new plan
+  owns synthetic-provenance gating, procedural OpenPose/depth, consistent
+  character identity, and the ComfyUI/provider evaluation.
 
 ## Comms expansions
 

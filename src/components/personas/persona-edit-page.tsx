@@ -139,8 +139,8 @@ export function PersonaEditPage({ personaId }: { personaId: string }) {
   return (
     <PageContainer>
       <LibraryBackLink href="/personas" label="Personas" />
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="prose-display text-2xl">{draft.title || "Untitled persona"}</h1>
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <h1 className="prose-display min-w-0 truncate text-2xl">{draft.title || "Untitled persona"}</h1>
       </div>
       <div onBlur={autosave.onBlur}>
         <PersonaEditor

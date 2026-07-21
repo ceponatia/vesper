@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from "react";
 import { locationsApi, type Ambient, type ApiResult, type LocationConnection } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { useAutosave } from "@/components/hooks/use-autosave";
 import { LibraryBackLink } from "@/components/library/back-link";
 import { EntityPickerDialog, type EntityPickerEntry } from "@/components/library/entity-picker";
 import { PublishToggle } from "@/components/library/publish-toggle";
@@ -99,8 +100,8 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
     setDirty(true);
   };
 
-  const save = async () => {
-    if (!form) return;
+  const save = async (opts: { silent?: boolean } = {}): Promise<boolean> => {
+    if (!form) return false;
     const gen = editGenRef.current;
     setSaving(true);
     const result = await locationsApi.update(locationId, {
@@ -116,11 +117,12 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
     if (result.ok) {
       // Edits made while the save was in flight stay marked unsaved.
       if (editGenRef.current === gen) setDirty(false);
-      toast.push({ title: "Location saved", tone: "success" });
+      if (!opts.silent) toast.push({ title: "Location saved", tone: "success" });
       detail.reload({ silent: true });
-    } else {
-      toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
+      return true;
     }
+    toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
+    return false;
   };
 
   const clone = async () => {
@@ -135,6 +137,17 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
       toast.push({ title: "Clone failed", description: result.error.message, tone: "error" });
     }
   };
+
+  // Autosave (mobile-ux.plan.md ruling 5 — the location editor missed the slice-7
+  // rollout): silent saves on change/blur. No forge/staged-draft state here, so
+  // there's nothing to pause it for.
+  const autosave = useAutosave({
+    enabled: true,
+    dirty,
+    saving,
+    save: () => save({ silent: true }),
+    signal: form,
+  });
 
   const remove = async () => {
     setDeleting(true);
@@ -174,8 +187,8 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
     return (
       <PageContainer>
         <LibraryBackLink href="/locations" label="Locations" />
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h1 className="prose-display text-2xl">{form.name || "Untitled location"}</h1>
+        <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <h1 className="prose-display min-w-0 truncate text-2xl">{form.name || "Untitled location"}</h1>
           <Button busy={cloning} onClick={() => void clone()}>
             Clone to my library
           </Button>
@@ -201,8 +214,8 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
   return (
     <PageContainer>
       <LibraryBackLink href="/locations" label="Locations" />
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="prose-display text-2xl">{form.name || "Untitled location"}</h1>
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <h1 className="prose-display min-w-0 truncate text-2xl">{form.name || "Untitled location"}</h1>
         {detail.data ? <PublishToggle kind="location" id={locationId} visibility={detail.data.visibility} /> : null}
       </div>
 
@@ -217,7 +230,7 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
           onImageChanged={() => detail.reload({ silent: true })}
         />
       ) : (
-        <>
+        <div onBlur={autosave.onBlur}>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Name">
           {(id) => <Input id={id} value={form.name} onChange={(e) => patch({ name: e.target.value })} />}
@@ -299,7 +312,7 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
         emptyText="No other locations to connect to yet."
         square={false}
       />
-        </>
+        </div>
       )}
 
       <SaveBar

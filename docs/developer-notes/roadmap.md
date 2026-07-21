@@ -23,9 +23,16 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-_(Nothing active — Gate 6 closed 2026-07-21, completing every committed
-successor-engine foundation gate (0–6). Next up per the owner's 2026-07-21
-scheduling ruling: **engine migration & rollout**, top of Next below.)_
+- **Successor engine — migration & rollout** —
+  [engine.rollout.plan.md](engine.rollout.plan.md) (**ACTIVE — started
+  2026-07-21**, the day the owner resolved its four opening rulings: chat at
+  `/chat/` is the first surface, UX-test worlds are the shadow corpus, R5
+  domain order by dependency, Aion 3.0 narrator default + Grok 4.5 added to
+  the accepted list). The foundation (gates 0–6, closed) becomes the live
+  world authority: R0 merge `engine`→`main` · R1 per-world authority flags +
+  internal test world · R2 live narrator over committed cuts · R3 the play
+  loop inside chat · R4 shadow mode on UX-test worlds · R5 domain-by-domain
+  authority migration · R6 cleanup + legacy world/session-model retirement.
 
 ## Next (queued)
 
@@ -37,7 +44,7 @@ Gate 3 verdict: **advance**, 2026-07-18; Gates 4, 5, and 6 closed **2026-07-19**
 owner's 2026-07-18 exit-scope ruling — live-model quality checks are the deferred
 human-in-the-loop items, parked in [deferred.plan.md](deferred.plan.md)
 §Owner-gated live eval runs). What remains is **delivery, not architecture**:
-the migration & rollout plan (first entry below, owner-scheduled 2026-07-21),
+the migration & rollout plan (now ACTIVE above, owner-scheduled 2026-07-21),
 then optional Gate 7 after it. Gate 5's contracts are also where the chat-lane
 meter-economy and body-needs plans (below) eventually port through. Full plan
 [engine.plan.md](engine.plan.md) · contract [engine.spec.md](engine.spec.md).
@@ -45,18 +52,6 @@ meter-economy and body-needs plans (below) eventually port through. Full plan
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star umbrella
 further down.)
 
-- **Successor engine — migration & rollout** —
-  [engine.rollout.plan.md](engine.rollout.plan.md) (**next** — queued 2026-07-21
-  by owner instruction). The foundation is complete but dormant (zero product
-  consumers); this plan makes it the live world authority: R0 merge
-  `engine`→`main` · R1 per-world authority flags + internal test world ·
-  R2 the live narrator over committed cuts (the deferred owner-gated evals
-  become runnable here) · R3 the product surface (play loop + authoring,
-  chat-lane-first) · R4 shadow mode under chat · R5 domain-by-domain authority
-  migration (where the meter-economy/body-needs plans port through Gate 5
-  contracts) · R6 cleanup + legacy world/session-model retirement. Exit:
-  one authority per world, shadow-parity report accepted, a migrated chat
-  world stable on Fly.
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
   [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly
   optional, and sequenced AFTER migration & rollout completes and is tested
@@ -103,6 +98,15 @@ further down.)
   names the seams the queued plans keep circling: the salience bus (nobody owns
   `buildInitiativeCue`'s budget), meter law by class, `SceneFrame`, and LOD as a way to
   ration the _settle_ — which is what actually scales with roster size, not the sim.
+- **Spatially controlled scene images — pose, depth, and character identity** —
+  [spatial-scene-images.plan.md](spatial-scene-images.plan.md) (draft; planned
+  2026-07-20 from the owner's exploration of procedural OpenPose/depth and
+  consistent character rendering). Chat-first, detached image pipeline: one
+  validated 3D spatial frame produces pose/depth/segmentation controls;
+  Qwen/ComfyUI establishes structure, identity packs and masked repair preserve
+  characters, and the same frame can later feed narrator reachability and motion.
+  Graduates the self-hosted ComfyUI follow-up; Gate 0 is a measured
+  workflow/license/cost spike.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
 - **At-rest encryption — user chat content unreadable on Neon** —
@@ -413,6 +417,13 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   gate gains fail-closed `asserted`/`believed` members; §21.3 ships as the derived
   relationship-evidence read (persisted social ledger stays Gate 5). 13 pure + 5 int
   cases; CI runs `test:engine-e4-2` (2 733 pure + 360 int green). Next: **E4.3**.
+- **Mobile UX pass — clock visibility, privacy mode, touch/overflow defects** —
+  [mobile-ux.plan.md](mobile-ux.plan.md) — 2026-07-19 — story-clock anchor editor
+  into Scenario setup on a calendar-grid weekday picker (+ desktop typed-date
+  field), weekday-first ambient time chip, privacy mode (monogram avatars, hidden
+  scene imagery), autosave for location/social-card editors, Dialog height cap,
+  SaveBar over the tab bar, and the audited touch/overflow defect list; PR #17,
+  verified live on Fly v92.
 - **World-engine perception & observation (E4.1)** — [engine.plan.md](engine.plan.md)
   §"Gate 4 build order" · contract [engine.spec.md](engine.spec.md) §20 — 2026-07-18 —
   the first Gate 4 slice, started the day Gate 3 closed (verdict: advance; rulings 14 +

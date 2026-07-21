@@ -37,6 +37,7 @@ import { useAsyncData } from "@/components/hooks/use-async";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { useIsMobile } from "@/components/hooks/use-is-mobile";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
+import { usePrivacyMode } from "@/components/hooks/use-privacy-mode";
 import { AvatarPanel } from "@/components/avatar";
 import { fileToAttachmentDataUrl } from "@/components/chat/attachment-file";
 import { ChatPickupStrip } from "@/components/chat/chat-pickup-strip";
@@ -81,11 +82,34 @@ const toLine = (m: ChatMessage): ChatLine => ({
   narrator: m.meta.inputMode === "narrator" || undefined,
 });
 
+/** Open-eye glyph — the privacy-mode toggle, off state (mobile-ux.plan.md ruling 4). */
+function EyeIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className}>
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+/** Eye-with-slash glyph — the privacy-mode toggle, on state. */
+function EyeOffIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className}>
+      <path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 7 11 7a13.2 13.2 0 0 1-3.35 4.19M6.1 6.1C3.42 7.9 1 11 1 11s4 7 11 7a9.24 9.24 0 0 0 5-1.6M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+      <path d="M1 1l22 22" />
+    </svg>
+  );
+}
+
 /**
  * The full-screen conversation page (`/chat/[chatId]`,
  * character-chat-standalone.spec.md §2.2): mobile-first single column filling the
- * viewport below the 3.25rem app header (the bottom tab bar is suppressed on this
- * route — the composer owns the bottom edge). Header row: back to the Chats hub,
+ * full viewport below `md` (the global app header is suppressed on this route at
+ * that width — mobile-ux.plan.md W1 — so this page's own header is the only one)
+ * and the viewport below the 3.25rem app header at `md`+, where that header comes
+ * back (the bottom tab bar stays suppressed on this route at every width — the
+ * composer owns the bottom edge). Header row: back to the Chats hub,
  * portrait, name/title, and a menu (bottom Sheet on phones, popover at ≥md) holding
  * the narrator-model pick, Scenario setup, State tools, Rename, Archive/Restore and
  * Delete. The scene strip sits in a disclosure under the header (collapsed by
@@ -100,6 +124,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const router = useRouter();
   const toast = useToast();
   const isMobile = useIsMobile();
+  // Privacy mode (mobile-ux.plan.md ruling 4): owned here, passed down to every
+  // consumer as props — see use-privacy-mode.ts for why that's the single source
+  // of truth instead of a module-level store.
+  const [privacyMode, setPrivacyMode] = usePrivacyMode();
 
   // One GET settles the whole screen: transcript + chat header + character card.
   const bootstrap = useAsyncData<ChatTranscript>(() => chatsApi.transcript(chatId), [chatId]);
@@ -926,6 +954,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           : undefined
       }
       onRoster={menuAction(() => setRosterOpen(true))}
+      privacyMode={privacyMode}
+      onTogglePrivacy={() => setPrivacyMode(!privacyMode)}
     />
   );
   const roster = bootstrap.data?.roster ?? [];
@@ -943,10 +973,12 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     !sending && ready && !archived && lastLine?.role === "assistant" && !lastLine.id.startsWith("tmp-");
 
   return (
-    // Fills the viewport below the 3.25rem app header (see app-shell.tsx — do not
-    // let that constant drift); the transcript scrolls internally, the composer
-    // owns the bottom edge (the bottom tab bar is suppressed on /chat/[chatId]).
-    <div className="flex h-[calc(100dvh-3.25rem)] min-h-0 flex-col">
+    // Below md the global app header is suppressed on this route (app-shell.tsx),
+    // so the page owns the full viewport height; at md+ it comes back and this
+    // reverts to subtracting its 3.25rem (do not let that constant drift). The
+    // transcript scrolls internally, the composer owns the bottom edge (the
+    // bottom tab bar is suppressed on /chat/[chatId] at every width).
+    <div className="flex h-dvh min-h-0 flex-col md:h-[calc(100dvh-3.25rem)]">
       <header className="flex shrink-0 items-center gap-2.5 border-b border-ink-600 bg-ink-900/95 px-3 py-2 sm:px-4">
         <Link
           href="/chat"
@@ -962,11 +994,16 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             <button
               type="button"
               onClick={() => setPortraitOpen(true)}
-              disabled={!character.avatarImageId}
-              aria-label={`View ${who}'s portrait`}
+              disabled={!character.avatarImageId || privacyMode}
+              aria-label={privacyMode ? `${who}'s portrait is hidden — privacy mode is on` : `View ${who}'s portrait`}
               className="shrink-0 cursor-pointer rounded-full disabled:cursor-default"
             >
-              <EntityImage imageId={character.avatarImageId} name={name} className="size-8 rounded-full text-xs" />
+              <EntityImage
+                imageId={character.avatarImageId}
+                name={name}
+                privacy={privacyMode}
+                className="size-8 rounded-full text-xs"
+              />
             </button>
             <div className="min-w-0 flex-1">
               {/* Auto-title: an unnamed conversation is titled by its character. */}
@@ -1011,16 +1048,6 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           panel + the relationship matrix (roster > 1). */}
       <Sheet open={rosterOpen} onClose={() => setRosterOpen(false)} side="bottom" title="Roster">
         <div className="flex flex-col gap-4 p-3">
-          {/* Story time on phones (chat-clock-calendar.plan.md) — the desktop right aside's card. */}
-          <ChatClockCard
-            chatId={chatId}
-            clockMinutes={chatState?.clockMinutes ?? 0}
-            calendarStart={chatState?.calendarStart ?? CHAT_DEFAULT_CALENDAR_START}
-            archived={archived}
-            skipBusy={skipBusy || sending}
-            onSkip={(amount) => void skipTime(amount)}
-            onSaved={(snapshot) => setChatState(snapshot)}
-          />
           {roster.length > 0 ? (
             <ChatRosterPanel
               chatId={chatId}
@@ -1031,6 +1058,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 setRosterOpen(false);
                 setSheetMember(member);
               }}
+              privacyMode={privacyMode}
             />
           ) : null}
           <ChatSupportingCastPanel
@@ -1060,39 +1088,44 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         </div>
       ) : null}
 
-      {/* Scene strip: a disclosure, collapsed by default so the transcript keeps the room. */}
-      <section className="shrink-0 border-b border-ink-600">
-        <button
-          type="button"
-          aria-expanded={scenesOpen}
-          onClick={() => setScenesOpen(!scenesOpen)}
-          className="flex w-full cursor-pointer items-center justify-between px-4 py-1.5 text-xs font-medium tracking-wide text-paper-400 uppercase transition-colors hover:text-paper-200"
-        >
-          <span>Scene images</span>
-          <svg
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden
-            className={cx("size-3.5 transition-transform", scenesOpen && "rotate-180")}
+      {/* Scene strip: a disclosure, collapsed by default so the transcript keeps the
+          room. Privacy mode (mobile-ux.plan.md ruling 4) removes the whole section —
+          toggle included — while active: "no point showing it" if the images
+          themselves never render. */}
+      {!privacyMode ? (
+        <section className="shrink-0 border-b border-ink-600">
+          <button
+            type="button"
+            aria-expanded={scenesOpen}
+            onClick={() => setScenesOpen(!scenesOpen)}
+            className="flex w-full cursor-pointer items-center justify-between px-4 py-1.5 text-xs font-medium tracking-wide text-paper-400 uppercase transition-colors hover:text-paper-200"
           >
-            <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        {scenesOpen && ready && character ? (
-          <div className="px-4 pb-3">
-            <SceneStrip
-              chatId={chatId}
-              name={name}
-              hasChat={lines.length > 0}
-              scenes={sceneList}
-              rendering={sceneRendering}
-              onRefresh={() => scenes.reload({ silent: true })}
-              sceneModel={parseChatSceneModel(chatState?.sceneModel)}
-              onSceneModelChange={saveSceneModel}
-            />
-          </div>
-        ) : null}
-      </section>
+            <span>Scene images</span>
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden
+              className={cx("size-3.5 transition-transform", scenesOpen && "rotate-180")}
+            >
+              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          {scenesOpen && ready && character ? (
+            <div className="px-4 pb-3">
+              <SceneStrip
+                chatId={chatId}
+                name={name}
+                hasChat={lines.length > 0}
+                scenes={sceneList}
+                rendering={sceneRendering}
+                onRefresh={() => scenes.reload({ silent: true })}
+                sceneModel={parseChatSceneModel(chatState?.sceneModel)}
+                onSceneModelChange={saveSceneModel}
+              />
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <div className="flex min-h-0 flex-1">
         {/* Standing portrait (≥lg only): the companion beside the story, using the
@@ -1100,16 +1133,45 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             portrait by tapping the header portrait or any reply's avatar instead. */}
         {ready && character ? (
           <aside className="hidden min-h-0 w-52 shrink-0 flex-col gap-4 overflow-y-auto p-4 lg:flex xl:w-64">
-            <button
-              type="button"
-              onClick={() => setPortraitOpen(true)}
-              disabled={!character.avatarImageId}
-              aria-label={`View ${who}'s portrait`}
-              title={character.avatarImageId ? "View full size" : undefined}
-              className="block w-full cursor-pointer rounded-card transition-opacity hover:opacity-90 disabled:cursor-default disabled:hover:opacity-100"
-            >
-              <AvatarPanel name={name} avatarImageId={character.avatarImageId} className="w-full" />
-            </button>
+            {privacyMode ? (
+              // Privacy mode (mobile-ux.plan.md ruling 4): the standing portrait
+              // collapses to nothing — page background, no "[hidden]" placeholder —
+              // leaving only this quiet toggle in its place to turn it back off.
+              <button
+                type="button"
+                onClick={() => setPrivacyMode(false)}
+                aria-pressed
+                aria-label="Privacy mode is on — show the portrait"
+                title="Privacy mode is on — tap to show the portrait again"
+                className="touch-target inline-flex w-fit cursor-pointer items-center gap-1.5 self-start rounded-md px-1.5 py-1 text-paper-500 transition-colors hover:text-paper-300"
+              >
+                <EyeOffIcon className="size-4" />
+                <span className="text-xs">Privacy mode</span>
+              </button>
+            ) : (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setPrivacyMode(true)}
+                  aria-pressed={false}
+                  aria-label="Turn on privacy mode"
+                  title="Hide the portrait and scene imagery — for when someone's looking over your shoulder"
+                  className="touch-target absolute top-1.5 right-1.5 z-10 inline-flex cursor-pointer items-center justify-center rounded-full bg-ink-950/70 p-1.5 text-paper-300 backdrop-blur-sm transition-colors hover:text-paper-50"
+                >
+                  <EyeIcon className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPortraitOpen(true)}
+                  disabled={!character.avatarImageId}
+                  aria-label={`View ${who}'s portrait`}
+                  title={character.avatarImageId ? "View full size" : undefined}
+                  className="block w-full cursor-pointer rounded-card transition-opacity hover:opacity-90 disabled:cursor-default disabled:hover:opacity-100"
+                >
+                  <AvatarPanel name={name} avatarImageId={character.avatarImageId} className="w-full" />
+                </button>
+              </div>
+            )}
             {roster.length > 0 ? (
               <ChatRosterPanel
                 chatId={chatId}
@@ -1117,6 +1179,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 archived={archived}
                 onChanged={() => bootstrap.reload({ silent: true })}
                 onOpenSheet={(member) => setSheetMember(member)}
+                privacyMode={privacyMode}
               />
             ) : null}
             {/* Supporting cast (chat-supporting-cast.plan.md): recurring side characters,
@@ -1189,9 +1252,12 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                       onSwitchTake={switchTake}
                       onRemember={archived ? undefined : openRemember}
                       onMarkMoment={archived ? undefined : (id) => void markMoment(id)}
-                      onEnlargeAvatar={character?.avatarImageId ? () => setPortraitOpen(true) : undefined}
+                      onEnlargeAvatar={!privacyMode && character?.avatarImageId ? () => setPortraitOpen(true) : undefined}
+                      privacyMode={privacyMode}
                     />
-                    {moments ? <SceneMomentRow images={moments} name={name} /> : null}
+                    {/* Scene moments (mobile-ux.plan.md ruling 4): hidden under privacy
+                        mode, same as the strip — no inline thumbnail, no reachable lightbox. */}
+                    {!privacyMode && moments ? <SceneMomentRow images={moments} name={name} /> : null}
                   </div>
                 );
               })
@@ -1279,7 +1345,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           ) : null}
           {!archived ? (
             <div className="flex flex-wrap items-center justify-between gap-2">
-              {chatState ? <StatusStrip state={chatState} /> : <span />}
+              {chatState ? <StatusStrip state={chatState} onOpenScenario={() => setScenarioOpen(true)} /> : <span />}
               {lines.length === 0 ? (
                 <Button
                   size="sm"
@@ -1347,7 +1413,14 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           ) : attachBusy ? (
             <span className="text-xs text-paper-500">Uploading…</span>
           ) : null}
-          <div className="flex items-end gap-2">
+          {/* Below `sm` the textarea owns its own full-width row (order-1) — sharing
+              it with the persona toggle + two icon buttons + Send left it ~153px
+              wide at 390px (mobile-ux.plan.md W4 task 2); flex-wrap drops the rest to
+              a row beneath (order-2+), Send pushed to that row's right edge so it
+              stays the obvious primary action. At `sm`+ flex-nowrap plus each
+              control's sm:order restore the original single-row layout, textarea
+              back to flex-1. */}
+          <div className="flex flex-wrap items-end gap-2 sm:flex-nowrap">
             {!archived ? (
               // Player ↔ narrator register toggle (chat-supporting-cast.plan.md §Narrator
               // input): narrator sends the line as story narration, not the player's POV.
@@ -1364,7 +1437,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                       : "You: speaking and acting as yourself — tap to write as the narrator"
                 }
                 className={cx(
-                  "touch-target inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md border px-2 py-2 text-[11px] font-medium tracking-wide uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  "order-2 touch-target inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md border px-2 py-2 text-[11px] font-medium tracking-wide uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:order-1",
                   narratorMode
                     ? "border-ink-500 bg-ink-750 text-paper-200"
                     : "border-transparent text-paper-500 hover:text-paper-300",
@@ -1391,7 +1464,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                     : `Message ${who}…  (Enter to send, Shift+Enter for a new line)`
               }
               className={cx(
-                "flex-1",
+                "order-1 w-full sm:order-2 sm:w-auto sm:flex-1",
                 oocActive && "border-accent-500 ring-1 ring-accent-500/40",
                 narratorMode && !oocActive && "border-ink-500 ring-1 ring-ink-500/60",
               )}
@@ -1415,7 +1488,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                   disabled={!ready || attachBusy || attachments.length >= 4 || narratorMode}
                   aria-label="Attach a photo"
                   title={narratorMode ? "Photos send as you — switch back to You to attach one" : `Show ${who} a photo (up to 4 per message)`}
-                  className="touch-target inline-flex cursor-pointer items-center justify-center rounded-md px-2 py-2 text-paper-500 transition-colors hover:text-accent-300 disabled:cursor-not-allowed disabled:text-paper-600"
+                  className="order-3 touch-target inline-flex cursor-pointer items-center justify-center rounded-md px-2 py-2 text-paper-500 transition-colors hover:text-accent-300 disabled:cursor-not-allowed disabled:text-paper-600"
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="size-4.5">
                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
@@ -1430,7 +1503,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 disabled={!ready}
                 aria-label="Remember this…"
                 title={`Tell ${who} something to always remember`}
-                className="touch-target inline-flex cursor-pointer items-center justify-center rounded-md px-2 py-2 text-paper-500 transition-colors hover:text-accent-300 disabled:cursor-not-allowed disabled:text-paper-600"
+                className="order-4 touch-target inline-flex cursor-pointer items-center justify-center rounded-md px-2 py-2 text-paper-500 transition-colors hover:text-accent-300 disabled:cursor-not-allowed disabled:text-paper-600"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="size-4.5">
                   <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
@@ -1440,7 +1513,13 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             {sending ? (
               // Stop swaps in for Send while a reply streams (spec §4.2): the server
               // truncates honestly; what's on screen stays as the settled reply.
-              <Button variant="ghost" busy={stopping} onClick={() => void stopReply()} title="Stop the reply — keeps what has streamed so far">
+              <Button
+                variant="ghost"
+                busy={stopping}
+                onClick={() => void stopReply()}
+                title="Stop the reply — keeps what has streamed so far"
+                className="order-5 ml-auto sm:ml-0"
+              >
                 Stop
               </Button>
             ) : (
@@ -1450,6 +1529,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 disabled={
                   archived || !ready || attachBusy || (!input.trim() && (narratorMode || !attachments.length))
                 }
+                className="order-5 ml-auto sm:ml-0"
               >
                 Send
               </Button>
@@ -1616,6 +1696,8 @@ function ConversationMenu({
   onDelete,
   onInspector,
   onRoster,
+  privacyMode,
+  onTogglePrivacy,
 }: {
   chatModel: string;
   onChatModelChange: (modelId: string) => void;
@@ -1636,6 +1718,11 @@ function ConversationMenu({
   onInspector?: () => void;
   /** The roster panel (multi-character-chat.plan.md): add/remove members, presence toggles. */
   onRoster: () => void;
+  /** Privacy mode (mobile-ux.plan.md ruling 4): the phone-menu path to the same
+   *  toggle the desktop standing portrait carries — hides the portrait, feed
+   *  avatars, and all scene imagery. */
+  privacyMode: boolean;
+  onTogglePrivacy: () => void;
 }) {
   return (
     <div className="flex flex-col p-2">
@@ -1660,6 +1747,11 @@ function ConversationMenu({
         Character sheet
       </MenuItem>
       <MenuItem onClick={onRoster}>Roster</MenuItem>
+      {/* Privacy mode (ruling 4): the phone path to the toggle — desktop also has
+          the standing-portrait affordance, but that column is hidden below lg. */}
+      <MenuItem onClick={onTogglePrivacy} pressed={privacyMode}>
+        {privacyMode ? "Privacy mode: On" : "Privacy mode: Off"}
+      </MenuItem>
       {onInspector ? <MenuItem onClick={onInspector}>Inspector</MenuItem> : null}
       {!archived ? (
         <div className="flex flex-col gap-1 px-2 py-1.5">
@@ -1702,11 +1794,14 @@ function MenuItem({
   onClick,
   disabled,
   danger,
+  pressed,
   children,
 }: {
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
+  /** Toggle items (e.g. Privacy mode) carry their on/off state for a11y. */
+  pressed?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -1714,6 +1809,7 @@ function MenuItem({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-pressed={pressed}
       className={cx(
         "touch-target block w-full cursor-pointer rounded-md px-2 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:text-paper-600",
         danger ? "text-danger-300 hover:bg-danger-500/10" : "text-paper-200 hover:bg-ink-700",
