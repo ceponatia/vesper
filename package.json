@@ -65,7 +65,8 @@
     "test:engine-e6-4": "vitest run --no-file-parallelism src/lib/simulation/promotion.test.ts src/lib/simulation/cohorts.test.ts src/lib/simulation/lod.test.ts src/server/engine/simulation/promotion-store.int.test.ts src/server/engine/simulation/engagement-store.int.test.ts src/server/engine/simulation/body-store.int.test.ts",
     "test:engine-e6-5": "vitest run --no-file-parallelism src/server/engine/simulation/gate6-corpus.int.test.ts",
     "test:rollout-r1": "vitest run --no-file-parallelism src/server/engine/simulation/rollout-world.int.test.ts src/app/api/admin/engine-authority/engine-authority.int.test.ts",
-    "test:rollout-r2": "vitest run --no-file-parallelism src/server/engine/sim-narrator.int.test.ts"
+    "test:rollout-r2": "vitest run --no-file-parallelism src/server/engine/sim-narrator.int.test.ts",
+    "test:rollout-r3": "vitest run --no-file-parallelism src/app/api/chats/sim-routes.int.test.ts src/server/engine/simulation/rollout-world.int.test.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --max-warnings 0"

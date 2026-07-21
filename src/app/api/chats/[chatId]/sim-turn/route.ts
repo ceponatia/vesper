@@ -1,16 +1,15 @@
 import { z } from "zod";
-import { deriveEngagementId, simulationHash } from "@/lib/simulation";
 import { newId } from "@/lib/ids";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import {
+  buildLiveDeliberation,
   persistAssistantReply,
   prepareEngagementTurn,
-  readChatEngineAuthority,
   renderCommittedCut,
   submitDurableOpenEngagement,
 } from "@/server/engine";
 import { characterChatMessages, db } from "@/server/db";
-import { loadOwnedChat } from "../../owned";
+import { requireSimChat, simPlayerEnvelope } from "../sim-shared";
 
 type Params = { chatId: string };
 
@@ -28,45 +27,19 @@ const bodySchema = z.object({ message: z.string().trim().min(1).max(4_000) }).st
 
 export const POST = withUser<Params>(async (user, req, ctx) => {
   const { chatId } = await ctx.params;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
+  const gate = await requireSimChat(chatId, user.id);
+  if (!gate.ok) return gate.response;
+  const { sim } = gate;
   const body = await readBody(req, bodySchema);
   if (!body.ok) return body.response;
-
-  const authority = await readChatEngineAuthority(chatId);
-  if (
-    !authority ||
-    authority.authority === "legacy_chat" ||
-    authority.authority === "successor_shadow" ||
-    !authority.simBranchId ||
-    !authority.simPlayerActorId ||
-    !authority.simPrimaryActorId
-  ) {
-    return jsonError(
-      "not_sim_enabled",
-      "this chat is not routed to the successor engine (authority + branch + actor mapping required)",
-      409,
-    );
-  }
-  const branchId = authority.simBranchId;
-  const playerActorId = authority.simPlayerActorId;
-  const primaryActorId = authority.simPrimaryActorId;
+  const { branchId, playerActorId, primaryActorId, openCommandId, engagementId } = sim;
 
   // Find-or-open the standing scene between the mapped pair. The open command
   // id is stable per chat, so a replay is the ordinary duplicate outcome.
-  const openCommandId = `sim-turn-open-${simulationHash({ chatId, playerActorId, primaryActorId })}`;
-  const engagementId = deriveEngagementId(branchId, openCommandId);
   const opened = await submitDurableOpenEngagement(
     {
-      id: openCommandId,
-      branchId,
-      expectedVersion: 0,
-      idempotencyKey: openCommandId,
-      principal: { kind: "player" as const, principalId: user.id, controlledActorIds: [playerActorId] },
-      submittedAtWallClock: new Date().toISOString(),
-      correlationId: `sim-turn-${chatId}`,
+      ...simPlayerEnvelope(sim, user.id, openCommandId),
       type: "open_engagement",
-      schemaVersion: 1,
       payload: { participantIds: [playerActorId, primaryActorId].sort(), channel: "co_present" },
     },
     { admitAtLockedVersion: true },
@@ -92,6 +65,10 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
     viewpointActorId: playerActorId,
     spanSeconds: 60,
     playerActorIds: [playerActorId],
+    // The R2 leftover landed: rare, consequential, ambiguous departures may
+    // consult one live model call; the deterministic policy remains the
+    // fallback on timeout, budget exhaustion, or a malformed reply.
+    deliberation: buildLiveDeliberation(),
     workerId: `sim-turn-${chatId}`,
   });
   const rendered = await renderCommittedCut({ branchId, engagementId, cutId: turn.cut.id });
@@ -106,7 +83,7 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
   await persistAssistantReply({
     id: assistantMessageId,
     chatId,
-    speakerCharacterId: owned.character.id,
+    speakerCharacterId: sim.owned.character.id,
     promptMessageId: userMessageId,
     content: rendered.prose,
     meta: {
