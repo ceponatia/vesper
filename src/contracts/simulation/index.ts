@@ -18,6 +18,7 @@ export * from "./soft-canon";
 export * from "./deliberation";
 export * from "./cohorts";
 export * from "./lod";
+export * from "./promotion";
 export * from "./routine";
 export * from "./memory";
 export * from "./social";

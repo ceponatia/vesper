@@ -58,7 +58,8 @@
     "test:engine-e5-6": "vitest run --no-file-parallelism src/server/engine/simulation/gate5-corpus.int.test.ts",
     "test:engine-e6-1": "vitest run --no-file-parallelism src/lib/simulation/lod.test.ts src/server/engine/simulation/lod-store.int.test.ts src/server/engine/simulation/narrative-store.int.test.ts",
     "test:engine-e6-2": "vitest run --no-file-parallelism src/lib/simulation/routine.test.ts src/lib/simulation/lod.test.ts src/server/engine/simulation/routine-store.int.test.ts src/server/engine/simulation/lod-store.int.test.ts",
-    "test:engine-e6-3": "vitest run --no-file-parallelism src/lib/simulation/lod.test.ts src/lib/simulation/bodies.test.ts src/lib/simulation/replay.test.ts src/lib/simulation/cohorts.test.ts src/server/engine/simulation/lod-store.int.test.ts src/server/engine/simulation/body-store.int.test.ts src/server/engine/simulation/cohort-store.int.test.ts"
+    "test:engine-e6-3": "vitest run --no-file-parallelism src/lib/simulation/lod.test.ts src/lib/simulation/bodies.test.ts src/lib/simulation/replay.test.ts src/lib/simulation/cohorts.test.ts src/server/engine/simulation/lod-store.int.test.ts src/server/engine/simulation/body-store.int.test.ts src/server/engine/simulation/cohort-store.int.test.ts",
+    "test:engine-e6-4": "vitest run --no-file-parallelism src/lib/simulation/promotion.test.ts src/lib/simulation/cohorts.test.ts src/lib/simulation/lod.test.ts src/server/engine/simulation/promotion-store.int.test.ts src/server/engine/simulation/engagement-store.int.test.ts src/server/engine/simulation/body-store.int.test.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --max-warnings 0"

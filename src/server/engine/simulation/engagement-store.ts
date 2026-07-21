@@ -40,6 +40,7 @@ import {
   runSimulationCommand,
   type LockedBranchView,
 } from "./command-runner";
+import { commitDependencyWakes, prepareDependencyWakes } from "./lod-store";
 import { loadSpaceRows, spaceProjectionFromRows } from "./space-store";
 import type { SimTx } from "./trigger-projector";
 
@@ -216,12 +217,26 @@ export async function submitDurableOpenEngagement(
         };
       });
 
+      // E6.4 dependency wake (§27.7): an engagement REACHING a below-event
+      // participant promotes them to `event` — attention cannot be claimed
+      // from an actor at a resolution that performs no scheduled work. Trains
+      // are prepared first (their events precede the open event in sequence)
+      // and committed only once the open itself is known legal.
+      const wakes = await prepareDependencyWakes(
+        tx,
+        branch,
+        command,
+        command.payload.participantIds,
+        branch.headSequence + 1,
+      );
+      const wakeEventCount = wakes.reduce((total, wake) => total + wake.events.length, 0);
+
       const resolution = resolveOpenEngagement(
         {
           worldId: branch.worldId,
           branchId: branch.id,
           rulesetVersion: branch.rulesetVersion,
-          headSequence: branch.headSequence,
+          headSequence: branch.headSequence + wakeEventCount,
           storySecond: branch.storySecond,
           participants,
         },
@@ -229,19 +244,21 @@ export async function submitDurableOpenEngagement(
       );
       if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
 
+      await commitDependencyWakes(tx, branch, command, wakes);
       await appendSimulationEvent(tx, resolution.event);
       await tx
         .insert(simEngagements)
         .values(engagementRowInsert(branch.id, resolution.engagement, resolution.event.sequence));
       await advanceLockedBranch(tx, branch, resolution.event.sequence);
 
+      const firstWakeEventSequence = wakes[0]?.events[0]?.sequence;
       return {
         status: "accepted",
         commandId: command.id,
         branchVersion: branch.version + 1,
-        firstSequence: resolution.event.sequence,
+        firstSequence: firstWakeEventSequence ?? resolution.event.sequence,
         lastSequence: resolution.event.sequence,
-        eventIds: [resolution.event.id],
+        eventIds: [...wakes.flatMap((wake) => wake.events.map((event) => event.id)), resolution.event.id],
       };
     },
   });

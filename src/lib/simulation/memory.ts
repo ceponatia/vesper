@@ -129,6 +129,12 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
     case "routine_policy_resolved":
     case "cohort_created":
     case "cohort_adjusted":
+    case "actor_materialized_from_aggregate":
+      // An actor materializing from a cohort (E6.4, §27.2/§27.7) is a
+      // RESOLUTION change, not a story fact: the person was already there in
+      // aggregate, and nobody in the scene did anything. Unlike item
+      // promotion (an in-scene actor drawing from stock), there is nothing
+      // for anyone to remember.
       // Bookkeeping derives no observations (§20); unreachable in practice
       // (mirrors `body_initialized`/`item_ownership_set`). Pressure
       // acknowledgment (E5.5 slice 3) is pure turn bookkeeping, not

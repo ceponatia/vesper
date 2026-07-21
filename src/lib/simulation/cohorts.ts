@@ -80,6 +80,25 @@ export function cohortPresenceAt(
   };
 }
 
+/**
+ * E6.4 (§27.2 step 5, §27.7): whether the aggregate's own presence read admits
+ * a person at `zoneId` right now — the no-contradiction law made deterministic.
+ * Inside a covering window, only the windowed zone's `presentCount` and the
+ * dispersed remainder are drawable; a zone the read declares empty cannot
+ * yield a person. Dispersed cohorts admit materialization anywhere.
+ */
+export function cohortCanMaterializeAt(
+  cohort: SimulationCohort,
+  zoneId: string,
+  atStorySecond: number,
+): boolean {
+  if (cohort.population < 1) return false;
+  const presence = cohortPresenceAt(cohort, atStorySecond);
+  if (!presence) return true;
+  if (presence.zoneId === zoneId) return presence.presentCount >= 1;
+  return cohort.population - presence.presentCount >= 1;
+}
+
 /** The total aggregate headcount present at one zone across every cohort. */
 export function zonePresenceAt(
   cohorts: readonly SimulationCohort[],

@@ -700,12 +700,12 @@ export interface ApplyMaterialEventOptions {
 
 /**
  * Pure synchronous projector for the material event family. It mutates on the
- * four real material events (three item-mutation events plus
- * `item_instantiated_from_promotion`, the first event that CREATES an item
- * rather than mutating one) and passes every other branch event through as a
- * bare boundary advance — the exhaustive passthrough (copied from
- * `applyActivityEvent`) keeps TS exhaustiveness holding so a new event type
- * cannot ship without a ruling.
+ * real material events (the item-mutation events, `item_instantiated_from_promotion`
+ * — the first event that CREATES an item — and E6.4's
+ * `actor_materialized_from_aggregate`, the first that CREATES an actor) and
+ * passes every other branch event through as a bare boundary advance — the
+ * exhaustive passthrough (copied from `applyActivityEvent`) keeps TS
+ * exhaustiveness holding so a new event type cannot ship without a ruling.
  */
 export function applyMaterialEvent(
   projection: MaterialsProjection,
@@ -783,6 +783,19 @@ export function applyMaterialEvent(
       const next = sortMaterialsProjection({
         ...bumped,
         items: [...projection.items, event.payload.item],
+      });
+      assertMaterialsProjectionInvariants(next);
+      return next;
+    }
+    case "actor_materialized_from_aggregate": {
+      // E6.4 (§27.2/§27.7): the first event that CREATES an actor rather than
+      // referencing one — the actor lane's `item_instantiated_from_promotion`.
+      if (projection.actors.some((actor) => actor.id === event.payload.actorId)) {
+        throw new Error("Material event replay double-materializes a promoted actor");
+      }
+      const next = sortMaterialsProjection({
+        ...bumped,
+        actors: [...projection.actors, { id: event.payload.actorId, name: event.payload.name }],
       });
       assertMaterialsProjectionInvariants(next);
       return next;

@@ -18,6 +18,7 @@ import {
 import { buildMaterialLotInitializedEvent } from "./households";
 import {
   applyActorLodEvent,
+  buildDependencyWakeTrain,
   effectiveActorLod,
   emptyActorLodsSeed,
   replayActorLodHistory,
@@ -363,6 +364,89 @@ describe("resolveAssignActorLodFromView (E6.1)", () => {
     );
     // Staying at event re-arms the routine alarm only.
     expect(kinds).toEqual(["actor_lod_assigned", "routine_policy_due"]);
+  });
+});
+
+describe("buildDependencyWakeTrain (E6.4, §27.7)", () => {
+  const dormantRow = actorLodStateSchema.parse({
+    actorId: MARA,
+    simulationLod: "dormant",
+    inferenceLod: "no_model",
+    registryVersion: actorLodRegistryVersion,
+    assignedAtStorySecond: 1_000,
+  });
+  const wakeCommand = {
+    id: "cmd-open-1",
+    correlationId: "corr-1",
+    submittedAtWallClock: "2026-07-21T12:00:00.000Z",
+  };
+
+  it("wakes nobody who is not below event — no row (defaults), event, or exact", () => {
+    expect(
+      buildDependencyWakeTrain({ view: view(), current: undefined, command: wakeCommand, actorId: MARA, startSequence: 8 }),
+    ).toBeUndefined();
+    expect(
+      buildDependencyWakeTrain({
+        view: view(),
+        current: actorLodStateSchema.parse({ ...dormantRow, simulationLod: "event" }),
+        command: wakeCommand,
+        actorId: MARA,
+        startSequence: 8,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("promotes a dormant actor to event, preserving the inference axis, with the full re-arm train", () => {
+    const train = buildDependencyWakeTrain({
+      view: view({ bodyInitialized: true, bodyAlarmViews: energyAlarmViews() }),
+      current: dormantRow,
+      command: wakeCommand,
+      actorId: MARA,
+      startSequence: 8,
+    });
+    if (!train) throw new Error("expected a wake train");
+    const kinds = train.events.map((event) =>
+      event.type === "trigger_scheduled" ? event.payload.kind : event.type,
+    );
+    expect(kinds).toEqual([
+      "actor_lod_assigned",
+      "body_threshold_due",
+      "body_collapse_due",
+      "routine_policy_due",
+    ]);
+    expect(train.events.map((event) => event.sequence)).toEqual([8, 9, 10, 11]);
+    expect(train.events[0]).toMatchObject({
+      payload: {
+        simulationLod: "event",
+        inferenceLod: "no_model",
+        previousSimulationLod: "dormant",
+        previousWasDefault: false,
+      },
+    });
+    expect(train.state).toMatchObject({ simulationLod: "event", inferenceLod: "no_model" });
+  });
+
+  it("wakes a bodiless actor with the single lod event, and ids stay unique per actor", () => {
+    const bare = buildDependencyWakeTrain({
+      view: view(),
+      current: dormantRow,
+      command: wakeCommand,
+      actorId: MARA,
+      startSequence: 8,
+    });
+    if (!bare) throw new Error("expected a wake train");
+    expect(bare.events).toHaveLength(1);
+
+    const other = buildDependencyWakeTrain({
+      view: view(),
+      current: actorLodStateSchema.parse({ ...dormantRow, actorId: "riven" }),
+      command: wakeCommand,
+      actorId: "riven",
+      startSequence: 9,
+    });
+    if (!other) throw new Error("expected a second wake train");
+    // One command can wake many actors — the per-actor suffix keeps ids apart.
+    expect(other.events[0]?.id).not.toBe(bare.events[0]?.id);
   });
 });
 

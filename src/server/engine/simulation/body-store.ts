@@ -35,9 +35,11 @@ import {
   type ResolveBodyCollapseCommandResult,
   type ResolveBodyThresholdCommandResult,
 } from "@/contracts/simulation/bodies";
+import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import { worldBranchIdSchema } from "@/contracts/simulation/identity";
 import { actorLodStateSchema, isBelowEventLod } from "@/contracts/simulation/lod";
 import { effectiveActorLod } from "@/lib/simulation/lod";
+import { buildRoutinePolicyTrigger, nextRoutineBoundarySecond } from "@/lib/simulation/routine";
 import {
   BODY_THRESHOLD_HORIZON_SECONDS,
   bodyCollapseUniquenessKeyPrefix,
@@ -640,16 +642,49 @@ export async function submitDurableInitializeActorBody(
       );
       if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
 
-      const [initialized, ...triggers] = resolution.events;
+      const [initialized] = resolution.events;
+      // E6.4: a body initialized for an actor ALREADY AT `event` LOD also
+      // arms the routine alarm — before this, only `assign_actor_lod` armed
+      // it (E6.2 requires a tracked body at assignment time), so an actor who
+      // landed at `event` first and gained a body second (a promoted actor's
+      // canonical order) had no background life until an extra assignment.
+      // The E6.2 invariant is one law either way: an event-LOD actor with a
+      // tracked body has exactly one live routine alarm. (The arm lives here
+      // rather than in the lib resolver because lib/routine imports
+      // lib/bodies — the reverse import would cycle.)
+      const events: SimulationBranchEvent[] = [...resolution.events];
+      if (effectiveLod.simulationLod === "event") {
+        const lastResolved = events[events.length - 1] ?? initialized;
+        events.push(
+          buildRoutinePolicyTrigger({
+            view: {
+              worldId: branch.worldId,
+              branchId: branch.id,
+              rulesetVersion: branch.rulesetVersion,
+              headSequence: branch.headSequence,
+              storySecond: branch.storySecond,
+            },
+            command,
+            sequence: lastResolved.sequence + 1,
+            causationId: initialized.id,
+            actorId: command.payload.actorId,
+            suffix: "init-arm-routine-policy",
+            dueStorySecond: nextRoutineBoundarySecond(rhythmRows, branch.storySecond),
+          }),
+        );
+      }
       await appendSimulationEvent(tx, initialized);
-      for (const trigger of triggers) {
-        await appendSimulationEvent(tx, trigger);
-        await applyTriggerScheduledEvent(tx, trigger, { branchId: branch.id, worldId: branch.worldId });
+      for (const event of events) {
+        if (event === initialized) continue;
+        await appendSimulationEvent(tx, event);
+        if (event.type === "trigger_scheduled") {
+          await applyTriggerScheduledEvent(tx, event, { branchId: branch.id, worldId: branch.worldId });
+        }
       }
       await tx
         .insert(simBodyMeters)
         .values(resolution.meters.map((meter) => bodyMeterRowInsert(branch.id, meter, initialized.sequence)));
-      const lastSequence = resolution.events[resolution.events.length - 1]?.sequence ?? initialized.sequence;
+      const lastSequence = events[events.length - 1]?.sequence ?? initialized.sequence;
       await advanceLockedBranch(tx, branch, lastSequence);
 
       return {
@@ -658,7 +693,7 @@ export async function submitDurableInitializeActorBody(
         branchVersion: branch.version + 1,
         firstSequence: initialized.sequence,
         lastSequence,
-        eventIds: resolution.events.map((event) => event.id),
+        eventIds: events.map((event) => event.id),
       };
     },
   });

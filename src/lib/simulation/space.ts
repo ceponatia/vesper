@@ -746,6 +746,28 @@ export function applySpaceEvent(
         ),
       });
     }
+    case "actor_materialized_from_aggregate": {
+      // E6.4 (§27.2/§27.7): a promoted actor's FIRST locus — created, never
+      // replaced; a pre-existing locus here means replay double-materialized.
+      if (projection.loci.some((locus) => locus.actorId === event.payload.actorId)) {
+        throw new Error("Space replay double-materializes a promoted actor's locus");
+      }
+      const zone = projection.zones.find((candidate) => candidate.id === event.payload.zoneId);
+      if (!zone) throw new Error("Materialization replay references a missing zone");
+      return sortSpaceProjection({
+        ...bumped,
+        loci: [
+          ...projection.loci,
+          physicalLocusSchema.parse({
+            kind: "at",
+            actorId: event.payload.actorId,
+            locationId: zone.locationId,
+            zoneId: zone.id,
+            since: event.storySecond,
+          }),
+        ],
+      });
+    }
     case "item_transferred":
     case "item_destroyed":
     case "item_consumed":
@@ -847,6 +869,13 @@ export function replaySpaceHistory(input: SpaceReplayInput): SpaceProjection {
  * each moved actor's origin is the first zone their earliest journey_planned
  * departed from. Unmoved actors keep their current locus — that placement is
  * seed data the event stream cannot validate.
+ *
+ * E6.4: an actor materialized mid-branch (`actor_materialized_from_aggregate`)
+ * had NO locus at sequence 0 — theirs is excluded from the seed entirely and
+ * the forward fold's materialization case re-creates it (the promoted-item
+ * seed rule, applied to loci; without this a materialized-then-moved actor
+ * would reverse-derive a phantom origin locus and the fold's
+ * double-materialization guard would throw).
  */
 export function spaceSeedForReplay(input: {
   branchId: string;
@@ -855,8 +884,13 @@ export function spaceSeedForReplay(input: {
   originStorySecond: number;
 }): SpaceProjection {
   const originZoneByActor = new Map<string, string>();
+  const materializedActorIds = new Set<string>();
   const ordered = [...input.events].sort((left, right) => left.sequence - right.sequence);
   for (const event of ordered) {
+    if (event.type === "actor_materialized_from_aggregate") {
+      materializedActorIds.add(event.payload.actorId);
+      continue;
+    }
     if (event.type !== "journey_planned") continue;
     for (const actorId of event.actorIds) {
       if (!originZoneByActor.has(actorId)) originZoneByActor.set(actorId, event.payload.originZoneId);
@@ -867,17 +901,19 @@ export function spaceSeedForReplay(input: {
     zones: input.current.zones,
     links: input.current.links,
   };
-  const loci = input.current.loci.map((locus) => {
-    const originZoneId = originZoneByActor.get(locus.actorId);
-    if (!originZoneId) return locus;
-    return physicalLocusSchema.parse({
-      kind: "at",
-      actorId: locus.actorId,
-      locationId: zoneLocationId(topology, originZoneId),
-      zoneId: originZoneId,
-      since: input.originStorySecond,
+  const loci = input.current.loci
+    .filter((locus) => !materializedActorIds.has(locus.actorId))
+    .map((locus) => {
+      const originZoneId = originZoneByActor.get(locus.actorId);
+      if (!originZoneId) return locus;
+      return physicalLocusSchema.parse({
+        kind: "at",
+        actorId: locus.actorId,
+        locationId: zoneLocationId(topology, originZoneId),
+        zoneId: originZoneId,
+        since: input.originStorySecond,
+      });
     });
-  });
   return sortSpaceProjection(
     spaceProjectionSchema.parse({
       worldId: input.current.worldId,

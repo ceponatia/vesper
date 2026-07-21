@@ -248,9 +248,13 @@ export function deriveEventObservations(
     case "routine_policy_resolved":
     case "cohort_created":
     case "cohort_adjusted":
+    case "actor_materialized_from_aggregate":
       // Aggregate cohort bookkeeping (E6.3) is likewise not perceptible: a
       // crowd's ebb reaches a viewpoint through the analytic presence READ,
-      // never as a witnessed event.
+      // never as a witnessed event. Materialization (E6.4) is the same law
+      // from the other side: the promoted person was already present in
+      // aggregate, so becoming named derives no observation — witnesses
+      // perceive their subsequent actions through those events' own rules.
       // Scheduler and commitment-ledger bookkeeping is not perceptible; an
       // actor's knowledge of an obligation rides its commitment's `observed`
       // knowledge source pointing at a perceptible event (§15.1, §20).

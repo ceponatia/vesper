@@ -119,11 +119,18 @@ export {
 export {
   actorLodFromRow,
   actorLodRowInsert,
+  commitDependencyWakes,
   loadActorBusyCounts,
+  prepareDependencyWakes,
   readEffectiveActorLod,
   submitDurableAssignActorLod,
   type ActorLodSubmitOptions,
+  type PreparedDependencyWake,
 } from "./lod-store";
+export {
+  submitDurablePromoteActorFromCohort,
+  type PromotionSubmitOptions,
+} from "./promotion-store";
 export { submitDurableRunRoutinePolicy, type RoutineSubmitOptions } from "./routine-store";
 export {
   insertReplayedKnowledge,

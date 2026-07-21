@@ -347,6 +347,11 @@ export async function readDurableBranchState(
  * seed is safe: a fork AT OR AFTER the promotion still gets the item, because
  * its instantiating event is then part of `inherited` and
  * `replayBranchHistory`'s forward fold re-adds it through the same new case.
+ *
+ * E6.4: actors materialized mid-branch by `actor_materialized_from_aggregate`
+ * get the identical treatment — excluded from the seed, re-added by the
+ * forward fold, so a fork BEFORE the promotion carries neither the actor nor
+ * a phantom locus.
  */
 export function seedProjectionForReplay(input: {
   branchId: string;
@@ -357,6 +362,11 @@ export function seedProjectionForReplay(input: {
     input.state.events
       .filter((event) => event.type === "item_instantiated_from_promotion")
       .map((event) => event.payload.item.id),
+  );
+  const materializedActorIds = new Set(
+    input.state.events
+      .filter((event) => event.type === "actor_materialized_from_aggregate")
+      .map((event) => event.payload.actorId),
   );
   const preExistingItems = projection.items.filter((item) => !promotedItemIds.has(item.id));
   const currentHoldings = new Map(preExistingItems.map((item) => [item.id, item.locus]));
@@ -369,7 +379,7 @@ export function seedProjectionForReplay(input: {
       version: 0,
       headSequence: 0,
       storySecond: input.state.ancestry.rootOriginStorySecond,
-      actors: projection.actors,
+      actors: projection.actors.filter((actor) => !materializedActorIds.has(actor.id)),
       items: preExistingItems.map((item) => ({
         ...item,
         locus: seedHoldings.get(item.id) ?? item.locus,
@@ -579,6 +589,11 @@ export async function forkBranch(
         spaceSequenceByJourney.set(event.payload.journeyId, event.sequence);
       } else if (isAccessEvent(event)) {
         for (const eventActorId of event.actorIds) spaceSequenceByActor.set(eventActorId, event.sequence);
+      } else if (event.type === "actor_materialized_from_aggregate") {
+        // E6.4: a materialized actor's FIRST locus IS the materialization —
+        // without this, the child locus row would wrongly default to
+        // sequence 0 (the promoted-item lastPlacedSequence rule).
+        spaceSequenceByActor.set(event.payload.actorId, event.sequence);
       }
     }
     await insertSpaceRows(
