@@ -43,6 +43,10 @@ export const chatEngineAuthorityStateSchema = z
     ragEligibility: z.boolean(),
     /** The successor branch this chat's world maps onto; null until linked. */
     simBranchId: z.string().min(1).nullable(),
+    /** R3: the sim actor the player embodies in the linked branch. */
+    simPlayerActorId: z.string().min(1).nullable(),
+    /** R3: the sim actor the chat's primary character embodies. */
+    simPrimaryActorId: z.string().min(1).nullable(),
   })
   .strict();
 export type ChatEngineAuthorityState = z.infer<typeof chatEngineAuthorityStateSchema>;

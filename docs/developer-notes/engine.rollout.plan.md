@@ -114,8 +114,8 @@ is the cleanup that makes the migration real.
    runnable against this leg on request). Exit: a full narrated turn against the
    internal test world within the latency/model-call budget, degradation paths
    observed live (a failed render withholds, never corrupts).
-4. **R3 — the product surface.** Status: **active — slice design recorded
-   2026-07-21** (survey done; build next). Slice 1, *the successor turn
+4. **R3 — the product surface.** Status: **slice 1 shipped —
+   2026-07-21** (slices 2–3 remain). Slice 1, *the successor turn
    route*: chat's exchange machine (`submitChatMessage`, ~2 000 lines of
    streaming pipeline) stays untouched — the lanes-separate rule applied to
    code. Instead a parallel, non-streaming route
@@ -126,7 +126,18 @@ is the cleanup that makes the migration real.
    `renderCommittedCut` → the prose persisted into the ordinary transcript
    (reuse `persistAssistantReply`) and returned. v1 actor mapping is two
    fields on the admin authority dial (player actor id + primary character
-   actor id; the rollout world's Mara/Ana). Slice 2, *player commands*:
+   actor id; the rollout world's Mara/Ana). Slice 1 shipped: migration 0082
+   (`sim_player_actor_id` / `sim_primary_actor_id` on `character_chats`),
+   the mapping threaded through the authority contract, seam, and admin
+   dial, and `POST /api/chats/[chatId]/sim-turn` — gated 409 unless
+   authority ≥ `successor_narrative_view` with branch + both actors mapped;
+   player line into the transcript, find-or-open the standing scene
+   (stable hash-derived open command), prepare → render live → prose
+   persisted via `persistAssistantReply` with cut/model/attempt metadata;
+   a withheld render is a clean 503 with no assistant line (ruling 8).
+   Gates green (3 111 pure + 471 int). Slice-1 leftover: a dedicated
+   sim-turn int test rides slice 2 alongside command admission. Slice 2,
+   *player commands*:
    move / start-stop activity / open-close engagement / transfer as typed
    admissions on the same route family. Slice 3, *authoring + storyteller
    tools*: topology/cohort/rhythm/action-definition CRUD plus relocate,
