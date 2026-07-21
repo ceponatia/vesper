@@ -72,12 +72,11 @@ jobs:
       - name: Apply migrations from zero
         run: pnpm db:migrate
 
-      - name: E2.2 durable branch transaction integration
-        run: pnpm test:engine-e2-2
-
-      - name: E2.3 outbox and rebuildable consumer integration
-        run: pnpm test:engine-e2-3
-
+      # E2.2/E2.3 steps retired 2026-07-21: E5.3 slice 1 deleted the item-transfer
+      # stand-in lane (tests included) wholesale; their invariants now run under
+      # E5.3 (material lane: transfers, idempotency, crash proofs) and E2.6 (soak:
+      # outbox crash-resume, duplicate defense). The steps had pointed at the
+      # deleted file ever since — masked by the verify-chain OOM fixed above.
       - name: E2.4 durable scheduler integration
         run: pnpm test:engine-e2-4
 
