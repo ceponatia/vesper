@@ -24,7 +24,7 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 ## Active (building now)
 
 - **Successor world engine — Gate 6: dual LOD & autonomous background life** —
-  [engine.plan.md](engine.plan.md) §"Gate 6" / §"Gate 6 build order" (**GATE 6 OPENED
+  [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md) (**GATE 6 OPENED
   2026-07-20**, owner go; ~10–25 dev-days). Separate simulation LOD (exact · event ·
   aggregate · dormant) and inference LOD (no-model · small-model · deliberator ·
   narrator) as independent per-actor axes, the deterministic background-life
@@ -53,7 +53,7 @@ body-needs plans (below) eventually port through. Full plan
 further down.)
 
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
-  [engine.plan.md](engine.plan.md) §"Gate 7" (draft). **Explicitly post-foundation and
+  [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly post-foundation and
   optional** — not part of the initial 60–120+ day build; admit a package (employers,
   schools, housing, labor, markets, news, law, weather, factions…) only when a world type +
   scenario corpus justifies it and it declares its authority, LOD, laws, budget, and disable
