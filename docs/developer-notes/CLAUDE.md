@@ -3,6 +3,32 @@
 This folder contains plan and spec files for development phases. Whenever possible, keep these documents up-to-date. When we develop something that conflicts with planned work, please update the planned work to reflect what has changed.
 If a complete reanalysis and rewrite of the planned work is needed due to other changes in code, say so in the relevant document. Do not do this analysis unless asked to, but tell the user in your response that it is needed.
 
+## Engine gate docs (split 2026-07-21)
+
+The successor-engine plan and spec are split so no single file has to be read or
+edited whole:
+
+- **One doc per gate: `engine.gateN.<slug>.md`** (e.g. `engine.gate6.dual-lod.md`),
+  where the slug names what the gate delivers. Each holds that gate's full plan
+  section — scope, build order, and the shipped E-package histories.
+  [engine.plan.md](engine.plan.md) stays the hub: goals, the gate index table
+  (one-line status + link per gate), dependency order, and cost/quality material.
+  **Future gates get their own file at planning time** (Gate 7 already has one) —
+  never grow a new gate inline in the hub. Gate numbers in filenames are NOT the
+  deprecated `phase-N` pattern: gate numbers are stable architectural identities
+  (each gate's exit gates the next; they can never be resequenced), so the name
+  encodes *what*, not a reorderable *when*.
+- **The spec is split by §-cluster: `engine.spec.<cluster>.md`** (kernel / world /
+  mind / bodies-materials / lod / operations). Section numbering is GLOBAL across
+  the set and never renumbers; [engine.spec.md](engine.spec.md) is the
+  authoritative § → file index. Keep citing sections as "engine.spec §N" in code
+  and docs — the index resolves them. A new section joins the file owning its
+  range; a genuinely new domain gets a new cluster file plus an index row. Owner
+  rulings stay in §39 (engine.spec.operations.md).
+- When finishing gate work, update: the gate doc (status + package history), the
+  hub's gate index row, and roadmap.md — in that order of detail (full record in
+  the gate doc, one line in each index).
+
 ## App Development State
 
 Vesper is a fork of Reverie, a role playing game. Vesper is more romance focused while Reverie is general.
