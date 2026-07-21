@@ -1280,8 +1280,8 @@ seed-pinned).
    across all suites. Leftovers: aggregate-stock feeding (no concrete item)
    is E6.3's lane; the §21.3 ledger terms in the general scorer remain §9's
    open decision 6.
-3. **E6.3 — aggregate and dormant lanes.** Status: **slice 1 shipped —
-   2026-07-20.** Population cohorts and institutions as flow-updated aggregates
+3. **E6.3 — aggregate and dormant lanes.** Status: **shipped — 2026-07-21
+   (slice 1 2026-07-20, slice 2 2026-07-21; E6.3 complete).** Population cohorts and institutions as flow-updated aggregates
    (extending §26.9 means bands and the §26.11 restock pattern): analytic updates
    on demand at read or dependency time, never on a tick; dormant actors provably
    arm no triggers and write no rows until an incoming dependency or promotion
@@ -1306,14 +1306,34 @@ seed-pinned).
    green; CI runs `test:engine-e6-3`. Waking on an incoming dependency
    (vs. explicit promotion) is deliberately deferred to E6.4's
    promotion/catch-up contract.
-   **Slice 2 (next): the aggregate lane** — population cohorts as
-   branch-scoped conserved-count entities (`cohort_created` /
-   `cohort_adjusted`, integer deltas with reasons, fork-replayed), authored
-   presence windows read analytically (zero rows at read), and means-band
-   support extended to cohort subjects (§26.10) — the promotable aggregate
-   facts E6.4 materializes actors from. Institutions stay households +
-   restock (§26.8–26.11) in v1; zone-shop restock generalization is
-   deferred until a scenario demands it.
+   **Slice 2 (2026-07-21): the aggregate lane** (spec §27.6 authored as the
+   normative wording; §26.10's means-subject vocabulary widened to
+   actor | household | cohort). Population cohorts land as branch-scoped
+   conserved counts — one `sim_cohorts` row (migration 0080) no matter how
+   many people it holds — existing only through `cohort_created`
+   (storyteller/system; presence-window zones validated fail-closed) and
+   moving only through `cohort_adjusted` (integer deltas, the closed
+   `authoring | influx | attrition | promotion_reservation` reason
+   vocabulary with headroom for E6.4, both counts captured
+   audit-without-reads; below-zero is the structured
+   `insufficient_population`, never a clamp). Presence is fully analytic:
+   authored minute-of-day windows (half-open, wrapping, earliest-triple
+   overlap rule) place `floor(population × share / 10 000)` people at a
+   zone as a pure read — zero rows, zero triggers, zero model calls, proven
+   in the int arc alongside the no-trigger assertion. Cohort events are not
+   perceptible (no observation, no beat, no memory — the crowd's ebb
+   reaches viewpoints through the read), threaded through every exhaustive
+   fold. A cohort wears a means band through the ordinary `set_means_band`
+   (subject existence fail-closed; new `cohort_id` band column) and is
+   band-tracked-or-unknown by construction. Fork children rebuild rows from
+   inherited events (`replayCohortHistory` wired into `forkBranch`, proven
+   with a presence-parity read). Institutions stay households + restock
+   (§26.8–26.11) in v1 — recorded ruling — and zone-shop restock
+   generalization is deferred until a scenario demands it. 9 new pure +
+   1 new int case; 3 099 pure + 462 int green; `test:engine-e6-3` carries
+   the cohort suites. Leftover to E6.4: the `promotion_reservation` debit
+   is vocabulary today — the promoting command that emits it (and
+   dependency-wake) is E6.4's contract.
 4. **E6.4 — actor promotion and catch-up.** §27.2's five steps generalized from
    the §26.10 item case to actors: promotion reserves conserved quantities,
    samples missing detail from a named deterministic stream with seed and

@@ -6,6 +6,7 @@ import {
   createStableStringSetSchema,
 } from "./envelopes";
 import {
+  cohortIdSchema,
   commandIdSchema,
   householdIdSchema,
   storySecondSchema,
@@ -174,9 +175,15 @@ export function compareMeansBands(a: MeansBandKey, b: MeansBandKey): number {
   return meansBandKeys.indexOf(a) - meansBandKeys.indexOf(b);
 }
 
+/**
+ * A means subject: actor, household, or — E6.3 — a population cohort, whose
+ * coarse economics are always band-tracked (lot loci never name a cohort, so
+ * the §26.10 lot-wins precedence can structurally never fire for one).
+ */
 export const meansSubjectSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("actor"), actorId: worldCharacterIdSchema }).strict(),
   z.object({ kind: z.literal("household"), householdId: householdIdSchema }).strict(),
+  z.object({ kind: z.literal("cohort"), cohortId: cohortIdSchema }).strict(),
 ]);
 export type MeansSubject = z.infer<typeof meansSubjectSchema>;
 

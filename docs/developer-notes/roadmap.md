@@ -31,9 +31,9 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   controller, aggregate/dormant lanes, and actor promotion + event-driven catch-up.
   Exit: an order-of-magnitude more off-screen actors does **not** grow model calls or
   per-minute work linearly. Build order E6.1–E6.5; **E6.1 (the per-actor LOD ledger),
-  E6.2 (the background-life controller: autonomous sleep/wake, then meals via the
-  §26.6 consumption train — complete), and E6.3 slice 1 (the dormant lane) shipped
-  2026-07-20 — see Shipped below. Next: E6.3 slice 2 (cohorts — the aggregate lane).**
+  E6.2 (the background-life controller — complete), and E6.3 (dormant lane, then the
+  cohort aggregate lane — complete) shipped 2026-07-20/21 — see Shipped below.
+  Next: E6.4 (actor promotion and catch-up).**
 
 ## Next (queued)
 
@@ -126,6 +126,16 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine population cohorts (E6.3, slice 2 — E6.3 COMPLETE)** —
+  [engine.plan.md](engine.plan.md) §"Gate 6 build order" · contract
+  [engine.spec.md](engine.spec.md) §27.6 (authored this work) — 2026-07-21 —
+  branch-scoped conserved counts (one row per crowd, migration 0080): existing only
+  through `cohort_created`, moving only through `cohort_adjusted` (closed reasons with
+  E6.4 headroom, both counts on the event, below-zero structurally rejected); fully
+  analytic presence windows (zero rows/triggers/model calls at read); cohort events
+  not perceptible; means-band subjects widened to cohorts (§26.10); fork parity via
+  `replayCohortHistory`. Institutions stay households+restock in v1. 3 099 pure +
+  462 int green. Next: **E6.4 (actor promotion and catch-up)**.
 - **World-engine dormant lane (E6.3, slice 1)** —
   [engine.plan.md](engine.plan.md) §"Gate 6 build order" · contract
   [engine.spec.md](engine.spec.md) §27.5 (authored this work) — 2026-07-20 — below

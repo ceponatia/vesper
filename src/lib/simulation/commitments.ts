@@ -875,6 +875,8 @@ export function applyCommitmentEvent(
     case "consent_escalation_resolved":
     case "actor_lod_assigned":
     case "routine_policy_resolved":
+    case "cohort_created":
+    case "cohort_adjusted":
       // Non-commitment families advance the boundary without touching this projection.
       return commitmentsProjectionSchema.parse(bumped);
     case "pressure_acknowledged": {

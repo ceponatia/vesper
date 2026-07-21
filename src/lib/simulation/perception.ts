@@ -246,6 +246,11 @@ export function deriveEventObservations(
     case "pressure_acknowledged":
     case "actor_lod_assigned":
     case "routine_policy_resolved":
+    case "cohort_created":
+    case "cohort_adjusted":
+      // Aggregate cohort bookkeeping (E6.3) is likewise not perceptible: a
+      // crowd's ebb reaches a viewpoint through the analytic presence READ,
+      // never as a witnessed event.
       // Scheduler and commitment-ledger bookkeeping is not perceptible; an
       // actor's knowledge of an obligation rides its commitment's `observed`
       // knowledge source pointing at a perceptible event (§15.1, §20).

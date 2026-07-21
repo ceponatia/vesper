@@ -1049,6 +1049,8 @@ export function applyActivityEvent(
     case "pressure_acknowledged":
     case "actor_lod_assigned":
     case "routine_policy_resolved":
+    case "cohort_created":
+    case "cohort_adjusted":
       // Non-activity families advance the boundary without touching activities.
       return activitiesProjectionSchema.parse(bumped);
   }

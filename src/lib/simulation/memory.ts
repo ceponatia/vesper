@@ -127,6 +127,8 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
     case "pressure_acknowledged":
     case "actor_lod_assigned":
     case "routine_policy_resolved":
+    case "cohort_created":
+    case "cohort_adjusted":
       // Bookkeeping derives no observations (§20); unreachable in practice
       // (mirrors `body_initialized`/`item_ownership_set`). Pressure
       // acknowledgment (E5.5 slice 3) is pure turn bookkeeping, not
