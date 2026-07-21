@@ -77,9 +77,17 @@ is the cleanup that makes the migration real.
    SSH provisioned the world on Neon (8 pending alarms), and
    `pnpm sim:advance -- --days 3` drained three story-days — 19 triggers
    fired, 9 routine decisions, one converged call, zero model calls — the
-   corpus behavior running on production infrastructure. Admission wiring
-   beyond the seam deliberately trails into R2/R4 — nothing consults the
-   flag until a successor leg exists to route to. Next: **R2**.
+   corpus behavior running on production infrastructure. Admission wiring landed
+   2026-07-21 (post-slice-3, owner ask — mobile testability): the ordinary
+   chat send endpoint forks a PLAIN send through `runSimChatExchange` when
+   the chat's authority flag says so — the one place the lanes meet, under
+   the same per-chat exchange lock as the legacy pipeline (taken only for
+   routed chats; the reply returns in the client's plain-text stream shape
+   and the transcript refetch shows both lines). Open/continue/action-beat/
+   regenerate/rerun kinds, attachments, and chips stay legacy — a successor
+   retake is a branch fork, never an in-place rerender (recorded boundary,
+   rides R5). The `/sim-turn` route remains as the thin headless wrapper
+   over the same core. Next at the time: **R2**.
 3. **R2 — the live narrator over the committed cut.** Status: **shipped —
    2026-07-21** (leftover below). `renderCommittedCut`
    (`server/engine/sim-narrator.ts`): load the persisted, hash-verified cut →

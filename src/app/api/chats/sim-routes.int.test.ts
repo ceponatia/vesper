@@ -41,6 +41,7 @@ import {
   setChatEngineAuthority,
 } from "@/server/engine";
 import { POST as chatsCreate } from "./route";
+import { POST as chatSend } from "./[chatId]/route";
 import { POST as simCommand } from "./[chatId]/sim-command/route";
 import { POST as simTurn } from "./[chatId]/sim-turn/route";
 
@@ -143,6 +144,25 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
     const assistant = messages.filter((row) => row.role === "assistant");
     expect(assistant).toHaveLength(1);
     expect(assistant[0]?.meta).toMatchObject({ simTurn: true, cutId: turnBody.cutId });
+
+    // The ADMISSION WIRING: the ordinary send endpoint — the one the chat UI
+    // (mobile included) actually calls — forks the same message into the
+    // successor lane for a routed chat, returning plain text and landing
+    // both lines in the transcript.
+    const uiSend = await chatSend(
+      jsonReq(`/api/chats/${ids.chat}`, { kind: "send", content: "I stretch and glance out the window." }),
+      ctx(ids.chat),
+    );
+    expect(uiSend.status).toBe(200);
+    expect(uiSend.headers.get("content-type")).toContain("text/plain");
+    const uiProse = await uiSend.text();
+    expect(uiProse.length).toBeGreaterThan(0);
+    const afterUiSend = await db()
+      .select({ role: characterChatMessages.role })
+      .from(characterChatMessages)
+      .where(eq(characterChatMessages.chatId, ids.chat));
+    expect(afterUiSend.filter((row) => row.role === "user")).toHaveLength(2);
+    expect(afterUiSend.filter((row) => row.role === "assistant")).toHaveLength(2);
 
     // give_item: not-held is the public face; the held keepsake transfers.
     const notHeld = await simCommand(
