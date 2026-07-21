@@ -1,7 +1,7 @@
 import { simulationHash } from "@/lib/simulation/hash";
 import { deriveEngagementId } from "@/lib/simulation/engagements";
 import { newId } from "@/lib/ids";
-import { characterChatMessages, db } from "@/server/db";
+import { characterChatMessages, db, simCharacters } from "@/server/db";
 import { desc, eq } from "drizzle-orm";
 import { readChatEngineAuthority } from "./chat-authority";
 import { persistAssistantReply } from "./chat-pipeline";
@@ -92,8 +92,20 @@ export async function runSimChatExchange(input: {
     return { ok: false, code: "sim_open_failed", message: `the scene could not open: ${opened.code}`, status: 409 };
   }
 
+  // World-truth display names — prose never reads actor ids well, and the
+  // agency rule needs to NAME the player's character to bind.
+  const nameRows = await db()
+    .select({ characterId: simCharacters.characterId, name: simCharacters.name })
+    .from(simCharacters)
+    .where(eq(simCharacters.branchId, branchId));
+  const actorNames = Object.fromEntries(nameRows.map((row) => [row.characterId, row.name]));
+  const playerName = actorNames[playerActorId] ?? "the player";
+
   // The conversational context the narrator responds to: the last few
-  // transcript lines (before this turn's insert), oldest first.
+  // transcript lines (before this turn's insert), oldest first. Assistant
+  // lines are labeled NARRATION, not a character — earlier replies may have
+  // wrongly voiced the player's character and must read as narration output,
+  // never as an example of that character speaking.
   const tailRows = await db()
     .select({ role: characterChatMessages.role, content: characterChatMessages.content })
     .from(characterChatMessages)
@@ -103,7 +115,7 @@ export async function runSimChatExchange(input: {
   const dialogueTail = tailRows
     .reverse()
     .map((row) => ({
-      speaker: row.role === "user" ? "The viewpoint actor" : (input.speakerName ?? "The scene"),
+      speaker: row.role === "user" ? `PLAYER (as ${playerName})` : "NARRATION (previous)",
       text: row.content,
     }));
 
@@ -130,7 +142,7 @@ export async function runSimChatExchange(input: {
     branchId,
     engagementId,
     cutId: turn.cut.id,
-    conversation: { playerUtterance: input.message, dialogueTail, viewpointIsPlayer: true },
+    conversation: { playerUtterance: input.message, dialogueTail, viewpointIsPlayer: true, actorNames },
   });
   if (rendered.status !== "rendered" || rendered.prose === undefined) {
     return { ok: false, code: "render_withheld", message: "the narrator could not render this turn; try again", status: 503 };

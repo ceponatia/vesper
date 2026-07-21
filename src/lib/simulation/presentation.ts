@@ -82,6 +82,8 @@ export interface CutRenderConversation {
    * "viewpoint inner voice" license applies only to NPC viewpoints.
    */
   viewpointIsPlayer?: boolean;
+  /** Display names by actor id — ids never read well in prose. */
+  actorNames?: Record<string, string>;
 }
 
 export function buildCutRenderPrompt(
@@ -89,15 +91,21 @@ export function buildCutRenderPrompt(
   conversation: CutRenderConversation = {},
 ): { system: string; prompt: string } {
   const lines: string[] = [];
+  const names = conversation.actorNames ?? {};
+  const nameOf = (actorId: string) => names[actorId] ?? actorId;
+  const viewpointName = nameOf(cut.viewpointActorId);
   lines.push(
-    `VIEWPOINT: ${cut.viewpointActorId}`,
+    `VIEWPOINT: ${viewpointName}${conversation.viewpointIsPlayer ? " — THE PLAYER'S CHARACTER" : ""}`,
     `STORY SPAN: second ${cut.fromStorySecond} through ${cut.throughStorySecond}`,
   );
+  if (Object.keys(names).length > 0) {
+    lines.push("CAST NAMES (use these, never ids):", ...Object.entries(names).map(([id, name]) => `- ${name} (${id})`));
+  }
   if (cut.currentLoci.length > 0) {
     lines.push(
       "SCENE (who is physically here):",
       ...cut.currentLoci.map(
-        (locus) => `- ${locus.actorId}: ${locus.kind}${locus.zoneId ? ` at ${locus.zoneId}` : ""}`,
+        (locus) => `- ${nameOf(locus.actorId)}: ${locus.kind}${locus.zoneId ? ` at ${locus.zoneId}` : ""}`,
       ),
     );
   }
@@ -174,7 +182,9 @@ export function buildCutRenderPrompt(
   const tail = (conversation.dialogueTail ?? []).filter((line) => line.text.trim().length > 0).slice(-6);
   if (tail.length > 0) {
     lines.push(
-      "RECENT CONVERSATION (oldest first — continuity only, never new facts):",
+      "RECENT TRANSCRIPT (oldest first — continuity only, never new facts; if",
+      "earlier NARRATION wrongly spoke or felt for the player's character, that",
+      "was an error — never imitate it):",
       ...tail.map((line) => `- ${line.speaker}: ${line.text.length > 300 ? `${line.text.slice(0, 300)}…` : line.text}`),
     );
   }
@@ -198,6 +208,14 @@ export function buildCutRenderPrompt(
       "If it implies an action or outcome the committed state above",
       "does not establish, portray only the attempt or the words — never the",
       "unearned outcome.",
+    );
+  }
+  if (conversation.viewpointIsPlayer) {
+    lines.push(
+      "",
+      `FINAL RULE — ${viewpointName} is the player's character. Their only words and`,
+      "actions this turn are the ones in THE VIEWPOINT ACTOR'S TURN above, verbatim.",
+      `Do not write any new dialogue, thought, feeling, or action for ${viewpointName}.`,
     );
   }
   lines.push(

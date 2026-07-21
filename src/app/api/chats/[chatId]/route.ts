@@ -274,27 +274,81 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     if (simLock === null) {
       return jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);
     }
-    try {
-      const sim = await runSimChatExchange({
-        chatId,
-        userId: user.id,
-        speakerCharacterId: owned.character.id,
-        speakerName: owned.character.name,
-        message: (body.value.content ?? "").trim(),
-      });
-      if (sim.ok) {
-        return new Response(sim.prose, {
-          headers: {
-            "content-type": "text/plain; charset=utf-8",
-            "cache-control": "no-cache, no-transform",
-            "x-accel-buffering": "no",
-          },
-        });
-      }
-      return jsonError(sim.code, sim.message, sim.status);
-    } finally {
-      releaseSimLock();
-    }
+    // Stream shape matters more than content here: the successor turn takes
+    // 30-60s of model time with nothing to say, and fly-proxy cuts a response
+    // that has sent zero bytes for ~60s (the "reply only appears on refresh"
+    // symptom — it had persisted server-side). First byte goes out
+    // immediately and an invisible zero-width-space heartbeat every 8s keeps
+    // the pipe warm; the prose lands as one chunk; a failure records the
+    // ordinary lastReplyFailure so the client's existing popup explains it.
+    const encoder = new TextEncoder();
+    const message = (body.value.content ?? "").trim();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("\u200B"));
+        const heartbeat = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode("\u200B"));
+          } catch {
+            clearInterval(heartbeat);
+          }
+        }, 8_000);
+        void (async () => {
+          try {
+            const sim = await runSimChatExchange({
+              chatId,
+              userId: user.id,
+              speakerCharacterId: owned.character.id,
+              speakerName: owned.character.name,
+              message,
+            });
+            if (sim.ok) {
+              controller.enqueue(encoder.encode(sim.prose));
+            } else {
+              await db()
+                .update(characterChats)
+                .set({
+                  lastReplyFailure: {
+                    code: "unknown",
+                    detail: `successor turn: ${sim.message}`,
+                    model: "",
+                    at: new Date().toISOString(),
+                  },
+                })
+                .where(eq(characterChats.id, chatId));
+            }
+          } catch (err) {
+            await db()
+              .update(characterChats)
+              .set({
+                lastReplyFailure: {
+                  code: "unknown",
+                  detail: `successor turn crashed: ${err instanceof Error ? err.message : String(err)}`,
+                  model: "",
+                  at: new Date().toISOString(),
+                },
+              })
+              .where(eq(characterChats.id, chatId))
+              .catch(() => undefined);
+          } finally {
+            clearInterval(heartbeat);
+            releaseSimLock();
+            try {
+              controller.close();
+            } catch {
+              // already closed by a client disconnect
+            }
+          }
+        })();
+      },
+    });
+    return new Response(stream, {
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-cache, no-transform",
+        "x-accel-buffering": "no",
+      },
+    });
   }
 
   const result = await submitChatMessage({
