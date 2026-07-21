@@ -114,7 +114,24 @@ is the cleanup that makes the migration real.
    runnable against this leg on request). Exit: a full narrated turn against the
    internal test world within the latency/model-call budget, degradation paths
    observed live (a failed render withholds, never corrupts).
-4. **R3 — the product surface.** Minimum playable seam **inside the existing
+4. **R3 — the product surface.** Status: **active — slice design recorded
+   2026-07-21** (survey done; build next). Slice 1, *the successor turn
+   route*: chat's exchange machine (`submitChatMessage`, ~2 000 lines of
+   streaming pipeline) stays untouched — the lanes-separate rule applied to
+   code. Instead a parallel, non-streaming route
+   (`POST /api/chats/[chatId]/sim-turn`) serves chats whose authority is
+   `successor_narrative_view` with a linked `simBranchId`: player text in →
+   `prepareEngagementTurn` (span per ruling 1, viewpoint = the player's
+   mapped actor, live deliberation joins here — the R2 leftover) →
+   `renderCommittedCut` → the prose persisted into the ordinary transcript
+   (reuse `persistAssistantReply`) and returned. v1 actor mapping is two
+   fields on the admin authority dial (player actor id + primary character
+   actor id; the rollout world's Mara/Ana). Slice 2, *player commands*:
+   move / start-stop activity / open-close engagement / transfer as typed
+   admissions on the same route family. Slice 3, *authoring + storyteller
+   tools*: topology/cohort/rhythm/action-definition CRUD plus relocate,
+   promote-from-cohort, and the LOD dial as admin routes. Exit unchanged:
+   a human plays a scene in the internal test world on Fly. Minimum playable seam **inside the existing
    character chat UI at `/chat/`** (ruling 1 — no standalone play page): API
    routes that admit player commands into the successor
    (movement, activities, engagement open/close, item transfer), the play loop
