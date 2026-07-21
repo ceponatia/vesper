@@ -15,7 +15,14 @@ import {
   withUser,
 } from "@/server/api";
 import { characterChats, characterChatMessages, characterChatState, db } from "@/server/db";
-import { deleteChat, resolveChatWardrobe, submitChatMessage } from "@/server/engine";
+import {
+  deleteChat,
+  readChatEngineAuthority,
+  resolveChatWardrobe,
+  runSimChatExchange,
+  submitChatMessage,
+  tryKeyedLock,
+} from "@/server/engine";
 import { loadOwnedChat } from "../owned";
 import { queueChatScene } from "./scene/queue";
 
@@ -233,6 +240,60 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   if (owned.chat.archivedAt) return jsonError("chat_archived", "this conversation is archived; restore it to continue", 409);
   if (!rateLimit(`chat:${user.id}`, CHAT_RATE_LIMIT)) {
     return jsonError("rate_limited", "too many chat messages; try again in a minute", 429);
+  }
+
+  // R3 admission wiring (engine.rollout.plan.md): a sim-routed chat's PLAIN
+  // send becomes a successor turn — the one place the lanes fork, decided by
+  // the chat's authority flag and nothing else. The reply comes back in the
+  // same plain-text shape the client already streams, and the post-exchange
+  // transcript refetch shows both persisted lines. Every other kind (open /
+  // continue / action_beat / regenerate / rerun), attachments, and action
+  // chips stay legacy: a successor retake is a branch fork, never an
+  // in-place rerender (recorded boundary — rides R5).
+  const plainSend =
+    body.value.kind === "send" &&
+    (body.value.content ?? "").trim().length > 0 &&
+    (body.value.attachmentIds === undefined || body.value.attachmentIds.length === 0) &&
+    body.value.action === undefined;
+  const simAuthority = plainSend ? await readChatEngineAuthority(chatId) : null;
+  const simRouted =
+    simAuthority !== null &&
+    simAuthority.authority !== "legacy_chat" &&
+    simAuthority.authority !== "successor_shadow" &&
+    simAuthority.simBranchId !== null &&
+    simAuthority.simPlayerActorId !== null &&
+    simAuthority.simPrimaryActorId !== null;
+  if (simRouted) {
+    let releaseSimLock!: () => void;
+    const simLockGate = new Promise<void>((resolve) => {
+      releaseSimLock = resolve;
+    });
+    // The same per-chat exchange lock the legacy pipeline takes — one reply
+    // in flight per conversation regardless of lane.
+    const simLock = tryKeyedLock(`chat_exchange:${chatId}`, () => simLockGate);
+    if (simLock === null) {
+      return jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);
+    }
+    try {
+      const sim = await runSimChatExchange({
+        chatId,
+        userId: user.id,
+        speakerCharacterId: owned.character.id,
+        message: (body.value.content ?? "").trim(),
+      });
+      if (sim.ok) {
+        return new Response(sim.prose, {
+          headers: {
+            "content-type": "text/plain; charset=utf-8",
+            "cache-control": "no-cache, no-transform",
+            "x-accel-buffering": "no",
+          },
+        });
+      }
+      return jsonError(sim.code, sim.message, sim.status);
+    } finally {
+      releaseSimLock();
+    }
   }
 
   const result = await submitChatMessage({
