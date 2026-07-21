@@ -41,6 +41,15 @@ export async function applyTriggerScheduledEvent(
     uniquenessKey: event.payload.uniquenessKey,
     payload: { command: { ...event.payload.command, branchId: target.branchId } },
   });
-  await tx.insert(simTriggers).values(trigger);
+  // A fresh arm is born eligible: `available_at` exists ONLY for retry
+  // backoff, which pushes it forward. The column's wall-clock default made a
+  // trigger armed MID-DRAIN (a fired alarm arming its successor — sleep
+  // arming its own expiry) invisible to the rest of that drain call, whose
+  // eligibility clock is captured once at entry — so one long skip silently
+  // deferred chained alarms to the NEXT drain, which then stamped their
+  // events at a too-late story second. That breaks §12.4 partition
+  // invariance; the Gate 6 exit corpus (EXIT 3) falsified it against the
+  // default before this line pinned the epoch.
+  await tx.insert(simTriggers).values({ ...trigger, availableAt: new Date(0) });
   return trigger;
 }
