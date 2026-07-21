@@ -575,6 +575,13 @@
       "when": 1784648546641,
       "tag": "0081_bent_brother_voodoo",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1784654826589,
+      "tag": "0082_steep_franklin_richards",
+      "breakpoints": true
     }
   ]
 }

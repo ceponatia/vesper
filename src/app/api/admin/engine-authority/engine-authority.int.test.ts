@@ -102,6 +102,8 @@ describe.runIf(ready)("R1 engine-authority dial", () => {
       authority: "legacy_chat",
       ragEligibility: false,
       simBranchId: null,
+      simPlayerActorId: null,
+      simPrimaryActorId: null,
     });
 
     const flipped = await authorityPatch(

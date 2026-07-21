@@ -21,6 +21,8 @@ export interface ChatAuthorityRow {
   engineAuthority: string;
   successorRagEligibility: boolean;
   simBranchId: string | null;
+  simPlayerActorId: string | null;
+  simPrimaryActorId: string | null;
 }
 
 /** Pure row → state, degraded default at the boundary. */
@@ -31,8 +33,16 @@ export function chatAuthorityStateFromRow(row: ChatAuthorityRow): ChatEngineAuth
       authority: row.engineAuthority,
       ragEligibility: row.successorRagEligibility,
       simBranchId: row.simBranchId,
+      simPlayerActorId: row.simPlayerActorId,
+      simPrimaryActorId: row.simPrimaryActorId,
     },
-    { authority: DEFAULT_ENGINE_AUTHORITY, ragEligibility: false, simBranchId: null },
+    {
+      authority: DEFAULT_ENGINE_AUTHORITY,
+      ragEligibility: false,
+      simBranchId: null,
+      simPlayerActorId: null,
+      simPrimaryActorId: null,
+    },
     undefined,
     "character_chats.engine_authority",
   );
@@ -48,6 +58,8 @@ export async function readChatEngineAuthority(
       engineAuthority: characterChats.engineAuthority,
       successorRagEligibility: characterChats.successorRagEligibility,
       simBranchId: characterChats.simBranchId,
+      simPlayerActorId: characterChats.simPlayerActorId,
+      simPrimaryActorId: characterChats.simPrimaryActorId,
     })
     .from(characterChats)
     .where(eq(characterChats.id, chatId))
@@ -63,6 +75,8 @@ export interface SetChatEngineAuthorityInput {
   ragEligibility?: boolean;
   /** Explicit null unlinks; undefined leaves the link untouched. */
   simBranchId?: string | null;
+  simPlayerActorId?: string | null;
+  simPrimaryActorId?: string | null;
 }
 
 export interface SetChatEngineAuthorityResult {
@@ -86,6 +100,8 @@ export async function setChatEngineAuthority(
         engineAuthority: characterChats.engineAuthority,
         successorRagEligibility: characterChats.successorRagEligibility,
         simBranchId: characterChats.simBranchId,
+        simPlayerActorId: characterChats.simPlayerActorId,
+        simPrimaryActorId: characterChats.simPrimaryActorId,
       })
       .from(characterChats)
       .where(eq(characterChats.id, input.chatId))
@@ -98,11 +114,17 @@ export async function setChatEngineAuthority(
       authority: input.authority ?? before.authority,
       ragEligibility: input.ragEligibility ?? before.ragEligibility,
       simBranchId: input.simBranchId === undefined ? before.simBranchId : input.simBranchId,
+      simPlayerActorId:
+        input.simPlayerActorId === undefined ? before.simPlayerActorId : input.simPlayerActorId,
+      simPrimaryActorId:
+        input.simPrimaryActorId === undefined ? before.simPrimaryActorId : input.simPrimaryActorId,
     };
     if (
       after.authority === before.authority &&
       after.ragEligibility === before.ragEligibility &&
-      after.simBranchId === before.simBranchId
+      after.simBranchId === before.simBranchId &&
+      after.simPlayerActorId === before.simPlayerActorId &&
+      after.simPrimaryActorId === before.simPrimaryActorId
     ) {
       return { before, after };
     }
@@ -113,6 +135,8 @@ export async function setChatEngineAuthority(
         engineAuthority: after.authority,
         successorRagEligibility: after.ragEligibility,
         simBranchId: after.simBranchId,
+        simPlayerActorId: after.simPlayerActorId,
+        simPrimaryActorId: after.simPrimaryActorId,
       })
       .where(eq(characterChats.id, input.chatId));
     await tx.insert(events).values({

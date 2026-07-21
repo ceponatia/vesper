@@ -331,6 +331,10 @@ export const characterChats = pgTable(
      * legacy-lane behavior rather than pointing at a ghost.
      */
     simBranchId: text("sim_branch_id").references(() => simBranches.id, { onDelete: "set null" }),
+    /** R3: the sim actor the PLAYER embodies in the linked branch (null = unmapped). */
+    simPlayerActorId: text("sim_player_actor_id"),
+    /** R3: the sim actor the chat's primary character embodies (null = unmapped). */
+    simPrimaryActorId: text("sim_primary_actor_id"),
     createdAt: createdAt(),
     /** Recency anchor for the Chats list; bumped on every exchange. */
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),

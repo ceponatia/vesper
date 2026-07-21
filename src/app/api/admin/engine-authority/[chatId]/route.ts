@@ -20,11 +20,17 @@ const patchBodySchema = z
     ragEligibility: z.boolean().optional(),
     /** Explicit null unlinks the successor branch; omit to leave untouched. */
     simBranchId: z.string().min(1).max(256).nullable().optional(),
+    simPlayerActorId: z.string().min(1).max(256).nullable().optional(),
+    simPrimaryActorId: z.string().min(1).max(256).nullable().optional(),
   })
   .strict()
   .refine(
     (body) =>
-      body.authority !== undefined || body.ragEligibility !== undefined || body.simBranchId !== undefined,
+      body.authority !== undefined ||
+      body.ragEligibility !== undefined ||
+      body.simBranchId !== undefined ||
+      body.simPlayerActorId !== undefined ||
+      body.simPrimaryActorId !== undefined,
     { message: "Nothing to change" },
   );
 
@@ -52,6 +58,10 @@ export const PATCH = withUser<Params>(async (user, req, ctx) => {
     ...(body.value.authority === undefined ? {} : { authority: body.value.authority }),
     ...(body.value.ragEligibility === undefined ? {} : { ragEligibility: body.value.ragEligibility }),
     ...(body.value.simBranchId === undefined ? {} : { simBranchId: body.value.simBranchId }),
+    ...(body.value.simPlayerActorId === undefined ? {} : { simPlayerActorId: body.value.simPlayerActorId }),
+    ...(body.value.simPrimaryActorId === undefined
+      ? {}
+      : { simPrimaryActorId: body.value.simPrimaryActorId }),
   });
   if (!result) return jsonError("not_found", "chat not found", 404);
   return jsonOk(result);
