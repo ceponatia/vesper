@@ -114,8 +114,9 @@ is the cleanup that makes the migration real.
    runnable against this leg on request). Exit: a full narrated turn against the
    internal test world within the latency/model-call budget, degradation paths
    observed live (a failed render withholds, never corrupts).
-4. **R3 — the product surface.** Status: **slices 1–2 shipped —
-   2026-07-21** (slice 3, authoring + storyteller tools, remains). Slice 1, *the successor turn
+4. **R3 — the product surface.** Status: **slices 1–3 shipped —
+   2026-07-21**; the R3 exit (a human plays a scene in the test world on
+   Fly) awaits the next deploy + a live session. Slice 1, *the successor turn
    route*: chat's exchange machine (`submitChatMessage`, ~2 000 lines of
    streaming pipeline) stays untouched — the lanes-separate rule applied to
    code. Instead a parallel, non-streaming route
@@ -149,9 +150,21 @@ is the cleanup that makes the migration real.
    them up). Slice-1 leftover closed: `test:rollout-r3` (in CI) runs the
    full arc — gate 409 → flip → turn into the transcript (AI_FAKE fallback
    render) → not-held refusal → keepsake handover → end scene → rest →
-   blocked move. Gates green (3 111 pure + 472 int). Slice 3, *authoring + storyteller
-   tools*: topology/cohort/rhythm/action-definition CRUD plus relocate,
-   promote-from-cohort, and the LOD dial as admin routes. Exit unchanged:
+   blocked move. Gates green (3 111 pure + 472 int). Slice 3 shipped —
+   the admin sim family (404-hidden, storyteller principal):
+   `POST /api/admin/sim/worlds` provisions a NEW world declaratively through
+   the real durable seeders in dependency order (each section validated by
+   its own seeder's contract — no second schema to drift; existing worldId =
+   409, never a mutation); `GET /api/admin/sim/[branchId]` is the authoring
+   status read (clock, cast with locus + LOD, cohorts, pending alarms);
+   `POST /api/admin/sim/[branchId]/command` is the tool palette — audited
+   `relocate` (ruling 4), §27.2 `promote` from a cohort, the `assign_lod`
+   dial, conserved `adjust_cohort` (overdraw = structured public refusal),
+   and the bounded `advance` drain. Int-proven end to end
+   (`sim-admin.int.test.ts`, in the CI glob): provision → promote "Odell"
+   out of the crowd → relocate → dial → adjust → advance a story-day →
+   status snapshot confirming every effect (3 111 pure; engine+rollout
+   28 files / 207 tests). Exit unchanged:
    a human plays a scene in the internal test world on Fly. Minimum playable seam **inside the existing
    character chat UI at `/chat/`** (ruling 1 — no standalone play page): API
    routes that admit player commands into the successor
