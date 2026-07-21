@@ -117,6 +117,18 @@ export {
   type KnowledgeStoreOptions,
 } from "./knowledge-store";
 export {
+  readDurableBodies,
+  seedDurableBodyRhythms,
+  submitDurableInitializeActorBody,
+} from "./body-store";
+export {
+  cohortFromRow,
+  loadBranchCohorts,
+  submitDurableAdjustCohort,
+  submitDurableCreateCohort,
+  type CohortSubmitOptions,
+} from "./cohort-store";
+export {
   actorLodFromRow,
   actorLodRowInsert,
   commitDependencyWakes,

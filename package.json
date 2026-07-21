@@ -38,7 +38,7 @@
     "sim:render-turn": "tsx scripts/sim/render-turn.ts",
     "eval:schedule-kind": "tsx scripts/eval/schedule-kind/run.ts",
     "eval:retrieval": "tsx scripts/eval/retrieval/run.ts",
-    "test:engine": "vitest run --no-file-parallelism src/server/engine/simulation src/server/engine/sim-narrator.int.test.ts src/app/api/chats/sim-routes.int.test.ts src/app/api/admin/engine-authority/engine-authority.int.test.ts",
+    "test:engine": "vitest run --no-file-parallelism src/server/engine/simulation src/server/engine/sim-narrator.int.test.ts src/app/api/chats/sim-routes.int.test.ts src/app/api/admin/engine-authority/engine-authority.int.test.ts src/app/api/admin/sim/sim-admin.int.test.ts",
     "test:engine-e2-4": "vitest run --no-file-parallelism src/server/engine/simulation/scheduler-store.int.test.ts",
     "test:engine-e2-5": "vitest run --no-file-parallelism src/server/engine/simulation/branch-store.int.test.ts",
     "test:engine-e2-6": "vitest run --no-file-parallelism src/server/engine/simulation/gate2-soak.int.test.ts",
