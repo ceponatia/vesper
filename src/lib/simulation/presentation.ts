@@ -11,7 +11,8 @@ import {
   type SoftCanonProposal,
 } from "@/contracts/simulation/soft-canon";
 import { parseOr } from "@/lib/parse";
-import { formatStoryClock, storyClockAt } from "./clock";
+import { formatStoryMoment } from "@/contracts/turns/chat-clock";
+import { formatStoryClock, storyCalendarParams, storyClockAt, type SimCalendarStart } from "./clock";
 
 /**
  * E4.3 — the §23.1 narrator trust boundary and the §23.2 presentation
@@ -85,6 +86,12 @@ export interface CutRenderConversation {
   viewpointIsPlayer?: boolean;
   /** Display names by actor id — ids never read well in prose. */
   actorNames?: Record<string, string>;
+  /**
+   * R5 time domain (ruling 17): the world's calendar anchor. Present, the
+   * WORLD CLOCK line carries the real date ("Monday, June 1 — 8:01am");
+   * absent, it stays "Day N". Presentation input — the cut never carries it.
+   */
+  calendarStart?: SimCalendarStart | null;
 }
 
 export function buildCutRenderPrompt(
@@ -98,10 +105,19 @@ export function buildCutRenderPrompt(
   // The clock made legible (ruling 17): raw story-seconds read as nothing to a
   // model, so without this line time-of-day color drifts to whatever the
   // transcript tail implies — the R3 live-session "afternoon light at 8am" bug.
-  const clock = storyClockAt(cut.fromStorySecond);
+  // With a calendar anchor (R5 time domain) the line carries the real weekday
+  // and date, sharing the legacy lane's Gregorian formatters via the adapter.
+  const anchor = conversation.calendarStart ?? null;
+  const clockLabel =
+    anchor === null
+      ? formatStoryClock(storyClockAt(cut.fromStorySecond))
+      : (() => {
+          const params = storyCalendarParams(cut.fromStorySecond, anchor);
+          return formatStoryMoment(params.clockMinutes, params.calendarStart);
+        })();
   lines.push(
     `VIEWPOINT: ${viewpointName}${conversation.viewpointIsPlayer ? " — THE PLAYER'S CHARACTER" : ""}`,
-    `WORLD CLOCK: ${formatStoryClock(clock)} — world truth. Light, meals, fatigue, and`,
+    `WORLD CLOCK: ${clockLabel} — world truth. Light, meals, fatigue, and`,
     "all time-of-day color follow this clock. If earlier prose implies a different",
     "time of day, the clock wins — shift naturally, never remark on the correction.",
     `STORY SPAN: second ${cut.fromStorySecond} through ${cut.throughStorySecond}`,

@@ -1,8 +1,10 @@
 import { claimHoldingEngagementStates } from "@/contracts/simulation/engagements";
+import { simCalendarStartSchema, type SimCalendarStart } from "@/lib/simulation/clock";
 import { simulationHash } from "@/lib/simulation/hash";
 import { deriveEngagementId } from "@/lib/simulation/engagements";
 import { newId } from "@/lib/ids";
-import { characterChatMessages, db, simBranches, simCharacters } from "@/server/db";
+import { parseOr } from "@/lib/parse";
+import { characterChatMessages, db, simBranches, simCharacters, simWorlds } from "@/server/db";
 import { desc, eq } from "drizzle-orm";
 import { readChatEngineAuthority } from "./chat-authority";
 import { persistAssistantReply } from "./chat-pipeline";
@@ -92,13 +94,20 @@ export async function findOrOpenStandingEngagement(input: {
     : { ok: false, code: "sim_conflict", publicReason: "The world moved; try again." };
 }
 
+export interface SimChatClock {
+  storySecond: number;
+  /** The world's calendar anchor (R5 time domain) — null = no calendar, "Day N" display. */
+  calendarStart: SimCalendarStart | null;
+}
+
 /**
- * R3 slice 4 (ruling 17) — the routed chat's world clock: the linked branch's
- * `storySecond`, or null for a legacy chat. The chat UI shows THIS clock for
- * sim-routed chats (parity throughout the system), never the legacy scenario
- * clock; the client derives the legible label via the shared story-clock seam.
+ * R3 slice 4 + R5 time domain (ruling 17) — the routed chat's world clock:
+ * the linked branch's `storySecond` plus the world's calendar anchor, or null
+ * for a legacy chat. The chat UI shows THIS clock for sim-routed chats
+ * (parity throughout the system), never the legacy scenario clock; the client
+ * derives the legible label via the shared story-clock seam.
  */
-export async function readSimChatStorySecond(chatId: string): Promise<number | null> {
+export async function readSimChatClock(chatId: string): Promise<SimChatClock | null> {
   const authority = await readChatEngineAuthority(chatId);
   if (
     !authority ||
@@ -108,12 +117,22 @@ export async function readSimChatStorySecond(chatId: string): Promise<number | n
   ) {
     return null;
   }
-  const [branch] = await db()
-    .select({ storySecond: simBranches.storySecond })
+  return readBranchClock(authority.simBranchId);
+}
+
+/** The branch clock + its world's calendar anchor (fail-open to no calendar). */
+export async function readBranchClock(branchId: string): Promise<SimChatClock | null> {
+  const [row] = await db()
+    .select({ storySecond: simBranches.storySecond, calendarStart: simWorlds.calendarStart })
     .from(simBranches)
-    .where(eq(simBranches.id, authority.simBranchId))
+    .innerJoin(simWorlds, eq(simWorlds.id, simBranches.worldId))
+    .where(eq(simBranches.id, branchId))
     .limit(1);
-  return branch?.storySecond ?? null;
+  if (!row) return null;
+  return {
+    storySecond: row.storySecond,
+    calendarStart: parseOr(simCalendarStartSchema.nullable(), row.calendarStart ?? null, null, undefined, "sim_worlds.calendar_start"),
+  };
 }
 
 export type SimChatExchangeResult =
@@ -223,11 +242,18 @@ export async function runSimChatExchange(input: {
     deliberation: buildLiveDeliberation(),
     workerId: `sim-turn-${input.chatId}`,
   });
+  const clock = await readBranchClock(branchId);
   const rendered = await renderCommittedCut({
     branchId,
     engagementId: scene.engagementId,
     cutId: turn.cut.id,
-    conversation: { playerUtterance: input.message, dialogueTail, viewpointIsPlayer: true, actorNames },
+    conversation: {
+      playerUtterance: input.message,
+      dialogueTail,
+      viewpointIsPlayer: true,
+      actorNames,
+      calendarStart: clock?.calendarStart ?? null,
+    },
   });
   if (rendered.status !== "rendered" || rendered.prose === undefined) {
     return { ok: false, code: "render_withheld", message: "the narrator could not render this turn; try again", status: 503 };

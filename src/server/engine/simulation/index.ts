@@ -159,6 +159,7 @@ export {
 export { submitDurableRunRoutinePolicy, type RoutineSubmitOptions } from "./routine-store";
 export {
   provisionStarterWorld,
+  STARTER_CALENDAR_START,
   STARTER_ORIGIN_STORY_SECOND,
   STARTER_WORLD_TYPE_ID,
   type StarterWorldResult,

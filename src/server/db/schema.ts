@@ -1389,6 +1389,14 @@ export const simWorlds = pgTable(
     status: text("status", { enum: ["active", "paused", "archived"] }).notNull().default("active"),
     /** Ruling 3: whether explicit forced-entry attempts are admissible here. */
     permitsTrespass: boolean("permits_trespass").notNull().default(false),
+    /**
+     * R5 time domain (ruling 17): the calendar anchor — the DATE of story day
+     * zero ({year, month, day}; time-of-day comes from storySecond itself).
+     * Null = no calendar declared: presentation stays "Day N". Presentation
+     * config, not causal state — editable in place, never through the event
+     * log (changing it re-labels history, it does not rewrite it).
+     */
+    calendarStart: jsonb("calendar_start"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

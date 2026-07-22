@@ -29,7 +29,7 @@ import {
   editChatState,
   loadChatScenario,
   loadChatState,
-  readSimChatStorySecond,
+  readSimChatClock,
   resolveChatWardrobe,
   resolveSeededOutfit,
   seedChatScenario,
@@ -145,8 +145,8 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
     ...chatStateSnapshot(state, scenario, { ...snapshotOpts(profile), persisted: stored !== null }),
     outfitLabel: wardrobe.garments,
     // Sim-routed chats show the WORLD clock, not the legacy scenario clock
-    // (R3 slice 4, ruling 17) — null for legacy chats.
-    simClock: await readSimChatStorySecond(chatId),
+    // (R3 slice 4 + R5 calendar, ruling 17) — null for legacy chats.
+    simClock: await readSimChatClock(chatId),
   });
 });
 
@@ -174,6 +174,6 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   return jsonOk({
     ...chatStateSnapshot(state, scenario, snapshotOpts(profile)),
     outfitLabel: wardrobe.garments,
-    simClock: await readSimChatStorySecond(chatId),
+    simClock: await readSimChatClock(chatId),
   });
 });
