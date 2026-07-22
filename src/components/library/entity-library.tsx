@@ -11,7 +11,6 @@ import {
   itemsApi,
   locationsApi,
   socialCardsApi,
-  worldsApi,
   type ApiResult,
   type CreatedRef,
   type ItemDefinitionParts,
@@ -43,7 +42,7 @@ import {
   socialCardFacetDefs,
 } from "./library-facets";
 
-export type LibraryEntity = "worlds" | "characters" | "locations" | "items" | "social-cards" | "personas";
+export type LibraryEntity = "characters" | "locations" | "items" | "social-cards" | "personas";
 
 interface LibraryCard {
   id: string;
@@ -130,23 +129,6 @@ interface EntityConfig {
 }
 
 const configs: Record<LibraryEntity, EntityConfig> = {
-  worlds: {
-    title: "Worlds",
-    blurb: "Settings with their own cast, map and lore.",
-    basePath: "/worlds",
-    forgePath: "/worlds/forge",
-    emptyTitle: "No worlds yet",
-    emptyBody: "Forge one from a prose premise — the agents draft the map, lore and cast for review.",
-    newName: "Untitled world",
-    square: false,
-    list: async ({ q, tag }) => {
-      const result = await worldsApi.list({ q, tag });
-      return result.ok
-        ? { ok: true, data: result.data.map((w) => ({ ...w, tags: [] as string[] })) }
-        : result;
-    },
-    create: ({ name }) => worldsApi.create({ name }),
-  },
   characters: {
     title: "Characters",
     blurb: "Reusable characters your worlds can cast.",
@@ -541,7 +523,7 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
     const name = `${config.newName} ${Math.random().toString(36).slice(2, 6)}`;
     const result = await config.create({ bucket, name });
     setCreating(false);
-    if (result.ok) router.push(`${config.basePath}/${result.data.id}${entity === "worlds" ? "/edit" : ""}`);
+    if (result.ok) router.push(`${config.basePath}/${result.data.id}`);
     else toast.push({ title: "Couldn't create", description: result.error.message, tone: "error" });
   };
 
@@ -693,26 +675,24 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
 
   return (
     <PageContainer wide>
-      {entity !== "worlds" ? (
-        <nav aria-label="Library sections" className="mb-5 flex gap-1 overflow-x-auto border-b border-ink-600">
-          {LIBRARY_TABS.map((tab) => {
-            const active = tab.entity === entity;
-            return (
-              <Link
-                key={tab.entity}
-                href={tab.href}
-                aria-current={active ? "page" : undefined}
-                className={cx(
-                  "-mb-px shrink-0 border-b-2 px-3 py-2 text-sm transition-colors",
-                  active ? "border-accent-500 text-paper-50" : "border-transparent text-paper-400 hover:text-paper-200",
-                )}
-              >
-                {tab.label}
-              </Link>
-            );
-          })}
-        </nav>
-      ) : null}
+      <nav aria-label="Library sections" className="mb-5 flex gap-1 overflow-x-auto border-b border-ink-600">
+        {LIBRARY_TABS.map((tab) => {
+          const active = tab.entity === entity;
+          return (
+            <Link
+              key={tab.entity}
+              href={tab.href}
+              aria-current={active ? "page" : undefined}
+              className={cx(
+                "-mb-px shrink-0 border-b-2 px-3 py-2 text-sm transition-colors",
+                active ? "border-accent-500 text-paper-50" : "border-transparent text-paper-400 hover:text-paper-200",
+              )}
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
+      </nav>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="prose-display text-2xl">{config.title}</h1>
