@@ -263,8 +263,14 @@ is the cleanup that makes the migration real.
    LOD dial) surface here too. Exit: a human plays a scene in the internal test
    world on Fly — moves, talks, sleeps, is witnessed — with world life
    continuing off-screen.
-5. **R4 — shadow mode under chat.** Status: **active — 2026-07-22**
-   (re-planned the same day against post-R3 drift; owner rulings below).
+5. **R4 — shadow mode under chat.** Status: **EXITED — 2026-07-22**
+   (owner marked the tests done and the report agreed: the scripted
+   corpus ran clean twice — local AI_FAKE and live Aion 3.0 on Fly — its
+   one finding was fixed the same day rather than ruled around, verdict
+   triage was proven through both API and the admin screen, and the
+   Shadow Parity screen remains available for ongoing played-session
+   comparison at any time. Re-planned earlier the same day against
+   post-R3 drift; owner rulings below.)
    `successor_shadow` chats run the LEGACY pipeline unchanged; after each
    plain-send exchange settles, a fire-and-forget shadow leg computes the
    successor's view of the same turn against a linked mirror branch with
@@ -427,7 +433,24 @@ is the cleanup that makes the migration real.
    a later admission pass; shadow renders skip admission for now). Int:
    "I smile and hand her the keepsake" moves the REAL item to the
    primary actor; a refused rest still renders a turn. Gates green
-   (3 126 pure + 480 int). `successor_rag_eligibility` flips when
+   (3 126 pure + 480 int). **Slices 3+4 shipped — 2026-07-22: the
+   presence and meters surfaces** (`sim-surfaces.ts` — the read seams the
+   chat envelopes call for ROUTED chats instead of legacy chat-state
+   rows; legacy and shadow lanes untouched). Slice 3, presence/space:
+   the transcript envelope's roster presence for the PRIMARY comes from
+   the mirror's `sim_physical_loci` — co-located ⇒ present, in transit
+   or another zone ⇒ away (with a zone-kind whereabouts phrase held for
+   the roster panel's later use). Slice 4, bodies & meters: the state
+   envelope's meters come from the ruling-15 substrate (fixed-point
+   /10 000 onto the chat's 0..1 scale) merged over the drifted legacy
+   record BEFORE `chatStateSnapshot` derives — so the mood chip and
+   meter pips now derive from world truth with zero UI changes.
+   Integrate-on-read for display (drift since last write) is the named
+   refinement. Int-proven: storyteller relocation flips the roster to
+   "away"; a world-truth hygiene write shows in the envelope where
+   legacy would still show the seed. Gates green (3 126 pure +
+   480 int). Remaining R5 domains: items/wardrobe → knowledge/memory →
+   relationships. `successor_rag_eligibility` flips when
    the knowledge domain lands. The chat lane's meter-economy/body-needs plans
    (roadmap Next) port through the Gate 5 contracts here rather than being
    built twice. Exit per domain: dual writes stopped, legacy write path

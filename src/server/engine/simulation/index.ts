@@ -119,6 +119,7 @@ export {
 export {
   readDurableBodies,
   seedDurableBodyRhythms,
+  submitDurableApplyBodySource,
   submitDurableInitializeActorBody,
 } from "./body-store";
 export {
