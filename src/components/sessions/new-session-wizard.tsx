@@ -118,10 +118,10 @@ export function NewSessionWizard() {
             ) : (
               <EmptyState
                 title="No worlds to play in"
-                description="Forge a world first — it takes one prose premise."
+                description="World-model sessions are retired — new worlds live on the successor engine under Worlds."
                 action={
-                  <Button variant="primary" onClick={() => router.push("/worlds/forge")}>
-                    Open the world forge
+                  <Button variant="primary" onClick={() => router.push("/worlds")}>
+                    Open Worlds
                   </Button>
                 }
               />

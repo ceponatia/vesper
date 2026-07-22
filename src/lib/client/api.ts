@@ -1297,6 +1297,28 @@ export const chatPresetsApi = {
   remove: (presetId: string) => apiDelete(`/api/chat-presets/${presetId}`),
 };
 
+export const successorChatSummarySchema = z.object({
+  id: z.string().min(1),
+  title: textOr(""),
+  characterName: textOr(""),
+  authority: z.string().catch("successor_narrative_view"),
+  /** The linked world's clock (storySecond); null when the branch was torn down. */
+  storySecond: z.number().nullable().catch(null),
+  lastMessageAt: z.string().catch(""),
+});
+export type SuccessorChatSummary = z.infer<typeof successorChatSummarySchema>;
+
+/**
+ * The successor front door (engine.rollout.plan.md, Worlds page): create a
+ * complete successor chat — fresh isolated world, actors mapped, authority
+ * flipped — in one call, and list the caller's existing ones.
+ */
+export const successorChatsApi = {
+  list: () => apiGet(z.object({ chats: z.array(successorChatSummarySchema).catch([]) }), "/api/successor-chats"),
+  create: (body: { characterId: string; title?: string }) =>
+    apiPost(z.object({ id: z.string().min(1) }), "/api/successor-chats", body),
+};
+
 export interface ChatStreamOutcome {
   ok: boolean;
   error?: ApiError;

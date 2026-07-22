@@ -306,7 +306,27 @@ is the cleanup that makes the migration real.
    worlds side by side — the legacy lane's authored New-Year's-morning
    scene vs the successor's Day 3 · 2:40pm afternoon render; transcript
    untouched (2 lines), legacy latency unaffected (~32s own model call),
-   a clock verdict ruled `intentional` through the API. Gates green
+   a clock verdict ruled `intentional` through the API.
+   **The successor front door — shipped 2026-07-22 (owner ask + three
+   rulings):** the `/worlds` nav slot is repurposed as the successor
+   engine's front door. `POST /api/successor-chats` spins up a complete
+   successor chat in one call — an ordinary character chat, a FRESH
+   starter world per chat (`starter-world.ts`: home + square a 5-min walk
+   apart, the player and the character's actors named automatically, a
+   neighbor at the square, a keepsake, a rest action; isolation is the
+   point — no two chats share a standing scene), and the audited flip to
+   `successor_narrative_view` with both actors mapped. `GET` lists the
+   caller's successor chats with each world's clock. Open to all
+   signed-in users (ruling: every account on this deployment is a dev;
+   sign-up is closed), capped at 25 worlds per user. The new Worlds page
+   (`successor-worlds-page.tsx`) is the form + list; the **legacy
+   world-model UI was deleted the same day** (ruling: index/forge/
+   detail/edit pages, `components/worlds/*`, the library's worlds
+   entity, the dashboard's worlds section — the world-model ENGINE code
+   survives until R6's cleanup; the session wizard's dead forge CTA now
+   points at Worlds). Int-proven end to end (`successor-chats.int.test`:
+   provision → route → a full sim turn through the ordinary send → list
+   with world clock). Gates green
    (3 120 pure + 477 int). **Slice 2 shipped — 2026-07-22:** the fixed
    corpus (`pnpm sim:shadow-corpus`, versioned in
    `scripts/sim/shadow-corpus.ts` as `shadow-corpus-v1`: four plain sends

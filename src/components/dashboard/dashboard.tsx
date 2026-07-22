@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { charactersApi, chatsApi, sessionsApi, worldsApi } from "@/lib/client/api";
+import { charactersApi, chatsApi, sessionsApi } from "@/lib/client/api";
 import { ChatSayMarker } from "@/components/chat/chats-page";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
-import { Skeleton, SkeletonCards } from "@/components/ui/skeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 
 /**
@@ -20,13 +20,11 @@ import { Tag } from "@/components/ui/tag";
 export function Dashboard() {
   const chats = useAsyncData(() => chatsApi.list(), []);
   const sessions = useAsyncData(() => sessionsApi.recent(), []);
-  const worlds = useAsyncData(() => worldsApi.list(), []);
   const cast = useAsyncData(() => charactersApi.list(), []);
 
   const recent = sessions.data ?? [];
   const latest = recent[0];
-  const freshInstall =
-    !sessions.loading && !worlds.loading && recent.length === 0 && (worlds.data ?? []).length === 0;
+  const freshInstall = !sessions.loading && !chats.loading && recent.length === 0 && (chats.data ?? []).length === 0;
 
   const recentChats = chats.data ?? [];
   const latestChat = recentChats[0];
@@ -100,21 +98,21 @@ export function Dashboard() {
           <div className="rounded-card border border-ink-600 bg-ink-800 px-8 py-12 text-center shadow-lift">
             <h1 className="prose-display text-3xl">Welcome to Vesper</h1>
             <p className="mx-auto mt-2 max-w-lg text-sm text-paper-400">
-              Forge a world from a prose premise, review what the agents drafted, then begin a session
-              and let the story keep its own state.
+              Forge a character, start a conversation — or spin up a living world on the new engine and
+              step into it.
             </p>
             <div className="mt-6 flex justify-center gap-3">
               <Link
-                href="/worlds/forge"
+                href="/characters/forge"
                 className="inline-flex h-9 items-center rounded-md bg-accent-500 px-4 text-sm font-medium text-ink-950 hover:bg-accent-400"
               >
-                Forge a world ✦
+                Forge a character ✦
               </Link>
               <Link
-                href="/characters/forge"
+                href="/worlds"
                 className="inline-flex h-9 items-center rounded-md border border-ink-600 px-4 text-sm text-paper-200 hover:bg-ink-800"
               >
-                Forge a character
+                Create a world
               </Link>
             </div>
           </div>
@@ -169,7 +167,8 @@ export function Dashboard() {
         ) : null}
       </section>
 
-      {/* Worlds */}
+      {/* Worlds — the successor engine's front door (the legacy world-model
+          library that lived here was deleted 2026-07-22; engine.rollout.plan.md). */}
       <section className="mb-10">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="prose-display text-xl">Worlds</h2>
@@ -177,37 +176,14 @@ export function Dashboard() {
             All worlds →
           </Link>
         </div>
-        {worlds.loading ? (
-          <SkeletonCards count={3} />
-        ) : worlds.error ? (
-          <ErrorState error={worlds.error} onRetry={() => worlds.reload()} />
-        ) : (worlds.data ?? []).length === 0 ? (
-          <EmptyState
-            title="No worlds yet"
-            description="A world is a premise, a small map, lore and a cast."
-            action={
-              <Link href="/worlds/forge" className="text-sm text-accent-300 hover:text-accent-400">
-                Forge one ✦
-              </Link>
-            }
-          />
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {(worlds.data ?? []).slice(0, 6).map((world) => (
-              <Link key={world.id} href={`/worlds/${world.id}`} className="group">
-                <Card interactive className="overflow-hidden">
-                  <EntityImage imageId={world.imageId} name={world.name} className="h-28 w-full text-xl" />
-                  <div className="p-4">
-                    <h3 className="prose-display truncate text-base group-hover:text-accent-300">{world.name}</h3>
-                    {world.description ? (
-                      <p className="mt-1 line-clamp-2 text-xs text-paper-400">{world.description}</p>
-                    ) : null}
-                  </div>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        )}
+        <Link href="/worlds" className="group block">
+          <Card interactive className="px-6 py-5">
+            <p className="text-sm text-paper-300">
+              Living worlds on the new engine — a place, a clock, and your character living in it.{" "}
+              <span className="text-accent-300 group-hover:text-accent-200">Create one and step in →</span>
+            </p>
+          </Card>
+        </Link>
       </section>
 
       {/* Cast strip */}

@@ -1,0 +1,146 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { useAsyncData } from "@/components/hooks/use-async";
+import { PageContainer } from "@/components/shell/app-shell";
+import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tag } from "@/components/ui/tag";
+import { useToast } from "@/components/ui/toast";
+import { charactersApi, successorChatsApi } from "@/lib/client/api";
+import { formatStoryClockShort, storyClockAt } from "@/lib/simulation";
+
+/**
+ * The Worlds page, repurposed (owner ruling 2026-07-22): the successor
+ * engine's front door. One form spins up a complete successor chat — a fresh
+ * isolated world (home + town square, the player and the chosen character in
+ * the cast, a neighbor, a keepsake), the actor mapping, and the authority
+ * flip — with zero backend setup. Below it, every successor chat you already
+ * have, with its world clock. The legacy world-model UI this page replaces
+ * was deleted the same day (its engine code survives until R6's cleanup).
+ */
+export function SuccessorWorldsPage() {
+  const router = useRouter();
+  const toast = useToast();
+  const characters = useAsyncData(() => charactersApi.list(), []);
+  const chats = useAsyncData(() => successorChatsApi.list(), []);
+  const [characterId, setCharacterId] = useState("");
+  const [title, setTitle] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const create = async () => {
+    if (!characterId || creating) return;
+    setCreating(true);
+    const result = await successorChatsApi.create({ characterId, ...(title.trim() ? { title: title.trim() } : {}) });
+    setCreating(false);
+    if (!result.ok) {
+      toast.push({ title: "Couldn't create the world", description: result.error.message, tone: "error" });
+      return;
+    }
+    router.push(`/chat/${result.data.id}`);
+  };
+
+  return (
+    <PageContainer>
+      <div className="mb-6">
+        <h1 className="prose-display text-2xl">Worlds</h1>
+        <p className="mt-1 text-sm text-paper-400">
+          Living worlds on the successor engine. Each chat here plays inside its own small world — real places, a
+          real clock, characters with bodies and routines. Ordinary chats stay under Chats.
+        </p>
+      </div>
+
+      <section className="mb-8 rounded-card border border-ink-600 bg-ink-850 p-4">
+        <h2 className="mb-3 text-sm font-medium tracking-wide text-paper-400 uppercase">New world</h2>
+        {characters.loading ? (
+          <Skeleton className="h-9 w-full max-w-md" />
+        ) : characters.error ? (
+          <ErrorState error={characters.error} onRetry={() => characters.reload()} />
+        ) : (characters.data ?? []).length === 0 ? (
+          <p className="text-sm text-paper-500">
+            You need a character first —{" "}
+            <Link href="/characters" className="text-accent-300 hover:text-accent-200">
+              create one in the Library
+            </Link>
+            .
+          </p>
+        ) : (
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-paper-400">Character</span>
+              <select
+                value={characterId}
+                onChange={(e) => setCharacterId(e.target.value)}
+                className="h-9 min-w-52 rounded-md border border-ink-600 bg-ink-900 px-2 text-sm text-paper-200"
+              >
+                <option value="">Choose…</option>
+                {(characters.data ?? []).map((character) => (
+                  <option key={character.id} value={character.id}>
+                    {character.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-paper-400">Title (optional)</span>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Their world"
+                maxLength={120}
+                className="h-9 min-w-52 rounded-md border border-ink-600 bg-ink-900 px-2 text-sm text-paper-200 placeholder:text-paper-600"
+              />
+            </label>
+            <Button variant="primary" busy={creating} disabled={!characterId} onClick={() => void create()}>
+              Create world & chat
+            </Button>
+          </div>
+        )}
+        <p className="mt-3 text-xs text-paper-500">
+          You&apos;ll get a fresh world — a home, a town square a short walk away, your character, a neighbor, and a
+          keepsake in your pocket. Time moves on the world&apos;s clock; the skip chips in the chat move it further.
+        </p>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-medium tracking-wide text-paper-400 uppercase">Your worlds</h2>
+        {chats.loading ? (
+          <div className="flex flex-col gap-2" aria-hidden="true">
+            {Array.from({ length: 2 }, (_, i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-card" />
+            ))}
+          </div>
+        ) : chats.error ? (
+          <ErrorState error={chats.error} onRetry={() => chats.reload()} />
+        ) : (chats.data?.chats.length ?? 0) === 0 ? (
+          <p className="text-sm text-paper-500">No worlds yet — create one above.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {chats.data?.chats.map((chat) => (
+              <li key={chat.id}>
+                <Link
+                  href={`/chat/${chat.id}`}
+                  className="flex items-center justify-between gap-3 rounded-card border border-ink-600 bg-ink-850 px-4 py-3 transition-colors hover:border-accent-500/50"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm text-paper-200">{chat.title || chat.characterName}</span>
+                    <span className="block text-xs text-paper-500">{chat.characterName}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    {chat.storySecond !== null ? (
+                      <Tag>{formatStoryClockShort(storyClockAt(chat.storySecond))}</Tag>
+                    ) : null}
+                    <Tag tone="accent">{chat.authority.replace("successor_", "").replace(/_/g, " ")}</Tag>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </PageContainer>
+  );
+}
