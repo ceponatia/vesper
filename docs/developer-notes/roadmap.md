@@ -27,6 +27,23 @@ _(Nothing active — pick up the top of Next.)_
 
 ## Next (queued)
 
+- **Presentation charter — one narrator craft law for both lanes; the successor
+  narrator repaired** —
+  [presentation-charter.plan.md](presentation-charter.plan.md) (next; planned
+  2026-07-22 from the two-model narrator review of the R2 successor narrator vs
+  the legacy chat narrator). The engine and committed-cut model stay; the
+  presentation layer gets rebuilt: the legacy chat narrator's craft law
+  (camera/agency, attribution/notation, content + life-stage framing, shape
+  discipline, intimate craft) extracted into a shared **charter** consumed by
+  both lanes, the successor prompt reassembled from authored canon + sim
+  projections (no raw ids, fenced untrusted data, persona/voice restored), the
+  render loop upgraded (normalization before audit, targeted-correction retry,
+  id-leak/JSON-echo audits, provider parity), and **routing parity** — no sim
+  chat operation silently falls back to the legacy narrator (the stop-ship
+  finding). Sits above the meter-economy work because the successor lane is the
+  live front door (`/worlds`) and currently ships the unrepaired prototype
+  narrator.
+
 **Successor world engine (`engine.plan.md`) — foundation AND rollout COMPLETE.**
 All committed gates (0–6) closed 2026-07-16 → 2026-07-21, and the migration &
 rollout plan (R0–R6) shipped 2026-07-21/22 — the engine is the live world

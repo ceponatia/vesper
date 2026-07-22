@@ -344,7 +344,8 @@ should not acquire scheduler, body, economy, or autonomous-agent scope.
 Rulings 1–11 and 13 were **resolved by the owner on 2026-07-17** (the Gate 3 unblock
 pass); ruling 14 was **resolved on 2026-07-18** (the Gate 4 unblock pass); rulings 15–16
 were **resolved on 2026-07-19** (the Gate 5 opening pass); ruling 17 was **resolved on
-2026-07-22** (the R3 live-session clock finding). Each resolved decision is
+2026-07-22** (the R3 live-session clock finding); rulings 18–19 were **resolved on
+2026-07-22** (the presentation-charter planning pass). Each resolved decision is
 normative and MUST be stored in a versioned world-type rule or explicit product
 contract, not only in a prompt. Ruling 12 remains **open** and is deferred to the work
 that needs it.
@@ -445,6 +446,20 @@ that needs it.
     config mapping story time → weekday/date, with the optional-player-control surface)
     is the R5 time/clock domain's product shape, expanded there — not invented early in
     presentation.
+18. **Sim-chat operation routing parity** — RESOLVED (2026-07-22, the presentation-
+    charter planning pass): **no operation on a sim-routed chat ever falls back to the
+    legacy narrator — every operation has successor semantics or is refused.**
+    Regenerate/rerun re-render the SAME committed cut (same events, fresh prose;
+    §22.3/§23 rerender-creates-nothing, confirm-by-id supersedence governing effect
+    arming on the retake) — this is a different *telling*, not a retake of *outcome*;
+    outcome-level retakes remain branch forks (§29). Attachments and legacy action
+    chips are refused with the affordance hidden until each earns designed successor
+    semantics. Detail: `presentation-charter.plan.md` §4.
+19. **Successor "Continue" advances time** — RESOLVED (2026-07-22): Continue (and the
+    character-opens beat) runs a real successor turn with **no player utterance** —
+    the engagement span advances per ruling 1, the world may act, and the narrator
+    renders the fresh cut. Continue is never presentation-only re-description; time is
+    the successor lane's medium and the scene visibly breathes.
 
 ## 40. Initial conformance checklist
 
