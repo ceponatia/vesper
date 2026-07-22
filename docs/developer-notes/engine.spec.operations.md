@@ -343,7 +343,8 @@ should not acquire scheduler, body, economy, or autonomous-agent scope.
 
 Rulings 1–11 and 13 were **resolved by the owner on 2026-07-17** (the Gate 3 unblock
 pass); ruling 14 was **resolved on 2026-07-18** (the Gate 4 unblock pass); rulings 15–16
-were **resolved on 2026-07-19** (the Gate 5 opening pass). Each resolved decision is
+were **resolved on 2026-07-19** (the Gate 5 opening pass); ruling 17 was **resolved on
+2026-07-22** (the R3 live-session clock finding). Each resolved decision is
 normative and MUST be stored in a versioned world-type rule or explicit product
 contract, not only in a prompt. Ruling 12 remains **open** and is deferred to the work
 that needs it.
@@ -431,6 +432,19 @@ that needs it.
     and its accept or decline lands back in the ledger as a causal entry — so consent is
     always explainable, revocable by a later entry, and never grantable by any spatial
     outcome (ruling 3) or narrator prose.
+17. **World-clock parity and player time control** — RESOLVED (2026-07-22): **the sim
+    clock is the one time surface for a sim-routed chat, and the player keeps control
+    of time skips.** Everything a sim-routed chat presents about time — narrator prose
+    color, the header clock chip, skip-landing labels — reads the branch's
+    `storySecond`, never the legacy chat clock (parity throughout the system; the
+    legacy clock keeps governing legacy chats until R5 migrates the time domain). The
+    player retains the ability to advance time by minutes / hours / days as an ordinary
+    admitted command, alongside time advancing naturally through play. Near-term
+    richness is what `storySecond` truthfully encodes (story day index + time of day +
+    daylight band); **full calendar integration** (a calendar anchor on the world
+    config mapping story time → weekday/date, with the optional-player-control surface)
+    is the R5 time/clock domain's product shape, expanded there — not invented early in
+    presentation.
 
 ## 40. Initial conformance checklist
 
