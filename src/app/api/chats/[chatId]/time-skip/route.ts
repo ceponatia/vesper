@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import {
+  CHAT_SKIP_MINUTES,
   characterProfileSchema,
   chatSkipAmountSchema,
   DiagnosticCollector,
@@ -18,6 +19,7 @@ import {
   enqueueChatMeanwhile,
   loadChatScenario,
   loadChatState,
+  mirrorShadowTimeSkip,
   persistChatState,
   readSimChatStorySecond,
   resolveSeededOutfit,
@@ -87,6 +89,11 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     new Date(),
   );
   await saveChatScenario(chatId, nextScenario);
+
+  // R4 shadow: mirror the same minutes onto a shadow chat's branch (bounded
+  // drain, detached) so the two clocks keep comparable deltas. No-op for
+  // every other lane.
+  void mirrorShadowTimeSkip(chatId, CHAT_SKIP_MINUTES[body.value.amount]);
 
   // The meanwhile pass (chat-offscreen-life.plan.md): once the cumulative skipped
   // time since the last pass crosses the gate, ONE detached archivist-class job

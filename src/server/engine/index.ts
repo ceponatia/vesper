@@ -23,6 +23,7 @@ export * from "./chat-action-beat";
 export * from "./chat-authority";
 export * from "./sim-exchange";
 export * from "./sim-narrator";
+export * from "./sim-shadow";
 export * from "./chat-callback";
 export * from "./chat-feeling";
 export * from "./chat-initiative";

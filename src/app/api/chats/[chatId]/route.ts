@@ -19,6 +19,7 @@ import {
   deleteChat,
   readChatEngineAuthority,
   resolveChatWardrobe,
+  runShadowChatExchange,
   runSimChatExchange,
   submitChatMessage,
   tryKeyedLock,
@@ -397,6 +398,14 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
         anchorMessageId: assistantMessageId,
         flavor: "selfie",
       });
+    },
+    // R4 shadow (engine.rollout.plan.md): after a plain send settles on a
+    // `successor_shadow` chat, the comparison leg runs detached — the runner
+    // re-reads authority and no-ops for every other lane, so this stays one
+    // cheap read per settled exchange.
+    onSettled: ({ assistantMessageId, content }) => {
+      if (body.value.kind !== "send" || content.length === 0) return;
+      void runShadowChatExchange({ chatId, userId: user.id, assistantMessageId, content });
     },
   });
   if (!result.ok) return jsonError(result.code, result.message, result.code === "chat_busy" ? 409 : 400);

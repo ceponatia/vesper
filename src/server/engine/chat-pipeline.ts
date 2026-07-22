@@ -230,6 +230,14 @@ export interface SubmitChatMessageInput {
    * the render must use that character, not always the primary.
    */
   onSelfie?: (info: { assistantMessageId: string; characterId: string }) => void;
+  /**
+   * Post-settle hook (R4 shadow — engine.rollout.plan.md): fired fire-and-forget
+   * after the finalizer on EVERY successfully settled exchange. The route owns
+   * what happens (the shadow comparison leg for `successor_shadow` chats); the
+   * engine only signals. `content` is the player's line ("" for synthetic-cue
+   * kinds) so the consumer never re-reads the transcript for it.
+   */
+  onSettled?: (info: { assistantMessageId: string; content: string }) => void;
 }
 
 export type SubmitChatMessageResult =
@@ -1411,6 +1419,9 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         if (finalized.bigMoment && scenario.sceneAuto === "milestones") {
           input.onBigMoment?.({ assistantMessageId });
         }
+        // R4 shadow signal: every settled exchange, unconditional — the route
+        // decides whether a shadow leg runs (authority-gated there).
+        input.onSettled?.({ assistantMessageId, content: (input.content ?? "").trim() });
       } catch (error) {
         log.error("engine.chat", "chat-state finalize failed", { error: describeError(error) });
       }
