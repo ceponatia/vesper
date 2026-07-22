@@ -1,6 +1,9 @@
 # Presentation charter — one narrator craft law for both lanes, and the successor narrator repaired
 
-Status: **next** (planned 2026-07-22 from the two-model narrator review — GPT + Fable
+Status: **active** — slices 1–4 landed 2026-07-22 (full gate green: lint / cycles /
+typecheck / 2 394 pure tests / jscpd, plus the targeted sim int suites); slice 5
+(live verification on Fly) remains. (Planned 2026-07-22 from the two-model narrator
+review — GPT + Fable
 comparing the legacy chat narrator against the R2 successor narrator; owner endorsed the
 review's frame: keep the engine and the committed-cut model, treat the current successor
 narrator as an R2 prototype whose presentation layer shipped several stages early).
@@ -174,17 +177,66 @@ snapshots), and the shadow-parity machinery.
 
 1. **Charter extraction** (pure refactor) — `charter.ts` + `profile-sections.ts`
    extracted from `character-chat.ts`; legacy prompt byte-identical (snapshot gate).
+   **Landed 2026-07-22:** 184/184 legacy tests pass with zero snapshot changes;
+   21 new charter unit tests. Rule bodies are number-free (the caller owns
+   numbering); known v1 caveat — `attributionTagRule` still references the
+   chat-lane "Scene notes"/"Supporting cast" blocks ("when present" phrasing keeps
+   it harmless in the sim lane).
 2. **Successor context assembly** — `sim-render.ts` with the six blocks; handle
    mapping at the trust boundary; `sim-exchange.ts` loads profile + persona +
    projections; history widened; fencing everywhere. Prompt snapshot tests (adult,
    minor, no-calendar, no-utterance variants).
+   **Landed 2026-07-22:** `buildSimRenderPrompt(cut, context, opts)` returns
+   `{system, prompt, handleMap}`; deterministic B/E handles (mustEnact +
+   allowedTransitions, then armedEffects); `parseNarratorResult` maps handles → ids
+   pre-validation; both `runSimTurn` AND `runSimRetake` load the same
+   presentation inputs concurrently, each degrading independently (profile via
+   participant → `characters.profile`, persona via `resolveChatPersona`, outfit +
+   relationship via `sim-surfaces`, zone labels from `sim_zones.kind` via
+   `zoneDisplayNoun` — the schema has NO zone/location name column, so kinds are
+   the only humane label source; raw ids humanize as last resort); tail 12 → 30.
+   Player-viewpoint beliefs render as never-voice context (player agency), not
+   "voiceable".
 3. **Render loop** — normalization, targeted retry, auditor additions, bridge
    demotion, provider parity. Unit tests falsified against the old loop (a
    placeholder echo, a leaked handle, a missing beat each provoke the right verdict
    and a corrective attempt-2 prompt).
+   **Landed 2026-07-22:** per-attempt prompt with a CORRECTION block naming the
+   prior audit's failures; prose normalized (`stripNarratorArtifacts` →
+   `collapseRepeatedBlocks` → fence/quote trim) BEFORE audit; new deterministic
+   audit checks `presentation.id_leak` / `presentation.contract_echo` /
+   `presentation.too_thin` (too-thin retries once, accepts on the final attempt,
+   and without attempt info records the diagnostic only); bridge only after the
+   feedback retry; `generateChecked` gained an additive `providerOptions`
+   pass-through so the narrator runs `narrativeProviderOptions` +
+   `NARRATIVE_TEMPERATURE` like the legacy lane. **Plus the retake double-arm
+   fix:** the confirm `idempotencyKey` is now keyed on `{cutId}` alone — one
+   confirm per cut, first accepted render wins; a retake replaces presentation,
+   never armed truth (invariant commented at `buildConfirmCommand`, pure-tested).
 4. **Routing parity** — kind-aware fork + refusals + UI affordance gating +
    Regenerate/Continue successor semantics (per owner ruling), int-tested
    (regenerate-same-cut row-count invariance; no legacy writes for sim chats).
+   **Landed 2026-07-22 (code):** the POST fork resolves authority once, before
+   kind dispatch (`isSimRoutedAuthority`), then a pure `decideSimOperation`
+   (`app/api/chats/[chatId]/sim-routing.ts`) maps each kind to a successor mode or
+   a 409 `sim_unsupported_operation` refusal — the legacy `submitChatMessage` is
+   unreachable for a sim-routed chat. `runSimChatExchange` grew a `mode`
+   (`send` | `continue` | `open` | `retake`): continue/open run an utterance-free
+   turn that still advances the span (ruling 19, `simOpening` on the reply meta for
+   open); retake (regenerate/rerun) re-renders the SAME committed cut from the
+   reply's `meta.cutId` (fallback `latestCutIdForEngagement`) and replaces the row
+   in place (content + browsable takes), never advancing time or admitting input
+   (ruling 18). The GET envelope carries `chat.simRouted`; the composer hides the
+   attachment control + legacy action chips for sim chats while Continue/Regenerate
+   stay. Pure test (`sim-routing.test.ts`) + int test (`sim-routing.int.test.ts`:
+   regenerate row/event invariance + same-cut id, continue-advances-time with no
+   user row, attachment/action → 409 no writes) both green. **Hazard RESOLVED
+   same day in slice 3:** a live-model retake enacting a *different* armed-effect
+   subset could have double-armed `confirm_narrator_result` (the cut stays
+   "latest" so supersedence never fires, and a different enacted set meant a
+   different idempotency key) — the confirm idempotency is now keyed on `{cutId}`
+   alone, so a cut confirms at most once and retake confirms dedupe to the first
+   accepted render.
 5. **Live verification** — deploy to Fly, drive the standing internal test world and
    a fresh `/worlds` chat via the uxtest account; verify feel items by hand (camera,
    voice, attribution rendering in the chat UI, length, no ids); add the "narrating…"

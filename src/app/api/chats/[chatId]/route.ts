@@ -17,6 +17,7 @@ import {
 import { characterChats, characterChatMessages, characterChatState, db } from "@/server/db";
 import {
   deleteChat,
+  isSimRoutedAuthority,
   readChatEngineAuthority,
   readSimChatOutfit,
   readSimChatPresence,
@@ -27,6 +28,7 @@ import {
   tryKeyedLock,
 } from "@/server/engine";
 import { loadOwnedChat } from "../owned";
+import { decideSimOperation } from "./sim-routing";
 import { queueChatScene } from "./scene/queue";
 
 type Params = { chatId: string };
@@ -193,6 +195,11 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
     ),
   );
 
+  // Routing parity (presentation-charter.plan.md §4): the client hides the
+  // attachment + action-chip affordances for a sim-routed chat (they have no
+  // successor semantics yet and the POST refuses them). One authority read.
+  const simRouted = isSimRoutedAuthority(await readChatEngineAuthority(chatId));
+
   return jsonOk({
     messages: page.reverse(),
     hasMore,
@@ -202,6 +209,8 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
       id: owned.chat.id,
       title: owned.chat.title,
       archivedAt: owned.chat.archivedAt,
+      // True when the successor engine owns this chat's turns.
+      simRouted,
       // Why the last exchange produced no reply (null when it replied) — the client's
       // post-exchange refetch turns this into the cause-specific failure popup.
       lastReplyFailure: parseOr(
@@ -256,34 +265,32 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     return jsonError("rate_limited", "too many chat messages; try again in a minute", 429);
   }
 
-  // R3 admission wiring (engine.rollout.plan.md): a sim-routed chat's PLAIN
-  // send becomes a successor turn — the one place the lanes fork, decided by
-  // the chat's authority flag and nothing else. The reply comes back in the
-  // same plain-text shape the client already streams, and the post-exchange
-  // transcript refetch shows both persisted lines. Every other kind (open /
-  // continue / action_beat / regenerate / rerun), attachments, and action
-  // chips stay legacy: a successor retake is a branch fork, never an
-  // in-place rerender (recorded boundary — rides R5).
-  const plainSend =
-    body.value.kind === "send" &&
-    (body.value.content ?? "").trim().length > 0 &&
-    (body.value.attachmentIds === undefined || body.value.attachmentIds.length === 0) &&
-    body.value.action === undefined;
-  const simAuthority = plainSend ? await readChatEngineAuthority(chatId) : null;
-  const simRouted =
-    simAuthority !== null &&
-    simAuthority.authority !== "legacy_chat" &&
-    simAuthority.authority !== "successor_shadow" &&
-    simAuthority.simBranchId !== null &&
-    simAuthority.simPlayerActorId !== null &&
-    simAuthority.simPrimaryActorId !== null;
+  // Routing parity (presentation-charter.plan.md §4; engine.spec.operations.md
+  // §39 rulings 18-19): authority is resolved ONCE, before kind dispatch. On a
+  // sim-routed chat EVERY operation has successor semantics or is refused — the
+  // legacy pipeline below is unreachable for it. `send` drives a turn;
+  // continue/open run an utterance-free turn (time advances); regenerate/rerun
+  // re-render the same committed cut; attachments and action chips are refused
+  // (the UI hides those affordances for sim chats).
+  const simRouted = isSimRoutedAuthority(await readChatEngineAuthority(chatId));
   if (simRouted) {
+    const decision = decideSimOperation({
+      kind: body.value.kind,
+      hasAttachments: (body.value.attachmentIds?.length ?? 0) > 0,
+      hasAction: body.value.action !== undefined,
+    });
+    if (decision.action === "refuse") {
+      return jsonError(decision.code, decision.message, 409);
+    }
+    const mode = decision.mode;
+    const message = (body.value.content ?? "").trim();
+
     let releaseSimLock!: () => void;
     const simLockGate = new Promise<void>((resolve) => {
       releaseSimLock = resolve;
     });
     // The same per-chat exchange lock the legacy pipeline takes — one reply
-    // in flight per conversation regardless of lane.
+    // in flight per conversation regardless of lane or kind.
     const simLock = tryKeyedLock(`chat_exchange:${chatId}`, () => simLockGate);
     if (simLock === null) {
       return jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);
@@ -296,7 +303,6 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     // the pipe warm; the prose lands as one chunk; a failure records the
     // ordinary lastReplyFailure so the client's existing popup explains it.
     const encoder = new TextEncoder();
-    const message = (body.value.content ?? "").trim();
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(encoder.encode("\u200B"));
@@ -314,6 +320,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
               userId: user.id,
               speakerCharacterId: owned.character.id,
               speakerName: owned.character.name,
+              mode,
               message,
             });
             if (sim.ok) {
@@ -365,6 +372,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     });
   }
 
+  // Legacy pipeline (unreachable for sim-routed chats — the fork above returns).
   const result = await submitChatMessage({
     chatId,
     memoryGroupId: owned.participant.memoryGroupId,

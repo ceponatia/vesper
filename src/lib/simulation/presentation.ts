@@ -11,8 +11,6 @@ import {
   type SoftCanonProposal,
 } from "@/contracts/simulation/soft-canon";
 import { parseOr } from "@/lib/parse";
-import { formatStoryMoment } from "@/contracts/turns/chat-clock";
-import { formatStoryClock, storyCalendarParams, storyClockAt, type SimCalendarStart } from "./clock";
 
 /**
  * E4.3 — the §23.1 narrator trust boundary and the §23.2 presentation
@@ -20,9 +18,12 @@ import { formatStoryClock, storyCalendarParams, storyClockAt, type SimCalendarSt
  * defaults: a malformed reply degrades to an empty result the auditor will
  * send back for rerender — never a thrown turn (docs/resilience.md).
  *
- * The auditor is deterministic and structural: it audits what the narrator
- * DECLARED against what the cut REQUIRED. It may request a rerender or supply
- * a deterministic bridge built from beat summaries; it cannot mutate truth.
+ * The prompt BUILDER lives in `server/engine/prompts/sim-render.ts`
+ * (presentation-charter.plan.md slice 2) — this module keeps only the parse +
+ * audit, the two pure trust-boundary halves. The audit is deterministic and
+ * structural: it audits what the narrator DECLARED and how the prose reads
+ * against what the cut REQUIRED. It may request a rerender or supply a
+ * deterministic bridge built from beat summaries; it cannot mutate truth.
  */
 
 /** A parse-failed render: nothing enacted, nothing proposed, empty prose. */
@@ -42,13 +43,35 @@ export interface ParsedNarratorResult {
   proposals: SoftCanonProposal[];
 }
 
-/** Parse one raw narrator reply against the §23.1 contract, safely. */
+/**
+ * Translate the model's declared HANDLES (B1…, E1…) back to real event/effect
+ * ids (presentation-charter.plan.md slice 2). `sim-render` shows the model
+ * opaque handles so no id ever needs to appear in prose; here at the boundary
+ * they map back before validation against the cut. A declared value not in the
+ * map flows through unchanged — the existing unknown-id flagging catches it.
+ */
+function mapDeclaredHandles(result: NarratorResult, handleMap: Record<string, string>): NarratorResult {
+  const map = (value: string): string => handleMap[value] ?? value;
+  return {
+    ...result,
+    enactedBeatEventIds: result.enactedBeatEventIds.map(map),
+    enactedArmedEffectIds: result.enactedArmedEffectIds.map(map),
+  };
+}
+
+/**
+ * Parse one raw narrator reply against the §23.1 contract, safely. When a
+ * `handleMap` is given (the successor lane), declared handles are translated to
+ * real ids before the proposals are stamped and the audit runs.
+ */
 export function parseNarratorResult(
   raw: unknown,
   cut: NarrativeCut,
   sink?: DiagnosticSink,
+  handleMap?: Record<string, string>,
 ): ParsedNarratorResult {
-  const result = parseOr(narratorResultSchema, raw, emptyNarratorResult, sink, "narrator.result");
+  const parsed = parseOr(narratorResultSchema, raw, emptyNarratorResult, sink, "narrator.result");
+  const result = handleMap ? mapDeclaredHandles(parsed, handleMap) : parsed;
   const proposals = result.proposedSoftCanon.flatMap((draft) => {
     const stamped = softCanonProposalSchema.safeParse({ ...draft, sourceCutId: cut.id });
     return stamped.success ? [stamped.data] : [];
@@ -63,302 +86,169 @@ export interface AuditPresentationOptions {
    * the render ignored the scene.
    */
   maxBridgedBeats?: number;
+  /**
+   * The 1-based attempt index. It gates two attempt-aware behaviours: the
+   * demoted bridge (a small omission gets a feedback retry first, and only
+   * bridges from attempt ≥2) and the substance floor (a thin render retries
+   * once but is ACCEPTED on the final attempt — a turn is never withheld over
+   * length alone). Absent ⇒ treated as final (accept), so direct callers keep
+   * the legacy accept/bridge semantics.
+   */
+  attempt?: number;
+  /** Total attempts (default 2) — the last attempt accepts a thin render. */
+  maxAttempts?: number;
+  /** True when the player gave an utterance this turn — the substance floor's other trigger. */
+  hadUtterance?: boolean;
+  /**
+   * Extra tokens that must never appear in prose (the render's handle
+   * vocabulary), unioned with the ids the audit derives from the cut itself.
+   */
+  leakTokens?: readonly string[];
 }
 
+/** A render under this word count (with beats or an utterance in play) is too thin. */
+const MIN_SUBSTANCE_WORDS = 40;
 /**
- * R2 (engine.rollout.plan.md) — serialize one committed cut into the live
- * narrator's system/prompt pair. Pure and deterministic: the prompt IS the
- * §22 boundary made text — everything in it comes from the cut, and the
- * §23.1 result contract is stated verbatim so the reply parses.
+ * Ids shorter than this are not scanned for in prose — real sim ids are long and
+ * distinctive (UUIDs, `rollout-actor-…`, `zone-…`), so this keeps a short actor
+ * id that happens to be an English word (`player`) from false-positive leaking.
  */
-export interface CutRenderConversation {
-  /** The viewpoint actor's words/intent THIS turn — presentation input only. */
-  playerUtterance?: string;
-  /** Recent dialogue, oldest first, for conversational continuity. */
-  dialogueTail?: readonly { speaker: string; text: string }[];
-  /**
-   * True when the viewpoint actor is PLAYER-CONTROLLED: the narrator never
-   * authors their dialogue, decisions, feelings, or actions beyond what the
-   * player's turn states, and their interoception (self bodily reads) is
-   * withheld — the player's inner life belongs to the player. The spec's
-   * "viewpoint inner voice" license applies only to NPC viewpoints.
-   */
-  viewpointIsPlayer?: boolean;
-  /** Display names by actor id — ids never read well in prose. */
-  actorNames?: Record<string, string>;
-  /**
-   * R5 time domain (ruling 17): the world's calendar anchor. Present, the
-   * WORLD CLOCK line carries the real date ("Monday, June 1 — 8:01am");
-   * absent, it stays "Day N". Presentation input — the cut never carries it.
-   */
-  calendarStart?: SimCalendarStart | null;
-  /**
-   * R5 input admission: a command the player's OWN words already executed in
-   * world truth this turn ("Brian handed the keepsake to Abigail."). The
-   * narrator portrays it as DONE — never as an attempt. Refused admissions
-   * ride the cut's failurePresentations instead, never this field.
-   */
-  admittedAction?: string;
-  /**
-   * R5 knowledge/memory: the rolling conversation summary (the chat-lane
-   * fold) — long-arc continuity the dialogue tail can't carry. Context,
-   * never new facts.
-   */
-  conversationSummary?: string;
-  /**
-   * R5 knowledge/memory: §24 viewpoint-scoped recall lines — what the
-   * viewpoint actor actually witnessed/knows, already perception-partitioned
-   * and epistemic-labeled by the query. Context, never new facts.
-   */
-  memory?: readonly string[];
+const MIN_LEAK_ID_LENGTH = 8;
+/** The output-contract field names — prose that embeds one is echoing the envelope. */
+const CONTRACT_FIELD_NAMES = ["enactedBeatEventIds", "enactedArmedEffectIds", "proposedSoftCanon"] as const;
+
+/** The distinctive ids + the deterministic B/E handle vocabulary a cut yields. */
+function collectCutLeakTokens(cut: NarrativeCut): { ids: string[]; handles: string[] } {
+  const ids = new Set<string>();
+  const add = (value: string | null | undefined): void => {
+    if (value && value.length >= MIN_LEAK_ID_LENGTH) ids.add(value);
+  };
+  add(cut.viewpointActorId);
+  for (const beat of [...cut.mustEnact, ...cut.allowedTransitions]) add(beat.eventId);
+  for (const effect of cut.armedEffects) {
+    add(effect.id);
+    add(effect.actorId);
+    for (const target of effect.targetActorIds) add(target);
+  }
+  for (const locus of cut.currentLoci) {
+    add(locus.actorId);
+    add(locus.zoneId);
+  }
+  for (const activity of cut.currentActivities) {
+    add(activity.zoneId);
+    for (const actorId of activity.actorIds) add(actorId);
+  }
+  for (const claim of cut.forbiddenClaims) for (const actorId of claim.subjectActorIds) add(actorId);
+  for (const read of cut.bodilyReads.observed) add(read.actorId);
+  for (const belief of cut.speakerBeliefs) for (const subjectId of belief.subjectIds) add(subjectId);
+
+  const beatHandleCount = cut.mustEnact.length + cut.allowedTransitions.length;
+  const handles: string[] = [];
+  for (let i = 1; i <= beatHandleCount; i += 1) handles.push(`B${i}`);
+  for (let i = 1; i <= cut.armedEffects.length; i += 1) handles.push(`E${i}`);
+  return { ids: [...ids], handles };
 }
 
-export function buildCutRenderPrompt(
-  cut: NarrativeCut,
-  conversation: CutRenderConversation = {},
-): { system: string; prompt: string } {
-  const lines: string[] = [];
-  const names = conversation.actorNames ?? {};
-  const nameOf = (actorId: string) => names[actorId] ?? actorId;
-  const viewpointName = nameOf(cut.viewpointActorId);
-  // The clock made legible (ruling 17): raw story-seconds read as nothing to a
-  // model, so without this line time-of-day color drifts to whatever the
-  // transcript tail implies — the R3 live-session "afternoon light at 8am" bug.
-  // With a calendar anchor (R5 time domain) the line carries the real weekday
-  // and date, sharing the legacy lane's Gregorian formatters via the adapter.
-  const anchor = conversation.calendarStart ?? null;
-  const clockLabel =
-    anchor === null
-      ? formatStoryClock(storyClockAt(cut.fromStorySecond))
-      : (() => {
-          const params = storyCalendarParams(cut.fromStorySecond, anchor);
-          return formatStoryMoment(params.clockMinutes, params.calendarStart);
-        })();
-  lines.push(
-    `VIEWPOINT: ${viewpointName}${conversation.viewpointIsPlayer ? " — THE PLAYER'S CHARACTER" : ""}`,
-    `WORLD CLOCK: ${clockLabel} — world truth. Light, meals, fatigue, and`,
-    "all time-of-day color follow this clock. If earlier prose implies a different",
-    "time of day, the clock wins — shift naturally, never remark on the correction.",
-    `STORY SPAN: second ${cut.fromStorySecond} through ${cut.throughStorySecond}`,
-  );
-  if (Object.keys(names).length > 0) {
-    lines.push("CAST NAMES (use these, never ids):", ...Object.entries(names).map(([id, name]) => `- ${name} (${id})`));
-  }
-  if (cut.currentLoci.length > 0) {
-    lines.push(
-      "SCENE (who is physically here):",
-      ...cut.currentLoci.map(
-        (locus) => `- ${nameOf(locus.actorId)}: ${locus.kind}${locus.zoneId ? ` at ${locus.zoneId}` : ""}`,
-      ),
-    );
-  }
-  if (cut.currentActivities.length > 0) {
-    lines.push(
-      "VISIBLE ACTIVITIES:",
-      ...cut.currentActivities.map(
-        (activity) => `- ${activity.actorIds.join(", ")}: ${activity.actionDefinitionId} (${activity.phase})`,
-      ),
-    );
-  }
-  lines.push(
-    "MUST ENACT (each beat exactly once; echo its event id in enactedBeatEventIds):",
-    ...(cut.mustEnact.length > 0
-      ? cut.mustEnact.map((beat) => `- [${beat.eventId}] ${beat.summary}`)
-      : ["- (none this turn)"]),
-  );
-  if (cut.allowedTransitions.length > 0) {
-    lines.push(
-      "MAY PORTRAY (already-resolved; never invent new outcomes):",
-      ...cut.allowedTransitions.map((beat) => `- [${beat.eventId}] ${beat.summary}`),
-    );
-  }
-  if (cut.speakerBeliefs.length > 0) {
-    lines.push(
-      "VIEWPOINT BELIEFS (voiceable, possibly false):",
-      ...cut.speakerBeliefs.map(
-        (belief) => `- ${belief.propositionKey} = ${JSON.stringify(belief.claimedValue)} (${belief.status})`,
-      ),
-    );
-  }
-  if (cut.relevantPressures.length > 0) {
-    lines.push(
-      "VIEWPOINT PRESSURES (their own obligations only):",
-      ...cut.relevantPressures.map((pressure) => `- ${pressure.severity}, act by second ${pressure.actBy}`),
-    );
-  }
-  const bodilyReads = conversation.viewpointIsPlayer
-    ? { observed: cut.bodilyReads.observed }
-    : cut.bodilyReads;
-  if (("self" in bodilyReads && bodilyReads.self) || bodilyReads.observed.length > 0) {
-    lines.push(`BODILY READS: ${JSON.stringify(bodilyReads)}`);
-  }
-  if (cut.failurePresentations.length > 0) {
-    lines.push(
-      "FAILED ATTEMPTS (present ONLY these public faces; never a private cause):",
-      ...cut.failurePresentations.map(
-        (failure) =>
-          `- ${failure.publicReason}${failure.legalAlternatives.length > 0 ? ` (alternatives: ${failure.legalAlternatives.join(", ")})` : ""}`,
-      ),
-    );
-  }
-  if (cut.creativeLicenses.length > 0) {
-    lines.push(
-      "CREATIVE LICENSES (bounded invention you MAY use):",
-      ...cut.creativeLicenses.map((license) => `- ${license.kind}: ${license.note}`),
-    );
-  }
-  lines.push(
-    "FORBIDDEN (never state or imply):",
-    ...(cut.forbiddenClaims.length > 0
-      ? cut.forbiddenClaims.map((claim) => `- ${claim.claim}`)
-      : ["- (no additional bans)"]),
-  );
-  if (cut.armedEffects.length > 0) {
-    lines.push(
-      "ARMED SPEECH ACTS (enact ONLY if your prose delivers it in meaning; list the ids you enacted):",
-      ...cut.armedEffects.map(
-        (effect) =>
-          `- [${effect.id}] ${effect.effectType}: ${effect.actorId} → ${effect.targetActorIds.join(", ")} — ${effect.detail}`,
-      ),
-    );
-  }
-  if (conversation.conversationSummary && conversation.conversationSummary.trim().length > 0) {
-    lines.push(
-      "CONVERSATION SO FAR (rolling summary — continuity context, never new",
-      "world facts):",
-      `- ${conversation.conversationSummary.trim()}`,
-    );
-  }
-  const memory = (conversation.memory ?? []).filter((line) => line.trim().length > 0).slice(0, 8);
-  if (memory.length > 0) {
-    lines.push(
-      `VIEWPOINT MEMORY (things ${viewpointName} recalls — context, never new`,
-      "facts; beliefs may be false and are labeled):",
-      ...memory.map((line) => `- ${line.trim()}`),
-    );
-  }
-  const tail = (conversation.dialogueTail ?? []).filter((line) => line.text.trim().length > 0).slice(-12);
-  if (tail.length > 0) {
-    lines.push(
-      "RECENT TRANSCRIPT (oldest first — continuity only, never new facts; if",
-      "earlier NARRATION wrongly spoke or felt for the player's character, that",
-      "was an error — never imitate it):",
-      ...tail.map((line) => `- ${line.speaker}: ${line.text.length > 300 ? `${line.text.slice(0, 300)}…` : line.text}`),
-    );
-  }
-  if (conversation.admittedAction && conversation.admittedAction.trim().length > 0) {
-    lines.push(
-      "PLAYER ACTION — already EXECUTED in world truth this turn. Portray it as",
-      "DONE (never an attempt, never reversed):",
-      `- ${conversation.admittedAction.trim()}`,
-    );
-  }
-  if (conversation.playerUtterance && conversation.playerUtterance.trim().length > 0) {
-    lines.push(
-      "THE VIEWPOINT ACTOR'S TURN — this drives the scene:",
-      `- ${conversation.playerUtterance.trim()}`,
-      ...(conversation.viewpointIsPlayer
-        ? [
-            "This is the PLAYER speaking/acting as the viewpoint actor. Treat it as",
-            "already performed exactly as stated — you may embed their words verbatim,",
-            "but NEVER add further dialogue, thoughts, feelings, decisions, or actions",
-            "for the viewpoint actor. Render how the OTHER characters and the scene",
-            "respond (their dialogue is yours under the small-talk license).",
-          ]
-        : [
-            "Portray the viewpoint actor saying/doing this and have the characters",
-            "present RESPOND to it naturally (dialogue is yours under the small-talk",
-            "license).",
-          ]),
-      "If it implies an action or outcome the committed state above",
-      "does not establish, portray only the attempt or the words — never the",
-      "unearned outcome.",
-    );
-  }
-  if (conversation.viewpointIsPlayer) {
-    lines.push(
-      "",
-      `FINAL RULE — ${viewpointName} is the player's character. Their only words and`,
-      "actions this turn are the ones in THE VIEWPOINT ACTOR'S TURN above, verbatim.",
-      `Do not write any new dialogue, thought, feeling, or action for ${viewpointName}.`,
-    );
-  }
-  lines.push(
-    "",
-    "Return STRICT JSON only, no prose outside it:",
-    '{"prose": "<the scene, 100-350 words>", "enactedBeatEventIds": ["..."], "enactedArmedEffectIds": ["..."], "proposedSoftCanon": []}',
-  );
-
-  const system = [
-    "You are the narrator of a live scene in a simulated world. You render ONLY what the",
-    "committed world state below establishes — you never move anyone, create objects,",
-    "reveal knowledge, or decide outcomes. Write immersive third-person present-tense",
-    "prose from the viewpoint actor's vantage.",
-    ...(conversation.viewpointIsPlayer
-      ? [
-          "The viewpoint actor is the PLAYER'S character: never author their dialogue,",
-          "inner monologue, emotions, or actions beyond what the player's turn states —",
-          "narrate the world around them and the other characters' responses.",
-        ]
-      : []),
-    "Every MUST ENACT beat appears exactly",
-    "once, in meaning. Nothing FORBIDDEN appears in any form. Failed attempts show only",
-    "their public face. The scene must ANSWER the viewpoint actor's turn when one is",
-    "given — background texture supports the exchange, never replaces it. Armed speech",
-    "acts are optional — enact one only when your prose",
-    "actually delivers it, and declare exactly what you enacted. Reply with the strict",
-    "JSON object requested and nothing else.",
-  ].join(" ");
-
-  return { system, prompt: lines.join("\n") };
+/** Which forbidden tokens actually appear in the prose (ids by substring, handles word-bounded). */
+function detectLeaks(prose: string, ids: readonly string[], handles: readonly string[]): string[] {
+  const leaked: string[] = [];
+  for (const id of ids) if (prose.includes(id)) leaked.push(id);
+  // Handles are `/^[BE]\d+$/`, safe to embed in a RegExp; word boundaries keep a stray
+  // "B1" inside another token from a false hit.
+  for (const handle of handles) if (new RegExp(`\\b${handle}\\b`).test(prose)) leaked.push(handle);
+  return leaked;
 }
 
-/** The §23.2 audit: flags omissions and overreach, requests rerender or bridges. */
+/** Prose that IS a JSON envelope, or embeds a contract field name — a template echo. */
+function detectContractEcho(prose: string): boolean {
+  const trimmed = prose.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      JSON.parse(trimmed);
+      return true;
+    } catch {
+      // Not valid JSON — fall through to the field-name check.
+    }
+  }
+  return CONTRACT_FIELD_NAMES.some((field) => prose.includes(field));
+}
+
+/** Whitespace-delimited word count of the trimmed prose. */
+function wordCount(prose: string): number {
+  const trimmed = prose.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+/** The §23.2 audit: flags omissions, overreach, and prose hygiene; requests rerender or bridges. */
 export function auditPresentation(
   cut: NarrativeCut,
   result: NarratorResult,
   options: AuditPresentationOptions = {},
 ): PresentationAudit {
   const maxBridgedBeats = options.maxBridgedBeats ?? 2;
+  const maxAttempts = options.maxAttempts ?? 2;
+  const { attempt } = options;
   const diagnostics: string[] = [];
 
   // A template echo is empty prose wearing brackets: models sometimes return
-  // the output contract's own placeholder ("<the scene, 100-350 words>")
-  // verbatim (caught live, R5 slice 6). Structurally valid, narratively
-  // nothing — send it back for the ruling-8 hidden retry.
+  // the output contract's own placeholder verbatim (caught live, R5 slice 6).
+  // Structurally valid, narratively nothing — send it back.
   const trimmedProse = result.prose.trim();
   const placeholderEcho = /^<[^<>]{0,120}>$/.test(trimmedProse) || trimmedProse.includes("100-350 words");
   if (placeholderEcho && trimmedProse.length > 0) diagnostics.push("presentation.placeholder_echo");
   const proseEmpty = trimmedProse.length === 0 || placeholderEcho;
   if (trimmedProse.length === 0) diagnostics.push("presentation.prose_empty");
 
+  // (a) Id/handle leak: no B/E handle, event/effect/actor/zone id from the cut may
+  // sit in the prose surface — the prose is story, the ids are the envelope's alone.
+  const { ids, handles } = collectCutLeakTokens(cut);
+  const leaked = trimmedProse.length > 0 ? detectLeaks(result.prose, [...ids, ...(options.leakTokens ?? [])], handles) : [];
+  const idLeak = leaked.length > 0;
+  if (idLeak) diagnostics.push("presentation.id_leak");
+
+  // (b) JSON / contract-field echo: the prose is (or embeds) the output envelope.
+  const contractEcho = !proseEmpty && detectContractEcho(result.prose);
+  if (contractEcho) diagnostics.push("presentation.contract_echo");
+
   const declaredBeatIds = new Set(result.enactedBeatEventIds);
   const missingBeats = cut.mustEnact.filter((beat) => !declaredBeatIds.has(beat.eventId));
-  if (missingBeats.length > 0) {
-    diagnostics.push(`presentation.missing_beats:${missingBeats.length}`);
-  }
+  if (missingBeats.length > 0) diagnostics.push(`presentation.missing_beats:${missingBeats.length}`);
 
-  const knownBeatIds = new Set<string>(
-    [...cut.mustEnact, ...cut.allowedTransitions].map((beat) => beat.eventId),
-  );
-  const unknownEnactedBeatEventIds = result.enactedBeatEventIds
-    .filter((eventId) => !knownBeatIds.has(eventId))
-    .sort();
+  const knownBeatIds = new Set<string>([...cut.mustEnact, ...cut.allowedTransitions].map((beat) => beat.eventId));
+  const unknownEnactedBeatEventIds = result.enactedBeatEventIds.filter((eventId) => !knownBeatIds.has(eventId)).sort();
   if (unknownEnactedBeatEventIds.length > 0) diagnostics.push("presentation.unknown_beats_declared");
 
   const armedIds = new Set(cut.armedEffects.map((effect) => effect.id));
-  const unknownEnactedArmedEffectIds = result.enactedArmedEffectIds
-    .filter((effectId) => !armedIds.has(effectId))
-    .sort();
+  const unknownEnactedArmedEffectIds = result.enactedArmedEffectIds.filter((effectId) => !armedIds.has(effectId)).sort();
   if (unknownEnactedArmedEffectIds.length > 0) diagnostics.push("presentation.unknown_effects_declared");
+
+  // (c) Substance floor: a render under the word floor while the cut carries beats or an
+  // utterance was given is too thin. It forces ONE retry, but the FINAL attempt accepts it
+  // (never withhold over length alone). Absent attempt info ⇒ final (accept).
+  const tooThin =
+    !proseEmpty &&
+    wordCount(result.prose) < MIN_SUBSTANCE_WORDS &&
+    (cut.mustEnact.length > 0 || (options.hadUtterance ?? false));
+  if (tooThin) diagnostics.push("presentation.too_thin");
+  const isFinalAttempt = attempt === undefined || attempt >= maxAttempts;
 
   let verdict: PresentationAudit["verdict"] = "accept";
   let bridgeProse: string | undefined;
-  if (proseEmpty || missingBeats.length > maxBridgedBeats) {
+  const smallOmission = missingBeats.length > 0 && missingBeats.length <= maxBridgedBeats;
+  if (proseEmpty || idLeak || contractEcho || missingBeats.length > maxBridgedBeats) {
     verdict = "rerender";
-  } else if (missingBeats.length > 0) {
-    verdict = "accept_with_bridge";
-    bridgeProse = missingBeats.map((beat) => beat.summary).join(" ");
+  } else if (smallOmission) {
+    // Bridge demoted to last resort (presentation-charter §3): a small omission gets a
+    // FEEDBACK retry first; it bridges only from attempt ≥2 (or a direct audit call with no
+    // attempt info, which keeps the legacy accept-with-bridge semantics).
+    if (attempt === undefined || attempt >= 2) {
+      verdict = "accept_with_bridge";
+      bridgeProse = missingBeats.map((beat) => beat.summary).join(" ");
+    } else {
+      verdict = "rerender";
+    }
+  } else if (tooThin && !isFinalAttempt) {
+    verdict = "rerender";
   }
 
   return presentationAuditSchema.parse({

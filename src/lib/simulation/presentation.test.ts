@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Diagnostic } from "@/contracts/diagnostics";
 import { narrativeCutSchema, type NarrativeCut } from "@/contracts/simulation/narrative";
-import { auditPresentation, buildCutRenderPrompt, emptyNarratorResult, parseNarratorResult } from "./presentation";
+import { auditPresentation, emptyNarratorResult, parseNarratorResult } from "./presentation";
 
 const NOW = 100_000;
 
@@ -55,6 +55,12 @@ function fixtureCut(overrides: Record<string, unknown> = {}): NarrativeCut {
   });
 }
 
+/** A render whose prose comfortably clears the substance floor. */
+const SUBSTANTIAL_PROSE =
+  "Mara sets the cup down without a word and crosses the room, the morning light catching the tired set of " +
+  "her shoulders. She stops at the window, watching the street below, and when she finally speaks her voice is " +
+  "quieter than before, worn thin by everything that has gone unsaid between them since dawn.";
+
 describe("E4.3 parseNarratorResult (§23.1 trust boundary)", () => {
   it("degrades garbage to the empty result instead of failing the turn", () => {
     const sink: Diagnostic[] = [];
@@ -87,12 +93,30 @@ describe("E4.3 parseNarratorResult (§23.1 trust boundary)", () => {
     expect(proposals).toHaveLength(1);
     expect(proposals[0]?.sourceCutId).toBe("cut-1");
   });
+
+  it("maps declared handles back to real event/effect ids, leaving unknown handles to be flagged", () => {
+    const { result } = parseNarratorResult(
+      {
+        prose: "She apologizes.",
+        enactedArmedEffectIds: ["E1"],
+        enactedBeatEventIds: ["B1", "B9"],
+        proposedSoftCanon: [],
+      },
+      fixtureCut(),
+      undefined,
+      { B1: "event-1", B2: "event-2", E1: "armed-1" },
+    );
+    // Handles translate to real ids; "B9" is not in the map, so it flows through
+    // unchanged to the existing unknown-id flagging.
+    expect(result.enactedBeatEventIds).toEqual(["event-1", "B9"]);
+    expect(result.enactedArmedEffectIds).toEqual(["armed-1"]);
+  });
 });
 
 describe("E4.3 auditPresentation (§23.2)", () => {
   it("accepts a render that declared every hard beat", () => {
     const audit = auditPresentation(fixtureCut(), {
-      prose: "Mara leaves; the room empties.",
+      prose: SUBSTANTIAL_PROSE,
       enactedArmedEffectIds: [],
       enactedBeatEventIds: ["event-1", "event-2"],
       proposedSoftCanon: [],
@@ -101,9 +125,9 @@ describe("E4.3 auditPresentation (§23.2)", () => {
     expect(audit.missingBeatEventIds).toEqual([]);
   });
 
-  it("bridges a small omission with the beat's own neutral summary", () => {
+  it("bridges a small omission with the beat's own neutral summary (direct call keeps legacy semantics)", () => {
     const audit = auditPresentation(fixtureCut(), {
-      prose: "Mara leaves.",
+      prose: SUBSTANTIAL_PROSE,
       enactedArmedEffectIds: [],
       enactedBeatEventIds: ["event-1"],
       proposedSoftCanon: [],
@@ -113,12 +137,29 @@ describe("E4.3 auditPresentation (§23.2)", () => {
     expect(audit.bridgeProse).toBe("Beat event-2 happened.");
   });
 
+  it("demotes the bridge to a feedback retry on a non-final attempt", () => {
+    const audit = auditPresentation(
+      fixtureCut(),
+      {
+        prose: SUBSTANTIAL_PROSE,
+        enactedArmedEffectIds: [],
+        enactedBeatEventIds: ["event-1"],
+        proposedSoftCanon: [],
+      },
+      { attempt: 1, maxAttempts: 2 },
+    );
+    // The small omission would bridge on the final attempt, but the FIRST attempt
+    // re-renders so a corrective retry can genuinely enact the missed beat.
+    expect(audit.verdict).toBe("rerender");
+    expect(audit.missingBeatEventIds).toEqual(["event-2"]);
+  });
+
   it("treats a template-echo render as empty and sends it back (live find, R5 slice 6)", () => {
     const cut = fixtureCut();
     const audit = auditPresentation(cut, {
       ...emptyNarratorResult,
       prose: "<the scene, 100-350 words>",
-      enactedBeatEventIds: cut.mustEnact.map((beat) => beat.eventId),
+      enactedBeatEventIds: cut.mustEnact.map((b) => b.eventId),
     });
     expect(audit.verdict).toBe("rerender");
     expect(audit.diagnostics).toContain("presentation.placeholder_echo");
@@ -129,7 +170,7 @@ describe("E4.3 auditPresentation (§23.2)", () => {
       mustEnact: [beat("event-1", 5), beat("event-2", 6), beat("event-3", 6)],
     });
     const blind = auditPresentation(cut, {
-      prose: "Nothing but vibes.",
+      prose: SUBSTANTIAL_PROSE,
       enactedArmedEffectIds: [],
       enactedBeatEventIds: [],
       proposedSoftCanon: [],
@@ -147,7 +188,7 @@ describe("E4.3 auditPresentation (§23.2)", () => {
 
   it("flags declared ids the cut never contained — audit only, truth untouched", () => {
     const audit = auditPresentation(fixtureCut(), {
-      prose: "Mara leaves; the room empties.",
+      prose: SUBSTANTIAL_PROSE,
       enactedArmedEffectIds: ["armed-1", "armed-invented"],
       enactedBeatEventIds: ["event-1", "event-2", "event-invented"],
       proposedSoftCanon: [],
@@ -156,78 +197,53 @@ describe("E4.3 auditPresentation (§23.2)", () => {
     expect(audit.unknownEnactedArmedEffectIds).toEqual(["armed-invented"]);
     expect(audit.unknownEnactedBeatEventIds).toEqual(["event-invented"]);
   });
-});
 
-describe("R3 buildCutRenderPrompt conversation input", () => {
-  it("carries a legible world clock that outranks transcript-implied time (slice 4, ruling 17)", () => {
-    // fromStorySecond 100 000 = day index 1, 03:46 — the model must read this,
-    // not raw seconds, or time-of-day color drifts to the dialogue tail.
-    const { prompt } = buildCutRenderPrompt(fixtureCut());
-    expect(prompt).toContain("WORLD CLOCK: Day 2 · 3:46am (night)");
-    expect(prompt).toContain("the clock wins");
+  it("(a) sends back a render whose prose leaked a beat handle", () => {
+    // A well-behaved reply lists handles only in the id arrays; a handle in the
+    // prose is an id leak. Audited on the final attempt so ONLY the leak forces rerender.
+    const audit = auditPresentation(
+      fixtureCut(),
+      {
+        prose: `${SUBSTANTIAL_PROSE} B1`,
+        enactedArmedEffectIds: [],
+        enactedBeatEventIds: ["event-1", "event-2"],
+        proposedSoftCanon: [],
+      },
+      { attempt: 2, maxAttempts: 2 },
+    );
+    expect(audit.verdict).toBe("rerender");
+    expect(audit.diagnostics).toContain("presentation.id_leak");
   });
 
-  it("carries the rolling summary and viewpoint memory as context-only sections (R5 knowledge/memory)", () => {
-    const { prompt } = buildCutRenderPrompt(fixtureCut(), {
-      conversationSummary: "They met at dawn and argued about the harvest.",
-      memory: ["[observed] Mara handed Ana the keepsake.", "[believed] The market opens at nine."],
-      actorNames: { player: "Mara" },
-    });
-    expect(prompt).toContain("CONVERSATION SO FAR (rolling summary");
-    expect(prompt).toContain("They met at dawn and argued about the harvest.");
-    expect(prompt).toContain("VIEWPOINT MEMORY (things Mara recalls");
-    expect(prompt).toContain("[observed] Mara handed Ana the keepsake.");
-    expect(prompt).toContain("[believed] The market opens at nine.");
+  it("(b) sends back a render whose prose is the JSON envelope", () => {
+    const audit = auditPresentation(
+      fixtureCut(),
+      {
+        prose: '{"prose":"she smiles","enactedBeatEventIds":["B1"]}',
+        enactedArmedEffectIds: [],
+        enactedBeatEventIds: ["event-1", "event-2"],
+        proposedSoftCanon: [],
+      },
+      { attempt: 2, maxAttempts: 2 },
+    );
+    expect(audit.verdict).toBe("rerender");
+    expect(audit.diagnostics).toContain("presentation.contract_echo");
   });
 
-  it("omits the memory sections entirely when there is nothing to carry", () => {
-    const { prompt } = buildCutRenderPrompt(fixtureCut(), { conversationSummary: "", memory: [] });
-    expect(prompt).not.toContain("CONVERSATION SO FAR");
-    expect(prompt).not.toContain("VIEWPOINT MEMORY");
-  });
+  it("(c) retries a thin render once, then accepts it on the final attempt", () => {
+    const thin = {
+      prose: "She nods and leaves.",
+      enactedArmedEffectIds: [],
+      enactedBeatEventIds: ["event-1", "event-2"],
+      proposedSoftCanon: [],
+    };
+    const early = auditPresentation(fixtureCut(), thin, { attempt: 1, maxAttempts: 2 });
+    expect(early.verdict).toBe("rerender");
+    expect(early.diagnostics).toContain("presentation.too_thin");
 
-  it("renders the real weekday and date when the world has a calendar anchor (R5)", () => {
-    // Day 0 = Monday June 1 2026 ⇒ storySecond 100 000 lands Tuesday 3:46am.
-    const { prompt } = buildCutRenderPrompt(fixtureCut(), { calendarStart: { year: 2026, month: 6, day: 1 } });
-    expect(prompt).toContain("WORLD CLOCK: Tuesday, June 2 — 3:46am (night)");
-    expect(prompt).toContain("the clock wins");
-  });
-
-  it("serializes the cut alone when no conversation is given", () => {
-    const { system, prompt } = buildCutRenderPrompt(fixtureCut());
-    expect(system).toContain("narrator of a live scene");
-    expect(prompt).toContain("MUST ENACT");
-    expect(prompt).not.toContain("VIEWPOINT ACTOR'S TURN");
-    expect(prompt).not.toContain("RECENT TRANSCRIPT");
-  });
-
-  it("carries the player's turn and a bounded dialogue tail into the prompt", () => {
-    const { prompt } = buildCutRenderPrompt(fixtureCut(), {
-      playerUtterance: "I ask Ana if she slept well.",
-      dialogueTail: [
-        { speaker: "The viewpoint actor", text: "Morning." },
-        { speaker: "Ana", text: "You're up early." },
-        { speaker: "The viewpoint actor", text: "" }, // blank lines drop
-      ],
-    });
-    expect(prompt).toContain("THE VIEWPOINT ACTOR'S TURN");
-    expect(prompt).toContain("I ask Ana if she slept well.");
-    expect(prompt).toContain("RECENT TRANSCRIPT");
-    expect(prompt).toContain("Ana: You're up early.");
-    expect(prompt).not.toContain("The viewpoint actor: \n");
-    // The unearned-outcome guard rides with the utterance.
-    expect(prompt).toContain("never the");
-  });
-
-  it("player-controlled viewpoints forbid authored interiority and drop self bodily reads", () => {
-    const { system, prompt } = buildCutRenderPrompt(fixtureCut(), {
-      playerUtterance: "\"Morning, Ana.\"",
-      viewpointIsPlayer: true,
-    });
-    expect(system).toContain("never author their dialogue");
-    expect(prompt).toContain("NEVER add further dialogue, thoughts, feelings");
-    expect(prompt).not.toContain("Portray the viewpoint actor saying");
-    // Self-interoception is withheld for a player viewpoint.
-    expect(prompt).not.toContain('"self"');
+    const final = auditPresentation(fixtureCut(), thin, { attempt: 2, maxAttempts: 2 });
+    // Never withhold a turn over length alone — the last attempt accepts, diagnostic kept.
+    expect(final.verdict).toBe("accept");
+    expect(final.diagnostics).toContain("presentation.too_thin");
   });
 });

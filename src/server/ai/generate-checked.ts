@@ -1,9 +1,9 @@
-import { APICallError, generateText, RetryError } from "ai";
+import { APICallError, generateText, RetryError, type JSONValue } from "ai";
 import { z, type ZodType } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { recordAgentFailure, type AgentTelemetry } from "./agent-failures";
 import { classifyProviderError } from "./errors";
-import { isDemoMode, openrouter, providerRouting, routedProvider, stateModelId, type OpenRouterRouting } from "./provider";
+import { isDemoMode, openrouter, providerRouting, routedProvider, stateModelId } from "./provider";
 
 /** An image handed to a vision-capable model alongside the prompt text. */
 export interface GenerateImagePart {
@@ -72,6 +72,13 @@ export interface GenerateCheckedOptions<T> {
    */
   degradeSeverity?: "warn" | "error";
   /**
+   * Extra OpenRouter provider options merged as the BASE for the per-call
+   * routing/reasoning knobs below (the narrator lanes pass
+   * `narrativeProviderOptions(modelId)` for the eval-ruled reasoning knob).
+   * Additive: absent ⇒ byte-identical behaviour for every existing caller.
+   */
+  providerOptions?: { openrouter?: Record<string, JSONValue> };
+  /**
    * Where this call lives (chat / session, which conversation, which exchange), so a
    * failure can be RECORDED and tallied rather than only logged
    * (`./agent-failures.ts`). Optional: without it the failure is still recorded, just
@@ -114,7 +121,7 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   // OpenRouter per-call routing/decoding knobs (see the option docs above).
   // providerRouting also applies any per-model provider exclusions (e.g. drop
   // DeepInfra for GLM 5.2), so it runs regardless of lowLatencyRouting.
-  const orOptions: { reasoning?: { enabled: boolean }; provider?: OpenRouterRouting } = {};
+  const orOptions: Record<string, JSONValue> = { ...(opts.providerOptions?.openrouter ?? {}) };
   if (opts.disableReasoning) orOptions.reasoning = { enabled: false };
   const routing = providerRouting(opts.modelId ?? stateModelId(), { sortLatency: opts.lowLatencyRouting });
   if (routing) orOptions.provider = routing;

@@ -5,22 +5,27 @@ import {
   type NarratorResult,
   type PresentationAudit,
 } from "@/contracts/simulation/narrative";
+import type { SoftCanonProposal } from "@/contracts/simulation/soft-canon";
 import { resolveChatModelId } from "@/lib/narrative-models";
-import {
-  auditPresentation,
-  buildCutRenderPrompt,
-  parseNarratorResult,
-  simulationHash,
-  type CutRenderConversation,
-} from "@/lib/simulation";
-import { generateChecked } from "@/server/ai";
+import { auditPresentation, parseNarratorResult, simulationHash } from "@/lib/simulation";
+import { collapseRepeatedBlocks, generateChecked, narrativeProviderOptions, stripNarratorArtifacts } from "@/server/ai";
 import { db, type Db } from "@/server/db";
+import { NARRATIVE_TEMPERATURE } from "./constants";
+import {
+  beatHandlesForCut,
+  buildSimHandleMap,
+  buildSimRenderPrompt,
+  type SimRenderContext,
+  type SimRenderCorrection,
+} from "./prompts/sim-render";
 import {
   latestCutIdForEngagement,
   loadPersistedCut,
   submitDurableConfirmNarratorResult,
   type PrepareTurnDeliberation,
 } from "./simulation";
+
+export type { SimRenderContext, SimRenderCorrection } from "./prompts/sim-render";
 
 /**
  * R2 (engine.rollout.plan.md) — the live narrator over one committed cut:
@@ -48,8 +53,8 @@ export interface RenderCutInput {
   modelId?: string;
   /** Total attempts including the ruling-8 hidden retry. Default 2. */
   maxAttempts?: number;
-  /** Presentation-lane conversational input — the player's turn + dialogue tail. */
-  conversation?: CutRenderConversation;
+  /** Presentation-lane input — the player's turn, authored canon, projections, dialogue tail. */
+  conversation?: SimRenderContext;
 }
 
 export type RenderSeam = (args: {
@@ -63,6 +68,11 @@ export interface RenderCutOptions {
   database?: Db;
   /** Injected model seam — tests stub this; omitting it calls the live model. */
   render?: RenderSeam;
+  /**
+   * Injected cut loader — a pure test supplies a fixture; omitting reads the
+   * persisted, hash-verified row (ruling 8: every attempt re-reads the SAME cut).
+   */
+  loadCut?: (branchId: string, cutId: string) => Promise<NarrativeCut>;
 }
 
 export interface RenderedCut {
@@ -97,12 +107,16 @@ function deterministicFallbackResult(cut: NarrativeCut): NarratorResult {
 
 function liveRenderSeam(cut: NarrativeCut): RenderSeam {
   return async ({ system, prompt, modelId }) => {
+    // Provider parity with the legacy narrator lane (presentation-charter §3):
+    // NARRATIVE_TEMPERATURE + the eval-ruled per-model reasoning/routing knobs.
+    const providerOptions = narrativeProviderOptions(modelId);
     const generated = await generateChecked({
       schema: narratorResultSchema,
       system,
       prompt,
       modelId,
-      temperature: 0.8,
+      temperature: NARRATIVE_TEMPERATURE,
+      ...(providerOptions === undefined ? {} : { providerOptions }),
       maxOutputTokens: 2_000,
       code: "sim.narrator",
       fallback: () => deterministicFallbackResult(cut),
@@ -113,6 +127,77 @@ function liveRenderSeam(cut: NarrativeCut): RenderSeam {
       ...(generated.latencyMs === undefined ? {} : { latencyMs: generated.latencyMs }),
       degraded: generated.degraded,
     };
+  };
+}
+
+/**
+ * Normalize raw model prose BEFORE the audit (presentation-charter §3, run in
+ * `sim-narrator` because lib cannot import server modules): strip the narrator
+ * artifact tags, collapse tandem repeats, then peel a stray wrapping code fence
+ * or quote pair. The auditor then reads the same clean text the user would see.
+ */
+function normalizeSimProse(raw: string): string {
+  const collapsed = collapseRepeatedBlocks(stripNarratorArtifacts(raw));
+  let trimmed = collapsed.trim();
+  const fence = /^```[A-Za-z]*\r?\n([\s\S]*?)\r?\n?```$/.exec(trimmed);
+  if (fence?.[1] !== undefined) trimmed = fence[1].trim();
+  if (
+    trimmed.length >= 2 &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("“") && trimmed.endsWith("”")))
+  ) {
+    trimmed = trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+/**
+ * One confirm per cut (presentation-charter hazard fix): the idempotencyKey is
+ * keyed on the cutId ALONE, so the FIRST accepted confirm for a cut wins and any
+ * retake — whose fresh render may enact a DIFFERENT armed-effect subset — dedupes
+ * to it. Armed truth from the first accepted telling stands; a retake replaces
+ * presentation, never truth. The command `id` stays per-submission for a clean
+ * duplicate-id path; only the idempotencyKey collapses.
+ */
+export function buildConfirmCommand(args: {
+  branchId: string;
+  engagementId: string;
+  cutId: string;
+  enacted: readonly string[];
+  proposals: readonly SoftCanonProposal[];
+}) {
+  const { branchId, engagementId, cutId, enacted, proposals } = args;
+  return {
+    id: `sim-narrator-confirm-${simulationHash({ cutId, enacted, proposals })}`,
+    branchId,
+    expectedVersion: 0,
+    idempotencyKey: `sim-narrator-confirm-${simulationHash({ cutId })}`,
+    principal: { kind: "system" as const, principalId: "sim-narrator", controlledActorIds: [] },
+    submittedAtWallClock: new Date().toISOString(),
+    correlationId: `sim-narrator-${simulationHash({ cutId })}`,
+    type: "confirm_narrator_result" as const,
+    schemaVersion: 2 as const,
+    payload: {
+      engagementId,
+      cutId,
+      enactedArmedEffectIds: [...enacted],
+      softCanonProposals: [...proposals],
+    },
+  };
+}
+
+/** Build the attempt-≥2 correction from the previous attempt's audit (missing beats + prose faults). */
+function correctionFromAudit(cut: NarrativeCut, audit: PresentationAudit): SimRenderCorrection {
+  const handleByEvent = new Map(beatHandlesForCut(cut).map((beat) => [beat.eventId, beat]));
+  const missingBeats = audit.missingBeatEventIds
+    .map((eventId) => handleByEvent.get(eventId))
+    .filter((beat): beat is { handle: string; eventId: string; summary: string } => beat !== undefined)
+    .map((beat) => ({ handle: beat.handle, summary: beat.summary }));
+  const diagnostics = new Set(audit.diagnostics);
+  return {
+    ...(missingBeats.length > 0 ? { missingBeats } : {}),
+    ...(diagnostics.has("presentation.id_leak") ? { leaked: true } : {}),
+    ...(diagnostics.has("presentation.contract_echo") ? { contractEcho: true } : {}),
+    ...(audit.proseEmpty || diagnostics.has("presentation.placeholder_echo") ? { emptyProse: true } : {}),
   };
 }
 
@@ -138,51 +223,65 @@ export async function renderCommittedCut(
     };
   }
   // Ruling 8: every attempt re-reads the SAME persisted, hash-verified cut.
-  const cut = await loadPersistedCut(input.branchId, cutId, { database });
-  const { system, prompt } = buildCutRenderPrompt(cut, input.conversation ?? {});
+  const loadCut =
+    options.loadCut ?? ((branchId: string, id: string) => loadPersistedCut(branchId, id, { database }));
+  const cut = await loadCut(input.branchId, cutId);
+  const context = input.conversation ?? {};
   const render = options.render ?? liveRenderSeam(cut);
+  // The handle vocabulary is deterministic per cut — the trust boundary maps the
+  // model's declared B/E handles back to real ids, and the audit forbids either in prose.
+  const handleMap = buildSimHandleMap(cut);
+  const leakTokens = Object.keys(handleMap);
+  const hadUtterance = (context.playerUtterance ?? "").trim().length > 0;
 
   let attempts = 0;
   let degraded = false;
   let provider: string | null | undefined;
   let latencyMs: number | undefined;
+  // The targeted retry (presentation-charter §3): each attempt rebuilds the prompt,
+  // and attempt ≥2 carries a CORRECTION naming exactly what the last audit rejected.
+  let correction: SimRenderCorrection | undefined;
   for (; attempts < maxAttempts; ) {
     attempts += 1;
+    const { system, prompt } = buildSimRenderPrompt(cut, context, {
+      attempt: attempts,
+      ...(correction === undefined ? {} : { correction }),
+    });
     const attempt = await render({ system, prompt, modelId, attempt: attempts });
     degraded = degraded || attempt.degraded;
     provider = attempt.provider ?? provider;
     latencyMs = attempt.latencyMs ?? latencyMs;
 
-    const parsed = parseNarratorResult(attempt.raw ?? {}, cut);
-    const audit = auditPresentation(cut, parsed.result);
+    const parsed = parseNarratorResult(attempt.raw ?? {}, cut, undefined, handleMap);
+    // Normalize BEFORE audit — the auditor reads the clean text the user would see.
+    const result: NarratorResult = { ...parsed.result, prose: normalizeSimProse(parsed.result.prose) };
+    const audit = auditPresentation(cut, result, {
+      attempt: attempts,
+      maxAttempts,
+      hadUtterance,
+      leakTokens,
+    });
     diagnostics.push(...audit.diagnostics.map((code) => `attempt${attempts}.${code}`));
-    if (audit.verdict === "rerender") continue;
+    if (audit.verdict === "rerender") {
+      correction = correctionFromAudit(cut, audit);
+      continue;
+    }
 
-    // Accepted (possibly with a deterministic bridge). Arm what actually
-    // landed: unknown ids were flagged by the audit and are simply dropped —
-    // the confirm command re-validates against the persisted row anyway.
+    // Accepted (possibly with a deterministic bridge — demoted to last resort, so it
+    // only lands after the feedback retry). Arm what actually landed: unknown ids were
+    // flagged by the audit and dropped — the confirm re-validates against the row anyway.
     const armedIds = new Set(cut.armedEffects.map((effect) => effect.id));
-    const enacted = parsed.result.enactedArmedEffectIds.filter((id) => armedIds.has(id));
+    const enacted = result.enactedArmedEffectIds.filter((id) => armedIds.has(id));
     let confirmStatus: string | undefined;
     if (enacted.length > 0 || parsed.proposals.length > 0) {
       const confirm = await submitDurableConfirmNarratorResult(
-        {
-          id: `sim-narrator-confirm-${simulationHash({ cutId, enacted, proposals: parsed.proposals })}`,
+        buildConfirmCommand({
           branchId: input.branchId,
-          expectedVersion: 0,
-          idempotencyKey: `sim-narrator-confirm-${simulationHash({ cutId, enacted })}`,
-          principal: { kind: "system" as const, principalId: "sim-narrator", controlledActorIds: [] },
-          submittedAtWallClock: new Date().toISOString(),
-          correlationId: `sim-narrator-${simulationHash({ cutId })}`,
-          type: "confirm_narrator_result",
-          schemaVersion: 2,
-          payload: {
-            engagementId: input.engagementId,
-            cutId,
-            enactedArmedEffectIds: enacted,
-            softCanonProposals: parsed.proposals,
-          },
-        },
+          engagementId: input.engagementId,
+          cutId,
+          enacted,
+          proposals: parsed.proposals,
+        }),
         { database, admitAtLockedVersion: true },
       );
       confirmStatus = confirm.status;
@@ -191,9 +290,8 @@ export async function renderCommittedCut(
       }
     }
 
-    const prose = audit.bridgeProse
-      ? `${parsed.result.prose.trimEnd()} ${audit.bridgeProse}`
-      : parsed.result.prose;
+    // A bridge lands as its own paragraph, never glued mid-sentence (§3).
+    const prose = audit.bridgeProse ? `${result.prose.trimEnd()}\n\n${audit.bridgeProse}` : result.prose;
     return {
       status: "rendered",
       cutId,
@@ -201,7 +299,7 @@ export async function renderCommittedCut(
       attempts,
       prose,
       audit,
-      result: parsed.result,
+      result,
       ...(confirmStatus === undefined ? {} : { confirmStatus }),
       degraded,
       provider: provider ?? null,

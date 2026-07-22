@@ -30,6 +30,19 @@ const ZONE_KIND_LABELS: Record<string, string> = {
 };
 
 /**
+ * The narrator's bare zone display NOUN for a kind — the roster-whereabouts phrase
+ * (ZONE_KIND_LABELS) with its leading preposition stripped ("at the town square" →
+ * "town square"), so the ONE kind→place map serves both the presence chip and the
+ * render prompt's zone display names (`sim-render` wraps this as "at the {noun}").
+ * "" for an unknown kind — the render then humanizes the raw zone id itself.
+ */
+export function zoneDisplayNoun(kind: string): string {
+  const phrase = ZONE_KIND_LABELS[kind];
+  if (!phrase) return "";
+  return phrase.replace(/^(?:at the |at |in the |in |on the |on )/, "");
+}
+
+/**
  * Slice 3: the primary character's REAL presence for a routed chat — where
  * their body is in the mirror world relative to the player's, never the
  * legacy chat-state flag. Null for legacy and shadow lanes (their display
