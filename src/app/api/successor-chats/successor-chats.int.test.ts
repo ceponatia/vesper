@@ -1,11 +1,13 @@
 import { and, eq, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { characterProfileSchema } from "@/contracts";
 import {
   characterChats,
   characterChatMessages,
   characters,
   db,
+  items,
   simBranches,
   simItemHoldings,
   simWorlds,
@@ -83,9 +85,24 @@ beforeAll(async () => {
   if (!user) throw new Error("failed to create test user");
   authState.user = { ...authState.user, id: user.id, email: user.email };
   ids.user = user.id;
+  // R5 slice 5: an authored default outfit — provisioning ports it into the
+  // mirror world as WORN items, so the outfit chip reads world truth.
+  const insertItem = async (name: string) => {
+    const [row] = await db()
+      .insert(items)
+      .values({ ownerId: user.id, kind: "clothing", name, description: name })
+      .returning({ id: items.id });
+    if (!row) throw new Error("failed to create item");
+    return row.id;
+  };
+  const jacketId = await insertItem("denim jacket");
+  const teeId = await insertItem("white cotton tee");
+  const profile = characterProfileSchema.parse({
+    outfits: [{ id: "everyday", name: "Everyday", items: [jacketId, teeId] }],
+  });
   const [character] = await db()
     .insert(characters)
-    .values({ ownerId: user.id, name: "Abigail", profile: {} })
+    .values({ ownerId: user.id, name: "Abigail", profile })
     .returning();
   if (!character) throw new Error("failed to seed character");
   ids.characterId = character.id;
@@ -97,6 +114,7 @@ afterAll(async () => {
   if (ids.extraWorldId) await db().delete(simWorlds).where(eq(simWorlds.id, ids.extraWorldId));
   await db().delete(characterChats).where(eq(characterChats.ownerId, ids.user));
   await db().delete(characters).where(eq(characters.ownerId, ids.user));
+  await db().delete(items).where(eq(items.ownerId, ids.user));
   await db().delete(users).where(eq(users.id, ids.user));
 });
 
@@ -280,5 +298,29 @@ describe.runIf(ready)("successor-chats front door", () => {
     ).json()) as { meters: Record<string, number> };
     expect(stateAfter.meters.hygiene).toBeCloseTo(0.2, 5);
     expect(stateAfter.meters.mood).toBeCloseTo(0.5, 5);
+
+    // R5 slice 5 — the authored outfit was born as WORN world items, and the
+    // outfit chip reads them (transcript roster + state envelope alike).
+    const worn = await db()
+      .select({ itemId: simItemHoldings.itemId })
+      .from(simItemHoldings)
+      .where(
+        and(
+          eq(simItemHoldings.branchId, body.branchId),
+          eq(simItemHoldings.locusKind, "worn"),
+          eq(simItemHoldings.actorId, chatRow.primaryActorId),
+        ),
+      );
+    expect(worn).toHaveLength(2);
+    const outfitEnvelope = (await (
+      await chatGet(new NextRequest(`http://t/api/chats/${body.id}`), ctx(body.id))
+    ).json()) as { roster: { sort: number; outfit: string }[] };
+    const primaryOutfit = outfitEnvelope.roster.find((m) => m.sort === 0)?.outfit ?? "";
+    expect(primaryOutfit).toContain("denim jacket");
+    expect(primaryOutfit).toContain("white cotton tee");
+    const stateOutfit = (await (
+      await stateGet(new NextRequest(`http://t/api/chats/${body.id}/state`), ctx(body.id))
+    ).json()) as { outfitLabel: string };
+    expect(stateOutfit.outfitLabel).toContain("denim jacket");
   });
 });

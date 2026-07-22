@@ -39,7 +39,16 @@ export interface StarterWorldResult {
 
 /** Provision one fresh starter world. Names label prose — they must differ. */
 export async function provisionStarterWorld(
-  input: { playerName: string; primaryName: string },
+  input: {
+    playerName: string;
+    primaryName: string;
+    /**
+     * R5 slice 5: the primary's authored outfit, ported into world truth as
+     * WORN items at birth — the outfit chip then reads the sim, not legacy
+     * chat state. Slot keys are made unique by the caller's ordering.
+     */
+    primaryGarments?: readonly { name: string; slotKey: string }[];
+  },
   database: Db = db(),
 ): Promise<StarterWorldResult> {
   const stamp = newId();
@@ -78,6 +87,12 @@ export async function provisionStarterWorld(
           ownerActorId: null,
           locus: { kind: "held", actorId: actors.player },
         },
+        ...(input.primaryGarments ?? []).map((garment, index) => ({
+          id: `stw-${stamp}-garment-${index}`,
+          name: garment.name.slice(0, 200),
+          ownerActorId: actors.primary,
+          locus: { kind: "worn" as const, actorId: actors.primary, slotKey: garment.slotKey },
+        })),
       ],
     },
     { database },

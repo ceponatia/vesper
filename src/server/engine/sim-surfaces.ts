@@ -1,6 +1,6 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { METER_FIXED_POINT_ONE } from "@/contracts/simulation/bodies";
-import { db, simPhysicalLoci, simZones } from "@/server/db";
+import { db, simItemHoldings, simItems, simPhysicalLoci, simZones } from "@/server/db";
 import { readChatEngineAuthority } from "./chat-authority";
 import { readDurableBodies } from "./simulation";
 
@@ -92,4 +92,38 @@ export async function readSimChatMeters(chatId: string): Promise<Record<string, 
   const meters = bodies.meters.filter((meter) => meter.actorId === authority.simPrimaryActorId);
   if (meters.length === 0) return null;
   return Object.fromEntries(meters.map((meter) => [meter.meterKey, meter.valueFixedPoint / METER_FIXED_POINT_ONE]));
+}
+
+/**
+ * Slice 5: the primary's outfit from world truth — the names of the items
+ * WORN by the mapped actor in the mirror, slot-ordered. "" when they wear
+ * nothing (the honest empty chip); null for legacy/shadow lanes.
+ */
+export async function readSimChatOutfit(chatId: string): Promise<string | null> {
+  const authority = await readChatEngineAuthority(chatId);
+  if (
+    !authority ||
+    authority.authority === "legacy_chat" ||
+    authority.authority === "successor_shadow" ||
+    !authority.simBranchId ||
+    !authority.simPrimaryActorId
+  ) {
+    return null;
+  }
+  const rows = await db()
+    .select({ name: simItems.name })
+    .from(simItemHoldings)
+    .innerJoin(
+      simItems,
+      and(eq(simItems.branchId, simItemHoldings.branchId), eq(simItems.itemId, simItemHoldings.itemId)),
+    )
+    .where(
+      and(
+        eq(simItemHoldings.branchId, authority.simBranchId),
+        eq(simItemHoldings.locusKind, "worn"),
+        eq(simItemHoldings.actorId, authority.simPrimaryActorId),
+      ),
+    )
+    .orderBy(asc(simItemHoldings.slotKey));
+  return rows.map((row) => row.name).join(", ");
 }

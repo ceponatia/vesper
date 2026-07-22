@@ -449,7 +449,19 @@ is the cleanup that makes the migration real.
    refinement. Int-proven: storyteller relocation flips the roster to
    "away"; a world-truth hygiene write shows in the envelope where
    legacy would still show the seed. Gates green (3 126 pure +
-   480 int). Remaining R5 domains: items/wardrobe → knowledge/memory →
+   480 int). **Slice 5 shipped — 2026-07-22: items/wardrobe.** The
+   substrate already modeled worn items (locusKind `worn` + slotKey), so
+   the port is direct: the successor-chats POST resolves the character's
+   authored default outfit through the SAME wardrobe seam the chat seed
+   uses (`seedChatState` → `loadChatWardrobe`) and provisioning births
+   the garments as items WORN by the primary actor (slot keys from
+   coverage, index-uniqued); `readSimChatOutfit` serves the worn names
+   slot-ordered, and both the transcript roster's outfit and the state
+   envelope's `outfitLabel` read it for routed chats ("" = honestly
+   nothing worn; legacy/shadow untouched). Exposure/coverage semantics
+   sim-side and worn-item transfer commands are the named leftovers.
+   Int-proven: two authored garments become two worn world items and
+   surface in both envelopes. Remaining R5 domains: knowledge/memory →
    relationships. `successor_rag_eligibility` flips when
    the knowledge domain lands. The chat lane's meter-economy/body-needs plans
    (roadmap Next) port through the Gate 5 contracts here rather than being

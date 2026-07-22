@@ -1,9 +1,11 @@
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
+import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import { newId } from "@/lib/ids";
+import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { characterChats, characters, chatParticipants, db, simBranches } from "@/server/db";
-import { provisionStarterWorld, setChatEngineAuthority } from "@/server/engine";
+import { loadChatWardrobe, provisionStarterWorld, seedChatState, setChatEngineAuthority } from "@/server/engine";
 
 /**
  * The successor front door (engine.rollout.plan.md, owner ask 2026-07-22) —
@@ -31,7 +33,7 @@ export const POST = withUser(async (user, req) => {
   if (!body.ok) return body.response;
 
   const [character] = await db()
-    .select({ id: characters.id, name: characters.name })
+    .select({ id: characters.id, name: characters.name, profile: characters.profile })
     .from(characters)
     .where(and(eq(characters.id, body.value.characterId), eq(characters.ownerId, user.id)));
   if (!character) return jsonError("not_found", "that character is not in your library", 404);
@@ -44,9 +46,19 @@ export const POST = withUser(async (user, req) => {
     return jsonError("too_many_worlds", `you already have ${MAX_SUCCESSOR_CHATS} successor chats; delete one first`, 409);
   }
 
+  // R5 slice 5: the character's authored default outfit becomes WORN world
+  // items at birth — resolved through the same wardrobe seam the chat seed
+  // uses, so the outfit chip shows the same clothes, now from world truth.
+  const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+  const wornIds = seedChatState(profile).wornItemIds;
+  const wardrobeItems = wornIds.length > 0 ? await loadChatWardrobe(user.id, wornIds) : [];
   const world = await provisionStarterWorld({
     playerName: (user.name ?? "").split(/\s+/)[0] ?? "",
     primaryName: character.name,
+    primaryGarments: wardrobeItems.map((item, index) => ({
+      name: item.name,
+      slotKey: `${item.coverage[0] ?? "garment"}-${index}`,
+    })),
   });
 
   const chatId = newId();
