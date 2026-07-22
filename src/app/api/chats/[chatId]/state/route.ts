@@ -31,6 +31,7 @@ import {
   loadChatState,
   readSimChatClock,
   readSimChatMeters,
+  readSimChatOutfit,
   resolveChatWardrobe,
   resolveSeededOutfit,
   seedChatScenario,
@@ -147,9 +148,11 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
   // Rendered garment phrase for the read-only strip chip (chat-wardrobe-parity): the structured
   // worn items resolved through the shared seam, else the free-text overlay.
   const wardrobe = await resolveChatWardrobe(state, user.id, profile, sink);
+  // R5 slice 5: a routed chat's outfit chip reads the mirror's WORN items.
+  const simOutfit = target.characterId === owned.participant.characterId ? await readSimChatOutfit(chatId) : null;
   return jsonOk({
     ...chatStateSnapshot(state, scenario, { ...snapshotOpts(profile), persisted: stored !== null }),
-    outfitLabel: wardrobe.garments,
+    outfitLabel: simOutfit ?? wardrobe.garments,
     // Sim-routed chats show the WORLD clock, not the legacy scenario clock
     // (R3 slice 4 + R5 calendar, ruling 17) — null for legacy chats.
     simClock: await readSimChatClock(chatId),
