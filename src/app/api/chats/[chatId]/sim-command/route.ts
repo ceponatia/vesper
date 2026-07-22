@@ -4,6 +4,7 @@ import { newId } from "@/lib/ids";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { db, simItemHoldings } from "@/server/db";
 import {
+  findStandingEngagement,
   submitDurableEndEngagement,
   submitDurableMoveActor,
   submitDurableStartActivity,
@@ -80,11 +81,20 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
       return respond(outcome);
     }
     case "end_scene": {
+      // Engagement identity belongs to the actor pair, not the chat: end the
+      // scene they are ACTUALLY in (whichever chat or tool opened it).
+      const standing = await findStandingEngagement(sim.branchId, sim.playerActorId, sim.primaryActorId);
+      if (standing.engagementId === null) {
+        return jsonOk(
+          { status: "rejected", code: "no_open_scene", publicReason: "There is no open scene to end.", legalAlternatives: [] },
+          409,
+        );
+      }
       const outcome = await submitDurableEndEngagement(
         {
           ...envelope,
           type: "end_engagement",
-          payload: { engagementId: sim.engagementId, reason: "participant_choice" },
+          payload: { engagementId: standing.engagementId, reason: "participant_choice" },
         },
         { admitAtLockedVersion: true },
       );

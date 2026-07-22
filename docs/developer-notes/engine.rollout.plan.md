@@ -183,7 +183,19 @@ is the cleanup that makes the migration real.
    (`sim-admin.int.test.ts`, in the CI glob): provision → promote "Odell"
    out of the crowd → relocate → dial → adjust → advance a story-day →
    status snapshot confirming every effect (3 111 pure; engine+rollout
-   28 files / 207 tests). Exit unchanged:
+   28 files / 207 tests). Live-session fix (2026-07-22): a second chat
+   mapped to the same actor pair was refused `participant_already_engaged`
+   on every send — the "standing scene" was derived per chat, so find-or-open
+   could never *find* across chats — and the failure was invisible (the
+   player line only persisted after the open gate, and the ZWSP heartbeat
+   marked the reply "received", muting the failure popup). Now: engagement
+   identity belongs to the actor pair — `findStandingEngagement` resolves the
+   pair's live co-present engagement by participants, opens (head-scoped
+   command id, so re-opening after end_scene works too) only when none
+   stands, and `end_scene` ends the resolved engagement; the player line
+   persists before the scene gate; the client strips the heartbeat before
+   counting received bytes, so a refusal shows the ordinary failure popup
+   with the §14.4 public reason. Exit unchanged:
    a human plays a scene in the internal test world on Fly. Minimum playable seam **inside the existing
    character chat UI at `/chat/`** (ruling 1 — no standalone play page): API
    routes that admit player commands into the successor
