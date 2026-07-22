@@ -2310,6 +2310,43 @@ export const simEngagements = pgTable(
 );
 
 /**
+ * R4 shadow divergences (engine.rollout.plan.md): one row per compared domain
+ * per shadowed exchange — the queryable substrate the shadow-parity report is
+ * computed from. `legacy`/`successor` hold each lane's raw view of the domain;
+ * `verdict` is the durable triage state ("ruled intentional" survives here,
+ * not in a doc). Rows are observations, never effects — deleting them all
+ * changes nothing about either lane.
+ */
+export const simShadowDivergences = pgTable(
+  "sim_shadow_divergences",
+  {
+    id: id(),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => characterChats.id, { onDelete: "cascade" }),
+    /** The settled assistant message this comparison anchors to. */
+    messageId: text("message_id").notNull(),
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    /** Compared domain: prose | presence | meters | clock — vocabulary grows without migration. */
+    domain: text("domain").notNull(),
+    legacy: jsonb("legacy").notNull(),
+    successor: jsonb("successor").notNull(),
+    /** One-line human summary of what differs (or "" when the row is informational). */
+    detail: text("detail").notNull().default(""),
+    verdict: text("verdict", { enum: ["open", "intentional", "fixed"] })
+      .notNull()
+      .default("open"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("sim_shadow_divergences_chat_idx").on(t.chatId, t.createdAt),
+    index("sim_shadow_divergences_verdict_idx").on(t.verdict),
+  ],
+);
+
+/**
  * E3.5 access grants (engine.spec §14). Malformed rows fail closed at read
  * time — a grant that does not parse admits no one.
  */

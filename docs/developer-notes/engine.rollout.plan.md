@@ -133,10 +133,21 @@ is the cleanup that makes the migration real.
    runnable against this leg on request). Exit: a full narrated turn against the
    internal test world within the latency/model-call budget, degradation paths
    observed live (a failed render withholds, never corrupts).
-4. **R3 — the product surface.** Status: **slices 1–4 shipped** (1–3 —
-   2026-07-21, complete; slice 4 + the live-session fix — 2026-07-22); the
-   R3 exit (a human plays a scene in the test world on Fly) awaits a live
-   session on the current deploy. Slice 1, *the successor turn
+4. **R3 — the product surface.** Status: **EXITED — 2026-07-22** (slices 1–3 —
+   2026-07-21; slice 4 + the live-session fix — 2026-07-22). Exit arc run
+   live on Fly (owner ruling: driven via the sim-command API in the owner's
+   test chat; owner's own live sessions covered the conversational play):
+   end scene → **move** to the square (in_transit honored — a mid-travel
+   send refused with the §14.4 public face "They are on the move right
+   now", the player line kept, the popup explaining) → arrival
+   **witnessed** (co-located with Ben + Riven) → walk home → **talk** (a
+   full narrated turn, world-clock colored) → **give** (the keepsake
+   transferred in world truth) → **sleep** (rest's full-attention claim;
+   mid-rest move refused `activity_conflict`) → **off-screen world life**
+   (three bounded advances drained travel arrivals + the rest; head
+   sequence 31 → 46, standing rhythms re-armed). No new UI was built for
+   typed commands — the API routes were the stated minimum; a player
+   command UI rides the successor surface later. Slice 1, *the successor turn
    route*: chat's exchange machine (`submitChatMessage`, ~2 000 lines of
    streaming pipeline) stays untouched — the lanes-separate rule applied to
    code. Instead a parallel, non-streaming route
@@ -252,14 +263,38 @@ is the cleanup that makes the migration real.
    LOD dial) surface here too. Exit: a human plays a scene in the internal test
    world on Fly — moves, talks, sleeps, is witnessed — with world life
    continuing off-screen.
-5. **R4 — shadow mode under chat.** `successor_shadow` on the UX-test
-   account's worlds (ruling 2 — never a player-owned world):
-   successor calculations run alongside the chat lane with **no effects**,
-   compared against fixed fixtures and live chat outcomes (events, projections,
-   presence, meter reads). Divergences are diagnostics, not failures — this
-   slice exists to find contract gaps before authority moves. Exit: an agreed
-   shadow-parity report over a fixed comparison corpus; every divergence either
-   fixed or ruled intentional.
+5. **R4 — shadow mode under chat.** Status: **active — 2026-07-22**
+   (re-planned the same day against post-R3 drift; owner rulings below).
+   `successor_shadow` chats run the LEGACY pipeline unchanged; after each
+   plain-send exchange settles, a fire-and-forget shadow leg computes the
+   successor's view of the same turn against a linked mirror branch with
+   **no effects on the chat lane** (the mirror world is the successor's own
+   state and may advance). Divergences are recorded rows, not failures —
+   this slice exists to find contract gaps before authority moves.
+   **Drift corrections vs the original text (written pre-R3):** the lanes
+   now meet at exactly one seam (the chat send route's authority fork), so
+   shadow hooks a post-settle callback there, plain sends only — the same
+   admission scope as the view lane. "Events, projections" have no chat
+   counterpart; the comparable domains are **prose** (legacy reply vs a
+   successor render from the same utterance + tail), **presence** (roster
+   presence vs mirror loci/engagement), **meters** (comparable via the
+   ruling-15 parity substrate), and **clock deltas** (the two clocks are
+   incommensurate absolutes after slice 4 — legacy `clockMinutes` skips
+   mirror onto the branch as advances; only deltas compare). Scene identity
+   is pair-based (`findStandingEngagement`), never chat-derived.
+   **Owner rulings (2026-07-22):** the comparison corpus runs on the
+   owner's own account (amending ruling 2's uxtest-worlds wording — see
+   §39), recreating or reusing the standing test worlds; the shadow leg
+   DOES render successor prose per exchange because it runs detached and
+   adds no perceived turn latency (had that not held, deterministic-only +
+   a deferred rethink was the fallback); divergences persist in a
+   queryable `sim_shadow_divergences` table (chat, message, domain, legacy
+   value, successor value, verdict) with an admin read + verdict surface,
+   so the exit report is computed, and "ruled intentional" is a durable row
+   verdict. Shadow renders skip live deliberation (deterministic fallback
+   only — comparison prose doesn't justify a second model call class).
+   Exit: an agreed shadow-parity report over a fixed comparison corpus;
+   every divergence either fixed or ruled intentional.
 6. **R5 — domain-by-domain authority migration.** `successor_authoritative` one
    domain at a time (candidate order: time/clock → space/presence → bodies &
    meters → items/wardrobe → knowledge/memory → relationships), each with dual
@@ -307,7 +342,12 @@ All four opening questions were answered the day the plan was queued:
    worlds.
 2. **Shadow comparison corpus — the UX-test account's worlds** (the dedicated
    `uxtest-main@vesper.local` worlds, e.g. Tsukikage Onsen). No player-owned
-   world is shadowed.
+   world is shadowed. **Amended (owner, 2026-07-22, R4 kickoff):** the corpus
+   runs on the owner's own account's test chats instead — the original wording
+   named world-model worlds (the deprecated lane), but R4 is shadow under
+   *chat*, and by kickoff the owner's account already carried the standing
+   successor test chats. Test worlds may be recreated or reused as needed; the
+   never-shadow-organic-play intent stands (dedicated test chats only).
 3. **R5 domain order — author's call, sequenced by dependency.** The owner
    expects fast iteration; the order in R5 stands unless a dependency proves
    otherwise mid-build.
