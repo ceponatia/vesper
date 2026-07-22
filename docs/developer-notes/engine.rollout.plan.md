@@ -375,21 +375,42 @@ is the cleanup that makes the migration real.
    agreeing the report — now both doable entirely in the browser.
    Exit: an agreed shadow-parity report over a fixed comparison corpus;
    every divergence either fixed or ruled intentional.
-6. **R5 — domain-by-domain authority migration.** `successor_authoritative` one
-   domain at a time (candidate order: time/clock → space/presence → bodies &
-   meters → items/wardrobe → knowledge/memory → relationships), each with dual
-   writes through its invariant window, fixture comparison, and a rollback
-   window before the next domain starts. **The time/clock domain expands the
-   R3 slice-4 clock work into full calendar integration (ruling 17):** a
-   calendar anchor on the world config maps `storySecond` → weekday/date
-   (superseding the legacy `CalendarStart`/`clockMinutes` lane as the one
-   time authority), the slice-4 presentation seam upgrades to render it
-   (prose and chip say "Monday morning", not just "Day 3"), and **optional
-   player control is the domain's product surface**: time advances naturally
-   through play, or the player skips N minutes / hours / days — the slice-4
-   `advance_time` admission graduating from bounded skip to the domain's
-   authoritative time control, with chat's pickup/skip affordances migrating
-   onto it. `successor_rag_eligibility` flips when
+6. **R5 — domain-by-domain authority migration.** Status: **active —
+   2026-07-22** (started in parallel with R4's open exit, owner ruling).
+   **Re-framed (owner ruling 2026-07-22, correcting pre-front-door
+   drift):** nobody migrates in place anymore — successor chats are BORN
+   successor (the Worlds front door) and legacy chats stay legacy until
+   R6 retires that lane. R5's real work is that successor chats are
+   HYBRIDS: the sim owns time/scene/narration while the strip's
+   mood/regard chips, wardrobe, meters, action chips, relationships, and
+   memory still read legacy chat-state rows. Each R5 domain makes the
+   successor authoritative for successor chats, surface by surface
+   (time/clock → space/presence → bodies & meters → items/wardrobe →
+   knowledge/memory → relationships). Dual writes are dropped; the R4
+   shadow substrate is the comparison harness; rollback stays the
+   authority flag. `successor_rag_eligibility` flips when the knowledge
+   domain lands; the chat lane's meter-economy/body-needs plans port
+   through the Gate 5 contracts here rather than being built twice.
+   **Slice 1 shipped — 2026-07-22: the time/clock domain (ruling 17's
+   full calendar).** A nullable `calendar_start` on `sim_worlds`
+   (migration 0084; the DATE of story day zero — presentation config,
+   edited in place, never through the event log: it re-labels history).
+   The whole integration is ONE adapter (`storyCalendarParams`:
+   storySecond 0 = the anchor date's midnight ⇒ `{clockMinutes: s/60,
+   start: anchor@00:00}`), after which every legacy Gregorian formatter
+   is correct verbatim — zero new date math. Anchored worlds render
+   "Monday, June 1 — 8:01am (morning)" in the narrator's WORLD CLOCK
+   line (presentation input on the render conversation; shadow renders
+   too), "Mon · 8:01am" in the strip chip, the full date in the clock
+   card, and calendar landings on skip previews; unanchored worlds keep
+   "Day N". The clock card's "story starts on…" editor returns for
+   successor chats (`PATCH /api/successor-chats/[chatId]`, date-only,
+   nullable to clear); starter worlds default to Monday, June 1 2026.
+   `readSimChatClock` (né readSimChatStorySecond) now carries
+   `{storySecond, calendarStart}`. **Next slice: input admission** (the
+   R1 leftover, owner-ruled next): mapping player language onto the
+   typed command set before the turn prepares — "I hand her the
+   keepsake" executes a real transfer instead of narrating an attempt. `successor_rag_eligibility` flips when
    the knowledge domain lands. The chat lane's meter-economy/body-needs plans
    (roadmap Next) port through the Gate 5 contracts here rather than being
    built twice. Exit per domain: dual writes stopped, legacy write path

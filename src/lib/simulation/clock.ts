@@ -1,4 +1,5 @@
-import { daylightBandAtMinute, to12Hour, type DaylightBand } from "@/lib/clock";
+import { z } from "zod";
+import { daylightBandAtMinute, to12Hour, type CalendarStart, type DaylightBand } from "@/lib/clock";
 
 /**
  * R3 slice 4 (engine.rollout.plan.md, ruling 17) — the sim story clock made
@@ -64,4 +65,36 @@ export function formatStoryClockShort(clock: StoryClock): string {
 /** "Day 3 · 10:04am (morning)" — the narrator's world-clock line. */
 export function formatStoryClock(clock: StoryClock): string {
   return `${formatStoryClockShort(clock)} (${clock.dayPart})`;
+}
+
+/**
+ * R5 time domain (ruling 17) — the per-world calendar anchor: the DATE of
+ * story day zero. Time-of-day lives in `storySecond` itself, so the anchor is
+ * date-only; null/absent means "no calendar declared" and presentation stays
+ * "Day N".
+ */
+export const simCalendarStartSchema = z
+  .object({
+    year: z.number().int().min(1).max(9_999),
+    month: z.number().int().min(1).max(12),
+    day: z.number().int().min(1).max(31),
+  })
+  .strict();
+export type SimCalendarStart = z.infer<typeof simCalendarStartSchema>;
+
+/**
+ * Map a branch clock onto the legacy calendar math. `storySecond` 0 IS the
+ * anchor date's midnight, so `{clockMinutes: s/60, start: anchor@00:00}` makes
+ * every legacy formatter (`chatGameTime`, `formatChatDate/Time/Moment`,
+ * `formatStoryMoment`) correct verbatim — one Gregorian truth, zero new date
+ * math. This adapter is the WHOLE calendar integration seam.
+ */
+export function storyCalendarParams(
+  storySecond: number,
+  anchor: SimCalendarStart,
+): { clockMinutes: number; calendarStart: CalendarStart } {
+  return {
+    clockMinutes: Math.floor(storySecond / 60),
+    calendarStart: { ...anchor, hour: 0, minute: 0 },
+  };
 }

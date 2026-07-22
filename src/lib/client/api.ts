@@ -365,9 +365,20 @@ export const chatStateSnapshotSchema = z.object({
   // The story-calendar anchor (chat-clock-calendar.plan.md) — the clock card formats
   // clockMinutes against it; degraded default matches CHAT_DEFAULT_CALENDAR_START.
   calendarStart: calendarStartSchema.catch({ year: 2024, month: 1, day: 1, hour: 8, minute: 0 }),
-  // Sim-routed chats (R3 slice 4, ruling 17): the linked world's storySecond — the
-  // clock the chip/card/skips read INSTEAD of clockMinutes. Null for legacy chats.
-  simClock: z.number().nullable().catch(null),
+  // Sim-routed chats (R3 slice 4 + R5 calendar, ruling 17): the linked world's
+  // clock — storySecond plus the world's calendar anchor (null anchor = "Day N"
+  // display). The chip/card/skips read THIS instead of clockMinutes; null for
+  // legacy chats.
+  simClock: z
+    .object({
+      storySecond: z.number().catch(0),
+      calendarStart: z
+        .object({ year: z.number(), month: z.number(), day: z.number() })
+        .nullable()
+        .catch(null),
+    })
+    .nullable()
+    .catch(null),
   // False ⇒ a seed-on-read (no row yet); the chat strip then previews the authored
   // Starting Relationship. Defaults true so a missing flag shows the stored disposition.
   persisted: z.boolean().catch(true),
@@ -1317,6 +1328,9 @@ export const successorChatsApi = {
   list: () => apiGet(z.object({ chats: z.array(successorChatSummarySchema).catch([]) }), "/api/successor-chats"),
   create: (body: { characterId: string; title?: string }) =>
     apiPost(z.object({ id: z.string().min(1) }), "/api/successor-chats", body),
+  /** R5 calendar (ruling 17): set (or clear) the linked world's calendar anchor. */
+  setCalendar: (chatId: string, calendarStart: { year: number; month: number; day: number } | null) =>
+    apiPatch(z.unknown(), `/api/successor-chats/${chatId}`, { calendarStart }),
 };
 
 export interface ChatStreamOutcome {

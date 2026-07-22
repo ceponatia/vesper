@@ -1,5 +1,7 @@
+import { eq } from "drizzle-orm";
 import { newId } from "@/lib/ids";
-import { db, type Db } from "@/server/db";
+import type { SimCalendarStart } from "@/lib/simulation/clock";
+import { db, simWorlds, type Db } from "@/server/db";
 import { seedDurableActionDefinitions } from "./activity-store";
 import { seedDurableBodyRhythms, submitDurableInitializeActorBody } from "./body-store";
 import { submitDurableAssignActorLod } from "./lod-store";
@@ -22,6 +24,8 @@ export const STARTER_WORLD_TYPE_ID = "starter-world-v1";
 export const STARTER_RULESET_VERSION = "starter-rules-v1";
 /** Day 1 · 8:00am — mornings read naturally for a first scene. */
 export const STARTER_ORIGIN_STORY_SECOND = 8 * 3_600;
+/** R5 calendar (ruling 17): fresh worlds open Monday, June 1, 2026 — editable per world. */
+export const STARTER_CALENDAR_START: SimCalendarStart = { year: 2026, month: 6, day: 1 };
 export const STARTER_REST_ACTION_SUFFIX = "action-rest";
 
 export interface StarterWorldResult {
@@ -170,6 +174,9 @@ export async function provisionStarterWorld(
   if (lod.status !== "accepted") {
     throw new Error(`starter world seed step "lod-neighbor" was not accepted: ${JSON.stringify(lod)}`);
   }
+  // The calendar anchor (R5 time domain): presentation config on the world
+  // row, set after the causal seeding — it labels history, never writes it.
+  await database.update(simWorlds).set({ calendarStart: STARTER_CALENDAR_START }).where(eq(simWorlds.id, worldId));
 
   return {
     worldId,

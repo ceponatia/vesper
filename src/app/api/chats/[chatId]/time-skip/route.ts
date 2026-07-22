@@ -21,7 +21,7 @@ import {
   loadChatState,
   mirrorShadowTimeSkip,
   persistChatState,
-  readSimChatStorySecond,
+  readSimChatClock,
   resolveSeededOutfit,
   saveChatScenario,
   seedChatScenario,
@@ -60,7 +60,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   // Lanes stay separate (R3 slice 4, ruling 17): a sim-routed chat's time is the
   // world's storySecond — skips go through the sim advance_time admission, and
   // the legacy scenario clock must never advance underneath it.
-  if ((await readSimChatStorySecond(chatId)) !== null) {
+  if ((await readSimChatClock(chatId)) !== null) {
     return jsonError("sim_routed", "this conversation's time belongs to its world — reload and skip again", 409);
   }
 

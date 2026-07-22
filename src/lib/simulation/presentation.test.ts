@@ -156,6 +156,13 @@ describe("R3 buildCutRenderPrompt conversation input", () => {
     expect(prompt).toContain("the clock wins");
   });
 
+  it("renders the real weekday and date when the world has a calendar anchor (R5)", () => {
+    // Day 0 = Monday June 1 2026 ⇒ storySecond 100 000 lands Tuesday 3:46am.
+    const { prompt } = buildCutRenderPrompt(fixtureCut(), { calendarStart: { year: 2026, month: 6, day: 1 } });
+    expect(prompt).toContain("WORLD CLOCK: Tuesday, June 2 — 3:46am (night)");
+    expect(prompt).toContain("the clock wins");
+  });
+
   it("serializes the cut alone when no conversation is given", () => {
     const { system, prompt } = buildCutRenderPrompt(fixtureCut());
     expect(system).toContain("narrator of a live scene");

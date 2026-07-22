@@ -13,7 +13,7 @@ import {
   type ChatActionId,
 } from "@/contracts";
 import type { ChatStateSnapshot } from "@/lib/client/api";
-import { formatStoryTime, storyClockAt } from "@/lib/simulation";
+import { formatStoryTime, storyCalendarParams, storyClockAt } from "@/lib/simulation";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { MoodChip } from "@/components/ui/mood-chip";
@@ -109,9 +109,20 @@ export function StatusStrip({ state, onOpenScenario }: { state: ChatStateSnapsho
   // free-text outfit for legacy/ad-hoc chats (chat-wardrobe-parity).
   const outfit = (state.outfitLabel || state.outfit).trim();
   const time = chatGameTime(state.clockMinutes, state.calendarStart);
-  // Sim-routed chats show the WORLD clock (R3 slice 4, ruling 17) — the branch's
-  // storySecond, the same truth the narrator colors by — never the legacy clock.
-  const sim = state.simClock == null ? null : storyClockAt(state.simClock);
+  // Sim-routed chats show the WORLD clock (R3 slice 4 + R5 calendar, ruling
+  // 17) — the branch's storySecond, the same truth the narrator colors by,
+  // never the legacy clock. An anchored world reuses the legacy calendar
+  // formatters verbatim via the adapter ("Mon · 8:01am"); unanchored stays
+  // "Day N · 8:01am".
+  const sim = state.simClock;
+  const simTime =
+    sim?.calendarStart != null
+      ? (() => {
+          const params = storyCalendarParams(sim.storySecond, sim.calendarStart);
+          return chatGameTime(params.clockMinutes, params.calendarStart);
+        })()
+      : null;
+  const simClock = sim == null ? null : storyClockAt(sim.storySecond);
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <button
@@ -120,9 +131,13 @@ export function StatusStrip({ state, onOpenScenario }: { state: ChatStateSnapsho
         title={sim ? "World time (tap to open Scenario setup)" : `${time.weekday} — story time (tap to open Scenario setup)`}
         className="touch-target inline-flex shrink-0 items-center gap-1 rounded-full border border-ink-500 px-2 py-0.5 text-[11px] leading-4 whitespace-nowrap text-paper-300 transition-colors hover:border-accent-500/50 hover:text-paper-100"
       >
-        {sim ? (
+        {simTime ? (
           <>
-            Day {sim.dayIndex + 1} <span aria-hidden>·</span> {formatStoryTime(sim)}
+            {simTime.weekday.slice(0, 3)} <span aria-hidden>·</span> {formatChatTime(simTime)}
+          </>
+        ) : simClock ? (
+          <>
+            Day {simClock.dayIndex + 1} <span aria-hidden>·</span> {formatStoryTime(simClock)}
           </>
         ) : (
           <>

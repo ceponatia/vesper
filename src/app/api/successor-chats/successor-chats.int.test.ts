@@ -21,9 +21,11 @@ vi.mock("@/server/auth", () => ({
   listUsers: async () => [authState.user],
 }));
 
-import { STARTER_ORIGIN_STORY_SECOND } from "@/server/engine";
+import { STARTER_CALENDAR_START, STARTER_ORIGIN_STORY_SECOND } from "@/server/engine";
 import { GET as successorList, POST as successorCreate } from "./route";
+import { PATCH as calendarPatch } from "./[chatId]/route";
 import { POST as chatSend } from "../chats/[chatId]/route";
+import { GET as stateGet } from "../chats/[chatId]/state/route";
 
 async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -47,9 +49,9 @@ async function probe(): Promise<boolean> {
 
 const ready = await probe();
 const ctx = (chatId: string) => ({ params: Promise.resolve({ chatId }) });
-function jsonReq(path: string, body: unknown): NextRequest {
+function jsonReq(path: string, body: unknown, method = "POST"): NextRequest {
   return new NextRequest(`http://t${path}`, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -137,6 +139,29 @@ describe.runIf(ready)("successor-chats front door", () => {
     expect(listed.characterName).toBe("Abigail");
     // The turn's 60s span moved the clock past the origin.
     expect(listed.storySecond).toBeGreaterThanOrEqual(STARTER_ORIGIN_STORY_SECOND);
+
+    // R5 calendar (ruling 17): fresh worlds carry the default anchor, the
+    // state envelope serves it, and the editor PATCH replaces (or clears) it.
+    const [world] = await db()
+      .select({ calendarStart: simWorlds.calendarStart })
+      .from(simWorlds)
+      .where(eq(simWorlds.id, body.worldId));
+    expect(world?.calendarStart).toEqual(STARTER_CALENDAR_START);
+    const stateRes = await stateGet(new NextRequest(`http://t/api/chats/${body.id}/state`), ctx(body.id));
+    const stateBody = (await stateRes.json()) as {
+      simClock: { storySecond: number; calendarStart: { year: number } | null } | null;
+    };
+    expect(stateBody.simClock?.calendarStart).toEqual(STARTER_CALENDAR_START);
+    const patched = await calendarPatch(
+      jsonReq(`/api/successor-chats/${body.id}`, { calendarStart: { year: 2027, month: 1, day: 15 } }, "PATCH"),
+      ctx(body.id),
+    );
+    expect(patched.status).toBe(200);
+    const [worldAfter] = await db()
+      .select({ calendarStart: simWorlds.calendarStart })
+      .from(simWorlds)
+      .where(eq(simWorlds.id, body.worldId));
+    expect(worldAfter?.calendarStart).toEqual({ year: 2027, month: 1, day: 15 });
   });
 
   it("rejects a character outside the caller's library", async () => {

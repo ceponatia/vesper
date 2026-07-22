@@ -13,7 +13,7 @@ import {
 import { readChatEngineAuthority } from "./chat-authority";
 import { loadChatScenario } from "./chat-state";
 import { tryKeyedLock } from "./keyed-lock";
-import { findOrOpenStandingEngagement, findStandingEngagement } from "./sim-exchange";
+import { findOrOpenStandingEngagement, findStandingEngagement, readBranchClock } from "./sim-exchange";
 import { renderCommittedCut } from "./sim-narrator";
 import { advanceBranchStoryTime, prepareEngagementTurn, readDurableBodies } from "./simulation";
 
@@ -163,11 +163,18 @@ async function compareExchange(
       // does not justify a second model-call class — deterministic policy only.
       workerId: `sim-shadow-${input.chatId}`,
     });
+    const clock = await readBranchClock(branchId);
     const rendered = await renderCommittedCut({
       branchId,
       engagementId: scene.engagementId,
       cutId: turn.cut.id,
-      conversation: { playerUtterance: input.content, dialogueTail, viewpointIsPlayer: true, actorNames },
+      conversation: {
+        playerUtterance: input.content,
+        dialogueTail,
+        viewpointIsPlayer: true,
+        actorNames,
+        calendarStart: clock?.calendarStart ?? null,
+      },
     });
     rows.push({
       domain: "prose",

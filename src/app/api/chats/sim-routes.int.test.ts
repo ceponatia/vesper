@@ -293,8 +293,8 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
     expect(advancedBody.toStorySecond).toBe(beforeAdvance.storySecond + 720 * 60);
     const stateRes = await stateGet(new NextRequest(`http://t/api/chats/${ids.chat}/state`), ctx(ids.chat));
     expect(stateRes.status).toBe(200);
-    const stateBody = (await stateRes.json()) as { simClock: number | null };
-    expect(stateBody.simClock).toBe(advancedBody.toStorySecond);
+    const stateBody = (await stateRes.json()) as { simClock: { storySecond: number } | null };
+    expect(stateBody.simClock?.storySecond).toBe(advancedBody.toStorySecond);
     const afterSkipSend = await chatSend(
       jsonReq(`/api/chats/${ids.chat}`, { kind: "send", content: "That was a good rest." }),
       ctx(ids.chat),
