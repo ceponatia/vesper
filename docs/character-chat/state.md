@@ -96,9 +96,13 @@ milestones, callbacks, presence and whereabouts—so a discarded group take cann
 through a non-primary row. A missing member anchor degrades explicitly with
 `chat_state.snapshot.missing`.
 
-Only the latest exchange can be rerun in place. Reaching farther back requires a
-conversation branch because one snapshot cannot reconstruct every intervening state;
-the API rejects that request before transcript mutation with `rerun_requires_branch`.
+Only the latest exchange can be rerun in place — its reply as sole successor, or no
+successors at all when the reply never persisted (a failed stream; the failure-popup
+retry). The no-successor rerun restores nothing: that exchange never settled, so the
+live state is already the pre-exchange state and the stored anchor belongs to the
+exchange before it. Reaching farther back requires a conversation branch because one
+snapshot cannot reconstruct every intervening state; the API rejects that request
+before transcript mutation with `rerun_requires_branch`.
 
 
 ## Wardrobe
