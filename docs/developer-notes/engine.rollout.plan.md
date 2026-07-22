@@ -407,10 +407,27 @@ is the cleanup that makes the migration real.
    successor chats (`PATCH /api/successor-chats/[chatId]`, date-only,
    nullable to clear); starter worlds default to Monday, June 1 2026.
    `readSimChatClock` (né readSimChatStorySecond) now carries
-   `{storySecond, calendarStart}`. **Next slice: input admission** (the
-   R1 leftover, owner-ruled next): mapping player language onto the
-   typed command set before the turn prepares — "I hand her the
-   keepsake" executes a real transfer instead of narrating an attempt. `successor_rag_eligibility` flips when
+   `{storySecond, calendarStart}`. **Slice 2 shipped — 2026-07-22: input
+   admission** (the R1 leftover, owner-ruled next). Deterministic by the
+   budget line (zero extra model calls): `admitPlayerCommand`
+   (`lib/simulation/input-admission.ts`) matches the player's UNQUOTED,
+   first-person sentences against the world's ACTUAL legal surface —
+   items the player holds (give/hand/pass), zones that exist
+   (go/walk/head + kind-derived words), catalog rest actions
+   (rest/sleep/lie down) — admitting at most ONE command per turn,
+   silence over cleverness (a wrong admission is a real world write).
+   Wired into `runSimChatExchange` AFTER the scene resolves so claim law
+   judges in context: an ACCEPTED command executes durably under the
+   player principal and the narrator gets a "PLAYER ACTION — already
+   EXECUTED in world truth" section (portray as done, never an attempt);
+   a REFUSED one feeds the cut's §14.4 `failurePresentations` and the
+   refusal is narrated lawfully (resting or walking off mid-scene fights
+   the engagement's attention claim — correct, and the scene-exit
+   choreography for language-driven departures is the named leftover for
+   a later admission pass; shadow renders skip admission for now). Int:
+   "I smile and hand her the keepsake" moves the REAL item to the
+   primary actor; a refused rest still renders a turn. Gates green
+   (3 126 pure + 480 int). `successor_rag_eligibility` flips when
    the knowledge domain lands. The chat lane's meter-economy/body-needs plans
    (roadmap Next) port through the Gate 5 contracts here rather than being
    built twice. Exit per domain: dual writes stopped, legacy write path

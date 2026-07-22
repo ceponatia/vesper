@@ -1,7 +1,16 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { characterChats, characterChatMessages, characters, db, simBranches, simWorlds, users } from "@/server/db";
+import {
+  characterChats,
+  characterChatMessages,
+  characters,
+  db,
+  simBranches,
+  simItemHoldings,
+  simWorlds,
+  users,
+} from "@/server/db";
 
 // The successor front door (engine.rollout.plan.md, owner ask 2026-07-22):
 // one POST provisions a fresh starter world, creates the chat, and routes it
@@ -57,7 +66,7 @@ function jsonReq(path: string, body: unknown, method = "POST"): NextRequest {
   });
 }
 
-const ids = { user: "", characterId: "", worldId: "" };
+const ids = { user: "", characterId: "", worldId: "", extraWorldId: "" };
 
 beforeAll(async () => {
   if (!ready) return;
@@ -80,6 +89,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!ready || !ids.user) return;
   if (ids.worldId) await db().delete(simWorlds).where(eq(simWorlds.id, ids.worldId));
+  if (ids.extraWorldId) await db().delete(simWorlds).where(eq(simWorlds.id, ids.extraWorldId));
   await db().delete(characterChats).where(eq(characterChats.ownerId, ids.user));
   await db().delete(characters).where(eq(characters.ownerId, ids.user));
   await db().delete(users).where(eq(users.id, ids.user));
@@ -167,5 +177,42 @@ describe.runIf(ready)("successor-chats front door", () => {
   it("rejects a character outside the caller's library", async () => {
     const res = await successorCreate(jsonReq("/api/successor-chats", { characterId: "not-a-real-id" }), { params: Promise.resolve({}) });
     expect(res.status).toBe(404);
+  });
+
+  it("input admission: 'I hand her the keepsake' executes a real transfer (R5 slice 2)", async () => {
+    const created = await successorCreate(
+      jsonReq("/api/successor-chats", { characterId: ids.characterId, title: "Admission Test" }),
+      { params: Promise.resolve({}) },
+    );
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as { id: string; worldId: string; branchId: string };
+    ids.extraWorldId = body.worldId;
+    const [chatRow] = await db()
+      .select({ playerActorId: characterChats.simPlayerActorId, primaryActorId: characterChats.simPrimaryActorId })
+      .from(characterChats)
+      .where(eq(characterChats.id, body.id));
+    if (!chatRow?.playerActorId || !chatRow.primaryActorId) throw new Error("actor mapping missing");
+
+    const send = await chatSend(
+      jsonReq(`/api/chats/${body.id}`, { kind: "send", content: "I smile and hand her the keepsake." }),
+      ctx(body.id),
+    );
+    expect(send.status).toBe(200);
+    expect((await send.text()).replace(/\u200B/g, "").length).toBeGreaterThan(0);
+    // World truth moved: the starter keepsake is now HELD by the primary actor.
+    const [holding] = await db()
+      .select({ actorId: simItemHoldings.actorId, locusKind: simItemHoldings.locusKind })
+      .from(simItemHoldings)
+      .where(and(eq(simItemHoldings.branchId, body.branchId), eq(simItemHoldings.itemId, `${body.worldId}-item-keepsake`)));
+    expect(holding).toMatchObject({ locusKind: "held", actorId: chatRow.primaryActorId });
+
+    // A refused admission (resting mid-scene fights the engagement's claim)
+    // still renders a turn — the §14.4 face rides the cut, never a dead send.
+    const refused = await chatSend(
+      jsonReq(`/api/chats/${body.id}`, { kind: "send", content: "I lie down to rest right here." }),
+      ctx(body.id),
+    );
+    expect(refused.status).toBe(200);
+    expect((await refused.text()).replace(/\u200B/g, "").length).toBeGreaterThan(0);
   });
 });

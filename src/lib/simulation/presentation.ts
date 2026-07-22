@@ -92,6 +92,13 @@ export interface CutRenderConversation {
    * absent, it stays "Day N". Presentation input — the cut never carries it.
    */
   calendarStart?: SimCalendarStart | null;
+  /**
+   * R5 input admission: a command the player's OWN words already executed in
+   * world truth this turn ("Brian handed the keepsake to Abigail."). The
+   * narrator portrays it as DONE — never as an attempt. Refused admissions
+   * ride the cut's failurePresentations instead, never this field.
+   */
+  admittedAction?: string;
 }
 
 export function buildCutRenderPrompt(
@@ -210,6 +217,13 @@ export function buildCutRenderPrompt(
       "earlier NARRATION wrongly spoke or felt for the player's character, that",
       "was an error — never imitate it):",
       ...tail.map((line) => `- ${line.speaker}: ${line.text.length > 300 ? `${line.text.slice(0, 300)}…` : line.text}`),
+    );
+  }
+  if (conversation.admittedAction && conversation.admittedAction.trim().length > 0) {
+    lines.push(
+      "PLAYER ACTION — already EXECUTED in world truth this turn. Portray it as",
+      "DONE (never an attempt, never reversed):",
+      `- ${conversation.admittedAction.trim()}`,
     );
   }
   if (conversation.playerUtterance && conversation.playerUtterance.trim().length > 0) {

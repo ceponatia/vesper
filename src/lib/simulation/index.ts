@@ -8,6 +8,7 @@ export * from "./deliberation";
 export * from "./engagements";
 export * from "./hash";
 export * from "./households";
+export * from "./input-admission";
 export * from "./knowledge";
 export * from "./cohorts";
 export * from "./lod";

@@ -1,15 +1,34 @@
 import { claimHoldingEngagementStates } from "@/contracts/simulation/engagements";
+import type { PublicFailurePresentation } from "@/contracts/simulation/narrative";
 import { simCalendarStartSchema, type SimCalendarStart } from "@/lib/simulation/clock";
+import { admitPlayerCommand, type AdmittedCommand } from "@/lib/simulation/input-admission";
 import { simulationHash } from "@/lib/simulation/hash";
 import { deriveEngagementId } from "@/lib/simulation/engagements";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
-import { characterChatMessages, db, simBranches, simCharacters, simWorlds } from "@/server/db";
-import { desc, eq } from "drizzle-orm";
+import {
+  characterChatMessages,
+  db,
+  simActionDefinitions,
+  simBranches,
+  simCharacters,
+  simItemHoldings,
+  simItems,
+  simWorlds,
+  simZones,
+} from "@/server/db";
+import { and, desc, eq } from "drizzle-orm";
 import { readChatEngineAuthority } from "./chat-authority";
 import { persistAssistantReply } from "./chat-pipeline";
 import { buildLiveDeliberation, renderCommittedCut } from "./sim-narrator";
-import { prepareEngagementTurn, readDurableEngagements, submitDurableOpenEngagement } from "./simulation";
+import {
+  prepareEngagementTurn,
+  readDurableEngagements,
+  submitDurableMoveActor,
+  submitDurableOpenEngagement,
+  submitDurableStartActivity,
+  submitDurableTransferItem,
+} from "./simulation";
 
 /**
  * R3 admission wiring (engine.rollout.plan.md) — one player message becomes
@@ -135,6 +154,137 @@ export async function readBranchClock(branchId: string): Promise<SimChatClock | 
   };
 }
 
+interface AdmissionOutcome {
+  /** A one-line world-truth note for the narrator — set iff the command was ACCEPTED. */
+  executed?: string;
+  /** The §14.4 public face — set iff the admitted command was REFUSED. */
+  failure?: PublicFailurePresentation;
+}
+
+/**
+ * R5 slice 2 — run deterministic input admission for one utterance: read the
+ * world's legal surface, match, and (at most once) submit the durable command
+ * under the player principal. Degrades to "no admission" on any failure —
+ * the exchange must never be worse off for having tried
+ * (docs/resilience.md).
+ */
+async function runInputAdmission(input: {
+  chatId: string;
+  userId: string;
+  branchId: string;
+  playerActorId: string;
+  primaryActorId: string;
+  playerName: string;
+  primaryName: string;
+  message: string;
+}): Promise<AdmissionOutcome | null> {
+  try {
+    const [held, zones, actions] = await Promise.all([
+      db()
+        .select({ itemId: simItemHoldings.itemId, name: simItems.name })
+        .from(simItemHoldings)
+        .innerJoin(
+          simItems,
+          and(eq(simItems.branchId, simItemHoldings.branchId), eq(simItems.itemId, simItemHoldings.itemId)),
+        )
+        .where(
+          and(
+            eq(simItemHoldings.branchId, input.branchId),
+            eq(simItemHoldings.locusKind, "held"),
+            eq(simItemHoldings.actorId, input.playerActorId),
+          ),
+        ),
+      db()
+        .select({ zoneId: simZones.zoneId, kind: simZones.kind })
+        .from(simZones)
+        .where(eq(simZones.branchId, input.branchId)),
+      db()
+        .select({ actionDefinitionId: simActionDefinitions.actionDefinitionId })
+        .from(simActionDefinitions)
+        .where(eq(simActionDefinitions.branchId, input.branchId)),
+    ]);
+    const command = admitPlayerCommand(input.message, {
+      heldItems: held,
+      zones,
+      actionDefinitionIds: actions.map((row) => row.actionDefinitionId),
+    });
+    if (command === null) return null;
+    return await submitAdmittedCommand(input, command);
+  } catch {
+    return null;
+  }
+}
+
+async function submitAdmittedCommand(
+  input: { chatId: string; userId: string; branchId: string; playerActorId: string; primaryActorId: string; playerName: string; primaryName: string },
+  command: AdmittedCommand,
+): Promise<AdmissionOutcome> {
+  const envelope = {
+    id: newId(),
+    branchId: input.branchId,
+    expectedVersion: 0,
+    idempotencyKey: newId(),
+    principal: { kind: "player" as const, principalId: input.userId, controlledActorIds: [input.playerActorId] },
+    submittedAtWallClock: new Date().toISOString(),
+    correlationId: `sim-admission-${input.chatId}`,
+    schemaVersion: 1,
+  };
+  const outcome =
+    command.kind === "give_item"
+      ? await submitDurableTransferItem(
+          {
+            ...envelope,
+            type: "transfer_item",
+            schemaVersion: 2,
+            payload: {
+              actorId: input.playerActorId,
+              itemId: command.itemId,
+              fromLocus: { kind: "held", actorId: input.playerActorId },
+              toLocus: { kind: "held", actorId: input.primaryActorId },
+            },
+          },
+          { admitAtLockedVersion: true },
+        )
+      : command.kind === "move"
+        ? await submitDurableMoveActor(
+            {
+              ...envelope,
+              type: "move_actor",
+              payload: { actorId: input.playerActorId, destinationZoneId: command.toZoneId, travelMode: "walk" },
+            },
+            { admitAtLockedVersion: true },
+          )
+        : await submitDurableStartActivity(
+            {
+              ...envelope,
+              type: "start_activity",
+              payload: { actorId: input.playerActorId, actionDefinitionId: command.actionDefinitionId },
+            },
+            { admitAtLockedVersion: true },
+          );
+  if (outcome.status === "accepted") {
+    const executed =
+      command.kind === "give_item"
+        ? `${input.playerName} handed ${command.itemName} to ${input.primaryName}.`
+        : command.kind === "move"
+          ? `${input.playerName} set off walking toward the ${command.placeWord}.`
+          : `${input.playerName} settled in to ${command.verb}.`;
+    return { executed };
+  }
+  if (outcome.status === "rejected") {
+    return {
+      failure: {
+        code: outcome.code,
+        publicReason: outcome.publicReason,
+        publicEvidence: [],
+        legalAlternatives: [...(outcome.legalAlternativeCommandTypes ?? [])].map(String).slice(0, 16),
+      },
+    };
+  }
+  // A version conflict is neither an outcome nor a refusal — stay silent.
+  return {};
+}
+
 export type SimChatExchangeResult =
   | {
       ok: true;
@@ -233,6 +383,21 @@ export async function runSimChatExchange(input: {
     return { ok: false, code: "sim_open_failed", message: `the scene could not open: ${scene.publicReason}`, status: 409 };
   }
 
+  // R5 input admission: the player's own words may BE a legal command. Runs
+  // after the scene resolves so claim law judges it in context — an accepted
+  // command is world truth the narrator portrays as DONE; a refusal rides the
+  // cut's §14.4 failurePresentations and gets narrated as a lawful refusal.
+  const admission = await runInputAdmission({
+    chatId: input.chatId,
+    userId: input.userId,
+    branchId,
+    playerActorId,
+    primaryActorId,
+    playerName,
+    primaryName: actorNames[primaryActorId] ?? "them",
+    message: input.message,
+  });
+
   const turn = await prepareEngagementTurn({
     branchId,
     engagementId: scene.engagementId,
@@ -241,6 +406,7 @@ export async function runSimChatExchange(input: {
     playerActorIds: [playerActorId],
     deliberation: buildLiveDeliberation(),
     workerId: `sim-turn-${input.chatId}`,
+    ...(admission?.failure === undefined ? {} : { failurePresentations: [admission.failure] }),
   });
   const clock = await readBranchClock(branchId);
   const rendered = await renderCommittedCut({
@@ -253,6 +419,7 @@ export async function runSimChatExchange(input: {
       viewpointIsPlayer: true,
       actorNames,
       calendarStart: clock?.calendarStart ?? null,
+      ...(admission?.executed === undefined ? {} : { admittedAction: admission.executed }),
     },
   });
   if (rendered.status !== "rendered" || rendered.prose === undefined) {
