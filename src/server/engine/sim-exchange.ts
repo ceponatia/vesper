@@ -1,3 +1,5 @@
+import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
+import type { CharacterProfile } from "@/contracts/world/profile";
 import { claimHoldingEngagementStates } from "@/contracts/simulation/engagements";
 import type { PublicFailurePresentation } from "@/contracts/simulation/narrative";
 import { simCalendarStartSchema, type SimCalendarStart } from "@/lib/simulation/clock";
@@ -6,8 +8,11 @@ import { simulationHash } from "@/lib/simulation/hash";
 import { deriveEngagementId } from "@/lib/simulation/engagements";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
+import { z } from "zod";
 import {
   characterChatMessages,
+  characters,
+  chatParticipants,
   db,
   simActionDefinitions,
   simBranches,
@@ -17,15 +22,19 @@ import {
   simWorlds,
   simZones,
 } from "@/server/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { embedText, embedTexts } from "@/server/ai";
+import { resolveChatPersona } from "../players";
 import { readChatEngineAuthority } from "./chat-authority";
-import { persistAssistantReply } from "./chat-pipeline";
+import { emptyReplyTakes, persistAssistantReply, pushReplyTake, replyTakesSchema } from "./chat-pipeline";
 import { enqueueChatSummary, loadChatSummary } from "./chat-summary";
 import { log } from "../log";
+import { narrationShapeId, type NarrationShapeId } from "./prompts/constants";
 import { buildLiveDeliberation, renderCommittedCut } from "./sim-narrator";
+import { readSimChatOutfit, readSimChatRelationship, zoneDisplayNoun, type SimChatRelationship } from "./sim-surfaces";
 import {
   drainMemoryIndexOutbox,
+  latestCutIdForEngagement,
   prepareEngagementTurn,
   queryMemoryDocuments,
   readDurableEngagements,
@@ -344,15 +353,303 @@ export type SimChatExchangeResult =
       degraded: boolean;
       diagnostics: string[];
     }
-  | { ok: false; code: "not_sim_enabled" | "sim_open_failed" | "render_withheld"; message: string; status: number };
+  | {
+      ok: false;
+      code: "not_sim_enabled" | "sim_open_failed" | "render_withheld" | "nothing_to_retake";
+      message: string;
+      status: number;
+    };
 
 /**
- * Run one successor exchange for an OWNERSHIP-CHECKED chat: gate on the
- * authority flag, land the player line in the transcript, find-or-open the
- * standing scene, prepare the turn (live deliberation included), render the
- * committed cut, persist the prose as the ordinary assistant message. A
- * withheld render leaves no assistant line — ruling 8. The player line
- * persists BEFORE the scene gate: a refusal explains itself via
+ * The successor exchange modes (presentation-charter.plan.md §4): a player-driven
+ * turn, an utterance-free turn that still advances the span (continue/open,
+ * ruling 19), or a same-cut re-render (retake = regenerate/rerun, ruling 18).
+ */
+export type SimChatExchangeMode = "send" | "continue" | "open" | "retake";
+
+/** A chat authority proven routed to the successor engine (branch + actors mapped). */
+type RoutedAuthority = NonNullable<Awaited<ReturnType<typeof readChatEngineAuthority>>> & {
+  simBranchId: string;
+  simPlayerActorId: string;
+  simPrimaryActorId: string;
+};
+
+/**
+ * Is this chat routed to the successor engine? The ONE predicate every sim path
+ * shares — an authority past the view threshold, branch-linked, and actor-mapped.
+ * A type guard so the route can use it as a boolean (GET affordance flag + POST
+ * fork) while the exchange core reuses it AND gets the narrowed branch/actor ids.
+ */
+export function isSimRoutedAuthority(
+  authority: Awaited<ReturnType<typeof readChatEngineAuthority>>,
+): authority is RoutedAuthority {
+  return (
+    authority !== null &&
+    authority.authority !== "legacy_chat" &&
+    authority.authority !== "successor_shadow" &&
+    authority.simBranchId !== null &&
+    authority.simPlayerActorId !== null &&
+    authority.simPrimaryActorId !== null
+  );
+}
+
+/** Just the reply-meta field the retake path reads back — the committed cut id. */
+const simReplyMetaSchema = z.object({ cutId: z.string().min(1).optional() }).catch({});
+
+interface ResolvedSimExchange {
+  branchId: string;
+  playerActorId: string;
+  primaryActorId: string;
+  /** World-truth display names by actor id — ids never read well in prose. */
+  actorNames: Record<string, string>;
+  playerName: string;
+  ragEligibility: boolean;
+}
+
+/**
+ * The shared gate + world-truth names for one exchange: resolve authority, refuse
+ * a non-sim chat, and load the branch's actor display names. Every mode starts
+ * here so the gate lives in exactly one place.
+ */
+async function resolveSimExchange(
+  chatId: string,
+): Promise<{ ok: true; ctx: ResolvedSimExchange } | { ok: false; result: SimChatExchangeResult }> {
+  const authority = await readChatEngineAuthority(chatId);
+  if (!isSimRoutedAuthority(authority)) {
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        code: "not_sim_enabled",
+        message: "this chat is not routed to the successor engine (authority + branch + actor mapping required)",
+        status: 409,
+      },
+    };
+  }
+  const branchId = authority.simBranchId;
+  const playerActorId = authority.simPlayerActorId;
+  const nameRows = await db()
+    .select({ characterId: simCharacters.characterId, name: simCharacters.name })
+    .from(simCharacters)
+    .where(eq(simCharacters.branchId, branchId));
+  const actorNames = Object.fromEntries(nameRows.map((row) => [row.characterId, row.name]));
+  return {
+    ok: true,
+    ctx: {
+      branchId,
+      playerActorId,
+      primaryActorId: authority.simPrimaryActorId,
+      actorNames,
+      playerName: actorNames[playerActorId] ?? "the player",
+      ragEligibility: authority.ragEligibility,
+    },
+  };
+}
+
+/**
+ * The rolling dialogue tail the narrator responds to (oldest first). Assistant
+ * lines are labeled NARRATION (previous), never a character — earlier replies may
+ * have wrongly voiced the player's character and must read as narration output.
+ * `excludeMessageId` drops one row (the reply a retake is re-rendering — it must
+ * never read itself back). 30 lines (~15 exchanges) — the charter's history depth
+ * (presentation-charter.plan.md §2 F11), on top of the R5 memory arc.
+ */
+async function loadSimDialogueTail(
+  chatId: string,
+  playerName: string,
+  excludeMessageId?: string,
+): Promise<{ speaker: string; text: string }[]> {
+  const tailRows = await db()
+    .select({
+      id: characterChatMessages.id,
+      role: characterChatMessages.role,
+      content: characterChatMessages.content,
+    })
+    .from(characterChatMessages)
+    .where(eq(characterChatMessages.chatId, chatId))
+    .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
+    .limit(excludeMessageId ? 31 : 30);
+  return tailRows
+    .filter((row) => row.id !== excludeMessageId)
+    .slice(0, 30)
+    .reverse()
+    .map((row) => ({
+      speaker: row.role === "user" ? `PLAYER (as ${playerName})` : "NARRATION (previous)",
+      text: row.content,
+    }));
+}
+
+/**
+ * The presentation context both a fresh turn and a retake feed the narrator: §24
+ * viewpoint recall (rag-gated, and only against a real utterance) plus the rolling
+ * conversation summary. Both degrade to absent — a failed recall narrows context,
+ * never fails the turn (docs/resilience.md).
+ */
+async function loadSimConversationContext(input: {
+  chatId: string;
+  branchId: string;
+  viewpointActorId: string;
+  message: string;
+  ragEligibility: boolean;
+  atStorySecond: number;
+}): Promise<{ memory: string[]; conversationSummary: string }> {
+  const memory =
+    input.ragEligibility && input.message.trim().length > 0
+      ? await recallViewpointMemory({
+          chatId: input.chatId,
+          branchId: input.branchId,
+          viewpointActorId: input.viewpointActorId,
+          message: input.message,
+          atStorySecond: input.atStorySecond,
+        })
+      : [];
+  const conversationSummary = await loadChatSummary(input.chatId)
+    .then((row) => row?.summary ?? "")
+    .catch(() => "");
+  return { memory, conversationSummary };
+}
+
+/**
+ * The rich charter context both a fresh turn and a retake feed the successor
+ * narrator (presentation-charter.plan.md §2): the primary character's authored
+ * profile, the player's persona, the sim wardrobe + §21 relationship projections,
+ * and zone display names — plus the active narration shape. EVERY field is
+ * best-effort — any single load failure degrades to that field being absent with a
+ * log.warn, never a failed turn (docs/resilience.md). The player name always
+ * carries (world-truth, no load); the narration shape is a pure lookup.
+ */
+interface SimPresentationInputs {
+  primary?: { name: string; profile: CharacterProfile };
+  player: { name: string; persona?: string; voice?: string; intimacy?: string };
+  outfitLine?: string;
+  relationship?: SimChatRelationship;
+  zoneNames?: Record<string, string>;
+  narrationShape: NarrationShapeId;
+}
+
+/** One `log.warn` shape for a degraded presentation load (never a thrown turn). */
+function simLoadWarn(chatId: string, what: string, error: unknown): void {
+  log.warn("engine.sim", what, { chatId, error: error instanceof Error ? error.message : String(error) });
+}
+
+/**
+ * The primary's authored `CharacterProfile` from the chat's primary participant
+ * (sort 0) — the AUTHORED CANON block's source, parsed with the degraded empty
+ * default. A query failure narrows the prompt (no canon block), never fails it.
+ */
+async function loadSimPrimaryProfile(
+  chatId: string,
+  primaryName: string | undefined,
+): Promise<{ name: string; profile: CharacterProfile } | undefined> {
+  try {
+    const [row] = await db()
+      .select({ name: characters.name, profile: characters.profile })
+      .from(chatParticipants)
+      .innerJoin(characters, eq(characters.id, chatParticipants.characterId))
+      .where(eq(chatParticipants.chatId, chatId))
+      .orderBy(asc(chatParticipants.sort))
+      .limit(1);
+    if (!row) return undefined;
+    const profile = parseOr(characterProfileSchema, row.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+    return { name: primaryName ?? row.name, profile };
+  } catch (error) {
+    simLoadWarn(chatId, "primary profile load degraded to absent", error);
+    return undefined;
+  }
+}
+
+/** The player persona's charter fields (persona/voice/intimacy); {} degrades to name-only. */
+async function loadSimPlayerPersonaFields(
+  userId: string,
+  chatId: string,
+): Promise<{ persona?: string; voice?: string; intimacy?: string }> {
+  try {
+    const persona = await resolveChatPersona({ ownerId: userId, chatId });
+    return {
+      ...(persona.persona?.trim() ? { persona: persona.persona } : {}),
+      ...(persona.profile?.voice?.trim() ? { voice: persona.profile.voice } : {}),
+      ...(persona.profile?.intimacy?.trim() ? { intimacy: persona.profile.intimacy } : {}),
+    };
+  } catch (error) {
+    simLoadWarn(chatId, "player persona load degraded to name only", error);
+    return {};
+  }
+}
+
+/**
+ * Zone display names by id for the branch — the humanized kind (`zoneDisplayNoun`,
+ * the shared sim-surfaces map), so raw zone ids never reach the prose surface.
+ * Unknown kinds are omitted (the render humanizes their id); absent on any failure.
+ */
+async function loadSimZoneNames(branchId: string, chatId: string): Promise<Record<string, string> | undefined> {
+  try {
+    const rows = await db()
+      .select({ zoneId: simZones.zoneId, kind: simZones.kind })
+      .from(simZones)
+      .where(eq(simZones.branchId, branchId));
+    const names: Record<string, string> = {};
+    for (const row of rows) {
+      const label = zoneDisplayNoun(row.kind);
+      if (label) names[row.zoneId] = label;
+    }
+    return Object.keys(names).length > 0 ? names : undefined;
+  } catch (error) {
+    simLoadWarn(chatId, "zone display names degraded to absent", error);
+    return undefined;
+  }
+}
+
+/** Load the charter context once per exchange — all fields concurrent, each degrading alone. */
+async function loadSimPresentationInputs(input: {
+  chatId: string;
+  userId: string;
+  branchId: string;
+  primaryActorId: string;
+  actorNames: Record<string, string>;
+  playerName: string;
+}): Promise<SimPresentationInputs> {
+  const [primary, personaFields, outfit, relationship, zoneNames] = await Promise.all([
+    loadSimPrimaryProfile(input.chatId, input.actorNames[input.primaryActorId]),
+    loadSimPlayerPersonaFields(input.userId, input.chatId),
+    readSimChatOutfit(input.chatId).catch((error: unknown) => {
+      simLoadWarn(input.chatId, "outfit projection degraded to absent", error);
+      return null;
+    }),
+    readSimChatRelationship(input.chatId).catch((error: unknown) => {
+      simLoadWarn(input.chatId, "relationship projection degraded to absent", error);
+      return null;
+    }),
+    loadSimZoneNames(input.branchId, input.chatId),
+  ]);
+  const outfitLine = outfit?.trim();
+  return {
+    ...(primary ? { primary } : {}),
+    player: { name: input.playerName, ...personaFields },
+    ...(outfitLine ? { outfitLine } : {}),
+    ...(relationship ? { relationship } : {}),
+    ...(zoneNames ? { zoneNames } : {}),
+    narrationShape: narrationShapeId("chat"),
+  };
+}
+
+/**
+ * Run one successor exchange for an OWNERSHIP-CHECKED chat (routing parity,
+ * presentation-charter.plan.md §4). The `mode` picks the semantics; the authority
+ * gate, world-truth names, dialogue tail, clock, memory/summary, render, and
+ * persist are one shared path with mode-conditional steps:
+ *
+ * - **send** — land the player line, run input admission, advance the span, render
+ *   a FRESH cut, persist a new assistant reply (existing behavior).
+ * - **continue / open** — a real turn with NO player utterance (ruling 19): no
+ *   user row, no admission, the span still advances (time moves), the render omits
+ *   the player-turn block. `open` records `simOpening` on the reply meta.
+ * - **retake** — re-render the SAME committed cut (regenerate/rerun, ruling 18):
+ *   no user row, no admission, NO `prepareEngagementTurn` (time does not advance),
+ *   the last assistant row replaced in place (mirroring legacy regenerate: content
+ *   + browsable takes + meta on the same id).
+ *
+ * A withheld render leaves the transcript untouched (ruling 8). For send, the
+ * player line persists BEFORE the scene gate: a refusal explains itself via
  * lastReplyFailure and never deletes what the player typed.
  */
 export async function runSimChatExchange(input: {
@@ -361,91 +658,85 @@ export async function runSimChatExchange(input: {
   speakerCharacterId: string;
   /** The primary character's display name — labels the dialogue tail. */
   speakerName?: string;
-  message: string;
+  /** Defaults to "send". */
+  mode?: SimChatExchangeMode;
+  /** The player's line — required for "send", ignored for the utterance-free modes. */
+  message?: string;
 }): Promise<SimChatExchangeResult> {
-  const authority = await readChatEngineAuthority(input.chatId);
-  if (
-    !authority ||
-    authority.authority === "legacy_chat" ||
-    authority.authority === "successor_shadow" ||
-    !authority.simBranchId ||
-    !authority.simPlayerActorId ||
-    !authority.simPrimaryActorId
-  ) {
-    return {
-      ok: false,
-      code: "not_sim_enabled",
-      message: "this chat is not routed to the successor engine (authority + branch + actor mapping required)",
-      status: 409,
-    };
+  const resolved = await resolveSimExchange(input.chatId);
+  if (!resolved.ok) return resolved.result;
+  const mode = input.mode ?? "send";
+  if (mode === "retake") {
+    return runSimRetake({ chatId: input.chatId, userId: input.userId, ctx: resolved.ctx });
   }
-  const branchId = authority.simBranchId;
-  const playerActorId = authority.simPlayerActorId;
-  const primaryActorId = authority.simPrimaryActorId;
-
-  // World-truth display names — prose never reads actor ids well, and the
-  // agency rule needs to NAME the player's character to bind.
-  const nameRows = await db()
-    .select({ characterId: simCharacters.characterId, name: simCharacters.name })
-    .from(simCharacters)
-    .where(eq(simCharacters.branchId, branchId));
-  const actorNames = Object.fromEntries(nameRows.map((row) => [row.characterId, row.name]));
-  const playerName = actorNames[playerActorId] ?? "the player";
-
-  // The conversational context the narrator responds to: the last few
-  // transcript lines (before this turn's insert), oldest first. Assistant
-  // lines are labeled NARRATION, not a character — earlier replies may have
-  // wrongly voiced the player's character and must read as narration output,
-  // never as an example of that character speaking. (12 lines since R5
-  // knowledge/memory — the rolling summary carries the longer arc.)
-  const tailRows = await db()
-    .select({ role: characterChatMessages.role, content: characterChatMessages.content })
-    .from(characterChatMessages)
-    .where(eq(characterChatMessages.chatId, input.chatId))
-    .orderBy(desc(characterChatMessages.createdAt))
-    .limit(12);
-  const dialogueTail = tailRows
-    .reverse()
-    .map((row) => ({
-      speaker: row.role === "user" ? `PLAYER (as ${playerName})` : "NARRATION (previous)",
-      text: row.content,
-    }));
-
-  const userMessageId = newId();
-  await db().insert(characterChatMessages).values({
-    id: userMessageId,
+  return runSimTurn({
     chatId: input.chatId,
-    speakerCharacterId: null,
-    role: "user",
-    content: input.message,
-    meta: { simTurn: true },
+    userId: input.userId,
+    speakerCharacterId: input.speakerCharacterId,
+    mode,
+    message: input.message,
+    ctx: resolved.ctx,
   });
+}
+
+/** send / continue / open — a real turn that advances the span and renders a fresh cut. */
+async function runSimTurn(input: {
+  chatId: string;
+  userId: string;
+  speakerCharacterId: string;
+  mode: "send" | "continue" | "open";
+  message?: string;
+  ctx: ResolvedSimExchange;
+}): Promise<SimChatExchangeResult> {
+  const { chatId, ctx } = input;
+  const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
+  // continue/open carry no utterance (ruling 19) — only a send speaks.
+  const message = input.mode === "send" ? (input.message ?? "").trim() : "";
+
+  // The tail is read BEFORE any insert this turn (a fresh reply doesn't exist yet).
+  const dialogueTail = await loadSimDialogueTail(chatId, playerName);
+
+  // send: land the player line first (a later refusal never deletes it). The
+  // utterance-free modes insert no user row (ruling 19).
+  let userMessageId: string | null = null;
+  if (input.mode === "send") {
+    userMessageId = newId();
+    await db().insert(characterChatMessages).values({
+      id: userMessageId,
+      chatId,
+      speakerCharacterId: null,
+      role: "user",
+      content: message,
+      meta: { simTurn: true },
+    });
+  }
 
   const scene = await findOrOpenStandingEngagement({
     branchId,
     playerActorId,
     primaryActorId,
     userId: input.userId,
-    correlationId: `sim-turn-${input.chatId}`,
+    correlationId: `sim-turn-${chatId}`,
   });
   if (!scene.ok) {
     return { ok: false, code: "sim_open_failed", message: `the scene could not open: ${scene.publicReason}`, status: 409 };
   }
 
-  // R5 input admission: the player's own words may BE a legal command. Runs
-  // after the scene resolves so claim law judges it in context — an accepted
-  // command is world truth the narrator portrays as DONE; a refusal rides the
-  // cut's §14.4 failurePresentations and gets narrated as a lawful refusal.
-  const admission = await runInputAdmission({
-    chatId: input.chatId,
-    userId: input.userId,
-    branchId,
-    playerActorId,
-    primaryActorId,
-    playerName,
-    primaryName: actorNames[primaryActorId] ?? "them",
-    message: input.message,
-  });
+  // R5 input admission (send only): the player's own words may BE a legal
+  // command. Runs after the scene resolves so claim law judges it in context.
+  const admission =
+    input.mode === "send"
+      ? await runInputAdmission({
+          chatId,
+          userId: input.userId,
+          branchId,
+          playerActorId,
+          primaryActorId,
+          playerName,
+          primaryName: actorNames[primaryActorId] ?? "them",
+          message,
+        })
+      : null;
 
   const turn = await prepareEngagementTurn({
     branchId,
@@ -454,31 +745,28 @@ export async function runSimChatExchange(input: {
     spanSeconds: 60,
     playerActorIds: [playerActorId],
     deliberation: buildLiveDeliberation(),
-    workerId: `sim-turn-${input.chatId}`,
+    workerId: `sim-turn-${chatId}`,
     ...(admission?.failure === undefined ? {} : { failurePresentations: [admission.failure] }),
   });
   const clock = await readBranchClock(branchId);
-  // R5 knowledge/memory: §24 viewpoint recall (rag-eligibility-gated) + the
-  // rolling conversation summary. Both degrade to absent — a failed recall
-  // narrows context, never fails the turn (docs/resilience.md).
-  const memory = authority.ragEligibility
-    ? await recallViewpointMemory({
-        chatId: input.chatId,
-        branchId,
-        viewpointActorId: playerActorId,
-        message: input.message,
-        atStorySecond: clock?.storySecond ?? 0,
-      })
-    : [];
-  const conversationSummary = await loadChatSummary(input.chatId)
-    .then((row) => row?.summary ?? "")
-    .catch(() => "");
+  const [{ memory, conversationSummary }, presentation] = await Promise.all([
+    loadSimConversationContext({
+      chatId,
+      branchId,
+      viewpointActorId: playerActorId,
+      message,
+      ragEligibility: ctx.ragEligibility,
+      atStorySecond: clock?.storySecond ?? 0,
+    }),
+    loadSimPresentationInputs({ chatId, userId: input.userId, branchId, primaryActorId, actorNames, playerName }),
+  ]);
   const rendered = await renderCommittedCut({
     branchId,
     engagementId: scene.engagementId,
     cutId: turn.cut.id,
     conversation: {
-      playerUtterance: input.message,
+      // No utterance ⇒ omit the player-turn block ("the scene breathes").
+      ...(message === "" ? {} : { playerUtterance: message }),
       dialogueTail,
       viewpointIsPlayer: true,
       actorNames,
@@ -486,6 +774,12 @@ export async function runSimChatExchange(input: {
       ...(admission?.executed === undefined ? {} : { admittedAction: admission.executed }),
       ...(conversationSummary === "" ? {} : { conversationSummary }),
       ...(memory.length === 0 ? {} : { memory }),
+      ...(presentation.primary ? { primary: presentation.primary } : {}),
+      player: presentation.player,
+      ...(presentation.outfitLine ? { outfitLine: presentation.outfitLine } : {}),
+      ...(presentation.relationship ? { relationship: presentation.relationship } : {}),
+      ...(presentation.zoneNames ? { zoneNames: presentation.zoneNames } : {}),
+      narrationShape: presentation.narrationShape,
     },
   });
   if (rendered.status !== "rendered" || rendered.prose === undefined) {
@@ -495,7 +789,7 @@ export async function runSimChatExchange(input: {
   const assistantMessageId = newId();
   await persistAssistantReply({
     id: assistantMessageId,
-    chatId: input.chatId,
+    chatId,
     speakerCharacterId: input.speakerCharacterId,
     promptMessageId: userMessageId,
     content: rendered.prose,
@@ -504,15 +798,134 @@ export async function runSimChatExchange(input: {
       cutId: rendered.cutId,
       modelId: rendered.modelId,
       attempts: rendered.attempts,
+      // The opening-directive flag a later prompt slice reads (§4).
+      ...(input.mode === "open" ? { simOpening: true } : {}),
       ...(rendered.confirmStatus === undefined ? {} : { confirmStatus: rendered.confirmStatus }),
     },
   });
-  // R5 knowledge/memory: fold the conversation forward — the job self-dedupes
-  // and no-ops below its own trigger.
-  void enqueueChatSummary({ chatId: input.chatId });
+  // R5 knowledge/memory: fold the conversation forward — self-dedupes below its trigger.
+  void enqueueChatSummary({ chatId });
   return {
     ok: true,
     messageId: assistantMessageId,
+    prose: rendered.prose,
+    cutId: rendered.cutId,
+    modelId: rendered.modelId,
+    attempts: rendered.attempts,
+    degraded: rendered.degraded,
+    diagnostics: rendered.diagnostics,
+  };
+}
+
+/**
+ * retake (regenerate/rerun, ruling 18) — re-render the SAME committed cut: same
+ * events, fresh prose. NO time advance, NO admission, NO new transcript rows; the
+ * last assistant reply is replaced in place (content + browsable takes + meta),
+ * exactly the row semantics the legacy regenerate gives the client.
+ */
+async function runSimRetake(input: { chatId: string; userId: string; ctx: ResolvedSimExchange }): Promise<SimChatExchangeResult> {
+  const { chatId, ctx } = input;
+  const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
+
+  // The target is the last assistant reply (regenerate targets it directly; a
+  // rerun of the latest exchange resolves to the same row).
+  const [target] = await db()
+    .select({
+      id: characterChatMessages.id,
+      content: characterChatMessages.content,
+      takes: characterChatMessages.takes,
+      meta: characterChatMessages.meta,
+    })
+    .from(characterChatMessages)
+    .where(and(eq(characterChatMessages.chatId, chatId), eq(characterChatMessages.role, "assistant")))
+    .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
+    .limit(1);
+  if (!target) {
+    return { ok: false, code: "nothing_to_retake", message: "there is no reply to regenerate yet", status: 409 };
+  }
+
+  // The pair's standing scene must exist to re-render its cut (read-only — a
+  // retake never opens a scene or advances anything).
+  const found = await findStandingEngagement(branchId, playerActorId, primaryActorId);
+  if (found.engagementId === null) {
+    return { ok: false, code: "sim_open_failed", message: "there is no open scene to re-render", status: 409 };
+  }
+  const engagementId = found.engagementId;
+
+  // The cut id: from the reply's meta (persistAssistantReply stored it), else the
+  // engagement's newest persisted cut (ruling 18 fallback).
+  const metaCutId = parseOr(simReplyMetaSchema, target.meta, {}, undefined, "character_chat_messages.meta").cutId;
+  const cutId = metaCutId ?? (await latestCutIdForEngagement(db(), branchId, engagementId));
+  if (!cutId) {
+    return { ok: false, code: "nothing_to_retake", message: "there is no committed cut to re-render", status: 409 };
+  }
+
+  // The tail excludes the reply being retaken (it must never read itself back);
+  // the prompting utterance is its immediate predecessor, and only if that was a
+  // player line (a retaken continue/open beat has none).
+  const dialogueTail = await loadSimDialogueTail(chatId, playerName, target.id);
+  const lastTailLine = dialogueTail.at(-1);
+  const priorUtterance =
+    lastTailLine && lastTailLine.speaker.startsWith("PLAYER") ? lastTailLine.text : "";
+  const clock = await readBranchClock(branchId);
+  const [{ memory, conversationSummary }, presentation] = await Promise.all([
+    loadSimConversationContext({
+      chatId,
+      branchId,
+      viewpointActorId: playerActorId,
+      message: priorUtterance,
+      ragEligibility: ctx.ragEligibility,
+      atStorySecond: clock?.storySecond ?? 0,
+    }),
+    loadSimPresentationInputs({ chatId, userId: input.userId, branchId, primaryActorId, actorNames, playerName }),
+  ]);
+
+  const rendered = await renderCommittedCut({
+    branchId,
+    engagementId,
+    cutId,
+    conversation: {
+      ...(priorUtterance.trim() === "" ? {} : { playerUtterance: priorUtterance }),
+      dialogueTail,
+      viewpointIsPlayer: true,
+      actorNames,
+      calendarStart: clock?.calendarStart ?? null,
+      ...(conversationSummary === "" ? {} : { conversationSummary }),
+      ...(memory.length === 0 ? {} : { memory }),
+      ...(presentation.primary ? { primary: presentation.primary } : {}),
+      player: presentation.player,
+      ...(presentation.outfitLine ? { outfitLine: presentation.outfitLine } : {}),
+      ...(presentation.relationship ? { relationship: presentation.relationship } : {}),
+      ...(presentation.zoneNames ? { zoneNames: presentation.zoneNames } : {}),
+      narrationShape: presentation.narrationShape,
+    },
+  });
+  if (rendered.status !== "rendered" || rendered.prose === undefined) {
+    return { ok: false, code: "render_withheld", message: "the narrator could not re-render this turn; try again", status: 503 };
+  }
+
+  // Replace the reply row in place: the prior text becomes a browsable take, the
+  // fresh render is active (spec §4.1 — the same transcript semantics legacy gives).
+  const priorTakes = parseOr(replyTakesSchema, target.takes, emptyReplyTakes(), undefined, "character_chat_messages.takes");
+  const nextTakes = pushReplyTake(priorTakes, target.content, rendered.prose, new Date().toISOString());
+  await db()
+    .update(characterChatMessages)
+    .set({
+      content: rendered.prose,
+      takes: nextTakes,
+      meta: {
+        simTurn: true,
+        cutId: rendered.cutId,
+        modelId: rendered.modelId,
+        attempts: rendered.attempts,
+        ...(rendered.confirmStatus === undefined ? {} : { confirmStatus: rendered.confirmStatus }),
+      },
+    })
+    .where(and(eq(characterChatMessages.id, target.id), eq(characterChatMessages.chatId, chatId)));
+
+  return {
+    ok: true,
+    messageId: target.id,
     prose: rendered.prose,
     cutId: rendered.cutId,
     modelId: rendered.modelId,

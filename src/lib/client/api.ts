@@ -822,6 +822,12 @@ export const chatTranscriptSchema = z.object({
     archivedAt: optionalText,
     /** Why the last exchange produced no reply (reply-failure surfacing); null when it replied. */
     lastReplyFailure: chatReplyFailureSchema.nullish().catch(null),
+    /**
+     * True when the successor engine owns this chat's turns (presentation-charter
+     * §4). The composer hides the attachment control + legacy action chips for it —
+     * they have no successor semantics yet and the POST refuses them.
+     */
+    simRouted: z.boolean().catch(false),
   }),
   character: z.object({
     id: idSchema,

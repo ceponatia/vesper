@@ -30,6 +30,32 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | `/api/admin/chat-inspector/:chatId[/…]` | memory inspector family (spec §6.1; **admin-role-gated — 404 for non-admins**, so it works on the deployed build; owner-scoped): overview (all facts incl. superseded/retracted — each labeled with its `channel`: `perceived`/`private`/`ooc`, the RAG visibility fence, [memory.md](../memory.md) §Fact channel — plus episodes + summary) · facts create/PATCH (pin/retract/restore, re-embed-on-edit) · episodes PATCH/DELETE + `score?q=` · summary PATCH · prompt preview (`previewChatPrompt` — "what reaches the narrator") |
 
 
+## Sim-routed dispatch (`POST /api/chats/:chatId`)
+
+When a chat is routed to the successor engine (its `engine_authority` is past the
+view threshold, branch-linked, and actor-mapped — the GET envelope's
+`chat.simRouted` flag), the POST fork resolves authority **once, before kind
+dispatch**: every operation has successor semantics or is refused, and the legacy
+pipeline (`submitChatMessage`) is unreachable for it (presentation-charter.plan.md
+§4; engine.spec.operations.md §39 rulings 18-19). The successor turn streams in the
+same plain-text/heartbeat shape as a legacy reply and the client's post-exchange
+transcript refetch reconciles the persisted rows.
+
+| POST kind | Sim behavior | Response |
+| --------- | ------------ | -------- |
+| `send` | `runSimChatExchange` — land the player line, run input admission, advance the span, render a fresh cut, persist a new reply | heartbeat stream, prose |
+| `continue` | Real turn with **no player utterance** (ruling 19): no user row, no admission, span still advances (time moves), render omits the player-turn block | heartbeat stream, prose |
+| `open` | As `continue`, plus `simOpening` on the reply's `meta` (the opening-directive flag a later prompt slice reads) | heartbeat stream, prose |
+| `regenerate` / `rerun` | **Re-render the SAME committed cut** (ruling 18): resolve the cut id from the last reply's `meta.cutId` (fallback `latestCutIdForEngagement`), re-render fresh prose, replace the reply row in place (content + browsable `takes` + meta). NO time advance, NO admission, NO new rows | heartbeat stream, prose |
+| `action_beat`, or any kind with `action` set | **Refused** — legacy action chips have no successor semantics yet | 409 `sim_unsupported_operation` |
+| any kind with `attachmentIds` | **Refused** — vision reads aren't wired to the sim lane yet | 409 `sim_unsupported_operation` |
+
+The UI hides the attachment control and action chips for a sim-routed chat (a
+hidden control beats a dead one that 409s); Continue / Regenerate / Go on / Prompt
+stay visible and now run the successor semantics above. The kind→mode decision is
+the pure `decideSimOperation` (`app/api/chats/[chatId]/sim-routing.ts`).
+
+
 ## Diagnostics
 
 Every leg failure below is ALSO recorded durably and tallied with a suspected cause — see
@@ -57,8 +83,9 @@ you can't quite make out"; a non-degraded later retake retries) ·
 `chat_memory.reconciled` — plus route
 errors `chat_busy` (409), `chat_archived` (409), `invalid_rerun_target` (400),
 `rerun_requires_branch` (400; an older line cannot be safely rewritten through a
-one-exchange state snapshot), `scene_busy` (409), `rate_limited` (429),
-`not_found` (404). A failed `queueChatScene` (auto or manual) log-warns
+one-exchange state snapshot), `sim_unsupported_operation` (409; an attachment or
+legacy action chip on a sim-routed chat — see §Sim-routed dispatch),
+`scene_busy` (409), `rate_limited` (429), `not_found` (404). A failed `queueChatScene` (auto or manual) log-warns
 (`chat_scene` scope) and returns null — never a failed exchange. Degradation tests
 assert the fallback **and** the code ([testing.md](../testing.md)).
 

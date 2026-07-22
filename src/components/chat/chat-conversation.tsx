@@ -997,6 +997,12 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     />
   );
   const roster = bootstrap.data?.roster ?? [];
+  // Routing parity (presentation-charter.plan.md §4): a sim-routed chat's turns
+  // run on the successor engine, which has no successor semantics for photos or
+  // legacy action chips yet — hide those affordances (a hidden control beats a
+  // dead one that 409s). Continue / Regenerate / Go on STAY: they now work via
+  // the new same-cut / utterance-free semantics.
+  const simRouted = bootstrap.data?.chat.simRouted ?? false;
   // The dialogue-tag vocabulary for rendering replies: every roster member's name (primary
   // first), so a group reply's non-primary `[Name]` tags attribute instead of leaking as
   // literal text. Falls back to the primary name on legacy/empty-roster payloads.
@@ -1411,7 +1417,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               )}
             </div>
           ) : null}
-          {chatState && !archived ? <ActionChips busy={actionBusy} disabled={sending} onAction={(a) => void runAction(a)} /> : null}
+          {chatState && !archived && !simRouted ? (
+            <ActionChips busy={actionBusy} disabled={sending} onAction={(a) => void runAction(a)} />
+          ) : null}
           {/* OOC affordance (slice 5): a clear amber signal the caret is inside a
               ((…)) block — a note to the storyteller no one in the scene hears. */}
           {oocActive && !archived ? (
@@ -1510,7 +1518,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 narratorMode && !oocActive && "border-ink-500 ring-1 ring-ink-500/60",
               )}
             />
-            {!archived ? (
+            {/* Attachments have no successor semantics yet (§4) — hidden for sim chats. */}
+            {!archived && !simRouted ? (
               <>
                 <input
                   ref={attachInputRef}

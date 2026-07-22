@@ -418,6 +418,50 @@ the response: episode compression, semantic propositions actually spoken, and pe
 soft-canon proposals. An extractor MUST NOT decide completed movement, item transfer,
 body effects, commitment outcomes, access, or witness eligibility.
 
+### 23.5 Presentation prompt, handles, and the charter (2026-07-22)
+
+The narrator prompt is assembled by `prompts/sim-render.ts` under the shared
+presentation charter (`prompts/charter.ts` — see
+`presentation-charter.plan.md`): the epistemic viewpoint (whose knowledge
+partitions the cut) is a distinct concept from the prose camera (charter law —
+second person to the player, third person for everyone else; the narrator never
+authors the player's words, thoughts, feelings, or actions).
+
+The prompt never carries raw identifiers. Beats and armed effects are addressed
+by **opaque handles** (`B1..Bn` over mustEnact then allowedTransitions, `E1..Em`
+over armedEffects, deterministic per cut); zones and actors render as display
+labels; pressures render as relative story time. The trust boundary
+(`parseNarratorResult`) maps declared handles back to real ids before
+validation; unmapped values fall into the existing unknown-id flagging. Player
+text, summaries, memory lines, and transcript tails are fenced as untrusted
+data (`prompts/untrusted.ts`).
+
+### 23.6 Presentation audit and retry (2026-07-22)
+
+Model prose is normalized (artifact strip, repeated-block collapse, fence/quote
+trim) BEFORE the §23.2 audit. The audit is deterministic and structural; beyond
+declaration checks it rejects: `presentation.id_leak` (any cut-derived id or
+handle token in prose), `presentation.contract_echo` (prose that is JSON or
+echoes contract field names / placeholder brackets), and `presentation.too_thin`
+(a substance floor — retried once, accepted on the final attempt, diagnostic
+only when the caller supplies no attempt context). A retry is never a blind
+reroll: attempt ≥2 rebuilds the prompt from the SAME persisted cut (ruling 8)
+with a correction block naming exactly what the previous audit rejected. The
+deterministic bridge is a last resort — only after the feedback retry, appended
+as its own paragraph, never mid-sentence. Semantic verification (a beat truly
+enacted in meaning, a forbidden claim absent in paraphrase) remains
+prompt-enforced; an LLM-judge audit leg is deliberately deferred to the
+owner-gated eval spend.
+
+### 23.7 One confirm per cut (2026-07-22)
+
+`confirm_narrator_result`'s idempotency key derives from the **cutId alone**: a
+cut confirms at most once, the first accepted confirm wins, and any retake's
+confirm — even with a different enacted subset — dedupes to it. A retake
+replaces presentation, never armed truth (closes the double-arm hazard found in
+the routing-parity work: a same-cut retake never supersedes the cut, so
+supersedence alone could not protect armed effects from double delivery).
+
 ## 24. RAG and memory
 
 ### 24.1 Eligibility before similarity
