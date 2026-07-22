@@ -30,6 +30,7 @@ import {
   loadChatScenario,
   loadChatState,
   readSimChatClock,
+  readSimChatMeters,
   resolveChatWardrobe,
   resolveSeededOutfit,
   seedChatScenario,
@@ -137,7 +138,12 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
   // persisted those ids) — the character sheet must show the garment phrase.
   const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
   const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
-  const state = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
+  const drifted = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
+  // R5 slice 4: a sim-routed chat's meters come from the ruling-15 body
+  // substrate — the mood chip and pips then DERIVE from world truth, since
+  // the snapshot computes emotion from whatever meters it is handed.
+  const simMeters = target.characterId === owned.participant.characterId ? await readSimChatMeters(chatId) : null;
+  const state = simMeters === null ? drifted : { ...drifted, meters: { ...drifted.meters, ...simMeters } };
   // Rendered garment phrase for the read-only strip chip (chat-wardrobe-parity): the structured
   // worn items resolved through the shared seam, else the free-text overlay.
   const wardrobe = await resolveChatWardrobe(state, user.id, profile, sink);

@@ -30,10 +30,15 @@ vi.mock("@/server/auth", () => ({
   listUsers: async () => [authState.user],
 }));
 
-import { STARTER_CALENDAR_START, STARTER_ORIGIN_STORY_SECOND } from "@/server/engine";
+import {
+  STARTER_CALENDAR_START,
+  STARTER_ORIGIN_STORY_SECOND,
+  submitDurableApplyBodySource,
+  submitDurableStorytellerRelocation,
+} from "@/server/engine";
 import { GET as successorList, POST as successorCreate } from "./route";
 import { PATCH as calendarPatch } from "./[chatId]/route";
-import { POST as chatSend } from "../chats/[chatId]/route";
+import { GET as chatGet, POST as chatSend } from "../chats/[chatId]/route";
 import { GET as stateGet } from "../chats/[chatId]/state/route";
 
 async function probe(): Promise<boolean> {
@@ -214,5 +219,66 @@ describe.runIf(ready)("successor-chats front door", () => {
     );
     expect(refused.status).toBe(200);
     expect((await refused.text()).replace(/\u200B/g, "").length).toBeGreaterThan(0);
+
+    // R5 slice 3 \u2014 presence reads the mirror's physical truth: co-located now\u2026
+    const before = (await (await chatGet(new NextRequest(`http://t/api/chats/${body.id}`), ctx(body.id))).json()) as {
+      roster: { sort: number; presence: string }[];
+    };
+    expect(before.roster.find((m) => m.sort === 0)?.presence).toBe("present");
+    // \u2026then the storyteller relocates the primary to the square \u2192 "away".
+    const relocated = await submitDurableStorytellerRelocation(
+      {
+        id: `test-relocate-${body.branchId}`,
+        branchId: body.branchId,
+        expectedVersion: 0,
+        idempotencyKey: `test-relocate-${body.branchId}`,
+        principal: { kind: "storyteller", principalId: ids.user, controlledActorIds: [] },
+        submittedAtWallClock: new Date().toISOString(),
+        correlationId: `test-${body.branchId}`,
+        type: "storyteller_relocate_actor",
+        schemaVersion: 1,
+        payload: {
+          actorId: chatRow.primaryActorId,
+          destinationZoneId: `${body.worldId}-zone-square`,
+          reason: "surfaces test",
+        },
+      },
+      { admitAtLockedVersion: true },
+    );
+    expect(relocated.status).toBe("accepted");
+    const after = (await (await chatGet(new NextRequest(`http://t/api/chats/${body.id}`), ctx(body.id))).json()) as {
+      roster: { sort: number; presence: string }[];
+    };
+    expect(after.roster.find((m) => m.sort === 0)?.presence).toBe("away");
+
+    // R5 slice 4 \u2014 the strip's meters read the ruling-15 substrate: drop the
+    // primary's hygiene in WORLD truth and the state envelope must show it
+    // (legacy chat-state would still say the seeded 0.9).
+    const washed = await submitDurableApplyBodySource(
+      {
+        id: `test-hygiene-${body.branchId}`,
+        branchId: body.branchId,
+        expectedVersion: 0,
+        idempotencyKey: `test-hygiene-${body.branchId}`,
+        principal: { kind: "system", principalId: "surfaces-test", controlledActorIds: [] },
+        submittedAtWallClock: new Date().toISOString(),
+        correlationId: `test-${body.branchId}`,
+        type: "apply_body_source",
+        schemaVersion: 1,
+        payload: {
+          actorId: chatRow.primaryActorId,
+          meterKey: "hygiene",
+          sourceKind: "wash",
+          operation: { kind: "set", valueFixedPoint: 2_000 },
+        },
+      },
+      { admitAtLockedVersion: true },
+    );
+    expect(washed.status).toBe("accepted");
+    const stateAfter = (await (
+      await stateGet(new NextRequest(`http://t/api/chats/${body.id}/state`), ctx(body.id))
+    ).json()) as { meters: Record<string, number> };
+    expect(stateAfter.meters.hygiene).toBeCloseTo(0.2, 5);
+    expect(stateAfter.meters.mood).toBeCloseTo(0.5, 5);
   });
 });

@@ -18,6 +18,7 @@ import { characterChats, characterChatMessages, characterChatState, db } from "@
 import {
   deleteChat,
   readChatEngineAuthority,
+  readSimChatPresence,
   resolveChatWardrobe,
   runShadowChatExchange,
   runSimChatExchange,
@@ -219,14 +220,24 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
       chatModel: owned.character.chatModel,
     },
     // The full roster, sort-ordered (first = primary) — the roster panel's data.
-    roster: owned.roster.map((m) => ({
-      characterId: m.characterId,
-      name: m.character.name,
-      avatarImageId: m.character.avatarImageId,
-      sort: m.sort,
-      presence: stateBy.get(m.characterId)?.presence ?? "present",
-      outfit: outfitLabels.get(m.characterId) ?? "",
-    })),
+    // R5 slice 3: for a sim-routed chat the PRIMARY's presence is the mirror
+    // world's physical truth (co-located or not), never the legacy state flag.
+    roster: await (async () => {
+      const simPresence = await readSimChatPresence(chatId);
+      return owned.roster.map((m) => ({
+        characterId: m.characterId,
+        name: m.character.name,
+        avatarImageId: m.character.avatarImageId,
+        sort: m.sort,
+        presence:
+          simPresence !== null && m.sort === 0
+            ? simPresence.present
+              ? ("present" as const)
+              : ("away" as const)
+            : (stateBy.get(m.characterId)?.presence ?? "present"),
+        outfit: outfitLabels.get(m.characterId) ?? "",
+      }));
+    })(),
   });
 });
 
