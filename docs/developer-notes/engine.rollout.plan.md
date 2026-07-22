@@ -133,9 +133,10 @@ is the cleanup that makes the migration real.
    runnable against this leg on request). Exit: a full narrated turn against the
    internal test world within the latency/model-call budget, degradation paths
    observed live (a failed render withholds, never corrupts).
-4. **R3 — the product surface.** Status: **slices 1–3 shipped —
-   2026-07-21**; the R3 exit (a human plays a scene in the test world on
-   Fly) awaits the next deploy + a live session. Slice 1, *the successor turn
+4. **R3 — the product surface.** Status: **slices 1–4 shipped** (1–3 —
+   2026-07-21, complete; slice 4 + the live-session fix — 2026-07-22); the
+   R3 exit (a human plays a scene in the test world on Fly) awaits a live
+   session on the current deploy. Slice 1, *the successor turn
    route*: chat's exchange machine (`submitChatMessage`, ~2 000 lines of
    streaming pipeline) stays untouched — the lanes-separate rule applied to
    code. Instead a parallel, non-streaming route
@@ -195,8 +196,8 @@ is the cleanup that makes the migration real.
    stands, and `end_scene` ends the resolved engagement; the player line
    persists before the scene gate; the client strips the heartbeat before
    counting received bytes, so a refusal shows the ordinary failure popup
-   with the §14.4 public reason. **Slice 4 — world-clock parity (planned;
-   precedes the exit session; ruling 17).** Live finding: narration colored
+   with the §14.4 public reason. **Slice 4 — world-clock parity (shipped —
+   2026-07-22; ruling 17).** Live finding: narration colored
    time from transcript prose ("afternoon light" against a morning world
    clock) because the cut prompt renders raw story-seconds
    (`STORY SPAN: second 183600…`) — illegible as time-of-day, so the model
@@ -229,10 +230,18 @@ is the cleanup that makes the migration real.
       from the slice-4 clock seam. Build detail to settle in the slice:
       per-skip bound and whether the pickup strip's named skips
       (Later / Next morning / Days later) map by daylight band.
-   Tests: pure (clock seam; prompt carries the WORLD CLOCK line and the
-   truth-wins rule), int (envelope clock for routed chats; advance_time
-   ends the scene, moves `storySecond`, and the next send opens fresh —
-   the slice-3 fix's find-or-open already proves reopen). Exit unchanged:
+   As shipped: the seam is `src/lib/simulation/clock.ts` (storyClockAt +
+   the three formatters; `daylightBandAtMinute` extracted in
+   `src/lib/clock.ts` so both lanes share the band thresholds); the
+   envelope field is `simClock` (the branch's raw storySecond — the client
+   derives the label); the legacy `/time-skip` route 409s for a routed
+   chat so the lanes can never double-advance; skips kept the fixed
+   CHAT_SKIP_MINUTES amounts (band-mapped named skips deferred to R5's
+   calendar work). Tests: pure (clock seam; the prompt carries the WORLD
+   CLOCK line and the truth-wins rule), int (advance_time completes the
+   standing rest via the drain, the state envelope carries the world
+   clock, the next send opens fresh, and the legacy skip lane refuses).
+   Gates green (3 120 pure + 474 int). Exit unchanged:
    a human plays a scene in the internal test world on Fly. Minimum playable seam **inside the existing
    character chat UI at `/chat/`** (ruling 1 — no standalone play page): API
    routes that admit player commands into the successor

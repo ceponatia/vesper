@@ -2,8 +2,9 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { newId } from "@/lib/ids";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
-import { db, simItemHoldings } from "@/server/db";
+import { db, simBranches, simItemHoldings } from "@/server/db";
 import {
+  advanceBranchStoryTime,
   findStandingEngagement,
   submitDurableEndEngagement,
   submitDurableMoveActor,
@@ -32,6 +33,11 @@ const bodySchema = z.discriminatedUnion("kind", [
       actionDefinitionId: z.string().min(1).max(256),
       targetActorId: z.string().min(1).max(256).optional(),
     })
+    .strict(),
+  // R3 slice 4 (ruling 17): the player's time skip — bounded minutes, capped at
+  // the storyteller advance's 30 days.
+  z
+    .object({ kind: z.literal("advance_time"), minutes: z.number().int().min(1).max(30 * 24 * 60) })
     .strict(),
 ]);
 
@@ -142,6 +148,41 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         { admitAtLockedVersion: true },
       );
       return respond(outcome);
+    }
+    case "advance_time": {
+      // A skip wraps the standing scene first (the legacy "Later →" semantics:
+      // the conversation ends, the player picks up after the gap), then drains
+      // the bounded advance the storyteller `advance` already uses.
+      const standing = await findStandingEngagement(sim.branchId, sim.playerActorId, sim.primaryActorId);
+      if (standing.engagementId !== null) {
+        const ended = await submitDurableEndEngagement(
+          {
+            ...envelope,
+            type: "end_engagement",
+            payload: { engagementId: standing.engagementId, reason: "participant_choice" },
+          },
+          { admitAtLockedVersion: true },
+        );
+        // The error envelope (not respond's refusal shape) so the skip toast can
+        // show the public reason through the ordinary client error path.
+        if (ended.status === "rejected") return jsonError(ended.code, ended.publicReason, 409);
+        if (ended.status !== "accepted") return jsonError("sim_conflict", "the world moved; try again", 409);
+      }
+      const [branch] = await db()
+        .select({ storySecond: simBranches.storySecond })
+        .from(simBranches)
+        .where(eq(simBranches.id, sim.branchId))
+        .limit(1);
+      if (!branch) return jsonError("not_found", "world branch not found", 404);
+      const target = branch.storySecond + command.minutes * 60;
+      let drained = 0;
+      for (let calls = 0; ; calls += 1) {
+        if (calls > 1_000) return jsonError("drain_diverged", "the drain did not converge", 500);
+        const outcome = await advanceBranchStoryTime(sim.branchId, target, { workerId: `sim-skip-${newId()}` });
+        drained += outcome.drained;
+        if (outcome.status === "advanced") break;
+      }
+      return jsonOk({ status: "advanced", toStorySecond: target, drained });
     }
   }
 });

@@ -148,6 +148,14 @@ describe("E4.3 auditPresentation (§23.2)", () => {
 });
 
 describe("R3 buildCutRenderPrompt conversation input", () => {
+  it("carries a legible world clock that outranks transcript-implied time (slice 4, ruling 17)", () => {
+    // fromStorySecond 100 000 = day index 1, 03:46 — the model must read this,
+    // not raw seconds, or time-of-day color drifts to the dialogue tail.
+    const { prompt } = buildCutRenderPrompt(fixtureCut());
+    expect(prompt).toContain("WORLD CLOCK: Day 2 · 3:46am (night)");
+    expect(prompt).toContain("the clock wins");
+  });
+
   it("serializes the cut alone when no conversation is given", () => {
     const { system, prompt } = buildCutRenderPrompt(fixtureCut());
     expect(system).toContain("narrator of a live scene");

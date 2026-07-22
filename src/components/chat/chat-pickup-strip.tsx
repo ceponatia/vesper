@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { CHAT_SKIP_MINUTES, formatChatMoment, type ChatSkipAmount } from "@/contracts";
 import type { CalendarStart } from "@/lib/clock";
+import { formatStoryClockShort, storyClockAt } from "@/lib/simulation";
 
 /**
  * The reopen strip's four choices (character-chat-standalone.spec.md §8.1, D14):
@@ -29,6 +30,7 @@ export function ChatPickupStrip({
   who,
   busy,
   clock,
+  simStorySecond = null,
   onPick,
   onInitiative,
 }: {
@@ -36,16 +38,21 @@ export function ChatPickupStrip({
   busy: boolean;
   /** Current story clock + anchor, for the landing preview on each chip. */
   clock?: { clockMinutes: number; calendarStart: CalendarStart };
+  /** The sim world clock for a routed chat (R3 slice 4) — landings preview in WORLD time. */
+  simStorySecond?: number | null;
   onPick: (amount: ChatSkipAmount | null) => void;
   /** Reopen-opener initiative (chat-initiative.plan.md): the character reaches out first. */
   onInitiative?: () => void;
 }) {
-  const landing = (amount: ChatSkipAmount | null): string | undefined =>
-    amount && clock
-      ? `→ ${formatChatMoment(clock.clockMinutes + CHAT_SKIP_MINUTES[amount], clock.calendarStart)}`
-      : undefined;
+  const landing = (amount: ChatSkipAmount | null): string | undefined => {
+    if (!amount) return undefined;
+    if (simStorySecond != null) {
+      return `→ ${formatStoryClockShort(storyClockAt(simStorySecond + CHAT_SKIP_MINUTES[amount] * 60))}`;
+    }
+    return clock ? `→ ${formatChatMoment(clock.clockMinutes + CHAT_SKIP_MINUTES[amount], clock.calendarStart)}` : undefined;
+  };
   // Options that actually skip time, for the caption row below (Continue has no landing).
-  const landings = clock ? PICKUP_OPTIONS.filter((opt) => opt.amount !== null) : [];
+  const landings = clock || simStorySecond != null ? PICKUP_OPTIONS.filter((opt) => opt.amount !== null) : [];
   return (
     <div className="flex flex-col gap-0.5">
       <div role="group" aria-label={`Pick up with ${who}`} className="flex flex-wrap items-center gap-1.5">

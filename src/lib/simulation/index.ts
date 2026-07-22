@@ -1,5 +1,6 @@
 export * from "./access";
 export * from "./activities";
+export * from "./clock";
 export * from "./bodies";
 export * from "./body-reads";
 export * from "./commitments";

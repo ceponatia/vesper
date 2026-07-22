@@ -19,6 +19,7 @@ import {
   loadChatScenario,
   loadChatState,
   persistChatState,
+  readSimChatStorySecond,
   resolveSeededOutfit,
   saveChatScenario,
   seedChatScenario,
@@ -54,6 +55,12 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   }
   const busy = chatBusyResponse(chatId);
   if (busy) return busy;
+  // Lanes stay separate (R3 slice 4, ruling 17): a sim-routed chat's time is the
+  // world's storySecond — skips go through the sim advance_time admission, and
+  // the legacy scenario clock must never advance underneath it.
+  if ((await readSimChatStorySecond(chatId)) !== null) {
+    return jsonError("sim_routed", "this conversation's time belongs to its world — reload and skip again", 409);
+  }
 
   const sink = new DiagnosticCollector();
   const primaryProfile = parseOr(

@@ -73,7 +73,11 @@ export const DAYLIGHT_BAND_START_MINUTES: Record<DaylightBand, number> = {
  * re-deriving hours.
  */
 export function daylightBand(time: GameTime): DaylightBand {
-  const minute = minuteOfDay(time);
+  return daylightBandAtMinute(minuteOfDay(time));
+}
+
+/** The band at a bare minute-of-day (0–1439) — for clocks with no GameTime (sim story clock). */
+export function daylightBandAtMinute(minute: number): DaylightBand {
   if (minute >= DAYLIGHT_BAND_START_MINUTES.dawn && minute < DAYLIGHT_BAND_START_MINUTES.day) return "dawn";
   if (minute >= DAYLIGHT_BAND_START_MINUTES.day && minute < DAYLIGHT_BAND_START_MINUTES.dusk) return "day";
   if (minute >= DAYLIGHT_BAND_START_MINUTES.dusk && minute < DAYLIGHT_BAND_START_MINUTES.night) return "dusk";

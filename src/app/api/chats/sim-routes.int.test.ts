@@ -6,6 +6,7 @@ import {
   characterChats,
   characters,
   db,
+  simBranches,
   simItemHoldings,
   simWorlds,
   users,
@@ -44,6 +45,8 @@ import { POST as chatsCreate } from "./route";
 import { POST as chatSend } from "./[chatId]/route";
 import { POST as simCommand } from "./[chatId]/sim-command/route";
 import { POST as simTurn } from "./[chatId]/sim-turn/route";
+import { GET as stateGet } from "./[chatId]/state/route";
+import { POST as legacyTimeSkip } from "./[chatId]/time-skip/route";
 
 async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -271,5 +274,39 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
       .from(characterChats)
       .where(eq(characterChats.id, ids.chat));
     expect(JSON.stringify(chatRow?.lastReplyFailure ?? null)).toContain("the scene could not open");
+
+    // R3 slice 4 (ruling 17): the player's time skip — advance_time drains the
+    // bounded story-time advance (completing the rest above), the state
+    // envelope carries the WORLD clock, and the next send opens fresh.
+    const [beforeAdvance] = await db()
+      .select({ storySecond: simBranches.storySecond })
+      .from(simBranches)
+      .where(eq(simBranches.id, ROLLOUT_BRANCH_ID));
+    if (!beforeAdvance) throw new Error("rollout branch missing");
+    const advanced = await simCommand(
+      jsonReq(`/api/chats/${ids.chat}/sim-command`, { kind: "advance_time", minutes: 720 }),
+      ctx(ids.chat),
+    );
+    expect(advanced.status).toBe(200);
+    const advancedBody = (await advanced.json()) as { status: string; toStorySecond: number };
+    expect(advancedBody.status).toBe("advanced");
+    expect(advancedBody.toStorySecond).toBe(beforeAdvance.storySecond + 720 * 60);
+    const stateRes = await stateGet(new NextRequest(`http://t/api/chats/${ids.chat}/state`), ctx(ids.chat));
+    expect(stateRes.status).toBe(200);
+    const stateBody = (await stateRes.json()) as { simClock: number | null };
+    expect(stateBody.simClock).toBe(advancedBody.toStorySecond);
+    const afterSkipSend = await chatSend(
+      jsonReq(`/api/chats/${ids.chat}`, { kind: "send", content: "That was a good rest." }),
+      ctx(ids.chat),
+    );
+    expect(afterSkipSend.status).toBe(200);
+    expect((await afterSkipSend.text()).replace(/\u200B/g, "").length).toBeGreaterThan(0);
+
+    // The legacy time-skip lane is closed for a routed chat — lanes stay separate.
+    const legacySkip = await legacyTimeSkip(
+      jsonReq(`/api/chats/${ids.chat}/time-skip`, { amount: "hours" }),
+      ctx(ids.chat),
+    );
+    expect(legacySkip.status).toBe(409);
   });
 });

@@ -11,6 +11,7 @@ import {
   type SoftCanonProposal,
 } from "@/contracts/simulation/soft-canon";
 import { parseOr } from "@/lib/parse";
+import { formatStoryClock, storyClockAt } from "./clock";
 
 /**
  * E4.3 — the §23.1 narrator trust boundary and the §23.2 presentation
@@ -94,8 +95,15 @@ export function buildCutRenderPrompt(
   const names = conversation.actorNames ?? {};
   const nameOf = (actorId: string) => names[actorId] ?? actorId;
   const viewpointName = nameOf(cut.viewpointActorId);
+  // The clock made legible (ruling 17): raw story-seconds read as nothing to a
+  // model, so without this line time-of-day color drifts to whatever the
+  // transcript tail implies — the R3 live-session "afternoon light at 8am" bug.
+  const clock = storyClockAt(cut.fromStorySecond);
   lines.push(
     `VIEWPOINT: ${viewpointName}${conversation.viewpointIsPlayer ? " — THE PLAYER'S CHARACTER" : ""}`,
+    `WORLD CLOCK: ${formatStoryClock(clock)} — world truth. Light, meals, fatigue, and`,
+    "all time-of-day color follow this clock. If earlier prose implies a different",
+    "time of day, the clock wins — shift naturally, never remark on the correction.",
     `STORY SPAN: second ${cut.fromStorySecond} through ${cut.throughStorySecond}`,
   );
   if (Object.keys(names).length > 0) {

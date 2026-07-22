@@ -13,12 +13,14 @@ import {
 } from "react";
 import {
   CHAT_DEFAULT_CALENDAR_START,
+  CHAT_SKIP_MINUTES,
   formatChatMoment,
   parseChatSceneModel,
   type ChatActionId,
   type ChatSceneModel,
   type ChatSkipAmount,
 } from "@/contracts";
+import { formatStoryClock, storyClockAt } from "@/lib/simulation";
 import {
   charactersApi,
   chatsApi,
@@ -889,6 +891,25 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const skipTime = async (amount: ChatSkipAmount) => {
     if (skipBusy || archived) return;
     setSkipBusy(true);
+    // Sim-routed chats (R3 slice 4, ruling 17): the skip is a world command —
+    // wrap the standing scene, drain the bounded advance — never the legacy
+    // scenario-clock write. Same amounts, same chips, different lane.
+    if (chatState?.simClock != null) {
+      const result = await chatsApi.simAdvanceTime(chatId, CHAT_SKIP_MINUTES[amount]);
+      setSkipBusy(false);
+      setPickupDismissed(true);
+      if (!result.ok) {
+        toast.push({ title: "Time skip failed", description: result.error.message, tone: "error" });
+        return;
+      }
+      await refreshState();
+      const landing = result.data.toStorySecond;
+      toast.push({
+        title: "Time passes…",
+        description: `It's now ${landing === null ? "later" : formatStoryClock(storyClockAt(landing))}. ${who} will pick the scene up from there.`,
+      });
+      return;
+    }
     const result = await chatsApi.timeSkip(chatId, amount);
     setSkipBusy(false);
     setPickupDismissed(true);
@@ -1290,6 +1311,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               chatId={chatId}
               clockMinutes={chatState?.clockMinutes ?? 0}
               calendarStart={chatState?.calendarStart ?? CHAT_DEFAULT_CALENDAR_START}
+              simStorySecond={chatState?.simClock ?? null}
               archived={archived}
               skipBusy={skipBusy || sending}
               onSkip={(amount) => void skipTime(amount)}
@@ -1311,6 +1333,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                   ? { clockMinutes: chatState.clockMinutes, calendarStart: chatState.calendarStart }
                   : undefined
               }
+              simStorySecond={chatState?.simClock ?? null}
               onPick={(amount) => {
                 if (amount === null) setPickupDismissed(true);
                 else void skipTime(amount);
