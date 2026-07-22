@@ -21,6 +21,7 @@ export * from "./presentation";
 export * from "./promotion";
 export * from "./replay";
 export * from "./routine";
+export * from "./shadow-parity";
 export * from "./social";
 export * from "./soft-canon";
 export * from "./space";

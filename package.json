@@ -36,6 +36,7 @@
     "sim:seed": "tsx scripts/sim/seed-rollout-world.ts",
     "sim:advance": "tsx scripts/sim/advance-rollout-world.ts",
     "sim:render-turn": "tsx scripts/sim/render-turn.ts",
+    "sim:shadow-corpus": "tsx scripts/sim/shadow-corpus.ts",
     "eval:schedule-kind": "tsx scripts/eval/schedule-kind/run.ts",
     "eval:retrieval": "tsx scripts/eval/retrieval/run.ts",
     "test:engine": "vitest run --no-file-parallelism src/server/engine/simulation src/server/engine/sim-narrator.int.test.ts src/app/api/chats/sim-routes.int.test.ts src/app/api/admin/engine-authority/engine-authority.int.test.ts src/app/api/admin/sim/sim-admin.int.test.ts",

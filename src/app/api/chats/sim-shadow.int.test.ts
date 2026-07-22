@@ -34,6 +34,7 @@ import { POST as chatsCreate } from "./route";
 import { POST as chatSend } from "./[chatId]/route";
 import { POST as legacyTimeSkip } from "./[chatId]/time-skip/route";
 import { GET as shadowGet, PATCH as shadowPatch } from "../admin/sim/shadow/[chatId]/route";
+import { GET as shadowReport } from "../admin/sim/shadow/[chatId]/report/route";
 
 async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -189,5 +190,24 @@ describe.runIf(ready)("R4 shadow mode under chat", () => {
       .from(simShadowDivergences)
       .where(eq(simShadowDivergences.id, clockRow.id));
     expect(persisted?.verdict).toBe("intentional");
+
+    // The computed parity report (slice 2): totals over the recorded rows,
+    // ruled rows counted but out of findings.
+    const reportRes = await shadowReport(
+      new NextRequest(`http://t/api/admin/sim/shadow/${ids.chat}/report`),
+      ctx(ids.chat),
+    );
+    expect(reportRes.status).toBe(200);
+    const { report } = (await reportRes.json()) as {
+      report: {
+        totals: { rows: number; byVerdict: Record<string, number> };
+        prose: { pairs: number; rendered: number };
+        clock: { latestSuccessorClock: string | null };
+      };
+    };
+    expect(report.totals.rows).toBeGreaterThanOrEqual(4);
+    expect(report.totals.byVerdict.intentional).toBeGreaterThanOrEqual(1);
+    expect(report.prose.rendered).toBeGreaterThanOrEqual(1);
+    expect(report.clock.latestSuccessorClock).toContain("Day");
   });
 });
