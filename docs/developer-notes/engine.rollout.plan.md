@@ -195,7 +195,44 @@ is the cleanup that makes the migration real.
    stands, and `end_scene` ends the resolved engagement; the player line
    persists before the scene gate; the client strips the heartbeat before
    counting received bytes, so a refusal shows the ordinary failure popup
-   with the §14.4 public reason. Exit unchanged:
+   with the §14.4 public reason. **Slice 4 — world-clock parity (planned;
+   precedes the exit session; ruling 17).** Live finding: narration colored
+   time from transcript prose ("afternoon light" against a morning world
+   clock) because the cut prompt renders raw story-seconds
+   (`STORY SPAN: second 183600…`) — illegible as time-of-day, so the model
+   reads the only legible signal, the dialogue tail — while the header chip
+   shows the *legacy* chat clock (`clockMinutes`/`calendarStart` via
+   `/state`), unrelated to the branch's `storySecond`. Three clock surfaces,
+   no shared truth. The patch (presentation-lane only; authority stays
+   `successor_narrative_view`):
+   1. *Sim clock seam* — a pure `src/lib/simulation` helper mapping
+      `storySecond` → story day index, hh:mm, daylight band (reusing
+      `to12Hour`/`daylightBand` from `src/lib/clock.ts`), rendering
+      "Day 3 · 10:04am · morning". No weekday/month invention — the full
+      calendar anchor is R5's (ruling 17).
+   2. *Narrator prompt* — `buildCutRenderPrompt` adds a legible
+      `WORLD CLOCK:` line from `cut.fromStorySecond` plus a truth-wins rule:
+      light/meals/fatigue color follow the world clock; when the RECENT
+      TRANSCRIPT implies a different time of day, the clock wins — shift
+      naturally, never lampshade the correction (same pattern as the
+      never-imitate-voicing note).
+   3. *Header chip parity* — for a sim-routed chat the once-per-open
+      envelope carries the branch clock (display-only read) and the strip
+      renders it instead of the legacy clock; legacy chats unchanged.
+   4. *Player time control parity* — a new `sim-command` kind
+      (`advance_time`, bounded minutes/hours/days under the player
+      principal): closes the standing scene as `participant_choice` when
+      one is open (matching the legacy "Later →" wrap-and-pick-up
+      semantics), then runs the bounded advance drain the storyteller
+      `advance` already uses; the chat skip affordances (clock card /
+      pickup strip) submit it for sim-routed chats, with landing labels
+      from the slice-4 clock seam. Build detail to settle in the slice:
+      per-skip bound and whether the pickup strip's named skips
+      (Later / Next morning / Days later) map by daylight band.
+   Tests: pure (clock seam; prompt carries the WORLD CLOCK line and the
+   truth-wins rule), int (envelope clock for routed chats; advance_time
+   ends the scene, moves `storySecond`, and the next send opens fresh —
+   the slice-3 fix's find-or-open already proves reopen). Exit unchanged:
    a human plays a scene in the internal test world on Fly. Minimum playable seam **inside the existing
    character chat UI at `/chat/`** (ruling 1 — no standalone play page): API
    routes that admit player commands into the successor
@@ -218,7 +255,17 @@ is the cleanup that makes the migration real.
    domain at a time (candidate order: time/clock → space/presence → bodies &
    meters → items/wardrobe → knowledge/memory → relationships), each with dual
    writes through its invariant window, fixture comparison, and a rollback
-   window before the next domain starts. `successor_rag_eligibility` flips when
+   window before the next domain starts. **The time/clock domain expands the
+   R3 slice-4 clock work into full calendar integration (ruling 17):** a
+   calendar anchor on the world config maps `storySecond` → weekday/date
+   (superseding the legacy `CalendarStart`/`clockMinutes` lane as the one
+   time authority), the slice-4 presentation seam upgrades to render it
+   (prose and chip say "Monday morning", not just "Day 3"), and **optional
+   player control is the domain's product surface**: time advances naturally
+   through play, or the player skips N minutes / hours / days — the slice-4
+   `advance_time` admission graduating from bounded skip to the domain's
+   authoritative time control, with chat's pickup/skip affordances migrating
+   onto it. `successor_rag_eligibility` flips when
    the knowledge domain lands. The chat lane's meter-economy/body-needs plans
    (roadmap Next) port through the Gate 5 contracts here rather than being
    built twice. Exit per domain: dual writes stopped, legacy write path
