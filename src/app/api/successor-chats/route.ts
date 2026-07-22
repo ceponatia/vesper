@@ -75,6 +75,8 @@ export const POST = withUser(async (user, req) => {
     chatId,
     byUserId: user.id,
     authority: "successor_narrative_view",
+    // R5 knowledge/memory: §24 recall routes for successor chats from birth.
+    ragEligibility: true,
     simBranchId: world.branchId,
     simPlayerActorId: world.playerActorId,
     simPrimaryActorId: world.primaryActorId,

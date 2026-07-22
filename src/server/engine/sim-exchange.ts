@@ -18,16 +18,22 @@ import {
   simZones,
 } from "@/server/db";
 import { and, desc, eq } from "drizzle-orm";
+import { embedText, embedTexts } from "@/server/ai";
 import { readChatEngineAuthority } from "./chat-authority";
 import { persistAssistantReply } from "./chat-pipeline";
+import { enqueueChatSummary, loadChatSummary } from "./chat-summary";
+import { log } from "../log";
 import { buildLiveDeliberation, renderCommittedCut } from "./sim-narrator";
 import {
+  drainMemoryIndexOutbox,
   prepareEngagementTurn,
+  queryMemoryDocuments,
   readDurableEngagements,
   submitDurableMoveActor,
   submitDurableOpenEngagement,
   submitDurableStartActivity,
   submitDurableTransferItem,
+  type MemoryEmbedder,
 } from "./simulation";
 
 /**
@@ -152,6 +158,48 @@ export async function readBranchClock(branchId: string): Promise<SimChatClock | 
     storySecond: row.storySecond,
     calendarStart: parseOr(simCalendarStartSchema.nullable(), row.calendarStart ?? null, null, undefined, "sim_worlds.calendar_start"),
   };
+}
+
+/** The live embedder adapter for the §24 index — pseudo in demo mode, real otherwise. */
+const memoryEmbedder: MemoryEmbedder = async (texts) => {
+  const embedded = await embedTexts(texts);
+  return { model: embedded[0]?.embedder ?? "pseudo", vectors: embedded.map((entry) => entry.vector) };
+};
+
+/**
+ * R5 knowledge/memory — §24 viewpoint recall for one utterance: drain the
+ * branch-agnostic index outbox (bounded — recall is current for the scene
+ * being played), embed the utterance, and query the viewpoint's documents.
+ * Returns epistemic-labeled lines for the prompt; every failure degrades to
+ * [] with a log line, never a failed turn.
+ */
+async function recallViewpointMemory(input: {
+  chatId: string;
+  branchId: string;
+  viewpointActorId: string;
+  message: string;
+  atStorySecond: number;
+}): Promise<string[]> {
+  try {
+    await drainMemoryIndexOutbox({ workerId: `sim-mem-${input.chatId}`, embed: memoryEmbedder, maxIterations: 25 });
+    const embedded = await embedText(input.message);
+    const recall = await queryMemoryDocuments({
+      branchId: input.branchId,
+      viewpointActorId: input.viewpointActorId,
+      atStorySecond: input.atStorySecond,
+      queryText: input.message,
+      queryEmbedding: embedded.vector,
+      queryEmbeddingModel: embedded.embedder,
+      limit: 6,
+    });
+    return recall.results.map((result) => `[${result.epistemicLabel}] ${result.text}`);
+  } catch (error) {
+    log.warn("engine.sim", "viewpoint recall degraded to empty", {
+      chatId: input.chatId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
 }
 
 interface AdmissionOutcome {
@@ -348,13 +396,14 @@ export async function runSimChatExchange(input: {
   // transcript lines (before this turn's insert), oldest first. Assistant
   // lines are labeled NARRATION, not a character — earlier replies may have
   // wrongly voiced the player's character and must read as narration output,
-  // never as an example of that character speaking.
+  // never as an example of that character speaking. (12 lines since R5
+  // knowledge/memory — the rolling summary carries the longer arc.)
   const tailRows = await db()
     .select({ role: characterChatMessages.role, content: characterChatMessages.content })
     .from(characterChatMessages)
     .where(eq(characterChatMessages.chatId, input.chatId))
     .orderBy(desc(characterChatMessages.createdAt))
-    .limit(6);
+    .limit(12);
   const dialogueTail = tailRows
     .reverse()
     .map((row) => ({
@@ -409,6 +458,21 @@ export async function runSimChatExchange(input: {
     ...(admission?.failure === undefined ? {} : { failurePresentations: [admission.failure] }),
   });
   const clock = await readBranchClock(branchId);
+  // R5 knowledge/memory: §24 viewpoint recall (rag-eligibility-gated) + the
+  // rolling conversation summary. Both degrade to absent — a failed recall
+  // narrows context, never fails the turn (docs/resilience.md).
+  const memory = authority.ragEligibility
+    ? await recallViewpointMemory({
+        chatId: input.chatId,
+        branchId,
+        viewpointActorId: playerActorId,
+        message: input.message,
+        atStorySecond: clock?.storySecond ?? 0,
+      })
+    : [];
+  const conversationSummary = await loadChatSummary(input.chatId)
+    .then((row) => row?.summary ?? "")
+    .catch(() => "");
   const rendered = await renderCommittedCut({
     branchId,
     engagementId: scene.engagementId,
@@ -420,6 +484,8 @@ export async function runSimChatExchange(input: {
       actorNames,
       calendarStart: clock?.calendarStart ?? null,
       ...(admission?.executed === undefined ? {} : { admittedAction: admission.executed }),
+      ...(conversationSummary === "" ? {} : { conversationSummary }),
+      ...(memory.length === 0 ? {} : { memory }),
     },
   });
   if (rendered.status !== "rendered" || rendered.prose === undefined) {
@@ -441,6 +507,9 @@ export async function runSimChatExchange(input: {
       ...(rendered.confirmStatus === undefined ? {} : { confirmStatus: rendered.confirmStatus }),
     },
   });
+  // R5 knowledge/memory: fold the conversation forward — the job self-dedupes
+  // and no-ops below its own trigger.
+  void enqueueChatSummary({ chatId: input.chatId });
   return {
     ok: true,
     messageId: assistantMessageId,
