@@ -293,6 +293,23 @@ is the cleanup that makes the migration real.
    so the exit report is computed, and "ruled intentional" is a durable row
    verdict. Shadow renders skip live deliberation (deterministic fallback
    only — comparison prose doesn't justify a second model call class).
+   **Slice 1 shipped — 2026-07-22:** the `onSettled` pipeline signal (fires
+   on every settled exchange; the route gates it to shadowed plain sends),
+   `sim-shadow.ts` (keyed-lock guarded, never-throw: prose render from the
+   same utterance + pre-exchange tail, presence vs the pair's standing
+   engagement, meters via ruling 15, raw clock captures), the
+   `sim_shadow_divergences` table (migration 0083), the legacy time-skip
+   mirror onto the branch clock, and
+   `GET|PATCH /api/admin/sim/shadow/[chatId]` for listing + durable
+   verdicts. Int-proven (AI_FAKE, `sim-shadow.int.test.ts`) and
+   live-smoked on Fly on the owner's account: same player line, two
+   worlds side by side — the legacy lane's authored New-Year's-morning
+   scene vs the successor's Day 3 · 2:40pm afternoon render; transcript
+   untouched (2 lines), legacy latency unaffected (~32s own model call),
+   a clock verdict ruled `intentional` through the API. Gates green
+   (3 120 pure + 477 int). Remaining for the R4 exit: the comparison
+   corpus itself (a scripted + played exchange set), the scale-aware
+   parity analysis over the recorded rows, and the agreed report.
    Exit: an agreed shadow-parity report over a fixed comparison corpus;
    every divergence either fixed or ruled intentional.
 6. **R5 — domain-by-domain authority migration.** `successor_authoritative` one
