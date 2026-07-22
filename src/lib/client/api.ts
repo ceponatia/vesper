@@ -365,6 +365,9 @@ export const chatStateSnapshotSchema = z.object({
   // The story-calendar anchor (chat-clock-calendar.plan.md) — the clock card formats
   // clockMinutes against it; degraded default matches CHAT_DEFAULT_CALENDAR_START.
   calendarStart: calendarStartSchema.catch({ year: 2024, month: 1, day: 1, hour: 8, minute: 0 }),
+  // Sim-routed chats (R3 slice 4, ruling 17): the linked world's storySecond — the
+  // clock the chip/card/skips read INSTEAD of clockMinutes. Null for legacy chats.
+  simClock: z.number().nullable().catch(null),
   // False ⇒ a seed-on-read (no row yet); the chat strip then previews the authored
   // Starting Relationship. Defaults true so a missing flag shows the stored disposition.
   persisted: z.boolean().catch(true),
@@ -1201,6 +1204,17 @@ export const chatsApi = {
    */
   timeSkip: (chatId: string, amount: ChatSkipAmount) =>
     apiPost(chatStateSnapshotSchema, `/api/chats/${chatId}/time-skip`, { amount }),
+  /**
+   * Sim-routed time skip (R3 slice 4, ruling 17): ends the standing scene (the
+   * "Later →" wrap) and drains the world's bounded story-time advance. The chat
+   * skip affordances call THIS for sim-routed chats, never the legacy timeSkip.
+   */
+  simAdvanceTime: (chatId: string, minutes: number) =>
+    apiPost(
+      z.object({ status: z.string().catch(""), toStorySecond: z.number().nullable().catch(null) }),
+      `/api/chats/${chatId}/sim-command`,
+      { kind: "advance_time", minutes },
+    ),
   /** The Relationship panel payload (spec §7.2–7.4 UI): stage, sparkline, milestones, story so far. */
   relationship: (chatId: string) => apiGet(chatRelationshipSchema, `/api/chats/${chatId}/relationship`),
   // --- Relationship matrix (relationship-model.plan.md slice 6) ---

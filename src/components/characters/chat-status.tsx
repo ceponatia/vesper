@@ -13,6 +13,7 @@ import {
   type ChatActionId,
 } from "@/contracts";
 import type { ChatStateSnapshot } from "@/lib/client/api";
+import { formatStoryTime, storyClockAt } from "@/lib/simulation";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { MoodChip } from "@/components/ui/mood-chip";
@@ -108,15 +109,26 @@ export function StatusStrip({ state, onOpenScenario }: { state: ChatStateSnapsho
   // free-text outfit for legacy/ad-hoc chats (chat-wardrobe-parity).
   const outfit = (state.outfitLabel || state.outfit).trim();
   const time = chatGameTime(state.clockMinutes, state.calendarStart);
+  // Sim-routed chats show the WORLD clock (R3 slice 4, ruling 17) — the branch's
+  // storySecond, the same truth the narrator colors by — never the legacy clock.
+  const sim = state.simClock == null ? null : storyClockAt(state.simClock);
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <button
         type="button"
         onClick={onOpenScenario}
-        title={`${time.weekday} — story time (tap to open Scenario setup)`}
+        title={sim ? "World time (tap to open Scenario setup)" : `${time.weekday} — story time (tap to open Scenario setup)`}
         className="touch-target inline-flex shrink-0 items-center gap-1 rounded-full border border-ink-500 px-2 py-0.5 text-[11px] leading-4 whitespace-nowrap text-paper-300 transition-colors hover:border-accent-500/50 hover:text-paper-100"
       >
-        {time.weekday.slice(0, 3)} <span aria-hidden>·</span> {formatChatTime(time)}
+        {sim ? (
+          <>
+            Day {sim.dayIndex + 1} <span aria-hidden>·</span> {formatStoryTime(sim)}
+          </>
+        ) : (
+          <>
+            {time.weekday.slice(0, 3)} <span aria-hidden>·</span> {formatChatTime(time)}
+          </>
+        )}
       </button>
       <MoodChip emotion={state.emotion} className="text-xs" />
       <Tag tone="accent" title={`Regard ${state.regard} · Familiarity ${state.familiarity}`}>

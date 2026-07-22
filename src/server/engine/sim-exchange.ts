@@ -2,7 +2,7 @@ import { claimHoldingEngagementStates } from "@/contracts/simulation/engagements
 import { simulationHash } from "@/lib/simulation/hash";
 import { deriveEngagementId } from "@/lib/simulation/engagements";
 import { newId } from "@/lib/ids";
-import { characterChatMessages, db, simCharacters } from "@/server/db";
+import { characterChatMessages, db, simBranches, simCharacters } from "@/server/db";
 import { desc, eq } from "drizzle-orm";
 import { readChatEngineAuthority } from "./chat-authority";
 import { persistAssistantReply } from "./chat-pipeline";
@@ -90,6 +90,30 @@ export async function findOrOpenStandingEngagement(input: {
   return opened.status === "rejected"
     ? { ok: false, code: opened.code, publicReason: opened.publicReason }
     : { ok: false, code: "sim_conflict", publicReason: "The world moved; try again." };
+}
+
+/**
+ * R3 slice 4 (ruling 17) — the routed chat's world clock: the linked branch's
+ * `storySecond`, or null for a legacy chat. The chat UI shows THIS clock for
+ * sim-routed chats (parity throughout the system), never the legacy scenario
+ * clock; the client derives the legible label via the shared story-clock seam.
+ */
+export async function readSimChatStorySecond(chatId: string): Promise<number | null> {
+  const authority = await readChatEngineAuthority(chatId);
+  if (
+    !authority ||
+    authority.authority === "legacy_chat" ||
+    authority.authority === "successor_shadow" ||
+    !authority.simBranchId
+  ) {
+    return null;
+  }
+  const [branch] = await db()
+    .select({ storySecond: simBranches.storySecond })
+    .from(simBranches)
+    .where(eq(simBranches.id, authority.simBranchId))
+    .limit(1);
+  return branch?.storySecond ?? null;
 }
 
 export type SimChatExchangeResult =

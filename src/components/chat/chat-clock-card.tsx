@@ -11,6 +11,7 @@ import {
   type ChatSkipAmount,
 } from "@/contracts";
 import { minuteOfDay, type CalendarStart } from "@/lib/clock";
+import { formatStoryClockShort, formatStoryTime, storyClockAt } from "@/lib/simulation";
 import type { ChatStateSnapshot } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
 import { CalendarStartDialog } from "@/components/chat/calendar-start-dialog";
@@ -34,6 +35,7 @@ export function ChatClockCard({
   chatId,
   clockMinutes,
   calendarStart,
+  simStorySecond = null,
   archived,
   skipBusy,
   onSkip,
@@ -42,6 +44,12 @@ export function ChatClockCard({
   chatId: string;
   clockMinutes: number;
   calendarStart: CalendarStart;
+  /**
+   * The sim world's clock for a routed chat (R3 slice 4, ruling 17) — when set,
+   * the card shows WORLD time (no weekday/calendar until R5's anchor) and the
+   * anchor editor hides (the calendar start is a legacy-lane concept).
+   */
+  simStorySecond?: number | null;
   archived: boolean;
   /** True while a skip or reply is in flight — chips disable. */
   skipBusy: boolean;
@@ -51,26 +59,41 @@ export function ChatClockCard({
   onSaved: (snapshot: ChatStateSnapshot) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const sim = simStorySecond == null ? null : storyClockAt(simStorySecond);
   const time = chatGameTime(clockMinutes, calendarStart);
-  const part = dayPartAtMinute(minuteOfDay(time));
-  const landing = (amount: ChatSkipAmount) => formatChatMoment(clockMinutes + CHAT_SKIP_MINUTES[amount], calendarStart);
+  const part = sim ? sim.dayPart : dayPartAtMinute(minuteOfDay(time));
+  const landing = (amount: ChatSkipAmount) =>
+    sim
+      ? formatStoryClockShort(storyClockAt(sim.storySecond + CHAT_SKIP_MINUTES[amount] * 60))
+      : formatChatMoment(clockMinutes + CHAT_SKIP_MINUTES[amount], calendarStart);
 
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Story time</span>
+      <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">{sim ? "World time" : "Story time"}</span>
       <div className="rounded-md border border-ink-600 bg-ink-850 px-2.5 py-2">
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          disabled={archived}
-          title={archived ? undefined : "Set when the story starts"}
-          className="block w-full cursor-pointer text-left disabled:cursor-default"
-        >
-          <span className="block text-sm text-paper-200">{formatChatDate(time)}</span>
-          <span className="block text-xs text-paper-400">
-            {formatChatTime(time)} · {part} · day {time.dayIndex + 1}
-          </span>
-        </button>
+        {sim ? (
+          // World time (sim-routed): no weekday/date to show or edit until the
+          // R5 calendar anchor — day index + clock + day part IS the truth.
+          <div className="w-full text-left">
+            <span className="block text-sm text-paper-200">Day {sim.dayIndex + 1}</span>
+            <span className="block text-xs text-paper-400">
+              {formatStoryTime(sim)} · {part}
+            </span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            disabled={archived}
+            title={archived ? undefined : "Set when the story starts"}
+            className="block w-full cursor-pointer text-left disabled:cursor-default"
+          >
+            <span className="block text-sm text-paper-200">{formatChatDate(time)}</span>
+            <span className="block text-xs text-paper-400">
+              {formatChatTime(time)} · {part} · day {time.dayIndex + 1}
+            </span>
+          </button>
+        )}
         <div className="mt-2 flex flex-wrap gap-1" role="group" aria-label="Skip time">
           {SKIP_CHIPS.map((chip) => (
             <Button
