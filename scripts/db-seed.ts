@@ -1,50 +1,24 @@
 import "dotenv/config";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import {
-  characterProfileSchema,
-  itemDefinitionSchema,
-  locationSnapshotSchema,
-  worldLoreSchema,
-  worldStyleSchema,
-  type CharacterProfile,
-  type ItemDefinition,
-} from "../src/contracts";
+import { characterProfileSchema, itemDefinitionSchema, type CharacterProfile } from "../src/contracts";
 import { DiagnosticCollector } from "../src/contracts/diagnostics";
 import { newId } from "../src/lib/ids";
-import {
-  characters,
-  db,
-  itemInstances,
-  items,
-  locations,
-  loreChunks,
-  sessionLocations,
-  sessionParticipants,
-  sessions,
-  users,
-  worldCast,
-  worldItems,
-  worldLinks,
-  worldLocations,
-  worlds,
-  type Db,
-} from "../src/server/db";
-import { indexLoreChunks, refreshSearchEmbedding } from "../src/server/memory";
+import { characters, db, items, locations, users, type Db } from "../src/server/db";
+import { refreshSearchEmbedding } from "../src/server/memory";
 import { DEV_PASSWORD, ensureDevCredential } from "../src/server/auth";
-import { harborHouse, SEED_TAG, WORLD_NAME, type SeedWorldFixture } from "./fixtures/harbor-house";
+import { harborHouse, SEED_TAG, type SeedWorldFixture } from "./fixtures/harbor-house";
 
 /**
- * Idempotent dev seed (docs/getting-started.md): wipes and recreates the
- * "Harbor House" starter world for the default dev user. Seed rows are marked
- * with SEED_TAG in their tags column; user-authored content is never wiped —
- * lingering references to seed rows are detached (sessions keep playing from
- * their snapshots), never cascaded.
+ * Idempotent dev seed (docs/getting-started.md): ensures the dev + UI/QA users
+ * (with credentials) and (re)creates the "Harbor House" library content —
+ * locations, items, characters — for the default dev user. Seed rows are marked
+ * with SEED_TAG; the re-seed drops the prior tagged rows first, and
+ * user-authored (untagged) content is never wiped.
  */
 
 const DEV_EMAIL = "player@vesper.local";
 
-/** The dedicated UI/QA admin (CLAUDE.md) — a fixed id every Tsukikage Onsen
- *  `ownerId` references, so it must be preserved, never recreated with a new id. */
+/** The dedicated UI/QA admin (CLAUDE.md) — a fixed id, so it must be preserved. */
 const UXTEST_ID = "uxtestmaina1b2c3d4e5f6g7";
 const UXTEST_EMAIL = "uxtest-main@vesper.local";
 
@@ -83,47 +57,19 @@ async function taggedIds(tx: Tx, table: typeof characters | typeof locations | t
   return rows.map((r) => r.id);
 }
 
+/** Drop the prior seed's tagged library rows so the re-seed (fresh ids each run) stays idempotent. */
 async function wipe(tx: Tx, ownerId: string): Promise<void> {
-  const oldWorlds = await tx
-    .select({ id: worlds.id })
-    .from(worlds)
-    .where(and(eq(worlds.ownerId, ownerId), eq(worlds.name, WORLD_NAME)));
-  const worldIds = oldWorlds.map((w) => w.id);
-  if (worldIds.length > 0) {
-    // sessions.world_id has no cascade; their children cascade from sessions.
-    const gone = await tx.delete(sessions).where(inArray(sessions.worldId, worldIds)).returning({ id: sessions.id });
-    if (gone.length > 0) console.log(`  deleted ${gone.length} session(s) of the previous seed world`);
-    await tx.delete(worlds).where(inArray(worlds.id, worldIds)); // cascades world_* + lore_chunks
-    console.log(`  deleted previous world "${WORLD_NAME}" (${worldIds.length})`);
-  }
-
   const charIds = await taggedIds(tx, characters, ownerId);
-  if (charIds.length > 0) {
-    await tx.update(sessionParticipants).set({ characterId: null }).where(inArray(sessionParticipants.characterId, charIds));
-    const borrowed = await tx.delete(worldCast).where(inArray(worldCast.sourceCharacterId, charIds)).returning({ id: worldCast.id });
-    if (borrowed.length > 0) console.log(`  warning: removed ${borrowed.length} cast row(s) referencing seed characters in other worlds`);
-    await tx.delete(characters).where(inArray(characters.id, charIds));
-  }
+  if (charIds.length > 0) await tx.delete(characters).where(inArray(characters.id, charIds));
 
   const itemIds = await taggedIds(tx, items, ownerId);
-  if (itemIds.length > 0) {
-    await tx.update(itemInstances).set({ itemId: null }).where(inArray(itemInstances.itemId, itemIds));
-    const borrowed = await tx.delete(worldItems).where(inArray(worldItems.sourceItemId, itemIds)).returning({ id: worldItems.id });
-    if (borrowed.length > 0) console.log(`  warning: removed ${borrowed.length} item placement(s) referencing seed items in other worlds`);
-    await tx.delete(items).where(inArray(items.id, itemIds));
-  }
+  if (itemIds.length > 0) await tx.delete(items).where(inArray(items.id, itemIds));
 
   const locIds = await taggedIds(tx, locations, ownerId);
-  if (locIds.length > 0) {
-    await tx.update(sessionLocations).set({ locationId: null }).where(inArray(sessionLocations.locationId, locIds));
-    const borrowed = await tx.delete(worldLocations).where(inArray(worldLocations.sourceLocationId, locIds)).returning({ id: worldLocations.id });
-    if (borrowed.length > 0) console.log(`  warning: removed ${borrowed.length} location row(s) referencing seed locations in other worlds`);
-    await tx.delete(locations).where(inArray(locations.id, locIds));
-  }
+  if (locIds.length > 0) await tx.delete(locations).where(inArray(locations.id, locIds));
 }
 
-interface CreatedWorld {
-  worldId: string;
+interface CreatedLibrary {
   characterIds: string[];
   locationIds: string[];
   itemIds: string[];
@@ -135,7 +81,7 @@ function requireKey<V>(map: Map<string, V>, key: string, what: string): V {
   return value;
 }
 
-async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promise<CreatedWorld> {
+async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promise<CreatedLibrary> {
   // Library locations.
   const locIdByKey = new Map<string, string>(fixture.locations.map((l) => [l.key, newId()]));
   await tx.insert(locations).values(
@@ -149,16 +95,13 @@ async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promi
     })),
   );
 
-  // Library items. Validate the composed definition; store extras only
-  // (items.definition holds the ItemDefinition extras slice — see server/api/schemas.ts).
+  // Library items (items.definition holds the ItemDefinition extras slice).
   const itemIdByKey = new Map<string, string>(fixture.items.map((i) => [i.key, newId()]));
-  // Capture the composed ItemDefinition per key so the world copy can bake it as
-  // its snapshot (world-instances.plan.md — the world owns a full copy).
-  const itemDefByKey = new Map<string, ItemDefinition>();
   await tx.insert(items).values(
     fixture.items.map((i) => {
       const tags = [...(i.tags ?? []), SEED_TAG];
-      itemDefByKey.set(i.key, itemDefinitionSchema.parse({ kind: i.kind, name: i.name, description: i.description, tags, ...i.extras }));
+      // Validate the composed definition so a vocabulary change fails here, not at read time.
+      itemDefinitionSchema.parse({ kind: i.kind, name: i.name, description: i.description, tags, ...i.extras });
       return {
         id: requireKey(itemIdByKey, i.key, "item"),
         ownerId,
@@ -171,14 +114,11 @@ async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promi
     }),
   );
 
-  // Characters (defaultOutfit references resolved library item ids).
+  // Library characters (defaultOutfit references resolved library item ids).
   const charIdByKey = new Map<string, string>(fixture.characters.map((c) => [c.key, newId()]));
-  // Capture each built profile + name so the world cast can bake them as its copy.
-  const profileByCharKey = new Map<string, CharacterProfile>();
-  const nameByCharKey = new Map<string, string>(fixture.characters.map((c) => [c.key, c.name]));
   await tx.insert(characters).values(
     fixture.characters.map((c) => {
-      const profile = characterProfileSchema.parse({
+      const profile: CharacterProfile = characterProfileSchema.parse({
         bio: c.bio,
         personality: c.personality,
         voice: c.voice,
@@ -190,7 +130,6 @@ async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promi
         defaultOutfit: c.defaultOutfitKeys.map((k) => requireKey(itemIdByKey, k, "item")),
         schedule: c.schedule,
       });
-      profileByCharKey.set(c.key, profile);
       return {
         id: requireKey(charIdByKey, c.key, "character"),
         ownerId,
@@ -201,107 +140,7 @@ async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promi
     }),
   );
 
-  // World.
-  const worldId = newId();
-  await tx.insert(worlds).values({
-    id: worldId,
-    ownerId,
-    name: fixture.name,
-    description: fixture.description,
-    style: worldStyleSchema.parse(fixture.style),
-    lore: worldLoreSchema.parse({
-      synopsis: fixture.synopsis,
-      factions: fixture.factions.map((f) => ({
-        id: f.id,
-        name: f.name,
-        description: f.description,
-        memberCharacterIds: f.memberCharacterKeys.map((k) => requireKey(charIdByKey, k, "character")),
-        conflicts: f.conflicts,
-      })),
-      plotAnchors: fixture.plotAnchors,
-    }),
-    narrativeModel: "", // per-world override unset → env default
-  });
-
-  // World locations + links.
-  const worldLocIdByKey = new Map<string, string>(fixture.locations.map((l) => [l.key, newId()]));
-  await tx.insert(worldLocations).values(
-    fixture.locations.map((l) => ({
-      id: requireKey(worldLocIdByKey, l.key, "world location"),
-      worldId,
-      sourceLocationId: requireKey(locIdByKey, l.key, "location"),
-      snapshot: locationSnapshotSchema.parse({
-        name: l.name,
-        description: l.description,
-        ambient: l.ambient,
-        tags: [...l.tags, SEED_TAG],
-      }),
-    })),
-  );
-  await tx.insert(worldLinks).values(
-    fixture.links.map((link) => ({
-      worldId,
-      fromWorldLocationId: requireKey(worldLocIdByKey, link.from, "world location"),
-      toWorldLocationId: requireKey(worldLocIdByKey, link.to, "world location"),
-      label: link.label,
-    })),
-  );
-
-  // Cast.
-  const castIdByCharKey = new Map<string, string>(fixture.cast.map((c) => [c.characterKey, newId()]));
-  await tx.insert(worldCast).values(
-    fixture.cast.map((c) => ({
-      id: requireKey(castIdByCharKey, c.characterKey, "cast"),
-      worldId,
-      sourceCharacterId: requireKey(charIdByKey, c.characterKey, "character"),
-      name: requireKey(nameByCharKey, c.characterKey, "character name"),
-      snapshot: requireKey(profileByCharKey, c.characterKey, "character profile"),
-      role: c.role,
-      startWorldLocationId: requireKey(worldLocIdByKey, c.startLocationKey, "world location"),
-    })),
-  );
-
-  // Item placements. Container rows are referenced by their world_items id, so
-  // every placement's id is precomputed and keyed by item key.
-  const worldItemIdByItemKey = new Map<string, string>(fixture.placements.map((p) => [p.itemKey, newId()]));
-  await tx.insert(worldItems).values(
-    fixture.placements.map((p) => {
-      const placements = [p.locationKey, p.castKey, p.containerKey].filter((v) => v !== undefined);
-      if (placements.length !== 1) throw new Error(`placement for "${p.itemKey}" must set exactly one of location/cast/container`);
-      const snapshot = requireKey(itemDefByKey, p.itemKey, "item definition");
-      return {
-        id: requireKey(worldItemIdByItemKey, p.itemKey, "placement"),
-        worldId,
-        sourceItemId: requireKey(itemIdByKey, p.itemKey, "item"),
-        name: snapshot.name,
-        snapshot,
-        worldLocationId: p.locationKey ? requireKey(worldLocIdByKey, p.locationKey, "world location") : null,
-        castId: p.castKey ? requireKey(castIdByCharKey, p.castKey, "cast") : null,
-        worn: p.worn ?? false,
-        containerWorldItemId: p.containerKey ? requireKey(worldItemIdByItemKey, p.containerKey, "placement") : null,
-        quantity: p.quantity ?? 1,
-      };
-    }),
-  );
-
-  // Lore chunks (embedded after commit by indexLoreChunks).
-  await tx.insert(loreChunks).values(
-    fixture.loreChunks.map((chunk) => ({
-      worldId,
-      title: chunk.title,
-      body: chunk.body,
-      category: chunk.category,
-      tier: chunk.tier,
-      visibility: chunk.visibility,
-      unlockTags: chunk.unlockTags ?? [],
-      locationTags: chunk.locationTags ?? [],
-      characterIds: (chunk.characterKeys ?? []).map((k) => requireKey(charIdByKey, k, "character")),
-      sort: chunk.sort,
-    })),
-  );
-
   return {
-    worldId,
     characterIds: [...charIdByKey.values()],
     locationIds: [...locIdByKey.values()],
     itemIds: [...itemIdByKey.values()],
@@ -310,10 +149,10 @@ async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promi
 
 async function main(): Promise<void> {
   const user = await ensureDevUser();
-  console.log(`seeding "${WORLD_NAME}" for ${DEV_EMAIL} (${user.id})`);
+  console.log(`seeding library content for ${DEV_EMAIL} (${user.id})`);
 
-  // Provision the shared dev credential so `POST /api/dev/impersonate` can mint a
-  // real signed session for the Player + the UI/QA admin (auth.plan.md).
+  // Provision the shared dev credential so sign-in / `POST /api/dev/impersonate`
+  // can mint a real signed session for the Player + the UI/QA admin (auth.plan.md).
   const uxtestId = await ensureUxtestAdmin();
   const provisioned = (await ensureDevCredential(user.id)) && (await ensureDevCredential(uxtestId));
   console.log(
@@ -328,14 +167,12 @@ async function main(): Promise<void> {
   });
 
   console.log(
-    `  created world ${created.worldId}: ${created.locationIds.length} locations, ` +
-      `${created.characterIds.length} characters, ${created.itemIds.length} items, ${harborHouse.loreChunks.length} lore chunks`,
+    `  created ${created.locationIds.length} locations, ` +
+      `${created.characterIds.length} characters, ${created.itemIds.length} items`,
   );
 
-  // Embeddings (demo mode → pseudo vectors). Failures degrade to diagnostics.
+  // Search embeddings (demo mode → pseudo vectors). Failures degrade to diagnostics.
   const sink = new DiagnosticCollector();
-  const indexed = await indexLoreChunks(created.worldId, sink);
-  console.log(`  embedded ${indexed} lore chunk(s)`);
   let refreshed = 0;
   for (const id of created.characterIds) refreshed += (await refreshSearchEmbedding("character", id, sink)) ? 1 : 0;
   for (const id of created.locationIds) refreshed += (await refreshSearchEmbedding("location", id, sink)) ? 1 : 0;

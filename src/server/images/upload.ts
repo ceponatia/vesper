@@ -87,7 +87,7 @@ export async function uploadAvatar(input: UploadAvatarInput): Promise<UploadAvat
   }
 
   const saved = await saveImageBuffer(asset.id, buffer, input.sink);
-  void logEvent(null, "image.avatar", {
+  void logEvent("image.avatar", {
     imageId: asset.id,
     characterId: input.characterId,
     status: saved?.status ?? "failed",

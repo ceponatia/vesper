@@ -1,7 +1,5 @@
 import { z } from "zod";
 import { attributeValueSchema } from "../attributes/value";
-import { calendarStartSchema, DEFAULT_CALENDAR_START } from "@/lib/clock";
-import { meterDefinitionSchema } from "../meters/registry";
 import { socialReactionCardSchema } from "../personality/cards";
 import { drivesSchema } from "../personality/drives";
 import { preferenceSchema } from "../personality/preference";
@@ -395,63 +393,3 @@ export function formatAge(age: string): string {
   if (!trimmed) return "";
   return /^\d+$/.test(trimmed) ? `${trimmed} years old` : trimmed;
 }
-
-export const worldStyleSchema = z.object({
-  directives: z.array(z.string()).default([]),
-  narratorGuidance: z.string().optional(),
-  calendarStart: calendarStartSchema.default(DEFAULT_CALENDAR_START),
-  /** Partial overrides per meter id; null disables the meter for this world. */
-  meterOverrides: z.record(z.string(), meterDefinitionSchema.partial().nullable()).default({}),
-  /**
-   * The world's social fabric (social-reaction-cards.plan.md) — snapshot copies of taboo /
-   * social-rule cards selected from the card library. Read live each turn (like the rest of
-   * `style`); resolves player→target reactions and witnessed breaches. Replaces the former
-   * freeform `norms`. Default `[]` ⇒ no social fabric (narrator plays it straight).
-   */
-  socialCards: z.array(socialReactionCardSchema).default([]),
-});
-
-export type WorldStyle = z.infer<typeof worldStyleSchema>;
-
-export function emptyWorldStyle(): WorldStyle {
-  return worldStyleSchema.parse({});
-}
-
-export const plotAnchorSchema = z.object({
-  id: z.string().min(1),
-  title: z.string().min(1),
-  summary: z.string().default(""),
-  priority: z.enum(["background", "active"]).default("background"),
-});
-
-export const worldFactionSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  description: z.string().default(""),
-  memberCharacterIds: z.array(z.string()).default([]),
-  conflicts: z.array(z.object({ factionName: z.string(), notes: z.string().default("") })).default([]),
-});
-
-export const worldLoreSchema = z.object({
-  synopsis: z.string().default(""),
-  factions: z.array(worldFactionSchema).default([]),
-  plotAnchors: z.array(plotAnchorSchema).default([]),
-});
-
-export type WorldLore = z.infer<typeof worldLoreSchema>;
-
-export function emptyWorldLore(): WorldLore {
-  return worldLoreSchema.parse({});
-}
-
-export const loreChunkTierSchema = z.enum(["always", "scene", "retrieval"]);
-export const loreChunkVisibilitySchema = z.enum(["public", "secret"]);
-export const loreChunkCategorySchema = z.enum([
-  "history",
-  "geography",
-  "institution",
-  "culture",
-  "relationship",
-  "secret",
-  "tone",
-]);

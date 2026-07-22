@@ -105,9 +105,8 @@ owner rulings 2026-07-11):
   establishing shot, minted lazily by `chat_place_image` from its agent-written
   sketch on the **first render there** (`queueChatScene` enqueues; that render still
   ships without it), CAS-written onto `ScenePlace.imageId` exactly like the sketch.
-  Once present, chat scenes render **multi-reference** (look/avatar + place — the
-  rung sessions always had, now live in this lane); selfies stay single-reference
-  (the subject is the shot).
+  Once present, chat scenes render **multi-reference** (look/avatar + place);
+  selfies stay single-reference (the subject is the shot).
 - Both kinds are chat-keyed, Gallery-hidden, hard-deleted with the conversation
   (`deleteChatAssets`), and self-healing: any lost race, failed render (row keeps
   `meta.error`), or missing file simply re-fires on the next trigger.

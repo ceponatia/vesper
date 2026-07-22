@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { attentionHintSchema } from "../perception/attention";
+
+/** How an item draws or averts a wearer's/holder's attention (relocated from the
+ *  deleted perception lane; the item wardrobe schema is its only consumer). */
+export const attentionHintSchema = z.enum(["absorbing", "faces_away", "outward"]);
+export type AttentionHint = z.infer<typeof attentionHintSchema>;
 
 export const itemKinds = ["clothing", "object", "container"] as const;
 export const itemKindSchema = z.enum(itemKinds);

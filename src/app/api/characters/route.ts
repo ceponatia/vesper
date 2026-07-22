@@ -4,7 +4,7 @@ import { z } from "zod";
 import { seedBodyConfigFromAttributes, seedRegistryDefaultValues, withItemsInDefaultOutfit } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { parseOrNull } from "@/lib/parse";
-import { characters, db, worldCast } from "@/server/db";
+import { characters, db } from "@/server/db";
 import {
   characterCreateSchema,
   jsonError,
@@ -30,8 +30,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
   // Summary columns only — the bare row carries the 1536-dim search embedding.
   // The facet columns (library-ux.plan.md §Follow-up pass) are extracted in SQL
   // rather than shipping the whole profile jsonb: speciesId is a top-level key,
-  // gender lives in the attributes array, world usage counts the soft source
-  // pointers worlds keep on their snapshot copies (world-instances.plan.md).
+  // gender lives in the attributes array.
   const rows = await db()
     .select({
       id: characters.id,
@@ -41,10 +40,6 @@ export const GET = withUser(async (user, req: NextRequest) => {
       updatedAt: characters.updatedAt,
       speciesId: sql<string | null>`${characters.profile}->>'speciesId'`,
       gender: sql<string | null>`jsonb_path_query_first(${characters.profile}, '$.attributes[*] ? (@.id == "identity.gender").value') #>> '{}'`,
-      // The inner table is aliased and the outer id table-qualified by hand:
-      // drizzle renders single-table selects with unqualified columns, so a
-      // bare correlated `id` would resolve to world_cast's own id.
-      worldCount: sql<number>`(select count(distinct wc.world_id)::int from ${worldCast} wc where wc.source_character_id = ${characters}.id)`,
     })
     .from(characters)
     // Non-owned rows are reachable only when the scoped search returned them.

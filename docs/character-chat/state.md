@@ -103,17 +103,17 @@ the API rejects that request before transcript mutation with `rerun_requires_bra
 
 ## Wardrobe
 
-Since chat-wardrobe-parity (2026-07-14) the chat lane carries **structured worn state** at
-full session parity, not one free-text string. A conversation holds `worn_item_ids` (the worn
+Since chat-wardrobe-parity (2026-07-14) the chat lane carries **structured worn state**,
+not one free-text string. A conversation holds `worn_item_ids` (the worn
 item-definition ids, seeded from the active outfit preset), `outfit_preset_id` (which named
 look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unowned garments —
 "a borrowed hoodie" — and the legacy fallback), and the retained `outfit_exposed` flag.
 
 - **The seam.** `resolveChatWardrobe` (`engine/chat-wardrobe.ts`) is the ONE place worn state
   becomes what downstream reads — a rendered garment phrase (via `wardrobeOutfitText`,
-  occlusion-filtered + subtype-led) plus **coverage-computed exposure** (via the session
-  classifier `exposedRegions`, [../contracts/items.md](../contracts/items.md)) — reusing the
-  session renderers, never re-forking them. The narrator prompt (`promptStateSlice`), the scene
+  occlusion-filtered + subtype-led) plus **coverage-computed exposure** (via the shared
+  wardrobe classifier `exposedRegions`, [../contracts/items.md](../contracts/items.md)) — reusing the
+  shared renderers, never re-forking them. The narrator prompt (`promptStateSlice`), the scene
   image (`queueChatScene` → `renderCharacterSceneImage`'s `exposure` override), and the
   `chat_look` key all read it. When `worn_item_ids` is empty the seam falls back to the
   free-text path (`outfit` + the manual `outfit_exposed`), self-healing the moment a preset
@@ -180,7 +180,7 @@ then reconciled by the archivist:
    current place this turn, or a pending time skip.
 2. **Injection.** The prompt builder renders the compact **Scene** block in the volatile tail
    (current place + details + connections + a directive that flips on "just changed"
-   — see [prompts.md](../prompts.md) §Character-chat reply discipline & scene memory); the time
+   — see [prompts.md](prompts.md) §Character-chat reply discipline & scene memory); the time
    of day rides the separate binding **Story time** line (`storyMoment`, derived from
    `clock_minutes` + `calendar_start`), so the narrator reads the same clock the clock card shows. On the
    conversation's **first exchange** (no assistant reply yet, not an opening beat) the memory is

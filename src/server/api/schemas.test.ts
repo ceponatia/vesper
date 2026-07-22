@@ -10,7 +10,6 @@ import {
   personaCreateSchema,
   personaPatchSchema,
 } from "./schemas";
-import { worldCreateSchema, worldItemInputSchema, worldLocationInputSchema } from "./worlds";
 
 describe("character body schemas", () => {
   it("create defaults profile and tags", () => {
@@ -111,32 +110,5 @@ describe("item body schemas", () => {
 describe("location body schemas", () => {
   it("patch tolerates empty object (no-op)", () => {
     expect(locationPatchSchema.parse({})).toEqual({});
-  });
-});
-
-describe("world input schemas", () => {
-  it("location input requires a name or a locationId", () => {
-    expect(worldLocationInputSchema.safeParse({ name: "Harbor" }).success).toBe(true);
-    expect(worldLocationInputSchema.safeParse({ locationId: "loc1" }).success).toBe(true);
-    expect(worldLocationInputSchema.safeParse({}).success).toBe(false);
-  });
-
-  it("item input requires an itemId or a definition", () => {
-    expect(worldItemInputSchema.safeParse({ itemId: "i1" }).success).toBe(true);
-    expect(
-      worldItemInputSchema.safeParse({ definition: { kind: "object", name: "Lantern" } }).success,
-    ).toBe(true);
-    expect(worldItemInputSchema.safeParse({ worn: true }).success).toBe(false);
-  });
-
-  it("create body defaults nested families and catches bad enums in lore chunks", () => {
-    const parsed = worldCreateSchema.parse({
-      name: "Tidewater",
-      loreChunks: [{ title: "The Flood", tier: "nonsense", visibility: "secret" }],
-    });
-    expect(parsed.locations).toEqual([]);
-    expect(parsed.loreChunks[0]?.tier).toBe("scene");
-    expect(parsed.loreChunks[0]?.visibility).toBe("secret");
-    expect(parsed.style.directives).toEqual([]);
   });
 });

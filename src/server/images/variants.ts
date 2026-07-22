@@ -84,7 +84,7 @@ async function loadReference(avatarImageId: string | null): Promise<{ row: Image
 }
 
 function logVariant(imageId: string, input: GenerateVariantInput, status: string, started: number): Promise<void> {
-  return logEvent(null, "image.portrait_variant", {
+  return logEvent("image.portrait_variant", {
     imageId,
     characterId: input.characterId,
     kind: input.kind,

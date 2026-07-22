@@ -17,7 +17,7 @@ import { SkeletonCards } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 
 /** Scene grouping modes (library-ux.plan.md §Follow-up pass — view modes). */
-type ViewMode = "session" | "character" | "world" | "timeline";
+type ViewMode = "character" | "timeline";
 
 const TABS: { id: GalleryTab; label: string }[] = [
   { id: "scenes", label: "Scenes" },
@@ -26,14 +26,10 @@ const TABS: { id: GalleryTab; label: string }[] = [
 ];
 
 const VIEW_OPTIONS: { id: ViewMode; label: string }[] = [
-  { id: "session", label: "By session" },
   { id: "character", label: "By character" },
-  { id: "world", label: "By world" },
   { id: "timeline", label: "Timeline" },
 ];
 
-/** Synthetic group key collecting every sessionless character-chat scene. */
-const CHAT_GROUP_KEY = "__character_chats__";
 const NONE_KEY = "__none__";
 
 interface Facet {
@@ -43,7 +39,7 @@ interface Facet {
 
 interface GalleryGroup {
   key: string;
-  /** Link target for the group heading (session groups only). */
+  /** Link target for the group heading (portrait groups only). */
   href: string | null;
   title: string;
   subtitle: string | null;
@@ -97,23 +93,11 @@ function collectGroups(images: GalleryImage[], keyOf: (image: GalleryImage) => O
 
 function groupScenes(images: GalleryImage[], view: ViewMode): GalleryGroup[] {
   switch (view) {
-    case "session":
-      return collectGroups(images, (s) =>
-        s.sessionId
-          ? { key: s.sessionId, href: `/sessions/${s.sessionId}`, title: s.sessionTitle ?? "Untitled session", subtitle: s.worldName ?? null }
-          : { key: CHAT_GROUP_KEY, href: null, title: "Character chats", subtitle: null },
-      );
     case "character":
       return collectGroups(images, (s) => {
         const name = characterNames(s)[0];
         return name ? { key: name, href: null, title: name, subtitle: null } : { key: NONE_KEY, href: null, title: "No character", subtitle: null };
       });
-    case "world":
-      return collectGroups(images, (s) =>
-        s.worldId
-          ? { key: s.worldId, href: null, title: s.worldName ?? "Untitled world", subtitle: null }
-          : { key: NONE_KEY, href: null, title: "Character chats", subtitle: null },
-      );
     case "timeline":
       return collectGroups(images, (s) => {
         const label = monthLabel(s.createdAt);
@@ -130,21 +114,20 @@ const ENTITY_GROUPS: Record<string, { label: string; order: number }> = {
 
 /**
  * Gallery hub (docs/ui.md): the owner's generated art in three tabs — Scenes
- * (grouped by session / character / world / timeline), Portraits (by
- * character) and Entity art (by kind) — with avatar chip filters, favorites,
- * multi-select delete, and keyset "Load more" past each page.
+ * (grouped by character / timeline), Portraits (by character) and Entity art
+ * (by kind) — with avatar chip filters, favorites, multi-select delete, and
+ * keyset "Load more" past each page.
  */
 export function GalleryPage() {
   const toast = useToast();
   const [tab, setTab] = useState<GalleryTab>("scenes");
-  const [view, setView] = useState<ViewMode>("session");
+  const [view, setView] = useState<ViewMode>("character");
   const [images, setImages] = useState<GalleryImage[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [worldFilter, setWorldFilter] = useState("");
   const [characterFilter, setCharacterFilter] = useState("");
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -183,7 +166,6 @@ export function GalleryPage() {
     setImages(null);
     setNextCursor(null);
     setError(null);
-    setWorldFilter("");
     setCharacterFilter("");
     setSelectMode(false);
     setSelected(new Set());
@@ -237,9 +219,6 @@ export function GalleryPage() {
   const loaded = images ?? [];
 
   // Facets from the full loaded set so the controls stay stable while filtering.
-  const worldFacets = uniqueFacets(
-    loaded.flatMap((s) => (s.worldId ? [{ id: s.worldId, name: s.worldName ?? "Untitled world" }] : [])),
-  );
   const characterFacets = uniqueFacets(
     loaded.flatMap((s) => [
       ...s.references.filter((r) => r.kind === "character").map((r) => ({ id: r.id, name: r.name || "Unnamed" })),
@@ -252,12 +231,7 @@ export function GalleryPage() {
     image.characterId === characterFilter ||
     image.references.some((r) => r.kind === "character" && r.id === characterFilter);
 
-  const filtered = loaded.filter(
-    (s) =>
-      (!favoritesOnly || s.favorite) &&
-      (worldFilter === "" || s.worldId === worldFilter) &&
-      matchesCharacter(s),
-  );
+  const filtered = loaded.filter((s) => (!favoritesOnly || s.favorite) && matchesCharacter(s));
 
   const entityGroupOrder = (group: GalleryGroup) => ENTITY_GROUPS[group.images[0]?.entityKind ?? ""]?.order ?? 9;
   const groups: GalleryGroup[] =
@@ -286,9 +260,7 @@ export function GalleryPage() {
   const captionFor = (image: GalleryImage): string => {
     if (tab === "portraits") return [image.characterName, shortDate(image.createdAt)].filter(Boolean).join(" · ");
     if (tab === "entity") return [image.entityName, shortDate(image.createdAt)].filter(Boolean).join(" · ");
-    return [characterNames(image).join(", "), image.worldName, image.sessionTitle, shortDate(image.createdAt)]
-      .filter(Boolean)
-      .join(" · ");
+    return [characterNames(image).join(", "), shortDate(image.createdAt)].filter(Boolean).join(" · ");
   };
 
   const tileTitle = (image: GalleryImage): string => {
@@ -301,7 +273,7 @@ export function GalleryPage() {
   const emptyCopy: Record<GalleryTab, { title: string; description: string }> = {
     scenes: {
       title: "No scene images yet",
-      description: "Turn on scene generation in a session's Scene tab — the artwork it creates collects here.",
+      description: "Generate scene images from a character chat — the artwork it creates collects here.",
     },
     portraits: {
       title: "No portraits yet",
@@ -318,7 +290,7 @@ export function GalleryPage() {
       <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="prose-display text-3xl">Gallery</h1>
-          <p className="mt-1 text-sm text-paper-400">Generated art from your sessions, chats and library.</p>
+          <p className="mt-1 text-sm text-paper-400">Generated art from your chats and library.</p>
         </div>
         <div role="tablist" aria-label="Gallery section" className="inline-flex gap-1 rounded-md border border-ink-600 bg-ink-850 p-1">
           {TABS.map((t) => (
@@ -345,22 +317,12 @@ export function GalleryPage() {
             <Select
               aria-label="View mode"
               value={view}
-              onChange={(e) => setView(VIEW_OPTIONS.find((v) => v.id === e.target.value)?.id ?? "session")}
+              onChange={(e) => setView(VIEW_OPTIONS.find((v) => v.id === e.target.value)?.id ?? "character")}
               className="h-8 text-xs"
             >
               {VIEW_OPTIONS.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.label}
-                </option>
-              ))}
-            </Select>
-          ) : null}
-          {tab === "scenes" && worldFacets.length > 0 ? (
-            <Select aria-label="Filter by world" value={worldFilter} onChange={(e) => setWorldFilter(e.target.value)} className="h-8 text-xs">
-              <option value="">All worlds</option>
-              {worldFacets.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
                 </option>
               ))}
             </Select>
@@ -453,12 +415,11 @@ export function GalleryPage() {
       ) : filtered.length === 0 ? (
         <EmptyState
           title="Nothing matches these filters"
-          description="Try a different world, character, or turn off Favorites."
+          description="Try a different character, or turn off Favorites."
           action={
             <button
               type="button"
               onClick={() => {
-                setWorldFilter("");
                 setCharacterFilter("");
                 setFavoritesOnly(false);
               }}

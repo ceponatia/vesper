@@ -91,7 +91,7 @@ export async function enqueueChatMeanwhile(args: EnqueueChatMeanwhileArgs): Prom
       )
       .limit(1);
     if (live) return;
-    await enqueueJob({ sessionId: null, type: "chat_meanwhile", payload: { ...args } });
+    await enqueueJob({ type: "chat_meanwhile", payload: { ...args } });
   } catch (err) {
     log.warn("chat_meanwhile", "failed to enqueue meanwhile pass", {
       chatId: args.chatId,

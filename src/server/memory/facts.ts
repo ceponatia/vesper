@@ -22,7 +22,7 @@ import {
 } from "./constants";
 import { fuseByRrf, nonBlankQueries } from "./fusion";
 import type { QueryEmbeddings } from "./query-embeddings";
-import { memoryScopeValues, memoryScopeWhere, scopeLabel, scopeSessionId, type MemoryScope } from "./scope";
+import { memoryScopeValues, memoryScopeWhere, scopeLabel, type MemoryScope } from "./scope";
 import { witnessEligibilityWhere, type WitnessEligibility } from "./witness-eligibility";
 
 const stringArraySchema = z.array(z.string());
@@ -403,7 +403,7 @@ export async function retrieveFacts(
   const scored = candidates.filter((c) => !pinnedIds.has(c.id) && (c.pinned || c.score >= FACT_MIN_SCORE));
   const hits = [...pinnedHits, ...scored];
 
-  await logEvent(scopeSessionId(scope), "retrieval", {
+  await logEvent("retrieval", {
     kind: "facts",
     scope: scopeLabel(scope),
     query: query.slice(0, 300),
@@ -478,7 +478,7 @@ export async function retrieveFactsFused(
     .map((f) => ({ ...f.hit, score: f.bestScore, sources: f.sources }));
   const hits = [...pinnedHits, ...scored];
 
-  await logEvent(scopeSessionId(scope), "retrieval", {
+  await logEvent("retrieval", {
     kind: "facts",
     fused: true,
     scope: scopeLabel(scope),

@@ -2,7 +2,7 @@
 
 # Contracts
 
-`src/contracts/` is the pure, IO-free heart of the domain — the registries and validation schemas that everything else checks itself against. Each core system below has its own focused doc, while some modules are covered as sections within a related doc (e.g. mood under meters-actions, personality under relationships, species under body, world under state). Start with whichever part you're touching; every doc links back here.
+`src/contracts/` is the pure, IO-free heart of the domain — the registries and validation schemas that everything else checks itself against. Each core system below has its own focused doc, while some modules are covered as sections within a related doc (e.g. mood under meters, personality under relationships, species under body, world under state). Start with whichever part you're touching; every doc links back here.
 
 ## Reading order
 
@@ -12,13 +12,11 @@
 | [body.md](body.md) | The body-location tree, body plans, species/heritage, the realized body, and colloquial targets |
 | [items.md](items.md) | Item definitions and visibility, clothing categories, object subtypes, and coverage editing |
 | [simulation.md](simulation.md) | Successor-engine identity, command/event/result envelopes, replay, observation, and NarrativeCut contracts |
-| [meters-actions.md](meters-actions.md) | Continuous 0–1 meters and registered timed actions |
+| [meters.md](meters.md) | Continuous 0–1 meters and the mood module |
 | [conditions.md](conditions.md) | Discrete, temporary states (e.g. "soaked", "exhausted") |
 | [relationships.md](relationships.md) | Affinity stages, the bond classifier, and disposition (traits, preferences, tags, modulation, the guardrail) |
-| [perception.md](perception.md) | The shapes behind presence, attention, salience, and the witness contract |
 | [facts.md](facts.md) | The fact taxonomy and the `FactDraft` shape |
-| [state.md](state.md) | The pinned JSONB state shapes, link access, and game time |
-| [turns.md](turns.md) | Agent result schemas, the streaming chunk event, and the intent brief |
+| [state.md](state.md) | The pinned JSONB shapes: the authored character, persona, scene-gen, and game time |
 
 ## How the contracts are built
 

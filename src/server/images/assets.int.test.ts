@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { characters, db, imageReferences, images, items, locations, sessionParticipants, sessions, users, worlds } from "../db";
+import { characters, db, images, items, locations, users } from "../db";
 import {
   absoluteImagePath,
   createImageAsset,
@@ -18,8 +18,6 @@ import { generateAvatar, generateAvatarsBatch } from "./avatar";
 import { generateEntityImage, generateEntityImagesBatch, missingEntityImageIds } from "./entity";
 import { uploadAvatar } from "./upload";
 import { generateVariant, promoteVariant } from "./variants";
-import { renderSceneImage } from "./scene";
-import { emptySceneRenderPlan } from "./prompts";
 
 // Exercises the full row-before-file protocol and the demo-mode pipelines
 // against DATABASE_URL. Self-skips when the database is unreachable.
@@ -53,8 +51,6 @@ afterAll(async () => {
   if (!available) return;
   await fs.rm(tmp, { recursive: true, force: true });
   await db().delete(images).where(eq(images.ownerId, userId));
-  await db().delete(sessions).where(eq(sessions.ownerId, userId));
-  await db().delete(worlds).where(eq(worlds.ownerId, userId));
   await db().delete(characters).where(eq(characters.ownerId, userId));
   await db().delete(items).where(eq(items.ownerId, userId));
   await db().delete(locations).where(eq(locations.ownerId, userId));
@@ -301,59 +297,5 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     // the pre-pictured item keeps its original image, untouched
     const [after] = await db().select().from(items).where(eq(items.id, pictured?.id ?? "")).limit(1);
     expect(after?.imageId).toBe("img-placeholder");
-  });
-
-  it("renderSceneImage attaches a ready demo scene to the session gallery", async (ctx) => {
-    if (!available) return ctx.skip();
-    const [world] = await db().insert(worlds).values({ ownerId: userId, name: "W" }).returning();
-    if (!world) throw new Error("failed to create world");
-    const [session] = await db().insert(sessions).values({ ownerId: userId, worldId: world.id, title: "S" }).returning();
-    if (!session) throw new Error("failed to create session");
-
-    const plan = {
-      ...emptySceneRenderPlan(),
-      focal: { name: "Mira Vale", action: "", outfitSummary: "", appearance: "" },
-    };
-    const imageId = await renderSceneImage({ session: { id: session.id, ownerId: userId }, plan, userId });
-    const [row] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
-    expect(row?.status).toBe("ready");
-    expect(row?.kind).toBe("scene");
-    expect(row?.sessionId).toBe(session.id);
-    await expect(fs.access(absoluteImagePath(row ?? { path: "missing" }))).resolves.toBeUndefined();
-  });
-
-  it("renderSceneImage records image_references rows and no longer writes meta.references", async (ctx) => {
-    if (!available) return ctx.skip();
-    const [world] = await db().insert(worlds).values({ ownerId: userId, name: "W-refs" }).returning();
-    if (!world) throw new Error("failed to create world");
-    const [session] = await db().insert(sessions).values({ ownerId: userId, worldId: world.id, title: "S-refs" }).returning();
-    if (!session) throw new Error("failed to create session");
-    const [character] = await db().insert(characters).values({ ownerId: userId, name: "Mira Vale" }).returning();
-    if (!character) throw new Error("failed to create character");
-    await db()
-      .insert(sessionParticipants)
-      .values({ sessionId: session.id, characterId: character.id, displayName: "Mira Vale" });
-
-    const plan = {
-      ...emptySceneRenderPlan(),
-      focal: { name: "Mira Vale", action: "", outfitSummary: "", appearance: "" },
-    };
-    const imageId = await renderSceneImage({ session: { id: session.id, ownerId: userId }, plan, userId });
-
-    const [row] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
-    expect(row?.status).toBe("ready");
-    const meta = (row?.meta ?? {}) as Record<string, unknown>;
-    expect(meta.references).toBeUndefined(); // dropped — the join table is the source of truth
-
-    const refs = await db().select().from(imageReferences).where(eq(imageReferences.sceneImageId, imageId));
-    expect(refs).toHaveLength(1);
-    expect(refs[0]?.kind).toBe("character");
-    expect(refs[0]?.entityId).toBe(character.id);
-    expect(refs[0]?.name).toBe("Mira Vale");
-
-    // Cascade: deleting the scene image removes its reference rows.
-    await db().delete(images).where(eq(images.id, imageId));
-    const afterDelete = await db().select().from(imageReferences).where(eq(imageReferences.sceneImageId, imageId));
-    expect(afterDelete).toHaveLength(0);
   });
 });

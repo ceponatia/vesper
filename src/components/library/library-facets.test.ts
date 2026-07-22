@@ -15,7 +15,7 @@ const facet = <T>(defs: { id: string; value?: (c: T) => string | undefined; valu
 };
 
 describe("characterFacetDefs", () => {
-  const defs = characterFacetDefs<{ speciesId?: string | null; gender?: string | null; worldCount?: number }>();
+  const defs = characterFacetDefs<{ speciesId?: string | null; gender?: string | null }>();
 
   it("collapses natal-sex gender variants into one browse chip", () => {
     const gender = facet(defs, "gender");
@@ -28,28 +28,20 @@ describe("characterFacetDefs", () => {
     expect(gender.matches?.(undefined, "female")).toBe(false);
   });
 
-  it("buckets world usage as used/unused with absent counts unused", () => {
-    const worlds = facet(defs, "worlds");
-    expect(worlds.value?.({ worldCount: 2 })).toBe("used");
-    expect(worlds.value?.({ worldCount: 0 })).toBe("unused");
-    expect(worlds.value?.({})).toBe("unused");
-  });
-
-  it("chips show notable species + world count, never a bare Human chip", () => {
-    expect(characterCardChips({ speciesId: "elf", worldCount: 2 }).map((c) => c.label)).toEqual(["Elf", "2 worlds"]);
-    expect(characterCardChips({ speciesId: "human", worldCount: 1 }).map((c) => c.label)).toEqual(["1 world"]);
-    expect(characterCardChips({ speciesId: "human", worldCount: 0 })).toEqual([]);
+  it("chips show notable species, never a bare Human chip", () => {
+    expect(characterCardChips({ speciesId: "elf" }).map((c) => c.label)).toEqual(["Elf"]);
+    expect(characterCardChips({ speciesId: "human" })).toEqual([]);
   });
 });
 
 describe("locationFacetDefs", () => {
-  it("facets on scale and world usage; chips label both", () => {
-    const defs = locationFacetDefs<{ scale?: string | null; worldCount?: number }>();
+  it("facets on scale; chips label it", () => {
+    const defs = locationFacetDefs<{ scale?: string | null }>();
     expect(facet(defs, "scale").value?.({ scale: "hall" })).toBe("hall");
     expect(facet(defs, "scale").value?.({ scale: null })).toBeUndefined();
-    expect(locationCardChips({ scale: "expanse", worldCount: 1 }).map((c) => c.label)).toEqual(["Expanse", "1 world"]);
+    expect(locationCardChips({ scale: "expanse" }).map((c) => c.label)).toEqual(["Expanse"]);
     // An unknown stored scale renders no chip rather than a raw id.
-    expect(locationCardChips({ scale: "weird", worldCount: 0 })).toEqual([]);
+    expect(locationCardChips({ scale: "weird" })).toEqual([]);
   });
 });
 

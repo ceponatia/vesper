@@ -8,20 +8,11 @@ import {
   characters,
   db,
   images,
-  itemInstances,
   items,
   jobs,
   locations,
-  loreChunks,
   personas,
-  sessionLinks,
-  sessionLocations,
-  sessionParticipants,
-  sessions,
   users,
-  worldCast,
-  worldLocations,
-  worlds,
 } from "@/server/db";
 import { resetRateLimits } from "@/server/api";
 
@@ -58,13 +49,6 @@ import { GET as listLocationsRoute, POST as createLocationRoute } from "./locati
 import { PATCH as patchLocationRoute } from "./locations/[id]/route";
 import { GET as listItemsRoute, POST as createItemRoute } from "./items/route";
 import { PATCH as patchItemRoute } from "./items/[id]/route";
-import { POST as worldFromDraftRoute } from "./worlds/from-draft/route";
-import { POST as updateWorldFromDraftRoute } from "./worlds/[id]/from-draft/route";
-import { GET as listWorldsRoute, POST as createWorldRoute } from "./worlds/route";
-import { DELETE as deleteWorldRoute, GET as getWorldRoute, PATCH as patchWorldRoute } from "./worlds/[id]/route";
-import { POST as duplicateWorldRoute } from "./worlds/[id]/duplicate/route";
-import { POST as spawnSessionRoute } from "./worlds/[id]/sessions/route";
-import { POST as forgeWorldRoute } from "./worlds/forge/route";
 import { GET as imageFileRoute } from "./images/[id]/file/route";
 import { POST as itemImagesBatchRoute } from "./items/images/route";
 import { POST as locationImagesBatchRoute } from "./locations/images/route";
@@ -81,7 +65,7 @@ async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
-      db().execute(sql`select 1 from worlds limit 1`),
+      db().execute(sql`select 1 from characters limit 1`),
       new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
       }),
@@ -147,8 +131,6 @@ afterAll(async () => {
   if (!ready) return;
   await fs.rm(tmpDataRoot, { recursive: true, force: true });
   const ownerId = authState.user.id;
-  await db().delete(sessions).where(eq(sessions.ownerId, ownerId));
-  await db().delete(worlds).where(eq(worlds.ownerId, ownerId));
   await db().delete(images).where(eq(images.ownerId, ownerId));
   await db().delete(items).where(eq(items.ownerId, ownerId));
   await db().delete(locations).where(eq(locations.ownerId, ownerId));
@@ -162,7 +144,6 @@ afterAll(async () => {
 let characterId = "";
 let locationId = "";
 let clothingItemId = "";
-let worldId = "";
 let personaId = "";
 
 describe("characters CRUD + search", () => {
@@ -361,7 +342,7 @@ describe("entity visibility (auth.plan.md)", () => {
 });
 
 describe("library list facets, sort & scope (library-ux.plan.md §Follow-up pass)", () => {
-  it("character list carries speciesId/gender/worldCount and honors ?sort=name", async (t) => {
+  it("character list carries speciesId/gender and honors ?sort=name", async (t) => {
     if (!ready) return t.skip();
     const mk = async (name: string) =>
       ((await json(await createCharacterRoute(send("http://t/api/characters", "POST", { name, tags: ["facet-sort"] }), noParams)))
@@ -370,50 +351,34 @@ describe("library list facets, sort & scope (library-ux.plan.md §Follow-up pass
     const aaId = await mk("Aa Facet Muse");
     const zzId = await mk("Zz Facet Muse");
 
-    const [world] = await db().insert(worlds).values({ ownerId: authState.user.id, name: "Facet World" }).returning();
-    if (!world) throw new Error("failed to create world");
-    // Two cast rows pointing at the same source must still count ONE world (distinct world_id).
-    await db().insert(worldCast).values([
-      { worldId: world.id, name: "Aa Copy", sourceCharacterId: aaId },
-      { worldId: world.id, name: "Aa Copy 2", sourceCharacterId: aaId },
-    ]);
-
     const byRecency = (await json(await listCharactersRoute(get("http://t/api/characters?tag=facet-sort"), noParams)))
-      .characters as Array<{ id: string; speciesId: string | null; gender: string | null; worldCount: number }>;
+      .characters as Array<{ id: string; speciesId: string | null; gender: string | null }>;
     expect(byRecency.map((c) => c.id)).toEqual([zzId, aaId]);
     const aa = byRecency.find((c) => c.id === aaId);
     // A blank-created character carries the registry defaults (human, female).
     expect(aa?.speciesId).toBe("human");
     expect(aa?.gender).toBe("female");
-    expect(aa?.worldCount).toBe(1);
-    expect(byRecency.find((c) => c.id === zzId)?.worldCount).toBe(0);
 
     const byName = (await json(await listCharactersRoute(get("http://t/api/characters?tag=facet-sort&sort=name"), noParams)))
       .characters as Array<{ id: string }>;
     expect(byName.map((c) => c.id)).toEqual([aaId, zzId]);
 
-    await db().delete(worlds).where(eq(worlds.id, world.id));
     for (const id of [aaId, zzId]) await deleteCharacterRoute(get(`http://t/api/characters/${id}`), ctx({ id }));
   });
 
-  it("location list carries scale + worldCount", async (t) => {
+  it("location list carries scale", async (t) => {
     if (!ready) return t.skip();
     const created = await createLocationRoute(
       send("http://t/api/locations", "POST", { name: "Facet Harbor", tags: ["facet-scale"] }),
       noParams,
     );
     const locId = ((await json(created)).location as { id: string }).id;
-    const [world] = await db().insert(worlds).values({ ownerId: authState.user.id, name: "Facet Loc World" }).returning();
-    if (!world) throw new Error("failed to create world");
-    await db().insert(worldLocations).values({ worldId: world.id, sourceLocationId: locId });
 
     const listed = (await json(await listLocationsRoute(get("http://t/api/locations?tag=facet-scale"), noParams)))
-      .locations as Array<{ id: string; scale: string; worldCount: number }>;
+      .locations as Array<{ id: string; scale: string }>;
     const row = listed.find((l) => l.id === locId);
     expect(row?.scale).toBe("room"); // the column default rides the list payload
-    expect(row?.worldCount).toBe(1);
 
-    await db().delete(worlds).where(eq(worlds.id, world.id));
     await db().delete(locations).where(eq(locations.id, locId));
   });
 
@@ -584,276 +549,6 @@ describe("locations and items", () => {
   });
 });
 
-describe("worlds", () => {
-  it("creates a world with nested locations/links/cast/items/lore", async (t) => {
-    if (!ready) return t.skip();
-    const res = await createWorldRoute(
-      send("http://t/api/worlds", "POST", {
-        name: "Tidewater",
-        description: "A drowned port city.",
-        lore: {
-          synopsis: "The flood never receded.",
-          plotAnchors: [{ id: "anchor-1", title: "The missing ledger", summary: "Someone cooked the books.", priority: "active" }],
-        },
-        locations: [
-          { name: "Quay", description: "Wet stone.", links: ["Harbor Office"] },
-          { locationId, description: "Now with a leak." },
-        ],
-        cast: [{ characterId, role: "companion", startLocationName: "Harbor Office" }],
-        items: [
-          { itemId: clothingItemId, castCharacterId: characterId, worn: true },
-          { definition: { kind: "container", name: "Ledger Chest" }, locationName: "Quay" },
-        ],
-        loreChunks: [
-          { title: "The Flood", body: "It came at night.", tier: "always" },
-          { title: "The Ledger", body: "Hidden in the chest.", visibility: "secret", unlockTags: ["ledger"] },
-        ],
-      }),
-      noParams,
-    );
-    expect(res.status).toBe(201);
-    const body = await json(res);
-    worldId = (body.world as { id: string }).id;
-    expect((body.locations as unknown[]).length).toBe(2);
-    expect((body.links as unknown[]).length).toBe(1);
-    expect((body.cast as Array<{ characterId: string; startWorldLocationId: string | null }>)[0]?.characterId).toBe(characterId);
-    expect((body.cast as Array<{ startWorldLocationId: string | null }>)[0]?.startWorldLocationId).not.toBeNull();
-    expect((body.items as unknown[]).length).toBe(2);
-    expect((body.loreChunks as unknown[]).length).toBe(2);
-    // the world-location override is applied to the effective description
-    const overridden = (body.locations as Array<{ locationId: string; description: string }>).find(
-      (l) => l.locationId === locationId,
-    );
-    expect(overridden?.description).toBe("Now with a leak.");
-  });
-
-  it("400s on unknown nested references before writing anything", async (t) => {
-    if (!ready) return t.skip();
-    const res = await createWorldRoute(
-      send("http://t/api/worlds", "POST", { name: "Broken", cast: [{ characterId: "no-such-id" }] }),
-      noParams,
-    );
-    expect(res.status).toBe(400);
-    expect(((await json(res)).error as { code: string }).code).toBe("invalid_reference");
-    const list = await json(await listWorldsRoute(get("http://t/api/worlds?q=Broken"), noParams));
-    expect(list.worlds).toEqual([]);
-  });
-
-  it("rejects a raw forge draft posted to the create route (strict body)", async (t) => {
-    if (!ready) return t.skip();
-    const res = await createWorldRoute(
-      send("http://t/api/worlds", "POST", { name: "Drafty", castSuggestions: [], itemPlacements: [] }),
-      noParams,
-    );
-    expect(res.status).toBe(400);
-    expect(((await json(res)).error as { code: string }).code).toBe("invalid_body");
-  });
-
-  it("saves a forge draft: matches cast by name, creates stubs, places items", async (t) => {
-    if (!ready) return t.skip();
-    resetRateLimits();
-    const res = await worldFromDraftRoute(
-      send("http://t/api/worlds/from-draft", "POST", {
-        name: "Draft Harbor",
-        description: "A foggy harbor town.",
-        locations: [
-          { name: "Quay", description: "Stone quay.", links: ["Lighthouse"] },
-          { name: "Lighthouse", description: "The old light.", links: [] },
-        ],
-        castSuggestions: [
-          { name: "Mireille Voss", conceptNote: "the harbor-master", role: "companion" },
-          { name: "Tobin Ash", conceptNote: "a nervous apprentice lighthouse keeper", role: "npc" },
-        ],
-        itemPlacements: [
-          {
-            itemName: "Keeper's Oil Lantern",
-            definition: { kind: "object", name: "Keeper's Oil Lantern", description: "Brass, salt-pitted." },
-            locationName: "Lighthouse",
-            worn: false,
-          },
-          {
-            itemName: "Keeper's Wool Coat",
-            definition: { kind: "clothing", name: "Keeper's Wool Coat", coverage: ["torso", "arms"], layer: 3 },
-            castName: "Tobin Ash",
-            worn: true,
-          },
-        ],
-      }),
-      noParams,
-    );
-    expect(res.status).toBe(201);
-    const body = await json(res);
-    const draftWorldId = body.id as string;
-    expect(draftWorldId.length).toBeGreaterThan(0);
-
-    const detail = await json(await getWorldRoute(get(`http://t/api/worlds/${draftWorldId}`), ctx({ id: draftWorldId })));
-    const cast = detail.cast as Array<{ characterId: string }>;
-    expect(cast.length).toBe(2);
-    // "Mireille Voss" re-matched the existing library character — no duplicate
-    expect(cast.map((c) => c.characterId)).toContain(characterId);
-
-    // the unmatched stub became a real character (skeletal in demo mode, tagged)
-    const stubCharacterId = cast.map((c) => c.characterId).find((id) => id !== characterId);
-    const [stubRow] = await db().select().from(characters).where(eq(characters.id, stubCharacterId!)).limit(1);
-    expect(stubRow?.name).toBe("Tobin Ash");
-    expect(stubRow?.tags).toContain("stub");
-    expect((stubRow?.profile as { bio: string }).bio).toBe("a nervous apprentice lighthouse keeper");
-    expect((body.diagnostics as Array<{ code: string }>).map((d) => d.code)).toContain(
-      "api.world.from_draft.cast_saved_as_stub",
-    );
-
-    // item placements: worn clothing landed on the stub, the lantern at its location
-    const placed = detail.items as Array<{ name: string; castId: string | null; worldLocationId: string | null; worn: boolean }>;
-    expect(placed.length).toBe(2);
-    const coat = placed.find((i) => i.name === "Keeper's Wool Coat");
-    expect(coat?.castId).not.toBeNull();
-    expect(coat?.worn).toBe(true);
-    const lantern = placed.find((i) => i.name === "Keeper's Oil Lantern");
-    expect(lantern?.worldLocationId).not.toBeNull();
-    expect((detail.links as unknown[]).length).toBe(1);
-
-    // cleanup so later world counts stay deterministic
-    await deleteWorldRoute(get(`http://t/api/worlds/${draftWorldId}`), ctx({ id: draftWorldId }));
-    await db().delete(characters).where(eq(characters.id, stubCharacterId!));
-  });
-
-  it("PATCH replaces lore chunks and merges style without clobbering", async (t) => {
-    if (!ready) return t.skip();
-    const first = await patchWorldRoute(
-      send(`http://t/api/worlds/${worldId}`, "PATCH", { style: { directives: ["slow-burn pacing"] } }),
-      ctx({ id: worldId }),
-    );
-    expect(first.status).toBe(200);
-    const second = await patchWorldRoute(
-      send(`http://t/api/worlds/${worldId}`, "PATCH", {
-        style: {
-          socialCards: [
-            { id: "no-flames", label: "No open flames on the docks", description: "", kind: "social_rule", triggers: [], severity: 40, reactionOverrides: [] },
-          ],
-        },
-        loreChunks: [{ title: "Rewritten", body: "Only chunk now." }],
-      }),
-      ctx({ id: worldId }),
-    );
-    expect(second.status).toBe(200);
-    const body = await json(second);
-    const style = (body.world as { style: { directives: string[]; socialCards: unknown[] } }).style;
-    expect(style.directives).toEqual(["slow-burn pacing"]); // earlier patch survived the cards patch
-    expect(style.socialCards.length).toBe(1);
-    expect((body.loreChunks as unknown[]).length).toBe(1);
-    expect((body.locations as unknown[]).length).toBe(2); // untouched family kept
-  });
-
-  it("duplicates deep with lineage", async (t) => {
-    if (!ready) return t.skip();
-    const res = await duplicateWorldRoute(send(`http://t/api/worlds/${worldId}/duplicate`, "POST"), ctx({ id: worldId }));
-    expect(res.status).toBe(201);
-    const body = await json(res);
-    const copy = body.world as { id: string; name: string; duplicatedFromWorldId: string | null };
-    expect(copy.id).not.toBe(worldId);
-    expect(copy.duplicatedFromWorldId).toBe(worldId);
-    expect(copy.name).toContain("(copy)");
-    expect((body.locations as unknown[]).length).toBe(2);
-    expect((body.links as unknown[]).length).toBe(1);
-    expect((body.cast as unknown[]).length).toBe(1);
-    expect((body.items as unknown[]).length).toBe(2);
-    expect((body.loreChunks as unknown[]).length).toBe(1);
-    // cleanup the copy so later counts stay deterministic
-    await deleteWorldRoute(get(`http://t/api/worlds/${copy.id}`), ctx({ id: copy.id }));
-  });
-
-  it("spawns a session: locations, links, participants, worn item instances, seeded threads", async (t) => {
-    if (!ready) return t.skip();
-    const res = await spawnSessionRoute(send(`http://t/api/worlds/${worldId}/sessions`, "POST", {}), ctx({ id: worldId }));
-    expect(res.status).toBe(201);
-    const body = await json(res);
-    const session = body.session as { id: string; title: string; runtime: { storyThreads: Array<{ source: string }> } };
-    expect(session.title).toBe("Tidewater");
-    expect(session.runtime.storyThreads.length).toBe(1);
-    expect(session.runtime.storyThreads[0]?.source).toBe("anchor");
-
-    const locs = await db().select().from(sessionLocations).where(eq(sessionLocations.sessionId, session.id));
-    expect(locs.length).toBe(2);
-    const links = await db().select().from(sessionLinks).where(eq(sessionLinks.sessionId, session.id));
-    expect(links.length).toBe(1);
-
-    const participants = await db().select().from(sessionParticipants).where(eq(sessionParticipants.sessionId, session.id));
-    expect(participants.length).toBe(2); // player + cast member
-    const player = participants.find((p) => p.isUser);
-    const companion = participants.find((p) => !p.isUser);
-    expect(player?.role).toBe("player");
-    expect(companion?.characterId).toBe(characterId);
-
-    const instances = await db().select().from(itemInstances).where(eq(itemInstances.sessionId, session.id));
-    expect(instances.length).toBe(2);
-    const worn = instances.find((i) => i.worn);
-    expect(worn?.holderParticipantId).toBe(companion?.id);
-    const placed = instances.find((i) => !i.worn);
-    expect(placed?.locationId).not.toBeNull();
-
-    await db().delete(sessions).where(eq(sessions.id, session.id));
-  });
-
-  it("404s spawn and detail for an unknown world", async (t) => {
-    if (!ready) return t.skip();
-    const spawn = await spawnSessionRoute(send("http://t/api/worlds/nope/sessions", "POST", {}), ctx({ id: "nope" }));
-    expect(spawn.status).toBe(404);
-    const detail = await getWorldRoute(get("http://t/api/worlds/nope"), ctx({ id: "nope" }));
-    expect(detail.status).toBe(404);
-  });
-
-  it("updates a saved world from the draft shape without duplicating library rows", async (t) => {
-    if (!ready) return t.skip();
-    resetRateLimits();
-    const before = await json(await getWorldRoute(get(`http://t/api/worlds/${worldId}`), ctx({ id: worldId })));
-    const beforeLocations = before.locations as Array<{ id: string; locationId: string; name: string }>;
-    const harborOffice = beforeLocations.find((l) => l.name === "Now with a leak." || l.locationId === locationId);
-    expect(harborOffice).toBeDefined();
-    const libLocationsBefore = await db().select({ id: locations.id }).from(locations).where(eq(locations.ownerId, authState.user.id));
-    const libItemsBefore = await db().select({ id: items.id }).from(items).where(eq(items.ownerId, authState.user.id));
-
-    const res = await updateWorldFromDraftRoute(
-      send(`http://t/api/worlds/${worldId}/from-draft`, "POST", {
-        name: "Tidewater",
-        description: "A drowned port city, revised.",
-        locations: [
-          // linked library location survives as an override, not a duplicate
-          { locationId, name: "Harbor Office", description: "Repainted.", links: ["Quay"] },
-          { name: "Quay", description: "Wet stone.", links: ["Harbor Office"] },
-        ],
-        castSuggestions: [{ existingCharacterId: characterId, name: "Mireille Voss", conceptNote: "", role: "companion" }],
-        itemPlacements: [
-          // name-matches the existing library item — reused, not re-created
-          { itemName: "Oilskin Coat", definition: { kind: "clothing", name: "Oilskin Coat" }, castName: "Mireille Voss", worn: true },
-        ],
-        loreChunks: [{ title: "Revised chunk", body: "Only one now." }],
-      }),
-      ctx({ id: worldId }),
-    );
-    expect(res.status).toBe(200);
-
-    const after = await json(await getWorldRoute(get(`http://t/api/worlds/${worldId}`), ctx({ id: worldId })));
-    expect((after.world as { description: string }).description).toBe("A drowned port city, revised.");
-    const afterLocations = after.locations as Array<{ locationId: string; name: string; description: string }>;
-    expect(afterLocations.length).toBe(2);
-    const linked = afterLocations.find((l) => l.locationId === locationId);
-    expect(linked?.description).toBe("Repainted."); // override applied, base row kept
-    expect((after.cast as Array<{ characterId: string }>).map((c) => c.characterId)).toEqual([characterId]);
-    const afterItems = after.items as Array<{ itemId: string; worn: boolean }>;
-    expect(afterItems.length).toBe(1);
-    expect(afterItems[0]?.itemId).toBe(clothingItemId); // reused by name
-    expect(afterItems[0]?.worn).toBe(true);
-
-    // no library rows were duplicated by the save: the name-only "Quay" reuses
-    // the row this world already created for it rather than orphaning it and
-    // inserting a fresh one (followups.phase3.md §5).
-    const libLocationsAfter = await db().select({ id: locations.id }).from(locations).where(eq(locations.ownerId, authState.user.id));
-    const libItemsAfter = await db().select({ id: items.id }).from(items).where(eq(items.ownerId, authState.user.id));
-    expect(libLocationsAfter.length).toBe(libLocationsBefore.length);
-    expect(libItemsAfter.length).toBe(libItemsBefore.length);
-  });
-});
-
 describe("batch entity images: malformed body must 400, never widen scope (codebase-review A4)", () => {
   it("rejects invalid JSON instead of queueing an unscoped paid batch", async (t) => {
     if (!ready) return t.skip();
@@ -981,22 +676,6 @@ describe("forge endpoints (demo mode) and rate limiting", () => {
     const after = await db().select({ id: characters.id }).from(characters).where(eq(characters.ownerId, authState.user.id));
     expect(after.length).toBe(before.length); // drafts never save
   });
-
-  it("drafts a world and rate-limits the eleventh call", async (t) => {
-    if (!ready) return t.skip();
-    resetRateLimits();
-    const res = await forgeWorldRoute(send("http://t/api/worlds/forge", "POST", { prompt: "a drowned port city" }), noParams);
-    expect(res.status).toBe(200);
-    const draft = (await json(res)).draft as { locations: unknown[] };
-    expect(draft.locations.length).toBeGreaterThan(0);
-
-    let limited: Response | undefined;
-    for (let i = 0; i < 10; i++) {
-      limited = await forgeWorldRoute(send("http://t/api/worlds/forge", "POST", { prompt: "again" }), noParams);
-      if (limited.status === 429) break;
-    }
-    expect(limited?.status).toBe(429);
-  });
 });
 
 describe("dev identity", () => {
@@ -1017,28 +696,6 @@ describe("dev identity", () => {
     } finally {
       (process.env as Record<string, string | undefined>).NODE_ENV = prev;
     }
-  });
-});
-
-describe("deletion guards", () => {
-  it("deletes a library character even while a world references it; the world keeps its snapshot", async (t) => {
-    if (!ready) return t.skip();
-    // world-instances.plan.md: worlds hold their own entity snapshots, so a
-    // library delete no longer 409s ("in use") and never breaks the world — the
-    // cast copy survives with a now-dangling source pointer.
-    const charGone = await deleteCharacterRoute(get(`http://t/api/characters/${characterId}`), ctx({ id: characterId }));
-    expect(charGone.status).toBe(200);
-    const cast = await db().select().from(worldCast).where(eq(worldCast.worldId, worldId));
-    expect(cast.length).toBeGreaterThan(0);
-    expect(cast.every((c) => c.name.length > 0)).toBe(true);
-
-    const worldGone = await deleteWorldRoute(get(`http://t/api/worlds/${worldId}`), ctx({ id: worldId }));
-    expect(worldGone.status).toBe(200);
-    const [chunkCount] = await db()
-      .select({ count: sql<number>`count(*)::int` })
-      .from(loreChunks)
-      .where(eq(loreChunks.worldId, worldId));
-    expect(chunkCount?.count).toBe(0);
   });
 });
 

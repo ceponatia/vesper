@@ -5,7 +5,7 @@ import { DiagnosticCollector } from "@/contracts/diagnostics";
 // and the fact that a timeout records at all — can be asserted without a database.
 const logged = vi.hoisted(() => ({ rows: [] as { type: string; payload: Record<string, unknown> }[] }));
 vi.mock("../events", () => ({
-  logEvent: (_sessionId: string | null, type: string, payload: Record<string, unknown>) => {
+  logEvent: (type: string, payload: Record<string, unknown>) => {
     logged.rows.push({ type, payload });
     return Promise.resolve();
   },

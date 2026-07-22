@@ -79,7 +79,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
     if (saved?.status === "ready") {
       await db().update(characters).set({ avatarImageId: asset.id }).where(eq(characters.id, input.characterId));
     }
-    void logEvent(null, "image.avatar", {
+    void logEvent("image.avatar", {
       imageId: asset.id,
       characterId: input.characterId,
       status: saved?.status ?? "failed",
@@ -89,7 +89,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
   } catch (err) {
     const message = describeProviderError(err);
     await failImage(asset.id, message);
-    void logEvent(null, "image.avatar", {
+    void logEvent("image.avatar", {
       imageId: asset.id,
       characterId: input.characterId,
       status: "failed",

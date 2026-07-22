@@ -34,7 +34,7 @@ type ItemDefinition = {
 | `layer` | `0` underwear → `3` outerwear. |
 | `opacity` | `opaque` or `sheer`. |
 | `sensory` | Optional `appearance` / `scent` / `tactile` notes. |
-| `attentionHint` | `absorbing` / `faces_away` / `outward` — a perception hint for `deriveAttention` (see [perception.md](perception.md)). |
+| `attentionHint` | `absorbing` / `faces_away` / `outward` — reserved perception hint (consumed by the retired session attention model). |
 | `fields` | Kind-specific extras (capacity, wearable container, …). |
 | `tags` | Free-form labels. |
 
@@ -52,12 +52,11 @@ The **visibility rule** (which replaces the old occlusion stack depths) is per b
 
 Implemented once in `items/visibility.ts` (`resolveWardrobeVisibility` for the occlusion rule;
 `exposedRegions` → `RegionExposure` for per-region bare/sheer/covered, plus the shared
-`FULLY_COVERED` constant and `intimateRegionsBare` predicate), and used by prompts, the simulant
-grounding, image prompts, and the UI. Since chat-wardrobe-parity (2026-07-14) the **character-chat
-lane reuses this same classifier** — not a re-fork: `resolveChatWardrobe`
-(`server/engine/chat-wardrobe.ts`) feeds the chat's worn item ids through `exposedRegions` for
-coverage-computed exposure and `wardrobeOutfitText` for the rendered garment phrase, so chat and
-session agree on what a garment covers ([../character-chat/state.md](../character-chat/state.md)
+`FULLY_COVERED` constant and `intimateRegionsBare` predicate), and used by the chat prompt builders,
+the chat state extraction, image prompts, and the UI. The **character-chat lane** feeds it via
+`resolveChatWardrobe` (`server/engine/chat-wardrobe.ts`, chat-wardrobe-parity 2026-07-14): the
+chat's worn item ids run through `exposedRegions` for coverage-computed exposure and
+`wardrobeOutfitText` for the rendered garment phrase ([../character-chat/state.md](../character-chat/state.md)
 §Wardrobe). The pure garment-phrase matcher + worn-list reducer the chat archivist's add/remove
 proposals fold through live in `items/chat-wardrobe.ts` (`matchGarment` / `applyWornGarmentChanges`).
 
@@ -67,7 +66,7 @@ proposals fold through live in `items/chat-wardrobe.ts` (`matchGarment` / `apply
 
 > top · outerwear · dress · pants · shorts · skirt · bra · underwear · socks · footwear · gloves · headwear · eyewear · jewelry
 
-Picking one pre-fills coverage + layer in the item editor, and the forges may emit one per garment to anchor coverage; everything stays editable afterward. The chosen id is stored as `ItemDefinition.category` for **editor display only** — **category names never enter gameplay prompts** (`docs/prompts.md`). The engine reads the resolved coverage set, so a "top" with arm coverage removed simply plays as a tank top.
+Picking one pre-fills coverage + layer in the item editor, and the forges may emit one per garment to anchor coverage; everything stays editable afterward. The chosen id is stored as `ItemDefinition.category` for **editor display only** — **category names never enter gameplay prompts** ([../character-chat/prompts.md](../character-chat/prompts.md) §Style rules). The engine reads the resolved coverage set, so a "top" with arm coverage removed simply plays as a tank top.
 
 Templates deliberately avoid parent ids that over-imply:
 
@@ -100,7 +99,7 @@ Extending a vocabulary is a one-line edit in that category's file; adding a voca
 
 > furniture · vehicle · weapon · tool · device · book · food · beverage · decoration · instrument
 
-The only capability so far is **`holdable`** — the item *can* be carried in a hand. Holdable is a capability, never a slot binding: where a holdable item currently sits (a hand, a container, a location) is session state, so holdables stay container-storable by construction.
+The only capability so far is **`holdable`** — the item *can* be carried in a hand. Holdable is a capability, never a slot binding: where a holdable item currently sits (a hand, a container, a location) is runtime state, so holdables stay container-storable by construction.
 
 Subtype *behavior* (vehicles moving characters, weapons in combat) is future work — each behavior gets its own design doc before any engine code, and the planned first is hand-equippable items.
 

@@ -1,11 +1,9 @@
-import fs from "node:fs/promises";
-import { and, eq } from "drizzle-orm";
-import { db, imageReferences, images, locations, sessionParticipants } from "../db";
+import { eq } from "drizzle-orm";
+import { db, imageReferences, images } from "../db";
 import {
   describeProviderError,
   executeImageProvider,
   generateChecked,
-  hasVenice,
   isDemoMode,
   routeSceneProviders,
   toolModelId,
@@ -18,13 +16,12 @@ import {
   type ProviderRenderResult,
   type SceneRenderRequest,
 } from "../ai";
-import { logEvent } from "../events";
 import { log } from "@/server/log";
 import { diag, DiagnosticCollector, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { AvatarImageModel } from "@/contracts/images/image-models";
-import type { SceneReference, SceneReferenceSource, SceneVisualReference } from "@/contracts/images/scene-reference";
+import type { SceneVisualReference } from "@/contracts/images/scene-reference";
 import type { SceneGenState, SceneReferenceMode } from "@/contracts/state/scene-gen";
-import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer, type ImageEntityKind, type ImageRow } from "./assets";
+import { createImageAsset, failImage, saveImageBuffer, type ImageEntityKind } from "./assets";
 import { monogramSvg } from "./monogram";
 import {
   buildSceneComposerPrompt,
@@ -92,70 +89,10 @@ function heuristicLighting(timeOfDay: string | undefined): string {
   return (timeOfDay && TIME_OF_DAY_LIGHTING[timeOfDay]) || "soft natural light";
 }
 
-export interface RenderSceneInput {
-  session: { id: string; ownerId: string };
-  plan: SceneRenderPlan;
-  userId: string;
-  /** Active location (library id + name) for the scene's location reference; null when emergent/unknown. */
-  location?: { id: string; name: string } | null;
-  /** Reference mode (the session toggle); `multi` feeds up to 3 references to Venice `/image/multi-edit`. */
-  mode?: SceneReferenceMode;
-  sink?: DiagnosticSink;
-}
-
-/**
- * Scene render (docs/images.md step 2). Resolve the scene's visual references
- * (featured characters + location, with each available spawn-snapshot avatar +
- * the location image attached), let the provider router pick an ordered fallback
- * chain, then run it with a reason-keyed retry policy (spec §8.3): a transient
- * failure retries once, a content rejection never retries and drops to the next
- * rung — Venice multi-edit (mode `multi`) → single-reference edit → Qwen
- * text-to-image → (demo monogram). Every reference is persisted to
- * `image_references` (the queryable record). Failures mark the row failed and
- * return its id — the session is never blocked by image work.
- */
-export async function renderSceneImage(input: RenderSceneInput): Promise<string> {
-  const demo = isDemoMode();
-  const mode = input.mode ?? "single";
-  const canVenice = !demo && hasVenice();
-  // Single mode anchors on one avatar; multi gathers every present character's
-  // avatar (in plan order) so two-character scenes can identity-lock both.
-  const anchors = canVenice ? await findSceneAnchors(input.session.id, input.plan, mode, input.sink) : [];
-  // The location image is only sent on the multi-reference path (it's the extra
-  // ref slot beyond the characters); single-edit takes one anchor, the character.
-  const locationImage =
-    mode === "multi" && canVenice && input.location
-      ? await loadLocationImage(input.location.id, input.userId)
-      : null;
-
-  const references = await buildVisualReferences(
-    input.session.id,
-    input.plan,
-    anchors,
-    input.location ?? null,
-    locationImage?.imageId ?? null,
-  );
-  const referenceBuffers = new Map<string, Buffer>();
-  for (const anchor of anchors) referenceBuffers.set(anchor.row.id, anchor.buffer);
-  if (locationImage) referenceBuffers.set(locationImage.imageId, locationImage.buffer);
-
-  return renderResolvedScene({
-    plan: input.plan,
-    references,
-    referenceBuffers,
-    mode,
-    linkage: { ownerId: input.userId, sessionId: input.session.id },
-    logResult: (imageId, status, started) => void logScene(input.session.id, imageId, status, started),
-    sink: input.sink,
-  });
-}
-
-/** Where a rendered scene image is filed: a session scene, or a library-entity (character-chat) scene. */
+/** Where a rendered scene image is filed: a library-entity (character-chat) scene. */
 export interface SceneAssetLinkage {
   ownerId: string;
-  /** Session scenes set this (cleared if the session is deleted). */
-  sessionId?: string;
-  /** Library-entity scenes (character chat) set these instead of a session. */
+  /** Library-entity scenes (character chat) set these. */
   entityKind?: ImageEntityKind;
   entityId?: string;
   /** Chat scenes also carry their conversation + anchor message (slice 9 inline moments). */
@@ -191,7 +128,7 @@ export interface RenderResolvedSceneInput {
   framing?: "pov" | "selfie";
   /** Asset flavor stamped on `meta.flavor` (e.g. "selfie") — distinguishes render treatments downstream. */
   flavor?: string;
-  /** Where to log the outcome (`logScene` for sessions, a character event otherwise). */
+  /** Where to log the outcome (a character event). */
   logResult: (imageId: string, status: string, startedMs: number) => void;
   sink?: DiagnosticSink;
 }
@@ -199,9 +136,8 @@ export interface RenderResolvedSceneInput {
 /**
  * The provider-chain core shared by every scene render (docs/images.md step 2),
  * decoupled from where the references came from and where the asset is filed
- * (`linkage`). The session path (`renderSceneImage`) and the sessionless
- * character-chat path (`renderCharacterSceneImage`, images/character-scene.ts)
- * both resolve their own references/anchor, then hand off here.
+ * (`linkage`). The character-chat path (`renderCharacterSceneImage`,
+ * images/character-scene.ts) resolves its own references/anchor, then hands off here.
  *
  * The provider router picks an ordered fallback chain run with the reason-keyed
  * retry policy (spec §8.3): transient → retry once, content rejection → next rung
@@ -277,7 +213,6 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   const asset = await createImageAsset({
     ownerId: linkage.ownerId,
     kind: "scene",
-    sessionId: linkage.sessionId,
     entityKind: linkage.entityKind,
     entityId: linkage.entityId,
     chatId: linkage.chatId,
@@ -420,75 +355,6 @@ async function runSceneProvider(id: ImageProviderId, ctx: SceneAttemptContext): 
   });
 }
 
-/**
- * The scene's visual references (spec §4): featured characters resolved to their
- * library `characterId`, plus the active location, with each available
- * spawn-snapshot avatar attached (imageId + provenance) and — on the
- * multi-reference path — the location's library image. Anchors with no backing
- * library character are still represented so the router routes their image to a
- * reference-edit provider. References are ordered focal, others, location (the
- * order the multi-edit provider sends them). Persisted to `image_references`.
- */
-async function buildVisualReferences(
-  sessionId: string,
-  plan: SceneRenderPlan,
-  anchors: { name: string; row: ImageRow; buffer: Buffer }[],
-  location: { id: string; name: string } | null,
-  locationImageId: string | null,
-): Promise<SceneVisualReference[]> {
-  const focalName = plan.focal?.name ?? null;
-  const names = [plan.focal?.name, ...plan.others.map((o) => o.name)].filter(
-    (n): n is string => typeof n === "string" && n.trim().length > 0,
-  );
-  const characterRefs = await resolveSceneCharacterRefs(sessionId, names);
-  const refs: SceneVisualReference[] = characterRefs.map((c) => ({
-    kind: "character",
-    entityId: c.id,
-    name: c.name,
-    role: c.name === focalName ? "focal" : "other",
-    allowForIntimate: true,
-  }));
-
-  for (const anchor of anchors) {
-    const anchorKey = anchor.name.trim().toLowerCase();
-    const existing = refs.find((r) => r.name?.trim().toLowerCase() === anchorKey);
-    const source = avatarSource(anchor.row.meta);
-    if (existing) {
-      existing.imageId = anchor.row.id;
-      existing.source = source;
-    } else {
-      // Anchor avatar with no backing library character — still feed the image.
-      refs.push({
-        kind: "character",
-        name: anchor.name,
-        role: anchor.name === focalName ? "focal" : "other",
-        imageId: anchor.row.id,
-        source,
-        allowForIntimate: true,
-      });
-    }
-  }
-
-  if (location) {
-    refs.push({
-      kind: "location",
-      entityId: location.id,
-      name: location.name,
-      role: "location",
-      source: "entity",
-      allowForIntimate: true,
-      ...(locationImageId ? { imageId: locationImageId } : {}),
-    });
-  }
-  return refs;
-}
-
-/** Uploaded avatars carry `meta.source: "upload"` (upload.ts); everything else we generate. */
-function avatarSource(meta: unknown): SceneReferenceSource {
-  const source = meta && typeof meta === "object" && !Array.isArray(meta) ? (meta as Record<string, unknown>).source : undefined;
-  return source === "upload" ? "uploaded" : "generated";
-}
-
 /** Persist the scene's references to the join table (spec §4). Never throws — a write failure degrades to a diagnostic. */
 async function recordImageReferences(
   sceneImageId: string,
@@ -530,10 +396,6 @@ function metaRecord(meta: unknown): Record<string, unknown> {
   return meta && typeof meta === "object" && !Array.isArray(meta) ? { ...(meta as Record<string, unknown>) } : {};
 }
 
-function logScene(sessionId: string, imageId: string, status: string, started: number): Promise<void> {
-  return logEvent(sessionId, "image.scene", { imageId, status, durationMs: Date.now() - started });
-}
-
 /** The user-facing reason a whole render chain failed, drawn from the terminal diagnostic the chain pushed. */
 function sceneFailureMessage(items: readonly Diagnostic[]): string {
   const terminal = [...items]
@@ -566,122 +428,6 @@ function drainSceneDiagnostics(items: readonly Diagnostic[], focalName: string |
     if (d.severity === "error") log.error("images.scene_render", d.message, data);
     else if (d.severity === "warn") log.warn("images.scene_render", d.message, data);
     else log.info("images.scene_render", d.message, data);
-  }
-}
-
-/**
- * Resolve in-frame participant display names to `character` references via their
- * library `characterId`. Names with no backing library character (the player, an
- * ad-hoc participant) are skipped — the scene still records the refs it can.
- * Exported for unit testing.
- */
-export async function resolveSceneCharacterRefs(sessionId: string, names: readonly string[]): Promise<SceneReference[]> {
-  const wanted = names.map((n) => n.trim()).filter(Boolean);
-  if (wanted.length === 0) return [];
-  const rows = await db()
-    .select({ displayName: sessionParticipants.displayName, characterId: sessionParticipants.characterId })
-    .from(sessionParticipants)
-    .where(eq(sessionParticipants.sessionId, sessionId));
-  const characterIdByName = new Map(rows.map((r) => [r.displayName.trim().toLowerCase(), r.characterId]));
-  const refs: SceneReference[] = [];
-  const seen = new Set<string>();
-  for (const name of wanted) {
-    const characterId = characterIdByName.get(name.toLowerCase());
-    if (!characterId || seen.has(characterId)) continue;
-    seen.add(characterId);
-    refs.push({ kind: "character", id: characterId, name });
-  }
-  return refs;
-}
-
-/**
- * Reference selection (docs/images.md §Scene images): the present characters'
- * spawn-snapshot avatars, in plan order (focal first, then others). `single`
- * mode keeps only the first — the focal's avatar when ready, else the first
- * plan-featured present NPC with one (the focal is then described textually,
- * info diagnostic `images.scene_render.reference_fallback`). `multi` keeps every
- * available avatar so two-character scenes can identity-lock both people. Absent
- * NPCs are never candidates — the plan only ever contains co-located characters.
- */
-async function findSceneAnchors(
-  sessionId: string,
-  plan: SceneRenderPlan,
-  mode: SceneReferenceMode,
-  sink?: DiagnosticSink,
-): Promise<{ name: string; row: ImageRow; buffer: Buffer }[]> {
-  if (!plan.focal) return []; // location-only shot
-  const ordered = [plan.focal.name, ...plan.others.map((o) => o.name)];
-  const found: { name: string; row: ImageRow; buffer: Buffer }[] = [];
-  for (const name of ordered) {
-    const avatar = await findParticipantAvatar(sessionId, name);
-    if (avatar) found.push({ name, ...avatar });
-    if (mode === "single" && found.length >= 1) break; // single only needs the primary anchor
-  }
-  // The primary anchor fell back off the focal onto another present NPC.
-  if (found.length > 0 && found[0]?.name.trim().toLowerCase() !== plan.focal.name.trim().toLowerCase()) {
-    sink?.push(
-      diag(
-        "info",
-        "images.scene_render.reference_fallback",
-        `focal character "${plan.focal.name}" has no ready avatar — using ${found[0]?.name}'s avatar as the identity reference`,
-      ),
-    );
-  }
-  return found;
-}
-
-/**
- * The active location's library image, for the multi-reference path (spec §5):
- * the extra reference slot beyond the characters. Owner-scoped + must be ready;
- * a missing image / lost file degrades to null (the scene just uses fewer refs).
- */
-async function loadLocationImage(
-  locationId: string,
-  ownerId: string,
-): Promise<{ imageId: string; buffer: Buffer } | null> {
-  const [location] = await db()
-    .select({ imageId: locations.imageId })
-    .from(locations)
-    .where(and(eq(locations.id, locationId), eq(locations.ownerId, ownerId)))
-    .limit(1);
-  if (!location?.imageId) return null;
-  const [row] = await db().select().from(images).where(eq(images.id, location.imageId)).limit(1);
-  if (!row || row.status !== "ready") return null;
-  try {
-    return { imageId: row.id, buffer: await fs.readFile(absoluteImagePath(row)) };
-  } catch {
-    return null; // file lost — fall through to fewer references
-  }
-}
-
-/**
- * Resolves a participant's canonical portrait for reference editing: strictly
- * the session participant's own snapshot avatar. The library character's avatar
- * is deliberately NOT consulted — a session is frozen at spawn (re-snapshot only
- * on restart, see engine/spawn.ts), so scene images depict the character as they
- * are in THIS session. Falling back to the live library avatar produced
- * wrong-character scene images when the library portrait changed after spawn (or
- * when the snapshot had none); the session snapshot is the single source.
- */
-async function findParticipantAvatar(
-  sessionId: string,
-  participantName: string,
-): Promise<{ row: ImageRow; buffer: Buffer } | null> {
-  const wanted = participantName.trim().toLowerCase();
-  if (!wanted) return null;
-  const participants = await db()
-    .select()
-    .from(sessionParticipants)
-    .where(eq(sessionParticipants.sessionId, sessionId));
-  const subject = participants.find((p) => p.displayName.trim().toLowerCase() === wanted);
-  if (!subject?.avatarImageId) return null;
-
-  const [row] = await db().select().from(images).where(eq(images.id, subject.avatarImageId)).limit(1);
-  if (!row || row.status !== "ready") return null;
-  try {
-    return { row, buffer: await fs.readFile(absoluteImagePath(row)) };
-  } catch {
-    return null; // file lost — no usable reference, fall through to text-to-image
   }
 }
 

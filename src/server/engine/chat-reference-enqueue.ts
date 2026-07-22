@@ -28,7 +28,7 @@ export interface EnqueueChatLookArgs {
 export async function enqueueChatLookImage(args: EnqueueChatLookArgs): Promise<void> {
   try {
     if (await hasLiveJob("chat_look_image", args.chatId)) return;
-    await enqueueJob({ sessionId: null, type: "chat_look_image", payload: { ...args } });
+    await enqueueJob({ type: "chat_look_image", payload: { ...args } });
   } catch (err) {
     log.warn("chat_look", "failed to enqueue look image", {
       chatId: args.chatId,
@@ -47,7 +47,7 @@ export interface EnqueueChatPlaceArgs {
 export async function enqueueChatPlaceImage(args: EnqueueChatPlaceArgs): Promise<void> {
   try {
     if (await hasLiveJob("chat_place_image", args.chatId)) return;
-    await enqueueJob({ sessionId: null, type: "chat_place_image", payload: { ...args } });
+    await enqueueJob({ type: "chat_place_image", payload: { ...args } });
   } catch (err) {
     log.warn("chat_place", "failed to enqueue place image", {
       chatId: args.chatId,

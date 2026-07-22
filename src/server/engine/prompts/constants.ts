@@ -3,7 +3,7 @@
  * constants (history depth, fact cap, …) live in ../constants.ts; re-exported
  * here so prompt code has one import site for everything it renders.
  */
-export { CHARACTER_CHAT_HISTORY_TURNS, EPISODE_WINDOW, FACTS_CAP, NARRATIVE_HISTORY_TURNS, OPEN_THREADS_IN_CONTEXT } from "../constants";
+export { CHARACTER_CHAT_HISTORY_TURNS, EPISODE_WINDOW } from "../constants";
 
 /**
  * Narration *shape profiles* (narrator-prompt-focus.plan.md §1.1) — the length /

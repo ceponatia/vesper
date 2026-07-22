@@ -72,7 +72,6 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
   /** Where the item is referenced — fetched when the delete dialog opens (slice 6). */
   const [usage, setUsage] = useState<{
     wornBy: { id: string; name: string }[];
-    placements: { worldId: string; worldName: string }[];
   } | null>(null);
   const [tab, setTab] = useState<"details" | "image">("details");
   /** Bumped on every edit so a completing save can't clear newer dirtiness. */
@@ -221,7 +220,7 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
     void itemsApi.usage(itemId).then((result) => {
       if (result.ok) setUsage(result.data);
       // A failed lookup degrades to the plain confirm — deleting stays possible.
-      else setUsage({ wornBy: [], placements: [] });
+      else setUsage({ wornBy: [] });
     });
   };
 
@@ -502,7 +501,6 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
         }
       >
         <div className="flex flex-col gap-2 text-sm">
-          <p>Sessions keep their own item snapshots.</p>
           {usage === null ? (
             <p className="text-xs text-paper-500">Checking where it&apos;s used…</p>
           ) : (
@@ -512,16 +510,9 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
                   Worn in the default outfit of {usage.wornBy.map((c) => c.name).join(", ")} — that outfit slot
                   will show &ldquo;not in library&rdquo; after deleting.
                 </p>
-              ) : null}
-              {usage.placements.length > 0 ? (
-                <p className="text-xs text-paper-400">
-                  Placed in {usage.placements.map((p) => p.worldName).join(", ")} — world copies keep playing
-                  (they hold their own snapshot).
-                </p>
-              ) : null}
-              {usage.wornBy.length === 0 && usage.placements.length === 0 ? (
-                <p className="text-xs text-paper-500">Not referenced by any character outfit or world.</p>
-              ) : null}
+              ) : (
+                <p className="text-xs text-paper-500">Not referenced by any character outfit.</p>
+              )}
             </>
           )}
         </div>

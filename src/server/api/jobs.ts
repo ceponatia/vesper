@@ -9,7 +9,6 @@ export type ApiJobType = JobInsert["type"];
 export interface StartJobOptions {
   type: ApiJobType;
   payload: Record<string, unknown>;
-  sessionId?: string;
   /** Background work; its resolved value is merged into the job payload. */
   run: () => Promise<Record<string, unknown>>;
 }
@@ -26,7 +25,6 @@ export async function startJob(opts: StartJobOptions): Promise<string> {
     .insert(jobs)
     .values({
       type: opts.type,
-      sessionId: opts.sessionId,
       status: "running",
       payload: opts.payload,
       attempts: 1,

@@ -7,8 +7,7 @@ import {
   openrouter,
   stripNarratorArtifactStream,
 } from "../ai";
-import { CHARACTER_CHAT_HISTORY_TURNS } from "./constants";
-import { NARRATIVE_TEMPERATURE } from "./pipeline";
+import { CHARACTER_CHAT_HISTORY_TURNS, NARRATIVE_TEMPERATURE } from "./constants";
 
 /**
  * The character-chat model stream (docs/character-chat/pipeline.md): the narrator leg of

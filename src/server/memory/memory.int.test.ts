@@ -2,6 +2,7 @@ import { and, eq , sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import type { FactDraft } from "@/contracts/facts/taxonomy";
+import { newId } from "@/lib/ids";
 
 // Wrap the batch embedder so the fused-retrieval degradation tests can fail ONE
 // call (mockRejectedValueOnce); every other call passes through to the real
@@ -14,25 +15,19 @@ vi.mock("../ai", async (importOriginal) => {
 
 import { embedTexts } from "../ai";
 import { pseudoEmbed } from "../ai/embeddings";
-import { characters, db, episodes, events, facts, items, locations, loreChunks, sessions, users, worlds } from "../db";
+import { characters, db, episodes, events, facts, items, locations, users } from "../db";
 import {
   addFacts,
   appendEpisode,
   chatScope,
-  computeUnlocks,
   deleteEpisodeForTurn,
   deleteEpisodesForScope,
   deleteFactsForScope,
   FACT_MIN_SCORE,
   latestEpisodeNumber,
-  eligibleRetrievalChunks,
-  embeddingTextFor,
   fuzzyResolve,
-  indexLoreChunks,
   listEpisodesForScope,
   listFactsForScope,
-  loadWorldLoreChunks,
-  preTurnRetrieve,
   recentEpisodes,
   refreshSearchEmbedding,
   retractFactsFromTurn,
@@ -40,8 +35,7 @@ import {
   retrieveEpisodesFused,
   retrieveFacts,
   retrieveFactsFused,
-  retrieveLoreChunks,
-  sessionScope,
+  scopeLabel,
 } from "./index";
 
 const mockEmbedTexts = vi.mocked(embedTexts);
@@ -69,13 +63,6 @@ async function probe(): Promise<boolean> {
 const ready = await probe();
 
 let ownerId: string;
-let worldId: string;
-
-async function makeSession(title: string): Promise<string> {
-  const [row] = await db().insert(sessions).values({ ownerId, worldId, title }).returning({ id: sessions.id });
-  if (!row) throw new Error("session insert failed");
-  return row.id;
-}
 
 function draft(over: Partial<FactDraft> & Pick<FactDraft, "subjectName" | "text">): FactDraft {
   return { kind: "knowledge", subjectKind: "character", tags: [], confidence: 0.9, ...over };
@@ -83,8 +70,6 @@ function draft(over: Partial<FactDraft> & Pick<FactDraft, "subjectName" | "text"
 
 afterAll(async () => {
   if (ready && ownerId) {
-    await db().delete(sessions).where(eq(sessions.ownerId, ownerId));
-    await db().delete(worlds).where(eq(worlds.ownerId, ownerId));
     await db().delete(characters).where(eq(characters.ownerId, ownerId));
     await db().delete(locations).where(eq(locations.ownerId, ownerId));
     await db().delete(items).where(eq(items.ownerId, ownerId));
@@ -102,16 +87,10 @@ describe.skipIf(!ready)("memory integration", () => {
       .returning({ id: users.id });
     if (!user) throw new Error("user insert failed");
     ownerId = user.id;
-    const [world] = await db()
-      .insert(worlds)
-      .values({ ownerId, name: "Int World" })
-      .returning({ id: worlds.id });
-    if (!world) throw new Error("world insert failed");
-    worldId = world.id;
   });
 
   describe("episodes", () => {
-    let sessionId: string;
+    let groupId: string;
     const summaries = [
       "Mara met the harbormaster at dawn.",
       "A storm forced everyone into the tavern.",
@@ -122,20 +101,20 @@ describe.skipIf(!ready)("memory integration", () => {
     ];
 
     beforeAll(async () => {
-      sessionId = await makeSession("episodes");
+      groupId = newId();
       for (let i = 0; i < summaries.length; i++) {
-        await appendEpisode(sessionScope(sessionId), i + 1, summaries[i]!, [`thread-${i + 1}`]);
+        await appendEpisode(chatScope(groupId), i + 1, summaries[i]!, [`thread-${i + 1}`]);
       }
     });
 
     it("recentEpisodes returns the last n in chronological order with parsed threadIds", async () => {
-      const recent = await recentEpisodes(sessionScope(sessionId), 2);
+      const recent = await recentEpisodes(chatScope(groupId), 2);
       expect(recent.map((e) => e.turnNumber)).toEqual([5, 6]);
       expect(recent[0]?.threadIds).toEqual(["thread-5"]);
     });
 
     it("retrieves an older episode by similarity", async () => {
-      const hits = await retrieveEpisodes(sessionScope(sessionId), summaries[1]!);
+      const hits = await retrieveEpisodes(chatScope(groupId), summaries[1]!);
       expect(hits).toHaveLength(1);
       expect(hits[0]?.turnNumber).toBe(2);
       expect(hits[0]?.score).toBeGreaterThan(0.99);
@@ -143,21 +122,21 @@ describe.skipIf(!ready)("memory integration", () => {
 
     it("excludes the most recent EPISODE_WINDOW turn numbers", async () => {
       // turn 5 is inside the recency window (max 6 − window 4 ⇒ cutoff 2)
-      const hits = await retrieveEpisodes(sessionScope(sessionId), summaries[4]!);
+      const hits = await retrieveEpisodes(chatScope(groupId), summaries[4]!);
       expect(hits).toHaveLength(0);
     });
 
     it("filters on the current embedder (pseudo vs stale model never compare)", async () => {
       const query = "An event recorded under a different embedding model.";
       await db().insert(episodes).values({
-        sessionId,
+        chatMemoryGroupId: groupId,
         turnNumber: 1,
         summary: query,
         threadIds: [],
         embedding: pseudoEmbed(query),
         embedder: "stale-model",
       });
-      const hits = await retrieveEpisodes(sessionScope(sessionId), query);
+      const hits = await retrieveEpisodes(chatScope(groupId), query);
       expect(hits).toHaveLength(0);
     });
 
@@ -165,31 +144,36 @@ describe.skipIf(!ready)("memory integration", () => {
       const rows = await db()
         .select({ payload: events.payload })
         .from(events)
-        .where(and(eq(events.sessionId, sessionId), eq(events.type, "retrieval")));
+        .where(
+          and(
+            eq(events.type, "retrieval"),
+            sql`${events.payload} ->> 'scope' = ${scopeLabel(chatScope(groupId))}`,
+          ),
+        );
       expect(rows.length).toBeGreaterThan(0);
     });
 
     it("deleteEpisodeForTurn removes exactly that turn's episode", async () => {
-      expect(await deleteEpisodeForTurn(sessionScope(sessionId), 6)).toBe(1);
-      const recent = await recentEpisodes(sessionScope(sessionId), 2);
+      expect(await deleteEpisodeForTurn(chatScope(groupId), 6)).toBe(1);
+      const recent = await recentEpisodes(chatScope(groupId), 2);
       expect(recent.map((e) => e.turnNumber)).toEqual([4, 5]);
-      expect(await deleteEpisodeForTurn(sessionScope(sessionId), 6)).toBe(0);
+      expect(await deleteEpisodeForTurn(chatScope(groupId), 6)).toBe(0);
     });
   });
 
   describe("facts", () => {
-    let sessionId: string;
+    let groupId: string;
     let firstId: string;
     let secondId: string;
 
-    beforeAll(async () => {
-      sessionId = await makeSession("facts");
+    beforeAll(() => {
+      groupId = newId();
     });
 
     it("drops low-confidence drafts with a diagnostic and inserts the rest", async () => {
       const sink = new DiagnosticCollector();
       const result = await addFacts(
-        sessionScope(sessionId),
+        chatScope(groupId),
         [
           draft({ subjectName: "Mara", text: "Mara might be hiding something.", confidence: 0.2 }),
           draft({ subjectName: "Mara", text: "Mara's hair is red." }),
@@ -209,7 +193,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("supersedes a same-subject fact above the similarity threshold in one transaction", async () => {
-      const result = await addFacts(sessionScope(sessionId), [draft({ subjectName: "MARA", text: "Mara's hair is red." })], { turnId: "turn-b" });
+      const result = await addFacts(chatScope(groupId), [draft({ subjectName: "MARA", text: "Mara's hair is red." })], { turnId: "turn-b" });
       expect(result.insertedIds).toHaveLength(1);
       expect(result.supersededIds).toEqual([firstId]);
       secondId = result.insertedIds[0]!;
@@ -221,12 +205,12 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("does not supersede across subjects even at similarity 1", async () => {
-      const result = await addFacts(sessionScope(sessionId), [draft({ subjectName: "Tobias", text: "Mara's hair is red." })], { turnId: "turn-c" });
+      const result = await addFacts(chatScope(groupId), [draft({ subjectName: "Tobias", text: "Mara's hair is red." })], { turnId: "turn-c" });
       expect(result.supersededIds).toHaveLength(0);
     });
 
     it("retrieves only active facts", async () => {
-      const hits = await retrieveFacts(sessionScope(sessionId), "Mara's hair is red.");
+      const hits = await retrieveFacts(chatScope(groupId), "Mara's hair is red.");
       const ids = hits.map((h) => h.id);
       expect(ids).toContain(secondId);
       expect(ids).not.toContain(firstId);
@@ -239,15 +223,15 @@ describe.skipIf(!ready)("memory integration", () => {
       const [oldRow] = await db().select({ status: facts.status }).from(facts).where(eq(facts.id, firstId));
       expect(oldRow?.status).toBe("superseded");
 
-      const hits = await retrieveFacts(sessionScope(sessionId), "Mara's hair is red.");
+      const hits = await retrieveFacts(chatScope(groupId), "Mara's hair is red.");
       expect(hits.map((h) => h.id)).not.toContain(secondId);
       expect(hits.map((h) => h.subjectName)).toContain("tobias");
     });
 
     it("supersedes within a single batch (earlier draft is a candidate for later ones)", async () => {
-      const batchSession = await makeSession("facts-batch");
+      const batchGroup = newId();
       const result = await addFacts(
-        sessionScope(batchSession),
+        chatScope(batchGroup),
         [
           draft({ subjectName: "Mara", text: "Mara likes chamomile tea." }),
           draft({ subjectName: "Mara", text: "Mara likes chamomile tea." }),
@@ -256,62 +240,6 @@ describe.skipIf(!ready)("memory integration", () => {
       );
       expect(result.insertedIds).toHaveLength(2);
       expect(result.supersededIds).toEqual([result.insertedIds[0]]);
-    });
-  });
-
-  describe("lore", () => {
-    let publicId: string;
-    let secretId: string;
-    const publicChunk = { title: "Harbor Lore", body: "Smugglers run the docks after midnight." };
-    const secretChunk = { title: "The Red Door", body: "Behind the red door lies the smuggler vault." };
-
-    beforeAll(async () => {
-      const inserted = await db()
-        .insert(loreChunks)
-        .values([
-          { worldId, ...publicChunk, tier: "retrieval" as const },
-          {
-            worldId,
-            ...secretChunk,
-            tier: "retrieval" as const,
-            visibility: "secret" as const,
-            unlockTags: ["red door"],
-          },
-        ])
-        .returning({ id: loreChunks.id });
-      publicId = inserted[0]!.id;
-      secretId = inserted[1]!.id;
-    });
-
-    it("indexLoreChunks embeds stale rows once", async () => {
-      expect(await indexLoreChunks(worldId)).toBe(2);
-      expect(await indexLoreChunks(worldId)).toBe(0);
-      const [row] = await db().select({ embedder: loreChunks.embedder }).from(loreChunks).where(eq(loreChunks.id, publicId));
-      expect(row?.embedder).toBe("pseudo");
-    });
-
-    it("retrieves eligible chunks above the min score only", async () => {
-      const query = embeddingTextFor(publicChunk.title, publicChunk.body);
-      const hits = await retrieveLoreChunks(worldId, query, [publicId, secretId]);
-      expect(hits.map((h) => h.id)).toEqual([publicId]);
-      expect(hits[0]?.score).toBeGreaterThan(0.99);
-    });
-
-    it("never returns chunks outside the eligible pool, even on a perfect match", async () => {
-      const query = embeddingTextFor(secretChunk.title, secretChunk.body);
-      const hits = await retrieveLoreChunks(worldId, query, [publicId]);
-      expect(hits).toHaveLength(0);
-    });
-
-    it("eligibility + unlock round-trip through real rows", async () => {
-      const chunks = await loadWorldLoreChunks(worldId);
-      const sceneCtx = { locationTags: [], presentCharacterIds: [] };
-      expect(eligibleRetrievalChunks(chunks, sceneCtx, []).map((c) => c.id)).toEqual([publicId]);
-      const newlyUnlocked = computeUnlocks(["Red Door"], chunks);
-      expect(newlyUnlocked).toEqual([secretId]);
-      expect(eligibleRetrievalChunks(chunks, sceneCtx, newlyUnlocked).map((c) => c.id).sort()).toEqual(
-        [publicId, secretId].sort(),
-      );
     });
   });
 
@@ -373,48 +301,8 @@ describe.skipIf(!ready)("memory integration", () => {
     });
   });
 
-  describe("preTurnRetrieve fan-out", () => {
-    let sessionId: string;
-    const loreBody = { title: "Vault Rumors", body: "The vault hides letters from the old regime." };
-    const query = embeddingTextFor(loreBody.title, loreBody.body);
-
-    beforeAll(async () => {
-      sessionId = await makeSession("fanout");
-      await appendEpisode(sessionScope(sessionId), 1, query, []);
-      for (let turn = 2; turn <= 6; turn++) {
-        await appendEpisode(sessionScope(sessionId), turn, `Filler episode number ${turn}.`, []);
-      }
-      await addFacts(sessionScope(sessionId), [draft({ subjectName: "vault", subjectKind: "location", text: query })], { turnId: "turn-f" });
-      await db().insert(loreChunks).values({ worldId, ...loreBody, tier: "retrieval" as const });
-      await indexLoreChunks(worldId);
-    });
-
-    it("returns hits from all three legs against real vector SQL", async () => {
-      const sink = new DiagnosticCollector();
-      const result = await preTurnRetrieve({
-        session: { id: sessionId },
-        world: { id: worldId },
-        queries: [],
-        input: query,
-        sceneCtx: { locationTags: [], presentCharacterIds: [] },
-        unlockedIds: [],
-        sink,
-      });
-      expect(result.episodeHits).toEqual([query]);
-      expect(result.factHits).toEqual([query]);
-      expect(result.loreHits).toContainEqual({ title: loreBody.title, body: loreBody.body });
-      expect(sink.items.filter((d) => d.severity === "error")).toHaveLength(0);
-
-      const logged = await db()
-        .select({ payload: events.payload })
-        .from(events)
-        .where(and(eq(events.sessionId, sessionId), eq(events.type, "retrieval")));
-      expect(logged.length).toBeGreaterThanOrEqual(3);
-    });
-  });
-
   // Chat-lane keying (character-chat-standalone.spec.md §1.3): facts + episodes keyed on
-  // a memory-group id instead of a session, and isolated from the session lane.
+  // a memory-group id, and isolated from every other group.
   describe("chat-scope memory (memory groups)", () => {
     const groupId = "int-test-memory-group";
 
@@ -437,29 +325,16 @@ describe.skipIf(!ready)("memory integration", () => {
       expect(factHits.map((h) => h.text)).toContain(factText);
     });
 
-    it("is isolated from the session lane (neither scope sees the other's rows)", async () => {
+    it("is isolated across memory groups (neither group sees the other's rows)", async () => {
       const chat = chatScope(groupId);
-      const sessionSecret = "Mara keeps a session-only secret.";
-      const session = sessionScope(await makeSession("isolation"));
-      await addFacts(session, [draft({ subjectName: "Mara", text: sessionSecret })], { turnId: "turn-iso" });
+      const otherSecret = "Mara keeps a secret in another group.";
+      const other = chatScope(newId());
+      await addFacts(other, [draft({ subjectName: "Mara", text: otherSecret })], { turnId: "turn-iso" });
 
-      const chatSees = await retrieveFacts(chat, sessionSecret);
-      expect(chatSees.map((h) => h.text)).not.toContain(sessionSecret);
-      const sessionSees = await retrieveFacts(session, factText);
-      expect(sessionSees.map((h) => h.text)).not.toContain(factText);
-    });
-
-    it("rejects a row keyed to BOTH a session and a chat (the exactly-one CHECK)", async () => {
-      const badSession = await makeSession("check");
-      await expect(
-        db().insert(episodes).values({
-          sessionId: badSession,
-          chatMemoryGroupId: groupId,
-          turnNumber: 1,
-          summary: "impossible dual-keyed row",
-          threadIds: [],
-        }),
-      ).rejects.toThrow();
+      const chatSees = await retrieveFacts(chat, otherSecret);
+      expect(chatSees.map((h) => h.text)).not.toContain(otherSecret);
+      const otherSees = await retrieveFacts(other, factText);
+      expect(otherSees.map((h) => h.text)).not.toContain(factText);
     });
 
     it("deleteFactsForScope / deleteEpisodesForScope purge only the chat's memory (Clear Chat — §4)", async () => {
@@ -476,7 +351,7 @@ describe.skipIf(!ready)("memory integration", () => {
   // pseudoEmbed is hash-based: hits need near-identical text, misses need clearly different text.
   describe("retrieval quality + pinned facts (slice 7)", () => {
     it("applies the relevance floor: a dissimilar fact is a candidate but never a hit", async () => {
-      const scope = sessionScope(await makeSession("floor"));
+      const scope = chatScope(newId());
       const onTopic = "Mara keeps a spare key under the third floorboard.";
       const offTopic = "The eastern gate collapsed during the siege.";
       const { insertedIds } = await addFacts(
@@ -494,7 +369,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("force-includes pinned facts ahead of scored hits despite a dissimilar query", async () => {
-      const scope = sessionScope(await makeSession("pinned"));
+      const scope = chatScope(newId());
       const pinnedText = "The player is allergic to shellfish.";
       const scoredText = "Tobias hums sea shanties while cooking.";
       const pinnedRes = await addFacts(
@@ -520,7 +395,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("an extracted draft never retires a similar pinned player fact (asymmetry, blocked direction)", async () => {
-      const scope = sessionScope(await makeSession("asym-blocked"));
+      const scope = chatScope(newId());
       const text = "The player's cat is named Biscuit.";
       const pinnedRes = await addFacts(
         scope,
@@ -548,7 +423,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("a player draft supersedes a similar extracted fact (asymmetry, allowed direction)", async () => {
-      const scope = sessionScope(await makeSession("asym-allowed"));
+      const scope = chatScope(newId());
       const text = "Mara's hair is auburn.";
       const extracted = await addFacts(scope, [draft({ subjectName: "Mara", text })], { turnId: "turn-e" });
       const player = await addFacts(
@@ -565,7 +440,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("prefers subjectId equality in supersedence: differing ids block, matching ids pass a rename", async () => {
-      const scope = sessionScope(await makeSession("subject-ids"));
+      const scope = chatScope(newId());
       const text = "The twin wears a silver locket.";
       const first = await addFacts(scope, [{ ...draft({ subjectName: "Twin", text }), subjectId: "char-a" }], {
         turnId: "turn-s1",
@@ -585,7 +460,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("fused fact retrieval unions per-query hits with per-source attribution, pinned in front", async () => {
-      const scope = sessionScope(await makeSession("fused-facts"));
+      const scope = chatScope(newId());
       const t1 = "Mara adores honey pastries.";
       const t2 = "Tobias fears the open sea.";
       const t3 = "The archive basement floods every spring.";
@@ -630,7 +505,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("zero usable queries degrade fused facts to the pinned-only result", async () => {
-      const scope = sessionScope(await makeSession("fused-blank"));
+      const scope = chatScope(newId());
       const tp = "The player never drinks coffee after dusk.";
       await addFacts(
         scope,
@@ -650,7 +525,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("query-embed failure degrades fused facts to pinned-only with a diagnostic", async () => {
-      const scope = sessionScope(await makeSession("fused-degrade"));
+      const scope = chatScope(newId());
       const tp = "The player owns a one-eyed parrot.";
       await addFacts(
         scope,
@@ -671,7 +546,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("fused episode retrieval unions per-query hits with sources and keeps the recency window", async () => {
-      const scope = sessionScope(await makeSession("fused-episodes"));
+      const scope = chatScope(newId());
       const s1 = "Mara bartered for passage on the grain barge.";
       const s2 = "Tobias confessed to forging the ledger.";
       await appendEpisode(scope, 1, s1, []);
@@ -691,7 +566,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("query-embed failure degrades fused episodes to [] with a diagnostic", async () => {
-      const scope = sessionScope(await makeSession("fused-ep-degrade"));
+      const scope = chatScope(newId());
       const sink = new DiagnosticCollector();
       mockEmbedTexts.mockRejectedValueOnce(new Error("provider down"));
       expect(await retrieveEpisodesFused(scope, ["anything"], 5, sink)).toEqual([]);
@@ -699,7 +574,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("listFactsForScope hides superseded/retracted rows unless includeInactive", async () => {
-      const scope = sessionScope(await makeSession("list-facts"));
+      const scope = chatScope(newId());
       const text = "Mara owes the guild forty crowns.";
       const first = await addFacts(scope, [draft({ subjectName: "Mara", text })], { turnId: "turn-l1" });
       const second = await addFacts(scope, [draft({ subjectName: "Mara", text })], { turnId: "turn-l2" });
@@ -729,12 +604,12 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("listEpisodesForScope returns rows in turn order with the embedded flag", async () => {
-      const sessionId = await makeSession("list-episodes");
-      const scope = sessionScope(sessionId);
+      const groupId = newId();
+      const scope = chatScope(groupId);
       await appendEpisode(scope, 1, "First.", [], undefined, [], "msg-1");
       await appendEpisode(scope, 2, "Second.", []);
       // an embed-failure row: present for audit/recency, invisible to RAG
-      await db().insert(episodes).values({ sessionId, turnNumber: 3, summary: "Unembedded.", threadIds: [] });
+      await db().insert(episodes).values({ chatMemoryGroupId: groupId, turnNumber: 3, summary: "Unembedded.", threadIds: [] });
 
       const rows = await listEpisodesForScope(scope);
       expect(rows.map((r) => r.turnNumber)).toEqual([1, 2, 3]);
@@ -798,8 +673,7 @@ describe.skipIf(!ready)("memory integration", () => {
 
   describe("Gate 0 witness eligibility spike", () => {
     it("filters facts, pinned facts and episode windows before top-k while preserving global rows", async () => {
-      const sessionId = await makeSession("witness eligibility");
-      const scope = sessionScope(sessionId);
+      const scope = chatScope(newId());
       const observer = "participant-observer";
       const other = "participant-other";
       const globalFact = "The harbor bell rings at noon for everyone.";

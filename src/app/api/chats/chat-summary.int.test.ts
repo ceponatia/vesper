@@ -175,7 +175,7 @@ describe("enqueueChatSummary — the guard", () => {
     // A queued job inserted directly (no runner kick), so the guard has something to see.
     await db()
       .insert(jobs)
-      .values({ sessionId: null, type: "chat_summary", status: "queued", payload: { chatId: ids.chat } });
+      .values({ type: "chat_summary", status: "queued", payload: { chatId: ids.chat } });
 
     await enqueueChatSummary({ chatId: ids.chat });
 
