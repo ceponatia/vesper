@@ -113,6 +113,17 @@ describe("E4.3 auditPresentation (§23.2)", () => {
     expect(audit.bridgeProse).toBe("Beat event-2 happened.");
   });
 
+  it("treats a template-echo render as empty and sends it back (live find, R5 slice 6)", () => {
+    const cut = fixtureCut();
+    const audit = auditPresentation(cut, {
+      ...emptyNarratorResult,
+      prose: "<the scene, 100-350 words>",
+      enactedBeatEventIds: cut.mustEnact.map((beat) => beat.eventId),
+    });
+    expect(audit.verdict).toBe("rerender");
+    expect(audit.diagnostics).toContain("presentation.placeholder_echo");
+  });
+
   it("sends an empty or beat-blind render back for rerender", () => {
     const cut = fixtureCut({
       mustEnact: [beat("event-1", 5), beat("event-2", 6), beat("event-3", 6)],

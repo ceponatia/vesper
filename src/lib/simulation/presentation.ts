@@ -322,8 +322,15 @@ export function auditPresentation(
   const maxBridgedBeats = options.maxBridgedBeats ?? 2;
   const diagnostics: string[] = [];
 
-  const proseEmpty = result.prose.trim().length === 0;
-  if (proseEmpty) diagnostics.push("presentation.prose_empty");
+  // A template echo is empty prose wearing brackets: models sometimes return
+  // the output contract's own placeholder ("<the scene, 100-350 words>")
+  // verbatim (caught live, R5 slice 6). Structurally valid, narratively
+  // nothing — send it back for the ruling-8 hidden retry.
+  const trimmedProse = result.prose.trim();
+  const placeholderEcho = /^<[^<>]{0,120}>$/.test(trimmedProse) || trimmedProse.includes("100-350 words");
+  if (placeholderEcho && trimmedProse.length > 0) diagnostics.push("presentation.placeholder_echo");
+  const proseEmpty = trimmedProse.length === 0 || placeholderEcho;
+  if (trimmedProse.length === 0) diagnostics.push("presentation.prose_empty");
 
   const declaredBeatIds = new Set(result.enactedBeatEventIds);
   const missingBeats = cut.mustEnact.filter((beat) => !declaredBeatIds.has(beat.eventId));
