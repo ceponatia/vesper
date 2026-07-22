@@ -1,9 +1,18 @@
 # Presentation charter — one narrator craft law for both lanes, and the successor narrator repaired
 
-Status: **active** — slices 1–4 landed 2026-07-22 (full gate green: lint / cycles /
-typecheck / 2 394 pure tests / jscpd, plus the targeted sim int suites); slice 5
-(live verification on Fly) remains. (Planned 2026-07-22 from the two-model narrator
-review — GPT + Fable
+Status: **shipped — 2026-07-22** — all five slices same-day (full gate green: lint /
+cycles / typecheck / 2 394 pure tests / jscpd, plus the targeted sim int suites; live
+verification on Fly v116 — a fresh `/worlds` chat confirmed second-person camera,
+in-voice prose, mechanical `[Name]` attribution rendering, no id/handle leaks, lean
+beat-scaled shape, attachments/chips hidden, retake = same cut + fresh prose + takes
+browser + NO time advance, Go-on = no user row + span advance 8:01→8:02 + continuity
+held across takes; screenshots in `screenshots/charter-*.png`). Leftovers, parked:
+sensory-allowance port (OQ3) and a sim-lane voice ring (OQ4) below; the LLM-judge
+audit leg and the prose-plus-sidecar A/B ride the owner-gated eval spend
+([deferred.plan.md](deferred.plan.md)); token streaming stays deferred (withhold
+contract); a richer "narrating…" progress state is optional polish — the existing
+typing indicator covered the 30–90s renders legibly. (Planned 2026-07-22 from the
+two-model narrator review — GPT + Fable
 comparing the legacy chat narrator against the R2 successor narrator; owner endorsed the
 review's frame: keep the engine and the committed-cut model, treat the current successor
 narrator as an R2 prototype whose presentation layer shipped several stages early).

@@ -23,22 +23,7 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Presentation charter — one narrator craft law for both lanes; the successor
-  narrator repaired** —
-  [presentation-charter.plan.md](presentation-charter.plan.md) (active; planned
-  2026-07-22 from the two-model narrator review of the R2 successor narrator vs
-  the legacy chat narrator; **slices 1–4 landed 2026-07-22**, full gate green —
-  slice 5 live verification on Fly remains). The engine and committed-cut model
-  stay; the presentation layer got rebuilt: the legacy chat narrator's craft law
-  extracted into the shared **charter** (`prompts/charter.ts` +
-  `profile-sections.ts`, legacy prompt byte-identical), the successor prompt
-  reassembled from authored canon + sim projections (`prompts/sim-render.ts` —
-  opaque B/E handles, no raw ids, fenced untrusted data, persona/voice restored),
-  the render loop upgraded (normalize-before-audit, targeted-correction retry,
-  id-leak/JSON-echo/substance audits, provider parity, one-confirm-per-cut), and
-  **routing parity** per §39 rulings 18–19 — no sim chat operation falls back to
-  the legacy narrator (regenerate = same-cut re-render, continue/open =
-  time-advancing utterance-free turns, attachments/chips refused + hidden).
+_(Nothing active — pick up the top of Next.)_
 
 ## Next (queued)
 
@@ -140,6 +125,17 @@ production-build perf pass §5), observer / god-mode POV, monorepo split (perman
 deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
+
+- **Presentation charter — one narrator craft law for both lanes; the successor
+  narrator repaired** —
+  [presentation-charter.plan.md](presentation-charter.plan.md) · spec additions
+  engine.spec.mind §23.5–23.7 + §39 rulings 18–19 — 2026-07-22 — the R2
+  prototype narrator became the game: shared craft charter (legacy prompt
+  byte-identical), successor prompt rebuilt from authored canon + sim
+  projections with opaque handles, render loop with normalize-before-audit +
+  targeted-correction retries + one-confirm-per-cut, and routing parity (no
+  sim-chat operation ever reaches the legacy narrator). Verified live on Fly
+  v116. Built by four Opus subagents, same day as planning.
 
 - **Successor engine — migration & rollout (R0–R6 COMPLETE); the legacy
   world/session model is RETIRED** —
