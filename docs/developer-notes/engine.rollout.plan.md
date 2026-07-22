@@ -307,9 +307,24 @@ is the cleanup that makes the migration real.
    scene vs the successor's Day 3 · 2:40pm afternoon render; transcript
    untouched (2 lines), legacy latency unaffected (~32s own model call),
    a clock verdict ruled `intentional` through the API. Gates green
-   (3 120 pure + 477 int). Remaining for the R4 exit: the comparison
-   corpus itself (a scripted + played exchange set), the scale-aware
-   parity analysis over the recorded rows, and the agreed report.
+   (3 120 pure + 477 int). **Slice 2 shipped — 2026-07-22:** the fixed
+   corpus (`pnpm sim:shadow-corpus`, versioned in
+   `scripts/sim/shadow-corpus.ts` as `shadow-corpus-v1`: four plain sends
+   + one mid-corpus "hours" skip on a fresh shadow chat, every detached
+   leg awaited so a run is deterministic and complete when it prints),
+   the pure scale-aware analyzer (`lib/simulation/shadow-parity.ts`:
+   clock DELTAS within ±2 min, meters normalized 0..1 within ±0.15 per
+   shared key, recorder-judged presence/prose, ruled rows out of
+   findings, malformed rows skipped never thrown), and the computed
+   report at `GET /api/admin/sim/shadow/[chatId]/report`. First local
+   corpus run (AI_FAKE): clock parity CLEAN across all steps including
+   the mirrored skip; presence + prose clean; one real finding —
+   **`intoxication`, `mood`, `stress` are tracked chat-side but not
+   instantiated on the mirror actor** (ruling 15's registry-data seam:
+   the rollout world seeds only arousal/energy/hygiene). Gates green
+   (3 124 pure + 477 int). Remaining for exit: run the corpus + played
+   sessions on Fly, triage the findings (fix or rule intentional), and
+   the owner agrees the report.
    Exit: an agreed shadow-parity report over a fixed comparison corpus;
    every divergence either fixed or ruled intentional.
 6. **R5 — domain-by-domain authority migration.** `successor_authoritative` one
