@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { cx } from "@/components/ui/cx";
 import { signOut, useSession } from "@/components/auth/auth-client";
+import { useIsAdmin } from "@/components/hooks/use-is-admin";
 
 /**
  * Header identity control (auth.plan.md): the signed-in user's name as a
@@ -15,6 +16,7 @@ import { signOut, useSession } from "@/components/auth/auth-client";
  */
 export function AccountMenu() {
   const { data, isPending } = useSession();
+  const isAdmin = useIsAdmin();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -88,6 +90,18 @@ export function AccountMenu() {
           >
             Settings
           </Link>
+          {isAdmin ? (
+            // Admin-only (R4, engine.rollout.plan.md): the Shadow Parity review
+            // screen — reports and verdicts without touching the API by hand.
+            <Link
+              href="/admin/shadow"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="block px-3 py-2 text-sm text-paper-200 transition-colors hover:bg-ink-700"
+            >
+              Shadow parity
+            </Link>
+          ) : null}
           <div className="my-1 border-t border-ink-600" />
           <button
             type="button"

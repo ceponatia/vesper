@@ -340,8 +340,19 @@ is the cleanup that makes the migration real.
    shared and within tolerance — and the LIVE Fly re-run (real Aion 3.0
    after `pnpm sim:seed` upgraded the standing world's bodies in place)
    confirmed it: 16 rows, clock/presence/prose/meters all clean,
-   `findings: []`. Remaining for exit: owner-played shadowed sessions on
-   Fly and the owner agreeing the report.
+   `findings: []`. **Slice 3 shipped — 2026-07-22: the admin Shadow
+   Parity screen** (owner ask — no raw API calls to review):
+   `/admin/shadow` lists every chat with recorded rows (open/total
+   counts, via the new `GET /api/admin/sim/shadow` index);
+   `/admin/shadow/[chatId]` renders the computed report card (findings,
+   verdict tallies, per-domain summaries), the exchanges grouped
+   newest-first with prose pairs side by side, and per-row verdict
+   buttons (open / intentional / fixed). Client layer
+   `lib/api-shadow.ts` (forgiving schemas, admin bundle kept out of the
+   player module); reached from the account menu's admin-only "Shadow
+   parity" item; enforcement stays the 404-hidden API family. Remaining
+   for exit: owner-played shadowed sessions on Fly and the owner
+   agreeing the report — now both doable entirely in the browser.
    Exit: an agreed shadow-parity report over a fixed comparison corpus;
    every divergence either fixed or ruled intentional.
 6. **R5 — domain-by-domain authority migration.** `successor_authoritative` one

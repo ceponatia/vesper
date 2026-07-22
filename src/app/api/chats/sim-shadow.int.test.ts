@@ -33,6 +33,7 @@ import {
 import { POST as chatsCreate } from "./route";
 import { POST as chatSend } from "./[chatId]/route";
 import { POST as legacyTimeSkip } from "./[chatId]/time-skip/route";
+import { GET as shadowList } from "../admin/sim/shadow/route";
 import { GET as shadowGet, PATCH as shadowPatch } from "../admin/sim/shadow/[chatId]/route";
 import { GET as shadowReport } from "../admin/sim/shadow/[chatId]/report/route";
 
@@ -209,5 +210,19 @@ describe.runIf(ready)("R4 shadow mode under chat", () => {
     expect(report.totals.byVerdict.intentional).toBeGreaterThanOrEqual(1);
     expect(report.prose.rendered).toBeGreaterThanOrEqual(1);
     expect(report.clock.latestSuccessorClock).toContain("Day");
+
+    // The index (the admin screen's front page): this chat listed with counts.
+    const listRes = await shadowList(new NextRequest("http://t/api/admin/sim/shadow"), {
+      params: Promise.resolve({}),
+    });
+    expect(listRes.status).toBe(200);
+    const { chats } = (await listRes.json()) as {
+      chats: { chatId: string; characterName: string; total: number; open: number }[];
+    };
+    const listed = chats.find((chat) => chat.chatId === ids.chat);
+    if (!listed) throw new Error("shadow chat missing from the index");
+    expect(listed.characterName).toBe("Ana");
+    expect(listed.total).toBeGreaterThanOrEqual(4);
+    expect(listed.open).toBeLessThan(listed.total); // one row was ruled intentional above
   });
 });
