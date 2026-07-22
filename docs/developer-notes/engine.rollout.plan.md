@@ -322,9 +322,23 @@ is the cleanup that makes the migration real.
    **`intoxication`, `mood`, `stress` are tracked chat-side but not
    instantiated on the mirror actor** (ruling 15's registry-data seam:
    the rollout world seeds only arousal/energy/hygiene). Gates green
-   (3 124 pure + 477 int). Remaining for exit: run the corpus + played
-   sessions on Fly, triage the findings (fix or rule intentional), and
-   the owner agrees the report.
+   (3 124 pure + 477 int). First LIVE corpus run on Fly (real Aion 3.0,
+   8 model calls) matched the local run exactly — clock/presence/prose
+   clean, same single meters finding. **Finding triaged — owner ruled
+   "fix" (2026-07-22):** stress/intoxication/mood joined
+   `bodyMeterRegistryV1` (semantics ported from the chat registry:
+   stress decays toward calm, intoxication metabolizes to sober, mood is
+   a valence returning to its 0.5 keel; prompt-hint thresholds stay
+   chat-side). Body initialization became **additive** — an
+   already-seeded body initializes only its MISSING registry meters
+   (`existingMeterKeys` replaces the boolean; a fully-covered body still
+   rejects `body_already_initialized`) — so a grown registry upgrades
+   standing worlds lawfully through the event log; `seedRolloutTestWorld`
+   runs that ensure pass (registry-stamped command ids) on its
+   found-world path, meaning `pnpm sim:seed` is the upgrade command.
+   Corpus re-run after the fix: **zero findings** — all six meters
+   shared and within tolerance. Remaining for exit: played sessions on
+   Fly and the owner agreeing the report.
    Exit: an agreed shadow-parity report over a fixed comparison corpus;
    every divergence either fixed or ruled intentional.
 6. **R5 — domain-by-domain authority migration.** `successor_authoritative` one

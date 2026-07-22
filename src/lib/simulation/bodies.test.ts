@@ -321,7 +321,7 @@ describe("E5.1 resolvers and replay parity", () => {
       baselineOverrides: { arousal: 1_500 },
     });
     const resolution = resolveInitializeActorBody(
-      { ...meta, actorExists: true, alreadyInitialized: false },
+      { ...meta, actorExists: true, existingMeterKeys: [] },
       // Envelope schemas validate inside the resolver's callers; parse here.
       parseInitialize(command),
     );
@@ -351,17 +351,32 @@ describe("E5.1 resolvers and replay parity", () => {
       ),
     );
     const rejected = resolveInitializeActorBody(
-      { ...meta, actorExists: true, alreadyInitialized: false },
+      { ...meta, actorExists: true, existingMeterKeys: [] },
       command,
     );
     expect(rejected.ok).toBe(false);
     if (!rejected.ok) expect(rejected.code).toBe("unauthorized_principal");
     const doubled = resolveInitializeActorBody(
-      { ...meta, actorExists: true, alreadyInitialized: true },
+      { ...meta, actorExists: true, existingMeterKeys: bodyMeterRegistryV1.map((definition) => definition.key) },
       parseInitialize(envelope("initialize_actor_body", { actorId: ACTOR, registryVersion: "body-v1", baselineOverrides: {} })),
     );
     expect(doubled.ok).toBe(false);
     if (!doubled.ok) expect(doubled.code).toBe("body_already_initialized");
+  });
+
+  it("initializes ONLY the missing meters when the registry grew since first seed (R4 additive upgrade)", () => {
+    // A body seeded under the three-meter registry, re-initialized after
+    // stress/intoxication/mood joined: only the newcomers appear, existing
+    // rows untouched, and no alarms arm (the newcomers carry no thresholds).
+    const resolution = resolveInitializeActorBody(
+      { ...meta, actorExists: true, existingMeterKeys: ["energy", "hygiene", "arousal"] },
+      parseInitialize(envelope("initialize_actor_body", { actorId: ACTOR, registryVersion: "body-v1", baselineOverrides: {} })),
+    );
+    if (!resolution.ok) throw new Error(`unexpected rejection ${resolution.code}`);
+    expect(resolution.meters.map((meter) => meter.meterKey).sort()).toEqual(["intoxication", "mood", "stress"]);
+    const [initialized] = resolution.events;
+    expect(initialized.payload.meters.map((meter) => meter.meterKey).sort()).toEqual(["intoxication", "mood", "stress"]);
+    expect(resolution.events.filter((event) => event.type === "trigger_scheduled")).toHaveLength(0);
   });
 
   it("applies a source at the integrated value and re-arms the meter's alarm", () => {
@@ -559,7 +574,7 @@ describe("E5.1 resolvers and replay parity", () => {
 
   it("replays a full material history onto the same projection the resolvers produced", () => {
     const initialize = resolveInitializeActorBody(
-      { ...meta, actorExists: true, alreadyInitialized: false },
+      { ...meta, actorExists: true, existingMeterKeys: [] },
       parseInitialize(envelope("initialize_actor_body", { actorId: ACTOR, registryVersion: "body-v1", baselineOverrides: {} })),
     );
     if (!initialize.ok) throw new Error("initialize rejected");

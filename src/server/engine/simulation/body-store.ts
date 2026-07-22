@@ -579,13 +579,12 @@ export async function submitDurableInitializeActorBody(
           and(eq(simCharacters.branchId, branch.id), eq(simCharacters.characterId, command.payload.actorId)),
         )
         .limit(1);
-      const [existingMeter] = await tx
+      const existingMeterRows = await tx
         .select({ meterKey: simBodyMeters.meterKey })
         .from(simBodyMeters)
         .where(
           and(eq(simBodyMeters.branchId, branch.id), eq(simBodyMeters.actorId, command.payload.actorId)),
-        )
-        .limit(1);
+        );
 
       const rhythmRows = (
         await tx
@@ -634,7 +633,7 @@ export async function submitDurableInitializeActorBody(
           headSequence: branch.headSequence,
           storySecond: branch.storySecond,
           actorExists: actorRow !== undefined,
-          alreadyInitialized: existingMeter !== undefined,
+          existingMeterKeys: existingMeterRows.map((row) => row.meterKey),
           selfCareAdjustmentsByMeter,
           armAlarms: !isBelowEventLod(effectiveLod.simulationLod),
         },
