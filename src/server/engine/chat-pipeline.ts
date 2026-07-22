@@ -140,10 +140,13 @@ import { chatPromptLayout, narrationShapeId } from "./prompts/constants";
  *   delete only the target user line's SUCCESSORS and reuse the target itself as the
  *   prompt guard — a fresh reply streams like a `send`. Nothing is deleted until the
  *   lock is held and the target validates, so a failed acquire leaves the transcript
- *   byte-identical. Only the latest exchange's prompt can rerun in place: an older
- *   target requires conversation branching because the one-exchange snapshot cannot
- *   restore every discarded successor honestly. State mirrors regenerate; the deleted
- *   assistant successor has its extracted memory retracted.
+ *   byte-identical. Only the latest exchange's prompt can rerun in place — its reply
+ *   as sole successor, or NO successors when the reply never persisted (failed
+ *   stream/timeout/empty). An older target requires conversation branching because
+ *   the one-exchange snapshot cannot restore every discarded successor honestly.
+ *   When a reply IS deleted, state mirrors regenerate and the reply's extracted
+ *   memory is retracted; a failed-reply rerun starts from the live state instead
+ *   (that exchange never settled, so there is nothing to roll back).
  */
 
 export type ChatExchangeKind = "send" | "open" | "continue" | "action_beat" | "regenerate" | "rerun";
@@ -481,7 +484,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     let effectiveKind: ChatExchangeKind = kind;
     /** For rerun: the assistant successors deleted this exchange (their memory is retracted). */
     let rerunDeletedAssistantIds: string[] = [];
-    /** For rerun: true only after the target is proven to be the latest exchange's prompt. */
+    /**
+     * For rerun: true only when the rerun deleted the latest reply — the exchange the
+     * stored anchor belongs to. A failed-reply rerun (no successors: the reply never
+     * persisted, so the exchange never settled) leaves this false — state never
+     * advanced and the anchor still belongs to the PREVIOUS exchange, so restoring it
+     * would double-roll-back.
+     */
     let rerunSnapshotApplies = false;
     /** Attached photos on this exchange's prompting line (chat-image-input.plan.md). */
     let attachmentFiles: { id: string; path: string }[] = [];
@@ -582,7 +591,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         promptMessageId = resolved.target.id;
         playerContent = resolved.target.content;
         rerunDeletedAssistantIds = resolved.deletedAssistantIds;
-        rerunSnapshotApplies = true;
+        rerunSnapshotApplies = resolved.deletedAssistantIds.length > 0;
         // Snipped user lines take their attached photos with them — player content,
         // never Gallery survivors. Fire-and-forget: the transcript rows are already gone.
         if (resolved.deletedIds.length) void deleteChatUploads(chatId, resolved.deletedIds);
@@ -641,9 +650,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     if (regenerateTarget) {
       storedState = await restoreOrDegrade(characterId);
       await reconcileMessageMemory(regenerateTarget.id, sink);
-    } else if (kind === "rerun") {
+    } else if (kind === "rerun" && rerunSnapshotApplies) {
       // A successful rerun is necessarily the latest exchange: older targets are
       // rejected before mutation because this one-exchange anchor cannot restore them.
+      // (A failed-reply rerun — no successors — skips the restore entirely: that
+      // exchange never settled, so the live state IS the correct starting point.)
       storedState = await restoreOrDegrade(characterId);
       // Retract the extracted memory of every assistant reply this rerun deleted
       // (spec §4.3 — provenance), like regenerate does for the single old take.
@@ -1654,8 +1665,10 @@ type RerunResolution =
  * `ok: false`, nothing modified — the delete only runs after validation passes), then
  * delete ONLY its successors — every row ordered after it on the `(created_at, id)` tuple
  * the transcript sorts by. The target row is left intact for the caller to reuse as the
- * prompt guard. In-place rerun is admitted only when the sole successor is the latest
- * assistant reply. Any older reach-back is rejected before deletion with
+ * prompt guard. In-place rerun is admitted only for the LATEST exchange's prompt: its
+ * sole successor is the latest assistant reply — or it has NO successors at all, the
+ * reply having never persisted (a stream failure/timeout, an empty reply, a pre-text
+ * stop). Any older reach-back is rejected before deletion with
  * `rerun_requires_branch`: the state store has one exchange anchor, not enough history
  * to roll every discarded successor back without corrupting the simulation.
  *
@@ -1689,7 +1702,8 @@ async function resolveRerunTarget(chatId: string, targetMessageId: string | unde
       };
     }
     const successors = ordered.slice(idx + 1);
-    if (successors.length !== 1 || successors[0]?.role !== "assistant") {
+    const soleLatestReply = successors.length === 1 && successors[0]?.role === "assistant";
+    if (successors.length > 0 && !soleLatestReply) {
       return {
         ok: false as const,
         code: "rerun_requires_branch" as const,

@@ -55,7 +55,11 @@ exchange:
    re-select the target itself). The target row is **reused** as the prompt guard, never
    re-inserted; deleted assistant successors have their memory retracted
    (`reconcileMessageMemory`), and state mirrors regenerate. Only the **latest
-   exchange's prompt** is eligible for in-place rerun (sole successor = the newest reply).
+   exchange's prompt** is eligible for in-place rerun: sole successor = the newest
+   reply, **or zero successors** — the reply never persisted (stream failure/timeout,
+   empty reply, pre-text stop), the retry path behind the failure popup. A zero-successor
+   rerun skips the snapshot rollback: the failed exchange never settled, so live state
+   is the correct starting point (the stored anchor belongs to the previous exchange).
    An older target returns 400 `rerun_requires_branch` before deleting anything: the
    one-exchange snapshot cannot restore an arbitrary discarded suffix, so the honest
    operation is a future conversation branch, not a false rollback. From there an accepted

@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { newId } from "@/lib/ids";
 import {
   characterChatMessages,
@@ -46,6 +46,7 @@ import {
   tryKeyedLock,
   type ReplyTakes,
 } from "@/server/engine";
+import { resetRateLimits } from "@/server/api";
 import { log } from "@/server/log";
 import { POST as chatsCreate } from "./route";
 import { DELETE as characterDelete } from "../characters/[id]/route";
@@ -78,6 +79,12 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+
+// The whole suite drives one user through one process, so the in-memory per-user
+// chat cap (CHAT_RATE_LIMIT, 30/min) is shared across every test — reset it per
+// test so adding an exchange to one test can't 429 an unrelated one.
+beforeEach(() => resetRateLimits());
+
 const collectionCtx = { params: Promise.resolve({}) };
 const ctx = (chatId: string) => ({ params: Promise.resolve({ chatId }) });
 const msgCtx = (chatId: string, messageId: string) => ({ params: Promise.resolve({ chatId, messageId }) });
@@ -1085,6 +1092,29 @@ describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-reru
     // The rerun IS the last exchange (its only successor was the newest reply), so it rolls
     // back the post-exchange perturbation to the snapshot, exactly like regenerate.
     expect(await stateAffinity(chat.id)).toBe(12);
+  });
+
+  it("reruns a prompt whose reply never persisted (zero successors) without a false rollback", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    expect((await statePatch(stateReq(chat.id, { regard: 12 }), ctx(chat.id))).status).toBe(200);
+    await (await chatSend(postReq(chat.id, { content: "first" }), ctx(chat.id))).text(); // settles: anchor holds regard 12
+    expect((await statePatch(stateReq(chat.id, { regard: 64 }), ctx(chat.id))).status).toBe(200); // live state moves on
+    // A failed exchange: the player line persisted but the model produced no text, so
+    // no assistant row and no settle — exactly what a stream failure/timeout leaves.
+    const orphanId = await insertMessage(chat.id, "user", "no reply came");
+
+    const res = await chatSend(postReq(chat.id, { kind: "rerun", messageId: orphanId }), ctx(chat.id));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("[Mara]");
+
+    // The orphan line was reused (not re-inserted) and got its fresh reply.
+    expect(await roleCounts(chat.id)).toEqual({ user: 2, assistant: 2 });
+    const after = await fullRows(chat.id);
+    expect(after.filter((m) => m.role === "user").map((m) => m.id)).toContain(orphanId);
+    // No false rollback: the failed exchange never settled, so the rerun starts from
+    // the LIVE state — the stored anchor (regard 12) belongs to the PREVIOUS exchange.
+    expect(await stateAffinity(chat.id)).toBe(64);
   });
 
   it("rejects an earlier exchange with rerun_requires_branch and modifies nothing", async (t) => {
