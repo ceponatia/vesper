@@ -337,7 +337,10 @@ is the cleanup that makes the migration real.
    runs that ensure pass (registry-stamped command ids) on its
    found-world path, meaning `pnpm sim:seed` is the upgrade command.
    Corpus re-run after the fix: **zero findings** — all six meters
-   shared and within tolerance. Remaining for exit: played sessions on
+   shared and within tolerance — and the LIVE Fly re-run (real Aion 3.0
+   after `pnpm sim:seed` upgraded the standing world's bodies in place)
+   confirmed it: 16 rows, clock/presence/prose/meters all clean,
+   `findings: []`. Remaining for exit: owner-played shadowed sessions on
    Fly and the owner agreeing the report.
    Exit: an agreed shadow-parity report over a fixed comparison corpus;
    every divergence either fixed or ruled intentional.
