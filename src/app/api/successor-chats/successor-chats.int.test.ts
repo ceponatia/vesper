@@ -11,6 +11,7 @@ import {
   simBranches,
   simItemHoldings,
   simMemoryDocuments,
+  simRelationshipLedger,
   simWorlds,
   users,
 } from "@/server/db";
@@ -37,6 +38,7 @@ import {
   STARTER_CALENDAR_START,
   STARTER_ORIGIN_STORY_SECOND,
   submitDurableApplyBodySource,
+  submitDurableRecordRelationshipEntry,
   submitDurableStorytellerRelocation,
 } from "@/server/engine";
 import { GET as successorList, POST as successorCreate } from "./route";
@@ -100,6 +102,9 @@ beforeAll(async () => {
   const teeId = await insertItem("white cotton tee");
   const profile = characterProfileSchema.parse({
     outfits: [{ id: "everyday", name: "Everyday", items: [jacketId, teeId] }],
+    // R5 relationships: an authored WARM start (band midpoint 57) — seeds the
+    // authored_prior ledger pair at provisioning.
+    playerRelationship: { familiarity: "close", regard: "warm" },
   });
   const [character] = await db()
     .insert(characters)
@@ -337,5 +342,49 @@ describe.runIf(ready)("successor-chats front door", () => {
       .from(simMemoryDocuments)
       .where(eq(simMemoryDocuments.branchId, body.branchId));
     expect(docs.length).toBeGreaterThan(0);
+
+    // R5 slice 7 — relationships: the authored WARM prior round-trips through
+    // the §21 read (regard 57), and lived ledger evidence MOVES the chip
+    // where the frozen legacy seed could not.
+    const ledger = await db()
+      .select({ kind: simRelationshipLedger.kind })
+      .from(simRelationshipLedger)
+      .where(eq(simRelationshipLedger.branchId, body.branchId));
+    expect(ledger.filter((row) => row.kind === "authored_prior")).toHaveLength(2);
+    const relStateBefore = (await (
+      await stateGet(new NextRequest(`http://t/api/chats/${body.id}/state`), ctx(body.id))
+    ).json()) as { regard: number; familiarity: number; regardBand: { label: string } };
+    // The §21 read time-decays evidence, so the authored 57 reads a hair
+    // lower as story time passes — the BAND is the stable assertion.
+    expect(relStateBefore.regard).toBeGreaterThanOrEqual(53);
+    expect(relStateBefore.regard).toBeLessThanOrEqual(57);
+    expect(relStateBefore.familiarity).toBe(40);
+    expect(relStateBefore.regardBand.label).toBe("Warm");
+    const affection = await submitDurableRecordRelationshipEntry(
+      {
+        id: `test-affection-${body.branchId}`,
+        branchId: body.branchId,
+        expectedVersion: 0,
+        idempotencyKey: `test-affection-${body.branchId}`,
+        principal: { kind: "storyteller", principalId: ids.user, controlledActorIds: [] },
+        submittedAtWallClock: new Date().toISOString(),
+        correlationId: `test-${body.branchId}`,
+        type: "record_relationship_entry",
+        schemaVersion: 1,
+        payload: {
+          fromActorId: chatRow.playerActorId,
+          toActorId: chatRow.primaryActorId,
+          kind: "affection_shown",
+          detail: "a kind gesture in the kitchen",
+        },
+      },
+      { admitAtLockedVersion: true },
+    );
+    expect(affection.status).toBe("accepted");
+    const relStateAfter = (await (
+      await stateGet(new NextRequest(`http://t/api/chats/${body.id}/state`), ctx(body.id))
+    ).json()) as { regard: number; familiarity: number };
+    expect(relStateAfter.regard).toBeGreaterThan(relStateBefore.regard);
+    expect(relStateAfter.familiarity).toBe(46);
   });
 });

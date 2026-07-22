@@ -381,8 +381,9 @@ is the cleanup that makes the migration real.
    agreeing the report — now both doable entirely in the browser.
    Exit: an agreed shadow-parity report over a fixed comparison corpus;
    every divergence either fixed or ruled intentional.
-6. **R5 — domain-by-domain authority migration.** Status: **active —
-   2026-07-22** (started in parallel with R4's open exit, owner ruling).
+6. **R5 — domain-by-domain authority migration.** Status: **EXITED —
+   2026-07-22** (all seven slices shipped the same day; the owner closed
+   the remaining domain and the exit together — see slice 7 below).
    **Re-framed (owner ruling 2026-07-22, correcting pre-front-door
    drift):** nobody migrates in place anymore — successor chats are BORN
    successor (the Worlds front door) and legacy chats stay legacy until
@@ -482,7 +483,36 @@ is the cleanup that makes the migration real.
    Shadow renders skip recall/summary (leftover with admission).
    Int-proven: rag-eligible at birth; the give-transfer's events project
    into `sim_memory_documents` through the inline drain. Gates green
-   (3 128 pure + 480 int). Remaining R5 domain: relationships. `successor_rag_eligibility` flips when
+   (3 128 pure + 480 int). A live find rode this slice: the narrator
+   echoed the output contract's placeholder verbatim and the §23.2 audit
+   accepted it — the audit now treats template echoes as empty prose
+   (rerender → ruling-8 retry → clean withhold). **Slice 7 shipped —
+   2026-07-22: relationships — and the R5 exit.** The §21 ledger is the
+   chip's truth for routed chats: `readSimChatRelationship` folds the
+   directional dyad through `deriveRelationshipRead` (authored-prior
+   weights honored) and maps trust/attraction/resentment onto the
+   −100..100 regard scale (monotone, documented, tunable; the ±3 000
+   strong band ≈ ±75); familiarity = an authored-prior floor (40) plus
+   lived dyad evidence. The front door seeds an AUTHORED starting
+   relationship as an `authored_prior` entry pair weighted to round-trip
+   the authored regard through the read (trust 36r + attraction 8r);
+   no authored record ⇒ an honest-empty ledger and the legacy seed keeps
+   the chip until evidence accumulates. The state envelope overrides
+   regard/familiarity before the snapshot derives, so bands and copy
+   follow world truth with zero UI changes. §21's time decay applies to
+   the prior too (history fades against lived evidence — embraced, and
+   the tests assert bands, not exact scalars). Leftovers named for
+   later: the Relationship PANEL (sparkline/milestones) still reads
+   legacy; familiarity's floor+volume mapping is deliberately crude.
+   Int-proven: the warm prior reads back in-band; a recorded
+   affection_shown MOVES the chip where the frozen legacy seed could
+   not. Gates green (3 129 pure + 480 int). **R5 exit:** every planned
+   domain (time/clock, input admission, presence/space, bodies & meters,
+   items/wardrobe, knowledge/memory, relationships) is
+   successor-authoritative for successor chats' surfaces, each proven by
+   int arcs and live sessions on Fly; legacy and shadow lanes untouched
+   throughout, rollback remaining one authority-flag flip. Next: **R6 —
+   cleanup and legacy retirement.** `successor_rag_eligibility` flips when
    the knowledge domain lands. The chat lane's meter-economy/body-needs plans
    (roadmap Next) port through the Gate 5 contracts here rather than being
    built twice. Exit per domain: dual writes stopped, legacy write path

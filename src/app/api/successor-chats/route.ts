@@ -1,11 +1,17 @@
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
-import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
+import { authoredRecordToLive, characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { characterChats, characters, chatParticipants, db, simBranches } from "@/server/db";
-import { loadChatWardrobe, provisionStarterWorld, seedChatState, setChatEngineAuthority } from "@/server/engine";
+import {
+  loadChatWardrobe,
+  provisionStarterWorld,
+  seedChatState,
+  setChatEngineAuthority,
+  submitDurableRecordRelationshipEntry,
+} from "@/server/engine";
 
 /**
  * The successor front door (engine.rollout.plan.md, owner ask 2026-07-22) —
@@ -71,6 +77,46 @@ export const POST = withUser(async (user, req) => {
     // Fresh memory island: successor chats never join a shared legacy history.
     await tx.insert(chatParticipants).values({ chatId, characterId: character.id, memoryGroupId: newId(), sort: 0 });
   });
+  // R5 relationships: an AUTHORED starting relationship becomes an
+  // authored_prior ledger entry pair, weighted so the §21 read round-trips
+  // the authored regard exactly (trust 36r + attraction 8r ⇒ blended 40r ⇒
+  // regard r). No authored record ⇒ no prior ⇒ the ledger starts honest-empty
+  // and the chip keeps the legacy seed until evidence accumulates.
+  if (profile.playerRelationship) {
+    const live = authoredRecordToLive(profile.playerRelationship);
+    const weightOverride = {
+      trustFixedPoint: live.regard * 36,
+      attractionFixedPoint: live.regard * 8,
+      resentmentFixedPoint: 0,
+    };
+    const detail = profile.playerRelationship.history.trim() || "authored starting relationship";
+    for (const [from, to, name] of [
+      [world.playerActorId, world.primaryActorId, "prior-toward-primary"],
+      [world.primaryActorId, world.playerActorId, "prior-toward-player"],
+    ] as const) {
+      const seeded = await submitDurableRecordRelationshipEntry(
+        {
+          id: `${world.branchId}-cmd-${name}`,
+          branchId: world.branchId,
+          expectedVersion: 0,
+          idempotencyKey: `${world.branchId}-${name}`,
+          principal: { kind: "storyteller" as const, principalId: user.id, controlledActorIds: [] },
+          submittedAtWallClock: new Date().toISOString(),
+          correlationId: `stw-seed-${world.branchId}`,
+          type: "record_relationship_entry",
+          schemaVersion: 1,
+          // No storySecond override: the prior lands "now" so the §21 read's
+          // time decay starts from the story's first moment, not before it.
+          payload: { fromActorId: from, toActorId: to, kind: "authored_prior", detail: detail.slice(0, 500), weightOverride },
+        },
+        { admitAtLockedVersion: true },
+      );
+      if (seeded.status !== "accepted") {
+        return jsonError("seed_failed", `the authored relationship could not seed: ${JSON.stringify(seeded)}`, 500);
+      }
+    }
+  }
+
   const flipped = await setChatEngineAuthority({
     chatId,
     byUserId: user.id,

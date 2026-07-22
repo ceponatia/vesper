@@ -1,8 +1,9 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { METER_FIXED_POINT_ONE } from "@/contracts/simulation/bodies";
-import { db, simItemHoldings, simItems, simPhysicalLoci, simZones } from "@/server/db";
+import { deriveRelationshipRead } from "@/lib/simulation/social";
+import { db, simBranches, simItemHoldings, simItems, simPhysicalLoci, simZones } from "@/server/db";
 import { readChatEngineAuthority } from "./chat-authority";
-import { readDurableBodies } from "./simulation";
+import { loadAuthoredPriorWeights, loadDyadLedgerEntries, readDurableBodies } from "./simulation";
 
 /**
  * R5 — successor chats shed their legacy hybrids, surface by surface
@@ -92,6 +93,71 @@ export async function readSimChatMeters(chatId: string): Promise<Record<string, 
   const meters = bodies.meters.filter((meter) => meter.actorId === authority.simPrimaryActorId);
   if (meters.length === 0) return null;
   return Object.fromEntries(meters.map((meter) => [meter.meterKey, meter.valueFixedPoint / METER_FIXED_POINT_ONE]));
+}
+
+/**
+ * Slice 7 (relationships): map the §21 read's fixed-point axes onto the
+ * chip's −100..100 regard scale. Monotone and deliberately simple — trust
+ * leads, attraction warms, resentment cools; the divisor aligns the ±3 000
+ * strong-band threshold with regard ≈ ±75. Tuning rides later; the point is
+ * the chip MOVES with world truth instead of freezing at the seed.
+ */
+function regardFromRead(read: { trustFixedPoint: number; attractionFixedPoint: number; resentmentFixedPoint: number }): number {
+  const blended = read.trustFixedPoint + read.attractionFixedPoint / 2 - read.resentmentFixedPoint / 2;
+  return Math.max(-100, Math.min(100, Math.round(blended / 40)));
+}
+
+export interface SimChatRelationship {
+  /** −100..100, derived from the §21 ledger (trust/attraction/resentment). */
+  regard: number;
+  /** 0..100 — authored-prior floor + accumulated dyad evidence. */
+  familiarity: number;
+}
+
+/**
+ * Slice 7: the primary's disposition toward the player from the RELATIONSHIP
+ * LEDGER — directional evidence of what the player did (promises kept,
+ * boundaries respected, scenes shared…) folded through §21's read, with
+ * authored-prior weights honored. Null for legacy/shadow lanes or an empty
+ * ledger with no authored prior (the legacy seed then keeps the chip).
+ */
+export async function readSimChatRelationship(chatId: string): Promise<SimChatRelationship | null> {
+  const authority = await readChatEngineAuthority(chatId);
+  if (
+    !authority ||
+    authority.authority === "legacy_chat" ||
+    authority.authority === "successor_shadow" ||
+    !authority.simBranchId ||
+    !authority.simPlayerActorId ||
+    !authority.simPrimaryActorId
+  ) {
+    return null;
+  }
+  const branchId = authority.simBranchId;
+  const [branch] = await db()
+    .select({ storySecond: simBranches.storySecond })
+    .from(simBranches)
+    .where(eq(simBranches.id, branchId));
+  if (!branch) return null;
+  const [towardPrimary, towardPlayer] = await Promise.all([
+    loadDyadLedgerEntries(db(), branchId, authority.simPlayerActorId, authority.simPrimaryActorId),
+    loadDyadLedgerEntries(db(), branchId, authority.simPrimaryActorId, authority.simPlayerActorId),
+  ]);
+  if (towardPrimary.length === 0 && towardPlayer.length === 0) return null;
+  const authoredPriorWeights = await loadAuthoredPriorWeights(db(), branchId, towardPrimary);
+  const read = deriveRelationshipRead({
+    entries: towardPrimary,
+    subjectActorId: authority.simPrimaryActorId,
+    aboutActorId: authority.simPlayerActorId,
+    atStorySecond: branch.storySecond,
+    authoredPriorWeights,
+  });
+  const priorCount =
+    towardPrimary.filter((entry) => entry.kind === "authored_prior").length +
+    towardPlayer.filter((entry) => entry.kind === "authored_prior").length;
+  const livedEntries = towardPrimary.length + towardPlayer.length - priorCount;
+  const familiarity = Math.min(100, (priorCount > 0 ? 40 : 0) + livedEntries * 6);
+  return { regard: regardFromRead(read), familiarity };
 }
 
 /**

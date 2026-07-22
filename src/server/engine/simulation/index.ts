@@ -181,6 +181,8 @@ export {
 export {
   submitDurableAttemptConsentEscalation,
   submitDurableRecordRelationshipChange,
+  loadAuthoredPriorWeights,
+  loadDyadLedgerEntries,
   submitDurableRecordRelationshipEntry,
   type AttemptConsentEscalationSubmitOptions,
   type DurableRelationshipCrashPoint,
