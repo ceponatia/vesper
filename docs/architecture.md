@@ -32,20 +32,21 @@ vesper/
       conditions/        #   active-condition schema
       items/             #   item definitions, instances, placement
       facts/             #   fact taxonomy + fact schema
-      world/             #   world/lore/style schemas
-      state/             #   character & session runtime state
-      turns/             #   agent result schemas, turn result, briefs
+      world/             #   life-stage, location, and character-profile schemas
+      simulation/        #   successor-engine identity/envelope/projection contracts
+      state/             #   scene-gen state
+      turns/             #   chat turn contracts (archivist, pulse, clock, plans, …)
       diagnostics.ts     #   Diagnostic record + helpers
     lib/                 # pure shared utilities (parseOr, ids, clock)
-      client/            #   client data layer (fetch wrappers, turn-stream parser, hooks)
+      client/            #   client data layer (fetch wrappers, stream parser, hooks)
     server/
       db/                # drizzle schema, client, query helpers
       ai/                # OpenRouter/Venice clients, embeddings, demo fallbacks
-      api/               # route-handler support: request schemas, responders, library/world/session services
-      engine/            # turn pipeline: assembly, streaming, agents, merge, jobs
-      memory/            # retrieval, fact supersedence, episodes, lore RAG
+      api/               # route-handler support: request schemas, responders, library services
+      engine/            # character-chat pipeline (chat-*) + the successor simulation engine (sim-* / simulation/)
+      memory/            # fact supersedence, episodes, fused retrieval (chat-scoped)
       images/            # avatar/scene/variant pipelines, asset registry
-      authoring/         # world forge, character forge
+      authoring/         # character forge + in-sheet fill/re-draft/portrait
       auth/              # Better Auth instance + session resolution (docs/auth.md)
       players/           # default player-character persona resolution (docs/auth.md)
       log.ts             # logging (reads LOG_LEVEL — server-only, kept out of lib)
@@ -62,44 +63,47 @@ server/db  ←  server/*       (db is imported by all server modules)
    ↑
 server/ai  ←  engine, memory, images, authoring
    ↑
-engine ← memory              (engine calls memory retrieval/writes)
-engine ← images              (engine schedules scene-image jobs only via jobs API)
+engine ← memory              (the chat pipeline calls memory retrieval/writes)
+engine ← images              (the chat pipeline schedules scene-image jobs only via the jobs API)
 app/api    →  server/*       (route handlers are thin: validate → call server fn → shape response)
 components →  contracts (types only), never server/*
 ```
+
+Two lanes live under `server/engine`: the **character-chat** lane (`chat-*` files —
+[character-chat/](character-chat/README.md)) and the **successor simulation engine**
+(`sim-*` files + `simulation/`, an event-sourced world model — contracts in
+[contracts/simulation.md](contracts/simulation.md), design in `docs/developer-notes/engine.*`).
+The original turn-based world/session lane was retired in the R6 rollout (2026-07-22).
 
 - `src/contracts` and `src/lib` are **pure**: no database, no fetch, no env reads. They must be importable from both server and client code. (Lint-enforced — see the boundary rule in `eslint.config.mjs`.)
 - Server modules export through their `index.ts` barrel; other modules import the barrel, not deep paths. (Lint-enforced.)
 - React components get server data via route handlers / server components only.
 - **Auth & ownership** ([auth.md](auth.md)): `server/auth` wraps Better Auth (signed sessions; `getCurrentUser` → 401 on no session). Every entity carries `ownerId` and every **write** is owner-strict. The single cross-owner relaxation is a **read** widening to owner-or-public (`findViewable`) confined to the browse/preview/copy path; "using" a public entity copies it (no live cross-owner reference), preserving the IDOR-clean property.
 
-## Data flow (one turn)
+## Data flow (one chat exchange)
 
 ```
-player input
+player message
    │
    ▼
-POST /api/sessions/:id/turns  (SSE response)
+POST /api/chats/:chatId/messages  (SSE response)
    │
-   ├─ pre-turn fan-out (parallel): episode RAG · fact retrieval · lore retrieval
-   │                               + deterministic: scene snapshot, wardrobe
-   │                               visibility, movement intent, canonical facts
+   ├─ pre-reply (parallel): fused fact + episode RAG · one-turn intent reads
+   │                        + deterministic: drift, scene/state slice, prompt build
    ▼
-narrative model (streamText, per-world model) ──► speaker segmenter ──► SSE chunks
-   │ (full narration persisted)
+narrative model (streamText) ──► speaker segmenter ──► SSE chunks
+   │ (full reply persisted)
    ▼
-post-turn fan-out (parallel generateObject agents):
-   simulant · archivist · continuity · director
+post-turn fan-out (parallel): reaction pulse ‖ three extraction legs
    │
    ▼
-deterministic merge reducer → one DB transaction
-   (state, items, clock, facts+supersedence, episode, threads, next-turn brief)
-   │
-   ▼
-maintenance jobs: scene image gen, lore unlocks, library embedding refresh
+finalize: state row + facts (+supersedence) + episode, then jobs
+   (scene image, summary fold, meanwhile)
 ```
 
-Details in [turn-engine.md](turn-engine.md).
+The full lifecycle is [character-chat/pipeline.md](character-chat/pipeline.md). The
+successor engine's request flow (command → event → synchronous projection → NarrativeCut) is
+[contracts/simulation.md](contracts/simulation.md).
 
 ## Naming
 

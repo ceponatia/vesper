@@ -57,8 +57,7 @@ The remainder slices (shipped 2026-07-12):
   one compact line (`formatScheduleRhythm` — "mornings: waiting tables at the
   Dockside Café; evenings: sketching at the pier") grounding the life-meanwhile
   license, so "just got off shift" beats draw on authored routine instead of
-  invention. Chat-side consumption only; the session movement engine already
-  walks the same rows.
+  invention.
 - **Opener selfie** — see [images.md](images.md) §Selfies (the opener arm).
 
 

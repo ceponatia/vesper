@@ -1,15 +1,10 @@
 # Vesper documentation
 
-Vesper is an LLM-powered romance roleplaying game: a web app where you forge worlds and characters (AI-drafted, human-edited), then play turn-based sessions with an AI companion in which a narrative model writes the story while a fan-out of parallel state agents keeps a persistent, queryable world model in sync — locations, wardrobe, meters, conditions, facts, story threads, and generated imagery.
+Vesper is an LLM-powered romance roleplaying game: a web app where you forge characters (AI-drafted, human-edited) and talk to them in **character chat** — a narrative model plays the character and narrates the scene while a fan-out of parallel state agents keeps per-character state in sync (wardrobe, meters, conditions, facts, relationship arc, and generated imagery). Alongside it runs the **successor simulation engine**, an event-sourced world model reached through the `/worlds` front door.
 
-It is a fork of reverie — itself a ground-up rewrite of the original companion-app — and shares reverie's full engine: dynamic state management, RAG memory, and multi-agent parallel orchestration feeding facts to the narrative model. The difference is focus. Reverie is a broadly-scoped roleplaying engine — it *can* host romantic and adult play, but as one mode among many. Vesper forks that engine to develop in a single direction: intimate, character-driven romance, optimized for mature, adult scenarios. Freed from staying general-purpose, the systems behind those scenarios — relationship and affinity progression, per-sense exposure gating, intimacy staging, and uncensored imagery — are first-class here and free to evolve as the product's core rather than incidental features.
+It is a fork of reverie — itself a ground-up rewrite of the original companion-app — and shares reverie's lineage: dynamic state management, RAG memory, and multi-agent parallel orchestration feeding facts to the narrative model. The difference is focus. Reverie is a broadly-scoped roleplaying engine — it *can* host romantic and adult play, but as one mode among many. Vesper forks that engine to develop in a single direction: intimate, character-driven romance, optimized for mature, adult scenarios. Freed from staying general-purpose, the systems behind those scenarios — relationship and affinity progression, per-sense exposure gating, intimacy staging, and uncensored imagery — are first-class here and free to evolve as the product's core rather than incidental features.
 
-**Direction (owner, 2026-07-13):** the character-chat lane is the **test bed for
-what the world/session model will eventually look like**. The two lanes stay
-separate for now, but if all goes to plan the current world/session model will
-eventually be deprecated in favor of a successor grown from the chat lane's
-proven patterns, with character chat migrating onto that successor. New
-interaction/state/narration patterns get proven in chat first.
+**Direction (owner, R6 rollout complete 2026-07-22):** the original turn-based **world/session model has been retired** — its play pages, session turn pipeline, world CRUD, and world-forge are deleted. Two lanes remain: the **character-chat** lane (`docs/character-chat/`), which was the test bed the successor grew out of, and the **successor simulation engine** (`src/server/engine/simulation` + `sim_*` tables; contracts in [contracts/simulation.md](contracts/simulation.md), design in `docs/developer-notes/engine.*`), whose successor chats are born via the `/worlds` front door. New interaction/state/narration patterns are still proven in chat first; character chat is expected to migrate onto the successor as it matures.
 
 ## Reading order
 
@@ -20,20 +15,17 @@ interaction/state/narration patterns get proven in chat first.
 | [resilience.md](resilience.md) | The error-handling philosophy every module must follow |
 | [contracts/](contracts/README.md) | Attribute registry, body model, meters, conditions — and how to extend them |
 | [database.md](database.md) | Drizzle schema, pgvector, migration workflow |
-| [turn-engine.md](turn-engine.md) | The turn lifecycle: pre-turn assembly, narrative streaming, post-turn agent fan-out |
-| [character-chat/](character-chat/README.md) | The sessionless chat lane: exchange pipeline, tracked state, supporting cast & narrator input, initiative, the ensemble, images, API |
-| [prompts.md](prompts.md) | Prompt architecture: static rulebook, turn context, caching, speaker tags |
-| [memory.md](memory.md) | Episodes, semantic facts + supersedence, lore tiers, retrieval |
-| [story-threads.md](story-threads.md) | Thread kinds, lifecycle, semantic dedup, accumulated developments, the detail modal |
-| [perception.md](perception.md) | Presence channels, the attention × salience witness matrix, awareness blocks, darkness, comms |
-| [streaming-api.md](streaming-api.md) | HTTP API surface and the SSE turn-streaming protocol |
+| [character-chat/](character-chat/README.md) | The chat lane: exchange pipeline, prompt architecture, tracked state, supporting cast & narrator input, initiative, the ensemble, images, API |
+| [contracts/simulation.md](contracts/simulation.md) | Successor-engine contracts (design detail in `docs/developer-notes/engine.*`) |
+| [memory.md](memory.md) | Episodes, semantic facts + supersedence, fused retrieval — chat-scoped |
+| [streaming-api.md](streaming-api.md) | HTTP API surface (library, chat, auth, pagination) |
 | [auth.md](auth.md) | Accounts (Better Auth), session resolution, and the entity-visibility / copy-on-use authorization seam |
-| [images.md](images.md) | Avatar generation, Venice reference editing, scene images, asset storage |
-| [authoring.md](authoring.md) | AI-first world/character forges and manual-override editors |
+| [images.md](images.md) | Avatar generation, Venice reference editing, chat scene images, asset storage |
+| [authoring.md](authoring.md) | AI-first character forge and manual-override editors |
 | [ui.md](ui.md) | Pages, components, styling conventions |
 | [testing.md](testing.md) | Test strategy and conventions |
 | [deployment.md](deployment.md) | Hosting the dev build online: Fly.io (Dockerfile, fly.toml, pgvector, volume, push-to-deploy, migrations) |
-| [guide/](guide/README.md) | Task-oriented manual pages (creating characters, items, worlds; running sessions) |
+| [guide/](guide/README.md) | Task-oriented manual pages (creating characters, items, locations, social cards) |
 
 ## Documentation rules
 

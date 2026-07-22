@@ -30,12 +30,12 @@ Picking one of these categories reveals a **Type** select (nose ring, choker, ti
 
 ## Deleting & public items
 
-- **Delete warns about references** (never blocks): the confirm dialog looks up where the item is used — a character wearing it in their default outfit (that outfit slot shows a red "not in library" tag after deleting) and worlds that placed it (world copies keep playing; they hold their own snapshot). Sessions always keep their own snapshots.
+- **Delete warns about references** (never blocks): the confirm dialog looks up where the item is used — a character wearing it in one of their outfit presets (that outfit slot shows a red "not in library" tag after deleting).
 - **Someone else's public item** opens as a read-only preview with a **Clone to my library** button instead of the editable form (saving a foreign item was never possible — the form just pretended). Locations work the same way.
 
 ## Where items come from
 
-Besides this editor: the character forge suggests outfit items (created on character save), and the world forge places items (created on world save). Both reuse an existing library item when the name matches — you never get duplicates from a save.
+Besides this editor: the character forge suggests outfit items (created on character save), reusing an existing library item when the name matches — you never get duplicates from a save.
 
 ## Organizing an existing library
 

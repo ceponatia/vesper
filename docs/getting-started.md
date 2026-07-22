@@ -14,7 +14,7 @@ cp .env.example .env        # add OPENROUTER_API_KEY (and VENICE_API_KEY for ima
 docker compose up -d postgres
 pnpm db:create              # verifies vesper_dev + pgvector extension
 pnpm db:migrate
-pnpm db:seed                # demo user, starter world ("Harbor House"), sample cast
+pnpm db:seed                # demo user + demo characters (and their credential)
 pnpm dev                    # http://localhost:3200
 ```
 
@@ -28,10 +28,10 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 
 ## Environment
 
-> **Text models are not env-configurable.** The narrator + in-session agent models
-> are chosen in code (`lib/narrative-models.ts`, `lib/agent-models.ts`) or per-world
-> in the UI (world creation + World tab); the scene-composer/tool model and the
-> embedding model default purely in code (`server/ai/provider.ts` `MODEL_DEFAULTS`).
+> **Text models are not env-configurable.** The chat narrator model is chosen in
+> code (`lib/narrative-models.ts`) or per-character in the UI; the post-turn agent
+> models (`lib/agent-models.ts`), the scene-composer/tool model, and the embedding
+> model default purely in code (`server/ai/provider.ts` `MODEL_DEFAULTS`).
 > Only the Venice **image** models below remain env-overridable.
 
 > **Tool-model candidate — `aion-labs/aion-3.0`.** Added to the narrator list
@@ -39,8 +39,8 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 > role: per OpenRouter's `supported_parameters` it advertises `tools` +
 > `tool_choice` (function/tool calling) and `response_format` (structured JSON) —
 > unlike most narrator picks. That makes it a candidate for the **tool model**
-> (`MODEL_DEFAULTS.tool`, backing intake + the scene composer — the legs that need
-> reliable tool/structured calls) and for the in-session agent list
+> (`MODEL_DEFAULTS.tool`, backing the scene composer — the leg that needs
+> reliable tool/structured calls) and for the post-turn agent list
 > (`lib/agent-models.ts`). Tool-calling **reliability in our pipeline is unverified**
 > (Aion is a multi-model roleplay/storytelling system on the GLM family, and
 > OpenRouter's advertised params don't guarantee behavior) — **test with it before

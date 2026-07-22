@@ -3,7 +3,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { characters, db, images, items, locations, worlds } from "../db";
+import { characters, db, images, items, locations } from "../db";
 import { newId } from "@/lib/ids";
 import { log } from "@/server/log";
 import { parseOr } from "@/lib/parse";
@@ -32,7 +32,6 @@ export interface CreateImageAssetOptions {
   kind: ImageKind;
   entityKind?: ImageEntityKind;
   entityId?: string;
-  sessionId?: string;
   /** Chat scoping for conversation scenes (slice 9) — the images row's SET-NULL FK. */
   chatId?: string;
   /** The assistant message the scene illustrates (inline-transcript anchor, no FK). */
@@ -53,7 +52,6 @@ export async function createImageAsset(opts: CreateImageAssetOptions): Promise<I
       kind: opts.kind,
       entityKind: opts.entityKind,
       entityId: opts.entityId,
-      sessionId: opts.sessionId,
       chatId: opts.chatId,
       anchorMessageId: opts.anchorMessageId,
       path: imageRelativePath(opts.ownerId, id),
@@ -149,7 +147,7 @@ export async function saveImageBuffer(imageId: string, buffer: Buffer, sink?: Di
  * (image_sweep reconciles a straggler). Owner-scoped, with an optional `kind`
  * guard so a route can't delete the wrong class of asset through it. Returns
  * false when no matching row exists (already gone, not owned, wrong kind). The
- * single-asset counterpart to the bulk deleteSessionImages/deleteEntityImages.
+ * single-asset counterpart to the bulk deleteEntityImages.
  */
 export async function deleteOwnedImage(
   imageId: string,
@@ -176,7 +174,7 @@ export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as co
 /**
  * Null out the soft pointers entity rows keep at deleted image ids — a
  * gallery-deleted portrait leaves its character avatar-less (the portrait
- * studio's own rule), a deleted entity render leaves its location/item/world
+ * studio's own rule), a deleted entity render leaves its location/item
  * imageless — never dangling. No-op for scene ids (nothing points at scenes).
  */
 export async function clearEntityImagePointers(imageIds: readonly string[]): Promise<void> {
@@ -186,7 +184,6 @@ export async function clearEntityImagePointers(imageIds: readonly string[]): Pro
     db().update(characters).set({ avatarImageId: null }).where(inArray(characters.avatarImageId, ids)),
     db().update(locations).set({ imageId: null }).where(inArray(locations.imageId, ids)),
     db().update(items).set({ imageId: null }).where(inArray(items.imageId, ids)),
-    db().update(worlds).set({ imageId: null }).where(inArray(worlds.imageId, ids)),
   ]);
 }
 

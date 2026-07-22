@@ -29,11 +29,12 @@ import { composeSceneSpec, renderResolvedScene } from "./scene";
  * Sessionless scene images for the character-chat harness
  * (docs/developer-notes/character-chat.plan.md). Same two-step pipeline as the
  * in-session scene image (compose a spec from the present cast + recent
- * narration, then render with the avatar as the identity anchor) — but there is
- * no session and no location, so the single subject is the library character and
- * a default room description stands in for the place. The asset is filed against
- * the character (`entityKind:"character"`) with no `sessionId`, so it surfaces in
- * the Gallery under "Character chats" and is deletable there like any scene.
+ * scene image (compose a spec from the present cast + recent narration, then
+ * render with the avatar as the identity anchor) — but there is no location, so
+ * the single subject is the library character and a default room description
+ * stands in for the place. The asset is filed against the character
+ * (`entityKind:"character"`), so it surfaces in the Gallery under "Character
+ * chats" and is deletable there like any scene.
  */
 
 /** The stand-in location when the chat has no real place. Overridable per request. */
@@ -354,7 +355,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
         anchorMessageId: input.anchorMessageId,
       },
       logResult: (imageId, status, started) =>
-        void logEvent(null, "image.character_scene", {
+        void logEvent("image.character_scene", {
           imageId,
           characterId: input.characterId,
           status,

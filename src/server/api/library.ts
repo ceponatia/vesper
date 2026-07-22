@@ -5,7 +5,7 @@ import { diag, itemDefinitionSchema, type DiagnosticSink, type ItemDefinition } 
 import { log } from "@/server/log";
 import { parseOr } from "@/lib/parse";
 import { currentEmbedder, embedText, toVectorLiteral } from "@/server/ai";
-import { db, images, items, locationLinks, locations, sessionParticipants, worldCast } from "@/server/db";
+import { db, images, items, locationLinks, locations } from "@/server/db";
 import { escapeLikePattern } from "@/server/authoring";
 import { fuzzyResolve, ITEM_DEDUPE_MIN_SCORE, refreshSearchEmbedding, type LibraryKind } from "@/server/memory";
 import { absoluteImagePath, type ImageEntityKind } from "@/server/images";
@@ -293,30 +293,8 @@ export function composeItemDefinition(row: {
 }
 
 /**
- * Avatar image ids (from the given set) still referenced by a world-cast or
- * session-participant copy. World/session entities are self-contained snapshots
- * (world-instances.plan.md) but share the same-owner avatar *asset*, so deleting
- * the source character must not unlink an avatar a copy still shows — those rows
- * are kept and reconciled by `image_sweep` once no copy references them.
- */
-async function referencedAvatarImageIds(imageIds: readonly string[]): Promise<Set<string>> {
-  if (imageIds.length === 0) return new Set();
-  const [castRows, participantRows] = await Promise.all([
-    db().select({ id: worldCast.avatarImageId }).from(worldCast).where(inArray(worldCast.avatarImageId, [...imageIds])),
-    db()
-      .select({ id: sessionParticipants.avatarImageId })
-      .from(sessionParticipants)
-      .where(inArray(sessionParticipants.avatarImageId, [...imageIds])),
-  ]);
-  const referenced = new Set<string>();
-  for (const row of [...castRows, ...participantRows]) if (row.id) referenced.add(row.id);
-  return referenced;
-}
-
-/**
  * Entity deletion image cleanup (docs/images.md): drop the rows, then remove
- * files best-effort — sweepOrphans reconciles anything missed. Character avatars
- * still referenced by a world/session copy are kept (see referencedAvatarImageIds).
+ * files best-effort — sweepOrphans reconciles anything missed.
  */
 export async function deleteEntityImages(entityKind: ImageEntityKind, entityId: string, ownerId: string): Promise<void> {
   const rows = await db()
@@ -324,20 +302,10 @@ export async function deleteEntityImages(entityKind: ImageEntityKind, entityId: 
     .from(images)
     .where(and(eq(images.ownerId, ownerId), eq(images.entityKind, entityKind), eq(images.entityId, entityId)));
   if (rows.length === 0) return;
-  const protectedIds = entityKind === "character" ? await referencedAvatarImageIds(rows.map((r) => r.id)) : new Set<string>();
-  const deletable = rows.filter((r) => !protectedIds.has(r.id));
-  if (deletable.length === 0) return;
   await db()
     .delete(images)
-    .where(
-      and(
-        eq(images.ownerId, ownerId),
-        eq(images.entityKind, entityKind),
-        eq(images.entityId, entityId),
-        inArray(images.id, deletable.map((r) => r.id)),
-      ),
-    );
-  for (const row of deletable) {
+    .where(and(eq(images.ownerId, ownerId), eq(images.entityKind, entityKind), eq(images.entityId, entityId)));
+  for (const row of rows) {
     void fs.unlink(absoluteImagePath(row)).catch(() => {
       // already gone or transient — image_sweep reconciles
     });
@@ -408,27 +376,5 @@ export async function setLocationLinks(ownerId: string, locationId: string, targ
   const toAdd = valid.filter((id) => !current.has(id));
   if (toAdd.length > 0) {
     await db().insert(locationLinks).values(toAdd.map((toLocationId) => ({ ownerId, fromLocationId: locationId, toLocationId })));
-  }
-}
-
-/**
- * Session deletion image cleanup: scene images reference sessions via
- * sessionId (FK set-null on delete), so without this they'd linger as
- * orphaned rows + files. Same drop-rows-then-unlink pattern as
- * deleteEntityImages.
- */
-export async function deleteSessionImages(sessionId: string, ownerId: string): Promise<void> {
-  const rows = await db()
-    .select({ id: images.id, path: images.path })
-    .from(images)
-    .where(and(eq(images.ownerId, ownerId), eq(images.sessionId, sessionId)));
-  if (rows.length === 0) return;
-  await db()
-    .delete(images)
-    .where(and(eq(images.ownerId, ownerId), eq(images.sessionId, sessionId)));
-  for (const row of rows) {
-    void fs.unlink(absoluteImagePath(row)).catch(() => {
-      // already gone or transient — image_sweep reconciles
-    });
   }
 }

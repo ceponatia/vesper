@@ -11,12 +11,10 @@ import type { FacetDef, FacetOption } from "./item-facets";
 interface CharacterFacetCard {
   speciesId?: string | null;
   gender?: string | null;
-  worldCount?: number;
 }
 
 interface LocationFacetCard {
   scale?: string | null;
-  worldCount?: number;
 }
 
 interface SocialCardFacetCard {
@@ -36,21 +34,6 @@ function genderMatches(value: string | undefined, optionId: string): boolean {
   return value === optionId || (value?.startsWith(`${optionId}_`) ?? false);
 }
 
-// "World usage" reads the soft source pointers worlds keep on their snapshot
-// copies (world_cast.source_character_id etc.) — see world-instances.plan.md.
-const WORLD_USAGE_OPTIONS: readonly FacetOption[] = [
-  { id: "used", label: "In a world" },
-  { id: "unused", label: "Unused" },
-];
-
-function worldUsage(count: number | undefined): string {
-  return (count ?? 0) > 0 ? "used" : "unused";
-}
-
-function worldCountChip(count: number | undefined): { label: string }[] {
-  return count && count > 0 ? [{ label: `${count} world${count === 1 ? "" : "s"}` }] : [];
-}
-
 export function characterFacetDefs<TCard extends CharacterFacetCard>(): FacetDef<TCard>[] {
   return [
     {
@@ -66,15 +49,14 @@ export function characterFacetDefs<TCard extends CharacterFacetCard>(): FacetDef
       value: (card) => card.gender ?? undefined,
       matches: genderMatches,
     },
-    { id: "worlds", label: "Worlds", options: WORLD_USAGE_OPTIONS, value: (card) => worldUsage(card.worldCount) },
   ];
 }
 
-/** Species (when notable — a library of humans doesn't need saying) + world usage. */
+/** Species (when notable — a library of humans doesn't need saying). */
 export function characterCardChips(card: CharacterFacetCard): { label: string }[] {
   const species =
     card.speciesId && card.speciesId !== "human" ? speciesCatalog.find((s) => s.id === card.speciesId) : undefined;
-  return [...(species ? [{ label: species.label }] : []), ...worldCountChip(card.worldCount)];
+  return species ? [{ label: species.label }] : [];
 }
 
 const SCALE_OPTIONS: readonly FacetOption[] = [
@@ -86,15 +68,12 @@ const SCALE_OPTIONS: readonly FacetOption[] = [
 ];
 
 export function locationFacetDefs<TCard extends LocationFacetCard>(): FacetDef<TCard>[] {
-  return [
-    { id: "scale", label: "Scale", options: SCALE_OPTIONS, value: (card) => card.scale ?? undefined },
-    { id: "worlds", label: "Worlds", options: WORLD_USAGE_OPTIONS, value: (card) => worldUsage(card.worldCount) },
-  ];
+  return [{ id: "scale", label: "Scale", options: SCALE_OPTIONS, value: (card) => card.scale ?? undefined }];
 }
 
 export function locationCardChips(card: LocationFacetCard): { label: string }[] {
   const scale = SCALE_OPTIONS.find((s) => s.id === card.scale);
-  return [...(scale ? [{ label: scale.label }] : []), ...worldCountChip(card.worldCount)];
+  return scale ? [{ label: scale.label }] : [];
 }
 
 const TIER_LABELS: Record<Tier, string> = {

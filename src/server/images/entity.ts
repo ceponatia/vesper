@@ -57,7 +57,7 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
       await setEntityImage(input.entityKind, input.entityId, input.userId, asset.id);
       await reclaimOldImages(input.entityKind, input.entityId, input.userId, asset.id);
     }
-    void logEvent(null, "image.entity", {
+    void logEvent("image.entity", {
       imageId: asset.id,
       entityKind: input.entityKind,
       entityId: input.entityId,
@@ -73,7 +73,7 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
         context: { entityKind: input.entityKind, entityId: input.entityId, imageId: asset.id },
       }),
     );
-    void logEvent(null, "image.entity", {
+    void logEvent("image.entity", {
       imageId: asset.id,
       entityKind: input.entityKind,
       entityId: input.entityId,

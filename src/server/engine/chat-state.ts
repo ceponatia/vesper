@@ -141,7 +141,6 @@ import {
   CHAT_PULSE_TIMEOUT_MS,
   CHAT_SKIP_MINUTES,
 } from "./constants";
-import { scheduleEntryAt } from "./merge/phases/schedule";
 import { chatSkipNote } from "./prompts/character-chat";
 import { buildChatPulsePrompt, CHAT_PULSE_SYSTEM } from "./prompts/chat-state";
 
@@ -923,6 +922,30 @@ export function applyTimeSkipToScenario(
  * the scenario's calendar anchor (chat-clock-calendar.plan.md), replacing the old
  * `clock % 1440` / day-mod-7 pseudo-calendar.
  */
+type ScheduleEntry = CharacterProfile["schedule"][number];
+
+/**
+ * Schedule entry covering a minute-of-day; windows may wrap past midnight.
+ * Entries with a `days` mask only match on those weekdays (absent ⇒ daily).
+ * (Relocated from the deleted session merge lane — the chat rhythm-dress read
+ * is its only surviving consumer.)
+ */
+function scheduleEntryAt(
+  schedule: readonly ScheduleEntry[],
+  minute: number,
+  weekdayIndex?: number,
+): ScheduleEntry | null {
+  for (const entry of schedule) {
+    if (entry.days && weekdayIndex !== undefined && !entry.days.includes(weekdayIndex)) continue;
+    if (entry.startMinute <= entry.endMinute) {
+      if (minute >= entry.startMinute && minute < entry.endMinute) return entry;
+    } else if (minute >= entry.startMinute || minute < entry.endMinute) {
+      return entry;
+    }
+  }
+  return null;
+}
+
 export function rhythmOutfitPatch(
   profile: CharacterProfile,
   clockMinutes: number,

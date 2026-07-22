@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TurnChunkEvent } from "@/contracts/turns/stream";
-import { createSegmenter, parseSegments } from "./segmenter";
+import { createSegmenter, parseSegments, type TurnChunkEvent } from "./segmenter";
 
 const KNOWN = ["Maya", "Rhett Calloway"];
 

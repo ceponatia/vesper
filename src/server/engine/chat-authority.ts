@@ -140,7 +140,6 @@ export async function setChatEngineAuthority(
       })
       .where(eq(characterChats.id, input.chatId));
     await tx.insert(events).values({
-      sessionId: null,
       type: "engine_authority_changed",
       payload: {
         chatId: input.chatId,

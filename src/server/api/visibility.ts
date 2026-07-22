@@ -6,7 +6,6 @@ import { characters, db, items, locations, socialCards } from "@/server/db";
  * the asymmetry: **reads** on the browse/preview/copy path widen to
  * owner-or-public; **every write stays owner-strict** (PATCH/DELETE still match
  * on `ownerId`, so a non-owner write 404s — it never confirms the row exists).
- * Worlds and sessions are always private and never pass through here.
  */
 
 export type ShareableKind = "character" | "location" | "item" | "social_card";

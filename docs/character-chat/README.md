@@ -14,27 +14,28 @@ a conversation can hold a **roster of up to 4 full characters**
 ([multi-character.md](multi-character.md) —
 [developer-notes/multi-character-chat.plan.md](../developer-notes/finished/multi-character-chat.plan.md)):
 narrative presence instead of locations, the one-block ensemble prompt frame, a
-per-conversation relationship matrix. It remains deliberately **not** a session: no
-locations, exposure mask, or story threads — but **wardrobe** reached full session parity
-as the first test-bed step (chat-wardrobe-parity, shipped 2026-07-14: structured worn
-item state, computed exposure via the session classifier, an equip/unequip Character sheet
+per-conversation relationship matrix. It carries **no** locations, exposure mask, or story
+threads — but **wardrobe** reached full parity with the old session model as the first
+test-bed step (chat-wardrobe-parity, shipped 2026-07-14: structured worn
+item state, computed exposure via the shared wardrobe classifier, an equip/unequip Character sheet
 — see [state.md](state.md) §Wardrobe and
 [developer-notes/chat-wardrobe-parity.plan.md](../developer-notes/chat-wardrobe-parity.plan.md)).
-**Direction (owner, 2026-07-13):** chat is the **test bed for what the
-world/session model will eventually look like** — the lanes stay separate for
-now, but the likely end-state deprecates the current world/session model in
-favor of a successor grown from what chat proves out, with chat migrating onto
-it (see `CLAUDE.md`).
-Where the two lanes
-share a mechanism (memory scope, the §6 reaction curve, disposition rendering, narration
-shape, artifact stripping, the generate-timeout race, the draining stream Response), they
-share **one implementation** — the chat lane must never re-fork session machinery.
+**Direction (R6 rollout complete 2026-07-22):** chat was the **test bed the successor
+simulation engine grew out of**. The original world/session model it was proving a
+replacement for is now **retired** (its play pages, turn pipeline, and world CRUD are
+deleted; the successor engine is live behind the `/worlds` front door — see the top-level
+[README](../README.md) and `CLAUDE.md`). Chat still leads new interaction/state/narration
+patterns, and is expected to migrate onto the successor as it matures.
+Where a shared mechanism exists (memory scope, the §6 reaction curve, disposition rendering,
+narration shape, artifact stripping, the generate-timeout race, the draining stream Response),
+there is **one implementation** — the chat lane must never re-fork it.
 
 ## Reading order
 
 | Doc | What it covers |
 | --- | --- |
 | [pipeline.md](pipeline.md) | The exchange lifecycle (lock → kind → window → drift → recall → prompt → stream → settle → render), the post-turn fan-out (pulse ‖ archivist), jobs, persistence guards |
+| [prompts.md](prompts.md) | The chat prompt architecture: the prompt-cache split, the intimate gate, sensory cues, player-input perception, POV narration, state-as-narration, reply discipline, RAG, the extraction field library |
 | [state.md](state.md) | Tracked state (the per-character row + the chat-wide scenario), scene memory, emotional weather, drives |
 | [supporting-cast.md](supporting-cast.md) | Recurring named side characters the narrator may play, and the player↔narrator composer register |
 | [initiative.md](initiative.md) | The character reaching out first (the reopen opener) and unprompted "remember when" callbacks |
@@ -66,7 +67,7 @@ share **one implementation** — the chat lane must never re-fork session machin
 | Supporting cast (schema + merge — §Supporting cast) | `contracts/turns/chat-supporting-cast.ts` (pure) + `buildSupportingCastSection` in `prompts/character-chat.ts` + the finalize merge in `chat-state.ts`; panel in `components/chat/chat-supporting-cast-panel.tsx` |
 | Narrator input (§Narrator input) | `wrapNarratorInput`/`narratorInputNote` in `prompts/character-chat.ts` + `inputMode` through route/pipeline (`meta.inputMode`) + the composer toggle in `chat-conversation.tsx` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
-| Life stage & minor fence ([prompts.md](../prompts.md) §Life stage & the minor fence) | `contracts/world/life-stage.ts` (pure registry) + the identity hint / `buildLifeStageSection` / scoped `CONTENT_FRAMING` in `prompts/character-chat.ts`; session twin in `engine/scene.ts` (canonical-facts hint + the `buildIntimateDispositionLine` fence) |
+| Life stage & minor fence ([prompts.md](prompts.md) §Life stage & the minor fence) | `contracts/world/life-stage.ts` (pure registry) + the identity hint / `buildLifeStageSection` / scoped `CONTENT_FRAMING` in `prompts/character-chat.ts` |
 | Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |
 | RRF fusion (pure) | `server/memory/fusion.ts` ([memory.md](../memory.md)) |
 | Scene image | `server/images/character-scene.ts` ([images.md](../images.md) §state-aware chat scene); queue + anchor + dedupe in `app/api/chats/[chatId]/scene/queue.ts` (`queueChatScene`) |

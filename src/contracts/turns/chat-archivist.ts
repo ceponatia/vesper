@@ -1,6 +1,20 @@
 import { z } from "zod";
 import { factDraftSchema } from "../facts/taxonomy";
-import { attributeChangeSchema } from "./agent-results";
+
+/**
+ * A single attribute mutation the archivist proposes. Applied through the
+ * `overlaySourceMayChange(def.mutability, "narrative")` guard, so an inherent
+ * trait (eye colour, species, gender) can never be rewritten. (Relocated from
+ * the deleted session agent-results contract; the chat lane is its sole owner now.)
+ */
+export const attributeChangeSchema = z.object({
+  participantName: z.string().min(1),
+  attributeId: z.string().min(1),
+  value: z.union([z.string(), z.array(z.string()), z.number(), z.boolean()]),
+  note: z.string().optional(),
+});
+
+export type AttributeChange = z.infer<typeof attributeChangeSchema>;
 import { DRIVES_MAX, driveUpdateSchema } from "../personality/drives";
 import { chatSceneProposalSchema } from "./chat-scene-memory";
 import { chatCastProposalSchema } from "./chat-supporting-cast";

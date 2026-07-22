@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { characterDraftSchema, emptyCharacterDraft, emptyWorldDraft, worldDraftSchema } from "@/lib/client/api";
-import { mergeCharacterSection, mergeWorldSection } from "./draft-merge";
+import { characterDraftSchema, emptyCharacterDraft } from "@/lib/client/api";
+import { mergeCharacterSection } from "./draft-merge";
 
 describe("mergeCharacterSection", () => {
   const base = characterDraftSchema.parse({
@@ -49,48 +49,5 @@ describe("mergeCharacterSection", () => {
     expect(merged.profile.outfits[0]?.items).toEqual(["boots"]);
     expect(merged.suggestedItems).toEqual([]);
     expect(merged.profile.attributes).toHaveLength(1);
-  });
-});
-
-describe("mergeWorldSection", () => {
-  const base = worldDraftSchema.parse({
-    name: "Harborfall",
-    description: "A drowned port.",
-    locations: [{ name: "Quay" }],
-    loreChunks: [{ title: "The Flood" }],
-    castSuggestions: [{ name: "Maya" }],
-    itemPlacements: [{ itemName: "Lantern" }],
-  });
-
-  it("premise replaces name/description/style/lore only", () => {
-    const incoming = worldDraftSchema.parse({
-      name: "Mistward",
-      description: "Fog city.",
-      style: { directives: ["slow burn"] },
-    });
-    const merged = mergeWorldSection(base, incoming, "premise");
-    expect(merged.name).toBe("Mistward");
-    expect(merged.style.directives).toEqual(["slow burn"]);
-    expect(merged.locations).toHaveLength(1);
-    expect(merged.loreChunks).toHaveLength(1);
-  });
-
-  it("premise keeps the current name when incoming is blank", () => {
-    const merged = mergeWorldSection(base, emptyWorldDraft(), "premise");
-    expect(merged.name).toBe("Harborfall");
-  });
-
-  it.each([
-    ["locations", (d: ReturnType<typeof worldDraftSchema.parse>) => d.locations] as const,
-    ["lore", (d: ReturnType<typeof worldDraftSchema.parse>) => d.loreChunks] as const,
-    ["cast", (d: ReturnType<typeof worldDraftSchema.parse>) => d.castSuggestions] as const,
-    ["items", (d: ReturnType<typeof worldDraftSchema.parse>) => d.itemPlacements] as const,
-  ])("%s section replaces only its list", (section, pick) => {
-    const merged = mergeWorldSection(base, emptyWorldDraft(), section);
-    expect(pick(merged)).toEqual([]);
-    // every other slice is untouched
-    const slices = [merged.locations, merged.loreChunks, merged.castSuggestions, merged.itemPlacements];
-    expect(slices.filter((s) => s.length === 1)).toHaveLength(3);
-    expect(merged.name).toBe("Harborfall");
   });
 });

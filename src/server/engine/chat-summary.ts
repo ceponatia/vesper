@@ -165,7 +165,7 @@ export function normalizeChatSummary(
  * chat (the job is idempotent anyway — it recomputes and no-ops below the
  * trigger). Self-contained: swallows and logs its own errors so callers can
  * fire-and-forget (`void enqueueChatSummary(...)`) without an unhandled
- * rejection. Runs as a `sessionId: null` job ⇒ the existing detached runner path.
+ * rejection. Runs through the existing detached runner path.
  */
 export async function enqueueChatSummary(args: { chatId: string }): Promise<void> {
   try {
@@ -181,7 +181,7 @@ export async function enqueueChatSummary(args: { chatId: string }): Promise<void
       )
       .limit(1);
     if (pending) return;
-    await enqueueJob({ sessionId: null, type: "chat_summary", payload: { ...args } });
+    await enqueueJob({ type: "chat_summary", payload: { ...args } });
   } catch (err) {
     log.warn("chat_summary", "failed to enqueue fold", { ...args, error: errorText(err) });
   }

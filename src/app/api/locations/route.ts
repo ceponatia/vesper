@@ -1,8 +1,8 @@
 import type { NextRequest } from "next/server";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 import { parseOrNull } from "@/lib/parse";
-import { db, locations, worldLocations } from "@/server/db";
+import { db, locations } from "@/server/db";
 import {
   jsonError,
   jsonOk,
@@ -25,8 +25,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
   const ids = await searchLibraryIds("location", user.id, { q, tags, sort: sort ?? undefined, scope });
   if (ids.length === 0) return jsonOk({ locations: [] });
   // Summary columns only — the bare row carries the 1536-dim search embedding.
-  // `scale` + world usage are the library facet columns (library-ux.plan.md
-  // §Follow-up pass); usage counts the worlds holding a snapshot copy.
+  // `scale` is the library facet column (library-ux.plan.md §Follow-up pass).
   const rows = await db()
     .select({
       id: locations.id,
@@ -35,8 +34,6 @@ export const GET = withUser(async (user, req: NextRequest) => {
       tags: locations.tags,
       imageId: locations.imageId,
       scale: locations.scale,
-      // Aliased inner table + hand-qualified outer id — see characters/route.ts.
-      worldCount: sql<number>`(select count(distinct wl.world_id)::int from ${worldLocations} wl where wl.source_location_id = ${locations}.id)`,
     })
     .from(locations)
     // Non-owned rows are reachable only when the scoped search returned them.

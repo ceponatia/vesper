@@ -8,7 +8,7 @@ import { logEvent } from "../events";
 import { EPISODE_MIN_SCORE, EPISODE_RETRIEVAL_LIMIT, EPISODE_WINDOW, RRF_K } from "./constants";
 import { fuseByRrf, nonBlankQueries } from "./fusion";
 import type { QueryEmbeddings } from "./query-embeddings";
-import { memoryScopeValues, memoryScopeWhere, scopeLabel, scopeSessionId, type MemoryScope } from "./scope";
+import { memoryScopeValues, memoryScopeWhere, scopeLabel, type MemoryScope } from "./scope";
 import { witnessEligibilityWhere, type WitnessEligibility } from "./witness-eligibility";
 
 const stringArraySchema = z.array(z.string());
@@ -189,7 +189,7 @@ export async function retrieveEpisodes(
 
   const candidates = await queryEpisodeCandidates(scope, toVectorLiteral(embedded.vector), cutoff, limit, opts);
   const hits = candidates.filter((c) => c.score >= minScore);
-  await logEvent(scopeSessionId(scope), "retrieval", {
+  await logEvent("retrieval", {
     kind: "episodes",
     scope: scopeLabel(scope),
     query: query.slice(0, 300),
@@ -304,7 +304,7 @@ export async function retrieveEpisodesFused(
     .slice(0, limit)
     .map((f) => ({ ...f.hit, score: f.bestScore, sources: f.sources }));
 
-  await logEvent(scopeSessionId(scope), "retrieval", {
+  await logEvent("retrieval", {
     kind: "episodes",
     fused: true,
     scope: scopeLabel(scope),

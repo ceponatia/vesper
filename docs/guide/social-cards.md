@@ -3,12 +3,12 @@
 A **social card** is a reusable taboo or social rule. When someone does a social
 act — flirts, propositions, shows affection in public, pushes a boundary — a
 matching card decides how the people around them react. Cards are a library
-entity like characters and items: build one, reuse it across worlds, attach it to
-a character, share it.
+entity like characters and items: build one, reuse it, attach it to a character,
+share it.
 
 ## What a card holds
 
-Open `Social cards → New` (or the inline editor on a world or character) and you
+Open `Social cards → New` (or the inline editor on a character) and you
 configure:
 
 - **Kind** — *Social rule* or *Taboo*. This is just an authoring label; the
@@ -38,21 +38,17 @@ intensity, default reaction, and each tag flip.
 
 ## Where cards apply
 
-- **On a world** (world editor) — the world's **social fabric**: norms everyone
-  in that world is held to.
-- **On a character** (the Personality tab, alongside likes & dislikes) — that
-  character's **own** lines and taboos.
-
-When a character reacts, their **own** cards are checked before the **world's**
-(a personal line beats society's), and the first card whose triggers match the
-act governs the reaction.
+Cards live **on a character** (the Personality tab, alongside likes & dislikes) —
+that character's **own** lines and taboos. When a character reacts, the first card
+whose triggers match the act governs the reaction (a bespoke like/dislike resolves
+ahead of any card).
 
 ## Reusing cards: import & save
 
 Cards are always **copies**, never live links — editing or deleting a library
-card never changes a world or character already using it.
+card never changes a character already using it.
 
-- **Import from library** (on a world's or character's card editor) — search the
+- **Import from library** (on a character's card editor) — search the
   library and drop a snapshot copy in.
 - **Save to library** (on an inline card) — promote it to a reusable library row
   so you can import it elsewhere.

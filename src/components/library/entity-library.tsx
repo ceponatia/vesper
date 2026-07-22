@@ -56,8 +56,6 @@ interface LibraryCard {
   /** Characters only (library-facets.ts). */
   speciesId?: string | null;
   gender?: string | null;
-  /** Characters + locations: worlds holding a snapshot copy of this entity. */
-  worldCount?: number;
   /** Locations only. */
   scale?: string | null;
   /** Social cards only: the definition slice driving tier/trigger facets + chips. */

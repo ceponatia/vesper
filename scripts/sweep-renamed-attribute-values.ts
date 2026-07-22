@@ -1,13 +1,7 @@
 import "dotenv/config";
 import { fileURLToPath } from "node:url";
 import { and, eq } from "drizzle-orm";
-import {
-  characters,
-  characterChatState,
-  db,
-  sessionParticipants,
-  worldCast,
-} from "../src/server/db";
+import { characterChatState, characters, db } from "../src/server/db";
 
 /**
  * One-off, idempotent stored-value sweep for the attribute-narrator-guidance
@@ -39,12 +33,8 @@ import {
  *
  * Storage sites swept (every place an AttributeValue / condition effect persists):
  *   1. characters.profile.attributes                       — library base values
- *   2. world_cast.snapshot.attributes                      — the world's own copy
- *   3. session_participants.snapshot.attributes            — session spawn snapshot
- *   4. session_participants.state.attributeOverlays        — session runtime overlays
- *   5. session_participants.state.conditions[].attributeEffects  — session condition effects
- *   6. character_chat_state.attributeOverlays              — chat runtime overlays
- *   7. character_chat_state.conditions[].attributeEffects  — chat condition effects
+ *   2. character_chat_state.attributeOverlays              — chat runtime overlays
+ *   3. character_chat_state.conditions[].attributeEffects  — chat condition effects
  *
  *   pnpm tsx scripts/sweep-renamed-attribute-values.ts [--dry-run]
  *
@@ -218,34 +208,7 @@ async function main(): Promise<void> {
     if (!dryRun) await db().update(characters).set({ profile: next }).where(eq(characters.id, row.id));
   }
 
-  // 2: world_cast.snapshot — the world's own copy of a character profile.
-  for (const row of await db().select({ id: worldCast.id, blob: worldCast.snapshot }).from(worldCast)) {
-    const { next, changes } = sweepProfile(row.blob);
-    if (changes === 0) continue;
-    bump("world_cast.snapshot", changes);
-    if (!dryRun) await db().update(worldCast).set({ snapshot: next }).where(eq(worldCast.id, row.id));
-  }
-
-  // 3: session_participants.snapshot — the CharacterProfile snapshot at spawn.
-  for (const row of await db().select({ id: sessionParticipants.id, blob: sessionParticipants.snapshot }).from(sessionParticipants)) {
-    const { next, changes } = sweepProfile(row.blob);
-    if (changes === 0) continue;
-    bump("session_participants.snapshot", changes);
-    if (!dryRun) await db().update(sessionParticipants).set({ snapshot: next }).where(eq(sessionParticipants.id, row.id));
-  }
-
-  // 4 + 5: session ParticipantState (overlays + condition effects).
-  const participants = await db()
-    .select({ id: sessionParticipants.id, state: sessionParticipants.state })
-    .from(sessionParticipants);
-  for (const row of participants) {
-    const { next, changes } = sweepParticipantState(row.state);
-    if (changes === 0) continue;
-    bump("session_participants.state", changes);
-    if (!dryRun) await db().update(sessionParticipants).set({ state: next }).where(eq(sessionParticipants.id, row.id));
-  }
-
-  // 6 + 7: character_chat_state (attribute overlays column + conditions column).
+  // 2 + 3: character_chat_state (attribute overlays column + conditions column).
   const chatStates = await db()
     .select({
       chatId: characterChatState.chatId,

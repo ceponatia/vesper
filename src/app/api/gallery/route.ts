@@ -1,7 +1,7 @@
-import { and, desc, eq, inArray, isNotNull, isNull, lt, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or, type SQL } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { jsonOk, withUser } from "@/server/api";
-import { characters, db, imageReferences, images, items, locations, sessions, worlds } from "@/server/db";
+import { characters, db, imageReferences, images, items, locations } from "@/server/db";
 import type { SceneReference } from "@/contracts";
 
 /** Default page size; `limit` is clamped to [1, 500] (the old single-payload cap). */
@@ -36,11 +36,10 @@ function keysetCondition(cursor: { at: Date; id: string } | null): SQL | undefin
 
 /**
  * GET /api/gallery — the owner's generated art as a tabbed hub (docs/images.md
- * §Gallery): `?tab=scenes` (default — in-session scenes join their session, so
- * a deleted session drops them; sessionless chat scenes join their character),
- * `?tab=portraits` (character portrait variants), `?tab=entity` (location /
- * item / world art). All tabs page by the keyset `?cursor` + `?limit`, newest
- * first, and carry the `favorite` flag. Scene rows also carry the
+ * §Gallery): `?tab=scenes` (default — character-chat scenes, joined to their
+ * character), `?tab=portraits` (character portrait variants), `?tab=entity`
+ * (location / item art). All tabs page by the keyset `?cursor` + `?limit`,
+ * newest first, and carry the `favorite` flag. Scene rows also carry the
  * `image_references` the client's filters/view modes are derived from.
  */
 export const GET = withUser(async (user, req: NextRequest) => {
@@ -83,7 +82,6 @@ export const GET = withUser(async (user, req: NextRequest) => {
         entityKind: images.entityKind,
         entityName: locations.name,
         itemName: items.name,
-        worldName: worlds.name,
         prompt: images.prompt,
         favorite: images.favorite,
         createdAt: images.createdAt,
@@ -91,7 +89,6 @@ export const GET = withUser(async (user, req: NextRequest) => {
       .from(images)
       .leftJoin(locations, and(eq(images.entityKind, "location"), eq(images.entityId, locations.id)))
       .leftJoin(items, and(eq(images.entityKind, "item"), eq(images.entityId, items.id)))
-      .leftJoin(worlds, and(eq(images.entityKind, "world"), eq(images.entityId, worlds.id)))
       .where(and(...base, eq(images.kind, "entity")))
       .orderBy(desc(images.createdAt), desc(images.id))
       .limit(limit + 1);
@@ -100,7 +97,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
       images: page.map((row) => ({
         id: row.id,
         entityKind: row.entityKind,
-        entityName: row.entityName ?? row.itemName ?? row.worldName ?? null,
+        entityName: row.entityName ?? row.itemName ?? null,
         prompt: row.prompt,
         favorite: row.favorite,
         createdAt: row.createdAt,
@@ -110,16 +107,11 @@ export const GET = withUser(async (user, req: NextRequest) => {
     });
   }
 
-  // Scenes: one keyset-ordered query over both sources — in-session scenes
-  // (must still have their session) and sessionless character-chat scenes
-  // (must still have their character; owner-scoped join, security Cluster I2).
+  // Scenes: character-chat scenes, joined to their character (must still exist;
+  // owner-scoped join, security Cluster I2).
   const rows = await db()
     .select({
       id: images.id,
-      sessionId: sessions.id,
-      sessionTitle: sessions.title,
-      worldId: sessions.worldId,
-      worldName: worlds.name,
       characterId: characters.id,
       characterName: characters.name,
       prompt: images.prompt,
@@ -127,16 +119,8 @@ export const GET = withUser(async (user, req: NextRequest) => {
       createdAt: images.createdAt,
     })
     .from(images)
-    .leftJoin(sessions, eq(images.sessionId, sessions.id))
-    .leftJoin(worlds, eq(sessions.worldId, worlds.id))
-    .leftJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
-    .where(
-      and(
-        ...base,
-        eq(images.kind, "scene"),
-        or(isNotNull(sessions.id), and(isNull(images.sessionId), eq(images.entityKind, "character"), isNotNull(characters.id))),
-      ),
-    )
+    .innerJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
+    .where(and(...base, eq(images.kind, "scene"), eq(images.entityKind, "character")))
     .orderBy(desc(images.createdAt), desc(images.id))
     .limit(limit + 1);
   const page = rows.slice(0, limit);
@@ -144,9 +128,6 @@ export const GET = withUser(async (user, req: NextRequest) => {
   return jsonOk({
     images: page.map((row) => ({
       ...row,
-      // A session scene's character join is incidental — chat scenes own it.
-      characterId: row.sessionId ? null : row.characterId,
-      characterName: row.sessionId ? null : row.characterName,
       references: referencesByScene.get(row.id) ?? [],
     })),
     nextCursor: rows.length > limit ? cursorFor(page[page.length - 1] ?? { createdAt: null, id: "" }) : null,

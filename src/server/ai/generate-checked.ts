@@ -219,7 +219,6 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   recordAgentFailure({
     legId: opts.telemetry?.legId ?? opts.code,
     chatId: opts.telemetry?.chatId,
-    sessionId: opts.telemetry?.sessionId,
     messageId: opts.telemetry?.messageId,
     kind: isTransport ? "api_error" : "parse_failed",
     providerCode: providerClassification?.code,

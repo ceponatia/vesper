@@ -5,7 +5,6 @@ import {
   activeConditionSchema,
   type ActiveCondition,
   ambientSchema as ambientBaseSchema,
-  authoredRelationshipSchema,
   avatarImageModels,
   avatarImageModelLabels,
   attributeValueSchema,
@@ -27,19 +26,13 @@ import {
   chatPlayerStateSchema,
   emptyCharacterProfile,
   emptyChatPlayerState,
-  emptyItemDefinition,
   emptyPersonaProfile,
-  emptyWorldLore,
-  emptyWorldStyle,
   personaProfileSchema,
   diagnosticSchema,
   emotionLabelSchema,
   itemDefinitionSchema,
   itemKindSchema,
   itemSensorySchema,
-  loreChunkCategorySchema,
-  loreChunkTierSchema,
-  loreChunkVisibilitySchema,
   sceneReferenceSchema,
   socialReactionCardExtrasSchema,
   socialReactionCardSchema,
@@ -48,8 +41,6 @@ import {
   type SupportingCastMember,
   chatPlansSchema,
   type ChatPlan,
-  worldLoreSchema,
-  worldStyleSchema,
 } from "@/contracts";
 
 /**
@@ -267,7 +258,6 @@ export const characterSummarySchema = z.object({
   /** Facet columns for the library browse (library-ux.plan.md §Follow-up pass). */
   speciesId: optionalText,
   gender: optionalText,
-  worldCount: z.number().catch(0),
 });
 export type CharacterSummary = z.infer<typeof characterSummarySchema>;
 
@@ -480,7 +470,6 @@ export const locationSummarySchema = z.object({
   imageId: optionalId,
   /** Facet columns for the library browse (library-ux.plan.md §Follow-up pass). */
   scale: z.enum(["intimate", "room", "hall", "open", "expanse"]).catch("room"),
-  worldCount: z.number().catch(0),
 });
 export type LocationSummary = z.infer<typeof locationSummarySchema>;
 
@@ -599,141 +588,16 @@ export const socialCardDetailSchema = socialCardSummarySchema.extend({
 });
 export type SocialCardDetail = z.infer<typeof socialCardDetailSchema>;
 
-// ---------------------------------------------------------------------------
-// Worlds
-// ---------------------------------------------------------------------------
-
-export const worldSummarySchema = z.object({
-  id: idSchema,
-  name: nameSchema,
-  description: textOr(""),
-  imageId: optionalId,
-  updatedAt: optionalText,
-  /** Default player character, so the new-session wizard can pre-fill embodiment (UX-audit §1a). */
-  playerCharacterId: optionalId,
-});
-export type WorldSummary = z.infer<typeof worldSummarySchema>;
-
-/** Spatial size class (proximity-spec); mirrors server/authoring locationScaleSchema. */
-export const worldLocationScaleSchema = z.enum(["intimate", "room", "hall", "open", "expanse"]).catch("room");
-export type WorldLocationScale = z.infer<typeof worldLocationScaleSchema>;
-
-/** Simulation/narration depth; mirrors server/authoring castTierSchema. */
-export const worldCastTierSchema = z.enum(["major", "minor", "extra"]).catch("minor");
-export type WorldCastTier = z.infer<typeof worldCastTierSchema>;
-
-export const worldCastEntrySchema = z.object({
-  id: idSchema,
-  characterId: optionalId,
-  name: textOr(""),
-  role: z.enum(["companion", "npc"]).catch("npc"),
-  tier: worldCastTierSchema,
-  avatarImageId: optionalId,
-  startWorldLocationId: optionalId,
-  /** Authored edges toward other cast names or "player" (contracts/relationships/authored.ts). */
-  relationships: arrayOf(authoredRelationshipSchema),
-});
-export type WorldCastEntry = z.infer<typeof worldCastEntrySchema>;
-
-export const worldLocationEntrySchema = z.object({
-  id: idSchema,
-  /** Soft source library id (provenance); null once the source is gone. */
-  locationId: optionalId,
-  name: textOr(""),
-  description: textOr(""),
-  ambient: ambientSchema,
-  scale: worldLocationScaleSchema,
-  tags: tagsSchema,
-  /** Map-grouping label (world-placement data); null/absent when unset. */
-  area: optionalText,
-});
-export type WorldLocationEntry = z.infer<typeof worldLocationEntrySchema>;
-
-export const worldLinkEntrySchema = z.object({
-  id: idSchema,
-  fromWorldLocationId: textOr(""),
-  toWorldLocationId: textOr(""),
-  label: optionalText,
-  travelMinutes: z.number().catch(1),
-});
-export type WorldLinkEntry = z.infer<typeof worldLinkEntrySchema>;
-
-export const worldItemEntrySchema = z.object({
-  id: idSchema,
-  itemId: optionalId,
-  name: textOr(""),
-  kind: itemKindSchema.catch("object"),
-  worldLocationId: optionalId,
-  castId: optionalId,
-  containerWorldItemId: optionalId,
-  worn: z.boolean().catch(false),
-  quantity: z.number().catch(1),
-});
-export type WorldItemEntry = z.infer<typeof worldItemEntrySchema>;
-
-export const loreChunkEntrySchema = z.object({
-  id: idSchema,
-  title: textOr(""),
-  body: textOr(""),
-  category: loreChunkCategorySchema.catch("history"),
-  tier: loreChunkTierSchema.catch("scene"),
-  visibility: loreChunkVisibilitySchema.catch("public"),
-  unlockTags: tagsSchema,
-  locationTags: tagsSchema,
-  manuallyUnlocked: z.boolean().catch(false),
-  sort: z.number().catch(0),
-});
-export type LoreChunkEntry = z.infer<typeof loreChunkEntrySchema>;
-
-export const worldDetailSchema = worldSummarySchema.extend({
-  style: worldStyleSchema.catch(() => emptyWorldStyle()),
-  lore: worldLoreSchema.catch(() => emptyWorldLore()),
-  cast: arrayOf(worldCastEntrySchema),
-  locations: arrayOf(worldLocationEntrySchema),
-  links: arrayOf(worldLinkEntrySchema),
-  items: arrayOf(worldItemEntrySchema),
-  loreChunks: arrayOf(loreChunkEntrySchema),
-  /** Where the player starts (decision 47); null ⇒ spawn anchors to the companion. */
-  playerStartWorldLocationId: optionalId,
-  /** Default player character (UX-audit §1a); null ⇒ observer. */
-  playerCharacterId: optionalId,
-  /** Resolved name of the default player character, for {{player}} display (UX-audit P2). */
-  playerCharacterName: optionalText,
-  /** A world-image backfill is still running — drives the "Generating artwork…" hint (UX-audit M7). */
-  imageJobActive: z.boolean().catch(false),
-});
-export type WorldDetail = z.infer<typeof worldDetailSchema>;
-
-// ---------------------------------------------------------------------------
-// Sessions
-// ---------------------------------------------------------------------------
-
-export const sessionSummarySchema = z.object({
-  id: idSchema,
-  worldId: optionalId,
-  worldName: optionalText,
-  title: z.string().catch("Untitled session"),
-  status: z.enum(["ready", "narrating", "processing"]).catch("ready"),
-  embodied: z.boolean().catch(true),
-  updatedAt: optionalText,
-});
-export type SessionSummary = z.infer<typeof sessionSummarySchema>;
-
 /** The Gallery hub's tabs (library-ux.plan.md §Follow-up pass). */
 export type GalleryTab = "scenes" | "portraits" | "entity";
 
 /**
  * One image in the tabbed Gallery hub (docs/images.md). Scenes carry a
- * `sessionId` (in-session) or `characterId` (sessionless character-chat,
- * grouped under "Character chats"); portraits carry `characterId`; entity art
- * carries `entityKind`/`entityName`.
+ * `characterId` (character-chat, grouped under "Character chats"); portraits
+ * carry `characterId`; entity art carries `entityKind`/`entityName`.
  */
 export const galleryImageSchema = z.object({
   id: idSchema,
-  sessionId: optionalId,
-  sessionTitle: optionalText,
-  worldId: optionalId,
-  worldName: optionalText,
   characterId: optionalId,
   characterName: optionalText,
   entityKind: optionalText,
@@ -745,16 +609,6 @@ export const galleryImageSchema = z.object({
   createdAt: optionalText,
 });
 export type GalleryImage = z.infer<typeof galleryImageSchema>;
-
-/** A relationship edge (stage label ids only — affinity values stay server-side). */
-export const relationshipEdgeSchema = z.object({
-  id: idSchema,
-  fromParticipantId: idSchema,
-  toParticipantId: idSchema,
-  kind: z.enum(["feeling", "perceived"]).catch("feeling"),
-  stage: textOr("stranger"),
-});
-export type RelationshipEdge = z.infer<typeof relationshipEdgeSchema>;
 
 // ---------------------------------------------------------------------------
 // Images
@@ -804,9 +658,6 @@ export type CharacterForgeSection = (typeof characterForgeSections)[number];
 // Per-tab Re-draft scopes (character-sheet-forge.plan.md); single source in lib.
 export { characterSheetScopes, type CharacterSheetScope } from "@/lib/character-scopes";
 
-export const worldForgeSections = ["premise", "locations", "lore", "cast", "items"] as const;
-export type WorldForgeSection = (typeof worldForgeSections)[number];
-
 export const characterDraftSchema = z.object({
   name: textOr(""),
   profile: characterProfileSchema.catch(() => emptyCharacterProfile()),
@@ -817,83 +668,6 @@ export type CharacterDraft = z.infer<typeof characterDraftSchema>;
 
 export function emptyCharacterDraft(): CharacterDraft {
   return characterDraftSchema.parse({});
-}
-
-export const worldDraftLocationSchema = z.object({
-  /** Present when editing a saved world (world_locations row id). */
-  id: z.string().optional().catch(undefined),
-  /** Library location id — saved-world rows keep their base location on save. */
-  locationId: z.string().optional().catch(undefined),
-  name: textOr(""),
-  description: textOr(""),
-  ambient: ambientSchema,
-  /** Spatial size class (proximity-spec §Location scale). */
-  scale: worldLocationScaleSchema,
-  /** Map-grouping label ("apartment-102", "downtown") — drives default travel times. */
-  area: z.string().optional().catch(undefined),
-  tags: tagsSchema,
-  /** Names of other draft locations this one connects to (undirected). */
-  links: tagsSchema,
-});
-export type WorldDraftLocation = z.infer<typeof worldDraftLocationSchema>;
-
-export const worldDraftLoreChunkSchema = z.object({
-  id: z.string().optional().catch(undefined),
-  title: textOr(""),
-  body: textOr(""),
-  category: loreChunkCategorySchema.catch("history"),
-  tier: loreChunkTierSchema.catch("scene"),
-  visibility: loreChunkVisibilitySchema.catch("public"),
-  unlockTags: tagsSchema,
-  locationTags: tagsSchema,
-  manuallyUnlocked: z.boolean().catch(false),
-});
-export type WorldDraftLoreChunk = z.infer<typeof worldDraftLoreChunkSchema>;
-
-export const worldDraftCastSuggestionSchema = z.object({
-  id: z.string().optional().catch(undefined),
-  existingCharacterId: z.string().optional().catch(undefined),
-  name: textOr(""),
-  conceptNote: textOr(""),
-  role: z.enum(["companion", "npc"]).catch("npc"),
-  /** Simulation/narration depth (cast-tiers-and-affinity-spec). */
-  tier: worldCastTierSchema,
-  /** Draft location name where this character starts (the innkeeper starts at the inn). */
-  startLocationName: z.string().optional().catch(undefined),
-  /** Directed edges toward other cast names or "player"; saved to world_cast.relationships and seeded at spawn. */
-  relationships: arrayOf(authoredRelationshipSchema),
-});
-export type WorldDraftCastSuggestion = z.infer<typeof worldDraftCastSuggestionSchema>;
-
-export const worldDraftItemPlacementSchema = z.object({
-  id: z.string().optional().catch(undefined),
-  itemName: textOr(""),
-  definition: itemDefinitionSchema.catch(() => emptyItemDefinition()),
-  locationName: z.string().optional().catch(undefined),
-  castName: z.string().optional().catch(undefined),
-  worn: z.boolean().catch(false),
-  quantity: z.number().int().min(1).max(20).catch(1),
-});
-export type WorldDraftItemPlacement = z.infer<typeof worldDraftItemPlacementSchema>;
-
-export const worldDraftSchema = z.object({
-  name: textOr(""),
-  description: textOr(""),
-  style: worldStyleSchema.catch(() => emptyWorldStyle()),
-  lore: worldLoreSchema.catch(() => emptyWorldLore()),
-  locations: arrayOf(worldDraftLocationSchema),
-  loreChunks: arrayOf(worldDraftLoreChunkSchema),
-  castSuggestions: arrayOf(worldDraftCastSuggestionSchema),
-  itemPlacements: arrayOf(worldDraftItemPlacementSchema),
-  /** Draft location name where the player starts (decision 47); unset ⇒ spawn anchors to the companion, "" clears on save. */
-  playerStartLocationName: z.string().optional().catch(undefined),
-  /** Default player character chosen up front (UX-audit §1a); unset ⇒ observer. */
-  playerCharacterId: optionalId,
-});
-export type WorldDraft = z.infer<typeof worldDraftSchema>;
-
-export function emptyWorldDraft(): WorldDraft {
-  return worldDraftSchema.parse({});
 }
 
 /** An attribute value as the portrait review renders it (contracts' value union). */
@@ -1492,7 +1266,6 @@ export const itemsApi = {
     apiGet(
       z.object({
         wornBy: z.array(z.object({ id: idSchema, name: nameSchema })).catch([]),
-        placements: z.array(z.object({ worldId: idSchema, worldName: nameSchema })).catch([]),
       }),
       `/api/items/${id}/usage`,
     ),
@@ -1520,38 +1293,6 @@ export const personasApi = {
   create: (body: unknown) => apiPost(createdRefSchema, "/api/personas", body),
   update: (id: string, body: unknown) => apiPatch(z.unknown(), `/api/personas/${id}`, body),
   remove: (id: string) => apiDelete(`/api/personas/${id}`),
-};
-
-export const worldsApi = {
-  list: (params: ListParams = {}) => apiGet(listOf(worldSummarySchema, "worlds"), withQuery("/api/worlds", params)),
-  get: (id: string) => apiGet(detailOf(worldDetailSchema, "world"), `/api/worlds/${id}`),
-  create: (body: unknown) => apiPost(createdRefSchema, "/api/worlds", body),
-  /** Save a forge draft: cast stubs are forged into real characters server-side. */
-  createFromDraft: (draft: WorldDraft) =>
-    apiPost(
-      z.object({ id: idSchema, diagnostics: arrayOf(diagnosticSchema) }),
-      "/api/worlds/from-draft",
-      draft,
-    ),
-  /** Save edits to a saved world from the same draft shape (full-replace). */
-  updateFromDraft: (id: string, draft: WorldDraft) =>
-    apiPost(
-      z.object({ id: idSchema, diagnostics: arrayOf(diagnosticSchema) }),
-      `/api/worlds/${id}/from-draft`,
-      draft,
-    ),
-  update: (id: string, body: unknown) => apiPatch(z.unknown(), `/api/worlds/${id}`, body),
-  remove: (id: string) => apiDelete(`/api/worlds/${id}`),
-  duplicate: (id: string) => apiPost(createdRefSchema, `/api/worlds/${id}/duplicate`, {}),
-  forge: (body: {
-    prompt: string;
-    section?: WorldForgeSection;
-    draft?: WorldDraft;
-    locationCount?: number;
-    characterCount?: number;
-  }) => apiPost(forgeResponseSchema(worldDraftSchema), "/api/worlds/forge", body),
-  createSession: (worldId: string, body: { title: string; embodied: boolean; playerCharacterId?: string }) =>
-    apiPost(createdRefSchema, `/api/worlds/${worldId}/sessions`, body),
 };
 
 // ---------------------------------------------------------------------------
@@ -1590,40 +1331,4 @@ export const galleryApi = {
   /** Bulk-delete gallery images (row + file each) — "Delete all" and the multi-select delete. */
   removeMany: (ids: string[]) =>
     apiPost(z.object({ deleted: z.number().catch(0) }), "/api/gallery/delete", { ids }),
-};
-
-export const sessionsApi = {
-  recent: () => apiGet(listOf(sessionSummarySchema, "sessions"), "/api/sessions?recent=1"),
-  forWorld: (worldId: string) =>
-    apiGet(listOf(sessionSummarySchema, "sessions"), withQuery("/api/sessions", { worldId })),
-  relationships: (id: string) =>
-    apiGet(listOf(relationshipEdgeSchema, "relationships"), `/api/sessions/${id}/relationships`),
-  /** Author an interior note for an NPC; processing runs as a background job. */
-  submitInnerNote: (id: string, participantId: string, text: string) =>
-    apiPost(
-      z.object({ jobId: z.string().catch("") }),
-      `/api/sessions/${id}/participants/${participantId}/inner-note`,
-      { text },
-    ),
-  remove: (id: string) => apiDelete(`/api/sessions/${id}`),
-  /** Dev-only: force-close a story thread (admin) — it drops from the status payload. */
-  closeThread: (id: string, threadId: string) => apiDelete(`/api/sessions/${id}/threads/${threadId}`),
-  /** Dev-only: snap an NPC to the player's location (bypasses movement). */
-  teleportToPlayer: (id: string, participantId: string) =>
-    apiPost(
-      z.object({ id: z.string().catch(""), locationId: z.string().catch("") }),
-      `/api/sessions/${id}/participants/${participantId}/teleport`,
-      {},
-    ),
-  /** Dev-only: flip a participant-held clothing item between worn and held inventory. */
-  updateParticipantClothing: (id: string, participantId: string, body: { action: "wear" | "remove"; itemInstanceId: string }) =>
-    apiPost(
-      z.object({
-        itemInstanceId: z.string().catch(""),
-        participantId: z.string().catch(""),
-        worn: z.boolean().catch(false),
-      }),
-      `/api/sessions/${id}/participants/${participantId}/clothing`,
-      body,
-    ),
 };

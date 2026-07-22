@@ -1,4 +1,10 @@
-import type { TurnChunkEvent } from "@/contracts/turns/stream";
+/** SSE chunk payload (docs/streaming-api.md). `content` is a delta to append;
+ *  `speaker` matches a known display name, or null for narrator prose. */
+export interface TurnChunkEvent {
+  segmentIndex: number;
+  speaker: string | null;
+  content: string;
+}
 
 /**
  * Speaker-tagged narrative parsing (docs/prompts.md §Dialogue tagging). Pure —

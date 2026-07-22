@@ -23,48 +23,32 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Successor engine — migration & rollout** —
-  [engine.rollout.plan.md](engine.rollout.plan.md) (**ACTIVE — started
-  2026-07-21**, the day the owner resolved its four opening rulings: chat at
-  `/chat/` is the first surface, UX-test worlds are the shadow corpus, R5
-  domain order by dependency, Aion 3.0 narrator default + Grok 4.5 added to
-  the accepted list). The foundation (gates 0–6, closed) becomes the live
-  world authority: **R0 (engine merged to main + deployed, v93) and R1
-  (audited per-chat authority flags, migration 0081, the standing internal
-  test world + `pnpm sim:seed`/`sim:advance`) shipped 2026-07-21; R2 live narrator + R3 slices 1–3 (sim-turn + typed commands under
-  /chat/, authoring + storyteller tool routes) SHIPPED same day — first live model
-  call in the successor lane, Aion 3.0, audit-accepted turn on the test
-  world** · next R3 the play loop inside chat ·
-  R4 shadow mode on UX-test worlds · R5 domain-by-domain authority
-  migration · R6 cleanup + legacy world/session-model retirement.
+_(Nothing active — pick up the top of Next.)_
 
 ## Next (queued)
 
-**Successor world engine (`engine.plan.md`) — foundation COMPLETE.** The gated
-event-kernel track: **all committed gates (0–6) are closed** (E2.1–E2.6 + E3.1–E3.5 +
-E4.1–E4.5 + E5.1–E5.6 + E6.1–E6.5 shipped; Gate 2 verdict: **advance**, 2026-07-17;
-Gate 3 verdict: **advance**, 2026-07-18; Gates 4, 5, and 6 closed **2026-07-19**,
-**2026-07-20**, and **2026-07-21** by their deterministic exit corpora per the
-owner's 2026-07-18 exit-scope ruling — live-model quality checks are the deferred
-human-in-the-loop items, parked in [deferred.plan.md](deferred.plan.md)
-§Owner-gated live eval runs). What remains is **delivery, not architecture**:
-the migration & rollout plan (now ACTIVE above, owner-scheduled 2026-07-21),
-then optional Gate 7 after it. Gate 5's contracts are also where the chat-lane
-meter-economy and body-needs plans (below) eventually port through. Full plan
-[engine.plan.md](engine.plan.md) · contract [engine.spec.md](engine.spec.md).
-(Distinct build from the chat-lane
-[world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star umbrella
-further down.)
+**Successor world engine (`engine.plan.md`) — foundation AND rollout COMPLETE.**
+All committed gates (0–6) closed 2026-07-16 → 2026-07-21, and the migration &
+rollout plan (R0–R6) shipped 2026-07-21/22 — the engine is the live world
+authority for successor chats and **the legacy world/session model is deleted**
+(see the top of §Shipped). What remains on this track: optional Gate 7 (below,
+owner-gated), the owner-gated live eval spend (parked in
+[deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs), and the
+chat-lane meter-economy/body-needs ports through the Gate 5 contracts (queued
+below). Full plan [engine.plan.md](engine.plan.md) · contract
+[engine.spec.md](engine.spec.md). (Distinct build from the chat-lane
+[world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
+umbrella further down.)
 
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
   [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly
-  optional, and sequenced AFTER migration & rollout completes and is tested
-  (owner ruling 2026-07-21** — recorded in
-  [engine.rollout.plan.md](engine.rollout.plan.md) §After completion). Admit a
-  package (employers, schools, housing, labor, markets, news, law, weather,
-  factions…) only when a world type + scenario corpus justifies it and it
-  declares its authority, LOD, laws, budget, and disable path. Listed for
-  tracking; may not begin before rollout R6 exits without a new owner ruling.
+  optional** (owner ruling 2026-07-21 — recorded in
+  [finished/engine.rollout.plan.md](finished/engine.rollout.plan.md) §After
+  completion). Its precondition — rollout R6 exited — was met 2026-07-22, so it
+  is now unblocked but still opens only on the owner's call. Admit a package
+  (employers, schools, housing, labor, markets, news, law, weather, factions…)
+  only when a world type + scenario corpus justifies it and it declares its
+  authority, LOD, laws, budget, and disable path.
 
 - **Chat meter economy — the body on the story clock** —
   [chat-meter-economy.plan.md](chat-meter-economy.plan.md) ·
@@ -142,7 +126,20 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
-- **World-engine Gate 6 exit corpus + scaling proof (E6.5) — GATE 6 CLOSED; the
+- **Successor engine — migration & rollout (R0–R6 COMPLETE); the legacy
+  world/session model is RETIRED** —
+  [finished/engine.rollout.plan.md](finished/engine.rollout.plan.md) —
+  2026-07-22 — the dormant foundation became the live product in two days: R0
+  merge+deploy and R1 audited per-chat authority flags + the standing internal
+  test world (07-21), R2 the live narrator over the committed cut (07-21), R3
+  the product surface under `/chat/` (sim-turn, typed commands, admin sim
+  family, world-clock parity), R4 shadow mode + the zero-findings parity
+  corpus + the `/worlds` successor front door, R5 all seven authority domains
+  (calendar, input admission, presence, meters, wardrobe, knowledge/RAG,
+  relationships), and R6 the deletion: 155 legacy files + 14 tables gone
+  (migration 0085), docs remapped, Fly v114, Neon safety branch
+  `pre-r6-legacy-drop`. The legacy CHAT lane is untouched; Gate 7 is now
+  unblocked but stays owner-gated.
   successor-engine foundation (gates 0–6) is COMPLETE** —
   [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md) §"Gate 6 build order" —
   2026-07-21 — three deterministic scenarios, zero model calls

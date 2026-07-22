@@ -1,19 +1,6 @@
 export * from "./constants";
-export * from "./intent";
-export * from "./intake";
-export * from "./scene";
-export * from "./movement";
-export * from "./demo";
-export * from "./bundle";
-export * from "./relationship-seeds";
-export * from "./spawn";
 export * from "./jobs";
 export * from "./keyed-lock";
-export * from "./recovery";
-export * from "./agents";
-export * from "./merge";
-export * from "./pipeline";
-export * from "./inner-note";
 export * from "./character-chat";
 export * from "./simulation";
 export * from "./chat-pipeline";
@@ -43,11 +30,7 @@ export * from "./prompts/chat-meanwhile";
 export * from "./prompts/chat-scene-sketch";
 export * from "./prompts/chat-summary";
 export * from "./prompts/chat-state";
-export * from "./prompts/narrative";
 export * from "./prompts/character-chat";
-export * from "./prompts/agents";
-export * from "./prompts/intake";
-export * from "./prompts/inner-note";
 // prompts/constants re-exports engine constants; only its unique values here.
 export {
   AGENT_INPUT_CAP,

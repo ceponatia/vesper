@@ -1,11 +1,11 @@
 import { eq, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { characters, db, imageReferences, images, locations, sessionParticipants, sessions, users, worlds } from "@/server/db";
+import { characters, db, imageReferences, images, locations, users } from "@/server/db";
 
-// Gallery route + scene-reference resolution integration suite (docs/testing.md
-// §api): the GET handler invoked directly with mocked auth against DATABASE_URL.
-// Self-skips when the database is unreachable.
+// Gallery route integration suite (docs/testing.md §api): the GET handler invoked
+// directly with mocked auth against DATABASE_URL. Self-skips when the database is
+// unreachable.
 
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Gallery Int", role: "admin" as const },
@@ -21,7 +21,6 @@ vi.mock("@/server/auth", () => ({
 import { GET as galleryRoute } from "./gallery/route";
 import { DELETE as galleryDelete, PATCH as galleryPatch } from "./gallery/[id]/route";
 import { POST as galleryDeleteAll } from "./gallery/delete/route";
-import { resolveSceneCharacterRefs } from "@/server/images";
 
 async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -53,13 +52,11 @@ async function json(res: Response): Promise<Record<string, unknown>> {
 
 interface SceneOut {
   id: string;
-  sessionId: string | null;
-  sessionTitle: string | null;
-  worldName: string | null;
   characterId: string | null;
   characterName: string | null;
   entityKind: string | null;
   entityName: string | null;
+  prompt: string;
   favorite: boolean;
   references: Array<{ kind: string; id: string; name: string }>;
 }
@@ -71,16 +68,12 @@ interface GalleryOut {
 
 const ids = {
   otherUser: "",
-  worldOld: "",
-  worldNew: "",
-  sessionOld: "",
-  sessionNew: "",
   character: "",
   location: "",
   sceneNew1: "",
   sceneNew2: "",
+  sceneNew3: "",
   sceneOld: "",
-  sceneChat: "",
   portrait: "",
   entityArt: "",
 };
@@ -94,100 +87,71 @@ beforeAll(async () => {
   authState.user = { ...authState.user, id: user.id, email: user.email };
   ids.otherUser = other.id;
 
-  const [wOld] = await db().insert(worlds).values({ ownerId: user.id, name: "Old World" }).returning();
-  const [wNew] = await db().insert(worlds).values({ ownerId: user.id, name: "New World" }).returning();
   const [character] = await db().insert(characters).values({ ownerId: user.id, name: "Alice Char" }).returning();
   const [location] = await db().insert(locations).values({ ownerId: user.id, name: "Quay House" }).returning();
-  if (!wOld || !wNew || !character || !location) throw new Error("failed to seed worlds/character/location");
-  ids.worldOld = wOld.id;
-  ids.worldNew = wNew.id;
+  if (!character || !location) throw new Error("failed to seed character/location");
   ids.character = character.id;
   ids.location = location.id;
 
-  // sessionNew is more recently updated than sessionOld → it sorts first.
-  const [sOld] = await db()
-    .insert(sessions)
-    .values({ ownerId: user.id, worldId: wOld.id, title: "Old Session", updatedAt: new Date(stamp - 60_000) })
-    .returning();
-  const [sNew] = await db()
-    .insert(sessions)
-    .values({ ownerId: user.id, worldId: wNew.id, title: "New Session", updatedAt: new Date(stamp) })
-    .returning();
-  if (!sOld || !sNew) throw new Error("failed to seed sessions");
-  ids.sessionOld = sOld.id;
-  ids.sessionNew = sNew.id;
-
+  // Every scene is a character-chat scene: kind="scene", entityKind="character",
+  // anchored on a library character the owner still has (the scenes tab inner-joins it).
   const scene = (over: Partial<typeof images.$inferInsert>) => ({
     ownerId: user.id,
     kind: "scene" as const,
     status: "ready" as const,
+    entityKind: "character" as const,
+    entityId: character.id,
     path: `images/${user.id}/scene.webp`,
     prompt: "",
     meta: {},
     ...over,
   });
 
-  // newest-first within sessionNew: sceneNew1 createdAt > sceneNew2
-  const [sceneNew1] = await db().insert(images).values(scene({ sessionId: sNew.id, createdAt: new Date(stamp + 2000) })).returning();
-  const [sceneNew2] = await db().insert(images).values(scene({ sessionId: sNew.id, createdAt: new Date(stamp + 1000) })).returning();
-  const [sceneOld] = await db().insert(images).values(scene({ sessionId: sOld.id, createdAt: new Date(stamp) })).returning();
-  if (!sceneNew1 || !sceneNew2 || !sceneOld) throw new Error("failed to seed scenes");
+  // newest-first by createdAt desc, id desc.
+  const [sceneNew1] = await db().insert(images).values(scene({ createdAt: new Date(stamp + 4000) })).returning();
+  const [sceneNew2] = await db().insert(images).values(scene({ createdAt: new Date(stamp + 3000) })).returning();
+  const [sceneNew3] = await db().insert(images).values(scene({ createdAt: new Date(stamp + 2000) })).returning();
+  const [sceneOld] = await db().insert(images).values(scene({ createdAt: new Date(stamp + 1000) })).returning();
+  if (!sceneNew1 || !sceneNew2 || !sceneNew3 || !sceneOld) throw new Error("failed to seed scenes");
   ids.sceneNew1 = sceneNew1.id;
   ids.sceneNew2 = sceneNew2.id;
+  ids.sceneNew3 = sceneNew3.id;
   ids.sceneOld = sceneOld.id;
 
-  // A sessionless character-chat scene (kind="scene", entityKind="character",
-  // no session) surfaces in the Gallery under "Character chats".
-  const [sceneChat] = await db()
-    .insert(images)
-    .values(scene({ sessionId: null, entityKind: "character", entityId: character.id, createdAt: new Date(stamp + 3000) }))
-    .returning();
-  if (!sceneChat) throw new Error("failed to seed chat scene");
-  ids.sceneChat = sceneChat.id;
-
-  // What each scene featured now lives in the image_references join table (the
+  // What each scene featured lives in the image_references join table (the
   // authoritative source the Gallery reads). sceneOld features nothing.
   await db().insert(imageReferences).values([
     { sceneImageId: sceneNew1.id, kind: "character", entityId: character.id, name: "Alice", source: "generated" },
     { sceneImageId: sceneNew1.id, kind: "location", entityId: "loc-1", name: "Quay", source: "entity" },
     { sceneImageId: sceneNew2.id, kind: "character", entityId: "char-bob", name: "Bob", source: "generated" },
-    { sceneImageId: sceneChat.id, kind: "character", entityId: character.id, name: "Alice", source: "generated" },
   ]);
 
-  // Excluded rows: pending / failed status, a true orphan (no session, no
-  // entity), and another owner's scene in the same session.
-  await db().insert(images).values(scene({ sessionId: sNew.id, status: "pending" }));
-  await db().insert(images).values(scene({ sessionId: sOld.id, status: "failed" }));
-  await db().insert(images).values(scene({ sessionId: null }));
-  await db().insert(images).values(scene({ ownerId: other.id, sessionId: sNew.id }));
+  // Excluded rows: pending / failed status, a character-anchored scene whose
+  // character no longer exists (inner join drops it), and another owner's scene.
+  await db().insert(images).values(scene({ status: "pending" }));
+  await db().insert(images).values(scene({ status: "failed" }));
+  await db().insert(images).values(scene({ entityId: "no-such-character" }));
+  await db().insert(images).values(scene({ ownerId: other.id }));
 
   // The other tabs' rows: a portrait variant and a location render — neither
   // may leak into the scenes tab, and each surfaces under its own tab.
   const [portrait] = await db()
     .insert(images)
-    .values(scene({ kind: "portrait_variant", sessionId: null, entityKind: "character", entityId: character.id, createdAt: new Date(stamp + 4000) }))
+    .values(scene({ kind: "portrait_variant", entityKind: "character", entityId: character.id, createdAt: new Date(stamp + 5000) }))
     .returning();
   const [entityArt] = await db()
     .insert(images)
-    .values(scene({ kind: "entity", sessionId: null, entityKind: "location", entityId: location.id, createdAt: new Date(stamp + 5000) }))
+    .values(scene({ kind: "entity", entityKind: "location", entityId: location.id, createdAt: new Date(stamp + 6000) }))
     .returning();
   if (!portrait || !entityArt) throw new Error("failed to seed portrait/entity art");
   ids.portrait = portrait.id;
   ids.entityArt = entityArt.id;
-
-  // Participants for the resolveSceneCharacterRefs test.
-  await db().insert(sessionParticipants).values([
-    { sessionId: sNew.id, displayName: "Alice", characterId: character.id },
-    { sessionId: sNew.id, displayName: "Player", isUser: true },
-  ]);
 });
 
 afterAll(async () => {
   if (!ready) return;
   await db().delete(images).where(eq(images.ownerId, authState.user.id));
   await db().delete(images).where(eq(images.ownerId, ids.otherUser));
-  await db().delete(sessions).where(eq(sessions.ownerId, authState.user.id));
-  await db().delete(worlds).where(eq(worlds.ownerId, authState.user.id));
   await db().delete(characters).where(eq(characters.ownerId, authState.user.id));
   await db().delete(locations).where(eq(locations.ownerId, authState.user.id));
   await db().delete(users).where(eq(users.id, authState.user.id));
@@ -196,28 +160,20 @@ afterAll(async () => {
 });
 
 describe("GET /api/gallery", () => {
-  it("scenes tab: the owner's ready scenes newest-first, with joins + references", async (t) => {
+  it("scenes tab: the owner's ready character-chat scenes newest-first, with references", async (t) => {
     if (!ready) return t.skip();
     const body = (await json(await galleryRoute(req("http://t/api/gallery"), noCtx))) as unknown as GalleryOut;
     const scenes = body.images;
 
-    // Only the four ready owned scenes — not pending, failed, the true orphan,
-    // another owner's, or the portrait/entity rows — newest first (keyset order).
-    expect(scenes.map((s) => s.id)).toEqual([ids.sceneChat, ids.sceneNew1, ids.sceneNew2, ids.sceneOld]);
+    // Only the four ready owned scenes — not pending, failed, the character-less
+    // orphan, another owner's, or the portrait/entity rows — newest first (keyset order).
+    expect(scenes.map((s) => s.id)).toEqual([ids.sceneNew1, ids.sceneNew2, ids.sceneNew3, ids.sceneOld]);
     expect(body.nextCursor).toBeNull();
 
-    // Joined session/world fields.
+    // Every scene is tagged with its anchor character (no session/world fields anymore).
     const first = scenes.find((s) => s.id === ids.sceneNew1)!;
-    expect(first.sessionTitle).toBe("New Session");
-    expect(first.worldName).toBe("New World");
-    expect(scenes.find((s) => s.id === ids.sceneOld)!.worldName).toBe("Old World");
-
-    // The sessionless chat scene is tagged with its character; session scenes are not.
-    const chat = scenes.find((s) => s.id === ids.sceneChat)!;
-    expect(chat.sessionId).toBeNull();
-    expect(chat.characterId).toBe(ids.character);
-    expect(chat.characterName).toBe("Alice Char");
-    expect(first.characterId).toBeNull();
+    expect(first.characterId).toBe(ids.character);
+    expect(first.characterName).toBe("Alice Char");
 
     // References come from the join table (order within a scene is not contractual).
     expect(first.references).toHaveLength(2);
@@ -233,17 +189,17 @@ describe("GET /api/gallery", () => {
   it("pages by keyset cursor without overlap or gaps", async (t) => {
     if (!ready) return t.skip();
     const page1 = (await json(await galleryRoute(req("http://t/api/gallery?limit=2"), noCtx))) as unknown as GalleryOut;
-    expect(page1.images.map((s) => s.id)).toEqual([ids.sceneChat, ids.sceneNew1]);
+    expect(page1.images.map((s) => s.id)).toEqual([ids.sceneNew1, ids.sceneNew2]);
     expect(page1.nextCursor).toBeTruthy();
 
     const page2 = (await json(
       await galleryRoute(req(`http://t/api/gallery?limit=2&cursor=${encodeURIComponent(page1.nextCursor ?? "")}`), noCtx),
     )) as unknown as GalleryOut;
-    expect(page2.images.map((s) => s.id)).toEqual([ids.sceneNew2, ids.sceneOld]);
+    expect(page2.images.map((s) => s.id)).toEqual([ids.sceneNew3, ids.sceneOld]);
 
     // A garbage cursor degrades to the first page, never a failed request.
     const garbage = (await json(await galleryRoute(req("http://t/api/gallery?limit=2&cursor=nonsense"), noCtx))) as unknown as GalleryOut;
-    expect(garbage.images.map((s) => s.id)).toEqual([ids.sceneChat, ids.sceneNew1]);
+    expect(garbage.images.map((s) => s.id)).toEqual([ids.sceneNew1, ids.sceneNew2]);
   });
 
   it("portraits tab: portrait variants joined to their character", async (t) => {
@@ -288,7 +244,8 @@ describe("PATCH /api/gallery/:id (favorite)", () => {
         ownerId: ids.otherUser,
         kind: "scene",
         status: "ready",
-        sessionId: ids.sessionNew,
+        entityKind: "character",
+        entityId: ids.character,
         path: `images/${ids.otherUser}/fav.webp`,
         prompt: "",
         meta: {},
@@ -297,19 +254,6 @@ describe("PATCH /api/gallery/:id (favorite)", () => {
     if (!foreign) throw new Error("failed to seed foreign scene");
     expect((await galleryPatch(patchReq(foreign.id, true), ctx(foreign.id))).status).toBe(404);
     await db().delete(images).where(eq(images.id, foreign.id));
-  });
-});
-
-describe("resolveSceneCharacterRefs", () => {
-  it("resolves in-frame names to character refs, skipping the character-less and deduping", async (t) => {
-    if (!ready) return t.skip();
-    const refs = await resolveSceneCharacterRefs(ids.sessionNew, ["Alice", "alice", "Player", "Ghost"]);
-    expect(refs).toEqual([{ kind: "character", id: ids.character, name: "Alice" }]);
-  });
-
-  it("returns [] for no names", async (t) => {
-    if (!ready) return t.skip();
-    expect(await resolveSceneCharacterRefs(ids.sessionNew, [])).toEqual([]);
   });
 });
 
@@ -326,7 +270,8 @@ describe("DELETE /api/gallery/:id", () => {
         ownerId: authState.user.id,
         kind: "scene",
         status: "ready",
-        sessionId: ids.sessionNew,
+        entityKind: "character",
+        entityId: ids.character,
         path: `images/${authState.user.id}/del.webp`,
         prompt: "",
         meta: {},
@@ -347,7 +292,8 @@ describe("DELETE /api/gallery/:id", () => {
         ownerId: ids.otherUser,
         kind: "scene",
         status: "ready",
-        sessionId: ids.sessionNew,
+        entityKind: "character",
+        entityId: ids.character,
         path: `images/${ids.otherUser}/del.webp`,
         prompt: "",
         meta: {},
@@ -422,6 +368,8 @@ describe("POST /api/gallery/delete (bulk)", () => {
     ownerId: authState.user.id,
     kind: "scene" as const,
     status: "ready" as const,
+    entityKind: "character" as const,
+    entityId: ids.character,
     path: `images/${authState.user.id}/bulk.webp`,
     prompt: "",
     meta: {},
@@ -430,15 +378,15 @@ describe("POST /api/gallery/delete (bulk)", () => {
 
   it("bulk-deletes only the owner's scene rows in the list, skipping foreign + non-scene ids", async (t) => {
     if (!ready) return t.skip();
-    const [a] = await db().insert(images).values(scene({ sessionId: ids.sessionNew })).returning();
-    const [b] = await db().insert(images).values(scene({ sessionId: ids.sessionOld })).returning();
+    const [a] = await db().insert(images).values(scene({})).returning();
+    const [b] = await db().insert(images).values(scene({})).returning();
     const [avatar] = await db()
       .insert(images)
-      .values(scene({ kind: "avatar", entityKind: "character", entityId: ids.character }))
+      .values(scene({ kind: "avatar" }))
       .returning();
     const [foreign] = await db()
       .insert(images)
-      .values(scene({ ownerId: ids.otherUser, sessionId: ids.sessionNew, path: `images/${ids.otherUser}/bulk.webp` }))
+      .values(scene({ ownerId: ids.otherUser, path: `images/${ids.otherUser}/bulk.webp` }))
       .returning();
     if (!a || !b || !avatar || !foreign) throw new Error("failed to seed bulk-delete scenes");
 

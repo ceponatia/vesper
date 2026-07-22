@@ -63,7 +63,7 @@ export async function enqueueChatSceneSketch(args: EnqueueChatSceneSketchArgs): 
       )
       .limit(1);
     if (live) return;
-    await enqueueJob({ sessionId: null, type: "chat_scene_sketch", payload: { ...args } });
+    await enqueueJob({ type: "chat_scene_sketch", payload: { ...args } });
   } catch (err) {
     log.warn("chat_scene_sketch", "failed to enqueue sketch", {
       chatId: args.chatId,

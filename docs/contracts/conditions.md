@@ -34,5 +34,5 @@ type ActiveCondition = {
 | `durationMinutes` | How long it lasts; the engine expires it. |
 | `source` | Where it came from — `narrative` / `item` / `environment` / `manual`, with an optional id. |
 | `attributeEffects` | Attribute values overlaid while active, written with `source: "condition"` and `sourceId` = the condition id. |
-| `senseEffects` | Perception impairment — per-sense `reduced` / `blocked` (see [perception.md](../perception.md) §Darkness). |
+| `senseEffects` | Per-sense `reduced` / `blocked` — reserved (a perception-impairment hint carried on the schema; the retired session perception matrix was its only consumer). |
 | `promptHint` | Optional phrasing hint for the narrator. |

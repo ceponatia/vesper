@@ -6,8 +6,7 @@ and the persistence guards that keep a mid-stream delete from resurrecting orpha
 
 ## The exchange lifecycle
 
-All orchestration lives in `engine/chat-pipeline.ts` (`submitChatMessage`) — the chat
-analogue of the session lane's `submitTurn`. The HTTP route
+All orchestration lives in `engine/chat-pipeline.ts` (`submitChatMessage`). The HTTP route
 (`app/api/chats/[chatId]/route.ts`) is a thin parse → auth → stream shell. One
 exchange:
 
@@ -107,9 +106,8 @@ exchange:
    anchor IS the player's input). Each of those used to embed its own copy of the same
    texts — 2–3 round-trips for one text set, and unlike every other agent cost this one sits
    on the **pre-reply** path the player actually waits on. A failed embed degrades each leg
-   exactly as its own would (facts → pinned-only, episodes → `[]`, callback → none). The
-   session lane's `preTurnRetrieve` shares the same cache (its episode + fact legs carried
-   the identical duplicate); a caller that passes none still embeds internally, unchanged.
+   exactly as its own would (facts → pinned-only, episodes → `[]`, callback → none). A
+   caller that passes no cache still embeds internally, unchanged (the eval harness).
 6. **Prompt build.** `buildCharacterChatPromptParts` (pure, snapshot-tested) — split
    for provider prefix caching (spec §9) into a **stable prefix** (identity → persona →
    scenario → background → regard-colored disposition → the composed **Relationship** block → cards →
@@ -127,8 +125,8 @@ exchange:
    features happened to ship, with nothing stating which governs when they pull apart.
    Deferral for a crowded turn is deliberately NOT done at render time — see §The one-turn
    notes below. An experimental `CHAT_PROMPT_LAYOUT=turn_context` switch (default off)
-   moves the tail + fenced current input into a final user message instead — the session
-   lane's shape; see [prompts.md](../prompts.md) §Character-chat prompt-cache split. The rules carry the **player-input
+   moves the tail + fenced current input into a final user message instead; see
+   [prompts.md](prompts.md) §Character-chat prompt-cache split. The rules carry the **player-input
    perception partition** (quoted = heard, narration = seen, interiority = invisible), the
    optional **markup-notation legend** (`*…*` thought/comms, `((…))` OOC, `_…_` italics —
    sigils parsed by the shared `@/lib/message-spans.ts`, with a per-turn comms/OOC tail note
@@ -137,11 +135,11 @@ exchange:
    light reflex writable, the player's agency not — and never the player's story advanced on
    the narrator's turn; when the two are in different places, the reply follows the
    character's side only, reaching the player solely through comms — rule 15). See
-   [prompts.md](../prompts.md) §§Character-chat sensory cues / player-input perception /
+   [prompts.md](prompts.md) §§Character-chat sensory cues / player-input perception /
    player-POV narration / state as a narration system / long-term memory, plus the
    regex-only one-turn cue (`engine/chat-intent.ts`).
-7. **Stream.** `streamCharacterChat` — the same `streamText` + `openrouter().chat()` shape
-   as the session narrator, through `stripNarratorArtifactStream` and then
+7. **Stream.** `streamCharacterChat` — a `streamText` + `openrouter().chat()` shape,
+   through `stripNarratorArtifactStream` and then
    `collapseRepeatedBlocksStream` (server/ai/narrator-repeats.ts — drops Aion
    tandem-repeat blocks, a verbatim re-emit of the reply's own trailing paragraphs,
    before they reach the live feed or the persisted accumulated reply). The narrator model is
@@ -178,7 +176,7 @@ exchange:
    `parseEmphasisRuns` (`lib/message-spans`) so a `_…_` pair nested inside quoted speech
    ("it's _perfect_!") renders italic instead of literal underscores (outermost-sigil rule —
    the quote stays one atomic speech span). Stored transcripts stay byte-verbatim. See
-   [prompts.md](../prompts.md) §Dialogue tagging and [ui.md](../ui.md) §Chat.
+   [prompts.md](prompts.md) §Dialogue tagging and [ui.md](../ui.md) §Chat.
 
 
 ## Post-turn fan-out
@@ -367,11 +365,11 @@ Adding a failure class = a literal in the contract + a copy entry in the client 
 
 | Type | Path | Recovery |
 | --- | --- | --- |
-| `chat_summary` | engine queue (`enqueueChatSummary`), detached (`session_id` NULL); folds the oldest verbatim exchanges into the rolling summary, serialized per chat via `withKeyedLock` | heartbeated while running; a dead row is failed by the detached-job sweep |
+| `chat_summary` | engine queue (`enqueueChatSummary`), detached; folds the oldest verbatim exchanges into the rolling summary, serialized per chat via `withKeyedLock` | heartbeated while running; a dead row is failed by the detached-job sweep |
 | `chat_scene_sketch` | engine queue (`enqueueChatSceneSketch`), detached; expands a just-introduced place into a visual sketch on `scene_memory` ([state.md](state.md) §Scene memory step 4) — write is an optimistic CAS, never the exchange lock; one live job per chat | same detached sweep; a lost CAS or failed run simply re-fires while the place's sketch stays absent |
 | `chat_look_image` | engine queue (`enqueueChatLookImage`, fired by the finalizer on an outfit/appearance change), detached; mints the outfit-true look anchor ([images.md](images.md) §Scene reference anchors) — image-active chats only, keep-latest | same sweep; a failed mint leaves renders on the avatar and the next change re-fires |
 | `chat_place_image` | engine queue (`enqueueChatPlaceImage`, fired lazily by `queueChatScene` on the first render in a sketched place), detached; CAS-writes `ScenePlace.imageId` | same sweep; a lost CAS / failed render re-fires on the next render there |
-| `chat_scene_image` | api-side `startJob` via the shared `queueChatScene` (`chats/[chatId]/scene/queue.ts`) — manual POST **and** the auto big-moment hook; one live render per chat (check-then-insert dedupe); anchored at queue time (manual = newest assistant line, auto = the exchange's reply) | `sweepDetachedApiJobs` (`engine/recovery.ts`) fails any session-less running job whose heartbeat is older than `API_JOB_STALE_MS` |
+| `chat_scene_image` | api-side `startJob` via the shared `queueChatScene` (`chats/[chatId]/scene/queue.ts`) — manual POST **and** the auto big-moment hook; one live render per chat (check-then-insert dedupe); anchored at queue time (manual = newest assistant line, auto = the exchange's reply) | `sweepDetachedApiJobs` (`engine/recovery.ts`) fails any detached running job whose heartbeat is older than `API_JOB_STALE_MS` |
 
 
 ## Persistence guards

@@ -1,6 +1,6 @@
 # Resilience
 
-The prime directive: **an error may degrade a turn, it must never disrupt the game.** A session must stay playable through malformed LLM output, a dead provider, a bad JSONB row, or a bug in one agent. This document defines the patterns every module uses to get there. They are not optional.
+The prime directive: **an error may degrade a turn, it must never disrupt the game.** A conversation must stay playable through malformed LLM output, a dead provider, a bad JSONB row, or a bug in one agent. This document defines the patterns every module uses to get there. They are not optional.
 
 ## 1. Boundary parsing: `parseOr`
 
@@ -12,7 +12,7 @@ parseOrNull<T>(schema: ZodType<T>, raw: unknown, sink?: DiagnosticSink, path?: s
 ```
 
 - Never `JSON.parse` + `schema.parse` inline. `parseOr` handles string-or-object input, catches, records a diagnostic, returns the fallback.
-- Fallbacks are **schema defaults**, defined next to the schema (`emptyCharacterState()`, `emptyBrief()`), not ad-hoc literals at call sites.
+- Fallbacks are **schema defaults**, defined next to the schema (each shape's `empty*()` constructor), not ad-hoc literals at call sites.
 - A failed parse is a diagnostic, not an exception. Exceptions are for programmer errors only.
 
 ## 2. Diagnostics
@@ -29,7 +29,7 @@ type Diagnostic = {
 };
 ```
 
-- Everything that degrades records a diagnostic. Turn-scoped diagnostics persist on `turns.diagnostics`; they render in the dev Turn Inspector.
+- Everything that degrades records a diagnostic. Exchange-scoped diagnostics ride the memory trace; they render in the admin chat inspector.
 - A `DiagnosticSink` is just `{ push(d: Diagnostic): void }`; pipelines thread one through rather than logging from leaf functions.
 
 ## 3. LLM structured output: validate → repair → degrade
@@ -43,35 +43,35 @@ Wrapper in `server/ai`: `generateChecked({ schema, system, prompt, code, fallbac
 Schema design rules that make this work:
 - Keep each agent's schema **small** (one concern). Small schemas parse reliably; the old app's one giant `TurnParseResult` is the anti-pattern.
 - `.default()` everything defaultable. `.catch()` on leaf enums/numbers so a single bad field doesn't reject the whole object.
-- Quantities are clamped in the merge reducer regardless of what the schema allowed (`minutesAdvanced` 1–480, meter deltas −1–1, etc.). Trust nothing.
+- Quantities are clamped by the consuming reducer regardless of what the schema allowed (`minutesAdvanced` 1–480, meter deltas −1–1, etc.). Trust nothing.
 
-### Worked example: a new boundary whose fallback is the previously-live path
+### Worked example: time-box a new leg, and make its fallback the prior deterministic path
 
-The pre-narration **intake agent** ([turn-engine.md](turn-engine.md) §Intake agent) is the cleanest shape this rule can take. It is a *new* LLM call on the critical path — the kind of addition the prime directive is most wary of — yet it can never make a turn worse than today's, because its degraded default **is the deterministic code path the engine ran before it existed**:
+The cleanest shape this rule takes: a leg that could make a turn worse can never do so if its **degraded default is the deterministic code path that ran before it existed**. Two live cases in the chat lane:
 
-- It runs `generateChecked` (the full ladder above) on the `tool` model, but is additionally wrapped in a hard timeout (`INTAKE_TIMEOUT_MS = 3000`).
-- On timeout, generation failure, demo mode, or when disabled by env, it falls back to `intentBriefFromSceneIntent(detectIntent(input))` — the regex intent that was the live behavior before intake — and records a diagnostic. The narration never blocks on the agent.
-- So the **worst case is exactly prior behavior**: no failed turn, no missing classification beyond what regex always missed, just a diagnostic noting the degrade. "Intake off" is a tested, safe state by construction, not a separately-maintained path. This is the pattern to copy when adding any future pre-narrator check: make its fallback the previously-shipped deterministic step, time-box it, and the new call is pure upside.
+- The one-turn intent reads (`chat-intent.ts`) are **regex-first, no LLM** — the safe baseline. The optional markup lane (`lib/message-spans`) only *upgrades* them to determinism when the player opts in; absent markup, behavior is exactly the regex baseline.
+- Every LLM leg on the reply path runs `generateChecked` (the full ladder above) wrapped in a hard timeout (`withGenerateTimeout`). On timeout, generation failure, or demo mode it degrades to a safe default — a no-op or the prior state — and records a diagnostic; the reply never blocks on it.
 
-## 4. Independent agent failure
+The pattern to copy when adding any future pre-reply check: make its fallback the previously-shipped deterministic step, time-box it, and the new call is pure upside.
 
-The four post-turn agents run in parallel and fail independently. The merge reducer consumes whatever subset succeeded:
+## 4. Independent leg failure
 
-- No simulant → no state changes this turn (clock advances by heuristic estimate).
-- No archivist → no new facts/episode (a synthetic episode row is written from the narration's first ~300 chars so the window stays contiguous).
-- No director → previous brief carries forward with `sceneSummary` refreshed heuristically.
-- No continuity → no corrections, fine.
+The chat lane's post-turn fan-out — the reaction **pulse** ‖ the **three extraction legs** — runs in parallel and fails independently. The finalize step consumes whatever subset succeeded:
 
-A turn reaches `status: "ready"` even if *every* agent failed — the player keeps playing; diagnostics tell the dev what degraded.
+- No pulse → no reaction/affinity change this exchange.
+- No memory scribe → no new facts/episode (a synthetic episode row is written from the reply's first ~300 chars so the window stays contiguous).
+- No character/continuity tracker → the state row keeps its old values.
 
-## 5. Turn-state machine and recovery
+An exchange settles even if *every* leg failed — the player keeps playing; diagnostics tell the dev what degraded (see §8's agent-failure telemetry, the counter-measure to this independence).
 
-`turns.status: pending → narrating → processing → ready | failed`. Sessions have three states (`ready`/`narrating`/`processing`); a failed turn returns its session to `ready` — failure never wedges play. Recovery rules:
+## 5. Reply lifecycle and recovery
 
-- Liveness is heartbeat-based: streaming and processing refresh `heartbeat_at` (~5s). On boot and on any turn start, turns/jobs whose heartbeat is >60s stale are failed and the session reset — a slow-but-alive stream is never clobbered.
-- Session concurrency is guarded by an atomic compare-and-swap (`UPDATE sessions SET status='narrating' WHERE id=$1 AND status='ready'`) — a second concurrent submit gets a clean 409, not a race.
-- Client disconnects don't abort turns: SSE writes are best-effort; narration persistence and the post-turn job proceed regardless.
-- The post-turn merge is **one transaction**: partial agent application is impossible.
+A chat exchange streams the reply, then finalizes state. Recovery rules:
+
+- The **reply-stream watchdog** (`withStreamTimeouts`) trips on a stalled provider — a first-token or overall timeout aborts the stream; whatever already streamed persists as the reply, and a zero-token stream surfaces an explicit "didn't reply" toast rather than a silently-vanishing bubble.
+- Exchange concurrency is guarded by a **keyed per-chat lock** (`acquireKeyedLockWithin`) — a second concurrent submit waits a bounded window then fails cleanly, not a race. The atomic **rerun** stops any in-flight reply, waits, re-acquires the lock, and transacts.
+- Client disconnects don't abort an exchange: SSE writes are best-effort; the reply persists and the post-turn jobs proceed regardless.
+- The finalize memory writes are each internally transactional; a failed embedding degrades ([memory.md](memory.md)) instead of failing the exchange.
 
 ## 6. Demo mode
 
@@ -84,7 +84,7 @@ With no `OPENROUTER_API_KEY`, the app runs end-to-end: deterministic template na
 
 ## 8. What is *not* tolerated
 
-Degradation hides bugs if nobody looks. Hence: diagnostics are persisted, the Turn Inspector shows them, and tests assert on diagnostic codes — a test that triggers degradation asserts both the fallback behavior **and** the emitted diagnostic.
+Degradation hides bugs if nobody looks. Hence: diagnostics are persisted, the chat inspector shows them, and tests assert on diagnostic codes — a test that triggers degradation asserts both the fallback behavior **and** the emitted diagnostic.
 
 ### Agent-failure telemetry (the counter-measure to §4)
 
@@ -99,4 +99,4 @@ So a failed agent leg now leaves a **durable, tallied record with a suspected ca
 
 A related wart fixed on the way (recorded in chat-reply-failures.plan.md §Follow-ups): `generateChecked` used to label *every* failure `${code}.parse_failed`, so a 429 / 402 / network drop read as "the model can't produce JSON". Transport failures now emit `${code}.api_error` with the provider's class, and the diagnostic, the log line, and the recorded failure all tell the same true story.
 
-Telemetry is **optional at the call site**: a leg that passes no `telemetry` is still counted (the leg id falls back to the diagnostic `code`), just with less to say about why. Wired today: the chat lane's pulse, the three extraction legs, and the per-member personal pass. Unwired (counted, not diagnosable): the session-lane agents and the detached chat jobs — pass `telemetry` when one of them next needs diagnosing.
+Telemetry is **optional at the call site**: a leg that passes no `telemetry` is still counted (the leg id falls back to the diagnostic `code`), just with less to say about why. Wired today: the chat lane's pulse, the three extraction legs, and the per-member personal pass. Unwired (counted, not diagnosable): the detached chat jobs — pass `telemetry` when one of them next needs diagnosing.

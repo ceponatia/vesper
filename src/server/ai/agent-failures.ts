@@ -34,8 +34,6 @@ export interface AgentTelemetry {
   legId: string;
   /** Chat lane: the conversation the failure belongs to (the inspector's filter). */
   chatId?: string | null;
-  /** Session lane: the session, so the row joins the `events` stream normally. */
-  sessionId?: string | null;
   /** The exchange this leg was running for, when known. */
   messageId?: string | null;
   modelId?: string;
@@ -93,7 +91,7 @@ export function buildAgentFailure(input: RecordAgentFailureInput): AgentFailure 
 /** Record a failed agent leg. Fire-and-forget — callers do not await it. */
 export function recordAgentFailure(input: RecordAgentFailureInput): void {
   const failure = buildAgentFailure(input);
-  void logEvent(input.sessionId ?? null, AGENT_FAILURE_EVENT, { ...failure });
+  void logEvent(AGENT_FAILURE_EVENT, { ...failure });
 }
 
 const SUMMARY_CAP = 200;
@@ -149,5 +147,5 @@ export function buildAgentRun(input: RecordAgentRunInput): AgentRun {
  */
 export function recordAgentRun(input: RecordAgentRunInput): void {
   const run = buildAgentRun(input);
-  void logEvent(input.sessionId ?? null, AGENT_RUN_EVENT, { ...run });
+  void logEvent(AGENT_RUN_EVENT, { ...run });
 }

@@ -6,16 +6,11 @@ import {
   createdRefSchema,
   detailOf,
   emptyCharacterDraft,
-  emptyWorldDraft,
   imageRecordSchema,
   imageUrl,
   itemDetailSchema,
-  sessionSummarySchema,
-  sessionsApi,
   toApiError,
   withQuery,
-  worldDetailSchema,
-  worldDraftSchema,
 } from "./api";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -209,93 +204,10 @@ describe("resource schemas degrade per-field", () => {
     expect(parsed.definition.layer).toBeNull();
   });
 
-  it("world detail drops bad list elements but keeps the rest", () => {
-    const parsed = worldDetailSchema.parse({
-      id: "w1",
-      name: "Harborfall",
-      cast: [{ id: "cast1", name: "Maya", role: "nonsense" }, "garbage"],
-      loreChunks: [{ id: "l1", title: "The Flood", tier: "??", visibility: "secret" }],
-    });
-    expect(parsed.cast).toHaveLength(1);
-    expect(parsed.cast[0]?.role).toBe("npc");
-    expect(parsed.loreChunks[0]?.tier).toBe("scene");
-    expect(parsed.loreChunks[0]?.visibility).toBe("secret");
-    expect(parsed.locations).toEqual([]);
-  });
-
-  it("session summary defaults status", () => {
-    const parsed = sessionSummarySchema.parse({ id: "s1", status: "exploded" });
-    expect(parsed.status).toBe("ready");
-    expect(parsed.title).toBe("Untitled session");
-  });
-
-  it("relationship edges default kind/stage and drop rows without ids", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        jsonResponse({
-          relationships: [
-            { id: "r1", fromParticipantId: "npc1", toParticipantId: "player", kind: "feeling", stage: "friendly" },
-            { id: "r2", fromParticipantId: "npc1", toParticipantId: "player", kind: "??", stage: 7 },
-            { fromParticipantId: "npc2", toParticipantId: "player" }, // no id → dropped
-          ],
-        }),
-      ),
-    );
-    const result = await sessionsApi.relationships("s1");
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data).toHaveLength(2);
-      expect(result.data[0]?.stage).toBe("friendly");
-      expect(result.data[1]?.kind).toBe("feeling");
-      expect(result.data[1]?.stage).toBe("stranger");
-    }
-  });
-
-  it("posts participant clothing updates and parses the response", async () => {
-    const fetchMock = vi.fn(async (..._args: Parameters<typeof fetch>) =>
-      jsonResponse({ itemInstanceId: "item1", participantId: "npc1", worn: false }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const result = await sessionsApi.updateParticipantClothing("s1", "npc1", {
-      action: "remove",
-      itemInstanceId: "item1",
-    });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data).toEqual({ itemInstanceId: "item1", participantId: "npc1", worn: false });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sessions/s1/participants/npc1/clothing",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ action: "remove", itemInstanceId: "item1" }),
-      }),
-    );
-  });
-
-  it("detailOf merges the wrapped entity with its sibling families (worlds GET shape)", () => {
-    // Regression: detailOf once returned only obj.world, discarding the
-    // sibling locations/cast/… — the editor then seeded empty families and the
-    // next save erased the world's real rows.
-    const parsed = detailOf(worldDetailSchema, "world").parse({
-      world: { id: "w1", name: "Harborfall" },
-      locations: [{ id: "wl1", locationId: "loc1", name: "Quay", description: "", ambient: {}, tags: [], overrides: {} }],
-      cast: [{ id: "cast1", characterId: "c1", name: "Maya", role: "companion", startWorldLocationId: null, avatarImageId: null }],
-      loreChunks: [{ id: "l1", title: "The Flood" }],
-      links: [],
-      items: [],
-    });
-    expect(parsed.id).toBe("w1");
-    expect(parsed.locations).toHaveLength(1);
-    expect(parsed.locations[0]?.locationId).toBe("loc1");
-    expect(parsed.cast).toHaveLength(1);
-    expect(parsed.loreChunks).toHaveLength(1);
-  });
-
   it("detailOf still accepts a bare entity", () => {
-    const parsed = detailOf(worldDetailSchema, "world").parse({ id: "w2", name: "Bare" });
-    expect(parsed.id).toBe("w2");
+    const parsed = detailOf(characterDetailSchema, "character").parse({ id: "c2", name: "Bare" });
+    expect(parsed.id).toBe("c2");
+    expect(parsed.mine).toBe(true);
   });
 });
 
@@ -305,24 +217,6 @@ describe("draft schemas", () => {
     expect(draft.name).toBe("");
     expect(draft.profile.attributes).toEqual([]);
     expect(draft.suggestedItems).toEqual([]);
-  });
-
-  it("emptyWorldDraft is schema-valid", () => {
-    const draft = emptyWorldDraft();
-    expect(draft.locations).toEqual([]);
-    expect(draft.style.directives).toEqual([]);
-  });
-
-  it("parses a partial world draft, dropping broken sections only", () => {
-    const draft = worldDraftSchema.parse({
-      name: "Mistward",
-      locations: [{ name: "Quay", links: ["Market"] }, 17],
-      loreChunks: "nope",
-    });
-    expect(draft.name).toBe("Mistward");
-    expect(draft.locations).toHaveLength(1);
-    expect(draft.locations[0]?.links).toEqual(["Market"]);
-    expect(draft.loreChunks).toEqual([]);
   });
 
   it("forge response accepts bare drafts and wrapped drafts", async () => {

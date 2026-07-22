@@ -49,7 +49,6 @@ export async function withGenerateTimeout<T>(
         // `timeoutCode` is `${legId}.timeout` by convention at every call site.
         legId: telemetry?.legId ?? timeoutCode.replace(/\.timeout$/, ""),
         chatId: telemetry?.chatId,
-        sessionId: telemetry?.sessionId,
         messageId: telemetry?.messageId,
         kind: "timeout",
         timeoutMs,
@@ -72,7 +71,6 @@ export async function withGenerateTimeout<T>(
           recordAgentRun({
             legId: telemetry.legId,
             chatId: telemetry.chatId,
-            sessionId: telemetry.sessionId,
             messageId: telemetry.messageId,
             modelId: telemetry.modelId,
             promptChars: telemetry.promptChars,

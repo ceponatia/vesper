@@ -1,12 +1,12 @@
 import { eq, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { characters, db, items, users, worldItems, worlds } from "@/server/db";
+import { characters, db, items, users } from "@/server/db";
 
 // Integration suite for GET /api/items/:id/usage (ux-improvements slice 6 —
-// the delete dialog's in-use warning): a character wearing the item in its
-// defaultOutfit and a world placement pointing at it are both named;
-// references are owner-scoped. Self-skips when the database is unreachable.
+// the delete dialog's in-use warning): the characters wearing the item in an
+// outfit preset (new shape or the legacy id list) are named; references are
+// owner-scoped. Self-skips when the database is unreachable.
 
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Usage Int", role: "admin" as const },
@@ -91,16 +91,12 @@ beforeAll(async () => {
   await db()
     .insert(characters)
     .values({ ownerId: user.id, name: "Legacy Lane", profile: { defaultOutfit: [worn.id] } });
-  const [world] = await db().insert(worlds).values({ ownerId: user.id, name: "Corner Café" }).returning();
-  if (!world) throw new Error("failed to seed world");
-  await db().insert(worldItems).values({ worldId: world.id, sourceItemId: worn.id, name: "Silk wrap dress" });
 });
 
 afterAll(async () => {
   if (ready) {
     for (const owner of [authState.user.id, ids.otherUser]) {
       if (!owner) continue;
-      await db().delete(worlds).where(eq(worlds.ownerId, owner)); // cascades world_items
       await db().delete(characters).where(eq(characters.ownerId, owner));
       await db().delete(items).where(eq(items.ownerId, owner));
       await db().delete(users).where(eq(users.id, owner));
@@ -111,23 +107,18 @@ afterAll(async () => {
 });
 
 describe.skipIf(!ready)("GET /api/items/:id/usage", () => {
-  it("names the wearing character and the placing world", async () => {
+  it("names every character wearing the item (new preset + legacy id list)", async () => {
     const res = await usageGet(req(ids.itemWorn), ctx(ids.itemWorn));
     expect(res.status).toBe(200);
-    const got = (await res.json()) as {
-      wornBy: { id: string; name: string }[];
-      placements: { worldId: string; worldName: string }[];
-    };
+    const got = (await res.json()) as { wornBy: { id: string; name: string }[] };
     expect(got.wornBy.map((c) => c.name).sort()).toEqual(["Legacy Lane", "Sabrina Vale"]);
-    expect(got.placements.map((p) => p.worldName)).toEqual(["Corner Café"]);
   });
 
-  it("returns empty lists for an unreferenced item", async () => {
+  it("returns an empty wornBy list for an unreferenced item", async () => {
     const res = await usageGet(req(ids.itemUnused), ctx(ids.itemUnused));
     expect(res.status).toBe(200);
-    const got = (await res.json()) as { wornBy: unknown[]; placements: unknown[] };
+    const got = (await res.json()) as { wornBy: unknown[] };
     expect(got.wornBy).toEqual([]);
-    expect(got.placements).toEqual([]);
   });
 
   it("404s on someone else's item", async () => {

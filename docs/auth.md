@@ -79,8 +79,7 @@ and the `/settings` page set it, and the persona editor authors the persona itse
 > the column. `StoredPlayerPersona` was deleted with it.
 
 Every consumer reads through **one resolver**, `resolveChatPersona({ownerId, chatId})`
-(`src/server/players/`) — the user-level analog of the session's `bundlePlayerName()`
-([turn-engine.md](turn-engine.md)). It is a three-rung ladder, each rung degrading
+(`src/server/players/`). It is a three-rung ladder, each rung degrading
 rather than throwing, so a chat turn always has someone to address
 ([resilience.md](resilience.md)):
 
@@ -136,15 +135,14 @@ One module owns the asymmetry — **reads widen, writes stay strict**:
 | **Clone** to your library | read public source, deep-copy into a new owned row (`visibility='private'`, `clonedFromId=src`). |
 
 - **Shareable** entities (`characters`, `locations`, `items`, `social_cards`)
-  carry a `visibility` column (`private` default | `public`). **Worlds and
-  sessions are always private** — they have no such column.
+  carry a `visibility` column (`private` default | `public`). **Personas and
+  chats are always private** — they have no such column.
 - The `GET /:kind/:id` routes use `findViewable`, then scope sub-resources
-  (portraits, links) to the **entity owner** so a public preview shows the
-  author's art/map — not the viewer's.
-- **Three unrelated "visibility/access" concepts coexist** — don't confuse them:
-  `<entity>.visibility` = cross-account **share scope** (this doc);
-  `lore_chunks.visibility` (`public`/`secret`) = in-world lore secrecy;
-  `world_links.access`/`session_links.access` = in-world traversal gating.
+  (portraits) to the **entity owner** so a public preview shows the
+  author's art — not the viewer's.
+- **`<entity>.visibility` is a cross-account share scope**, distinct from any
+  in-world/in-fiction secrecy concept — don't confuse a public/private *share*
+  scope with a character's authored secrets or a scenario's hidden premise.
 - Headroom: `visibility` can gain an `unlisted` (link-only) tier later with no
   migration. A `(visibility)` index lands with the public-browse query, not before.
 
@@ -187,8 +185,7 @@ the optional `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` pairs, and
 ## Later (not v1)
 
 Expansion is plugins, not rewrites: a public **browse/discovery** gallery (the
-read rule already supports it — only the list query + UI are missing), the
-"add public entity to a world" surface that pairs with it, user profiles,
-an `unlisted` tier, selective update **propagation** to copies (deferred — see
-the world-instances plan), and Better Auth plugins (organizations, 2FA, passkeys,
-API keys, more OAuth). Tracked in [auth.plan.md](developer-notes/finished/auth.plan.md).
+read rule already supports it — only the list query + UI are missing), user
+profiles, an `unlisted` tier, selective update **propagation** to copies, and
+Better Auth plugins (organizations, 2FA, passkeys, API keys, more OAuth). Tracked
+in [auth.plan.md](developer-notes/finished/auth.plan.md).
