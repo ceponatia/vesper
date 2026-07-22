@@ -256,7 +256,7 @@ export async function submitDurableRecordRelationshipChange(
 /** Narrow dyad load: every ledger entry directed `fromActorId → toActorId`,
  * any kind — the utility score (§4.7) needs the full trust/attraction/
  * resentment read, not just consent-scoped entries. */
-async function loadDyadLedgerEntries(
+export async function loadDyadLedgerEntries(
   tx: DbExecutor,
   branchId: string,
   fromActorId: string,
@@ -285,7 +285,7 @@ async function loadDyadLedgerEntries(
  * omitted here; `deriveRelationshipRead` is what notices the gap and pushes
  * the `authored_prior_missing_weight` diagnostic.
  */
-async function loadAuthoredPriorWeights(
+export async function loadAuthoredPriorWeights(
   tx: DbExecutor,
   branchId: string,
   entries: readonly RelationshipLedgerEntry[],
