@@ -75,7 +75,7 @@ function jsonReq(path: string, body: unknown): NextRequest {
   });
 }
 
-const ids = { chat: "", user: "" };
+const ids = { chat: "", user: "", characterId: "" };
 
 beforeAll(async () => {
   if (!ready) return;
@@ -93,6 +93,7 @@ beforeAll(async () => {
     .values({ ownerId: user.id, name: "Ana", profile: {} })
     .returning();
   if (!character) throw new Error("failed to seed character");
+  ids.characterId = character.id;
   const res = await chatsCreate(
     jsonReq("/api/chats", { characterIds: [character.id], memory: "fresh" }),
     { params: Promise.resolve({}) },
@@ -164,6 +165,37 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
     expect(afterUiSend.filter((row) => row.role === "user")).toHaveLength(2);
     expect(afterUiSend.filter((row) => row.role === "assistant")).toHaveLength(2);
 
+    // A SECOND chat mapped to the same actor pair must FIND the standing
+    // scene, not fight the claim law for a chat-scoped new one (the R3
+    // live-session bug: every send was refused participant_already_engaged
+    // and the player's line silently vanished).
+    const res2 = await chatsCreate(
+      jsonReq("/api/chats", { characterIds: [ids.characterId], memory: "fresh" }),
+      { params: Promise.resolve({}) },
+    );
+    expect(res2.status).toBe(201);
+    const chat2 = ((await res2.json()) as { id: string }).id;
+    await setChatEngineAuthority({
+      chatId: chat2,
+      byUserId: ids.user,
+      authority: "successor_narrative_view",
+      simBranchId: ROLLOUT_BRANCH_ID,
+      simPlayerActorId: ROLLOUT_ACTORS.mara,
+      simPrimaryActorId: ROLLOUT_ACTORS.ana,
+    });
+    const secondChatSend = await chatSend(
+      jsonReq(`/api/chats/${chat2}`, { kind: "send", content: "I wave from the doorway." }),
+      ctx(chat2),
+    );
+    expect(secondChatSend.status).toBe(200);
+    expect((await secondChatSend.text()).replace(/\u200B/g, "").length).toBeGreaterThan(0);
+    const chat2Messages = await db()
+      .select({ role: characterChatMessages.role })
+      .from(characterChatMessages)
+      .where(eq(characterChatMessages.chatId, chat2));
+    expect(chat2Messages.filter((row) => row.role === "user")).toHaveLength(1);
+    expect(chat2Messages.filter((row) => row.role === "assistant")).toHaveLength(1);
+
     // give_item: not-held is the public face; the held keepsake transfers.
     const notHeld = await simCommand(
       jsonReq(`/api/chats/${ids.chat}/sim-command`, { kind: "give_item", itemId: "rollout-item-loaf" }),
@@ -188,6 +220,19 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
     // a §14.4 public refusal with a reason, never a private cause.
     const ended = await simCommand(jsonReq(`/api/chats/${ids.chat}/sim-command`, { kind: "end_scene" }), ctx(ids.chat));
     expect(ended.status).toBe(200);
+
+    // Ending the scene must not strand the pair: the next send opens a FRESH
+    // engagement (the head-scoped open command) instead of deduping into the
+    // ended one — and ending THAT scene resolves the live engagement, not a
+    // chat-derived id.
+    const reopened = await simTurn(
+      jsonReq(`/api/chats/${ids.chat}/sim-turn`, { message: "Wait — one more thing." }),
+      ctx(ids.chat),
+    );
+    expect(reopened.status).toBe(200);
+    const reEnded = await simCommand(jsonReq(`/api/chats/${ids.chat}/sim-command`, { kind: "end_scene" }), ctx(ids.chat));
+    expect(reEnded.status).toBe(200);
+
     const rested = await simCommand(
       jsonReq(`/api/chats/${ids.chat}/sim-command`, { kind: "start_activity", actionDefinitionId: ROLLOUT_REST_ACTION_ID }),
       ctx(ids.chat),
@@ -201,5 +246,30 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
     const blockedBody = (await blocked.json()) as { status: string; code: string; publicReason?: string };
     expect(blockedBody).toMatchObject({ status: "rejected", code: "activity_conflict" });
     expect(blockedBody.publicReason?.length ?? 0).toBeGreaterThan(0);
+
+    // A refused scene open (rest holds full attention) keeps the player's
+    // line and records the public-faced failure for the client popup —
+    // never a silent delete (the vanishing-message half of the R3 bug).
+    const before = await db()
+      .select({ role: characterChatMessages.role })
+      .from(characterChatMessages)
+      .where(eq(characterChatMessages.chatId, ids.chat));
+    const refusedSend = await chatSend(
+      jsonReq(`/api/chats/${ids.chat}`, { kind: "send", content: "Are you asleep?" }),
+      ctx(ids.chat),
+    );
+    expect(refusedSend.status).toBe(200);
+    expect((await refusedSend.text()).replace(/\u200B/g, "")).toBe("");
+    const after = await db()
+      .select({ role: characterChatMessages.role })
+      .from(characterChatMessages)
+      .where(eq(characterChatMessages.chatId, ids.chat));
+    expect(after.filter((row) => row.role === "user")).toHaveLength(before.filter((row) => row.role === "user").length + 1);
+    expect(after.filter((row) => row.role === "assistant")).toHaveLength(before.filter((row) => row.role === "assistant").length);
+    const [chatRow] = await db()
+      .select({ lastReplyFailure: characterChats.lastReplyFailure })
+      .from(characterChats)
+      .where(eq(characterChats.id, ids.chat));
+    expect(JSON.stringify(chatRow?.lastReplyFailure ?? null)).toContain("the scene could not open");
   });
 });

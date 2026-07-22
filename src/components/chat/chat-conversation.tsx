@@ -497,14 +497,20 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       chatId,
       body,
       (delta) => {
+        // The sim lane's transport keepalive (a zero-width space every 8s while
+        // the successor turn thinks) is not content: counting it as received
+        // would silence the no-reply failure popup below, and appending it
+        // would leave invisible characters in the bubble.
+        const text = delta.replace(/\u200B/g, "");
+        if (!text) return;
         received = true;
         if (Date.now() < holdUntil) {
-          held += delta;
+          held += text;
           holdTimer ??= setTimeout(flushHeld, holdUntil - Date.now());
           return;
         }
         flushHeld();
-        append(delta);
+        append(text);
       },
       controller.signal,
     );

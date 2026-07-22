@@ -1,4 +1,3 @@
-import { deriveEngagementId, simulationHash } from "@/lib/simulation";
 import { jsonError } from "@/server/api";
 import { readChatEngineAuthority } from "@/server/engine";
 import { loadOwnedChat, type OwnedChat } from "../owned";
@@ -7,15 +6,15 @@ import { loadOwnedChat, type OwnedChat } from "../owned";
  * R3 (engine.rollout.plan.md) — the one gate every sim route shares: the chat
  * must be owned, flipped past the view threshold, branch-linked, and
  * actor-mapped. Returns the resolved sim context or the response to send.
+ * The standing scene is deliberately NOT derived here: engagement identity
+ * belongs to the actor pair in the world, not to a chat — resolve it live
+ * via `findStandingEngagement` (engine `sim-exchange`).
  */
 export interface SimChatContext {
   owned: OwnedChat;
   branchId: string;
   playerActorId: string;
   primaryActorId: string;
-  /** The standing scene between the mapped pair — stable per chat. */
-  openCommandId: string;
-  engagementId: string;
 }
 
 export async function requireSimChat(
@@ -42,19 +41,13 @@ export async function requireSimChat(
       ),
     };
   }
-  const branchId = authority.simBranchId;
-  const playerActorId = authority.simPlayerActorId;
-  const primaryActorId = authority.simPrimaryActorId;
-  const openCommandId = `sim-turn-open-${simulationHash({ chatId, playerActorId, primaryActorId })}`;
   return {
     ok: true,
     sim: {
       owned,
-      branchId,
-      playerActorId,
-      primaryActorId,
-      openCommandId,
-      engagementId: deriveEngagementId(branchId, openCommandId),
+      branchId: authority.simBranchId,
+      playerActorId: authority.simPlayerActorId,
+      primaryActorId: authority.simPrimaryActorId,
     },
   };
 }

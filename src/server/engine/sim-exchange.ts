@@ -1,3 +1,4 @@
+import { claimHoldingEngagementStates } from "@/contracts/simulation/engagements";
 import { simulationHash } from "@/lib/simulation/hash";
 import { deriveEngagementId } from "@/lib/simulation/engagements";
 import { newId } from "@/lib/ids";
@@ -6,7 +7,7 @@ import { desc, eq } from "drizzle-orm";
 import { readChatEngineAuthority } from "./chat-authority";
 import { persistAssistantReply } from "./chat-pipeline";
 import { buildLiveDeliberation, renderCommittedCut } from "./sim-narrator";
-import { prepareEngagementTurn, submitDurableOpenEngagement } from "./simulation";
+import { prepareEngagementTurn, readDurableEngagements, submitDurableOpenEngagement } from "./simulation";
 
 /**
  * R3 admission wiring (engine.rollout.plan.md) — one player message becomes
@@ -18,10 +19,77 @@ import { prepareEngagementTurn, submitDurableOpenEngagement } from "./simulation
  * the route fork.
  */
 
-/** The standing scene's stable identity for one chat's mapped actor pair. */
-export function simSceneIds(chatId: string, branchId: string, playerActorId: string, primaryActorId: string) {
-  const openCommandId = `sim-turn-open-${simulationHash({ chatId, playerActorId, primaryActorId })}`;
-  return { openCommandId, engagementId: deriveEngagementId(branchId, openCommandId) };
+/**
+ * The actor pair's ACTUAL standing scene: any open co-present engagement
+ * holding both mapped actors, no matter which chat (or storyteller tool)
+ * opened it. One body, one physical scene (engine.spec §11.3) means a
+ * per-chat derived id cannot be trusted to find it — a second chat mapped
+ * to the same pair would mint a NEW open command and be refused
+ * `participant_already_engaged` forever (the R3 live-session bug). Returns
+ * the branch head too, so a miss can mint a head-scoped open command:
+ * stable under a same-head race, fresh after an end_scene.
+ */
+export async function findStandingEngagement(
+  branchId: string,
+  playerActorId: string,
+  primaryActorId: string,
+): Promise<{ engagementId: string | null; headSequence: number }> {
+  const projection = await readDurableEngagements(branchId);
+  const standing = projection.engagements.find((engagement) => {
+    const participants: readonly string[] = engagement.participantIds;
+    return (
+      engagement.channel === "co_present" &&
+      claimHoldingEngagementStates.includes(engagement.state) &&
+      participants.includes(playerActorId) &&
+      participants.includes(primaryActorId)
+    );
+  });
+  return { engagementId: standing?.id ?? null, headSequence: projection.headSequence };
+}
+
+/**
+ * Find the pair's standing scene or open a fresh one. A refusal carries the
+ * §14.4 public face (code + public reason), never a private cause.
+ */
+export async function findOrOpenStandingEngagement(input: {
+  branchId: string;
+  playerActorId: string;
+  primaryActorId: string;
+  userId: string;
+  correlationId: string;
+}): Promise<{ ok: true; engagementId: string } | { ok: false; code: string; publicReason: string }> {
+  const { branchId, playerActorId, primaryActorId } = input;
+  const found = await findStandingEngagement(branchId, playerActorId, primaryActorId);
+  if (found.engagementId !== null) return { ok: true, engagementId: found.engagementId };
+
+  const openCommandId = `sim-scene-open-${simulationHash({ branchId, playerActorId, primaryActorId })}-${found.headSequence}`;
+  const opened = await submitDurableOpenEngagement(
+    {
+      id: openCommandId,
+      branchId,
+      expectedVersion: 0,
+      idempotencyKey: openCommandId,
+      principal: { kind: "player" as const, principalId: input.userId, controlledActorIds: [playerActorId] },
+      submittedAtWallClock: new Date().toISOString(),
+      correlationId: input.correlationId,
+      type: "open_engagement",
+      schemaVersion: 1,
+      payload: { participantIds: [playerActorId, primaryActorId].sort(), channel: "co_present" },
+    },
+    { admitAtLockedVersion: true },
+  );
+  if (opened.status === "accepted" || (opened.status === "rejected" && opened.code === "duplicate_command_id")) {
+    return { ok: true, engagementId: deriveEngagementId(branchId, openCommandId) };
+  }
+  if (opened.status === "rejected" && opened.code === "participant_already_engaged") {
+    // Race: another window opened the pair's scene between our read and this
+    // submit — the re-read finds what the claim law just protected.
+    const refound = await findStandingEngagement(branchId, playerActorId, primaryActorId);
+    if (refound.engagementId !== null) return { ok: true, engagementId: refound.engagementId };
+  }
+  return opened.status === "rejected"
+    ? { ok: false, code: opened.code, publicReason: opened.publicReason }
+    : { ok: false, code: "sim_conflict", publicReason: "The world moved; try again." };
 }
 
 export type SimChatExchangeResult =
@@ -39,10 +107,12 @@ export type SimChatExchangeResult =
 
 /**
  * Run one successor exchange for an OWNERSHIP-CHECKED chat: gate on the
- * authority flag, find-or-open the standing scene, land the player line in
- * the transcript, prepare the turn (live deliberation included), render the
+ * authority flag, land the player line in the transcript, find-or-open the
+ * standing scene, prepare the turn (live deliberation included), render the
  * committed cut, persist the prose as the ordinary assistant message. A
- * withheld render leaves no assistant line — ruling 8.
+ * withheld render leaves no assistant line — ruling 8. The player line
+ * persists BEFORE the scene gate: a refusal explains itself via
+ * lastReplyFailure and never deletes what the player typed.
  */
 export async function runSimChatExchange(input: {
   chatId: string;
@@ -71,26 +141,6 @@ export async function runSimChatExchange(input: {
   const branchId = authority.simBranchId;
   const playerActorId = authority.simPlayerActorId;
   const primaryActorId = authority.simPrimaryActorId;
-  const { openCommandId, engagementId } = simSceneIds(input.chatId, branchId, playerActorId, primaryActorId);
-
-  const opened = await submitDurableOpenEngagement(
-    {
-      id: openCommandId,
-      branchId,
-      expectedVersion: 0,
-      idempotencyKey: openCommandId,
-      principal: { kind: "player" as const, principalId: input.userId, controlledActorIds: [playerActorId] },
-      submittedAtWallClock: new Date().toISOString(),
-      correlationId: `sim-turn-${input.chatId}`,
-      type: "open_engagement",
-      schemaVersion: 1,
-      payload: { participantIds: [playerActorId, primaryActorId].sort(), channel: "co_present" },
-    },
-    { admitAtLockedVersion: true },
-  );
-  if (opened.status === "rejected" && opened.code !== "duplicate_command_id") {
-    return { ok: false, code: "sim_open_failed", message: `the scene could not open: ${opened.code}`, status: 409 };
-  }
 
   // World-truth display names — prose never reads actor ids well, and the
   // agency rule needs to NAME the player's character to bind.
@@ -129,9 +179,20 @@ export async function runSimChatExchange(input: {
     meta: { simTurn: true },
   });
 
+  const scene = await findOrOpenStandingEngagement({
+    branchId,
+    playerActorId,
+    primaryActorId,
+    userId: input.userId,
+    correlationId: `sim-turn-${input.chatId}`,
+  });
+  if (!scene.ok) {
+    return { ok: false, code: "sim_open_failed", message: `the scene could not open: ${scene.publicReason}`, status: 409 };
+  }
+
   const turn = await prepareEngagementTurn({
     branchId,
-    engagementId,
+    engagementId: scene.engagementId,
     viewpointActorId: playerActorId,
     spanSeconds: 60,
     playerActorIds: [playerActorId],
@@ -140,7 +201,7 @@ export async function runSimChatExchange(input: {
   });
   const rendered = await renderCommittedCut({
     branchId,
-    engagementId,
+    engagementId: scene.engagementId,
     cutId: turn.cut.id,
     conversation: { playerUtterance: input.message, dialogueTail, viewpointIsPlayer: true, actorNames },
   });
