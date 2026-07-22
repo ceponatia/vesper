@@ -204,6 +204,48 @@ export const bodyMeterRegistryV1: readonly BodyMeterDefinition[] = [
     baselineFixedPoint: 0,
     thresholds: [],
   }),
+  // R4 corpus finding, owner-ruled "fix" (2026-07-22): the chat lane's
+  // remaining stored meters join the substrate so shadow parity compares the
+  // full economy. Semantics port from contracts/meters/registry.ts — stress
+  // decays toward calm (chat −0.03/h), intoxication metabolizes to sober
+  // (−0.12/h), mood returns to an even keel at 0.5 (+0.06/h recovery).
+  // Threshold prompt-hints stay chat-side presentation; no sim outcomes yet.
+  bodyMeterDefinitionSchema.parse({
+    key: "stress",
+    class: "load",
+    driftLaw: {
+      kind: "linear",
+      ratePerHourFixedPoint: 300,
+      target: { kind: "baseline" },
+    },
+    initialFixedPoint: 1_500,
+    baselineFixedPoint: 0,
+    thresholds: [],
+  }),
+  bodyMeterDefinitionSchema.parse({
+    key: "intoxication",
+    class: "load",
+    driftLaw: {
+      kind: "linear",
+      ratePerHourFixedPoint: 1_200,
+      target: { kind: "baseline" },
+    },
+    initialFixedPoint: 0,
+    baselineFixedPoint: 0,
+    thresholds: [],
+  }),
+  bodyMeterDefinitionSchema.parse({
+    key: "mood",
+    class: "valence",
+    driftLaw: {
+      kind: "linear",
+      ratePerHourFixedPoint: 600,
+      target: { kind: "baseline" },
+    },
+    initialFixedPoint: 5_000,
+    baselineFixedPoint: 5_000,
+    thresholds: [],
+  }),
 ];
 
 export const bodyMeterRegistryByVersion: Record<BodyRegistryVersion, readonly BodyMeterDefinition[]> =

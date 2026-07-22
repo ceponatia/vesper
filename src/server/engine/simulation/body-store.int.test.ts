@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
+import { bodyMeterRegistryV1 } from "@/contracts/simulation/bodies";
 import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import { newId } from "@/lib/ids";
 import {
@@ -171,7 +172,9 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
     expect(result.status).toBe("accepted");
 
     const bodies = await readDurableBodies(ids.branchId);
-    expect(bodies.meters.map((meter) => meter.meterKey)).toEqual(["arousal", "energy", "hygiene"]);
+    expect(bodies.meters.map((meter) => meter.meterKey)).toEqual(
+      bodyMeterRegistryV1.map((definition) => definition.key).sort(),
+    );
     expect(bodies.meters.every((meter) => meter.lastIntegratedAtStorySecond === SEED_SECOND)).toBe(true);
 
     const triggers = await pendingBodyTriggers(ids.branchId);

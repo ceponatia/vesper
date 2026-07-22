@@ -742,7 +742,14 @@ function rearmThresholdTrigger(input: {
 
 export interface InitializeActorBodyResolutionView extends BodyBranchMeta {
   actorExists: boolean;
-  alreadyInitialized: boolean;
+  /**
+   * The actor's meter rows that already exist. Initialization is ADDITIVE
+   * (R4 corpus finding, 2026-07-22): a registry that grew since this body was
+   * first seeded initializes only the MISSING meters; a fully-covered body
+   * still rejects `body_already_initialized`. Re-running a world seed after a
+   * registry addition is therefore the lawful upgrade path.
+   */
+  existingMeterKeys: readonly string[];
   /** E5.2: rhythm crossings per meter so initial alarms see future self-care. */
   selfCareAdjustmentsByMeter?: ReadonlyMap<string, readonly ScheduledBodyAdjustment[]>;
   /**
@@ -772,10 +779,11 @@ export function resolveInitializeActorBody(
     return rejection("unauthorized_principal", "Bodies are seeded by the world, not played into being.");
   }
   if (!view.actorExists) return rejection("actor_not_found", "That actor is unavailable.");
-  if (view.alreadyInitialized) {
+  const registry = bodyMeterRegistryByVersion[command.payload.registryVersion];
+  const missing = registry.filter((definition) => !view.existingMeterKeys.includes(definition.key));
+  if (missing.length === 0) {
     return rejection("body_already_initialized", "That body already exists.");
   }
-  const registry = bodyMeterRegistryByVersion[command.payload.registryVersion];
   const knownKeys = new Set(registry.map((definition) => definition.key));
   for (const overrideKey of Object.keys(command.payload.baselineOverrides)) {
     if (!knownKeys.has(overrideKey)) {
@@ -783,7 +791,7 @@ export function resolveInitializeActorBody(
     }
   }
 
-  const meters = registry.map((definition) =>
+  const meters = missing.map((definition) =>
     bodyMeterStateSchema.parse({
       actorId: command.payload.actorId,
       meterKey: definition.key,

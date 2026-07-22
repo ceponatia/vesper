@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
+import { bodyMeterRegistryV1 } from "@/contracts/simulation/bodies";
 import { newId } from "@/lib/ids";
+import { simulationHash } from "@/lib/simulation/hash";
 import { db, simBranches, simEvents, simTriggers, simWorlds, type Db } from "@/server/db";
 import { seedDurableActionDefinitions } from "./activity-store";
 import { seedDurableBodyRhythms, submitDurableInitializeActorBody } from "./body-store";
@@ -105,7 +107,36 @@ export async function seedRolloutTestWorld(database: Db = db()): Promise<Rollout
     .from(simWorlds)
     .where(eq(simWorlds.id, ROLLOUT_WORLD_ID))
     .limit(1);
-  if (existing) return summarize(database, true);
+  if (existing) {
+    // The standing world is found, never re-seeded — but bodies stay CURRENT:
+    // initialization is additive (R4), so when the meter registry grew since
+    // this world was first seeded, a re-run lawfully initializes only the
+    // missing meters. The command id carries the registry's key set — an
+    // unchanged registry dedupes as duplicate_command_id; a fully-covered
+    // body rejects body_already_initialized. Both are complete states.
+    const registryStamp = simulationHash(bodyMeterRegistryV1.map((definition) => definition.key));
+    for (const [name, actorId] of [
+      ["ana", ROLLOUT_ACTORS.ana],
+      ["ben", ROLLOUT_ACTORS.ben],
+      ["riven", ROLLOUT_ACTORS.riven],
+      ["mara", ROLLOUT_ACTORS.mara],
+    ] as const) {
+      const ensured = await submitDurableInitializeActorBody(
+        command(`ensure-body-${name}-${registryStamp}`, {
+          type: "initialize_actor_body",
+          payload: { actorId, registryVersion: "body-v1", baselineOverrides: {} },
+        }),
+        { database, admitAtLockedVersion: true },
+      );
+      if (
+        ensured.status !== "accepted" &&
+        !(ensured.status === "rejected" && (ensured.code === "duplicate_command_id" || ensured.code === "body_already_initialized"))
+      ) {
+        throw new Error(`Rollout world body ensure "${name}" failed: ${JSON.stringify(ensured)}`);
+      }
+    }
+    return summarize(database, true);
+  }
 
   await seedDurableMaterialBranch(
     {
