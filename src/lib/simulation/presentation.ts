@@ -99,6 +99,18 @@ export interface CutRenderConversation {
    * ride the cut's failurePresentations instead, never this field.
    */
   admittedAction?: string;
+  /**
+   * R5 knowledge/memory: the rolling conversation summary (the chat-lane
+   * fold) — long-arc continuity the dialogue tail can't carry. Context,
+   * never new facts.
+   */
+  conversationSummary?: string;
+  /**
+   * R5 knowledge/memory: §24 viewpoint-scoped recall lines — what the
+   * viewpoint actor actually witnessed/knows, already perception-partitioned
+   * and epistemic-labeled by the query. Context, never new facts.
+   */
+  memory?: readonly string[];
 }
 
 export function buildCutRenderPrompt(
@@ -210,7 +222,22 @@ export function buildCutRenderPrompt(
       ),
     );
   }
-  const tail = (conversation.dialogueTail ?? []).filter((line) => line.text.trim().length > 0).slice(-6);
+  if (conversation.conversationSummary && conversation.conversationSummary.trim().length > 0) {
+    lines.push(
+      "CONVERSATION SO FAR (rolling summary — continuity context, never new",
+      "world facts):",
+      `- ${conversation.conversationSummary.trim()}`,
+    );
+  }
+  const memory = (conversation.memory ?? []).filter((line) => line.trim().length > 0).slice(0, 8);
+  if (memory.length > 0) {
+    lines.push(
+      `VIEWPOINT MEMORY (things ${viewpointName} recalls — context, never new`,
+      "facts; beliefs may be false and are labeled):",
+      ...memory.map((line) => `- ${line.trim()}`),
+    );
+  }
+  const tail = (conversation.dialogueTail ?? []).filter((line) => line.text.trim().length > 0).slice(-12);
   if (tail.length > 0) {
     lines.push(
       "RECENT TRANSCRIPT (oldest first — continuity only, never new facts; if",

@@ -10,6 +10,7 @@ import {
   items,
   simBranches,
   simItemHoldings,
+  simMemoryDocuments,
   simWorlds,
   users,
 } from "@/server/db";
@@ -322,5 +323,19 @@ describe.runIf(ready)("successor-chats front door", () => {
       await stateGet(new NextRequest(`http://t/api/chats/${body.id}/state`), ctx(body.id))
     ).json()) as { outfitLabel: string };
     expect(stateOutfit.outfitLabel).toContain("denim jacket");
+
+    // R5 knowledge/memory: successor chats are rag-eligible from birth, and
+    // the inline drain projected §24 documents (the give-transfer's events)
+    // during the SECOND exchange's recall.
+    const [authorityRow] = await db()
+      .select({ ragEligibility: characterChats.successorRagEligibility })
+      .from(characterChats)
+      .where(eq(characterChats.id, body.id));
+    expect(authorityRow?.ragEligibility).toBe(true);
+    const docs = await db()
+      .select({ docId: simMemoryDocuments.docId })
+      .from(simMemoryDocuments)
+      .where(eq(simMemoryDocuments.branchId, body.branchId));
+    expect(docs.length).toBeGreaterThan(0);
   });
 });

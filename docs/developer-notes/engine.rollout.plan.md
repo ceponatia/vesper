@@ -461,8 +461,28 @@ is the cleanup that makes the migration real.
    nothing worn; legacy/shadow untouched). Exposure/coverage semantics
    sim-side and worn-item transfer commands are the named leftovers.
    Int-proven: two authored garments become two worn world items and
-   surface in both envelopes. Remaining R5 domains: knowledge/memory →
-   relationships. `successor_rag_eligibility` flips when
+   surface in both envelopes. **Slice 6 shipped — 2026-07-22:
+   knowledge/memory (owner rulings: full embeddings now; build the
+   summarizer now; inline bounded drain).** The §24 machinery was
+   complete but disconnected — nothing drained the index outbox in
+   production and the narrator never queried. Now each routed exchange
+   (gated on `successor_rag_eligibility`, which the front door flips
+   TRUE at birth — the R1 flag finally lands): a bounded inline drain
+   (live embedder; `pseudoEmbed` + embedder-isolation keep every test at
+   zero calls), the utterance embedded, `queryMemoryDocuments` for the
+   PLAYER viewpoint (perception-partitioned by construction), and the
+   epistemic-labeled results ride a new "VIEWPOINT MEMORY" prompt
+   section — context, never new facts, degrading to absent on any
+   failure. Conversational continuity: the legacy fold summarizer is
+   reused UNCHANGED (`enqueueChatSummary` after each settle — the job
+   self-dedupes and no-ops below its trigger; the transcript is the
+   ordinary chat lane's), its rolling summary rides a "CONVERSATION SO
+   FAR" section, and the dialogue tail widened 6 → 12. Pre-slice
+   successor chats keep recall OFF until their flag flips via the dial.
+   Shadow renders skip recall/summary (leftover with admission).
+   Int-proven: rag-eligible at birth; the give-transfer's events project
+   into `sim_memory_documents` through the inline drain. Gates green
+   (3 128 pure + 480 int). Remaining R5 domain: relationships. `successor_rag_eligibility` flips when
    the knowledge domain lands. The chat lane's meter-economy/body-needs plans
    (roadmap Next) port through the Gate 5 contracts here rather than being
    built twice. Exit per domain: dual writes stopped, legacy write path

@@ -156,6 +156,25 @@ describe("R3 buildCutRenderPrompt conversation input", () => {
     expect(prompt).toContain("the clock wins");
   });
 
+  it("carries the rolling summary and viewpoint memory as context-only sections (R5 knowledge/memory)", () => {
+    const { prompt } = buildCutRenderPrompt(fixtureCut(), {
+      conversationSummary: "They met at dawn and argued about the harvest.",
+      memory: ["[observed] Mara handed Ana the keepsake.", "[believed] The market opens at nine."],
+      actorNames: { player: "Mara" },
+    });
+    expect(prompt).toContain("CONVERSATION SO FAR (rolling summary");
+    expect(prompt).toContain("They met at dawn and argued about the harvest.");
+    expect(prompt).toContain("VIEWPOINT MEMORY (things Mara recalls");
+    expect(prompt).toContain("[observed] Mara handed Ana the keepsake.");
+    expect(prompt).toContain("[believed] The market opens at nine.");
+  });
+
+  it("omits the memory sections entirely when there is nothing to carry", () => {
+    const { prompt } = buildCutRenderPrompt(fixtureCut(), { conversationSummary: "", memory: [] });
+    expect(prompt).not.toContain("CONVERSATION SO FAR");
+    expect(prompt).not.toContain("VIEWPOINT MEMORY");
+  });
+
   it("renders the real weekday and date when the world has a calendar anchor (R5)", () => {
     // Day 0 = Monday June 1 2026 ⇒ storySecond 100 000 lands Tuesday 3:46am.
     const { prompt } = buildCutRenderPrompt(fixtureCut(), { calendarStart: { year: 2026, month: 6, day: 1 } });
