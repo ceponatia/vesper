@@ -165,9 +165,16 @@ describe.skipIf(!ready)("memory integration", () => {
     let groupId: string;
     let firstId: string;
     let secondId: string;
+    // `retractFactsFromTurn` is GLOBAL by turn id (in production a turn id is a unique message
+    // id, so there is never a collision). This suite reused the literal "turn-b" across describe
+    // blocks, so a leftover "turn-b" fact from a prior run — the local int DB is not truncated
+    // between runs — got swept into the retract and broke the count. Derive the retract's turn id
+    // from this run's fresh groupId so it can only ever match this run's own row.
+    let turnB: string;
 
     beforeAll(() => {
       groupId = newId();
+      turnB = `turn-b-${groupId}`;
     });
 
     it("drops low-confidence drafts with a diagnostic and inserts the rest", async () => {
@@ -193,7 +200,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("supersedes a same-subject fact above the similarity threshold in one transaction", async () => {
-      const result = await addFacts(chatScope(groupId), [draft({ subjectName: "MARA", text: "Mara's hair is red." })], { turnId: "turn-b" });
+      const result = await addFacts(chatScope(groupId), [draft({ subjectName: "MARA", text: "Mara's hair is red." })], { turnId: turnB });
       expect(result.insertedIds).toHaveLength(1);
       expect(result.supersededIds).toEqual([firstId]);
       secondId = result.insertedIds[0]!;
@@ -217,7 +224,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("retractFactsFromTurn retracts without reactivating superseded facts", async () => {
-      const retracted = await retractFactsFromTurn("turn-b");
+      const retracted = await retractFactsFromTurn(turnB);
       expect(retracted).toEqual([secondId]);
 
       const [oldRow] = await db().select({ status: facts.status }).from(facts).where(eq(facts.id, firstId));
