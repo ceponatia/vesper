@@ -1,7 +1,10 @@
 # Composed sim-commands — idempotency + per-chat lock
 
 Status: draft (stub — successor-engine backlog item A1, parked 2026-07-23;
-promote per [CLAUDE.md](CLAUDE.md) before building)
+promote per [CLAUDE.md](CLAUDE.md) before building. Owner ruling 2026-07-23:
+graduates **paired with A4** as one command-integrity plan — see
+[move-together-atomicity.plan.md](move-together-atomicity.plan.md)
+§Owner rulings.)
 
 ## What
 
