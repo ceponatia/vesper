@@ -345,7 +345,8 @@ Rulings 1–11 and 13 were **resolved by the owner on 2026-07-17** (the Gate 3 u
 pass); ruling 14 was **resolved on 2026-07-18** (the Gate 4 unblock pass); rulings 15–16
 were **resolved on 2026-07-19** (the Gate 5 opening pass); ruling 17 was **resolved on
 2026-07-22** (the R3 live-session clock finding); rulings 18–19 were **resolved on
-2026-07-22** (the presentation-charter planning pass). Each resolved decision is
+2026-07-22** (the presentation-charter planning pass); rulings 20–21 were **resolved on
+2026-07-23** (the world-UI planning pass). Each resolved decision is
 normative and MUST be stored in a versioned world-type rule or explicit product
 contract, not only in a prompt. Ruling 12 remains **open** and is deferred to the work
 that needs it.
@@ -460,6 +461,32 @@ that needs it.
     the engagement span advances per ruling 1, the world may act, and the narrator
     renders the fresh cut. Continue is never presentation-only re-description; time is
     the successor lane's medium and the scene visibly breathes.
+20. **Travel-control time semantics** — RESOLVED (2026-07-23, the world-UI planning
+    pass): **skip-style arrival.** Player-initiated travel resolves within the same
+    interaction: the travel affordance (and, for parity, an admitted natural-language
+    move) composes the `move` command with a bounded `advance_time` to the journey's
+    earliest arrival — tap, the clock jumps the travel duration, the player lands. The
+    §17 journey machinery still runs underneath (in-transit locus, scheduled arrival
+    trigger, re-validated arrival): skip-style is loop sugar over the same events,
+    never a bypass, and the §17.1 lower-bound law (repartitioning a skip MUST not
+    change arrival) holds. Detail: `world-ui.plan.md`.
+21. **Solo turns away from the primary** — RESOLVED (2026-07-23, the world-UI planning
+    pass): **dual-block narration.** When a turn runs without a co-present primary,
+    the render is two blocks: (a) a player-side block reacting to what the player does
+    in the world — looking around the zone, examining held items, local NPCs engaging
+    — in the charter's second person; and (b) an **away vignette** of the primary
+    character acting in their own location, interacting with the NPCs there, going
+    about their routine, in third person. The engine supplies **routine-based MUSTs**
+    (the primary's actual committed activities, commitments, and movements) to the
+    narrator; within them the narrator is free to color, bounded by standing law: it
+    cannot move the primary or create state (§65 non-goals), the primary does not
+    travel aimlessly, and does not incessantly text/call the player. The Narrator
+    input mode (the existing composer toggle) is the player's steering channel for
+    giving the character things to react to. The vignette is **audience knowledge,
+    not player-character knowledge** — it must never fold into the player's §20
+    perception/knowledge or memory partitions; the privacy-law interaction (what a
+    vignette may show when the primary's activity is private) is an open design point
+    in `world-ui.plan.md`.
 
 ## 40. Initial conformance checklist
 
