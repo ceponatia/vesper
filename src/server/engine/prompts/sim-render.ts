@@ -2,6 +2,7 @@ import { formatStoryMoment } from "@/contracts/turns/chat-clock";
 import { dispositionBands, effectiveTraitValue, traitRegistry } from "@/contracts/personality/traits";
 import { regardBandForValue, familiarityBandForValue } from "@/contracts/relationships/bands";
 import { formatStoryClock, storyCalendarParams, storyClockAt, type SimCalendarStart } from "@/lib/simulation/clock";
+import { humanizeActivity, humanizeId } from "@/lib/simulation/humanize";
 import { lifeStageForAge } from "@/contracts/world/life-stage";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
 import { speciesLorePhrase } from "@/contracts/species";
@@ -68,6 +69,13 @@ export interface SimRenderRelationship {
 export interface SimRenderContext {
   /** The viewpoint (player) actor's words/intent THIS turn — presentation input only. */
   playerUtterance?: string;
+  /**
+   * The composer's Narrator input mode (`meta.inputMode === "narrator"`): the
+   * player's line is STORY NARRATION written as the storyteller, not the
+   * player-character speaking or acting. Reframes THE PLAYER'S TURN block as
+   * steering the scene rather than a first-person act.
+   */
+  narratorInput?: boolean;
   /** Recent dialogue, oldest first, for conversational continuity. */
   dialogueTail?: readonly { speaker: string; text: string }[];
   /**
@@ -171,40 +179,10 @@ export function beatHandlesForCut(cut: NarrativeCut): { handle: string; eventId:
   return buildSimHandles(cut).beats;
 }
 
-/** Collapse id punctuation to spaces — the last-resort zone/name humanizer. */
-function humanizeId(id: string): string {
-  return id.replace(/[_.\-:/]+/g, " ").trim();
-}
-
 /** A zone's display name: the supplied map, else the humanized id (never the raw id). */
 function zoneLabel(zoneId: string, zoneNames: Record<string, string> | undefined): string {
   const named = zoneNames?.[zoneId]?.trim();
   return named && named.length > 0 ? named : humanizeId(zoneId);
-}
-
-const VOWEL_START = /^[aeiou]/i;
-
-/** Naive verb → gerund for humanizing action ids ("prepare" → "preparing"). */
-function toGerund(verb: string): string {
-  if (verb.endsWith("ing")) return verb;
-  if (verb.length > 2 && verb.endsWith("e") && !verb.endsWith("ee")) return `${verb.slice(0, -1)}ing`;
-  return `${verb}ing`;
-}
-
-/**
- * Humanize an action-definition id into a verb phrase ("prepare_meal" →
- * "preparing a meal"), keeping only the last namespaced segment. A single-word
- * id becomes its own gerund ("resting" → "resting").
- */
-function humanizeActivity(actionDefinitionId: string): string {
-  const base = actionDefinitionId.split(/[.:/]/).pop() ?? actionDefinitionId;
-  const words = base.split("_").filter(Boolean);
-  if (words.length === 0) return humanizeId(actionDefinitionId);
-  const [verb, ...rest] = words;
-  const gerund = toGerund(verb ?? base);
-  if (rest.length === 0) return gerund;
-  const object = rest.join(" ");
-  return `${gerund} ${VOWEL_START.test(object) ? "an" : "a"} ${object}`;
 }
 
 /** A belief's claimed value as readable text (a bare string as-is, else JSON). */
@@ -224,9 +202,9 @@ function relativePressureTime(deltaSeconds: number): string {
 }
 
 /** The legible world-clock label (calendar anchor when present, else "Day N"). */
-function worldClockLabel(cut: NarrativeCut, calendarStart: SimCalendarStart | null): string {
-  if (calendarStart === null) return formatStoryClock(storyClockAt(cut.fromStorySecond));
-  const params = storyCalendarParams(cut.fromStorySecond, calendarStart);
+export function worldClockLabel(fromStorySecond: number, calendarStart: SimCalendarStart | null): string {
+  if (calendarStart === null) return formatStoryClock(storyClockAt(fromStorySecond));
+  const params = storyCalendarParams(fromStorySecond, calendarStart);
   return formatStoryMoment(params.clockMinutes, params.calendarStart);
 }
 
@@ -253,8 +231,8 @@ function buildRoleBlock(args: {
     .join("\n\n");
 }
 
-/** Block 2 — AUTHORED CANON (the primary's profile + the player persona). */
-function buildCanonBlock(args: {
+/** Block 2 — AUTHORED CANON (the primary's profile + the player persona). Shared with the solo cut. */
+export function buildCanonBlock(args: {
   primaryName: string;
   playerName: string;
   profile: CharacterProfile | undefined;
@@ -330,7 +308,7 @@ function buildTruthBlock(args: {
   const lines: string[] = ["COMMITTED TRUTH — everything below already happened; render it, never change it."];
 
   lines.push(
-    `WORLD CLOCK: ${worldClockLabel(cut, context.calendarStart ?? null)} — world truth. Light, meals, fatigue, and`,
+    `WORLD CLOCK: ${worldClockLabel(cut.fromStorySecond, context.calendarStart ?? null)} — world truth. Light, meals, fatigue, and`,
     "all time-of-day color follow this clock. If earlier prose implies a different",
     "time of day, the clock wins — shift naturally, never remark on the correction.",
   );
@@ -427,8 +405,8 @@ function buildTruthBlock(args: {
   return lines.join("\n");
 }
 
-/** Block 4 — SIM PRESENTATION STATE (outfit projection + relationship framing). */
-function buildPresentationStateBlock(args: {
+/** Block 4 — SIM PRESENTATION STATE (outfit projection + relationship framing). Shared with the solo cut. */
+export function buildPresentationStateBlock(args: {
   primaryName: string;
   playerName: string;
   outfitLine: string | undefined;
@@ -451,13 +429,20 @@ function buildPresentationStateBlock(args: {
   return ["SIM PRESENTATION STATE", ...lines].join("\n");
 }
 
-/** Block 5 — CONVERSATION (volatile, every untrusted string fenced). */
-function buildConversationBlock(args: {
+/**
+ * Block 5 — CONVERSATION (volatile, every untrusted string fenced). Shared with
+ * the solo cut. `soloAway` reframes the player-turn instruction (the primary is
+ * NOT present to respond); `context.narratorInput` reframes the whole turn as
+ * storyteller narration rather than the player-character acting.
+ */
+export function buildConversationBlock(args: {
   primaryName: string;
   playerName: string;
   context: SimRenderContext;
+  /** The primary is elsewhere this turn (solo cut) — the player's line drives block (a), not a co-present reply. */
+  soloAway?: boolean;
 }): string {
-  const { primaryName, playerName, context } = args;
+  const { primaryName, playerName, context, soloAway } = args;
   const blocks: string[] = ["CONVERSATION"];
 
   const summary = context.conversationSummary?.trim();
@@ -494,18 +479,28 @@ function buildConversationBlock(args: {
 
   const utterance = context.playerUtterance?.trim();
   if (utterance) {
+    const respondClause = soloAway
+      ? `Continue block one — how ${playerName}'s own moment unfolds and how anyone present with them reacts`
+      : `Render how ${primaryName} and the scene respond`;
     blocks.push(
-      [
-        `THE PLAYER'S TURN — this drives the scene. ${playerName}'s words/action, verbatim:`,
-        fenceUntrusted("player turn", utterance),
-        `This is ${playerName} speaking/acting. Treat it as already performed exactly as stated — you may embed`,
-        `their words verbatim, but NEVER add further dialogue, thoughts, feelings, decisions, or actions for`,
-        `${playerName}. Render how ${primaryName} and the scene respond. If it implies an action or outcome the`,
-        "committed truth above does not establish, portray only the attempt or the words — never the unearned outcome.",
-        "",
-        `FINAL RULE — ${playerName} is the player's character. Their only words and actions this turn are the ones in`,
-        `THE PLAYER'S TURN above, verbatim. Do not write any new dialogue, thought, feeling, or action for ${playerName}.`,
-      ].join("\n"),
+      context.narratorInput
+        ? [
+            `THE PLAYER'S TURN — STORY NARRATION from ${playerName}, written as the storyteller, NOT ${playerName} speaking or acting:`,
+            fenceUntrusted("player turn", utterance),
+            `Everything it describes has happened in the story. ${respondClause}, and continue the scene from where it leaves off.`,
+            `Do NOT reply as if ${playerName} said or did any of it, and do not re-narrate what it already establishes.`,
+          ].join("\n")
+        : [
+            `THE PLAYER'S TURN — this drives the scene. ${playerName}'s words/action, verbatim:`,
+            fenceUntrusted("player turn", utterance),
+            `This is ${playerName} speaking/acting. Treat it as already performed exactly as stated — you may embed`,
+            `their words verbatim, but NEVER add further dialogue, thoughts, feelings, decisions, or actions for`,
+            `${playerName}. ${respondClause}. If it implies an action or outcome the`,
+            "committed truth above does not establish, portray only the attempt or the words — never the unearned outcome.",
+            "",
+            `FINAL RULE — ${playerName} is the player's character. Their only words and actions this turn are the ones in`,
+            `THE PLAYER'S TURN above, verbatim. Do not write any new dialogue, thought, feeling, or action for ${playerName}.`,
+          ].join("\n"),
     );
   }
 
