@@ -918,6 +918,54 @@ export const libraryRelationshipsSchema = z.object({
 });
 export type LibraryRelationships = z.infer<typeof libraryRelationshipsSchema>;
 
+/**
+ * The player-facing world envelope for a routed chat (world-ui.plan.md slice 1):
+ * where the player is (`place`) or is walking to (`transit`), the cast's
+ * whereabouts, the open walkable `destinations`, `held` items, and whether a
+ * scene is standing. Every field is forgiving — a degraded field falls back, the
+ * card renders what it has.
+ */
+export const chatWorldSchema = z.object({
+  place: z
+    .object({ label: z.string().catch(""), privacy: z.string().catch("public") })
+    .nullable()
+    .catch(null),
+  transit: z
+    .object({ toLabel: z.string().catch(""), arrivesInSeconds: z.number().catch(0) })
+    .nullable()
+    .catch(null),
+  cast: arrayOf(
+    z.object({ name: z.string().catch(""), whereabouts: z.string().catch(""), present: z.boolean().catch(false) }),
+  ),
+  destinations: arrayOf(
+    z.object({
+      zoneId: z.string(),
+      label: z.string().catch(""),
+      mode: z.string().catch("walk"),
+      travelSeconds: z.number().catch(0),
+    }),
+  ),
+  held: arrayOf(z.object({ itemId: z.string(), name: z.string().catch("") })),
+  sceneOpen: z.boolean().catch(false),
+});
+export type ChatWorld = z.infer<typeof chatWorldSchema>;
+
+/**
+ * The `travel` command's outcome (ruling 20): a landing (`traveled`, with the
+ * arrival `toStorySecond`) OR the §14.4 public refusal (`rejected`, with
+ * `publicReason` + `legalAlternatives`). Both arrive at 200 so the card reads
+ * the refusal instead of a flattened HTTP-error body.
+ */
+export const simTravelResultSchema = z.object({
+  status: z.enum(["traveled", "rejected"]).catch("rejected"),
+  toStorySecond: z.number().nullable().catch(null),
+  arrived: z.boolean().catch(false),
+  code: z.string().catch(""),
+  publicReason: z.string().catch(""),
+  legalAlternatives: z.array(z.string()).catch([]),
+});
+export type SimTravelResult = z.infer<typeof simTravelResultSchema>;
+
 export const chatsApi = {
   /** Active conversations, newest first; scoped to one character and/or the archived shelf. */
   list: (opts: { characterId?: string; archived?: boolean } = {}) =>
@@ -1006,6 +1054,25 @@ export const chatsApi = {
       `/api/chats/${chatId}/sim-command`,
       { kind: "advance_time", minutes },
     ),
+  /**
+   * The player-facing world read (world-ui.plan.md slice 1). Degraded / legacy /
+   * shadow ⇒ `!ok`, and the `ChatWorldCard` simply doesn't render (ruling-18-style
+   * affordance hiding).
+   */
+  world: (chatId: string) => apiGet(chatWorldSchema, `/api/chats/${chatId}/world`),
+  /**
+   * Skip-style travel (ruling 20): server-composed `move` + a bounded advance to
+   * the journey's earliest arrival. Returns a landing or the §14.4 public refusal
+   * (both `ok`); the card refreshes world + chat state on a landing.
+   */
+  simTravel: (chatId: string, toZoneId: string) =>
+    apiPost(simTravelResultSchema, `/api/chats/${chatId}/sim-command`, { kind: "travel", toZoneId }),
+  /** Hand the player's held item to the primary (wiring lands now; its card UI is slice 3). */
+  simGiveItem: (chatId: string, itemId: string) =>
+    apiPost(z.object({ status: z.string().catch("") }), `/api/chats/${chatId}/sim-command`, { kind: "give_item", itemId }),
+  /** End the pair's standing scene (wiring lands now; its card UI is slice 3). */
+  simEndScene: (chatId: string) =>
+    apiPost(z.object({ status: z.string().catch("") }), `/api/chats/${chatId}/sim-command`, { kind: "end_scene" }),
   /** The Relationship panel payload (spec §7.2–7.4 UI): stage, sparkline, milestones, story so far. */
   relationship: (chatId: string) => apiGet(chatRelationshipSchema, `/api/chats/${chatId}/relationship`),
   // --- Relationship matrix (relationship-model.plan.md slice 6) ---

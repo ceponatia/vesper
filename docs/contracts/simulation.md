@@ -140,6 +140,40 @@ inserts trigger rows — applies it live and again on fork replay. `scheduleDura
 keeps its E2.4 signature as an idempotent wrapper whose command identity derives from the
 trigger identity.
 
+## Chat world read and player commands
+
+A **routed** chat (successor lane, `engine_authority` past the view threshold, branch +
+actors mapped) reaches the world through two chat-scoped surfaces, both gated by
+`requireSimChat` (legacy/shadow chats are refused; the client treats a refusal as "no
+affordance"):
+
+- **`GET /api/chats/[chatId]/world`** → `readSimChatWorld` (`server/engine/sim-surfaces.ts`).
+  The player-facing envelope: `place {label, privacy}` when the player is `at` a zone OR
+  `transit {toLabel, arrivesInSeconds}` when `in_transit` (ETA = the journey's
+  `earliestArrivalAt − storySecond`, floored at 0); `cast [{name, whereabouts, present}]`
+  for every non-player actor (whereabouts via the shared `actorWhereabouts` decision —
+  the same machinery `readSimChatPresence` uses); `destinations [{zoneId, label, mode,
+  travelSeconds}]` (open, walkable links from the current zone, treated as **undirected**
+  like the route planner, empty in transit); `held [{itemId, name}]`; and `sceneOpen`
+  (`isStandingCoPresentEngagement`, shared with the exchange's `findStandingEngagement`).
+  Zone labels are display **nouns** off the zone kind (never a raw id). The read is
+  fail-open: a malformed projection degrades to `null` (a 503 the client reads as "no
+  card"), never a throw (docs/resilience.md). Pure shaping lives in
+  `src/lib/simulation/world-read.ts`.
+- **`POST /api/chats/[chatId]/sim-command`** carries the typed player commands
+  (`move` · `end_scene` · `give_item` · `start_activity` · `advance_time` · **`travel`**).
+  Each is the ordinary durable command under the player principal; a refusal returns the
+  §14.4 PUBLIC face (code + public reason + legal alternatives), never a private cause.
+  **`travel {toZoneId}`** is the skip-style composite (ruling 20): submit the player
+  `move`, then — on acceptance — drain the branch clock to the resulting journey's
+  `earliestArrivalAt` through the same bounded `advanceBranchStoryTime` loop `advance_time`
+  uses (shared `drainBranchTo` helper). The accepted move already interrupts the standing
+  scene (§18.2), so the scene is not ended first; the §17 arrival trigger fires inside the
+  drain. Response `{status:"traveled", toStorySecond, arrived}`; a rejection returns the
+  §14.4 shape at HTTP 200 (so the card can read `publicReason` + `legalAlternatives`
+  instead of a flattened error body). Skip-style is loop sugar over the §17 events, never
+  a bypass — the §17.1 lower-bound law still holds.
+
 ## Forks, snapshots, and audit
 
 A branch forks at a past sequence N into a causally isolated child

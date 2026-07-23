@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatStoryMoment } from "@/contracts/turns/chat-clock";
 import { daylightBandAtMinute, to12Hour, type CalendarStart, type DaylightBand } from "@/lib/clock";
 
 /**
@@ -97,4 +98,18 @@ export function storyCalendarParams(
     clockMinutes: Math.floor(storySecond / 60),
     calendarStart: { ...anchor, hour: 0, minute: 0 },
   };
+}
+
+/**
+ * The legible landing label for a branch `storySecond` — a real weekday/date +
+ * time when the world declares a calendar anchor ("Friday, Jun 5 · 10:05am"),
+ * else the anchorless story clock ("Day 3 · 10:05am (morning)"). The one seam
+ * the skip toast AND the travel toast both name their landing through.
+ */
+export function formatSimLanding(storySecond: number, anchor: SimCalendarStart | null): string {
+  if (anchor !== null) {
+    const params = storyCalendarParams(storySecond, anchor);
+    return formatStoryMoment(params.clockMinutes, params.calendarStart);
+  }
+  return formatStoryClock(storyClockAt(storySecond));
 }

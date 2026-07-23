@@ -15,13 +15,12 @@ import {
   CHAT_DEFAULT_CALENDAR_START,
   CHAT_SKIP_MINUTES,
   formatChatMoment,
-  formatStoryMoment,
   parseChatSceneModel,
   type ChatActionId,
   type ChatSceneModel,
   type ChatSkipAmount,
 } from "@/contracts";
-import { formatStoryClock, storyCalendarParams, storyClockAt } from "@/lib/simulation";
+import { formatSimLanding } from "@/lib/simulation";
 import {
   charactersApi,
   chatsApi,
@@ -50,6 +49,7 @@ import { ChatRosterPanel } from "@/components/chat/chat-roster-panel";
 import { ChatSupportingCastPanel } from "@/components/chat/chat-supporting-cast-panel";
 import { ChatPlansPanel } from "@/components/chat/chat-plans-panel";
 import { ChatClockCard } from "@/components/chat/chat-clock-card";
+import { ChatWorldCard } from "@/components/chat/chat-world-card";
 import { replyFailureToast } from "@/components/chat/reply-failure";
 import { SceneMomentRow, scenesByAnchor } from "@/components/chat/chat-scene-moments";
 import { MessageBubble, type ChatLine } from "@/components/characters/chat-message";
@@ -150,6 +150,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     2500,
   );
   const sceneAnchors = scenesByAnchor(sceneList);
+  // The player-facing world envelope (world-ui.plan.md slice 1): fetched on load,
+  // null for legacy chats (the ChatWorldCard hides itself), re-fetched wherever
+  // refreshState runs so the card tracks play after exchanges / skips / travel.
+  const world = useAsyncData(() => chatsApi.world(chatId), [chatId]);
   const character = bootstrap.data?.character ?? null;
   const name = character?.name ?? "";
   const who = name.trim() || "this character";
@@ -423,6 +427,12 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     stageRef.current = result.data.regardBand.label;
   };
 
+  /** After a world-changing beat (a landing): refresh the chat state (clock) AND the world card. */
+  const refreshWorldAndState = () => {
+    void refreshState();
+    world.reload({ silent: true });
+  };
+
   /**
    * Shared streaming flow for every reply kind — send, opening beat, Go on, and
    * Another take: stream the reply into an assistant bubble, then reconcile against
@@ -559,6 +569,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     // and the scene list, since a big moment may have auto-queued a render (slice 9).
     await refreshState();
     scenes.reload({ silent: true });
+    // A successor turn may have moved the world (arrival, scene end) — track it.
+    world.reload({ silent: true });
     // Zero tokens on an otherwise-clean settle: the narrator produced nothing and
     // persisted no reply. The exchange recorded WHY on the chat row before the
     // stream closed (`last_reply_failure`), and the transcript refetch above just
@@ -904,17 +916,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         return;
       }
       await refreshState();
+      world.reload({ silent: true });
       const landing = result.data.toStorySecond;
       const anchor = chatState?.simClock?.calendarStart ?? null;
-      const landingLabel =
-        landing === null
-          ? "later"
-          : anchor !== null
-            ? (() => {
-                const params = storyCalendarParams(landing, anchor);
-                return formatStoryMoment(params.clockMinutes, params.calendarStart);
-              })()
-            : formatStoryClock(storyClockAt(landing));
+      const landingLabel = landing === null ? "later" : formatSimLanding(landing, anchor);
       toast.push({
         title: "Time passes…",
         description: `It's now ${landingLabel}. ${who} will pick the scene up from there.`,
@@ -1092,6 +1097,16 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           panel + the relationship matrix (roster > 1). */}
       <Sheet open={rosterOpen} onClose={() => setRosterOpen(false)} side="bottom" title="Roster">
         <div className="flex flex-col gap-4 p-3">
+          {/* The world card is the phone's only path to travel (the desktop aside is
+              hidden below lg) — folded into the Roster sheet; hides for legacy chats. */}
+          <ChatWorldCard
+            chatId={chatId}
+            world={world.data}
+            calendarStart={chatState?.simClock?.calendarStart ?? null}
+            archived={archived}
+            busy={skipBusy || sending}
+            onTraveled={refreshWorldAndState}
+          />
           {roster.length > 0 ? (
             <ChatRosterPanel
               chatId={chatId}
@@ -1334,6 +1349,16 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               onSkip={(amount) => void skipTime(amount)}
               onSaved={(snapshot) => setChatState(snapshot)}
               onSimCalendarSaved={() => void refreshState()}
+            />
+            {/* The world card (world-ui.plan.md slice 1) sits below the clock — it
+                renders nothing for a legacy chat (world.data === null). */}
+            <ChatWorldCard
+              chatId={chatId}
+              world={world.data}
+              calendarStart={chatState?.simClock?.calendarStart ?? null}
+              archived={archived}
+              busy={skipBusy || sending}
+              onTraveled={refreshWorldAndState}
             />
           </aside>
         ) : null}

@@ -1,11 +1,10 @@
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import { claimHoldingEngagementStates } from "@/contracts/simulation/engagements";
 import type { PublicFailurePresentation } from "@/contracts/simulation/narrative";
 import { simCalendarStartSchema, type SimCalendarStart } from "@/lib/simulation/clock";
 import { admitPlayerCommand, type AdmittedCommand } from "@/lib/simulation/input-admission";
 import { simulationHash } from "@/lib/simulation/hash";
-import { deriveEngagementId } from "@/lib/simulation/engagements";
+import { deriveEngagementId, isStandingCoPresentEngagement } from "@/lib/simulation/engagements";
 import { humanizeId } from "@/lib/simulation/humanize";
 import {
   buildSoloFallbackProse,
@@ -84,15 +83,9 @@ export async function findStandingEngagement(
   primaryActorId: string,
 ): Promise<{ engagementId: string | null; headSequence: number }> {
   const projection = await readDurableEngagements(branchId);
-  const standing = projection.engagements.find((engagement) => {
-    const participants: readonly string[] = engagement.participantIds;
-    return (
-      engagement.channel === "co_present" &&
-      claimHoldingEngagementStates.includes(engagement.state) &&
-      participants.includes(playerActorId) &&
-      participants.includes(primaryActorId)
-    );
-  });
+  const standing = projection.engagements.find((engagement) =>
+    isStandingCoPresentEngagement(engagement, playerActorId, primaryActorId),
+  );
   return { engagementId: standing?.id ?? null, headSequence: projection.headSequence };
 }
 
