@@ -199,12 +199,13 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
     expect(chat2Messages.filter((row) => row.role === "user")).toHaveLength(1);
     expect(chat2Messages.filter((row) => row.role === "assistant")).toHaveLength(1);
 
-    // give_item: not-held is the public face; the held keepsake transfers.
+    // give_item: not-held is the §14.4 public face at 200 (the card reads the
+    // refusal body, matching travel); the held keepsake transfers.
     const notHeld = await simCommand(
       jsonReq(`/api/chats/${ids.chat}/sim-command`, { kind: "give_item", itemId: "rollout-item-loaf" }),
       ctx(ids.chat),
     );
-    expect(notHeld.status).toBe(409);
+    expect(notHeld.status).toBe(200);
     expect(await notHeld.json()).toMatchObject({ status: "rejected", code: "not_held" });
     const gave = await simCommand(
       jsonReq(`/api/chats/${ids.chat}/sim-command`, { kind: "give_item", itemId: ROLLOUT_KEEPSAKE_ID }),
