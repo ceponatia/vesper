@@ -28,6 +28,21 @@ describe("worldBeatText", () => {
     );
   });
 
+  it("acknowledges the parting when a departure ended a standing scene (slice 4)", () => {
+    expect(
+      worldBeatText({ kind: "traveled", storySecond: EIGHT_AM, anchor: null, destinationLabel: "town square", parted: true }),
+    ).toBe("You take your leave and walk to the town square. · Day 1 · 8:00am (morning)");
+    expect(worldBeatText({ kind: "traveled", storySecond: EIGHT_AM, anchor: null, destinationLabel: "home", parted: true })).toBe(
+      "You take your leave and walk home. · Day 1 · 8:00am (morning)",
+    );
+  });
+
+  it("a plain travel (parted false) keeps the bare phrasing", () => {
+    expect(
+      worldBeatText({ kind: "traveled", storySecond: EIGHT_AM, anchor: null, destinationLabel: "town square", parted: false }),
+    ).toBe("You walk to the town square. · Day 1 · 8:00am (morning)");
+  });
+
   it("falls back to 'somewhere nearby' when the destination label is missing", () => {
     expect(worldBeatText({ kind: "traveled", storySecond: EIGHT_AM, anchor: null })).toBe(
       "You walk to somewhere nearby. · Day 1 · 8:00am (morning)",

@@ -30,6 +30,12 @@ export interface WorldBeatInput {
   anchor: SimCalendarStart | null;
   /** Destination display noun for a `traveled` beat ("town square", "home"); ignored otherwise. */
   destinationLabel?: string;
+  /**
+   * The traveled departure ended a standing scene as a CHOICE (slice 4) — the
+   * beat acknowledges the parting ("You take your leave and walk to…"). Ignored
+   * for a plain travel or any non-`traveled` beat.
+   */
+  parted?: boolean;
   /** The recipient's display name for a `gave_item` beat; ignored otherwise. */
   recipientName?: string;
   /** The handed item's display name for a `gave_item` beat (carries its own article); ignored otherwise. */
@@ -55,7 +61,10 @@ export function worldBeatText(input: WorldBeatInput): string {
       const label = input.destinationLabel ?? "";
       // "home" reads bare ("You walk home"); every other place takes the article
       // via `placeGoPhrase` ("the town square") — the goChipLabel idiom, in prose.
-      const phrase = label === "home" ? "You walk home." : `You walk to ${placeGoPhrase(label)}.`;
+      // A `parted` departure (slice 4) ended a standing scene as a choice, so the
+      // beat acknowledges the leave-taking first.
+      const lead = input.parted ? "You take your leave and walk" : "You walk";
+      const phrase = label === "home" ? `${lead} home.` : `${lead} to ${placeGoPhrase(label)}.`;
       return `${phrase} · ${landing}`;
     }
     case "time_skipped":

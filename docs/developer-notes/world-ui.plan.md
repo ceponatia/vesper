@@ -2,8 +2,8 @@
 
 Status: active (planned 2026-07-23 from the owner's world-UI design pass; owner rulings
 20–21 recorded in [engine.spec.operations.md](engine.spec.operations.md) §39. **Slices 0,
-1, 2, and 3 shipped 2026-07-23**; slices 4–5 remain. NL-move parity was deferred out of
-slice 1 — see Slice 1 "How it shipped".)
+1, 2, 3, and 4 shipped 2026-07-23**; slice 5 remains. Slice 4 closed the NL-move parity
+that was deferred out of slice 1 — see Slice 4 "How it shipped".)
 
 The successor engine's world is live but invisible. The starter world really exists —
 home, town square, a 5-minute walkable link, the neighbor, the keepsake
@@ -360,11 +360,71 @@ shows/hides it). Shares the slice-1 refusal surface.
   `do_activity` start→drain→complete) are integration-shaped and want a Fly/Postgres pass.
   Lint + cycles + typecheck + unit + jscpd all pass.
 
-### Slice 4 — graceful departure choreography (adopts the R5 leftover)
+### Slice 4 — graceful departure choreography (adopts the R5 leftover) — SHIPPED 2026-07-23
 
-An admitted departure routes through `winding_down` with a farewell beat before the
-move commits, instead of a hard interrupt — shared by the button path and the NL path.
-The turn that carries a departure narrates the goodbye and the setting-out.
+A player-CHOSEN departure (the travel chip, or an admitted natural-language "I walk to
+the town square") now ENDS the standing scene as a choice and narrates the parting,
+instead of leaning on the move's hard `engagement_interrupted`. One choreography, two
+entry points (the button and the NL path). This **closes** the R5 leftover "scene-exit
+choreography for language-driven departures" (`finished/engine.rollout.plan.md`) and
+ruling 20's "for parity" clause (`engine.spec.operations.md` §39), which slice 1 had
+explicitly deferred.
+
+**How it shipped (decisions):**
+
+- **End as a CHOICE, not `winding_down`.** The original slice sketch said "route through
+  `winding_down`"; the owner's build direction settled it as an **END** (`end_engagement`,
+  reason `participant_choice`) taken BEFORE the move — the same lawful two-step
+  `advance_time` already performs. An ended scene holds no claim (spec §18.2), so the move
+  that follows fires **no** `engagement_interrupted`: a parting, not a rupture. (A future
+  slice can still add the playable `winding_down` transition where the NPC gets a beat to
+  react before the player leaves; slice 4 is the clean-exit case.)
+- **The choreography (both entry points).** When a scene stands: `end_engagement`
+  (participant_choice) → `move_actor` → drain the clock to the journey's earliest arrival
+  (ruling 20, via the shared `drainBranchTo` + `moveArrivalTarget` helpers) → **one**
+  `traveled` world-beat phrased with the parting → render at the destination. When no scene
+  stands (already solo): the same move → drain → beat → render, minus the end and the
+  farewell framing.
+- **Button travel** (`travel` kind, `sim-command/route.ts`): ends the standing scene first
+  (was: relied on the move's interrupt), threads a `parted` flag into the beat, and reads
+  the drain target through the shared `moveArrivalTarget`. The response shape is unchanged
+  (`{status:"traveled", toStorySecond, arrived}`).
+- **NL departures route to the SOLO renderer** (`sim-exchange.ts`, the turn-flow restructure
+  slice 1 deferred as un-testable-locally). `runSimTurn` now pattern-matches admission
+  (match only, no submit) BEFORE the scene fork; a pure `planDepartureChoreography`
+  (`lib/simulation/departure.ts`, unit-tested — scene-stands × admitted-kind → steps)
+  decides the shape. An admitted MOVE runs `runSimDepartureTurn`, which ends/moves/drains
+  then renders through `runSimSoloTurn` (the slice-0 dual-block machinery) with a new
+  **departure context**: block (a) narrates the goodbye, the walk, and the arrival as one
+  continuous beat; block (b) is the primary's vignette. The solo turn **skips its own 60s
+  span advance** when a departure already drained to arrival (no double-count). The pure
+  departure line (`buildSoloDepartureLine`) and the `SoloDeparture` shape live in
+  `lib/simulation/departure.ts`; `sim-solo-render.ts` gained a `departure?` context field.
+- **Give / rest and everything else are untouched.** Non-move admissions keep the co-present
+  submit + render (extracted verbatim to `runCoPresentTurn`, reused by the departure
+  fallback). `advance_time` / `end_scene` / `give_item` / `do_activity` are unchanged.
+- **One beat per departure, guaranteed.** The old NL-move beat (written inside the retired
+  `runInputAdmission`) is gone; the beat is now written exactly once — by the route (button)
+  or by `runSimDepartureTurn` (NL), phrased `parted` when a scene was ended. A move that
+  reaches the co-present FALLBACK writes the ordinary (non-parted) beat there, still once.
+- **Degradation (docs/resilience.md), never a dead turn:** an unexpected end-engagement
+  failure logs `engine.sim.departure` and falls back to today's interrupt path (the accepted
+  move interrupts the still-standing scene; the co-present cut renders "set off walking",
+  no farewell, no parted beat). A refused/undone move keeps today's behavior (no world
+  change) and renders a plain solo turn. A divergent arrival drain degrades to the current
+  clock (the arrival trigger settles a later turn).
+- **Smallest-lawful edge (documented).** A move REFUSED *after* a successful scene-end
+  (scene stood, then the walk was rejected) renders a plain solo turn — factually the pair
+  is still co-present, so the "primary elsewhere" framing is slightly off. This is
+  **unreachable in the starter world** (a standing co-present scene rules out the body claim
+  a walk could refuse, and the two zones are adjacent); a future multi-zone world where
+  admission can name an unreachable/multi-hop zone would want a reachability pre-check before
+  the end (reusing `buildWorldDestinations`).
+- **Tests / deferrals.** New pure coverage: `departure.test.ts` (the decision matrix + the
+  arc line), `world-beat.test.ts` (parted phrasing), `sim-solo-render.test.ts` (the
+  departure-context block). The choreography itself is integration-shaped;
+  `pnpm test:int` was **not** run (no local Postgres) — the end→move→drain→solo path wants a
+  Fly/Postgres pass. Lint + cycles + typecheck + unit + jscpd all pass.
 
 ### Slice 5 — walk-with-me
 

@@ -2,6 +2,7 @@ import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { PublicFailurePresentation } from "@/contracts/simulation/narrative";
 import { admitPlayerCommand, type AdmittedCommand } from "@/lib/simulation/input-admission";
+import { planDepartureChoreography, type SoloDeparture } from "@/lib/simulation/departure";
 import { simulationHash } from "@/lib/simulation/hash";
 import { deriveEngagementId, isStandingCoPresentEngagement } from "@/lib/simulation/engagements";
 import { humanizeId } from "@/lib/simulation/humanize";
@@ -48,6 +49,7 @@ import {
   readDurableCommitments,
   readDurableEngagements,
   readDurableSpaceBranch,
+  submitDurableEndEngagement,
   submitDurableMoveActor,
   submitDurableOpenEngagement,
   submitDurableStartActivity,
@@ -203,23 +205,59 @@ interface AdmissionOutcome {
   failure?: PublicFailurePresentation;
 }
 
+/** One admitted command plus the branch zones (labels a move's destination beat without a re-read). */
+interface AdmittedForChat {
+  command: AdmittedCommand | null;
+  zones: { zoneId: string; kind: string }[];
+}
+
 /**
- * R5 slice 2 — run deterministic input admission for one utterance: read the
- * world's legal surface, match, and (at most once) submit the durable command
- * under the player principal. Degrades to "no admission" on any failure —
- * the exchange must never be worse off for having tried
- * (docs/resilience.md).
+ * Drain the branch clock to `target` through the SAME bounded advance loop the
+ * sim-command route uses (`catch_up_required` just means keep draining). Shared
+ * by the route's skip-style composites and slice 4's departure choreography so
+ * the two settle time identically — never duplicated (world-ui.plan.md slice 4).
  */
-async function runInputAdmission(input: {
-  chatId: string;
-  userId: string;
+export async function drainBranchTo(
+  branchId: string,
+  target: number,
+): Promise<{ ok: true; drained: number } | { ok: false; reason: "diverged" }> {
+  let drained = 0;
+  for (let calls = 0; ; calls += 1) {
+    if (calls > 1_000) return { ok: false, reason: "diverged" };
+    const outcome = await advanceBranchStoryTime(branchId, target, { workerId: `sim-skip-${newId()}` });
+    drained += outcome.drained;
+    if (outcome.status === "advanced") return { ok: true, drained };
+  }
+}
+
+/**
+ * How far to drain after a committed move: the resulting journey's earliest
+ * arrival (§17), or the current clock when the move produced no journey. Shared
+ * by the travel chip and the NL departure choreography (ruling 20 skip-style).
+ */
+export async function moveArrivalTarget(branchId: string, actorId: string): Promise<number> {
+  const after = await readDurableSpaceBranch(branchId);
+  const movedLocus = after.loci.find((locus) => locus.actorId === actorId);
+  const journey =
+    movedLocus?.kind === "in_transit"
+      ? after.journeys.find((candidate) => candidate.id === movedLocus.journeyId)
+      : undefined;
+  return journey?.earliestArrivalAt ?? after.storySecond;
+}
+
+/**
+ * R5 slice 2 — deterministic input admission, MATCH ONLY: read the world's legal
+ * surface (held items, zones, actions) and pattern-match the player's prose to at
+ * most one typed command. No submit here — the choreography branch in `runSimTurn`
+ * decides how to enact it (a move drives the departure choreography; give/rest
+ * submit into the co-present turn). Degrades to a null command on any read failure
+ * — the exchange must never be worse off for having tried (docs/resilience.md).
+ */
+async function admitPlayerCommandForChat(input: {
   branchId: string;
   playerActorId: string;
-  primaryActorId: string;
-  playerName: string;
-  primaryName: string;
   message: string;
-}): Promise<AdmissionOutcome | null> {
+}): Promise<AdmittedForChat> {
   try {
     const [held, zones, actions] = await Promise.all([
       db()
@@ -250,12 +288,34 @@ async function runInputAdmission(input: {
       zones,
       actionDefinitionIds: actions.map((row) => row.actionDefinitionId),
     });
-    if (command === null) return null;
+    return { command, zones };
+  } catch {
+    return { command: null, zones: [] };
+  }
+}
+
+/**
+ * Submit an admitted command in the CO-PRESENT context (the primary is here to
+ * react) and return its §14.4 outcome. A committed move — only reached as the
+ * departure choreography's interrupt FALLBACK (world-ui.plan.md slice 4) — leaves
+ * the same (non-parting) "You walk to …" beat slices 1–2 wrote. Best-effort: a
+ * failed submit/beat degrades to no admission (docs/resilience.md).
+ */
+async function admitIntoCoPresentTurn(
+  input: {
+    chatId: string;
+    userId: string;
+    branchId: string;
+    playerActorId: string;
+    primaryActorId: string;
+    playerName: string;
+    primaryName: string;
+  },
+  command: AdmittedCommand,
+  zones: { zoneId: string; kind: string }[],
+): Promise<AdmissionOutcome> {
+  try {
     const outcome = await submitAdmittedCommand(input, command);
-    // Slice 2 (world-ui.plan.md): an admitted NL move that COMMITS leaves the
-    // same durable "You walk to …" beat the travel chip does, alongside the
-    // narrated turn (the beat is a departure here — slice 1 keeps NL moves
-    // abrupt, no drain to arrival). Best-effort inside the already-guarded try.
     if (command.kind === "move" && outcome.executed !== undefined) {
       const kind = zones.find((zone) => zone.zoneId === command.toZoneId)?.kind ?? "";
       await writeWorldBeat({
@@ -267,7 +327,7 @@ async function runInputAdmission(input: {
     }
     return outcome;
   } catch {
-    return null;
+    return {};
   }
 }
 
@@ -742,45 +802,114 @@ async function runSimTurn(input: {
     userId: input.userId,
     correlationId: `sim-turn-${chatId}`,
   });
-  if (!scene.ok) {
-    // Not co-present ⇒ run the dual-block SOLO cut instead of dead-ending the
-    // chat (ruling 21). Any other open failure is a genuine fault → 409.
-    if (SOLO_CUT_OPEN_CODES.has(scene.code)) {
-      return runSimSoloTurn({
-        chatId,
-        userId: input.userId,
-        speakerCharacterId: input.speakerCharacterId,
-        mode: input.mode,
-        message,
-        narratorInput,
-        ctx,
-        userMessageId,
-        dialogueTail,
-      });
-    }
+  // A genuine open fault (not "simply not co-present") still 409s. Otherwise the
+  // turn runs — co-present (scene.ok) or the dual-block solo cut (ruling 21).
+  if (!scene.ok && !SOLO_CUT_OPEN_CODES.has(scene.code)) {
     return { ok: false, code: "sim_open_failed", message: `the scene could not open: ${scene.publicReason}`, status: 409 };
   }
 
   // R5 input admission (send only, never in narrator mode): the player's own
-  // words may BE a legal command. Runs after the scene resolves so claim law
-  // judges it in context.
+  // words may BE a legal command. Pattern-match now (no submit) so the plan below
+  // can route a MOVE through the departure choreography before the scene resolves.
+  const admitted =
+    input.mode === "send" && !narratorInput && message.length > 0
+      ? await admitPlayerCommandForChat({ branchId, playerActorId, message })
+      : { command: null, zones: [] };
+  const plan = planDepartureChoreography({ admittedKind: admitted.command?.kind ?? null, sceneStands: scene.ok });
+
+  // A chosen departure (an admitted MOVE, world-ui.plan.md slice 4): end the
+  // scene as a choice, walk the player there, and render the arrival through the
+  // solo cut with a farewell/walk/arrival departure context.
+  if (admitted.command?.kind === "move") {
+    return runSimDepartureTurn({
+      chatId,
+      userId: input.userId,
+      speakerCharacterId: input.speakerCharacterId,
+      mode: input.mode,
+      message,
+      ctx,
+      command: admitted.command,
+      zones: admitted.zones,
+      plan,
+      sceneEngagementId: scene.ok ? scene.engagementId : null,
+      dialogueTail,
+      userMessageId,
+    });
+  }
+
+  // Not a departure. The primary is NOT co-present ⇒ the dual-block solo cut;
+  // give/rest admissions keep today's flow (never submitted from the solo path).
+  if (!scene.ok) {
+    return runSimSoloTurn({
+      chatId,
+      userId: input.userId,
+      speakerCharacterId: input.speakerCharacterId,
+      mode: input.mode,
+      message,
+      narratorInput,
+      ctx,
+      userMessageId,
+      dialogueTail,
+    });
+  }
+
+  // The primary is co-present. Submit an admitted give/rest (its §14.4 outcome
+  // reaches the narrator), then render the shared co-present turn.
   const admission =
-    input.mode === "send" && !narratorInput
-      ? await runInputAdmission({
-          chatId,
-          userId: input.userId,
-          branchId,
-          playerActorId,
-          primaryActorId,
-          playerName,
-          primaryName: actorNames[primaryActorId] ?? "them",
-          message,
-        })
+    admitted.command !== null
+      ? await admitIntoCoPresentTurn(
+          {
+            chatId,
+            userId: input.userId,
+            branchId,
+            playerActorId,
+            primaryActorId,
+            playerName,
+            primaryName: actorNames[primaryActorId] ?? "them",
+          },
+          admitted.command,
+          admitted.zones,
+        )
       : null;
+  return runCoPresentTurn({
+    chatId,
+    userId: input.userId,
+    speakerCharacterId: input.speakerCharacterId,
+    mode: input.mode,
+    message,
+    narratorInput,
+    ctx,
+    engagementId: scene.engagementId,
+    admission,
+    dialogueTail,
+    userMessageId,
+  });
+}
+
+/**
+ * The co-present turn body (the primary is here to react): prepare the engagement
+ * cut, load context, render, and persist. Split out of `runSimTurn` so the
+ * departure choreography's interrupt fallback (slice 4) can reuse it verbatim.
+ */
+async function runCoPresentTurn(input: {
+  chatId: string;
+  userId: string;
+  speakerCharacterId: string;
+  mode: "send" | "continue" | "open";
+  message: string;
+  narratorInput: boolean;
+  ctx: ResolvedSimExchange;
+  engagementId: string;
+  admission: AdmissionOutcome | null;
+  dialogueTail: { speaker: string; text: string }[];
+  userMessageId: string | null;
+}): Promise<SimChatExchangeResult> {
+  const { chatId, ctx, admission } = input;
+  const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
 
   const turn = await prepareEngagementTurn({
     branchId,
-    engagementId: scene.engagementId,
+    engagementId: input.engagementId,
     viewpointActorId: playerActorId,
     spanSeconds: 60,
     playerActorIds: [playerActorId],
@@ -794,7 +923,7 @@ async function runSimTurn(input: {
       chatId,
       branchId,
       viewpointActorId: playerActorId,
-      message,
+      message: input.message,
       ragEligibility: ctx.ragEligibility,
       atStorySecond: clock?.storySecond ?? 0,
     }),
@@ -802,13 +931,13 @@ async function runSimTurn(input: {
   ]);
   const rendered = await renderCommittedCut({
     branchId,
-    engagementId: scene.engagementId,
+    engagementId: input.engagementId,
     cutId: turn.cut.id,
     conversation: {
       // No utterance ⇒ omit the player-turn block ("the scene breathes").
-      ...(message === "" ? {} : { playerUtterance: message }),
-      ...(narratorInput ? { narratorInput: true } : {}),
-      dialogueTail,
+      ...(input.message === "" ? {} : { playerUtterance: input.message }),
+      ...(input.narratorInput ? { narratorInput: true } : {}),
+      dialogueTail: input.dialogueTail,
       viewpointIsPlayer: true,
       actorNames,
       calendarStart: clock?.calendarStart ?? null,
@@ -832,7 +961,7 @@ async function runSimTurn(input: {
     id: assistantMessageId,
     chatId,
     speakerCharacterId: input.speakerCharacterId,
-    promptMessageId: userMessageId,
+    promptMessageId: input.userMessageId,
     content: rendered.prose,
     meta: {
       simTurn: true,
@@ -856,6 +985,171 @@ async function runSimTurn(input: {
     degraded: rendered.degraded,
     diagnostics: rendered.diagnostics,
   };
+}
+
+/**
+ * world-ui.plan.md slice 4 — the graceful-departure choreography behind an
+ * admitted natural-language MOVE (the NL twin of the travel chip; closes ruling
+ * 20's parity clause and the R5 "scene-exit choreography for language-driven
+ * departures" leftover). The player CHOSE to leave, so:
+ *
+ * 1. END the standing scene as a CHOICE (`participant_choice`) — the same lawful
+ *    two-step `advance_time` performs. An ended scene holds no claim (spec §18.2),
+ *    so the move that follows fires NO hard interrupt: a parting, not a rupture.
+ * 2. submit the move; 3. drain the clock to the journey's earliest arrival (ruling
+ *    20); 4. leave ONE traveled beat phrased with the parting; 5. render the
+ *    goodbye + walk + arrival through the SOLO renderer with a departure context.
+ *
+ * Degrades per docs/resilience.md — never a dead turn:
+ * - the end-engagement step failing unexpectedly falls back to today's interrupt
+ *   path (the still-standing scene is interrupted by the accepted move, the
+ *   co-present cut renders "set off walking");
+ * - a refused/undone move keeps today's behavior (no world change; a plain solo
+ *   turn renders — the player is where they were).
+ */
+async function runSimDepartureTurn(input: {
+  chatId: string;
+  userId: string;
+  speakerCharacterId: string;
+  mode: "send" | "continue" | "open";
+  message: string;
+  ctx: ResolvedSimExchange;
+  command: Extract<AdmittedCommand, { kind: "move" }>;
+  zones: { zoneId: string; kind: string }[];
+  plan: ReturnType<typeof planDepartureChoreography>;
+  sceneEngagementId: string | null;
+  dialogueTail: { speaker: string; text: string }[];
+  userMessageId: string | null;
+}): Promise<SimChatExchangeResult> {
+  const { chatId, ctx, command, plan } = input;
+  const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
+  const primaryName = actorNames[primaryActorId] ?? "them";
+  const zoneKindOf = (zoneId: string): string => input.zones.find((zone) => zone.zoneId === zoneId)?.kind ?? "";
+  const toLabel = zoneLabelFromKind(command.toZoneId, zoneKindOf(command.toZoneId));
+
+  const soloArgs = {
+    chatId,
+    userId: input.userId,
+    speakerCharacterId: input.speakerCharacterId,
+    mode: input.mode,
+    message: input.message,
+    narratorInput: false,
+    ctx,
+    userMessageId: input.userMessageId,
+    dialogueTail: input.dialogueTail,
+  };
+
+  // The zone the player is leaving (for the departure context). Read once here;
+  // runSimSoloTurn re-reads the settled space to place the player at the arrival.
+  let fromLabel = "";
+  try {
+    const preMove = await readDurableSpaceBranch(branchId);
+    const fromLocus = preMove.loci.find((locus) => locus.actorId === playerActorId);
+    if (fromLocus?.kind === "at") fromLabel = zoneLabelFromKind(fromLocus.zoneId, zoneKindOf(fromLocus.zoneId));
+  } catch (error) {
+    simLoadWarn(chatId, "departure from-zone read degraded", error);
+  }
+
+  const envelopeBase = {
+    branchId,
+    expectedVersion: 0,
+    principal: { kind: "player" as const, principalId: input.userId, controlledActorIds: [playerActorId] },
+    submittedAtWallClock: new Date().toISOString(),
+    correlationId: `sim-departure-${chatId}`,
+    schemaVersion: 1,
+  };
+
+  // 1) End the standing scene as a CHOICE. An unexpected failure degrades to
+  //    today's interrupt path: the accepted move interrupts the scene and the
+  //    co-present cut renders — no farewell framing, no parted beat.
+  if (plan.endSceneFirst && input.sceneEngagementId !== null) {
+    const endId = newId();
+    let ended: Awaited<ReturnType<typeof submitDurableEndEngagement>> | undefined;
+    try {
+      ended = await submitDurableEndEngagement(
+        {
+          ...envelopeBase,
+          id: endId,
+          idempotencyKey: endId,
+          type: "end_engagement",
+          payload: { engagementId: input.sceneEngagementId, reason: "participant_choice" },
+        },
+        { admitAtLockedVersion: true },
+      );
+    } catch (error) {
+      simLoadWarn(chatId, "departure end-engagement threw — interrupt fallback", error);
+    }
+    if (ended?.status !== "accepted") {
+      log.warn("engine.sim.departure", "end-engagement not accepted; interrupt fallback", {
+        chatId,
+        status: ended?.status ?? "threw",
+      });
+      const admission = await admitIntoCoPresentTurn(
+        { chatId, userId: input.userId, branchId, playerActorId, primaryActorId, playerName, primaryName },
+        command,
+        input.zones,
+      );
+      return runCoPresentTurn({
+        chatId,
+        userId: input.userId,
+        speakerCharacterId: input.speakerCharacterId,
+        mode: input.mode,
+        message: input.message,
+        narratorInput: false,
+        ctx,
+        engagementId: input.sceneEngagementId,
+        admission,
+        dialogueTail: input.dialogueTail,
+        userMessageId: input.userMessageId,
+      });
+    }
+  }
+
+  // 2) Submit the move. A refusal / conflict keeps today's behavior (no world
+  //    change) — render a plain solo turn (never a dead turn).
+  const moveId = newId();
+  let move: Awaited<ReturnType<typeof submitDurableMoveActor>> | undefined;
+  try {
+    move = await submitDurableMoveActor(
+      {
+        ...envelopeBase,
+        id: moveId,
+        idempotencyKey: moveId,
+        type: "move_actor",
+        payload: { actorId: playerActorId, destinationZoneId: command.toZoneId, travelMode: "walk" },
+      },
+      { admitAtLockedVersion: true },
+    );
+  } catch (error) {
+    simLoadWarn(chatId, "departure move threw — plain solo render", error);
+  }
+  if (move?.status !== "accepted") {
+    if (move?.status === "rejected") {
+      // Unreachable in the starter world when a scene had already been ended
+      // above (a standing scene rules out the body claim a walk could refuse, and
+      // the two zones are adjacent); render a plain solo turn regardless.
+      log.warn("engine.sim.departure", "move not accepted; plain solo render", { chatId, code: move.code });
+    }
+    return runSimSoloTurn(soloArgs);
+  }
+
+  // 3) Walk the player there: drain the clock to the journey's earliest arrival
+  //    (ruling 20). A divergent drain degrades to the current clock — the arrival
+  //    trigger simply settles on a later turn (never a dead turn).
+  const target = await moveArrivalTarget(branchId, playerActorId);
+  const drain = await drainBranchTo(branchId, target);
+  if (!drain.ok) log.warn("engine.sim.departure", "arrival drain did not converge", { chatId });
+
+  // 4) ONE traveled beat, phrased with the parting when a scene was ended.
+  await writeWorldBeat({ chatId, branchId, kind: "traveled", destinationLabel: toLabel, parted: plan.parted });
+
+  // 5) Render the arrival through the solo cut with the departure arc.
+  const departure: SoloDeparture = {
+    ...(plan.farewell ? { farewellFrom: primaryName } : {}),
+    fromLabel,
+    toLabel,
+  };
+  return runSimSoloTurn({ ...soloArgs, departure });
 }
 
 /** The player's held-item display names — the first inventory read the solo player-side needs. */
@@ -999,21 +1293,32 @@ async function runSimSoloTurn(input: {
   ctx: ResolvedSimExchange;
   userMessageId: string | null;
   dialogueTail: { speaker: string; text: string }[];
+  /**
+   * A chosen departure this turn (slice 4): the choreography already ended the
+   * scene, moved the player, and drained the clock to the arrival — so this turn
+   * SKIPS its own span advance and the solo prompt narrates the farewell/walk/
+   * arrival arc.
+   */
+  departure?: SoloDeparture;
 }): Promise<SimChatExchangeResult> {
   const { chatId, ctx } = input;
   const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
   const primaryName = actorNames[primaryActorId] ?? "them";
 
   // Time moves: advance the ordinary span and drain due triggers. A failure here
-  // degrades to rendering at the current clock, never a failed turn.
+  // degrades to rendering at the current clock, never a failed turn. A departure
+  // turn already drained to the arrival, so it does NOT advance again (that would
+  // over-count the parting past the moment the player just arrived).
   const before = await readBranchClock(branchId);
-  try {
-    await advanceBranchStoryTime(branchId, (before?.storySecond ?? 0) + 60, {
-      workerId: `sim-solo-${chatId}`,
-      database: db(),
-    });
-  } catch (error) {
-    simLoadWarn(chatId, "solo story-time advance degraded", error);
+  if (input.departure === undefined) {
+    try {
+      await advanceBranchStoryTime(branchId, (before?.storySecond ?? 0) + 60, {
+        workerId: `sim-solo-${chatId}`,
+        database: db(),
+      });
+    } catch (error) {
+      simLoadWarn(chatId, "solo story-time advance degraded", error);
+    }
   }
   const clock = (await readBranchClock(branchId)) ?? before;
   const atStorySecond = clock?.storySecond ?? 0;
@@ -1056,6 +1361,7 @@ async function runSimSoloTurn(input: {
     calendarStart: clock?.calendarStart ?? null,
     actorNames,
     solo: soloContext,
+    ...(input.departure ? { departure: input.departure } : {}),
     ...(input.message === "" ? {} : { playerUtterance: input.message }),
     ...(input.narratorInput ? { narratorInput: true } : {}),
     dialogueTail: input.dialogueTail,
