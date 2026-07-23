@@ -58,11 +58,23 @@ Verified at flesh-out (2026-07-23 — re-verify on promotion):
   client-minted key crosses a trust boundary — bound it with the
   stable-token shape in the body schema (resilience law: `parseOr` at every
   boundary).
+- **Replay is blind to the payload** (added 2026-07-23, GPT review —
+  verified): the command-runner's two idempotency checks match on
+  `(branchId, idempotencyKey)` alone and replay the recorded result with NO
+  comparison of the submitted command (`command-runner.ts:79-86, 117-122`) —
+  a reused key with a *different* command would replay an unrelated result.
+  Harmless while keys are server-minted per request; load-bearing the moment
+  ruling-2's client-minted keys land. The route record must bind the key to
+  a canonical hash of (kind, payload) and refuse a mismatch.
 - Cross-links: the shared lock also narrows A2's turn-vs-drain clock race
   ([turn-clock-race.plan.md](turn-clock-race.plan.md) names A1 in its
   sketch); A4's atomic `move_together` removes the worst composed sequence,
   leaving `travel`, `advance_time`, and `do_activity` as the composed
-  survivors this plan makes retry-safe.
+  survivors this plan makes retry-safe. Post-A5, long drains move to a
+  durable time job that OUTLIVES this plan's in-process lock — the
+  job-active guard lives in
+  [../drain-hardening.honesty.md](../drain-hardening.honesty.md) and is the
+  serialization for that detached phase.
 
 ## Why it matters
 
@@ -102,8 +114,27 @@ world-mutation surface that can still interleave with a streaming reply.
   both are needed and neither substitutes for the other.
 - **Route-level replay**: under the lock, the route first checks a recorded
   response for `(chatId, requestId)` and replays it verbatim — beats not
-  re-written, drains not re-run. The final response body is recorded before
-  returning. (Where the record lives is the open question below.)
+  re-written, drains not re-run. (Where the record lives is the open
+  question below.) Tightened 2026-07-23 (GPT review, adopted):
+  - **"Record the response before returning" is not exactly-once.** A crash
+    after the command+beat commit but before the response record leaves a
+    retry that re-executes. The record is a small state machine —
+    `started → completed | failed` — written `started` BEFORE execution,
+    and the beat gets a **deterministic id derived from the request key**
+    (via `composeSimulationId`, with a uniqueness constraint), so a
+    crash-window retry dedupes the beat at the insert even when the
+    response record never completed.
+  - **Bind the key to the request**: store a canonical hash of (command
+    kind, payload) with the record; a same-key resubmit with a different
+    hash returns `idempotency_mismatch` 409, never an unrelated replay.
+    (The command-runner itself replays blind — see What above — so the
+    route record is where the binding lives.)
+  - **Record the whole HTTP result** — status code, body, a
+    schema-version tag, completed-at — not just the command outcome, so a
+    replay is bit-faithful across deploys.
+  - **Crash-point tests**: the int suite kills the flow after each
+    committed step (command, beat, record) and asserts the retry converges
+    to one drain, one beat, one response.
 - **Threaded step keys**: composed kinds derive step envelope ids from the
   client key (via `composeSimulationId`, one suffix per step), so a retry of
   a request that died mid-composition resumes through the command cache
@@ -115,11 +146,28 @@ world-mutation surface that can still interleave with a streaming reply.
 - **Client bounce handling**: a `chat_busy` on a chip is swallowed into a
   silent world-card refresh (the disable already covers the visible case;
   the send composer keeps its existing busy toast).
+- **Scope statement for `sim-turn`** (2026-07-23 GPT review, adopted): this
+  plan makes the headless route **concurrency-safe only** (the lock). A
+  client retry after an uncertain response still creates a second user
+  message and a second turn — turn-level idempotency would need a request
+  id on the exchange itself. Deliberately out of scope until a headless
+  caller actually retries; recorded so the limitation is chosen, not
+  discovered.
+- **Lock-key assumption, recorded** (same review): `chat_exchange:${chatId}`
+  serializes a *branch* only because successor provisioning is 1:1
+  chat↔branch today. Multi-chat worlds or remote channels
+  ([remote-channels.plan.md](remote-channels.plan.md)) would let several
+  chats mutate one branch and the chat-keyed lock stops covering it —
+  at that point the lock (or a lease) re-keys by branch. The A5 durable
+  job-active guard is already branch-keyed and is the model.
 
 ## Slices
 
-Sized for the paired A1+A4 command-integrity plan (A4 §Slices carries the
-`move_together` slices).
+Sized for the grouped A1+A2+A4 command-integrity plan (A4 §Slices carries the
+`move_together` slices). Each slice is **independently shippable** (2026-07-23
+GPT review, adopted): the lock is small and immediately valuable; replay and
+`move_together` are each medium — one plan, but nothing waits on the slice
+behind it.
 
 1. **The lock** — shared-key guard on `sim-command` + `sim-turn`, `chat_busy`
    bounce, client swallow-and-refresh; int test: two concurrent travels — one

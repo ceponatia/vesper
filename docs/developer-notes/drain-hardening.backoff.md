@@ -1,12 +1,12 @@
 # Drain vs retrying trigger — stop and settle later
 
-Status: draft (successor-engine backlog item A6, parked 2026-07-23; **fleshed
-out 2026-07-23 — engineering ruling below, no product rulings needed**; still
-parked — promote per [CLAUDE.md](CLAUDE.md) before building. Graduates
-**bundled with A5 [drain-chunking](drain-chunking.plan.md), A7
-[arrival-target-mismatch](arrival-target-mismatch.plan.md), and C15
-[composition-diagnostics](composition-diagnostics.plan.md)** as one
-drain-hardening plan — see A7 §Owner rulings.)
+Status: detail doc of [drain-hardening.plan.md](drain-hardening.plan.md)
+(successor-engine backlog item A6; fleshed out 2026-07-23 — engineering
+ruling below, no product rulings needed; **promoted 2026-07-23** with A5
+[honesty](drain-hardening.honesty.md), A7
+[arrival](drain-hardening.arrival.md), and C15
+[diagnostics](drain-hardening.diagnostics.md) — was
+`deferred/drain-trigger-backoff.plan.md`.)
 
 ## What
 
@@ -83,6 +83,28 @@ Sized for the bundled drain-hardening plan — this is one S slice.
    around a mid-drain backoff) converges to identical histories. Degradation
    test asserts the fallback and the recorded diagnostic code
    (docs/resilience.md law).
+
+## Poison triggers — the terminal-failure sibling (2026-07-23 GPT review, adopted)
+
+Stop-and-settle-later covers the *transient* case. The review surfaced the
+terminal one, verified in code: a trigger that exhausts retries lands in
+state `"failed"` (`scheduler-store.ts:468, 594`), after which
+`nextDueStorySecond` never sees it again — a later drain simply jumps
+onward. For an arrival trigger that means a permanently stranded traveller;
+for a routine re-arm, a silently dead rhythm. Policy (designed with the A5
+job, built in its slice):
+
+- A terminally-failed trigger **inside a job's window blocks the job's
+  completion** — the job parks (state `blocked`, C15-recorded, visible in
+  the admin inspector) rather than reporting the skip complete over a hole
+  in history.
+- Repair is explicit: an admin retry (reset attempts) or a domain-level
+  failure outcome committed as an event — never a silent skip-over. Which
+  domain outcomes exist per trigger kind is decided at build; arrival
+  triggers at minimum need "force-arrive now" as the repair.
+- Outside a job (an ordinary bounded drain), a failed trigger in the window
+  degrades the drain to honest-short with a distinct C15 code
+  (`trigger_failed`), so it can never hide.
 
 ## Open questions
 

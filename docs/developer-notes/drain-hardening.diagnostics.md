@@ -1,13 +1,13 @@
 # Make composition half-failures observable
 
-Status: draft (successor-engine backlog item C15, parked 2026-07-23; **fleshed
-out 2026-07-23 — owner rulings 1–3 recorded below**; still parked — promote per
-[CLAUDE.md](CLAUDE.md) before building. Per ruling 3 it graduates as part of
-the **drain-hardening bundle with A5
-[drain-chunking](drain-chunking.plan.md) + A6
-[drain-trigger-backoff](drain-trigger-backoff.plan.md) + A7
-[arrival-target-mismatch](arrival-target-mismatch.plan.md)**, inheriting that
-bundle's timing — see A7 ruling 4's tripwire.)
+Status: detail doc of [drain-hardening.plan.md](drain-hardening.plan.md)
+(successor-engine backlog item C15; fleshed out and ruled 2026-07-23;
+**promoted 2026-07-23** with A5 [honesty](drain-hardening.honesty.md), A6
+[backoff](drain-hardening.backoff.md), and A7
+[arrival](drain-hardening.arrival.md) — was
+`deferred/composition-diagnostics.plan.md`. Builds FIRST in the plan's slice
+order: the tally baselines how often live turns degrade before the fixes
+change the numbers.)
 
 ## What
 
@@ -81,6 +81,15 @@ because nobody can count how often live turns degrade.
   `persistAssistantReply` sites (co-present and solo, which today drops what
   it already collected) and mirrored into the events rows. The API response
   keeps returning diagnostics as it does today.
+  - **Meta carries public-safe codes ONLY** (2026-07-23 GPT review,
+    adopted): message meta rides the ordinary chat payload to the player's
+    client, so the persisted meta gets the stable fallback code and site —
+    never exception text, provider causes, or internal detail. The `detail`
+    field lives exclusively in the admin events rows. This keeps ruling 2
+    (admin-only) true at the transport layer, not just the render layer.
+  - The events-row mirror is fire-and-forget (the agent-failure precedent) —
+    best-effort persistence is accepted for the tally; the reply-meta write
+    rides the reply's own persist and is the durable per-message record.
 - **Inspector tally section** beside the agent-failure tallies, with human
   labels per code (the `LEG_LABELS` precedent).
 - Degradation tests assert the fallback **and** the recorded code

@@ -1,8 +1,9 @@
 # Travel distances & durations as authored world configuration
 
 Status: draft (stub — parked 2026-07-23 from an owner ruling recorded during
-[arrival-target-mismatch.plan.md](arrival-target-mismatch.plan.md)'s
-flesh-out; promote per [CLAUDE.md](CLAUDE.md) before building)
+[../drain-hardening.arrival.md](../drain-hardening.arrival.md)'s
+flesh-out (then backlog item A7); promote per [CLAUDE.md](CLAUDE.md) before
+building)
 
 ## What
 
@@ -32,10 +33,11 @@ Part of the world-configuration surface: per-link (or per-zone-pair)
 distance/duration authoring feeding `minimumDurationSeconds` /
 `expectedDurationSeconds` / `uncertaintySeconds`; bespoke worlds author these
 in seed/config data now, a player world-builder edits them through whatever
-authoring UI that lane grows later. **Tripwire:** planning this (or any
-nonzero-uncertainty travel) MUST first promote the drain-hardening bundle —
-see [arrival-target-mismatch.plan.md](arrival-target-mismatch.plan.md)
-ruling 4.
+authoring UI that lane grows later. **Tripwire:** this (or any
+nonzero-uncertainty travel) MUST NOT ship before the drain-hardening plan has
+— promoted 2026-07-23, see
+[../drain-hardening.plan.md](../drain-hardening.plan.md) (§Tripwire) and
+[../drain-hardening.arrival.md](../drain-hardening.arrival.md) ruling 4.
 
 ## Open questions
 

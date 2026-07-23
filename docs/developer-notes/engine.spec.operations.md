@@ -346,7 +346,9 @@ pass); ruling 14 was **resolved on 2026-07-18** (the Gate 4 unblock pass); rulin
 were **resolved on 2026-07-19** (the Gate 5 opening pass); ruling 17 was **resolved on
 2026-07-22** (the R3 live-session clock finding); rulings 18–19 were **resolved on
 2026-07-22** (the presentation-charter planning pass); rulings 20–21 were **resolved on
-2026-07-23** (the world-UI planning pass). Each resolved decision is
+2026-07-23** (the world-UI planning pass); rulings 22–25 were **resolved on 2026-07-23**
+(the drain-hardening promotion — full versions with alternatives-rejected context in
+[drain-hardening.plan.md](drain-hardening.plan.md)'s detail docs). Each resolved decision is
 normative and MUST be stored in a versioned world-type rule or explicit product
 contract, not only in a prompt. Ruling 12 remains **open** and is deferred to the work
 that needs it.
@@ -487,6 +489,39 @@ that needs it.
     perception/knowledge or memory partitions; the privacy-law interaction (what a
     vignette may show when the primary's activity is private) is an open design point
     in `world-ui.plan.md`.
+
+22. **Long skips are staged, server-owned catch-up** — RESOLVED (2026-07-23, the
+    drain-hardening promotion): a long `advance_time` runs as short server steps, never
+    one request that must survive the whole stretch; while the app is open the world
+    card shows progress ("Day 12 of 30…"). Once a skip or travel starts, **the server
+    owns completion** — a durable, leased time job (its own table, not `sim_outbox`)
+    finishes the drain whether or not the app stays open, with a boot/next-request
+    sweep so deploys strand nothing. While a time job is active on a branch, every
+    mutation entry point turns away (the quiet catching-up face) — the in-process
+    per-chat lock does not outlive the original request, so the guard is durable job
+    state, not the lock.
+23. **Never a 500 after a committed write; drains stop honestly** — RESOLVED
+    (2026-07-23, drain-hardening; follows from resilience law): sim-command routes
+    return 200 with an honest shape (what committed, how far time actually moved,
+    why it stopped short) — `drain_diverged` 500s are gone. A transiently-failing
+    trigger halts the drain AT its due second (`trigger_backoff`, distinct from
+    budget exhaustion) so its event stamps at the second it was due — §12.4 partition
+    invariance over wall-clock backoff. A terminally-failed trigger inside a job's
+    window **blocks the job** for explicit repair, never a silent skip-over.
+24. **Drain target ≡ arrival trigger due second** — RESOLVED (2026-07-23,
+    drain-hardening): travel drains target `expectedArrivalAt` (the arrival trigger's
+    due second), whatever values authored route configuration later supplies — the
+    invariant is semantics-neutral. Every travel choreography verifies post-drain that
+    the traveller left `in_transit`, and a still-in-transit actor **escalates to the
+    durable time job** (recovery, not just a warn). A delay feature must bump
+    `journey.expectedArrivalAt` AND reschedule the durable trigger; the job re-reads
+    its target between steps so a mid-drain delay extends rather than strands.
+25. **Composition half-failures are recorded, admin-only** — RESOLVED (2026-07-23,
+    drain-hardening): every choreography fallback lands (a) in the affected message's
+    persisted meta as a stable **public-safe code** (never exception text — meta rides
+    the player-visible payload) and (b) as a durable `composition_fallback` tally row
+    for the admin inspector. Players see only the honest prose; no player-facing
+    notice or retry affordance.
 
 ## 40. Initial conformance checklist
 

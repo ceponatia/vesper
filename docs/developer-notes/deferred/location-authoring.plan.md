@@ -80,6 +80,19 @@ registry, and **recurring upkeep**.
    Consequence to design for at promotion: positions settle one turn behind
    the prose that moved them, so a post-turn legality rejection surfaces as
    next-turn correction/drift-repair, not an in-turn refusal.
+   **Hybrid refinement (owner, 2026-07-23 — resolving the GPT review's
+   authority-model objection):** the incoming half splits by *who moved*.
+   **Deliberate player moves between spots** ride the existing deterministic
+   pre-turn admission (the R5 zone-level MOVE pattern extended to spot
+   granularity — pattern-matched code, instant, no LLM), commit before
+   render, and the narrator narrates committed truth — no drift for the
+   common case. **Only incidental narrative drift** (NPC repositioning,
+   implied shifts inside the prose) goes through the post-turn agent leg,
+   and what that leg writes is **soft staging**: presentation-tier position
+   that legality, witnessing, and line-of-sight NEVER consume until it
+   settles into the authoritative state on a later commit. The narrator can
+   therefore never assert a *mechanical* truth the world hasn't accepted —
+   the review's objection — while the latency rationale stands untouched.
 4. **When to go 3D:** when something real consumes the precision — a rendered
    map view, true pathfinding, distance-based mechanics, or the
    graphical-game promotion itself.
@@ -121,28 +134,64 @@ facing what" exists.
   machinery; upkeep needs a recurring-charge mechanism (trigger-scheduled, like
   arrivals) that doesn't exist yet.
 - **Tripwire inherited from the sibling:** authored travel durations with
-  nonzero uncertainty require the drain-hardening bundle (A5+A6+A7+C15 —
-  [arrival-target-mismatch.plan.md](arrival-target-mismatch.plan.md) ruling 4)
-  to promote first.
+  nonzero uncertainty MUST NOT ship before
+  [../drain-hardening.plan.md](../drain-hardening.plan.md) has (promoted
+  2026-07-23; see [../drain-hardening.arrival.md](../drain-hardening.arrival.md)
+  ruling 4).
+
+## Adopted from the 2026-07-23 GPT review (design requirements at promotion)
+
+- **Spot entity modeling needs a ruling**: a named spot as a child
+  `sim_zone` (the hierarchy exists) vs a distinct `sim_spot` — adding a
+  layer without deciding risks duplicated topology.
+- **A versioned `WorldDefinition` contract + validator/compiler**:
+  `starter-world.ts` provisions through several sequential seeders; an
+  authored world of real size needs preflight validation and atomic
+  install-or-nothing.
+- **Template ≠ live state**: editing an authored world template must never
+  silently mutate running branches or change replay; instantiation copies.
+- **Graph invariant validation** at compile: parent cycles, unreachable
+  zones, dangling visibility edges, capacity conflicts, size caps.
+- **Directed links need a stance** (verified: `searchRoute` inserts every
+  link in both directions — all links are bidirectional today regardless of
+  `from`/`to`). Either bless bidirectionality in the contract or make
+  direction real; don't leave it implicit under an authoring surface.
+- **Version the sight/adjacency rules** (like routes' `derivationVersion`),
+  so tuning visibility never retroactively changes how old events replay.
+- **Future 3D as anchors, not bare XY**: stable anchor ids with optional
+  geometry/asset bindings later — richer than the stub's "optional
+  coordinate fields", same intent (ruling 1 stands).
+- **Function typing as capabilities/tags**, not one exclusive type — a
+  location is often home AND workplace.
+- **Furniture as placed entities with components** (seat / surface /
+  container / obstacle / occluder) rather than a parallel hard-coded
+  hierarchy — resolves the furniture open question below in direction;
+  details at promotion.
+- **Review suggests deferring upkeep** to an economy plan. The owner's ask
+  stands in What; treat build order (upkeep last, or split out) as a
+  promotion-time call.
+- **Promotion is likely several plans**, not one: definition/compiler →
+  macro topology → named spots → perception integration →
+  furniture/affordances → household access → upkeep/geometry later.
 
 ## Open questions
 
 _(Spatial fidelity, geometry-vs-rules line of sight, and engine-vs-narrator
-position ownership were resolved by the 2026-07-23 rulings above.)_
+position ownership were resolved by the 2026-07-23 rulings above — including
+the hybrid incoming-authority refinement in ruling 3.)_
 
 - **Chat-lane proving ground:** new patterns prove out in the chat lane first
   (product direction) — what's the smallest chat-lane surface for named spots
   (staging in the state strip? spot mentions in beats?)
-- **Furniture:** items with an immovable/obstacle flag, or a distinct
-  furniture registry with its own placement rules (containers, surfaces,
-  seats)?
 - **Upkeep:** what does it charge (household currency stock?), on what cadence
   (story-time trigger?), and what happens on failure to pay — is that a
-  commitment/consequence hook?
+  commitment/consequence hook? (See also the review's defer-to-economy
+  suggestion above.)
 - **Fold or split:** do this and
   [travel-duration-authoring.plan.md](travel-duration-authoring.plan.md)
   graduate as ONE world-authoring plan, or does travel-duration ship first as
-  the thin end?
+  the thin end? (The review's several-promotions suggestion above sharpens
+  this.)
 - **Starter worlds:** does the builder replace the hand-seeded starter world
   (and B8 [starter-world-seeds.plan.md](starter-world-seeds.plan.md)'s seeds
   become its first authored content), or do seeds stay a separate lane?

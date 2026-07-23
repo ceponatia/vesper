@@ -24,6 +24,14 @@ the read, degrades to `null` plus a diagnostic on failure rather than throwing.
 Apply the same wrap-and-degrade shape to the four throwing seams so a malformed
 row yields a missing panel + diagnostic, never a 500.
 
+Related staleness defect in the same seam (2026-07-23 GPT review, verified —
+fix alongside the guards): `readSimChatMeters` returns the stored fixed-point
+rows without calling `integrateMeterValue` at the branch clock
+(`sim-surfaces.ts:273-289`), so the state strip shows values as of the last
+body event, not now. The pure integrator exists (`lib/simulation/bodies.ts`
+§25.1); the read should integrate at the current story second. Also a
+prerequisite for [physiology.plan.md](physiology.plan.md).
+
 ## Open questions
 
 _(To be fleshed out in discussion at promotion.)_

@@ -40,6 +40,20 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
+- **Drain hardening — honest, durable, correctly-stamped time advancement** —
+  [drain-hardening.plan.md](drain-hardening.plan.md) ·
+  detail docs `drain-hardening.{honesty,backoff,arrival,diagnostics}.md`
+  (**promoted from deferred/ 2026-07-23 by owner ruling** — the former
+  A5+A6+A7+C15 backlog bundle; the owner lifted the travel-uncertainty
+  parking because A5/A6/C15's defects are live today). Live-defects-first
+  slice order: composition-fallback telemetry (the baseline), no-500-after-
+  commit honest responses, the `trigger_backoff` stop, durable leased time
+  jobs + the branch job-active guard, staged catch-up UI, and the
+  `expectedArrivalAt` retarget. Owner rulings copied to engine.spec §39
+  (22–25); the 2026-07-23 GPT-review hardening (job table vs `sim_outbox`,
+  leasing/fencing, poison-trigger policy, mid-drain retarget, public-safe
+  meta codes) is folded into the plan and detail docs.
+
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
   [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly
   optional** (owner ruling 2026-07-21 — recorded in
