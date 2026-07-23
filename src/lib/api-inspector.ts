@@ -201,6 +201,30 @@ export const agentHealthSchema = z.object({
 });
 export type AgentHealth = z.infer<typeof agentHealthSchema>;
 
+/** One recorded composed-turn degradation (C15) — mirrors `compositionFallbackSchema`. */
+export const compositionFallbackRowSchema = z.object({
+  site: textOr("departure"),
+  code: textOr("drain_short"),
+  messageId: optionalId,
+  detail: textOr(""),
+  at: textOr(""),
+});
+export type CompositionFallbackRow = z.infer<typeof compositionFallbackRowSchema>;
+
+const compositionReportSchema = z.object({
+  recent: arrayOf(compositionFallbackRowSchema),
+  total: z.number().catch(0),
+  byCode: arrayOf(tallyRowSchema),
+  bySite: arrayOf(tallyRowSchema),
+});
+
+export const compositionHealthSchema = z.object({
+  days: z.number().catch(7),
+  chat: compositionReportSchema,
+  global: compositionReportSchema,
+});
+export type CompositionHealth = z.infer<typeof compositionHealthSchema>;
+
 export const chatInspectorApi = {
   /** Everything stored for the conversation: all facts, episodes, summary row, character card. */
   overview: (chatId: string) => apiGet(inspectorOverviewSchema, base(chatId)),
@@ -209,6 +233,12 @@ export const chatInspectorApi = {
   /** Which helper legs FAILED behind this chat's replies, how often, and why (probably). */
   agentFailures: (chatId: string, days?: number) =>
     apiGet(agentHealthSchema, withQuery(`${base(chatId)}/agent-failures`, days ? { days: String(days) } : {})),
+  /** Which composed legs DEGRADED behind this chat's beats (C15), how often, and where. */
+  compositionFallbacks: (chatId: string, days?: number) =>
+    apiGet(
+      compositionHealthSchema,
+      withQuery(`${base(chatId)}/composition-fallbacks`, days ? { days: String(days) } : {}),
+    ),
   /** Ad-hoc dev fact — origin "dev", confidence 1; subjectName defaults to the character. */
   createFact: (chatId: string, body: InspectorFactCreate) =>
     apiPost(z.object({ id: z.string().min(1) }), `${base(chatId)}/facts`, body),

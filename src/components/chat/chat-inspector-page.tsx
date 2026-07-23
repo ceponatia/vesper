@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { ChatInspectorAgentHealth } from "@/components/chat/chat-inspector-agent-health";
+import { ChatInspectorCompositionHealth } from "@/components/chat/chat-inspector-composition-health";
 import { ChatInspectorEpisodes } from "@/components/chat/chat-inspector-episodes";
 import { ChatInspectorFacts } from "@/components/chat/chat-inspector-facts";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -70,6 +71,9 @@ function InspectorBody({ chatId }: { chatId: string }) {
           {/* Agent health leads: a leg failing silently is the thing you most want to know
               BEFORE you start reading the memory it was supposed to have written. */}
           <ChatInspectorAgentHealth chatId={chatId} />
+          {/* Composed-turn health beside agent health: the choreography degrades as silently as
+              the agent legs do — a "traveled alone" reads exactly like a normal turn (C15). */}
+          <ChatInspectorCompositionHealth chatId={chatId} />
           <ChatInspectorFacts
             chatId={chatId}
             characterName={data.character.name}
