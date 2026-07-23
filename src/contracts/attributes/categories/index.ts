@@ -15,6 +15,7 @@ import { shouldersGroup } from "./shoulders";
 import { chestGroup } from "./chest";
 import { waistGroup } from "./waist";
 import { hipsGroup } from "./hips";
+import { buttocksGroup } from "./buttocks";
 import { armsGroup } from "./arms";
 import { handsGroup } from "./hands";
 import { legsGroup } from "./legs";
@@ -47,6 +48,7 @@ export const attributeGroups: readonly AttributeGroup[] = [
   chestGroup,
   waistGroup,
   hipsGroup,
+  buttocksGroup,
   armsGroup,
   handsGroup,
   legsGroup,

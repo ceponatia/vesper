@@ -27,6 +27,7 @@ export const attributeCategories = [
   "wings",
   "waist",
   "hips",
+  "buttocks",
   "tail",
   "arms",
   "hands",
