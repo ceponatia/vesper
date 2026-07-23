@@ -1,9 +1,9 @@
 # World UI — the player-facing surface of the successor world
 
 Status: active (planned 2026-07-23 from the owner's world-UI design pass; owner rulings
-20–21 recorded in [engine.spec.operations.md](engine.spec.operations.md) §39. **Slices 0
-and 1 shipped 2026-07-23**; slices 2–5 remain. NL-move parity was deferred out of slice 1
-— see Slice 1 "How it shipped".)
+20–21 recorded in [engine.spec.operations.md](engine.spec.operations.md) §39. **Slices 0,
+1, and 2 shipped 2026-07-23**; slices 3–5 remain. NL-move parity was deferred out of
+slice 1 — see Slice 1 "How it shipped".)
 
 The successor engine's world is live but invisible. The starter world really exists —
 home, town square, a 5-minute walkable link, the neighbor, the keepsake
@@ -241,12 +241,64 @@ of 409ing:
   `refreshState` runs (post-exchange, post-skip, post-travel); travel chips disable while
   `sending`/`skipBusy`.
 
-### Slice 2 — visible trace: transcript world-beats
+### Slice 2 — visible trace: transcript world-beats — SHIPPED 2026-07-23
 
-A new transcript line kind for departed / arrived / scene-ended / time-skipped beats,
-replacing toast-only feedback. The one structural UI change: extend `ChatLine`
-(`src/components/characters/chat-message.tsx:11`), `chatMessageSchema`
-(`src/lib/client/api.ts:304`), `toLine`, and a `MessageBubble` branch.
+A durable, rendered **world-beat line** in the successor-chat transcript for the events
+the player causes or witnesses — traveled / time-skipped / scene-ended — replacing
+slice 1's toast-only feedback. The one structural UI change: extend `ChatLine`
+(`src/components/characters/chat-message.tsx`), `chatMessageSchema`
+(`src/lib/client/api.ts`), `toLine`, and a `MessageBubble` branch.
+
+**How it shipped (decisions):**
+
+- **Encoding — no migration.** A beat is an ordinary `character_chat_messages` row:
+  `role = "assistant"` (a legal enum value; `speakerCharacterId` null), `meta.worldBeat
+  = { kind }` (`"traveled" | "time_skipped" | "scene_ended"`) marking it, and the
+  **phrased line stored verbatim on `content`**. The transcript GET already carries
+  `meta` through untouched, so the client re-parses the marker with zod and renders;
+  no schema change, no new `role` value.
+- **Phrasing is server-side + pure** (`src/lib/simulation/world-beat.ts`,
+  unit-tested): `worldBeatText` composes the destination phrase (`placeGoPhrase` — "home"
+  bare, else article'd, the goChipLabel idiom in prose) with the **shared
+  `formatSimLanding` stamp** — the one time surface the skip/travel toasts already name
+  their landing through; the beat invents no new formatter. `traveled` → "You walk to
+  the town square. · <landing>"; `time_skipped` → "Time passes — it's now <landing>.";
+  `scene_ended` → "The scene ends. · <landing>". The text is frozen at write time with
+  the authoritative **post-command** clock (a durable trace, not a live re-render).
+- **Render** — a `MessageBubble` early branch (after all hooks, for the strict
+  hooks-lint) draws a **muted, centered, non-bubble system line** (`text-xs
+  text-paper-500 italic`) — no portrait, no speaker label, no hover actions. `ChatLine`
+  gained `worldBeat?: WorldBeatKind` and `toLine` maps `meta.worldBeat.kind`;
+  `lastAssistantId` skips beats so "Another take" still targets the last real reply.
+- **Write points, server-side** — a new guarded `writeWorldBeat`
+  (`src/server/engine/sim-beats.ts`, successor-lane only) reads the post-command clock,
+  phrases, and inserts. The **sim-command route** writes the beat when `travel` /
+  `advance_time` / `end_scene` **commit** (after acceptance); a skip **folds** a wrapped
+  standing scene into its one "Time passes" beat (never a second `scene_ended`).
+  **sim-exchange** (`runInputAdmission`) writes the traveled beat when an **admitted NL
+  move** commits — a *departure* beat here, since slice 1 keeps NL moves abrupt (no
+  drain to arrival), alongside the narrated turn. `readBranchClock` moved from
+  `sim-exchange` to `sim-beats` so the writer owns its clock read with no import cycle;
+  `zoneLabelFromKind` was extracted in `sim-surfaces` (shared by the world read and the
+  beat writer — one kind→noun seam, no raw id). Beat rows are **excluded from the
+  narrator dialogue tail** (`loadSimDialogueTail`, via `isWorldBeatMeta`) — a UI trace,
+  never narration the model should echo.
+- **Client feedback flip** — for sim chats the travel + skip **success toasts are
+  gone**; a shared `reloadTranscript` (extracted from the post-send reconcile) pulls the
+  server-written beat into the transcript after the command returns (travel via
+  `onTraveled`/`refreshWorldAndState`, skip inline). **Refusal** feedback
+  (publicReason / legalAlternatives) is unchanged from slice 1. Legacy-lane skip toasts
+  stay (`formatChatMoment` path untouched). The `calendarStart` prop the card only used
+  for its old toast was removed.
+- **Degradation** (docs/resilience.md) — `writeWorldBeat` is fully self-guarded: a
+  failed beat write logs the `engine.sim.world_beat` diagnostic and returns, so the
+  command that already committed still returns success.
+- **Deferred / notes.** `docs/contracts/simulation.md` needed no change — the
+  `travel`/`advance_time`/`end_scene` **response shapes are unchanged**; the beat is a
+  transcript side effect. No local Postgres, so `pnpm test:int` (the sim-routes
+  integration tests) was **not** run here — the added coverage is the pure
+  `world-beat.test.ts` (phrasing + schema round-trip). Unit + lint + cycles + typecheck
+  + jscpd all pass.
 
 ### Slice 3 — pocket & actions
 

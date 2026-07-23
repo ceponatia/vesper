@@ -1,7 +1,6 @@
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { PublicFailurePresentation } from "@/contracts/simulation/narrative";
-import { simCalendarStartSchema, type SimCalendarStart } from "@/lib/simulation/clock";
 import { admitPlayerCommand, type AdmittedCommand } from "@/lib/simulation/input-admission";
 import { simulationHash } from "@/lib/simulation/hash";
 import { deriveEngagementId, isStandingCoPresentEngagement } from "@/lib/simulation/engagements";
@@ -22,24 +21,23 @@ import {
   chatParticipants,
   db,
   simActionDefinitions,
-  simBranches,
   simCharacters,
   simItemHoldings,
   simItems,
-  simWorlds,
   simZones,
 } from "@/server/db";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { embedText, embedTexts } from "@/server/ai";
 import { resolveChatPersona } from "../players";
 import { readChatEngineAuthority } from "./chat-authority";
+import { isWorldBeatMeta, readBranchClock, writeWorldBeat, type SimChatClock } from "./sim-beats";
 import { emptyReplyTakes, persistAssistantReply, pushReplyTake, replyTakesSchema } from "./chat-pipeline";
 import { enqueueChatSummary, loadChatSummary } from "./chat-summary";
 import { log } from "../log";
 import { narrationShapeId, type NarrationShapeId } from "./prompts/constants";
 import { buildSimSoloRenderPrompt } from "./prompts/sim-solo-render";
 import { buildLiveDeliberation, renderCommittedCut, renderSoloNarration } from "./sim-narrator";
-import { readSimChatOutfit, readSimChatRelationship, zoneDisplayNoun, type SimChatRelationship } from "./sim-surfaces";
+import { readSimChatOutfit, readSimChatRelationship, zoneDisplayNoun, zoneLabelFromKind, type SimChatRelationship } from "./sim-surfaces";
 import {
   advanceBranchStoryTime,
   drainMemoryIndexOutbox,
@@ -134,18 +132,14 @@ export async function findOrOpenStandingEngagement(input: {
     : { ok: false, code: "sim_conflict", publicReason: "The world moved; try again." };
 }
 
-export interface SimChatClock {
-  storySecond: number;
-  /** The world's calendar anchor (R5 time domain) — null = no calendar, "Day N" display. */
-  calendarStart: SimCalendarStart | null;
-}
-
 /**
  * R3 slice 4 + R5 time domain (ruling 17) — the routed chat's world clock:
  * the linked branch's `storySecond` plus the world's calendar anchor, or null
  * for a legacy chat. The chat UI shows THIS clock for sim-routed chats
  * (parity throughout the system), never the legacy scenario clock; the client
- * derives the legible label via the shared story-clock seam.
+ * derives the legible label via the shared story-clock seam. `readBranchClock`
+ * (the underlying branch read) lives in `sim-beats` alongside the beat writer
+ * that stamps against it.
  */
 export async function readSimChatClock(chatId: string): Promise<SimChatClock | null> {
   const authority = await readChatEngineAuthority(chatId);
@@ -158,21 +152,6 @@ export async function readSimChatClock(chatId: string): Promise<SimChatClock | n
     return null;
   }
   return readBranchClock(authority.simBranchId);
-}
-
-/** The branch clock + its world's calendar anchor (fail-open to no calendar). */
-export async function readBranchClock(branchId: string): Promise<SimChatClock | null> {
-  const [row] = await db()
-    .select({ storySecond: simBranches.storySecond, calendarStart: simWorlds.calendarStart })
-    .from(simBranches)
-    .innerJoin(simWorlds, eq(simWorlds.id, simBranches.worldId))
-    .where(eq(simBranches.id, branchId))
-    .limit(1);
-  if (!row) return null;
-  return {
-    storySecond: row.storySecond,
-    calendarStart: parseOr(simCalendarStartSchema.nullable(), row.calendarStart ?? null, null, undefined, "sim_worlds.calendar_start"),
-  };
 }
 
 /** The live embedder adapter for the §24 index — pseudo in demo mode, real otherwise. */
@@ -272,7 +251,21 @@ async function runInputAdmission(input: {
       actionDefinitionIds: actions.map((row) => row.actionDefinitionId),
     });
     if (command === null) return null;
-    return await submitAdmittedCommand(input, command);
+    const outcome = await submitAdmittedCommand(input, command);
+    // Slice 2 (world-ui.plan.md): an admitted NL move that COMMITS leaves the
+    // same durable "You walk to …" beat the travel chip does, alongside the
+    // narrated turn (the beat is a departure here — slice 1 keeps NL moves
+    // abrupt, no drain to arrival). Best-effort inside the already-guarded try.
+    if (command.kind === "move" && outcome.executed !== undefined) {
+      const kind = zones.find((zone) => zone.zoneId === command.toZoneId)?.kind ?? "";
+      await writeWorldBeat({
+        chatId: input.chatId,
+        branchId: input.branchId,
+        kind: "traveled",
+        destinationLabel: zoneLabelFromKind(command.toZoneId, kind),
+      });
+    }
+    return outcome;
   } catch {
     return null;
   }
@@ -457,7 +450,9 @@ async function resolveSimExchange(
  * lines are labeled NARRATION (previous), never a character — earlier replies may
  * have wrongly voiced the player's character and must read as narration output.
  * `excludeMessageId` drops one row (the reply a retake is re-rendering — it must
- * never read itself back). 30 lines (~15 exchanges) — the charter's history depth
+ * never read itself back). World-beat rows (slice 2 travel/skip/scene traces) are
+ * skipped — they are a UI trace, never narration the model produced or should echo.
+ * 30 lines (~15 exchanges) — the charter's history depth
  * (presentation-charter.plan.md §2 F11), on top of the R5 memory arc.
  */
 async function loadSimDialogueTail(
@@ -470,13 +465,14 @@ async function loadSimDialogueTail(
       id: characterChatMessages.id,
       role: characterChatMessages.role,
       content: characterChatMessages.content,
+      meta: characterChatMessages.meta,
     })
     .from(characterChatMessages)
     .where(eq(characterChatMessages.chatId, chatId))
     .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
-    .limit(excludeMessageId ? 31 : 30);
+    .limit(excludeMessageId ? 41 : 40);
   return tailRows
-    .filter((row) => row.id !== excludeMessageId)
+    .filter((row) => row.id !== excludeMessageId && !isWorldBeatMeta(row.meta))
     .slice(0, 30)
     .reverse()
     .map((row) => ({

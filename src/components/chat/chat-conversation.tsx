@@ -20,7 +20,6 @@ import {
   type ChatSceneModel,
   type ChatSkipAmount,
 } from "@/contracts";
-import { formatSimLanding } from "@/lib/simulation";
 import {
   charactersApi,
   chatsApi,
@@ -83,6 +82,8 @@ const toLine = (m: ChatMessage): ChatLine => ({
   stopped: m.meta.stopped,
   attachmentIds: m.meta.attachments?.ids.length ? m.meta.attachments.ids : undefined,
   narrator: m.meta.inputMode === "narrator" || undefined,
+  // World beat (world-ui.plan.md slice 2): the muted travel/skip/scene-ended trace.
+  worldBeat: m.meta.worldBeat?.kind,
 });
 
 /** Open-eye glyph — the privacy-mode toggle, off state (mobile-ux.plan.md ruling 4). */
@@ -427,8 +428,29 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     stageRef.current = result.data.regardBand.label;
   };
 
-  /** After a world-changing beat (a landing): refresh the chat state (clock) AND the world card. */
+  /**
+   * Pull the newest transcript page and swap it in (bailing if a send started
+   * meanwhile). The shared post-command reload — a settled exchange, a landing,
+   * or a skip all end here so a server-written world beat (slice 2) shows up. This
+   * resets to the newest page (paged-in history collapses; Load earlier restores it).
+   */
+  const reloadTranscript = async () => {
+    const fresh = await chatsApi.transcript(chatId);
+    if (fresh.ok && !sendingRef.current) {
+      setLines(fresh.data.messages.map(toLine));
+      setHasEarlier(fresh.data.hasMore);
+      setEarlierCursor(fresh.data.nextBefore);
+    }
+    return fresh;
+  };
+
+  /**
+   * After a world-changing beat (a travel landing): refresh the transcript (the
+   * new world beat lands there — slice 2 replaced the toast), plus the chat state
+   * (clock) and the world card.
+   */
   const refreshWorldAndState = () => {
+    void reloadTranscript();
     void refreshState();
     world.reload({ silent: true });
   };
@@ -554,16 +576,12 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       return outcome;
     }
     // Swap the optimistic temp-ids for the persisted ids so the exchange just sent
-    // is immediately editable/deletable (and pick up recorded takes + stop marks).
-    // Skip if another send already started. This resets to the newest page —
-    // history the reader paged in collapses (they're at the bottom after their
-    // own exchange; Load earlier brings it back), and the cursor re-syncs.
-    const fresh = await chatsApi.transcript(chatId);
-    if (fresh.ok && !sendingRef.current) {
-      setLines(fresh.data.messages.map(toLine));
-      setHasEarlier(fresh.data.hasMore);
-      setEarlierCursor(fresh.data.nextBefore);
-    }
+    // is immediately editable/deletable (and pick up recorded takes + stop marks) —
+    // and any world beat the successor turn wrote (slice 2). Skip if another send
+    // already started. This resets to the newest page — history the reader paged in
+    // collapses (they're at the bottom after their own exchange; Load earlier brings
+    // it back), and the cursor re-syncs.
+    const fresh = await reloadTranscript();
     // The pulse + drift settle server-side as the stream finalizes; refetch the
     // strip so the disposition (and any stage change) shows after the exchange —
     // and the scene list, since a big moment may have auto-queued a render (slice 9).
@@ -915,15 +933,11 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         toast.push({ title: "Time skip failed", description: result.error.message, tone: "error" });
         return;
       }
+      // Slice 2 (world-ui.plan.md): the landing shows as a durable "Time passes…"
+      // beat in the transcript now, not a toast — pull it in with the world + clock.
+      await reloadTranscript();
       await refreshState();
       world.reload({ silent: true });
-      const landing = result.data.toStorySecond;
-      const anchor = chatState?.simClock?.calendarStart ?? null;
-      const landingLabel = landing === null ? "later" : formatSimLanding(landing, anchor);
-      toast.push({
-        title: "Time passes…",
-        description: `It's now ${landingLabel}. ${who} will pick the scene up from there.`,
-      });
       return;
     }
     const result = await chatsApi.timeSkip(chatId, amount);
@@ -1014,8 +1028,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const rosterNames = roster.length ? roster.map((m) => m.name) : name ? [name] : [];
 
   const premise = chatState?.premise.trim() ?? "";
-  // Another take targets the last assistant reply (spec §4.1) — only there, only idle.
-  const lastAssistantId = [...lines].reverse().find((l) => l.role === "assistant")?.id ?? null;
+  // Another take targets the last assistant REPLY (spec §4.1) — only there, only
+  // idle. A trailing world beat (slice 2) is not a reply, so it's skipped.
+  const lastAssistantId = [...lines].reverse().find((l) => l.role === "assistant" && !l.worldBeat)?.id ?? null;
   // Go on (spec §4.2): the newest SETTLED message is a reply and nothing is streaming.
   const lastLine = lines[lines.length - 1];
   const canGoOn =
@@ -1102,7 +1117,6 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           <ChatWorldCard
             chatId={chatId}
             world={world.data}
-            calendarStart={chatState?.simClock?.calendarStart ?? null}
             archived={archived}
             busy={skipBusy || sending}
             onTraveled={refreshWorldAndState}
@@ -1355,7 +1369,6 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             <ChatWorldCard
               chatId={chatId}
               world={world.data}
-              calendarStart={chatState?.simClock?.calendarStart ?? null}
               archived={archived}
               busy={skipBusy || sending}
               onTraveled={refreshWorldAndState}

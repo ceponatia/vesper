@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CharacterSheetScope } from "@/lib/character-scopes";
 import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
+import { WORLD_BEAT_KINDS } from "@/lib/simulation/world-beat";
 import {
   activeConditionSchema,
   type ActiveCondition,
@@ -319,8 +320,14 @@ export const chatMessageSchema = z.object({
         .catch(null),
       /** "narrator" on a user line = story narration authored as the storyteller (chat-supporting-cast.plan.md). */
       inputMode: z.enum(["player", "narrator"]).nullish().catch(null),
+      /**
+       * World beat (world-ui.plan.md slice 2): a durable travel / time-skip /
+       * scene-ended trace on an assistant row — `content` carries the phrased line,
+       * this marks it so the transcript renders a muted system line, not a bubble.
+       */
+      worldBeat: z.object({ kind: z.enum(WORLD_BEAT_KINDS).catch("traveled") }).nullish().catch(null),
     })
-    .catch({ stopped: false, attachments: null, inputMode: null }),
+    .catch({ stopped: false, attachments: null, inputMode: null, worldBeat: null }),
   createdAt: optionalText,
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;

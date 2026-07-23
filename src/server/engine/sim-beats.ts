@@ -1,0 +1,88 @@
+import { eq } from "drizzle-orm";
+import { z } from "zod";
+import { newId } from "@/lib/ids";
+import { parseOr } from "@/lib/parse";
+import { simCalendarStartSchema, type SimCalendarStart } from "@/lib/simulation/clock";
+import { worldBeatText, type WorldBeatKind } from "@/lib/simulation/world-beat";
+import { characterChatMessages, db, simBranches, simWorlds } from "../db";
+import { log } from "../log";
+
+/**
+ * World beats (world-ui.plan.md slice 2) — the durable transcript trace of a
+ * world event the player caused or witnessed (travel, a time skip, a scene
+ * ending), successor-lane only. A beat is an ordinary `character_chat_messages`
+ * row (NO migration): `role = "assistant"` (a legal enum value, `speakerCharacterId`
+ * null) with `meta.worldBeat = { kind }` marking it, and the phrased line stored
+ * verbatim on `content`. The transcript read carries `meta` through untouched, so
+ * the client re-parses the marker and renders a muted system line; the narrator
+ * dialogue tail skips beat rows by that same marker.
+ */
+
+export interface SimChatClock {
+  storySecond: number;
+  /** The world's calendar anchor (R5 time domain) — null = no calendar, "Day N" display. */
+  calendarStart: SimCalendarStart | null;
+}
+
+/** The world-beat marker on a message row's `meta` (fail-open to "not a beat"). */
+const worldBeatMetaSchema = z.object({ worldBeat: z.object({ kind: z.string() }).nullish() }).catch({ worldBeat: null });
+
+/** True when a message row's `meta` marks it as a world beat (a UI trace, not narration). */
+export function isWorldBeatMeta(meta: unknown): boolean {
+  return parseOr(worldBeatMetaSchema, meta, {}, undefined, "character_chat_messages.meta").worldBeat != null;
+}
+
+/** The branch clock + its world's calendar anchor (fail-open to no calendar). */
+export async function readBranchClock(branchId: string): Promise<SimChatClock | null> {
+  const [row] = await db()
+    .select({ storySecond: simBranches.storySecond, calendarStart: simWorlds.calendarStart })
+    .from(simBranches)
+    .innerJoin(simWorlds, eq(simWorlds.id, simBranches.worldId))
+    .where(eq(simBranches.id, branchId))
+    .limit(1);
+  if (!row) return null;
+  return {
+    storySecond: row.storySecond,
+    calendarStart: parseOr(simCalendarStartSchema.nullable(), row.calendarStart ?? null, null, undefined, "sim_worlds.calendar_start"),
+  };
+}
+
+/**
+ * Write one world beat to a successor chat's transcript, stamped at the current
+ * (post-command) branch clock. Best-effort by ruling (docs/resilience.md): a
+ * failed beat write must NEVER fail the command that already committed — it logs
+ * the `engine.sim.world_beat` diagnostic and returns. Callers resolve any display
+ * label (they hold the space projection); this owns the clock read, phrasing, and
+ * insert so every call site is one guarded line.
+ */
+export async function writeWorldBeat(input: {
+  chatId: string;
+  branchId: string;
+  kind: WorldBeatKind;
+  /** Destination display noun for a `traveled` beat; omitted for skips / scene-ends. */
+  destinationLabel?: string;
+}): Promise<void> {
+  try {
+    const clock = await readBranchClock(input.branchId);
+    const content = worldBeatText({
+      kind: input.kind,
+      storySecond: clock?.storySecond ?? 0,
+      anchor: clock?.calendarStart ?? null,
+      ...(input.destinationLabel === undefined ? {} : { destinationLabel: input.destinationLabel }),
+    });
+    await db().insert(characterChatMessages).values({
+      id: newId(),
+      chatId: input.chatId,
+      speakerCharacterId: null,
+      role: "assistant",
+      content,
+      meta: { simTurn: true, worldBeat: { kind: input.kind } },
+    });
+  } catch (error) {
+    log.warn("engine.sim.world_beat", "beat write degraded; command already succeeded", {
+      chatId: input.chatId,
+      kind: input.kind,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}

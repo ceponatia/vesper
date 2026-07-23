@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { formatSimLanding, type SimCalendarStart } from "@/lib/simulation";
 import { placeAtPhrase } from "@/lib/simulation/solo-cut";
 import { approxWalkMinutes, capitalizeFirst, goChipLabel, placeGoPhrase } from "@/lib/simulation/world-read";
 import { chatsApi, type ChatWorld } from "@/lib/client/api";
@@ -15,28 +14,26 @@ type Destination = ChatWorld["destinations"][number];
  * successor world, beside the clock card in the right "story time" aside (and in
  * the phone Roster sheet). It draws where the player is (or is walking to), who
  * else is around, and the open destinations as skip-style travel chips (ruling
- * 20). A tap composes move + a drain to arrival server-side, toasts the landing
- * in skip-parity, and refreshes the world + chat state. A refused move renders
- * the §14.4 public face (publicReason + legalAlternatives) — the first real UI
- * consumer of that shape. Renders nothing for a degraded / legacy / shadow chat
- * (world === null) — ruling-18-style affordance hiding.
+ * 20). A tap composes move + a drain to arrival server-side, then the host refresh
+ * pulls in the durable "You walk to …" world beat (world-ui.plan.md slice 2
+ * replaced slice 1's landing toast) plus the world + chat state. A refused move
+ * renders the §14.4 public face (publicReason + legalAlternatives) — the first
+ * real UI consumer of that shape. Renders nothing for a degraded / legacy / shadow
+ * chat (world === null) — ruling-18-style affordance hiding.
  */
 export function ChatWorldCard({
   chatId,
   world,
-  calendarStart,
   archived,
   busy,
   onTraveled,
 }: {
   chatId: string;
   world: ChatWorld | null;
-  /** The world's calendar anchor (chatState.simClock.calendarStart) — labels the landing toast. */
-  calendarStart: SimCalendarStart | null;
   archived: boolean;
   /** True while a reply / skip is in flight — travel chips disable (same discipline as skip chips). */
   busy: boolean;
-  /** Host refreshes the world envelope + chat state after a landing. */
+  /** Host refreshes the transcript (the new world beat), world envelope, and chat state after a landing. */
   onTraveled: () => void;
 }) {
   const toast = useToast();
@@ -62,9 +59,9 @@ export function ChatWorldCard({
       });
       return;
     }
-    const landing = result.data.toStorySecond;
-    const landingLabel = landing === null ? "later" : formatSimLanding(landing, calendarStart);
-    toast.push({ title: "You set out", description: `You walk to ${placeGoPhrase(dest.label)}. It's now ${landingLabel}.` });
+    // Slice 2 (world-ui.plan.md): the landing is now a durable "You walk to …"
+    // beat in the transcript (server-written), so no success toast — the host
+    // refresh (`onTraveled`) pulls the beat + world + clock in.
     onTraveled();
   };
 

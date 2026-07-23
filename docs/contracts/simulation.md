@@ -172,7 +172,12 @@ affordance"):
   drain. Response `{status:"traveled", toStorySecond, arrived}`; a rejection returns the
   §14.4 shape at HTTP 200 (so the card can read `publicReason` + `legalAlternatives`
   instead of a flattened error body). Skip-style is loop sugar over the §17 events, never
-  a bypass — the §17.1 lower-bound law still holds.
+  a bypass — the §17.1 lower-bound law still holds. On commit, `travel` / `advance_time` /
+  `end_scene` each write a durable **world beat** to the chat transcript (a side effect,
+  not part of the response — world-ui.plan.md slice 2): an ordinary `role: "assistant"`
+  message row marked `meta.worldBeat = { kind }`, the phrased line on `content`, stamped
+  through `formatSimLanding`. Best-effort (`writeWorldBeat`, `server/engine/sim-beats.ts`):
+  a failed beat write logs `engine.sim.world_beat` and never fails the committed command.
 
 ## Forks, snapshots, and audit
 
