@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { WorldBeatKind } from "@/lib/simulation/world-beat";
 import type { ReplyTakes } from "@/lib/client/api";
 import { MessageContent } from "@/components/characters/message-content";
 import { chatReplySegments } from "@/components/characters/chat-segments";
@@ -20,6 +21,12 @@ export interface ChatLine {
   attachmentIds?: string[];
   /** User line written in NARRATOR mode (chat-supporting-cast.plan.md): story narration, not the player's POV. */
   narrator?: boolean;
+  /**
+   * World beat (world-ui.plan.md slice 2): a durable travel / time-skip / scene-ended
+   * trace on a successor-chat transcript. Set ⇒ the line renders as a muted, compact
+   * system line (no portrait, no bubble, no actions) — `content` is the phrased text.
+   */
+  worldBeat?: WorldBeatKind;
 }
 
 /** Circular-arrow "rerun" glyph (stroke-based, 24×24 box — matches the nav icons). */
@@ -163,6 +170,18 @@ export function MessageBubble({
     await onSwitchTake(line.id, takeId);
     setSwitching(false);
   };
+
+  if (line.worldBeat) {
+    // A durable world beat (travel / time-skip / scene-ended, world-ui.plan.md
+    // slice 2): a muted, compact, non-bubble system line in the successor
+    // transcript — no portrait, no speaker label, no hover actions. The phrased
+    // text (with its story-time stamp) is server-rendered onto `content`.
+    return (
+      <div className="flex justify-center px-4 py-1">
+        <p className="text-center text-xs text-paper-500 italic">{line.content}</p>
+      </div>
+    );
+  }
 
   return (
     <div className={`group flex gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>

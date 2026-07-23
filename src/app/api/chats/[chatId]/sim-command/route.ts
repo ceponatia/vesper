@@ -11,6 +11,8 @@ import {
   submitDurableMoveActor,
   submitDurableStartActivity,
   submitDurableTransferItem,
+  writeWorldBeat,
+  zoneLabelFromKind,
 } from "@/server/engine";
 import { requireSimChat, simPlayerEnvelope } from "../sim-shared";
 
@@ -127,6 +129,11 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         },
         { admitAtLockedVersion: true },
       );
+      // Slice 2: an explicitly-ended scene leaves a durable transcript beat (a
+      // skip folds its own scene close into the time-passes beat instead).
+      if (outcome.status === "accepted") {
+        await writeWorldBeat({ chatId, branchId: sim.branchId, kind: "scene_ended" });
+      }
       return respond(outcome);
     }
     case "give_item": {
@@ -200,6 +207,9 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
       const target = branch.storySecond + command.minutes * 60;
       const drain = await drainBranchTo(sim.branchId, target);
       if (!drain.ok) return drain.response;
+      // Slice 2: the skip lands a durable "Time passes — it's now …" beat (the
+      // wrapped standing scene is folded into this one beat, never a second).
+      await writeWorldBeat({ chatId, branchId: sim.branchId, kind: "time_skipped" });
       return jsonOk({ status: "advanced", toStorySecond: target, drained: drain.drained });
     }
     case "travel": {
@@ -243,6 +253,16 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
       const arrived = settled.loci.some(
         (locus) => locus.actorId === sim.playerActorId && locus.kind === "at" && locus.zoneId === command.toZoneId,
       );
+      // Slice 2: the landing leaves a durable "You walk to …" beat in the
+      // transcript (replacing slice 1's toast). The destination label resolves
+      // through the SAME kind→noun seam the world card uses — never a raw id.
+      const destKind = settled.zones.find((zone) => zone.id === command.toZoneId)?.kind ?? "";
+      await writeWorldBeat({
+        chatId,
+        branchId: sim.branchId,
+        kind: "traveled",
+        destinationLabel: zoneLabelFromKind(command.toZoneId, destKind),
+      });
       return jsonOk({ status: "traveled", toStorySecond: target, arrived });
     }
   }

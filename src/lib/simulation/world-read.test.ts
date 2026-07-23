@@ -26,7 +26,6 @@ import {
  */
 
 const PLAYER = "actor-player";
-const PRIMARY = "actor-primary";
 const HOME = "zone-home";
 const SQUARE = "zone-square";
 const NOW = 8 * 3_600;

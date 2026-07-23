@@ -61,6 +61,16 @@ export function zoneDisplayNoun(kind: string): string {
 }
 
 /**
+ * A zone's display label from its kind — the display NOUN, humanizing the raw
+ * zone id only when the kind is unknown. The one `zoneLabelOf` both the world
+ * read and the world-beat writer resolve through (charter law — never a raw id).
+ */
+export function zoneLabelFromKind(zoneId: string, kind: string): string {
+  const noun = zoneDisplayNoun(kind);
+  return noun.length > 0 ? noun : humanizeId(zoneId);
+}
+
+/**
  * Slice 3: the primary character's REAL presence for a routed chat — where
  * their body is in the mirror world relative to the player's, never the
  * legacy chat-state flag. Null for legacy and shadow lanes (their display
@@ -164,10 +174,7 @@ export async function readSimChatWorld(chatId: string): Promise<SimChatWorld | n
     const kindByZone = new Map<string, string>(space.zones.map((zone) => [zone.id, zone.kind]));
     const privacyByZone = new Map<string, string>(space.zones.map((zone) => [zone.id, zone.privacyPolicy]));
     const locusByActor = new Map<string, PhysicalLocus>(space.loci.map((locus) => [locus.actorId, locus]));
-    const zoneLabelOf = (zoneId: string): string => {
-      const noun = zoneDisplayNoun(kindByZone.get(zoneId) ?? "");
-      return noun.length > 0 ? noun : humanizeId(zoneId);
-    };
+    const zoneLabelOf = (zoneId: string): string => zoneLabelFromKind(zoneId, kindByZone.get(zoneId) ?? "");
     const zonePrivacyOf = (zoneId: string): string => privacyByZone.get(zoneId) ?? "public";
     const zonePhraseOf = (zoneId: string): string => ZONE_KIND_LABELS[kindByZone.get(zoneId) ?? ""] ?? "elsewhere";
 
