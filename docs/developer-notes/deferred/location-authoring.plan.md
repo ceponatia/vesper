@@ -67,11 +67,19 @@ registry, and **recurring upkeep**.
    game with AI control of NPCs**. 3D space is the destination; named spots
    are the on-ramp and the prose-facing vocabulary while the game is
    prose-led — not a permanent ceiling.
-3. **The narrator never parses coordinates.** When coordinates exist, a
-   dedicated **agent** parses spatial state and tells the narrator where
-   people are in terms it can understand (the same shape as the existing
-   pre-turn agent legs). The translation layer is an agent seam, not a reason
-   coordinates can't exist.
+3. **Spatial translation is split by direction, on latency grounds**
+   (refined 2026-07-23 from "an agent parses coordinates for the narrator").
+   The narrator never parses coordinates in either era. **Outgoing** —
+   spots/coordinates → narrator-usable terms (nearest spot, distance bands,
+   relative facing, occlusion) — is **deterministic code** on the pre-turn
+   path: pre-turn work sits between user input and narrator output, so it
+   must be instant; code is also replayable and cannot hallucinate geometry.
+   **Incoming** — narrative prose → position updates and their legality —
+   is **post-turn agent work**: post-turn agents run asynchronously and are
+   allowed to be slow because they don't meaningfully delay the chat.
+   Consequence to design for at promotion: positions settle one turn behind
+   the prose that moved them, so a post-turn legality rejection surfaces as
+   next-turn correction/drift-repair, not an in-turn refusal.
 4. **When to go 3D:** when something real consumes the precision — a rendered
    map view, true pathfinding, distance-based mechanics, or the
    graphical-game promotion itself.
@@ -106,9 +114,9 @@ facing what" exists.
 - **Sub-zone space per ruling 1:** named spots with stable IDs, optional
   coordinate fields, and hand-authored sight/adjacency rules; facing and
   obstacles are expressed against spots in v1 and against geometry after the
-  ruling-4 trigger. The engine owns position authoritatively; a
-  spatial-translation agent (ruling 3) is the narrator's window into it once
-  coordinates exist.
+  ruling-4 trigger. The engine owns position authoritatively; the ruling-3
+  seam — deterministic read-out pre-turn, async agent write-back post-turn —
+  is the narrator's window into it.
 - **Ownership/residency/upkeep** wire into the existing household + currency
   machinery; upkeep needs a recurring-charge mechanism (trigger-scheduled, like
   arrivals) that doesn't exist yet.
