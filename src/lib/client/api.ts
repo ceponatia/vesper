@@ -970,6 +970,16 @@ export const chatWorldSchema = z.object({
     }),
   ),
   sceneOpen: z.boolean().catch(false),
+  /**
+   * Drain-hardening A5 slice 5: present while a durable time job is catching this branch's world
+   * up after a long skip — the card renders staged progress and keeps polling until it clears
+   * (the server owns completion). Absent = no catch-up in flight.
+   */
+  catchingUp: z
+    .object({ targetStorySecond: z.number().catch(0), reachedStorySecond: z.number().catch(0) })
+    .nullish()
+    .catch(null)
+    .transform((v) => v ?? null),
 });
 export type ChatWorld = z.infer<typeof chatWorldSchema>;
 
