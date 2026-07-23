@@ -216,6 +216,18 @@ export {
   type ScheduleTriggerOptions,
 } from "./scheduler-store";
 export {
+  claimDueTimeJob,
+  enqueueTimeJob,
+  hasActiveTimeJob,
+  readTimeJobForChat,
+  runClaimedTimeJob,
+  type EnqueueTimeJobInput,
+  type RunJobResult,
+  type TimeJob,
+  type TimeJobState,
+  type TimeJobStatus,
+} from "./time-job-store";
+export {
   captureBranchSnapshot,
   discardBranchSnapshots,
   rebuildDurableBranchProjection,

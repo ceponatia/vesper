@@ -46,6 +46,7 @@ import { readSimChatOutfit, readSimChatRelationship, zoneDisplayNoun, zoneLabelF
 import {
   advanceBranchStoryTime,
   drainMemoryIndexOutbox,
+  hasActiveTimeJob,
   latestCutIdForEngagement,
   prepareEngagementTurn,
   queryMemoryDocuments,
@@ -539,7 +540,7 @@ export type SimChatExchangeResult =
     }
   | {
       ok: false;
-      code: "not_sim_enabled" | "sim_open_failed" | "render_withheld" | "nothing_to_retake";
+      code: "not_sim_enabled" | "sim_open_failed" | "render_withheld" | "nothing_to_retake" | "world_catching_up";
       message: string;
       status: number;
     };
@@ -860,7 +861,21 @@ export async function runSimChatExchange(input: {
   if (!resolved.ok) return resolved.result;
   const mode = input.mode ?? "send";
   if (mode === "retake") {
+    // A retake re-renders a committed cut — it mutates nothing and advances no time, so it is
+    // allowed even while the world is catching up (the guard below is for real turns only).
     return runSimRetake({ chatId: input.chatId, userId: input.userId, ctx: resolved.ctx });
+  }
+  // A5 slice 4: a real turn advances the span and writes — turn it away while a durable time job
+  // is catching this branch's world up. The in-process reply lock does not outlive the request
+  // that started the job, so the durable job state is the guard (shared by the send + sim-turn
+  // routes, since both funnel through here).
+  if (await hasActiveTimeJob(resolved.ctx.branchId)) {
+    return {
+      ok: false,
+      code: "world_catching_up",
+      message: "the world is still catching up on this chat; try again in a moment",
+      status: 409,
+    };
   }
   return runSimTurn({
     chatId: input.chatId,

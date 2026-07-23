@@ -1434,6 +1434,71 @@ export const simConsumerCheckpoints = pgTable(
 );
 
 /**
+ * Durable time-advance jobs (drain-hardening A5 slice 4): a long skip / travel drain that
+ * outlives its originating HTTP request. Once a skip starts the SERVER owns completion — a
+ * leased/fenced runner drains the branch to `targetStorySecond` in bounded steps, persisting
+ * `reachedStorySecond` as it goes, and finishes whether or not the app stays open (the Fly
+ * machine never auto-stops). Distinct from `sim_outbox` (which is event-delivery keyed to a
+ * committed source event); a time job is durable player INTENT plus progress.
+ *
+ * Concurrency (the review's load-bearing requirement): at most ONE active job per branch (the
+ * partial unique index), claimed with a lease + fenced progress writes, re-claimable on lease
+ * expiry, so a second request or a boot sweep can never double-run one. `blocked` is the poison
+ * outcome — a terminally-failed trigger in the window parks the job for admin repair rather than
+ * a silent skip-over.
+ */
+export const simTimeJobs = pgTable(
+  "sim_time_jobs",
+  {
+    id: text("id").primaryKey(),
+    worldId: text("world_id").notNull(),
+    branchId: text("branch_id").notNull(),
+    /** The conversation that requested the skip — for the landing beat + the catch-up UI. */
+    chatId: text("chat_id").notNull(),
+    /** Where the drain must reach. */
+    targetStorySecond: bigint("target_story_second", { mode: "number" }).notNull(),
+    /** How far the drain has actually reached (progress; drives the "Day 12 of 30…" UI). */
+    reachedStorySecond: bigint("reached_story_second", { mode: "number" }).notNull(),
+    state: text("state", { enum: ["pending", "processing", "completed", "failed", "blocked"] })
+      .notNull()
+      .default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    /** When the job may next be claimed — bumped past a `trigger_backoff` so the runner waits it out. */
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+    leaseOwner: text("lease_owner"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "sim_time_jobs_branch_world_fk",
+      columns: [t.branchId, t.worldId],
+      foreignColumns: [simBranches.id, simBranches.worldId],
+    }).onDelete("cascade"),
+    // At most one ACTIVE (pending/processing) job per branch — a partial unique index is the
+    // one-job-per-branch guarantee at the storage layer, so a race to escalate cannot create two.
+    uniqueIndex("sim_time_jobs_one_active_per_branch")
+      .on(t.branchId)
+      .where(sql`state in ('pending', 'processing')`),
+    // The runner's claim query: due, claimable, oldest first.
+    index("sim_time_jobs_claim_idx").on(t.state, t.availableAt, t.createdAt),
+    index("sim_time_jobs_branch_idx").on(t.branchId, t.state),
+    check(
+      "sim_time_jobs_seconds_safe",
+      sql`${t.reachedStorySecond} >= 0 AND ${t.reachedStorySecond} <= ${t.targetStorySecond} AND ${t.targetStorySecond} <= 9007199254740991`,
+    ),
+    check("sim_time_jobs_attempts_nonnegative", sql`${t.attempts} >= 0`),
+    check(
+      "sim_time_jobs_processing_has_lease",
+      sql`${t.state} <> 'processing' OR (${t.leaseOwner} IS NOT NULL AND ${t.leaseExpiresAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
  * First disposable async projection: one stable row per material movement event
  * (§26.4). E5.3 bumps this to schema version 2 — `eventKind` distinguishes a
  * transfer from a destruction, and `fromLocus`/`toLocus` carry the locus-model
