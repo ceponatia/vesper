@@ -9,6 +9,7 @@ import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { log } from "@/server/log";
 import { db, simActionDefinitions, simBranches, simCharacters, simItemHoldings, simItems } from "@/server/db";
 import {
+  CompositionFallbackCollector,
   drainBranchTo,
   findStandingEngagement,
   moveArrivalTarget,
@@ -323,6 +324,9 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         primaryActorId: sim.primaryActorId,
         primaryName: primary?.name ?? "They",
         toZoneId: command.toZoneId,
+        // C15: the chip path has no reply to attach codes to; the collector stamps them on the
+        // beat runAccompanyTogether writes, and records the durable events rows.
+        fallbacks: new CompositionFallbackCollector(chatId),
       });
       if (outcome.status === "declined") {
         return jsonOk({ status: "rejected", code: "accompany_declined", publicReason: outcome.publicReason, legalAlternatives: outcome.legalAlternatives });

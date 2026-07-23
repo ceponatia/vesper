@@ -2,10 +2,12 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
+import type { CompositionFallbackCode } from "@/contracts/turns/composition-fallback";
 import { simCalendarStartSchema, type SimCalendarStart } from "@/lib/simulation/clock";
 import { worldBeatText, type WorldBeatKind } from "@/lib/simulation/world-beat";
 import { characterChatMessages, db, simBranches, simWorlds } from "../db";
 import { log } from "../log";
+import { recordCompositionFallback } from "./composition-diagnostics";
 
 /**
  * World beats (world-ui.plan.md slice 2) — the durable transcript trace of a
@@ -71,6 +73,12 @@ export async function writeWorldBeat(input: {
   itemName?: string;
   /** Performed action display label for a `rested` beat. */
   activityLabel?: string;
+  /**
+   * Public-safe composition-fallback codes to stamp on this beat's meta (C15 surface a) — the
+   * "open a suspicious beat and see what degraded" breadcrumb. Codes ONLY, never private
+   * detail (ruling 2). Omitted / empty ⇒ no marker.
+   */
+  fallbacks?: readonly CompositionFallbackCode[];
 }): Promise<void> {
   try {
     const clock = await readBranchClock(input.branchId);
@@ -91,13 +99,25 @@ export async function writeWorldBeat(input: {
       speakerCharacterId: null,
       role: "assistant",
       content,
-      meta: { simTurn: true, worldBeat: { kind: input.kind } },
+      meta: {
+        simTurn: true,
+        worldBeat: { kind: input.kind },
+        ...(input.fallbacks && input.fallbacks.length ? { compositionFallbacks: [...input.fallbacks] } : {}),
+      },
     });
   } catch (error) {
     log.warn("engine.sim.world_beat", "beat write degraded; command already succeeded", {
       chatId: input.chatId,
       kind: input.kind,
       error: error instanceof Error ? error.message : String(error),
+    });
+    // C15: the one degradation that has no reply/beat to attach a code to — record it directly
+    // as a durable events row so a beat vanishing is countable, not just a log line.
+    recordCompositionFallback({
+      site: "beat",
+      code: "beat_write_degraded",
+      chatId: input.chatId,
+      detail: error instanceof Error ? error.message : String(error),
     });
   }
 }

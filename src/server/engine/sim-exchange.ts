@@ -34,6 +34,7 @@ import { embedText, embedTexts } from "@/server/ai";
 import { resolveChatPersona } from "../players";
 import { readChatEngineAuthority } from "./chat-authority";
 import { isWorldBeatMeta, readBranchClock, writeWorldBeat, type SimChatClock } from "./sim-beats";
+import { CompositionFallbackCollector } from "./composition-diagnostics";
 import { emptyReplyTakes, persistAssistantReply, pushReplyTake, replyTakesSchema } from "./chat-pipeline";
 import { enqueueChatSummary, loadChatSummary } from "./chat-summary";
 import { log } from "../log";
@@ -773,6 +774,9 @@ async function runSimTurn(input: {
 }): Promise<SimChatExchangeResult> {
   const { chatId, ctx } = input;
   const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
+  // C15: one collector per turn, threaded through the choreography. Each degradation site
+  // notes it (durable events row now + a public-safe code for the reply meta at persist).
+  const fallbacks = new CompositionFallbackCollector(chatId);
   // continue/open carry no utterance (ruling 19) — only a send speaks.
   const message = input.mode === "send" ? (input.message ?? "").trim() : "";
   // A "narrator" send is storyteller steering (not the player-character acting):
@@ -836,6 +840,7 @@ async function runSimTurn(input: {
       sceneEngagementId: scene.engagementId,
       dialogueTail,
       userMessageId,
+      fallbacks,
     });
   }
 
@@ -862,6 +867,7 @@ async function runSimTurn(input: {
       sceneEngagementId: scene.ok ? scene.engagementId : null,
       dialogueTail,
       userMessageId,
+      fallbacks,
     });
   }
 
@@ -878,6 +884,7 @@ async function runSimTurn(input: {
       ctx,
       userMessageId,
       dialogueTail,
+      fallbacks,
     });
   }
 
@@ -913,6 +920,7 @@ async function runSimTurn(input: {
     admission,
     dialogueTail,
     userMessageId,
+    fallbacks,
   });
 }
 
@@ -933,6 +941,8 @@ async function runCoPresentTurn(input: {
   admission: AdmissionOutcome | null;
   dialogueTail: { speaker: string; text: string }[];
   userMessageId: string | null;
+  /** C15: composition-fallback collector threaded from the turn entry (may be absent). */
+  fallbacks?: CompositionFallbackCollector;
 }): Promise<SimChatExchangeResult> {
   const { chatId, ctx, admission } = input;
   const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
@@ -1001,6 +1011,8 @@ async function runCoPresentTurn(input: {
       // The opening-directive flag a later prompt slice reads (§4).
       ...(input.mode === "open" ? { simOpening: true } : {}),
       ...(rendered.confirmStatus === undefined ? {} : { confirmStatus: rendered.confirmStatus }),
+      // C15 surface a: public-safe codes only (ruling 2) — open a degraded beat and see why.
+      ...(input.fallbacks && input.fallbacks.codes().length ? { compositionFallbacks: input.fallbacks.codes() } : {}),
     },
   });
   // R5 knowledge/memory: fold the conversation forward — self-dedupes below its trigger.
@@ -1050,6 +1062,7 @@ async function runSimDepartureTurn(input: {
   sceneEngagementId: string | null;
   dialogueTail: { speaker: string; text: string }[];
   userMessageId: string | null;
+  fallbacks?: CompositionFallbackCollector;
 }): Promise<SimChatExchangeResult> {
   const { chatId, ctx, command, plan } = input;
   const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
@@ -1067,6 +1080,7 @@ async function runSimDepartureTurn(input: {
     ctx,
     userMessageId: input.userMessageId,
     dialogueTail: input.dialogueTail,
+    ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
   };
 
   // The zone the player is leaving (for the departure context). Read once here;
@@ -1114,6 +1128,11 @@ async function runSimDepartureTurn(input: {
         chatId,
         status: ended?.status ?? "threw",
       });
+      input.fallbacks?.note({
+        site: "departure",
+        code: "end_engagement_fallback",
+        detail: `end-engagement ${ended?.status ?? "threw"}`,
+      });
       const admission = await admitIntoCoPresentTurn(
         { chatId, userId: input.userId, branchId, playerActorId, primaryActorId, playerName, primaryName },
         command,
@@ -1131,6 +1150,7 @@ async function runSimDepartureTurn(input: {
         admission,
         dialogueTail: input.dialogueTail,
         userMessageId: input.userMessageId,
+        ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
       });
     }
   }
@@ -1160,6 +1180,11 @@ async function runSimDepartureTurn(input: {
       // the two zones are adjacent); render a plain solo turn regardless.
       log.warn("engine.sim.departure", "move not accepted; plain solo render", { chatId, code: move.code });
     }
+    input.fallbacks?.note({
+      site: "departure",
+      code: "move_rejected_solo_render",
+      detail: `move ${move?.status ?? "threw"}${move?.status === "rejected" ? ` code=${move.code}` : ""}`,
+    });
     return runSimSoloTurn(soloArgs);
   }
 
@@ -1168,7 +1193,10 @@ async function runSimDepartureTurn(input: {
   //    trigger simply settles on a later turn (never a dead turn).
   const target = await moveArrivalTarget(branchId, playerActorId);
   const drain = await drainBranchTo(branchId, target);
-  if (!drain.ok) log.warn("engine.sim.departure", "arrival drain did not converge", { chatId });
+  if (!drain.ok) {
+    log.warn("engine.sim.departure", "arrival drain did not converge", { chatId });
+    input.fallbacks?.note({ site: "departure", code: "drain_diverged" });
+  }
 
   // 4) ONE traveled beat, phrased with the parting when a scene was ended.
   await writeWorldBeat({ chatId, branchId, kind: "traveled", destinationLabel: toLabel, parted: plan.parted });
@@ -1222,6 +1250,8 @@ export async function runAccompanyTogether(input: {
   primaryActorId: string;
   primaryName: string;
   toZoneId: string;
+  /** C15: collector for surface (b) events rows + the codes stamped on the beat this writes. */
+  fallbacks?: CompositionFallbackCollector;
 }): Promise<AccompanyResult> {
   const { chatId, userId, branchId, playerActorId, primaryActorId, primaryName, toZoneId } = input;
 
@@ -1303,6 +1333,7 @@ export async function runAccompanyTogether(input: {
     );
     if (ended.status !== "accepted") {
       log.warn("engine.sim.accompany", "end-engagement not accepted; interrupt fallback", { chatId, status: ended.status });
+      input.fallbacks?.note({ site: "accompany", code: "end_engagement_fallback", detail: `end-engagement ${ended.status}` });
     }
   }
 
@@ -1357,6 +1388,7 @@ export async function runAccompanyTogether(input: {
       chatId,
       status: primaryMove?.status ?? "threw",
     });
+    input.fallbacks?.note({ site: "accompany", code: "traveled_alone", detail: `primary move ${primaryMove?.status ?? "threw"}` });
   }
 
   // 4) Drain to the LATER of the two earliest arrivals (both share the link, but
@@ -1365,15 +1397,20 @@ export async function runAccompanyTogether(input: {
   const primaryTarget = together ? await moveArrivalTarget(branchId, primaryActorId) : playerTarget;
   const target = Math.max(playerTarget, primaryTarget);
   const drain = await drainBranchTo(branchId, target);
-  if (!drain.ok) log.warn("engine.sim.accompany", "arrival drain did not converge", { chatId });
+  if (!drain.ok) {
+    log.warn("engine.sim.accompany", "arrival drain did not converge", { chatId });
+    input.fallbacks?.note({ site: "accompany", code: "drain_diverged" });
+  }
 
   // 5) ONE world beat — "together" on a real co-travel, else the plain traveled beat.
+  //    C15: stamp any codes this choreography collected onto the beat's meta (surface a).
   await writeWorldBeat({
     chatId,
     branchId,
     kind: "traveled",
     destinationLabel: toLabel,
     ...(together ? { together: true } : {}),
+    ...(input.fallbacks && input.fallbacks.codes().length ? { fallbacks: input.fallbacks.codes() } : {}),
   });
 
   const settled = await readDurableSpaceBranch(branchId);
@@ -1407,6 +1444,7 @@ async function runSimAccompanyTurn(input: {
   sceneEngagementId: string;
   dialogueTail: { speaker: string; text: string }[];
   userMessageId: string | null;
+  fallbacks?: CompositionFallbackCollector;
 }): Promise<SimChatExchangeResult> {
   const { chatId, ctx, command } = input;
   const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
@@ -1420,6 +1458,7 @@ async function runSimAccompanyTurn(input: {
     primaryActorId,
     primaryName,
     toZoneId: command.toZoneId,
+    ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
   });
 
   // A decline (or a rare player-move refusal): the scene still stands. Render the
@@ -1443,6 +1482,7 @@ async function runSimAccompanyTurn(input: {
       admission: { failure },
       dialogueTail: input.dialogueTail,
       userMessageId: input.userMessageId,
+      ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
     });
   }
 
@@ -1456,6 +1496,7 @@ async function runSimAccompanyTurn(input: {
     ctx,
     userMessageId: input.userMessageId,
     dialogueTail: input.dialogueTail,
+    ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
   };
 
   // not_copresent shouldn't reach here (a standing scene implies co-presence), but
@@ -1482,6 +1523,7 @@ async function runSimAccompanyTurn(input: {
       chatId,
       code: scene.code,
     });
+    input.fallbacks?.note({ site: "accompany", code: "scene_reopen_failed", detail: `reopen ${scene.code}` });
     return runSimSoloTurn({ ...soloArgs, departure });
   }
   const travelContext = outcome.fromLabel
@@ -1499,6 +1541,7 @@ async function runSimAccompanyTurn(input: {
     admission: { executed: travelContext },
     dialogueTail: input.dialogueTail,
     userMessageId: input.userMessageId,
+    ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
   });
 }
 
@@ -1650,6 +1693,8 @@ async function runSimSoloTurn(input: {
    * arrival arc.
    */
   departure?: SoloDeparture;
+  /** C15: composition-fallback collector threaded from the turn entry (may be absent). */
+  fallbacks?: CompositionFallbackCollector;
 }): Promise<SimChatExchangeResult> {
   const { chatId, ctx } = input;
   const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
@@ -1731,6 +1776,7 @@ async function runSimSoloTurn(input: {
   }
 
   const diagnostics = [...solo.diagnostics, ...rendered.diagnostics];
+  const fallbackCodes = input.fallbacks?.codes() ?? [];
   const assistantMessageId = newId();
   await persistAssistantReply({
     id: assistantMessageId,
@@ -1744,6 +1790,10 @@ async function runSimSoloTurn(input: {
       modelId: rendered.modelId,
       attempts: rendered.attempts,
       ...(input.mode === "open" ? { simOpening: true } : {}),
+      // C15 surface a: the composed-flow codes (public-safe), plus the solo render's own
+      // stable diagnostic codes — both were previously returned then dropped at persist.
+      ...(fallbackCodes.length ? { compositionFallbacks: fallbackCodes } : {}),
+      ...(diagnostics.length ? { renderDiagnostics: diagnostics } : {}),
     },
   });
   void enqueueChatSummary({ chatId });
