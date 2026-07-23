@@ -456,6 +456,12 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     world.reload({ silent: true });
   };
 
+  // A5 slice 5: while the server is catching the world up after a long skip, poll the world (its
+  // own next-request sweep re-drives the durable job) AND the transcript, so the catch-up banner
+  // updates and the landing beat appears the moment the job settles and `catchingUp` clears. The
+  // world card disables every affordance meanwhile.
+  usePollWhile(world.data?.catchingUp != null, () => refreshWorldAndState(), 2000);
+
   /**
    * Shared streaming flow for every reply kind — send, opening beat, Go on, and
    * Another take: stream the reply into an assistant bubble, then reconcile against

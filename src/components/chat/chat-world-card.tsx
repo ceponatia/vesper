@@ -30,6 +30,17 @@ type WorldAction = ChatWorld["actions"][number];
  * state via `onWorldChanged`. Renders nothing for a degraded / legacy / shadow
  * chat (world === null) — ruling-18-style affordance hiding.
  */
+
+/** A human "time remaining" for the catch-up banner (A5 slice 5); "" below an hour (not worth a number). */
+function catchUpRemaining(cu: { targetStorySecond: number; reachedStorySecond: number }): string {
+  const seconds = Math.max(0, cu.targetStorySecond - cu.reachedStorySecond);
+  if (seconds < 3_600) return "";
+  const days = Math.floor(seconds / 86_400);
+  if (days >= 1) return days === 1 ? "1 day" : `${days} days`;
+  const hours = Math.round(seconds / 3_600);
+  return hours === 1 ? "1 hour" : `${hours} hours`;
+}
+
 export function ChatWorldCard({
   chatId,
   world,
@@ -55,9 +66,17 @@ export function ChatWorldCard({
   if (!world) return null;
 
   // One command in flight at a time — travel, walk-together, a handoff, and an
-  // action are mutually exclusive (each moves the same world clock).
+  // action are mutually exclusive (each moves the same world clock). A5 slice 5: while a durable
+  // time job is catching the world up, every affordance is disabled — the server owns the clock
+  // until it settles (a click would only bounce with world_catching_up).
   const anyBusy =
-    busy || archived || travelingZone !== null || travelingTogetherZone !== null || givingItem !== null || actingId !== null;
+    busy ||
+    archived ||
+    world.catchingUp != null ||
+    travelingZone !== null ||
+    travelingTogetherZone !== null ||
+    givingItem !== null ||
+    actingId !== null;
 
   // The give-item target is always the primary; the card knows them (and their
   // presence) from the cast. Available actions are the zone-gated ones only —
@@ -155,6 +174,19 @@ export function ChatWorldCard({
 
   return (
     <div className="flex flex-col gap-1.5">
+      {world.catchingUp ? (
+        <div
+          className="flex items-center gap-2 rounded-md border border-accent-600/40 bg-accent-950/30 px-2.5 py-2 text-xs text-accent-200"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent-400" aria-hidden="true" />
+          <span>
+            The world is catching up…
+            {catchUpRemaining(world.catchingUp) ? ` about ${catchUpRemaining(world.catchingUp)} to go.` : ""}
+          </span>
+        </div>
+      ) : null}
       <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Where you are</span>
       <div className="rounded-md border border-ink-600 bg-ink-850 px-2.5 py-2">
         <span className="block text-sm text-paper-200">{placeLine}</span>
