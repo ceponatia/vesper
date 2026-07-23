@@ -2,10 +2,11 @@
 
 Status: draft (successor-engine backlog item A1, parked 2026-07-23; **fleshed
 out 2026-07-23 — owner rulings 1–2 recorded below**; still parked — promote per
-[CLAUDE.md](CLAUDE.md) before building. Graduates **paired with A4
+[CLAUDE.md](CLAUDE.md) before building. Graduates **grouped with A2
+[turn-clock-race](turn-clock-race.plan.md) and A4
 [move-together-atomicity](move-together-atomicity.plan.md)** as one
-command-integrity plan — see A4 §Owner rulings, ruling 2. With this flesh-out
-the pair is discussion-complete.)
+command-integrity plan — see A4 §Owner rulings, ruling 2 (A2 joined the group
+2026-07-23, its ruling 3). The trio is discussion-complete.)
 
 ## What
 
