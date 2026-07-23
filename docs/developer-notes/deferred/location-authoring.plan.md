@@ -54,6 +54,37 @@ So the genuinely new ground is: the **authoring/builder surface itself**, the
 **furniture** as a first-class placed-thing, **function typing** as a
 registry, and **recurring upkeep**.
 
+## Owner rulings (2026-07-23 — copy into engine.spec §39 at promotion)
+
+1. **Spatial model: named spots now, 3D later.** v1 is named spots ("by the
+   hearth", "behind the counter") designed from day one as the top layer of a
+   future 3D space: stable spot IDs, **optional coordinate fields left empty**,
+   and hand-authored spot-to-spot sight/adjacency rules. Going 3D later means
+   filling in geometry **underneath** existing spots and computing visibility
+   instead of hand-authoring it — an enrichment, not a rewrite.
+2. **Long-term destination is a graphical game.** The prose era has a horizon:
+   if models get fast enough, the product may be promoted to a **graphical
+   game with AI control of NPCs**. 3D space is the destination; named spots
+   are the on-ramp and the prose-facing vocabulary while the game is
+   prose-led — not a permanent ceiling.
+3. **The narrator never parses coordinates.** When coordinates exist, a
+   dedicated **agent** parses spatial state and tells the narrator where
+   people are in terms it can understand (the same shape as the existing
+   pre-turn agent legs). The translation layer is an agent seam, not a reason
+   coordinates can't exist.
+4. **When to go 3D:** when something real consumes the precision — a rendered
+   map view, true pathfinding, distance-based mechanics, or the
+   graphical-game promotion itself.
+
+Context for ruling 1 (assessment behind the recommendation, kept for
+reference): nothing consumes coordinates today (no renderer, no pathfinding —
+the consumers are the narrator, movement legality, and zone-granular
+witnessing, all served by spots + authored visibility rules); 3D's real cost
+is **geometry authoring** for every location in every world, falling hardest
+on player world-builders; and the legacy world model's failure mode was
+mechanical ambition outrunning the narrative — spots keep spatial fidelity in
+service of the story until ruling 4's trigger arrives.
+
 ## Why it matters
 
 The location builder is the backbone of the bespoke + player-built worlds
@@ -72,10 +103,12 @@ facing what" exists.
   function types (home/shop/workplace/…), furniture kinds, and obstacle flags
   should be registry data edits; schema fields modeled with headroom for the
   known-future capabilities listed above even where v1 uses one case.
-- **Sub-zone space is the big new subsystem** — representation is the core
-  promotion-time decision: named anchors/waypoints ("by the hearth", "behind
-  the counter") vs coordinates/grid, and what movement + line of sight consume
-  from it. Facing and obstacles only mean something once that choice lands.
+- **Sub-zone space per ruling 1:** named spots with stable IDs, optional
+  coordinate fields, and hand-authored sight/adjacency rules; facing and
+  obstacles are expressed against spots in v1 and against geometry after the
+  ruling-4 trigger. The engine owns position authoritatively; a
+  spatial-translation agent (ruling 3) is the narrator's window into it once
+  coordinates exist.
 - **Ownership/residency/upkeep** wire into the existing household + currency
   machinery; upkeep needs a recurring-charge mechanism (trigger-scheduled, like
   arrivals) that doesn't exist yet.
@@ -86,13 +119,12 @@ facing what" exists.
 
 ## Open questions
 
-- **Spatial fidelity:** how precise is "where in the room + facing"? Named
-  anchors vs a coordinate grid; does line of sight consume geometry or
-  anchor-to-anchor visibility rules?
-- **Who owns within-zone position** — the engine (authoritative, replayable)
-  or the narrator (prose-level staging)? New patterns prove out in the chat
-  lane first (product direction), so what's the chat-lane proving ground for
-  this?
+_(Spatial fidelity, geometry-vs-rules line of sight, and engine-vs-narrator
+position ownership were resolved by the 2026-07-23 rulings above.)_
+
+- **Chat-lane proving ground:** new patterns prove out in the chat lane first
+  (product direction) — what's the smallest chat-lane surface for named spots
+  (staging in the state strip? spot mentions in beats?)
 - **Furniture:** items with an immovable/obstacle flag, or a distinct
   furniture registry with its own placement rules (containers, surfaces,
   seats)?
