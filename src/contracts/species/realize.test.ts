@@ -144,18 +144,34 @@ describe("intimate constants stay consistent with the registry", () => {
     }
   });
 
-  it("intimate attribute categories are a subset of the region groups", () => {
-    for (const cat of INTIMATE_ATTRIBUTE_CATEGORIES) {
-      expect((INTIMATE_REGION_GROUPS as readonly string[]).includes(cat)).toBe(true);
+  it("every region group is an intimate attribute category (moderation set ⊇ region groups)", () => {
+    // The moderation/exposure set is a SUPERSET of the toggleable region groups:
+    // every togglable region is exposure-sensitive, plus the universal categories.
+    for (const cat of INTIMATE_REGION_GROUPS) {
+      expect((INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(cat)).toBe(true);
     }
   });
 
-  it("anus is universal, not a configurable region group", () => {
-    // It must never appear as a body-config toggle…
-    expect((INTIMATE_REGION_GROUPS as readonly string[]).includes("anus")).toBe(false);
-    // …yet it is realized on every body, regardless of the body-config.
-    expect(realizeBody({ intimateRegions: [] }).isLocationPresent("anus")).toBe(true);
-    expect(realizeBody({ intimateRegions: ["vulva"] }).isLocationPresent("anus")).toBe(true);
+  it("the universal intimate categories (anus, perineum) are moderation-gated but not region groups", () => {
+    for (const cat of ["anus", "perineum"] as const) {
+      // Exposure-sensitive in prompts…
+      expect((INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(cat)).toBe(true);
+      // …but never a body-config toggle.
+      expect((INTIMATE_REGION_GROUPS as readonly string[]).includes(cat)).toBe(false);
+    }
+  });
+
+  it("anus and perineum are universal — realized on every body regardless of body-config", () => {
+    for (const loc of ["anus", "perineum"] as const) {
+      expect(realizeBody({ intimateRegions: [] }).isLocationPresent(loc)).toBe(true);
+      expect(realizeBody({ intimateRegions: ["vulva"] }).isLocationPresent(loc)).toBe(true);
+    }
+    // Their attributes are applicable even with an empty body-config (not region-gated).
+    const bare = realizeBody({ intimateRegions: [] });
+    expect(bare.isAttributeApplicable(def("anus.tightness"))).toBe(true);
+    expect(bare.isAttributeApplicable(def("perineum.sensitivity"))).toBe(true);
+    // …while a togglable region stays gated off until switched on.
+    expect(bare.isAttributeApplicable(def("vulva.tightness"))).toBe(false);
   });
 });
 

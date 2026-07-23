@@ -9,11 +9,12 @@ import type { BodyLocation } from "./types";
  * means no *configurable* intimate anatomy — exactly the engine's behavior before
  * this existed.
  *
- * The **anus** is deliberately NOT here: it is universal anatomy present on every
- * realized body (it carries no `intimateGroup`, so the filter never gates it
- * out), not a per-character toggle. It is still moderation-sensitive — it lives
- * in `intimate.ts` and is exposure-gated like any below-waist region — it simply
- * isn't something the author switches on or off.
+ * The **anus** and **perineum** are deliberately NOT here: they are universal
+ * anatomy present on every realized body (they carry no `intimateGroup`, so the
+ * filter never gates them out), not per-character toggles. They are still
+ * moderation-sensitive — they live in `intimate.ts` and are exposure-gated like
+ * any below-waist region (their categories are in INTIMATE_ATTRIBUTE_CATEGORIES)
+ * — they simply aren't something the author switches on or off.
  */
 export const INTIMATE_REGION_GROUPS = ["breasts", "vulva", "penis", "testicles"] as const;
 export type IntimateRegionGroup = (typeof INTIMATE_REGION_GROUPS)[number];
@@ -23,13 +24,22 @@ export function isIntimateRegionGroup(value: string): value is IntimateRegionGro
 }
 
 /**
- * Attribute categories that are intimate anatomy (a subset of INTIMATE_REGION_GROUPS —
- * "anus" is modelled as a touchable region with no descriptive attributes yet).
- * An attribute in one of these categories is only applicable to a character whose
- * body-config switches the matching group on. A contracts test asserts every entry
- * is a real attribute category.
+ * Attribute categories treated as intimate for **prompt moderation + exposure
+ * gating** — withheld from chat unless the turn's focus targets the region, and
+ * from images unless the caller opts in (`allowIntimate`) and the region reads
+ * exposed. This is a SUPERSET of the toggleable `INTIMATE_REGION_GROUPS`:
+ *
+ *   - the four region groups (breasts · vulva · penis · testicles), which are
+ *     body-config-gated (present only when the character switches the region on), plus
+ *   - the **universal** intimate categories (anus · perineum), present on every
+ *     realized body (like buttocks) yet still exposure-sensitive.
+ *
+ * The distinction matters at exactly one seam: body-config gating keys off
+ * `isIntimateRegionGroup` (a toggle), NOT this set (see species/realize.ts), so
+ * the universal categories are never gated out. A contracts test asserts every
+ * entry is a real attribute category and that the region groups are ⊆ this set.
  */
-export const INTIMATE_ATTRIBUTE_CATEGORIES = ["breasts", "vulva", "penis", "testicles"] as const;
+export const INTIMATE_ATTRIBUTE_CATEGORIES = ["breasts", "vulva", "penis", "testicles", "anus", "perineum"] as const;
 export type IntimateAttributeCategory = (typeof INTIMATE_ATTRIBUTE_CATEGORIES)[number];
 
 export function isIntimateAttributeCategory(category: string): category is IntimateAttributeCategory {
@@ -58,10 +68,13 @@ export const humanoidIntimateLocations: readonly BodyLocation[] = [
   { id: "penis", label: "penis", parentId: "groin", coverageRelevant: false, intimateGroup: "penis" },
   // Testicles group
   { id: "testicles", label: "testicles", parentId: "groin", coverageRelevant: false, intimateGroup: "testicles" },
-  // Anus — universal anatomy (no `intimateGroup`, so the realized-body filter
-  // always includes it). A touchable, exposure-gated region with no descriptive
-  // attributes yet; covered by any garment over `pelvis`.
+  // Anus + perineum — universal anatomy (no `intimateGroup`, so the realized-body
+  // filter always includes them). Touchable, exposure-gated regions; covered by
+  // any garment over `pelvis` (coverageRelevant: false → covered via `expand`).
+  // Their descriptive attributes are the universal `anus` / `perineum` categories,
+  // exposure-gated in prompts via INTIMATE_ATTRIBUTE_CATEGORIES.
   { id: "anus", label: "anus", parentId: "pelvis", coverageRelevant: false },
+  { id: "perineum", label: "perineum", parentId: "pelvis", coverageRelevant: false },
   // Breasts group
   { id: "breasts", label: "breasts", parentId: "chest", coverageRelevant: false, intimateGroup: "breasts" },
   { id: "nipples", label: "nipples", parentId: "breasts", coverageRelevant: false, intimateGroup: "breasts" },

@@ -28,6 +28,11 @@ export const attributeCategories = [
   "waist",
   "hips",
   "buttocks",
+  // Anus + perineum — universal below-waist anatomy (present on every body, like
+  // buttocks), but moderation/exposure-sensitive: their categories are in
+  // INTIMATE_ATTRIBUTE_CATEGORIES yet never body-config-gated (not region groups).
+  "anus",
+  "perineum",
   "tail",
   "arms",
   "hands",

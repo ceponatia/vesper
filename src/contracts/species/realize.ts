@@ -4,7 +4,6 @@ import {
   bodyLocationRegistry,
   isFeatureAttributeCategory,
   isFeatureGroup,
-  INTIMATE_ATTRIBUTE_CATEGORIES,
   isIntimateRegionGroup,
 } from "../body/locations";
 import { bodyPlanById, DEFAULT_BODY_PLAN_ID } from "../body/plans";
@@ -144,8 +143,12 @@ export function realizeBody(input: RealizeBodyInput): RealizedBody {
     if (def.appliesToBodyPlans && !def.appliesToBodyPlans.includes(bodyPlanId)) return false;
     if (def.excludesBodyPlans?.includes(bodyPlanId)) return false;
     if (forbiddenAttributeIds.has(def.id)) return false;
-    // Intimate category gating: the region must be switched on for this character.
-    if ((INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(def.category) && !intimateRegions.has(def.category)) {
+    // Intimate REGION-GROUP gating: a toggleable region (breasts/vulva/penis/
+    // testicles) must be switched on for this character. Keyed on
+    // `isIntimateRegionGroup`, NOT INTIMATE_ATTRIBUTE_CATEGORIES — the latter also
+    // includes the universal intimate categories (anus/perineum), which are
+    // present on every body and must never be body-config-gated out.
+    if (isIntimateRegionGroup(def.category) && !intimateRegions.has(def.category)) {
       return false;
     }
     if (isFeatureAttributeCategory(def.category) && !bodyFeatures.has(def.category)) return false;

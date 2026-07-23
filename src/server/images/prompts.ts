@@ -23,10 +23,11 @@ import type { CharacterProfile } from "@/contracts/world/profile";
  */
 /**
  * Non-visual attributes never belong in an image prompt — an image can't depict
- * how someone sounds or smells. `kind: "sensory"` is the auditory/olfactory set
- * (voice pitch/timbre/cadence, baseline scent), so it is dropped from both the
- * avatar prompt and the scene appearance summary. (Intimate sensory anatomy is
- * already gated separately by the exposure predicates.)
+ * how someone sounds, smells, or how sensitive they are. `kind: "sensory"` is the
+ * auditory/olfactory/tactile-response set (voice pitch/timbre/cadence, baseline
+ * scent, intimate scent/taste, and per-region sensitivity), so it is dropped from
+ * both the avatar prompt and the scene appearance summary. (Intimate sensory
+ * anatomy is already gated separately by the exposure predicates.)
  */
 function isNonVisualAttribute(def: AttributeDefinition): boolean {
   return def.kind === "sensory";
@@ -817,7 +818,17 @@ export function viewerBodyAppearance(
   return excerpt(out.join("; "), VIEWER_BODY_CHARS);
 }
 
-/** Which exposure region uncovers each intimate attribute category. */
+/**
+ * Which exposure region uncovers each intimate attribute category. An intimate
+ * category with NO entry here never renders in an image (axis undefined ⇒
+ * `intimateAttrRendersExposed` returns false) — this is deliberate for the
+ * universal `anus` / `perineum` categories: image inclusion is a PLACEHOLDER
+ * pending image-prompt re-evaluation (owner ruling 2026-07-23). Every render
+ * today views the character from the front, where anal/perineal detail can't
+ * show and would only confuse the model, so those categories stay omitted (they
+ * remain fully exposure-gated for chat/prose). Add `anus`/`perineum → "pelvis"`
+ * when rear/exposure framing lands.
+ */
 const INTIMATE_CATEGORY_EXPOSURE: Record<string, keyof RegionExposure> = {
   breasts: "torso",
   vulva: "pelvis",

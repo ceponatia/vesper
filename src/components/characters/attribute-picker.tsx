@@ -56,20 +56,19 @@ export interface AttributePickerProps {
  * part of the body region they belong to instead of floating loose at the top:
  *
  *  - `breasts` nests inside the everyday **Chest** section.
- *  - the universal `buttocks` and the gated `vulva` / `penis` / `testicles` nest
- *    inside a synthetic **Pelvis** area (there is no everyday `pelvis` attribute
- *    group to host them).
+ *  - the universal `buttocks` / `anus` / `perineum` and the gated `vulva` /
+ *    `penis` / `testicles` nest inside a synthetic **Pelvis** area (there is no
+ *    everyday `pelvis` attribute group to host them).
  *
- * `buttocks` is universal anatomy (present on every body, like hips) so it always
- * shows; the genital categories appear only when the body-config switches their
- * region on. The **anus** is likewise universal, surfaced as a present-region
- * note (its descriptive field is still planned — see contracts buttocks.ts).
+ * `buttocks`, `anus`, and `perineum` are universal anatomy (present on every
+ * body, like hips) so they always show; the genital categories appear only when
+ * the body-config switches their region on.
  */
 const NESTED_UNDER_CHEST = ["breasts"] as const;
 // Universal pelvis anatomy (always present) vs gated genitals (present only when
 // the body-config switches the region on). The genital list drives the
-// "configure a region" hint; buttocks renders regardless.
-const PELVIS_UNIVERSAL_CATEGORIES = ["buttocks"] as const;
+// "configure a region" hint; the universal categories render regardless.
+const PELVIS_UNIVERSAL_CATEGORIES = ["buttocks", "anus", "perineum"] as const;
 const PELVIS_GENITAL_CATEGORIES = ["vulva", "penis", "testicles"] as const;
 const PELVIS_CATEGORIES = [...PELVIS_UNIVERSAL_CATEGORIES, ...PELVIS_GENITAL_CATEGORIES] as const;
 const NESTED_CATEGORIES = new Set<string>([...NESTED_UNDER_CHEST, ...PELVIS_CATEGORIES]);
@@ -166,7 +165,6 @@ export function AttributePicker({
               <PelvisArea
                 members={nestedGroupsFor(PELVIS_CATEGORIES)}
                 hasGenitals={nestedGroupsFor(PELVIS_GENITAL_CATEGORIES).length > 0}
-                anusPresent={body.isLocationPresent("anus")}
                 byId={byId}
                 onSet={onSet}
                 onRemove={onRemove}
@@ -502,15 +500,14 @@ function AttributeGroupSection({
 
 /**
  * The Pelvis area — a synthetic anatomical section grouping below-waist anatomy:
- * the universal `buttocks` (always present, like hips) and the gated genital
- * categories (vulva / penis / testicles, each present only when the body-config
- * switches it on), plus the universal anus as a present-region note. When no
- * genital region is configured, a hint points at the body-config toggles.
+ * the universal `buttocks` / `anus` / `perineum` (always present, like hips) and
+ * the gated genital categories (vulva / penis / testicles, each present only when
+ * the body-config switches it on). When no genital region is configured, a hint
+ * points at the body-config toggles.
  */
 function PelvisArea({
   members,
   hasGenitals,
-  anusPresent,
   byId,
   onSet,
   onRemove,
@@ -520,7 +517,6 @@ function PelvisArea({
 }: {
   members: readonly NestedGroup[];
   hasGenitals: boolean;
-  anusPresent: boolean;
   byId: Map<string, AttributeValue>;
   onSet: (id: string, value: AttributeValue["value"]) => void;
   onRemove: (id: string) => void;
@@ -557,12 +553,6 @@ function PelvisArea({
           {!hasGenitals ? (
             <p className="text-xs text-paper-500">
               No genital anatomy configured — switch a region on in Body configuration above.
-            </p>
-          ) : null}
-          {anusPresent ? (
-            <p className="text-xs text-paper-500">
-              <span className="font-semibold text-paper-300">Anus</span> — present (universal anatomy; no detail to
-              author).
             </p>
           ) : null}
         </div>

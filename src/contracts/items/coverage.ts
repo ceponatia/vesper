@@ -49,8 +49,10 @@ export function toggleCoverage(
     for (const descendant of registry.expand(id)) effective.add(descendant);
   }
   // Coverage is a wardrobe-slot concept: non-coverageRelevant locations (the
-  // intimate sub-tree) are never stored — a garment over `groin`/`chest` already
-  // covers them via `expand` for visibility, and they aren't garment slots.
+  // intimate sub-tree) are never stored — a garment over `groin`/`pelvis`/`chest`
+  // already covers them via `expand` for visibility (the universal anus/perineum
+  // hang off `pelvis`, which every bottom template covers), and they aren't
+  // garment slots of their own.
   const ordered = registry.all
     .filter((loc) => (loc.coverageRelevant ?? true) && effective.has(loc.id))
     .map((loc) => loc.id);

@@ -1,10 +1,17 @@
 import { defineAttributeGroup } from "../../types";
-import { INTIMATE_SCENT_BASE, INTIMATE_SCENT_GUIDANCE } from "../../shared-values";
+import {
+  INTIMATE_SCENT_BASE,
+  INTIMATE_SCENT_GUIDANCE,
+  INTIMATE_SCENT_SWEAT,
+  INTIMATE_SCENT_SWEAT_GUIDANCE,
+} from "../../shared-values";
 
 /**
  * Penis — intimate region, gated by the body-config group "penis". These describe
  * the resting anatomy; live state (flaccid/erect) is the `arousal` meter +
  * conditions, not an attribute (Decision 2). Clinical values; prose promptHints.
+ * Enum scales are ordered low→high; visual detail renders in an image only when the
+ * region reads exposed on the uncensored route (server/images/prompts.ts).
  */
 export const penisGroup = defineAttributeGroup("penis", [
   {
@@ -13,12 +20,24 @@ export const penisGroup = defineAttributeGroup("penis", [
     kind: "physical",
     category: "penis",
     valueType: "enum",
-    description: "General size as it reads at rest.",
+    description: "General length as it reads at rest.",
     mutability: "inherent",
-    allowedValues: ["small", "average", "large"],
+    allowedValues: [
+      "petite",
+      "small",
+      "modest",
+      "average",
+      "large",
+      "impressive",
+      "very_large",
+      "hung",
+      "massive",
+    ],
     bodyLocationId: "penis",
     aliases: ["penis size", "cock size"],
-    promptHints: ["Describes resting anatomy; current arousal state comes from the arousal meter, not here. Surfaces only at the intimate exposure tier."],
+    promptHints: [
+      "Describes resting anatomy; current arousal state comes from the arousal meter, not here. Surfaces only at the intimate exposure tier.",
+    ],
   },
   {
     id: "penis.girth",
@@ -28,9 +47,83 @@ export const penisGroup = defineAttributeGroup("penis", [
     valueType: "enum",
     description: "How thick the penis is.",
     mutability: "inherent",
-    allowedValues: ["slim", "average", "thick"],
+    allowedValues: ["thin", "slim", "average", "substantial", "thick", "girthy", "very_thick", "massive"],
     bodyLocationId: "penis",
     aliases: ["girth"],
+  },
+  {
+    id: "penis.shape",
+    label: "Penis shape",
+    kind: "physical",
+    category: "penis",
+    valueType: "enum",
+    description: "Overall shape and curvature of the shaft.",
+    mutability: "inherent",
+    allowedValues: [
+      "straight",
+      "slightly_curved",
+      "upward_curve",
+      "downward_curve",
+      "left_curve",
+      "right_curve",
+      "tapered",
+    ],
+    bodyLocationId: "penis",
+  },
+  {
+    id: "penis.head",
+    label: "Glans",
+    kind: "physical",
+    category: "penis",
+    valueType: "enum",
+    description: "Size and shape of the glans (head).",
+    mutability: "inherent",
+    allowedValues: ["small", "average", "large", "tapered", "smooth", "ridged", "flared", "prominent"],
+    bodyLocationId: "penis",
+    aliases: ["glans", "cock head"],
+  },
+  {
+    id: "penis.veins",
+    label: "Visible veins",
+    kind: "physical",
+    category: "penis",
+    valueType: "enum",
+    description: "How prominently veins read along the shaft.",
+    mutability: "inherent",
+    allowedValues: ["none", "faint", "visible", "prominent", "heavy", "ropelike"],
+    bodyLocationId: "penis",
+    aliases: ["cock veins"],
+  },
+  {
+    id: "penis.skin",
+    label: "Foreskin",
+    kind: "physical",
+    category: "penis",
+    valueType: "enum",
+    description: "Foreskin presentation (relevant when uncircumcised).",
+    mutability: "inherent",
+    allowedValues: [
+      "tight",
+      "smooth",
+      "wrinkled",
+      "retractable",
+      "partially_covering",
+      "fully_covering",
+      "loose",
+    ],
+    bodyLocationId: "penis",
+    aliases: ["foreskin"],
+  },
+  {
+    id: "penis.color",
+    label: "Penis color",
+    kind: "physical",
+    category: "penis",
+    valueType: "enum",
+    description: "Pigmentation of the shaft and glans (deepens toward the head, and further when aroused).",
+    mutability: "inherent",
+    allowedValues: ["pale", "pink", "flushed", "reddish", "tan", "brown", "dark", "purplish"],
+    bodyLocationId: "penis",
   },
   {
     id: "penis.circumcised",
@@ -44,6 +137,20 @@ export const penisGroup = defineAttributeGroup("penis", [
     aliases: ["circumcised"],
   },
   {
+    id: "penis.sensitivity",
+    label: "Penis sensitivity",
+    // kind "sensory": non-visual, so it stays out of image prompts and surfaces only
+    // under an intimate touch/proximity focus (like scent/taste), never in the generic
+    // chat body block.
+    kind: "sensory",
+    category: "penis",
+    valueType: "enum",
+    description: "Baseline responsiveness to touch — a tendency, not live arousal.",
+    mutability: "mutable",
+    allowedValues: ["numb", "low", "average", "high", "extremely_sensitive"],
+    bodyLocationId: "penis",
+  },
+  {
     id: "penis.scent",
     label: "Genital scent",
     kind: "sensory",
@@ -51,8 +158,8 @@ export const penisGroup = defineAttributeGroup("penis", [
     valueType: "enum",
     description: "Intimate scent; shifts with hygiene and arousal. Surfaces only when scent is earned at close/intimate range.",
     mutability: "mutable",
-    allowedValues: [...INTIMATE_SCENT_BASE],
+    allowedValues: [...INTIMATE_SCENT_BASE, ...INTIMATE_SCENT_SWEAT],
     bodyLocationId: "penis",
-    narratorGuidance: INTIMATE_SCENT_GUIDANCE,
+    narratorGuidance: { ...INTIMATE_SCENT_GUIDANCE, ...INTIMATE_SCENT_SWEAT_GUIDANCE },
   },
 ]);

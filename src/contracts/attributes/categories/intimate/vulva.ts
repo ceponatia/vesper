@@ -140,6 +140,18 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
     ],
     bodyLocationId: "vulva",
   },
+  {
+    id: "vulva.inner_color",
+    label: "Inner color",
+    kind: "physical",
+    category: "vulva",
+    valueType: "enum",
+    description: "Pigmentation of the inner labia and vaginal entrance — deeper than the outer labia.",
+    mutability: "inherent",
+    allowedValues: ["pale_pink", "soft_pink", "rose", "deep_pink", "red", "dark_red", "mauve", "purplish"],
+    bodyLocationId: "vestibule",
+    promptHints: ["Surfaces only at the intimate exposure tier, when the inner vulva is visible."],
+  },
 
   // === Clitoris ===
   {
@@ -268,7 +280,7 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
     description:
       "How much the vulva visibly swells and puffs when aroused — a response tendency, not live state (current arousal rides the arousal meter).",
     mutability: "mutable",
-    allowedValues: ["none", "slight", "moderate", "heavy", "engorged"],
+    allowedValues: ["none", "slight", "puffy", "moderate", "heavy", "engorged", "distended"],
     bodyLocationId: "vulva",
     promptHints: [
       "Only surfaces when arousal is high or during close examination.",
@@ -283,9 +295,33 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
     description:
       "How wet she gets when aroused — the natural lubrication response, not live state (current arousal rides the arousal meter).",
     mutability: "mutable",
-    allowedValues: ["dry", "dewy", "slick", "glistening", "dripping", "creamy"],
+    allowedValues: [
+      "dry",
+      "dewy",
+      "thin",
+      "slick",
+      "slippery",
+      "glistening",
+      "creamy",
+      "viscous",
+      "dripping",
+      "soaking",
+    ],
     bodyLocationId: "vulva",
     promptHints: ["Rendered only at intimate exposure or touch tier."],
+  },
+  {
+    id: "vulva.tightness",
+    label: "Baseline tightness",
+    kind: "physical",
+    category: "vulva",
+    valueType: "enum",
+    description:
+      "Baseline vaginal tightness — a tendency that shifts with arousal and use, not live state (current arousal rides the arousal meter).",
+    mutability: "mutable",
+    allowedValues: ["loose", "relaxed", "average", "snug", "tight", "very_tight"],
+    bodyLocationId: "vagina",
+    promptHints: ["Only surfaces during intimate contact."],
   },
 
   // === Sensory ===
@@ -297,7 +333,7 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
     valueType: "enum",
     description: "Intimate scent; shifts with hygiene, cycle, and arousal.",
     mutability: "mutable",
-    allowedValues: [...INTIMATE_SCENT_BASE, "sweet"],
+    allowedValues: [...INTIMATE_SCENT_BASE, "sweet", "salty", "fermented", "floral_musk"],
     bodyLocationId: "vulva",
     promptHints: [
       "Surfaces only at close/intimate range when scent is earned.",
@@ -305,6 +341,9 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
     narratorGuidance: {
       ...INTIMATE_SCENT_GUIDANCE,
       sweet: "an unexpectedly sweet, honeyed note",
+      salty: "clean sweat-salt over warm skin",
+      fermented: "a tangy, sourdough ferment note",
+      floral_musk: "musk with an incongruous floral sweetness laid over it",
     },
   },
   {
@@ -315,12 +354,13 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
     valueType: "enum",
     description: "Taste when orally stimulated.",
     mutability: "mutable",
-    allowedValues: [...INTIMATE_TASTE_BASE, "sweet"],
+    allowedValues: [...INTIMATE_TASTE_BASE, "sweet", "creamy"],
     bodyLocationId: "vulva",
     promptHints: ["Only surfaces at the intimate taste tier (oral contact)."],
     narratorGuidance: {
       ...INTIMATE_TASTE_GUIDANCE,
       sweet: "distinctly sweet — a honeyed taste",
+      creamy: "a thick, rounded, dairy-soft note on the tongue",
     },
   },
 ]);
