@@ -1,9 +1,11 @@
 # World UI — the player-facing surface of the successor world
 
-Status: active (planned 2026-07-23 from the owner's world-UI design pass; owner rulings
-20–21 recorded in [engine.spec.operations.md](engine.spec.operations.md) §39. **Slices 0,
-1, 2, 3, and 4 shipped 2026-07-23**; slice 5 remains. Slice 4 closed the NL-move parity
-that was deferred out of slice 1 — see Slice 4 "How it shipped".)
+Status: shipped — 2026-07-23 (planned 2026-07-23 from the owner's world-UI design pass;
+owner rulings 20–21 recorded in [engine.spec.operations.md](engine.spec.operations.md)
+§39. **Slices 0, 1, 2, 3, 4, and 5 all shipped 2026-07-23.** Slice 4 closed the NL-move
+parity that was deferred out of slice 1; slice 5 delivered walk-with-me v1 — see each
+slice's "How it shipped". Leftovers: the §19.3-deliberator upgrade of the acceptance seam
+and the §14.2 remote-invite family (inviting an ABSENT partner) are noted in Slice 5.)
 
 The successor engine's world is live but invisible. The starter world really exists —
 home, town square, a 5-minute walkable link, the neighbor, the keepsake
@@ -426,12 +428,88 @@ explicitly deferred.
   `pnpm test:int` was **not** run (no local Postgres) — the end→move→drain→solo path wants a
   Fly/Postgres pass. Lint + cycles + typecheck + unit + jscpd all pass.
 
-### Slice 5 — walk-with-me
+### Slice 5 — walk-with-me — SHIPPED 2026-07-23
 
-The §14.2 invite/accompany family (`InviteActor` is specced but absent from the
-command registry), NPC acceptance via the policy/deliberator seam, shared journeys,
-and engagement continuity across co-travel. For a romance-first product this is the
-marquee travel feature — traveling *together*; solo travel is plumbing for it.
+When the player and the co-present primary set off TOGETHER, one composed
+interaction (ruling 20) walks them both to the destination: the primary's
+acceptance is NPC agency, both journeys settle, and co-presence is restored so the
+scene continues at the far end. For a romance-first product this is the marquee
+travel feature — traveling *together*; solo travel (slices 1/4) is plumbing for it.
+Two entry points, one choreography (a "walk together" chip and a natural-language
+invite).
+
+**How it shipped (decisions):**
+
+- **Acceptance is NPC agency via a bounded DETERMINISTIC policy, no model call**
+  (`decideAccompany`, `lib/simulation/accompany.ts`, PURE + unit-tested). The exact
+  matrix: **accept UNLESS** (a) a claim-holding activity occupies the primary's
+  **body** right now (the same body-claim gate `resolveMoveActor` enforces —
+  `claimHoldingActivityPhases` × a `body` claim), or (b) a **`firm`/`hard`**, still-open
+  commitment's `window.latestArrival` falls at or before the walk's earliest arrival
+  **plus a 300 s buffer** (`ACCOMPANY_ARRIVAL_BUFFER_SECONDS`). Soft/negotiable
+  commitments, attention-only claims, another actor's claim/commitment, and resolved
+  commitments never decline. A decline returns an honest §14.4-style PUBLIC face —
+  `"{primary} can't come with you right now."` + `["go on your own", "wait a while"]`
+  — **identical whether (a) or (b) blocks her**, so the private cause never leaks
+  (asserted in the test). The acceptance seam does NOT touch the §21.4 consent ledger
+  (§39 ruling 16). **A future pass upgrades acceptance to the §19.3 deliberator seam**
+  (bounded legal candidates, deterministic fallback = decline); the decision shape was
+  chosen to survive that upgrade.
+- **The composed choreography** (`runAccompanyTogether`, `sim-exchange.ts`; world
+  writes only — the ONE seam both entry points call, ruling 20): read pre-move space +
+  activities + commitments → estimate arrival from the current zone's open link (the
+  same pure `buildWorldDestinations` the travel chip reads) → `decideAccompany` → on
+  accept, **END the standing scene as a CHOICE** (`participant_choice`, §18.2 grace) →
+  submit the **player's** `move` (player principal) → submit the **primary's** `move`
+  under an **`npc_policy` principal controlling the primary** (`principalId:
+  "sim-accompany"`, the arbiter's precedent) — the player principal is **never**
+  authorized to move an NPC (`resolveMoveActor` rejects `unauthorized_actor`; §14.2) →
+  drain to the **later** of the two journeys' earliest arrivals (`moveArrivalTarget`
+  ×2, `drainBranchTo`) → write **ONE** `together` world beat. Both actors are then
+  `at` the destination; the next `findOrOpenStandingEngagement` reopens the scene
+  there naturally.
+- **Button** — a **`travel_together {toZoneId}`** sim-command kind
+  (`sim-command/route.ts`) calls `runAccompanyTogether` and maps its outcome to the
+  card: a landing (`accompanied`/`traveled_alone`) refreshes world + transcript; a
+  decline / refusal returns the §14.4 face at 200 (`status: "rejected"`). The card
+  pairs each destination with a **"Walk together"** chip, rendered **only when the
+  primary is `present`** (`cast[].isPrimary` + `present`), beside the existing "Go
+  to …" chip — layout kept uncluttered (chip pair + one caption row per destination).
+  Client method `chatsApi.simTravelTogether` + `simTravelTogetherResultSchema`.
+- **NL** — input admission gained an **`accompany`** admitted-command kind
+  (`input-admission.ts`, deterministic, one command max): first-person **plural** or
+  **invite** phrasing (`ACCOMPANY_LEADS` = `let's` / `let us` / `we` / `with me`) plus
+  a move verb (incl. `come`) over a known `ZONE_KIND_WORDS` zone → accompany, checked
+  **before** solo move so "let's walk to the square" reads as an invite while a plain
+  "I walk to the square" stays a solo move. Silence over cleverness: quoted speech,
+  third-person, and no-zone-word all stay null (tested). In the turn
+  (`runSimAccompanyTurn`): an admitted accompany **while co-present** runs the
+  choreography, then on **accept** REOPENS the scene at the destination and renders the
+  **CO-PRESENT** turn with a travel-context line ("{player} and {primary} have just
+  walked to … together from …") threaded through the existing `admittedAction` seam
+  (portrayed as done — the scene continues in prose); on **decline** renders the
+  ordinary co-present turn with the decline as a §14.4 **failure presentation** (she
+  answers in character). Admitted **while NOT co-present** ⇒ a plain solo move (slice 4
+  path) — **inviting an ABSENT partner is future work** (the §14.2 remote-invite family:
+  `InviteActor`/`CallActor`/`RequestVisit`, specced but absent from the command
+  registry).
+- **Degradation (docs/resilience.md), never a dead turn / never fabricated co-travel:**
+  if the **NPC move fails after the player's move committed** (divergence), the player
+  still travels — their move stands — the beat is the **plain** traveled beat (not
+  `together`), `engine.sim.accompany` logs, the outcome is `traveled_alone`, and the NL
+  render falls to the **solo** path. An unexpected scene-end failure degrades to the
+  interrupt path (the accepted moves still lawfully interrupt). A refused player move
+  keeps today's behavior (no travel) and returns the §14.4 face.
+- **Together beat phrasing** — `world-beat.ts` gained a `together` flag: `traveled` →
+  "You walk to {place} together." (bare "You walk home together."), **superseding**
+  `parted` (you don't take your leave of someone you walk with). Threaded through
+  `writeWorldBeat`.
+- **Tests / deferrals.** New pure coverage: `accompany.test.ts` (the full decision
+  matrix incl. the privacy invariant), accompany admission grammar (positives +
+  negatives) in `input-admission.test.ts`, and the together-beat phrasing in
+  `world-beat.test.ts`. The choreography itself is integration-shaped; **`pnpm test:int`
+  was NOT run (no local Postgres)** — the end→move×2→drain→reopen→render path wants a
+  Fly/Postgres pass. Lint + cycles + typecheck + unit + jscpd all pass.
 
 ## Open questions
 

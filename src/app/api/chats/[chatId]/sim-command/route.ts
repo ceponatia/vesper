@@ -14,6 +14,7 @@ import {
   moveArrivalTarget,
   readDurableActivities,
   readDurableSpaceBranch,
+  runAccompanyTogether,
   submitDurableEndEngagement,
   submitDurableMoveActor,
   submitDurableStartActivity,
@@ -52,6 +53,9 @@ const bodySchema = z.discriminatedUnion("kind", [
   // world-ui.plan.md slice 1 (ruling 20): server-composed skip-style travel —
   // move + a bounded advance to the journey's earliest arrival, atomically.
   z.object({ kind: z.literal("travel"), toZoneId: z.string().min(1).max(256) }).strict(),
+  // world-ui.plan.md slice 5: walk-with-me — invite the co-present primary to
+  // travel together (NPC agency via the deterministic acceptance policy).
+  z.object({ kind: z.literal("travel_together"), toZoneId: z.string().min(1).max(256) }).strict(),
   // world-ui.plan.md slice 3 (ruling 20 spirit): server-composed skip-style
   // activity — start_activity + a bounded drain through its duration, atomically.
   z.object({ kind: z.literal("do_activity"), actionDefinitionId: z.string().min(1).max(256) }).strict(),
@@ -299,6 +303,42 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         parted,
       });
       return jsonOk({ status: "traveled", toStorySecond: target, arrived });
+    }
+    case "travel_together": {
+      // Walk-with-me (world-ui.plan.md slice 5): the shared choreography runs the
+      // deterministic acceptance policy + composes the scene-end, both moves (the
+      // primary under its OWN npc_policy principal — §14.2), the drain, and the
+      // "together" beat. A decline / refusal returns the §14.4 face at 200 so the
+      // card reads it; a landing refreshes the world + transcript.
+      const [primary] = await db()
+        .select({ name: simCharacters.name })
+        .from(simCharacters)
+        .where(and(eq(simCharacters.branchId, sim.branchId), eq(simCharacters.characterId, sim.primaryActorId)))
+        .limit(1);
+      const outcome = await runAccompanyTogether({
+        chatId,
+        userId: user.id,
+        branchId: sim.branchId,
+        playerActorId: sim.playerActorId,
+        primaryActorId: sim.primaryActorId,
+        primaryName: primary?.name ?? "They",
+        toZoneId: command.toZoneId,
+      });
+      if (outcome.status === "declined") {
+        return jsonOk({ status: "rejected", code: "accompany_declined", publicReason: outcome.publicReason, legalAlternatives: outcome.legalAlternatives });
+      }
+      if (outcome.status === "rejected") {
+        return jsonOk({ status: "rejected", code: outcome.code, publicReason: outcome.publicReason, legalAlternatives: outcome.legalAlternatives });
+      }
+      if (outcome.status === "not_copresent") {
+        return jsonOk({
+          status: "rejected",
+          code: "not_copresent",
+          publicReason: `${primary?.name ?? "They"} isn't here to walk with you.`,
+          legalAlternatives: [],
+        });
+      }
+      return jsonOk({ status: outcome.status, toStorySecond: outcome.toStorySecond, arrived: outcome.arrived });
     }
     case "do_activity": {
       // Skip-style activity (ruling 20 spirit): submit the player's

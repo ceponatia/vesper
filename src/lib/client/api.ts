@@ -990,6 +990,23 @@ export const simTravelResultSchema = z.object({
 export type SimTravelResult = z.infer<typeof simTravelResultSchema>;
 
 /**
+ * The `travel_together` (walk-with-me, slice 5) outcome: both walked together
+ * (`accompanied`), the player travelled alone after a divergence (`traveled_alone`
+ * — the primary couldn't come along at the last step), OR the §14.4 public
+ * refusal (`rejected` — the primary declined the invite, or a move was refused).
+ * Both success shapes refresh the world; `rejected` renders the public face.
+ */
+export const simTravelTogetherResultSchema = z.object({
+  status: z.enum(["accompanied", "traveled_alone", "rejected"]).catch("rejected"),
+  toStorySecond: z.number().nullable().catch(null),
+  arrived: z.boolean().catch(false),
+  code: z.string().catch(""),
+  publicReason: z.string().catch(""),
+  legalAlternatives: z.array(z.string()).catch([]),
+});
+export type SimTravelTogetherResult = z.infer<typeof simTravelTogetherResultSchema>;
+
+/**
  * The `give_item` handoff outcome (slice 3): a success (`gave`) OR the §14.4
  * public refusal (`rejected` — the primary isn't co-located, etc.). Both arrive
  * at 200 so the card reads the refusal instead of a flattened HTTP-error body.
@@ -1117,6 +1134,14 @@ export const chatsApi = {
    */
   simTravel: (chatId: string, toZoneId: string) =>
     apiPost(simTravelResultSchema, `/api/chats/${chatId}/sim-command`, { kind: "travel", toZoneId }),
+  /**
+   * Walk-with-me (world-ui.plan.md slice 5): invite the co-present primary to
+   * travel together. The primary's acceptance is NPC agency (a deterministic
+   * policy); returns a co-travel landing, a solo-travel divergence, or the §14.4
+   * public refusal (all `ok`). The card refreshes world + transcript on a landing.
+   */
+  simTravelTogether: (chatId: string, toZoneId: string) =>
+    apiPost(simTravelTogetherResultSchema, `/api/chats/${chatId}/sim-command`, { kind: "travel_together", toZoneId }),
   /**
    * Hand the player's held item to the primary (slice 3): a success or the
    * §14.4 public refusal, both at 200. On success the server writes a `gave_item`

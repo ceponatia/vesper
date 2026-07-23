@@ -47,15 +47,17 @@ export function ChatWorldCard({
 }) {
   const toast = useToast();
   const [travelingZone, setTravelingZone] = useState<string | null>(null);
+  const [travelingTogetherZone, setTravelingTogetherZone] = useState<string | null>(null);
   const [givingItem, setGivingItem] = useState<string | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<{ publicReason: string; legalAlternatives: string[] } | null>(null);
 
   if (!world) return null;
 
-  // One command in flight at a time — travel, a handoff, and an action are
-  // mutually exclusive (each moves the same world clock).
-  const anyBusy = busy || archived || travelingZone !== null || givingItem !== null || actingId !== null;
+  // One command in flight at a time — travel, walk-together, a handoff, and an
+  // action are mutually exclusive (each moves the same world clock).
+  const anyBusy =
+    busy || archived || travelingZone !== null || travelingTogetherZone !== null || givingItem !== null || actingId !== null;
 
   // The give-item target is always the primary; the card knows them (and their
   // presence) from the cast. Available actions are the zone-gated ones only —
@@ -76,6 +78,26 @@ export function ChatWorldCard({
     if (result.data.status === "rejected") {
       setRefusal({
         publicReason: result.data.publicReason || "You can't go there right now.",
+        legalAlternatives: result.data.legalAlternatives,
+      });
+      return;
+    }
+    onWorldChanged();
+  };
+
+  const travelTogether = async (dest: Destination) => {
+    if (anyBusy || !primary?.present) return;
+    setTravelingTogetherZone(dest.zoneId);
+    setRefusal(null);
+    const result = await chatsApi.simTravelTogether(chatId, dest.zoneId);
+    setTravelingTogetherZone(null);
+    if (!result.ok) {
+      toast.push({ title: "Travel failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    if (result.data.status === "rejected") {
+      setRefusal({
+        publicReason: result.data.publicReason || "You can't go together right now.",
         legalAlternatives: result.data.legalAlternatives,
       });
       return;
@@ -148,31 +170,41 @@ export function ChatWorldCard({
         ) : null}
 
         {world.destinations.length > 0 ? (
-          <>
-            <div className="mt-2 flex flex-wrap gap-1" role="group" aria-label="Travel">
-              {world.destinations.map((dest) => (
-                <Button
-                  key={dest.zoneId}
-                  size="sm"
-                  variant="quiet"
-                  busy={travelingZone === dest.zoneId}
-                  disabled={anyBusy}
-                  title={`~${approxWalkMinutes(dest.travelSeconds)} min walk`}
-                  onClick={() => void travel(dest)}
-                >
-                  {goChipLabel(dest.label)}
-                </Button>
-              ))}
-            </div>
-            {/* Travel times visible without hover — the title tooltip is invisible on touch. */}
-            <div className="mt-1.5 flex flex-col gap-0.5 text-[10px] text-paper-600">
-              {world.destinations.map((dest) => (
-                <span key={dest.zoneId}>
+          <div className="mt-2 flex flex-col gap-1.5" role="group" aria-label="Travel">
+            {world.destinations.map((dest) => (
+              <div key={dest.zoneId} className="flex flex-col gap-0.5">
+                <div className="flex flex-wrap items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="quiet"
+                    busy={travelingZone === dest.zoneId}
+                    disabled={anyBusy}
+                    title={`~${approxWalkMinutes(dest.travelSeconds)} min walk`}
+                    onClick={() => void travel(dest)}
+                  >
+                    {goChipLabel(dest.label)}
+                  </Button>
+                  {/* Walk-with-me (slice 5): only when the primary is here to accept. */}
+                  {primary?.present ? (
+                    <Button
+                      size="sm"
+                      variant="quiet"
+                      busy={travelingTogetherZone === dest.zoneId}
+                      disabled={anyBusy}
+                      title={`Walk there with ${primary.name}`}
+                      onClick={() => void travelTogether(dest)}
+                    >
+                      Walk together
+                    </Button>
+                  ) : null}
+                </div>
+                {/* Travel time visible without hover — the title tooltip is invisible on touch. */}
+                <span className="text-[10px] text-paper-600">
                   {goChipLabel(dest.label)} · ~{approxWalkMinutes(dest.travelSeconds)} min walk
                 </span>
-              ))}
-            </div>
-          </>
+              </div>
+            ))}
+          </div>
         ) : null}
 
         {world.held.length > 0 ? (

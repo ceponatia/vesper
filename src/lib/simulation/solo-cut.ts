@@ -93,7 +93,12 @@ function joinNames(names: readonly string[]): string {
 }
 
 /** Commitment statuses that still bind the actor (a live obligation to respect). */
-const OPEN_COMMITMENT_STATUSES = new Set(["planned", "noticed", "accepted", "in_progress"]);
+export const OPEN_COMMITMENT_STATUSES: ReadonlySet<string> = new Set([
+  "planned",
+  "noticed",
+  "accepted",
+  "in_progress",
+]);
 
 interface LocusResolution {
   zoneLabel: string;

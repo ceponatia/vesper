@@ -63,6 +63,8 @@ export async function writeWorldBeat(input: {
   destinationLabel?: string;
   /** A `traveled` departure ended a standing scene as a choice (slice 4) — acknowledge the parting. */
   parted?: boolean;
+  /** A `traveled` WALK-WITH-ME (slice 5) — the primary came along ("You walk to … together."). */
+  together?: boolean;
   /** Recipient display name for a `gave_item` beat. */
   recipientName?: string;
   /** Handed item display name for a `gave_item` beat. */
@@ -78,6 +80,7 @@ export async function writeWorldBeat(input: {
       anchor: clock?.calendarStart ?? null,
       ...(input.destinationLabel === undefined ? {} : { destinationLabel: input.destinationLabel }),
       ...(input.parted === undefined ? {} : { parted: input.parted }),
+      ...(input.together === undefined ? {} : { together: input.together }),
       ...(input.recipientName === undefined ? {} : { recipientName: input.recipientName }),
       ...(input.itemName === undefined ? {} : { itemName: input.itemName }),
       ...(input.activityLabel === undefined ? {} : { activityLabel: input.activityLabel }),
