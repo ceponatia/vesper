@@ -119,10 +119,60 @@ at all (memoryless: derive from current drivers); slow ones (engorgement,
 sweat-until-washed, refractory) need the stored level or a condition. Where
 the line falls is design work at promotion.
 
+**Math correction (2026-07-23 GPT review, adopted):** "the proportional law
+pointed at a moving target" understates the work. The meter-economy
+exponential composes because its target is FIXED (a baseline); chasing a
+target that itself moves continuously is a different integral, and a coupling
+that drains another meter (sweat → hydration) requires integrating the
+response over time — even depth-1 couplings drift toward an ODE unless
+expressed as discrete events or analytically solvable pieces. The tractable
+shape: treat drivers as **piecewise-constant between events** (they already
+are — meters change at drains/sources), integrate the response analytically
+within each piece, and represent coupling effects as **discrete
+body-source/modifier events** at piece boundaries (the successor bodies
+model's existing shape) rather than continuous flows. **v1 therefore
+prohibits causal couplings outright** — perception-only responses derived
+from existing meters; coupling lands later through the event mechanism, per
+response, with its integral written down first.
+
 **Lane:** chat proves it (product direction: new state patterns land in the
 chat lane first); the successor engine's bodies cluster
 ([../engine.spec.bodies-materials.md](../engine.spec.bodies-materials.md))
 inherits the contracts when it graduates, as E5.1 already does for meters.
+Sharpened by the review: the derivation itself is **pure and shared from day
+one** (`contracts/`), so "chat first" means chat is the first *consumer* —
+never a second physiology store built lane-side and ported later. For
+successor chats the substrate authority is the sim bodies system
+(`lib/simulation/bodies.ts` §25.1 integration), which chat-lane code reads
+through the surfaces, not around them.
+
+**Adopted from the 2026-07-23 GPT review** (each verified same-day):
+
+- **Enum tendencies need a versioned mapping to curve parameters.** The
+  tendency attributes are words (`slight`/`puffy`/`heavy`…), not numbers;
+  the registry carries an explicit `word → gain/τ parameters` table with a
+  **derivation version**, so tuning is data and replays don't silently
+  change.
+- **Tendency vs live level is a hard write barrier.** Several tendency
+  attributes are `mutability: "mutable"` (they can drift with life events),
+  which invites confusion: the derived live level is NEVER written back
+  into the attribute. Attributes hold the authored/slow tendency; live
+  state lives in the physiology layer only.
+- **Prerequisite seam fix**: `readSimChatMeters` returns stored fixed-point
+  rows without calling `integrateMeterValue` at the branch clock
+  (`sim-surfaces.ts:273-289`) — the state strip shows last-event values,
+  not now. Physiology reads compose on top of integrated meters; fix this
+  read (integrate at the clock) before physiology consumes it. Noted also
+  in C14 [sim-read-seam-guards.plan.md](sim-read-seam-guards.plan.md).
+- **Capture with the cut.** Physiology facts a committed cut rendered
+  against are recorded in that cut's presentation context, so a retake
+  re-renders the SAME body state — recomputing from the later live clock
+  would let regenerate describe a different body than the turn it replaces.
+- **Test list** (beyond the meter-economy suites): hidden-state leakage
+  (nothing unperceivable reaches the prompt), partition invariance
+  (advance-in-parts ≡ advance-at-once for stored levels), response bounds
+  (levels clamped under extreme driver histories), cut/retake stability,
+  and narration repetition (the anti-tedium cap actually caps).
 
 **Sequencing:** hard-depends on
 [../chat-meter-economy.plan.md](../chat-meter-economy.plan.md) (clock-keyed
@@ -160,4 +210,9 @@ drivers and coupling targets; its needs channel is the behavior surface).
 
 ## Slices
 
-_(Defined at promotion.)_
+_(Defined at promotion. Direction fixed by the review adoption above: slice 1
+is the **read-only derivation** — pulse, breath, flush, visible tension:
+memoryless or analytically derived from existing meters, perception-gated,
+captured in the cut's presentation context, no persistence, no couplings.
+Stored levels, condition bridges, and event-mediated couplings come after
+that slice proves the read.)_

@@ -19,22 +19,20 @@ tombstone here.** None are committed work until then._
 
 - **A. Bugs first** — composed-command idempotency + per-chat lock; send-vs-drain
   clock race (dead turn); solo-reply regenerate 409; `travel_together` crash
-  window; 500-after-committed-write + unchunked 30-day drains; drain leaping a
-  retrying trigger; latent `earliest`-vs-`expectedArrivalAt` mismatch (A1, A2,
-  A4, A5, A6, and A7 — fleshed out 2026-07-23, rulings recorded in each stub.
-  Graduation groups: A5+A6+A7+C15 as one drain-hardening plan and A1+A2+A4 as
-  one command-integrity plan — serialize, survive, atomize — both
-  discussion-complete).
+  window (A1, A2, A4 — fleshed out 2026-07-23, rulings recorded in each stub;
+  grouped as one command-integrity plan — serialize, survive, atomize —
+  discussion-complete). _A5+A6+A7 (drain honesty/backoff/arrival) graduated
+  2026-07-23 → [drain-hardening.plan.md](drain-hardening.plan.md)._
 - **B. Living world** — seed the built-but-unseeded life (commitments, third
   zone, meal item, lore memories — the standout cheap win); the primary's LOD
   ruling (at `exact` she is mechanically inert forever); remote text/voice when
   apart; successor NPC initiative; named daylight-band skips (the R5 leftover);
   autonomous NPC travel toward commitments.
 - **C. Hardening & perf** — four throwing sim read-seams (one bad row 500s the
-  state strip); invisible half-failure diagnostics (C15 — fleshed out
-  2026-07-23, owner rulings recorded in the stub; joins the drain-hardening
-  bundle); redundant projection reads per turn + integration coverage for the
-  composed paths.
+  state strip; plus the 2026-07-23-found meters-staleness defect noted in the
+  stub); redundant projection reads per turn + integration coverage for the
+  composed paths. _C15 (half-failure diagnostics) graduated 2026-07-23 →
+  [drain-hardening.plan.md](drain-hardening.plan.md)._
 
 ## World authoring — locations, travel distances & durations
 
@@ -52,7 +50,9 @@ one plan at promotion:_
 - **Travel distances & durations** —
   [deferred/travel-duration-authoring.plan.md](deferred/travel-duration-authoring.plan.md):
   the duration-authoring facet (feeds `minimum`/`expected`/`uncertainty`);
-  carries the A5+A6+A7+C15 drain-hardening tripwire.
+  carries the drain-hardening tripwire (nonzero uncertainty MUST NOT ship
+  before [drain-hardening.plan.md](drain-hardening.plan.md) has — promoted
+  2026-07-23).
 
 ## Physiology simulation — triggered body responses
 

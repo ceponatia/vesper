@@ -1,14 +1,14 @@
 # Drain to expectedArrivalAt — latent arrival mismatch
 
-Status: draft (successor-engine backlog item A7, parked 2026-07-23; **fleshed
-out 2026-07-23 — owner rulings 1–4 recorded below**; still parked — promote per
-[CLAUDE.md](CLAUDE.md) before building. Per ruling 3 it graduates **bundled
-with A5 [drain-chunking](drain-chunking.plan.md), A6
-[drain-trigger-backoff](drain-trigger-backoff.plan.md), and C15
-[composition-diagnostics](composition-diagnostics.plan.md) (joined by owner
-ruling 2026-07-23)** as one drain-hardening plan; per ruling 4 it stays parked
-until travel uncertainty / mid-trip delays
-are planned — **that planning MUST promote this bundle first (tripwire)**.)
+Status: detail doc of [drain-hardening.plan.md](drain-hardening.plan.md)
+(successor-engine backlog item A7; fleshed out and ruled 2026-07-23;
+**promoted 2026-07-23** with A5 [honesty](drain-hardening.honesty.md), A6
+[backoff](drain-hardening.backoff.md), and C15
+[diagnostics](drain-hardening.diagnostics.md) — was
+`deferred/arrival-target-mismatch.plan.md`. Ruling 4's parking was lifted by
+the owner 2026-07-23 (the bundle promotes on its live defects, not A7's
+latent trap); the tripwire survives as a **floor**: travel uncertainty /
+mid-trip delays MUST NOT ship before this plan has.)
 
 ## What
 
@@ -58,7 +58,7 @@ by design headroom the engine deliberately reserved (the
    must always be the same second** — today that shared second is
    `expectedArrivalAt`, whatever values the authoring system later writes into
    a route. The authoring system itself is parked separately:
-   [travel-duration-authoring.plan.md](travel-duration-authoring.plan.md).
+   [deferred/travel-duration-authoring.plan.md](deferred/travel-duration-authoring.plan.md).
 2. **Safety net: re-aim + post-drain arrival check.** Beyond retargeting the
    drain, every travel choreography verifies after the drain that the
    traveller's locus actually left `in_transit`; if not, log a stable
@@ -68,7 +68,7 @@ by design headroom the engine deliberately reserved (the
    **rejected** (crosses the chat → scheduler-internals seam we keep clean).
 3. **Bundling: graduates with A5 + A6** as one drain-hardening plan (same code
    seam, one shared test setup, one review-and-ship pass). _Extended
-   2026-07-23: C15 [composition-diagnostics](composition-diagnostics.plan.md)
+   2026-07-23: C15 [diagnostics](drain-hardening.diagnostics.md)
    joins the bundle._
 4. **Timing: stays parked** until travel uncertainty or mid-trip delays are
    planned; that feature's planning MUST promote the drain-hardening bundle
@@ -84,12 +84,22 @@ by design headroom the engine deliberately reserved (the
   1362-1363`; `sim-command/route.ts` travel-case comment). Walk-with-me's
   max-of-targets composition needs no structural change — it maxes the two
   expected arrivals instead.
-- **Post-drain check (ruling 2):** a small shared helper beside
-  `moveArrivalTarget` (e.g. `warnIfStillInTransit(branchId, actorIds, site)`)
-  that re-reads loci and `log.warn`s a stable diagnostic code when any actor is
-  still `in_transit` after its drain. Call it from all three choreography
-  sites; the route's travel case already re-reads `settled` and computes
-  `arrived` — reuse that read rather than adding one.
+- **Post-drain check (ruling 2), upgraded to recovery (2026-07-23 GPT
+  review, adopted):** a small shared helper beside `moveArrivalTarget`
+  (e.g. `settleIfStillInTransit(branchId, actorIds, site)`) that re-reads
+  loci after the drain — and when any actor is still `in_transit`,
+  **escalates to an A5 durable time job** targeting the journey's current
+  `expectedArrivalAt` (which resumes until arrival), records the C15 code,
+  and warns. The review's point stands: a log line alone is observability,
+  not recovery — "never a stuck character" is delivered by the job, not the
+  warn. Call it from all three choreography sites; the route's travel case
+  already re-reads `settled` and computes `arrived` — reuse that read.
+- **Mid-drain retargeting (same review, adopted):** a `journey_delayed`
+  firing while a drain is in flight bumps `expectedArrivalAt` past the
+  drain's computed target — completing to that stale target re-creates this
+  bug at runtime. The A5 job runner re-reads the journey's target between
+  steps and extends; the bounded in-request drain doesn't need to (its
+  shortfall is caught by the post-drain check above).
 - **Out of scope, noted as the tripwire's second half:** when a delay feature
   finally emits `journey_delayed`, it must both bump
   `journey.expectedArrivalAt` (projector exists) **and** reschedule the durable

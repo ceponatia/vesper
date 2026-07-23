@@ -32,9 +32,9 @@ shipped. Groups: A bugs first · B living world · C hardening & perf.
 - A2 [turn-clock-race.plan.md](turn-clock-race.plan.md)
 - A3 [solo-retake.plan.md](solo-retake.plan.md)
 - A4 [move-together-atomicity.plan.md](move-together-atomicity.plan.md)
-- A5 [drain-chunking.plan.md](drain-chunking.plan.md)
-- A6 [drain-trigger-backoff.plan.md](drain-trigger-backoff.plan.md)
-- A7 [arrival-target-mismatch.plan.md](arrival-target-mismatch.plan.md)
+- A5 — graduated 2026-07-23 → [../drain-hardening.honesty.md](../drain-hardening.honesty.md)
+- A6 — graduated 2026-07-23 → [../drain-hardening.backoff.md](../drain-hardening.backoff.md)
+- A7 — graduated 2026-07-23 → [../drain-hardening.arrival.md](../drain-hardening.arrival.md)
 - B8 [starter-world-seeds.plan.md](starter-world-seeds.plan.md)
 - B9 [primary-lod-ruling.plan.md](primary-lod-ruling.plan.md)
 - B10 [remote-channels.plan.md](remote-channels.plan.md)
@@ -42,13 +42,15 @@ shipped. Groups: A bugs first · B living world · C hardening & perf.
 - B12 [named-skips.plan.md](named-skips.plan.md)
 - B13 [autonomous-npc-travel.plan.md](autonomous-npc-travel.plan.md)
 - C14 [sim-read-seam-guards.plan.md](sim-read-seam-guards.plan.md)
-- C15 [composition-diagnostics.plan.md](composition-diagnostics.plan.md)
+- C15 — graduated 2026-07-23 → [../drain-hardening.diagnostics.md](../drain-hardening.diagnostics.md)
 - C16 [turn-loop-efficiency.plan.md](turn-loop-efficiency.plan.md)
 
-Fleshed out (still parked): A1, A2, A4, A5, A6, A7, and C15 (2026-07-23 —
-rulings recorded in each stub). Graduation groups so far: A5+A6+A7+C15 as one
-drain-hardening plan (discussion-complete); A1+A2+A4 as one command-integrity
-plan (discussion-complete — serialize, survive, atomize).
+Fleshed out (still parked): A1, A2, and A4 (2026-07-23 — rulings recorded in
+each stub), grouped as one command-integrity plan (discussion-complete —
+serialize, survive, atomize). **Graduated:** A5+A6+A7+C15 promoted 2026-07-23
+as [../drain-hardening.plan.md](../drain-hardening.plan.md) (owner lifted the
+A7 tripwire parking; the bundle rolls out next — the review that triggered
+promotion also hardened the stubs' job/leasing/poison-trigger design).
 
 Added after the review:
 

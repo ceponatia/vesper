@@ -1,12 +1,11 @@
 # Drain honesty — no 500 after commit, server-owned long skips
 
-Status: draft (successor-engine backlog item A5, parked 2026-07-23; **fleshed
-out 2026-07-23 — owner rulings 1–3 recorded below**; still parked — promote per
-[CLAUDE.md](CLAUDE.md) before building. Graduates **bundled with A6
-[drain-trigger-backoff](drain-trigger-backoff.plan.md), A7
-[arrival-target-mismatch](arrival-target-mismatch.plan.md), and C15
-[composition-diagnostics](composition-diagnostics.plan.md)** as one
-drain-hardening plan — see A7 §Owner rulings.)
+Status: detail doc of [drain-hardening.plan.md](drain-hardening.plan.md)
+(successor-engine backlog item A5; fleshed out and ruled 2026-07-23;
+**promoted 2026-07-23** with A6 [backoff](drain-hardening.backoff.md), A7
+[arrival](drain-hardening.arrival.md), and C15
+[diagnostics](drain-hardening.diagnostics.md) — was
+`deferred/drain-chunking.plan.md`.)
 
 ## What
 
@@ -65,10 +64,38 @@ cannot honor it at scale.
   the reached story second. Travel drains are minutes of story time and
   should rarely escalate.
 - **Escalation to a durable job:** when the bounded window doesn't reach the
-  target, write a durable skip-intent row (branch, target second — the
-  `sim_outbox` shape) and hand the remainder to a detached server-side runner
-  (fire-and-forget continuation; the machine is always on). A boot-time /
-  next-request sweep re-launches unfinished jobs so deploys can't strand one.
+  target, write a durable skip-intent row and hand the remainder to a
+  detached server-side runner (fire-and-forget continuation; the machine is
+  always on). A boot-time / next-request sweep re-launches unfinished jobs so
+  deploys can't strand one.
+  - **A dedicated table, not `sim_outbox` rows** (2026-07-23 GPT review,
+    verified): `sim_outbox` is event-delivery coordination — rows key to a
+    committed source event with a sequence range and per-consumer uniqueness
+    (`schema.ts:1357-1396`). A skip is durable player intent + progress, a
+    different thing. Ruling 2's feasibility citation stands as *pattern*
+    precedent (pending/processing/completed/failed with retry delays), but
+    the job gets its own small table (`sim_time_jobs`-shaped: branch, target
+    second, state, claim owner, lease expiry, progress) — or a committed
+    `time_advance_requested` event with an atomically-created obligation;
+    leaning the table.
+  - **Leasing and fencing are load-bearing, not polish** (same review):
+    there is no production outbox worker loop to copy — the claim/lease
+    functions exist (`outbox-store.ts`) but only the memory indexer and the
+    soak harness consume them, lazily. The detached-promise + sweep runner
+    must itself guarantee: ONE active job per branch, claim owner + lease
+    expiry, retry availability on lease lapse, fenced progress writes (a
+    stale claimant's write must not land), and clean deploy/restart
+    behavior. Without this, a second request or a restart sweep double-runs
+    the same job.
+  - **A durable job-active guard at every mutation entry point** (same
+    review): the in-process `chat_exchange` lock releases when the original
+    request returns, while the job keeps draining — so the send route,
+    sim-command, headless sim-turn, and admin branch commands must consult
+    the job state and turn away (`world_catching_up` face) while a time job
+    is active on the branch. The composer/UI block (the open question below)
+    is presentation on top of this, not the mechanism. The A2 tolerant turn
+    advance ([turn-clock-race](deferred/turn-clock-race.plan.md) ruling 1)
+    remains the semantic backstop if a gap slips through.
 - **Client staged catch-up (ruling 1):** while a job runs, the world card
   polls (world read or a small job-status read) and renders progress; the
   landing "Time passes…" beat is written by whichever side finishes the
@@ -98,9 +125,10 @@ Sized for the bundled drain-hardening plan.
   server process? (No separate worker process — single-machine deploy.)
 - Job-status surface: piggyback on the world read vs a dedicated
   `GET .../sim-jobs` read — decide with the UI slice.
-- Can the player interact mid-skip? A message sent while a skip job is
-  draining lands on a mid-skip clock. Leaning: the skip UI blocks input while
-  a job is active on this chat's branch (matches today's modal skip feel);
-  revisit if skips ever run long enough to matter.
+- Can the player interact mid-skip? Settled in mechanism by the review
+  addition above (the durable job-active guard turns mutations away
+  server-side; the UI disable mirrors it) — what remains open is only the
+  face: does the composer grey out with a "world catching up" hint, or stay
+  enabled and swallow the bounce into a card refresh?
 - Does `travel` ever need the job path, or is bounded-window + honest-short
   sufficient there? (Journey drains are short by construction.)
