@@ -3,9 +3,11 @@
 Status: draft (successor-engine backlog item A7, parked 2026-07-23; **fleshed
 out 2026-07-23 — owner rulings 1–4 recorded below**; still parked — promote per
 [CLAUDE.md](CLAUDE.md) before building. Per ruling 3 it graduates **bundled
-with A5 [drain-chunking](drain-chunking.plan.md) and A6
-[drain-trigger-backoff](drain-trigger-backoff.plan.md)** as one drain-hardening
-plan; per ruling 4 it stays parked until travel uncertainty / mid-trip delays
+with A5 [drain-chunking](drain-chunking.plan.md), A6
+[drain-trigger-backoff](drain-trigger-backoff.plan.md), and C15
+[composition-diagnostics](composition-diagnostics.plan.md) (joined by owner
+ruling 2026-07-23)** as one drain-hardening plan; per ruling 4 it stays parked
+until travel uncertainty / mid-trip delays
 are planned — **that planning MUST promote this bundle first (tripwire)**.)
 
 ## What
@@ -65,7 +67,9 @@ by design headroom the engine deliberately reserved (the
    the scheduler row's actual `dueStorySecond` from chat-side code — was
    **rejected** (crosses the chat → scheduler-internals seam we keep clean).
 3. **Bundling: graduates with A5 + A6** as one drain-hardening plan (same code
-   seam, one shared test setup, one review-and-ship pass).
+   seam, one shared test setup, one review-and-ship pass). _Extended
+   2026-07-23: C15 [composition-diagnostics](composition-diagnostics.plan.md)
+   joins the bundle._
 4. **Timing: stays parked** until travel uncertainty or mid-trip delays are
    planned; that feature's planning MUST promote the drain-hardening bundle
    first. The trap physically cannot spring while every trip has an exact

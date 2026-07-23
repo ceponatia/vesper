@@ -121,7 +121,7 @@ facing what" exists.
   machinery; upkeep needs a recurring-charge mechanism (trigger-scheduled, like
   arrivals) that doesn't exist yet.
 - **Tripwire inherited from the sibling:** authored travel durations with
-  nonzero uncertainty require the drain-hardening bundle (A5+A6+A7 —
+  nonzero uncertainty require the drain-hardening bundle (A5+A6+A7+C15 —
   [arrival-target-mismatch.plan.md](arrival-target-mismatch.plan.md) ruling 4)
   to promote first.
 

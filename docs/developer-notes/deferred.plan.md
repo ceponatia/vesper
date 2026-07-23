@@ -21,16 +21,18 @@ tombstone here.** None are committed work until then._
   clock race (dead turn); solo-reply regenerate 409; `travel_together` crash
   window; 500-after-committed-write + unchunked 30-day drains; drain leaping a
   retrying trigger; latent `earliest`-vs-`expectedArrivalAt` mismatch (A7 —
-  fleshed out 2026-07-23, owner rulings recorded in the stub; A5+A6+A7 graduate
-  together as one drain-hardening plan).
+  fleshed out 2026-07-23, owner rulings recorded in the stub; A5+A6+A7+C15
+  graduate together as one drain-hardening plan).
 - **B. Living world** — seed the built-but-unseeded life (commitments, third
   zone, meal item, lore memories — the standout cheap win); the primary's LOD
   ruling (at `exact` she is mechanically inert forever); remote text/voice when
   apart; successor NPC initiative; named daylight-band skips (the R5 leftover);
   autonomous NPC travel toward commitments.
 - **C. Hardening & perf** — four throwing sim read-seams (one bad row 500s the
-  state strip); invisible half-failure diagnostics; redundant projection reads
-  per turn + integration coverage for the composed paths.
+  state strip); invisible half-failure diagnostics (C15 — fleshed out
+  2026-07-23, owner rulings recorded in the stub; joins the drain-hardening
+  bundle); redundant projection reads per turn + integration coverage for the
+  composed paths.
 
 ## World authoring — locations, travel distances & durations
 
@@ -48,7 +50,7 @@ one plan at promotion:_
 - **Travel distances & durations** —
   [deferred/travel-duration-authoring.plan.md](deferred/travel-duration-authoring.plan.md):
   the duration-authoring facet (feeds `minimum`/`expected`/`uncertainty`);
-  carries the A5+A6+A7 drain-hardening tripwire.
+  carries the A5+A6+A7+C15 drain-hardening tripwire.
 
 ## Owner-gated live eval runs — run on request, not roadmap items
 
