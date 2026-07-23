@@ -2,9 +2,10 @@
 
 Status: draft (successor-engine backlog item A4, parked 2026-07-23; **fleshed
 out 2026-07-23 — owner rulings 1–3 recorded below**; still parked — promote per
-[CLAUDE.md](CLAUDE.md) before building. Per ruling 2 it graduates **paired
-with A1 [sim-command-idempotency](sim-command-idempotency.plan.md)** as one
-command-integrity plan.)
+[CLAUDE.md](CLAUDE.md) before building. Per ruling 2 it graduates **grouped
+with A1 [sim-command-idempotency](sim-command-idempotency.plan.md)** — and,
+since 2026-07-23, A2 [turn-clock-race](turn-clock-race.plan.md) (its ruling
+3) — as one command-integrity plan.)
 
 ## What
 

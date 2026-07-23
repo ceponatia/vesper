@@ -20,10 +20,11 @@ tombstone here.** None are committed work until then._
 - **A. Bugs first** — composed-command idempotency + per-chat lock; send-vs-drain
   clock race (dead turn); solo-reply regenerate 409; `travel_together` crash
   window; 500-after-committed-write + unchunked 30-day drains; drain leaping a
-  retrying trigger; latent `earliest`-vs-`expectedArrivalAt` mismatch (A1, A4,
-  A5, A6, and A7 — fleshed out 2026-07-23, rulings recorded in each stub.
-  Graduation groups: A5+A6+A7+C15 as one drain-hardening plan and A1+A4 as one
-  command-integrity plan, both discussion-complete).
+  retrying trigger; latent `earliest`-vs-`expectedArrivalAt` mismatch (A1, A2,
+  A4, A5, A6, and A7 — fleshed out 2026-07-23, rulings recorded in each stub.
+  Graduation groups: A5+A6+A7+C15 as one drain-hardening plan and A1+A2+A4 as
+  one command-integrity plan — serialize, survive, atomize — both
+  discussion-complete).
 - **B. Living world** — seed the built-but-unseeded life (commitments, third
   zone, meal item, lore memories — the standout cheap win); the primary's LOD
   ruling (at `exact` she is mechanically inert forever); remote text/voice when

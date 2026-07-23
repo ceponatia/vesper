@@ -45,10 +45,10 @@ shipped. Groups: A bugs first · B living world · C hardening & perf.
 - C15 [composition-diagnostics.plan.md](composition-diagnostics.plan.md)
 - C16 [turn-loop-efficiency.plan.md](turn-loop-efficiency.plan.md)
 
-Fleshed out (still parked): A1, A4, A5, A6, A7, and C15 (2026-07-23 — rulings
-recorded in each stub). Graduation groups so far: A5+A6+A7+C15 as one
-drain-hardening plan (discussion-complete); A1+A4 as one command-integrity
-plan (discussion-complete).
+Fleshed out (still parked): A1, A2, A4, A5, A6, A7, and C15 (2026-07-23 —
+rulings recorded in each stub). Graduation groups so far: A5+A6+A7+C15 as one
+drain-hardening plan (discussion-complete); A1+A2+A4 as one command-integrity
+plan (discussion-complete — serialize, survive, atomize).
 
 Added after the review:
 
