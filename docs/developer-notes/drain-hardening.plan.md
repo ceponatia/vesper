@@ -1,9 +1,17 @@
 # Drain hardening — honest, durable, correctly-stamped time advancement
 
-Status: **next** (promoted from `deferred/` 2026-07-23 by owner ruling — the
-bundle no longer waits on the travel-uncertainty tripwire; it rolls out next.
-Formerly successor-engine backlog items A5+A6+A7+C15, fleshed out and ruled
-2026-07-23.)
+Status: **active** (promoted from `deferred/` 2026-07-23; formerly
+successor-engine backlog items A5+A6+A7+C15). **Slices 1–4 and 6 shipped
+2026-07-23** (C15 telemetry, A5 honesty, A6 backoff + poison-trigger
+surfacing, A7 retarget + arrival check — all gated green on the pure suite
+and committed). **Remaining: A5 slice 4 (durable leased time jobs) and slice
+5 (staged catch-up UI)** — see §Slices. The durable-job runner and the
+staged-UI both need infrastructure the shipping session lacked: Postgres to
+integration-test the lease/fence/sweep concurrency (unvalidated concurrency
+must not ship), and the Fly deploy for UI. The A5 detail doc's escalation
+seam and A7's "escalate a still-in-transit actor to the job" both wait on
+that runner; until it lands, a short drain settles the remainder on later
+turns via the existing `catch_up_required` resume (honest, just not offline).
 
 One plan, four strands, each with its own detail doc carrying the full
 evidence, rulings, and per-strand sketch:
@@ -77,22 +85,42 @@ strand's doc):
 C15 lands first deliberately: it baselines how often live turns degrade
 before the fixes change the numbers.
 
-1. **C15 — contract + recorder + reply-meta + inspector tally** (S/M): the
-   `composition_fallback` vocabulary, fire-and-forget recorder at the eight
-   warn sites, meta persistence at both persist sites (public-safe codes
-   only), admin tally.
-2. **A5 slice 1 — honesty** (S): the three `drain_diverged` 500s become 200s
-   with an honest what-committed/how-far shape, recorded via C15.
-3. **A6 — `trigger_backoff`** (S): the third catch-up reason; loops stop on
-   it; partition-invariance test.
-4. **A5 slice 2 — durable time jobs** (M): the job table, leased/fenced
-   runner, boot/next-request sweep, escalation seam in `advance_time`, the
-   job-active guard at every mutation entry point, the poison-trigger block.
-5. **A5 slice 3 — staged catch-up UI** (S): world-card progress while a job
-   runs; landing beat on completion.
-6. **A7 — retarget + arrival check** (S): `expectedArrivalAt` as the drain
-   target, comment sweep, post-drain check escalating to a job; mid-drain
-   retarget rides the job runner from slice 4.
+1. **C15 — contract + recorder + reply-meta + inspector tally** (S/M) —
+   **SHIPPED 2026-07-23** (`300e8d9`): `contracts/turns/composition-fallback.ts`
+   (vocabulary + tally + labels, pure-tested), `server/engine/composition-diagnostics.ts`
+   (recorder + `CompositionFallbackCollector`), the eight warn sites wired,
+   reply meta at both persist sites (public-safe codes + the previously-dropped
+   solo render diagnostics), `server/memory/composition-fallback-log.ts` + admin
+   route + `ChatInspectorCompositionHealth` panel.
+2. **A5 slice 1 — honesty** (S) — **SHIPPED 2026-07-23** (`dbcc955`):
+   `drainBranchTo` returns an honest `DrainResult` (reached second + short
+   reason); the three composites return 200 + `drainShort` instead of a
+   `drain_diverged` 500, recorded via C15.
+3. **A6 — `trigger_backoff`** (S) — **SHIPPED 2026-07-23** (`dbcc955`): the
+   distinct catch-up reason (carrying `availableAt`); `drainBranchTo` /
+   sim-shadow / rollout-world / admin loops stop on it; poison-trigger
+   surfacing (`terminalFailures` → `trigger_failed` code). Deterministic
+   poison-continue int test added; the retry-parking/partition-invariance int
+   test needs a dispatch-throw mock (follow-up).
+6. **A7 — retarget + arrival check** (S) — **SHIPPED 2026-07-23** (`38b4b6a`):
+   `moveArrivalTarget` → `expectedArrivalAt`; `noteStillInTransit` after every
+   travel drain records + warns (the job-escalation half waits on slice 4). The
+   divergent-journey int test (synthetic `expectedArrivalAt > earliestArrivalAt`)
+   is follow-up.
+4. **A5 slice 4 — durable time jobs** (M) — **REMAINING**: the `sim_time_jobs`
+   table (migration), leased/fenced runner, boot/next-request sweep, escalation
+   seam in `advance_time`, the branch job-active guard at every mutation entry
+   point, the poison-trigger block. **Blocked on infra:** needs `pnpm db:generate`
+   for the migration and a Postgres run to integration-test the lease/fence/sweep
+   (unvalidated concurrency must not ship). A7's arrival-check escalation and the
+   A5 detail doc's mid-drain retarget both hang off this runner.
+5. **A5 slice 5 — staged catch-up UI** (S) — **REMAINING**: world-card progress
+   while a job runs; landing beat on completion. Follows slice 4 and is
+   UI-tested against the Fly deploy.
+
+_Slice numbering keeps the original build-order labels (1, 2, 3, 6 shipped;
+4, 5 remaining) rather than renumbering, so commit messages and the detail
+docs still resolve._
 
 ## Open questions
 
