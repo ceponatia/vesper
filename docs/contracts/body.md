@@ -48,6 +48,7 @@ Explicit anatomy (`intimate.ts`) hangs off the everyday tree under `groin` / `pe
 | penis | |
 | testicles | |
 | anus | |
+| perineum | |
 | breasts | + nipples |
 
 These are all `coverageRelevant: false` — a garment over `pelvis` / `chest` already covers them via `expand`, so they aren't garment slots of their own.
@@ -55,9 +56,14 @@ These are all `coverageRelevant: false` — a garment over `pelvis` / `chest` al
 **Which intimate anatomy is configurable** is controlled by `intimateGroup`:
 
 - The *configurable* parts each carry an `intimateGroup` (`INTIMATE_REGION_GROUPS = breasts · vulva · penis · testicles`), so the realized-body filter can include or omit that sub-tree per character.
-- The **anus is the exception**: it carries **no** `intimateGroup`, so it is **universal** — present on every realized body (everyone has one), never a body-config toggle. It still lives in the fenced intimate subfolder and is exposure-gated like any below-waist region.
+- The **anus and perineum are the exception**: they carry **no** `intimateGroup`, so they are **universal** — present on every realized body (everyone has them), never a body-config toggle. They are still exposure-gated like any below-waist region.
 
-**Where intimate attributes live:** `attributes/categories/intimate/` — a fenced subfolder, easy to find and to withhold from moderation-prone routes. Its categories are `INTIMATE_ATTRIBUTE_CATEGORIES = breasts · vulva · penis · testicles` (the anus is a touchable region with no descriptive attributes yet).
+**Where intimate attributes live:** the four *configurable* region groups live in the fenced `attributes/categories/intimate/` subfolder (easy to find and to withhold from moderation-prone routes); the two *universal* moderation-sensitive categories — `anus` and `perineum` — are top-level category files (`categories/anus.ts`, `categories/perineum.ts`), alongside `buttocks`, since they aren't body-config-gated.
+
+**Two distinct sets, one superset relationship** (see `body/locations/intimate.ts`):
+
+- `INTIMATE_REGION_GROUPS = breasts · vulva · penis · testicles` — the **toggleable** regions. Body-config gating (`species/realize.ts`) keys on membership here (via `isIntimateRegionGroup`), so only these can be switched off.
+- `INTIMATE_ATTRIBUTE_CATEGORIES = breasts · vulva · penis · testicles · anus · perineum` — the **moderation/exposure** set (a superset). A category here is withheld from chat unless the turn's focus targets the region and from images unless the caller opts in and the region reads exposed. The two extras (anus · perineum) are universal but still exposure-sensitive.
 
 The full aionchat anatomy vocabulary that didn't port in T1 (buttocks, groin, abdomen, nose, …) is catalogued in `docs/developer-notes/supplemental-anatomy.phase4.md`.
 

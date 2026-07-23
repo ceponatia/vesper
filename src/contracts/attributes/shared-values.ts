@@ -53,6 +53,15 @@ export const INTIMATE_SCENT_BASE = [
 ] as const;
 
 /**
+ * Sweat-register scent notes appropriate to the penis / testicles / anus — the
+ * warmer, saltier funk of skin folds that the (more cycle/arousal-driven) vulva
+ * core doesn't foreground. Augments `INTIMATE_SCENT_BASE`: those fields spread
+ * `[...INTIMATE_SCENT_BASE, ...INTIMATE_SCENT_SWEAT]`. Only ever *add* to this —
+ * a member is persisted once authored (`AttributeValue.value`).
+ */
+export const INTIMATE_SCENT_SWEAT = ["salty", "sharp", "sweaty"] as const;
+
+/**
  * The shared core of intimate taste — mirrors the scent core's clean/musky/earthy
  * register plus taste-only notes (`mild`, `bitter`, `salty`, `sharp`, `primal`,
  * `faintly_sweet`). Per-anatomy fields augment it: `vulva.taste` adds `sweet`.
@@ -109,6 +118,16 @@ export const INTIMATE_SCENT_GUIDANCE: Record<string, string> = {
   heavy: "dense and low — it lingers and settles",
   thick: "so dense the air feels close",
   animal: "plainly animal — fur-warm and primal",
+};
+
+/**
+ * Narrator glosses for the sweat-register scent notes (keys ⊆ `INTIMATE_SCENT_SWEAT`).
+ * Spread alongside `INTIMATE_SCENT_GUIDANCE` wherever a field spreads the sweat set.
+ */
+export const INTIMATE_SCENT_SWEAT_GUIDANCE: Record<string, string> = {
+  salty: "clean sweat-salt carried on warm skin",
+  sharp: "a biting, acrid edge that catches the throat",
+  sweaty: "fresh sweat — warm, unwashed, close",
 };
 
 /**

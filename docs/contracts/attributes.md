@@ -128,7 +128,7 @@ One spine, two registries, so traits inherit the same machinery without duplicat
 
 ## Starter vocabulary
 
-The starter set is roughly 90 attributes across all categories (the table below lists the everyday + morphology groups; the intimate-anatomy groups add the rest). (Expansion toward aionchat's per-anatomy granularity is expected — the group mechanism is the contract, the vocabulary is not.)
+The starter set is roughly 120 attributes across all categories (the table below lists the everyday + morphology groups; the intimate-anatomy groups add the rest). (Expansion toward aionchat's per-anatomy granularity is expected — the group mechanism is the contract, the vocabulary is not.)
 
 | Category group | Attributes |
 | --- | --- |
@@ -143,7 +143,8 @@ The starter set is roughly 90 attributes across all categories (the table below 
 | horns | shape, length, count, texture, color |
 | neck, shoulders, chest | neck (length, throat_prominence); shoulders (width, slope); chest (size, hair) |
 | wings | type, shape, span, color, carriage |
-| waist, hips, buttocks | waist (definition); hips (width); buttocks (size, shape, firmness) |
+| waist, hips, buttocks | waist (definition); hips (width); buttocks (size, shape, firmness, cheek_separation, dimples, texture, hair, sensitivity) |
+| anus, perineum | Universal but **moderation-gated** below-waist anatomy (present on every body, like buttocks, but in `INTIMATE_ATTRIBUTE_CATEGORIES`). anus (appearance, color, tightness, texture, hair, sensitivity, lubrication, scent); perineum (texture, sensitivity, hair) |
 | tail | type, length, tip, color |
 | arms, hands, legs, feet | arms (build, hair); hands (size, texture, nails); legs (build, length, hair); feet (size, arch, nails, smell, toes) |
 | voice | pitch, timbre, accent, cadence |
