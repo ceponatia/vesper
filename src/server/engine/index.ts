@@ -10,6 +10,7 @@ export * from "./chat-action-beat";
 export * from "./chat-authority";
 export * from "./sim-beats";
 export * from "./composition-diagnostics";
+export * from "./sim-time-jobs";
 export * from "./sim-exchange";
 export * from "./sim-narrator";
 export * from "./sim-shadow";

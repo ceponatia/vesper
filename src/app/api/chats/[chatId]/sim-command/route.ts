@@ -11,6 +11,7 @@ import { db, simActionDefinitions, simBranches, simCharacters, simItemHoldings, 
 import {
   CompositionFallbackCollector,
   drainBranchTo,
+  hasActiveTimeJob,
   noteDrainDiagnostics,
   noteStillInTransit,
   findStandingEngagement,
@@ -18,6 +19,8 @@ import {
   readDurableActivities,
   readDurableSpaceBranch,
   runAccompanyTogether,
+  runDueTimeJobs,
+  runSkipWithEscalation,
   submitDurableEndEngagement,
   submitDurableMoveActor,
   submitDurableStartActivity,
@@ -107,6 +110,13 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
   const gate = await requireSimChat(chatId, user.id);
   if (!gate.ok) return gate.response;
   const { sim } = gate;
+  // A5 slice 4: while a durable time job is catching this branch's world up, turn every mutation
+  // away — the in-process lock does not outlive the request that started the job, so the durable
+  // job state IS the guard. Re-drive a crashed/backed-off job with a detached sweep on the way out.
+  if (await hasActiveTimeJob(sim.branchId)) {
+    void runDueTimeJobs(`guard-sweep-${newId()}`).catch(() => undefined);
+    return jsonError("world_catching_up", "the world is still catching up on this chat; try again in a moment", 409);
+  }
   const body = await readBody(req, bodySchema);
   if (!body.ok) return body.response;
   const command = body.value;
@@ -235,28 +245,38 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         if (ended.status !== "accepted") return jsonError("sim_conflict", "the world moved; try again", 409);
       }
       const [branch] = await db()
-        .select({ storySecond: simBranches.storySecond })
+        .select({ storySecond: simBranches.storySecond, worldId: simBranches.worldId })
         .from(simBranches)
         .where(eq(simBranches.id, sim.branchId))
         .limit(1);
       if (!branch) return jsonError("not_found", "world branch not found", 404);
       const target = branch.storySecond + command.minutes * 60;
-      const drain = await drainBranchTo(sim.branchId, target);
-      // A5: NEVER a 500 after the clock already committed (docs/resilience.md). A short drain
-      // returns an honest 200 — how far time ACTUALLY moved — with the shortfall recorded via
-      // C15 and marked on the beat. (Durable server-owned completion of the remainder is A5
-      // slice 2; here the world simply settled where the bounded drain left it.)
-      const skipFallbacks = new CompositionFallbackCollector(chatId);
-      noteDrainDiagnostics(skipFallbacks, "advance_time", drain);
-      // The skip lands a durable "Time passes — it's now …" beat, phrased at the clock the drain
-      // actually reached (the wrapped standing scene is folded into this one beat, never a second).
-      await writeWorldBeat({ chatId, branchId: sim.branchId, kind: "time_skipped", fallbacks: skipFallbacks.codes() });
-      return jsonOk({
-        status: "advanced",
-        toStorySecond: drain.reachedStorySecond,
-        drained: drain.drained,
-        drainShort: !drain.converged,
+      // A5 slice 4: NEVER a 500 after the clock committed, and no dead request grinding a 30-day
+      // drain. A bounded fast path finishes short skips in-request; a long skip hands its remainder
+      // to a durable, server-owned job (which writes the landing beat on completion) and returns
+      // `catchingUp` so the client shows staged progress until the world settles (ruling 1–2).
+      const skip = await runSkipWithEscalation({
+        worldId: branch.worldId,
+        branchId: sim.branchId,
+        chatId,
+        targetStorySecond: target,
       });
+      const skipFallbacks = new CompositionFallbackCollector(chatId);
+      if (skip.terminalFailures > 0) {
+        skipFallbacks.note({
+          site: "advance_time",
+          code: "trigger_failed",
+          detail: `${skip.terminalFailures} poison trigger(s) in the fast path`,
+        });
+      }
+      if (skip.status === "completed") {
+        // The skip finished in-request: land the "Time passes — it's now …" beat now (the wrapped
+        // standing scene folds into this one beat, never a second).
+        await writeWorldBeat({ chatId, branchId: sim.branchId, kind: "time_skipped", fallbacks: skipFallbacks.codes() });
+        return jsonOk({ status: "advanced", toStorySecond: skip.reachedStorySecond, drainShort: false, catchingUp: false });
+      }
+      // Catching up: the durable job owns the landing beat; the client polls the world/job status.
+      return jsonOk({ status: "advanced", toStorySecond: skip.reachedStorySecond, drainShort: true, catchingUp: true });
     }
     case "travel": {
       // Skip-style travel (ruling 20) + graceful departure (slice 4): if a scene
