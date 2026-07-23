@@ -9,13 +9,17 @@ import {
 } from "@/contracts/simulation/space";
 import { chatWorldSchema, simTravelResultSchema } from "@/lib/client/api";
 import {
+  actionChipLabel,
   actorWhereabouts,
+  approxActivityMinutes,
   approxWalkMinutes,
+  buildWorldActions,
   buildWorldDestinations,
   buildWorldPlaceOrTransit,
   capitalizeFirst,
   goChipLabel,
   placeGoPhrase,
+  type WorldActionCandidate,
 } from "./world-read";
 
 /**
@@ -183,7 +187,67 @@ describe("actorWhereabouts", () => {
   });
 });
 
+describe("buildWorldActions", () => {
+  const rest: WorldActionCandidate = {
+    id: "stw-x1-action-rest",
+    label: "Rest",
+    controllerKinds: ["player", "npc_policy"],
+    durationSeconds: 600,
+    requiredZoneKinds: ["home"],
+    needsConsent: false,
+  };
+
+  it("marks a zone-gated action available at the matching zone kind", () => {
+    expect(buildWorldActions({ candidates: [rest], playerZoneKind: "home" })).toEqual([
+      { id: "stw-x1-action-rest", label: "Rest", durationSeconds: 600, available: true },
+    ]);
+  });
+
+  it("marks it unavailable (with a reason) at a non-matching zone kind", () => {
+    const [action] = buildWorldActions({ candidates: [rest], playerZoneKind: "plaza" });
+    expect(action).toMatchObject({ available: false, unavailableReason: "This is not the place for that." });
+  });
+
+  it("marks everything unavailable while the player is in transit (null zone)", () => {
+    const [action] = buildWorldActions({ candidates: [rest], playerZoneKind: null });
+    expect(action).toMatchObject({ available: false, unavailableReason: "Not while you're on the move." });
+  });
+
+  it("offers a no-precondition action anywhere the player is `at`", () => {
+    const anywhere: WorldActionCandidate = { ...rest, id: "a-stretch", requiredZoneKinds: [] };
+    expect(buildWorldActions({ candidates: [anywhere], playerZoneKind: "plaza" })[0]?.available).toBe(true);
+  });
+
+  it("drops actions the player cannot control", () => {
+    const npcOnly: WorldActionCandidate = { ...rest, controllerKinds: ["npc_policy"] };
+    expect(buildWorldActions({ candidates: [npcOnly], playerZoneKind: "home" })).toEqual([]);
+  });
+
+  it("marks a consent-gated action unavailable (the card can't gather consent)", () => {
+    const intimate: WorldActionCandidate = { ...rest, requiredZoneKinds: [], needsConsent: true };
+    const [action] = buildWorldActions({ candidates: [intimate], playerZoneKind: "home" });
+    expect(action).toMatchObject({ available: false, unavailableReason: "That needs someone else's say-so." });
+  });
+});
+
+describe("actionChipLabel", () => {
+  it("prefers an authored label", () => {
+    expect(actionChipLabel("stw-x1-action-rest", "Rest")).toBe("Rest");
+    expect(actionChipLabel("stw-x1-action-rest", "  Take a nap ")).toBe("Take a nap");
+  });
+
+  it("falls back to a title-cased last id segment when unlabeled", () => {
+    expect(actionChipLabel("stw-x1-action-rest")).toBe("Rest");
+    expect(actionChipLabel("stw-x1-action-rest", "   ")).toBe("Rest");
+  });
+});
+
 describe("card phrasing", () => {
+  it("rounds activity minutes with a floor of 1", () => {
+    expect(approxActivityMinutes(600)).toBe(10);
+    expect(approxActivityMinutes(30)).toBe(1);
+  });
+
   it("rounds walk minutes with a floor of 1", () => {
     expect(approxWalkMinutes(300)).toBe(5);
     expect(approxWalkMinutes(240)).toBe(4);
@@ -206,19 +270,23 @@ describe("card phrasing", () => {
 });
 
 describe("client response parsing", () => {
-  it("parses the world envelope, dropping malformed cast/destination rows", () => {
+  it("parses the world envelope, dropping malformed cast/destination/action rows", () => {
     const parsed = chatWorldSchema.parse({
       place: { label: "home", privacy: "public" },
       transit: null,
-      cast: [{ name: "Nora", whereabouts: "", present: true }, "garbage"],
+      cast: [{ name: "Nora", whereabouts: "", present: true, isPrimary: true }, "garbage"],
       destinations: [{ zoneId: SQUARE, label: "town square", mode: "walk", travelSeconds: 300 }, { label: "no id" }],
       held: [{ itemId: "item-1", name: "a keepsake" }],
+      actions: [{ id: "action-rest", label: "Rest", durationSeconds: 600, available: true }, { label: "no id" }],
       sceneOpen: true,
     });
     expect(parsed.place).toEqual({ label: "home", privacy: "public" });
     expect(parsed.cast).toHaveLength(1);
+    expect(parsed.cast[0]?.isPrimary).toBe(true);
     expect(parsed.destinations).toHaveLength(1);
     expect(parsed.held[0]).toEqual({ itemId: "item-1", name: "a keepsake" });
+    expect(parsed.actions).toHaveLength(1);
+    expect(parsed.actions[0]).toMatchObject({ id: "action-rest", label: "Rest", durationSeconds: 600, available: true });
     expect(parsed.sceneOpen).toBe(true);
   });
 

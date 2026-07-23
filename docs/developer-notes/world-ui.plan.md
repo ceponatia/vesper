@@ -2,7 +2,7 @@
 
 Status: active (planned 2026-07-23 from the owner's world-UI design pass; owner rulings
 20–21 recorded in [engine.spec.operations.md](engine.spec.operations.md) §39. **Slices 0,
-1, and 2 shipped 2026-07-23**; slices 3–5 remain. NL-move parity was deferred out of
+1, 2, and 3 shipped 2026-07-23**; slices 4–5 remain. NL-move parity was deferred out of
 slice 1 — see Slice 1 "How it shipped".)
 
 The successor engine's world is live but invisible. The starter world really exists —
@@ -300,12 +300,65 @@ slice 1's toast-only feedback. The one structural UI change: extend `ChatLine`
   `world-beat.test.ts` (phrasing + schema round-trip). Unit + lint + cycles + typecheck
   + jscpd all pass.
 
-### Slice 3 — pocket & actions
+### Slice 3 — pocket & actions — SHIPPED 2026-07-23
 
 Held-items row on the world card with "Hand to {primary}" (`give_item` — today's only
-legal transfer is player→primary held→held) and a "Rest (10 min)" chip
-(`start_activity`; the seeded rest action's `at_zone_kind: home` precondition
+legal transfer is player→primary held→held) and a "Rest · ~10 min" chip
+(`do_activity`; the seeded rest action's `at_zone_kind: home` precondition
 shows/hides it). Shares the slice-1 refusal surface.
+
+**How it shipped (decisions):**
+
+- **Co-location is resolver-enforced — NO route precheck added.** The transfer resolver
+  (`resolveTransferItemFromView`, `lib/simulation/materials.ts` §26.4 step 7) already
+  requires the destination chain's root zone to equal the acting actor's zone; a
+  `give_item` to the primary's held locus therefore refuses `root_not_colocated` ("That
+  destination is not within reach.") whenever the primary is away — a §14.4 public face
+  with no instant co-location effect (§14.2 spirit). So the route adds no co-location
+  precheck. **Independently** the card disables the "Hand to {primary}" affordance when
+  `cast[].present` is false (with a muted "{name} isn't here to take it." caption), so the
+  refusal is rarely even reachable.
+- **`give_item` returns the §14.4 face at 200** (matching `travel`, not the old `respond`
+  409) so the card renders `publicReason` + `legalAlternatives` from the `ok` channel; on
+  success it writes a **`gave_item` world beat** ("You hand {primary} {item name}. ·
+  <landing>") via the slice-2 `writeWorldBeat` seam and returns `{status:"gave"}`.
+- **`do_activity {actionDefinitionId}` — a new composed skip-style kind** (ruling 20's
+  spirit), pattern-matched on the slice-1 `travel` composition: submit the player's
+  `start_activity`; on a `rejected` outcome return the §14.4 face at 200 (a **claim
+  conflict** — e.g. resting mid-scene, since rest claims body + full attention against the
+  standing engagement's attention claim — surfaces here and renders on the card); on
+  acceptance read the just-started activity's `expectedCompleteAt` (deterministic id via
+  `deriveActivityId(branchId, commandId)`) and drain the branch clock to it through the
+  shared `drainBranchTo` helper. **Completion is trigger-scheduled AT start** (activity-
+  store schedules the completion trigger at `expectedCompleteAt`), so the drain fires it —
+  the route never submits `complete_activity` itself; the activity never dangles active.
+  Response `{status:"performed", toStorySecond}` + a **`rested` world beat** phrased
+  generically from the action's display label ("You rest a while." — a future "Nap"/
+  "Meditate" reads right for free).
+- **The `actions` envelope field** (`readSimChatWorld`): each branch action definition the
+  **player** may control, shaped `{id, label, durationSeconds, available, unavailableReason?}`.
+  `available` is the pure `buildWorldActions` decision — the player is `at` a zone whose
+  kind satisfies every `at_zone_kind` precondition (reusing the same law
+  `resolveStartActivity` enforces, not a duplicate), and a `consent_covered`-gated action is
+  marked unavailable (the card can't gather targeted consent yet). The card renders only
+  `available` actions as chips (ruling-18 affordance hiding); unavailable ones round-trip
+  but are hidden, not disabled.
+- **Action display label as authored data.** Added an OPTIONAL `label` field to
+  `simulationActionDefinitionSchema` (jsonb payload — **no DB migration**; older rows
+  without it still parse and fall back to an id-derived title-cased label). The starter
+  world seeds `label: "Rest"`, so the chip reads "Rest" instead of humanizing the stamped
+  `stw-…-action-rest` id (the slice-0 humanize wart, sidestepped for player-facing chips).
+- **Cast carries `isPrimary`** so the card knows the fixed give target's name + presence
+  without a redundant envelope field. The card's `onTraveled` prop was renamed
+  `onWorldChanged` (it now refreshes after travel / handoff / action alike).
+- **No `end_scene` on the card** — departure choreography is slice 4; `simEndScene` stays
+  wired-but-unused.
+- **Tests / deferrals.** New pure coverage: `buildWorldActions` availability shaping,
+  `actionChipLabel` fallback, `approxActivityMinutes`, the `gave_item`/`rested` beat
+  phrasings, and the envelope round-trip (`actions` + `isPrimary`). `pnpm test:int` was
+  **not** run (no local Postgres) — the composed-command paths (`give_item` beat,
+  `do_activity` start→drain→complete) are integration-shaped and want a Fly/Postgres pass.
+  Lint + cycles + typecheck + unit + jscpd all pass.
 
 ### Slice 4 — graceful departure choreography (adopts the R5 leftover)
 

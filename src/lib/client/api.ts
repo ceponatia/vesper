@@ -942,7 +942,13 @@ export const chatWorldSchema = z.object({
     .nullable()
     .catch(null),
   cast: arrayOf(
-    z.object({ name: z.string().catch(""), whereabouts: z.string().catch(""), present: z.boolean().catch(false) }),
+    z.object({
+      name: z.string().catch(""),
+      whereabouts: z.string().catch(""),
+      present: z.boolean().catch(false),
+      /** The give-item target (slice 3): true for the chat's primary. */
+      isPrimary: z.boolean().catch(false),
+    }),
   ),
   destinations: arrayOf(
     z.object({
@@ -953,6 +959,16 @@ export const chatWorldSchema = z.object({
     }),
   ),
   held: arrayOf(z.object({ itemId: z.string(), name: z.string().catch("") })),
+  /** Player-startable actions (slice 3) — the card renders the `available` ones as chips. */
+  actions: arrayOf(
+    z.object({
+      id: z.string(),
+      label: z.string().catch(""),
+      durationSeconds: z.number().catch(0),
+      available: z.boolean().catch(false),
+      unavailableReason: z.string().optional().catch(undefined),
+    }),
+  ),
   sceneOpen: z.boolean().catch(false),
 });
 export type ChatWorld = z.infer<typeof chatWorldSchema>;
@@ -972,6 +988,33 @@ export const simTravelResultSchema = z.object({
   legalAlternatives: z.array(z.string()).catch([]),
 });
 export type SimTravelResult = z.infer<typeof simTravelResultSchema>;
+
+/**
+ * The `give_item` handoff outcome (slice 3): a success (`gave`) OR the §14.4
+ * public refusal (`rejected` — the primary isn't co-located, etc.). Both arrive
+ * at 200 so the card reads the refusal instead of a flattened HTTP-error body.
+ */
+export const simGiveItemResultSchema = z.object({
+  status: z.enum(["gave", "rejected"]).catch("rejected"),
+  code: z.string().catch(""),
+  publicReason: z.string().catch(""),
+  legalAlternatives: z.array(z.string()).catch([]),
+});
+export type SimGiveItemResult = z.infer<typeof simGiveItemResultSchema>;
+
+/**
+ * The `do_activity` outcome (slice 3): a performed skip-style activity
+ * (`performed`, with the settled `toStorySecond`) OR the §14.4 public refusal
+ * (`rejected` — e.g. a claim conflict when a scene is standing). Both at 200.
+ */
+export const simDoActivityResultSchema = z.object({
+  status: z.enum(["performed", "rejected"]).catch("rejected"),
+  toStorySecond: z.number().nullable().catch(null),
+  code: z.string().catch(""),
+  publicReason: z.string().catch(""),
+  legalAlternatives: z.array(z.string()).catch([]),
+});
+export type SimDoActivityResult = z.infer<typeof simDoActivityResultSchema>;
 
 export const chatsApi = {
   /** Active conversations, newest first; scoped to one character and/or the archived shelf. */
@@ -1074,10 +1117,22 @@ export const chatsApi = {
    */
   simTravel: (chatId: string, toZoneId: string) =>
     apiPost(simTravelResultSchema, `/api/chats/${chatId}/sim-command`, { kind: "travel", toZoneId }),
-  /** Hand the player's held item to the primary (wiring lands now; its card UI is slice 3). */
+  /**
+   * Hand the player's held item to the primary (slice 3): a success or the
+   * §14.4 public refusal, both at 200. On success the server writes a `gave_item`
+   * world beat; the card refreshes the transcript + world.
+   */
   simGiveItem: (chatId: string, itemId: string) =>
-    apiPost(z.object({ status: z.string().catch("") }), `/api/chats/${chatId}/sim-command`, { kind: "give_item", itemId }),
-  /** End the pair's standing scene (wiring lands now; its card UI is slice 3). */
+    apiPost(simGiveItemResultSchema, `/api/chats/${chatId}/sim-command`, { kind: "give_item", itemId }),
+  /**
+   * Perform a skip-style action (slice 3): server-composed `start_activity` + a
+   * bounded drain through the activity's duration (the completion trigger fires
+   * inside the drain). Returns a landing or the §14.4 public refusal (both `ok`);
+   * on success the server writes a `rested` world beat.
+   */
+  simDoActivity: (chatId: string, actionDefinitionId: string) =>
+    apiPost(simDoActivityResultSchema, `/api/chats/${chatId}/sim-command`, { kind: "do_activity", actionDefinitionId }),
+  /** End the pair's standing scene (wiring lands now; its card UI is slice 4). */
   simEndScene: (chatId: string) =>
     apiPost(z.object({ status: z.string().catch("") }), `/api/chats/${chatId}/sim-command`, { kind: "end_scene" }),
   /** The Relationship panel payload (spec §7.2–7.4 UI): stage, sparkline, milestones, story so far. */

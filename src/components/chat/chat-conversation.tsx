@@ -445,7 +445,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   };
 
   /**
-   * After a world-changing beat (a travel landing): refresh the transcript (the
+   * After a world-changing command from the card (a travel landing, an item
+   * handoff, or a performed action — slices 1–3): refresh the transcript (the
    * new world beat lands there — slice 2 replaced the toast), plus the chat state
    * (clock) and the world card.
    */
@@ -1119,7 +1120,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             world={world.data}
             archived={archived}
             busy={skipBusy || sending}
-            onTraveled={refreshWorldAndState}
+            onWorldChanged={refreshWorldAndState}
           />
           {roster.length > 0 ? (
             <ChatRosterPanel
@@ -1371,7 +1372,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               world={world.data}
               archived={archived}
               busy={skipBusy || sending}
-              onTraveled={refreshWorldAndState}
+              onWorldChanged={refreshWorldAndState}
             />
           </aside>
         ) : null}

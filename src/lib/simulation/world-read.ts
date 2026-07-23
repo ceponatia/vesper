@@ -36,6 +36,8 @@ export interface SimWorldCastMember {
   /** "" when present with the player; else a short phrase ("at the town square", "on the move"). */
   whereabouts: string;
   present: boolean;
+  /** True for the chat's primary — the fixed target of a `give_item` handoff (slice 3). */
+  isPrimary: boolean;
 }
 
 export interface SimWorldDestination {
@@ -53,6 +55,19 @@ export interface SimWorldHeldItem {
   name: string;
 }
 
+export interface SimWorldAction {
+  /** The action-definition id — the `do_activity` command's `actionDefinitionId`. */
+  id: string;
+  /** Chip label ("Rest") — the authored action label, else id-derived. */
+  label: string;
+  /** Fixed activity duration in story-seconds — the chip's "~10 min" phrasing. */
+  durationSeconds: number;
+  /** True when the player can start it from their current zone (the card hides the rest). */
+  available: boolean;
+  /** A short "why not" for an unavailable action (the card doesn't render it, but it round-trips). */
+  unavailableReason?: string;
+}
+
 export interface SimChatWorld {
   /** Set when the player's locus is `at` a zone; null while in transit. */
   place: SimWorldPlace | null;
@@ -62,8 +77,29 @@ export interface SimChatWorld {
   /** Open walkable links from the player's current zone; empty while in transit. */
   destinations: SimWorldDestination[];
   held: SimWorldHeldItem[];
+  /** The branch's player-startable actions (slice 3) — the card renders the `available` ones as chips. */
+  actions: SimWorldAction[];
   /** A standing co-present engagement between the player and the primary exists. */
   sceneOpen: boolean;
+}
+
+/**
+ * The lean action facts the availability shaper needs — the server maps each
+ * `SimulationActionDefinition` to this so the pure shaper stays contract-shape
+ * agnostic and unit-testable without full authored definitions.
+ */
+export interface WorldActionCandidate {
+  id: string;
+  /** Authored display label; the chip falls back to an id-derived label when absent. */
+  label?: string;
+  /** Whose commands may start it — only player-startable actions surface on the card. */
+  controllerKinds: readonly string[];
+  /** Fixed activity duration in story-seconds. */
+  durationSeconds: number;
+  /** Zone-kind gates: every one must equal the player's current zone kind (`at_zone_kind`). */
+  requiredZoneKinds: readonly string[];
+  /** True when the action needs someone's targeted say-so (`consent_covered`) — not tappable from the card in v1. */
+  needsConsent: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +187,64 @@ export function buildWorldDestinations(input: {
     destinations.push({ zoneId: toZone, label: zoneLabelOf(toZone), mode: "walk", travelSeconds: link.minimumDurationSeconds });
   }
   return destinations;
+}
+
+/**
+ * The player-startable actions for the card (slice 3). Availability is evaluated
+ * against the player's CURRENT zone kind using the same `at_zone_kind` law the
+ * durable `resolveStartActivity` enforces — no duplication of claim/scene checks
+ * (those surface as a §14.4 refusal when the player actually taps). Only
+ * player-controllable actions are shaped; a consent-gated action is marked
+ * unavailable (the card can't gather targeted consent yet). Definition order is
+ * preserved (the server loads them id-sorted).
+ */
+export function buildWorldActions(input: {
+  candidates: readonly WorldActionCandidate[];
+  /** The player's current zone kind, or null while in transit (nothing is startable). */
+  playerZoneKind: string | null;
+}): SimWorldAction[] {
+  const { candidates, playerZoneKind } = input;
+  const actions: SimWorldAction[] = [];
+  for (const candidate of candidates) {
+    if (!candidate.controllerKinds.includes("player")) continue;
+    const zoneOk =
+      playerZoneKind !== null && candidate.requiredZoneKinds.every((kind) => kind === playerZoneKind);
+    const available = zoneOk && !candidate.needsConsent;
+    const unavailableReason = available
+      ? undefined
+      : candidate.needsConsent
+        ? "That needs someone else's say-so."
+        : playerZoneKind === null
+          ? "Not while you're on the move."
+          : "This is not the place for that.";
+    actions.push({
+      id: candidate.id,
+      label: actionChipLabel(candidate.id, candidate.label),
+      durationSeconds: candidate.durationSeconds,
+      available,
+      ...(unavailableReason === undefined ? {} : { unavailableReason }),
+    });
+  }
+  return actions;
+}
+
+/**
+ * A short chip label for an action. Prefers the authored `label`; falls back to
+ * the id's last segment, title-cased ("stw-…-action-rest" → "Rest"), so an
+ * un-labeled legacy definition still reads sensibly (fresh worlds carry the label).
+ */
+export function actionChipLabel(actionId: string, label?: string): string {
+  const trimmed = label?.trim();
+  if (trimmed) return trimmed;
+  const base = actionId.split(/[.:/]/).pop() ?? actionId;
+  const words = base.split(/[-_]+/).filter(Boolean);
+  const last = words[words.length - 1] ?? base;
+  return last.length === 0 ? last : `${last.charAt(0).toUpperCase()}${last.slice(1)}`;
+}
+
+/** Legible activity minutes for a duration, floored at 1 ("~10 min"). */
+export function approxActivityMinutes(seconds: number): number {
+  return Math.max(1, Math.round(seconds / 60));
 }
 
 // ---------------------------------------------------------------------------

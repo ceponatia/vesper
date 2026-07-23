@@ -154,16 +154,24 @@ affordance"):
   for every non-player actor (whereabouts via the shared `actorWhereabouts` decision —
   the same machinery `readSimChatPresence` uses); `destinations [{zoneId, label, mode,
   travelSeconds}]` (open, walkable links from the current zone, treated as **undirected**
-  like the route planner, empty in transit); `held [{itemId, name}]`; and `sceneOpen`
-  (`isStandingCoPresentEngagement`, shared with the exchange's `findStandingEngagement`).
-  Zone labels are display **nouns** off the zone kind (never a raw id). The read is
-  fail-open: a malformed projection degrades to `null` (a 503 the client reads as "no
-  card"), never a throw (docs/resilience.md). Pure shaping lives in
+  like the route planner, empty in transit); `held [{itemId, name}]`; `actions [{id, label,
+  durationSeconds, available, unavailableReason?}]` (world-ui.plan.md slice 3 — the branch's
+  **player-startable** action definitions; `available` is the `at_zone_kind` law evaluated
+  against the player's current zone kind via the pure `buildWorldActions`, the same law
+  `resolveStartActivity` enforces; a `consent_covered`-gated action is marked unavailable);
+  and `sceneOpen` (`isStandingCoPresentEngagement`, shared with the exchange's
+  `findStandingEngagement`). Each `cast` member also carries `isPrimary` (the fixed
+  `give_item` target). Zone labels are display **nouns** off the zone kind, and an action's
+  `label` is its authored display label (`simulationActionDefinition.label`, an OPTIONAL
+  jsonb field — no migration; unlabeled definitions fall back to an id-derived label) — never
+  a raw id. The read is fail-open: a malformed projection degrades to `null` (a 503 the
+  client reads as "no card"), never a throw (docs/resilience.md). Pure shaping lives in
   `src/lib/simulation/world-read.ts`.
 - **`POST /api/chats/[chatId]/sim-command`** carries the typed player commands
-  (`move` · `end_scene` · `give_item` · `start_activity` · `advance_time` · **`travel`**).
-  Each is the ordinary durable command under the player principal; a refusal returns the
-  §14.4 PUBLIC face (code + public reason + legal alternatives), never a private cause.
+  (`move` · `end_scene` · `give_item` · `start_activity` · `advance_time` · **`travel`** ·
+  **`do_activity`**). Each is the ordinary durable command under the player principal; a
+  refusal returns the §14.4 PUBLIC face (code + public reason + legal alternatives), never a
+  private cause.
   **`travel {toZoneId}`** is the skip-style composite (ruling 20): submit the player
   `move`, then — on acceptance — drain the branch clock to the resulting journey's
   `earliestArrivalAt` through the same bounded `advanceBranchStoryTime` loop `advance_time`
@@ -172,12 +180,31 @@ affordance"):
   drain. Response `{status:"traveled", toStorySecond, arrived}`; a rejection returns the
   §14.4 shape at HTTP 200 (so the card can read `publicReason` + `legalAlternatives`
   instead of a flattened error body). Skip-style is loop sugar over the §17 events, never
-  a bypass — the §17.1 lower-bound law still holds. On commit, `travel` / `advance_time` /
-  `end_scene` each write a durable **world beat** to the chat transcript (a side effect,
-  not part of the response — world-ui.plan.md slice 2): an ordinary `role: "assistant"`
-  message row marked `meta.worldBeat = { kind }`, the phrased line on `content`, stamped
-  through `formatSimLanding`. Best-effort (`writeWorldBeat`, `server/engine/sim-beats.ts`):
-  a failed beat write logs `engine.sim.world_beat` and never fails the committed command.
+  a bypass — the §17.1 lower-bound law still holds.
+  **`do_activity {actionDefinitionId}`** (world-ui.plan.md slice 3) is the analogous
+  skip-style composite for an activity: submit the player's `start_activity`, then — on
+  acceptance — drain the branch clock to the just-started activity's `expectedCompleteAt`
+  (deterministic id via `deriveActivityId(branchId, commandId)`) through the same
+  `drainBranchTo` helper. Completion is trigger-scheduled AT start (§16.3), so the drain
+  fires it — the route never submits `complete_activity`, and the activity never dangles
+  active. A claim conflict (resting mid-scene) surfaces as the §14.4 face at 200. Response
+  `{status:"performed", toStorySecond}`.
+  **`give_item {itemId}`** (world-ui.plan.md slice 3) hands the player's held item to the
+  primary (player→primary held→held, the only legal transfer today). Giver/receiver
+  co-location is enforced by the transfer resolver itself (§26.4 step 7 — the destination's
+  root zone must equal the acting actor's zone), so an absent primary refuses
+  `root_not_colocated` with no route-level precheck; the card additionally disables the
+  affordance when the primary is not present. Returns the §14.4 face at 200 on rejection, or
+  `{status:"gave"}` on success.
+  On commit, `travel` / `advance_time` / `end_scene` / `give_item` / `do_activity` each write
+  a durable **world beat** to the chat transcript (a side effect, not part of the response —
+  world-ui.plan.md slices 2–3): an ordinary `role: "assistant"` message row marked
+  `meta.worldBeat = { kind }`, the phrased line on `content`, stamped through
+  `formatSimLanding`. The beat kinds are `traveled` · `time_skipped` · `scene_ended` ·
+  `gave_item` ("You hand {primary} {item}. · <landing>") · `rested` ("You {label} a while.
+  · <landing>", phrased generically from the action label). Best-effort (`writeWorldBeat`,
+  `server/engine/sim-beats.ts`): a failed beat write logs `engine.sim.world_beat` and never
+  fails the committed command.
 
 ## Forks, snapshots, and audit
 

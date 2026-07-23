@@ -61,6 +61,12 @@ export async function writeWorldBeat(input: {
   kind: WorldBeatKind;
   /** Destination display noun for a `traveled` beat; omitted for skips / scene-ends. */
   destinationLabel?: string;
+  /** Recipient display name for a `gave_item` beat. */
+  recipientName?: string;
+  /** Handed item display name for a `gave_item` beat. */
+  itemName?: string;
+  /** Performed action display label for a `rested` beat. */
+  activityLabel?: string;
 }): Promise<void> {
   try {
     const clock = await readBranchClock(input.branchId);
@@ -69,6 +75,9 @@ export async function writeWorldBeat(input: {
       storySecond: clock?.storySecond ?? 0,
       anchor: clock?.calendarStart ?? null,
       ...(input.destinationLabel === undefined ? {} : { destinationLabel: input.destinationLabel }),
+      ...(input.recipientName === undefined ? {} : { recipientName: input.recipientName }),
+      ...(input.itemName === undefined ? {} : { itemName: input.itemName }),
+      ...(input.activityLabel === undefined ? {} : { activityLabel: input.activityLabel }),
     });
     await db().insert(characterChatMessages).values({
       id: newId(),

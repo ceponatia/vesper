@@ -1,11 +1,16 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { newId } from "@/lib/ids";
+import { parseOr } from "@/lib/parse";
+import { simulationActionDefinitionSchema } from "@/contracts/simulation/activities";
+import { deriveActivityId } from "@/lib/simulation/activities";
+import { actionChipLabel } from "@/lib/simulation/world-read";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
-import { db, simBranches, simItemHoldings } from "@/server/db";
+import { db, simActionDefinitions, simBranches, simCharacters, simItemHoldings, simItems } from "@/server/db";
 import {
   advanceBranchStoryTime,
   findStandingEngagement,
+  readDurableActivities,
   readDurableSpaceBranch,
   submitDurableEndEngagement,
   submitDurableMoveActor,
@@ -45,6 +50,9 @@ const bodySchema = z.discriminatedUnion("kind", [
   // world-ui.plan.md slice 1 (ruling 20): server-composed skip-style travel —
   // move + a bounded advance to the journey's earliest arrival, atomically.
   z.object({ kind: z.literal("travel"), toZoneId: z.string().min(1).max(256) }).strict(),
+  // world-ui.plan.md slice 3 (ruling 20 spirit): server-composed skip-style
+  // activity — start_activity + a bounded drain through its duration, atomically.
+  z.object({ kind: z.literal("do_activity"), actionDefinitionId: z.string().min(1).max(256) }).strict(),
 ]);
 
 interface CommandOutcome {
@@ -71,6 +79,21 @@ async function drainBranchTo(
     drained += outcome.drained;
     if (outcome.status === "advanced") return { ok: true, drained };
   }
+}
+
+/**
+ * The §14.4 PUBLIC refusal in the `ok` channel (HTTP 200), so the card reads
+ * `publicReason` + `legalAlternatives` instead of a flattened HTTP-error body.
+ * Shared by every card-facing composite (travel / give_item / do_activity) —
+ * the card is the first real refusal consumer and needs the structured shape.
+ */
+function publicRefusal(outcome: CommandOutcome) {
+  return jsonOk({
+    status: "rejected",
+    code: outcome.code,
+    publicReason: outcome.publicReason,
+    legalAlternatives: [...(outcome.legalAlternativeCommandTypes ?? [])],
+  });
 }
 
 function respond(outcome: CommandOutcome) {
@@ -138,16 +161,23 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
     }
     case "give_item": {
       const [holding] = await db()
-        .select({ locusKind: simItemHoldings.locusKind, actorId: simItemHoldings.actorId })
+        .select({ locusKind: simItemHoldings.locusKind, actorId: simItemHoldings.actorId, name: simItems.name })
         .from(simItemHoldings)
+        .innerJoin(
+          simItems,
+          and(eq(simItems.branchId, simItemHoldings.branchId), eq(simItems.itemId, simItemHoldings.itemId)),
+        )
         .where(and(eq(simItemHoldings.branchId, sim.branchId), eq(simItemHoldings.itemId, command.itemId)))
         .limit(1);
       if (!holding || holding.locusKind !== "held" || holding.actorId !== sim.playerActorId) {
-        return jsonOk(
-          { status: "rejected", code: "not_held", publicReason: "They are not holding that.", legalAlternatives: [] },
-          409,
-        );
+        // The §14.4 public face at 200 (matching travel) so the card renders it.
+        return jsonOk({ status: "rejected", code: "not_held", publicReason: "You are not holding that.", legalAlternatives: [] });
       }
+      // The transfer resolver enforces giver/receiver co-location itself (§26.4
+      // step 7: the destination's root zone — the primary's zone — must equal
+      // the player's), so an absent primary yields `root_not_colocated` "That
+      // destination is not within reach." — no route-level co-location precheck
+      // needed. The card also disables the affordance when the primary is away.
       const outcome = await submitDurableTransferItem(
         {
           ...envelope,
@@ -162,7 +192,23 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         },
         { admitAtLockedVersion: true },
       );
-      return respond(outcome);
+      if (outcome.status === "rejected") return publicRefusal(outcome);
+      if (outcome.status !== "accepted") return jsonError("sim_conflict", "the world moved; try again", 409);
+      // Slice 3: the handoff leaves a durable "You hand … " beat, named through
+      // the primary + the item's own display name (never a raw id).
+      const [primary] = await db()
+        .select({ name: simCharacters.name })
+        .from(simCharacters)
+        .where(and(eq(simCharacters.branchId, sim.branchId), eq(simCharacters.characterId, sim.primaryActorId)))
+        .limit(1);
+      await writeWorldBeat({
+        chatId,
+        branchId: sim.branchId,
+        kind: "gave_item",
+        ...(primary ? { recipientName: primary.name } : {}),
+        itemName: holding.name,
+      });
+      return jsonOk({ status: "gave" });
     }
     case "start_activity": {
       const outcome = await submitDurableStartActivity(
@@ -226,17 +272,7 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         },
         { admitAtLockedVersion: true },
       );
-      if (moveOutcome.status === "rejected") {
-        // The §14.4 public refusal — returned at 200 (not the `respond` 409) so
-        // the card, the first real refusal consumer, can read publicReason +
-        // legalAlternatives instead of a flattened HTTP-error body.
-        return jsonOk({
-          status: "rejected",
-          code: moveOutcome.code,
-          publicReason: moveOutcome.publicReason,
-          legalAlternatives: [...(moveOutcome.legalAlternativeCommandTypes ?? [])],
-        });
-      }
+      if (moveOutcome.status === "rejected") return publicRefusal(moveOutcome);
       if (moveOutcome.status !== "accepted") {
         return jsonError("sim_conflict", "the world moved; try again", 409);
       }
@@ -264,6 +300,56 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         destinationLabel: zoneLabelFromKind(command.toZoneId, destKind),
       });
       return jsonOk({ status: "traveled", toStorySecond: target, arrived });
+    }
+    case "do_activity": {
+      // Skip-style activity (ruling 20 spirit): submit the player's
+      // start_activity, then — on acceptance — drain the clock through the
+      // activity's duration. Completion is trigger-scheduled AT start
+      // (activity-store schedules the completion trigger at expectedCompleteAt),
+      // so the drain fires it; the route never submits complete_activity itself.
+      const outcome = await submitDurableStartActivity(
+        {
+          ...envelope,
+          type: "start_activity",
+          payload: { actorId: sim.playerActorId, actionDefinitionId: command.actionDefinitionId },
+        },
+        { admitAtLockedVersion: true },
+      );
+      // A claim conflict (e.g. resting mid-scene) surfaces here as the §14.4
+      // public face at 200 — the card renders it via the slice-1 refusal surface.
+      if (outcome.status === "rejected") return publicRefusal(outcome);
+      if (outcome.status !== "accepted") return jsonError("sim_conflict", "the world moved; try again", 409);
+      // The started activity's id is deterministic from this command; read its
+      // expectedCompleteAt to know how far to drain (mirrors travel reading the
+      // journey's earliestArrivalAt).
+      const activityId = deriveActivityId(sim.branchId, envelope.id);
+      const activities = await readDurableActivities(sim.branchId);
+      const started = activities.activities.find((activity) => activity.id === activityId);
+      const target = started?.expectedCompleteAt ?? activities.storySecond;
+      const drain = await drainBranchTo(sim.branchId, target);
+      if (!drain.ok) return drain.response;
+      // Slice 3: the settled activity leaves a durable "You rest a while." beat,
+      // phrased generically from the action's display label (never a raw id).
+      const [definitionRow] = await db()
+        .select({ payload: simActionDefinitions.payload })
+        .from(simActionDefinitions)
+        .where(
+          and(
+            eq(simActionDefinitions.branchId, sim.branchId),
+            eq(simActionDefinitions.actionDefinitionId, command.actionDefinitionId),
+          ),
+        )
+        .limit(1);
+      const definition = definitionRow
+        ? parseOr(simulationActionDefinitionSchema.nullable(), definitionRow.payload, null, undefined, "sim_action_definitions.payload")
+        : null;
+      await writeWorldBeat({
+        chatId,
+        branchId: sim.branchId,
+        kind: "rested",
+        activityLabel: actionChipLabel(command.actionDefinitionId, definition?.label),
+      });
+      return jsonOk({ status: "performed", toStorySecond: target });
     }
   }
 });

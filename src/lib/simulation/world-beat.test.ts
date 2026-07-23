@@ -46,6 +46,33 @@ describe("worldBeatText", () => {
     );
   });
 
+  it("phrases a gave_item beat with the recipient + the item's own name", () => {
+    expect(
+      worldBeatText({ kind: "gave_item", storySecond: EIGHT_AM, anchor: null, recipientName: "Mira", itemName: "a small keepsake" }),
+    ).toBe("You hand Mira a small keepsake. · Day 1 · 8:00am (morning)");
+  });
+
+  it("falls back to 'them'/'it' when the gave_item names are missing", () => {
+    expect(worldBeatText({ kind: "gave_item", storySecond: EIGHT_AM, anchor: null })).toBe(
+      "You hand them it. · Day 1 · 8:00am (morning)",
+    );
+  });
+
+  it("phrases a rested beat generically from the action label (lower-cased)", () => {
+    expect(worldBeatText({ kind: "rested", storySecond: NINE_AM, anchor: null, activityLabel: "Rest" })).toBe(
+      "You rest a while. · Day 1 · 9:00am (morning)",
+    );
+    expect(worldBeatText({ kind: "rested", storySecond: NINE_AM, anchor: null, activityLabel: "Nap" })).toBe(
+      "You nap a while. · Day 1 · 9:00am (morning)",
+    );
+  });
+
+  it("defaults the rested verb to 'rest' when the label is missing", () => {
+    expect(worldBeatText({ kind: "rested", storySecond: NINE_AM, anchor: null })).toBe(
+      "You rest a while. · Day 1 · 9:00am (morning)",
+    );
+  });
+
   it("covers every declared beat kind (no empty output)", () => {
     for (const kind of WORLD_BEAT_KINDS) {
       expect(worldBeatText({ kind, storySecond: EIGHT_AM, anchor: null, destinationLabel: "home" }).length).toBeGreaterThan(0);
