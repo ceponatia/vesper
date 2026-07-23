@@ -9,11 +9,12 @@ editor.
 
 ## Successor-engine improvement backlog (2026-07-23 three-lens review)
 
-_Detail: [successor-engine-improvements.deferred.md](successor-engine-improvements.deferred.md)
-— 16 code-verified items from the correctness / simulation-fidelity /
-resilience-perf review run the day the world-UI slices shipped. **Owner
-process: we flesh these out one by one as we discuss — each graduates to its
-own `<topic>.plan.md` (+ spec where warranted) and a roadmap line, leaving a
+_Detail: one draft-plan stub per item in the [deferred/](deferred/CLAUDE.md)
+folder (index in its CLAUDE.md) — 16 code-verified items from the
+correctness / simulation-fidelity / resilience-perf review run the day the
+world-UI slices shipped. **Owner process: we flesh these out one by one as we
+discuss — each stub graduates per deferred/CLAUDE.md to its own
+`<topic>.plan.md` (+ spec where warranted) and a roadmap line, leaving a
 tombstone here.** None are committed work until then._
 
 - **A. Bugs first** — composed-command idempotency + per-chat lock; send-vs-drain
