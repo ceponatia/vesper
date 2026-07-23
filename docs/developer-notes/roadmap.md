@@ -40,19 +40,15 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
-- **Drain hardening — honest, durable, correctly-stamped time advancement** —
-  [drain-hardening.plan.md](drain-hardening.plan.md) ·
-  detail docs `drain-hardening.{honesty,backoff,arrival,diagnostics}.md`
-  (**promoted from deferred/ 2026-07-23 by owner ruling** — the former
-  A5+A6+A7+C15 backlog bundle; the owner lifted the travel-uncertainty
-  parking because A5/A6/C15's defects are live today). Live-defects-first
-  slice order: composition-fallback telemetry (the baseline), no-500-after-
-  commit honest responses, the `trigger_backoff` stop, durable leased time
-  jobs + the branch job-active guard, staged catch-up UI, and the
-  `expectedArrivalAt` retarget. Owner rulings copied to engine.spec §39
-  (22–25); the 2026-07-23 GPT-review hardening (job table vs `sim_outbox`,
-  leasing/fencing, poison-trigger policy, mid-drain retarget, public-safe
-  meta codes) is folded into the plan and detail docs.
+- **Drain hardening — durable leased time jobs + staged catch-up UI** (the
+  A5 slice-4/5 remainder) — [drain-hardening.plan.md](drain-hardening.plan.md)
+  §Slices. The `sim_time_jobs` table + leased/fenced runner + boot sweep +
+  branch job-active guard + poison-trigger block (slice 4), then the world-card
+  catch-up UI (slice 5). Blocked on infra: the migration (`pnpm db:generate`)
+  and a Postgres run to integration-test the lease/fence/sweep before it ships;
+  the UI is Fly-tested. A7's arrival-check escalation and the mid-drain retarget
+  hang off this runner. **The live-defect + observability slices already
+  shipped — see Shipped below.**
 
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
   [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly
@@ -143,6 +139,17 @@ production-build perf pass §5), observer / god-mode POV, monorepo split (perman
 deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
+
+- **Drain hardening — live-defect + observability slices (C15, A5 honesty, A6,
+  A7)** — [drain-hardening.plan.md](drain-hardening.plan.md) · engine.spec §39
+  rulings 22–25 — 2026-07-23 — composed-turn degradations are now recorded on
+  two surfaces (durable admin tally + public-safe reply-meta codes); the three
+  sim-command composites stopped 500ing after a committed write (honest 200 +
+  `drainShort`); a backed-off trigger stops the drain at its due second
+  (`trigger_backoff`, §12.4 invariance) and poison triggers are surfaced not
+  hidden; travel drains target `expectedArrivalAt` with a post-drain arrival
+  check. Remaining slices 4–5 (durable leased time jobs + catch-up UI) stay in
+  Next above.
 
 - **World UI — the player-facing surface of the successor world** —
   [world-ui.plan.md](world-ui.plan.md) · rulings 20–21 in
