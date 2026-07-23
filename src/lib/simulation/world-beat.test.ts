@@ -43,6 +43,28 @@ describe("worldBeatText", () => {
     ).toBe("You walk to the town square. · Day 1 · 8:00am (morning)");
   });
 
+  it("a WALK-WITH-ME phrases 'together' (slice 5), bare for home", () => {
+    expect(
+      worldBeatText({ kind: "traveled", storySecond: EIGHT_AM, anchor: null, destinationLabel: "town square", together: true }),
+    ).toBe("You walk to the town square together. · Day 1 · 8:00am (morning)");
+    expect(
+      worldBeatText({ kind: "traveled", storySecond: EIGHT_AM, anchor: null, destinationLabel: "home", together: true }),
+    ).toBe("You walk home together. · Day 1 · 8:00am (morning)");
+  });
+
+  it("'together' supersedes 'parted' (you don't take your leave of someone you walk with)", () => {
+    expect(
+      worldBeatText({
+        kind: "traveled",
+        storySecond: EIGHT_AM,
+        anchor: null,
+        destinationLabel: "town square",
+        parted: true,
+        together: true,
+      }),
+    ).toBe("You walk to the town square together. · Day 1 · 8:00am (morning)");
+  });
+
   it("falls back to 'somewhere nearby' when the destination label is missing", () => {
     expect(worldBeatText({ kind: "traveled", storySecond: EIGHT_AM, anchor: null })).toBe(
       "You walk to somewhere nearby. · Day 1 · 8:00am (morning)",

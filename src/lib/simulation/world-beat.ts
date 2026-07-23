@@ -36,6 +36,13 @@ export interface WorldBeatInput {
    * for a plain travel or any non-`traveled` beat.
    */
   parted?: boolean;
+  /**
+   * The traveled departure was a WALK-WITH-ME (slice 5) — the primary accepted
+   * the invite and came along ("You walk to … together."). Supersedes `parted`
+   * (you don't take your leave of someone you're walking with). Ignored for a
+   * solo travel or any non-`traveled` beat.
+   */
+  together?: boolean;
   /** The recipient's display name for a `gave_item` beat; ignored otherwise. */
   recipientName?: string;
   /** The handed item's display name for a `gave_item` beat (carries its own article); ignored otherwise. */
@@ -61,8 +68,13 @@ export function worldBeatText(input: WorldBeatInput): string {
       const label = input.destinationLabel ?? "";
       // "home" reads bare ("You walk home"); every other place takes the article
       // via `placeGoPhrase` ("the town square") — the goChipLabel idiom, in prose.
-      // A `parted` departure (slice 4) ended a standing scene as a choice, so the
-      // beat acknowledges the leave-taking first.
+      // A WALK-WITH-ME (slice 5) supersedes the parting: you walk there together.
+      // Else a `parted` departure (slice 4) ended a standing scene as a choice, so
+      // the beat acknowledges the leave-taking first.
+      if (input.together) {
+        const phrase = label === "home" ? "You walk home together." : `You walk to ${placeGoPhrase(label)} together.`;
+        return `${phrase} · ${landing}`;
+      }
       const lead = input.parted ? "You take your leave and walk" : "You walk";
       const phrase = label === "home" ? `${lead} home.` : `${lead} to ${placeGoPhrase(label)}.`;
       return `${phrase} · ${landing}`;

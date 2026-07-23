@@ -23,6 +23,12 @@ export interface AdmissionSurface {
 export type AdmittedCommand =
   | { kind: "give_item"; itemId: string; itemName: string }
   | { kind: "move"; toZoneId: string; placeWord: string }
+  /**
+   * A walk-with-me invite (world-ui.plan.md slice 5): the player asks the
+   * co-present primary to travel together. Carries the same zone fields a `move`
+   * does, so a NOT-co-present admission converts to a plain solo move cheaply.
+   */
+  | { kind: "accompany"; toZoneId: string; placeWord: string }
   | { kind: "start_activity"; actionDefinitionId: string; verb: string };
 
 /** Words that name a zone, by zone KIND — grows as world templates grow. */
@@ -35,10 +41,26 @@ const ZONE_KIND_WORDS: Record<string, readonly string[]> = {
 const GIVE_VERBS = /\b(give|gives|hand|hands|pass|passes)\b/;
 const MOVE_VERBS = /\b(go|goes|walk|walks|head|heads|run|runs|leave|leaves|step|steps)\b/;
 const REST_VERBS = /\b(rest|rests|sleep|sleeps|nap|naps|lie down|lies down|turn in|turns in)\b/;
+/**
+ * The walk-with-me markers: first-person PLURAL or invite phrasing ("let's walk
+ * to the square", "we head home", "walk with me…", "come with me…"). `come` joins
+ * the move verbs here because "come with me" is the canonical invite.
+ */
+const ACCOMPANY_LEADS = /\blet'?s\b|\blet us\b|\bwe\b|\bwith me\b/;
+const ACCOMPANY_VERBS = /\b(go|goes|come|comes|walk|walks|head|heads|run|runs|leave|leaves|step|steps)\b/;
 
 /** Strip quoted spans — words SPOKEN are never words ACTED ("let's walk later"). */
 function stripQuotes(utterance: string): string {
   return utterance.replace(/"[^"]*"/g, " ").replace(/“[^”]*”/g, " ").replace(/'[^']*'/g, " ");
+}
+
+/** The unquoted sentences of an utterance, lowercased (words SPOKEN are already stripped). */
+function sentencesOf(utterance: string): string[] {
+  return stripQuotes(utterance)
+    .toLowerCase()
+    .split(/[.!?\n]+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
 }
 
 /**
@@ -47,11 +69,7 @@ function stripQuotes(utterance: string): string {
  * character, second-person suggestions) is out of admission's reach.
  */
 function firstPersonSentences(utterance: string): string[] {
-  return stripQuotes(utterance)
-    .toLowerCase()
-    .split(/[.!?\n]+/)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => /(^|\W)i\b/.test(sentence));
+  return sentencesOf(utterance).filter((sentence) => /(^|\W)i\b/.test(sentence));
 }
 
 /** Case-insensitive whole-word presence of any ≥4-char word of `name` in `sentence`. */
@@ -63,14 +81,31 @@ function nameWordIn(sentence: string, name: string): boolean {
     .some((word) => new RegExp(`\\b${word}\\b`).test(sentence));
 }
 
+/** The zone whose kind-word appears in `sentence`, plus the matched word — else null. */
+function zoneWordIn(
+  sentence: string,
+  zones: readonly { zoneId: string; kind: string }[],
+): { zoneId: string; word: string } | null {
+  for (const zone of zones) {
+    const words = ZONE_KIND_WORDS[zone.kind] ?? [];
+    const word = words.find((candidate) => new RegExp(`\\b${candidate}\\b`).test(sentence));
+    if (word) return { zoneId: zone.zoneId, word };
+  }
+  return null;
+}
+
 /**
- * Admit at most ONE command from one utterance. Priority: give (most
- * specific: names a held item) → move (names a place) → rest. Null when
- * nothing matches with confidence.
+ * Admit at most ONE command from one utterance. Priority: give (most specific:
+ * names a held item) → accompany (a plural/invite over a known place) → move
+ * (names a place, first person) → rest. Null when nothing matches with
+ * confidence. Accompany precedes solo move so "let's walk to the square" reads
+ * as an invite, not a self-move — but it draws on a broader sentence set (no
+ * first-person "I" required), so a plain "I walk to the square" still admits a move.
  */
 export function admitPlayerCommand(utterance: string, surface: AdmissionSurface): AdmittedCommand | null {
   const sentences = firstPersonSentences(utterance);
-  if (sentences.length === 0) return null;
+  const allSentences = sentencesOf(utterance);
+  if (allSentences.length === 0) return null;
 
   for (const sentence of sentences) {
     if (!GIVE_VERBS.test(sentence)) continue;
@@ -78,13 +113,16 @@ export function admitPlayerCommand(utterance: string, surface: AdmissionSurface)
     if (item) return { kind: "give_item", itemId: item.itemId, itemName: item.name };
   }
 
+  for (const sentence of allSentences) {
+    if (!ACCOMPANY_LEADS.test(sentence) || !ACCOMPANY_VERBS.test(sentence)) continue;
+    const zone = zoneWordIn(sentence, surface.zones);
+    if (zone) return { kind: "accompany", toZoneId: zone.zoneId, placeWord: zone.word };
+  }
+
   for (const sentence of sentences) {
     if (!MOVE_VERBS.test(sentence)) continue;
-    for (const zone of surface.zones) {
-      const words = ZONE_KIND_WORDS[zone.kind] ?? [];
-      const word = words.find((candidate) => new RegExp(`\\b${candidate}\\b`).test(sentence));
-      if (word) return { kind: "move", toZoneId: zone.zoneId, placeWord: word };
-    }
+    const zone = zoneWordIn(sentence, surface.zones);
+    if (zone) return { kind: "move", toZoneId: zone.zoneId, placeWord: zone.word };
   }
 
   for (const sentence of sentences) {

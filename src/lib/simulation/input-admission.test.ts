@@ -59,4 +59,44 @@ describe("admitPlayerCommand", () => {
       admitPlayerCommand("I hand her the keepsake, then walk to the square to rest.", surface),
     ).toMatchObject({ kind: "give_item" });
   });
+
+  // Slice 5 — walk-with-me: first-person plural / invite phrasing over a known
+  // zone word admits an ACCOMPANY (not a solo move), deterministic and quiet.
+  describe("accompany (walk-with-me)", () => {
+    it("admits a 'let's' invite over a known place", () => {
+      expect(admitPlayerCommand("Let's walk to the square.", surface)).toMatchObject({
+        kind: "accompany",
+        toZoneId: "zone-square",
+      });
+    });
+
+    it("admits first-person plural ('we head home')", () => {
+      expect(admitPlayerCommand("We head home before dark.", surface)).toMatchObject({
+        kind: "accompany",
+        toZoneId: "zone-home",
+      });
+    });
+
+    it("admits 'walk with me' and 'come with me' invites", () => {
+      expect(admitPlayerCommand("Walk with me to the square.", surface)).toMatchObject({
+        kind: "accompany",
+        toZoneId: "zone-square",
+      });
+      expect(admitPlayerCommand("Come with me to the square, please.", surface)).toMatchObject({
+        kind: "accompany",
+        toZoneId: "zone-square",
+      });
+    });
+
+    it("a plain first-person move stays a solo MOVE, never accompany", () => {
+      expect(admitPlayerCommand("I walk to the town square.", surface)).toMatchObject({ kind: "move" });
+    });
+
+    it("stays silent on quoted invites, third-person, and no zone word", () => {
+      expect(admitPlayerCommand('I say "let’s walk to the square."', surface)).toBeNull();
+      expect(admitPlayerCommand("She walks to the square with her friends.", surface)).toBeNull();
+      expect(admitPlayerCommand("Let's talk for a while.", surface)).toBeNull();
+      expect(admitPlayerCommand("Come with me to the harbor.", surface)).toBeNull();
+    });
+  });
 });

@@ -169,9 +169,9 @@ affordance"):
   `src/lib/simulation/world-read.ts`.
 - **`POST /api/chats/[chatId]/sim-command`** carries the typed player commands
   (`move` · `end_scene` · `give_item` · `start_activity` · `advance_time` · **`travel`** ·
-  **`do_activity`**). Each is the ordinary durable command under the player principal; a
-  refusal returns the §14.4 PUBLIC face (code + public reason + legal alternatives), never a
-  private cause.
+  **`travel_together`** · **`do_activity`**). Each is the ordinary durable command under the
+  player principal; a refusal returns the §14.4 PUBLIC face (code + public reason + legal
+  alternatives), never a private cause.
   **`travel {toZoneId}`** is the skip-style composite (ruling 20) with a **graceful
   departure** (world-ui.plan.md slice 4): if a scene stands, END it as a CHOICE first
   (`end_engagement`, reason `participant_choice` — the lawful two-step `advance_time`
@@ -192,6 +192,30 @@ affordance"):
   slice-0 dual-block prompt), closing ruling 20's parity clause. The pure decision
   (`planDepartureChoreography`, `lib/simulation/departure.ts`) is scene-stands × admitted-kind
   → steps; give/rest/none keep the co-present flow.
+  **`travel_together {toZoneId}`** (world-ui.plan.md slice 5) is **walk-with-me**: the player
+  invites the CO-PRESENT primary to travel together. The primary's acceptance is **NPC agency
+  via a bounded deterministic policy** (`decideAccompany`, `lib/simulation/accompany.ts` —
+  no model call, no §21.4 consent-ledger touch per §39 ruling 16): **accept unless** (a) a
+  claim-holding activity occupies the primary's **body**, or (b) a **`firm`/`hard`** open
+  commitment falls due before the walk's arrival + a 300 s buffer. A decline returns an
+  honest §14.4 PUBLIC face — the SAME reason whether (a) or (b) blocks her, so the private
+  cause never leaks. On acceptance the shared choreography (`runAccompanyTogether`,
+  `sim-exchange.ts`) composes ONE interaction: END the standing scene as a choice → the
+  player `move` (player principal) → the primary `move` under an **`npc_policy`** principal
+  controlling the primary (the player principal is **never** authorized to move an NPC —
+  §14.2; `resolveMoveActor` rejects `unauthorized_actor`) → drain to the **later** of the two
+  journeys' earliest arrivals → ONE `together` world beat. Response `{status:"accompanied"
+  |"traveled_alone", toStorySecond, arrived}`; a decline / refusal returns the §14.4 shape at
+  200 (`status:"rejected"`). **Degradation:** an NPC-move divergence after the player's move
+  committed degrades to solo travel (`traveled_alone`, the plain beat, `engine.sim.accompany`
+  logged) — never fabricated co-travel. **The natural-language twin** is an admitted
+  **`accompany`** intent (input admission — first-person plural or invite phrasing "let's walk
+  to the square" / "we head home" / "walk with me…" / "come with me…", over a known zone word,
+  deterministic, checked before solo move): while co-present it runs the same choreography then
+  reopens the scene at the destination and renders the co-present turn with a travel-context
+  line (on accept) or the decline as a §14.4 failure presentation (on decline); while NOT
+  co-present it degrades to a plain solo move (inviting an ABSENT partner is the §14.2
+  remote-invite family, future work).
   **`do_activity {actionDefinitionId}`** (world-ui.plan.md slice 3) is the analogous
   skip-style composite for an activity: submit the player's `start_activity`, then — on
   acceptance — drain the branch clock to the just-started activity's `expectedCompleteAt`
@@ -213,7 +237,8 @@ affordance"):
   `meta.worldBeat = { kind }`, the phrased line on `content`, stamped through
   `formatSimLanding`. The beat kinds are `traveled` ("You walk to …", or "You take your
   leave and walk to …" when a departure ended a standing scene — the `parted` flag, slice
-  4) · `time_skipped` · `scene_ended` · `gave_item` ("You hand {primary} {item}. ·
+  4, or "You walk to … together." on a walk-with-me — the `together` flag, slice 5, which
+  supersedes `parted`) · `time_skipped` · `scene_ended` · `gave_item` ("You hand {primary} {item}. ·
   <landing>") · `rested` ("You {label} a while. · <landing>", phrased generically from the
   action label). Best-effort (`writeWorldBeat`,
   `server/engine/sim-beats.ts`): a failed beat write logs `engine.sim.world_beat` and never
