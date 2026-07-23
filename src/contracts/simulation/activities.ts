@@ -139,6 +139,14 @@ export const simulationActionDefinitionSchema = z
   .object({
     id: actionDefinitionIdSchema,
     version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    /**
+     * A short human display label for player-facing surfaces (world-ui.plan.md
+     * slice 3 — the world card's action chip, e.g. "Rest"). Optional and
+     * forward-compatible: stored in the jsonb payload (no migration), and a
+     * definition without it falls back to an id-derived label. Charter law —
+     * a display label as data, never a raw id in prose.
+     */
+    label: z.string().trim().min(1).max(48).optional(),
     /** Principal kinds whose commands may start this action (spec §16.1). */
     controllerKinds: z.array(principalKindSchema).min(1),
     duration: durationRuleSchema,

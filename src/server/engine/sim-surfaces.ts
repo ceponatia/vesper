@@ -1,18 +1,31 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { simulationActionDefinitionSchema } from "@/contracts/simulation/activities";
 import { METER_FIXED_POINT_ONE } from "@/contracts/simulation/bodies";
 import type { PhysicalLocus } from "@/contracts/simulation/space";
 import { isStandingCoPresentEngagement } from "@/lib/simulation/engagements";
 import { humanizeId } from "@/lib/simulation/humanize";
+import { parseOr } from "@/lib/parse";
 import { deriveRelationshipRead } from "@/lib/simulation/social";
 import {
   actorWhereabouts,
+  buildWorldActions,
   buildWorldDestinations,
   buildWorldPlaceOrTransit,
   type SimChatWorld,
   type SimWorldCastMember,
   type WhereaboutsLocus,
+  type WorldActionCandidate,
 } from "@/lib/simulation/world-read";
-import { db, simBranches, simCharacters, simItemHoldings, simItems, simPhysicalLoci, simZones } from "@/server/db";
+import {
+  db,
+  simActionDefinitions,
+  simBranches,
+  simCharacters,
+  simItemHoldings,
+  simItems,
+  simPhysicalLoci,
+  simZones,
+} from "@/server/db";
 import { readChatEngineAuthority } from "./chat-authority";
 import { log } from "../log";
 import {
@@ -143,7 +156,7 @@ export async function readSimChatWorld(chatId: string): Promise<SimChatWorld | n
   const playerActorId = authority.simPlayerActorId;
   const primaryActorId = authority.simPrimaryActorId;
   try {
-    const [space, engagements, nameRows, heldRows] = await Promise.all([
+    const [space, engagements, nameRows, heldRows, actionRows] = await Promise.all([
       readDurableSpaceBranch(branchId),
       readDurableEngagements(branchId),
       db()
@@ -166,6 +179,11 @@ export async function readSimChatWorld(chatId: string): Promise<SimChatWorld | n
           ),
         )
         .orderBy(asc(simItemHoldings.slotKey)),
+      db()
+        .select({ payload: simActionDefinitions.payload })
+        .from(simActionDefinitions)
+        .where(eq(simActionDefinitions.branchId, branchId))
+        .orderBy(asc(simActionDefinitions.actionDefinitionId)),
     ]);
 
     // Zone labels come from the projection's own zone KINDS (the schema has no
@@ -199,8 +217,30 @@ export async function readSimChatWorld(chatId: string): Promise<SimChatWorld | n
           ? { kind: locus.kind, zoneId: locus.kind === "at" ? locus.zoneId : null }
           : undefined;
         const { present, whereabouts } = actorWhereabouts({ actorLocus, playerLocus: playerWhereabouts, zonePhraseOf });
-        return { name: row.name, whereabouts, present };
+        return { name: row.name, whereabouts, present, isPrimary: row.characterId === primaryActorId };
       });
+
+    // Player-startable actions (slice 3): availability is the `at_zone_kind`
+    // law against the player's CURRENT zone kind. A malformed authored payload
+    // is dropped (parseOr → null), never a thrown read.
+    const playerZoneKind = playerLocus?.kind === "at" ? (kindByZone.get(playerLocus.zoneId) ?? null) : null;
+    const candidates: WorldActionCandidate[] = actionRows.flatMap((row) => {
+      const definition = parseOr(simulationActionDefinitionSchema.nullable(), row.payload, null, undefined, "sim_action_definitions.payload");
+      if (!definition) return [];
+      return [
+        {
+          id: definition.id,
+          ...(definition.label === undefined ? {} : { label: definition.label }),
+          controllerKinds: definition.controllerKinds,
+          durationSeconds: definition.duration.seconds,
+          requiredZoneKinds: definition.preconditions.flatMap((precondition) =>
+            precondition.kind === "at_zone_kind" ? [precondition.zoneKind] : [],
+          ),
+          needsConsent: definition.preconditions.some((precondition) => precondition.kind === "consent_covered"),
+        },
+      ];
+    });
+    const actions = buildWorldActions({ candidates, playerZoneKind });
 
     const sceneOpen = engagements.engagements.some((engagement) =>
       isStandingCoPresentEngagement(engagement, playerActorId, primaryActorId),
@@ -212,6 +252,7 @@ export async function readSimChatWorld(chatId: string): Promise<SimChatWorld | n
       cast,
       destinations,
       held: heldRows.map((row) => ({ itemId: row.itemId, name: row.name })),
+      actions,
       sceneOpen,
     };
   } catch (error) {

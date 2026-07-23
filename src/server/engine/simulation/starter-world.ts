@@ -142,6 +142,7 @@ export async function provisionStarterWorld(
         {
           id: `stw-${stamp}-${STARTER_REST_ACTION_SUFFIX}`,
           version: 1,
+          label: "Rest",
           controllerKinds: ["player", "npc_policy"],
           duration: { kind: "fixed", seconds: 600 },
           preconditions: [{ kind: "at_zone_kind", zoneKind: "home" }],
