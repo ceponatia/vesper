@@ -6,6 +6,7 @@ import { db, simBranches, simItemHoldings } from "@/server/db";
 import {
   advanceBranchStoryTime,
   findStandingEngagement,
+  readDurableSpaceBranch,
   submitDurableEndEngagement,
   submitDurableMoveActor,
   submitDurableStartActivity,
@@ -39,6 +40,9 @@ const bodySchema = z.discriminatedUnion("kind", [
   z
     .object({ kind: z.literal("advance_time"), minutes: z.number().int().min(1).max(30 * 24 * 60) })
     .strict(),
+  // world-ui.plan.md slice 1 (ruling 20): server-composed skip-style travel —
+  // move + a bounded advance to the journey's earliest arrival, atomically.
+  z.object({ kind: z.literal("travel"), toZoneId: z.string().min(1).max(256) }).strict(),
 ]);
 
 interface CommandOutcome {
@@ -46,6 +50,25 @@ interface CommandOutcome {
   code?: string;
   publicReason?: string;
   legalAlternativeCommandTypes?: readonly string[];
+}
+
+/**
+ * Drain the branch clock to `target` through the SAME bounded advance loop
+ * `advance_time` uses (`catch_up_required` just means keep draining). Shared by
+ * the player time skip and skip-style travel so the two settle time identically.
+ * Returns the trigger count drained, or the error Response on divergence.
+ */
+async function drainBranchTo(
+  branchId: string,
+  target: number,
+): Promise<{ ok: true; drained: number } | { ok: false; response: Response }> {
+  let drained = 0;
+  for (let calls = 0; ; calls += 1) {
+    if (calls > 1_000) return { ok: false, response: jsonError("drain_diverged", "the drain did not converge", 500) };
+    const outcome = await advanceBranchStoryTime(branchId, target, { workerId: `sim-skip-${newId()}` });
+    drained += outcome.drained;
+    if (outcome.status === "advanced") return { ok: true, drained };
+  }
 }
 
 function respond(outcome: CommandOutcome) {
@@ -175,14 +198,52 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         .limit(1);
       if (!branch) return jsonError("not_found", "world branch not found", 404);
       const target = branch.storySecond + command.minutes * 60;
-      let drained = 0;
-      for (let calls = 0; ; calls += 1) {
-        if (calls > 1_000) return jsonError("drain_diverged", "the drain did not converge", 500);
-        const outcome = await advanceBranchStoryTime(sim.branchId, target, { workerId: `sim-skip-${newId()}` });
-        drained += outcome.drained;
-        if (outcome.status === "advanced") break;
+      const drain = await drainBranchTo(sim.branchId, target);
+      if (!drain.ok) return drain.response;
+      return jsonOk({ status: "advanced", toStorySecond: target, drained: drain.drained });
+    }
+    case "travel": {
+      // Skip-style travel (ruling 20): submit the player's move, then — on
+      // acceptance — drain the clock to the journey's earliest arrival. An
+      // accepted move already lawfully interrupts the standing scene
+      // (space-store interruptCoPresentEngagementsForActor), so we do NOT end it
+      // first. The §17 arrival trigger fires inside the drain.
+      const moveOutcome = await submitDurableMoveActor(
+        {
+          ...envelope,
+          type: "move_actor",
+          payload: { actorId: sim.playerActorId, destinationZoneId: command.toZoneId, travelMode: "walk" },
+        },
+        { admitAtLockedVersion: true },
+      );
+      if (moveOutcome.status === "rejected") {
+        // The §14.4 public refusal — returned at 200 (not the `respond` 409) so
+        // the card, the first real refusal consumer, can read publicReason +
+        // legalAlternatives instead of a flattened HTTP-error body.
+        return jsonOk({
+          status: "rejected",
+          code: moveOutcome.code,
+          publicReason: moveOutcome.publicReason,
+          legalAlternatives: [...(moveOutcome.legalAlternativeCommandTypes ?? [])],
+        });
       }
-      return jsonOk({ status: "advanced", toStorySecond: target, drained });
+      if (moveOutcome.status !== "accepted") {
+        return jsonError("sim_conflict", "the world moved; try again", 409);
+      }
+      const afterMove = await readDurableSpaceBranch(sim.branchId);
+      const movedLocus = afterMove.loci.find((locus) => locus.actorId === sim.playerActorId);
+      const journey =
+        movedLocus?.kind === "in_transit"
+          ? afterMove.journeys.find((candidate) => candidate.id === movedLocus.journeyId)
+          : undefined;
+      const target = journey?.earliestArrivalAt ?? afterMove.storySecond;
+      const drain = await drainBranchTo(sim.branchId, target);
+      if (!drain.ok) return drain.response;
+      const settled = await readDurableSpaceBranch(sim.branchId);
+      const arrived = settled.loci.some(
+        (locus) => locus.actorId === sim.playerActorId && locus.kind === "at" && locus.zoneId === command.toZoneId,
+      );
+      return jsonOk({ status: "traveled", toStorySecond: target, arrived });
     }
   }
 });

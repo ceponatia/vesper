@@ -48,6 +48,22 @@ export function deriveEngagementId(branchId: string, commandId: string): string 
   return composeSimulationId("engagement", [branchId, commandId]);
 }
 
+/**
+ * The pair's STANDING scene test (spec §11.3, one body one physical scene): a
+ * claim-holding co-present engagement binding both actors. Shared by the chat
+ * exchange's `findStandingEngagement` and the world read's `sceneOpen` flag so
+ * the two can never disagree about whether a scene is open.
+ */
+export function isStandingCoPresentEngagement(engagement: Engagement, actorA: string, actorB: string): boolean {
+  const participants: readonly string[] = engagement.participantIds;
+  return (
+    engagement.channel === "co_present" &&
+    claimHoldingEngagementStates.includes(engagement.state) &&
+    participants.includes(actorA) &&
+    participants.includes(actorB)
+  );
+}
+
 /** Claims an actor holds through open engagements (held until `ended`, §18.2). */
 export function engagementClaimsForActor(
   engagements: readonly Engagement[],

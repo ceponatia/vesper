@@ -74,13 +74,6 @@ export function placeAtPhrase(zoneLabel: string): string {
   return zoneLabel === "home" ? "at home" : `at the ${zoneLabel}`;
 }
 
-/** Legible minutes for a story-time delta, floor 1 ("about 4 min", "under a minute"). */
-function minutesPhrase(deltaSeconds: number): string {
-  if (deltaSeconds <= 0) return "any moment now";
-  if (deltaSeconds < 60) return "under a minute";
-  return `about ${Math.round(deltaSeconds / 60)} min`;
-}
-
 /** A commitment deadline as relative story time (never a clock second). */
 function deadlinePhrase(deltaSeconds: number): string {
   if (deltaSeconds <= 0) return "already due";

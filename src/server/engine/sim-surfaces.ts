@@ -1,9 +1,27 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { METER_FIXED_POINT_ONE } from "@/contracts/simulation/bodies";
+import type { PhysicalLocus } from "@/contracts/simulation/space";
+import { isStandingCoPresentEngagement } from "@/lib/simulation/engagements";
+import { humanizeId } from "@/lib/simulation/humanize";
 import { deriveRelationshipRead } from "@/lib/simulation/social";
-import { db, simBranches, simItemHoldings, simItems, simPhysicalLoci, simZones } from "@/server/db";
+import {
+  actorWhereabouts,
+  buildWorldDestinations,
+  buildWorldPlaceOrTransit,
+  type SimChatWorld,
+  type SimWorldCastMember,
+  type WhereaboutsLocus,
+} from "@/lib/simulation/world-read";
+import { db, simBranches, simCharacters, simItemHoldings, simItems, simPhysicalLoci, simZones } from "@/server/db";
 import { readChatEngineAuthority } from "./chat-authority";
-import { loadAuthoredPriorWeights, loadDyadLedgerEntries, readDurableBodies } from "./simulation";
+import { log } from "../log";
+import {
+  loadAuthoredPriorWeights,
+  loadDyadLedgerEntries,
+  readDurableBodies,
+  readDurableEngagements,
+  readDurableSpaceBranch,
+} from "./simulation";
 
 /**
  * R5 — successor chats shed their legacy hybrids, surface by surface
@@ -72,17 +90,130 @@ export async function readSimChatPresence(chatId: string): Promise<SimChatPresen
   const player = rows.find((row) => row.actorId === authority.simPlayerActorId);
   const primary = rows.find((row) => row.actorId === authority.simPrimaryActorId);
   if (!player || !primary) return null;
-  if (primary.kind === "in_transit") return { present: false, whereabouts: "on the move" };
-  if (player.kind === "at" && primary.zoneId === player.zoneId) return { present: true, whereabouts: "" };
-  let label = "elsewhere";
-  if (primary.zoneId !== null) {
+  // Resolve the primary's zone phrase only when it can matter (not co-present) —
+  // the shared decision below turns it into present / on-the-move / elsewhere.
+  const coPresent = player.kind === "at" && primary.kind === "at" && primary.zoneId === player.zoneId;
+  let primaryZonePhrase = "elsewhere";
+  if (!coPresent && primary.kind === "at" && primary.zoneId !== null) {
     const [zone] = await db()
       .select({ kind: simZones.kind })
       .from(simZones)
       .where(and(eq(simZones.branchId, authority.simBranchId), eq(simZones.zoneId, primary.zoneId)));
-    label = (zone && ZONE_KIND_LABELS[zone.kind]) ?? "elsewhere";
+    primaryZonePhrase = (zone && ZONE_KIND_LABELS[zone.kind]) ?? "elsewhere";
   }
-  return { present: false, whereabouts: label };
+  return actorWhereabouts({
+    actorLocus: { kind: primary.kind, zoneId: primary.zoneId },
+    playerLocus: { kind: player.kind, zoneId: player.zoneId },
+    zonePhraseOf: () => primaryZonePhrase,
+  });
+}
+
+/**
+ * Slice 1 (world-ui.plan.md): the player-facing world envelope for a routed
+ * chat — where the player is (or is walking to), who else is around and their
+ * whereabouts, the open destinations they can walk to, what they're holding,
+ * and whether a scene is standing. The `ChatWorldCard` draws THIS. Null for
+ * legacy/shadow lanes (no card) and, per docs/resilience.md, on any internal
+ * degradation (a malformed projection degrades to null — the card hides —
+ * never throws).
+ */
+export async function readSimChatWorld(chatId: string): Promise<SimChatWorld | null> {
+  const authority = await readChatEngineAuthority(chatId);
+  if (
+    !authority ||
+    authority.authority === "legacy_chat" ||
+    authority.authority === "successor_shadow" ||
+    !authority.simBranchId ||
+    !authority.simPlayerActorId ||
+    !authority.simPrimaryActorId
+  ) {
+    return null;
+  }
+  const branchId = authority.simBranchId;
+  const playerActorId = authority.simPlayerActorId;
+  const primaryActorId = authority.simPrimaryActorId;
+  try {
+    const [space, engagements, nameRows, heldRows] = await Promise.all([
+      readDurableSpaceBranch(branchId),
+      readDurableEngagements(branchId),
+      db()
+        .select({ characterId: simCharacters.characterId, name: simCharacters.name })
+        .from(simCharacters)
+        .where(eq(simCharacters.branchId, branchId))
+        .orderBy(asc(simCharacters.characterId)),
+      db()
+        .select({ itemId: simItemHoldings.itemId, name: simItems.name })
+        .from(simItemHoldings)
+        .innerJoin(
+          simItems,
+          and(eq(simItems.branchId, simItemHoldings.branchId), eq(simItems.itemId, simItemHoldings.itemId)),
+        )
+        .where(
+          and(
+            eq(simItemHoldings.branchId, branchId),
+            eq(simItemHoldings.locusKind, "held"),
+            eq(simItemHoldings.actorId, playerActorId),
+          ),
+        )
+        .orderBy(asc(simItemHoldings.slotKey)),
+    ]);
+
+    // Zone labels come from the projection's own zone KINDS (the schema has no
+    // zone-name column — the same humane source the render prompt uses), so no
+    // raw zone id reaches the card.
+    const kindByZone = new Map<string, string>(space.zones.map((zone) => [zone.id, zone.kind]));
+    const privacyByZone = new Map<string, string>(space.zones.map((zone) => [zone.id, zone.privacyPolicy]));
+    const locusByActor = new Map<string, PhysicalLocus>(space.loci.map((locus) => [locus.actorId, locus]));
+    const zoneLabelOf = (zoneId: string): string => {
+      const noun = zoneDisplayNoun(kindByZone.get(zoneId) ?? "");
+      return noun.length > 0 ? noun : humanizeId(zoneId);
+    };
+    const zonePrivacyOf = (zoneId: string): string => privacyByZone.get(zoneId) ?? "public";
+    const zonePhraseOf = (zoneId: string): string => ZONE_KIND_LABELS[kindByZone.get(zoneId) ?? ""] ?? "elsewhere";
+
+    const playerLocus = locusByActor.get(playerActorId);
+    const { place, transit } = buildWorldPlaceOrTransit({
+      playerLocus,
+      journeys: space.journeys,
+      zoneLabelOf,
+      zonePrivacyOf,
+      atStorySecond: space.storySecond,
+    });
+    const destinations = buildWorldDestinations({ playerLocus, links: space.links, zoneLabelOf });
+
+    const playerWhereabouts: WhereaboutsLocus | undefined = playerLocus
+      ? { kind: playerLocus.kind, zoneId: playerLocus.kind === "at" ? playerLocus.zoneId : null }
+      : undefined;
+    const cast: SimWorldCastMember[] = nameRows
+      .filter((row) => row.characterId !== playerActorId)
+      .map((row) => {
+        const locus = locusByActor.get(row.characterId);
+        const actorLocus: WhereaboutsLocus | undefined = locus
+          ? { kind: locus.kind, zoneId: locus.kind === "at" ? locus.zoneId : null }
+          : undefined;
+        const { present, whereabouts } = actorWhereabouts({ actorLocus, playerLocus: playerWhereabouts, zonePhraseOf });
+        return { name: row.name, whereabouts, present };
+      });
+
+    const sceneOpen = engagements.engagements.some((engagement) =>
+      isStandingCoPresentEngagement(engagement, playerActorId, primaryActorId),
+    );
+
+    return {
+      place,
+      transit,
+      cast,
+      destinations,
+      held: heldRows.map((row) => ({ itemId: row.itemId, name: row.name })),
+      sceneOpen,
+    };
+  } catch (error) {
+    log.warn("engine.sim", "world read degraded to null", {
+      chatId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 /**

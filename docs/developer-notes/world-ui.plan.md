@@ -1,8 +1,9 @@
 # World UI — the player-facing surface of the successor world
 
-Status: active (build started 2026-07-23; planned 2026-07-23 from the owner's world-UI
-design pass; owner rulings 20–21 recorded in
-[engine.spec.operations.md](engine.spec.operations.md) §39)
+Status: active (planned 2026-07-23 from the owner's world-UI design pass; owner rulings
+20–21 recorded in [engine.spec.operations.md](engine.spec.operations.md) §39. **Slices 0
+and 1 shipped 2026-07-23**; slices 2–5 remain. NL-move parity was deferred out of slice 1
+— see Slice 1 "How it shipped".)
 
 The successor engine's world is live but invisible. The starter world really exists —
 home, town square, a 5-minute walkable link, the neighbor, the keepsake
@@ -162,7 +163,7 @@ of 409ing:
   narrator-mode line as `PLAYER (as …)` rather than narration (the legacy lane wraps
   them). Minor fidelity; only the *current* turn's framing is corrected here.
 
-### Slice 1 — the sidewalk: world read + ChatWorldCard + travel
+### Slice 1 — the sidewalk: world read + ChatWorldCard + travel — SHIPPED 2026-07-23
 
 - `readSimChatWorld` + `GET /api/chats/[chatId]/world` (Layer 1 envelope).
 - `ChatWorldCard` (Layer 2) with destination chips; in-transit display ("Walking to
@@ -173,6 +174,72 @@ of 409ing:
 - §14.4 refusal rendering (publicReason + legalAlternatives chips).
 - No schema migration; no new message kind (feedback is toast-parity with skips until
   slice 2).
+
+**How it shipped (decisions):**
+
+- **The world envelope** (`readSimChatWorld`, `sim-surfaces.ts`; gated exactly like the
+  sibling reads — routed non-shadow chats only, else `null`): `place {label, privacy}`
+  when the player is `at` OR `transit {toLabel, arrivesInSeconds}` when `in_transit`
+  (ETA = `journey.earliestArrivalAt − storySecond`, floored at 0, journey-then-locus
+  fallback); `cast [{name, whereabouts, present}]` for every non-player sim actor;
+  `destinations [{zoneId, label, mode, travelSeconds}]` (open, **walkable** links, empty
+  in transit); `held [{itemId, name}]`; `sceneOpen`. Labels are zone **display nouns**
+  (`zoneDisplayNoun` off the kind, `humanizeId` last resort — never a raw id). The read
+  is wrapped fail-open: a malformed projection logs `engine.sim world read degraded to
+  null` and returns `null` (the card hides), never throws.
+- **Pure shaping in `src/lib/simulation/world-read.ts`** (unit-tested):
+  `buildWorldPlaceOrTransit`, `buildWorldDestinations` (links are **undirected** for
+  travel, matching the route planner's adjacency — a home→square link also offers
+  square→home), `actorWhereabouts` (the present / on-the-move / elsewhere decision —
+  now **shared** with `readSimChatPresence`, which was refactored to call it, so the
+  roster chip and the world card can never drift), and the card phrasing
+  (`approxWalkMinutes`, `placeGoPhrase`, `goChipLabel`, `capitalizeFirst`).
+  `isStandingCoPresentEngagement` (the "is a scene open?" test) was extracted to
+  `lib/simulation/engagements.ts` and is shared by `findStandingEngagement` (sim-exchange)
+  and the world read's `sceneOpen` — this also broke the sim-surfaces↔sim-exchange cycle
+  a direct `findStandingEngagement` import would have created.
+- **Server-composed travel** (`travel` kind on the sim-command route, ruling 20): submit
+  the player `move`; on acceptance read the space projection for the player's journey and
+  drain the clock to its `earliestArrivalAt` via the SAME bounded `advanceBranchStoryTime`
+  loop `advance_time` uses (extracted to a shared `drainBranchTo` helper — no duplication).
+  The standing scene is **not** ended first (an accepted move already lawfully interrupts
+  it — space-store `interruptCoPresentEngagementsForActor`). Response `{status:"traveled",
+  toStorySecond, arrived}` (arrived re-read from the settled loci). A refusal returns the
+  §14.4 shape at **200** (not the `respond` 409) — the client's error path flattens a 409
+  body, so the card, the first real refusal consumer, needs the structured shape in the
+  `ok` channel.
+- **NL move parity — DEFERRED (documented).** Ruling 20's "for parity" clause (drain an
+  admitted natural-language move to arrival in `submitAdmittedCommand`) is **not** shipped.
+  The clause's stated intent — "the slice-0 solo path then naturally renders the player at
+  the destination" — does not hold within one turn: `runSimTurn` opens the engagement
+  BEFORE admission and then calls `prepareEngagementTurn` **unconditionally**, so an
+  admitted mid-turn move never routes to the solo renderer that same turn. Draining alone
+  would jump the clock to arrival while the turn still renders the co-present cut (primary
+  narrated as present though the player has walked away) — incoherent, and arguably worse
+  than today's abrupt-but-honest "set off walking" note. The coherent fix (re-checking
+  co-presence after an admitted move and re-routing the turn to `runSimSoloTurn`) is a
+  turn-flow restructure that cannot be integration-tested locally (no local Postgres for
+  UI/turn work — Fly is the surface), so it is disproportionate for slice 1. **NL moves
+  keep today's behavior** (move interrupts, co-present render, "set off walking"); the
+  next turn after an NL move renders solo naturally. The button `travel` command delivers
+  full ruling-20 skip-style travel. Unifying the two paths ("one choreography, two entry
+  points") lands with the Layer-3 game-systems slices (4/5), where the turn-flow
+  restructure is in scope and testable on Fly.
+- **Client + card.** `chatsApi.world` / `simTravel` / `simGiveItem` / `simEndScene`
+  (give/end are wiring-only — their card UI is slice 3). `ChatWorldCard`
+  (`components/chat/chat-world-card.tsx`) renders in the desktop right aside below
+  `ChatClockCard` AND — since it is the **only** travel surface and the desktop aside is
+  hidden below `lg` — in the **phone Roster sheet** (a deliberate divergence from the
+  clock, which mobile-ux rulings 1–2 removed from that sheet as redundant with the ambient
+  clock chip; the world card has no other mobile home). It self-hides when `world === null`.
+  A tapped destination calls `simTravel`, shows a per-chip busy state, toasts the landing
+  in skip-parity via the **shared** `formatSimLanding` helper (extracted to
+  `lib/simulation/clock.ts`; the skip toast now reuses it too), then refreshes world +
+  chat state. A `{status:"rejected"}` renders `publicReason` inline with
+  `legalAlternatives` as plain text (none are card-actionable in slice 1 — honest over
+  clever). The world envelope is fetched with `useAsyncData` and re-fetched wherever
+  `refreshState` runs (post-exchange, post-skip, post-travel); travel chips disable while
+  `sending`/`skipBusy`.
 
 ### Slice 2 — visible trace: transcript world-beats
 
