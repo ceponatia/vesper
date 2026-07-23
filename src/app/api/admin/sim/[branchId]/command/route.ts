@@ -138,13 +138,22 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         command.toStorySecond ?? branch.storySecond + Math.round((command.days ?? 0) * 86_400);
       if (target < branch.storySecond) return jsonError("invalid_target", "story time cannot move backwards", 400);
       let drained = 0;
+      let reachedStorySecond = branch.storySecond;
+      let drainShort = false;
       for (let calls = 0; ; calls += 1) {
         if (calls > 1_000) return jsonError("drain_diverged", "the drain did not converge", 500);
         const outcome = await advanceBranchStoryTime(branchId, target, { workerId: `sim-admin-${newId()}` });
         drained += outcome.drained;
+        reachedStorySecond = outcome.storySecond;
         if (outcome.status === "advanced") break;
+        // A6: a backed-off trigger parks the clock at its due second — stop rather than re-loop
+        // past it (this debug advance settles the rest on a later run, once the backoff elapses).
+        if (outcome.reason === "trigger_backoff") {
+          drainShort = true;
+          break;
+        }
       }
-      return jsonOk({ status: "advanced", toStorySecond: target, drained });
+      return jsonOk({ status: "advanced", toStorySecond: reachedStorySecond, drained, drainShort });
     }
   }
 });

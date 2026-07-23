@@ -113,13 +113,31 @@ export type ResolveTriggerOutcome =
   | { status: "lease_lost"; triggerId: string };
 
 export type AdvanceStoryTimeOutcome =
-  | { status: "advanced"; branchId: string; storySecond: number; drained: number }
+  | { status: "advanced"; branchId: string; storySecond: number; drained: number; terminalFailures?: number }
   | {
       status: "catch_up_required";
       branchId: string;
       storySecond: number;
       drained: number;
-      reason: "trigger_budget" | "time_budget";
+      /**
+       * Triggers that exhausted their retries and went terminally `failed` during this advance
+       * (A6 poison sibling). The drain does NOT stop on one — stopping would strand the clock
+       * behind a trigger that can never resolve (bricking every future skip on the branch).
+       * Instead it is COUNTED and surfaced so a caller with chat context records a
+       * `trigger_failed` C15 diagnostic — never hidden. The job-blocking + admin repair is A5
+       * slice 4 (durable time jobs).
+       */
+      terminalFailures?: number;
+      /**
+       * Why the advance stopped short. `trigger_budget` / `time_budget` mean there is more
+       * VISIBLE work — a looping caller should keep draining. `trigger_backoff` (A6) means a
+       * trigger transiently failed and backed off on the WALL clock: the story clock is parked
+       * exactly at its due second, so a looping caller must STOP (re-looping cannot see the
+       * backed-off trigger and would jump the clock past it, mis-stamping its event and breaking
+       * §12.4 partition invariance). `availableAt` is when the backoff elapses.
+       */
+      reason: "trigger_budget" | "time_budget" | "trigger_backoff";
+      availableAt?: Date;
     };
 
 function safeDiagnostic(error: unknown, claimed: ClaimedTrigger): string {
@@ -703,12 +721,18 @@ export async function advanceBranchStoryTime(
   if (start.storySecond > target) throw new Error("Story time cannot move backwards");
 
   let clock = start.storySecond;
-  const partial = (reason: "trigger_budget" | "time_budget"): AdvanceStoryTimeOutcome => ({
+  let terminalFailures = 0;
+  const partial = (
+    reason: "trigger_budget" | "time_budget" | "trigger_backoff",
+    availableAt?: Date,
+  ): AdvanceStoryTimeOutcome => ({
     status: "catch_up_required",
     branchId: rawBranchId,
     storySecond: clock,
     drained,
     reason,
+    ...(availableAt ? { availableAt } : {}),
+    ...(terminalFailures ? { terminalFailures } : {}),
   });
 
   for (;;) {
@@ -726,13 +750,27 @@ export async function advanceBranchStoryTime(
 
     const outcome = await resolveNextDueTrigger(rawBranchId, { ...options, database, now });
     if (outcome.status === "idle") break;
-    // A retrying trigger stays due at this second. Leaving the loop lets its
-    // backoff elapse instead of spinning on it for the rest of this advance.
-    if (outcome.status === "retry") return partial("time_budget");
+    // A retrying trigger stays due at this second. Report the stop DISTINCTLY (A6) — the clock
+    // is parked at the due second, and a looping caller must NOT keep draining past it (that is
+    // the §12.4-breaking jump the distinct reason exists to stop). `availableAt` tells the
+    // caller when resuming is worthwhile.
+    if (outcome.status === "retry") return partial("trigger_backoff", outcome.availableAt);
+    // A poison trigger — terminally `failed` (retries exhausted) OR `rejected` (a deterministic
+    // refusal): both leave the row in state `failed`, never to resolve. COUNT it and keep
+    // draining (stopping would strand the clock behind a trigger that can never fire). The count
+    // is surfaced so a caller records a `trigger_failed` diagnostic — never hidden (A6 poison
+    // sibling; the job-blocking + admin repair is A5 slice 4).
+    if (outcome.status === "failed" || outcome.status === "rejected") terminalFailures += 1;
     drained += 1;
   }
 
   clock = target;
   await setStorySecond(rawBranchId, clock, database);
-  return { status: "advanced", branchId: rawBranchId, storySecond: target, drained };
+  return {
+    status: "advanced",
+    branchId: rawBranchId,
+    storySecond: target,
+    drained,
+    ...(terminalFailures ? { terminalFailures } : {}),
+  };
 }

@@ -34,6 +34,7 @@ import { embedText, embedTexts } from "@/server/ai";
 import { resolveChatPersona } from "../players";
 import { readChatEngineAuthority } from "./chat-authority";
 import { isWorldBeatMeta, readBranchClock, writeWorldBeat, type SimChatClock } from "./sim-beats";
+import type { CompositionFallbackCode, CompositionFallbackSite } from "@/contracts/turns/composition-fallback";
 import { CompositionFallbackCollector } from "./composition-diagnostics";
 import { emptyReplyTakes, persistAssistantReply, pushReplyTake, replyTakesSchema } from "./chat-pipeline";
 import { enqueueChatSummary, loadChatSummary } from "./chat-summary";
@@ -214,22 +215,107 @@ interface AdmittedForChat {
   zones: { zoneId: string; kind: string }[];
 }
 
+/** Why a drain stopped short of its target (A5 honesty; A6 adds the trigger reasons). */
+export type DrainShortReason = "diverged" | "trigger_backoff" | "trigger_failed";
+
+/** The honest result of a drain — how far time ACTUALLY moved, and why it stopped short. */
+export interface DrainResult {
+  /** True when the drain reached `target`; false when it stopped short. */
+  converged: boolean;
+  /** The story second the branch clock actually reached (the honest "how far time moved"). */
+  reachedStorySecond: number;
+  /** The requested target second. */
+  target: number;
+  /** Triggers resolved across the whole drain. */
+  drained: number;
+  /** Why it stopped short — absent on a clean converge. */
+  shortReason?: DrainShortReason;
+  /**
+   * Triggers that went terminally `failed` during the drain (A6 poison sibling). A `converged`
+   * drain can still carry these — a poison trigger does not stop the clock. A caller with chat
+   * context records a `trigger_failed` diagnostic so the failure is never hidden.
+   */
+  terminalFailures: number;
+}
+
+/** Map a short-drain reason to its C15 fallback code (A5 honesty + A6 trigger reasons). */
+export function drainShortCode(reason: DrainShortReason | undefined): CompositionFallbackCode {
+  switch (reason) {
+    case "diverged":
+      return "drain_diverged";
+    case "trigger_backoff":
+      return "drain_backoff";
+    case "trigger_failed":
+      return "trigger_failed";
+    case undefined:
+      return "drain_short";
+  }
+}
+
+/**
+ * Record every C15 diagnostic a drain result implies, through a collector (A5 + A6): a
+ * short-drain code when it fell short, and a `trigger_failed` code when a poison trigger
+ * failed terminally during it (which can happen even on a converged drain). One shared seam so
+ * the five drain sites don't each re-derive this.
+ */
+export function noteDrainDiagnostics(
+  fallbacks: CompositionFallbackCollector | undefined,
+  site: CompositionFallbackSite,
+  drain: DrainResult,
+): void {
+  if (!drain.converged) {
+    fallbacks?.note({
+      site,
+      code: drainShortCode(drain.shortReason),
+      detail: `reached ${drain.reachedStorySecond}/${drain.target}`,
+    });
+  }
+  if (drain.terminalFailures > 0) {
+    fallbacks?.note({ site, code: "trigger_failed", detail: `${drain.terminalFailures} trigger(s) failed terminally` });
+  }
+}
+
 /**
  * Drain the branch clock to `target` through the SAME bounded advance loop the
  * sim-command route uses (`catch_up_required` just means keep draining). Shared
  * by the route's skip-style composites and slice 4's departure choreography so
  * the two settle time identically — never duplicated (world-ui.plan.md slice 4).
+ *
+ * Returns an HONEST result (A5): the clock second actually reached and whether it fell short —
+ * never a thrown error, so a caller can report "how far time moved" instead of a 500 after the
+ * world already committed (docs/resilience.md).
  */
-export async function drainBranchTo(
-  branchId: string,
-  target: number,
-): Promise<{ ok: true; drained: number } | { ok: false; reason: "diverged" }> {
+export async function drainBranchTo(branchId: string, target: number): Promise<DrainResult> {
   let drained = 0;
+  let terminalFailures = 0;
   for (let calls = 0; ; calls += 1) {
-    if (calls > 1_000) return { ok: false, reason: "diverged" };
+    if (calls > 1_000) {
+      // The runaway backstop: the clock advanced as far as it got (every advance persists it),
+      // so read the real reached second rather than pretending we hit the target.
+      const reached = (await readBranchClock(branchId))?.storySecond ?? target;
+      return { converged: false, reachedStorySecond: reached, target, drained, shortReason: "diverged", terminalFailures };
+    }
     const outcome = await advanceBranchStoryTime(branchId, target, { workerId: `sim-skip-${newId()}` });
     drained += outcome.drained;
-    if (outcome.status === "advanced") return { ok: true, drained };
+    terminalFailures += outcome.terminalFailures ?? 0;
+    if (outcome.status === "advanced") {
+      return { converged: true, reachedStorySecond: outcome.storySecond, target, drained, terminalFailures };
+    }
+    // A6: a backed-off trigger parks the clock at its due second. STOP here (an honest short
+    // drain) rather than re-looping — the next pass cannot see the trigger and would jump the
+    // clock past it, mis-stamping its event. The clock stays parked, so when the backoff
+    // elapses the trigger resolves at exactly the second it was due (§12.4 invariance).
+    if (outcome.reason === "trigger_backoff") {
+      return {
+        converged: false,
+        reachedStorySecond: outcome.storySecond,
+        target,
+        drained,
+        shortReason: "trigger_backoff",
+        terminalFailures,
+      };
+    }
+    // trigger_budget / time_budget: more visible work remains — keep draining.
   }
 }
 
@@ -1193,10 +1279,10 @@ async function runSimDepartureTurn(input: {
   //    trigger simply settles on a later turn (never a dead turn).
   const target = await moveArrivalTarget(branchId, playerActorId);
   const drain = await drainBranchTo(branchId, target);
-  if (!drain.ok) {
-    log.warn("engine.sim.departure", "arrival drain did not converge", { chatId });
-    input.fallbacks?.note({ site: "departure", code: "drain_diverged" });
+  if (!drain.converged) {
+    log.warn("engine.sim.departure", "arrival drain did not converge", { chatId, reason: drain.shortReason });
   }
+  noteDrainDiagnostics(input.fallbacks, "departure", drain);
 
   // 4) ONE traveled beat, phrased with the parting when a scene was ended.
   await writeWorldBeat({ chatId, branchId, kind: "traveled", destinationLabel: toLabel, parted: plan.parted });
@@ -1397,10 +1483,10 @@ export async function runAccompanyTogether(input: {
   const primaryTarget = together ? await moveArrivalTarget(branchId, primaryActorId) : playerTarget;
   const target = Math.max(playerTarget, primaryTarget);
   const drain = await drainBranchTo(branchId, target);
-  if (!drain.ok) {
-    log.warn("engine.sim.accompany", "arrival drain did not converge", { chatId });
-    input.fallbacks?.note({ site: "accompany", code: "drain_diverged" });
+  if (!drain.converged) {
+    log.warn("engine.sim.accompany", "arrival drain did not converge", { chatId, reason: drain.shortReason });
   }
+  noteDrainDiagnostics(input.fallbacks, "accompany", drain);
 
   // 5) ONE world beat — "together" on a real co-travel, else the plain traveled beat.
   //    C15: stamp any codes this choreography collected onto the beat's meta (surface a).
