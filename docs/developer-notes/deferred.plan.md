@@ -20,7 +20,9 @@ tombstone here.** None are committed work until then._
 - **A. Bugs first** — composed-command idempotency + per-chat lock; send-vs-drain
   clock race (dead turn); solo-reply regenerate 409; `travel_together` crash
   window; 500-after-committed-write + unchunked 30-day drains; drain leaping a
-  retrying trigger; latent `earliest`-vs-`expectedArrivalAt` mismatch.
+  retrying trigger; latent `earliest`-vs-`expectedArrivalAt` mismatch (A7 —
+  fleshed out 2026-07-23, owner rulings recorded in the stub; A5+A6+A7 graduate
+  together as one drain-hardening plan).
 - **B. Living world** — seed the built-but-unseeded life (commitments, third
   zone, meal item, lore memories — the standout cheap win); the primary's LOD
   ruling (at `exact` she is mechanically inert forever); remote text/voice when
@@ -29,6 +31,13 @@ tombstone here.** None are committed work until then._
 - **C. Hardening & perf** — four throwing sim read-seams (one bad row 500s the
   state strip); invisible half-failure diagnostics; redundant projection reads
   per turn + integration coverage for the composed paths.
+
+## World authoring — travel distances & durations
+
+_Owner note 2026-07-23 (recorded during the A7 stub flesh-out): world setup
+needs a system to define distances and travel time lengths between locations —
+authored for both the bespoke worlds we develop and player-built worlds. Stub:
+[deferred/travel-duration-authoring.plan.md](deferred/travel-duration-authoring.plan.md)._
 
 ## Owner-gated live eval runs — run on request, not roadmap items
 

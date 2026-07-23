@@ -44,3 +44,12 @@ shipped. Groups: A bugs first · B living world · C hardening & perf.
 - C14 [sim-read-seam-guards.plan.md](sim-read-seam-guards.plan.md)
 - C15 [composition-diagnostics.plan.md](composition-diagnostics.plan.md)
 - C16 [turn-loop-efficiency.plan.md](turn-loop-efficiency.plan.md)
+
+Fleshed out (still parked): A7 (2026-07-23 — owner rulings recorded in the
+stub; A5+A6+A7 graduate together as one drain-hardening plan).
+
+Added after the review:
+
+- [travel-duration-authoring.plan.md](travel-duration-authoring.plan.md) —
+  owner-noted world-authoring system (2026-07-23, recorded during A7's
+  flesh-out)

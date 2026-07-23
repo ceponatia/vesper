@@ -1,7 +1,10 @@
 # Drain vs retrying trigger — stop and settle later
 
 Status: draft (stub — successor-engine backlog item A6, parked 2026-07-23;
-promote per [CLAUDE.md](CLAUDE.md) before building)
+promote per [CLAUDE.md](CLAUDE.md) before building. Owner ruling 2026-07-23:
+graduates **bundled with A5 + A7** as one drain-hardening plan — see
+[arrival-target-mismatch.plan.md](arrival-target-mismatch.plan.md)
+§Owner rulings.)
 
 ## What
 
