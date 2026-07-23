@@ -322,6 +322,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
               speakerName: owned.character.name,
               mode,
               message,
+              inputMode: body.value.inputMode,
             });
             if (sim.ok) {
               controller.enqueue(encoder.encode(sim.prose));

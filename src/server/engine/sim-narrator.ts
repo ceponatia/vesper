@@ -1,6 +1,7 @@
 import { deliberatorResponseSchema } from "@/contracts/simulation/deliberation";
 import {
   narratorResultSchema,
+  soloNarrationSchema,
   type NarrativeCut,
   type NarratorResult,
   type PresentationAudit,
@@ -315,6 +316,137 @@ export async function renderCommittedCut(
   return {
     status: "withheld",
     cutId,
+    modelId,
+    attempts,
+    degraded,
+    provider: provider ?? null,
+    ...(latencyMs === undefined ? {} : { latencyMs }),
+    diagnostics,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Solo-cut render (world-ui.plan.md slice 0, ruling 21)
+// ---------------------------------------------------------------------------
+
+/** The injected model seam for a solo render — a stub in tests, the live model otherwise. */
+export type SoloRenderSeam = (args: {
+  system: string;
+  prompt: string;
+  modelId: string;
+  attempt: number;
+}) => Promise<{ prose: string; provider?: string | null; latencyMs?: number; degraded: boolean }>;
+
+export interface RenderSoloInput {
+  system: string;
+  prompt: string;
+  modelId?: string;
+  /** Total attempts before falling back to the deterministic prose. Default 2. */
+  maxAttempts?: number;
+  /**
+   * The deterministic minimal narration this render degrades to on total model
+   * failure (docs/resilience.md, §18.5). MUST be non-empty so a solo turn never
+   * dead-ends — the whole point of the solo cut is "never a failed turn".
+   */
+  fallbackProse: string;
+}
+
+export interface RenderedSolo {
+  status: "rendered" | "withheld";
+  modelId: string;
+  attempts: number;
+  /** Present iff status is "rendered": the audited, normalized prose. */
+  prose?: string;
+  degraded: boolean;
+  provider?: string | null;
+  latencyMs?: number;
+  diagnostics: string[];
+}
+
+/** Live seam: one `generateChecked` call under narrator provider parity, degrading to the fallback prose. */
+function liveSoloSeam(fallbackProse: string): SoloRenderSeam {
+  return async ({ system, prompt, modelId }) => {
+    const providerOptions = narrativeProviderOptions(modelId);
+    const generated = await generateChecked({
+      schema: soloNarrationSchema,
+      system,
+      prompt,
+      modelId,
+      temperature: NARRATIVE_TEMPERATURE,
+      ...(providerOptions === undefined ? {} : { providerOptions }),
+      maxOutputTokens: 2_000,
+      code: "sim.narrator.solo",
+      fallback: () => ({ prose: fallbackProse }),
+    });
+    return {
+      prose: generated.value?.prose ?? fallbackProse,
+      provider: generated.provider ?? null,
+      ...(generated.latencyMs === undefined ? {} : { latencyMs: generated.latencyMs }),
+      degraded: generated.degraded,
+    };
+  };
+}
+
+/**
+ * Render one solo cut's dual-block prose. There is no committed NarrativeCut and
+ * no armed effect, so this is a lean loop: render → normalize → accept if
+ * non-empty, retry once, and — because a solo turn must NEVER dead-end — degrade
+ * to the caller's deterministic `fallbackProse` rather than withholding. The
+ * withheld branch is reachable only if even the fallback is empty (a caller bug).
+ */
+export async function renderSoloNarration(
+  input: RenderSoloInput,
+  options: { render?: SoloRenderSeam } = {},
+): Promise<RenderedSolo> {
+  const modelId = resolveChatModelId(input.modelId);
+  const maxAttempts = input.maxAttempts ?? 2;
+  const render = options.render ?? liveSoloSeam(input.fallbackProse);
+  const diagnostics: string[] = [];
+
+  let attempts = 0;
+  let degraded = false;
+  let provider: string | null | undefined;
+  let latencyMs: number | undefined;
+  for (; attempts < maxAttempts; ) {
+    attempts += 1;
+    const attempt = await render({ system: input.system, prompt: input.prompt, modelId, attempt: attempts });
+    degraded = degraded || attempt.degraded;
+    provider = attempt.provider ?? provider;
+    latencyMs = attempt.latencyMs ?? latencyMs;
+    const prose = normalizeSimProse(attempt.prose);
+    if (prose.length > 0) {
+      return {
+        status: "rendered",
+        modelId,
+        attempts,
+        prose,
+        degraded,
+        provider: provider ?? null,
+        ...(latencyMs === undefined ? {} : { latencyMs }),
+        diagnostics,
+      };
+    }
+    diagnostics.push(`attempt${attempts}.sim.narrator.solo.empty`);
+  }
+
+  // Never a dead chat: the deterministic fallback stands in for a failed render.
+  const fallback = normalizeSimProse(input.fallbackProse);
+  if (fallback.length > 0) {
+    diagnostics.push("sim.narrator.solo.degraded_to_fallback");
+    return {
+      status: "rendered",
+      modelId,
+      attempts,
+      prose: fallback,
+      degraded: true,
+      provider: provider ?? null,
+      ...(latencyMs === undefined ? {} : { latencyMs }),
+      diagnostics,
+    };
+  }
+  diagnostics.push("sim.narrator.solo.withheld_empty_fallback");
+  return {
+    status: "withheld",
     modelId,
     attempts,
     degraded,

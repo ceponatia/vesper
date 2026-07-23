@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { narrativeCutSchema, type NarrativeCut } from "@/contracts/simulation/narrative";
-import { buildConfirmCommand, renderCommittedCut, type RenderSeam } from "./sim-narrator";
+import {
+  buildConfirmCommand,
+  renderCommittedCut,
+  renderSoloNarration,
+  type RenderSeam,
+  type SoloRenderSeam,
+} from "./sim-narrator";
 
 /**
  * Pure render-loop tests (presentation-charter.plan.md slice 3) — the cut is
@@ -143,5 +149,48 @@ describe("buildConfirmCommand — one confirm per cut", () => {
     expect(first.idempotencyKey).toBe(retake.idempotencyKey);
     // The command id still differs per submission (a clean duplicate-id path).
     expect(first.id).not.toBe(retake.id);
+  });
+});
+
+describe("renderSoloNarration — solo cut (world-ui.plan.md slice 0)", () => {
+  const FALLBACK = "You look around the quiet square.\n\nElsewhere, Nora goes about her morning.";
+
+  const soloSeam = (replies: string[]): { seam: SoloRenderSeam; calls: number[] } => {
+    const calls: number[] = [];
+    let n = 0;
+    const seam: SoloRenderSeam = async ({ attempt }) => {
+      calls.push(attempt);
+      const prose = replies[Math.min(n, replies.length - 1)] ?? "";
+      n += 1;
+      return { prose, degraded: false, provider: "stub", latencyMs: 1 };
+    };
+    return { seam, calls };
+  };
+
+  it("accepts a non-empty first render and returns the normalized prose", async () => {
+    const { seam } = soloSeam(["You step into the square, the keepsake warm in your pocket."]);
+    const result = await renderSoloNarration({ system: "s", prompt: "p", fallbackProse: FALLBACK }, { render: seam });
+    expect(result.status).toBe("rendered");
+    expect(result.prose).toContain("keepsake warm in your pocket");
+    expect(result.attempts).toBe(1);
+    expect(result.degraded).toBe(false);
+  });
+
+  it("retries once when the first render is empty, then accepts", async () => {
+    const { seam, calls } = soloSeam(["", "You linger a moment longer than you meant to."]);
+    const result = await renderSoloNarration({ system: "s", prompt: "p", fallbackProse: FALLBACK }, { render: seam });
+    expect(calls).toEqual([1, 2]);
+    expect(result.status).toBe("rendered");
+    expect(result.attempts).toBe(2);
+    expect(result.prose).toContain("linger a moment");
+  });
+
+  it("degrades to the deterministic fallback (never a dead chat) when every render is empty", async () => {
+    const { seam } = soloSeam([""]);
+    const result = await renderSoloNarration({ system: "s", prompt: "p", fallbackProse: FALLBACK }, { render: seam });
+    expect(result.status).toBe("rendered");
+    expect(result.prose).toBe(FALLBACK);
+    expect(result.degraded).toBe(true);
+    expect(result.diagnostics).toContain("sim.narrator.solo.degraded_to_fallback");
   });
 });

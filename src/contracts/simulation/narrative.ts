@@ -456,6 +456,19 @@ export const narratorResultSchema = z.object({
 
 export type NarratorResult = z.infer<typeof narratorResultSchema>;
 
+/**
+ * The solo-cut narrator's reply (world-ui.plan.md slice 0, ruling 21). A solo
+ * turn enacts no beats and arms no effects (there is no committed cut), so its
+ * output is prose alone. Deliberately NOT `.strict()` and `prose` defaults to ""
+ * so a malformed reply degrades to the deterministic fallback rather than
+ * throwing (docs/resilience.md).
+ */
+export const soloNarrationSchema = z.object({
+  prose: z.string().max(20_000).default(""),
+});
+
+export type SoloNarration = z.infer<typeof soloNarrationSchema>;
+
 // --- Presentation audit (§23.2) ------------------------------------------------
 
 export const presentationAuditVerdicts = ["accept", "accept_with_bridge", "rerender"] as const;

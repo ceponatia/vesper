@@ -1,7 +1,8 @@
 # World UI — the player-facing surface of the successor world
 
-Status: next (planned 2026-07-23 from the owner's world-UI design pass; owner rulings
-20–21 recorded in [engine.spec.operations.md](engine.spec.operations.md) §39)
+Status: active (build started 2026-07-23; planned 2026-07-23 from the owner's world-UI
+design pass; owner rulings 20–21 recorded in
+[engine.spec.operations.md](engine.spec.operations.md) §39)
 
 The successor engine's world is live but invisible. The starter world really exists —
 home, town square, a 5-minute walkable link, the neighbor, the keepsake
@@ -82,7 +83,7 @@ settlement (ruling 20), graceful departure choreography (slice 4), walk-with-me
 
 ## Slices
 
-### Slice 0 — scene-optional turns (dual-block solo narration)
+### Slice 0 — scene-optional turns (dual-block solo narration) — SHIPPED 2026-07-23
 
 The prerequisite for every travel affordance. When `findOrOpenStandingEngagement`
 cannot produce a co-present player+primary scene, the turn runs a **solo cut** instead
@@ -91,12 +92,75 @@ of 409ing:
 - Player-side context: current zone, co-present NPCs, held items — second person.
 - Primary away-projection: locus, active activity, due commitments — the **routine
   MUSTs** — rendered as the third-person vignette per ruling 21, under charter law
-  (opaque handles, display labels, no raw ids; withhold contract; one confirm per cut).
-- Co-present NPCs at the player's location can engage (the engagement machinery is
-  actor-pair generic; presenting a non-primary engagement in the chat UI is part of
-  this slice's design).
+  (display labels, no raw ids; audience-not-character knowledge).
 - Degradation: vignette-build failure ⇒ player-side block alone + diagnostic
   (per `docs/resilience.md`); never a failed turn.
+
+**How it shipped (decisions):**
+
+- **Fork point.** `runSimTurn` (`server/engine/sim-exchange.ts`) forks to
+  `runSimSoloTurn` when `findOrOpenStandingEngagement` fails with a *genuinely not
+  co-present* code — `SOLO_CUT_OPEN_CODES = {participants_not_co_located,
+  participant_in_transit}`. Every other open failure (`branch_mismatch`,
+  `participant_not_found`, …) still 409s as before. `participant_unavailable` /
+  `participant_already_engaged` (primary present but busy / engaged elsewhere) stay
+  409 in v1 — the vignette's "not here with you" framing would misread a same-zone
+  primary; promoting them to solo needs the co-location-aware framing deferred below.
+- **The solo path never touches the cut machinery.** There is no committed
+  `NarrativeCut` for a solo turn (no engagement), so it does **not** call
+  `prepareEngagementTurn`/`renderCommittedCut`. Instead it advances the branch clock
+  by the ordinary 60s span via `advanceBranchStoryTime` (draining due triggers — how
+  an in-transit player eventually arrives), reads the space/activities/commitments/held
+  projections, and renders through a **dedicated** lean loop `renderSoloNarration`
+  (`sim-narrator.ts`) over a **new** dual-block prompt
+  (`prompts/sim-solo-render.ts`). No handles/armed effects (a solo cut enacts none),
+  so the output schema is `{prose}` (`soloNarrationSchema`).
+- **Pure shaping** lives in `src/lib/simulation/solo-cut.ts` (`buildSoloPlayerSide`,
+  `buildSoloVignette`, `buildSoloFallbackProse`, unit-tested); the store/IO layer
+  (`buildSoloCutContext` in `sim-exchange`) only loads projections and resolves
+  display labels from the space projection's zone **kinds** (the same humane source
+  `sim-render` uses — no raw id reaches the prompt). Humanizers were extracted to
+  `src/lib/simulation/humanize.ts` and are now shared by both prompt builders.
+- **Co-present NPCs: prose-only, no formal non-primary engagement (OQ answer).** Wiring
+  a non-primary engagement through `prepareEngagementTurn` was judged disproportionate
+  for v1 (per the slice's own allowance). Co-present NPCs (e.g. the starter neighbor)
+  appear in block (a) as visible, reactive prose with their live activity; they hold no
+  engagement. Revisit if/when the chat UI needs to *present* a non-primary scene.
+- **Presentation (OQ6 answer).** Dual-block renders as **one assistant bubble, two
+  paragraphs** — block (a) then a paragraph break then block (b). No new message kind
+  (that is slice 2). The reply persists with `meta.solo = true` (no `cutId`).
+- **Degradation ladder.** space-read failure ⇒ minimal safe narration
+  (`engine.sim.solo.space_read_failed`); activities/commitments failure ⇒ block (a)
+  alone (`engine.sim.solo.vignette_degraded`); held-items failure ⇒ empty pocket
+  (`engine.sim.solo.held_read_degraded`); a failed model render degrades to the
+  deterministic `buildSoloFallbackProse` (`sim.narrator.solo.degraded_to_fallback`).
+  A solo turn is architecturally *never* withheld (§18.5 "deterministic minimal
+  transition") — there is always a non-empty fallback.
+- **Narrator input mode threaded end-to-end.** It previously reached NO successor turn
+  (the route dropped `inputMode`). Now `route.ts → runSimChatExchange → runSimTurn /
+  runSimSoloTurn` carries it; a `narrator` send **skips input admission** (storyteller
+  narration is not the player-character's own command) and reframes the player-turn
+  block in BOTH the co-present builder (`sim-render`) and the solo builder. The user
+  row records `meta.inputMode = "narrator"` for register parity with the legacy lane.
+
+**Deferred out of slice 0 (documented, not built):**
+
+- **Retake of a solo turn.** A solo reply has no `cutId`; `runSimRetake` finds no
+  standing scene and returns 409 "there is no open scene to re-render". Acceptable
+  (not a dead chat) but a wart — a solo-aware retake would re-render from re-read
+  projections.
+- **Autonomous primary departure during a solo turn.** `advanceBranchStoryTime` drains
+  triggers but the solo path runs no engagement, so the departure/deliberator policy
+  (`prepareEngagementTurn`) never fires for the primary. The vignette *shows* a due
+  shift as a routine MUST but the engine will not actually move the primary — matches
+  ruling 21 ("the narrator cannot move the primary"); real autonomous NPC travel is a
+  later slice.
+- **`humanizeActivity` id wart.** A namespaced/stamped action id (`stw-…-action-rest`)
+  humanizes poorly — pre-existing and shared with the co-present path; the starter
+  primary auto-starts no activity, so v1 rarely hits it.
+- **Past narrator-mode tail labels.** The dialogue tail still labels a past
+  narrator-mode line as `PLAYER (as …)` rather than narration (the legacy lane wraps
+  them). Minor fidelity; only the *current* turn's framing is corrected here.
 
 ### Slice 1 — the sidewalk: world read + ChatWorldCard + travel
 
