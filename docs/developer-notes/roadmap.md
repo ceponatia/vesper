@@ -50,18 +50,6 @@ umbrella further down.)
   only when a world type + scenario corpus justifies it and it declares its
   authority, LOD, laws, budget, and disable path.
 
-- **World UI — the player-facing surface of the successor world** —
-  [world-ui.plan.md](world-ui.plan.md) (planned 2026-07-23; owner rulings 20–21 in
-  [engine.spec.operations.md](engine.spec.operations.md) §39). The engine's world is
-  live but invisible: no world state reaches the client, and of the five typed player
-  commands only `advance_time` is UI-wired. Slice 0 makes turns scene-optional
-  (dual-block solo narration: second-person player-side world reactions + the
-  primary's third-person routine vignette on engine MUSTs — today a turn away from
-  the primary 409s); slices 1–5 add the world read surface + `ChatWorldCard` (place,
-  presence, destination chips, §14.4 refusal rendering), transcript world-beats,
-  pocket/give/rest, graceful departure choreography (adopting the R5 leftover), and
-  walk-with-me. Travel is skip-style per ruling 20.
-
 - **Chat meter economy — the body on the story clock** —
   [chat-meter-economy.plan.md](chat-meter-economy.plan.md) ·
   [spec](chat-meter-economy.spec.md) (planned 2026-07-15 from an owner report after the
@@ -137,6 +125,18 @@ production-build perf pass §5), observer / god-mode POV, monorepo split (perman
 deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
+
+- **World UI — the player-facing surface of the successor world** —
+  [world-ui.plan.md](world-ui.plan.md) · rulings 20–21 in
+  engine.spec.operations §39 — 2026-07-23 — the invisible world became playable
+  in six slices, planned and built the same day by five Opus subagents:
+  scene-optional dual-block solo turns (a not-co-located turn no longer 409s),
+  the world read surface + `ChatWorldCard` (place, whereabouts, destination
+  chips, first §14.4 refusal consumer), durable transcript world-beats, pocket +
+  skip-style actions (`do_activity`), graceful departure choreography (closing
+  the R5 scene-exit leftover and ruling 20's NL parity), and walk-with-me v1
+  (deterministic accompany policy; deliberator upgrade + remote invites are the
+  named leftovers). Not yet deployed/verified on Fly at ship time.
 
 - **Presentation charter — one narrator craft law for both lanes; the successor
   narrator repaired** —
