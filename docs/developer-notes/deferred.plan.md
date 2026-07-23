@@ -7,6 +7,28 @@ leaves here (a one-line "graduated → …" tombstone is fine). This file is the
 anchor; supporting detail files named `<topic>.deferred.md` nest under it in the
 editor.
 
+## Successor-engine improvement backlog (2026-07-23 three-lens review)
+
+_Detail: [successor-engine-improvements.deferred.md](successor-engine-improvements.deferred.md)
+— 16 code-verified items from the correctness / simulation-fidelity /
+resilience-perf review run the day the world-UI slices shipped. **Owner
+process: we flesh these out one by one as we discuss — each graduates to its
+own `<topic>.plan.md` (+ spec where warranted) and a roadmap line, leaving a
+tombstone here.** None are committed work until then._
+
+- **A. Bugs first** — composed-command idempotency + per-chat lock; send-vs-drain
+  clock race (dead turn); solo-reply regenerate 409; `travel_together` crash
+  window; 500-after-committed-write + unchunked 30-day drains; drain leaping a
+  retrying trigger; latent `earliest`-vs-`expectedArrivalAt` mismatch.
+- **B. Living world** — seed the built-but-unseeded life (commitments, third
+  zone, meal item, lore memories — the standout cheap win); the primary's LOD
+  ruling (at `exact` she is mechanically inert forever); remote text/voice when
+  apart; successor NPC initiative; named daylight-band skips (the R5 leftover);
+  autonomous NPC travel toward commitments.
+- **C. Hardening & perf** — four throwing sim read-seams (one bad row 500s the
+  state strip); invisible half-failure diagnostics; redundant projection reads
+  per turn + integration coverage for the composed paths.
+
 ## Owner-gated live eval runs — run on request, not roadmap items
 
 _Removed from the roadmap 2026-07-13 (owner ruling: manual OpenRouter-spend
