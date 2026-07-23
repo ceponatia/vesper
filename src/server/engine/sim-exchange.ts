@@ -320,9 +320,16 @@ export async function drainBranchTo(branchId: string, target: number): Promise<D
 }
 
 /**
- * How far to drain after a committed move: the resulting journey's earliest
+ * How far to drain after a committed move: the resulting journey's EXPECTED
  * arrival (§17), or the current clock when the move produced no journey. Shared
  * by the travel chip and the NL departure choreography (ruling 20 skip-style).
+ *
+ * A7: the drain target MUST equal the arrival trigger's due second, which §17 schedules at
+ * `expectedArrivalAt`. Draining only to `earliestArrivalAt` (equal today, since uncertainty is
+ * hardcoded 0) would, the moment travel uncertainty or a `journey_delayed` becomes nonzero,
+ * stop the clock BEFORE the arrival trigger fires — leaving the traveller stranded in transit.
+ * The two must be the same second; that second is `expectedArrivalAt`, whatever authored route
+ * durations later write. (The post-drain check below is the net if they ever diverge.)
  */
 export async function moveArrivalTarget(branchId: string, actorId: string): Promise<number> {
   const after = await readDurableSpaceBranch(branchId);
@@ -331,7 +338,36 @@ export async function moveArrivalTarget(branchId: string, actorId: string): Prom
     movedLocus?.kind === "in_transit"
       ? after.journeys.find((candidate) => candidate.id === movedLocus.journeyId)
       : undefined;
-  return journey?.earliestArrivalAt ?? after.storySecond;
+  return journey?.expectedArrivalAt ?? after.storySecond;
+}
+
+/**
+ * A7 safety net (ruling 2): after a travel drain, verify each traveller actually left transit.
+ * If one is still `in_transit`, record the `still_in_transit` C15 diagnostic and warn — the
+ * arrival settles on a later beat (a subsequent turn's advance pushes the clock past the
+ * trigger), never a stuck character or a dead turn (docs/resilience.md). This reuses the loci
+ * a caller already read when it can, so the check is one shared line at each choreography site.
+ *
+ * The review upgrade — ESCALATE a still-in-transit actor to an A5 durable time job that resumes
+ * until arrival — lands with A5 slice 2 (the job runner). Until then this is observability plus
+ * the natural next-turn settle; the diagnostic is what makes a genuine strand visible.
+ */
+export function noteStillInTransit(
+  fallbacks: CompositionFallbackCollector | undefined,
+  site: CompositionFallbackSite,
+  loci: readonly { actorId: string; kind: string }[],
+  actorIds: readonly string[],
+  chatId: string,
+): void {
+  const stranded = actorIds.filter((actorId) =>
+    loci.some((locus) => locus.actorId === actorId && locus.kind === "in_transit"),
+  );
+  if (stranded.length === 0) return;
+  log.warn("engine.sim.arrival", "actor still in transit after arrival drain; settles on a later beat", {
+    chatId,
+    stranded,
+  });
+  fallbacks?.note({ site, code: "still_in_transit", detail: `stranded: ${stranded.join(",")}` });
 }
 
 /**
@@ -1274,8 +1310,8 @@ async function runSimDepartureTurn(input: {
     return runSimSoloTurn(soloArgs);
   }
 
-  // 3) Walk the player there: drain the clock to the journey's earliest arrival
-  //    (ruling 20). A divergent drain degrades to the current clock — the arrival
+  // 3) Walk the player there: drain the clock to the journey's expected arrival
+  //    (ruling 20, A7). A divergent drain degrades to the current clock — the arrival
   //    trigger simply settles on a later turn (never a dead turn).
   const target = await moveArrivalTarget(branchId, playerActorId);
   const drain = await drainBranchTo(branchId, target);
@@ -1283,6 +1319,9 @@ async function runSimDepartureTurn(input: {
     log.warn("engine.sim.departure", "arrival drain did not converge", { chatId, reason: drain.shortReason });
   }
   noteDrainDiagnostics(input.fallbacks, "departure", drain);
+  // A7 arrival check: if the player never left transit, record it and let a later beat settle it.
+  const departureSettled = await readDurableSpaceBranch(branchId);
+  noteStillInTransit(input.fallbacks, "departure", departureSettled.loci, [playerActorId], chatId);
 
   // 4) ONE traveled beat, phrased with the parting when a scene was ended.
   await writeWorldBeat({ chatId, branchId, kind: "traveled", destinationLabel: toLabel, parted: plan.parted });
@@ -1477,8 +1516,8 @@ export async function runAccompanyTogether(input: {
     input.fallbacks?.note({ site: "accompany", code: "traveled_alone", detail: `primary move ${primaryMove?.status ?? "threw"}` });
   }
 
-  // 4) Drain to the LATER of the two earliest arrivals (both share the link, but
-  //    compute each defensively) — the §17 arrival trigger fires inside the drain.
+  // 4) Drain to the LATER of the two expected arrivals (both share the link, but
+  //    compute each defensively; A7) — the §17 arrival trigger fires inside the drain.
   const playerTarget = await moveArrivalTarget(branchId, playerActorId);
   const primaryTarget = together ? await moveArrivalTarget(branchId, primaryActorId) : playerTarget;
   const target = Math.max(playerTarget, primaryTarget);
@@ -1487,6 +1526,17 @@ export async function runAccompanyTogether(input: {
     log.warn("engine.sim.accompany", "arrival drain did not converge", { chatId, reason: drain.shortReason });
   }
   noteDrainDiagnostics(input.fallbacks, "accompany", drain);
+
+  // A7 arrival check (read settled ONCE, before the beat, so both actors' in-transit state and
+  // `arrived` come from the same read and any still_in_transit code lands on the beat too).
+  const settled = await readDurableSpaceBranch(branchId);
+  noteStillInTransit(
+    input.fallbacks,
+    "accompany",
+    settled.loci,
+    together ? [playerActorId, primaryActorId] : [playerActorId],
+    chatId,
+  );
 
   // 5) ONE world beat — "together" on a real co-travel, else the plain traveled beat.
   //    C15: stamp any codes this choreography collected onto the beat's meta (surface a).
@@ -1499,7 +1549,6 @@ export async function runAccompanyTogether(input: {
     ...(input.fallbacks && input.fallbacks.codes().length ? { fallbacks: input.fallbacks.codes() } : {}),
   });
 
-  const settled = await readDurableSpaceBranch(branchId);
   const arrived = settled.loci.some(
     (locus) => locus.actorId === playerActorId && locus.kind === "at" && locus.zoneId === toZoneId,
   );
