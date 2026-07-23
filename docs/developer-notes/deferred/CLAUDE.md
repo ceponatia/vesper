@@ -53,3 +53,7 @@ Added after the review:
 - [travel-duration-authoring.plan.md](travel-duration-authoring.plan.md) —
   owner-noted world-authoring system (2026-07-23, recorded during A7's
   flesh-out)
+- [location-authoring.plan.md](location-authoring.plan.md) — owner-requested
+  location builder (2026-07-23): authored locations outside the entity
+  library — spatial model (position/facing/obstacles/line of sight),
+  furniture, ownership/residency, upkeep, function typing

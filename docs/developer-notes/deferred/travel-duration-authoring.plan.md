@@ -20,9 +20,11 @@ declare a duration range.
 Travel realism — and the uncertainty/delay features the engine reserved
 headroom for (`expected`/`minimum`/`uncertainty`, `journey_delayed`) — is an
 authoring problem before it is an engine problem: nothing can have a duration
-range until a world can declare one. This is also a slice of the larger
-world-building surface (bespoke + player-built worlds) that will need its own
-plan when that direction firms up.
+range until a world can declare one. This is one facet of the larger
+world-building surface (bespoke + player-built worlds), whose backbone is now
+parked as [location-authoring.plan.md](location-authoring.plan.md) — travel
+time to connected locations is one of that builder's authored fields, so the
+two stubs may fold into one world-authoring plan at promotion.
 
 ## Sketch
 
