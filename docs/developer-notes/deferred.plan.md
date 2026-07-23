@@ -32,12 +32,23 @@ tombstone here.** None are committed work until then._
   state strip); invisible half-failure diagnostics; redundant projection reads
   per turn + integration coverage for the composed paths.
 
-## World authoring — travel distances & durations
+## World authoring — locations, travel distances & durations
 
-_Owner note 2026-07-23 (recorded during the A7 stub flesh-out): world setup
-needs a system to define distances and travel time lengths between locations —
-authored for both the bespoke worlds we develop and player-built worlds. Stub:
-[deferred/travel-duration-authoring.plan.md](deferred/travel-duration-authoring.plan.md)._
+_Owner direction 2026-07-23: world setup for bespoke first-party worlds and
+player-built worlds needs an authoring surface. Two stubs, which may fold into
+one plan at promotion:_
+
+- **Location builder** —
+  [deferred/location-authoring.plan.md](deferred/location-authoring.plan.md):
+  authored locations outside the entity library, with travel times to
+  connected locations, contained furniture/items, a within-location spatial
+  model (character/player position and facing, item positions and obstacle
+  flags for movement + line-of-sight), owners (household), residents, upkeep
+  cost, and function typing (workplace/shop/home/…).
+- **Travel distances & durations** —
+  [deferred/travel-duration-authoring.plan.md](deferred/travel-duration-authoring.plan.md):
+  the duration-authoring facet (feeds `minimum`/`expected`/`uncertainty`);
+  carries the A5+A6+A7 drain-hardening tripwire.
 
 ## Owner-gated live eval runs — run on request, not roadmap items
 
