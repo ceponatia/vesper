@@ -1,7 +1,10 @@
 # Drain honesty — no 500 after commit, chunked long skips
 
 Status: draft (stub — successor-engine backlog item A5, parked 2026-07-23;
-promote per [CLAUDE.md](CLAUDE.md) before building)
+promote per [CLAUDE.md](CLAUDE.md) before building. Owner ruling 2026-07-23:
+graduates **bundled with A6 + A7** as one drain-hardening plan — see
+[arrival-target-mismatch.plan.md](arrival-target-mismatch.plan.md)
+§Owner rulings.)
 
 ## What
 
