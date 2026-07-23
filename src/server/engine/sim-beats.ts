@@ -61,6 +61,8 @@ export async function writeWorldBeat(input: {
   kind: WorldBeatKind;
   /** Destination display noun for a `traveled` beat; omitted for skips / scene-ends. */
   destinationLabel?: string;
+  /** A `traveled` departure ended a standing scene as a choice (slice 4) — acknowledge the parting. */
+  parted?: boolean;
   /** Recipient display name for a `gave_item` beat. */
   recipientName?: string;
   /** Handed item display name for a `gave_item` beat. */
@@ -75,6 +77,7 @@ export async function writeWorldBeat(input: {
       storySecond: clock?.storySecond ?? 0,
       anchor: clock?.calendarStart ?? null,
       ...(input.destinationLabel === undefined ? {} : { destinationLabel: input.destinationLabel }),
+      ...(input.parted === undefined ? {} : { parted: input.parted }),
       ...(input.recipientName === undefined ? {} : { recipientName: input.recipientName }),
       ...(input.itemName === undefined ? {} : { itemName: input.itemName }),
       ...(input.activityLabel === undefined ? {} : { activityLabel: input.activityLabel }),

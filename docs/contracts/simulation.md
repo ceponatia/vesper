@@ -172,15 +172,26 @@ affordance"):
   **`do_activity`**). Each is the ordinary durable command under the player principal; a
   refusal returns the §14.4 PUBLIC face (code + public reason + legal alternatives), never a
   private cause.
-  **`travel {toZoneId}`** is the skip-style composite (ruling 20): submit the player
-  `move`, then — on acceptance — drain the branch clock to the resulting journey's
-  `earliestArrivalAt` through the same bounded `advanceBranchStoryTime` loop `advance_time`
-  uses (shared `drainBranchTo` helper). The accepted move already interrupts the standing
-  scene (§18.2), so the scene is not ended first; the §17 arrival trigger fires inside the
-  drain. Response `{status:"traveled", toStorySecond, arrived}`; a rejection returns the
-  §14.4 shape at HTTP 200 (so the card can read `publicReason` + `legalAlternatives`
-  instead of a flattened error body). Skip-style is loop sugar over the §17 events, never
-  a bypass — the §17.1 lower-bound law still holds.
+  **`travel {toZoneId}`** is the skip-style composite (ruling 20) with a **graceful
+  departure** (world-ui.plan.md slice 4): if a scene stands, END it as a CHOICE first
+  (`end_engagement`, reason `participant_choice` — the lawful two-step `advance_time`
+  performs), so the move that follows fires **no** hard interrupt (spec §18.2: an ended
+  scene holds no claim to interrupt). Then submit the player `move` and — on acceptance —
+  drain the branch clock to the resulting journey's `earliestArrivalAt` through the shared
+  `drainBranchTo` + `moveArrivalTarget` helpers (the same bounded `advanceBranchStoryTime`
+  loop `advance_time` uses); the §17 arrival trigger fires inside the drain. The `traveled`
+  world-beat is phrased with the parting (`parted`) when a scene was ended. An unexpected
+  end-engagement failure degrades to the old interrupt path (the accepted move still
+  interrupts) — travel is never blocked. Response `{status:"traveled", toStorySecond,
+  arrived}`; a rejection returns the §14.4 shape at HTTP 200 (so the card can read
+  `publicReason` + `legalAlternatives` instead of a flattened error body). Skip-style is
+  loop sugar over the §17 events, never a bypass — the §17.1 lower-bound law still holds.
+  **The natural-language twin** (an admitted "I walk to the town square", `sim-exchange.ts`)
+  runs the SAME choreography (end-as-choice → move → drain → one parted beat) and then
+  renders the farewell + walk + arrival through the **solo cut** (a departure context in the
+  slice-0 dual-block prompt), closing ruling 20's parity clause. The pure decision
+  (`planDepartureChoreography`, `lib/simulation/departure.ts`) is scene-stands × admitted-kind
+  → steps; give/rest/none keep the co-present flow.
   **`do_activity {actionDefinitionId}`** (world-ui.plan.md slice 3) is the analogous
   skip-style composite for an activity: submit the player's `start_activity`, then — on
   acceptance — drain the branch clock to the just-started activity's `expectedCompleteAt`
@@ -200,9 +211,11 @@ affordance"):
   a durable **world beat** to the chat transcript (a side effect, not part of the response —
   world-ui.plan.md slices 2–3): an ordinary `role: "assistant"` message row marked
   `meta.worldBeat = { kind }`, the phrased line on `content`, stamped through
-  `formatSimLanding`. The beat kinds are `traveled` · `time_skipped` · `scene_ended` ·
-  `gave_item` ("You hand {primary} {item}. · <landing>") · `rested` ("You {label} a while.
-  · <landing>", phrased generically from the action label). Best-effort (`writeWorldBeat`,
+  `formatSimLanding`. The beat kinds are `traveled` ("You walk to …", or "You take your
+  leave and walk to …" when a departure ended a standing scene — the `parted` flag, slice
+  4) · `time_skipped` · `scene_ended` · `gave_item` ("You hand {primary} {item}. ·
+  <landing>") · `rested` ("You {label} a while. · <landing>", phrased generically from the
+  action label). Best-effort (`writeWorldBeat`,
   `server/engine/sim-beats.ts`): a failed beat write logs `engine.sim.world_beat` and never
   fails the committed command.
 

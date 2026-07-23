@@ -82,6 +82,28 @@ describe("buildSimSoloRenderPrompt", () => {
     expect(prompt).not.toContain("zone-");
   });
 
+  it("narrates the farewell/walk/arrival arc when this is a chosen departure (slice 4)", () => {
+    const { prompt } = buildSimSoloRenderPrompt(
+      context({ departure: { farewellFrom: "Nora", fromLabel: "home", toLabel: "town square" } }),
+    );
+    // The departure line rides inside block one, before the where/here lines.
+    expect(prompt).toContain("taking their leave of Nora at home and setting out for the town square");
+    expect(prompt).toContain("Narrate the goodbye, the walk, and the arrival as one continuous moment");
+    expect(prompt).not.toContain("zone-");
+  });
+
+  it("a solo departure (already away) narrates only the walk and arrival — no farewell", () => {
+    const { prompt } = buildSimSoloRenderPrompt(context({ departure: { fromLabel: "home", toLabel: "town square" } }));
+    expect(prompt).toContain("set out from home for the town square");
+    expect(prompt).not.toContain("taking their leave");
+  });
+
+  it("omits the departure line entirely on an ordinary solo turn", () => {
+    const { prompt } = buildSimSoloRenderPrompt(context());
+    expect(prompt).not.toContain("This turn began with");
+    expect(prompt).not.toContain("set out from");
+  });
+
   it("omits block two and asks for block one alone when the vignette degraded away", () => {
     const soloNoVignette: SoloCutContext = { ...SOLO, vignette: undefined };
     const { prompt } = buildSimSoloRenderPrompt(context({ solo: soloNoVignette }));

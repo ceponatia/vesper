@@ -6,10 +6,12 @@ import { simulationActionDefinitionSchema } from "@/contracts/simulation/activit
 import { deriveActivityId } from "@/lib/simulation/activities";
 import { actionChipLabel } from "@/lib/simulation/world-read";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { log } from "@/server/log";
 import { db, simActionDefinitions, simBranches, simCharacters, simItemHoldings, simItems } from "@/server/db";
 import {
-  advanceBranchStoryTime,
+  drainBranchTo,
   findStandingEngagement,
+  moveArrivalTarget,
   readDurableActivities,
   readDurableSpaceBranch,
   submitDurableEndEngagement,
@@ -60,25 +62,6 @@ interface CommandOutcome {
   code?: string;
   publicReason?: string;
   legalAlternativeCommandTypes?: readonly string[];
-}
-
-/**
- * Drain the branch clock to `target` through the SAME bounded advance loop
- * `advance_time` uses (`catch_up_required` just means keep draining). Shared by
- * the player time skip and skip-style travel so the two settle time identically.
- * Returns the trigger count drained, or the error Response on divergence.
- */
-async function drainBranchTo(
-  branchId: string,
-  target: number,
-): Promise<{ ok: true; drained: number } | { ok: false; response: Response }> {
-  let drained = 0;
-  for (let calls = 0; ; calls += 1) {
-    if (calls > 1_000) return { ok: false, response: jsonError("drain_diverged", "the drain did not converge", 500) };
-    const outcome = await advanceBranchStoryTime(branchId, target, { workerId: `sim-skip-${newId()}` });
-    drained += outcome.drained;
-    if (outcome.status === "advanced") return { ok: true, drained };
-  }
 }
 
 /**
@@ -252,18 +235,38 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
       if (!branch) return jsonError("not_found", "world branch not found", 404);
       const target = branch.storySecond + command.minutes * 60;
       const drain = await drainBranchTo(sim.branchId, target);
-      if (!drain.ok) return drain.response;
+      if (!drain.ok) return jsonError("drain_diverged", "the drain did not converge", 500);
       // Slice 2: the skip lands a durable "Time passes — it's now …" beat (the
       // wrapped standing scene is folded into this one beat, never a second).
       await writeWorldBeat({ chatId, branchId: sim.branchId, kind: "time_skipped" });
       return jsonOk({ status: "advanced", toStorySecond: target, drained: drain.drained });
     }
     case "travel": {
-      // Skip-style travel (ruling 20): submit the player's move, then — on
-      // acceptance — drain the clock to the journey's earliest arrival. An
-      // accepted move already lawfully interrupts the standing scene
-      // (space-store interruptCoPresentEngagementsForActor), so we do NOT end it
-      // first. The §17 arrival trigger fires inside the drain.
+      // Skip-style travel (ruling 20) + graceful departure (slice 4): if a scene
+      // stands, END it as a CHOICE first (participant_choice — the lawful two-step
+      // advance_time performs), so the move that follows fires no hard interrupt
+      // (spec §18.2: an ended scene holds no claim). Then submit the move and — on
+      // acceptance — drain the clock to the journey's earliest arrival (the §17
+      // arrival trigger fires inside the drain).
+      const standing = await findStandingEngagement(sim.branchId, sim.playerActorId, sim.primaryActorId);
+      let parted = false;
+      if (standing.engagementId !== null) {
+        const endId = newId();
+        const ended = await submitDurableEndEngagement(
+          {
+            ...envelope,
+            id: endId,
+            idempotencyKey: endId,
+            type: "end_engagement",
+            payload: { engagementId: standing.engagementId, reason: "participant_choice" },
+          },
+          { admitAtLockedVersion: true },
+        );
+        // Degrade to today's behavior on an unexpected end failure: the accepted
+        // move still lawfully interrupts the standing scene — never block travel.
+        if (ended.status === "accepted") parted = true;
+        else log.warn("engine.sim.departure", "travel end-engagement not accepted; interrupt fallback", { chatId, status: ended.status });
+      }
       const moveOutcome = await submitDurableMoveActor(
         {
           ...envelope,
@@ -276,28 +279,24 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
       if (moveOutcome.status !== "accepted") {
         return jsonError("sim_conflict", "the world moved; try again", 409);
       }
-      const afterMove = await readDurableSpaceBranch(sim.branchId);
-      const movedLocus = afterMove.loci.find((locus) => locus.actorId === sim.playerActorId);
-      const journey =
-        movedLocus?.kind === "in_transit"
-          ? afterMove.journeys.find((candidate) => candidate.id === movedLocus.journeyId)
-          : undefined;
-      const target = journey?.earliestArrivalAt ?? afterMove.storySecond;
+      const target = await moveArrivalTarget(sim.branchId, sim.playerActorId);
       const drain = await drainBranchTo(sim.branchId, target);
-      if (!drain.ok) return drain.response;
+      if (!drain.ok) return jsonError("drain_diverged", "the drain did not converge", 500);
       const settled = await readDurableSpaceBranch(sim.branchId);
       const arrived = settled.loci.some(
         (locus) => locus.actorId === sim.playerActorId && locus.kind === "at" && locus.zoneId === command.toZoneId,
       );
-      // Slice 2: the landing leaves a durable "You walk to …" beat in the
-      // transcript (replacing slice 1's toast). The destination label resolves
-      // through the SAME kind→noun seam the world card uses — never a raw id.
+      // Slice 2/4: the landing leaves ONE durable "You walk to …" beat in the
+      // transcript (replacing slice 1's toast), phrased with the parting when a
+      // scene was ended. The destination label resolves through the SAME kind→noun
+      // seam the world card uses — never a raw id.
       const destKind = settled.zones.find((zone) => zone.id === command.toZoneId)?.kind ?? "";
       await writeWorldBeat({
         chatId,
         branchId: sim.branchId,
         kind: "traveled",
         destinationLabel: zoneLabelFromKind(command.toZoneId, destKind),
+        parted,
       });
       return jsonOk({ status: "traveled", toStorySecond: target, arrived });
     }
@@ -327,7 +326,7 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
       const started = activities.activities.find((activity) => activity.id === activityId);
       const target = started?.expectedCompleteAt ?? activities.storySecond;
       const drain = await drainBranchTo(sim.branchId, target);
-      if (!drain.ok) return drain.response;
+      if (!drain.ok) return jsonError("drain_diverged", "the drain did not converge", 500);
       // Slice 3: the settled activity leaves a durable "You rest a while." beat,
       // phrased generically from the action's display label (never a raw id).
       const [definitionRow] = await db()

@@ -1,5 +1,6 @@
 import { effectiveTraitValue } from "@/contracts/personality/traits";
 import { lifeStageForAge } from "@/contracts/world/life-stage";
+import { buildSoloDepartureLine, type SoloDeparture } from "@/lib/simulation/departure";
 import { placeAtPhrase, type SoloCutContext } from "@/lib/simulation/solo-cut";
 import { DEFAULT_NARRATION_SHAPE } from "./constants";
 import { UNTRUSTED_DATA_NOTICE } from "./untrusted";
@@ -46,6 +47,12 @@ export interface SimSoloRenderContext extends SimRenderContext {
   storySecond: number;
   /** The dual-block payload (player-side + optional away vignette). */
   solo: SoloCutContext;
+  /**
+   * The chosen departure this turn is (slice 4): the player just left a scene /
+   * their zone and travelled here. Present ⇒ block (a) narrates the goodbye (when
+   * a farewell), the walk, and the arrival as one continuous beat.
+   */
+  departure?: SoloDeparture;
 }
 
 /** Legible minutes-remaining for an in-transit ETA (floor "a moment"). */
@@ -79,13 +86,18 @@ function buildSoloSceneBlock(args: {
   storySecond: number;
   calendarStart: SimSoloRenderContext["calendarStart"];
   solo: SoloCutContext;
+  departure?: SoloDeparture;
 }): string {
-  const { playerName, primaryName, storySecond, calendarStart, solo } = args;
+  const { playerName, primaryName, storySecond, calendarStart, solo, departure } = args;
   const { playerSide, vignette } = solo;
   const blocks: string[] = [
     "SOLO SCENE — everything below already happened in the world; render it, never change it.",
     `WORLD CLOCK: ${worldClockLabel(storySecond, calendarStart ?? null)} — world truth; light and time-of-day follow it.`,
   ];
+
+  // A chosen departure (slice 4): block (a) tells the whole arc — goodbye (when a
+  // scene was ended), the walk, and the arrival — as one continuous beat.
+  const departureLine = departure ? buildSoloDepartureLine({ departure, playerName }) : "";
 
   const whereLine = playerSide.inTransit
     ? `${playerName} is on the move${playerSide.transitToLabel ? ` toward the ${playerSide.transitToLabel}` : ""}${
@@ -103,6 +115,7 @@ function buildSoloSceneBlock(args: {
   blocks.push(
     [
       `BLOCK ONE — ${playerName}'s side, SECOND PERSON ("you"):`,
+      ...(departureLine ? [`- ${departureLine}`] : []),
       `- ${whereLine}`,
       `- ${hereLine}`,
       ...(holdLine ? [`- ${holdLine}`] : []),
@@ -171,6 +184,7 @@ export function buildSimSoloRenderPrompt(context: SimSoloRenderContext): { syste
       storySecond: context.storySecond,
       calendarStart: context.calendarStart ?? null,
       solo: context.solo,
+      ...(context.departure ? { departure: context.departure } : {}),
     }),
     buildPresentationStateBlock({ primaryName, playerName, outfitLine: context.outfitLine, relationship: context.relationship }),
     buildConversationBlock({ primaryName, playerName, context, soloAway: true }),
