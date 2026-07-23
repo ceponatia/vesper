@@ -143,7 +143,7 @@ The starter set is roughly 90 attributes across all categories (the table below 
 | horns | shape, length, count, texture, color |
 | neck, shoulders, chest | neck (length, throat_prominence); shoulders (width, slope); chest (size, hair) |
 | wings | type, shape, span, color, carriage |
-| waist, hips | waist (definition); hips (width) |
+| waist, hips, buttocks | waist (definition); hips (width); buttocks (size, shape, firmness) |
 | tail | type, length, tip, color |
 | arms, hands, legs, feet | arms (build, hair); hands (size, texture, nails); legs (build, length, hair); feet (size, arch, nails, smell, toes) |
 | voice | pitch, timbre, accent, cadence |
