@@ -59,3 +59,8 @@ Added after the review:
   location builder (2026-07-23): authored locations outside the entity
   library — spatial model (position/facing/obstacles/line of sight),
   furniture, ownership/residency, upkeep, function typing
+- [physiology.plan.md](physiology.plan.md) — owner-requested physiology
+  simulation (2026-07-23): triggered body responses as background processes
+  (arousal → blood flow → swelling/lubrication, cold → shivering, fear →
+  trembling, …) whose results — not the processes — surface to the narrator;
+  generalizes the meter-economy OQ2 ruling into a response registry

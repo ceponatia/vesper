@@ -53,6 +53,26 @@ one plan at promotion:_
   the duration-authoring facet (feeds `minimum`/`expected`/`uncertainty`);
   carries the A5+A6+A7+C15 drain-hardening tripwire.
 
+## Physiology simulation — triggered body responses
+
+_Owner direction 2026-07-23. Stub:
+[deferred/physiology.plan.md](deferred/physiology.plan.md)._
+Simulate physiology responding to triggers — arousal → genital blood flow →
+swelling/lubrication, and the general case (cold → shivering/goosebumps,
+embarrassment → blush, fear → trembling, exertion → sweat/breath). Background
+processes: never wired to the narrator directly, but their *results* are
+visible (field values, reads, behavior). The generalization of the
+meter-economy OQ2 ruling ("arousal is a driver, not a talk-switch") into a
+**response registry**: per-response drivers + rise/fall τ, with the
+just-authored tendency attributes (`vulva.swelling`/`wetness`/`tightness`,
+the sensitivity gains) as each character's transfer function, surfacing only
+through perception-gated reads, the state strip, image prompts, and existing
+behavior channels. Hard-depends on
+[chat-meter-economy.plan.md](chat-meter-economy.plan.md); pairs with
+[chat-body-needs.plan.md](chat-body-needs.plan.md) (drivers, couplings, the
+needs channel). Open questions (stored vs derived, expression mechanism,
+which intermediates earn their keep, anti-tedium cap) live in the stub.
+
 ## Owner-gated live eval runs — run on request, not roadmap items
 
 _Removed from the roadmap 2026-07-13 (owner ruling: manual OpenRouter-spend
