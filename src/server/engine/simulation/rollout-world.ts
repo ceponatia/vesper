@@ -332,6 +332,9 @@ export async function advanceRolloutWorld(
     });
     drained += outcome.drained;
     if (outcome.status === "advanced") break;
+    // A6: a backed-off trigger parks the clock at its due second — stop rather than re-loop past
+    // it (the trigger settles on a later advance, once its wall-clock backoff elapses).
+    if (outcome.reason === "trigger_backoff") break;
   }
 
   const decisions = await database

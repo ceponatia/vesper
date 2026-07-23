@@ -277,6 +277,9 @@ export async function mirrorShadowTimeSkip(chatId: string, minutes: number): Pro
       }
       const outcome = await advanceBranchStoryTime(branchId, target, { workerId: `sim-shadow-skip-${newId()}` });
       if (outcome.status === "advanced") return;
+      // A6: a backed-off trigger parks the clock at its due second — stop rather than re-loop
+      // past it (the shadow mirror settles the rest on a later pass, once the backoff elapses).
+      if (outcome.reason === "trigger_backoff") return;
     }
   } catch (error) {
     log.error("engine.shadow", "shadow time-skip mirror failed", {

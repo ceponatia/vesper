@@ -11,6 +11,7 @@ import { db, simActionDefinitions, simBranches, simCharacters, simItemHoldings, 
 import {
   CompositionFallbackCollector,
   drainBranchTo,
+  noteDrainDiagnostics,
   findStandingEngagement,
   moveArrivalTarget,
   readDurableActivities,
@@ -240,11 +241,21 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
       if (!branch) return jsonError("not_found", "world branch not found", 404);
       const target = branch.storySecond + command.minutes * 60;
       const drain = await drainBranchTo(sim.branchId, target);
-      if (!drain.ok) return jsonError("drain_diverged", "the drain did not converge", 500);
-      // Slice 2: the skip lands a durable "Time passes — it's now …" beat (the
-      // wrapped standing scene is folded into this one beat, never a second).
-      await writeWorldBeat({ chatId, branchId: sim.branchId, kind: "time_skipped" });
-      return jsonOk({ status: "advanced", toStorySecond: target, drained: drain.drained });
+      // A5: NEVER a 500 after the clock already committed (docs/resilience.md). A short drain
+      // returns an honest 200 — how far time ACTUALLY moved — with the shortfall recorded via
+      // C15 and marked on the beat. (Durable server-owned completion of the remainder is A5
+      // slice 2; here the world simply settled where the bounded drain left it.)
+      const skipFallbacks = new CompositionFallbackCollector(chatId);
+      noteDrainDiagnostics(skipFallbacks, "advance_time", drain);
+      // The skip lands a durable "Time passes — it's now …" beat, phrased at the clock the drain
+      // actually reached (the wrapped standing scene is folded into this one beat, never a second).
+      await writeWorldBeat({ chatId, branchId: sim.branchId, kind: "time_skipped", fallbacks: skipFallbacks.codes() });
+      return jsonOk({
+        status: "advanced",
+        toStorySecond: drain.reachedStorySecond,
+        drained: drain.drained,
+        drainShort: !drain.converged,
+      });
     }
     case "travel": {
       // Skip-style travel (ruling 20) + graceful departure (slice 4): if a scene
@@ -286,7 +297,11 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
       }
       const target = await moveArrivalTarget(sim.branchId, sim.playerActorId);
       const drain = await drainBranchTo(sim.branchId, target);
-      if (!drain.ok) return jsonError("drain_diverged", "the drain did not converge", 500);
+      // A5: a short travel drain is honest, never a 500 — the move committed. `arrived` reads the
+      // ACTUAL settled loci, so a short drain that left the traveller in transit reports
+      // `arrived: false` and the arrival settles on a later beat (see also A7's arrival check).
+      const travelFallbacks = new CompositionFallbackCollector(chatId);
+      noteDrainDiagnostics(travelFallbacks, "travel", drain);
       const settled = await readDurableSpaceBranch(sim.branchId);
       const arrived = settled.loci.some(
         (locus) => locus.actorId === sim.playerActorId && locus.kind === "at" && locus.zoneId === command.toZoneId,
@@ -302,8 +317,9 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         kind: "traveled",
         destinationLabel: zoneLabelFromKind(command.toZoneId, destKind),
         parted,
+        fallbacks: travelFallbacks.codes(),
       });
-      return jsonOk({ status: "traveled", toStorySecond: target, arrived });
+      return jsonOk({ status: "traveled", toStorySecond: drain.reachedStorySecond, arrived, drainShort: !drain.converged });
     }
     case "travel_together": {
       // Walk-with-me (world-ui.plan.md slice 5): the shared choreography runs the
@@ -370,7 +386,10 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
       const started = activities.activities.find((activity) => activity.id === activityId);
       const target = started?.expectedCompleteAt ?? activities.storySecond;
       const drain = await drainBranchTo(sim.branchId, target);
-      if (!drain.ok) return jsonError("drain_diverged", "the drain did not converge", 500);
+      // A5: a short activity drain is honest, never a 500 — the activity started and its
+      // completion trigger is durable, so it settles on a later beat if the drain stops short.
+      const activityFallbacks = new CompositionFallbackCollector(chatId);
+      noteDrainDiagnostics(activityFallbacks, "do_activity", drain);
       // Slice 3: the settled activity leaves a durable "You rest a while." beat,
       // phrased generically from the action's display label (never a raw id).
       const [definitionRow] = await db()
@@ -391,8 +410,9 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         branchId: sim.branchId,
         kind: "rested",
         activityLabel: actionChipLabel(command.actionDefinitionId, definition?.label),
+        fallbacks: activityFallbacks.codes(),
       });
-      return jsonOk({ status: "performed", toStorySecond: target });
+      return jsonOk({ status: "performed", toStorySecond: drain.reachedStorySecond, drainShort: !drain.converged });
     }
   }
 });

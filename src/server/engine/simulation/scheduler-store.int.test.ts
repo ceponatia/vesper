@@ -443,6 +443,34 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
     expect(await eventCount(ids.branchId)).toBe(3);
   });
 
+  it("keeps draining past a poison trigger and surfaces it as a terminal failure (A6)", async () => {
+    // A poison trigger (here a deterministic rejection — a missing item) must NOT stop the
+    // drain: stopping would strand the clock behind a trigger that can never resolve, bricking
+    // every future skip on the branch. Instead the drain continues AND surfaces the failure via
+    // `terminalFailures`, so a caller records a `trigger_failed` diagnostic (never hidden).
+    const ids = makeIds(1);
+    await seedCase(ids);
+    // A poison trigger at +100 (references an item that isn't there → rejected → state failed),
+    // and a healthy transfer at +200 that must still fire.
+    await scheduleDurableTrigger({
+      worldId: ids.worldId,
+      branchId: ids.branchId,
+      kind: "scheduled_transfer_item",
+      schemaVersion: 1,
+      dueStorySecond: SEED_STORY_SECOND + 100,
+      uniquenessKey: "poison-missing-item",
+      payload: { command: command(ids, newId()) },
+    });
+    await scheduleAt(ids, SEED_STORY_SECOND + 200, "healthy-at-200", 0);
+
+    const advanced = await advanceBranchStoryTime(ids.branchId, SEED_STORY_SECOND + 300, {
+      workerId: "worker_a",
+    });
+    // Reached the target (did not stop on the poison), counted the failure, and fired the good one.
+    expect(advanced).toMatchObject({ status: "advanced", storySecond: SEED_STORY_SECOND + 300, terminalFailures: 1 });
+    expect(await eventCount(ids.branchId)).toBe(1);
+  });
+
   it("rejects a trigger whose command targets another branch", async () => {
     const ids = makeIds();
     const other = makeIds(1, ids.worldId);
