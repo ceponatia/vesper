@@ -112,6 +112,34 @@ methodology nicety, not blocking — the shipped rulings (per-lane profile, per-
 "focus planner doesn't earn its keep") already stand on the current data. Pick up only if a future
 ruling hinges on a margin this thin.
 
+## Attribute value relationships & composite body-types
+
+_Raised 2026-07-23. Detail: [attribute-scales.deferred.md](attribute-scales.deferred.md)._
+Successor to the shipped per-value glosses
+([finished/attribute-narrator-guidance.plan.md](finished/attribute-narrator-guidance.plan.md))
+— the layer above them: the *relationship between* sibling values, so
+`wiry` / `slim` / `athletic` stop being amorphous LLM-in-the-moment reads. The
+owner's tell — those three aren't one scale, they're a gestalt flattened across
+the orthogonal `frame × musculature × weight` axes. Two facets on one foundation
+(attribute vocabularies as **ordered axes in a body-space**):
+
+- **A — narrator scale/neighbor guidance (read):** on *ordered-scale* enums only,
+  enrich the character's one rendered value with derived prev/next neighbors + a
+  positional scope descriptor ("low on a 7-step scale"). Bounded to O(1) tokens
+  (never the rejected full menu); pole-**words** and counts-between stay out of
+  the prompt (counts feed an authoring/eval tool instead). Zero new authoring —
+  all derived from the existing `allowedValues` order.
+- **B — composite body-type fill (write):** a root gestalt word ("athletic")
+  pre-fills the body axes. The owner's "too many combinations" worry dissolves:
+  sparse per-word patches (2–3 defining axes) + additive composition + editable
+  seed (not lock) + forge fallback for the tail ⇒ **O(words), not
+  O(combinations)**.
+
+Prerequisite for both: a definition flag marking which enums are ordered scales
+vs categorical. Open questions (scope form, counts, lexicon size, conflict
+resolution) live in the detail doc. Can graduate separately (A is render-only and
+smaller; B is an authoring feature) but they share the prerequisite.
+
 ## Plan docs: drop hard phase numbers
 
 _Raised 2026-06-16._ The `phase-N` scheme bakes **both** a doc's identity and its
