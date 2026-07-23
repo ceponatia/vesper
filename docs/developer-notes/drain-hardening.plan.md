@@ -1,17 +1,20 @@
 # Drain hardening — honest, durable, correctly-stamped time advancement
 
-Status: **active** (promoted from `deferred/` 2026-07-23; formerly
-successor-engine backlog items A5+A6+A7+C15). **Slices 1–4 and 6 shipped
-2026-07-23** (C15 telemetry, A5 honesty, A6 backoff + poison-trigger
-surfacing, A7 retarget + arrival check — all gated green on the pure suite
-and committed). **Remaining: A5 slice 4 (durable leased time jobs) and slice
-5 (staged catch-up UI)** — see §Slices. The durable-job runner and the
-staged-UI both need infrastructure the shipping session lacked: Postgres to
-integration-test the lease/fence/sweep concurrency (unvalidated concurrency
-must not ship), and the Fly deploy for UI. The A5 detail doc's escalation
-seam and A7's "escalate a still-in-transit actor to the job" both wait on
-that runner; until it lands, a short drain settles the remainder on later
-turns via the existing `catch_up_required` resume (honest, just not offline).
+Status: **shipped — 2026-07-23** (promoted from `deferred/` the same day;
+formerly successor-engine backlog items A5+A6+A7+C15). **All slices shipped
+and validated 2026-07-23:** C15 telemetry, A5 honesty, A6 backoff +
+poison-trigger surfacing, A7 retarget + arrival check, A5 slice 4 (durable
+leased time jobs — validated by 10 integration tests against a real Postgres:
+one-active-job-per-branch, lease/fence, reclaim, poison), and A5 slice 5
+(staged catch-up UI). Migration 0086 (`sim_time_jobs`) applied to Neon on the
+2026-07-23 Fly deploy (version 118); the app boots clean and the world route's
+new time-job reads run live. Commits: `300e8d9` (C15), `dbcc955` (A5
+honesty + A6), `38b4b6a` (A7), `4d6239e` (A5 slice 4), `10beeb1` (A5 slice 5).
+Leftover (follow-up, not blocking): the retry-parking/partition-invariance
+int test needs a dispatch-throw mock, the A7 divergent-journey int test needs
+a synthetic `journey_planned`, and A7's arrival check currently records +
+next-turn-settles rather than escalating a stranded actor to the time job
+(the runner now exists — wiring that escalation is a small follow-up).
 
 One plan, four strands, each with its own detail doc carrying the full
 evidence, rulings, and per-strand sketch:
@@ -107,16 +110,21 @@ before the fixes change the numbers.
    travel drain records + warns (the job-escalation half waits on slice 4). The
    divergent-journey int test (synthetic `expectedArrivalAt > earliestArrivalAt`)
    is follow-up.
-4. **A5 slice 4 — durable time jobs** (M) — **REMAINING**: the `sim_time_jobs`
-   table (migration), leased/fenced runner, boot/next-request sweep, escalation
-   seam in `advance_time`, the branch job-active guard at every mutation entry
-   point, the poison-trigger block. **Blocked on infra:** needs `pnpm db:generate`
-   for the migration and a Postgres run to integration-test the lease/fence/sweep
-   (unvalidated concurrency must not ship). A7's arrival-check escalation and the
-   A5 detail doc's mid-drain retarget both hang off this runner.
-5. **A5 slice 5 — staged catch-up UI** (S) — **REMAINING**: world-card progress
-   while a job runs; landing beat on completion. Follows slice 4 and is
-   UI-tested against the Fly deploy.
+4. **A5 slice 4 — durable time jobs** (M) — **SHIPPED 2026-07-23** (`4d6239e`):
+   `sim_time_jobs` table (migration 0086), `time-job-store.ts` (enqueue with the
+   one-active-per-branch partial unique index, `FOR UPDATE SKIP LOCKED` claim,
+   fenced drain-step loop, reclaim), `sim-time-jobs.ts` (the runner + landing
+   beat + poison C15 + `runSkipWithEscalation` fast-path/escalation + the sweep),
+   the branch job-active guard on `sim-command` and the shared
+   `runSimChatExchange` (retakes pass), the world-read next-request sweep.
+   Validated by 10 int tests against Postgres. Mid-drain retarget from the A5
+   detail doc and A7's arrival→job escalation remain small follow-ups on the
+   now-existing runner.
+5. **A5 slice 5 — staged catch-up UI** (S) — **SHIPPED 2026-07-23** (`10beeb1`):
+   the world read surfaces a `catchingUp` progress payload; the world card shows
+   a pulsing "catching up… about N days to go" banner and disables affordances;
+   the conversation polls world + transcript until it clears and the landing beat
+   lands.
 
 _Slice numbering keeps the original build-order labels (1, 2, 3, 6 shipped;
 4, 5 remaining) rather than renumbering, so commit messages and the detail

@@ -40,16 +40,6 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
-- **Drain hardening — durable leased time jobs + staged catch-up UI** (the
-  A5 slice-4/5 remainder) — [drain-hardening.plan.md](drain-hardening.plan.md)
-  §Slices. The `sim_time_jobs` table + leased/fenced runner + boot sweep +
-  branch job-active guard + poison-trigger block (slice 4), then the world-card
-  catch-up UI (slice 5). Blocked on infra: the migration (`pnpm db:generate`)
-  and a Postgres run to integration-test the lease/fence/sweep before it ships;
-  the UI is Fly-tested. A7's arrival-check escalation and the mid-drain retarget
-  hang off this runner. **The live-defect + observability slices already
-  shipped — see Shipped below.**
-
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
   [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly
   optional** (owner ruling 2026-07-21 — recorded in
@@ -140,16 +130,19 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
-- **Drain hardening — live-defect + observability slices (C15, A5 honesty, A6,
-  A7)** — [drain-hardening.plan.md](drain-hardening.plan.md) · engine.spec §39
-  rulings 22–25 — 2026-07-23 — composed-turn degradations are now recorded on
-  two surfaces (durable admin tally + public-safe reply-meta codes); the three
-  sim-command composites stopped 500ing after a committed write (honest 200 +
-  `drainShort`); a backed-off trigger stops the drain at its due second
-  (`trigger_backoff`, §12.4 invariance) and poison triggers are surfaced not
+- **Drain hardening — honest, durable, correctly-stamped time advancement
+  (COMPLETE)** — [drain-hardening.plan.md](drain-hardening.plan.md) ·
+  engine.spec §39 rulings 22–25 — 2026-07-23 — all of A5+A6+A7+C15, built,
+  gated, and deployed the day it was promoted. Composed-turn degradations are
+  recorded on two surfaces (durable admin tally + public-safe reply-meta codes);
+  the sim-command composites stopped 500ing after a committed write (honest 200
+  + `drainShort`); a backed-off trigger stops the drain at its due second
+  (`trigger_backoff`, §12.4 invariance) with poison triggers surfaced not
   hidden; travel drains target `expectedArrivalAt` with a post-drain arrival
-  check. Remaining slices 4–5 (durable leased time jobs + catch-up UI) stay in
-  Next above.
+  check; and long skips are now **server-owned durable time jobs** (leased,
+  fenced, one-per-branch — validated by 10 int tests against Postgres) with a
+  branch mutation guard and a staged catch-up UI. Migration 0086 live on Neon
+  (Fly version 118).
 
 - **World UI — the player-facing surface of the successor world** —
   [world-ui.plan.md](world-ui.plan.md) · rulings 20–21 in
