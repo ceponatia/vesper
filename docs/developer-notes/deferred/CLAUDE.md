@@ -41,9 +41,9 @@ shipped. Groups: A bugs first · B living world · C hardening & perf.
 - B11 [successor-npc-initiative.plan.md](successor-npc-initiative.plan.md)
 - B12 [named-skips.plan.md](named-skips.plan.md)
 - B13 [autonomous-npc-travel.plan.md](autonomous-npc-travel.plan.md)
-- C14 [sim-read-seam-guards.plan.md](sim-read-seam-guards.plan.md)
+- C14 — graduated 2026-07-24 → [../sim-read-seam-guards.plan.md](../sim-read-seam-guards.plan.md)
 - C15 — graduated 2026-07-23 → [../drain-hardening.diagnostics.md](../drain-hardening.diagnostics.md)
-- C16 [turn-loop-efficiency.plan.md](turn-loop-efficiency.plan.md)
+- C16 — graduated 2026-07-24 → [../sim-read-seam-guards.plan.md](../sim-read-seam-guards.plan.md) (folded into the C14 plan per owner ruling; stub removed)
 
 Fleshed out (still parked): A1, A2, and A4 (2026-07-23 — rulings recorded in
 each stub), grouped as one command-integrity plan (discussion-complete —
@@ -51,6 +51,8 @@ serialize, survive, atomize). **Graduated:** A5+A6+A7+C15 promoted 2026-07-23
 as [../drain-hardening.plan.md](../drain-hardening.plan.md) (owner lifted the
 A7 tripwire parking; the bundle rolls out next — the review that triggered
 promotion also hardened the stubs' job/leasing/poison-trigger design).
+C14+C16 promoted 2026-07-24 as [../sim-read-seam-guards.plan.md](../sim-read-seam-guards.plan.md)
+(C16 folded into the C14 plan per owner ruling; its stub removed).
 
 Added after the review:
 
