@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   materialBranchSeedSchema,
   transferItemCommandSchema,
@@ -9,6 +9,15 @@ import {
 import { schedulerDerivationVersion } from "@/contracts/simulation/scheduler";
 import { newId } from "@/lib/ids";
 import { db, simBranches, simEvents, simTriggers, simWorlds } from "@/server/db";
+
+// Wrap the transfer submit so the A6 backoff test can make ONE trigger dispatch throw
+// (a transient DB blip) via mockImplementationOnce; every other call — including the
+// scheduler's own dispatch in the other cases — passes through to the real implementation.
+vi.mock("./material-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./material-store")>();
+  return { ...actual, submitDurableTransferItem: vi.fn(actual.submitDurableTransferItem) };
+});
+
 import { seedDurableMaterialBranch, submitDurableTransferItem } from "./material-store";
 import {
   advanceBranchStoryTime,
@@ -16,6 +25,8 @@ import {
   scheduleDurableTrigger,
 } from "./scheduler-store";
 import { seedDurableSpaceTopology } from "./space-store";
+
+const mockedTransfer = vi.mocked(submitDurableTransferItem);
 
 const SEED_STORY_SECOND = 57_600;
 
@@ -469,6 +480,53 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
     // Reached the target (did not stop on the poison), counted the failure, and fired the good one.
     expect(advanced).toMatchObject({ status: "advanced", storySecond: SEED_STORY_SECOND + 300, terminalFailures: 1 });
     expect(await eventCount(ids.branchId)).toBe(1);
+  });
+
+  it("parks the clock at a backed-off trigger's due second and stamps its event there once the backoff elapses (A6)", async () => {
+    // A6 partition invariance under a TRANSIENT failure: a trigger whose dispatch throws backs
+    // off on the wall clock. The drain must STOP at the trigger's due second (not jump past it),
+    // and once the backoff elapses the event must stamp at the second it was due — otherwise
+    // advance-in-parts diverges from advance-in-one-go.
+    const ids = makeIds();
+    await seedCase(ids);
+    await scheduleAt(ids, SEED_STORY_SECOND + 100, "backoff-trigger");
+
+    const now1 = new Date("2026-07-23T12:00:00.000Z");
+    // The first dispatch throws (transient), driving the trigger into retry/backoff.
+    mockedTransfer.mockImplementationOnce(() => Promise.reject(new Error("transient DB blip")));
+
+    const parked = await advanceBranchStoryTime(ids.branchId, SEED_STORY_SECOND + 500, {
+      workerId: "worker_a",
+      now: now1,
+    });
+    expect(parked).toMatchObject({
+      status: "catch_up_required",
+      reason: "trigger_backoff",
+      storySecond: SEED_STORY_SECOND + 100,
+    });
+    expect((parked as { availableAt?: Date }).availableAt).toBeInstanceOf(Date);
+    // The clock is parked AT the due second, not jumped to the +500 target, and nothing fired.
+    const [branchAfter] = await db()
+      .select({ storySecond: simBranches.storySecond })
+      .from(simBranches)
+      .where(eq(simBranches.id, ids.branchId));
+    expect(branchAfter?.storySecond).toBe(SEED_STORY_SECOND + 100);
+    expect(await eventCount(ids.branchId)).toBe(0);
+
+    // After the ~1s backoff elapses (a later wall clock), the trigger resolves at its due second.
+    const now2 = new Date(now1.getTime() + 60_000);
+    const resumed = await advanceBranchStoryTime(ids.branchId, SEED_STORY_SECOND + 500, {
+      workerId: "worker_a",
+      now: now2,
+    });
+    expect(resumed).toMatchObject({ status: "advanced" });
+    expect(await eventCount(ids.branchId)).toBe(1);
+    // The invariant: the event stamped at the DUE second (+100), never the advance target (+500).
+    const [event] = await db()
+      .select({ storySecond: simEvents.storySecond })
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "item_transferred")));
+    expect(event?.storySecond).toBe(SEED_STORY_SECOND + 100);
   });
 
   it("rejects a trigger whose command targets another branch", async () => {

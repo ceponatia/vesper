@@ -10,11 +10,15 @@ one-active-job-per-branch, lease/fence, reclaim, poison), and A5 slice 5
 2026-07-23 Fly deploy (version 118); the app boots clean and the world route's
 new time-job reads run live. Commits: `300e8d9` (C15), `dbcc955` (A5
 honesty + A6), `38b4b6a` (A7), `4d6239e` (A5 slice 4), `10beeb1` (A5 slice 5).
-Leftover (follow-up, not blocking): the retry-parking/partition-invariance
-int test needs a dispatch-throw mock, the A7 divergent-journey int test needs
-a synthetic `journey_planned`, and A7's arrival check currently records +
-next-turn-settles rather than escalating a stranded actor to the time job
-(the runner now exists — wiring that escalation is a small follow-up).
+**Follow-ups closed 2026-07-23:** the A6 retry-parking/partition-invariance
+int test (a mocked transient dispatch throw drives `trigger_backoff`; the
+clock parks at the due second and the event stamps there once the backoff
+elapses), the A7 divergent-journey int test (a `journey_delayed`-style
+`expectedArrivalAt` bump proves `moveArrivalTarget` follows expected, not
+earliest), and **A7's arrival check now escalates a stranded traveller to the
+durable time job** (`settleStrandedInTransit` — recovery, not just a
+next-turn settle) — all validated against Postgres in the full int suite
+(48 files, 433 tests). No leftovers.
 
 One plan, four strands, each with its own detail doc carrying the full
 evidence, rulings, and per-strand sketch:

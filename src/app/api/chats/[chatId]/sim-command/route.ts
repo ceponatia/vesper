@@ -13,7 +13,7 @@ import {
   drainBranchTo,
   hasActiveTimeJob,
   noteDrainDiagnostics,
-  noteStillInTransit,
+  settleStrandedInTransit,
   findStandingEngagement,
   moveArrivalTarget,
   readDurableActivities,
@@ -324,9 +324,15 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
       const travelFallbacks = new CompositionFallbackCollector(chatId);
       noteDrainDiagnostics(travelFallbacks, "travel", drain);
       const settled = await readDurableSpaceBranch(sim.branchId);
-      // A7 arrival check: reuse the settled read; a still-in-transit player is recorded and
-      // settles on a later beat (never a stuck character).
-      noteStillInTransit(travelFallbacks, "travel", settled.loci, [sim.playerActorId], chatId);
+      // A7 arrival check: reuse the settled read; a still-in-transit player is recorded and a
+      // durable job is escalated to finish reaching the arrival (never a stuck character).
+      await settleStrandedInTransit({
+        fallbacks: travelFallbacks,
+        site: "travel",
+        space: settled,
+        actorIds: [sim.playerActorId],
+        chatId,
+      });
       const arrived = settled.loci.some(
         (locus) => locus.actorId === sim.playerActorId && locus.kind === "at" && locus.zoneId === command.toZoneId,
       );
