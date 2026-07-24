@@ -10,6 +10,7 @@ import {
   bodyDerivationVersion,
   bodyInitializedEventSchema,
   bodyMeterRegistryByVersion,
+  bodyRegistryVersionSchema,
   bodyMeterStateSchema,
   bodyModifierAppliedEventSchema,
   bodyModifierSchema,
@@ -498,6 +499,50 @@ export function selfCareAdjustmentsBetween(
     }
   }
   return adjustments.sort((left, right) => left.atStorySecond - right.atStorySecond);
+}
+
+/**
+ * The per-meter {@link MeterIntegrationView} over one actor's already-loaded
+ * body rows: resolve the meter's registry definition from the row's captured
+ * `registryVersion` (validated through {@link bodyRegistryVersionSchema}),
+ * attach that meter's modifiers, and fold the §25.5 rhythm self-care crossings
+ * through `horizon` as scheduled adjustments. `undefined` when the actor holds
+ * no such meter row, or its registry version / definition cannot be resolved.
+ *
+ * Pure and total — the ONE builder the material and activity command stores AND
+ * the read seams (`readSimChatMeters`) all route through, so a command-time
+ * view and a read-time view can never diverge. Callers set `horizon` to their
+ * need: the command path solves alarms across the full threshold horizon; a
+ * read integrating only to "now" passes the branch clock itself.
+ */
+export function buildMeterView(
+  rows: {
+    meters: readonly BodyMeterState[];
+    modifiers: readonly BodyModifier[];
+    rhythms: readonly BodyRhythmRow[];
+  },
+  meterKey: string,
+  horizon: number,
+): MeterIntegrationView | undefined {
+  const state = rows.meters.find((meter) => meter.meterKey === meterKey);
+  if (!state) return undefined;
+  const parsedVersion = bodyRegistryVersionSchema.safeParse(state.registryVersion);
+  if (!parsedVersion.success) return undefined;
+  const definition = bodyMeterRegistryByVersion[parsedVersion.data].find(
+    (candidate) => candidate.key === meterKey,
+  );
+  if (!definition) return undefined;
+  return {
+    definition,
+    state,
+    modifiers: rows.modifiers.filter((modifier) => modifier.meterKey === meterKey),
+    scheduledAdjustments: selfCareAdjustmentsBetween(
+      rows.rhythms,
+      meterKey,
+      state.lastIntegratedAtStorySecond,
+      horizon,
+    ),
+  };
 }
 
 /**

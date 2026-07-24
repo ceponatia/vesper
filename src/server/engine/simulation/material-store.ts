@@ -69,10 +69,9 @@ import {
   resolveItemConditionThreshold,
   type ItemConditionView,
 } from "@/lib/simulation/material-condition";
-import { bodyMeterRegistryByVersion, bodyRegistryVersionSchema } from "@/contracts/simulation/bodies";
 import {
   BODY_THRESHOLD_HORIZON_SECONDS,
-  selfCareAdjustmentsBetween,
+  buildMeterView,
   type BodyEventCommandContext,
   type MeterIntegrationView,
 } from "@/lib/simulation/bodies";
@@ -812,22 +811,8 @@ export async function loadConsumptionBodyView(
       undefined,
     );
 
-  const meterView = (meterKey: string): MeterIntegrationView | undefined => {
-    const state = meters.find((meter) => meter.meterKey === meterKey);
-    if (!state) return undefined;
-    const parsedVersion = bodyRegistryVersionSchema.safeParse(state.registryVersion);
-    if (!parsedVersion.success) return undefined;
-    const definition = bodyMeterRegistryByVersion[parsedVersion.data].find(
-      (candidate) => candidate.key === meterKey,
-    );
-    if (!definition) return undefined;
-    return {
-      definition,
-      state,
-      modifiers: modifiers.filter((modifier) => modifier.meterKey === meterKey),
-      scheduledAdjustments: selfCareAdjustmentsBetween(rhythms, meterKey, state.lastIntegratedAtStorySecond, horizon),
-    };
-  };
+  const meterView = (meterKey: string): MeterIntegrationView | undefined =>
+    buildMeterView({ meters, modifiers, rhythms }, meterKey, horizon);
 
   return {
     bodyInitialized: meters.length > 0,

@@ -4,6 +4,7 @@ import type { PublicFailurePresentation } from "@/contracts/simulation/narrative
 import { admitPlayerCommand, type AdmittedCommand } from "@/lib/simulation/input-admission";
 import { decideAccompany } from "@/lib/simulation/accompany";
 import { planDepartureChoreography, type SoloDeparture } from "@/lib/simulation/departure";
+import { computeMoveArrivalTarget, planStrandedSettlement } from "@/lib/simulation/travel-settle";
 import { buildWorldDestinations, placeGoPhrase } from "@/lib/simulation/world-read";
 import { simulationHash } from "@/lib/simulation/hash";
 import { deriveEngagementId, isStandingCoPresentEngagement } from "@/lib/simulation/engagements";
@@ -336,12 +337,7 @@ export async function drainBranchTo(branchId: string, target: number): Promise<D
  */
 export async function moveArrivalTarget(branchId: string, actorId: string): Promise<number> {
   const after = await readDurableSpaceBranch(branchId);
-  const movedLocus = after.loci.find((locus) => locus.actorId === actorId);
-  const journey =
-    movedLocus?.kind === "in_transit"
-      ? after.journeys.find((candidate) => candidate.id === movedLocus.journeyId)
-      : undefined;
-  return journey?.expectedArrivalAt ?? after.storySecond;
+  return computeMoveArrivalTarget(after, actorId);
 }
 
 /**
@@ -361,34 +357,25 @@ export async function settleStrandedInTransit(input: {
   chatId: string;
 }): Promise<void> {
   const { space, chatId } = input;
-  const stranded = input.actorIds.filter((actorId) =>
-    space.loci.some((locus) => locus.actorId === actorId && locus.kind === "in_transit"),
-  );
-  if (stranded.length === 0) return;
+  const settlement = planStrandedSettlement(space, input.actorIds);
+  if (settlement.stranded.length === 0) return;
   log.warn("engine.sim.arrival", "actor still in transit after arrival drain; escalating to a durable job", {
     chatId,
-    stranded,
+    stranded: settlement.stranded,
   });
-  input.fallbacks?.note({ site: input.site, code: "still_in_transit", detail: `stranded: ${stranded.join(",")}` });
-
-  // The latest expected arrival among the stranded — the second the branch clock must reach for
-  // every arrival trigger to have fired.
-  const targets = stranded.flatMap((actorId) => {
-    const locus = space.loci.find((l) => l.actorId === actorId && l.kind === "in_transit");
-    const journeyId = locus?.kind === "in_transit" ? locus.journeyId : undefined;
-    const journey = journeyId ? space.journeys.find((j) => j.id === journeyId) : undefined;
-    return journey ? [journey.expectedArrivalAt] : [];
+  input.fallbacks?.note({
+    site: input.site,
+    code: "still_in_transit",
+    detail: `stranded: ${settlement.stranded.join(",")}`,
   });
-  if (targets.length === 0) return;
-  const target = Math.max(...targets);
   // Already at/past the arrivals ⇒ the trigger itself failed (poison); a job can't re-fire it, so
   // the C15 record above is the surfacing — don't enqueue a no-op job.
-  if (target <= space.storySecond) return;
+  if (!settlement.escalate) return;
   await escalateToTimeJob({
     worldId: space.worldId,
     branchId: space.branchId,
     chatId,
-    targetStorySecond: target,
+    targetStorySecond: settlement.target,
     reachedStorySecond: space.storySecond,
   });
 }
@@ -821,14 +808,10 @@ async function loadSimPresentationInputs(input: {
   const [primary, personaFields, outfit, relationship, zoneNames] = await Promise.all([
     loadSimPrimaryProfile(input.chatId, input.actorNames[input.primaryActorId]),
     loadSimPlayerPersonaFields(input.userId, input.chatId),
-    readSimChatOutfit(input.chatId).catch((error: unknown) => {
-      simLoadWarn(input.chatId, "outfit projection degraded to absent", error);
-      return null;
-    }),
-    readSimChatRelationship(input.chatId).catch((error: unknown) => {
-      simLoadWarn(input.chatId, "relationship projection degraded to absent", error);
-      return null;
-    }),
+    // Both reads self-degrade to `null` with their own per-seam diagnostic
+    // (sim-surfaces §7 guards), so no local `.catch` wrapper is needed here.
+    readSimChatOutfit(input.chatId),
+    readSimChatRelationship(input.chatId),
     loadSimZoneNames(input.branchId, input.chatId),
   ]);
   const outfitLine = outfit?.trim();
@@ -1370,13 +1353,16 @@ async function runSimDepartureTurn(input: {
   // 4) ONE traveled beat, phrased with the parting when a scene was ended.
   await writeWorldBeat({ chatId, branchId, kind: "traveled", destinationLabel: toLabel, parted: plan.parted });
 
-  // 5) Render the arrival through the solo cut with the departure arc.
+  // 5) Render the arrival through the solo cut with the departure arc. A departure
+  //    turn does NOT advance the clock again (it already drained to the arrival), so
+  //    the settled projection just read is exactly what the solo cut would re-read —
+  //    thread it in rather than re-materialize the same state.
   const departure: SoloDeparture = {
     ...(plan.farewell ? { farewellFrom: primaryName } : {}),
     fromLabel,
     toLabel,
   };
-  return runSimSoloTurn({ ...soloArgs, departure });
+  return runSimSoloTurn({ ...soloArgs, departure, settledSpace: departureSettled });
 }
 
 /**
@@ -1562,8 +1548,11 @@ export async function runAccompanyTogether(input: {
 
   // 4) Drain to the LATER of the two expected arrivals (both share the link, but
   //    compute each defensively; A7) — the §17 arrival trigger fires inside the drain.
-  const playerTarget = await moveArrivalTarget(branchId, playerActorId);
-  const primaryTarget = together ? await moveArrivalTarget(branchId, primaryActorId) : playerTarget;
+  //    Read the post-move projection ONCE and derive both arrivals from it (both
+  //    reads saw the same committed state — no need to re-materialize per actor).
+  const postMove = await readDurableSpaceBranch(branchId);
+  const playerTarget = computeMoveArrivalTarget(postMove, playerActorId);
+  const primaryTarget = together ? computeMoveArrivalTarget(postMove, primaryActorId) : playerTarget;
   const target = Math.max(playerTarget, primaryTarget);
   const drain = await drainBranchTo(branchId, target);
   if (!drain.converged) {
@@ -1763,16 +1752,27 @@ async function buildSoloCutContext(input: {
   primaryName: string;
   actorNames: Record<string, string>;
   atStorySecond: number;
+  /**
+   * A projection the caller already settled THIS turn (a departure/accompany
+   * choreography drained to the arrival and won't advance again) — reused in
+   * place of a re-read so the composed loop materializes space once. Absent on
+   * an ordinary solo turn, which reads it fresh after its own span advance.
+   */
+  settledSpace?: SpaceProjection;
 }): Promise<{ context: SoloCutContext | null; diagnostics: string[] }> {
   const diagnostics: string[] = [];
   const actorNameOf = (actorId: string): string => input.actorNames[actorId] ?? humanizeId(actorId);
 
-  let space: Awaited<ReturnType<typeof readDurableSpaceBranch>>;
-  try {
-    space = await readDurableSpaceBranch(input.branchId);
-  } catch (error) {
-    simLoadWarn(input.chatId, "solo space read failed — minimal narration", error);
-    return { context: null, diagnostics: ["engine.sim.solo.space_read_failed"] };
+  let space: SpaceProjection;
+  if (input.settledSpace !== undefined) {
+    space = input.settledSpace;
+  } else {
+    try {
+      space = await readDurableSpaceBranch(input.branchId);
+    } catch (error) {
+      simLoadWarn(input.chatId, "solo space read failed — minimal narration", error);
+      return { context: null, diagnostics: ["engine.sim.solo.space_read_failed"] };
+    }
   }
 
   // Zone display labels come from the space projection's own zone KINDS (the
@@ -1872,6 +1872,13 @@ async function runSimSoloTurn(input: {
    * arrival arc.
    */
   departure?: SoloDeparture;
+  /**
+   * A settled projection the departure/accompany caller already read this turn.
+   * ONLY sound alongside a `departure` (that path skips the span advance below, so
+   * the state can't drift underneath it); on an ordinary solo turn the space is
+   * re-read AFTER the advance, so a threaded value would be stale and is ignored.
+   */
+  settledSpace?: SpaceProjection;
   /** C15: composition-fallback collector threaded from the turn entry (may be absent). */
   fallbacks?: CompositionFallbackCollector;
 }): Promise<SimChatExchangeResult> {
@@ -1897,6 +1904,12 @@ async function runSimSoloTurn(input: {
   const clock = (await readBranchClock(branchId)) ?? before;
   const atStorySecond = clock?.storySecond ?? 0;
 
+  // A departure/accompany turn already settled the projection this request and
+  // did NOT advance again (guarded above) — reuse it. An ordinary solo turn just
+  // advanced, so any threaded snapshot is stale: ignore it and let the context
+  // read fresh.
+  const settledSpace = input.departure !== undefined ? input.settledSpace : undefined;
+
   const [{ memory, conversationSummary }, presentation, solo] = await Promise.all([
     loadSimConversationContext({
       chatId,
@@ -1916,6 +1929,7 @@ async function runSimSoloTurn(input: {
       primaryName,
       actorNames,
       atStorySecond,
+      ...(settledSpace ? { settledSpace } : {}),
     }),
   ]);
 

@@ -10,16 +10,20 @@ import {
   bodyMeterStateSchema,
   bodyModifierSchema,
   bodyMeterRegistryV1,
+  bodyRhythmRowSchema,
   endBodyConditionCommandSchema,
+  HYGIENE_WASH_SET_FIXED_POINT,
   initializeActorBodyCommandSchema,
   resolveBodyCollapseCommandSchema,
   resolveBodyThresholdCommandSchema,
   type BodyMeterDefinition,
   type BodyMeterState,
   type BodyModifier,
+  type BodyRhythmRow,
 } from "@/contracts/simulation/bodies";
 import {
   applyBodyEvent,
+  buildMeterView,
   emptyBodiesSeed,
   exp2NegativeFixedPoint,
   integrateMeterValue,
@@ -872,6 +876,93 @@ describe("E5.2 slice 2b — collapse resolves into forced sleep and interruption
     );
     expect(recovered.ok).toBe(false);
     if (!recovered.ok) expect(recovered.code).toBe("collapse_stale");
+  });
+});
+
+describe("buildMeterView — the shared integration-view seam (slice 2 dedup)", () => {
+  const hygieneDef = ((): BodyMeterDefinition => {
+    const found = bodyMeterRegistryV1.find((definition) => definition.key === "hygiene");
+    if (!found) throw new Error("registry hygiene missing");
+    return found;
+  })();
+
+  function hygieneRows(
+    overrides: {
+      meterOverrides?: Partial<BodyMeterState>;
+      modifiers?: BodyModifier[];
+      rhythms?: BodyRhythmRow[];
+    } = {},
+  ): { meters: BodyMeterState[]; modifiers: BodyModifier[]; rhythms: BodyRhythmRow[] } {
+    return {
+      meters: [
+        meterState(hygieneDef, {
+          valueFixedPoint: 9_000,
+          lastIntegratedAtStorySecond: 0,
+          ...overrides.meterOverrides,
+        }),
+      ],
+      modifiers: overrides.modifiers ?? [],
+      rhythms: overrides.rhythms ?? [],
+    };
+  }
+
+  it("resolves the registry definition and drifts a rate meter to the target second", () => {
+    const view = buildMeterView(hygieneRows(), "hygiene", 7_200);
+    expect(view?.definition.key).toBe("hygiene");
+    // Registry hygiene is linear 150/h toward 0: 9000 − ⌊150·7200/3600⌋ = 8700.
+    expect(view && integrateMeterValue(view, 7_200)).toBe(8_700);
+  });
+
+  it("returns undefined for an unknown meter or an unresolvable registry version", () => {
+    expect(buildMeterView(hygieneRows(), "no-such-meter", 7_200)).toBeUndefined();
+    // A stored registryVersion outside the known enum degrades to undefined (the
+    // read hides the chip) rather than throwing — the fail-closed boundary.
+    const bogus: BodyMeterState = {
+      ...meterState(hygieneDef),
+      registryVersion: "body-v999" as BodyMeterState["registryVersion"],
+    };
+    expect(buildMeterView({ meters: [bogus], modifiers: [], rhythms: [] }, "hygiene", 7_200)).toBeUndefined();
+  });
+
+  it("attaches only this meter's modifiers and folds a suspend boundary into integration", () => {
+    const suspend = modifier({
+      id: "mod-suspend",
+      meterKey: "hygiene",
+      operation: { kind: "suspend" },
+      validFromStorySecond: 1_000,
+      validUntilStorySecond: 2_000,
+    });
+    const foreign = modifier({ id: "mod-energy", meterKey: "energy", operation: { kind: "suspend" } });
+    const view = buildMeterView(hygieneRows({ modifiers: [suspend, foreign] }), "hygiene", 3_000);
+    // The energy modifier is filtered out — buildMeterView scopes to the meter.
+    expect(view?.modifiers.map((row) => row.id)).toEqual(["mod-suspend"]);
+    const withSuspend = view ? integrateMeterValue(view, 3_000) : -1;
+    const drifted = buildMeterView(hygieneRows(), "hygiene", 3_000);
+    const withoutSuspend = drifted ? integrateMeterValue(drifted, 3_000) : -1;
+    // The suspended middle hour spares that hour's drain.
+    expect(withSuspend).toBe(8_918);
+    expect(withoutSuspend).toBe(8_875);
+    expect(withSuspend).toBeGreaterThan(withoutSuspend);
+  });
+
+  it("folds a rhythm self-care jump (wash) as a scheduled adjustment", () => {
+    const wash = bodyRhythmRowSchema.parse({
+      actorId: ACTOR,
+      kind: "wash",
+      startMinuteOfDay: 400,
+      endMinuteOfDay: 420, // 07:00 → the crossing lands at 25 200s.
+    });
+    const view = buildMeterView(hygieneRows({ rhythms: [wash] }), "hygiene", 30_000);
+    expect(view?.scheduledAdjustments).toEqual([
+      { atStorySecond: 25_200, operation: { kind: "set", valueFixedPoint: HYGIENE_WASH_SET_FIXED_POINT } },
+    ]);
+    // At 26 000s the wash has just SET hygiene to 9 500 (at 25 200) then drifted
+    // ~800s — far above the pure-drift trajectory that never washed.
+    const washed = view ? integrateMeterValue(view, 26_000) : -1;
+    const driftOnly = buildMeterView(hygieneRows(), "hygiene", 30_000);
+    const unwashed = driftOnly ? integrateMeterValue(driftOnly, 26_000) : -1;
+    expect(washed).toBeGreaterThan(unwashed);
+    expect(washed).toBeLessThanOrEqual(HYGIENE_WASH_SET_FIXED_POINT);
   });
 });
 
