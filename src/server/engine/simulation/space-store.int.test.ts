@@ -9,7 +9,8 @@ import {
   simulationHash,
   spaceSeedForReplay,
 } from "@/lib/simulation";
-import { db, simEvents, simJourneys, simPhysicalLoci, simTriggers, simWorlds } from "@/server/db";
+import { db, simEvents, simJourneys, simPhysicalLoci, simTimeJobs, simTriggers, simWorlds } from "@/server/db";
+import { moveArrivalTarget, settleStrandedInTransit } from "@/server/engine";
 import { forkBranch } from "./branch-store";
 import { seedDurableMaterialBranch } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
@@ -214,6 +215,54 @@ describe.runIf(ready)("E3.1 durable space authority", () => {
     expect(trigger?.kind).toBe("journey_arrival_due");
     expect(trigger?.state).toBe("pending");
     expect(trigger?.dueStorySecond).toBe(SEED_SECOND + WALK_AB + WALK_BC);
+  });
+
+  it("moveArrivalTarget follows expectedArrivalAt, not earliestArrivalAt, once a delay makes them diverge (A7)", async () => {
+    const ids = await seedSpaceCase();
+    const result = await submitDurableMoveActor(moveCommand(ids));
+    expect(result.status).toBe("accepted");
+    if (result.status !== "accepted") return;
+
+    const earliest = SEED_SECOND + WALK_AB + WALK_BC;
+    const before = await readDurableSpaceBranch(ids.branchId);
+    // A fresh journey: planRoute funds no uncertainty, so both bounds agree AND the arrival
+    // trigger's due second equals both (verified in the test above at `dueStorySecond`).
+    expect(before.journeys[0]?.earliestArrivalAt).toBe(earliest);
+    expect(before.journeys[0]?.expectedArrivalAt).toBe(earliest);
+    expect(await moveArrivalTarget(ids.branchId, ids.actorId)).toBe(earliest);
+
+    // Simulate a journey_delayed: expected slips 200s past earliest (the divergence A7 disarms;
+    // the schema check `expected >= earliest` permits it). The arrival trigger is due at
+    // expectedArrivalAt, so the drain target MUST follow expected — draining only to `earliest`
+    // would stop before the arrival fires and strand the traveller in transit.
+    const delayed = earliest + 200;
+    await db().update(simJourneys).set({ expectedArrivalAt: delayed }).where(eq(simJourneys.branchId, ids.branchId));
+
+    const after = await readDurableSpaceBranch(ids.branchId);
+    expect(after.journeys[0]?.earliestArrivalAt).toBe(earliest);
+    expect(after.journeys[0]?.expectedArrivalAt).toBe(delayed);
+    expect(await moveArrivalTarget(ids.branchId, ids.actorId)).toBe(delayed);
+  });
+
+  it("escalates a durable time job when a traveller is still in transit after the drain (A7 recovery)", async () => {
+    const ids = await seedSpaceCase();
+    await submitDurableMoveActor(moveCommand(ids)); // actor in_transit; clock still at SEED_SECOND
+    const earliest = SEED_SECOND + WALK_AB + WALK_BC;
+    const delayed = earliest + 200;
+    // A delay slips the expected arrival past where any in-request drain reached (here: no drain,
+    // so the clock is still at SEED, well short of `delayed`) — the actor is genuinely stranded.
+    await db().update(simJourneys).set({ expectedArrivalAt: delayed }).where(eq(simJourneys.branchId, ids.branchId));
+
+    const space = await readDurableSpaceBranch(ids.branchId);
+    const chatId = newId();
+    await settleStrandedInTransit({ site: "travel", space, actorIds: [ids.actorId], chatId });
+
+    // A7 recovery: a durable time job was escalated to the expected arrival so the runner settles
+    // it offline (the enqueue is awaited before the detached kick, so the row exists here).
+    const [job] = await db().select().from(simTimeJobs).where(eq(simTimeJobs.branchId, ids.branchId));
+    expect(job).toBeDefined();
+    expect(job?.targetStorySecond).toBe(delayed);
+    expect(job?.chatId).toBe(chatId);
   });
 
   it("arrives through the scheduler drain, stamping the arrival at its due second", async () => {

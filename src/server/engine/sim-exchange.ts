@@ -35,7 +35,9 @@ import { resolveChatPersona } from "../players";
 import { readChatEngineAuthority } from "./chat-authority";
 import { isWorldBeatMeta, readBranchClock, writeWorldBeat, type SimChatClock } from "./sim-beats";
 import type { CompositionFallbackCode, CompositionFallbackSite } from "@/contracts/turns/composition-fallback";
+import type { SpaceProjection } from "@/contracts/simulation/space";
 import { CompositionFallbackCollector } from "./composition-diagnostics";
+import { escalateToTimeJob } from "./sim-time-jobs";
 import { emptyReplyTakes, persistAssistantReply, pushReplyTake, replyTakesSchema } from "./chat-pipeline";
 import { enqueueChatSummary, loadChatSummary } from "./chat-summary";
 import { log } from "../log";
@@ -343,32 +345,52 @@ export async function moveArrivalTarget(branchId: string, actorId: string): Prom
 }
 
 /**
- * A7 safety net (ruling 2): after a travel drain, verify each traveller actually left transit.
- * If one is still `in_transit`, record the `still_in_transit` C15 diagnostic and warn — the
- * arrival settles on a later beat (a subsequent turn's advance pushes the clock past the
- * trigger), never a stuck character or a dead turn (docs/resilience.md). This reuses the loci
- * a caller already read when it can, so the check is one shared line at each choreography site.
- *
- * The review upgrade — ESCALATE a still-in-transit actor to an A5 durable time job that resumes
- * until arrival — lands with A5 slice 2 (the job runner). Until then this is observability plus
- * the natural next-turn settle; the diagnostic is what makes a genuine strand visible.
+ * A7 safety net (ruling 2), with the review's recovery upgrade: after a travel drain, verify each
+ * traveller actually left transit. If one is still `in_transit`, record the `still_in_transit`
+ * C15 diagnostic, warn, and — the recovery, not just observability — **escalate a durable time
+ * job** targeting the latest stranded arrival, so the runner drains the branch there and fires
+ * the arrival OFFLINE, never a stuck character or a dead turn (docs/resilience.md). When the clock
+ * has already reached those arrivals (a poison arrival trigger that can never fire), no job is
+ * enqueued — the C15 record is what surfaces that for repair.
  */
-export function noteStillInTransit(
-  fallbacks: CompositionFallbackCollector | undefined,
-  site: CompositionFallbackSite,
-  loci: readonly { actorId: string; kind: string }[],
-  actorIds: readonly string[],
-  chatId: string,
-): void {
-  const stranded = actorIds.filter((actorId) =>
-    loci.some((locus) => locus.actorId === actorId && locus.kind === "in_transit"),
+export async function settleStrandedInTransit(input: {
+  fallbacks?: CompositionFallbackCollector;
+  site: CompositionFallbackSite;
+  space: SpaceProjection;
+  actorIds: readonly string[];
+  chatId: string;
+}): Promise<void> {
+  const { space, chatId } = input;
+  const stranded = input.actorIds.filter((actorId) =>
+    space.loci.some((locus) => locus.actorId === actorId && locus.kind === "in_transit"),
   );
   if (stranded.length === 0) return;
-  log.warn("engine.sim.arrival", "actor still in transit after arrival drain; settles on a later beat", {
+  log.warn("engine.sim.arrival", "actor still in transit after arrival drain; escalating to a durable job", {
     chatId,
     stranded,
   });
-  fallbacks?.note({ site, code: "still_in_transit", detail: `stranded: ${stranded.join(",")}` });
+  input.fallbacks?.note({ site: input.site, code: "still_in_transit", detail: `stranded: ${stranded.join(",")}` });
+
+  // The latest expected arrival among the stranded — the second the branch clock must reach for
+  // every arrival trigger to have fired.
+  const targets = stranded.flatMap((actorId) => {
+    const locus = space.loci.find((l) => l.actorId === actorId && l.kind === "in_transit");
+    const journeyId = locus?.kind === "in_transit" ? locus.journeyId : undefined;
+    const journey = journeyId ? space.journeys.find((j) => j.id === journeyId) : undefined;
+    return journey ? [journey.expectedArrivalAt] : [];
+  });
+  if (targets.length === 0) return;
+  const target = Math.max(...targets);
+  // Already at/past the arrivals ⇒ the trigger itself failed (poison); a job can't re-fire it, so
+  // the C15 record above is the surfacing — don't enqueue a no-op job.
+  if (target <= space.storySecond) return;
+  await escalateToTimeJob({
+    worldId: space.worldId,
+    branchId: space.branchId,
+    chatId,
+    targetStorySecond: target,
+    reachedStorySecond: space.storySecond,
+  });
 }
 
 /**
@@ -1334,9 +1356,16 @@ async function runSimDepartureTurn(input: {
     log.warn("engine.sim.departure", "arrival drain did not converge", { chatId, reason: drain.shortReason });
   }
   noteDrainDiagnostics(input.fallbacks, "departure", drain);
-  // A7 arrival check: if the player never left transit, record it and let a later beat settle it.
+  // A7 arrival check: if the player never left transit, record it and escalate a durable job to
+  // finish reaching the arrival (recovery, not just a next-turn settle).
   const departureSettled = await readDurableSpaceBranch(branchId);
-  noteStillInTransit(input.fallbacks, "departure", departureSettled.loci, [playerActorId], chatId);
+  await settleStrandedInTransit({
+    ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
+    site: "departure",
+    space: departureSettled,
+    actorIds: [playerActorId],
+    chatId,
+  });
 
   // 4) ONE traveled beat, phrased with the parting when a scene was ended.
   await writeWorldBeat({ chatId, branchId, kind: "traveled", destinationLabel: toLabel, parted: plan.parted });
@@ -1545,13 +1574,13 @@ export async function runAccompanyTogether(input: {
   // A7 arrival check (read settled ONCE, before the beat, so both actors' in-transit state and
   // `arrived` come from the same read and any still_in_transit code lands on the beat too).
   const settled = await readDurableSpaceBranch(branchId);
-  noteStillInTransit(
-    input.fallbacks,
-    "accompany",
-    settled.loci,
-    together ? [playerActorId, primaryActorId] : [playerActorId],
+  await settleStrandedInTransit({
+    ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
+    site: "accompany",
+    space: settled,
+    actorIds: together ? [playerActorId, primaryActorId] : [playerActorId],
     chatId,
-  );
+  });
 
   // 5) ONE world beat — "together" on a real co-travel, else the plain traveled beat.
   //    C15: stamp any codes this choreography collected onto the beat's meta (surface a).
