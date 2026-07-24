@@ -2,6 +2,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { simulationActionDefinitionSchema } from "@/contracts/simulation/activities";
 import { METER_FIXED_POINT_ONE } from "@/contracts/simulation/bodies";
 import type { PhysicalLocus } from "@/contracts/simulation/space";
+import { buildMeterView, integrateMeterValue } from "@/lib/simulation/bodies";
 import { isStandingCoPresentEngagement } from "@/lib/simulation/engagements";
 import { humanizeId } from "@/lib/simulation/humanize";
 import { parseOr } from "@/lib/parse";
@@ -29,9 +30,9 @@ import {
 import { readChatEngineAuthority } from "./chat-authority";
 import { log } from "../log";
 import {
+  loadActorBody,
   loadAuthoredPriorWeights,
   loadDyadLedgerEntries,
-  readDurableBodies,
   readDurableEngagements,
   readDurableSpaceBranch,
 } from "./simulation";
@@ -101,34 +102,45 @@ export async function readSimChatPresence(chatId: string): Promise<SimChatPresen
   ) {
     return null;
   }
-  const rows = await db()
-    .select({ actorId: simPhysicalLoci.actorId, kind: simPhysicalLoci.kind, zoneId: simPhysicalLoci.zoneId })
-    .from(simPhysicalLoci)
-    .where(
-      and(
-        eq(simPhysicalLoci.branchId, authority.simBranchId),
-        inArray(simPhysicalLoci.actorId, [authority.simPlayerActorId, authority.simPrimaryActorId]),
-      ),
-    );
-  const player = rows.find((row) => row.actorId === authority.simPlayerActorId);
-  const primary = rows.find((row) => row.actorId === authority.simPrimaryActorId);
-  if (!player || !primary) return null;
-  // Resolve the primary's zone phrase only when it can matter (not co-present) —
-  // the shared decision below turns it into present / on-the-move / elsewhere.
-  const coPresent = player.kind === "at" && primary.kind === "at" && primary.zoneId === player.zoneId;
-  let primaryZonePhrase = "elsewhere";
-  if (!coPresent && primary.kind === "at" && primary.zoneId !== null) {
-    const [zone] = await db()
-      .select({ kind: simZones.kind })
-      .from(simZones)
-      .where(and(eq(simZones.branchId, authority.simBranchId), eq(simZones.zoneId, primary.zoneId)));
-    primaryZonePhrase = (zone && ZONE_KIND_LABELS[zone.kind]) ?? "elsewhere";
+  const branchId = authority.simBranchId;
+  const playerActorId = authority.simPlayerActorId;
+  const primaryActorId = authority.simPrimaryActorId;
+  try {
+    const rows = await db()
+      .select({ actorId: simPhysicalLoci.actorId, kind: simPhysicalLoci.kind, zoneId: simPhysicalLoci.zoneId })
+      .from(simPhysicalLoci)
+      .where(
+        and(
+          eq(simPhysicalLoci.branchId, branchId),
+          inArray(simPhysicalLoci.actorId, [playerActorId, primaryActorId]),
+        ),
+      );
+    const player = rows.find((row) => row.actorId === playerActorId);
+    const primary = rows.find((row) => row.actorId === primaryActorId);
+    if (!player || !primary) return null;
+    // Resolve the primary's zone phrase only when it can matter (not co-present) —
+    // the shared decision below turns it into present / on-the-move / elsewhere.
+    const coPresent = player.kind === "at" && primary.kind === "at" && primary.zoneId === player.zoneId;
+    let primaryZonePhrase = "elsewhere";
+    if (!coPresent && primary.kind === "at" && primary.zoneId !== null) {
+      const [zone] = await db()
+        .select({ kind: simZones.kind })
+        .from(simZones)
+        .where(and(eq(simZones.branchId, branchId), eq(simZones.zoneId, primary.zoneId)));
+      primaryZonePhrase = (zone && ZONE_KIND_LABELS[zone.kind]) ?? "elsewhere";
+    }
+    return actorWhereabouts({
+      actorLocus: { kind: primary.kind, zoneId: primary.zoneId },
+      playerLocus: { kind: player.kind, zoneId: player.zoneId },
+      zonePhraseOf: () => primaryZonePhrase,
+    });
+  } catch (error) {
+    log.warn("engine.sim", "presence read degraded to null", {
+      chatId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
   }
-  return actorWhereabouts({
-    actorLocus: { kind: primary.kind, zoneId: primary.zoneId },
-    playerLocus: { kind: player.kind, zoneId: player.zoneId },
-    zonePhraseOf: () => primaryZonePhrase,
-  });
 }
 
 /**
@@ -267,8 +279,13 @@ export async function readSimChatWorld(chatId: string): Promise<SimChatWorld | n
 /**
  * Slice 4: the primary actor's body meters from the ruling-15 substrate, on
  * the chat's 0..1 scale — the strip's mood/meter chips derive from THESE for
- * a routed chat. Stored values (integrate-on-read is the named refinement);
- * null for legacy/shadow lanes or when the mirror actor has no meters.
+ * a routed chat. Integrated on read (sim-read-seam-guards.plan.md slice 2): each
+ * meter drifts from its last material write to the branch clock through the
+ * shared `buildMeterView` seam (modifiers + §25.5 self-care folded in, exactly
+ * as the command path integrates), so a chip that has drifted for hours reads
+ * NOW, not as of its last event. Null for legacy/shadow lanes or when the
+ * mirror actor has no meters; degrades to null (a hidden chip, never a 500) on
+ * any internal throw.
  */
 export async function readSimChatMeters(chatId: string): Promise<Record<string, number> | null> {
   const authority = await readChatEngineAuthority(chatId);
@@ -281,10 +298,36 @@ export async function readSimChatMeters(chatId: string): Promise<Record<string, 
   ) {
     return null;
   }
-  const bodies = await readDurableBodies(authority.simBranchId);
-  const meters = bodies.meters.filter((meter) => meter.actorId === authority.simPrimaryActorId);
-  if (meters.length === 0) return null;
-  return Object.fromEntries(meters.map((meter) => [meter.meterKey, meter.valueFixedPoint / METER_FIXED_POINT_ONE]));
+  const branchId = authority.simBranchId;
+  const primaryActorId = authority.simPrimaryActorId;
+  try {
+    // The branch clock is the integrate target — a narrower per-actor load
+    // (WITH rhythms, unlike the branch projection) is all the strip needs.
+    const [branch] = await db()
+      .select({ storySecond: simBranches.storySecond })
+      .from(simBranches)
+      .where(eq(simBranches.id, branchId));
+    if (!branch) return null;
+    const storySecond = branch.storySecond;
+    const body = await loadActorBody(db(), branchId, primaryActorId);
+    if (body.meters.length === 0) return null;
+    const integrated: Record<string, number> = {};
+    for (const meter of body.meters) {
+      // Integrate only to now — never the future — so the self-care horizon
+      // need only reach the branch clock.
+      const view = buildMeterView(body, meter.meterKey, storySecond);
+      if (!view) continue;
+      integrated[meter.meterKey] = integrateMeterValue(view, storySecond) / METER_FIXED_POINT_ONE;
+    }
+    if (Object.keys(integrated).length === 0) return null;
+    return integrated;
+  } catch (error) {
+    log.warn("engine.sim", "meters read degraded to null", {
+      chatId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 /**
@@ -326,30 +369,40 @@ export async function readSimChatRelationship(chatId: string): Promise<SimChatRe
     return null;
   }
   const branchId = authority.simBranchId;
-  const [branch] = await db()
-    .select({ storySecond: simBranches.storySecond })
-    .from(simBranches)
-    .where(eq(simBranches.id, branchId));
-  if (!branch) return null;
-  const [towardPrimary, towardPlayer] = await Promise.all([
-    loadDyadLedgerEntries(db(), branchId, authority.simPlayerActorId, authority.simPrimaryActorId),
-    loadDyadLedgerEntries(db(), branchId, authority.simPrimaryActorId, authority.simPlayerActorId),
-  ]);
-  if (towardPrimary.length === 0 && towardPlayer.length === 0) return null;
-  const authoredPriorWeights = await loadAuthoredPriorWeights(db(), branchId, towardPrimary);
-  const read = deriveRelationshipRead({
-    entries: towardPrimary,
-    subjectActorId: authority.simPrimaryActorId,
-    aboutActorId: authority.simPlayerActorId,
-    atStorySecond: branch.storySecond,
-    authoredPriorWeights,
-  });
-  const priorCount =
-    towardPrimary.filter((entry) => entry.kind === "authored_prior").length +
-    towardPlayer.filter((entry) => entry.kind === "authored_prior").length;
-  const livedEntries = towardPrimary.length + towardPlayer.length - priorCount;
-  const familiarity = Math.min(100, (priorCount > 0 ? 40 : 0) + livedEntries * 6);
-  return { regard: regardFromRead(read), familiarity };
+  const playerActorId = authority.simPlayerActorId;
+  const primaryActorId = authority.simPrimaryActorId;
+  try {
+    const [branch] = await db()
+      .select({ storySecond: simBranches.storySecond })
+      .from(simBranches)
+      .where(eq(simBranches.id, branchId));
+    if (!branch) return null;
+    const [towardPrimary, towardPlayer] = await Promise.all([
+      loadDyadLedgerEntries(db(), branchId, playerActorId, primaryActorId),
+      loadDyadLedgerEntries(db(), branchId, primaryActorId, playerActorId),
+    ]);
+    if (towardPrimary.length === 0 && towardPlayer.length === 0) return null;
+    const authoredPriorWeights = await loadAuthoredPriorWeights(db(), branchId, towardPrimary);
+    const read = deriveRelationshipRead({
+      entries: towardPrimary,
+      subjectActorId: primaryActorId,
+      aboutActorId: playerActorId,
+      atStorySecond: branch.storySecond,
+      authoredPriorWeights,
+    });
+    const priorCount =
+      towardPrimary.filter((entry) => entry.kind === "authored_prior").length +
+      towardPlayer.filter((entry) => entry.kind === "authored_prior").length;
+    const livedEntries = towardPrimary.length + towardPlayer.length - priorCount;
+    const familiarity = Math.min(100, (priorCount > 0 ? 40 : 0) + livedEntries * 6);
+    return { regard: regardFromRead(read), familiarity };
+  } catch (error) {
+    log.warn("engine.sim", "relationship read degraded to null", {
+      chatId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 /**
@@ -368,20 +421,30 @@ export async function readSimChatOutfit(chatId: string): Promise<string | null> 
   ) {
     return null;
   }
-  const rows = await db()
-    .select({ name: simItems.name })
-    .from(simItemHoldings)
-    .innerJoin(
-      simItems,
-      and(eq(simItems.branchId, simItemHoldings.branchId), eq(simItems.itemId, simItemHoldings.itemId)),
-    )
-    .where(
-      and(
-        eq(simItemHoldings.branchId, authority.simBranchId),
-        eq(simItemHoldings.locusKind, "worn"),
-        eq(simItemHoldings.actorId, authority.simPrimaryActorId),
-      ),
-    )
-    .orderBy(asc(simItemHoldings.slotKey));
-  return rows.map((row) => row.name).join(", ");
+  const branchId = authority.simBranchId;
+  const primaryActorId = authority.simPrimaryActorId;
+  try {
+    const rows = await db()
+      .select({ name: simItems.name })
+      .from(simItemHoldings)
+      .innerJoin(
+        simItems,
+        and(eq(simItems.branchId, simItemHoldings.branchId), eq(simItems.itemId, simItemHoldings.itemId)),
+      )
+      .where(
+        and(
+          eq(simItemHoldings.branchId, branchId),
+          eq(simItemHoldings.locusKind, "worn"),
+          eq(simItemHoldings.actorId, primaryActorId),
+        ),
+      )
+      .orderBy(asc(simItemHoldings.slotKey));
+    return rows.map((row) => row.name).join(", ");
+  } catch (error) {
+    log.warn("engine.sim", "outfit read degraded to null", {
+      chatId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }

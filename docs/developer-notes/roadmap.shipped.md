@@ -5,6 +5,20 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Sim read hardening — guard the seams, read them fresh, read them once** —
+  [sim-read-seam-guards.plan.md](sim-read-seam-guards.plan.md) — 2026-07-24 —
+  graduated + built same day (backlog C14+C16). The four successor state-read
+  seams (`readSimChatPresence/Meters/Relationship/Outfit`) now degrade to `null`
+  + a per-seam `engine.sim` diagnostic instead of 500ing the whole state strip;
+  meters integrate to the branch clock **on read** (no longer frozen at the last
+  body event) via an extracted shared `buildMeterView` that also dedups the two
+  command stores; the composed departure/accompany loop stops re-reading the same
+  space projection (two genuine re-reads collapsed, mutation-crossing reads left
+  with reasons) with two pure step-planners extracted and the first composed-flow
+  integration coverage. Built by two Opus subagents; five local gates green
+  (2534 pure). Leftovers: the integration tests gate in CI (no local Postgres);
+  Fly UI verification pending.
+
 - **Drain hardening — honest, durable, correctly-stamped time advancement
   (COMPLETE)** — [drain-hardening.plan.md](finished/drain-hardening.plan.md) ·
   engine.spec §39 rulings 22–25 — 2026-07-23 — all of A5+A6+A7+C15, built,

@@ -1,8 +1,13 @@
 # Sim read hardening — guard the seams, read them fresh, read them once
 
-Status: next (graduated 2026-07-24 from successor-engine backlog items **C14**
-resilience guards + meters-staleness and **C16** turn-loop read consolidation —
-C16 folded in per owner ruling. Rulings recorded under §Rulings.)
+Status: shipped — 2026-07-24 (graduated same day from successor-engine backlog
+items **C14** resilience guards + meters-staleness and **C16** turn-loop read
+consolidation — C16 folded in per owner ruling; rulings under §Rulings. All four
+slices built by two Opus subagents; five local gates green —
+lint/cycles/typecheck/**2534 pure tests**/jscpd. **Leftovers:** the degradation,
+integrate-on-read, and composed-flow **integration** tests gate in CI only (no
+local Postgres at ship time); Fly UI verification pending; and Unit B flagged a
+`route.ts:275` per-request authority double-read as an out-of-scope follow-up.)
 
 ## What
 

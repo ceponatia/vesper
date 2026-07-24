@@ -41,17 +41,6 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
-- **Sim read hardening — guard the seams, read them fresh, read them once** —
-  [sim-read-seam-guards.plan.md](sim-read-seam-guards.plan.md) (next; graduated
-  2026-07-24 from successor-engine backlog **C14+C16**). Top of Next as a
-  HIGH-severity resilience fix: four successor state-read seams 500 the whole
-  state strip on one malformed row (`docs/resilience.md` §7 violation). Also
-  integrate-on-read meters (fixes the strip freezing at the last body event —
-  the [physiology.plan.md](deferred/physiology.plan.md) prerequisite) and the
-  folded-in turn-loop read consolidation + first composed-flow integration
-  coverage (C16). Four slices; `sim-surfaces.ts` (1–2) and `sim-exchange.ts`
-  (3–4) ship independently.
-
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
   [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly
   optional** (owner ruling 2026-07-21 — recorded in

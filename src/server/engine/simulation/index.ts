@@ -117,6 +117,7 @@ export {
   type KnowledgeStoreOptions,
 } from "./knowledge-store";
 export {
+  loadActorBody,
   readDurableBodies,
   seedDurableBodyRhythms,
   submitDurableApplyBodySource,

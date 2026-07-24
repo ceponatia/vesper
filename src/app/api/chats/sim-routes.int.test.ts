@@ -38,6 +38,7 @@ import {
   ROLLOUT_REST_ACTION_ID,
   ROLLOUT_WORLD_ID,
   ROLLOUT_ZONES,
+  readDurableSpaceBranch,
   seedRolloutTestWorld,
   setChatEngineAuthority,
 } from "@/server/engine";
@@ -309,5 +310,99 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
       ctx(ids.chat),
     );
     expect(legacySkip.status).toBe(409);
+  });
+
+  // sim-read-seam-guards.plan.md slice 4 (folded C16) — the composed choreography
+  // the turn-loop read consolidation (slice 3) must preserve byte-for-byte:
+  // walk-with-me → co-present render at the destination, a natural-language
+  // departure → solo render at the arrival, and a primary-absent solo turn that
+  // still advances time. Positions + render kind (a committed cutId vs. the empty
+  // solo cutId) + the choreography's world beats pin the behavior. AI_FAKE renders
+  // the deterministic fallback, so there are zero live model calls.
+  it("composes walk-with-me, a natural-language departure, and a solo turn end to end", async () => {
+    // A fresh chat mapped to the SAME branch + Mara/Ana pair. The case above left
+    // both at home, co-present, pre-bedtime — the starting state this needs (only
+    // these commands move the pair; Ana's routine is meal/sleep, never travel).
+    const created = await chatsCreate(
+      jsonReq("/api/chats", { characterIds: [ids.characterId], memory: "fresh" }),
+      { params: Promise.resolve({}) },
+    );
+    expect(created.status).toBe(201);
+    const chat = ((await created.json()) as { id: string }).id;
+    await setChatEngineAuthority({
+      chatId: chat,
+      byUserId: ids.user,
+      authority: "successor_narrative_view",
+      simBranchId: ROLLOUT_BRANCH_ID,
+      simPlayerActorId: ROLLOUT_ACTORS.mara,
+      simPrimaryActorId: ROLLOUT_ACTORS.ana,
+    });
+
+    const zoneOf = (space: Awaited<ReturnType<typeof readDurableSpaceBranch>>, actorId: string): string | null => {
+      const locus = space.loci.find((l) => l.actorId === actorId);
+      return locus?.kind === "at" ? locus.zoneId : null;
+    };
+    const contentsOf = async (): Promise<string[]> =>
+      (
+        await db()
+          .select({ content: characterChatMessages.content })
+          .from(characterChatMessages)
+          .where(eq(characterChatMessages.chatId, chat))
+      ).map((row) => row.content);
+
+    // Precondition: the pair is co-present at home.
+    const start = await readDurableSpaceBranch(ROLLOUT_BRANCH_ID);
+    expect(zoneOf(start, ROLLOUT_ACTORS.mara)).toBe(ROLLOUT_ZONES.home);
+    expect(zoneOf(start, ROLLOUT_ACTORS.ana)).toBe(ROLLOUT_ZONES.home);
+
+    // 1) WALK-WITH-ME: an admitted accompany the co-present primary ACCEPTS. Both
+    //    travel home → square; co-presence restored there ⇒ the CO-PRESENT cut (a
+    //    real committed cutId), and a `together` beat lands in the transcript.
+    const together = await simTurn(
+      jsonReq(`/api/chats/${chat}/sim-turn`, { message: "We walk to the town square together." }),
+      ctx(chat),
+    );
+    expect(together.status).toBe(200);
+    const togetherBody = (await together.json()) as { cutId: string; prose: string };
+    expect(togetherBody.cutId.length).toBeGreaterThan(0); // co-present render, not solo
+    const afterAccompany = await readDurableSpaceBranch(ROLLOUT_BRANCH_ID);
+    expect(zoneOf(afterAccompany, ROLLOUT_ACTORS.mara)).toBe(ROLLOUT_ZONES.square);
+    expect(zoneOf(afterAccompany, ROLLOUT_ACTORS.ana)).toBe(ROLLOUT_ZONES.square);
+    expect((await contentsOf()).some((line) => line.includes("together"))).toBe(true);
+
+    // 2) NATURAL-LANGUAGE DEPARTURE: an admitted move while the scene stands ends it
+    //    as a CHOICE, walks Mara square → home ALONE (Ana stays), and renders through
+    //    the SOLO cut (empty cutId) behind a `parted` traveled beat.
+    const depart = await simTurn(
+      jsonReq(`/api/chats/${chat}/sim-turn`, { message: "I walk back home." }),
+      ctx(chat),
+    );
+    expect(depart.status).toBe(200);
+    const departBody = (await depart.json()) as { cutId: string; prose: string };
+    expect(departBody.cutId).toBe(""); // the departure choreography renders via the solo path
+    const afterDeparture = await readDurableSpaceBranch(ROLLOUT_BRANCH_ID);
+    expect(zoneOf(afterDeparture, ROLLOUT_ACTORS.mara)).toBe(ROLLOUT_ZONES.home);
+    expect(zoneOf(afterDeparture, ROLLOUT_ACTORS.ana)).toBe(ROLLOUT_ZONES.square);
+    expect((await contentsOf()).some((line) => line.includes("take your leave"))).toBe(true);
+
+    // 3) SOLO TURN (primary absent): Mara@home, Ana@square. A non-command line runs
+    //    the dual-block solo cut and STILL advances the span (time is the medium).
+    const [beforeSolo] = await db()
+      .select({ storySecond: simBranches.storySecond })
+      .from(simBranches)
+      .where(eq(simBranches.id, ROLLOUT_BRANCH_ID));
+    const solo = await simTurn(
+      jsonReq(`/api/chats/${chat}/sim-turn`, { message: "I tidy up and put the kettle on." }),
+      ctx(chat),
+    );
+    expect(solo.status).toBe(200);
+    const soloBody = (await solo.json()) as { cutId: string; prose: string };
+    expect(soloBody.cutId).toBe(""); // solo render
+    expect(soloBody.prose.length).toBeGreaterThan(0);
+    const [afterSolo] = await db()
+      .select({ storySecond: simBranches.storySecond })
+      .from(simBranches)
+      .where(eq(simBranches.id, ROLLOUT_BRANCH_ID));
+    expect(afterSolo?.storySecond ?? 0).toBeGreaterThan(beforeSolo?.storySecond ?? 0);
   });
 });
