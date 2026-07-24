@@ -1149,6 +1149,54 @@ export const simCommands = pgTable(
   ],
 );
 
+/**
+ * Route-level idempotency for successor sim-commands (command-integrity.plan.md
+ * A1, slice 4). One row per `(chatId, requestId)` — the stable token the client
+ * mints per tap. Under the shared `chat_exchange` lock the route records `started`
+ * BEFORE executing, then `completed` with the full HTTP result (status + body), so
+ * a retry replays the recorded response verbatim instead of re-running the drain or
+ * writing a second world beat. A canonical `(kind, payload)` hash guards a reused
+ * requestId carrying a DIFFERENT action (→ `idempotency_mismatch`). Beats and step
+ * commands carry their own deterministic ids, so a crash between execute and
+ * `completed` still dedupes at the insert when the retry re-executes. This is a
+ * CHAT-scoped replay table, distinct from `sim_commands` (branch-scoped, the
+ * command-runner's own per-envelope dedupe) — one uniform route-level replay path.
+ */
+export const simCommandRequests = pgTable(
+  "sim_command_requests",
+  {
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => characterChats.id, { onDelete: "cascade" }),
+    requestId: text("request_id").notNull(),
+    kind: text("kind").notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    /**
+     * The branch story-clock captured when this request FIRST started — the stable
+     * anchor a relative command (`advance_time`, target = clock + minutes) re-derives
+     * its absolute target from on a crash-remnant re-execution, so a retry lands the
+     * same clock instead of advancing a second time. Null for callers with no branch
+     * clock at record time.
+     */
+    preClockStorySecond: bigint("pre_clock_story_second", { mode: "number" }),
+    state: text("state", { enum: ["started", "completed", "failed"] })
+      .notNull()
+      .default("started"),
+    /** The recorded HTTP result — null until `completed`. */
+    resultStatus: integer("result_status"),
+    resultBody: jsonb("result_body"),
+    /** Result-shape tag (the command kind) for forward-compatible replay interpretation. */
+    schemaTag: text("schema_tag"),
+    startedAt: createdAt(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_command_requests_chat_request_pk", columns: [t.chatId, t.requestId] }),
+    index("sim_command_requests_state_idx").on(t.state, t.startedAt),
+  ],
+);
+
 /** Immutable, schema-versioned successor-engine domain history. */
 export const simEvents = pgTable(
   "sim_events",

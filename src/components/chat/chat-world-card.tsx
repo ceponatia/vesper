@@ -91,6 +91,10 @@ export function ChatWorldCard({
     const result = await chatsApi.simTravel(chatId, dest.zoneId);
     setTravelingZone(null);
     if (!result.ok) {
+      if (result.error.code === "chat_busy") {
+        onWorldChanged();
+        return;
+      }
       toast.push({ title: "Travel failed", description: result.error.message, tone: "error" });
       return;
     }
@@ -111,6 +115,10 @@ export function ChatWorldCard({
     const result = await chatsApi.simTravelTogether(chatId, dest.zoneId);
     setTravelingTogetherZone(null);
     if (!result.ok) {
+      if (result.error.code === "chat_busy") {
+        onWorldChanged();
+        return;
+      }
       toast.push({ title: "Travel failed", description: result.error.message, tone: "error" });
       return;
     }
@@ -131,6 +139,10 @@ export function ChatWorldCard({
     const result = await chatsApi.simGiveItem(chatId, item.itemId);
     setGivingItem(null);
     if (!result.ok) {
+      if (result.error.code === "chat_busy") {
+        onWorldChanged();
+        return;
+      }
       toast.push({ title: "That didn't work", description: result.error.message, tone: "error" });
       return;
     }
@@ -151,6 +163,10 @@ export function ChatWorldCard({
     const result = await chatsApi.simDoActivity(chatId, action.id);
     setActingId(null);
     if (!result.ok) {
+      if (result.error.code === "chat_busy") {
+        onWorldChanged();
+        return;
+      }
       toast.push({ title: "That didn't work", description: result.error.message, tone: "error" });
       return;
     }

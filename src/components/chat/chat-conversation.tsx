@@ -639,7 +639,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     // mode needs text (narration is words) and never carries photos (a player-POV act).
     const narrator = narratorMode && !attachments.length;
     if (narratorMode && !content) return;
-    if ((!content && !attachments.length) || sendingRef.current || !ready || archived || attachBusy) return;
+    // `skipBusy` blocks the composer while a world skip/command is draining — parity
+    // with the world-card chips (which disable on `skipBusy || sending`), so a typed
+    // turn can't race a clock-advance still in flight (command-integrity A1/A2).
+    if ((!content && !attachments.length) || sendingRef.current || !ready || archived || attachBusy || skipBusy) return;
     const attachmentIds = attachments.length ? [...attachments] : undefined;
     setInput("");
     setAttachments([]);

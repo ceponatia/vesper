@@ -81,6 +81,21 @@ export interface AdvanceStoryTimeOptions extends ResolveTriggerOptions {
   maxTriggers?: number;
   /** Wall-clock budget in milliseconds for the drain loop. */
   budgetMs?: number;
+  /**
+   * How `toStorySecond` is treated (A2-1, the world's clock wins):
+   *
+   * - `"exact"` (default) — `toStorySecond` is a firm target. A clock already
+   *   PAST it is a genuine logic bug and throws "Story time cannot move
+   *   backwards". This is the behavior every skip/travel/admin drain relies on.
+   * - `"at_least"` — `toStorySecond` is a floor. The effective target clamps UP
+   *   to the current clock (`max(toStorySecond, current)`), so a turn whose span
+   *   was overtaken by a concurrent drain lands at the drained clock as a LEGAL
+   *   outcome (no throw, no degrade). The normal drain loop then runs against the
+   *   effective target, so anything due through it still fires before the turn
+   *   renders. Only the turn-side advance (`prepareEngagementTurn`,
+   *   `runSimSoloTurn`) opts in.
+   */
+  targetMode?: "exact" | "at_least";
 }
 
 /**
@@ -706,7 +721,8 @@ export async function advanceBranchStoryTime(
 ): Promise<AdvanceStoryTimeOutcome> {
   const database = options.database ?? db();
   const now = options.now ?? new Date();
-  const target = storySecondSchema.parse(toStorySecond);
+  const requestedTarget = storySecondSchema.parse(toStorySecond);
+  const targetMode = options.targetMode ?? "exact";
   const maxTriggers = positiveSafeInteger(options.maxTriggers ?? 1000, "maxTriggers");
   const budgetMs = positiveSafeInteger(options.budgetMs ?? 30_000, "budgetMs");
   const startedAt = Date.now();
@@ -718,6 +734,11 @@ export async function advanceBranchStoryTime(
     .where(eq(simBranches.id, rawBranchId))
     .limit(1);
   if (!start) throw new Error("Cannot advance an unavailable branch");
+  // A2-1: in "at_least" the world's clock wins — an overtaken target clamps UP to
+  // the current clock (never below it), so the backwards guard cannot fire and the
+  // turn lands at the drained clock. In "exact" (every other caller) the target is
+  // firm and a backwards move stays a loud logic-bug throw.
+  const target = targetMode === "at_least" ? Math.max(requestedTarget, start.storySecond) : requestedTarget;
   if (start.storySecond > target) throw new Error("Story time cannot move backwards");
 
   let clock = start.storySecond;

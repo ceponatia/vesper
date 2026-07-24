@@ -707,4 +707,39 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
     expect(rival.status).toBe("rejected");
     if (rival.status === "rejected") expect(rival.code).toBe("participant_already_engaged");
   });
+
+  // command-integrity.plan.md slice 2 (A2). Ruling A2-1 — the world's clock wins.
+  it("lands a co-present turn overtaken by a concurrent drain instead of crashing (A2)", async () => {
+    const ids = await seedCorpusCase();
+    const opened = await submitDurableOpenEngagement(chatCommand(ids), admit);
+    expect(opened.status).toBe("accepted");
+
+    // The race A2 fixes: a skip/travel drain advances the branch clock FAR past where this
+    // co-present turn's span (SEED_SECOND + TURN_SPAN) would land, at the same time the turn
+    // prepares. Before A2-1 the turn's own advance read the drained clock and threw "Story
+    // time cannot move backwards" — which `runCoPresentTurn` surfaces as a reply-less
+    // `lastReplyFailure`. Now the turn's advance is tolerant (`at_least`): whatever the
+    // interleave, the turn clamps to the drained clock and LANDS with a real cut.
+    const farTarget = SEED_SECOND + 86_400;
+    const [drain, turn] = await Promise.all([
+      advanceBranchStoryTime(ids.branchId, farTarget, { workerId: "w-a2-drain" }),
+      prepareEngagementTurn({
+        branchId: ids.branchId,
+        engagementId: chatEngagementId(ids),
+        viewpointActorId: ids.player,
+        spanSeconds: TURN_SPAN,
+        workerId: "w-a2-turn",
+      }),
+    ]);
+
+    // Neither side threw: the drain moved forward (exact guard intact) and the turn landed.
+    expect(drain.status).toBe("advanced");
+    expect(turn.advance.status).toBe("advanced");
+    if (turn.advance.status === "advanced") {
+      // The world's clock won — the turn never lands BELOW its own span target, and in the
+      // raced interleave lands at the far-drained clock. Both are a legal `advanced` outcome.
+      expect(turn.advance.storySecond).toBeGreaterThanOrEqual(SEED_SECOND + TURN_SPAN);
+    }
+    expect(turn.cut.id.length).toBeGreaterThan(0);
+  });
 });

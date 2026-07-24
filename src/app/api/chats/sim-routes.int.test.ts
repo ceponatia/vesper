@@ -32,6 +32,7 @@ vi.mock("@/server/auth", () => ({
 }));
 
 import {
+  advanceBranchStoryTime,
   ROLLOUT_ACTORS,
   ROLLOUT_BRANCH_ID,
   ROLLOUT_KEEPSAKE_ID,
@@ -42,6 +43,7 @@ import {
   seedRolloutTestWorld,
   setChatEngineAuthority,
 } from "@/server/engine";
+import { log } from "@/server/log";
 import { POST as chatsCreate } from "./route";
 import { POST as chatSend } from "./[chatId]/route";
 import { POST as simCommand } from "./[chatId]/sim-command/route";
@@ -404,5 +406,53 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
       .from(simBranches)
       .where(eq(simBranches.id, ROLLOUT_BRANCH_ID));
     expect(afterSolo?.storySecond ?? 0).toBeGreaterThan(beforeSolo?.storySecond ?? 0);
+  });
+
+  // command-integrity.plan.md slice 2 (A2). Ruling A2-1 — the world's clock wins, on the
+  // SOLO path. The two tests above leave Mara@home and Ana@square (not co-present), so a
+  // fresh send here runs the solo turn. Its span advance is now tolerant (`at_least`): a
+  // concurrent skip that overtook the span is a LEGAL race, not a degrade. Before A2 the
+  // race threw inside the solo advance, got caught, and recorded the `simLoadWarn` degrade.
+  it("A2: a solo turn overtaken by a concurrent drain lands and logs no degrade warning", async () => {
+    const created = await chatsCreate(
+      jsonReq("/api/chats", { characterIds: [ids.characterId], memory: "fresh" }),
+      { params: Promise.resolve({}) },
+    );
+    expect(created.status).toBe(201);
+    const chat = ((await created.json()) as { id: string }).id;
+    await setChatEngineAuthority({
+      chatId: chat,
+      byUserId: ids.user,
+      authority: "successor_narrative_view",
+      simBranchId: ROLLOUT_BRANCH_ID,
+      simPlayerActorId: ROLLOUT_ACTORS.mara,
+      simPrimaryActorId: ROLLOUT_ACTORS.ana,
+    });
+
+    const [nowClock] = await db()
+      .select({ storySecond: simBranches.storySecond })
+      .from(simBranches)
+      .where(eq(simBranches.id, ROLLOUT_BRANCH_ID));
+    // A drain target well past the solo turn's 60s span, so the race overtakes it.
+    const farTarget = (nowClock?.storySecond ?? 0) + 3_600;
+
+    const warnSpy = vi.spyOn(log, "warn");
+    try {
+      // The solo turn and the overtaking drain run concurrently. With A2 the turn always
+      // lands (the advance clamps, never throws); before A2 the race threw and was logged.
+      const [, turn] = await Promise.all([
+        advanceBranchStoryTime(ROLLOUT_BRANCH_ID, farTarget, { workerId: "w-a2-solo-drain" }),
+        simTurn(jsonReq(`/api/chats/${chat}/sim-turn`, { message: "I sweep the floor." }), ctx(chat)),
+      ]);
+      expect(turn.status).toBe(200);
+
+      // The pure clock race no longer records the `simLoadWarn` degrade diagnostic.
+      const soloAdvanceWarn = warnSpy.mock.calls.some(
+        (call) => call[1] === "solo story-time advance degraded",
+      );
+      expect(soloAdvanceWarn).toBe(false);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

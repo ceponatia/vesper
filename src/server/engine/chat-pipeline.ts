@@ -95,7 +95,7 @@ import {
   CHAT_STREAM_FIRST_TOKEN_MS,
   CHAT_STREAM_OVERALL_MS,
 } from "./constants";
-import { acquireKeyedLockWithin, tryKeyedLock } from "./keyed-lock";
+import { acquireKeyedLockWithin, CHAT_LOCK_LABEL_REPLY, tryKeyedLock } from "./keyed-lock";
 import {
   buildCharacterChatPromptParts,
   buildCharacterChatSystemPrompt,
@@ -448,10 +448,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     const acquired = await acquireKeyedLockWithin(lockKey, () => chatLockGate, {
       timeoutMs: input.rerunLockWaitMs ?? CHAT_RERUN_LOCK_WAIT_MS,
       onAttempt: () => void stopChatReply(chatId),
+      label: CHAT_LOCK_LABEL_REPLY,
     });
     chatLock = acquired?.held ?? null;
   } else {
-    chatLock = tryKeyedLock(lockKey, () => chatLockGate);
+    chatLock = tryKeyedLock(lockKey, () => chatLockGate, CHAT_LOCK_LABEL_REPLY);
   }
   if (chatLock === null) {
     return { ok: false, code: "chat_busy", message: "a reply is still streaming for this chat; wait for it to finish" };

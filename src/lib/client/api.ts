@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CharacterSheetScope } from "@/lib/character-scopes";
+import { newId } from "@/lib/ids";
 import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
 import { WORLD_BEAT_KINDS } from "@/lib/simulation/world-beat";
 import {
@@ -1124,12 +1125,14 @@ export const chatsApi = {
    * Sim-routed time skip (R3 slice 4, ruling 17): ends the standing scene (the
    * "Later →" wrap) and drains the world's bounded story-time advance. The chat
    * skip affordances call THIS for sim-routed chats, never the legacy timeSkip.
+   * `requestId` is minted per call (command-integrity A1): a resend of the exact
+   * body replays the recorded response instead of advancing time twice.
    */
   simAdvanceTime: (chatId: string, minutes: number) =>
     apiPost(
       z.object({ status: z.string().catch(""), toStorySecond: z.number().nullable().catch(null) }),
       `/api/chats/${chatId}/sim-command`,
-      { kind: "advance_time", minutes },
+      { kind: "advance_time", minutes, requestId: newId() },
     ),
   /**
    * The player-facing world read (world-ui.plan.md slice 1). Degraded / legacy /
@@ -1143,7 +1146,7 @@ export const chatsApi = {
    * (both `ok`); the card refreshes world + chat state on a landing.
    */
   simTravel: (chatId: string, toZoneId: string) =>
-    apiPost(simTravelResultSchema, `/api/chats/${chatId}/sim-command`, { kind: "travel", toZoneId }),
+    apiPost(simTravelResultSchema, `/api/chats/${chatId}/sim-command`, { kind: "travel", toZoneId, requestId: newId() }),
   /**
    * Walk-with-me (world-ui.plan.md slice 5): invite the co-present primary to
    * travel together. The primary's acceptance is NPC agency (a deterministic
@@ -1151,14 +1154,18 @@ export const chatsApi = {
    * public refusal (all `ok`). The card refreshes world + transcript on a landing.
    */
   simTravelTogether: (chatId: string, toZoneId: string) =>
-    apiPost(simTravelTogetherResultSchema, `/api/chats/${chatId}/sim-command`, { kind: "travel_together", toZoneId }),
+    apiPost(simTravelTogetherResultSchema, `/api/chats/${chatId}/sim-command`, {
+      kind: "travel_together",
+      toZoneId,
+      requestId: newId(),
+    }),
   /**
    * Hand the player's held item to the primary (slice 3): a success or the
    * §14.4 public refusal, both at 200. On success the server writes a `gave_item`
    * world beat; the card refreshes the transcript + world.
    */
   simGiveItem: (chatId: string, itemId: string) =>
-    apiPost(simGiveItemResultSchema, `/api/chats/${chatId}/sim-command`, { kind: "give_item", itemId }),
+    apiPost(simGiveItemResultSchema, `/api/chats/${chatId}/sim-command`, { kind: "give_item", itemId, requestId: newId() }),
   /**
    * Perform a skip-style action (slice 3): server-composed `start_activity` + a
    * bounded drain through the activity's duration (the completion trigger fires
@@ -1166,10 +1173,17 @@ export const chatsApi = {
    * on success the server writes a `rested` world beat.
    */
   simDoActivity: (chatId: string, actionDefinitionId: string) =>
-    apiPost(simDoActivityResultSchema, `/api/chats/${chatId}/sim-command`, { kind: "do_activity", actionDefinitionId }),
+    apiPost(simDoActivityResultSchema, `/api/chats/${chatId}/sim-command`, {
+      kind: "do_activity",
+      actionDefinitionId,
+      requestId: newId(),
+    }),
   /** End the pair's standing scene (wiring lands now; its card UI is slice 4). */
   simEndScene: (chatId: string) =>
-    apiPost(z.object({ status: z.string().catch("") }), `/api/chats/${chatId}/sim-command`, { kind: "end_scene" }),
+    apiPost(z.object({ status: z.string().catch("") }), `/api/chats/${chatId}/sim-command`, {
+      kind: "end_scene",
+      requestId: newId(),
+    }),
   /** The Relationship panel payload (spec §7.2–7.4 UI): stage, sparkline, milestones, story so far. */
   relationship: (chatId: string) => apiGet(chatRelationshipSchema, `/api/chats/${chatId}/relationship`),
   // --- Relationship matrix (relationship-model.plan.md slice 6) ---

@@ -28,10 +28,10 @@ Parked 2026-07-23 from the three-lens successor-engine review (correctness ·
 simulation fidelity · resilience/perf), run the day the world-UI slices 0–5
 shipped. Groups: A bugs first · B living world · C hardening & perf.
 
-- A1 [sim-command-idempotency.plan.md](sim-command-idempotency.plan.md)
-- A2 [turn-clock-race.plan.md](turn-clock-race.plan.md)
+- A1 — graduated 2026-07-24 → [../command-integrity.plan.md](../command-integrity.plan.md)
+- A2 — graduated 2026-07-24 → [../command-integrity.plan.md](../command-integrity.plan.md)
 - A3 [solo-retake.plan.md](solo-retake.plan.md)
-- A4 [move-together-atomicity.plan.md](move-together-atomicity.plan.md)
+- A4 — graduated 2026-07-24 → [../command-integrity.plan.md](../command-integrity.plan.md)
 - A5 — graduated 2026-07-23 → [../drain-hardening.honesty.md](../drain-hardening.honesty.md)
 - A6 — graduated 2026-07-23 → [../drain-hardening.backoff.md](../drain-hardening.backoff.md)
 - A7 — graduated 2026-07-23 → [../drain-hardening.arrival.md](../drain-hardening.arrival.md)
@@ -45,9 +45,10 @@ shipped. Groups: A bugs first · B living world · C hardening & perf.
 - C15 — graduated 2026-07-23 → [../drain-hardening.diagnostics.md](../drain-hardening.diagnostics.md)
 - C16 — graduated 2026-07-24 → [../sim-read-seam-guards.plan.md](../sim-read-seam-guards.plan.md) (folded into the C14 plan per owner ruling; stub removed)
 
-Fleshed out (still parked): A1, A2, and A4 (2026-07-23 — rulings recorded in
-each stub), grouped as one command-integrity plan (discussion-complete —
-serialize, survive, atomize). **Graduated:** A5+A6+A7+C15 promoted 2026-07-23
+**Graduated:** A1+A2+A4 promoted 2026-07-24 as the one command-integrity plan
+[../command-integrity.plan.md](../command-integrity.plan.md) (serialize, survive,
+atomize; discussion-complete at parking, all three stubs removed).
+A5+A6+A7+C15 promoted 2026-07-23
 as [../drain-hardening.plan.md](../drain-hardening.plan.md) (owner lifted the
 A7 tripwire parking; the bundle rolls out next — the review that triggered
 promotion also hardened the stubs' job/leasing/poison-trigger design).

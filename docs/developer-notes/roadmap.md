@@ -41,6 +41,17 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
+- **Command integrity — serialize, survive, atomize** —
+  [command-integrity.plan.md](command-integrity.plan.md) (next; graduated
+  2026-07-24 from successor-engine backlog **A1+A2+A4**, discussion-complete).
+  Three successor-command correctness bugs as one plan: a per-chat lock +
+  idempotency so a duplicated skip/travel can't double time or interleave a
+  streaming reply (A1); a tolerant turn-advance so a turn overtaken by a drain
+  lands instead of crashing with "story time cannot move backwards" (A2); and an
+  atomic `move_together` command so walk-with-me can't strand the pair mid-move
+  (A4). Six independently-shippable slices; owner rulings recorded, to be copied
+  into engine.spec §39 at build.
+
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
   [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly
   optional** (owner ruling 2026-07-21 — recorded in

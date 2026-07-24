@@ -610,6 +610,13 @@
       "when": 1784849203414,
       "tag": "0086_dizzy_baron_strucker",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1784917566014,
+      "tag": "0087_magenta_doctor_spectrum",
+      "breakpoints": true
     }
   ]
 }
