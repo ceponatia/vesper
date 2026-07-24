@@ -28,11 +28,12 @@ tombstone here.** None are committed work until then._
   ruling (at `exact` she is mechanically inert forever); remote text/voice when
   apart; successor NPC initiative; named daylight-band skips (the R5 leftover);
   autonomous NPC travel toward commitments.
-- **C. Hardening & perf** — four throwing sim read-seams (one bad row 500s the
-  state strip; plus the 2026-07-23-found meters-staleness defect noted in the
-  stub); redundant projection reads per turn + integration coverage for the
-  composed paths. _C15 (half-failure diagnostics) graduated 2026-07-23 →
-  [drain-hardening.plan.md](drain-hardening.plan.md)._
+- **C. Hardening & perf.** _C14 (four throwing read-seams + the meters-staleness
+  defect) and C16 (redundant projection reads per turn + composed-path
+  integration coverage) graduated 2026-07-24 → [sim-read-seam-guards.plan.md](sim-read-seam-guards.plan.md)
+  — C16 folded into the C14 plan per owner ruling. C15 (half-failure
+  diagnostics) graduated 2026-07-23 → [drain-hardening.plan.md](drain-hardening.plan.md)._
+  Nothing left in this group.
 
 ## World authoring — locations, travel distances & durations
 
