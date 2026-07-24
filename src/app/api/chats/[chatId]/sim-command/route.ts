@@ -97,9 +97,11 @@ const bodySchema = z.discriminatedUnion("kind", [
   // world-ui.plan.md slice 1 (ruling 20): server-composed skip-style travel —
   // move + a bounded advance to the journey's earliest arrival, atomically.
   z.object({ kind: z.literal("travel"), toZoneId: z.string().min(1).max(256), requestId: requestIdBodySchema }).strict(),
-  // world-ui.plan.md slice 5: walk-with-me — invite the co-present primary to
-  // travel together (NPC agency via the deterministic acceptance policy).
-  z.object({ kind: z.literal("travel_together"), toZoneId: z.string().min(1).max(256), requestId: requestIdBodySchema }).strict(),
+  // command-integrity A4: walk-with-me — invite the co-present primary to travel
+  // together. ONE atomic `move_together` command (scene-end + one shared journey +
+  // one arrival) can no longer strand the pair mid-move; NPC agency (the
+  // deterministic acceptance policy) re-runs inside the locked authority view.
+  z.object({ kind: z.literal("move_together"), toZoneId: z.string().min(1).max(256), requestId: requestIdBodySchema }).strict(),
   // world-ui.plan.md slice 3 (ruling 20 spirit): server-composed skip-style
   // activity — start_activity + a bounded drain through its duration, atomically.
   z.object({ kind: z.literal("do_activity"), actionDefinitionId: z.string().min(1).max(256), requestId: requestIdBodySchema }).strict(),
@@ -416,14 +418,13 @@ async function resolveCommand(ctx: CommandContext): Promise<CommandHttpResult> {
       });
       return httpOk({ status: "traveled", toStorySecond: drain.reachedStorySecond, arrived, drainShort: !drain.converged });
     }
-    case "travel_together": {
-      // Walk-with-me (world-ui.plan.md slice 5): the shared choreography runs the
-      // deterministic acceptance policy + composes the scene-end, both moves (the
-      // primary under its OWN npc_policy principal — §14.2), the drain, and the
-      // "together" beat. A decline / refusal returns the §14.4 face at 200 so the
-      // card reads it; a landing refreshes the world + transcript. (A4 will thread
-      // request-derived step keys into this choreography; A1 gives it route-level
-      // replay only.)
+    case "move_together": {
+      // Walk-with-me (command-integrity A4): ONE atomic `move_together` command
+      // (decide inside the locked view + scene-end grace + one shared journey +
+      // one arrival) — the pair can no longer be stranded mid-move. A decline /
+      // refusal returns the §14.4 face at 200 so the card reads it; a landing
+      // refreshes the world + transcript. The command id + world beat carry
+      // request-derived deterministic ids so a retry replays instead of moving twice.
       const [primary] = await db()
         .select({ name: simCharacters.name })
         .from(simCharacters)
@@ -440,6 +441,8 @@ async function resolveCommand(ctx: CommandContext): Promise<CommandHttpResult> {
         // C15: the chip path has no reply to attach codes to; the collector stamps them on the
         // beat runAccompanyTogether writes, and records the durable events rows.
         fallbacks: new CompositionFallbackCollector(chatId),
+        commandId: stepEnvelope("move-together").id,
+        beatDedupeId,
       });
       if (outcome.status === "declined") {
         return httpOk({ status: "rejected", code: "accompany_declined", publicReason: outcome.publicReason, legalAlternatives: outcome.legalAlternatives });

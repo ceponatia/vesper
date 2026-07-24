@@ -1,10 +1,14 @@
 # Command integrity — serialize, survive, atomize
 
-Status: next (graduated 2026-07-24 from successor-engine backlog items **A1**
-[sim-command idempotency + per-chat lock], **A2** [turn-vs-clock race], **A4**
-[`travel_together` atomicity], grouped as one command-integrity plan — the trio
-was discussion-complete at parking, owner rulings recorded below. All code refs
-re-verified against the post-C14/C16 tree on promotion; see §Interactions.)
+Status: shipped — 2026-07-24 (graduated 2026-07-24 from successor-engine backlog
+items **A1** [sim-command idempotency + per-chat lock], **A2** [turn-vs-clock
+race], **A4** [`travel_together` atomicity], grouped as one command-integrity
+plan. All six slices shipped: A1 (slices 1/3/4) + A2 (slice 2) first, then A4
+(slices 5/6 — atomic `move_together`) on 2026-07-24. Owner rulings recorded below
+were the build guide. One deviation, on slice 6: the atomic command has no
+partial-commit window, so the old mid-flight `traveled_alone` divergence is gone
+outright — a bare version conflict degrades to an honest `rejected` (world
+unchanged), not a phantom solo travel.)
 
 Three correctness defects on the successor command surface, one theme: composed
 world-mutations must stay honest under concurrency, crashes, and retries.
@@ -163,13 +167,31 @@ degrades to plain solo travel, recorded via C15).
    int tests: same-key resubmit of `advance_time`/`travel` replays (one drain,
    ONE beat), fresh-key applies again, mid-composition death resumes; crash-point
    tests after each committed step; degradation test asserts fallback + code. (M)
-5. **`move_together` command** (A4) — contract + resolver (locked-view agency
-   re-check, one event batch) + store wiring; pure resolver tests: accept,
-   decline (§14.4 face), claim-conflict refusal, already-in-transit refusal,
-   multi-actor journey landing both. (M)
-6. **Choreography swap** (A4) — walk-with-me (chip + NL twin) submits
-   `move_together`; delete the two-move composition; int test: one shared journey
-   drains to one arrival, co-presence restored at the destination. (M)
+5. **`move_together` command** (A4) — **shipped 2026-07-24.** New `move_together`
+   sim-command contract (`contracts/simulation/space.ts`) + pure resolver
+   (`lib/simulation/move-together.ts`, re-running `decideAccompany` inside the
+   locked view; ONE event batch = engagement_ended? + journey_planned[both] +
+   actor_departed + trigger_scheduled via an extracted shared `buildJourneyBatch`
+   that `resolveMoveActor` now reuses) + durable store
+   (`server/engine/simulation/move-together-store.ts` on the `runSimulationCommand`
+   shell). Route body gains a `move_together` variant carrying `requestId` +
+   request-derived step/beat ids (A1 parity). Pure tests: accept (with/without a
+   standing scene), decline §14.4 face (body-claim + firm-commitment), the refusal
+   taxonomy (not_copresent / in-transit / unauthorized §14.2 / already-there), and
+   the shared journey landing BOTH via `resolveJourneyArrival`. NO migration (reuses
+   the journey model + existing event types). (M)
+6. **Choreography swap** (A4) — **shipped 2026-07-24.** `runAccompanyTogether`
+   rewritten to submit the ONE atomic `move_together` (the two separate
+   `submitDurableMoveActor` calls + the mid-flight `traveled_alone` divergence +
+   the pre-commit `decideAccompany`/`end_engagement` are deleted); it now only
+   settles time (drain to the single journey's arrival, `settleStrandedInTransit`
+   kept, one `together` beat). The chip (`chat-world-card.tsx` → new
+   `chatsApi.simMoveTogether`) and the NL twin (`runSimAccompanyTurn`) both route
+   through it. Int test: one shared journey drains to one arrival, co-presence
+   restored; atomicity (both-or-neither) closes the old crash window; branch-level
+   replay. Deviation: the atomic command has no partial-commit window, so a bare
+   version conflict degrades to an honest `rejected` (world unchanged) with the
+   existing C15 note — not a phantom solo travel. (M)
 
 ## Testing
 

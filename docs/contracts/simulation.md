@@ -169,7 +169,7 @@ affordance"):
   `src/lib/simulation/world-read.ts`.
 - **`POST /api/chats/[chatId]/sim-command`** carries the typed player commands
   (`move` · `end_scene` · `give_item` · `start_activity` · `advance_time` · **`travel`** ·
-  **`travel_together`** · **`do_activity`**). Each is the ordinary durable command under the
+  **`move_together`** · **`do_activity`**). Each is the ordinary durable command under the
   player principal; a refusal returns the §14.4 PUBLIC face (code + public reason + legal
   alternatives), never a private cause.
   **`travel {toZoneId}`** is the skip-style composite (ruling 20) with a **graceful
@@ -192,23 +192,32 @@ affordance"):
   slice-0 dual-block prompt), closing ruling 20's parity clause. The pure decision
   (`planDepartureChoreography`, `lib/simulation/departure.ts`) is scene-stands × admitted-kind
   → steps; give/rest/none keep the co-present flow.
-  **`travel_together {toZoneId}`** (world-ui.plan.md slice 5) is **walk-with-me**: the player
-  invites the CO-PRESENT primary to travel together. The primary's acceptance is **NPC agency
-  via a bounded deterministic policy** (`decideAccompany`, `lib/simulation/accompany.ts` —
-  no model call, no §21.4 consent-ledger touch per §39 ruling 16): **accept unless** (a) a
-  claim-holding activity occupies the primary's **body**, or (b) a **`firm`/`hard`** open
-  commitment falls due before the walk's arrival + a 300 s buffer. A decline returns an
-  honest §14.4 PUBLIC face — the SAME reason whether (a) or (b) blocks her, so the private
-  cause never leaks. On acceptance the shared choreography (`runAccompanyTogether`,
-  `sim-exchange.ts`) composes ONE interaction: END the standing scene as a choice → the
-  player `move` (player principal) → the primary `move` under an **`npc_policy`** principal
-  controlling the primary (the player principal is **never** authorized to move an NPC —
-  §14.2; `resolveMoveActor` rejects `unauthorized_actor`) → drain to the **later** of the two
-  journeys' earliest arrivals → ONE `together` world beat. Response `{status:"accompanied"
-  |"traveled_alone", toStorySecond, arrived}`; a decline / refusal returns the §14.4 shape at
-  200 (`status:"rejected"`). **Degradation:** an NPC-move divergence after the player's move
-  committed degrades to solo travel (`traveled_alone`, the plain beat, `engine.sim.accompany`
-  logged) — never fabricated co-travel. **The natural-language twin** is an admitted
+  **`move_together {toZoneId}`** (command-integrity A4; was `travel_together`) is
+  **walk-with-me**, now **ONE atomic branch-locked command**: the player invites the
+  CO-PRESENT primary to travel together. The primary's acceptance is **NPC agency via a
+  bounded deterministic policy** (`decideAccompany`, `lib/simulation/accompany.ts` — no model
+  call, no §21.4 consent-ledger touch per §39 ruling 16): **accept unless** (a) a claim-holding
+  activity occupies the primary's **body**, or (b) a **`firm`/`hard`** open commitment falls
+  due before the walk's arrival + a 300 s buffer. `decideAccompany` re-runs **inside the locked
+  authority view** (`resolveMoveTogether`, `lib/simulation/move-together.ts`), closing the
+  read-vs-commit agency race the old pre-commit decision left open (§14.2). A decline returns an
+  honest §14.4 PUBLIC face — the SAME reason whether (a) or (b) blocks her, so the private cause
+  never leaks. On **acceptance** the durable store (`submitDurableMoveTogether`) commits, in ONE
+  transaction, an event batch: `engagement_ended` (when a scene stands, `participant_choice` —
+  §18.2 grace) → `journey_planned` with **both** actors on one `Journey.actorIds` → ONE
+  `actor_departed` → ONE arrival `trigger_scheduled` (built via the shared `buildJourneyBatch`
+  `resolveMoveActor` also uses). "Together" is **true by construction** — one journey, one
+  arrival, both land at once; the projectors and the arrival resolver already fan out over
+  `actorIds`. §14.2 is preserved and strengthened: the player principal controls only the
+  player; the co-traveller is authorized by the policy, never by the principal. After the atomic
+  command, `runAccompanyTogether` (`sim-exchange.ts`) only settles time — drain to the ONE
+  journey's arrival, the A7 `settleStrandedInTransit` net, ONE `together` world beat. Response
+  `{status:"accompanied", toStorySecond, arrived}`; a decline / refusal returns the §14.4 shape
+  at 200 (`status:"rejected"`). **No stranding window:** the old three-transaction choreography
+  (scene-end, player move, primary move — with a mid-flight `traveled_alone` divergence) is
+  **deleted**; a whole-command failure commits nothing (both-or-neither), so a bare version
+  conflict degrades to an honest `rejected` (world unchanged, C15-noted), never a phantom solo
+  travel. **The natural-language twin** is an admitted
   **`accompany`** intent (input admission — first-person plural or invite phrasing "let's walk
   to the square" / "we head home" / "walk with me…" / "come with me…", over a known zone word,
   deterministic, checked before solo move): while co-present it runs the same choreography then

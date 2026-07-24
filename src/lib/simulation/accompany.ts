@@ -46,7 +46,7 @@ export type AccompanyDecision =
   | { accept: false; publicReason: string; legalAlternatives: string[] };
 
 /** True when a claim-holding activity holds the actor's BODY (the departure-blocking claim, §3.1). */
-function actorHoldsBodyClaim(actorId: string, activities: readonly ActivityInstance[]): boolean {
+export function actorHoldsBodyClaim(actorId: string, activities: readonly ActivityInstance[]): boolean {
   return activities.some(
     (activity) =>
       activity.actorIds.some((id) => id === actorId) &&

@@ -277,7 +277,7 @@ function locusInsert(
       };
 }
 
-function journeyInsert(
+export function journeyInsert(
   branchId: string,
   journey: Journey,
   updatedSequence: number,

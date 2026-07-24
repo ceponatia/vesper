@@ -211,6 +211,8 @@ import {
   type ArriveJourneyCommandResult,
   type MoveActorCommand,
   type MoveActorCommandResult,
+  type MoveTogetherCommand,
+  type MoveTogetherCommandResult,
 } from "./space";
 
 /**
@@ -526,6 +528,7 @@ export type SimulationCommandEnvelope =
   | SetItemOwnershipCommand
   | ScheduleTransferTriggerCommand
   | MoveActorCommand
+  | MoveTogetherCommand
   | ArriveJourneyCommand
   | StartActivityCommand
   | CompleteActivityCommand
@@ -574,6 +577,7 @@ export type SimulationCommandResultRecord =
   | SetItemOwnershipCommandResult
   | ScheduleTriggerCommandResult
   | MoveActorCommandResult
+  | MoveTogetherCommandResult
   | ArriveJourneyCommandResult
   | StartActivityCommandResult
   | CompleteActivityCommandResult

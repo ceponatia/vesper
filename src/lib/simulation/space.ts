@@ -278,6 +278,178 @@ export function journeyArrivalUniquenessKey(journeyId: string): string {
   return composeSimulationId("journey-arrival", [journeyId]);
 }
 
+/**
+ * The branch identity a movement batch stamps its events with. Plain strings —
+ * every field is fed into a schema `.parse()` (which validates and brands) or
+ * `composeSimulationId`, so callers pass raw ids without re-branding.
+ */
+interface JourneyBatchMeta {
+  worldId: string;
+  branchId: string;
+  rulesetVersion: string;
+}
+
+interface JourneyBatchParams {
+  command: { id: string; correlationId: string; submittedAtWallClock: string };
+  /** Every traveller sharing this journey — sorted-unique, at least one. */
+  travelerActorIds: readonly string[];
+  originZoneId: string;
+  originLocationId: string;
+  destinationZoneId: string;
+  route: RouteResult;
+  firstLink: SimulationLink;
+  departedAt: number;
+  /** The events occupy `baseSequence + 1 .. + 3` (an engagement_ended prefix bumps it). */
+  baseSequence: number;
+}
+
+export interface JourneyBatch {
+  journey: Journey;
+  /** One in-transit locus per traveller (all share the journey, link, and timings). */
+  loci: PhysicalLocus[];
+  events: [JourneyPlannedEvent, ActorDepartedEvent, TriggerScheduledEvent];
+}
+
+/**
+ * Build the journey + its `journey_planned` / `actor_departed` /
+ * `trigger_scheduled` event batch + the travellers' transit loci for ONE shared
+ * journey. Shared by `resolveMoveActor` (one traveller) and the composed
+ * `move_together` resolver (player + invited co-traveller): both produce the SAME
+ * three movement events over a `Journey.actorIds` list, so the projectors and the
+ * arrival resolver — which already fan out over `actorIds` — need no change.
+ */
+export function buildJourneyBatch(meta: JourneyBatchMeta, params: JourneyBatchParams): JourneyBatch {
+  const { command, travelerActorIds, originZoneId, originLocationId, destinationZoneId, route, firstLink } = params;
+  const journeyId = deriveJourneyId(meta.branchId, command.id);
+  const { departedAt } = params;
+  const earliestArrivalAt = departedAt + route.minimumDurationSeconds;
+  const expectedArrivalAt = departedAt + route.expectedDurationSeconds;
+  const actorIds = [...travelerActorIds];
+
+  const plannedEvent = journeyPlannedEventSchema.parse({
+    id: composeSimulationId("event", [meta.branchId, command.id, "journey-planned"]),
+    worldId: meta.worldId,
+    branchId: meta.branchId,
+    sequence: params.baseSequence + 1,
+    storySecond: departedAt,
+    type: "journey_planned",
+    schemaVersion: 1,
+    rulesetVersion: meta.rulesetVersion,
+    derivationVersion: GATE3_ROUTE_VERSION,
+    commandId: command.id,
+    correlationId: command.correlationId,
+    actorIds,
+    entityIds: sortedUnique([...actorIds, journeyId, originZoneId, destinationZoneId]),
+    locationId: originLocationId,
+    recordedAtWallClock: command.submittedAtWallClock,
+    payload: {
+      journeyId,
+      originZoneId,
+      destinationZoneId,
+      routeLinkIds: route.linkIds,
+      travelMode: route.travelMode,
+      earliestArrivalAt,
+      expectedArrivalAt,
+      routeDerivationVersion: GATE3_ROUTE_VERSION,
+    },
+  });
+
+  const departedEvent = actorDepartedEventSchema.parse({
+    id: composeSimulationId("event", [meta.branchId, command.id, "actor-departed"]),
+    worldId: meta.worldId,
+    branchId: meta.branchId,
+    sequence: params.baseSequence + 2,
+    storySecond: departedAt,
+    type: "actor_departed",
+    schemaVersion: 1,
+    rulesetVersion: meta.rulesetVersion,
+    commandId: command.id,
+    causationId: plannedEvent.id,
+    correlationId: command.correlationId,
+    actorIds,
+    entityIds: sortedUnique([...actorIds, journeyId, firstLink.id]),
+    locationId: originLocationId,
+    recordedAtWallClock: command.submittedAtWallClock,
+    payload: {
+      journeyId,
+      fromZoneId: originZoneId,
+      linkId: firstLink.id,
+      departedAt,
+    },
+  });
+
+  // The arrival is evaluated, never assumed: this schedules a durable trigger
+  // whose command re-validates the journey at fire time (spec §9.3; the E2.6
+  // stale-template caveat). Fork replay reconstructs the trigger from this
+  // event alone. ONE journey ⇒ ONE arrival uniqueness key ⇒ both travellers land
+  // together in a single arrival transaction.
+  const templateId = composeSimulationId("template", [journeyId]);
+  const triggerEvent = triggerScheduledEventSchema.parse({
+    id: composeSimulationId("event", [meta.branchId, command.id, "arrival-trigger"]),
+    worldId: meta.worldId,
+    branchId: meta.branchId,
+    sequence: params.baseSequence + 3,
+    storySecond: departedAt,
+    type: "trigger_scheduled",
+    schemaVersion: 1,
+    rulesetVersion: meta.rulesetVersion,
+    derivationVersion: schedulerDerivationVersion,
+    commandId: command.id,
+    causationId: departedEvent.id,
+    correlationId: command.correlationId,
+    actorIds,
+    entityIds: [journeyId],
+    recordedAtWallClock: command.submittedAtWallClock,
+    payload: {
+      kind: journeyArrivalTriggerKind,
+      triggerSchemaVersion: 1,
+      dueStorySecond: expectedArrivalAt,
+      priority: 0,
+      uniquenessKey: journeyArrivalUniquenessKey(journeyId),
+      command: {
+        id: templateId,
+        branchId: meta.branchId,
+        expectedVersion: 0,
+        idempotencyKey: templateId,
+        principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] },
+        submittedAtWallClock: command.submittedAtWallClock,
+        correlationId: command.correlationId,
+        type: "arrive_journey",
+        schemaVersion: 1,
+        payload: { journeyId },
+      },
+    },
+  });
+
+  const journey = journeySchema.parse({
+    id: journeyId,
+    actorIds,
+    originZoneId,
+    destinationZoneId,
+    routeLinkIds: route.linkIds,
+    travelMode: route.travelMode,
+    departedAt,
+    earliestArrivalAt,
+    expectedArrivalAt,
+    status: "active",
+    currentLinkIndex: 0,
+    routeDerivationVersion: GATE3_ROUTE_VERSION,
+  });
+
+  const loci = actorIds.map((actorId) =>
+    physicalLocusSchema.parse({
+      kind: "in_transit",
+      actorId,
+      journeyId,
+      linkId: firstLink.id,
+      enteredAt: departedAt,
+      earliestExitAt: departedAt + firstLink.minimumDurationSeconds,
+    }),
+  );
+
+  return { journey, loci, events: [plannedEvent, departedEvent, triggerEvent] };
+}
+
 /** Pure MoveActor resolver over a lock-consistent authority view. */
 export function resolveMoveActor(
   view: MoveActorResolutionView,
@@ -323,137 +495,29 @@ export function resolveMoveActor(
   }
   const route = plan.route;
 
-  const journeyId = deriveJourneyId(view.branchId, command.id);
-  const departedAt = view.storySecond;
-  const earliestArrivalAt = departedAt + route.minimumDurationSeconds;
-  const expectedArrivalAt = departedAt + route.expectedDurationSeconds;
   const firstLinkId = route.linkIds[0];
   if (!firstLinkId) throw new Error("A planned route cannot be empty");
   const firstLink = view.topology.links.find((link) => link.id === firstLinkId);
   if (!firstLink) throw new Error("A planned route references a missing link");
 
-  const actorId = command.payload.actorId;
-  const originLocationId = zoneLocationId(view.topology, locus.zoneId);
-
-  const plannedEvent = journeyPlannedEventSchema.parse({
-    id: composeSimulationId("event", [view.branchId, command.id, "journey-planned"]),
-    worldId: view.worldId,
-    branchId: view.branchId,
-    sequence: view.headSequence + 1,
-    storySecond: departedAt,
-    type: "journey_planned",
-    schemaVersion: 1,
-    rulesetVersion: view.rulesetVersion,
-    derivationVersion: GATE3_ROUTE_VERSION,
-    commandId: command.id,
-    correlationId: command.correlationId,
-    actorIds: [actorId],
-    entityIds: sortedUnique([actorId, journeyId, locus.zoneId, destination.id]),
-    locationId: originLocationId,
-    recordedAtWallClock: command.submittedAtWallClock,
-    payload: {
-      journeyId,
+  const batch = buildJourneyBatch(
+    { worldId: view.worldId, branchId: view.branchId, rulesetVersion: view.rulesetVersion },
+    {
+      command,
+      travelerActorIds: [command.payload.actorId],
       originZoneId: locus.zoneId,
+      originLocationId: zoneLocationId(view.topology, locus.zoneId),
       destinationZoneId: destination.id,
-      routeLinkIds: route.linkIds,
-      travelMode: route.travelMode,
-      earliestArrivalAt,
-      expectedArrivalAt,
-      routeDerivationVersion: GATE3_ROUTE_VERSION,
+      route,
+      firstLink,
+      departedAt: view.storySecond,
+      baseSequence: view.headSequence,
     },
-  });
+  );
+  const transitLocus = batch.loci[0];
+  if (!transitLocus) throw new Error("A single-actor move must produce one transit locus");
 
-  const departedEvent = actorDepartedEventSchema.parse({
-    id: composeSimulationId("event", [view.branchId, command.id, "actor-departed"]),
-    worldId: view.worldId,
-    branchId: view.branchId,
-    sequence: view.headSequence + 2,
-    storySecond: departedAt,
-    type: "actor_departed",
-    schemaVersion: 1,
-    rulesetVersion: view.rulesetVersion,
-    commandId: command.id,
-    causationId: plannedEvent.id,
-    correlationId: command.correlationId,
-    actorIds: [actorId],
-    entityIds: sortedUnique([actorId, journeyId, firstLinkId]),
-    locationId: originLocationId,
-    recordedAtWallClock: command.submittedAtWallClock,
-    payload: {
-      journeyId,
-      fromZoneId: locus.zoneId,
-      linkId: firstLinkId,
-      departedAt,
-    },
-  });
-
-  // The arrival is evaluated, never assumed: this schedules a durable trigger
-  // whose command re-validates the journey at fire time (spec §9.3; the E2.6
-  // stale-template caveat). Fork replay reconstructs the trigger from this
-  // event alone.
-  const templateId = composeSimulationId("template", [journeyId]);
-  const triggerEvent = triggerScheduledEventSchema.parse({
-    id: composeSimulationId("event", [view.branchId, command.id, "arrival-trigger"]),
-    worldId: view.worldId,
-    branchId: view.branchId,
-    sequence: view.headSequence + 3,
-    storySecond: departedAt,
-    type: "trigger_scheduled",
-    schemaVersion: 1,
-    rulesetVersion: view.rulesetVersion,
-    derivationVersion: schedulerDerivationVersion,
-    commandId: command.id,
-    causationId: departedEvent.id,
-    correlationId: command.correlationId,
-    actorIds: [actorId],
-    entityIds: [journeyId],
-    recordedAtWallClock: command.submittedAtWallClock,
-    payload: {
-      kind: journeyArrivalTriggerKind,
-      triggerSchemaVersion: 1,
-      dueStorySecond: expectedArrivalAt,
-      priority: 0,
-      uniquenessKey: journeyArrivalUniquenessKey(journeyId),
-      command: {
-        id: templateId,
-        branchId: view.branchId,
-        expectedVersion: 0,
-        idempotencyKey: templateId,
-        principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] },
-        submittedAtWallClock: command.submittedAtWallClock,
-        correlationId: command.correlationId,
-        type: "arrive_journey",
-        schemaVersion: 1,
-        payload: { journeyId },
-      },
-    },
-  });
-
-  const journey = journeySchema.parse({
-    id: journeyId,
-    actorIds: [actorId],
-    originZoneId: locus.zoneId,
-    destinationZoneId: destination.id,
-    routeLinkIds: route.linkIds,
-    travelMode: route.travelMode,
-    departedAt,
-    earliestArrivalAt,
-    expectedArrivalAt,
-    status: "active",
-    currentLinkIndex: 0,
-    routeDerivationVersion: GATE3_ROUTE_VERSION,
-  });
-
-  const transitLocus = physicalLocusSchema.parse({
-    kind: "in_transit",
-    actorId,
-    journeyId,
-    linkId: firstLinkId,
-    enteredAt: departedAt,
-    earliestExitAt: departedAt + firstLink.minimumDurationSeconds,
-  });
-
-  return { ok: true, route, journey, locus: transitLocus, events: [plannedEvent, departedEvent, triggerEvent] };
+  return { ok: true, route, journey: batch.journey, locus: transitLocus, events: batch.events };
 }
 
 // ---------------------------------------------------------------------------

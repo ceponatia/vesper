@@ -112,7 +112,7 @@ export function ChatWorldCard({
     if (anyBusy || !primary?.present) return;
     setTravelingTogetherZone(dest.zoneId);
     setRefusal(null);
-    const result = await chatsApi.simTravelTogether(chatId, dest.zoneId);
+    const result = await chatsApi.simMoveTogether(chatId, dest.zoneId);
     setTravelingTogetherZone(null);
     if (!result.ok) {
       if (result.error.code === "chat_busy") {
