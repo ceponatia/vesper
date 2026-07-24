@@ -54,6 +54,27 @@ promotion also hardened the stubs' job/leasing/poison-trigger design).
 C14+C16 promoted 2026-07-24 as [../sim-read-seam-guards.plan.md](../sim-read-seam-guards.plan.md)
 (C16 folded into the C14 plan per owner ruling; its stub removed).
 
+Parked 2026-07-24 from the successor engine & chat-UI product review (a
+static 20-item review, code-verified claim-by-claim before parking; items that
+duplicated the 2026-07-23 backlog were folded into the stubs above instead of
+re-parked — its idempotency/serialization item is A1+A2+A4, its solo-retake
+item added the stale-cut addendum to A3, and its partial-travel item's
+server half shipped with drain-hardening). Groups: D honest controls ·
+E lifecycle integrity · F honest progress & status · G product &
+maintainability.
+
+- D17 [sim-chat-capabilities.plan.md](sim-chat-capabilities.plan.md)
+- D18 [sim-stop-cancellation.plan.md](sim-stop-cancellation.plan.md)
+- D19 [sim-branch-ux.plan.md](sim-branch-ux.plan.md)
+- E20 [successor-world-lifecycle.plan.md](successor-world-lifecycle.plan.md)
+- F21 [sim-typed-stream.plan.md](sim-typed-stream.plan.md)
+- F22 [sim-world-surface-ux.plan.md](sim-world-surface-ux.plan.md)
+- F23 [sim-turn-time-honesty.plan.md](sim-turn-time-honesty.plan.md)
+- G24 [worlds-dashboard.plan.md](worlds-dashboard.plan.md)
+- G25 [chat-conversation-refactor.plan.md](chat-conversation-refactor.plan.md)
+- G26 [composer-drafts-ime.plan.md](composer-drafts-ime.plan.md)
+- G27 [sim-memory-index-worker.plan.md](sim-memory-index-worker.plan.md)
+
 Added after the review:
 
 - [travel-duration-authoring.plan.md](travel-duration-authoring.plan.md) —

@@ -119,8 +119,9 @@ umbrella further down.)
 
 Unpromoted ideas live in [deferred.plan.md](deferred.plan.md): the
 **successor-engine improvement backlog**
-([deferred/CLAUDE.md](deferred/CLAUDE.md) — 16 reviewed items as draft-plan
-stubs, 2026-07-23, promoted one-by-one into real plans/specs as discussed),
+([deferred/CLAUDE.md](deferred/CLAUDE.md) — 16 reviewed items parked
+2026-07-23 + 11 more from the 2026-07-24 successor-chat product review, all
+draft-plan stubs promoted one-by-one into real plans/specs as discussed),
 the relationship &
 meter timeline (UX-audit #4), the full **NPC-puppeting** system
 ([npc-puppeting.deferred.md](npc-puppeting.deferred.md) — only Slice 2's deflection

@@ -7,12 +7,13 @@ leaves here (a one-line "graduated → …" tombstone is fine). This file is the
 anchor; supporting detail files named `<topic>.deferred.md` nest under it in the
 editor.
 
-## Successor-engine improvement backlog (2026-07-23 three-lens review)
+## Successor-engine improvement backlog (2026-07-23 + 2026-07-24 reviews)
 
 _Detail: one draft-plan stub per item in the [deferred/](deferred/CLAUDE.md)
-folder (index in its CLAUDE.md) — 16 code-verified items from the
-correctness / simulation-fidelity / resilience-perf review run the day the
-world-UI slices shipped. **Owner process: we flesh these out one by one as we
+folder (index in its CLAUDE.md). Batch 1: 16 code-verified items from the
+2026-07-23 correctness / simulation-fidelity / resilience-perf review run the
+day the world-UI slices shipped. Batch 2: 11 stubs from the 2026-07-24
+product review (below). **Owner process: we flesh these out one by one as we
 discuss — each stub graduates per deferred/CLAUDE.md to its own
 `<topic>.plan.md` (+ spec where warranted) and a roadmap line, leaving a
 tombstone here.** None are committed work until then._
@@ -34,6 +35,37 @@ tombstone here.** None are committed work until then._
   — C16 folded into the C14 plan per owner ruling. C15 (half-failure
   diagnostics) graduated 2026-07-23 → [drain-hardening.plan.md](drain-hardening.plan.md)._
   Nothing left in this group.
+
+### Batch 2 (2026-07-24 product review — successor engine & chat UI)
+
+_Same process, second batch: 11 stubs (D17–G27) parked from the 20-item
+product review of the successor front door, chat routes, exchange layer, and
+world surfaces — every claim code-verified before parking. Review items that
+duplicated batch 1 were folded there instead (idempotency/serialization →
+A1+A2+A4; solo retake → an A3 addendum; partial-travel server honesty had
+already shipped with drain-hardening)._
+
+- **D. Honest controls** — the capability manifest + immediate gating of the
+  dead/wrong sim-chat controls (Stop, rerun-from-here, edit/delete,
+  solo-another-take) (D17); real Stop via an AbortSignal through the
+  successor turn (D18); branch/fork/replay UX — the complete fix for honest
+  rerun and history editing, surfacing `forkBranch`/ancestry/
+  `explainItemPlacement`, none of which has a production caller (D19).
+- **E. Lifecycle integrity** — successor world provisioning (non-atomic
+  five-step front door, no idempotency), deletion (orphans every world —
+  no sim-table cleanup), and the racy shadow-counting quota, as one
+  lifecycle plan (E20).
+- **F. Honest progress & status** — typed reply stream replacing the ZWSP
+  heartbeat, preserving successor failure codes the reply-failure contract
+  currently flattens to `unknown` (F21); world-surface UX — degraded reads
+  shown instead of a vanished card, unavailable actions with their authored
+  reasons, partial travel/activity progress, a real mobile World surface
+  (F22); turn-time honesty — solo turns through the bounded drain seam,
+  completion beats written at completion (F23).
+- **G. Product & maintainability** — Worlds page → operational dashboard
+  (G24); ChatConversation decomposition + explicit exchange state machine
+  (G25); composer IME guard + per-chat drafts (G26); memory-index drain off
+  the reply-critical path (G27).
 
 ## World authoring — locations, travel distances & durations
 
