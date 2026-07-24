@@ -267,6 +267,44 @@ function endRejection(code: EndEngagementRejectionCode, publicReason: string): E
   return { ok: false, code, publicReason };
 }
 
+/**
+ * The `engagement_ended` event for one open engagement at a chosen sequence.
+ * Shared by `resolveEndEngagement` (the ordinary end command) and the composed
+ * `move_together` resolver (which ends the standing scene as `participant_choice`
+ * in the SAME batch that departs both travellers — §18.2 grace, one indivisible
+ * action). Ending releases claims but moves no one (§18.2); the mover's departure
+ * events do the moving.
+ */
+export function buildEngagementEndedEvent(input: {
+  meta: EngagementBranchMeta;
+  command: { id: string; correlationId: string; submittedAtWallClock: string };
+  engagement: Engagement;
+  reason: EndEngagementCommand["payload"]["reason"];
+  sequence: number;
+}): EngagementEndedEvent {
+  return engagementEndedEventSchema.parse({
+    id: composeSimulationId("event", [input.meta.branchId, input.command.id, "engagement-ended"]),
+    worldId: input.meta.worldId,
+    branchId: input.meta.branchId,
+    sequence: input.sequence,
+    storySecond: input.meta.storySecond,
+    type: "engagement_ended",
+    schemaVersion: 1,
+    rulesetVersion: input.meta.rulesetVersion,
+    commandId: input.command.id,
+    correlationId: input.command.correlationId,
+    actorIds: input.engagement.participantIds,
+    entityIds: sortedUnique([input.engagement.id, ...input.engagement.participantIds]),
+    ...(input.engagement.locationId ? { locationId: input.engagement.locationId } : {}),
+    recordedAtWallClock: input.command.submittedAtWallClock,
+    payload: {
+      engagementId: input.engagement.id,
+      endedAt: input.meta.storySecond,
+      reason: input.reason,
+    },
+  });
+}
+
 /** Ending releases claims but moves no one (§18.2). */
 export function resolveEndEngagement(
   view: EndEngagementResolutionView,
@@ -288,26 +326,18 @@ export function resolveEndEngagement(
     return endRejection("unauthorized_actor", "You are not part of that conversation.");
   }
 
-  const event = engagementEndedEventSchema.parse({
-    id: composeSimulationId("event", [view.branchId, command.id, "engagement-ended"]),
-    worldId: view.worldId,
-    branchId: view.branchId,
-    sequence: view.headSequence + 1,
-    storySecond: view.storySecond,
-    type: "engagement_ended",
-    schemaVersion: 1,
-    rulesetVersion: view.rulesetVersion,
-    commandId: command.id,
-    correlationId: command.correlationId,
-    actorIds: engagement.participantIds,
-    entityIds: sortedUnique([engagement.id, ...engagement.participantIds]),
-    ...(engagement.locationId ? { locationId: engagement.locationId } : {}),
-    recordedAtWallClock: command.submittedAtWallClock,
-    payload: {
-      engagementId: engagement.id,
-      endedAt: view.storySecond,
-      reason: command.payload.reason,
+  const event = buildEngagementEndedEvent({
+    meta: {
+      worldId: view.worldId,
+      branchId: view.branchId,
+      rulesetVersion: view.rulesetVersion,
+      headSequence: view.headSequence,
+      storySecond: view.storySecond,
     },
+    command,
+    engagement,
+    reason: command.payload.reason,
+    sequence: view.headSequence + 1,
   });
 
   const ended = engagementSchema.parse({ ...engagement, state: "ended" });

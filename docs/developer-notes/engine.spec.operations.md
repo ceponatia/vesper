@@ -550,6 +550,14 @@ that needs it.
     the world is catching up, not "a reply is still streaming" (the keyed lock
     carries a holder label). Client-side the composer disables during `skipBusy`
     (parity with the world-card chips), so the visible bounce is rare.
+30. **Walk-with-me is one indivisible move** — RESOLVED (2026-07-24,
+    command-integrity A4): a dedicated branch-locked `move_together` command commits
+    scene-end + ONE shared journey (both actors on it) + one arrival trigger
+    atomically, so a crash can no longer strand the pair mid-move and "together" is
+    true by construction. `decideAccompany` re-runs inside the locked authority view
+    (§14.2 — the player principal never moves an NPC); a decline renders as the
+    command's own §14.4 refusal (one surface for accept and decline). A version
+    conflict commits nothing (honest `rejected`), never a phantom solo travel.
 
 ## 40. Initial conformance checklist
 

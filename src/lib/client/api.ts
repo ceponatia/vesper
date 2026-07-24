@@ -1001,21 +1001,21 @@ export const simTravelResultSchema = z.object({
 export type SimTravelResult = z.infer<typeof simTravelResultSchema>;
 
 /**
- * The `travel_together` (walk-with-me, slice 5) outcome: both walked together
- * (`accompanied`), the player travelled alone after a divergence (`traveled_alone`
- * — the primary couldn't come along at the last step), OR the §14.4 public
- * refusal (`rejected` — the primary declined the invite, or a move was refused).
- * Both success shapes refresh the world; `rejected` renders the public face.
+ * The `move_together` (walk-with-me) outcome (command-integrity A4): both walked
+ * together (`accompanied` — true by construction; the atomic command has no
+ * partial-commit "player alone" divergence) OR the §14.4 public refusal
+ * (`rejected` — the primary declined the invite, or a move was refused). A landing
+ * refreshes the world; `rejected` renders the public face.
  */
-export const simTravelTogetherResultSchema = z.object({
-  status: z.enum(["accompanied", "traveled_alone", "rejected"]).catch("rejected"),
+export const simMoveTogetherResultSchema = z.object({
+  status: z.enum(["accompanied", "rejected"]).catch("rejected"),
   toStorySecond: z.number().nullable().catch(null),
   arrived: z.boolean().catch(false),
   code: z.string().catch(""),
   publicReason: z.string().catch(""),
   legalAlternatives: z.array(z.string()).catch([]),
 });
-export type SimTravelTogetherResult = z.infer<typeof simTravelTogetherResultSchema>;
+export type SimMoveTogetherResult = z.infer<typeof simMoveTogetherResultSchema>;
 
 /**
  * The `give_item` handoff outcome (slice 3): a success (`gave`) OR the §14.4
@@ -1148,14 +1148,17 @@ export const chatsApi = {
   simTravel: (chatId: string, toZoneId: string) =>
     apiPost(simTravelResultSchema, `/api/chats/${chatId}/sim-command`, { kind: "travel", toZoneId, requestId: newId() }),
   /**
-   * Walk-with-me (world-ui.plan.md slice 5): invite the co-present primary to
-   * travel together. The primary's acceptance is NPC agency (a deterministic
-   * policy); returns a co-travel landing, a solo-travel divergence, or the §14.4
-   * public refusal (all `ok`). The card refreshes world + transcript on a landing.
+   * Walk-with-me (command-integrity A4): invite the co-present primary to travel
+   * together via the ONE atomic `move_together` command (decide + scene-end + one
+   * shared journey + one arrival — the pair can no longer be stranded mid-move).
+   * The primary's acceptance is NPC agency (a deterministic policy, re-run inside
+   * the locked view); returns a co-travel landing or the §14.4 public refusal (both
+   * `ok`). `requestId` is minted per tap (A1): a resend replays the recorded
+   * response instead of moving twice. The card refreshes world + transcript on a landing.
    */
-  simTravelTogether: (chatId: string, toZoneId: string) =>
-    apiPost(simTravelTogetherResultSchema, `/api/chats/${chatId}/sim-command`, {
-      kind: "travel_together",
+  simMoveTogether: (chatId: string, toZoneId: string) =>
+    apiPost(simMoveTogetherResultSchema, `/api/chats/${chatId}/sim-command`, {
+      kind: "move_together",
       toZoneId,
       requestId: newId(),
     }),

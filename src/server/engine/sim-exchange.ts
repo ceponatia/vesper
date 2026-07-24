@@ -2,10 +2,9 @@ import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { PublicFailurePresentation } from "@/contracts/simulation/narrative";
 import { admitPlayerCommand, type AdmittedCommand } from "@/lib/simulation/input-admission";
-import { decideAccompany } from "@/lib/simulation/accompany";
 import { planDepartureChoreography, type SoloDeparture } from "@/lib/simulation/departure";
 import { computeMoveArrivalTarget, planStrandedSettlement } from "@/lib/simulation/travel-settle";
-import { buildWorldDestinations, placeGoPhrase } from "@/lib/simulation/world-read";
+import { placeGoPhrase } from "@/lib/simulation/world-read";
 import { simulationHash } from "@/lib/simulation/hash";
 import { deriveEngagementId, isStandingCoPresentEngagement } from "@/lib/simulation/engagements";
 import { humanizeId } from "@/lib/simulation/humanize";
@@ -59,6 +58,7 @@ import {
   readDurableSpaceBranch,
   submitDurableEndEngagement,
   submitDurableMoveActor,
+  submitDurableMoveTogether,
   submitDurableOpenEngagement,
   submitDurableStartActivity,
   submitDurableTransferItem,
@@ -1366,33 +1366,28 @@ async function runSimDepartureTurn(input: {
 }
 
 /**
- * world-ui.plan.md slice 5 — the WALK-WITH-ME choreography (world writes only;
- * the two entry points render differently). When the player and the co-present
- * primary set off together, this composes ONE interaction (§39 ruling 20):
+ * command-integrity A4 — the WALK-WITH-ME choreography, now ONE indivisible
+ * action. When the player invites the co-present primary to travel together, the
+ * whole decision + world mutation is a single branch-locked `move_together`
+ * command (`submitDurableMoveTogether`): the deterministic `decideAccompany`
+ * policy re-runs INSIDE the locked authority view (§14.2, closing the
+ * read-vs-commit agency race), and on acceptance ONE transaction commits
+ * scene-end (grace, §18.2), ONE shared journey carrying BOTH actors, ONE
+ * departure, and ONE arrival trigger. The pair can no longer be stranded
+ * mid-move — "together" is true by construction (one journey, one arrival).
  *
- * 1. NPC AGENCY via the bounded deterministic policy (`decideAccompany`, no model
- *    call, no consent-ledger touch): accept unless a body claim occupies the
- *    primary or a firm/hard commitment falls due before arrival + a buffer. A
- *    decline returns an honest §14.4 PUBLIC face (no private cause).
- * 2. On acceptance: END the standing scene as a CHOICE (grace, §18.2), submit the
- *    PLAYER's move (player principal), then the PRIMARY's move under an
- *    `npc_policy` principal controlling the primary — the NPC's OWN controller
- *    acting on the accepted invite (§14.2 — the player principal is NEVER
- *    authorized to move an NPC; `resolveMoveActor` rejects `unauthorized_actor`).
- * 3. Drain to the LATER of the two journeys' earliest arrivals (§17), then leave
- *    ONE `together` world beat. Co-presence is restored at the destination.
+ * After the atomic command this only settles time: drain to the ONE journey's
+ * expected arrival (A7), check nobody is stranded, and leave ONE `together` beat.
  *
  * Degradation (docs/resilience.md), never a dead turn:
- * - the NPC move failing AFTER the player's move committed is a divergence — the
- *   player still travels (their move stands), the beat is the PLAIN traveled beat,
- *   a diagnostic logs, and the caller falls to the solo render (`traveled_alone`);
- * - an unexpected end-engagement failure degrades to the interrupt path (the
- *   accepted moves still lawfully interrupt the standing scene);
- * - a refused player move keeps today's behavior (no travel) and returns `rejected`.
+ * - a DECLINE returns the command's own §14.4 face (nobody moves; the scene stands);
+ * - a refused player move / not-co-present returns the matching refusal;
+ * - a bare version conflict under the lock leaves the world UNCHANGED (the atomic
+ *   command has no partial-commit window), so it degrades to an honest `rejected`
+ *   (the standing scene is intact) with a C15 note — never a phantom solo travel.
  */
 export type AccompanyResult =
   | { status: "accompanied"; toStorySecond: number; arrived: boolean; fromLabel: string; toLabel: string }
-  | { status: "traveled_alone"; toStorySecond: number; arrived: boolean; fromLabel: string; toLabel: string }
   | { status: "declined"; publicReason: string; legalAlternatives: string[] }
   | { status: "rejected"; code: string; publicReason: string; legalAlternatives: string[] }
   | { status: "not_copresent" };
@@ -1407,198 +1402,122 @@ export async function runAccompanyTogether(input: {
   toZoneId: string;
   /** C15: collector for surface (b) events rows + the codes stamped on the beat this writes. */
   fallbacks?: CompositionFallbackCollector;
+  /**
+   * A deterministic `move_together` command id derived from the route request key
+   * (command-integrity A1 idempotency parity). The NL choreography omits it and
+   * mints a fresh one (it runs under the lock; retry story = "the player sends again").
+   */
+  commandId?: string;
+  /** Deterministic world-beat id (route path); omitted ⇒ a fresh id per NL turn. */
+  beatDedupeId?: string;
 }): Promise<AccompanyResult> {
-  const { chatId, userId, branchId, playerActorId, primaryActorId, primaryName, toZoneId } = input;
+  const { chatId, userId, branchId, playerActorId, primaryActorId, toZoneId } = input;
 
-  // 0) Pre-move world truth: where both actors are, the walk estimate, and the
-  //    primary's activities/commitments (the acceptance policy's inputs).
-  const [space, activities, commitments] = await Promise.all([
-    readDurableSpaceBranch(branchId),
-    readDurableActivities(branchId),
-    readDurableCommitments(branchId),
-  ]);
-  const kindByZone = new Map<string, string>(space.zones.map((zone) => [zone.id, zone.kind]));
+  // Labels for the render + beat. Co-presence and the acceptance policy are
+  // re-checked AUTHORITATIVELY inside the locked resolver; this read only names
+  // the places (a stale read here can never strand the pair — the command is atomic).
+  const preMove = await readDurableSpaceBranch(branchId);
+  const kindByZone = new Map<string, string>(preMove.zones.map((zone) => [zone.id, zone.kind]));
   const zoneKindOf = (zoneId: string): string => kindByZone.get(zoneId) ?? "";
   const toLabel = zoneLabelFromKind(toZoneId, zoneKindOf(toZoneId));
-  const playerLocus = space.loci.find((locus) => locus.actorId === playerActorId);
-  const primaryLocus = space.loci.find((locus) => locus.actorId === primaryActorId);
+  const playerLocus = preMove.loci.find((locus) => locus.actorId === playerActorId);
   const fromLabel =
     playerLocus?.kind === "at" ? zoneLabelFromKind(playerLocus.zoneId, zoneKindOf(playerLocus.zoneId)) : "";
 
-  // Both must be physically co-present to walk together (§14.2 — the invite is
-  // only meaningful in each other's presence). Not co-present ⇒ the caller falls
-  // back to a plain solo move (the remote-invite family is future work).
-  if (
-    !playerLocus ||
-    playerLocus.kind !== "at" ||
-    !primaryLocus ||
-    primaryLocus.kind !== "at" ||
-    primaryLocus.zoneId !== playerLocus.zoneId
-  ) {
-    return { status: "not_copresent" };
-  }
-
-  // The walk's earliest arrival estimate from the current zone's open link (the
-  // SAME pure helper the world card's travel chip reads its "~N min" from), so the
-  // commitment gate can judge what leaving now risks. No direct link ⇒ arrival
-  // "now" (the most conservative gate — a multi-hop world is future work).
-  const walkSeconds =
-    buildWorldDestinations({ playerLocus, links: space.links, zoneLabelOf: () => "" }).find(
-      (destination) => destination.zoneId === toZoneId,
-    )?.travelSeconds ?? 0;
-  const arrivalStorySecond = space.storySecond + walkSeconds;
-
-  // 1) NPC agency — accept or an honest §14.4 decline (built from PUBLIC facts only).
-  const decision = decideAccompany({
-    primaryActorId,
-    primaryName,
-    activities: activities.activities,
-    commitments: commitments.commitments,
-    arrivalStorySecond,
-  });
-  if (!decision.accept) {
-    return { status: "declined", publicReason: decision.publicReason, legalAlternatives: decision.legalAlternatives };
-  }
-
-  const playerPrincipal = { kind: "player" as const, principalId: userId, controlledActorIds: [playerActorId] };
-  const envelopeBase = {
-    branchId,
-    expectedVersion: 0,
-    submittedAtWallClock: new Date().toISOString(),
-    correlationId: `sim-accompany-${chatId}`,
-    schemaVersion: 1,
-  };
-
-  // 2) End the standing scene as a CHOICE (grace, §18.2 — an ended scene holds no
-  //    claim, so the moves fire no hard interrupt). A miss degrades to the
-  //    interrupt path (never blocks the walk).
-  const standing = await findStandingEngagement(branchId, playerActorId, primaryActorId);
-  if (standing.engagementId !== null) {
-    const endId = newId();
-    const ended = await submitDurableEndEngagement(
-      {
-        ...envelopeBase,
-        id: endId,
-        idempotencyKey: endId,
-        principal: playerPrincipal,
-        type: "end_engagement",
-        payload: { engagementId: standing.engagementId, reason: "participant_choice" },
-      },
-      { admitAtLockedVersion: true },
-    );
-    if (ended.status !== "accepted") {
-      log.warn("engine.sim.accompany", "end-engagement not accepted; interrupt fallback", { chatId, status: ended.status });
-      input.fallbacks?.note({ site: "accompany", code: "end_engagement_fallback", detail: `end-engagement ${ended.status}` });
-    }
-  }
-
-  // 3a) The PLAYER's move (player principal — never moves the NPC, §14.2).
-  const playerMoveId = newId();
-  const playerMove = await submitDurableMoveActor(
+  // ONE atomic command: decide (locked view) + scene-end (grace) + one shared
+  // journey (both actors) + one arrival trigger. §14.2: the player principal
+  // controls only the player; the co-traveler is authorized by `decideAccompany`.
+  const commandId = input.commandId ?? newId();
+  const outcome = await submitDurableMoveTogether(
     {
-      ...envelopeBase,
-      id: playerMoveId,
-      idempotencyKey: playerMoveId,
-      principal: playerPrincipal,
-      type: "move_actor",
-      payload: { actorId: playerActorId, destinationZoneId: toZoneId, travelMode: "walk" },
+      id: commandId,
+      branchId,
+      expectedVersion: 0,
+      idempotencyKey: commandId,
+      principal: { kind: "player" as const, principalId: userId, controlledActorIds: [playerActorId] },
+      submittedAtWallClock: new Date().toISOString(),
+      correlationId: `sim-accompany-${chatId}`,
+      type: "move_together" as const,
+      schemaVersion: 1,
+      payload: {
+        actorId: playerActorId,
+        coTravelerActorId: primaryActorId,
+        destinationZoneId: toZoneId,
+        travelMode: "walk" as const,
+      },
     },
     { admitAtLockedVersion: true },
   );
-  if (playerMove.status === "rejected") {
-    return {
-      status: "rejected",
-      code: playerMove.code,
-      publicReason: playerMove.publicReason,
-      legalAlternatives: [...(playerMove.legalAlternativeCommandTypes ?? [])].map(String).slice(0, 16),
-    };
+
+  if (outcome.status === "rejected") {
+    const legalAlternatives = [...outcome.legalAlternativeCommandTypes].map(String).slice(0, 16);
+    if (outcome.code === "accompany_declined") {
+      return { status: "declined", publicReason: outcome.publicReason, legalAlternatives };
+    }
+    if (outcome.code === "not_copresent") return { status: "not_copresent" };
+    return { status: "rejected", code: outcome.code, publicReason: outcome.publicReason, legalAlternatives };
   }
-  if (playerMove.status !== "accepted") {
+  if (outcome.status !== "accepted") {
+    // A bare version conflict — the world moved under the lock. The atomic command
+    // committed NOTHING, so the honest degrade is "nobody moved" (the standing
+    // scene is intact), recorded via the existing C15 fallback note.
+    input.fallbacks?.note({ site: "accompany", code: "traveled_alone", detail: `move_together ${outcome.status}` });
     return { status: "rejected", code: "sim_conflict", publicReason: "The world moved; try again.", legalAlternatives: [] };
   }
 
-  // 3b) The PRIMARY's move (npc_policy principal controlling the primary — the
-  //     NPC's own controller acting on the accepted invite, §14.2). A divergence
-  //     here degrades honestly: the player still travels, ALONE (`traveled_alone`).
-  const primaryMoveId = newId();
-  let primaryMove: Awaited<ReturnType<typeof submitDurableMoveActor>> | undefined;
-  try {
-    primaryMove = await submitDurableMoveActor(
-      {
-        ...envelopeBase,
-        id: primaryMoveId,
-        idempotencyKey: primaryMoveId,
-        principal: { kind: "npc_policy" as const, principalId: "sim-accompany", controlledActorIds: [primaryActorId] },
-        type: "move_actor",
-        payload: { actorId: primaryActorId, destinationZoneId: toZoneId, travelMode: "walk" },
-      },
-      { admitAtLockedVersion: true },
-    );
-  } catch (error) {
-    simLoadWarn(chatId, "accompany primary move threw — player travels alone", error);
-  }
-  const together = primaryMove?.status === "accepted";
-  if (!together) {
-    log.warn("engine.sim.accompany", "primary move not accepted; player travels alone", {
-      chatId,
-      status: primaryMove?.status ?? "threw",
-    });
-    input.fallbacks?.note({ site: "accompany", code: "traveled_alone", detail: `primary move ${primaryMove?.status ?? "threw"}` });
-  }
-
-  // 4) Drain to the LATER of the two expected arrivals (both share the link, but
-  //    compute each defensively; A7) — the §17 arrival trigger fires inside the drain.
-  //    Read the post-move projection ONCE and derive both arrivals from it (both
-  //    reads saw the same committed state — no need to re-materialize per actor).
+  // Accepted: both are on ONE shared journey. Drain to its expected arrival (A7),
+  // then check nobody stranded. (The co-traveler's `primaryName` from `input` is a
+  // call-site label only — the resolver read the authoritative name under the lock.)
   const postMove = await readDurableSpaceBranch(branchId);
-  const playerTarget = computeMoveArrivalTarget(postMove, playerActorId);
-  const primaryTarget = together ? computeMoveArrivalTarget(postMove, primaryActorId) : playerTarget;
-  const target = Math.max(playerTarget, primaryTarget);
+  const target = computeMoveArrivalTarget(postMove, playerActorId);
   const drain = await drainBranchTo(branchId, target);
   if (!drain.converged) {
     log.warn("engine.sim.accompany", "arrival drain did not converge", { chatId, reason: drain.shortReason });
   }
   noteDrainDiagnostics(input.fallbacks, "accompany", drain);
 
-  // A7 arrival check (read settled ONCE, before the beat, so both actors' in-transit state and
-  // `arrived` come from the same read and any still_in_transit code lands on the beat too).
+  // A7 arrival check (read settled ONCE, before the beat, so both actors' in-transit
+  // state and `arrived` come from the same read and any still_in_transit code lands
+  // on the beat too). Both travelers share the journey — check them together.
   const settled = await readDurableSpaceBranch(branchId);
   await settleStrandedInTransit({
     ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
     site: "accompany",
     space: settled,
-    actorIds: together ? [playerActorId, primaryActorId] : [playerActorId],
+    actorIds: [playerActorId, primaryActorId],
     chatId,
   });
 
-  // 5) ONE world beat — "together" on a real co-travel, else the plain traveled beat.
-  //    C15: stamp any codes this choreography collected onto the beat's meta (surface a).
+  // ONE world beat — "together" by construction. C15: stamp any collected codes
+  // onto the beat meta (surface a). A route-derived dedupe id makes the beat
+  // idempotent under a crash-window retry (A1); the NL path mints a fresh id.
   await writeWorldBeat({
     chatId,
     branchId,
     kind: "traveled",
     destinationLabel: toLabel,
-    ...(together ? { together: true } : {}),
+    together: true,
     ...(input.fallbacks && input.fallbacks.codes().length ? { fallbacks: input.fallbacks.codes() } : {}),
+    ...(input.beatDedupeId ? { dedupeId: input.beatDedupeId } : {}),
   });
 
   const arrived = settled.loci.some(
     (locus) => locus.actorId === playerActorId && locus.kind === "at" && locus.zoneId === toZoneId,
   );
-  return { status: together ? "accompanied" : "traveled_alone", toStorySecond: target, arrived, fromLabel, toLabel };
+  return { status: "accompanied", toStorySecond: target, arrived, fromLabel, toLabel };
 }
 
 /**
  * world-ui.plan.md slice 5 — the natural-language twin of the walk-together chip.
  * An admitted ACCOMPANY while co-present runs the shared `runAccompanyTogether`
- * choreography and then RENDERS:
- * - ACCEPTED ⇒ co-presence is restored at the destination, so reopen the scene
- *   and render the CO-PRESENT turn with a travel-context line (you two just walked
- *   here together from X) — the scene continues in prose, not a jump-cut;
- * - DECLINED ⇒ the scene still stands; render the ordinary co-present turn with
- *   the decline as a §14.4 failure presentation (she answers in character);
- * - a divergence (`traveled_alone`) or an unexpected reopen failure ⇒ the player
- *   is where they arrived; render a plain solo turn (never a dead turn).
+ * choreography (command-integrity A4: ONE atomic `move_together`) and then RENDERS:
+ * - ACCEPTED ⇒ both walked together (true by construction); co-presence is restored
+ *   at the destination, so reopen the scene and render the CO-PRESENT turn with a
+ *   travel-context line (you two just walked here together from X) — prose, not a jump-cut;
+ * - DECLINED / a refused move ⇒ the scene still stands; render the ordinary
+ *   co-present turn with the §14.4 face (she answers in character);
+ * - an unexpected reopen failure ⇒ the player is where they arrived; render a plain
+ *   solo turn (never a dead turn).
  */
 async function runSimAccompanyTurn(input: {
   chatId: string;
@@ -1672,10 +1591,6 @@ async function runSimAccompanyTurn(input: {
   if (outcome.status === "not_copresent") return runSimSoloTurn(soloArgs);
 
   const departure: SoloDeparture = { fromLabel: outcome.fromLabel, toLabel: outcome.toLabel };
-
-  // A divergence — the primary didn't come. The player arrived ALONE; render the
-  // solo cut at the destination (co-presence NOT restored; the plain beat is written).
-  if (outcome.status === "traveled_alone") return runSimSoloTurn({ ...soloArgs, departure });
 
   // Accepted: co-presence restored at the destination. Reopen the scene there and
   // render the CO-PRESENT turn with a travel-context line so it continues in prose.

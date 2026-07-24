@@ -289,6 +289,61 @@ export const moveActorRejectionCodes = [
 export const moveActorRejectionCodeSchema = z.enum(moveActorRejectionCodes);
 export const moveActorCommandResultSchema = createCommandResultSchema(moveActorRejectionCodeSchema);
 
+// --- MoveTogether command (command-integrity A4, §14.2 / §17) ----------------
+
+/**
+ * The atomic walk-with-me command (command-integrity.plan.md A4): the PLAYER
+ * principal moves the player actor AND an invited co-present co-traveler as ONE
+ * indivisible action. `actorId` is the player (controlled by the principal);
+ * `coTravelerActorId` is the invited primary — authorized NOT by the principal
+ * (§14.2: a player never directs an NPC) but by the deterministic
+ * `decideAccompany` policy the resolver re-runs inside the locked authority view.
+ * Accept ⇒ ONE shared journey carries both (both land together by construction);
+ * decline ⇒ the command's own §14.4 refusal. Replaces the former three-transaction
+ * choreography that could strand the pair mid-move.
+ */
+const moveTogetherPayloadSchema = z
+  .object({
+    actorId: worldCharacterIdSchema,
+    coTravelerActorId: worldCharacterIdSchema,
+    destinationZoneId: zoneIdSchema,
+    travelMode: travelModeSchema,
+  })
+  .strict()
+  .refine((payload) => payload.actorId !== payload.coTravelerActorId, {
+    message: "A walk-together needs two distinct travellers",
+    path: ["coTravelerActorId"],
+  });
+
+export const moveTogetherCommandSchema = createCommandEnvelopeSchema(
+  "move_together",
+  1,
+  moveTogetherPayloadSchema,
+);
+
+export const moveTogetherRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "actor_not_found",
+  "unauthorized_actor",
+  "destination_not_found",
+  "already_at_destination",
+  "actor_in_transit",
+  "activity_conflict",
+  "no_route",
+  "route_access_denied",
+  "travel_mode_unavailable",
+  // Co-traveler-specific faces (§14.2 walk-with-me):
+  "co_traveler_not_found",
+  "co_traveler_in_transit",
+  "not_copresent",
+  // The deterministic acceptance policy declined — the command's own §14.4 face.
+  "accompany_declined",
+] as const;
+export const moveTogetherRejectionCodeSchema = z.enum(moveTogetherRejectionCodes);
+export const moveTogetherCommandResultSchema = createCommandResultSchema(moveTogetherRejectionCodeSchema);
+
 // --- ArriveJourney command (engine.spec §9.3) -------------------------------
 
 /**
@@ -483,6 +538,10 @@ export type MoveActorCommand = z.infer<typeof moveActorCommandSchema>;
 export type MoveActorCommandInput = z.input<typeof moveActorCommandSchema>;
 export type MoveActorRejectionCode = z.infer<typeof moveActorRejectionCodeSchema>;
 export type MoveActorCommandResult = z.infer<typeof moveActorCommandResultSchema>;
+export type MoveTogetherCommand = z.infer<typeof moveTogetherCommandSchema>;
+export type MoveTogetherCommandInput = z.input<typeof moveTogetherCommandSchema>;
+export type MoveTogetherRejectionCode = z.infer<typeof moveTogetherRejectionCodeSchema>;
+export type MoveTogetherCommandResult = z.infer<typeof moveTogetherCommandResultSchema>;
 export type ArriveJourneyCommand = z.infer<typeof arriveJourneyCommandSchema>;
 export type ArriveJourneyCommandInput = z.input<typeof arriveJourneyCommandSchema>;
 export type ArriveJourneyRejectionCode = z.infer<typeof arriveJourneyRejectionCodeSchema>;

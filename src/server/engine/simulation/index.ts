@@ -251,4 +251,5 @@ export {
   type SpaceStoreOptions,
   type SpaceTopologySeed,
 } from "./space-store";
+export { submitDurableMoveTogether, type MoveTogetherStoreOptions } from "./move-together-store";
 export { applyTriggerScheduledEvent } from "./trigger-projector";

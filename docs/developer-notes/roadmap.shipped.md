@@ -5,6 +5,25 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Command integrity — serialize, survive, atomize (COMPLETE)** —
+  [command-integrity.plan.md](command-integrity.plan.md) · engine.spec §39 rulings
+  26–30 — 2026-07-24 — graduated + built same day (backlog A1+A2+A4); three
+  successor-command correctness bugs closed as one plan. **Serialize (A1):**
+  sim-command + headless sim-turn routes take the shared `chat_exchange:${chatId}`
+  lock (`chat_busy` 409 bounce, holder-labelled) plus a `sim_command_requests`
+  replay table (migration 0087) — a duplicated skip/travel replays one response, no
+  doubled time, one beat (deterministic beat ids + a pre-clock anchor). **Survive
+  (A2):** an opt-in `at_least` advance so a co-present turn overtaken by a
+  concurrent drain lands at the drained clock instead of crashing with "story time
+  cannot move backwards" (every other caller keeps the loud guard). **Atomize
+  (A4):** walk-with-me is now ONE branch-locked `move_together` command —
+  `decideAccompany` re-runs inside the locked view (§14.2), acceptance commits
+  scene-end + one shared journey (both actors) + one arrival in a single
+  transaction; the three-transaction choreography that could strand the pair
+  mid-move is deleted (a conflict is an honest `rejected`, never phantom co-travel).
+  Built by four Opus subagents; local gates green (2545 pure); the integration
+  tests (lock/idempotency/crash-point, tolerant-advance race, move_together
+  atomicity) gate in CI. Migration 0087 applies on Fly deploy.
 - **Sim read hardening — guard the seams, read them fresh, read them once** —
   [sim-read-seam-guards.plan.md](sim-read-seam-guards.plan.md) — 2026-07-24 —
   graduated + built same day (backlog C14+C16). The four successor state-read
