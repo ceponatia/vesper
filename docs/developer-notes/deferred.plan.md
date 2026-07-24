@@ -18,12 +18,14 @@ discuss — each stub graduates per deferred/CLAUDE.md to its own
 `<topic>.plan.md` (+ spec where warranted) and a roadmap line, leaving a
 tombstone here.** None are committed work until then._
 
-- **A. Bugs first** — composed-command idempotency + per-chat lock; send-vs-drain
-  clock race (dead turn); solo-reply regenerate 409; `travel_together` crash
-  window (A1, A2, A4 — fleshed out 2026-07-23, rulings recorded in each stub;
-  grouped as one command-integrity plan — serialize, survive, atomize —
-  discussion-complete). _A5+A6+A7 (drain honesty/backoff/arrival) graduated
-  2026-07-23 → [drain-hardening.plan.md](drain-hardening.plan.md)._
+- **A. Bugs first.** _A1+A2+A4 (composed-command idempotency + per-chat lock;
+  turn-vs-drain dead-turn race; `travel_together` crash window) graduated
+  2026-07-24 → [command-integrity.plan.md](command-integrity.plan.md) (serialize,
+  survive, atomize; all three stubs removed). A5+A6+A7 (drain
+  honesty/backoff/arrival) graduated 2026-07-23 →
+  [drain-hardening.plan.md](drain-hardening.plan.md)._ Still parked: **A3**
+  solo-reply regenerate 409
+  ([deferred/solo-retake.plan.md](deferred/solo-retake.plan.md)).
 - **B. Living world** — seed the built-but-unseeded life (commitments, third
   zone, meal item, lore memories — the standout cheap win); the primary's LOD
   ruling (at `exact` she is mechanically inert forever); remote text/voice when

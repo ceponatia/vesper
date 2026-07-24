@@ -1,6 +1,28 @@
 import { jsonError } from "@/server/api";
-import { readChatEngineAuthority } from "@/server/engine";
+import { CHAT_LOCK_LABEL_REPLY, keyedLockHolderLabel, readChatEngineAuthority } from "@/server/engine";
 import { loadOwnedChat, type OwnedChat } from "../owned";
+
+/**
+ * The per-chat serialization key both reply lanes (send pipeline, sim turn) and
+ * the successor sim-commands hold (command-integrity A1-2): one exchange in
+ * flight per conversation from any tab, lane, or headless caller.
+ */
+export function chatExchangeLockKey(chatId: string): string {
+  return `chat_exchange:${chatId}`;
+}
+
+/**
+ * The A1-1 / A2-2 busy bounce: contention turns away immediately (never queues),
+ * and the copy names the cause from the current holder's label — a streaming
+ * reply vs. the world catching up (fallback: catching up). Shared 409 `chat_busy`
+ * code so the client handles every lane the same way.
+ */
+export function chatBusyBounce(chatId: string): Response {
+  const holder = keyedLockHolderLabel(chatExchangeLockKey(chatId));
+  return holder === CHAT_LOCK_LABEL_REPLY
+    ? jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409)
+    : jsonError("chat_busy", "the world is catching up on this chat; try again in a moment", 409);
+}
 
 /**
  * R3 (engine.rollout.plan.md) — the one gate every sim route shares: the chat

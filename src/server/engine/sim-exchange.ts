@@ -1886,16 +1886,21 @@ async function runSimSoloTurn(input: {
   const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
   const primaryName = actorNames[primaryActorId] ?? "them";
 
-  // Time moves: advance the ordinary span and drain due triggers. A failure here
-  // degrades to rendering at the current clock, never a failed turn. A departure
-  // turn already drained to the arrival, so it does NOT advance again (that would
-  // over-count the parting past the moment the player just arrived).
+  // Time moves: advance the ordinary span and drain due triggers. A2-1: the
+  // advance is tolerant (`at_least`), so a concurrent drain that overtook this
+  // span is a legal race, not a degrade — the effective target clamps up to the
+  // drained clock and the turn renders there. The broad catch stays for OTHER
+  // failures (a genuine drain fault), but the overtaken-clock race no longer
+  // throws, so `simLoadWarn` no longer fires for it. A departure turn already
+  // drained to the arrival, so it does NOT advance again (that would over-count
+  // the parting past the moment the player just arrived).
   const before = await readBranchClock(branchId);
   if (input.departure === undefined) {
     try {
       await advanceBranchStoryTime(branchId, (before?.storySecond ?? 0) + 60, {
         workerId: `sim-solo-${chatId}`,
         database: db(),
+        targetMode: "at_least",
       });
     } catch (error) {
       simLoadWarn(chatId, "solo story-time advance degraded", error);

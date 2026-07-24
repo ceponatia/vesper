@@ -181,10 +181,14 @@ export async function prepareEngagementTurn(
   const turnEnd = fromStorySecond + input.spanSeconds;
 
   // §18.3 step 2: reconcile due world work through the turn boundary. The
-  // world does not freeze for a conversation.
+  // world does not freeze for a conversation. A2-1: the advance is tolerant — a
+  // concurrent skip/travel drain that already moved past `turnEnd` does NOT crash
+  // the turn; the effective target clamps up to the drained clock and the turn
+  // lands there. Due work through the effective target still drains first.
   const advance = await advanceBranchStoryTime(branchId, turnEnd, {
     workerId: input.workerId,
     database,
+    targetMode: "at_least",
   });
 
   // §18.3 steps 4–6: look ahead and let deterministic policy decide.

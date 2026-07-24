@@ -612,3 +612,79 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
     expect(branch?.version).toBe(2);
   });
 });
+
+// command-integrity.plan.md slice 2 (A2). Ruling A2-1 — the world's clock wins: the
+// turn-side advance is opt-in tolerant. `targetMode: "at_least"` treats the target as
+// a FLOOR (effective target = `max(requested, current clock)`), so a turn whose span was
+// overtaken by a concurrent skip/travel drain lands at the drained clock as a LEGAL
+// outcome (no throw). Every other caller keeps the loud backwards guard (the default
+// `"exact"`), which the first case pins is unchanged.
+describe.skipIf(!ready)("A2 tolerant advance — at_least mode", () => {
+  async function readClock(branchId: string): Promise<number | undefined> {
+    const [row] = await db()
+      .select({ storySecond: simBranches.storySecond })
+      .from(simBranches)
+      .where(eq(simBranches.id, branchId))
+      .limit(1);
+    return row?.storySecond;
+  }
+
+  it("clamps an overtaken at_least target up to the current clock — exact still throws (A2-1)", async () => {
+    const ids = makeIds();
+    await seedCase(ids);
+    // A concurrent drain already moved the clock past where this turn's span would land.
+    const drained = await advanceBranchStoryTime(ids.branchId, SEED_STORY_SECOND + 500, {
+      workerId: "drain",
+    });
+    expect(drained).toMatchObject({ status: "advanced", storySecond: SEED_STORY_SECOND + 500 });
+
+    // exact (the default every skip/travel/admin drain uses) keeps the loud backwards
+    // guard — a target behind the clock there is a genuine logic bug.
+    await expect(
+      advanceBranchStoryTime(ids.branchId, SEED_STORY_SECOND + 100, { workerId: "turn" }),
+    ).rejects.toThrow(/backwards/u);
+
+    // at_least: the world's clock wins — clamp UP to the current clock, land there, no throw.
+    const landed = await advanceBranchStoryTime(ids.branchId, SEED_STORY_SECOND + 100, {
+      workerId: "turn",
+      targetMode: "at_least",
+    });
+    expect(landed).toMatchObject({ status: "advanced", storySecond: SEED_STORY_SECOND + 500, drained: 0 });
+    expect(await readClock(ids.branchId)).toBe(SEED_STORY_SECOND + 500);
+  });
+
+  it("leaves a not-overtaken at_least target unchanged — it lands at the requested second", async () => {
+    const ids = makeIds();
+    await seedCase(ids);
+    // The requested target is AHEAD of the clock (the ordinary, un-raced turn): at_least
+    // behaves exactly like exact and lands at the requested second.
+    const landed = await advanceBranchStoryTime(ids.branchId, SEED_STORY_SECOND + 3_600, {
+      workerId: "turn",
+      targetMode: "at_least",
+    });
+    expect(landed).toMatchObject({ status: "advanced", storySecond: SEED_STORY_SECOND + 3_600 });
+    expect(await readClock(ids.branchId)).toBe(SEED_STORY_SECOND + 3_600);
+  });
+
+  it("still drains a trigger due at the effective (clamped) target (A2-1)", async () => {
+    const ids = makeIds();
+    await seedCase(ids);
+    // A concurrent drain advanced the clock to +500, but a trigger due exactly at +500
+    // has not resolved yet (it became eligible after the jump). Set the clock directly to
+    // model the raced state: clock ahead, trigger still pending at the effective target.
+    await scheduleAt(ids, SEED_STORY_SECOND + 500, "due-at-effective");
+    await db()
+      .update(simBranches)
+      .set({ storySecond: SEED_STORY_SECOND + 500 })
+      .where(eq(simBranches.id, ids.branchId));
+
+    // The turn's own span (+100) was overtaken; at_least clamps to +500 and the NORMAL
+    // drain loop still fires the trigger due at the effective target before the turn lands.
+    const landed = await advanceBranchStoryTime(ids.branchId, SEED_STORY_SECOND + 100, {
+      workerId: "turn",
+      targetMode: "at_least",
+    });
+    expect(landed).toMatchObject({ status: "advanced", storySecond: SEED_STORY_SECOND + 500, drained: 1 });
+    expect(await eventCount(ids.branchId)).toBe(1);
+  });
+});

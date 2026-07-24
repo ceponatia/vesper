@@ -522,6 +522,34 @@ that needs it.
     the player-visible payload) and (b) as a durable `composition_fallback` tally row
     for the admin inspector. Players see only the honest prose; no player-facing
     notice or retry affordance.
+26. **Contended sim commands turn away, never queue** — RESOLVED (2026-07-24,
+    command-integrity A1): a sim command (chip / skip / travel / do_activity)
+    arriving while the chat is busy — another command or a streaming reply —
+    bounces immediately with the message lane's quiet busy face (`chat_busy`
+    409). No bounded wait, no FIFO queue; the world card already greys chips
+    during a same-tab op, so a visible bounce is rare and just refreshes the card.
+27. **One shared per-chat lock for every writer** — RESOLVED (2026-07-24,
+    command-integrity A1): sim commands and the headless `sim-turn` route take the
+    SAME `chat_exchange:${chatId}` keyed lock the reply lanes hold, so chips,
+    skips, and replies serialize per chat from any tab or headless caller.
+    Retry-safety rides a dedicated `sim_command_requests` replay record
+    (client-minted `requestId`, `started → completed | failed`, payload-hash
+    bound, deterministic beat ids) so a duplicated request replays one response —
+    no doubled time, no second beat. In-process on the single-machine deploy;
+    re-keys by branch if it ever scales.
+28. **The world's clock wins — a turn never fails because time moved first** —
+    RESOLVED (2026-07-24, command-integrity A2): the turn-side story-time advance
+    is tolerant (`at_least` target = `max(requested turnEnd, current clock)`), so a
+    co-present turn overtaken by a concurrent drain lands at the drained clock as a
+    LEGAL outcome — no error, no degrade diagnostic. Skip/travel drain callers keep
+    the loud backwards guard (a backwards target there is a genuine logic bug, the
+    class ruling 24 exists to catch).
+29. **Send-vs-drain contention turns away, with the right words** — RESOLVED
+    (2026-07-24, command-integrity A2): a send arriving while a drain holds the chat
+    bounces with the same quiet busy face (mirror of ruling 26), but the copy says
+    the world is catching up, not "a reply is still streaming" (the keyed lock
+    carries a holder label). Client-side the composer disables during `skipBusy`
+    (parity with the world-card chips), so the visible bounce is rare.
 
 ## 40. Initial conformance checklist
 

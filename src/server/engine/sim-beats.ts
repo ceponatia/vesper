@@ -79,6 +79,13 @@ export async function writeWorldBeat(input: {
    * detail (ruling 2). Omitted / empty ⇒ no marker.
    */
   fallbacks?: readonly CompositionFallbackCode[];
+  /**
+   * A deterministic message id derived from the client request key (command-integrity
+   * A1, slice 4). When set, the insert is idempotent (`ON CONFLICT DO NOTHING` on the
+   * primary key), so a crash-window retry that re-executes the command writes exactly
+   * one beat. Omitted (NL choreographies, durable jobs) ⇒ a fresh `newId()` per call.
+   */
+  dedupeId?: string;
 }): Promise<void> {
   try {
     const clock = await readBranchClock(input.branchId);
@@ -93,18 +100,21 @@ export async function writeWorldBeat(input: {
       ...(input.itemName === undefined ? {} : { itemName: input.itemName }),
       ...(input.activityLabel === undefined ? {} : { activityLabel: input.activityLabel }),
     });
-    await db().insert(characterChatMessages).values({
-      id: newId(),
-      chatId: input.chatId,
-      speakerCharacterId: null,
-      role: "assistant",
-      content,
-      meta: {
-        simTurn: true,
-        worldBeat: { kind: input.kind },
-        ...(input.fallbacks && input.fallbacks.length ? { compositionFallbacks: [...input.fallbacks] } : {}),
-      },
-    });
+    await db()
+      .insert(characterChatMessages)
+      .values({
+        id: input.dedupeId ?? newId(),
+        chatId: input.chatId,
+        speakerCharacterId: null,
+        role: "assistant",
+        content,
+        meta: {
+          simTurn: true,
+          worldBeat: { kind: input.kind },
+          ...(input.fallbacks && input.fallbacks.length ? { compositionFallbacks: [...input.fallbacks] } : {}),
+        },
+      })
+      .onConflictDoNothing();
   } catch (error) {
     log.warn("engine.sim.world_beat", "beat write degraded; command already succeeded", {
       chatId: input.chatId,

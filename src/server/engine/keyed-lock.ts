@@ -11,17 +11,41 @@ interface LockEntry {
   chain: Promise<void>;
   /** Holders + waiters; the entry is dropped when it reaches 0. */
   count: number;
+  /**
+   * A caller-supplied tag for the holder currently running `fn` (command-integrity
+   * A2-2/slice 3): a busy MISS reads it to name the cause — "reply" (a turn is
+   * streaming) vs "world_catchup" (a world command holds the clock). Set when a
+   * holder begins executing; the next holder overwrites it.
+   */
+  label?: string;
 }
 
 const locks = new Map<string, LockEntry>();
+
+/**
+ * Holder labels for the shared `chat_exchange:<chatId>` key — a busy 409 reads the
+ * current holder's label (via {@link keyedLockHolderLabel}) to name its cause.
+ * Live here (the lock's server home) so both the reply lanes and the app-layer sim
+ * routes share one source of truth without an app→server label import.
+ */
+export const CHAT_LOCK_LABEL_REPLY = "reply";
+export const CHAT_LOCK_LABEL_WORLD = "world_catchup";
 
 /** True while any holder or waiter is active on the key. */
 export function keyedLockBusy(key: string): boolean {
   return (locks.get(key)?.count ?? 0) > 0;
 }
 
+/**
+ * The label of the holder currently running under this key (or `undefined` when
+ * free / unlabelled) — the busy 409 copy names its cause from it (slice 3).
+ */
+export function keyedLockHolderLabel(key: string): string | undefined {
+  return locks.get(key)?.label;
+}
+
 /** Run `fn` with the key held; concurrent callers queue in FIFO order. */
-export async function withKeyedLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+export async function withKeyedLock<T>(key: string, fn: () => Promise<T>, label?: string): Promise<T> {
   const entry = locks.get(key) ?? { chain: Promise.resolve(), count: 0 };
   entry.count += 1;
   locks.set(key, entry);
@@ -31,6 +55,8 @@ export async function withKeyedLock<T>(key: string, fn: () => Promise<T>): Promi
     release = resolve;
   });
   await prev;
+  // Now the active holder: stamp our label so a concurrent busy-miss names us.
+  entry.label = label;
   try {
     return await fn();
   } finally {
@@ -44,10 +70,11 @@ export async function withKeyedLock<T>(key: string, fn: () => Promise<T>): Promi
  * Non-blocking variant: run `fn` with the key held, or return `null` immediately
  * if the key is busy (the caller turns that into a 409). The busy check and the
  * acquisition happen in the same synchronous tick, so two callers can't both pass.
+ * `label` tags the holder so a later busy-miss can name the cause (slice 3).
  */
-export function tryKeyedLock<T>(key: string, fn: () => Promise<T>): Promise<T> | null {
+export function tryKeyedLock<T>(key: string, fn: () => Promise<T>, label?: string): Promise<T> | null {
   if (keyedLockBusy(key)) return null;
-  return withKeyedLock(key, fn);
+  return withKeyedLock(key, fn, label);
 }
 
 /**
@@ -69,13 +96,13 @@ export function tryKeyedLock<T>(key: string, fn: () => Promise<T>): Promise<T> |
 export async function acquireKeyedLockWithin<T>(
   key: string,
   fn: () => Promise<T>,
-  opts: { timeoutMs: number; pollMs?: number; onAttempt?: () => void },
+  opts: { timeoutMs: number; pollMs?: number; onAttempt?: () => void; label?: string },
 ): Promise<{ held: Promise<T> } | null> {
   const pollMs = Math.max(1, opts.pollMs ?? 100);
   const deadline = Date.now() + opts.timeoutMs;
   for (;;) {
     opts.onAttempt?.();
-    const held = tryKeyedLock(key, fn);
+    const held = tryKeyedLock(key, fn, opts.label);
     if (held !== null) return { held };
     if (Date.now() >= deadline) return null;
     await new Promise((resolve) => setTimeout(resolve, pollMs));
