@@ -85,6 +85,11 @@ Added after the review:
   location builder (2026-07-23): authored locations outside the entity
   library — spatial model (position/facing/obstacles/line of sight),
   furniture, ownership/residency, upkeep, function typing
+- [security-authz.plan.md](security-authz.plan.md) — S1–S7 from the
+  2026-07-25 external static security review (magic-link log leak, public
+  full-row DTOs, unscoped delete traversal, app-only ownership enforcement,
+  public-image owner binding, pre-signup auth checklist, two-user authz test
+  matrix); every finding code-verified at parking
 - [physiology.plan.md](physiology.plan.md) — owner-requested physiology
   simulation (2026-07-23): triggered body responses as background processes
   (arousal → blood flow → swelling/lubrication, cold → shivering, fear →
