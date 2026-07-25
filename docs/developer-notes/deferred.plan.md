@@ -71,24 +71,10 @@ already shipped with drain-hardening)._
 
 ## Security review follow-ups (2026-07-25) — ownership & auth hardening
 
-_Stub: [deferred/security-authz.plan.md](deferred/security-authz.plan.md).
-Parked from an external static security review of main; all seven findings
-(S1–S7) re-verified in code before parking._ Successor to the shipped
-2026-06-23 sweep
-([finished/security-hardening.plan.md](finished/security-hardening.plan.md)).
-Nothing is exploitable under today's deployment facts (single owner,
-`ALLOW_SIGNUP` off, chats reject foreign characters), but several findings are
-one planned feature away from being live: **S1** magic-link URLs logged in
-production (the now-fix — a live sign-in URL in log retention); **S2** public
-entities/portraits returned as full DB rows (incl. image `path`/`prompt`)
-instead of allow-listed DTOs; **S3** character-delete's chat traversal and
-`deleteChat` trusting route-supplied ownership; **S4** ownership enforced only
-in app queries (lint-guardrail / repo-helper sketch; RLS an open question);
-**S5** public-image gate not binding image owner to entity owner; **S6** the
-pre-public-signup auth checklist (email verification, shared rate limiting,
-admin MFA, session revocation); **S7** a reusable two-user authorization test
-matrix. S1 is small enough to ride along with any auth-adjacent work before
-promotion.
+_Graduated 2026-07-25 (same day as parking, on the owner's call) →
+[security-authz.plan.md](security-authz.plan.md), queued at the top of
+[roadmap.md](roadmap.md) §Next. All seven findings (S1–S7) from the external
+static security review, fleshed into slices there._
 
 ## World authoring — locations, travel distances & durations
 
