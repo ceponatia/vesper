@@ -45,4 +45,27 @@ Every `.int.test.ts` suite probes the database at collection and **self-skips** 
 
 `pnpm test:int:strict` is the same run with `REQUIRE_INTEGRATION_DB=true`: the shared probe **throws** instead of returning "skip", so the suite fails loudly and names what was unreachable. Use it before a release or in CI; plain `pnpm test:int` stays skip-tolerant for local work. (`CI=true` and `VESPER_REQUIRE_TEST_DB=1` are honored as strict signals too — they predate the flag.)
 
+### Running the whole integration suite locally
+
+`pnpm test:int` needs **`VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1`**:
+
+```
+VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1 pnpm test:int
+```
+
+The low-level engine suites seed bare branches and submit the shared synthetic
+player fixture, which the simulation authorization seam refuses without this
+opt-in (deliberately — authorization tests leave it unset and keep proving that
+ordinary unanchored players fail). CI exports it for the `pnpm test:engine` step,
+so a plain local `pnpm test:int` reports **~120 spurious failures** in
+`simulation/*-store` and the gate corpora that CI never sees. Note also that CI
+runs `test:engine`'s curated glob rather than the whole suite, so the route-level
+suites (`gallery`, `chat`, `library-routes`, `authz-matrix`, `public-dto`,
+`variants`) are **not** gated on merge — see `rate-limits.plan.md` OQ3.
+
+Fixtures inserting `images` rows must go through **`canonicalImageRow`**
+(`@/server/test-support`): the `images_path_canonical` CHECK requires the stored
+path to be exactly `images/<owner_id>/<id>.webp`, and the helper derives the id
+and the path together so a suite cannot pick one without the other.
+
 The probe lives in one place, `src/server/test-support/int-db.ts` (`probeIntegrationDb(suite, table)`), imported through the `@/server/test-support` barrel. **A suite honors strict mode only once it uses that helper**; suites still carrying their own inline probe skip regardless of the flag. Converted so far: the security surface — `server/api/authz-matrix`, `server/api/public-dto`, `server/api/library`, `server/api/social-cards`, `server/images/variants`, `server/engine/simulation/command-authz`, `app/api/chats/chat`. Everything else (the engine `simulation/*-store` and gate-corpus suites, the remaining `app/api/**` route suites, `server/memory`, `server/images/assets`, the chat-lane `server/engine/chat-*` suites) still self-skips — convert a suite's probe to the helper when you next touch it.

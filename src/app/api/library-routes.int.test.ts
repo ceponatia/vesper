@@ -15,6 +15,7 @@ import {
   users,
 } from "@/server/db";
 import { resetRateLimits } from "@/server/api";
+import { canonicalImageRow } from "@/server/test-support";
 
 // Demo-mode route-handler integration suite (docs/testing.md §api): handlers
 // invoked directly with mocked auth against DATABASE_URL. Self-skips when the
@@ -607,7 +608,9 @@ describe("images: avatar job, portraits, serving", () => {
     expect(missing.status).toBe(404);
     const [pendingRow] = await db()
       .insert(images)
-      .values({ ownerId: authState.user.id, kind: "entity", entityKind: "world", path: "images/x/pending.webp" })
+      .values(
+        canonicalImageRow({ ownerId: authState.user.id, kind: "entity" as const, entityKind: "world" as const }),
+      )
       .returning();
     if (!pendingRow) throw new Error("failed to insert pending image");
     const pending = await imageFileRoute(get(`http://t/api/images/${pendingRow.id}/file`), ctx({ id: pendingRow.id }));

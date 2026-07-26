@@ -28,7 +28,7 @@ import {
   socialCards,
   users,
 } from "@/server/db";
-import { probeIntegrationDb } from "@/server/test-support";
+import { canonicalImageRow, probeIntegrationDb } from "@/server/test-support";
 // The ownership gates these rows drive live in the route tree rather than a
 // server barrel (`src/app/api/**/owned.ts`), but they are plain exported async
 // functions, so the matrix calls the REAL seam the route calls instead of a
@@ -185,26 +185,28 @@ beforeAll(async () => {
 
   const [portrait] = await db()
     .insert(images)
-    .values({
-      ownerId: ownerA,
-      kind: "portrait_variant",
-      entityKind: "character",
-      entityId: fixture.privateCharacter,
-      path: `images/${ownerA}/portrait.webp`,
-      prompt: "the author's private generation prompt",
-      status: "ready",
-    })
+    .values(
+      canonicalImageRow({
+        ownerId: ownerA,
+        kind: "portrait_variant" as const,
+        entityKind: "character" as const,
+        entityId: fixture.privateCharacter,
+        prompt: "the author's private generation prompt",
+        status: "ready" as const,
+      }),
+    )
     .returning({ id: images.id });
   const [bImage] = await db()
     .insert(images)
-    .values({
-      ownerId: ownerB,
-      kind: "portrait_variant",
-      entityKind: "character",
-      entityId: fixture.bCharacter,
-      path: `images/${ownerB}/own.webp`,
-      status: "ready",
-    })
+    .values(
+      canonicalImageRow({
+        ownerId: ownerB,
+        kind: "portrait_variant" as const,
+        entityKind: "character" as const,
+        entityId: fixture.bCharacter,
+        status: "ready" as const,
+      }),
+    )
     .returning({ id: images.id });
   fixture.portrait = portrait!.id;
   fixture.bImage = bImage!.id;
@@ -401,7 +403,7 @@ const resources: OwnedResource[] = [
     seed: async (ownerId) => {
       const [row] = await db()
         .insert(images)
-        .values({ ownerId, kind: "scene", path: `images/${ownerId}/${newId()}.webp`, status: "ready" })
+        .values(canonicalImageRow({ ownerId, kind: "scene" as const, status: "ready" as const }))
         .returning({ id: images.id });
       return row!.id;
     },

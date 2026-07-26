@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { generateEntityImagesBatch, missingEntityImageIds } from "@/server/images";
-import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, startJob, withUser } from "@/server/api";
+import { imageRenderRejection, jobCapRejection, jsonOk, readBody, startJob, withUser } from "@/server/api";
 
 /** Optional id scope — the library sends the ids visible under the active filter. */
 const batchBodySchema = z.object({ ids: z.array(z.string()).optional() });
@@ -21,22 +21,30 @@ const MAX_BATCH = 100;
  * batches of 5 in a background job that survives navigation; returns how many
  * were queued. Locations that already have an image are skipped.
  */
-export const POST = withUser(async (user, req: NextRequest) => {
-  const body = await readBody(req, batchBodySchema);
-  // A malformed body must 400, never widen the scope (codebase-review A4): the old
-  // `body.ok ? {ids} : undefined` turned invalid JSON into "generate EVERY missing
-  // location" — an unbounded-ish paid-render batch from a bad request.
-  if (!body.ok) return body.response;
-  const candidates = await missingEntityImageIds("location", user.id, { ids: body.value.ids });
-  if (candidates.length === 0) return jsonOk({ queued: 0 });
-  if (!rateLimit(`location_image:${user.id}`, GENERATION_RATE_LIMIT)) {
-    return jsonError("rate_limited", "too many image generations; try again in a minute", 429);
-  }
-  const ids = candidates.slice(0, MAX_BATCH);
-  const jobId = await startJob({
-    type: "entity_image",
-    payload: { entityKind: "location", batch: ids.length },
-    run: async () => ({ count: await generateEntityImagesBatch("location", ids, user.id) }),
-  });
-  return jsonOk({ jobId, queued: ids.length }, 202);
-});
+export const POST = withUser(
+  async (user, req: NextRequest) => {
+    const body = await readBody(req, batchBodySchema);
+    // A malformed body must 400, never widen the scope (codebase-review A4): the old
+    // `body.ok ? {ids} : undefined` turned invalid JSON into "generate EVERY missing
+    // location" — an unbounded-ish paid-render batch from a bad request.
+    if (!body.ok) return body.response;
+    const candidates = await missingEntityImageIds("location", user.id, { ids: body.value.ids });
+    if (candidates.length === 0) return jsonOk({ queued: 0 });
+
+    const ids = candidates.slice(0, MAX_BATCH);
+    // The batch charges its real size against the daily budget and storage
+    // headroom — one call here is `ids.length` paid renders, not one.
+    const blocked = await imageRenderRejection(user, req, { count: ids.length });
+    if (blocked) return blocked;
+
+    const job = await startJob({
+      type: "entity_image",
+      ownerId: user.id,
+      payload: { entityKind: "location", batch: ids.length },
+      run: async () => ({ count: await generateEntityImagesBatch("location", ids, user.id) }),
+    });
+    if (!job.ok) return jobCapRejection(job, user, req);
+    return jsonOk({ jobId: job.jobId, queued: ids.length }, 202);
+  },
+  { limit: "image_generate" },
+);

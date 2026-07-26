@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { uploadAvatar } from "@/server/images";
-import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
+import { jsonError, jsonOk, readBody, uploadRejection, withUser } from "@/server/api";
 import { findOwnedCharacter } from "../../owned";
 
 type Params = { id: string };
@@ -23,16 +23,19 @@ const uploadBodySchema = z.object({
  * (docs/images.md). Synchronous — no model runs, so the new avatar id comes
  * back in the response and the studio refetches immediately, no polling.
  */
-export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  const { id } = await ctx.params;
-  const body = await readBody(req, uploadBodySchema);
-  if (!body.ok) return body.response;
-  if (!(await findOwnedCharacter(id, user.id))) return jsonError("not_found", "character not found", 404);
-  if (!rateLimit(`avatar_gen:${user.id}`, GENERATION_RATE_LIMIT)) {
-    return jsonError("rate_limited", "too many avatar uploads; try again in a minute", 429);
-  }
+export const POST = withUser<Params>(
+  async (user, req: NextRequest, ctx) => {
+    const { id } = await ctx.params;
+    const body = await readBody(req, uploadBodySchema);
+    if (!body.ok) return body.response;
+    if (!(await findOwnedCharacter(id, user.id))) return jsonError("not_found", "character not found", 404);
 
-  const result = await uploadAvatar({ characterId: id, userId: user.id, dataUrl: body.value.image });
-  if (!result.ok) return jsonError("bad_request", result.error, 400);
-  return jsonOk({ avatarImageId: result.avatarImageId }, 201);
-});
+    const blocked = await uploadRejection(user, req, body.value.image);
+    if (blocked) return blocked;
+
+    const result = await uploadAvatar({ characterId: id, userId: user.id, dataUrl: body.value.image });
+    if (!result.ok) return jsonError("bad_request", result.error, 400);
+    return jsonOk({ avatarImageId: result.avatarImageId }, 201);
+  },
+  { limit: "upload" },
+);

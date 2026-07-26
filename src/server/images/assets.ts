@@ -139,7 +139,10 @@ export async function saveImageBuffer(imageId: string, buffer: Buffer, sink?: Di
     const info = await writeWebpAtomic(absoluteImagePath(row), buffer);
     const [updated] = await db()
       .update(images)
-      .set({ status: "ready", meta: mergeMeta(row.meta, { ...info }) })
+      // `bytes` is also the storage-quota column (rate-limits.plan.md slice 4);
+      // it is written here, at the one place a file actually lands on disk, so
+      // the quota measures reality rather than intent.
+      .set({ status: "ready", bytes: info.bytes, meta: mergeMeta(row.meta, { ...info }) })
       .where(eq(images.id, imageId))
       .returning();
     return updated ?? null;

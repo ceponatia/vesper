@@ -5,6 +5,18 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Rate limits & cost controls** — [rate-limits.plan.md](rate-limits.plan.md) —
+  2026-07-26 — the authorization batch closed *who may touch what*; this closes
+  *how much*. Burst limits and cost controls split by what losing them would
+  cost: per-IP windows ahead of authentication and named per-user policies stay
+  in-process, while daily provider budgets, the per-owner storage quota, and the
+  concurrent-job cap are durable, because an in-memory budget is reset by
+  crash-looping the process. Denials are 429s carrying real retry metadata,
+  backpressure sheds unstarted work at 503 when a provider lane trips, and abuse
+  signals ride a seam with no field a prompt could travel in. Migration 0088.
+  Also fixed six integration suites left red on main by the previous batch's
+  image-path CHECK constraint; the CI-coverage gap that hid them is OQ3.
+
 - **Security & ownership hardening — S1–S7 (COMPLETE)** —
   [security-authz.plan.md](security-authz.plan.md) — 2026-07-26 — parked,
   promoted, and built within two days of the external static review. Magic-link

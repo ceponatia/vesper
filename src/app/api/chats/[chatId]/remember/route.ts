@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { DiagnosticCollector } from "@/contracts";
-import { CHAT_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
+import { dailyBudgetRejection, jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { addFacts, chatScope } from "@/server/memory";
 import { resolveChatPersona } from "@/server/players";
 import { loadOwnedChat } from "../../owned";
@@ -35,9 +35,10 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   if (owned.chat.archivedAt) {
     return jsonError("chat_archived", "this conversation is archived; restore it to continue", 409);
   }
-  if (!rateLimit(`chat_remember:${user.id}`, CHAT_RATE_LIMIT)) {
-    return jsonError("rate_limited", "too many notes; try again in a minute", 429);
-  }
+
+  // Storing a note embeds it, so this route spends on the embedding lane.
+  const blocked = await dailyBudgetRejection("provider_embed_day", user, req);
+  if (blocked) return blocked;
 
   const sink = new DiagnosticCollector();
   const player = await resolveChatPersona({ ownerId: user.id, chatId });
@@ -66,4 +67,4 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     },
     201,
   );
-});
+}, { limit: "embed" });

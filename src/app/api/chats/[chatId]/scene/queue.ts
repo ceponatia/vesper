@@ -136,8 +136,9 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
       void enqueueChatPlaceImage({ chatId: args.chatId, characterId: args.character.id, placeName: place.name });
     }
 
-    return await startJob({
+    const job = await startJob({
       type: "chat_scene_image",
+      ownerId: args.userId,
       payload: { chatId: args.chatId, characterId: args.character.id, ...(args.flavor ? { flavor: args.flavor } : {}) },
       run: async () => ({
         imageId: await renderCharacterSceneImage({
@@ -168,6 +169,18 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
         }),
       }),
     });
+    if (!job.ok) {
+      // The per-user concurrency cap refused the slot. Same `null` contract the
+      // already-rendering and failure paths use — the auto hook is
+      // fire-and-forget, and the manual route reports it as "too much in flight".
+      log.info("chat_scene", "scene render capped by concurrent job limit", {
+        chatId: args.chatId,
+        active: job.active,
+        limit: job.limit,
+      });
+      return null;
+    }
+    return job.jobId;
   } catch (error) {
     log.warn("chat_scene", "failed to queue chat scene", {
       chatId: args.chatId,

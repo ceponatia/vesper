@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
+import { jsonError, jsonOk, readBody, uploadRejection, withUser } from "@/server/api";
 import { uploadChatAttachment } from "@/server/images";
 import { loadOwnedChat } from "../../owned";
 
@@ -26,18 +26,21 @@ const uploadBodySchema = z.object({
  * are input-only chat content: Gallery-hidden and hard-deleted with their
  * message/conversation.
  */
-export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  const { chatId } = await ctx.params;
-  const body = await readBody(req, uploadBodySchema);
-  if (!body.ok) return body.response;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
-  if (owned.chat.archivedAt) return jsonError("chat_archived", "this conversation is archived; restore it to continue", 409);
-  if (!rateLimit(`chat_attachment:${user.id}`, GENERATION_RATE_LIMIT)) {
-    return jsonError("rate_limited", "too many uploads; try again in a minute", 429);
-  }
+export const POST = withUser<Params>(
+  async (user, req: NextRequest, ctx) => {
+    const { chatId } = await ctx.params;
+    const body = await readBody(req, uploadBodySchema);
+    if (!body.ok) return body.response;
+    const owned = await loadOwnedChat(chatId, user.id);
+    if (!owned) return jsonError("not_found", "chat not found", 404);
+    if (owned.chat.archivedAt) return jsonError("chat_archived", "this conversation is archived; restore it to continue", 409);
 
-  const result = await uploadChatAttachment({ chatId, userId: user.id, dataUrl: body.value.image });
-  if (!result.ok) return jsonError("bad_request", result.error, 400);
-  return jsonOk({ id: result.imageId }, 201);
-});
+    const blocked = await uploadRejection(user, req, body.value.image);
+    if (blocked) return blocked;
+
+    const result = await uploadChatAttachment({ chatId, userId: user.id, dataUrl: body.value.image });
+    if (!result.ok) return jsonError("bad_request", result.error, 400);
+    return jsonOk({ id: result.imageId }, 201);
+  },
+  { limit: "upload" },
+);

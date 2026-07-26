@@ -49,7 +49,7 @@ import {
 } from "@/server/engine";
 import { resetRateLimits } from "@/server/api";
 import { log } from "@/server/log";
-import { probeIntegrationDb } from "@/server/test-support";
+import { canonicalImageRow, probeIntegrationDb } from "@/server/test-support";
 import { POST as chatsCreate } from "./route";
 import { DELETE as characterDelete } from "../characters/[id]/route";
 import { DELETE as chatDelete, GET as chatGet, POST as chatSend } from "./[chatId]/route";
@@ -69,8 +69,9 @@ import { DELETE as participantRemove, PATCH as participantPatch } from "./[chatI
 const ready = await probeIntegrationDb("chat.int.test", "character_chats");
 
 // The whole suite drives one user through one process, so the in-memory per-user
-// chat cap (CHAT_RATE_LIMIT, 30/min) is shared across every test — reset it per
-// test so adding an exchange to one test can't 429 an unrelated one.
+// chat cap (the `chat` policy, 30/min) and the shared pre-auth per-IP window are
+// both shared across every test — reset them per test so adding an exchange to
+// one test can't 429 an unrelated one.
 beforeEach(() => resetRateLimits());
 
 const collectionCtx = { params: Promise.resolve({}) };
@@ -406,14 +407,15 @@ describe("GET + DELETE /api/chats/:chatId", () => {
     // A chat scene's prompt embeds recent chat lines; the asset must survive a
     // delete, but its chat-derived prompt must not (gallery enlarge shows it).
     const chat = await createChat(ids.character);
-    await db().insert(images).values({
-      ownerId: authState.user.id,
-      kind: "scene",
-      entityKind: "character",
-      entityId: ids.character,
-      path: "images/test/scene.webp",
-      prompt: "Mara leans close, whispering the secret she just told you.",
-    });
+    await db().insert(images).values(
+      canonicalImageRow({
+        ownerId: authState.user.id,
+        kind: "scene" as const,
+        entityKind: "character" as const,
+        entityId: ids.character,
+        prompt: "Mara leans close, whispering the secret she just told you.",
+      }),
+    );
 
     const del = await chatDelete(delReq(chat.id), ctx(chat.id));
     expect(del.status).toBe(200);
@@ -432,29 +434,31 @@ describe("GET + DELETE /api/chats/:chatId", () => {
     const chatB = await createChat(ids.character);
     const [sceneA] = await db()
       .insert(images)
-      .values({
-        ownerId: authState.user.id,
-        kind: "scene",
-        entityKind: "character",
-        entityId: ids.character,
-        chatId: chatA.id,
-        anchorMessageId: "anchor-a",
-        path: "images/test/scene-a.webp",
-        prompt: "Chat A's secret moment.",
-      })
+      .values(
+        canonicalImageRow({
+          ownerId: authState.user.id,
+          kind: "scene" as const,
+          entityKind: "character" as const,
+          entityId: ids.character,
+          chatId: chatA.id,
+          anchorMessageId: "anchor-a",
+          prompt: "Chat A's secret moment.",
+        }),
+      )
       .returning();
     const [sceneB] = await db()
       .insert(images)
-      .values({
-        ownerId: authState.user.id,
-        kind: "scene",
-        entityKind: "character",
-        entityId: ids.character,
-        chatId: chatB.id,
-        anchorMessageId: "anchor-b",
-        path: "images/test/scene-b.webp",
-        prompt: "Chat B's secret moment.",
-      })
+      .values(
+        canonicalImageRow({
+          ownerId: authState.user.id,
+          kind: "scene" as const,
+          entityKind: "character" as const,
+          entityId: ids.character,
+          chatId: chatB.id,
+          anchorMessageId: "anchor-b",
+          prompt: "Chat B's secret moment.",
+        }),
+      )
       .returning();
 
     const del = await chatDelete(delReq(chatA.id), ctx(chatA.id));
@@ -472,23 +476,24 @@ describe("GET + DELETE /api/chats/:chatId", () => {
     if (!ready) return t.skip();
     const chatA = await createChat(ids.character);
     const chatB = await createChat(ids.character);
-    const seed = (chatId: string | null, path: string) =>
+    const seed = (chatId: string | null) =>
       db()
         .insert(images)
-        .values({
-          ownerId: authState.user.id,
-          kind: "scene",
-          entityKind: "character",
-          entityId: ids.character,
-          chatId,
-          path,
-          prompt: "moment",
-        })
+        .values(
+          canonicalImageRow({
+            ownerId: authState.user.id,
+            kind: "scene" as const,
+            entityKind: "character" as const,
+            entityId: ids.character,
+            chatId,
+            prompt: "moment",
+          }),
+        )
         .returning({ id: images.id });
     const [[sceneA], [sceneB]] = await Promise.all([
-      seed(chatA.id, "images/test/scoped-a.webp"),
-      seed(chatB.id, "images/test/scoped-b.webp"),
-      seed(null, "images/test/scoped-legacy.webp"), // gallery-only; must not surface in any chat
+      seed(chatA.id),
+      seed(chatB.id),
+      seed(null), // gallery-only; must not surface in any chat
     ]);
 
     const res = await sceneList(getReq(chatA.id), ctx(chatA.id));

@@ -2,11 +2,11 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { itemKindSchema } from "@/contracts";
 import {
+  backpressureRejection,
+  dailyBudgetRejection,
   draftItemProposal,
-  GENERATION_RATE_LIMIT,
   jsonError,
   jsonOk,
-  rateLimit,
   readBody,
   withUser,
 } from "@/server/api";
@@ -29,15 +29,21 @@ const draftBodySchema = z
  * Stateless: nothing is written; the editor fill-merges into the unsaved form
  * so the SaveBar stays the review step (the Forge-the-rest discipline).
  */
-export const POST = withUser(async (user, req: NextRequest) => {
-  const body = await readBody(req, draftBodySchema);
-  if (!body.ok) return body.response;
-  if (!rateLimit(`item_draft:${user.id}`, GENERATION_RATE_LIMIT)) {
-    return jsonError("rate_limited", "too many drafts; try again in a minute", 429);
-  }
-  const draft = await draftItemProposal(body.value);
-  if (!draft) {
-    return jsonError("draft_failed", "the draft model returned nothing usable — try again", 502);
-  }
-  return jsonOk({ draft });
-});
+export const POST = withUser(
+  async (user, req: NextRequest) => {
+    const body = await readBody(req, draftBodySchema);
+    if (!body.ok) return body.response;
+
+    const shed = await backpressureRejection("text", user, req);
+    if (shed) return shed;
+    const overBudget = await dailyBudgetRejection("provider_text_day", user, req);
+    if (overBudget) return overBudget;
+
+    const draft = await draftItemProposal(body.value);
+    if (!draft) {
+      return jsonError("draft_failed", "the draft model returned nothing usable — try again", 502);
+    }
+    return jsonOk({ draft });
+  },
+  { limit: "forge" },
+);
