@@ -9,17 +9,20 @@ type Params = { id: string };
 /**
  * Serve an image asset from data/ (docs/images.md). Owner-only by default; on
  * the preview/copy path a **public-entity** image is viewable cross-owner
- * (auth.plan.md). Cache policy follows that split (security Cluster I3): public
- * entities get a shared-cacheable policy, owner-only images stay `private` so a
- * shared cache never serves one user's asset to another. Content is immutable
- * per id; missing or non-ready rows are 404s (treated as not-found cross-owner).
+ * (auth.plan.md) — but only when the image and the public entity it names share
+ * an owner (`row.ownerId`, security-authz.plan.md slice 3), so unverified
+ * polymorphic metadata can never widen one account's asset. Cache policy follows
+ * that split (security Cluster I3): public entities get a shared-cacheable
+ * policy, owner-only images stay `private` so a shared cache never serves one
+ * user's asset to another. Content is immutable per id; missing or non-ready
+ * rows are 404s (treated as not-found cross-owner).
  */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
   const [row] = await db().select().from(images).where(eq(images.id, id)).limit(1);
   if (!row || row.status !== "ready") return jsonError("not_found", "image not found", 404);
 
-  const entityIsPublic = await isPublicEntityImage(row.entityKind, row.entityId);
+  const entityIsPublic = await isPublicEntityImage(row.entityKind, row.entityId, row.ownerId);
   if (row.ownerId !== user.id && !entityIsPublic) return jsonError("not_found", "image not found", 404);
 
   let buffer: Buffer;

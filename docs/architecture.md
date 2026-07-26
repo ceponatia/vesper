@@ -78,7 +78,7 @@ The original turn-based world/session lane was retired in the R6 rollout (2026-0
 - `src/contracts` and `src/lib` are **pure**: no database, no fetch, no env reads. They must be importable from both server and client code. (Lint-enforced — see the boundary rule in `eslint.config.mjs`.)
 - Server modules export through their `index.ts` barrel; other modules import the barrel, not deep paths. (Lint-enforced.)
 - React components get server data via route handlers / server components only.
-- **Auth & ownership** ([auth.md](auth.md)): `server/auth` wraps Better Auth (signed sessions; `getCurrentUser` → 401 on no session). Every entity carries `ownerId` and every **write** is owner-strict. The single cross-owner relaxation is a **read** widening to owner-or-public (`findViewable`) confined to the browse/preview/copy path; "using" a public entity copies it (no live cross-owner reference), preserving the IDOR-clean property.
+- **Auth & ownership** ([auth.md](auth.md)): `server/auth` wraps Better Auth (signed sessions; `getCurrentUser` → 401 on no session). Every entity carries `ownerId` and every **write** is owner-strict. The single cross-owner relaxation is a **read** widening to owner-or-public (`findViewable`) confined to the browse/preview/copy path, and even there a foreign viewer receives an **allow-listed public representation** (`toPublicCharacter` & co.), never the persisted row; "using" a public entity copies it (no live cross-owner reference), preserving the IDOR-clean property.
 
 ## Data flow (one chat exchange)
 

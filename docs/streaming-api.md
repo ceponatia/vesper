@@ -7,7 +7,7 @@ Route handlers in `src/app/api/`. Handlers are thin: resolve user → zod-valida
 ### Library
 ```
 GET/POST           /api/characters            list (search ?q, ?tag) / create (201)
-GET/PATCH/DELETE   /api/characters/:id        GET returns { character, portraits }
+GET/PATCH/DELETE   /api/characters/:id        GET returns { character, portraits, mine }
 POST               /api/characters/forge      prose prompt → AI draft (not saved); { prompt, section?, draft? }
                                               regenerates one section against the supplied draft
 POST               /api/characters/:id/avatar          { style: "realistic"|"stylized" } ⇒ 202 { jobId, characterId }
@@ -26,6 +26,8 @@ GET/POST, GET/PATCH/DELETE        /api/social-cards, /api/social-cards/:id   (re
 
 Creates return 201 with the row. Deleting an entity still referenced by another row is a 409 `in_use` (FK violation mapped, never a cascade).
 
+The four shareable detail GETs (`characters`/`locations`/`items`/`social-cards`) carry a `mine` flag and shape the entity to it: the owner gets the full row, a **foreign viewer of a public row gets the allow-listed public representation** — no `ownerId`, no embedding/authoring internals, portraits reduced to `{ id, kind, entityKind, entityId, createdAt }`. See [auth.md](auth.md) §"Public" is a representation, not the row.
+
 The character-chat lane's HTTP surface (`/api/chats/*` — the transcript GET, the send/rerun SSE, scene/relationship/time-skip routes, and its diagnostic codes) is documented in [character-chat/api.md](character-chat/api.md). The successor engine's routes live under `/api/chats` and `/api/admin/*` (see [contracts/simulation.md](contracts/simulation.md)).
 
 ### Misc
@@ -33,7 +35,7 @@ The character-chat lane's HTTP surface (`/api/chats/*` — the transcript GET, t
 GET                /api/gallery                owner's ready scene images (chat scenes + entity/portrait art)
                                                (scenes[]: id, references[], prompt, createdAt)
 DELETE             /api/gallery/:id            hard-delete one owned scene image (row + file); 404 if not owned / not a scene
-GET                /api/images/:id/file        serve from data/ (ready rows only; owner OR public-entity image; immutable cache)
+GET                /api/images/:id/file        serve from data/ (ready rows only; owner OR same-owner public-entity image; immutable cache)
 POST               /api/characters/:id/clone   clone a public/own entity → owned private copy (also locations, items, social-cards)
 GET                /api/auth/*                 Better Auth surface (sign-in/up/out, OAuth, magic-link, get-session)
 GET                /api/auth-config            { providers[], emailPassword, magicLink } — enabled methods for the sign-in UI

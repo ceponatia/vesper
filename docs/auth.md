@@ -15,7 +15,8 @@ See also: [streaming-api.md §Auth](streaming-api.md) (HTTP surface),
 
 | File | Role |
 | --- | --- |
-| `auth.ts` | The `betterAuth(...)` instance — Drizzle adapter, email+password, env-gated OAuth + magic-link, `admin()` + `nextCookies()` plugins. **No `next/headers`** so scripts (the seed) can import it. |
+| `auth.ts` | The `betterAuth(...)` instance — Drizzle adapter, email+password, env-gated OAuth + magic-link, explicit session lifetime, `admin()` + `nextCookies()` plugins. **No `next/headers`** so scripts (the seed) can import it. |
+| `magic-link.ts` | Magic-link delivery policy: whether the plugin registers at all, and what a delivery attempt is allowed to log. |
 | `session.ts` | `getCurrentUser()` → `CurrentUser`, and the `Unauthenticated` sentinel. Lazily imports `next/headers`. |
 | `dev.ts` | Dev-only session minting: `devImpersonate`, `ensureDevCredential`, `DEV_PASSWORD`. |
 | `index.ts` | Barrel — the only thing the rest of the app imports. |
@@ -34,6 +35,33 @@ set `ALLOW_SIGNUP=true` (local `.env`, or `fly secrets set ALLOW_SIGNUP=true -a
 vesper`, then redeploy/restart), sign up, then set it back to `false`. OAuth
 providers can also create accounts, but are only active when their
 client-id/secret env vars are set (none in the Fly deployment), so they're inert.
+
+### Before `ALLOW_SIGNUP=true`
+
+Today's posture is safe **because** sign-up is off and the app runs a single
+instance: the only accounts are seeded/approved ones. Opening self-service sign-up
+changes who can reach these surfaces, so this list is the gate — every item is
+done before `ALLOW_SIGNUP` flips to `true` for anything but a brief, supervised
+window ([security-authz.plan.md](developer-notes/security-authz.plan.md)
+slice 7 / finding S6).
+
+| # | Requirement | Status |
+| --- | --- | --- |
+| 1 | **Required email verification** — `emailAndPassword.requireEmailVerification` + a real transport, so an address can't be claimed without proving control of it | **pending** (needs the same transport as magic link — plan OQ3) |
+| 2 | **Password policy** — minimum length/strength beyond Better Auth's default, and rejection of known-breached passwords | **pending** |
+| 3 | **Shared (cross-instance) rate limiting** on sign-in, password reset, and magic-link requests | **deferred** — `src/server/api/rate-limit.ts` is deliberately process-local; the 2026-06-23 ruling ([finished/security-hardening.plan.md](developer-notes/finished/security-hardening.plan.md)) keeps it that way until Vesper runs more than one instance. Re-open with the second instance, not with sign-up. |
+| 4 | **Admin MFA / WebAuthn** — a second factor on `role: "admin"` accounts (Better Auth `twoFactor` / `passkey` plugin) | **pending** |
+| 5 | **Revoke all sessions on credential change** — password reset/change invalidates every other `auth_sessions` row | **pending** |
+| 6 | **Explicit idle/absolute session lifetimes** | **done (2026-07-26)** — `auth.ts` sets `session.expiresIn` (7 days) and `session.updateAge` (1 day) rather than inheriting them; see below |
+| 7 | **Security events logged without tokens** | **done (2026-07-26)** for magic link (`auth.magic_link` never carries a url/token in production — see [Magic link](#magic-link-dev-only-until-a-transport-exists)); any new auth event re-checks the same rule |
+
+### Session lifetime
+
+`auth.ts` states the lifetime instead of inheriting it: `expiresIn` 7 days (the
+absolute life of a session row/cookie) and `updateAge` 1 day (how often an active
+session is refreshed toward a new 7-day window). The values match Better Auth's
+defaults — the point is that shortening them is a visible, deliberate one-line
+decision rather than a framework default nobody chose.
 
 ### Tables (`server/db/schema.ts`, “Identity & library”)
 
@@ -105,12 +133,35 @@ things turn intimate.
 | Method | v1 status |
 | --- | --- |
 | Email + password | Always on. |
-| Magic link | Wired; **no email transport in v1** — the dev fallback logs the link (`auth.magic_link`). A real Resend/SMTP sender plugs into `auth.ts`'s `sendMagicLink`. |
+| Magic link | **Dev-only in v1** — no email transport exists, so the plugin registers in dev (and logs the link) but is **absent in production**. See [Magic link](#magic-link-dev-only-until-a-transport-exists) below. |
 | Social OAuth (Google/GitHub/Discord) | Env-gated: a provider is enabled only when **both** its `_CLIENT_ID` and `_CLIENT_SECRET` exist; absent ⇒ off (never a boot crash). |
 
 `GET /api/auth-config` reports the enabled methods so the sign-in UI
-(`/sign-in`, `src/components/auth/`) renders only buttons that work. The header
-`AccountMenu` shows the user + sign-out, or a sign-in link.
+(`/sign-in`, `src/components/auth/`) renders only buttons that work — including
+`magicLink`, which follows the plugin gate below. The header `AccountMenu` shows
+the user + sign-out, or a sign-in link.
+
+### Magic link (dev-only until a transport exists)
+
+A magic link **is a temporary password**, so it must never reach log retention
+([security-authz.plan.md](developer-notes/security-authz.plan.md) slice 1).
+`src/server/auth/magic-link.ts` owns the whole
+policy:
+
+- **Registration.** `magicLinkPluginEnabled()` — always in dev; in production only
+  when `magicLinkTransportConfigured()` (a non-empty `RESEND_API_KEY` or
+  `SMTP_URL`). With no transport the plugin is simply **absent** from the
+  production `plugins` array, exactly as an OAuth provider without creds is absent
+  — the `/api/auth/sign-in/magic-link` endpoint doesn't exist there, and
+  `/api/auth-config` reports `magicLink: false` so the button isn't rendered.
+- **Logging.** `sendMagicLink` emits one `auth.magic_link` event built by
+  `magicLinkEvent()`: in **dev** `info` with `{ email, url }` (the link is how a
+  local sign-in completes — grep the server console for it); in **production**
+  `{ email }` only — never the url, token, or callback query string — as `info`
+  when a transport delivered it, `warn` when it was dropped for want of one.
+- **Adding a transport.** Implement the send in `sendMagicLink` behind
+  `magicLinkTransportConfigured()`, document the var in `.env.example`, and
+  production magic-link turns itself on. Unit coverage: `magic-link.test.ts`.
 
 ### Trusted origins (LAN dev)
 
@@ -131,7 +182,7 @@ One module owns the asymmetry — **reads widen, writes stay strict**:
 | --- | --- |
 | **Write** (PATCH / DELETE / mutating image-gen) | `ownerId = me` **only** — a non-owner write returns 404, never confirming the row exists. |
 | **List "my library"** | `ownerId = me` (any visibility). |
-| **Browse / preview** (read for copy) | `findViewable(kind, id, me)` = owner **OR** `visibility = 'public'`. |
+| **Browse / preview** (read for copy) | `findViewable(kind, id, me)` = owner **OR** `visibility = 'public'`; a **foreign** viewer receives the allow-listed public representation, not the row (below). |
 | **Clone** to your library | read public source, deep-copy into a new owned row (`visibility='private'`, `clonedFromId=src`). |
 
 - **Shareable** entities (`characters`, `locations`, `items`, `social_cards`)
@@ -140,6 +191,34 @@ One module owns the asymmetry — **reads widen, writes stay strict**:
 - The `GET /:kind/:id` routes use `findViewable`, then scope sub-resources
   (portraits) to the **entity owner** so a public preview shows the
   author's art — not the viewer's.
+
+#### "Public" is a representation, not the row
+
+A foreign viewer never receives the persisted row. `server/api/visibility.ts`
+owns one **allow-list projection per kind** — `toPublicCharacter`,
+`toPublicLocation`, `toPublicItem`, `toPublicSocialCard` — and the four detail
+routes split on `mine` (`row.ownerId === user.id`): the owner keeps the full row
+because the edit surfaces need every column; everyone else gets the projection
+(security-authz.plan.md slice 4).
+
+- **Always excluded**: `ownerId` (the response carries the computed `mine` flag
+  instead — a viewer never needs another account's id), `searchEmbedding` /
+  `embedder`, `clonedFromId`, and `updatedAt`. `createdAt` is the only timestamp.
+- **Included**: id, name, tags, visibility, createdAt + the kind's display fields
+  — character `profile` + `avatarImageId`; location description/ambient/scale/
+  area/affordances/imageId; item kind/description/definition/imageId; social card
+  description/definition.
+- Portrait rows beside a public character project to
+  `{ id, kind, entityKind, entityId, createdAt }` — no `path`, no `prompt`, no
+  provider internals ([images.md](images.md)).
+- The default is **closed**: a column added to one of these tables is private
+  until someone adds it to the projection. `public-dto.int.test.ts` asserts the
+  **exact key set** per kind, so widening the public surface is always a
+  deliberate, reviewed edit. Character `profile` ships whole pending the owner
+  ruling on what a public character reveals (plan OQ2).
+- The **list/browse** routes were already projected (summary columns only) and
+  stay that way — `searchLibraryIds` returns ids, and whatever hydrates them for
+  a `public`/`all` scope must select an explicit column list.
 - **`<entity>.visibility` is a cross-account share scope**, distinct from any
   in-world/in-fiction secrecy concept — don't confuse a public/private *share*
   scope with a character's authored secrets or a scenario's hidden premise.
@@ -159,8 +238,10 @@ break your copy: deleting the source leaves the clone intact (verified in
 image file into the new owner's storage with a fresh row (`sourceImageId`
 provenance), so a clone is fully self-contained. `images/:id/file` serves
 owner-only by default but widens to a **public-entity** image on the preview
-path (`isPublicEntityImage`); cache policy follows that split — `public` for
-public-entity images, `private` for owner-only (security Cluster I3).
+path (`isPublicEntityImage`) — and only when the image and the public entity it
+names **share an owner**, since the entity linkage is polymorphic metadata with
+no FK (security-authz.plan.md slice 3). Cache policy follows that split —
+`public` for public-entity images, `private` for owner-only (security Cluster I3).
 
 ## Dev / QA ergonomics
 
@@ -179,8 +260,9 @@ returns the resolved user. See [CLAUDE.md](../CLAUDE.md) for the QA flow.
 `BETTER_AUTH_SECRET` (required — signs sessions; **missing in production is a
 boot-time error**, since Better Auth would otherwise fall back to a forgeable
 built-in dev secret), `BETTER_AUTH_URL` (app origin, OAuth callbacks + CSRF),
-the optional `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` pairs, and
-`DEV_PASSWORD`. Full table in [getting-started.md](getting-started.md).
+the optional `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` pairs, the (unused in
+v1) magic-link transport vars `RESEND_API_KEY` / `SMTP_URL`, and `DEV_PASSWORD`.
+Full table in [getting-started.md](getting-started.md).
 
 ## Later (not v1)
 

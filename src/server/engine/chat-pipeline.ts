@@ -1968,8 +1968,28 @@ export async function previewChatPrompt(input: {
  * participant's memory group is purged **only when no other conversation
  * references it** — shared-history siblings keep the relationship's memory
  * alive (D7).
+ *
+ * Ownership is re-read here rather than trusted from the caller
+ * (security-authz.plan.md slice 2): a destructive service takes only ids and
+ * proves the pairing itself, so no route-supplied `ownerId` — or an anomalous
+ * cross-owner participant row — can route a foreign conversation into deletion.
+ * A miss is a warn-level no-op, never a throw (docs/resilience.md).
  */
-export async function deleteChat(chat: { id: string; ownerId: string }): Promise<void> {
+export async function deleteChat(chatId: string, ownerId: string): Promise<void> {
+  const [chat] = await db()
+    .select({ id: characterChats.id, ownerId: characterChats.ownerId })
+    .from(characterChats)
+    .where(and(eq(characterChats.id, chatId), eq(characterChats.ownerId, ownerId)))
+    .limit(1);
+  if (!chat) {
+    log.warn("engine.chat", "chat delete denied: no chat matches this owner", {
+      code: "chat.delete_denied",
+      chatId,
+      ownerId,
+    });
+    return;
+  }
+
   const participants = await db()
     .select({ characterId: chatParticipants.characterId, memoryGroupId: chatParticipants.memoryGroupId })
     .from(chatParticipants)

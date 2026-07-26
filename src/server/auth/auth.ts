@@ -2,16 +2,19 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin, magicLink } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
-import { log } from "@/server/log";
 import { accounts, authSessions, db, users, verifications } from "../db";
+import { magicLinkPluginEnabled, sendMagicLink } from "./magic-link";
 
 /**
  * The Better Auth instance (auth.plan.md). Self-hosted, owns its tables in our
  * Postgres via the Drizzle adapter — `session` maps to `auth_sessions` to avoid
  * the collision with the game `sessions` table. Email+password is always on;
- * social OAuth and magic-link delivery are **env-gated** (degrade quietly when
- * their secrets are absent, per docs/resilience.md) so a missing provider never
- * crashes boot. This module is free of `next/headers` so scripts (the seed) can
+ * social OAuth and magic-link are **env-gated** (degrade quietly when their
+ * secrets are absent, per docs/resilience.md) so a missing provider never crashes
+ * boot — a method whose delivery isn't configured is absent, never half-working
+ * (magic-link's gate and logging policy live in `magic-link.ts`, whose comments
+ * explain why production must not log a link). This module is free of
+ * `next/headers` so scripts (the seed) can
  * import it; request-bound resolution lives in `session.ts`.
  */
 
@@ -53,16 +56,6 @@ function configuredTrustedOrigins(): string[] {
     .filter(Boolean);
 }
 
-/**
- * Deliver a magic-link sign-in URL. v1 has no email transport, so the dev
- * fallback is to **log the link** (docs/getting-started.md) — a real transport
- * (Resend/SMTP) plugs in here later behind its own env gate. Always logs so the
- * link is recoverable from server output during local testing.
- */
-async function sendMagicLink({ email, url }: { email: string; url: string }): Promise<void> {
-  log.info("auth.magic_link", "magic-link sign-in requested", { email, url });
-}
-
 // Self-service sign-up is OFF by default — only seeded/approved accounts exist.
 // Flip it on by setting ALLOW_SIGNUP=true (local .env, or `fly secrets set
 // ALLOW_SIGNUP=true`), let the person register, then set it back to false.
@@ -102,10 +95,27 @@ export const auth = betterAuth({
   trustedOrigins: configuredTrustedOrigins(),
   emailAndPassword: { enabled: true, disableSignUp: signupDisabled },
   socialProviders: configuredSocialProviders(),
-  plugins: [
-    magicLink({ sendMagicLink, disableSignUp: signupDisabled }),
-    admin(),
-    // nextCookies must be last so it can flush Set-Cookie on server-action responses.
-    nextCookies(),
-  ],
+  /**
+   * Session lifetime is stated rather than inherited (security-authz.plan.md
+   * slice 7): the "Before ALLOW_SIGNUP=true" checklist in docs/auth.md requires a
+   * deliberate, documented lifetime. The values are Better Auth's own defaults —
+   * a 7-day session, refreshed at most once a day — so this pins today's behavior
+   * instead of changing it; shortening them is now a one-line decision.
+   */
+  session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
+  /**
+   * Magic-link registers only where its link can actually be delivered — a
+   * production without a transport gets no plugin at all rather than a sign-in
+   * URL in the logs (security-authz.plan.md slice 1), the same shape as the
+   * env-gated social providers above.
+   *
+   * Written as two whole literals rather than a conditional spread because Better
+   * Auth infers its `$Infer`/API types from the plugin **tuple**: a spread widens
+   * the array and the admin plugin's added user fields (`role`) stop resolving in
+   * `session.ts`. `nextCookies()` stays last in both arms so it can flush
+   * Set-Cookie on server-action responses.
+   */
+  plugins: magicLinkPluginEnabled()
+    ? [magicLink({ sendMagicLink, disableSignUp: signupDisabled }), admin(), nextCookies()]
+    : [admin(), nextCookies()],
 });

@@ -60,10 +60,14 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 | `GOOGLE_/GITHUB_/DISCORD_CLIENT_ID`+`_SECRET` | — | OAuth providers — a provider is enabled only when **both** are set; absent ⇒ off |
 | `ALLOW_SIGNUP` | `false` (off) | Sign-up gate — email/OAuth/magic-link registration is disabled unless `true` ([auth.md](auth.md) §Sign-up control) |
 | `BETTER_AUTH_TRUSTED_ORIGINS` | — | Comma-separated extra allowed origins (CSRF); needed for LAN dev, e.g. `http://<lan-ip>:3200` |
+| `RESEND_API_KEY` / `SMTP_URL` | — | Magic-link email transport. **Unimplemented in v1** — setting either is what makes magic-link production-eligible ([auth.md](auth.md) §Magic link) |
 | `DEV_PASSWORD` | `vesper-dev-password` | Dev/QA: password the seed sets on the Player + uxtest admin for `POST /api/dev/impersonate` (local dev only — the endpoint 404s on the production Fly build) |
 | `LOG_LEVEL` | `info` | Logger |
 
-> Magic-link sign-in has no email transport in v1 — the dev fallback **logs the link** to the server console (grep `auth.magic_link`).
+> Magic-link sign-in has no email transport in v1, so it is **dev-only**: locally
+> the link is written to the server console (grep `auth.magic_link`) and that is how
+> you complete the sign-in, while a production build drops the plugin entirely
+> rather than log a live sign-in URL ([auth.md](auth.md) §Magic link).
 
 ## Day-to-day
 

@@ -12,6 +12,8 @@ import {
   jsonOk,
   queueEmbedRefresh,
   readBody,
+  toPublicCharacter,
+  toPublicEntityImage,
   withUser,
 } from "@/server/api";
 import { findOwnedCharacter } from "./owned";
@@ -24,14 +26,21 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   const row = await findViewable("character", id, user.id);
   if (!row) return jsonError("not_found", "character not found", 404);
   // Portraits scope to the entity owner so a public preview shows the author's art.
-  const portraits = await db()
+  const portraitRows = await db()
     .select()
     .from(images)
     .where(and(eq(images.ownerId, row.ownerId), eq(images.entityKind, "character"), eq(images.entityId, id)))
     .orderBy(desc(images.createdAt));
+  // The strip here is a render list, so it ships the public image shape for
+  // EVERY viewer (security-authz.plan.md slice 4): no client reads `path`,
+  // `prompt` or the provider internals from this response — the portrait studio
+  // loads full rows from the owner-strict `GET /characters/:id/portraits`.
+  const portraits = portraitRows.map(toPublicEntityImage);
   // `mine` — read-only preview + duplicate CTA for foreign public rows (the
-  // item/location slice-6 pattern; edits would 404 server-side anyway).
-  return jsonOk({ character: row, portraits, mine: row.ownerId === user.id });
+  // item/location slice-6 pattern; edits would 404 server-side anyway). A
+  // foreign viewer gets the allow-listed public representation, not the row.
+  const mine = row.ownerId === user.id;
+  return jsonOk({ character: mine ? row : toPublicCharacter(row), portraits, mine });
 });
 
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
@@ -74,13 +83,16 @@ export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   // last-reference memory purge), so route every referencing chat through it while the
   // participant rows still exist. Today every chat is 1:1; when multi-character chats
   // land, this becomes "remove the participant, delete the chat only when it empties".
+  // The join is owner-scoped (security-authz.plan.md slice 2) so an anomalous cross-owner
+  // participant row can never route another user's chat into deletion — it is skipped and
+  // survives, correctly; `deleteChat` re-proves the pairing anyway.
   const chats = await db()
-    .select({ id: characterChats.id, ownerId: characterChats.ownerId })
+    .select({ id: characterChats.id })
     .from(chatParticipants)
     .innerJoin(characterChats, eq(characterChats.id, chatParticipants.chatId))
-    .where(eq(chatParticipants.characterId, id));
+    .where(and(eq(chatParticipants.characterId, id), eq(characterChats.ownerId, user.id)));
   for (const chat of chats) {
-    await deleteChat(chat);
+    await deleteChat(chat.id, user.id);
   }
   // Worlds/sessions hold their own snapshots (world-instances.plan.md), so a
   // library delete never breaks them and never hits a FK — no in-use guard.
