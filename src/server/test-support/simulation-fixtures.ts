@@ -8,7 +8,7 @@
 export const LEGACY_ENGINE_TEST_PLAYER_ID = "principal-1";
 
 /** Environment key used only by the aggregate legacy engine test command. */
-export const LEGACY_ENGINE_TEST_PLAYER_ENV = "VESPER_ENGINE_TEST_PLAYER_ID";
+export const LEGACY_ENGINE_TEST_PLAYER_ENV = "VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER";
 
 export interface LegacyEngineTestPlayerPrincipal {
   kind: "player";
@@ -33,14 +33,18 @@ export function legacyEngineTestPlayerPrincipal(controlledActorIds: string[]): L
  * Narrow compatibility seam for the aggregate engine suite.
  *
  * Production and ordinary integration runs remain fail-closed: the exception is
- * active only under Vitest's NODE_ENV=test and only when test:engine explicitly
- * opts into this exact synthetic principal id. The dedicated authorization suite
- * does not set the env key, so it still proves that every ordinary unanchored
- * player is denied before any write.
+ * active only under Vitest's NODE_ENV=test, only when test:engine explicitly
+ * opts in, and only for the one shared synthetic fixture identity. The dedicated
+ * authorization suite does not set the env key, so it still proves that every
+ * ordinary unanchored player is denied before any write.
  */
 export function isLegacyUnanchoredEngineTestPlayer(
   principalId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return env.NODE_ENV === "test" && env[LEGACY_ENGINE_TEST_PLAYER_ENV] === principalId;
+  return (
+    env.NODE_ENV === "test" &&
+    env[LEGACY_ENGINE_TEST_PLAYER_ENV] === "1" &&
+    principalId === LEGACY_ENGINE_TEST_PLAYER_ID
+  );
 }
