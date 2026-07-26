@@ -58,6 +58,7 @@ import {
   simZones,
   type Db,
 } from "@/server/db";
+import { authorizeSimulationCommand } from "./command-authz";
 import { enqueueMemoryIndexObligations } from "./memory-index-store";
 import { recordCommandObservations } from "./observation-store";
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
@@ -437,6 +438,17 @@ function invalidArrivalResult(): ArriveJourneyCommandResult {
   };
 }
 
+/** The one not-found-shaped refusal both space commands return: absent branch, foreign branch. */
+function branchUnavailableResult(commandId: string) {
+  return {
+    status: "rejected" as const,
+    commandId,
+    code: "branch_mismatch" as const,
+    publicReason: "That world branch is unavailable.",
+    legalAlternativeCommandTypes: [],
+  };
+}
+
 async function loadTopologyView(tx: SimTx, meta: SpaceBranchMetaView) {
   const rows = await loadSpaceRows(tx, meta.branchId);
   const projection = spaceProjectionFromRows(meta, rows);
@@ -465,6 +477,14 @@ export async function submitDurableMoveActor(
   const submitted = parsed.data;
   const database = options.database ?? db();
 
+  // §Follow-ups 1: this store predates the shared shell and keeps its own copy,
+  // so it carries the same ownership gate — above every read and every write.
+  const authorization = await authorizeSimulationCommand(
+    { branchId: submitted.branchId, commandId: submitted.id, type: submitted.type, principal: submitted.principal },
+    database,
+  );
+  if (!authorization.allowed) return branchUnavailableResult(submitted.id);
+
   const [preLockCached] = await database
     .select({ result: simCommands.result })
     .from(simCommands)
@@ -490,15 +510,7 @@ export async function submitDurableMoveActor(
       .where(eq(simBranches.id, submitted.branchId))
       .limit(1)
       .for("update", { of: simBranches });
-    if (!branch) {
-      return {
-        status: "rejected",
-        commandId: submitted.id,
-        code: "branch_mismatch",
-        publicReason: "That world branch is unavailable.",
-        legalAlternativeCommandTypes: [],
-      } satisfies MoveActorCommandResult;
-    }
+    if (!branch) return branchUnavailableResult(submitted.id) satisfies MoveActorCommandResult;
 
     const command: MoveActorCommand = options.admitAtLockedVersion
       ? { ...submitted, expectedVersion: branchVersionSchema.parse(branch.version) }
@@ -739,6 +751,15 @@ export async function submitDurableJourneyArrival(
   const submitted = parsed.data;
   const database = options.database ?? db();
 
+  // §Follow-ups 1 again: a fired arrival replays the ORIGINAL move's principal
+  // (scheduleDurableTrigger copies `template.principal`), so the drain's
+  // resubmission re-proves the same owner it was admitted under.
+  const authorization = await authorizeSimulationCommand(
+    { branchId: submitted.branchId, commandId: submitted.id, type: submitted.type, principal: submitted.principal },
+    database,
+  );
+  if (!authorization.allowed) return branchUnavailableResult(submitted.id);
+
   const [preLockCached] = await database
     .select({ result: simCommands.result })
     .from(simCommands)
@@ -764,15 +785,7 @@ export async function submitDurableJourneyArrival(
       .where(eq(simBranches.id, submitted.branchId))
       .limit(1)
       .for("update", { of: simBranches });
-    if (!branch) {
-      return {
-        status: "rejected",
-        commandId: submitted.id,
-        code: "branch_mismatch",
-        publicReason: "That world branch is unavailable.",
-        legalAlternativeCommandTypes: [],
-      } satisfies ArriveJourneyCommandResult;
-    }
+    if (!branch) return branchUnavailableResult(submitted.id) satisfies ArriveJourneyCommandResult;
 
     const command: ArriveJourneyCommand = options.admitAtLockedVersion
       ? { ...submitted, expectedVersion: branchVersionSchema.parse(branch.version) }

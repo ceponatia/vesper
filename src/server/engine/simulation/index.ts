@@ -58,6 +58,12 @@ export {
   type ExplainOptions,
 } from "./audit-store";
 export {
+  SIM_COMMAND_DENIED,
+  authorizeSimulationCommand,
+  type SimCommandAuthorization,
+  type SimCommandDenialReason,
+} from "./command-authz";
+export {
   readDurableCommitments,
   submitDurableCreateCommitment,
   submitDurableRaisePressure,

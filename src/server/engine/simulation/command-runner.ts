@@ -7,6 +7,7 @@ import type {
 import type { PrincipalKind } from "@/contracts/simulation/envelopes";
 import { branchVersionSchema } from "@/contracts/simulation/identity";
 import { db, simBranches, simCommands, simEvents, simWorlds, type Db } from "@/server/db";
+import { authorizeSimulationCommand } from "./command-authz";
 import { recordCommandKnowledge } from "./knowledge-recorder";
 import { enqueueMemoryIndexObligations } from "./memory-index-store";
 import { recordCommandObservations } from "./observation-store";
@@ -29,7 +30,11 @@ interface RunnableCommand {
   branchId: string;
   expectedVersion: number;
   idempotencyKey: string;
-  principal: { kind: PrincipalKind };
+  /**
+   * `principalId` is load-bearing, not decoration: the shell verifies it against
+   * the branch's owning chat before anything is read or written (§Follow-ups 1).
+   */
+  principal: { kind: PrincipalKind; principalId: string };
   submittedAtWallClock: string;
   type: string;
   schemaVersion: number;
@@ -75,6 +80,20 @@ export async function runSimulationCommand<
   if (!parsed.success) return args.invalidResult();
   const submitted = parsed.data;
   const database = args.database ?? db();
+
+  // security-authz.plan.md §Follow-ups item 1 — ownership is proven HERE, above
+  // the idempotency fast path and the transaction that owns every write, so a
+  // refused command leaves no command row, no ledger entry, no projection, no
+  // outbox row, no scheduler row and no event behind. It also sits above the
+  // cached-result read: replaying someone else's stored result would leak it.
+  const authorization = await authorizeSimulationCommand(
+    { branchId: submitted.branchId, commandId: submitted.id, type: submitted.type, principal: submitted.principal },
+    database,
+  );
+  // Not-found-shaped on purpose: a foreign branch reads exactly like an absent
+  // one, so the refusal is not a branch-existence oracle. The private cause
+  // rides the `sim.command_denied` diagnostic instead.
+  if (!authorization.allowed) return args.branchUnavailableResult(submitted.id);
 
   const [preLockCached] = await database
     .select({ result: simCommands.result })
