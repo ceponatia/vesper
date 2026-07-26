@@ -116,6 +116,24 @@ behavior channels. Hard-depends on
 needs channel). Open questions (stored vs derived, expression mechanism,
 which intermediates earn their keep, anti-tedium cap) live in the stub.
 
+## Body-attribute physics and visual affordances
+
+_Owner direction 2026-07-26. Stub:
+[deferred/body-attribute-affordances.plan.md](deferred/body-attribute-affordances.plan.md)._
+A deterministic layer that turns authored body attributes plus live state
+(wetness, binding, coverage, pose, environment) into currently valid,
+perception-gated physical/visual affordances — structured facts like
+`hair.strands_adhere_to_skin` with strength, causes, and suppression
+evidence, realized by the narrator rather than improvised. Per-attribute
+files contribute normalized physics parameters; per-phenomenon files own the
+cross-input rules; dirty-set invalidation, no tick loop, read-only with
+respect to substrate. Reads physiology results but never duplicates its
+transfer functions ([deferred/physiology.plan.md](deferred/physiology.plan.md)).
+Hair is the proving domain; seven per-domain companion spec drafts
+(`deferred/body-attribute-affordances.spec.*.md`: hair, skin-surface,
+soft-tissue, appendages, stature-reach, garment-interaction, thermal) are
+indexed in the stub's `## Companion spec drafts`.
+
 ## Owner-gated live eval runs — run on request, not roadmap items
 
 _Removed from the roadmap 2026-07-13 (owner ruling: manual OpenRouter-spend
