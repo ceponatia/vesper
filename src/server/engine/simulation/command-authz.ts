@@ -24,6 +24,8 @@ export const SIM_COMMAND_DENIED = "sim.command_denied";
 
 /** Why a command was refused — the private cause, logged and never returned to the caller. */
 export type SimCommandDenialReason =
+  /** A player principal cannot prove ownership because no chat anchors the branch. */
+  | "unanchored_player"
   /** A player principal that is not the owning chat's account. */
   | "principal_not_owner"
   /** More than one account's chat anchors this branch: ownership is unreadable, so fail closed. */
@@ -47,18 +49,19 @@ export type SimCommandAuthorization = { allowed: true } | { allowed: false; reas
  * Which principal kinds carry an ACCOUNT id that has to be proven.
  *
  * - `player` is the only kind minted from a player-supplied request
- *   (`simPlayerEnvelope`), and its `principalId` is a `users.id` — so it is the
- *   one kind whose claim is checked against the branch's owning chat.
+ *   (`simPlayerEnvelope`), and its `principalId` is a `users.id`. A player must
+ *   therefore resolve exactly one chat anchor and match that account. An
+ *   unanchored branch is not an ownerless public branch; it is an engine state
+ *   that a player cannot prove authority over.
  * - `director` / `storyteller` are the authoring surfaces: their only HTTP entry
  *   points are the admin sim routes, which 404 for a non-admin role before an
- *   envelope is ever built, plus world provisioning (`/api/successor-chats`),
- *   which seeds a branch the caller just minted and does not yet anchor. Their
- *   ids are account ids but an admin is by construction allowed on any branch,
- *   so matching them against the owner would deny every legitimate use.
+ *   envelope is ever built, plus world provisioning (`/api/successor-chats`).
+ *   Their ids are account ids but an admin is by construction allowed on any
+ *   branch, so matching them against the owner would deny every legitimate use.
  * - `npc_policy` / `npc_deliberator` / `system` / `migration` are engine-internal
  *   (the arbiter, the scheduler drain, the world seeders). Their `principalId` is
  *   a fixed label like `sim-scheduler` — not an account — and nothing outside the
- *   server can mint one, so there is no claim to verify.
+ *   server can mint one, so there is no account claim to verify.
  *
  * Exhaustive by design: a new principal kind must state which side it lands on.
  */
@@ -95,13 +98,11 @@ async function anchorOwnerIds(branchId: string, database: Db): Promise<string[]>
  * Decide whether this principal may mutate this branch. Read-only: it must be
  * safe to call before the command shell has written anything at all.
  *
- * A branch NO chat points at is unanchored — a fixture branch, a fork not yet
- * linked, or a world provisioned in the moments before its chat row exists
- * (`/api/successor-chats` seeds the authored relationship first, then flips the
- * chat onto the branch). There is no account boundary to cross there, and no
- * HTTP surface lets a player name a branch id: the player route derives it from
- * a chat it already proved they own, and the admin route is role-gated. So an
- * unanchored branch admits; an ANCHORED one admits only its owner.
+ * A branch no chat points at is an engine/provisioning state, not a player-owned
+ * resource. Engine-internal and privileged authoring principals may operate
+ * there according to their own entry-point policy; a `player` principal must
+ * resolve exactly one owning chat and match it. This keeps the service boundary
+ * fail-closed even if a future caller accepts a raw branch id.
  */
 export async function authorizeSimulationCommand(
   input: SimCommandAuthorizationInput,
@@ -110,7 +111,7 @@ export async function authorizeSimulationCommand(
   if (!requiresOwnerMatch(input.principal.kind)) return { allowed: true };
 
   const owners = await anchorOwnerIds(input.branchId, database);
-  if (owners.length === 0) return { allowed: true };
+  if (owners.length === 0) return deny(input, "unanchored_player");
   if (owners.length > 1) return deny(input, "ambiguous_anchor");
   return owners[0] === input.principal.principalId ? { allowed: true } : deny(input, "principal_not_owner");
 }
@@ -119,7 +120,7 @@ function deny(input: SimCommandAuthorizationInput, reason: SimCommandDenialReaso
   // Diagnostics over exceptions (docs/resilience.md §2): the refusal is a
   // coded warning here and a not-found-shaped result at the caller, so the
   // private cause never becomes a branch-existence oracle for the requester.
-  log.warn(SIM_COMMAND_DENIED, "simulation command refused: principal is not the branch owner", {
+  log.warn(SIM_COMMAND_DENIED, "simulation command refused: principal cannot prove branch authority", {
     reason,
     branchId: input.branchId,
     commandId: input.commandId,
