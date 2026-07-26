@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { ZodType } from "zod";
 import { log } from "@/server/log";
 import { getCurrentUser, Unauthenticated, type CurrentUser } from "@/server/auth";
+import { csrfRejection, type RouteCsrfOptions } from "./csrf";
 
 /**
  * Route-handler plumbing (docs/streaming-api.md, docs/resilience.md §7):
@@ -28,13 +29,13 @@ export interface RouteContext<P> {
 export type UserHandler<P> = (user: CurrentUser, req: NextRequest, ctx: RouteContext<P>) => Promise<Response>;
 
 /**
- * Wraps a handler with Better Auth session resolution and the error envelope.
- * No signed session ⇒ **401 `unauthenticated`** (never a fabricated user); a
- * genuine resolution failure (DB down) stays a **500 `auth_unavailable`**. The
- * two are distinct codes so clients can redirect-to-sign-in vs. retry.
+ * Wraps a handler with Better Auth session resolution, centralized CSRF origin
+ * validation for cookie-bearing mutations, and the error envelope. No signed
+ * session ⇒ **401 `unauthenticated`**; auth infrastructure failures stay 500s.
  */
 export function withUser<P = Record<string, never>>(
   handler: UserHandler<P>,
+  options: RouteCsrfOptions = {},
 ): (req: NextRequest, ctx: RouteContext<P>) => Promise<Response> {
   return withRoute<P>(async (req, ctx) => {
     let user: CurrentUser;
@@ -48,15 +49,18 @@ export function withUser<P = Record<string, never>>(
       return jsonError("auth_unavailable", "could not resolve the current user", 500);
     }
     return handler(user, req, ctx);
-  });
+  }, options);
 }
 
-/** Same envelope/error protection for routes that need no resolved user. */
+/** Shared envelope/error and CSRF protection for routes without a resolved user. */
 export function withRoute<P = Record<string, never>>(
   handler: (req: NextRequest, ctx: RouteContext<P>) => Promise<Response>,
+  options: RouteCsrfOptions = {},
 ): (req: NextRequest, ctx: RouteContext<P>) => Promise<Response> {
   return async (req, ctx) => {
     try {
+      const csrf = csrfRejection(req, options);
+      if (csrf) return csrf;
       return await handler(req, ctx);
     } catch (err) {
       log.error("api", `unhandled route error: ${req.method} ${req.nextUrl?.pathname ?? ""}`, {
@@ -81,10 +85,7 @@ export const DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024;
  * Backstop cap for a stored message's content (chat send/edit, session message
  * edit) — an anti-abuse bound only, NEVER a product limit. Model replies have no
  * output-token cap in either lane, so a deliberately requested lengthy reply can
- * run tens of thousands of characters and must still round-trip through edit
- * (a 4000-char edit cap once rejected a legitimate Aion reply the DB had
- * already stored). Sized far above any real reply while still bounding a
- * hostile body field.
+ * run tens of thousands of characters and must still round-trip through edit.
  */
 export const MESSAGE_CONTENT_MAX = 100_000;
 
