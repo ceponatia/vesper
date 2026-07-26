@@ -4,78 +4,172 @@ Status: draft (companion to
 [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md);
 promote with the plan)
 
-## What this covers
+## Purpose
 
-Fabric as a physical participant: wet cling and translucency, wind response
-of skirts/hems/capes, and drape changes with pose. The rain-soaked shirt that
-clings and turns translucent is the flagship case — very high value for this
-product, and impossible for the narrator to keep consistent without a
-deterministic read.
+Compose wardrobe-owned garment properties with body state, environment, pose,
+and motion to derive current visual garment effects:
 
-**Boundary caveat:** garments are presentation state, not body attributes, so
-this domain sits half outside the plan's title. It is included because the
-phenomenon registry composes garment material profiles with body state
-through exactly the same machinery, and because wet-cling only matters as a
-body-adjacent effect. Whether garment physics profiles are authored by the
-wardrobe system and *consumed* here, or owned here outright, is the first
-open question — this spec must not quietly become a second wardrobe system.
+- wet cling;
+- opacity/translucency change;
+- surface beading or saturation;
+- wind or body-motion response;
+- pose-dependent drape.
 
-## Contributing inputs
+Garments are not body attributes. This spec is an integration consumer of the
+same phenomenon machinery because body-adjacent visual narration needs clothing
+and body state to agree.
 
-Not attributes — garment facts supplied by the presentation layer:
+## Ownership boundary
 
-- material class (cotton, silk, leather, wool, knit, synthetic…)
-- weave weight and opacity baseline
-- fit (loose / fitted / tight) and construction (structured vs draped)
-- base color lightness (white cotton turns translucent; black doesn't read)
+The wardrobe/item system owns:
 
-Body-side inputs: wetness by location, soft-tissue/build contour profiles
-(what cling reveals), pose and motion, environment wind and rain.
+- material identity and layered construction;
+- weight, stiffness, absorbency, and baseline opacity;
+- fit and garment-region coverage;
+- support function;
+- worn location and current fastened state;
+- persistent garment wetness, dirt, damage, displacement, and riding-up state.
 
-## Physical profile sketch
+The affordance layer receives a normalized `GarmentPhysicalRead`. It must not
+create a second garment catalog or mutate worn state.
 
-Per worn garment (or garment region): `absorbency`, `clingAffinity`,
-`wetTranslucency`, `flutterMass`, `drapeStiffness`.
+```ts
+interface GarmentPhysicalRead {
+  garmentId: ItemId;
+  regions: readonly GarmentRegionPhysicalRead[];
+}
+
+interface GarmentRegionPhysicalRead {
+  coveredBodyLocations: readonly BodyLocationId[];
+  materialClass: GarmentMaterialClass;
+  absorbency: UnitInterval;
+  saturation: UnitInterval;
+  clingAffinity: UnitInterval;
+  baselineOpacity: UnitInterval;
+  wetOpacityResponse: UnitInterval;
+  flutterMass: UnitInterval;
+  drapeStiffness: UnitInterval;
+  fit: "loose" | "fitted" | "tight" | "structured";
+}
+```
+
+Base color/lightness metadata may affect visible wet-opacity change, but it
+belongs to the garment read, not to body attributes.
+
+## Resolution order
+
+Do not build a general cyclic phenomenon graph. Use an explicit staged pipeline:
+
+1. wardrobe supplies authored coverage and current garment state;
+2. garment phenomena derive current cling, displacement, and effective opacity;
+3. those results produce a final `EffectiveCoverageRead`;
+4. body-surface perception uses that final read;
+5. narrator ranking happens after both garment and body observations exist.
+
+A garment phenomenon may change the **read** of coverage/opacity but cannot
+silently rewrite the garment or body substrate.
 
 ## Phenomena
 
-- **wet-cling** — saturation above a band makes fabric adhere to skin and
-  follow body contour; candidate carries the affected regions and a contour
-  band (what silhouette detail becomes readable). Translucency resolves
-  separately from `wetTranslucency × saturation × color lightness`.
-- **derived coverage** — the architectural wrinkle: wet-cling and
-  translucency *modify the effective `CoverageRead`* that other phenomena and
-  the perception layer consume (a translucent region may downgrade opacity so
-  a flush or marking underneath becomes partially visible). That makes
-  coverage a pipeline — authored coverage → garment-state modifiers → final
-  read — and the resolution order must be explicit, or phenomena would feed
-  each other in the same pass. Promotion must rule on this layering before
-  any implementation.
-- **wind-response** — hems, skirts, capes, loose sleeves flutter/lift by
-  `flutterMass` vs wind band; suppressed by wetness (soaked fabric hangs)
-  and fit, exactly parallel to hair wind motion. Lift candidates are banded
-  and capped — this is an affordance, not an upskirt generator; the
-  perception/decency gate applies with force.
-- **drape-and-motion** — pose transitions emit settle candidates (a skirt
-  pooling when she sits, a hem riding on stairs); mostly low salience,
-  aggressive `repeatKey` suppression.
+### `garment.wet_surface_state`
 
-## Worked example
+Current saturation plus material response yields observations such as:
 
-White cotton shirt, fitted, caught in the rain: saturation crosses the cling
-band → cling candidate over shoulders/back with `clear` contour, translucency
-downgrades those regions' opacity one band; the skin-surface spec's
-flush-visibility can now emit a `subtle` candidate through it. The same rain
-on a leather jacket: absorbency near zero, droplets bead and run, no cling,
-opacity unchanged — the only candidate is surface droplets.
+- droplets bead and run;
+- fabric darkens;
+- fabric appears saturated;
+- water sheds with little absorption.
+
+A leather jacket and cotton shirt should not use the same response.
+
+### `garment.wet_cling`
+
+Requires sufficient saturation and cling affinity. Fit, stiffness, lining, and
+body contact determine where cling occurs.
+
+The observation carries affected garment/body regions and a contour-read band.
+It does not invent uncovered anatomy; downstream exposure policy remains
+binding.
+
+### `garment.effective_opacity`
+
+Derives a current opacity band from baseline opacity, saturation response,
+material/construction, and color/lightness metadata. This feeds the staged
+`EffectiveCoverageRead`.
+
+Do not treat all white fabric as transparent when wet or all dark fabric as
+unchanged. The authored garment/material profile decides the response.
+
+### `garment.wind_or_motion_response`
+
+Requires current wind, subject motion, or an impulse. Soaked fabric generally
+loads and hangs more heavily; fit and construction constrain movement.
+
+Outputs describe actual current movement — a hem stirring, loose sleeve
+fluttering, cape snapping — not generic capability.
+
+### `garment.pose_drape`
+
+A current pose transition may change drape or settle state. Persistent changes
+such as a hem remaining caught or a strap remaining displaced belong to
+wardrobe/presentation state, not affordance memory.
+
+## Worked cases
+
+### Fitted cotton shirt in rain
+
+- saturation rises in garment state;
+- wet-cling may resolve over regions currently contacting the body;
+- effective opacity may decrease according to the garment profile;
+- the final coverage read determines what underlying surface observations are
+  perceptible.
+
+### Leather jacket in the same rain
+
+- low absorption produces beading/runoff;
+- no fabric cling or opacity downgrade;
+- the useful observation is surface droplets or darkened wet leather.
+
+### Soaked loose skirt in wind
+
+- water loading suppresses flutter compared with its dry state;
+- a strong gust may still move an exposed hem;
+- no persistent riding-up state is invented without a wardrobe event/state
+  change.
+
+## Narrative-focus and exposure policy
+
+A physical/perception read can establish that contour or underlying detail is
+observable. A separate shared product/narrative-focus policy decides whether it
+belongs in the current narration. The same policy should govern intimate soft-
+tissue observations and garment opacity changes.
+
+This layer must preserve:
+
+- authored exposure/coverage rules;
+- observer angle and distance;
+- current action relevance;
+- strict repetition limits;
+- the distinction between subtle contour, partial opacity change, and actual
+  uncovered exposure.
+
+## Acceptance tests
+
+- wardrobe is the sole owner of garment material and persistent garment state;
+- wet cotton and wet leather produce materially different observations;
+- saturation cannot increase flutter for a fabric whose authored water loading
+  should suppress it;
+- wet cling requires current garment/body contact;
+- opacity changes feed the staged effective-coverage read deterministically;
+- no current force/motion means no garment-motion observation;
+- persistent displacement requires authoritative wardrobe state;
+- hidden/intimate detail never bypasses exposure and narrative-focus policy.
 
 ## Open questions
 
-- Ownership: does the wardrobe/presentation system author garment physics
-  profiles, with this layer purely consuming them?
-- Derived-coverage layering: fixed two-stage pipeline, or a general
-  dependency ordering across phenomena? (Blocks everything else here.)
-- Does v1 ship wet-cling only and defer wind/drape (smallest slice with the
-  most value)?
-- Where is the decency gate for lift/translucency candidates — same ruling
-  as the soft-tissue spec's question, decide once for both.
+- Exact garment material/profile vocabulary and existing wardrobe seams.
+- Whether v1 proves only wet surface/cling before wind and drape.
+- Ownership of garment-region contact reads.
+- Shared narrative-focus policy for intimate body and garment observations.
+- Whether effective coverage is captured in the presentation cut directly or
+  reconstructed from captured garment reads.
