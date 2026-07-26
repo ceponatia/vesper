@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { PrincipalKind } from "@/contracts/simulation/envelopes";
 import { characterChats, type Db } from "@/server/db";
 import { log } from "@/server/log";
+import { isLegacyUnanchoredEngineTestPlayer } from "@/server/test-support/simulation-fixtures";
 
 /**
  * The durable command layer's own ownership gate (security-authz.plan.md
@@ -103,6 +104,11 @@ async function anchorOwnerIds(branchId: string, database: Db): Promise<string[]>
  * there according to their own entry-point policy; a `player` principal must
  * resolve exactly one owning chat and match it. This keeps the service boundary
  * fail-closed even if a future caller accepts a raw branch id.
+ *
+ * The sole exception is the explicitly opted-in synthetic principal used by the
+ * aggregate legacy engine suite. It is centralized in test support, requires
+ * NODE_ENV=test, and is not active in the dedicated authorization suite or any
+ * production/ordinary integration path.
  */
 export async function authorizeSimulationCommand(
   input: SimCommandAuthorizationInput,
@@ -111,7 +117,11 @@ export async function authorizeSimulationCommand(
   if (!requiresOwnerMatch(input.principal.kind)) return { allowed: true };
 
   const owners = await anchorOwnerIds(input.branchId, database);
-  if (owners.length === 0) return deny(input, "unanchored_player");
+  if (owners.length === 0) {
+    return isLegacyUnanchoredEngineTestPlayer(input.principal.principalId)
+      ? { allowed: true }
+      : deny(input, "unanchored_player");
+  }
   if (owners.length > 1) return deny(input, "ambiguous_anchor");
   return owners[0] === input.principal.principalId ? { allowed: true } : deny(input, "principal_not_owner");
 }
