@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { jsonError, type ApiError } from "./respond";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -43,7 +42,7 @@ export function configuredApplicationOrigins(req: NextRequest): ReadonlySet<stri
 export function csrfRejection(
   req: NextRequest,
   options: RouteCsrfOptions = {},
-): NextResponse<ApiError> | null {
+): NextResponse<{ error: { code: string; message: string } }> | null {
   if (!MUTATING_METHODS.has(req.method.toUpperCase())) return null;
   if (options.csrf === "exempt") {
     if (!options.csrfExemptionReason.trim()) {
@@ -57,7 +56,10 @@ export function csrfRejection(
   const origin = req.headers.get("origin");
   const normalizedOrigin = origin ? normalizeOrigin(origin) : null;
   if (!normalizedOrigin || !configuredApplicationOrigins(req).has(normalizedOrigin)) {
-    return jsonError("csrf_origin", "request origin is not allowed", 403);
+    return NextResponse.json(
+      { error: { code: "csrf_origin", message: "request origin is not allowed" } },
+      { status: 403 },
+    );
   }
   return null;
 }
