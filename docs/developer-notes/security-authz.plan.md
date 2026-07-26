@@ -1,9 +1,20 @@
 # Security & ownership hardening — 2026-07-25 review follow-ups
 
-Status: **active** (build started 2026-07-26; promoted 2026-07-25 from
-[deferred/security-authz.plan.md](deferred/CLAUDE.md) — parked and promoted the
-same day on the owner's call; queued at the top of
-[roadmap.md](roadmap.md) §Next)
+Status: **shipped — 2026-07-26** (promoted 2026-07-25 from
+[deferred/security-authz.plan.md](deferred/CLAUDE.md), built 2026-07-26)
+
+**Completion note (2026-07-26):** all seven slices landed in one batch (five
+parallel implementation agents; gates run serially green — lint, cycles,
+typecheck, 2560 pure tests, jscpd — plus `pnpm test:int` 505/505 against a
+local Postgres). Beyond the slice text: `/api/auth-config` now reports the
+real magic-link gate (it was hardcoded `true`, which would have rendered a
+dead sign-in button once production drops the plugin), and the slice-6
+tripwire's baseline census found **zero** unscoped mutations across 31 sites
+in 18 route files. Leftovers: OQ1–OQ3 below remain open (RLS, the
+public-`profile` ruling, transport-before-signup), and slice 5's adversarial
+sweep surfaced three latent items recorded in §Follow-ups — none exploitable
+today, all one-caller-away shapes worth closing when their surfaces are next
+touched.
 
 Successor to the shipped 2026-06-23 sweep
 ([finished/security-hardening.plan.md](finished/security-hardening.plan.md)).
@@ -211,6 +222,32 @@ them); the sanitized shape applies when `row.ownerId !== user.id`.
   documented choice. Everything else in the checklist waits for the signup
   decision; the shared rate limiter stays deferred until multi-instance
   (unchanged 2026-06-23 ruling).
+
+## Follow-ups (recorded at ship, 2026-07-26)
+
+Surfaced by slice 5's adversarial sweep; asserted-secure-today by the matrix,
+not fixed here:
+
+1. **The durable simulation command layer is ownership-blind.**
+   `submitDurable*`/`runSimulationCommand`
+   (`src/server/engine/simulation/command-runner.ts`) lock the branch by id
+   and record — but never validate — `principal.principalId` against the
+   chat's owner; `requireSimChat` in the sim-command route is the *only*
+   gate. Exactly the S3 shape: one new caller away. Fix when the command
+   surface is next touched: validate the principal against the branch's
+   owning chat inside the runner, or extend the slice-6 tripwire to
+   `src/server/engine/simulation/`.
+2. **`promoteVariant(characterId, imageId)` takes no ownerId**
+   (`src/server/images/variants.ts`) — safe only because the route gates on
+   `findOwnedCharacter` and the image must already point at that character.
+   Same polymorphic-metadata trust S5 flagged; thread the owner id through
+   when the variants module is next edited.
+3. **Latent 500 in persona listing scope:** `searchLibraryIds` emits
+   `visibility = 'public'` for non-owned scopes, but `personas` has no
+   `visibility` column — safe only because the personas route hardcodes
+   `scope: "owned"`. If persona listing ever accepts a scope param it throws
+   rather than leaks; make `searchLibraryIds` reject non-shareable kinds for
+   non-owned scopes instead.
 
 ## Open questions
 
