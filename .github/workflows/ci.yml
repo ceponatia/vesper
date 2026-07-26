@@ -58,27 +58,7 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=6144
 
       - name: Pure test suite
-        id: pure_tests
-        shell: bash
-        run: |
-          set +e
-          pnpm test > pure-test.log 2>&1
-          code=$?
-          cat pure-test.log
-          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
-          exit 0
-
-      - name: Upload pure-test diagnostics
-        if: steps.pure_tests.outputs.exit_code != '0'
-        uses: actions/upload-artifact@v4
-        with:
-          name: pure-test-diagnostics
-          path: pure-test.log
-          retention-days: 1
-
-      - name: Enforce pure-test result
-        if: steps.pure_tests.outputs.exit_code != '0'
-        run: exit "${{ steps.pure_tests.outputs.exit_code }}"
+        run: pnpm test
 
       - name: Copy-paste threshold (jscpd)
         run: pnpm jscpd
