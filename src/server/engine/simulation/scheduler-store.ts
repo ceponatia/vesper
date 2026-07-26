@@ -37,6 +37,7 @@ import { transferItemCommandSchema } from "@/contracts/simulation/materials";
 import { arriveJourneyCommandSchema } from "@/contracts/simulation/space";
 import { db, simBranches, simCommands, simEvents, simTriggers, simWorlds, type Db } from "@/server/db";
 import { submitDurableCompleteActivity } from "./activity-store";
+import { authorizeSimulationCommand } from "./command-authz";
 import {
   submitDurableEndBodyCondition,
   submitDurableResolveBodyCollapse,
@@ -204,6 +205,15 @@ export async function submitDurableTriggerSchedule(
 
   const submitted = parsed.data;
   const database = options.database ?? db();
+
+  // §Follow-ups 1: the third inlined copy of the shell. A schedule inherits the
+  // scheduled command's principal, so a player-originated trigger proves the
+  // same owner here that its parent command proved.
+  const authorization = await authorizeSimulationCommand(
+    { branchId: submitted.branchId, commandId: submitted.id, type: submitted.type, principal: submitted.principal },
+    database,
+  );
+  if (!authorization.allowed) return scheduleBranchUnavailableResult(submitted);
 
   const [preLockCached] = await database
     .select({ result: simCommands.result })
