@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { diag, itemDefinitionSchema, type DiagnosticSink, type ItemDefinition } from "@/contracts";
+import { diag, itemDefinitionSchema, type Diagnostic, type DiagnosticSink, type ItemDefinition } from "@/contracts";
 import { log } from "@/server/log";
 import { parseOr } from "@/lib/parse";
 import { currentEmbedder, embedText, toVectorLiteral } from "@/server/ai";
@@ -12,6 +12,7 @@ import { absoluteImagePath, type ImageEntityKind } from "@/server/images";
 import { startJob } from "./jobs";
 import { errorText } from "./respond";
 import { invalidCoverageIds, itemExtrasSchema, type ItemExtras } from "./schemas";
+import type { ShareableKind } from "./visibility";
 
 export const LIST_LIMIT = 100;
 /** Looser than FUZZY_MIN_SCORE: search suggests, the user picks. */
@@ -27,6 +28,29 @@ const TABLE_NAMES: Record<LibraryKind, string> = {
 
 const idRowSchema = z.object({ id: z.string() });
 const scoredIdRowSchema = z.object({ id: z.string(), score: z.number() });
+
+/** Cross-account discovery tiers (auth.plan.md). */
+export type LibraryScope = "all" | "public" | "owned";
+
+/**
+ * The library kinds with **no** public tier — their table carries no
+ * `visibility` column, so `owned` is the only scope that means anything.
+ * Derived from `ShareableKind` (./visibility) so the two can never drift:
+ * making a kind shareable removes it from here automatically.
+ */
+export type OwnerOnlyLibraryKind = Exclude<LibraryKind, ShareableKind>;
+
+/**
+ * `ShareableKind` as a value, so the runtime check below and the type-level
+ * split share one source of truth — widening the union breaks this map until
+ * the new kind is listed.
+ */
+const SHAREABLE_LIBRARY_KINDS: Record<ShareableKind, true> = {
+  character: true,
+  location: true,
+  item: true,
+  social_card: true,
+};
 
 export interface LibrarySearchOptions {
   q?: string;
@@ -63,7 +87,8 @@ export interface LibrarySearchOptions {
    * `owned` (default) is owner-only — the long-standing behaviour every other
    * caller relies on; `public` is everyone's published rows (your own public
    * ones included); `all` is owner ∪ public. Only the shareable tables carry a
-   * `visibility` column, so pass a non-`owned` scope only for those.
+   * `visibility` column, which is why the overloads below accept these options
+   * for `ShareableKind` alone.
    *
    * This returns **ids**; whatever hydrates them for a non-`owned` scope is
    * feeding foreign rows to a client and must select an explicit column list —
@@ -71,7 +96,50 @@ export interface LibrarySearchOptions {
    * does (summary columns only, no `ownerId`/`searchEmbedding`); the detail
    * routes project through `toPublic*` in `./visibility`.
    */
-  scope?: "all" | "public" | "owned";
+  scope?: LibraryScope;
+}
+
+/**
+ * Search options for an owner-only kind: every filter the shareable kinds get,
+ * but `owned` is the only expressible scope — a persona is *you*, so there is
+ * no public tier to widen to (persona-library.plan.md).
+ */
+export type OwnerOnlyLibrarySearchOptions = Omit<LibrarySearchOptions, "scope"> & { scope?: "owned" };
+
+/**
+ * The outcome of checking a `kind × scope` pair before any SQL is built
+ * (security-authz.plan.md §Follow-ups item 3).
+ */
+export type LibraryScopeDecision =
+  | { supported: true; scope: LibraryScope }
+  | { supported: false; diagnostic: Diagnostic };
+
+/**
+ * Can this kind be searched at this scope? Pure, so the decision is unit
+ * testable without a database — and the *only* thing the query builder reads
+ * when it composes the scope predicate.
+ *
+ * A non-`owned` scope on a kind with no `visibility` column used to compile a
+ * `visibility = 'public'` clause against a table that has no such column: a
+ * 500 from invalid SQL, latent only because the personas route hardcodes
+ * `scope: "owned"` (security-authz.plan.md §Follow-ups item 3). The overloads
+ * on `searchLibraryIds` keep that pair unrepresentable for statically-known
+ * kinds; this is the backstop for dynamic ones. Unsupported degrades to an
+ * empty result + a `warn` diagnostic rather than throwing — and deliberately
+ * does not quietly narrow `all` to `owned`, which would hand the caller their
+ * own rows and hide the bug.
+ */
+export function resolveLibraryScope(kind: LibraryKind, scope: LibraryScope = "owned"): LibraryScopeDecision {
+  if (scope === "owned" || Object.hasOwn(SHAREABLE_LIBRARY_KINDS, kind)) return { supported: true, scope };
+  return {
+    supported: false,
+    diagnostic: diag(
+      "warn",
+      "api.library.scope_unsupported",
+      `"${kind}" has no public tier (no visibility column); a "${scope}" search returns nothing`,
+      { path: TABLE_NAMES[kind], context: { kind, scope } },
+    ),
+  };
 }
 
 /** Parse a `tag` query param: comma-separated values, ANDed by the search. */
@@ -85,7 +153,20 @@ export function parseTagsParam(value: string | null): string[] {
  * ILIKE) first, then embedding-similarity hits ≥ SEARCH_MIN_SCORE
  * (docs/streaming-api.md §Pagination & limits). An embedding failure degrades
  * to text-only results.
+ *
+ * Two overloads, so the scope split is a compile error rather than a runtime
+ * one (security-authz.plan.md §Follow-ups item 3): **any** kind may be searched
+ * at `owned` (including a dynamically-typed `LibraryKind`), while `public`/`all`
+ * are accepted only for the shareable kinds whose table has a `visibility`
+ * column. `OwnerOnlyLibraryKind` (personas) therefore cannot reach the public
+ * predicate at all from statically-known call sites.
  */
+export function searchLibraryIds(
+  kind: LibraryKind,
+  ownerId: string,
+  opts?: OwnerOnlyLibrarySearchOptions,
+): Promise<string[]>;
+export function searchLibraryIds(kind: ShareableKind, ownerId: string, opts: LibrarySearchOptions): Promise<string[]>;
 export async function searchLibraryIds(
   kind: LibraryKind,
   ownerId: string,
@@ -99,7 +180,18 @@ export async function searchLibraryIds(
   const itemKind = kind === "item" ? (opts.itemKind?.trim() ?? "") : "";
   const facets = kind === "item" ? (opts.itemFacets ?? {}) : {};
   // Discovery scope (default owner-only, so existing callers are unchanged).
-  const scope = opts.scope ?? "owned";
+  // A kind the caller reached dynamically can still name a scope its table
+  // cannot serve — degrade to no results rather than emit invalid SQL.
+  const decision = resolveLibraryScope(kind, opts.scope);
+  if (!decision.supported) {
+    log.warn("api.library", decision.diagnostic.message, {
+      code: decision.diagnostic.code,
+      kind,
+      scope: opts.scope,
+    });
+    return [];
+  }
+  const scope = decision.scope;
   const scopeCondition =
     scope === "public"
       ? sql`visibility = 'public'`
