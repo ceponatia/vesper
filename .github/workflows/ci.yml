@@ -82,6 +82,11 @@ jobs:
       # local conveniences only.
       - name: Engine + rollout integration suite
         run: pnpm test:engine
+        env:
+          # Low-level engine suites historically seed bare branches and submit
+          # the shared synthetic player fixture. Authorization tests do not set
+          # this flag and continue proving that ordinary unanchored players fail.
+          VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER: 1
 
       - name: Stop successor-engine database
         if: always()
