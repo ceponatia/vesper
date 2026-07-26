@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 
-const approvedWrappers = /\b(withOwnedChat|withOwnedEntity|withAdmin|withAdminOwnedChat|withAuthorizedResource)\b/;
+const approvedWrappers = /\b(withOwnedChat|withOwnedEntity|withOwnerAdmin|withOwnerAdminResource|withOwnerAdminOwnedChat|withCrossAccountSupport|withAuthorizedResource)\b/;
 const resourceRoute = /src\/app\/api\/.+\/\[[^/]+\]\/.*route\.ts$/;
 
 function changedFiles(): string[] {
@@ -34,6 +34,8 @@ for (const path of changedFiles()) {
 if (unsafe.length > 0) {
   console.error("Sensitive resource-ID routes may not rely on bare withUser:");
   for (const path of unsafe) console.error(`  - ${path}`);
-  console.error("Use withOwnedChat, withOwnedEntity, withAdmin, withAdminOwnedChat, or withAuthorizedResource.");
+  console.error(
+    "Use an owner-scoped wrapper, withOwnerAdminResource/withOwnerAdminOwnedChat, or withCrossAccountSupport.",
+  );
   process.exit(1);
 }
