@@ -26,7 +26,8 @@ import {
 } from "./authz";
 
 const ctx = <P>(params: P) => ({ params: Promise.resolve(params) });
-const request = (path = "/api/test", init: RequestInit = {}) =>
+type NextRequestInit = NonNullable<ConstructorParameters<typeof NextRequest>[1]>;
+const request = (path = "/api/test", init: NextRequestInit = {}) =>
   new NextRequest(`http://localhost${path}`, init);
 
 beforeEach(() => {
