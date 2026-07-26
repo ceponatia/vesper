@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import type { PrincipalKind } from "@/contracts/simulation/envelopes";
-import { characterChats, type Db } from "@/server/db";
+import { characterChats, type Db, users } from "@/server/db";
 import { log } from "@/server/log";
-import { isLegacyUnanchoredEngineTestPlayer } from "@/server/test-support";
+import { legacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * The durable command layer's own ownership gate (security-authz.plan.md
@@ -95,6 +95,12 @@ async function anchorOwnerIds(branchId: string, database: Db): Promise<string[]>
   return rows.map((row) => row.ownerId);
 }
 
+/** Does the claimed principal id name a real account? */
+async function principalAccountExists(principalId: string, database: Db): Promise<boolean> {
+  const [row] = await database.select({ id: users.id }).from(users).where(eq(users.id, principalId)).limit(1);
+  return row !== undefined;
+}
+
 /**
  * Decide whether this principal may mutate this branch. Read-only: it must be
  * safe to call before the command shell has written anything at all.
@@ -105,10 +111,10 @@ async function anchorOwnerIds(branchId: string, database: Db): Promise<string[]>
  * resolve exactly one owning chat and match it. This keeps the service boundary
  * fail-closed even if a future caller accepts a raw branch id.
  *
- * The sole exception is the explicitly opted-in synthetic principal used by the
- * aggregate legacy engine suite. It is centralized in test support, requires
- * NODE_ENV=test, and is not active in the dedicated authorization suite or any
- * production/ordinary integration path.
+ * The aggregate legacy engine suite may opt into synthetic fixture principals
+ * because those domain tests directly seed branches and predate account/chat
+ * ownership. Even in that mode, an id that exists in `users` is denied: the
+ * compatibility seam can never turn a real account into an unanchored owner.
  */
 export async function authorizeSimulationCommand(
   input: SimCommandAuthorizationInput,
@@ -118,9 +124,13 @@ export async function authorizeSimulationCommand(
 
   const owners = await anchorOwnerIds(input.branchId, database);
   if (owners.length === 0) {
-    return isLegacyUnanchoredEngineTestPlayer(input.principal.principalId)
-      ? { allowed: true }
-      : deny(input, "unanchored_player");
+    if (
+      legacyUnanchoredEngineTestMode() &&
+      !(await principalAccountExists(input.principal.principalId, database))
+    ) {
+      return { allowed: true };
+    }
+    return deny(input, "unanchored_player");
   }
   if (owners.length > 1) return deny(input, "ambiguous_anchor");
   return owners[0] === input.principal.principalId ? { allowed: true } : deny(input, "principal_not_owner");
