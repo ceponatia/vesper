@@ -95,11 +95,13 @@ Added after the review:
   trembling, …) whose results — not the processes — surface to the narrator;
   generalizes the meter-economy OQ2 ruling into a response registry
 - [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) —
-  owner-requested body-attribute physics and visual affordance layer
-  (2026-07-26): per-attribute physical contributions composed by
-  cross-attribute phenomenon rules, dirtied by live state/environment/pose
-  changes and surfaced only as perception-gated structured cues. Fans out
-  into seven per-domain companion spec drafts
-  (`body-attribute-affordances.spec.*.md`, drafted 2026-07-26): hair,
-  skin-surface, soft-tissue, appendages, stature-reach, garment-interaction,
-  thermal — indexed in the plan's `## Companion spec drafts`
+  owner-requested body-attribute physics and visual-observation layer
+  (2026-07-26; reviewed/refocused 2026-07-26): canonical attributes contribute
+  orthogonal material/geometry parameters; cross-input phenomenon files combine
+  them with authoritative live state to produce actual visual observations or
+  constraints. V1 is a pure current-cut read with no persisted dirty flags or
+  affordance-owned hysteresis. Active companion drafts: hair, skin-surface,
+  garment-interaction, appendages, soft-tissue, and narrator-relevant relative
+  stature/body blocking. `body-attribute-affordances.spec.thermal.md` is a scope
+  tombstone: passive thermal observations moved to future environment/
+  perception work.
