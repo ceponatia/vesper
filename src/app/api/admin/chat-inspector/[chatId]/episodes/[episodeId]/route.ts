@@ -1,10 +1,9 @@
-import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { jsonError, jsonOk, readBody } from "@/server/api";
 import { db, episodes } from "@/server/db";
-import { loadOwnedChat } from "../../../../../chats/owned";
 import { serializeEpisodeRow, tryEmbed } from "../../../shared";
+import { withSelfOwnedChat } from "../../../owned";
 
 type Params = { chatId: string; episodeId: string };
 
@@ -20,20 +19,11 @@ const episodeReturning = {
   createdAt: episodes.createdAt,
 } as const;
 
-/**
- * Dev episode edit (character-chat-standalone.spec.md §6.1): overwrite one
- * episode's summary and re-embed it (an embed failure still saves the text but
- * nulls the vector — the row honestly leaves similarity retrieval, flagged
- * `embedDegraded`). Keyed on `(id, chat_memory_group_id)` so an episode outside
- * this chat's memory group is a 404, never touched. Admin-only: **404 for non-admin roles**.
- */
-export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
-  const { chatId, episodeId } = await ctx.params;
+/** Edit one episode inside an owner-admin's own chat memory group. */
+export const PATCH = withSelfOwnedChat<Params>(async (_user, owned, req, ctx) => {
+  const { episodeId } = await ctx.params;
   const body = await readBody(req, patchBodySchema);
   if (!body.ok) return body.response;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
 
   const embed = await tryEmbed(body.value.summary);
   const [updated] = await db()
@@ -49,17 +39,9 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   });
 });
 
-/**
- * Dev episode delete (spec §6.1) — a hard delete, unlike fact retraction:
- * episodes carry no supersedence audit trail, and the inspector's use case is
- * pruning a bad summary outright. Scope-checked the same way as PATCH.
- */
-export const DELETE = withUser<Params>(async (user, _req, ctx) => {
-  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
-  const { chatId, episodeId } = await ctx.params;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
-
+/** Hard-delete one episode inside an owner-admin's own chat memory group. */
+export const DELETE = withSelfOwnedChat<Params>(async (_user, owned, _req, ctx) => {
+  const { episodeId } = await ctx.params;
   const [deleted] = await db()
     .delete(episodes)
     .where(and(eq(episodes.id, episodeId), eq(episodes.chatMemoryGroupId, owned.participant.memoryGroupId)))
