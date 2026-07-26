@@ -76,6 +76,8 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 ```bash
 pnpm dev / build / start
 pnpm test / test:watch / test:int / typecheck / lint     # see testing.md
+pnpm test:int:strict                        # release/CI form of test:int — an unreachable DB fails
+                                            #   instead of skipping (testing.md §Strict integration mode)
 pnpm db:generate                            # after editing src/server/db/schema.ts → review drizzle/ SQL
 pnpm db:migrate
 pnpm db:studio                              # drizzle studio

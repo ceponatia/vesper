@@ -30,9 +30,19 @@ Vitest 4, one root config (`vitest.config.ts`) including `src/**/*.test.ts` and 
 pnpm test               # all non-DB suites (excludes **/*.int.test.ts)
 pnpm test:watch         # same exclusion, watch mode
 pnpm test:int           # DB suites only (filename filter ".int.test.", file parallelism off — they share one DB)
+pnpm test:int:strict    # the SAME run as a release gate: REQUIRE_INTEGRATION_DB=true, so an unreachable
+                        #   or unmigrated database FAILS the converted suites instead of skipping them
 pnpm test:engine        # the successor engine's authority + narrator + sim-route int suites
 pnpm test:engine-e2-5   # focused successor branch transaction + crash/concurrency proof (gate-specific
                         #   scripts run e2-4 … e6-5; run `pnpm db:migrate` first; local runs self-skip if unreachable, CI fails)
 pnpm typecheck
 pnpm lint
 ```
+
+## Strict integration mode (the release form)
+
+Every `.int.test.ts` suite probes the database at collection and **self-skips** when it is unreachable or unmigrated — right for ordinary dev, wrong for a claimed release gate, where a broken database would silently skip (for instance) the entire authorization matrix and still report green.
+
+`pnpm test:int:strict` is the same run with `REQUIRE_INTEGRATION_DB=true`: the shared probe **throws** instead of returning "skip", so the suite fails loudly and names what was unreachable. Use it before a release or in CI; plain `pnpm test:int` stays skip-tolerant for local work. (`CI=true` and `VESPER_REQUIRE_TEST_DB=1` are honored as strict signals too — they predate the flag.)
+
+The probe lives in one place, `src/server/test-support/int-db.ts` (`probeIntegrationDb(suite, table)`), imported through the `@/server/test-support` barrel. **A suite honors strict mode only once it uses that helper**; suites still carrying their own inline probe skip regardless of the flag. Converted so far: the security surface — `server/api/authz-matrix`, `server/api/public-dto`, `server/api/library`, `server/api/social-cards`, `server/images/variants`, `server/engine/simulation/command-authz`, `app/api/chats/chat`. Everything else (the engine `simulation/*-store` and gate-corpus suites, the remaining `app/api/**` route suites, `server/memory`, `server/images/assets`, the chat-lane `server/engine/chat-*` suites) still self-skips — convert a suite's probe to the helper when you next touch it.

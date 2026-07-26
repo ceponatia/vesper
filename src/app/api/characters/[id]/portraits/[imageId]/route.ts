@@ -3,24 +3,9 @@ import { and, eq } from "drizzle-orm";
 import { characters, db, images } from "@/server/db";
 import { absoluteImagePath } from "@/server/images";
 import { jsonError, jsonOk, withUser } from "@/server/api";
+import { findPortrait } from "../owned";
 
 type Params = { id: string; imageId: string };
-
-async function findPortrait(ownerId: string, characterId: string, imageId: string) {
-  const [row] = await db()
-    .select()
-    .from(images)
-    .where(
-      and(
-        eq(images.id, imageId),
-        eq(images.ownerId, ownerId),
-        eq(images.entityKind, "character"),
-        eq(images.entityId, characterId),
-      ),
-    )
-    .limit(1);
-  return row;
-}
 
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id, imageId } = await ctx.params;

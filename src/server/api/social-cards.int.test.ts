@@ -1,34 +1,17 @@
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { cloneToLibrary, findViewable, searchLibraryIds } from "@/server/api";
 import { db, socialCards, users } from "@/server/db";
+import { probeIntegrationDb } from "@/server/test-support";
 
 // Integration suite for the social-card library reuse slice
 // (social-reaction-cards.plan.md step 6): the discovery `scope` query
 // (owned/public/all), owner-or-public `findViewable`, and clone-on-use. Two
 // owners so cross-account visibility is exercised. Self-skips when the database
-// is unreachable.
+// is unreachable, except under strict integration mode (`pnpm test:int:strict`),
+// where it fails instead.
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from social_cards limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[social-cards.int.test] skipping — database unreachable or unmigrated: ${reason}\n`);
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
+const ready = await probeIntegrationDb("social-cards.int.test", "social_cards");
 
 let ownerA: string;
 let ownerB: string;

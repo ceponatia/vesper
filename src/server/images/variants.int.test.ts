@@ -1,7 +1,8 @@
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
 import { characters, db, images, users } from "@/server/db";
+import { probeIntegrationDb } from "@/server/test-support";
 import { promoteVariant } from "./variants";
 
 // Ownership coverage for the avatar-promotion seam (security-authz.plan.md
@@ -11,28 +12,10 @@ import { promoteVariant } from "./variants";
 // `findOwnedCharacter` gate. Two owners, so every cross-account shape is
 // expressible; the last case is the S5 shape (polymorphic entityKind/entityId
 // are unverified metadata, so ownership can never be inferred from them).
-// Self-skips when the database is unreachable.
+// Self-skips when the database is unreachable, except under strict integration
+// mode (`pnpm test:int:strict`), where it fails instead.
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from images limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[images variants.int.test] skipping — database unreachable or unmigrated: ${reason}\n`);
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
+const ready = await probeIntegrationDb("images variants.int.test", "images");
 
 /** The owner. Owns every fixture unless a case says otherwise. */
 let ownerA = "";
