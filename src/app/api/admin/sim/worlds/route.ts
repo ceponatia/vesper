@@ -1,7 +1,7 @@
-import { z } from "zod";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
-import { db, simWorlds } from "@/server/db";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
+import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
+import { db, simWorlds } from "@/server/db";
 import {
   seedDurableActionDefinitions,
   seedDurableBodyRhythms,
@@ -12,26 +12,13 @@ import {
   submitDurableInitializeActorBody,
 } from "@/server/engine";
 
-/**
- * R3 slice 3 (engine.rollout.plan.md) — declarative sim-world provisioning:
- * one admin POST runs the same durable seeders the rollout world and every
- * corpus use, in dependency order (world+actors+items → topology → rhythms →
- * action catalog → bodies → LOD assignments → cohorts). Each section is
- * validated by its own seeder's contract — this route adds no second schema
- * to drift; a seeder rejection is a 400 carrying the message. Admin-only,
- * 404-hidden (the chat-inspector idiom). An existing worldId is a 409 —
- * provisioning never mutates a live world.
- */
-
 const bodySchema = z
   .object({
     world: z.record(z.string(), z.unknown()),
     topology: z.record(z.string(), z.unknown()),
     rhythms: z.array(z.record(z.string(), z.unknown())).max(64).optional(),
     actionDefinitions: z.array(z.record(z.string(), z.unknown())).max(64).optional(),
-    /** Actors whose bodies initialize (registry body-v1, no overrides). */
     embodyActorIds: z.array(z.string().min(1).max(256)).max(64).optional(),
-    /** Per-actor LOD assignments applied after embodiment. */
     lods: z
       .array(
         z
@@ -48,8 +35,8 @@ const bodySchema = z
   })
   .strict();
 
-export const POST = withUser(async (user, req) => {
-  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
+/** Provision a development world through the explicit owner-admin namespace. */
+export const POST = withOwnerAdmin(async (user, req) => {
   const body = await readBody(req, bodySchema);
   if (!body.ok) return body.response;
   const seed = body.value;

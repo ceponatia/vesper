@@ -1,10 +1,10 @@
-import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { jsonError, jsonOk, readBody } from "@/server/api";
 import { db, facts } from "@/server/db";
-import { loadOwnedChat } from "../../../../../chats/owned";
+import { loadOwnedChat } from "@/app/api/chats/owned";
 import { factReturning, serializeFactRow, tryEmbed } from "../../../shared";
+import { withSelfOwnedChat } from "../../../owned";
 
 type Params = { chatId: string; factId: string };
 
@@ -14,26 +14,20 @@ const patchBodySchema = z
     pinned: z.boolean().optional(),
     status: z.enum(["active", "retracted"]).optional(),
   })
-  .refine((b) => b.text !== undefined || b.pinned !== undefined || b.status !== undefined, {
+  .refine((body) => body.text !== undefined || body.pinned !== undefined || body.status !== undefined, {
     message: "provide at least one of text, pinned, status",
   });
 
-/**
- * Dev fact CRUD (character-chat-standalone.spec.md §6.1): edit content
- * (re-embeds; an embed failure still saves the text but nulls the vector so the
- * row honestly drops out of similarity retrieval — flagged `embedDegraded`),
- * hard-set `pinned` (the force-include testing lever), retract, or restore
- * (restoring also clears the supersedence marks so the row is fully live
- * again). The UPDATE is keyed on `(id, chat_memory_group_id)` — a fact outside
- * this chat's memory group is a 404, never touched. Admin-only: **404 for non-admin roles**.
- */
-export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
-  const { chatId, factId } = await ctx.params;
+/** Edit one fact inside an owner-admin's own chat memory group. */
+export const PATCH = withSelfOwnedChat<Params>(async (user, owned, req, ctx) => {
+  const { factId } = await ctx.params;
   const body = await readBody(req, patchBodySchema);
   if (!body.ok) return body.response;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
+
+  // Keep the route-layer ownership tripwire load-bearing even though the shared
+  // wrapper has already resolved this exact owner/chat pair.
+  const verified = await loadOwnedChat(owned.chat.id, user.id);
+  if (!verified) return jsonError("not_found", "chat not found", 404);
 
   const edit = body.value;
   const embed = edit.text !== undefined ? await tryEmbed(edit.text) : null;
@@ -47,7 +41,7 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
       ...(edit.status !== undefined ? { status: edit.status } : {}),
       ...(edit.status === "active" ? { supersededById: null, supersededAt: null } : {}),
     })
-    .where(and(eq(facts.id, factId), eq(facts.chatMemoryGroupId, owned.participant.memoryGroupId)))
+    .where(and(eq(facts.id, factId), eq(facts.chatMemoryGroupId, verified.participant.memoryGroupId)))
     .returning(factReturning);
   if (!updated) return jsonError("not_found", "fact not found", 404);
 

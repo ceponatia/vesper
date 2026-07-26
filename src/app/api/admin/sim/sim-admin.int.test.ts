@@ -1,12 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { db, simWorlds, users } from "@/server/db";
-
-// R3 slice 3 (engine.rollout.plan.md) — the authoring + storyteller tool
-// routes: declarative provisioning through the real seeders, the status
-// read, audited relocation, §27.2 promote-from-cohort, the LOD dial,
-// conserved cohort adjustment, and the bounded advance. Zero model calls.
+import { characterChats, db, simWorlds, users } from "@/server/db";
 
 process.env.AI_FAKE = "1";
 
@@ -48,8 +43,10 @@ async function probe(): Promise<boolean> {
 const ready = await probe();
 const WORLD = "sim-admin-test-world";
 const BRANCH = "sim-admin-test-branch";
-const ORIGIN = 2 * 86_400 + 600 * 60; // day 2, 10:00 — mid presence window
+const ORIGIN = 2 * 86_400 + 600 * 60;
 const ctx = (branchId: string) => ({ params: Promise.resolve({ branchId }) });
+const statusPath = (branchId: string) => `/api/admin/self/sim/${branchId}`;
+const commandPath = (branchId: string) => `${statusPath(branchId)}/command`;
 function jsonReq(path: string, body: unknown): NextRequest {
   return new NextRequest(`http://t${path}`, {
     method: "POST",
@@ -58,27 +55,39 @@ function jsonReq(path: string, body: unknown): NextRequest {
   });
 }
 
+const ids = { owner: "", foreignAdmin: "", chat: "" };
+
 beforeAll(async () => {
   if (!ready) return;
+  await db().delete(characterChats).where(eq(characterChats.simBranchId, BRANCH));
   await db().delete(simWorlds).where(eq(simWorlds.id, WORLD));
-  const [user] = await db()
+  const stamp = Date.now();
+  const [owner] = await db()
     .insert(users)
-    .values({ email: `sim-admin-${Date.now()}@test.local`, name: "Sim Admin", role: "admin" })
+    .values({ email: `sim-admin-${stamp}@test.local`, name: "Sim Admin", role: "admin" })
     .returning();
-  if (!user) throw new Error("failed to create test user");
-  authState.user = { ...authState.user, id: user.id, email: user.email };
+  const [foreignAdmin] = await db()
+    .insert(users)
+    .values({ email: `sim-admin-foreign-${stamp}@test.local`, name: "Foreign Admin", role: "admin" })
+    .returning();
+  if (!owner || !foreignAdmin) throw new Error("failed to create test users");
+  authState.user = { ...authState.user, id: owner.id, email: owner.email };
+  ids.owner = owner.id;
+  ids.foreignAdmin = foreignAdmin.id;
 });
 
 afterAll(async () => {
-  if (!ready || !authState.user.id) return;
+  if (!ready) return;
+  await db().delete(characterChats).where(eq(characterChats.simBranchId, BRANCH));
   await db().delete(simWorlds).where(eq(simWorlds.id, WORLD));
-  await db().delete(users).where(eq(users.id, authState.user.id));
+  if (ids.owner) await db().delete(users).where(eq(users.id, ids.owner));
+  if (ids.foreignAdmin) await db().delete(users).where(eq(users.id, ids.foreignAdmin));
 });
 
-describe.runIf(ready)("R3 sim admin routes", () => {
-  it("provisions a world declaratively, reads status, and drives every storyteller tool", async () => {
+describe.runIf(ready)("R3 self-scoped sim admin routes", () => {
+  it("provisions a world, links it to an owned chat, and drives every storyteller tool", async () => {
     const provisioned = await worldsPost(
-      jsonReq("/api/admin/sim/worlds", {
+      jsonReq("/api/admin/self/sim/worlds", {
         world: {
           worldId: WORLD,
           worldTypeId: "sim-admin-test",
@@ -128,14 +137,22 @@ describe.runIf(ready)("R3 sim admin routes", () => {
       { params: Promise.resolve({}) },
     );
     expect(provisioned.status).toBe(201);
-    // Re-provisioning the same world is a 409, never a mutation.
-    const dup = await worldsPost(jsonReq("/api/admin/sim/worlds", { world: { worldId: WORLD, branchId: BRANCH }, topology: {} }), {
-      params: Promise.resolve({}),
-    });
-    expect(dup.status).toBe(409);
 
-    const promoteRes = await toolPost(
-      jsonReq(`/api/admin/sim/${BRANCH}/command`, {
+    const [chat] = await db()
+      .insert(characterChats)
+      .values({ ownerId: ids.owner, simBranchId: BRANCH })
+      .returning({ id: characterChats.id });
+    if (!chat) throw new Error("failed to link branch to owned chat");
+    ids.chat = chat.id;
+
+    const duplicate = await worldsPost(
+      jsonReq("/api/admin/self/sim/worlds", { world: { worldId: WORLD, branchId: BRANCH }, topology: {} }),
+      { params: Promise.resolve({}) },
+    );
+    expect(duplicate.status).toBe(409);
+
+    const promote = await toolPost(
+      jsonReq(commandPath(BRANCH), {
         kind: "promote",
         cohortId: "sat-cohort-crowd",
         zoneId: "sat-zone-square",
@@ -144,42 +161,67 @@ describe.runIf(ready)("R3 sim admin routes", () => {
       }),
       ctx(BRANCH),
     );
-    expect(promoteRes.status).toBe(200);
+    expect(promote.status).toBe(200);
 
-    const relocated = await toolPost(
-      jsonReq(`/api/admin/sim/${BRANCH}/command`, {
-        kind: "relocate",
-        actorId: "sat-actor-iris",
-        destinationZoneId: "sat-zone-inn",
-        reason: "authoring: staging the scene",
-      }),
-      ctx(BRANCH),
-    );
-    expect(relocated.status).toBe(200);
+    expect(
+      (
+        await toolPost(
+          jsonReq(commandPath(BRANCH), {
+            kind: "relocate",
+            actorId: "sat-actor-iris",
+            destinationZoneId: "sat-zone-inn",
+            reason: "authoring: staging the scene",
+          }),
+          ctx(BRANCH),
+        )
+      ).status,
+    ).toBe(200);
 
-    const dialed = await toolPost(
-      jsonReq(`/api/admin/sim/${BRANCH}/command`, { kind: "assign_lod", actorId: "sat-actor-iris", simulationLod: "exact", inferenceLod: "deliberator" }),
-      ctx(BRANCH),
-    );
-    expect(dialed.status).toBe(200);
+    expect(
+      (
+        await toolPost(
+          jsonReq(commandPath(BRANCH), {
+            kind: "assign_lod",
+            actorId: "sat-actor-iris",
+            simulationLod: "exact",
+            inferenceLod: "deliberator",
+          }),
+          ctx(BRANCH),
+        )
+      ).status,
+    ).toBe(200);
 
-    const adjusted = await toolPost(
-      jsonReq(`/api/admin/sim/${BRANCH}/command`, { kind: "adjust_cohort", cohortId: "sat-cohort-crowd", deltaCount: -5, reason: "attrition" }),
-      ctx(BRANCH),
-    );
-    expect(adjusted.status).toBe(200);
+    expect(
+      (
+        await toolPost(
+          jsonReq(commandPath(BRANCH), {
+            kind: "adjust_cohort",
+            cohortId: "sat-cohort-crowd",
+            deltaCount: -5,
+            reason: "attrition",
+          }),
+          ctx(BRANCH),
+        )
+      ).status,
+    ).toBe(200);
+
     const overdraw = await toolPost(
-      jsonReq(`/api/admin/sim/${BRANCH}/command`, { kind: "adjust_cohort", cohortId: "sat-cohort-crowd", deltaCount: -500, reason: "attrition" }),
+      jsonReq(commandPath(BRANCH), {
+        kind: "adjust_cohort",
+        cohortId: "sat-cohort-crowd",
+        deltaCount: -500,
+        reason: "attrition",
+      }),
       ctx(BRANCH),
     );
     expect(overdraw.status).toBe(409);
     expect(await overdraw.json()).toMatchObject({ status: "rejected", code: "insufficient_population" });
 
-    const advanced = await toolPost(jsonReq(`/api/admin/sim/${BRANCH}/command`, { kind: "advance", days: 1 }), ctx(BRANCH));
+    const advanced = await toolPost(jsonReq(commandPath(BRANCH), { kind: "advance", days: 1 }), ctx(BRANCH));
     expect(advanced.status).toBe(200);
     expect(await advanced.json()).toMatchObject({ status: "advanced", toStorySecond: ORIGIN + 86_400 });
 
-    const status = await statusGet(new NextRequest(`http://t/api/admin/sim/${BRANCH}`), ctx(BRANCH));
+    const status = await statusGet(new NextRequest(`http://t${statusPath(BRANCH)}`), ctx(BRANCH));
     expect(status.status).toBe(200);
     const snapshot = (await status.json()) as {
       storySecond: number;
@@ -187,22 +229,29 @@ describe.runIf(ready)("R3 sim admin routes", () => {
       cohorts: { cohortId: string; population: number }[];
     };
     expect(snapshot.storySecond).toBe(ORIGIN + 86_400);
-    // The promoted actor exists with their landing LOD; the cohort conserved
-    // 40 − 1 (promotion) − 5 (attrition) = 34; Iris rests at the inn on the
-    // exact/deliberator dial the storyteller set.
     expect(snapshot.cohorts).toEqual([{ cohortId: "sat-cohort-crowd", name: "market crowd", population: 34 }]);
-    const iris = snapshot.actors.find((actor) => actor.id === "sat-actor-iris");
-    expect(iris?.locus?.zoneId).toBe("sat-zone-inn");
-    expect(iris?.lod?.simulationLod).toBe("exact");
-    const odell = snapshot.actors.find((actor) => actor.name === "Odell");
-    expect(odell?.lod?.simulationLod).toBe("event");
-    expect(odell?.locus?.zoneId).toBe("sat-zone-square");
+    expect(snapshot.actors.find((actor) => actor.id === "sat-actor-iris")?.locus?.zoneId).toBe("sat-zone-inn");
+    expect(snapshot.actors.find((actor) => actor.id === "sat-actor-iris")?.lod?.simulationLod).toBe("exact");
+    expect(snapshot.actors.find((actor) => actor.name === "Odell")?.lod?.simulationLod).toBe("event");
   });
 
-  it("hides the family from non-admins", async () => {
-    authState.user = { ...authState.user, role: "user" };
-    const denied = await statusGet(new NextRequest(`http://t/api/admin/sim/${BRANCH}`), ctx(BRANCH));
+  it("hides owned branches from other admins, non-admins, and the old namespace", async () => {
+    const owner = { ...authState.user };
+    authState.user = {
+      id: ids.foreignAdmin,
+      email: "foreign-admin@test.local",
+      name: "Foreign Admin",
+      role: "admin",
+    };
+    const foreign = await statusGet(new NextRequest(`http://t${statusPath(BRANCH)}`), ctx(BRANCH));
+    expect(foreign.status).toBe(404);
+
+    authState.user = { ...owner, role: "user" };
+    const denied = await statusGet(new NextRequest(`http://t${statusPath(BRANCH)}`), ctx(BRANCH));
     expect(denied.status).toBe(404);
-    authState.user = { ...authState.user, role: "admin" };
+
+    authState.user = owner;
+    const oldNamespace = await statusGet(new NextRequest(`http://t/api/admin/sim/${BRANCH}`), ctx(BRANCH));
+    expect(oldNamespace.status).toBe(404);
   });
 });

@@ -1,34 +1,32 @@
 import { desc, eq, inArray, sql } from "drizzle-orm";
-import { jsonError, jsonOk, withUser } from "@/server/api";
+import { jsonOk, withOwnerAdmin } from "@/server/api";
 import { characterChats, characters, chatParticipants, db, simShadowDivergences } from "@/server/db";
 
 /**
- * R4 (engine.rollout.plan.md) — the shadow-parity index: every chat that has
- * recorded divergence rows, with open/total counts and the primary character's
- * name, newest activity first. The admin Shadow Parity screen's front page;
- * 404-hidden for non-admins like the rest of the sim family.
+ * Self-scoped shadow-parity index. It enumerates only the administrator's own
+ * chats and keeps the result bounded; cross-account or unrestricted search is
+ * deliberately absent.
  */
-export const GET = withUser(async (user) => {
-  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
+const PAGE_LIMIT = 50;
+
+export const GET = withOwnerAdmin(async (user) => {
   const grouped = await db()
     .select({
       chatId: simShadowDivergences.chatId,
+      title: characterChats.title,
       total: sql<number>`count(*)::int`,
       open: sql<number>`count(*) filter (where ${simShadowDivergences.verdict} = 'open')::int`,
       lastAt: sql<string>`max(${simShadowDivergences.createdAt})`,
     })
     .from(simShadowDivergences)
-    .groupBy(simShadowDivergences.chatId)
+    .innerJoin(characterChats, eq(characterChats.id, simShadowDivergences.chatId))
+    .where(eq(characterChats.ownerId, user.id))
+    .groupBy(simShadowDivergences.chatId, characterChats.title)
     .orderBy(desc(sql`max(${simShadowDivergences.createdAt})`))
-    .limit(100);
+    .limit(PAGE_LIMIT);
   if (grouped.length === 0) return jsonOk({ chats: [] });
 
   const chatIds = grouped.map((row) => row.chatId);
-  const chatRows = await db()
-    .select({ id: characterChats.id, title: characterChats.title })
-    .from(characterChats)
-    .where(inArray(characterChats.id, chatIds));
-  const titles = new Map(chatRows.map((row) => [row.id, row.title]));
   const primaryRows = await db()
     .select({ chatId: chatParticipants.chatId, sort: chatParticipants.sort, name: characters.name })
     .from(chatParticipants)
@@ -40,7 +38,7 @@ export const GET = withUser(async (user) => {
   return jsonOk({
     chats: grouped.map((row) => ({
       chatId: row.chatId,
-      title: titles.get(row.chatId) ?? "",
+      title: row.title,
       characterName: primaryName.get(row.chatId) ?? "",
       total: row.total,
       open: row.open,

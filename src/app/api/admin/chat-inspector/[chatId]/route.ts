@@ -1,26 +1,20 @@
 import { eq } from "drizzle-orm";
-import { jsonError, jsonOk, withUser } from "@/server/api";
+import { jsonOk } from "@/server/api";
 import { characterChatSummaries, db } from "@/server/db";
 import { chatScope, listEpisodesForScope, listFactsForScope } from "@/server/memory";
-import { loadOwnedChat } from "../../../chats/owned";
 import { serializeEpisodeRow, serializeFactRow, toIso } from "../shared";
+import { withSelfOwnedChat } from "../owned";
 
 type Params = { chatId: string };
 
 /**
- * Dev chat-inspector overview (character-chat-standalone.spec.md §6.1): everything
- * stored for one conversation's memory group — ALL facts (active + superseded +
- * retracted, so provenance and supersedence chains are visible), every episode,
- * the rolling-summary row, and the character card for the page header. Gated
- * by role — **404 for non-admins** (hidden, never a 403) — plus the usual
- * ownership resolution (a miss is a 404, never a 403).
+ * Self-scoped developer chat-inspector overview: everything stored for the
+ * administrator's own conversation memory group. Cross-account inspection is
+ * impossible through this route family; future support access uses the distinct
+ * audited `/api/admin/support` boundary.
  */
-export const GET = withUser<Params>(async (user, _req, ctx) => {
-  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
-  const { chatId } = await ctx.params;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
-
+export const GET = withSelfOwnedChat<Params>(async (_user, owned) => {
+  const chatId = owned.chat.id;
   const scope = chatScope(owned.participant.memoryGroupId);
   const [factRows, episodeRows, [summaryRow]] = await Promise.all([
     listFactsForScope(scope, { includeInactive: true }),

@@ -1,18 +1,11 @@
 import { z } from "zod";
 import { engineAuthoritySchema } from "@/contracts/simulation";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { jsonError, jsonOk, readBody, withOwnerAdminOwnedChat } from "@/server/api";
 import { readChatEngineAuthority, setChatEngineAuthority } from "@/server/engine";
-import { loadOwnedChat } from "../../../chats/owned";
+import { loadOwnedChat } from "@/app/api/chats/owned";
 
 type Params = { chatId: string };
-
-/**
- * R1 (engine.rollout.plan.md) — the audited per-chat engine-authority dial.
- * Admin-only (404 for non-admins — hidden, never a 403, the chat-inspector
- * idiom) over chats the admin owns. GET reads the current state; PATCH flips
- * lane / RAG eligibility / branch link, landing an `engine_authority_changed`
- * audit row atomically with the write.
- */
+type OwnedChat = NonNullable<Awaited<ReturnType<typeof loadOwnedChat>>>;
 
 const patchBodySchema = z
   .object({
@@ -34,26 +27,22 @@ const patchBodySchema = z
     { message: "Nothing to change" },
   );
 
-export const GET = withUser<Params>(async (user, _req, ctx) => {
-  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
-  const { chatId } = await ctx.params;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
-  const state = await readChatEngineAuthority(chatId);
+const ownedChat = (user: { id: string }, params: Params) => loadOwnedChat(params.chatId, user.id);
+
+/** Read the engine-authority dial for an owner-admin's own chat only. */
+export const GET = withOwnerAdminOwnedChat<Params, OwnedChat>(ownedChat, async (_user, owned) => {
+  const state = await readChatEngineAuthority(owned.chat.id);
   if (!state) return jsonError("not_found", "chat not found", 404);
   return jsonOk(state);
 });
 
-export const PATCH = withUser<Params>(async (user, req, ctx) => {
-  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
-  const { chatId } = await ctx.params;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
+/** Change the engine-authority dial for an owner-admin's own chat only. */
+export const PATCH = withOwnerAdminOwnedChat<Params, OwnedChat>(ownedChat, async (user, owned, req) => {
   const body = await readBody(req, patchBodySchema);
   if (!body.ok) return body.response;
 
   const result = await setChatEngineAuthority({
-    chatId,
+    chatId: owned.chat.id,
     byUserId: user.id,
     ...(body.value.authority === undefined ? {} : { authority: body.value.authority }),
     ...(body.value.ragEligibility === undefined ? {} : { ragEligibility: body.value.ragEligibility }),

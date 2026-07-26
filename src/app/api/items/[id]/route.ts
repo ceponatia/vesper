@@ -14,10 +14,11 @@ import {
   queueEmbedRefresh,
   readBody,
   toPublicItem,
+  withOwnedEntity,
   withUser,
 } from "@/server/api";
 
-type Params = { id: string };
+ type Params = { id: string };
 
 async function findItem(ownerId: string, id: string) {
   const [row] = await db()
@@ -25,28 +26,31 @@ async function findItem(ownerId: string, id: string) {
     .from(items)
     .where(and(eq(items.id, id), eq(items.ownerId, ownerId)))
     .limit(1);
-  return row;
+  return row ?? null;
 }
+
+const withOwnedItem = (
+  handler: Parameters<typeof withOwnedEntity<Params, NonNullable<Awaited<ReturnType<typeof findItem>>>, "item">>[2],
+) =>
+  withOwnedEntity(
+    "item",
+    (user, params) => findItem(user.id, params.id),
+    handler,
+  );
 
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
-  // Owner-or-public read (the browse/preview/copy path); private non-owned ⇒ 404.
   const row = await findViewable("item", id, user.id);
   if (!row) return jsonError("not_found", "item not found", 404);
-  // `mine` tells the editor whether to offer the form or a read-only preview +
-  // clone CTA (ux-improvements slice 6 — a foreign Save would 404 anyway). A
-  // foreign viewer gets the allow-listed public representation, not the row
-  // (security-authz.plan.md slice 4).
   const mine = row.ownerId === user.id;
   return jsonOk({ item: mine ? row : toPublicItem(row), mine });
 });
 
-export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
+export const PATCH = withOwnedItem(async (user, entity, req: NextRequest, ctx) => {
   const { id } = await ctx.params;
   const body = await readBody(req, itemPatchSchema);
   if (!body.ok) return body.response;
-  const existing = await findItem(user.id, id);
-  if (!existing) return jsonError("not_found", "item not found", 404);
+  const existing = entity.value;
 
   const update: Partial<typeof items.$inferInsert> = {};
   if (body.value.name !== undefined) update.name = body.value.name;
@@ -75,12 +79,8 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   return jsonOk({ item: row });
 });
 
-export const DELETE = withUser<Params>(async (user, _req, ctx) => {
-  const { id } = await ctx.params;
-  const existing = await findItem(user.id, id);
-  if (!existing) return jsonError("not_found", "item not found", 404);
-  // Worlds/sessions hold their own snapshots (world-instances.plan.md), so a
-  // library delete never breaks them and never hits a FK — no in-use guard.
+export const DELETE = withOwnedItem(async (user, entity) => {
+  const id = entity.value.id;
   await db().delete(items).where(and(eq(items.id, id), eq(items.ownerId, user.id)));
   void deleteEntityImages("item", id, user.id).catch(() => undefined);
   return jsonOk({ ok: true });
