@@ -1,23 +1,15 @@
 import fs from "node:fs/promises";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, type SQL } from "drizzle-orm";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { diag } from "@/contracts/diagnostics";
 import { db, images } from "@/server/db";
-import {
-  absoluteImagePath,
-  deleteChatAssets,
-  deleteChatUploads,
-  saveImageBuffer,
-  type ImageFileRef,
-  type ImageKind,
-  type ImageRow,
-} from "./assets";
+import { absoluteImagePath, saveImageBuffer, type ImageKind, type ImageRow } from "./assets";
 
 /**
  * Route-facing save boundary. The caller must supply the authenticated owner id;
  * a missing or foreign image is indistinguishable and no file or row is changed.
  *
- * The final write delegates to the internal row-before-file implementation only
+ * The final write delegates to the trusted row-before-file implementation only
  * after ownership is proven. `images.owner_id` is immutable through application
  * code, and the canonical-path database constraint binds the row to that owner.
  */
@@ -74,25 +66,14 @@ export async function deleteOwnedChatAssets(
   return deleteOwnedRows(and(eq(images.chatId, chatId), eq(images.ownerId, ownerId), inArray(images.kind, [...kinds])));
 }
 
-async function deleteOwnedRows(where: Parameters<ReturnType<typeof db>["select"]>[0] extends never ? never : never): Promise<number> {
-  // This declaration is replaced below; it exists only to keep the implementation
-  // close to the route-safe wrappers without exporting a generic deletion seam.
-  void where;
-  return 0;
-}
-
-/** Internal implementation with a concrete Drizzle SQL predicate. */
-async function deleteRows(where: import("drizzle-orm").SQL | undefined): Promise<number> {
+/** Private deletion primitive; callers cannot omit the owner predicate. */
+async function deleteOwnedRows(where: SQL | undefined): Promise<number> {
   const rows = await db()
     .select({ id: images.id, ownerId: images.ownerId, path: images.path })
     .from(images)
     .where(where);
   if (rows.length === 0) return 0;
   await db().delete(images).where(where);
-  await Promise.all(rows.map((row: ImageFileRef) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
+  await Promise.all(rows.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
   return rows.length;
 }
-
-// Keep the wrappers above readable while retaining a private, typed deletion primitive.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _routeSafeDeleteTypecheck = [deleteChatUploads, deleteChatAssets];
