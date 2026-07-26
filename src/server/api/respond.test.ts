@@ -23,22 +23,45 @@ vi.mock("@/server/auth", () => {
 import { getCurrentUser, Unauthenticated } from "@/server/auth";
 
 const TEST_USER = { id: "u1", email: "t@test.local", name: "Tester", role: "user" as const };
+const encoder = new TextEncoder();
 
-function post(body: string): NextRequest {
+function post(body: string, headers: Record<string, string> = {}): NextRequest {
   return new NextRequest("http://test.local/api/x", {
     method: "POST",
     body,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
   });
 }
 
 /** A request whose declared Content-Length is `bytes`, regardless of actual body. */
 function postWithLength(body: string, bytes: number): NextRequest {
+  return post(body, { "content-length": String(bytes) });
+}
+
+/** A streamed request split into deliberate transport chunks, with no declared length. */
+function streamedPost(chunks: string[], headers: Record<string, string> = {}): NextRequest {
+  const encoded = chunks.map((chunk) => encoder.encode(chunk));
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of encoded) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
   return new NextRequest("http://test.local/api/x", {
     method: "POST",
     body,
-    headers: { "content-type": "application/json", "content-length": String(bytes) },
+    headers: { "content-type": "application/json", ...headers },
   });
+}
+
+async function expectPayloadTooLarge(result: Awaited<ReturnType<typeof readBody>>): Promise<void> {
+  expect(result.ok).toBe(false);
+  if (!result.ok) {
+    expect(result.response.status).toBe(413);
+    expect(await result.response.json()).toEqual({
+      error: { code: "payload_too_large", message: "request body is too large" },
+    });
+  }
 }
 
 const emptyCtx = { params: Promise.resolve({}) };
@@ -87,29 +110,48 @@ describe("readBody", () => {
     }
   });
 
-  it("413s with payload_too_large when Content-Length exceeds the default cap", async () => {
+  it("rejects an oversized request from a valid Content-Length before buffering", async () => {
     const req = postWithLength(JSON.stringify({ name: "Maya" }), DEFAULT_MAX_BODY_BYTES + 1);
-    const result = await readBody(req, schema);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.response.status).toBe(413);
-      const body = await result.response.json();
-      expect(body.error.code).toBe("payload_too_large");
-    }
+    await expectPayloadTooLarge(await readBody(req, schema));
   });
 
-  it("413s when Content-Length exceeds a per-call maxBytes override", async () => {
-    const req = postWithLength(JSON.stringify({ name: "Maya" }), 200);
-    const result = await readBody(req, schema, { maxBytes: 100 });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(413);
+  it("rejects an oversized request without Content-Length", async () => {
+    const body = JSON.stringify({ name: "abcdefghij" });
+    await expectPayloadTooLarge(await readBody(post(body), schema, { maxBytes: encoder.encode(body).byteLength - 1 }));
   });
 
-  it("parses normally when Content-Length is within the cap", async () => {
-    const req = postWithLength(JSON.stringify({ name: "Maya" }), 50);
-    const result = await readBody(req, schema);
+  it("counts streamed/chunked bodies across chunk boundaries", async () => {
+    const chunks = ['{"na', 'me":"', 'Maya"}'];
+    const actualBytes = chunks.reduce((sum, chunk) => sum + encoder.encode(chunk).byteLength, 0);
+    await expectPayloadTooLarge(await readBody(streamedPost(chunks), schema, { maxBytes: actualBytes - 1 }));
+  });
+
+  it("does not trust a falsely low Content-Length", async () => {
+    const body = JSON.stringify({ name: "abcdefghij" });
+    const req = postWithLength(body, 1);
+    await expectPayloadTooLarge(await readBody(req, schema, { maxBytes: encoder.encode(body).byteLength - 1 }));
+  });
+
+  it("counts multibyte UTF-8 bytes rather than JavaScript characters", async () => {
+    const body = JSON.stringify({ name: "é" });
+    const actualBytes = encoder.encode(body).byteLength;
+    expect(body.length).toBeLessThan(actualBytes);
+    await expectPayloadTooLarge(await readBody(post(body), schema, { maxBytes: actualBytes - 1 }));
+  });
+
+  it("parses a streamed request normally when actual bytes stay within the cap", async () => {
+    const result = await readBody(streamedPost(['{"name":', '"Maya"}']), schema, { maxBytes: 64 });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.name).toBe("Maya");
+  });
+
+  it("rejects compressed request bodies before buffering", async () => {
+    const result = await readBody(post(JSON.stringify({ name: "Maya" }), { "content-encoding": "gzip" }), schema);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(415);
+      expect((await result.response.json()).error.code).toBe("unsupported_content_encoding");
+    }
   });
 });
 
