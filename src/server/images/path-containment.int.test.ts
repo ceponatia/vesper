@@ -1,10 +1,19 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, images, users } from "../db";
 import { imageRelativePath } from "./paths";
 
 let available = false;
 let ownerId = "";
+
+function hasPgCode(error: unknown, code: string): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 6 && current !== null && typeof current === "object"; depth += 1) {
+    if ((current as { code?: unknown }).code === code) return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
 
 beforeAll(async () => {
   try {
@@ -25,12 +34,14 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!available) return;
-  await db().delete(users).where(sql`${users.id} = ${ownerId}`);
+  await db().delete(images).where(eq(images.ownerId, ownerId));
+  await db().delete(users).where(eq(users.id, ownerId));
   await globalThis.__vesperPool?.end();
 });
 
-describe.runIf(available)("images.path database containment", () => {
-  it("accepts the exact canonical owner/id path", async () => {
+describe("images.path database containment", () => {
+  it("accepts the exact canonical owner/id path", async (ctx) => {
+    if (!available) return ctx.skip();
     const id = `path-valid-${Date.now()}`;
     const [row] = await db()
       .insert(images)
@@ -47,16 +58,21 @@ describe.runIf(available)("images.path database containment", () => {
 
   it.each(["../outside.webp", "/tmp/outside.webp", "images/someone-else/wrong.webp"])(
     "rejects noncanonical path %s",
-    async (storedPath) => {
+    async (storedPath, ctx) => {
+      if (!available) return ctx.skip();
       const id = `path-invalid-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      await expect(
-        db().insert(images).values({
+      let caught: unknown;
+      try {
+        await db().insert(images).values({
           id,
           ownerId,
           kind: "entity",
           path: storedPath,
-        }),
-      ).rejects.toMatchObject({ code: "23514" });
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(hasPgCode(caught, "23514")).toBe(true);
     },
   );
 });
