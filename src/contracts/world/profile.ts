@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { attributeValueSchema } from "../attributes/value";
+import { attributeValueSchema, type AttributeValue } from "../attributes/value";
 import { socialReactionCardSchema } from "../personality/cards";
 import { drivesSchema } from "../personality/drives";
 import { preferenceSchema } from "../personality/preference";
@@ -333,6 +333,51 @@ export type CharacterProfile = z.infer<typeof characterProfileSchema>;
 
 export function emptyCharacterProfile(): CharacterProfile {
   return characterProfileSchema.parse({});
+}
+
+/**
+ * The profile attributes a PUBLIC preview may carry (security-authz.plan.md
+ * OQ2). Only `identity.gender`: the library browse route already extracts it in
+ * SQL as a public facet (`GET /api/characters?scope=public`), so withholding it
+ * from the detail projection would buy nothing while breaking the wearer hint
+ * on a chat with someone else's public character. Everything else in the
+ * attribute array — the appearance set, and the intimate anatomy the body-config
+ * gates — stays private, and each surviving row is projected to `{id, value}`
+ * (the `source`/`sourceId`/`note` provenance is authoring internals).
+ */
+export const PUBLIC_PROFILE_ATTRIBUTE_IDS: readonly AttributeValue["id"][] = ["identity.gender"];
+
+/**
+ * What a FOREIGN viewer sees of a character's authored profile
+ * (security-authz.plan.md OQ2, ruled **conservative private-by-default**): the
+ * presentation data the public preview renders, and nothing else. Narrator
+ * guidance (`voice`, `voiceAnchors`, `microExemplars`, `intimacy`, `traits`,
+ * `preferences`, `socialCards`), authored secrets (`drives` — they carry
+ * `guarded`/`secret` secrecy levels and reveal gates), hidden stance
+ * (`playerRelationship` — its mask, shared history and premise note), and the
+ * operational fields (`bodyPlanId`, `intimateRegions`, `bodyFeatures`,
+ * `heritageId`, `aliases`, `outfits`, `schedule`, disposition `tags`) are all
+ * withheld. A field added to `characterProfileObjectSchema` is therefore private
+ * until someone adds it HERE, deliberately.
+ *
+ * A **clone** is a different product surface and deliberately still copies the
+ * whole profile — see `cloneToLibrary` (`server/api/clone.ts`).
+ */
+export type PublicCharacterProfile = Pick<CharacterProfile, "bio" | "personality" | "age" | "speciesId"> & {
+  attributes: Pick<AttributeValue, "id" | "value">[];
+};
+
+/** Project an authored profile down to its public representation. PURE. */
+export function toPublicCharacterProfile(profile: CharacterProfile): PublicCharacterProfile {
+  return {
+    bio: profile.bio,
+    personality: profile.personality,
+    age: profile.age,
+    speciesId: profile.speciesId,
+    attributes: profile.attributes
+      .filter((attribute) => PUBLIC_PROFILE_ATTRIBUTE_IDS.includes(attribute.id))
+      .map((attribute) => ({ id: attribute.id, value: attribute.value })),
+  };
 }
 
 /**

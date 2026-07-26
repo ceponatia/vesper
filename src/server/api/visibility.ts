@@ -1,4 +1,6 @@
 import { and, eq, or, sql } from "drizzle-orm";
+import { characterProfileSchema, emptyCharacterProfile, toPublicCharacterProfile } from "@/contracts";
+import { parseOr } from "@/lib/parse";
 import { characters, db, type images, items, locations, socialCards } from "@/server/db";
 
 /**
@@ -109,15 +111,26 @@ export async function isPublicEntityImage(
  *
  * Owner reads keep the full row — the edit surfaces need every column — so the
  * routes split on `row.ownerId === user.id`, never on the shape alone.
+ *
+ * The character projection goes one level deeper and narrows the `profile`
+ * jsonb too (security-authz.plan.md OQ2, ruled **conservative
+ * private-by-default**): a public preview shows presentation data only, so the
+ * narrator guidance, authored secrets and hidden stance an author writes for
+ * their own use never reach a foreign viewer. That allow-list lives beside the
+ * field definitions in `contracts/world/profile.ts`
+ * (`toPublicCharacterProfile`), so adding a profile field puts the reviewer next
+ * to the decision. The **clone** path is deliberately wider — see
+ * `cloneToLibrary`.
  */
 export function toPublicCharacter(row: typeof characters.$inferSelect) {
-  // `profile` ships whole pending the owner ruling on what a public character
-  // reveals (security-authz.plan.md OQ2); the duplicate CTA already copies it
-  // whole, so narrowing here without narrowing the clone would be theatre.
+  // `profile` is jsonb — untrusted at the read boundary — so it parses through
+  // the contract before the allow-list projects it (docs/resilience.md §1); a
+  // malformed profile degrades to the empty one, never a failed preview.
+  const profile = parseOr(characterProfileSchema, row.profile, emptyCharacterProfile(), undefined, "characters.profile");
   return {
     id: row.id,
     name: row.name,
-    profile: row.profile,
+    profile: toPublicCharacterProfile(profile),
     avatarImageId: row.avatarImageId,
     tags: row.tags,
     visibility: row.visibility,

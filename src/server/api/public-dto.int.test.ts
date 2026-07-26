@@ -80,9 +80,38 @@ describe.skipIf(!ready)("public representations for foreign viewers", () => {
     ownerA = a.id;
     ownerB = b.id;
 
+    // Authored in every section, so the OQ2 profile projection has something
+    // real to withhold — a bio-only fixture would pass a broken allow-list.
     const [pubChar] = await db()
       .insert(characters)
-      .values({ ownerId: ownerA, name: "Public author", profile: { bio: "published" }, visibility: "public" })
+      .values({
+        ownerId: ownerA,
+        name: "Public author",
+        profile: {
+          bio: "published",
+          personality: "dry and watchful",
+          age: "34",
+          speciesId: "elf",
+          voice: "low and unhurried",
+          intimacy: "hates being rushed",
+          microExemplars: [{ situation: "pushed about her past", line: "Not that patient, are you." }],
+          voiceAnchors: { petPhrases: ["no promises"], cadence: "clipped", neverSays: ["babe"] },
+          drives: [{ want: "to reopen the gallery", why: "it was her mother's", secrecy: "secret" }],
+          traits: [{ id: "warmth", value: -20, source: "creation" }],
+          preferences: [{ target: "compliment", valence: "dislike" }],
+          playerRelationship: { familiarity: "acquainted", regard: "warm", kind: "neighbour", note: "You owe her money." },
+          aliases: ["the glassblower"],
+          heritageId: "dark_elf",
+          intimateRegions: ["vulva", "breasts"],
+          attributes: [
+            { id: "identity.gender", value: "female", source: "manual", note: "author's note" },
+            { id: "hair.color", value: "black", source: "creation" },
+          ],
+          outfits: [{ id: "everyday", name: "Everyday", items: ["item-1"] }],
+          schedule: [{ startMinute: 360, endMinute: 720, locationName: "the quay", activity: "inspection" }],
+        },
+        visibility: "public",
+      })
       .returning({ id: characters.id });
     const [privChar] = await db()
       .insert(characters)
@@ -152,6 +181,54 @@ describe.skipIf(!ready)("public representations for foreign viewers", () => {
       "tags",
       "visibility",
     ]);
+  });
+
+  it("the public profile is presentation only — narrator guidance and secrets are withheld", async () => {
+    const row = await findViewable("character", publicCharacterId, ownerB);
+    expect(row).toBeTruthy();
+    const profile: Record<string, unknown> = { ...toPublicCharacter(row!).profile };
+    // The allow-list (security-authz.plan.md OQ2), top level.
+    expect(Object.keys(profile).sort()).toEqual(["age", "attributes", "bio", "personality", "speciesId"]);
+    expect(profile.bio).toBe("published");
+    expect(profile.personality).toBe("dry and watchful");
+    expect(profile.age).toBe("34");
+    expect(profile.speciesId).toBe("elf");
+    // Named negatives — every section the stored row really carries.
+    for (const key of [
+      "voice",
+      "intimacy",
+      "microExemplars",
+      "voiceAnchors",
+      "drives",
+      "traits",
+      "preferences",
+      "socialCards",
+      "playerRelationship",
+      "tags",
+      "aliases",
+      "heritageId",
+      "bodyPlanId",
+      "intimateRegions",
+      "bodyFeatures",
+      "outfits",
+      "schedule",
+    ]) {
+      expect(profile[key]).toBeUndefined();
+    }
+    // The stored row is the wide one — the projection is what narrows it.
+    const stored = JSON.stringify(row!.profile);
+    expect(stored).toContain("voiceAnchors");
+    expect(stored).toContain("secret");
+    expect(stored).toContain("You owe her money.");
+  });
+
+  it("the nested attributes section is projected, not passed whole", async () => {
+    const row = await findViewable("character", publicCharacterId, ownerB);
+    const { attributes } = toPublicCharacter(row!).profile;
+    // Only the id the browse route already publishes as a facet survives, and
+    // only its `{id, value}` — no `source`/`sourceId`/`note` provenance.
+    expect(attributes).toEqual([{ id: "identity.gender", value: "female" }]);
+    expect(Object.keys(attributes[0] ?? {}).sort()).toEqual(["id", "value"]);
   });
 
   it("a foreign public location is exactly the allow-listed keys", async () => {
