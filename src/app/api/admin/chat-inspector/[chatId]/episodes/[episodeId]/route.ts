@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { jsonError, jsonOk, readBody } from "@/server/api";
 import { db, episodes } from "@/server/db";
+import { loadOwnedChat } from "@/app/api/chats/owned";
 import { serializeEpisodeRow, tryEmbed } from "../../../shared";
 import { withSelfOwnedChat } from "../../../owned";
 
@@ -20,16 +21,19 @@ const episodeReturning = {
 } as const;
 
 /** Edit one episode inside an owner-admin's own chat memory group. */
-export const PATCH = withSelfOwnedChat<Params>(async (_user, owned, req, ctx) => {
+export const PATCH = withSelfOwnedChat<Params>(async (user, owned, req, ctx) => {
   const { episodeId } = await ctx.params;
   const body = await readBody(req, patchBodySchema);
   if (!body.ok) return body.response;
+
+  const verified = await loadOwnedChat(owned.chat.id, user.id);
+  if (!verified) return jsonError("not_found", "chat not found", 404);
 
   const embed = await tryEmbed(body.value.summary);
   const [updated] = await db()
     .update(episodes)
     .set({ summary: body.value.summary, embedding: embed.vector, embedder: embed.embedder })
-    .where(and(eq(episodes.id, episodeId), eq(episodes.chatMemoryGroupId, owned.participant.memoryGroupId)))
+    .where(and(eq(episodes.id, episodeId), eq(episodes.chatMemoryGroupId, verified.participant.memoryGroupId)))
     .returning(episodeReturning);
   if (!updated) return jsonError("not_found", "episode not found", 404);
 
@@ -40,11 +44,14 @@ export const PATCH = withSelfOwnedChat<Params>(async (_user, owned, req, ctx) =>
 });
 
 /** Hard-delete one episode inside an owner-admin's own chat memory group. */
-export const DELETE = withSelfOwnedChat<Params>(async (_user, owned, _req, ctx) => {
+export const DELETE = withSelfOwnedChat<Params>(async (user, owned, _req, ctx) => {
   const { episodeId } = await ctx.params;
+  const verified = await loadOwnedChat(owned.chat.id, user.id);
+  if (!verified) return jsonError("not_found", "chat not found", 404);
+
   const [deleted] = await db()
     .delete(episodes)
-    .where(and(eq(episodes.id, episodeId), eq(episodes.chatMemoryGroupId, owned.participant.memoryGroupId)))
+    .where(and(eq(episodes.id, episodeId), eq(episodes.chatMemoryGroupId, verified.participant.memoryGroupId)))
     .returning({ id: episodes.id });
   if (!deleted) return jsonError("not_found", "episode not found", 404);
   return jsonOk({ deleted: true });
