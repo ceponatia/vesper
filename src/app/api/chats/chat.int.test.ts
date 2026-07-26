@@ -49,6 +49,7 @@ import {
 } from "@/server/engine";
 import { resetRateLimits } from "@/server/api";
 import { log } from "@/server/log";
+import { probeIntegrationDb } from "@/server/test-support";
 import { POST as chatsCreate } from "./route";
 import { DELETE as characterDelete } from "../characters/[id]/route";
 import { DELETE as chatDelete, GET as chatGet, POST as chatSend } from "./[chatId]/route";
@@ -61,25 +62,11 @@ import { GET as matrixGet, PUT as matrixPut } from "./[chatId]/relationships/rou
 import { GET as libGet, PUT as libPut } from "../characters/[id]/relationships/route";
 import { DELETE as participantRemove, PATCH as participantPatch } from "./[chatId]/participants/[characterId]/route";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from character_chats limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(`[chat.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`);
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
+// Self-skips when the database is unreachable; under strict integration mode
+// (`pnpm test:int:strict`) the same failure is fatal instead — this suite owns
+// the chat/message deletion authorization cases, so a silent skip would hide
+// them behind a green gate.
+const ready = await probeIntegrationDb("chat.int.test", "character_chats");
 
 // The whole suite drives one user through one process, so the in-memory per-user
 // chat cap (CHAT_RATE_LIMIT, 30/min) is shared across every test — reset it per

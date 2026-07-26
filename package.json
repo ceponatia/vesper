@@ -19,6 +19,7 @@
     "test": "vitest run --exclude '**/*.int.test.ts'",
     "test:watch": "vitest --exclude '**/*.int.test.ts'",
     "test:int": "vitest run --no-file-parallelism .int.test.",
+    "test:int:strict": "REQUIRE_INTEGRATION_DB=true vitest run --no-file-parallelism .int.test.",
     "verify": "pnpm lint && pnpm lint:cycles && pnpm typecheck && pnpm test && pnpm jscpd",
     "prepare": "husky",
     "db:up": "docker compose up -d --wait",

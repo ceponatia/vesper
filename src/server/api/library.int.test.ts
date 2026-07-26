@@ -1,8 +1,9 @@
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DiagnosticCollector, itemDefinitionSchema } from "@/contracts";
 import { pseudoEmbed } from "@/server/ai";
 import { db, items, locations, users } from "@/server/db";
+import { probeIntegrationDb } from "@/server/test-support";
 import {
   connectedLocationIds,
   loadLocationLinks,
@@ -16,28 +17,10 @@ import {
 // backstop → fresh insert. pseudoEmbed is near-orthogonal across distinct
 // strings, so the embedding path is forced by seeding an existing item's stored
 // vector to the suggestion's exact text under a non-matching name. Self-skips
-// when the database is unreachable.
+// when the database is unreachable, except under strict integration mode
+// (`pnpm test:int:strict`), where it fails instead.
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from items limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[library.int.test] skipping integration suite — database unreachable or unmigrated: ${reason}\n`);
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
+const ready = await probeIntegrationDb("library.int.test", "items");
 
 let ownerId: string;
 let facetOwnerId: string;

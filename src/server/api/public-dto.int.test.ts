@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   findViewable,
@@ -10,6 +10,7 @@ import {
   toPublicSocialCard,
 } from "@/server/api";
 import { characters, db, images, items, locations, socialCards, users } from "@/server/db";
+import { probeIntegrationDb } from "@/server/test-support";
 
 // Integration suite for the public-read hardening (security-authz.plan.md
 // slices 3 + 4): the allow-listed public representation a FOREIGN viewer gets
@@ -17,28 +18,10 @@ import { characters, db, images, items, locations, socialCards, users } from "@/
 // access. The key-set assertions are the point — they are the tripwire that
 // makes adding a column to one of these tables a deliberate decision about the
 // public surface rather than a silent widening of it. Two owners so every
-// cross-account case is exercised. Self-skips when the database is unreachable.
+// cross-account case is exercised. Self-skips when the database is unreachable,
+// except under strict integration mode (`pnpm test:int:strict`), where it fails.
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from characters limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[public-dto.int.test] skipping — database unreachable or unmigrated: ${reason}\n`);
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
+const ready = await probeIntegrationDb("public-dto.int.test", "characters");
 
 /** The author. */
 let ownerA: string;

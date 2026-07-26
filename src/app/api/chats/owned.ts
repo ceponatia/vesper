@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { characterChats, characters, chatParticipants, db } from "@/server/db";
 import { keyedLockBusy } from "@/server/engine";
 import { jsonError } from "@/server/api";
@@ -90,6 +90,37 @@ export async function loadOwnedChat(chatId: string, userId: string): Promise<Own
     },
     roster,
   };
+}
+
+/** One roster member as chat creation needs it (selection order = roster order). */
+export interface OwnedRosterMember {
+  id: string;
+  name: string;
+  /** Raw `characters.profile` column — the caller parses it through the contract. */
+  profile: unknown;
+}
+
+/**
+ * Resolve the requested characters as a roster the user OWNS, in the order they
+ * were requested (first = primary participant, sort 0). `null` when any
+ * requested id is not the caller's — the count must match the request exactly,
+ * so one foreign id fails the whole create, which `POST /api/chats` surfaces as
+ * 404 `character not found`. Public visibility is no help here: public widens
+ * READS, never writes.
+ *
+ * Extracted from the create handler (it was inline, so the authorization matrix
+ * could only reproduce it) — the route and
+ * `src/server/api/authz-matrix.int.test.ts` now run the same query and the same
+ * count check (security-authz.plan.md slice 5 follow-up).
+ */
+export async function loadOwnedRoster(userId: string, characterIds: string[]): Promise<OwnedRosterMember[] | null> {
+  const owned = await db()
+    .select({ id: characters.id, name: characters.name, profile: characters.profile })
+    .from(characters)
+    .where(and(inArray(characters.id, characterIds), eq(characters.ownerId, userId)));
+  const byId = new Map(owned.map((c) => [c.id, c]));
+  const roster = characterIds.flatMap((cid) => byId.get(cid) ?? []);
+  return roster.length === characterIds.length && roster.length > 0 ? roster : null;
 }
 
 /**

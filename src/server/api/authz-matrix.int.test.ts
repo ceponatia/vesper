@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
 import {
@@ -28,14 +28,19 @@ import {
   socialCards,
   users,
 } from "@/server/db";
-// The chat / successor ownership gates live in the route tree rather than a
-// server barrel (`src/app/api/chats/...`), but they are plain exported async
-// functions, so the matrix drives the REAL seam instead of a replica. Where a
-// seam is genuinely module-private (`findPortrait`, `findPersona`, the chat
-// creation roster query) the matrix reproduces the exact predicate the route
-// runs and says so at the case.
-import { loadOwnedChat } from "../../app/api/chats/owned";
+import { probeIntegrationDb } from "@/server/test-support";
+// The ownership gates these rows drive live in the route tree rather than a
+// server barrel (`src/app/api/**/owned.ts`), but they are plain exported async
+// functions, so the matrix calls the REAL seam the route calls instead of a
+// replica. Predicates that were module-private when the matrix was written
+// (`findPortrait`, `findPersona`, the chat-creation roster query) were lifted
+// into these colocated `owned.ts` modules for exactly that reason — a secure
+// test copy can drift away from an insecure route original.
+import { loadOwnedChat, loadOwnedRoster } from "../../app/api/chats/owned";
 import { requireSimChat } from "../../app/api/chats/[chatId]/sim-shared";
+import { findOwnedCharacter } from "../../app/api/characters/[id]/owned";
+import { findPortrait, listOwnedPortraits } from "../../app/api/characters/[id]/portraits/owned";
+import { findPersona } from "../../app/api/personas/[id]/owned";
 
 // =============================================================================
 // The two-user authorization matrix (security-authz.plan.md slice 5 / S7).
@@ -60,31 +65,15 @@ import { requireSimChat } from "../../app/api/chats/[chatId]/sim-shared";
 // invoke here, test the server-side query seam the route uses and name the route
 // in a comment (the pattern the other int suites follow).
 //
-// Self-skips when the database is unreachable.
+// Self-skips when the database is unreachable — EXCEPT under strict integration
+// mode (`pnpm test:int:strict`, i.e. REQUIRE_INTEGRATION_DB=true), where an
+// unreachable database fails the suite instead. A release gate that skips the
+// whole authorization matrix is worse than no gate.
 // =============================================================================
 
 process.env.AI_FAKE = "1";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from characters limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[authz-matrix.int.test] skipping — database unreachable or unmigrated: ${reason}\n`);
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
+const ready = await probeIntegrationDb("authz-matrix.int.test", "characters");
 
 /** The author. Owns every fixture unless a case says otherwise. */
 let ownerA = "";
@@ -379,16 +368,15 @@ const resources: OwnedResource[] = [
   },
   {
     // Personas are owner-STRICT: no `visibility` column, so they never widen.
-    // src/app/api/personas/[id]/route.ts keeps its lookup module-private
-    // (`findPersona`); this is that predicate verbatim.
+    // The real seam: `findPersona` (src/app/api/personas/[id]/owned.ts) is the
+    // lookup every /api/personas/[id] verb runs before doing anything.
     resource: "persona",
     seed: async (ownerId) => {
       const title = label("persona");
       const [row] = await db().insert(personas).values({ ownerId, title, name: "Persona" }).returning({ id: personas.id });
       return row!.id;
     },
-    read: async (id, userId) =>
-      (await db().select().from(personas).where(and(eq(personas.id, id), eq(personas.ownerId, userId))).limit(1))[0],
+    read: (id, userId) => findPersona(userId, id),
     update: async (id, userId) =>
       (
         await db()
@@ -598,29 +586,11 @@ describe.skipIf(!ready)("authorization matrix — public reads", () => {
 // under a parent they merely name.
 // -----------------------------------------------------------------------------
 
-/**
- * The portrait lookup `src/app/api/characters/[id]/portraits/[imageId]/route.ts`
- * runs (`findPortrait` — module-private there, so reproduced verbatim): the image
- * must be the caller's AND entity-linked to the parent character in the URL.
- */
-async function findPortrait(ownerId: string, characterId: string, imageId: string) {
-  const [row] = await db()
-    .select()
-    .from(images)
-    .where(
-      and(
-        eq(images.id, imageId),
-        eq(images.ownerId, ownerId),
-        eq(images.entityKind, "character"),
-        eq(images.entityId, characterId),
-      ),
-    )
-    .limit(1);
-  return row;
-}
-
 describe.skipIf(!ready)("authorization matrix — child resources", () => {
   it("B cannot read A's portraits through the owner-scoped seam", async () => {
+    // `findPortrait` (src/app/api/characters/[id]/portraits/owned.ts) is the real
+    // lookup GET/DELETE of portraits/[imageId] run: the image must be the
+    // caller's AND entity-linked to the parent character in the URL.
     expect(await findPortrait(ownerA, fixture.privateCharacter, fixture.portrait)).toBeTruthy();
     expect(await findPortrait(ownerB, fixture.privateCharacter, fixture.portrait)).toBeUndefined();
   });
@@ -632,13 +602,14 @@ describe.skipIf(!ready)("authorization matrix — child resources", () => {
   });
 
   it("B cannot list A's portraits — the studio list is scoped to the VIEWER's images", async () => {
-    // src/app/api/characters/[id]/portraits/route.ts: findOwnedCharacter gate,
-    // then `images.ownerId = viewer` + entity link. Both halves must miss for B.
-    const rows = await db()
-      .select({ id: images.id })
-      .from(images)
-      .where(and(eq(images.ownerId, ownerB), eq(images.entityKind, "character"), eq(images.entityId, fixture.privateCharacter)));
-    expect(rows).toEqual([]);
+    // src/app/api/characters/[id]/portraits/route.ts GET is two owner-scoped
+    // halves: the findOwnedCharacter gate, then `listOwnedPortraits` (the same
+    // module, `./owned`) keyed on the VIEWER's images + the entity link. Both
+    // must miss for B, so neither alone leaks a foreign roster.
+    expect(await findOwnedCharacter(fixture.privateCharacter, ownerB)).toBeUndefined();
+    expect(await listOwnedPortraits(ownerB, fixture.privateCharacter)).toEqual([]);
+    // The owner's own list is the case the seam exists for.
+    expect((await listOwnedPortraits(ownerA, fixture.privateCharacter)).map((row) => row.id)).toContain(fixture.portrait);
   });
 
   it("B cannot reach A's chat messages: the chat gate blocks, and the message is chat-scoped", async () => {
@@ -677,27 +648,22 @@ describe.skipIf(!ready)("authorization matrix — adversarial cases", () => {
   });
 
   it("B supplies A's character id at chat creation", async () => {
-    // src/app/api/chats/route.ts POST: the roster is fetched owner-strict and
-    // the count must match the request exactly — one foreign id fails the whole
-    // create (404 `character not found`). Reproduced here because the check is
-    // inline in the handler.
-    const roster = async (requested: string[], userId: string) =>
-      db()
-        .select({ id: characters.id })
-        .from(characters)
-        .where(and(inArray(characters.id, requested), eq(characters.ownerId, userId)));
-
-    const foreignOnly = [fixture.privateCharacter];
-    expect(await roster(foreignOnly, ownerB)).toHaveLength(0);
+    // `loadOwnedRoster` (src/app/api/chats/owned.ts) IS the create gate: POST
+    // /api/chats 404s `character not found` on its null. The roster is fetched
+    // owner-strict and the count must match the request exactly, so one foreign
+    // id fails the whole create.
+    expect(await loadOwnedRoster(ownerB, [fixture.privateCharacter])).toBeNull();
 
     // The subtler shape: B smuggles A's character in beside their own. The
-    // count mismatch (1 returned, 2 requested) is what rejects it.
-    const mixed = [fixture.bCharacter, fixture.privateCharacter];
-    const got = await roster(mixed, ownerB);
-    expect(got).toHaveLength(1);
-    expect(got.length).not.toBe(mixed.length);
+    // count mismatch (1 owned, 2 requested) is what rejects it — a partial
+    // roster must never become a chat.
+    expect(await loadOwnedRoster(ownerB, [fixture.bCharacter, fixture.privateCharacter])).toBeNull();
     // A's public character is no better: public widens READS, never writes.
-    expect(await roster([fixture.publicCharacter], ownerB)).toHaveLength(0);
+    expect(await loadOwnedRoster(ownerB, [fixture.publicCharacter])).toBeNull();
+
+    // B's own character is the case the seam exists for, in selection order.
+    const own = await loadOwnedRoster(ownerB, [fixture.bCharacter]);
+    expect(own?.map((c) => c.id)).toEqual([fixture.bCharacter]);
   });
 
   it("B supplies a foreign image id in a context expecting their own", async () => {

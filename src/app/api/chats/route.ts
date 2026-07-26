@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   activeConditionSchema,
@@ -25,7 +25,7 @@ import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { characterChats, characterChatState, characters, chatParticipants, chatScenarioPresets, db } from "@/server/db";
 import { editChatState, saveChatScenario, seedChatRelationships, seedChatScenario } from "@/server/engine";
-import { resolveChatMemoryGroupId } from "./owned";
+import { loadOwnedRoster, resolveChatMemoryGroupId } from "./owned";
 
 /**
  * The conversations collection (docs/character-chat/; character-chat-standalone.spec.md
@@ -179,15 +179,11 @@ export const POST = withUser(async (user, req: NextRequest) => {
   const { memory } = body.value;
   const characterIds = [...new Set(body.value.characterIds)];
 
-  const owned = await db()
-    .select({ id: characters.id, name: characters.name, profile: characters.profile })
-    .from(characters)
-    .where(and(inArray(characters.id, characterIds), eq(characters.ownerId, user.id)));
-  const byId = new Map(owned.map((c) => [c.id, c]));
-  // Selection order is the roster order: first = primary participant (sort 0).
-  const roster = characterIds.flatMap((cid) => byId.get(cid) ?? []);
-  const [primary] = roster;
-  if (roster.length !== characterIds.length || !primary) return jsonError("not_found", "character not found", 404);
+  // Owner-strict roster in selection order (first = primary participant, sort 0);
+  // null ⇒ at least one id isn't the caller's, and the whole create 404s.
+  const roster = await loadOwnedRoster(user.id, characterIds);
+  const primary = roster?.[0];
+  if (!roster || !primary) return jsonError("not_found", "character not found", 404);
 
   // "shared" reuses each character's existing group (any of the user's chats with that
   // character carries it); no prior chat — or "fresh" — mints a new island per character.

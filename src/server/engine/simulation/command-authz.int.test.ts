@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import { newId } from "@/lib/ids";
@@ -14,6 +14,7 @@ import {
   users,
 } from "@/server/db";
 import { log } from "@/server/log";
+import { probeIntegrationDb } from "@/server/test-support";
 import { SIM_COMMAND_DENIED } from "./command-authz";
 import { submitDurableCreateCohort } from "./cohort-store";
 import { seedDurableMaterialBranch } from "./material-store";
@@ -37,32 +38,11 @@ import { seedDurableSpaceTopology, submitDurableMoveActor, type SpaceTopologySee
 const SEED_SECOND = 10_000;
 const WALK_AB = 600;
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_physical_loci limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[command-authz.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
+// Self-skips when the database is unreachable, and FAILS instead under strict
+// integration mode (`pnpm test:int:strict` / CI) — the shared probe carries both
+// modes, including the CI / VESPER_REQUIRE_TEST_DB signals this suite honored
+// before the helper existed.
+const ready = await probeIntegrationDb("command-authz.int.test", "sim_physical_loci");
 const seededWorldIds: string[] = [];
 const seededUserIds: string[] = [];
 

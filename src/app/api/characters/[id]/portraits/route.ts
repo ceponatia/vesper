@@ -1,10 +1,9 @@
 import type { NextRequest } from "next/server";
-import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { db, images } from "@/server/db";
 import { generateVariant } from "@/server/images";
 import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, startJob, withUser } from "@/server/api";
 import { findOwnedCharacter } from "../owned";
+import { listOwnedPortraits } from "./owned";
 
 type Params = { id: string };
 
@@ -17,22 +16,7 @@ const portraitBodySchema = z.object({
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
   if (!(await findOwnedCharacter(id, user.id))) return jsonError("not_found", "character not found", 404);
-
-  // Avatar + variants only — character-chat scenes (kind="scene") are filed
-  // against the character too, but belong to the Chat tab, not the studio.
-  const portraits = await db()
-    .select()
-    .from(images)
-    .where(
-      and(
-        eq(images.ownerId, user.id),
-        eq(images.entityKind, "character"),
-        eq(images.entityId, id),
-        inArray(images.kind, ["avatar", "portrait_variant"]),
-      ),
-    )
-    .orderBy(desc(images.createdAt));
-  return jsonOk({ portraits });
+  return jsonOk({ portraits: await listOwnedPortraits(user.id, id) });
 });
 
 /**

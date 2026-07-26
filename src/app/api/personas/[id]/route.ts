@@ -12,22 +12,9 @@ import {
   readBody,
   withUser,
 } from "@/server/api";
+import { findPersona } from "./owned";
 
 type Params = { id: string };
-
-/**
- * Owner-strict lookup. Personas have no `visibility` column and therefore no
- * `findViewable` owner-or-public widening — a persona is *you*, so every read is
- * owner-only (persona-library.plan.md).
- */
-async function findPersona(ownerId: string, id: string) {
-  const [row] = await db()
-    .select()
-    .from(personas)
-    .where(and(eq(personas.id, id), eq(personas.ownerId, ownerId)))
-    .limit(1);
-  return row;
-}
 
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
