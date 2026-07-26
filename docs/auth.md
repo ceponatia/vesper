@@ -231,17 +231,38 @@ because the edit surfaces need every column; everyone else gets the projection
   instead — a viewer never needs another account's id), `searchEmbedding` /
   `embedder`, `clonedFromId`, and `updatedAt`. `createdAt` is the only timestamp.
 - **Included**: id, name, tags, visibility, createdAt + the kind's display fields
-  — character `profile` + `avatarImageId`; location description/ambient/scale/
-  area/affordances/imageId; item kind/description/definition/imageId; social card
-  description/definition.
+  — character `profile` (**projected**, below) + `avatarImageId`; location
+  description/ambient/scale/area/affordances/imageId; item
+  kind/description/definition/imageId; social card description/definition.
+- The character **`profile` jsonb is itself projected** — `toPublicCharacterProfile`
+  in [`contracts/world/profile.ts`](../src/contracts/world/profile.ts), beside the
+  field definitions so adding a profile field puts the reviewer next to the
+  decision (security-authz.plan.md OQ2, ruled **conservative
+  private-by-default**). A public preview shows **presentation only**: `bio`,
+  `personality`, `age`, `speciesId`, and an allow-listed slice of `attributes`
+  (today just `identity.gender`, which the browse route already publishes as a
+  facet — each surviving row reduced to `{ id, value }`, no provenance). Withheld:
+  narrator guidance (`voice`, `voiceAnchors`, `microExemplars`, `intimacy`,
+  `traits`, `preferences`, `socialCards`, disposition `tags`), authored secrets
+  (`drives` — they carry `guarded`/`secret` levels and reveal gates), hidden
+  stance (`playerRelationship` — mask, shared history, premise note), and the
+  operational fields (`heritageId`, `bodyPlanId`, `intimateRegions`,
+  `bodyFeatures`, `aliases`, `outfits`, `schedule`). `row.profile` is untrusted
+  jsonb, so it goes through `parseOr(characterProfileSchema, …)` before the
+  projection — never a cast.
+- **Clone is deliberately wider than preview**: `cloneToLibrary` copies the
+  *whole* authored profile. Publishing a character offers it as a full authored
+  starting point; the preview is the shop window, the clone is the goods (same
+  OQ2 ruling).
 - Portrait rows beside a public character project to
   `{ id, kind, entityKind, entityId, createdAt }` — no `path`, no `prompt`, no
   provider internals ([images.md](images.md)).
 - The default is **closed**: a column added to one of these tables is private
   until someone adds it to the projection. `public-dto.int.test.ts` asserts the
   **exact key set** per kind, so widening the public surface is always a
-  deliberate, reviewed edit. Character `profile` ships whole pending the owner
-  ruling on what a public character reveals (plan OQ2).
+  deliberate, reviewed edit — and, for the character profile, the exact key set
+  of the projection **and** of its nested `attributes` rows (a pure twin lives in
+  `contracts/world/profile.test.ts`).
 - The **list/browse** routes were already projected (summary columns only) and
   stay that way — `searchLibraryIds` returns ids, and whatever hydrates them for
   a `public`/`all` scope must select an explicit column list.

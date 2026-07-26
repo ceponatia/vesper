@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   characterProfileSchema,
   describeScheduleWindow,
+  emptyCharacterProfile,
   emptyVoiceAnchors,
   formatScheduleMinute,
   formatScheduleRhythm,
@@ -9,6 +10,7 @@ import {
   matchScheduleDayPart,
   SCHEDULE_DAY_PARTS,
   scheduleDayPartById,
+  toPublicCharacterProfile,
   VOICE_PET_PHRASES_MAX,
   voiceAnchorsSchema,
   type ScheduleEntry,
@@ -100,5 +102,102 @@ describe("profile.schedule boundary (element-wise catch)", () => {
     expect(parsed.schedule).toEqual([
       { startMinute: 360, endMinute: 720, locationName: "the quay", activity: "inspection" },
     ]);
+  });
+});
+
+describe("toPublicCharacterProfile (security-authz.plan.md OQ2)", () => {
+  /** A profile with something authored in EVERY section, so an exclusion is a real one. */
+  const authored = characterProfileSchema.parse({
+    bio: "Runs the glassworks on the quay.",
+    personality: "Dry, watchful, slow to warm.",
+    voice: "low, unhurried, a little amused",
+    intimacy: "takes her time; hates being rushed",
+    microExemplars: [{ situation: "pushed about her past", line: "That's a long story and you're not that patient." }],
+    voiceAnchors: { petPhrases: ["no promises"], cadence: "clipped and dry", neverSays: ["babe"] },
+    age: "34",
+    speciesId: "elf",
+    heritageId: "dark_elf",
+    bodyPlanId: "humanoid",
+    intimateRegions: ["vulva", "breasts"],
+    bodyFeatures: ["wings"],
+    attributes: [
+      { id: "identity.gender", value: "female", source: "manual", note: "author's note" },
+      { id: "hair.color", value: "black", source: "creation" },
+      { id: "identity.apparent_age", value: "thirties", source: "creation" },
+    ],
+    tags: ["aloof"],
+    preferences: [{ target: "compliment", valence: "dislike" }],
+    socialCards: [],
+    drives: [{ want: "to reopen the gallery", why: "it was her mother's", secrecy: "secret" }],
+    traits: [{ id: "warmth", value: 30, source: "creation" }],
+    playerRelationship: { familiarity: "acquainted", regard: "warm", kind: "neighbour", history: "a bad winter", note: "You owe her money." },
+    aliases: ["the glassblower"],
+    outfits: [{ id: "everyday", name: "Everyday", items: ["item-1"] }],
+    schedule: [{ startMinute: 360, endMinute: 720, locationName: "the quay", activity: "inspection" }],
+  });
+
+  it("is exactly the allow-listed presentation keys", () => {
+    expect(Object.keys(toPublicCharacterProfile(authored)).sort()).toEqual([
+      "age",
+      "attributes",
+      "bio",
+      "personality",
+      "speciesId",
+    ]);
+  });
+
+  it("carries the presentation values the public preview renders", () => {
+    const projected = toPublicCharacterProfile(authored);
+    expect(projected.bio).toBe("Runs the glassworks on the quay.");
+    expect(projected.personality).toBe("Dry, watchful, slow to warm.");
+    expect(projected.age).toBe("34");
+    expect(projected.speciesId).toBe("elf");
+  });
+
+  it("withholds narrator guidance, authored secrets and hidden stance", () => {
+    const projected: Record<string, unknown> = { ...toPublicCharacterProfile(authored) };
+    for (const key of [
+      "voice",
+      "intimacy",
+      "microExemplars",
+      "voiceAnchors",
+      "drives",
+      "traits",
+      "preferences",
+      "socialCards",
+      "playerRelationship",
+      "tags",
+      "aliases",
+      "outfits",
+      "schedule",
+      "heritageId",
+      "bodyPlanId",
+      "intimateRegions",
+      "bodyFeatures",
+    ]) {
+      expect(projected[key]).toBeUndefined();
+    }
+    // The source profile really did carry them — the exclusions are doing work.
+    expect(authored.drives[0]?.secrecy).toBe("secret");
+    expect(authored.voiceAnchors.petPhrases).toEqual(["no promises"]);
+    expect(authored.playerRelationship.note).toBe("You owe her money.");
+  });
+
+  it("projects the attributes section rather than passing it whole", () => {
+    const projected = toPublicCharacterProfile(authored);
+    // Only the already-public browse facet survives, reduced to {id, value}.
+    expect(projected.attributes).toEqual([{ id: "identity.gender", value: "female" }]);
+    expect(Object.keys(projected.attributes[0] ?? {}).sort()).toEqual(["id", "value"]);
+    expect(authored.attributes).toHaveLength(3);
+  });
+
+  it("an empty profile projects to empty presentation, never undefined", () => {
+    expect(toPublicCharacterProfile(emptyCharacterProfile())).toEqual({
+      bio: "",
+      personality: "",
+      age: "",
+      speciesId: "human",
+      attributes: [],
+    });
   });
 });

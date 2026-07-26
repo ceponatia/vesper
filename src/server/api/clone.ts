@@ -11,6 +11,12 @@ import { findViewable, type ShareableKind } from "./visibility";
  * deleting the source later can never break your copy (the world-instances
  * guarantee, extended library→library). The source is never mutated.
  *
+ * A character clone copies the **whole** authored `profile` — narrator guidance,
+ * drives, voice anchors and all — and that is an explicit product decision
+ * (security-authz.plan.md OQ2), not an oversight: publishing a character offers
+ * it as a full authored starting point, so a clone is richer than the public
+ * *preview*, which `toPublicCharacterProfile` narrows to presentation data only.
+ *
  * Scope note: the snapshot is copied as-is — a character's `defaultOutfit` /
  * a location's links keep referencing the source owner's library ids, which
  * simply degrade (resolve to nothing) for the new owner rather than breaking.
