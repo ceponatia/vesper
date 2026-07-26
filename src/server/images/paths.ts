@@ -37,7 +37,9 @@ function canonicalizePossiblyMissing(absolutePath: string): string {
       return path.join(existing, ...missing);
     } catch (error) {
       if (errorCode(error) !== "ENOENT") {
-        throw new ImagePathError(`DATA_ROOT could not be canonicalized: ${error instanceof Error ? error.message : String(error)}`);
+        throw new ImagePathError(
+          `DATA_ROOT could not be canonicalized: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       const parent = path.dirname(cursor);
       if (parent === cursor) throw new ImagePathError("DATA_ROOT has no resolvable ancestor");
@@ -106,16 +108,22 @@ function assertNoSymlinkComponents(root: string, candidate: string): void {
     } catch (error) {
       if (error instanceof ImagePathError) throw error;
       if (errorCode(error) === "ENOENT") break;
-      throw new ImagePathError(`image path could not be inspected: ${error instanceof Error ? error.message : String(error)}`);
+      throw new ImagePathError(
+        `image path could not be inspected: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
+}
+
+function isAbsoluteOnAnySupportedPlatform(value: string): boolean {
+  return path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value);
 }
 
 /** Resolve an arbitrary relative data path while keeping it strictly under DATA_ROOT. */
 export function absoluteDataPath(relativePath: string): string {
   if (
     relativePath.length === 0 ||
-    path.isAbsolute(relativePath) ||
+    isAbsoluteOnAnySupportedPlatform(relativePath) ||
     relativePath.includes("\\") ||
     relativePath.includes("\0")
   ) {
@@ -136,7 +144,9 @@ export function absoluteDataPath(relativePath: string): string {
 export function absoluteImagePath(image: StoredImagePath): string {
   if (image.id !== undefined && image.ownerId !== undefined) {
     const expected = imageRelativePath(image.ownerId, image.id);
-    if (image.path !== expected) throw new ImagePathError("images.path is not canonical for its owner and image id");
+    if (image.path !== expected) {
+      throw new ImagePathError("images.path is not canonical for its owner and image id");
+    }
   }
   return absoluteDataPath(image.path);
 }
