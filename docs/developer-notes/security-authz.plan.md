@@ -5,16 +5,80 @@ Status: **shipped — 2026-07-26** (promoted 2026-07-25 from
 
 **Completion note (2026-07-26):** all seven slices landed in one batch (five
 parallel implementation agents; gates run serially green — lint, cycles,
-typecheck, 2560 pure tests, jscpd — plus `pnpm test:int` 505/505 against a
-local Postgres). Beyond the slice text: `/api/auth-config` now reports the
-real magic-link gate (it was hardcoded `true`, which would have rendered a
-dead sign-in button once production drops the plugin), and the slice-6
-tripwire's baseline census found **zero** unscoped mutations across 31 sites
-in 18 route files. Leftovers: OQ1–OQ3 below remain open (RLS, the
-public-`profile` ruling, transport-before-signup), and slice 5's adversarial
-sweep surfaced three latent items recorded in §Follow-ups — none exploitable
-today, all one-caller-away shapes worth closing when their surfaces are next
-touched.
+typecheck, pure tests, jscpd — plus `pnpm test:int` against a local
+Postgres). Beyond the slice text: `/api/auth-config` now reports the real
+magic-link gate (it was hardcoded `true`, which would have rendered a dead
+sign-in button once production drops the plugin).
+
+**Follow-up hardening batch (2026-07-26, same day):** an external review of
+the shipped batch drove eight corrections, all landed and gated (serial
+gates green; **strict** integration run `pnpm test:int:strict` 519/519 with
+zero skips):
+
+1. **S1 corrected — no transport exists, and env vars no longer pretend one
+   does.** The first cut treated `RESEND_API_KEY`/`SMTP_URL` *presence* as a
+   working transport while `sendMagicLink` only logged. Now
+   `configuredMagicLinkTransport()` resolves from a registry of *implemented*
+   senders — empty today, so **production magic-link is disabled
+   unconditionally** until a real sender is registered; the same resolved
+   transport drives plugin registration, `/api/auth-config`, and delivery
+   (send failures rethrow with a no-URL diagnostic). The env names are
+   documented as reserved and inert.
+2. **Follow-up 1 FIXED:** `authorizeSimulationCommand`
+   (`simulation/command-authz.ts`) resolves branch → anchoring chat →
+   `owner_id` inside all four durable shells, before any write (ledger,
+   events, projections, outbox, scheduler, cached-result replay included);
+   `player` principals must match the owner, admin/engine kinds pass by
+   construction, two-owner anomalies fail closed; denials are
+   not-found-shaped with a `sim.command_denied` warn. `requireSimChat` stays
+   as route-level defense in depth. Noted leftover: `character_chats.
+   sim_branch_id` has no index (seq scan on a small table, player-kind
+   commands only) — add one via the normal db:generate flow when convenient.
+3. **Follow-up 2 FIXED:** `promoteVariant(characterId, imageId, ownerId)`
+   verifies character ownership, image ownership, and the image↔character
+   metadata binding in its own queries (`images.promote.*` warn codes,
+   denials indistinguishable from not-found).
+4. **Follow-up 3 FIXED:** `searchLibraryIds` rejects non-owned scopes for
+   visibility-less kinds at compile time (overload split on `ShareableKind`)
+   and at runtime (`api.library.scope_unsupported` warn + `[]`, before any
+   SQL composes).
+5. **S4 census corrected + tripwire strengthened:** ownership tokens now
+   count only inside the mutation's `.where(...)` span (rejected fixtures
+   prove `.set({ownerId})`/`.returning({ownerId})`/comments no longer pass);
+   helper guards must be invoked with `user.id`, above the write, result
+   branched on. Corrected baseline: **31 sites / 14 where-owned / 13
+   helper-guarded / 4 allow-listed under 3 entries** (11 sites are both).
+   New simulation invariant: the four durable shells call
+   `authorizeSimulationCommand` before their first write and all 48 other
+   `submitDurable*` exports delegate to a shell. The scanner's header states
+   it is a regression tripwire, not semantic proof.
+6. **Strict integration mode:** `pnpm test:int:strict`
+   (`REQUIRE_INTEGRATION_DB=true`) makes DB-probe failures fail suites
+   loudly instead of skipping — the release form (docs/testing.md). Honored
+   by the seven security suites via the shared `src/server/test-support`
+   probe; legacy suites still self-skip (documented boundary). The matrix
+   also stopped reproducing private route predicates: `findPortrait`/
+   `listOwnedPortraits`/`findPersona`/`loadOwnedRoster` are extracted
+   helpers called by both routes and matrix.
+7. **OQ2 RESOLVED (ruling below).**
+8. Portrait-delete route writes carry direct owner predicates (was
+   helper-guard only).
+
+**OQ2 ruling (2026-07-26): conservative private-by-default.** A public
+character's profile surface is `toPublicCharacterProfile`
+(`src/contracts/world/profile.ts`, colocated with the schema): `age`, `bio`,
+`personality`, `speciesId`, and `attributes` narrowed to `identity.gender`
+as `{id, value}` — exactly what the foreign preview and browse facets
+render. Withheld: voice, microExemplars, voiceAnchors, drives, traits,
+preferences, socialCards, playerRelationship, intimacy, intimateRegions,
+bodyPlanId, bodyFeatures, outfits, schedule, aliases, disposition tags, all
+other attributes. Ambiguous-and-excluded (promotable later): `heritageId`,
+appearance attributes, `bodyFeatures`. **Clone deliberately stays wider**
+(full profile copy — a clone is a full authored copy, not a preview;
+recorded in `clone.ts`).
+
+Remaining open: OQ1 (RLS) and OQ3 (transport-before-signup) below. Not
+deployed — Fly deploys stay manual.
 
 Successor to the shipped 2026-06-23 sweep
 ([finished/security-hardening.plan.md](finished/security-hardening.plan.md)).
@@ -223,12 +287,13 @@ them); the sanitized shape applies when `row.ownerId !== user.id`.
   decision; the shared rate limiter stays deferred until multi-instance
   (unchanged 2026-06-23 ruling).
 
-## Follow-ups (recorded at ship, 2026-07-26)
+## Follow-ups (recorded at ship 2026-07-26 — ALL FIXED same day)
 
-Surfaced by slice 5's adversarial sweep; asserted-secure-today by the matrix,
-not fixed here:
+Surfaced by slice 5's adversarial sweep; all three closed by the follow-up
+hardening batch (see the completion note for what shipped). Original findings
+kept for the record:
 
-1. **The durable simulation command layer is ownership-blind.**
+1. **[FIXED] The durable simulation command layer is ownership-blind.**
    `submitDurable*`/`runSimulationCommand`
    (`src/server/engine/simulation/command-runner.ts`) lock the branch by id
    and record — but never validate — `principal.principalId` against the
@@ -237,12 +302,12 @@ not fixed here:
    surface is next touched: validate the principal against the branch's
    owning chat inside the runner, or extend the slice-6 tripwire to
    `src/server/engine/simulation/`.
-2. **`promoteVariant(characterId, imageId)` takes no ownerId**
+2. **[FIXED] `promoteVariant(characterId, imageId)` takes no ownerId**
    (`src/server/images/variants.ts`) — safe only because the route gates on
    `findOwnedCharacter` and the image must already point at that character.
    Same polymorphic-metadata trust S5 flagged; thread the owner id through
    when the variants module is next edited.
-3. **Latent 500 in persona listing scope:** `searchLibraryIds` emits
+3. **[FIXED] Latent 500 in persona listing scope:** `searchLibraryIds` emits
    `visibility = 'public'` for non-owned scopes, but `personas` has no
    `visibility` column — safe only because the personas route hardcodes
    `scope: "owned"`. If persona listing ever accepts a scope param it throws
@@ -256,13 +321,9 @@ not fixed here:
   single-tenant-per-row app? Revisit when successor resources multiply or a
   second app instance appears. (The review itself calls RLS "more
   involved".)
-- **OQ2 — what does "public character" reveal?** `profile` is currently
-  copied whole by the duplicate CTA, so it is de facto fully public today.
-  Needs an owner ruling: is the full profile (narrator-facing authoring
-  detail included) the intended public surface, or should public preview +
-  clone both narrow to a presentation subset? Slice 4 ships with profile
-  included pending the ruling — flipping it later is a projection edit plus
-  the key-enumeration test update.
+- ~~OQ2~~ — resolved 2026-07-26; ruling recorded in the completion note
+  (conservative private-by-default `toPublicCharacterProfile`; clone stays
+  deliberately wider).
 - **OQ3 — transport before signup?** If a real email transport
   (Resend/SMTP) is scheduled before any `ALLOW_SIGNUP=true` window, S1's
   production path becomes "transport or plugin-off", never "log", and the

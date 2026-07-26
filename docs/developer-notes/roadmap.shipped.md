@@ -14,7 +14,17 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   traversal is owner-scoped; public images require image-owner = entity-owner;
   a 31-site route-mutation tripwire and a two-user authorization matrix are
   permanent gates; `docs/auth.md` carries the Before-`ALLOW_SIGNUP` checklist.
-  Three latent follow-ups recorded in the plan.
+  **Same-day follow-up hardening batch** (external review of the shipped
+  cut): production magic-link now requires a *registered concrete transport*
+  (env vars alone are inert — disabled until a real sender exists); the
+  durable sim command runner verifies principal-vs-branch-owner before any
+  write; `promoteVariant` is owner-strict in its own queries; persona scope
+  misuse is a compile error + runtime refusal instead of a latent 500; the
+  tripwire counts ownership only inside `.where(...)` (census 31/14/13/4
+  sites, 3 entries) and enforces the simulation shell invariant;
+  `pnpm test:int:strict` (REQUIRE_INTEGRATION_DB) is the release gate —
+  519/519 with zero skips; OQ2 ruled conservative private-by-default
+  (`toPublicCharacterProfile`). All three ship-time follow-ups closed.
 
 - **Command integrity — serialize, survive, atomize (COMPLETE)** —
   [command-integrity.plan.md](command-integrity.plan.md) · engine.spec §39 rulings

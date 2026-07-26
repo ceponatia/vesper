@@ -178,7 +178,7 @@ async function footprint(branchId: string) {
     db().select({ id: simCommands.commandId }).from(simCommands).where(eq(simCommands.branchId, branchId)),
     db().select({ id: simEvents.id }).from(simEvents).where(eq(simEvents.branchId, branchId)),
     db().select({ id: simTriggers.id }).from(simTriggers).where(eq(simTriggers.branchId, branchId)),
-    db().select({ id: simJourneys.id }).from(simJourneys).where(eq(simJourneys.branchId, branchId)),
+    db().select({ id: simJourneys.journeyId }).from(simJourneys).where(eq(simJourneys.branchId, branchId)),
     db()
       .select({ version: simBranches.version, headSequence: simBranches.headSequence })
       .from(simBranches)
