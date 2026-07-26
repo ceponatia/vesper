@@ -2,21 +2,10 @@ import { jsonError } from "@/server/api";
 import { CHAT_LOCK_LABEL_REPLY, keyedLockHolderLabel, readChatEngineAuthority } from "@/server/engine";
 import { loadOwnedChat, type OwnedChat } from "../owned";
 
-/**
- * The per-chat serialization key both reply lanes (send pipeline, sim turn) and
- * the successor sim-commands hold (command-integrity A1-2): one exchange in
- * flight per conversation from any tab, lane, or headless caller.
- */
 export function chatExchangeLockKey(chatId: string): string {
   return `chat_exchange:${chatId}`;
 }
 
-/**
- * The A1-1 / A2-2 busy bounce: contention turns away immediately (never queues),
- * and the copy names the cause from the current holder's label — a streaming
- * reply vs. the world catching up (fallback: catching up). Shared 409 `chat_busy`
- * code so the client handles every lane the same way.
- */
 export function chatBusyBounce(chatId: string): Response {
   const holder = keyedLockHolderLabel(chatExchangeLockKey(chatId));
   return holder === CHAT_LOCK_LABEL_REPLY
@@ -24,14 +13,6 @@ export function chatBusyBounce(chatId: string): Response {
     : jsonError("chat_busy", "the world is catching up on this chat; try again in a moment", 409);
 }
 
-/**
- * R3 (engine.rollout.plan.md) — the one gate every sim route shares: the chat
- * must be owned, flipped past the view threshold, branch-linked, and
- * actor-mapped. Returns the resolved sim context or the response to send.
- * The standing scene is deliberately NOT derived here: engagement identity
- * belongs to the actor pair in the world, not to a chat — resolve it live
- * via `findStandingEngagement` (engine `sim-exchange`).
- */
 export interface SimChatContext {
   owned: OwnedChat;
   branchId: string;
@@ -39,12 +20,19 @@ export interface SimChatContext {
   primaryActorId: string;
 }
 
+/**
+ * Simulation capability gate. Callers using `withOwnedChat` pass the already
+ * authorized chat so this function never performs a second ownership lookup.
+ */
 export async function requireSimChat(
   chatId: string,
   userId: string,
+  authorized?: OwnedChat,
 ): Promise<{ ok: true; sim: SimChatContext } | { ok: false; response: Response }> {
-  const owned = await loadOwnedChat(chatId, userId);
-  if (!owned) return { ok: false, response: jsonError("not_found", "chat not found", 404) };
+  const owned = authorized ?? (await loadOwnedChat(chatId, userId));
+  if (!owned || owned.chat.ownerId !== userId || owned.chat.id !== chatId) {
+    return { ok: false, response: jsonError("not_found", "chat not found", 404) };
+  }
   const authority = await readChatEngineAuthority(chatId);
   if (
     !authority ||
@@ -74,7 +62,6 @@ export async function requireSimChat(
   };
 }
 
-/** The player-principal envelope every sim route submits under. */
 export function simPlayerEnvelope(sim: SimChatContext, userId: string, commandId: string) {
   return {
     id: commandId,

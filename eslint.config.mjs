@@ -107,14 +107,35 @@ export default defineConfig([
       ] }],
     },
   },
-  // 3. Route handlers: barrel discipline + provider gateway.
+  // 3. Route handlers: barrel discipline + provider gateway + owner-safe image mutations.
   {
     files: ["src/app/api/**/*.{ts,tsx}"],
     rules: {
-      "no-restricted-imports": ["error", { patterns: [
-        { group: ["@/server/*/*"], message: "Import a server module through its barrel (@/server/<module>), not a deep path." },
-        RESTRICT_PROVIDER,
-      ] }],
+      "no-restricted-imports": ["error", {
+        paths: [
+          {
+            name: "@/server/images",
+            importNames: [
+              "saveImageBuffer",
+              "deleteChatUploads",
+              "deleteChatAssets",
+              "internalSaveImageBuffer",
+              "internalDeleteChatUploads",
+              "internalDeleteChatAssets",
+            ],
+            message:
+              "Route handlers must use saveOwnedImageBuffer/deleteOwnedChatUploads/deleteOwnedChatAssets and pass the authenticated owner id.",
+          },
+        ],
+        patterns: [
+          { group: ["@/server/*/*"], message: "Import a server module through its barrel (@/server/<module>), not a deep path." },
+          {
+            group: ["@/server/images/internal", "@/server/images/internal/**"],
+            message: "Internal image mutations are reserved for trusted workers and verified cascade paths, never route modules.",
+          },
+          RESTRICT_PROVIDER,
+        ],
+      }],
     },
   },
   // 4. Server (except the AI gateway) + scripts: barrel discipline + provider gateway.

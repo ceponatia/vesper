@@ -16,14 +16,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { chatInspectorApi, type InspectorSummary } from "@/lib/api-inspector";
 
 /**
- * The dev memory inspector for one conversation (`/chat/[chatId]/inspector`,
- * character-chat-standalone.spec.md §6.1): full visibility + editability of
- * everything stored — facts (all statuses), episodes (+ retrieval scoring), the
- * rolling summary, and the rebuilt "what reaches the narrator now" prompt.
- * Admin-gated client-side via `useIsAdmin` (false until confirmed, so
- * non-admins — and everyone, briefly — see a plain "Not found." fallback); the
- * `/api/admin/chat-inspector` family is additionally role-gated server-side
- * (404 for non-admins) — real enforcement lives there, not in this UI gate.
+ * The owner-admin memory inspector for one conversation. The client gate is UX;
+ * `/api/admin/self/chat-inspector` separately requires the admin role and proves
+ * that the current administrator owns the requested chat before returning or
+ * mutating any memory.
  */
 export function ChatInspectorPage({ chatId }: { chatId: string }) {
   const isAdmin = useIsAdmin();

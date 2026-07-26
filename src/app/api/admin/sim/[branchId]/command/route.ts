@@ -1,8 +1,8 @@
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { newId } from "@/lib/ids";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { jsonError, jsonOk, readBody } from "@/server/api";
 import { db, simBranches } from "@/server/db";
-import { eq } from "drizzle-orm";
 import {
   advanceBranchStoryTime,
   submitDurableAdjustCohort,
@@ -10,16 +10,9 @@ import {
   submitDurablePromoteActorFromCohort,
   submitDurableStorytellerRelocation,
 } from "@/server/engine";
+import { withSelfOwnedBranch } from "../../owned";
 
 type Params = { branchId: string };
-
-/**
- * R3 slice 3 — the storyteller tool palette as ONE discriminated admin route:
- * audited relocation (ruling 4), §27.2 promote-from-cohort, the E6.1 LOD
- * dial, conserved cohort adjustment, and the bounded story-clock advance.
- * Every world change is the ordinary durable command under the storyteller
- * principal; refusals return the public face. Admin-only, 404-hidden.
- */
 
 const bodySchema = z.discriminatedUnion("kind", [
   z
@@ -60,9 +53,9 @@ function respond(outcome: CommandOutcome) {
   return jsonError("sim_conflict", "the world moved; try again", 409);
 }
 
-export const POST = withUser<Params>(async (user, req, ctx) => {
-  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
-  const { branchId } = await ctx.params;
+/** Storyteller commands for a branch linked to the owner-admin's own chat only. */
+export const POST = withSelfOwnedBranch<Params>(async (user, owned, req) => {
+  const branchId = owned.branchId;
   const body = await readBody(req, bodySchema);
   if (!body.ok) return body.response;
   const command = body.value;
@@ -134,8 +127,7 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         .where(eq(simBranches.id, branchId))
         .limit(1);
       if (!branch) return jsonError("not_found", "branch not found", 404);
-      const target =
-        command.toStorySecond ?? branch.storySecond + Math.round((command.days ?? 0) * 86_400);
+      const target = command.toStorySecond ?? branch.storySecond + Math.round((command.days ?? 0) * 86_400);
       if (target < branch.storySecond) return jsonError("invalid_target", "story time cannot move backwards", 400);
       let drained = 0;
       let reachedStorySecond = branch.storySecond;
@@ -146,8 +138,6 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
         drained += outcome.drained;
         reachedStorySecond = outcome.storySecond;
         if (outcome.status === "advanced") break;
-        // A6: a backed-off trigger parks the clock at its due second — stop rather than re-loop
-        // past it (this debug advance settles the rest on a later run, once the backoff elapses).
         if (outcome.reason === "trigger_backoff") {
           drainShort = true;
           break;

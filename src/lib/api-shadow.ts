@@ -1,15 +1,7 @@
 import { z } from "zod";
 import { apiGet, apiPatch } from "@/lib/client/api";
 
-/**
- * Client data layer for the admin Shadow Parity screen (R4,
- * engine.rollout.plan.md) — the `/api/admin/sim/shadow` family (role-gated:
- * 404 for non-admins). Kept out of `lib/client/api.ts` like the inspector's
- * layer: admin-only surfaces don't bulk the player bundle. Every response is
- * parsed with forgiving `.catch()` schemas — bad fields fall back, bad list
- * elements are dropped (docs/resilience.md §7).
- */
-
+/** Client data layer for the owner-admin Shadow Parity screen. */
 const textOr = (fallback: string) => z.string().catch(fallback);
 
 /** Array where invalid elements are dropped instead of failing the whole list. */
@@ -106,16 +98,16 @@ export const shadowReportSchema = z.object({
 });
 export type ShadowReport = z.infer<typeof shadowReportSchema>;
 
+const BASE = "/api/admin/self/sim/shadow";
+
 export const shadowApi = {
-  /** Every chat with recorded divergences, newest activity first. */
-  chats: () => apiGet(z.object({ chats: arrayOf(shadowChatSummarySchema) }), "/api/admin/sim/shadow"),
-  /** One chat's raw divergence rows, newest first. */
-  rows: (chatId: string) =>
-    apiGet(z.object({ rows: arrayOf(shadowRowSchema) }), `/api/admin/sim/shadow/${chatId}`),
+  /** The current administrator's chats with recorded divergences, newest first. */
+  chats: () => apiGet(z.object({ chats: arrayOf(shadowChatSummarySchema) }), BASE),
+  /** One owned chat's raw divergence rows, newest first. */
+  rows: (chatId: string) => apiGet(z.object({ rows: arrayOf(shadowRowSchema) }), `${BASE}/${chatId}`),
   /** The computed scale-aware parity report. */
-  report: (chatId: string) =>
-    apiGet(z.object({ report: shadowReportSchema }), `/api/admin/sim/shadow/${chatId}/report`),
-  /** Rule one row's verdict — "intentional" is the durable ruling. */
+  report: (chatId: string) => apiGet(z.object({ report: shadowReportSchema }), `${BASE}/${chatId}/report`),
+  /** Rule one owned row's verdict. */
   verdict: (chatId: string, id: string, verdict: ShadowVerdict) =>
-    apiPatch(z.object({ id: z.string(), verdict: z.string() }), `/api/admin/sim/shadow/${chatId}`, { id, verdict }),
+    apiPatch(z.object({ id: z.string(), verdict: z.string() }), `${BASE}/${chatId}`, { id, verdict }),
 };

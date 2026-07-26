@@ -3,11 +3,6 @@ import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { characterChats, characters, db, events, users } from "@/server/db";
 
-// R1 (engine.rollout.plan.md) — the audited per-chat engine-authority dial:
-// admin-gated (404 for non-admins), owner-scoped, every real flip landing an
-// `engine_authority_changed` audit row, no-op flips landing none. Mirrors the
-// chat-inspector suite's mocked-auth harness; self-skips without a database.
-
 process.env.AI_FAKE = "1";
 
 const authState = vi.hoisted(() => ({
@@ -47,6 +42,7 @@ async function probe(): Promise<boolean> {
 const ready = await probe();
 const collectionCtx = { params: Promise.resolve({}) };
 const ctx = (chatId: string) => ({ params: Promise.resolve({ chatId }) });
+const authorityPath = (chatId: string) => `/api/admin/self/engine-authority/${chatId}`;
 const getReq = (path: string) => new NextRequest(`http://t${path}`);
 function patchReq(path: string, body: unknown): NextRequest {
   return new NextRequest(`http://t${path}`, {
@@ -88,7 +84,6 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!ready || !ids.user) return;
   await db().delete(events).where(eq(events.type, "engine_authority_changed"));
-  // FK order: chats and characters hang off the user without cascade.
   await db().delete(characterChats).where(eq(characterChats.ownerId, ids.user));
   await db().delete(characters).where(eq(characters.ownerId, ids.user));
   await db().delete(users).where(eq(users.id, ids.user));
@@ -96,7 +91,7 @@ afterAll(async () => {
 
 describe.runIf(ready)("R1 engine-authority dial", () => {
   it("reads the legacy default, flips with an audit row, and skips audit on no-ops", async () => {
-    const initial = await authorityGet(getReq(`/api/admin/engine-authority/${ids.chat}`), ctx(ids.chat));
+    const initial = await authorityGet(getReq(authorityPath(ids.chat)), ctx(ids.chat));
     expect(initial.status).toBe(200);
     expect(await initial.json()).toEqual({
       authority: "legacy_chat",
@@ -107,7 +102,7 @@ describe.runIf(ready)("R1 engine-authority dial", () => {
     });
 
     const flipped = await authorityPatch(
-      patchReq(`/api/admin/engine-authority/${ids.chat}`, { authority: "successor_shadow" }),
+      patchReq(authorityPath(ids.chat), { authority: "successor_shadow" }),
       ctx(ids.chat),
     );
     expect(flipped.status).toBe(200);
@@ -126,9 +121,7 @@ describe.runIf(ready)("R1 engine-authority dial", () => {
       .from(events)
       .where(and(eq(events.type, "engine_authority_changed")))
       .orderBy(desc(events.createdAt));
-    const mine = auditRows.filter(
-      (row) => (row.payload as { chatId?: string }).chatId === ids.chat,
-    );
+    const mine = auditRows.filter((row) => (row.payload as { chatId?: string }).chatId === ids.chat);
     expect(mine).toHaveLength(1);
     expect(mine[0]?.payload).toMatchObject({
       byUserId: ids.user,
@@ -136,9 +129,8 @@ describe.runIf(ready)("R1 engine-authority dial", () => {
       after: { authority: "successor_shadow" },
     });
 
-    // A no-op flip changes nothing and writes no audit row.
     const noop = await authorityPatch(
-      patchReq(`/api/admin/engine-authority/${ids.chat}`, { authority: "successor_shadow" }),
+      patchReq(authorityPath(ids.chat), { authority: "successor_shadow" }),
       ctx(ids.chat),
     );
     expect(noop.status).toBe(200);
@@ -150,18 +142,23 @@ describe.runIf(ready)("R1 engine-authority dial", () => {
       auditAfterNoop.filter((row) => (row.payload as { chatId?: string }).chatId === ids.chat),
     ).toHaveLength(1);
 
-    // An empty patch is a 400, not a silent no-op.
-    const empty = await authorityPatch(patchReq(`/api/admin/engine-authority/${ids.chat}`, {}), ctx(ids.chat));
+    const empty = await authorityPatch(patchReq(authorityPath(ids.chat), {}), ctx(ids.chat));
     expect(empty.status).toBe(400);
   });
 
-  it("hides itself from non-admins and unknown chats", async () => {
+  it("hides itself from non-admins, the old namespace, and unknown chats", async () => {
     authState.user = { ...authState.user, role: "user" };
-    const denied = await authorityGet(getReq(`/api/admin/engine-authority/${ids.chat}`), ctx(ids.chat));
+    const denied = await authorityGet(getReq(authorityPath(ids.chat)), ctx(ids.chat));
     expect(denied.status).toBe(404);
     authState.user = { ...authState.user, role: "admin" };
 
-    const missing = await authorityGet(getReq(`/api/admin/engine-authority/ghost`), ctx("ghost"));
+    const oldNamespace = await authorityGet(
+      getReq(`/api/admin/engine-authority/${ids.chat}`),
+      ctx(ids.chat),
+    );
+    expect(oldNamespace.status).toBe(404);
+
+    const missing = await authorityGet(getReq(authorityPath("ghost")), ctx("ghost"));
     expect(missing.status).toBe(404);
   });
 });

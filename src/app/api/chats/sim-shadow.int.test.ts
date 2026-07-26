@@ -1,14 +1,17 @@
 import { eq, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { characterChats, characters, db, simBranches, simShadowDivergences, simWorlds, users } from "@/server/db";
-
-// R4 shadow mode (engine.rollout.plan.md) — a `successor_shadow` chat runs the
-// legacy pipeline untouched while the detached shadow leg records divergence
-// rows (prose · presence · meters · clock) against the mirror branch, legacy
-// time skips mirror onto the branch clock, and the admin surface rules
-// verdicts. AI_FAKE end to end — zero live model calls. Self-skips without a
-// database.
+import { newId } from "@/lib/ids";
+import {
+  characterChats,
+  characters,
+  chatParticipants,
+  db,
+  simBranches,
+  simShadowDivergences,
+  simWorlds,
+  users,
+} from "@/server/db";
 
 process.env.AI_FAKE = "1";
 
@@ -59,6 +62,8 @@ async function probe(): Promise<boolean> {
 
 const ready = await probe();
 const ctx = (chatId: string) => ({ params: Promise.resolve({ chatId }) });
+const shadowPath = (chatId?: string, suffix = "") =>
+  `/api/admin/self/sim/shadow${chatId ? `/${chatId}` : ""}${suffix}`;
 function jsonReq(path: string, body: unknown, method = "POST"): NextRequest {
   return new NextRequest(`http://t${path}`, {
     method,
@@ -67,7 +72,6 @@ function jsonReq(path: string, body: unknown, method = "POST"): NextRequest {
   });
 }
 
-/** Poll until the detached shadow leg has landed at least `count` rows. */
 async function waitForRows(chatId: string, count: number): Promise<(typeof simShadowDivergences.$inferSelect)[]> {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const rows = await db().select().from(simShadowDivergences).where(eq(simShadowDivergences.chatId, chatId));
@@ -77,7 +81,7 @@ async function waitForRows(chatId: string, count: number): Promise<(typeof simSh
   return db().select().from(simShadowDivergences).where(eq(simShadowDivergences.chatId, chatId));
 }
 
-const ids = { chat: "", legacyChat: "", user: "" };
+const ids = { chat: "", legacyChat: "", user: "", foreignUser: "", foreignChat: "" };
 
 beforeAll(async () => {
   if (!ready) return;
@@ -87,22 +91,44 @@ beforeAll(async () => {
     .insert(users)
     .values({ email: `sim-shadow-${stamp}@test.local`, name: "Sim Shadow" })
     .returning();
-  if (!user) throw new Error("failed to create test user");
+  const [foreignUser] = await db()
+    .insert(users)
+    .values({ email: `sim-shadow-foreign-${stamp}@test.local`, name: "Foreign Shadow" })
+    .returning();
+  if (!user || !foreignUser) throw new Error("failed to create test users");
   authState.user = { ...authState.user, id: user.id, email: user.email };
   ids.user = user.id;
+  ids.foreignUser = foreignUser.id;
+
   const [character] = await db()
     .insert(characters)
     .values({ ownerId: user.id, name: "Ana", profile: {} })
     .returning();
-  if (!character) throw new Error("failed to seed character");
+  const [foreignCharacter] = await db()
+    .insert(characters)
+    .values({ ownerId: foreignUser.id, name: "Foreign Ana", profile: {} })
+    .returning();
+  if (!character || !foreignCharacter) throw new Error("failed to seed characters");
+
   for (const key of ["chat", "legacyChat"] as const) {
-    const res = await chatsCreate(
+    const response = await chatsCreate(
       jsonReq("/api/chats", { characterIds: [character.id], memory: "fresh" }),
       { params: Promise.resolve({}) },
     );
-    if (res.status !== 201) throw new Error(`chat create failed: ${res.status}`);
-    ids[key] = ((await res.json()) as { id: string }).id;
+    if (response.status !== 201) throw new Error(`chat create failed: ${response.status}`);
+    ids[key] = ((await response.json()) as { id: string }).id;
   }
+
+  const [foreignChat] = await db()
+    .insert(characterChats)
+    .values({ ownerId: foreignUser.id })
+    .returning({ id: characterChats.id });
+  if (!foreignChat) throw new Error("failed to seed foreign chat");
+  ids.foreignChat = foreignChat.id;
+  await db()
+    .insert(chatParticipants)
+    .values({ chatId: foreignChat.id, characterId: foreignCharacter.id, memoryGroupId: newId() });
+
   await seedRolloutTestWorld();
   await setChatEngineAuthority({
     chatId: ids.chat,
@@ -112,31 +138,39 @@ beforeAll(async () => {
     simPlayerActorId: ROLLOUT_ACTORS.mara,
     simPrimaryActorId: ROLLOUT_ACTORS.ana,
   });
+
+  await db().insert(simShadowDivergences).values({
+    id: newId(),
+    chatId: ids.foreignChat,
+    messageId: "foreign-message",
+    branchId: ROLLOUT_BRANCH_ID,
+    domain: "prose",
+    legacy: { private: "foreign legacy" },
+    successor: { private: "foreign successor" },
+    detail: "foreign detail",
+  });
 });
 
 afterAll(async () => {
-  if (!ready || !ids.user) return;
+  if (!ready) return;
   await db().delete(simWorlds).where(eq(simWorlds.id, ROLLOUT_WORLD_ID));
-  await db().delete(characterChats).where(eq(characterChats.ownerId, ids.user));
-  await db().delete(characters).where(eq(characters.ownerId, ids.user));
-  await db().delete(users).where(eq(users.id, ids.user));
+  if (ids.user) await db().delete(characterChats).where(eq(characterChats.ownerId, ids.user));
+  if (ids.foreignUser) await db().delete(characterChats).where(eq(characterChats.ownerId, ids.foreignUser));
+  if (ids.user) await db().delete(characters).where(eq(characters.ownerId, ids.user));
+  if (ids.foreignUser) await db().delete(characters).where(eq(characters.ownerId, ids.foreignUser));
+  if (ids.user) await db().delete(users).where(eq(users.id, ids.user));
+  if (ids.foreignUser) await db().delete(users).where(eq(users.id, ids.foreignUser));
 });
 
 describe.runIf(ready)("R4 shadow mode under chat", () => {
   it("records divergence rows for a shadowed exchange while the chat lane stays legacy", async () => {
     const send = await chatSend(jsonReq(`/api/chats/${ids.chat}`, { content: "Good morning, Ana." }), ctx(ids.chat));
     expect(send.status).toBe(200);
-    const prose = await send.text();
-    // The LEGACY lane answered (demo mode), not the successor's plain-chunk shape.
-    expect(prose).toContain("Demo mode");
+    expect(await send.text()).toContain("Demo mode");
 
     const rows = await waitForRows(ids.chat, 4);
-    const domains = rows.map((row) => row.domain).sort();
-    expect(domains).toEqual(["clock", "meters", "presence", "prose"]);
-    const proseRow = rows.find((row) => row.domain === "prose");
-    // The successor rendered its OWN prose from the same utterance (AI_FAKE
-    // deterministic fallback) — and none of it touched the transcript.
-    expect(JSON.stringify(proseRow?.successor)).toContain("rendered");
+    expect(rows.map((row) => row.domain).sort()).toEqual(["clock", "meters", "presence", "prose"]);
+    expect(JSON.stringify(rows.find((row) => row.domain === "prose")?.successor)).toContain("rendered");
     expect(rows.every((row) => row.verdict === "open")).toBe(true);
   });
 
@@ -146,9 +180,12 @@ describe.runIf(ready)("R4 shadow mode under chat", () => {
       .from(simBranches)
       .where(eq(simBranches.id, ROLLOUT_BRANCH_ID));
     if (!before) throw new Error("rollout branch missing");
-    const skip = await legacyTimeSkip(jsonReq(`/api/chats/${ids.chat}/time-skip`, { amount: "hours" }), ctx(ids.chat));
+    const skip = await legacyTimeSkip(
+      jsonReq(`/api/chats/${ids.chat}/time-skip`, { amount: "hours" }),
+      ctx(ids.chat),
+    );
     expect(skip.status).toBe(200);
-    // The mirror advance is detached — poll the branch clock.
+
     let after = before.storySecond;
     for (let attempt = 0; attempt < 50 && after < before.storySecond + 180 * 60; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -161,28 +198,23 @@ describe.runIf(ready)("R4 shadow mode under chat", () => {
     expect(after).toBeGreaterThanOrEqual(before.storySecond + 180 * 60);
   });
 
-  it("stays silent for legacy chats and rules verdicts through the admin surface", async () => {
-    const send = await chatSend(jsonReq(`/api/chats/${ids.legacyChat}`, { content: "hi" }), ctx(ids.legacyChat));
-    expect(send.status).toBe(200);
-    await send.text();
+  it("rules verdicts and reports only through the self-scoped admin surface", async () => {
+    const legacySend = await chatSend(jsonReq(`/api/chats/${ids.legacyChat}`, { content: "hi" }), ctx(ids.legacyChat));
+    expect(legacySend.status).toBe(200);
+    await legacySend.text();
     await new Promise((resolve) => setTimeout(resolve, 500));
-    const legacyRows = await db()
-      .select()
-      .from(simShadowDivergences)
-      .where(eq(simShadowDivergences.chatId, ids.legacyChat));
-    expect(legacyRows).toHaveLength(0);
+    expect(
+      await db().select().from(simShadowDivergences).where(eq(simShadowDivergences.chatId, ids.legacyChat)),
+    ).toHaveLength(0);
 
-    const list = await shadowGet(
-      new NextRequest(`http://t/api/admin/sim/shadow/${ids.chat}`),
-      ctx(ids.chat),
-    );
+    const list = await shadowGet(new NextRequest(`http://t${shadowPath(ids.chat)}`), ctx(ids.chat));
     expect(list.status).toBe(200);
     const { rows } = (await list.json()) as { rows: { id: string; domain: string; verdict: string }[] };
-    expect(rows.length).toBeGreaterThanOrEqual(4);
     const clockRow = rows.find((row) => row.domain === "clock");
     if (!clockRow) throw new Error("clock row missing");
+
     const ruled = await shadowPatch(
-      jsonReq(`/api/admin/sim/shadow/${ids.chat}`, { id: clockRow.id, verdict: "intentional" }, "PATCH"),
+      jsonReq(shadowPath(ids.chat), { id: clockRow.id, verdict: "intentional" }, "PATCH"),
       ctx(ids.chat),
     );
     expect(ruled.status).toBe(200);
@@ -192,17 +224,15 @@ describe.runIf(ready)("R4 shadow mode under chat", () => {
       .where(eq(simShadowDivergences.id, clockRow.id));
     expect(persisted?.verdict).toBe("intentional");
 
-    // The computed parity report (slice 2): totals over the recorded rows,
-    // ruled rows counted but out of findings.
-    const reportRes = await shadowReport(
-      new NextRequest(`http://t/api/admin/sim/shadow/${ids.chat}/report`),
+    const reportResponse = await shadowReport(
+      new NextRequest(`http://t${shadowPath(ids.chat, "/report")}`),
       ctx(ids.chat),
     );
-    expect(reportRes.status).toBe(200);
-    const { report } = (await reportRes.json()) as {
+    expect(reportResponse.status).toBe(200);
+    const { report } = (await reportResponse.json()) as {
       report: {
         totals: { rows: number; byVerdict: Record<string, number> };
-        prose: { pairs: number; rendered: number };
+        prose: { rendered: number };
         clock: { latestSuccessorClock: string | null };
       };
     };
@@ -211,18 +241,29 @@ describe.runIf(ready)("R4 shadow mode under chat", () => {
     expect(report.prose.rendered).toBeGreaterThanOrEqual(1);
     expect(report.clock.latestSuccessorClock).toContain("Day");
 
-    // The index (the admin screen's front page): this chat listed with counts.
-    const listRes = await shadowList(new NextRequest("http://t/api/admin/sim/shadow"), {
+    const indexResponse = await shadowList(new NextRequest(`http://t${shadowPath()}`), {
       params: Promise.resolve({}),
     });
-    expect(listRes.status).toBe(200);
-    const { chats } = (await listRes.json()) as {
+    expect(indexResponse.status).toBe(200);
+    const { chats } = (await indexResponse.json()) as {
       chats: { chatId: string; characterName: string; total: number; open: number }[];
     };
     const listed = chats.find((chat) => chat.chatId === ids.chat);
     if (!listed) throw new Error("shadow chat missing from the index");
     expect(listed.characterName).toBe("Ana");
-    expect(listed.total).toBeGreaterThanOrEqual(4);
-    expect(listed.open).toBeLessThan(listed.total); // one row was ruled intentional above
+    expect(listed.open).toBeLessThan(listed.total);
+    expect(chats.some((chat) => chat.chatId === ids.foreignChat)).toBe(false);
+
+    expect(
+      (await shadowGet(new NextRequest(`http://t${shadowPath(ids.foreignChat)}`), ctx(ids.foreignChat))).status,
+    ).toBe(404);
+    expect(
+      (
+        await shadowGet(
+          new NextRequest(`http://t/api/admin/sim/shadow/${ids.chat}`),
+          ctx(ids.chat),
+        )
+      ).status,
+    ).toBe(404);
   });
 });

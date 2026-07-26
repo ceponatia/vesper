@@ -1,3 +1,4 @@
+import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
@@ -8,23 +9,24 @@ import { newId } from "@/lib/ids";
 import { log } from "@/server/log";
 import { parseOr } from "@/lib/parse";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import {
+  absoluteImagePath,
+  containedAbsoluteImagePath,
+  dataRoot,
+  imageRelativePath,
+  imagesDirectoryPath,
+} from "./paths";
+
+export { absoluteImagePath, dataRoot, imageRelativePath } from "./paths";
 
 export type ImageRow = typeof images.$inferSelect;
 export type ImageKind = ImageRow["kind"];
 export type ImageEntityKind = NonNullable<ImageRow["entityKind"]>;
 
-/** Runtime asset root. Overridable via DATA_ROOT for tests. */
-export function dataRoot(): string {
-  return process.env.DATA_ROOT ?? path.join(process.cwd(), "data");
-}
-
-/** Canonical relative path stored on the row (docs/images.md). */
-export function imageRelativePath(ownerId: string, imageId: string): string {
-  return `images/${ownerId}/${imageId}.webp`;
-}
-
-export function absoluteImagePath(image: Pick<ImageRow, "path">): string {
-  return path.join(dataRoot(), image.path);
+export interface ImageFileRef {
+  id: string;
+  ownerId: string;
+  path: string;
 }
 
 export interface CreateImageAssetOptions {
@@ -84,23 +86,29 @@ const SHARP_DECODE_LIMITS = { limitInputPixels: 40_000_000, failOn: "error", ani
 
 /**
  * Atomic write protocol: convert to webp, write `<name>.pending.webp`, fsync,
- * rename to the final path. A crash leaves only a pending temp file that
- * sweepOrphans reclaims — never a half-written final file.
+ * rename to the final path. Both the final and temporary paths are revalidated
+ * beneath canonical DATA_ROOT, and O_NOFOLLOW prevents a pre-planted temp-file
+ * symlink from redirecting the write.
  */
 export async function writeWebpAtomic(absolutePath: string, buffer: Buffer): Promise<WrittenImageInfo> {
+  let targetPath = containedAbsoluteImagePath(absolutePath);
   const { data, info } = await sharp(buffer, SHARP_DECODE_LIMITS)
     .webp({ quality: WEBP_QUALITY })
     .toBuffer({ resolveWithObject: true });
-  const pendingPath = pendingPathFor(absolutePath);
-  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-  const handle = await fs.open(pendingPath, "w");
+
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  // Directory creation may have exposed a pre-existing symlink component.
+  targetPath = containedAbsoluteImagePath(targetPath);
+  const pendingPath = containedAbsoluteImagePath(pendingPathFor(targetPath));
+  const flags = constants.O_CREAT | constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW;
+  const handle = await fs.open(pendingPath, flags, 0o600);
   try {
     await handle.writeFile(data);
     await handle.sync();
   } finally {
     await handle.close();
   }
-  await fs.rename(pendingPath, absolutePath);
+  await fs.rename(pendingPath, containedAbsoluteImagePath(targetPath));
   return { width: info.width, height: info.height, bytes: info.size };
 }
 
@@ -155,7 +163,11 @@ export async function deleteOwnedImage(
   opts: { kind?: ImageKind; kinds?: readonly ImageKind[] } = {},
 ): Promise<boolean> {
   const where = and(eq(images.id, imageId), eq(images.ownerId, ownerId), kindGuard(opts));
-  const [row] = await db().select({ path: images.path }).from(images).where(where).limit(1);
+  const [row] = await db()
+    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
+    .from(images)
+    .where(where)
+    .limit(1);
   if (!row) return false;
   await db().delete(images).where(eq(images.id, imageId));
   await fs.unlink(absoluteImagePath(row)).catch(() => undefined); // sweep reconciles stragglers
@@ -203,7 +215,10 @@ export async function deleteOwnedImages(
 ): Promise<number> {
   if (imageIds.length === 0) return 0;
   const where = and(inArray(images.id, imageIds), eq(images.ownerId, ownerId), kindGuard(opts));
-  const rows = await db().select({ path: images.path }).from(images).where(where);
+  const rows = await db()
+    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
+    .from(images)
+    .where(where);
   if (rows.length === 0) return 0;
   await db().delete(images).where(where);
   await Promise.all(rows.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
@@ -224,7 +239,10 @@ export async function deleteChatUploads(chatId: string, anchorMessageIds?: reado
   const where = anchorMessageIds
     ? and(eq(images.chatId, chatId), eq(images.kind, "chat_upload"), inArray(images.anchorMessageId, [...anchorMessageIds]))
     : and(eq(images.chatId, chatId), eq(images.kind, "chat_upload"));
-  const rows = await db().select({ path: images.path }).from(images).where(where);
+  const rows = await db()
+    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
+    .from(images)
+    .where(where);
   if (rows.length === 0) return 0;
   await db().delete(images).where(where);
   await Promise.all(rows.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
@@ -239,7 +257,10 @@ export async function deleteChatUploads(chatId: string, anchorMessageIds?: reado
 export async function deleteChatAssets(chatId: string, kinds: readonly ImageKind[]): Promise<number> {
   if (kinds.length === 0) return 0;
   const where = and(eq(images.chatId, chatId), inArray(images.kind, [...kinds]));
-  const rows = await db().select({ path: images.path }).from(images).where(where);
+  const rows = await db()
+    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
+    .from(images)
+    .where(where);
   if (rows.length === 0) return 0;
   await db().delete(images).where(where);
   await Promise.all(rows.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
@@ -257,10 +278,10 @@ export async function claimChatAttachments(
   chatId: string,
   messageId: string,
   imageIds: readonly string[],
-): Promise<{ id: string; path: string }[]> {
+): Promise<ImageFileRef[]> {
   if (imageIds.length === 0) return [];
   const rows = await db()
-    .select({ id: images.id, path: images.path })
+    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
     .from(images)
     .where(
       and(
@@ -270,26 +291,26 @@ export async function claimChatAttachments(
         eq(images.status, "ready"),
       ),
     );
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  const kept = imageIds.map((id) => byId.get(id)).filter((r): r is { id: string; path: string } => r !== undefined);
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const kept = imageIds.map((id) => byId.get(id)).filter((row): row is ImageFileRef => row !== undefined);
   if (kept.length) {
     await db()
       .update(images)
       .set({ anchorMessageId: messageId })
-      .where(inArray(images.id, kept.map((r) => r.id)));
+      .where(inArray(images.id, kept.map((row) => row.id)));
   }
   return kept;
 }
 
 /** The file paths for a message's already-claimed attachments (regenerate/rerun re-reads). */
-export async function chatAttachmentPaths(chatId: string, imageIds: readonly string[]): Promise<{ id: string; path: string }[]> {
+export async function chatAttachmentPaths(chatId: string, imageIds: readonly string[]): Promise<ImageFileRef[]> {
   if (imageIds.length === 0) return [];
   const rows = await db()
-    .select({ id: images.id, path: images.path })
+    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
     .from(images)
     .where(and(inArray(images.id, [...imageIds]), eq(images.chatId, chatId), eq(images.kind, "chat_upload"), eq(images.status, "ready")));
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  return imageIds.map((id) => byId.get(id)).filter((r): r is { id: string; path: string } => r !== undefined);
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return imageIds.map((id) => byId.get(id)).filter((row): row is ImageFileRef => row !== undefined);
 }
 
 /**
@@ -324,9 +345,9 @@ export async function cloneEntityImages(
     const newImageId = newId();
     const relative = imageRelativePath(dstOwnerId, newImageId);
     try {
-      const absoluteDst = path.join(dataRoot(), relative);
+      const absoluteDst = absoluteImagePath({ id: newImageId, ownerId: dstOwnerId, path: relative });
       await fs.mkdir(path.dirname(absoluteDst), { recursive: true });
-      await fs.copyFile(absoluteImagePath(src), absoluteDst);
+      await fs.copyFile(absoluteImagePath(src), containedAbsoluteImagePath(absoluteDst));
     } catch (err) {
       log.warn("images", "clone image copy failed; skipping", {
         imageId: src.id,
@@ -386,7 +407,8 @@ const SWEEP_GRACE_MS = 10 * 60_000;
  * Idempotent rows↔files reconciliation (docs/images.md). Both directions:
  * ready rows whose file vanished are marked failed; files without a row (and
  * crash-leftover `.pending.webp` temps) older than the grace period are
- * removed. Never throws.
+ * removed. Never throws, and every scanned or row-derived path passes through
+ * the same DATA_ROOT containment and symlink checks as ordinary asset access.
  */
 export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult> {
   const now = opts.now ?? new Date();
@@ -400,14 +422,14 @@ export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult
   };
   try {
     const baseQuery = db()
-      .select({ id: images.id, path: images.path, status: images.status, createdAt: images.createdAt })
+      .select({ id: images.id, ownerId: images.ownerId, path: images.path, status: images.status, createdAt: images.createdAt })
       .from(images);
     const rows = opts.ownerId ? await baseQuery.where(eq(images.ownerId, opts.ownerId)) : await baseQuery;
     result.rowsScanned = rows.length;
-    const rowPaths = new Set(rows.map((r) => r.path));
+    const rowPaths = new Set(rows.map((row) => row.path));
 
     const root = dataRoot();
-    const imagesDir = opts.ownerId ? path.join(root, "images", opts.ownerId) : path.join(root, "images");
+    const imagesDir = imagesDirectoryPath(opts.ownerId);
     let entries: Array<{ parentPath: string; name: string; isFile(): boolean }> = [];
     try {
       entries = await fs.readdir(imagesDir, { recursive: true, withFileTypes: true });
@@ -418,7 +440,7 @@ export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult
     for (const entry of entries) {
       if (!entry.isFile()) continue;
       result.filesScanned += 1;
-      const absolute = path.join(entry.parentPath, entry.name);
+      const absolute = containedAbsoluteImagePath(path.join(entry.parentPath, entry.name));
       const relative = path.relative(root, absolute).split(path.sep).join("/");
       const isPendingTemp = entry.name.endsWith(".pending.webp");
       if (!isPendingTemp && rowPaths.has(relative)) continue;
@@ -441,7 +463,7 @@ export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult
     for (const row of rows) {
       try {
         if (row.status === "ready") {
-          const exists = await fileExists(path.join(root, row.path));
+          const exists = await fileExists(absoluteImagePath(row));
           if (exists) continue;
           await db().update(images).set({ status: "failed" }).where(eq(images.id, row.id));
           result.rowsMarkedFailed += 1;

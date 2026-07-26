@@ -1,9 +1,8 @@
-import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { factKindSchema, factSubjectKindSchema } from "@/contracts";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { jsonError, jsonOk, readBody } from "@/server/api";
 import { addFacts, chatScope } from "@/server/memory";
-import { loadOwnedChat } from "../../../../chats/owned";
+import { withSelfOwnedChat } from "../../owned";
 
 type Params = { chatId: string };
 
@@ -15,20 +14,10 @@ const createBodySchema = z.object({
   pinned: z.boolean().default(false),
 });
 
-/**
- * Ad-hoc dev fact (character-chat-standalone.spec.md §6.1): a testing lever for
- * seeding memory — goes through the real `addFacts` (embedding + supersedence),
- * stamped `origin: "dev"` / confidence 1 with no source anchor, so provenance
- * stays honest and reconciliation never retracts it. `subjectName` defaults to
- * the conversation's character. Admin-only: **404 for non-admin roles**.
- */
-export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
-  const { chatId } = await ctx.params;
+/** Add a development fact to an owner-admin's own conversation only. */
+export const POST = withSelfOwnedChat<Params>(async (_user, owned, req) => {
   const body = await readBody(req, createBodySchema);
   if (!body.ok) return body.response;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
 
   const result = await addFacts(
     chatScope(owned.participant.memoryGroupId),
