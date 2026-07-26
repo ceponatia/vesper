@@ -1,82 +1,159 @@
-# Affordance spec draft — morphology appendages (wings, tail, horns)
+# Affordance spec draft — morphology appendages
 
 Status: draft (companion to
 [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md);
 promote with the plan)
 
-## What this covers
+## Purpose
 
-Physical affordances of nonhuman appendages: what wings, a tail, or horns can
-do in the current space, what constrains them, and what live state (wetness,
-binding, seating) does to them. The morphology attribute categories already
-exist (`wings.*`, `tail.*`, `horns.*`), and the demo cast includes a succubus
-— this domain is not hypothetical.
+Derive current constraints and observable physical effects for wings, tails,
+and horns from morphology attributes plus authoritative pose, presentation,
+space, wetness, and motion state.
 
-The key boundary: this layer owns **capability and constraint**, not
-behavior. It can say the tail is free, pinned under the character's seated
-weight, or tucked beneath a skirt; it cannot decide that the tail *is*
-swaying because she is pleased. Expressive motion is body language and stays
-with the narrator/mood systems — but those systems must consult the
-constraint read so a pinned tail never lashes.
+The central boundary is:
+
+- this layer may say an appendage is currently free, folded, pinned, soaked,
+  drooping, concealed, or moving because of an asserted force/motion;
+- it may constrain narration that would contradict those facts;
+- it does not decide that a pleased character chooses to sway a tail or spread
+  wings;
+- “could shelter another person” and similar offers are future action-capability
+  queries, not ambient visual observations.
 
 ## Contributing attributes
 
-- `wings.type` (membrane / feathered / insectile / energy…), `wings.shape`,
-  `wings.span`, `wings.carriage`
-- `tail.type`, `tail.length`, `tail.tip`
-- `horns.shape`, `horns.length`, `horns.count`
+- `wings.type`, `wings.shape`, `wings.span`, `wings.carriage`;
+- `tail.type`, `tail.length`, `tail.tip`;
+- `horns.shape`, `horns.length`, `horns.count`.
 
-## Physical profile sketch
+Promotion must audit whether type values encode hidden dimensions such as mass,
+prehensility, flexibility, or material. When a value is ambiguous, use a
+conservative provisional mapping or add an orthogonal attribute.
 
-- Wings: `foldedBulk`, `spreadSpan`, `membraneWaterLoading` (by type —
-  feathers soak, membranes shed and drip, energy wings ignore water),
-  `flightCapable`.
-- Tail: `reach`, `flexibility`, `massBand` (a thick demon tail vs a slim
-  spade-tipped one), `prehensile` flag from type.
-- Horns: `clearanceHeight`, `snagProfile` (curved horns catch on hoods and
-  low branches; short nubs do not).
+## Physical profiles
+
+```ts
+interface WingPhysicalProfile {
+  foldedBulk: UnitInterval;
+  spreadSpan: UnitInterval;
+  flexibility: UnitInterval;
+  waterLoading: UnitInterval;
+  flightCapabilityClass?: FlightCapabilityClass;
+}
+
+interface TailPhysicalProfile {
+  lengthBand: UnitInterval;
+  flexibility: UnitInterval;
+  massBand: UnitInterval;
+  prehensility: UnitInterval;
+}
+
+interface HornPhysicalProfile {
+  clearanceHeight: UnitInterval;
+  lateralClearance: UnitInterval;
+  snagAffinity: UnitInterval;
+}
+```
+
+A capability class may constrain downstream action validation, but it is not a
+narrator cue by itself.
+
+## Live inputs
+
+- current appendage carriage/pose;
+- current clothing, binding, seating, and concealment;
+- current space/clearance read;
+- current wetness/contamination;
+- current wind, body motion, or impulse event;
+- asserted contact with furniture, surfaces, garments, or another body.
+
+Unknown space or contact fails closed for specific clearance/contact claims.
 
 ## Phenomena
 
-- **clearance-and-fit** — appendage extent vs a coarse environment space band
-  (open / roomy / confined / narrow). Wings cannot spread in a corridor;
-  spreading them in a tavern is an *offered action with consequences*, not an
-  ambient fact. Horns vs hoods, hats, low doorframes; a chair with a solid
-  back forces the tail to one side. Requires a new environment input
-  (`spaceBand`, coarse ceiling/passage facts) — fail closed: unknown space
-  licenses no clearance claim in either direction.
-- **constraint-state** — the standing read behavior systems consume: each
-  appendage resolves to free / constrained (by seating, clothing, binding,
-  a held object) / concealed, with suppression evidence. Consumed by the
-  narrator contract the same way suppression works elsewhere: a constrained
-  appendage never moves in prose.
-- **wet-loading** — rain or immersion loads wings per `wings.type`: soaked
-  feathers droop, ground the character (`flightCapable` suppressed), and
-  shed droplets on a shake impulse (reusing the hair droplet-shedding
-  pattern); membranes bead and drip quickly. Emits both the visual state and
-  the capability suppression.
-- **shelter-capability** — an *offered-action* affordance: a large wing can
-  cover self or an adjacent character from rain or wind (asserted adjacency
-  required). Acting on it is a command that changes presentation coverage;
-  the affordance only surfaces the possibility.
+### `appendage.constraint_state`
 
-## Worked example
+Produces current constraint reads such as:
 
-Succubus with membrane wings and a long spade tail, seated in a high-backed
-chair in a small room: constraint-state reads wings `constrained (chair)`,
-tail `constrained (seated)`; clearance-and-fit suppresses any wing-spread
-offer (`spaceBand: confined`). She stands by the open door: wings become
-free-but-confined (no full spread), tail free — and only now may the mood
-system animate it.
+- `free`;
+- `partially_constrained`;
+- `pinned_by_seating`;
+- `blocked_by_garment`;
+- `concealed`;
+- `space_limited`.
+
+These reads prevent incompatible narration. A constrained tail cannot lash; a
+folded wing blocked by a chair cannot suddenly spread through it.
+
+### `appendage.actual_motion`
+
+Requires an authoritative pose/motion change, behavior event, wind, or impulse.
+The resolver determines how the physical profile and constraints shape that
+motion. Mood may motivate a tail-sway action upstream, but this layer does not
+invent the action from mood.
+
+### `wing.wet_loading`
+
+Current wetness plus wing material/type may produce observations such as:
+
+- feather clumping or droop;
+- beading on membrane;
+- dripping after immersion;
+- reduced movement or flight constraint.
+
+The affordance read does not apply wetness or change flight state as a hidden
+side effect. Any authoritative capability change must be owned by body/action
+state.
+
+### `appendage.clearance_conflict`
+
+Combines current appendage pose/extent with an authoritative space or garment
+clearance read. It may produce a current constraint or an action-warning read,
+but not an ambient claim that the character attempts the blocked action.
+
+## Future capability queries
+
+The same profiles may later answer separate queries such as:
+
+- can wings fully spread here?;
+- can a wing cover an adjacent person?;
+- can this tail grasp an object?;
+- will these horns fit beneath this hood?.
+
+Those belong to a dedicated `queryCapability(...)` surface. They must not enter
+the narrator's visual-observation queue unless an action is actually attempted
+or completed.
+
+## Worked case
+
+A membrane-winged, long-tailed character sits in a high-backed chair in a small
+room:
+
+- wings resolve as constrained by chair and available space;
+- tail resolves as displaced or pinned according to asserted seating contact;
+- no expressive movement is invented.
+
+After she stands:
+
+- seating constraints clear;
+- room clearance may still prevent full wing spread;
+- a committed tail-sway behavior could now be physically realized by the motion
+  resolver.
+
+## Acceptance tests
+
+- no motion/behavior/force input produces no actual-motion observation;
+- chair contact can constrain wings/tail only when contact is asserted;
+- unknown space does not license full-spread or blocked-space claims;
+- wet loading differs by authored material/type mapping;
+- constraint reads suppress incompatible narrator cues;
+- possible-action queries never appear in ambient visual cue output;
+- concealment blocks observer output without deleting physical state.
 
 ## Open questions
 
-- Who produces the environment `spaceBand` and coarse passage/ceiling facts
-  before location authoring ships? (Cross-ref
-  [location-authoring.plan.md](location-authoring.plan.md).)
-- Species/glamour: when morphology is hidden or shifted, is that an attribute
-  overlay (already supported) or does this layer need a concealment input?
-- Is `massBand`/`prehensile` derivable from `tail.type`, or does the tail
-  vocabulary need the same orthogonality split as `hair.quality`?
-- Do offered-action affordances (shelter, wing-spread) share the candidate
-  contract or need a distinct `possibleAction` output type?
+- Authoritative producer of coarse room, passage, and furniture clearance.
+- Whether morphology type values need orthogonal material/flexibility attributes.
+- Ownership of glamour/concealment state.
+- Which appendage domain should be the first fixture: tail constraints or wing
+  wet loading.
