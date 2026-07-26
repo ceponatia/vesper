@@ -72,6 +72,17 @@ umbrella further down.)
   chat-chip / registered-action fork that currently leaves `meal` and `snack` with no
   meter effects. **Depends on the meter economy landing first** — it is the second use of
   that plan's clock-keyed drift, rhythm `kind`s, and read seam.
+- **Character schema improvements — facial realism + engine-shaped contracts** —
+  [character-schema.plan.md](character-schema.plan.md) (draft; planned 2026-07-20 from an
+  owner ask; position here is provisional). Two threads: the portrait studio's hardcoded
+  beauty bias replaced by a descriptive `face.attractiveness` attribute (grotesque →
+  stunning, per-value `imageGuidance` phrases — evaluative one-worders don't steer image
+  models; descriptive vocabulary does) with the forge's identity-anchor machinery pulling
+  structural fills toward the authored band; and the template-side fields the engine
+  branch's shipped substrate can consume at migration while the chat lane uses them now —
+  typed schedule `kind`s (retiring `inferScheduleKind`), `birthday`, the reserved
+  `attraction` relationship axis, an authored `means` band, and consent-scope
+  scaffolding (rulings 15/16).
 - **World engine refactor — a simulated world under the chat lane** —
   [world-engine-refactor.plan.md](world-engine-refactor.plan.md) (draft; written 2026-07-16
   from an owner brainstorm ask). **An umbrella / north-star doc, not a build item** — it is
