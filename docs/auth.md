@@ -16,7 +16,7 @@ See also: [streaming-api.md §Auth](streaming-api.md) (HTTP surface),
 | File | Role |
 | --- | --- |
 | `auth.ts` | The `betterAuth(...)` instance — Drizzle adapter, email+password, env-gated OAuth + magic-link, explicit session lifetime, `admin()` + `nextCookies()` plugins. **No `next/headers`** so scripts (the seed) can import it. |
-| `magic-link.ts` | Magic-link delivery policy: whether the plugin registers at all, and what a delivery attempt is allowed to log. |
+| `magic-link.ts` | Magic-link delivery policy: the transport registry (empty in v1), whether the plugin registers at all, and what a delivery attempt is allowed to log. |
 | `session.ts` | `getCurrentUser()` → `CurrentUser`, and the `Unauthenticated` sentinel. Lazily imports `next/headers`. |
 | `dev.ts` | Dev-only session minting: `devImpersonate`, `ensureDevCredential`, `DEV_PASSWORD`. |
 | `index.ts` | Barrel — the only thing the rest of the app imports. |
@@ -133,7 +133,7 @@ things turn intimate.
 | Method | v1 status |
 | --- | --- |
 | Email + password | Always on. |
-| Magic link | **Dev-only in v1** — no email transport exists, so the plugin registers in dev (and logs the link) but is **absent in production**. See [Magic link](#magic-link-dev-only-until-a-transport-exists) below. |
+| Magic link | **Dev-only in v1** — no email transport is implemented, so the plugin registers in dev (and logs the link) but is **absent in production**, regardless of env. See [Magic link](#magic-link-dev-only-until-a-transport-exists) below. |
 | Social OAuth (Google/GitHub/Discord) | Env-gated: a provider is enabled only when **both** its `_CLIENT_ID` and `_CLIENT_SECRET` exist; absent ⇒ off (never a boot crash). |
 
 `GET /api/auth-config` reports the enabled methods so the sign-in UI
@@ -148,20 +148,37 @@ A magic link **is a temporary password**, so it must never reach log retention
 `src/server/auth/magic-link.ts` owns the whole
 policy:
 
+- **One fact gates everything: a resolved transport object**, never the presence
+  of an env var. `configuredMagicLinkTransport(): MagicLinkTransport | null` walks
+  a registry of transport factories (each reads its own env, returns `null` when
+  unconfigured). That registry is **empty in v1** — no sender is implemented — so
+  production magic-link is off unconditionally. An env name proves a value was
+  set, not that anything can send mail; gating on presence would enable the plugin
+  and the config flag while delivering nothing.
 - **Registration.** `magicLinkPluginEnabled()` — always in dev; in production only
-  when `magicLinkTransportConfigured()` (a non-empty `RESEND_API_KEY` or
-  `SMTP_URL`). With no transport the plugin is simply **absent** from the
+  when a transport resolves. With none the plugin is simply **absent** from the
   production `plugins` array, exactly as an OAuth provider without creds is absent
   — the `/api/auth/sign-in/magic-link` endpoint doesn't exist there, and
-  `/api/auth-config` reports `magicLink: false` so the button isn't rendered.
+  `/api/auth-config` reports `magicLink: false` (same function) so the button isn't
+  rendered.
+- **Delivery.** `sendMagicLink` awaits `transport.send(email, url)` when one
+  resolves. A rejected send emits an `error` event and **rethrows** so Better Auth
+  sees the failure — an undelivered link is never reported as sent
+  ([resilience.md](resilience.md)).
 - **Logging.** `sendMagicLink` emits one `auth.magic_link` event built by
-  `magicLinkEvent()`: in **dev** `info` with `{ email, url }` (the link is how a
-  local sign-in completes — grep the server console for it); in **production**
-  `{ email }` only — never the url, token, or callback query string — as `info`
-  when a transport delivered it, `warn` when it was dropped for want of one.
-- **Adding a transport.** Implement the send in `sendMagicLink` behind
-  `magicLinkTransportConfigured()`, document the var in `.env.example`, and
-  production magic-link turns itself on. Unit coverage: `magic-link.test.ts`.
+  `magicLinkEvent()` / `magicLinkFailureEvent()`: in **dev** `info` with
+  `{ email, url }` (the link is how a local sign-in completes — grep the server
+  console for it); in **production** `{ email }` only — never the url, token, or
+  callback query string — as `info` when the transport delivered it, `warn` on the
+  (now unreachable) no-transport branch, and `error` with `{ email, error }` on a
+  failed send, where `error` is the exception's **class name** only: a transport's
+  message routinely quotes the request it failed on, which contains the link.
+- **Adding a transport.** Implement the sender, add its factory to the registry in
+  `magic-link.ts` (one entry: read its var, return the transport or `null`),
+  document the var in `.env.example` — and production magic-link turns itself on.
+  `RESEND_API_KEY` / `SMTP_URL` are **reserved names for that future sender and are
+  inert today**. Unit coverage: `magic-link.test.ts` (asserts the production payload
+  key sets and that the gate stays off with both vars set).
 
 ### Trusted origins (LAN dev)
 
@@ -191,6 +208,15 @@ One module owns the asymmetry — **reads widen, writes stay strict**:
 - The `GET /:kind/:id` routes use `findViewable`, then scope sub-resources
   (portraits) to the **entity owner** so a public preview shows the
   author's art — not the viewer's.
+- **The discovery scope is typed to that split.** `searchLibraryIds`
+  (`server/api/library.ts`) is overloaded: any `LibraryKind` may be searched at
+  `owned`, but `public`/`all` are accepted only for a `ShareableKind`, so a
+  visibility-less kind can't reach the `visibility = 'public'` predicate from a
+  statically-known call site. `resolveLibraryScope` is the runtime backstop for
+  dynamic kinds — an unsupported pair returns **no ids** plus an
+  `api.library.scope_unsupported` warn diagnostic instead of emitting SQL
+  against a column the table doesn't have (security-authz.plan.md §Follow-ups
+  item 3; matrix in `library.test.ts`).
 
 #### "Public" is a representation, not the row
 
@@ -260,8 +286,9 @@ returns the resolved user. See [CLAUDE.md](../CLAUDE.md) for the QA flow.
 `BETTER_AUTH_SECRET` (required — signs sessions; **missing in production is a
 boot-time error**, since Better Auth would otherwise fall back to a forgeable
 built-in dev secret), `BETTER_AUTH_URL` (app origin, OAuth callbacks + CSRF),
-the optional `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` pairs, the (unused in
-v1) magic-link transport vars `RESEND_API_KEY` / `SMTP_URL`, and `DEV_PASSWORD`.
+the optional `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` pairs, the magic-link
+transport names `RESEND_API_KEY` / `SMTP_URL` (**reserved and inert** — no sender
+reads them in v1, and setting one enables nothing), and `DEV_PASSWORD`.
 Full table in [getting-started.md](getting-started.md).
 
 ## Later (not v1)
