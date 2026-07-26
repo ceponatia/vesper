@@ -19,12 +19,13 @@ export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   const row = await findPortrait(user.id, id, imageId);
   if (!row) return jsonError("not_found", "portrait not found", 404);
 
-  await db().delete(images).where(eq(images.id, imageId));
-  // a deleted canonical portrait leaves the character avatar-less, never dangling
+  await db().delete(images).where(and(eq(images.id, imageId), eq(images.ownerId, user.id)));
+  // a deleted canonical portrait leaves the character avatar-less, never dangling;
+  // owner predicate direct, not just via findPortrait (security-authz.plan.md slice 6)
   await db()
     .update(characters)
     .set({ avatarImageId: null })
-    .where(and(eq(characters.id, id), eq(characters.avatarImageId, imageId)));
+    .where(and(eq(characters.id, id), eq(characters.ownerId, user.id), eq(characters.avatarImageId, imageId)));
   void fs.unlink(absoluteImagePath(row)).catch(() => undefined); // sweep reconciles stragglers
   return jsonOk({ ok: true });
 });
