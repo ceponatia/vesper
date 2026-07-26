@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { jsonError, jsonOk, withUser } from "@/server/api";
+import { jsonError, jsonOk } from "@/server/api";
 import {
   db,
   simActorLods,
@@ -9,17 +9,13 @@ import {
   simPhysicalLoci,
   simTriggers,
 } from "@/server/db";
+import { withSelfOwnedBranch } from "../owned";
 
 type Params = { branchId: string };
 
-/**
- * R3 slice 3 — the authoring status read: one GET showing a branch's clock,
- * cast (locus + effective-LOD row if assigned), cohorts, and pending alarm
- * count. Admin-only, 404-hidden.
- */
-export const GET = withUser<Params>(async (user, _req, ctx) => {
-  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
-  const { branchId } = await ctx.params;
+/** Self-scoped simulation status for a branch linked to the administrator's own chat. */
+export const GET = withSelfOwnedBranch<Params>(async (_user, owned) => {
+  const branchId = owned.branchId;
   const [branch] = await db()
     .select({ storySecond: simBranches.storySecond, headSequence: simBranches.headSequence, version: simBranches.version })
     .from(simBranches)
