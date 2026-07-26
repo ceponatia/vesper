@@ -94,3 +94,8 @@ Added after the review:
   (arousal → blood flow → swelling/lubrication, cold → shivering, fear →
   trembling, …) whose results — not the processes — surface to the narrator;
   generalizes the meter-economy OQ2 ruling into a response registry
+- [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) —
+  owner-requested body-attribute physics and visual affordance layer
+  (2026-07-26): per-attribute physical contributions composed by
+  cross-attribute phenomenon rules, dirtied by live state/environment/pose
+  changes and surfaced only as perception-gated structured cues
