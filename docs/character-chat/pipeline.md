@@ -395,5 +395,9 @@ Adding a failure class = a literal in the contract + a copy entry in the client 
   away and stranded the chat row, transcript, and memory group (invisible in the hub,
   which inner-joins participants, but fully stored). Ordering matters: the participant
   rows are the only map from chat to memory group, so the purge must run while they
-  still exist.
+  still exist. **Ownership is proved inside `deleteChat(chatId, ownerId)`**, not taken
+  from the caller (security-authz.plan.md slice 2): it re-reads the chat under
+  `id + owner_id` and no-ops with a `chat.delete_denied` warn when nothing matches, and
+  the character traversal is itself owner-scoped — a cross-owner participant row is
+  skipped, and that chat survives.
 
