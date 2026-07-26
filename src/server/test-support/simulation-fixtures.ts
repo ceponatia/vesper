@@ -30,21 +30,13 @@ export function legacyEngineTestPlayerPrincipal(controlledActorIds: string[]): L
 }
 
 /**
- * Narrow compatibility seam for the aggregate engine suite.
+ * Whether the aggregate engine run has opted into legacy synthetic principals.
  *
- * Production and ordinary integration runs remain fail-closed: the exception is
- * active only under Vitest's NODE_ENV=test, only when test:engine explicitly
- * opts in, and only for the one shared synthetic fixture identity. The dedicated
- * authorization suite does not set the env key, so it still proves that every
- * ordinary unanchored player is denied before any write.
+ * This is intentionally only a mode check. The authorization seam separately
+ * proves that the submitted id is NOT a real account before admitting it, so an
+ * opted-in test run still cannot make an unanchored branch writable by a seeded
+ * user. Production and ordinary integration runs never enable this mode.
  */
-export function isLegacyUnanchoredEngineTestPlayer(
-  principalId: string,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  return (
-    env.NODE_ENV === "test" &&
-    env[LEGACY_ENGINE_TEST_PLAYER_ENV] === "1" &&
-    principalId === LEGACY_ENGINE_TEST_PLAYER_ID
-  );
+export function legacyUnanchoredEngineTestMode(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.NODE_ENV === "test" && env[LEGACY_ENGINE_TEST_PLAYER_ENV] === "1";
 }
