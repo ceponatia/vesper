@@ -89,13 +89,59 @@ export const DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024;
 export const MESSAGE_CONTENT_MAX = 100_000;
 
 export interface ReadBodyOptions {
-  /** Reject bodies whose `Content-Length` exceeds this (default {@link DEFAULT_MAX_BODY_BYTES}). */
+  /** Maximum number of actual encoded body bytes to buffer (default {@link DEFAULT_MAX_BODY_BYTES}). */
   maxBytes?: number;
 }
 
+const TOO_LARGE = () => jsonError("payload_too_large", "request body is too large", 413);
+
 /**
- * Zod-validated request body; malformed JSON and schema failures are 400s, and
- * an oversized body (per `Content-Length`) is a 413 before we ever buffer it.
+ * Read at most `maxBytes` from the request stream. `Content-Length` is only an
+ * early-rejection optimization: omitted, chunked, and falsely-low declarations
+ * still hit the same byte counter. Counting chunks by `byteLength` measures the
+ * encoded UTF-8 bytes rather than JavaScript code units.
+ */
+async function readBoundedBytes(req: NextRequest, maxBytes: number): Promise<Uint8Array | NextResponse<ApiError>> {
+  const contentLengthHeader = req.headers.get("content-length");
+  if (contentLengthHeader !== null) {
+    const contentLength = Number(contentLengthHeader);
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) return TOO_LARGE();
+  }
+
+  const body = req.body;
+  if (body === null) return new Uint8Array();
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel("request body exceeds configured byte limit").catch(() => undefined);
+        return TOO_LARGE();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+/**
+ * Zod-validated JSON body with a hard streaming byte cap. Compressed request
+ * bodies are rejected because their expanded size cannot be bounded by counting
+ * transport bytes alone; route callers currently accept identity encoding only.
  */
 export async function readBody<T>(
   req: NextRequest,
@@ -103,15 +149,25 @@ export async function readBody<T>(
   options: ReadBodyOptions = {},
 ): Promise<BodyResult<T>> {
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BODY_BYTES;
-  // Content-Length lets us reject before buffering. Absent on chunked/streamed
-  // bodies — those fall through to req.json() and are not size-capped here.
-  const contentLength = Number(req.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-    return { ok: false, response: jsonError("payload_too_large", "request body is too large", 413) };
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+    throw new RangeError("readBody maxBytes must be a non-negative safe integer");
   }
+
+  const contentEncoding = req.headers.get("content-encoding")?.trim().toLowerCase();
+  if (contentEncoding && contentEncoding !== "identity") {
+    return {
+      ok: false,
+      response: jsonError("unsupported_content_encoding", "compressed request bodies are not supported", 415),
+    };
+  }
+
+  const bounded = await readBoundedBytes(req, maxBytes);
+  if (bounded instanceof NextResponse) return { ok: false, response: bounded };
+
   let raw: unknown;
   try {
-    raw = await req.json();
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bounded);
+    raw = JSON.parse(text);
   } catch {
     return { ok: false, response: jsonError("invalid_json", "request body is not valid JSON", 400) };
   }
