@@ -38,6 +38,7 @@ vi.mock("@/server/auth", () => ({
 }));
 
 import {
+  deleteChat,
   loadChatState,
   loadPreExchangeState,
   persistAssistantReply,
@@ -675,6 +676,61 @@ describe("DELETE /api/characters/:id — conversations go through deleteChat (de
     expect(chatRow).toBeUndefined();
     expect(await messageCount(chat.id)).toBe(0);
     expect(await factCount(chat.memoryGroupId)).toBe(0);
+  });
+
+  it("leaves another owner's conversation intact when the character anomalously participates in it", async (t) => {
+    if (!ready) return t.skip();
+    // The cross-owner participant row violates today's "chat owner == character owner"
+    // invariant, so it is seeded directly — no route can produce it. That is the shape
+    // security-authz.plan.md slice 2 hardens against.
+    const [mole] = await db().insert(characters).values({ ownerId: authState.user.id, name: "Mole", profile: {} }).returning();
+    if (!mole) throw new Error("failed to seed character");
+    const [foreignChat] = await db().insert(characterChats).values({ ownerId: ids.otherUser }).returning({ id: characterChats.id });
+    if (!foreignChat) throw new Error("failed to seed foreign chat");
+    const foreignGroup = newId();
+    await db().insert(chatParticipants).values([
+      { chatId: foreignChat.id, characterId: ids.otherCharacter, memoryGroupId: foreignGroup, sort: 0 },
+      { chatId: foreignChat.id, characterId: mole.id, memoryGroupId: foreignGroup, sort: 1 },
+    ]);
+    await insertMessage(foreignChat.id, "user", "the other owner's transcript");
+    await db()
+      .insert(facts)
+      .values({ chatMemoryGroupId: foreignGroup, kind: "knowledge", subjectName: "other", text: "the other owner's memory" });
+    plantedGroups.push(foreignGroup);
+
+    const res = await characterDelete(new NextRequest(`http://t/api/characters/${mole.id}`, { method: "DELETE" }), {
+      params: Promise.resolve({ id: mole.id }),
+    });
+    expect(res.status).toBe(200);
+
+    // The owned character is gone; the foreign conversation, its transcript and its
+    // memory survive (the traversal skipped it, and `deleteChat` would have refused).
+    expect(await db().select({ id: characters.id }).from(characters).where(eq(characters.id, mole.id))).toHaveLength(0);
+    expect(await db().select({ id: characterChats.id }).from(characterChats).where(eq(characterChats.id, foreignChat.id))).toHaveLength(1);
+    expect(await messageCount(foreignChat.id)).toBe(1);
+    expect(await factCount(foreignGroup)).toBe(1);
+  });
+
+  it("deleteChat refuses a chat the caller does not own: no-op plus a warn diagnostic (docs/resilience.md)", async (t) => {
+    if (!ready) return t.skip();
+    const [foreignChat] = await db().insert(characterChats).values({ ownerId: ids.otherUser }).returning({ id: characterChats.id });
+    if (!foreignChat) throw new Error("failed to seed foreign chat");
+    await db().insert(chatParticipants).values({ chatId: foreignChat.id, characterId: ids.otherCharacter, memoryGroupId: newId() });
+    await insertMessage(foreignChat.id, "user", "still here");
+
+    const warnSpy = vi.spyOn(log, "warn").mockImplementation(() => undefined);
+    try {
+      await deleteChat(foreignChat.id, authState.user.id);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "engine.chat",
+        expect.any(String),
+        expect.objectContaining({ code: "chat.delete_denied", chatId: foreignChat.id, ownerId: authState.user.id }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+    expect(await db().select({ id: characterChats.id }).from(characterChats).where(eq(characterChats.id, foreignChat.id))).toHaveLength(1);
+    expect(await messageCount(foreignChat.id)).toBe(1);
   });
 });
 
