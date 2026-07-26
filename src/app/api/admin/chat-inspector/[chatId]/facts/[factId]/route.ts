@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { jsonError, jsonOk, readBody } from "@/server/api";
 import { db, facts } from "@/server/db";
+import { loadOwnedChat } from "@/app/api/chats/owned";
 import { factReturning, serializeFactRow, tryEmbed } from "../../../shared";
 import { withSelfOwnedChat } from "../../../owned";
 
@@ -18,10 +19,15 @@ const patchBodySchema = z
   });
 
 /** Edit one fact inside an owner-admin's own chat memory group. */
-export const PATCH = withSelfOwnedChat<Params>(async (_user, owned, req, ctx) => {
+export const PATCH = withSelfOwnedChat<Params>(async (user, owned, req, ctx) => {
   const { factId } = await ctx.params;
   const body = await readBody(req, patchBodySchema);
   if (!body.ok) return body.response;
+
+  // Keep the route-layer ownership tripwire load-bearing even though the shared
+  // wrapper has already resolved this exact owner/chat pair.
+  const verified = await loadOwnedChat(owned.chat.id, user.id);
+  if (!verified) return jsonError("not_found", "chat not found", 404);
 
   const edit = body.value;
   const embed = edit.text !== undefined ? await tryEmbed(edit.text) : null;
@@ -35,7 +41,7 @@ export const PATCH = withSelfOwnedChat<Params>(async (_user, owned, req, ctx) =>
       ...(edit.status !== undefined ? { status: edit.status } : {}),
       ...(edit.status === "active" ? { supersededById: null, supersededAt: null } : {}),
     })
-    .where(and(eq(facts.id, factId), eq(facts.chatMemoryGroupId, owned.participant.memoryGroupId)))
+    .where(and(eq(facts.id, factId), eq(facts.chatMemoryGroupId, verified.participant.memoryGroupId)))
     .returning(factReturning);
   if (!updated) return jsonError("not_found", "fact not found", 404);
 
