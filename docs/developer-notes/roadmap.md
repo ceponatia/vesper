@@ -23,15 +23,7 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Security & ownership hardening — 2026-07-25 review follow-ups (S1–S7)** —
-  [security-authz.plan.md](security-authz.plan.md) (active — build started
-  2026-07-26; parked and promoted 2026-07-25 from the deferred backlog on the
-  owner's call). Seven code-verified findings from an external static review:
-  stop logging magic-link URLs in production (S1, the now-fix), allow-listed
-  public DTOs with key-enumeration tests (S2), owner-scoped delete traversal +
-  ownership-verifying `deleteChat` (S3), route-layer ownership guardrail (S4),
-  public-image owner binding (S5), the pre-public-signup auth checklist (S6),
-  and a permanent two-user authorization test matrix (S7).
+_(Nothing active — pick up the top of Next.)_
 
 ## Next (queued)
 

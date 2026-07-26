@@ -5,6 +5,17 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Security & ownership hardening — S1–S7 (COMPLETE)** —
+  [security-authz.plan.md](security-authz.plan.md) — 2026-07-26 — parked,
+  promoted, and built within two days of the external static review. Magic-link
+  URLs never reach production logs (plugin drops without a transport); public
+  entities return allow-listed DTOs with exact-key-set tests instead of full
+  rows; `deleteChat` verifies ownership itself and the character-delete
+  traversal is owner-scoped; public images require image-owner = entity-owner;
+  a 31-site route-mutation tripwire and a two-user authorization matrix are
+  permanent gates; `docs/auth.md` carries the Before-`ALLOW_SIGNUP` checklist.
+  Three latent follow-ups recorded in the plan.
+
 - **Command integrity — serialize, survive, atomize (COMPLETE)** —
   [command-integrity.plan.md](command-integrity.plan.md) · engine.spec §39 rulings
   26–30 — 2026-07-24 — graduated + built same day (backlog A1+A2+A4); three
