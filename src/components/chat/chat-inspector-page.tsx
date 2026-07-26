@@ -77,15 +77,15 @@ function InspectorBody({ chatId }: { chatId: string }) {
             onChanged={reloadSilent}
           />
           <ChatInspectorEpisodes chatId={chatId} episodes={data.episodes} onChanged={reloadSilent} />
-          <SummaryEditor chatId={chatId} summary={data.summary} onSaved={reloadSilent} />
-          <PromptPreview chatId={chatId} />
+          <SummarySection chatId={chatId} summary={data.summary} onSaved={reloadSilent} />
+          <PromptSection chatId={chatId} />
         </div>
       ) : null}
     </PageContainer>
   );
 }
 
-function SummaryEditor({
+function SummarySection({
   chatId,
   summary,
   onSaved,
@@ -94,92 +94,106 @@ function SummaryEditor({
   summary: InspectorSummary | null;
   onSaved: () => void;
 }) {
-  const [text, setText] = useState(summary?.summary ?? "");
+  const [draft, setDraft] = useState(summary?.summary ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
-  async function save() {
+  const save = async () => {
+    if (saving) return;
     setSaving(true);
     setError(null);
-    try {
-      await chatInspectorApi.updateSummary(chatId, text);
-      onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save summary");
-    } finally {
-      setSaving(false);
+    setSaved(false);
+    const result = await chatInspectorApi.updateSummary(chatId, draft);
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.error.message);
+      return;
     }
-  }
+    setSaved(true);
+    onSaved();
+  };
 
   return (
     <section className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-medium tracking-wide text-paper-400 uppercase">Rolling summary</h2>
-        <span className="text-[11px] text-paper-600">
-          {summary ? `${summary.coveredExchanges} exchanges covered` : "No summary row"}
+      <h2 className="text-sm font-medium tracking-wide text-paper-400 uppercase">Rolling summary</h2>
+      <Textarea
+        rows={6}
+        value={draft}
+        maxLength={4000}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setSaved(false);
+        }}
+        placeholder="No rolling summary yet — everything is still inside the verbatim window."
+      />
+      <div className="flex flex-wrap items-center gap-3">
+        <Button size="sm" variant="primary" busy={saving} onClick={() => void save()}>
+          Save summary
+        </Button>
+        {saved ? <span className="text-xs text-ok-400">Saved.</span> : null}
+        {error ? (
+          <span role="alert" className="text-xs text-danger-300">
+            {error}
+          </span>
+        ) : null}
+        <span className="ml-auto text-[11px] text-paper-600">
+          {summary
+            ? `covers ${summary.coveredExchanges} exchange${summary.coveredExchanges === 1 ? "" : "s"} · watermark ${
+                summary.watermarkAt ? summary.watermarkAt.slice(0, 16).replace("T", " ") : "none"
+              }`
+            : "no summary row yet"}
         </span>
       </div>
-      <Textarea
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        rows={6}
-        maxLength={4000}
-        placeholder="No rolling summary yet."
-      />
-      <div className="flex items-center gap-3">
-        <Button type="button" onClick={() => void save()} disabled={saving}>
-          {saving ? "Saving…" : "Save summary"}
-        </Button>
-        {summary?.watermarkAt ? (
-          <span className="text-xs text-paper-600">Watermark {summary.watermarkAt}</span>
-        ) : null}
-      </div>
-      {error ? <p className="text-xs text-danger-300">{error}</p> : null}
     </section>
   );
 }
 
-function PromptPreview({ chatId }: { chatId: string }) {
-  const [open, setOpen] = useState(false);
-  const prompt = useAsyncData(() => (open ? chatInspectorApi.prompt(chatId) : Promise.resolve(null)), [chatId, open]);
+function PromptSection({ chatId }: { chatId: string }) {
+  const prompt = useAsyncData(() => chatInspectorApi.prompt(chatId), [chatId]);
+  const data = prompt.data;
 
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-medium tracking-wide text-paper-400 uppercase">Narrator prompt preview</h2>
-          <p className="mt-1 text-xs text-paper-600">Read-only reconstruction of what the next exchange would send.</p>
-        </div>
-        <Button type="button" variant="secondary" onClick={() => setOpen((value) => !value)}>
-          {open ? "Hide prompt" : "Build prompt"}
+        <h2 className="text-sm font-medium tracking-wide text-paper-400 uppercase">
+          Prompt — what reaches the narrator now
+        </h2>
+        <Button size="sm" onClick={() => prompt.reload()} disabled={prompt.loading}>
+          Refresh
         </Button>
       </div>
-      {open ? (
-        prompt.loading ? (
-          <Skeleton className="h-48 w-full rounded-card" aria-hidden="true" />
-        ) : prompt.error ? (
-          <ErrorState error={prompt.error} onRetry={() => prompt.reload()} />
-        ) : prompt.data ? (
-          <div className="flex flex-col gap-3 rounded-card border border-paper-800 bg-paper-950/50 p-4">
-            <PromptBlock label="System prefix" value={prompt.data.prefix} />
-            <PromptBlock label="Turn tail" value={prompt.data.tail} />
-            <PromptBlock label="Memory queries" value={prompt.data.memoryQueries.join("\n")} />
-            <PromptBlock label="Facts selected" value={prompt.data.memory.facts.join("\n")} />
-            <PromptBlock label="Episodes selected" value={prompt.data.memory.episodes.join("\n")} />
-          </div>
-        ) : null
+
+      {prompt.loading ? (
+        <Skeleton className="h-32 w-full rounded-card" aria-hidden="true" />
+      ) : prompt.error ? (
+        <ErrorState error={prompt.error} onRetry={() => prompt.reload()} />
+      ) : data ? (
+        <>
+          <p className="text-xs text-paper-500">
+            Recall: {data.memory.facts.length} fact{data.memory.facts.length === 1 ? "" : "s"} ·{" "}
+            {data.memory.episodes.length} episode{data.memory.episodes.length === 1 ? "" : "s"} · queries:{" "}
+            <span className="text-paper-400">{data.memoryQueries.length ? data.memoryQueries.join("; ") : "—"}</span>
+          </p>
+          <PromptBlock label="Prefix (cache-stable)" text={data.prefix} defaultOpen />
+          <PromptBlock label="Tail (per-turn)" text={data.tail} defaultOpen />
+        </>
       ) : null}
     </section>
   );
 }
 
-function PromptBlock({ label, value }: { label: string; value: string }) {
+const encoder = new TextEncoder();
+
+function PromptBlock({ label, text, defaultOpen }: { label: string; text: string; defaultOpen?: boolean }) {
   return (
-    <div>
-      <h3 className="mb-1 text-xs font-medium tracking-wide text-paper-500 uppercase">{label}</h3>
-      <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-md bg-paper-900/70 p-3 text-xs text-paper-300">
-        {value || "—"}
+    <details className="rounded-card border border-ink-600 bg-ink-950/40" open={defaultOpen}>
+      <summary className="cursor-pointer px-3 py-2 text-xs text-paper-300 select-none">
+        {label} · {encoder.encode(text).length.toLocaleString()} bytes
+      </summary>
+      <pre className="overflow-x-auto border-t border-ink-600 p-3 font-mono text-xs leading-relaxed text-paper-300">
+        {text || "(empty)"}
       </pre>
-    </div>
+    </details>
   );
 }
