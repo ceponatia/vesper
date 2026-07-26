@@ -1,6 +1,6 @@
 # Security & ownership hardening — 2026-07-25 review follow-ups
 
-Status: **next** (promoted 2026-07-25 from
+Status: **active** (build started 2026-07-26; promoted 2026-07-25 from
 [deferred/security-authz.plan.md](deferred/CLAUDE.md) — parked and promoted the
 same day on the owner's call; queued at the top of
 [roadmap.md](roadmap.md) §Next)
