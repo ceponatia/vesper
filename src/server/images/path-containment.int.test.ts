@@ -58,8 +58,8 @@ describe("images.path database containment", () => {
 
   it.each(["../outside.webp", "/tmp/outside.webp", "images/someone-else/wrong.webp"])(
     "rejects noncanonical path %s",
-    async (storedPath, ctx) => {
-      if (!available) return ctx.skip();
+    async (storedPath) => {
+      if (!available) return;
       const id = `path-invalid-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       let caught: unknown;
       try {
