@@ -9,8 +9,9 @@ import { magicLinkPluginEnabled, sendMagicLink } from "./magic-link";
  * The Better Auth instance (auth.plan.md). Self-hosted, owns its tables in our
  * Postgres via the Drizzle adapter — `session` maps to `auth_sessions` to avoid
  * the collision with the game `sessions` table. Email+password is always on;
- * social OAuth and magic-link are **env-gated** (degrade quietly when their
- * secrets are absent, per docs/resilience.md) so a missing provider never crashes
+ * social OAuth is **env-gated** and magic-link is **transport-gated** (both
+ * degrade quietly when their delivery isn't configured, per docs/resilience.md)
+ * so a missing provider never crashes
  * boot — a method whose delivery isn't configured is absent, never half-working
  * (magic-link's gate and logging policy live in `magic-link.ts`, whose comments
  * explain why production must not log a link). This module is free of
@@ -105,9 +106,14 @@ export const auth = betterAuth({
   session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
   /**
    * Magic-link registers only where its link can actually be delivered — a
-   * production without a transport gets no plugin at all rather than a sign-in
-   * URL in the logs (security-authz.plan.md slice 1), the same shape as the
-   * env-gated social providers above.
+   * production without a resolved transport gets no plugin at all rather than a
+   * sign-in URL in the logs (security-authz.plan.md slice 1), the same shape as
+   * the env-gated social providers above.
+   *
+   * The hook is wrapped rather than passed by reference because Better Auth calls
+   * it as `sendMagicLink(data, request)`, and that second argument would land in
+   * `sendMagicLink`'s injectable `env` parameter — reading as non-production and
+   * logging the URL. The wrapper pins the resolved environment instead.
    *
    * Written as two whole literals rather than a conditional spread because Better
    * Auth infers its `$Infer`/API types from the plugin **tuple**: a spread widens
@@ -116,6 +122,13 @@ export const auth = betterAuth({
    * Set-Cookie on server-action responses.
    */
   plugins: magicLinkPluginEnabled()
-    ? [magicLink({ sendMagicLink, disableSignUp: signupDisabled }), admin(), nextCookies()]
+    ? [
+        magicLink({
+          sendMagicLink: (link) => sendMagicLink({ email: link.email, url: link.url }),
+          disableSignUp: signupDisabled,
+        }),
+        admin(),
+        nextCookies(),
+      ]
     : [admin(), nextCookies()],
 });

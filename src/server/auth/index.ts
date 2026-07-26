@@ -4,7 +4,8 @@
  * for our own route handlers; `Unauthenticated` is the no-session sentinel that
  * `withUser` turns into a 401. Dev-only session minting lives in `dev.ts`;
  * `magicLinkPluginEnabled` reports whether magic-link sign-in is actually
- * available here (dev, or a production transport — security-authz.plan.md slice 1).
+ * available here (dev, or a production with a resolved transport —
+ * security-authz.plan.md slice 1).
  */
 export { auth, enabledSocialProviders } from "./auth";
 export { magicLinkPluginEnabled } from "./magic-link";
