@@ -98,4 +98,8 @@ Added after the review:
   owner-requested body-attribute physics and visual affordance layer
   (2026-07-26): per-attribute physical contributions composed by
   cross-attribute phenomenon rules, dirtied by live state/environment/pose
-  changes and surfaced only as perception-gated structured cues
+  changes and surfaced only as perception-gated structured cues. Fans out
+  into seven per-domain companion spec drafts
+  (`body-attribute-affordances.spec.*.md`, drafted 2026-07-26): hair,
+  skin-surface, soft-tissue, appendages, stature-reach, garment-interaction,
+  thermal — indexed in the plan's `## Companion spec drafts`

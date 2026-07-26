@@ -900,7 +900,9 @@ narrator from treating static descriptors as unconditional behavior.
   and where can monotonic defaults be derived safely from ordered enum scales?
 - **Scope.** After hair proves the system, which body domains produce enough
   narrative value to justify simulation next: skin moisture/flush visibility,
-  body hair, soft-tissue support/compression, wings/tails, or clothing?
+  body hair, soft-tissue support/compression, wings/tails, or clothing? Each
+  candidate now has a draft spec sketching its shape (see
+  `## Companion spec drafts`); the question is ordering, not shape.
 
 ## Proposed slices
 
@@ -964,6 +966,35 @@ narrator from treating static descriptors as unconditional behavior.
   prompts.
 - Keep all consumer-specific wording outside the shared resolver.
 
-Promotion should turn this stub into a real plan plus a companion spec. The spec
-should freeze the profile vocabulary, fixed-point rules, registry invariants,
-input ownership, cue contract, and first hair formulas before implementation.
+## Companion spec drafts
+
+This plan fans out into per-domain specs (drafted 2026-07-26, all
+`Status: draft`, parked beside this stub). Each targets one focused area; the
+shared contracts above are the law they all follow. Promotion turns this stub
+into a real plan and freezes — per adopted domain — the profile vocabulary,
+fixed-point rules, registry invariants, input ownership, cue contract, and
+first formulas in the matching spec before implementation. Hair promotes
+first; other domains promote only when scheduled (see the Scope open
+question).
+
+- [body-attribute-affordances.spec.hair.md](body-attribute-affordances.spec.hair.md)
+  — the proving domain; landing spec for the worked design this plan carries
+  (wind motion, wet clumping, skin adhesion, droplet shedding).
+- [body-attribute-affordances.spec.skin-surface.md](body-attribute-affordances.spec.skin-surface.md)
+  — moisture sheen, flush/pallor visibility vs skin tone, goosebumps,
+  compression marks (the hysteresis flagship), contamination.
+- [body-attribute-affordances.spec.soft-tissue.md](body-attribute-affordances.spec.soft-tissue.md)
+  — gravity/support state, impulse motion response, contact compression for
+  breasts/buttocks/soft mass; strictest anti-tedium discipline.
+- [body-attribute-affordances.spec.appendages.md](body-attribute-affordances.spec.appendages.md)
+  — wings/tail/horns capability-and-constraint reads, clearance vs space,
+  wet wing loading, offered-action shelter.
+- [body-attribute-affordances.spec.stature-reach.md](body-attribute-affordances.spec.stature-reach.md)
+  — pairwise height-differential geometry (kiss/embrace/eye-line), reach
+  envelopes, passage fit, strength-capability offers.
+- [body-attribute-affordances.spec.garment-interaction.md](body-attribute-affordances.spec.garment-interaction.md)
+  — wet cling/translucency, wind response, drape; carries the
+  derived-coverage layering question and a presentation-ownership caveat.
+- [body-attribute-affordances.spec.thermal.md](body-attribute-affordances.spec.thermal.md)
+  — visible breath, touch temperature, radiated warmth; the attribute-light
+  stress test of the phenomenon registry.
