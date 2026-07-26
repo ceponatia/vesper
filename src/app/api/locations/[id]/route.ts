@@ -11,6 +11,7 @@ import {
   queueEmbedRefresh,
   readBody,
   setLocationLinks,
+  toPublicLocation,
   withUser,
 } from "@/server/api";
 
@@ -33,7 +34,11 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   // Links scope to the entity owner so a public preview shows the author's map.
   const links = await loadLocationLinks(row.ownerId, id);
   // `mine` — read-only preview + clone CTA for foreign public rows (slice 6 audit).
-  return jsonOk({ location: { ...row, links }, mine: row.ownerId === user.id });
+  // A foreign viewer gets the allow-listed public representation, not the row
+  // (security-authz.plan.md slice 4); `links` is already a projected `{id,name}`.
+  const mine = row.ownerId === user.id;
+  const location = mine ? { ...row, links } : { ...toPublicLocation(row), links };
+  return jsonOk({ location, mine });
 });
 
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {

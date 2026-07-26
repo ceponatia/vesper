@@ -469,6 +469,6 @@ export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   const { chatId } = await ctx.params;
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
-  await deleteChat({ id: owned.chat.id, ownerId: owned.chat.ownerId });
+  await deleteChat(owned.chat.id, user.id);
   return jsonOk({ deleted: true });
 });

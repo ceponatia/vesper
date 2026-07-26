@@ -11,6 +11,7 @@ import {
   readBody,
   socialCardExtrasSchema,
   socialCardPatchSchema,
+  toPublicSocialCard,
   withUser,
 } from "@/server/api";
 
@@ -31,7 +32,10 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   const row = await findViewable("social_card", id, user.id);
   if (!row) return jsonError("not_found", "social card not found", 404);
   // `mine` tells the builder whether to offer edit/delete or a clone-to-library CTA.
-  return jsonOk({ socialCard: row, mine: row.ownerId === user.id });
+  // A foreign viewer gets the allow-listed public representation, not the row
+  // (security-authz.plan.md slice 4).
+  const mine = row.ownerId === user.id;
+  return jsonOk({ socialCard: mine ? row : toPublicSocialCard(row), mine });
 });
 
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {

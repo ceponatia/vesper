@@ -64,6 +64,12 @@ export interface LibrarySearchOptions {
    * caller relies on; `public` is everyone's published rows (your own public
    * ones included); `all` is owner ∪ public. Only the shareable tables carry a
    * `visibility` column, so pass a non-`owned` scope only for those.
+   *
+   * This returns **ids**; whatever hydrates them for a non-`owned` scope is
+   * feeding foreign rows to a client and must select an explicit column list —
+   * never `select()` (security-authz.plan.md slice 4). Every list route already
+   * does (summary columns only, no `ownerId`/`searchEmbedding`); the detail
+   * routes project through `toPublic*` in `./visibility`.
    */
   scope?: "all" | "public" | "owned";
 }

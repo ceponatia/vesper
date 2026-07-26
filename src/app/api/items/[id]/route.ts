@@ -13,6 +13,7 @@ import {
   jsonOk,
   queueEmbedRefresh,
   readBody,
+  toPublicItem,
   withUser,
 } from "@/server/api";
 
@@ -33,8 +34,11 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   const row = await findViewable("item", id, user.id);
   if (!row) return jsonError("not_found", "item not found", 404);
   // `mine` tells the editor whether to offer the form or a read-only preview +
-  // clone CTA (ux-improvements slice 6 — a foreign Save would 404 anyway).
-  return jsonOk({ item: row, mine: row.ownerId === user.id });
+  // clone CTA (ux-improvements slice 6 — a foreign Save would 404 anyway). A
+  // foreign viewer gets the allow-listed public representation, not the row
+  // (security-authz.plan.md slice 4).
+  const mine = row.ownerId === user.id;
+  return jsonOk({ item: mine ? row : toPublicItem(row), mine });
 });
 
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
