@@ -158,12 +158,14 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     expect(variant?.status).toBe("ready");
     expect(variant?.kind).toBe("portrait_variant");
 
-    const promoted = await promoteVariant(character.id, variantId);
+    const promoted = await promoteVariant(character.id, variantId, userId);
     expect(promoted.ok).toBe(true);
     const [after] = await db().select().from(characters).where(eq(characters.id, character.id)).limit(1);
     expect(after?.avatarImageId).toBe(variantId);
 
-    const denied = await promoteVariant("someone-else", variantId);
+    // Cross-owner rejection has its own suite (variants.int.test.ts); this is
+    // just the unknown-character miss.
+    const denied = await promoteVariant("someone-else", variantId, userId);
     expect(denied.ok).toBe(false);
   });
 

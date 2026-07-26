@@ -96,7 +96,7 @@ export async function uploadAvatar(input: UploadAvatarInput): Promise<UploadAvat
   });
   if (saved?.status !== "ready") return { ok: false, error: "failed to save the uploaded image" };
 
-  const promoted = await promoteVariant(input.characterId, asset.id);
+  const promoted = await promoteVariant(input.characterId, asset.id, input.userId);
   if (!promoted.ok) return { ok: false, error: promoted.error ?? "failed to set the avatar" };
   return { ok: true, avatarImageId: asset.id };
 }

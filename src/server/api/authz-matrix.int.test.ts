@@ -706,16 +706,27 @@ describe.skipIf(!ready)("authorization matrix — adversarial cases", () => {
     expect(await deleteOwnedImage(fixture.portrait, ownerB)).toBe(false);
     expect(await db().select().from(images).where(eq(images.id, fixture.portrait)).limit(1)).toEqual(before);
 
-    // Promotion binds image → character by the entity link, so B cannot mount
-    // A's portrait onto B's own character even though B owns the character.
-    const promoted = await promoteVariant(fixture.bCharacter, fixture.portrait);
+    // Promotion binds image → character by the entity link AND matches both
+    // rows against the caller's owner id (security-authz.plan.md §Follow-ups
+    // item 2), so B cannot mount A's portrait onto B's own character even
+    // though B owns the character. The owner-strict image lookup is the first
+    // predicate to fail, so the miss is indistinguishable from a nonexistent
+    // id — no "that image exists but isn't yours" signal.
+    const promoted = await promoteVariant(fixture.bCharacter, fixture.portrait, ownerB);
     expect(promoted.ok).toBe(false);
-    expect(promoted.ok ? "" : (promoted.error ?? "")).toContain("belong");
+    expect(promoted.ok ? "" : (promoted.error ?? "")).toBe("image not found");
+    expect(await promoteVariant(fixture.bCharacter, newId(), ownerB)).toEqual(promoted);
+
+    // A owning the image is not enough either: the character must be A's too,
+    // so the mirror attempt (A's image, A's caller, B's character) also fails.
+    expect((await promoteVariant(fixture.bCharacter, fixture.portrait, ownerA)).ok).toBe(false);
+
+    // B's character survives every attempt with no avatar mounted.
     const [bChar] = await db().select({ avatarImageId: characters.avatarImageId }).from(characters).where(eq(characters.id, fixture.bCharacter));
     expect(bChar?.avatarImageId).toBeNull();
 
     // And B's own image on B's own character is the case the seam exists for.
-    expect((await promoteVariant(fixture.bCharacter, fixture.bImage)).ok).toBe(true);
+    expect((await promoteVariant(fixture.bCharacter, fixture.bImage, ownerB)).ok).toBe(true);
   });
 
   it("B issues a command against A's successor branch id", async () => {

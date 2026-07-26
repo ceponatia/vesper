@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { characters, db, images } from "../db";
 import { isDemoMode, veniceEditImage, veniceEditModelId } from "../ai";
 import { logEvent } from "../events";
+import { log } from "@/server/log";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer, type ImageRow } from "./assets";
 import { monogramSvg } from "./monogram";
@@ -98,19 +99,55 @@ export interface PromoteVariantResult {
   error?: string;
 }
 
-/** Promotes a ready variant (or avatar) to the character's canonical avatar. */
-export async function promoteVariant(characterId: string, imageId: string): Promise<PromoteVariantResult> {
-  const [image] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
-  if (!image) return { ok: false, error: "image not found" };
+/**
+ * Promotes a ready variant (or avatar) to the character's canonical avatar.
+ *
+ * Owner-strict in its OWN queries (security-authz.plan.md §Follow-ups item 2):
+ * the promote route gates on `findOwnedCharacter` first, but a mutating service
+ * must verify ownership itself rather than inherit it from a caller — and must
+ * not infer it from `entityKind`/`entityId`, which are unverified metadata with
+ * no FK (the S5 shape: pointing an owned image at a foreign PUBLIC entity must
+ * buy nothing). Both rows are matched on `ownerId` in the same query as the id,
+ * and a foreign row is reported as a plain miss, so a caller cannot use the
+ * error to tell "not yours" from "does not exist".
+ */
+export async function promoteVariant(characterId: string, imageId: string, ownerId: string): Promise<PromoteVariantResult> {
+  const [character] = await db()
+    .select({ id: characters.id })
+    .from(characters)
+    .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
+    .limit(1);
+  if (!character) return denyPromotion("images.promote.character_denied", "character not found", characterId, imageId, ownerId);
+
+  const [image] = await db()
+    .select()
+    .from(images)
+    .where(and(eq(images.id, imageId), eq(images.ownerId, ownerId)))
+    .limit(1);
+  if (!image) return denyPromotion("images.promote.image_denied", "image not found", characterId, imageId, ownerId);
+  // Not an authorization miss — an owned image that simply isn't paintable yet.
   if (image.status !== "ready") return { ok: false, error: `image status is ${image.status}` };
   if (image.entityKind !== "character" || image.entityId !== characterId) {
-    return { ok: false, error: "image does not belong to this character" };
+    return denyPromotion("images.promote.entity_mismatch", "image does not belong to this character", characterId, imageId, ownerId);
   }
+
   const updated = await db()
     .update(characters)
     .set({ avatarImageId: imageId })
-    .where(eq(characters.id, characterId))
+    .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
     .returning({ id: characters.id });
   if (updated.length === 0) return { ok: false, error: "character not found" };
   return { ok: true };
+}
+
+/** Diagnostic for a rejected promotion (docs/resilience.md): logged, never thrown. */
+function denyPromotion(
+  code: string,
+  error: string,
+  characterId: string,
+  imageId: string,
+  ownerId: string,
+): PromoteVariantResult {
+  log.warn("images", `promote denied: ${error}`, { code, characterId, imageId, ownerId });
+  return { ok: false, error };
 }
