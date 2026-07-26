@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { characters, db, imageReferences, images, locations, users } from "@/server/db";
+import { canonicalImageRow } from "@/server/test-support";
 
 // Gallery route integration suite (docs/testing.md §api): the GET handler invoked
 // directly with mocked auth against DATABASE_URL. Self-skips when the database is
@@ -95,17 +96,17 @@ beforeAll(async () => {
 
   // Every scene is a character-chat scene: kind="scene", entityKind="character",
   // anchored on a library character the owner still has (the scenes tab inner-joins it).
-  const scene = (over: Partial<typeof images.$inferInsert>) => ({
-    ownerId: user.id,
-    kind: "scene" as const,
-    status: "ready" as const,
-    entityKind: "character" as const,
-    entityId: character.id,
-    path: `images/${user.id}/scene.webp`,
-    prompt: "",
-    meta: {},
-    ...over,
-  });
+  const scene = (over: Partial<typeof images.$inferInsert>) =>
+    canonicalImageRow({
+      ownerId: user.id,
+      kind: "scene" as const,
+      status: "ready" as const,
+      entityKind: "character" as const,
+      entityId: character.id,
+      prompt: "",
+      meta: {},
+      ...over,
+    });
 
   // newest-first by createdAt desc, id desc.
   const [sceneNew1] = await db().insert(images).values(scene({ createdAt: new Date(stamp + 4000) })).returning();
@@ -240,16 +241,16 @@ describe("PATCH /api/gallery/:id (favorite)", () => {
     if (!ready) return t.skip();
     const [foreign] = await db()
       .insert(images)
-      .values({
+      .values(canonicalImageRow({
         ownerId: ids.otherUser,
-        kind: "scene",
-        status: "ready",
-        entityKind: "character",
+        kind: "scene" as const,
+        status: "ready" as const,
+        entityKind: "character" as const,
         entityId: ids.character,
         path: `images/${ids.otherUser}/fav.webp`,
         prompt: "",
         meta: {},
-      })
+      }))
       .returning();
     if (!foreign) throw new Error("failed to seed foreign scene");
     expect((await galleryPatch(patchReq(foreign.id, true), ctx(foreign.id))).status).toBe(404);
@@ -266,16 +267,16 @@ describe("DELETE /api/gallery/:id", () => {
     if (!ready) return t.skip();
     const [row] = await db()
       .insert(images)
-      .values({
+      .values(canonicalImageRow({
         ownerId: authState.user.id,
-        kind: "scene",
-        status: "ready",
-        entityKind: "character",
+        kind: "scene" as const,
+        status: "ready" as const,
+        entityKind: "character" as const,
         entityId: ids.character,
         path: `images/${authState.user.id}/del.webp`,
         prompt: "",
         meta: {},
-      })
+      }))
       .returning();
     if (!row) throw new Error("failed to seed scene to delete");
 
@@ -288,16 +289,16 @@ describe("DELETE /api/gallery/:id", () => {
     if (!ready) return t.skip();
     const [row] = await db()
       .insert(images)
-      .values({
+      .values(canonicalImageRow({
         ownerId: ids.otherUser,
-        kind: "scene",
-        status: "ready",
-        entityKind: "character",
+        kind: "scene" as const,
+        status: "ready" as const,
+        entityKind: "character" as const,
         entityId: ids.character,
         path: `images/${ids.otherUser}/del.webp`,
         prompt: "",
         meta: {},
-      })
+      }))
       .returning();
     if (!row) throw new Error("failed to seed other-owner scene");
 
@@ -310,16 +311,16 @@ describe("DELETE /api/gallery/:id", () => {
     if (!ready) return t.skip();
     const [row] = await db()
       .insert(images)
-      .values({
+      .values(canonicalImageRow({
         ownerId: authState.user.id,
-        kind: "avatar",
-        status: "ready",
-        entityKind: "character",
+        kind: "avatar" as const,
+        status: "ready" as const,
+        entityKind: "character" as const,
         entityId: ids.character,
         path: `images/${authState.user.id}/avatar-del.webp`,
         prompt: "",
         meta: {},
-      })
+      }))
       .returning();
     if (!row) throw new Error("failed to seed avatar");
 
@@ -332,16 +333,16 @@ describe("DELETE /api/gallery/:id", () => {
     if (!ready) return t.skip();
     const [row] = await db()
       .insert(images)
-      .values({
+      .values(canonicalImageRow({
         ownerId: authState.user.id,
-        kind: "portrait_variant",
-        status: "ready",
-        entityKind: "character",
+        kind: "portrait_variant" as const,
+        status: "ready" as const,
+        entityKind: "character" as const,
         entityId: ids.character,
         path: `images/${authState.user.id}/portrait-del.webp`,
         prompt: "",
         meta: {},
-      })
+      }))
       .returning();
     if (!row) throw new Error("failed to seed portrait");
     await db().update(characters).set({ avatarImageId: row.id }).where(eq(characters.id, ids.character));
@@ -364,17 +365,17 @@ describe("POST /api/gallery/delete (bulk)", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ ids }),
     });
-  const scene = (over: Partial<typeof images.$inferInsert>) => ({
-    ownerId: authState.user.id,
-    kind: "scene" as const,
-    status: "ready" as const,
-    entityKind: "character" as const,
-    entityId: ids.character,
-    path: `images/${authState.user.id}/bulk.webp`,
-    prompt: "",
-    meta: {},
-    ...over,
-  });
+  const scene = (over: Partial<typeof images.$inferInsert>) =>
+    canonicalImageRow({
+      ownerId: authState.user.id,
+      kind: "scene" as const,
+      status: "ready" as const,
+      entityKind: "character" as const,
+      entityId: ids.character,
+      prompt: "",
+      meta: {},
+      ...over,
+    });
 
   it("bulk-deletes only the owner's scene rows in the list, skipping foreign + non-scene ids", async (t) => {
     if (!ready) return t.skip();
@@ -386,7 +387,7 @@ describe("POST /api/gallery/delete (bulk)", () => {
       .returning();
     const [foreign] = await db()
       .insert(images)
-      .values(scene({ ownerId: ids.otherUser, path: `images/${ids.otherUser}/bulk.webp` }))
+      .values(scene({ ownerId: ids.otherUser }))
       .returning();
     if (!a || !b || !avatar || !foreign) throw new Error("failed to seed bulk-delete scenes");
 

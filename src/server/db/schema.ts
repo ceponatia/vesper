@@ -926,6 +926,14 @@ export const images = pgTable(
     anchorMessageId: text("anchor_message_id"),
     /** Relative to data/, e.g. images/<ownerId>/<imageId>.webp */
     path: text("path").notNull(),
+    /**
+     * Encoded size of the stored webp (rate-limits.plan.md slice 4). `writeWebpAtomic`
+     * already reported this into `meta.bytes`; promoting it to a column makes the
+     * per-owner storage quota a `SUM(bytes)` over an indexed column rather than a JSONB
+     * scan. Deliberately **derived, never a counter** — every delete path reclaims quota
+     * for free, and no decrement can be forgotten. 0 on a pending or failed row.
+     */
+    bytes: integer("bytes").notNull().default(0),
     prompt: text("prompt").notNull().default(""),
     sourceImageId: text("source_image_id"),
     status: text("status", { enum: ["pending", "ready", "failed"] }).notNull().default("pending"),
@@ -979,6 +987,12 @@ export const jobs = pgTable(
     type: text("type", {
       enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_meanwhile", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify"],
     }).notNull(),
+    /**
+     * Who the work is being done for (rate-limits.plan.md slice 5) — the key the
+     * per-user concurrency cap counts over. Nullable: system//engine-internal jobs
+     * belong to no user, and legacy rows predate the column. Uncapped when null.
+     */
+    ownerId: text("owner_id").references(() => users.id),
     status: text("status", { enum: ["queued", "running", "done", "failed"] }).notNull().default("queued"),
     runnerId: text("runner_id"),
     heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }).notNull().defaultNow(),
@@ -989,7 +1003,11 @@ export const jobs = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
-  (t) => [index("jobs_queued_idx").on(t.status, t.type)],
+  (t) => [
+    index("jobs_queued_idx").on(t.status, t.type),
+    /** Backs the per-owner active-job count in the concurrency cap's conditional insert. */
+    index("jobs_owner_status_idx").on(t.ownerId, t.status),
+  ],
 );
 
 export const events = pgTable(
@@ -1001,6 +1019,39 @@ export const events = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("events_type_idx").on(t.type)],
+);
+
+/**
+ * Durable usage accounting for cost-bearing work (rate-limits.plan.md slice 3).
+ *
+ * Burst limits stay in-process — losing them to a restart is harmless. These do
+ * not: an in-memory daily budget is reset by crash-looping the process, which is
+ * precisely the move an abuser would make. One row per (owner, kind, UTC day).
+ *
+ * `windowStart` is a `YYYY-MM-DD` UTC date rather than a timestamp on purpose —
+ * the reset boundary becomes a fact about the key, so nothing has to sweep
+ * expired rows or fire a timer for a counter to roll over.
+ */
+export const usageCounters = pgTable(
+  "usage_counters",
+  {
+    id: id(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** A `UsageCounterKind` (src/server/api/quota.ts) — vocabulary is a code edit, never a migration. */
+    kind: text("kind").notNull(),
+    /** UTC calendar day, `YYYY-MM-DD`. */
+    windowStart: text("window_start").notNull(),
+    /** Monotonic within a window; bigint because byte counters outgrow int4 quickly. */
+    amount: bigint("amount", { mode: "number" }).notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    /** The upsert target — `ON CONFLICT` needs this to be unique, not merely indexed. */
+    uniqueIndex("usage_counters_owner_kind_window_idx").on(t.ownerId, t.kind, t.windowStart),
+  ],
 );
 
 

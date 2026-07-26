@@ -2,7 +2,7 @@ import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
 import { characters, db, images, users } from "@/server/db";
-import { probeIntegrationDb } from "@/server/test-support";
+import { canonicalImageRow, probeIntegrationDb } from "@/server/test-support";
 import { promoteVariant } from "./variants";
 
 // Ownership coverage for the avatar-promotion seam (security-authz.plan.md
@@ -45,15 +45,16 @@ async function seedCharacter(ownerId: string, name: string, visibility: "private
 async function seedReadyImage(ownerId: string, characterId: string): Promise<string> {
   const [row] = await db()
     .insert(images)
-    .values({
-      ownerId,
-      kind: "portrait_variant",
-      entityKind: "character",
-      entityId: characterId,
-      path: `images/${ownerId}/${newId()}.webp`,
-      prompt: "a portrait variant",
-      status: "ready",
-    })
+    .values(
+      canonicalImageRow({
+        ownerId,
+        kind: "portrait_variant" as const,
+        entityKind: "character" as const,
+        entityId: characterId,
+        prompt: "a portrait variant",
+        status: "ready" as const,
+      }),
+    )
     .returning({ id: images.id });
   if (!row) throw new Error("image insert failed");
   return row.id;

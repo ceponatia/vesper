@@ -4,7 +4,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { characterDraftSchema, derivePortraitAttributes } from "@/server/authoring";
-import { FORGE_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
+import { backpressureRejection, dailyBudgetRejection, jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { db, images } from "@/server/db";
 import { absoluteImagePath } from "@/server/images";
 import { findOwnedCharacter } from "../../owned";
@@ -29,9 +29,11 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const character = await findOwnedCharacter(id, user.id);
   if (!character) return jsonError("not_found", "character not found", 404);
   if (!character.avatarImageId) return jsonError("no_avatar", "generate or upload a portrait first", 400);
-  if (!rateLimit(`forge:${user.id}`, FORGE_RATE_LIMIT)) {
-    return jsonError("rate_limited", "too many forge requests; try again in a minute", 429);
-  }
+
+  const shed = await backpressureRejection("text", user, req);
+  if (shed) return shed;
+  const overBudget = await dailyBudgetRejection("provider_text_day", user, req);
+  if (overBudget) return overBudget;
 
   const [row] = await db().select().from(images).where(eq(images.id, character.avatarImageId)).limit(1);
   if (!row || row.status !== "ready") return jsonError("no_avatar", "the portrait is not ready yet", 400);
@@ -55,4 +57,4 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     diagnostics: sink.items,
     portrait: { conflicts: result.conflicts, filled: result.filled },
   });
-});
+}, { limit: "forge" });

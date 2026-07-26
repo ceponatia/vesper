@@ -5,13 +5,14 @@ import { chatActionIdSchema, chatReplyFailureSchema, characterProfileSchema, emp
 import { resolveChatModelId } from "@/lib/narrative-models";
 import { parseOr } from "@/lib/parse";
 import {
-  CHAT_RATE_LIMIT,
+  backpressureRejection,
+  dailyBudgetRejection,
   drainingStreamResponse,
   jsonError,
   jsonOk,
   MESSAGE_CONTENT_MAX,
-  rateLimit,
   readBody,
+  userRateLimitRejection,
   withUser,
 } from "@/server/api";
 import { characterChats, characterChatMessages, characterChatState, db } from "@/server/db";
@@ -262,9 +263,20 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
   if (owned.chat.archivedAt) return jsonError("chat_archived", "this conversation is archived; restore it to continue", 409);
-  if (!rateLimit(`chat:${user.id}`, CHAT_RATE_LIMIT)) {
-    return jsonError("rate_limited", "too many chat messages; try again in a minute", 429);
+
+  // Re-running a turn the caller already has is the cheapest thing to spam and
+  // costs a full narrator call each time, so it carries its own tighter window
+  // on top of the route-wide `chat` one.
+  if (body.value.kind === "regenerate" || body.value.kind === "rerun") {
+    const throttled = userRateLimitRejection("regenerate", user.id, req);
+    if (throttled) return throttled;
   }
+
+  const shed = await backpressureRejection("text", user, req);
+  if (shed) return shed;
+
+  const overBudget = await dailyBudgetRejection("provider_text_day", user, req);
+  if (overBudget) return overBudget;
 
   // Routing parity (presentation-charter.plan.md §4; engine.spec.operations.md
   // §39 rulings 18-19): authority is resolved ONCE, before kind dispatch. On a
@@ -442,7 +454,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
       "x-accel-buffering": "no",
     },
   });
-});
+}, { limit: "chat" });
 
 /** PATCH /api/chats/:chatId — rename, archive, or restore. */
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {

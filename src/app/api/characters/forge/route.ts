@@ -12,7 +12,7 @@ import {
   forgeCharacterSection,
   redraftCharacterScope,
 } from "@/server/authoring";
-import { FORGE_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
+import { backpressureRejection, dailyBudgetRejection, jsonError, jsonOk, readBody, withUser } from "@/server/api";
 
 const forgeBodySchema = z.object({
   /** Required for create mode; fill and redraft work from the draft alone (sheet-only, no guidance). */
@@ -35,10 +35,12 @@ const forgeBodySchema = z.object({
 export const POST = withUser(async (user, req: NextRequest) => {
   const body = await readBody(req, forgeBodySchema);
   if (!body.ok) return body.response;
+
+  const shed = await backpressureRejection("text", user, req);
+  if (shed) return shed;
   // After body validation so a malformed request doesn't burn the budget.
-  if (!rateLimit(`forge:${user.id}`, FORGE_RATE_LIMIT)) {
-    return jsonError("rate_limited", "too many forge requests; try again in a minute", 429);
-  }
+  const overBudget = await dailyBudgetRejection("provider_text_day", user, req);
+  if (overBudget) return overBudget;
 
   const sink = new DiagnosticCollector();
   const { prompt, mode, section, scope, draft } = body.value;
@@ -59,4 +61,4 @@ export const POST = withUser(async (user, req: NextRequest) => {
   }
   const forged = await forgeCharacter({ prompt, userId: user.id, sink });
   return jsonOk({ draft: forged, diagnostics: sink.items });
-});
+}, { limit: "forge" });

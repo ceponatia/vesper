@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { CHAT_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
+import { imageRenderRejection, jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { db, images } from "@/server/db";
 import { loadOwnedChat } from "../../owned";
 import { hasLiveChatSceneJob, queueChatScene } from "./queue";
@@ -53,17 +53,22 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
 });
 
 /** POST /api/chats/:chatId/scene — queue a scene render from the recent chat. */
-export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  const { chatId } = await ctx.params;
-  const parsed = await readBody(req, sceneBodySchema);
-  if (!parsed.ok) return parsed.response;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
-  if (!rateLimit(`chat_scene:${user.id}`, CHAT_RATE_LIMIT)) {
-    return jsonError("rate_limited", "too many scene renders; try again in a minute", 429);
-  }
+export const POST = withUser<Params>(
+  async (user, req: NextRequest, ctx) => {
+    const { chatId } = await ctx.params;
+    const parsed = await readBody(req, sceneBodySchema);
+    if (!parsed.ok) return parsed.response;
+    const owned = await loadOwnedChat(chatId, user.id);
+    if (!owned) return jsonError("not_found", "chat not found", 404);
 
-  const jobId = await queueChatScene({ userId: user.id, chatId, character: owned.character });
-  if (!jobId) return jsonError("scene_busy", "a scene is already rendering for this chat", 409);
-  return jsonOk({ jobId, chatId }, 202);
-});
+    const blocked = await imageRenderRejection(user, req);
+    if (blocked) return blocked;
+
+    const jobId = await queueChatScene({ userId: user.id, chatId, character: owned.character });
+    if (!jobId) {
+      return jsonError("scene_busy", "a scene render is already in flight; wait for it to finish", 409);
+    }
+    return jsonOk({ jobId, chatId }, 202);
+  },
+  { limit: "image_generate" },
+);

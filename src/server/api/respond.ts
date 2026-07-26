@@ -3,6 +3,8 @@ import type { ZodType } from "zod";
 import { log } from "@/server/log";
 import { getCurrentUser, Unauthenticated, type CurrentUser } from "@/server/auth";
 import { csrfRejection, type RouteCsrfOptions } from "./csrf";
+import { ipRateLimitRejection, userRateLimitRejection } from "./route-limits";
+import type { ApiLimitName } from "./rate-limit";
 
 /**
  * Route-handler plumbing (docs/streaming-api.md, docs/resilience.md §7):
@@ -28,14 +30,26 @@ export interface RouteContext<P> {
 
 export type UserHandler<P> = (user: CurrentUser, req: NextRequest, ctx: RouteContext<P>) => Promise<Response>;
 
+export interface RouteLimitOptions {
+  /**
+   * Named per-user burst policy (`rate-limit.ts`). Declared here rather than
+   * called inside the handler so the limit cannot be forgotten halfway down a
+   * route, and so it is enforced before any body read or query runs.
+   */
+  limit?: ApiLimitName;
+}
+
+export type RouteOptions = RouteCsrfOptions & RouteLimitOptions;
+
 /**
- * Wraps a handler with Better Auth session resolution, centralized CSRF origin
- * validation for cookie-bearing mutations, and the error envelope. No signed
- * session ⇒ **401 `unauthenticated`**; auth infrastructure failures stay 500s.
+ * Wraps a handler with Better Auth session resolution, per-IP and per-user rate
+ * limiting, centralized CSRF origin validation for cookie-bearing mutations, and
+ * the error envelope. No signed session ⇒ **401 `unauthenticated`**; auth
+ * infrastructure failures stay 500s.
  */
 export function withUser<P = Record<string, never>>(
   handler: UserHandler<P>,
-  options: RouteCsrfOptions = {},
+  options: RouteOptions = {},
 ): (req: NextRequest, ctx: RouteContext<P>) => Promise<Response> {
   return withRoute<P>(async (req, ctx) => {
     let user: CurrentUser;
@@ -48,17 +62,30 @@ export function withUser<P = Record<string, never>>(
       log.error("api", "auth resolution failed", { error: errorText(err) });
       return jsonError("auth_unavailable", "could not resolve the current user", 500);
     }
+    if (options.limit !== undefined) {
+      const limited = userRateLimitRejection(options.limit, user.id, req);
+      if (limited) return limited;
+    }
     return handler(user, req, ctx);
   }, options);
 }
 
-/** Shared envelope/error and CSRF protection for routes without a resolved user. */
+/**
+ * Shared envelope/error, per-IP rate limiting, and CSRF protection for routes
+ * without a resolved user.
+ *
+ * The IP window runs **first**, ahead of both CSRF and `withUser`'s session
+ * resolution, so an unauthenticated flood costs a map lookup rather than a
+ * database round trip (rate-limits.plan.md slice 2).
+ */
 export function withRoute<P = Record<string, never>>(
   handler: (req: NextRequest, ctx: RouteContext<P>) => Promise<Response>,
-  options: RouteCsrfOptions = {},
+  options: RouteOptions = {},
 ): (req: NextRequest, ctx: RouteContext<P>) => Promise<Response> {
   return async (req, ctx) => {
     try {
+      const limited = ipRateLimitRejection(req);
+      if (limited) return limited;
       const csrf = csrfRejection(req, options);
       if (csrf) return csrf;
       return await handler(req, ctx);

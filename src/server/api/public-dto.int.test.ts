@@ -10,7 +10,7 @@ import {
   toPublicSocialCard,
 } from "@/server/api";
 import { characters, db, images, items, locations, socialCards, users } from "@/server/db";
-import { probeIntegrationDb } from "@/server/test-support";
+import { canonicalImageRow, probeIntegrationDb } from "@/server/test-support";
 
 // Integration suite for the public-read hardening (security-authz.plan.md
 // slices 3 + 4): the allow-listed public representation a FOREIGN viewer gets
@@ -125,28 +125,30 @@ describe.skipIf(!ready)("public representations for foreign viewers", () => {
 
     const [authorImage] = await db()
       .insert(images)
-      .values({
-        ownerId: ownerA,
-        kind: "avatar",
-        entityKind: "character",
-        entityId: publicCharacterId,
-        path: `images/${ownerA}/author.webp`,
-        prompt: "the author's private generation prompt",
-        status: "ready",
-      })
+      .values(
+        canonicalImageRow({
+          ownerId: ownerA,
+          kind: "avatar" as const,
+          entityKind: "character" as const,
+          entityId: publicCharacterId,
+          prompt: "the author's private generation prompt",
+          status: "ready" as const,
+        }),
+      )
       .returning({ id: images.id });
     // The slice-3 attack shape: B writes A's public character into their OWN
     // image's polymorphic metadata. Nothing about the row is A's.
     const [impostorImage] = await db()
       .insert(images)
-      .values({
-        ownerId: ownerB,
-        kind: "avatar",
-        entityKind: "character",
-        entityId: publicCharacterId,
-        path: `images/${ownerB}/impostor.webp`,
-        status: "ready",
-      })
+      .values(
+        canonicalImageRow({
+          ownerId: ownerB,
+          kind: "avatar" as const,
+          entityKind: "character" as const,
+          entityId: publicCharacterId,
+          status: "ready" as const,
+        }),
+      )
       .returning({ id: images.id });
     authorImageId = authorImage!.id;
     impostorImageId = impostorImage!.id;
