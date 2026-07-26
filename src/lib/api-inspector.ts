@@ -136,7 +136,7 @@ const failureReportSchema = z.object({
   byLeg: arrayOf(tallyRowSchema),
   byCause: arrayOf(tallyRowSchema),
 });
-const EMPTY_FAILURE_REPORT = { recent: [], total: 0, byLeg: [], byCause: [] } as const;
+const EMPTY_FAILURE_REPORT = { recent: [], total: 0, byLeg: [], byCause: [] };
 
 export const agentRunDetailRowSchema = z.object({ label: textOr(""), items: arrayOf(z.string().catch("")) });
 export type AgentRunDetailRow = z.infer<typeof agentRunDetailRowSchema>;
@@ -168,7 +168,7 @@ const runReportSchema = z.object({
   total: z.number().catch(0),
   byLeg: arrayOf(runStatRowSchema),
 });
-const EMPTY_RUN_REPORT = { recent: [], total: 0, byLeg: [] } as const;
+const EMPTY_RUN_REPORT = { recent: [], total: 0, byLeg: [] };
 
 /**
  * Global fields remain as empty compatibility defaults for the current UI, but
@@ -198,7 +198,7 @@ const compositionReportSchema = z.object({
   byCode: arrayOf(tallyRowSchema),
   bySite: arrayOf(tallyRowSchema),
 });
-const EMPTY_COMPOSITION_REPORT = { recent: [], total: 0, byCode: [], bySite: [] } as const;
+const EMPTY_COMPOSITION_REPORT = { recent: [], total: 0, byCode: [], bySite: [] };
 
 export const compositionHealthSchema = z.object({
   days: z.number().catch(7),
