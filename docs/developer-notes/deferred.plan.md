@@ -136,6 +136,19 @@ specs, plus a recognizable-features projection that derives identity cues from
 located body truth and observer visual memory rather than storing a duplicate
 feature array. Thermal observations remain explicitly out of scope.
 
+## Clothing state graph and condition gradients
+
+_Owner direction 2026-07-27. Stub:
+[deferred/clothing-state-graph.plan.md](deferred/clothing-state-graph.plan.md)._
+Make garments persistent semantic graphs rather than worn-name strings:
+authored parts/materials/closures instantiate into located clothing objects
+whose sleeves, fasteners, tucks, displacement, wetness, cleanliness, creasing,
+wear, local contaminants, and damage can change independently. The runtime
+derives one coverage/occlusion/material read and offers only a bounded,
+perception-safe observation to narration/images. This is the upstream wardrobe
+state expected by the body-affordance garment companion; it reuses the
+successor item-condition numerics and proves the interaction in chat first.
+
 ## Owner-gated live eval runs — run on request, not roadmap items
 
 _Removed from the roadmap 2026-07-13 (owner ruling: manual OpenRouter-spend

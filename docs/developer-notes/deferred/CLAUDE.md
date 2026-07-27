@@ -108,3 +108,11 @@ Added after the review:
   through visibility × uniqueness × importance; no duplicate feature array).
   Passive thermal observations are out of scope and live only as a ruling in
   the plan.
+- [clothing-state-graph.plan.md](clothing-state-graph.plan.md) —
+  owner-requested clothing object graph + condition-gradient plan (2026-07-27):
+  sparse authored garment-part blueprints become stable chat/world instances
+  with typed loci and presentation operations; fixed-point wetness,
+  cleanliness, crease, and wear compose with regional contaminants/damage,
+  then derive one effective coverage/visibility read and bounded garment
+  observations. Chat-first upstream wardrobe owner for the garment-affordance
+  companion above, not a parallel cloth simulator or attention model.

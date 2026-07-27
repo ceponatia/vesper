@@ -18,6 +18,9 @@ and motion to derive current visual garment effects:
 Garments are not body attributes. This spec is an integration consumer of the
 same [domain architecture](body-attribute-affordances.spec.architecture.md)
 because body-adjacent visual narration needs clothing and body state to agree.
+The upstream [clothing state graph](clothing-state-graph.plan.md) draft owns the
+blueprint, stable instance/locus, presentation operations, condition gradients,
+and localized marks this domain reads; this domain must not duplicate them.
 
 ## Ownership boundary
 
