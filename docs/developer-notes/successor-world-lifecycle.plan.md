@@ -1,9 +1,24 @@
 # Successor world lifecycle — provision once, delete honestly, count what's real
 
-Status: next (graduated 2026-07-27 from successor-engine backlog item **E20**,
-parked 2026-07-24 from the successor engine & chat-UI product review. Owner
-rulings recorded below — copy into engine.spec §39 at build. Queued at the top
-of [roadmap.md](roadmap.md) §Next.)
+Status: shipped — 2026-07-27 (graduated from successor-engine backlog item
+**E20** and built the same day; all four slices. Rulings E20-1..3 recorded in
+engine.spec §39 as rulings 31–33. Built by three Opus subagents (slice 1 ·
+slices 3+4 · slice 2), verified against the Fly deploy: migration 0089 applied
+to Neon; prod E2E confirmed create/replay-verbatim/`idempotency_mismatch`/
+delete-with-world through both the API and the real Worlds UI; the one-time
+orphan sweep deleted the **6** historically-leaked worlds with zero failures
+and the follow-up dry-run is empty, routed worlds untouched. Deviations from
+the sketch, all deliberate: the admin sweep route lives at
+`/api/admin/self/sim/sweep-orphan-worlds` (the `withOwnerAdmin` gate only
+admits the `/api/admin/self` namespace — house idiom, handler + one-line
+shim); a THIRD delete-confirm surface (the in-conversation dialog) also gained
+the world-consequence copy; dropping `"archived"` propagated into the
+`materialWorldStatuses` contract; `provisionStarterWorld` resumes via
+stage-level existence guards rather than per-row upserts; the quota
+deliberately ignores `successor_authoritative` (nothing sets it — in-code
+comment marks the owner). Leftover: none of this plan's own; the pre-existing
+red simulation-store int suites found while gating are tracked separately
+(rate-limits OQ3 territory).)
 
 Three integrity gaps around the `/worlds` front door, one theme: a successor
 world's **lifecycle** must be as honest as its turns now are. **Provision

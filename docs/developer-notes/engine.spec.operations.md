@@ -558,6 +558,33 @@ that needs it.
     (§14.2 — the player principal never moves an NPC); a decline renders as the
     command's own §14.4 refusal (one surface for accept and decline). A version
     conflict commits nothing (honest `rejected`), never a phantom solo travel.
+31. **A successor world hard-deletes with its chat** — RESOLVED (2026-07-27,
+    successor-world-lifecycle E20-1): the front door is 1:1 chat↔world, and the app
+    treats archive as the everyday action (`archived_at` on the chat) and delete as
+    the one destructive verb — so `deleteChat` deletes the world graph (one
+    `sim_worlds` delete; cascades take branches + branch-scoped rows) in the same
+    transaction, and every delete-confirm surface states the consequence.
+    (Archive-the-world and detach-and-keep rejected; a D19 fork / multi-chat-world
+    future re-opens this ruling.) The orphan-world sweeper
+    (`sweepOrphanSimWorlds`, admin `POST /api/admin/self/sim/sweep-orphan-worlds`)
+    applies the same ruling to already-leaked and degraded-path worlds — no chat on
+    any branch, no pending provisioning record, 1h DB-clock grace (E20-2).
+32. **Provisioning is synchronous and resumable — one world per tap** — RESOLVED
+    (2026-07-27, successor-world-lifecycle E20-3): the player waits on one request;
+    a durable `sim_provisioning_requests` record (client-minted `requestId`, state
+    machine `requested → world_created → chat_created → relationships_seeded →
+    ready | failed`, payload-hash bound) under an owner-scoped
+    `successor_provision:${ownerId}` lock makes a retry RESUME a partial world —
+    the `stw-` stamp derives from the idempotency key, so every seeder id is stable
+    and the command-runner's dedupe finally applies. Completed requests replay
+    verbatim; failures run compensating cleanup (no partial state survives —
+    `seed_failed`/`flip_failed` retired for one `provision_failed`).
+33. **The world quota counts what's real** — RESOLVED (2026-07-27,
+    successor-world-lifecycle slice 4): the per-owner cap counts
+    `successor_narrative_view` chats plus non-terminal provisioning records,
+    checked inside the provisioning lock (race-free). Shadow chats no longer
+    count; a `failed` record holds no slot; a resume/replay is never re-charged
+    (a half-built world locked out by its own cap would strand forever).
 
 ## 40. Initial conformance checklist
 
