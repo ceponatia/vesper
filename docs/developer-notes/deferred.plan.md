@@ -140,16 +140,13 @@ feature array. Thermal observations remain explicitly out of scope.
 
 ## Clothing state graph and condition gradients
 
-_Owner direction 2026-07-27. Stub:
-[deferred/clothing-state-graph.plan.md](deferred/clothing-state-graph.plan.md)._
-Make garments persistent semantic graphs rather than worn-name strings:
-authored parts/materials/closures instantiate into located clothing objects
-whose sleeves, fasteners, tucks, displacement, wetness, cleanliness, creasing,
-wear, local contaminants, and damage can change independently. The runtime
-derives one coverage/occlusion/material read and offers only a bounded,
-perception-safe observation to narration/images. This is the upstream wardrobe
-state expected by the body-affordance garment companion; it reuses the
-successor item-condition numerics and proves the interaction in chat first.
+_Graduated 2026-07-27 (same day as parking) →
+[clothing-state-graph.plan.md](clothing-state-graph.plan.md), queued at the top
+of [roadmap.md](roadmap.md) §Next. Promotion rulings R1–R4 recorded in the
+plan: promoted alone as the wardrobe-truth prerequisite (body-affordances
+stays parked and consumes it later), continuity may mint ad-hoc garment
+instances from category templates, left garments stay at their scene place,
+wetness + crease_load ship first._
 
 ## Owner-gated live eval runs — run on request, not roadmap items
 
