@@ -13,6 +13,7 @@ import {
 import { seedDurableMaterialBranch } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { readDurableSpaceBranch, seedDurableSpaceTopology, submitDurableMoveActor } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 const SEED_SECOND = 50_000;
 const WALK = 600;
@@ -48,6 +49,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("commitment-store.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {

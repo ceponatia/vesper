@@ -97,6 +97,7 @@ import { advanceBranchStoryTime } from "./scheduler-store";
 import { loadRelationshipLedgerProjection } from "./social-recorder";
 import { submitDurableAttemptConsentEscalation } from "./social-store";
 import { seedDurableSpaceTopology } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * The Gate 5 exit corpus (engine.plan.md §"Gate 5 exit" / §"Gate 5 build
@@ -147,6 +148,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("gate5-corpus.int.test");
 const seededWorldIds: string[] = [];
 const seededBranchIds: string[] = [];
 

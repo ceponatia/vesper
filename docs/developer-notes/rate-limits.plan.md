@@ -134,10 +134,13 @@ free-form content field at all.
   `library-routes`, `authz-matrix`, `public-dto`, and `variants` have no CI
   coverage at all, which is why a constraint that broke all six shipped green.
   `pnpm test:int` also needs `VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1` (CI sets
-  it for `test:engine` only), so a plain local run reports ~120 spurious engine
-  failures. **Owner call needed:** run the full `pnpm test:int` in CI with that
-  flag, or keep a curated glob and accept the gap. Not fixed here — changing what
-  gates every merge is a decision, not a cleanup.
+  it for `test:engine` only). A flagless local run used to report ~120 spurious
+  engine failures; since 2026-07-27 the player-principal suites fail fast at
+  collection with a message naming the flag (see docs/testing.md §"Running the
+  whole integration suite locally"), so the trap self-explains — but the flag is
+  still required. **Owner call needed:** run the full `pnpm test:int` in CI with
+  that flag, or keep a curated glob and accept the gap. Not fixed here — changing
+  what gates every merge is a decision, not a cleanup.
 
 ## Verification
 

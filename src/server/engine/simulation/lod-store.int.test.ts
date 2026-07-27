@@ -21,6 +21,7 @@ import { seedDurableMaterialBranch } from "./material-store";
 import { branchEventFromRow } from "./observation-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { seedDurableSpaceTopology } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E6.1 durable actor-LOD ledger (engine.spec §27–§28): `assign_actor_lod` end
@@ -55,6 +56,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("lod-store.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {

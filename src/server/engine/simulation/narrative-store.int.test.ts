@@ -22,6 +22,7 @@ import { loadPersistedCut, NarrativeCutVersionError, persistNarrativeCut } from 
 import { loadSoftCanonProjection } from "./soft-canon-recorder";
 import { submitDurableDemoteSoftCanon } from "./soft-canon-store";
 import { seedDurableSpaceTopology } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E4.3 integration: persisted cuts (immutable, addressable, retryable),
@@ -62,6 +63,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("narrative-store.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {

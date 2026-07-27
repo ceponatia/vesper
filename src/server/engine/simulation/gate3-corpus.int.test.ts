@@ -30,6 +30,7 @@ import {
   seedDurableSpaceTopology,
   submitDurableMoveActor,
 } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * The Gate 3 exit corpus (engine.plan §"Gate 3 scenario corpus"): every
@@ -78,6 +79,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("gate3-corpus.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {

@@ -23,6 +23,7 @@ import { seedDurableMaterialBranch } from "./material-store";
 import { branchEventFromRow } from "./observation-store";
 import { submitDurablePromoteActorFromCohort } from "./promotion-store";
 import { seedDurableSpaceTopology } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E6.4 durable actor promotion and dependency wake (engine.spec §27.2, §27.7):
@@ -59,6 +60,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("promotion-store.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {

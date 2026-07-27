@@ -21,6 +21,7 @@ import {
 import { queryMemoryDocuments } from "./memory-query-store";
 import { seedDurableSpaceTopology } from "./space-store";
 import { submitDurableDemoteSoftCanon } from "./soft-canon-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E4.4 integration: outbox-driven indexing, the §24.1 eligibility-before-
@@ -58,6 +59,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("memory-store.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {
