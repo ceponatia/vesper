@@ -5,6 +5,20 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Successor world lifecycle — provision once, delete honestly, count what's
+  real (COMPLETE)** —
+  [successor-world-lifecycle.plan.md](successor-world-lifecycle.plan.md) ·
+  engine.spec §39 rulings 31–33 — 2026-07-27 — graduated from backlog item E20
+  and built the same day; the successor lane's last HIGH review items closed.
+  Provisioning is resumable behind a durable `sim_provisioning_requests` record
+  (client `requestId`, key-derived `stw-` stamp, owner-scoped lock — a retry
+  resumes instead of minting a second world; `seed_failed`/`flip_failed`
+  retired), a successor chat's world hard-deletes with it (Worlds-page delete
+  control + consequence copy on all three confirm surfaces), the quota counts
+  playable worlds race-free, and the orphan sweeper reclaimed the 6
+  historically-leaked worlds on deploy (follow-up dry-run empty). Migration
+  0089. Verified end-to-end on Fly, API and UI.
+
 - **Rate limits & cost controls** — [rate-limits.plan.md](rate-limits.plan.md) —
   2026-07-26 — the authorization batch closed *who may touch what*; this closes
   *how much*. Burst limits and cost controls split by what losing them would
