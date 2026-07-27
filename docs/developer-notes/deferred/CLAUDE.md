@@ -96,12 +96,12 @@ Added after the review:
   generalizes the meter-economy OQ2 ruling into a response registry
 - [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) —
   owner-requested body-attribute physics and visual-observation layer
-  (2026-07-26; reviewed/refocused 2026-07-26): canonical attributes contribute
-  orthogonal material/geometry parameters; cross-input phenomenon files combine
-  them with authoritative live state to produce actual visual observations or
-  constraints. V1 is a pure current-cut read with no persisted dirty flags or
-  affordance-owned hysteresis. Active companion drafts: hair, skin-surface,
-  garment-interaction, appendages, soft-tissue, and narrator-relevant relative
-  stature/body blocking. `body-attribute-affordances.spec.thermal.md` is a scope
-  tombstone: passive thermal observations moved to future environment/
-  perception work.
+  (2026-07-26; reviewed/refocused 2026-07-26; architecture cleanup 2026-07-27):
+  each body domain compiles canonical attributes into a structural profile,
+  derives reusable current mechanics, assembles a frame with authoritative
+  force/contact/state, then runs narrow phenomena that emit actual visual
+  observations or constraints. V1 is a pure current-cut read with no persisted
+  dirty flags or affordance-owned hysteresis. Active companions: the shared
+  domain-architecture spec plus hair, skin-surface, garment-interaction,
+  appendages, soft-tissue, and narrator-relevant relative geometry. Passive
+  thermal observations are out of scope and live only as a ruling in the plan.

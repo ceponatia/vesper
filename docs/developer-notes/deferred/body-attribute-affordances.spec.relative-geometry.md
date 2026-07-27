@@ -10,6 +10,12 @@ Provide deterministic **relative body geometry reads** that keep narrator
 blocking consistent across scenes: who looks up or down, whether a kiss requires
 a bend or tiptoe, and where two bodies align in an embrace.
 
+This pair domain follows the shared
+[architecture](body-attribute-affordances.spec.architecture.md), but it does not
+need a generic material-mechanics object. It compiles stable stature profiles,
+assembles a two-subject frame with current posture/presentation, and derives one
+pair geometry read.
+
 This is the narrator-relevant portion of stature physics. Generic shelf reach,
 passage fit, lifting, carrying, and strength checks are future action-validation
 consumers and should not be mixed into the ambient visual observation contract.
@@ -37,17 +43,30 @@ consumers and should not be mixed into the ambient visual observation contract.
 Without a pair and relevant interaction context, no kiss/embrace geometry cue is
 produced.
 
-## Profile and pair read
+## Structural profile and pair frame
 
 Ordinal height values should map to calibrated semantic stature anchors. Exact
 centimeters are not required unless later action validation needs them.
 
 ```ts
-interface StatureProfile {
+interface StatureStructuralProfile {
   statureAnchor: FixedPoint;
   eyeLineOffset: FixedPoint;
   shoulderLineOffset: FixedPoint;
-  effectiveFootwearModifier: FixedPoint;
+}
+
+interface RelativeGeometryFrame {
+  subject: StatureStructuralProfile;
+  other: StatureStructuralProfile;
+  subjectPresentation: EffectiveStaturePresentationRead;
+  otherPresentation: EffectiveStaturePresentationRead;
+  subjectPose: PostureRead;
+  otherPose: PostureRead;
+  subjectSurface: SurfaceLevelRead;
+  otherSurface: SurfaceLevelRead;
+  proximity: PairProximityRead;
+  orientation: PairOrientationRead;
+  actionContext?: PairActionContext;
 }
 
 interface RelativeBodyGeometryRead {
@@ -61,7 +80,14 @@ interface RelativeBodyGeometryRead {
 ```
 
 The mapping is semantic and deterministic. Do not present anchor values to the
-narrator as numbers.
+narrator as numbers. Footwear and surface level are live frame inputs, never
+structural-profile fields.
+
+`RelativeBodyGeometryRead` is the domain's reusable pair calculation, not a
+third narrator-output category. When current action context makes one relation
+relevant, projection emits a normal structured visual observation such as
+`relative_geometry.eye_line` or `relative_geometry.kiss_blocking`. The whole
+pair object never enters the ambient cue queue.
 
 ## Phenomenon
 
@@ -119,6 +145,8 @@ this visual-narration plan does not own.
 
 ## Acceptance tests
 
+- the pair phenomenon never receives raw height/leg/neck enum values;
+- structural profiles contain no footwear, surface, or posture state;
 - all examples use legal `build.height` values;
 - pair ordering is symmetric and perspective-correct;
 - footwear changes effective stature without changing canonical height;

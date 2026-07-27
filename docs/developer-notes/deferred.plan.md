@@ -122,17 +122,17 @@ _Owner direction 2026-07-26. Stub:
 [deferred/body-attribute-affordances.plan.md](deferred/body-attribute-affordances.plan.md)._
 A deterministic layer that turns authored body attributes plus live state
 (wetness, binding, coverage, pose, environment) into currently valid,
-perception-gated physical/visual affordances — structured facts like
-`hair.strands_adhere_to_skin` with strength, causes, and suppression
-evidence, realized by the narrator rather than improvised. Per-attribute
-files contribute normalized physics parameters; per-phenomenon files own the
-cross-input rules; dirty-set invalidation, no tick loop, read-only with
-respect to substrate. Reads physiology results but never duplicates its
-transfer functions ([deferred/physiology.plan.md](deferred/physiology.plan.md)).
-Hair is the proving domain; seven per-domain companion spec drafts
-(`deferred/body-attribute-affordances.spec.*.md`: hair, skin-surface,
-soft-tissue, appendages, stature-reach, garment-interaction, thermal) are
-indexed in the stub's `## Companion spec drafts`.
+perception-gated **visual observations** — structured facts like
+`hair.strands_adhere_to_skin`, realized by the narrator rather than improvised.
+Each domain compiles resolved attributes into a structural profile, derives
+reusable current mechanics, assembles a frame with actual force/contact/state,
+then resolves narrow phenomena. V1 recomputes the current cut: no tick loop,
+persisted dirty sets, or affordance-owned hysteresis. Reads physiology results
+but never duplicates its transfer functions
+([deferred/physiology.plan.md](deferred/physiology.plan.md)). Hair is the proving
+domain; the companion set contains one shared architecture spec plus hair,
+skin-surface, garment, appendage, soft-tissue, and relative-geometry domain
+specs. Thermal observations remain explicitly out of scope.
 
 ## Owner-gated live eval runs — run on request, not roadmap items
 
