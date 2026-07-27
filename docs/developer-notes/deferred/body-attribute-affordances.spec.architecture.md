@@ -198,6 +198,9 @@ Cue projection then:
 
 - adds descriptive metadata such as hair color without feeding it back into
   mechanics;
+- projects eligible body truth into recognizable-feature candidates with
+  observer-specific visibility, uniqueness, and importance
+  ([recognition spec](body-attribute-affordances.spec.recognizable-features.md));
 - ranks by current action relevance, change, salience, and novelty;
 - applies `repeatKey` history and a strict one-or-two-cue cap;
 - emits structured data, never stored prose.
@@ -350,6 +353,12 @@ src/contracts/affordances/
     appendages/
     soft-tissue/
     relative-geometry/
+
+  recognition/
+    candidates.ts
+    salience.ts
+    visual-memory.ts
+    mention-policy.ts
 
   domains.ts
   derive-affordance-read.ts

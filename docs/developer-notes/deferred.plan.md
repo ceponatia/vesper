@@ -132,7 +132,9 @@ but never duplicates its transfer functions
 ([deferred/physiology.plan.md](deferred/physiology.plan.md)). Hair is the proving
 domain; the companion set contains one shared architecture spec plus hair,
 skin-surface, garment, appendage, soft-tissue, and relative-geometry domain
-specs. Thermal observations remain explicitly out of scope.
+specs, plus a recognizable-features projection that derives identity cues from
+located body truth and observer visual memory rather than storing a duplicate
+feature array. Thermal observations remain explicitly out of scope.
 
 ## Owner-gated live eval runs — run on request, not roadmap items
 
