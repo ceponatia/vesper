@@ -173,6 +173,14 @@ export {
   type StarterWorldResult,
 } from "./starter-world";
 export {
+  DEFAULT_ORPHAN_GRACE_MS,
+  deleteSimWorldGraph,
+  sweepOrphanSimWorlds,
+  type OrphanSweepFailure,
+  type OrphanSweepResult,
+  type SweepOrphanWorldsOptions,
+} from "./world-lifecycle";
+export {
   insertReplayedKnowledge,
   loadKnowledgeProjection,
   recordCommandKnowledge,

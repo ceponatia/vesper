@@ -98,9 +98,11 @@ afterAll(async () => {
 });
 
 async function provision(title: string): Promise<{ chatId: string; branchId: string }> {
-  const created = await successorCreate(jsonReq("/api/successor-chats", { characterId: ids.characterId, title }), {
-    params: Promise.resolve({}),
-  });
+  const created = await successorCreate(
+    // slice 3: `requestId` is the required per-intent idempotency key.
+    jsonReq("/api/successor-chats", { characterId: ids.characterId, title, requestId: `routing-${title.toLowerCase().replace(/\s+/gu, "-")}-${Date.now()}` }),
+    { params: Promise.resolve({}) },
+  );
   expect(created.status).toBe(201);
   const body = (await created.json()) as { id: string; worldId: string; branchId: string };
   worldIds.push(body.worldId);

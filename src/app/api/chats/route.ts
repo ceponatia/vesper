@@ -94,6 +94,9 @@ export const GET = withUser(async (user, req: NextRequest) => {
       plans: characterChats.plans,
       clockMinutes: characterChats.clockMinutes,
       calendarStart: characterChats.calendarStart,
+      // Successor lane marker (successor-world-lifecycle.plan.md slice 1): the
+      // hub's delete confirm must say the WORLD goes too for these rows.
+      engineAuthority: characterChats.engineAuthority,
       lastLine: sql<string | null>`(
         select left(m.content, 160) from character_chat_messages m
         where m.chat_id = ${characterChats.id}
@@ -127,7 +130,10 @@ export const GET = withUser(async (user, req: NextRequest) => {
     .orderBy(desc(characterChats.lastMessageAt))
     .limit(LIST_LIMIT);
 
-  const chats = rows.map(({ profile, regard, meters, conditions, openLoops, milestones, milestonesSeenAt, plans, clockMinutes, calendarStart, ...rest }) => {
+  const chats = rows.map(({ profile, regard, meters, conditions, openLoops, milestones, milestonesSeenAt, plans, clockMinutes, calendarStart, engineAuthority, ...rest }) => {
+    // A successor chat owns a whole simulated world that dies with it (E20-1) —
+    // one boolean so the hub's confirm dialog can say so.
+    const isSuccessor = engineAuthority !== "legacy_chat";
     // "Has something to say" (spec §8.4, D4; v2 chat-initiative.plan.md slice 2): a pure
     // read-time derivation — never a job, never the wall clock. An imminent / just-missed
     // PLAN leads (chat-plans-promises — a commitment coming due is the strongest pull), then
@@ -144,7 +150,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
       ) ||
       loops[0]?.trim() ||
       (unseenMilestoneReason(parsedMilestones, milestonesSeenAt ?? new Date()) ?? "");
-    if (regard === null) return { ...rest, regardBand: null, emotion: null, say };
+    if (regard === null) return { ...rest, regardBand: null, emotion: null, say, isSuccessor };
     const parsedMeters = parseOr(listMetersSchema, meters ?? {}, {}, undefined, "character_chat_state.meters");
     const parsedConditions = parseOr(listConditionsSchema, conditions ?? [], [], undefined, "character_chat_state.conditions");
     const prof = parseOr(characterProfileSchema, profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
@@ -166,6 +172,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
       regardBand: { id: band.id, label: band.label },
       emotion: { label: emotion.emotion, intensity: emotion.intensity },
       say,
+      isSuccessor,
     };
   });
 

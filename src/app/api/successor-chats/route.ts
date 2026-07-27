@@ -1,27 +1,54 @@
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authoredRecordToLive, characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
-import { characterChats, characters, chatParticipants, db, simBranches } from "@/server/db";
 import {
+  deriveProvisioningStamp,
+  provisioningPayloadHash,
+  provisioningRequestIdSchema,
+} from "@/lib/simulation/provisioning";
+import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import {
+  characterChats,
+  characters,
+  chatParticipants,
+  db,
+  simBranches,
+  simProvisioningPendingStates,
+  simProvisioningRequests,
+} from "@/server/db";
+import { log } from "@/server/log";
+import {
+  deleteSimWorldGraph,
   loadChatWardrobe,
   provisionStarterWorld,
   seedChatState,
   setChatEngineAuthority,
   submitDurableRecordRelationshipEntry,
+  tryKeyedLock,
 } from "@/server/engine";
 
 /**
  * The successor front door (engine.rollout.plan.md, owner ask 2026-07-22) —
  * the Worlds page's API. POST spins up a complete successor chat in one call:
- * an ordinary character chat, a FRESH starter world (isolated branch, cast
- * named after the player and the character), and the authority flip to
+ * an ordinary character chat, a starter world (isolated branch, cast named
+ * after the player and the character), and the authority flip to
  * `successor_narrative_view` with both actors mapped — everything the backend
  * setup used to require. GET lists the caller's successor chats with each
- * world's clock. Open to every signed-in user (owner ruling: all users on
- * this deployment are devs; sign-up is closed).
+ * world's clock. Open to every signed-in user (owner ruling: all users on this
+ * deployment are devs; sign-up is closed).
+ *
+ * successor-world-lifecycle.plan.md slices 3–4 (rulings E20-3 / the honest
+ * quota) turned that five-step sequence into a RESUMABLE one. The whole handler
+ * runs under `successor_provision:<ownerId>`, so this route is the single writer
+ * per owner; inside the lock a durable `sim_provisioning_requests` record
+ * advances after each committed step, and the world's identity is DERIVED from
+ * the client's `requestId` — so a retry after any failure finishes the world it
+ * already started instead of minting a second one. The old `seed_failed` /
+ * `flip_failed` half-states are gone: a step failure now runs compensating
+ * cleanup (world graph + chat row) and answers ONE honest `provision_failed`.
  */
 
 /** Per-user cap on successor chats — each one carries a whole provisioned world. */
@@ -31,105 +58,434 @@ const createBodySchema = z
   .object({
     characterId: z.string().min(1).max(120),
     title: z.string().trim().max(120).optional(),
+    /**
+     * REQUIRED (unlike the sim-command lane's optional token): provisioning
+     * cannot promise "one world per tap" without a stable key, and there is no
+     * degraded default that still keeps that promise. A malformed one is a
+     * plain 400 through `readBody`'s boundary parse.
+     */
+    requestId: provisioningRequestIdSchema,
   })
   .strict();
+
+/** The 201 body a finished provision resolves to — recorded verbatim for replay. */
+const provisionResponseSchema = z.object({
+  id: z.string().min(1),
+  worldId: z.string().min(1),
+  branchId: z.string().min(1),
+});
+type ProvisionResponse = z.infer<typeof provisionResponseSchema>;
+
+type ProvisioningState = (typeof simProvisioningRequests.$inferSelect)["state"];
+
+/** Ordinal rank of each state, so "have we passed this step?" is one comparison. */
+const STATE_RANK: Record<ProvisioningState, number> = {
+  requested: 0,
+  world_created: 1,
+  chat_created: 2,
+  relationships_seeded: 3,
+  ready: 4,
+  failed: 0,
+};
+
+interface ProvisioningRecord {
+  state: ProvisioningState;
+  payloadHash: string;
+  worldId: string | null;
+  branchId: string | null;
+  chatId: string | null;
+  response: unknown;
+  httpStatus: number | null;
+}
+
+/**
+ * What the compensating cleanup must undo if a later step fails. Tracked as the
+ * flow goes rather than re-read at the end, so cleanup works even when the
+ * failure is a thrown exception mid-step.
+ */
+interface ProvisionedSoFar {
+  worldId: string | null;
+  chatId: string | null;
+}
+
+/**
+ * Undo a failed provision (ruling E20-3). The chat row goes first (its
+ * `sim_branch_id` FK is `set null`, so order only affects tidiness), then the
+ * world graph — which also frees the DERIVED ids, so the same key can be
+ * retried from scratch rather than colliding with its own wreckage.
+ *
+ * Never throws: a cleanup that fails leaves an orphan for the slice-2 sweeper,
+ * and the caller still owes the player one honest error
+ * (docs/resilience.md — diagnostics over exceptions).
+ */
+async function cleanupPartialProvision(built: ProvisionedSoFar, ownerId: string, requestId: string): Promise<void> {
+  try {
+    if (built.chatId !== null) {
+      await db()
+        .delete(characterChats)
+        .where(and(eq(characterChats.id, built.chatId), eq(characterChats.ownerId, ownerId)));
+    }
+    if (built.worldId !== null) await deleteSimWorldGraph(built.worldId);
+  } catch (error) {
+    log.warn("engine.sim.provisioning", "compensating cleanup failed; the orphan sweeper is the backstop", {
+      code: "provisioning.cleanup_failed",
+      ownerId,
+      requestId,
+      worldId: built.worldId,
+      chatId: built.chatId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/** Advance the durable record; a patch is only ever applied to this owner's own key. */
+async function updateRecord(
+  ownerId: string,
+  requestId: string,
+  patch: Partial<typeof simProvisioningRequests.$inferInsert>,
+): Promise<void> {
+  await db()
+    .update(simProvisioningRequests)
+    .set(patch)
+    .where(and(eq(simProvisioningRequests.ownerId, ownerId), eq(simProvisioningRequests.requestId, requestId)));
+}
+
+/**
+ * The honest quota (slice 4, ruling E20-3's sibling). Counts what is REAL:
+ * chats the successor engine actually owns (`successor_narrative_view` — the
+ * old `ne("legacy_chat")` also counted `successor_shadow` chats, which
+ * `requireSimChat` rejects as unplayable), plus this owner's other in-flight
+ * provisioning records (an in-flight world is a world; a `failed` one has had
+ * its graph cleaned up and holds nothing).
+ *
+ * A record whose chat is already counted is not counted twice — that is only
+ * reachable in the one-statement window between the authority flip and the
+ * `ready` write, but it should not silently cost the owner a slot.
+ *
+ * `successor_authoritative` is deliberately absent: nothing sets it yet, and the
+ * front door only ever mints `successor_narrative_view`. Whatever promotes a
+ * chat to it owns adding it here.
+ *
+ * Race-free by construction: provisioning is serialized per owner by the lock,
+ * so the count and the write that makes it true cannot interleave (the old
+ * plain SELECT let two requests at N−1 both pass).
+ */
+async function countUsedWorlds(ownerId: string, exceptRequestId: string): Promise<number> {
+  const chats = await db()
+    .select({ id: characterChats.id })
+    .from(characterChats)
+    .where(
+      and(eq(characterChats.ownerId, ownerId), eq(characterChats.engineAuthority, "successor_narrative_view")),
+    );
+  const chatIds = new Set(chats.map((chat) => chat.id));
+  const inFlight = await db()
+    .select({ requestId: simProvisioningRequests.requestId, chatId: simProvisioningRequests.chatId })
+    .from(simProvisioningRequests)
+    .where(
+      and(
+        eq(simProvisioningRequests.ownerId, ownerId),
+        inArray(simProvisioningRequests.state, [...simProvisioningPendingStates]),
+        ne(simProvisioningRequests.requestId, exceptRequestId),
+      ),
+    );
+  const pending = inFlight.filter((row) => row.chatId === null || !chatIds.has(row.chatId)).length;
+  return chatIds.size + pending;
+}
+
+function tooManyWorlds(used: number): NextResponse {
+  // The rate-limit family's metadata idiom, minus `retry`: like the storage
+  // quota, a world slot frees when the owner deletes one — an action, not an
+  // instant, so advertising a retry time would be a lie.
+  return NextResponse.json(
+    {
+      error: {
+        code: "too_many_worlds",
+        message: `you already have ${MAX_SUCCESSOR_CHATS} worlds; delete one first`,
+        limit: MAX_SUCCESSOR_CHATS,
+        used,
+      },
+    },
+    { status: 409 },
+  );
+}
+
+interface ProvisionInput {
+  ownerId: string;
+  ownerName: string;
+  requestId: string;
+  characterId: string;
+  title: string;
+}
+
+/**
+ * Run (or finish) one provision under the owner lock. Returns the response to
+ * send. Every step is skipped when the record says it already committed, and
+ * every step is idempotent anyway — the belt for the crash-in-the-middle-of-a-
+ * step case the record cannot see.
+ */
+async function runProvisioning(input: ProvisionInput): Promise<Response> {
+  const { ownerId, requestId } = input;
+  const payloadHash = provisioningPayloadHash({ characterId: input.characterId, title: input.title });
+
+  const [existing] = await db()
+    .select({
+      state: simProvisioningRequests.state,
+      payloadHash: simProvisioningRequests.payloadHash,
+      worldId: simProvisioningRequests.worldId,
+      branchId: simProvisioningRequests.branchId,
+      chatId: simProvisioningRequests.chatId,
+      response: simProvisioningRequests.response,
+      httpStatus: simProvisioningRequests.httpStatus,
+    })
+    .from(simProvisioningRequests)
+    .where(and(eq(simProvisioningRequests.ownerId, ownerId), eq(simProvisioningRequests.requestId, requestId)))
+    .limit(1);
+  const record: ProvisioningRecord | undefined = existing;
+
+  let resumeFrom: ProvisioningState = "requested";
+  const built: ProvisionedSoFar = { worldId: null, chatId: null };
+
+  // A reused key carrying a DIFFERENT ask is a client bug — never replay an
+  // unrelated world (the `sim_command_requests` guard, owner-scoped). Checked
+  // before anything else, so a mismatch can never touch the library or the cap.
+  if (record && record.payloadHash !== payloadHash) {
+    return jsonError("idempotency_mismatch", "this request id was already used for a different world", 409);
+  }
+  let replayUnreadable = false;
+  if (record?.state === "ready" && record.httpStatus !== null) {
+    // Verbatim replay: one world, one chat, one 201 — no matter how many taps.
+    // Ahead of the library lookup too: a finished world stays replayable even if
+    // the character it was born from has since been deleted.
+    const replayed = parseOr(provisionResponseSchema.nullable(), record.response, null, undefined, "sim_provisioning_requests.response");
+    if (replayed) return jsonOk(replayed, record.httpStatus);
+    // A `ready` row whose recorded body no longer parses cannot be replayed
+    // honestly; re-running is safe (every step is idempotent) so degrade to that.
+    log.warn("engine.sim.provisioning", "ready record carried an unreadable response; re-running the provision", {
+      code: "provisioning.replay_unreadable",
+      ownerId,
+      requestId,
+    });
+    replayUnreadable = true;
+  }
+
+  const [character] = await db()
+    .select({ id: characters.id, name: characters.name, profile: characters.profile })
+    .from(characters)
+    .where(and(eq(characters.id, input.characterId), eq(characters.ownerId, ownerId)));
+  if (!character) return jsonError("not_found", "that character is not in your library", 404);
+
+  if (record) {
+    if (replayUnreadable) {
+      resumeFrom = "relationships_seeded";
+      built.worldId = record.worldId;
+      built.chatId = record.chatId;
+    } else if (record.state === "failed") {
+      // Its cleanup already removed the graph, so the derived ids are free:
+      // reset and build again from scratch under the SAME stamp.
+      await updateRecord(ownerId, requestId, {
+        state: "requested",
+        worldId: null,
+        branchId: null,
+        chatId: null,
+        response: null,
+        httpStatus: null,
+        error: null,
+        completedAt: null,
+      });
+      resumeFrom = "requested";
+    } else {
+      // A crash remnant: resume from where the record says it got to. The lock
+      // is single-holder, so no live peer is still working this key.
+      resumeFrom = record.state;
+      built.worldId = record.worldId;
+      built.chatId = record.chatId;
+    }
+  } else {
+    // Only a genuinely NEW request is charged against the cap; a resume or a
+    // replay of an already-counted world must never be turned away.
+    const used = await countUsedWorlds(ownerId, requestId);
+    if (used >= MAX_SUCCESSOR_CHATS) return tooManyWorlds(used);
+    await db()
+      .insert(simProvisioningRequests)
+      .values({ ownerId, requestId, payloadHash, state: "requested" })
+      .onConflictDoNothing();
+  }
+
+  const reached = STATE_RANK[resumeFrom];
+  // R5 slice 5: the character's authored default outfit becomes WORN world
+  // items at birth — resolved through the same wardrobe seam the chat seed
+  // uses, so the outfit chip shows the same clothes, now from world truth.
+  const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+
+  try {
+    // --- Step 1: the world. Idempotent on the derived stamp, so this both
+    // creates a fresh world and completes a half-built one.
+    const wornIds = seedChatState(profile).wornItemIds;
+    const wardrobeItems = wornIds.length > 0 ? await loadChatWardrobe(ownerId, wornIds) : [];
+    const world = await provisionStarterWorld({
+      stamp: deriveProvisioningStamp(ownerId, requestId),
+      playerName: (input.ownerName || "").split(/\s+/)[0] ?? "",
+      primaryName: character.name,
+      primaryGarments: wardrobeItems.map((item, index) => ({
+        name: item.name,
+        slotKey: `${item.coverage[0] ?? "garment"}-${index}`,
+      })),
+    });
+    built.worldId = world.worldId;
+    if (reached < STATE_RANK.world_created) {
+      await updateRecord(ownerId, requestId, {
+        state: "world_created",
+        worldId: world.worldId,
+        branchId: world.branchId,
+      });
+    }
+
+    // --- Step 2: the chat. The insert and the record advance share ONE
+    // transaction, so a crash can never leave a chat row this key cannot find.
+    // (`built.chatId` carries a RESUMED chat only — a reset `failed` record left
+    // it null, so a rebuild never reuses the chat id its cleanup deleted.)
+    let chatId = built.chatId;
+    if (reached < STATE_RANK.chat_created || chatId === null) {
+      chatId = newId();
+      const newChatId = chatId;
+      await db().transaction(async (tx) => {
+        await tx.insert(characterChats).values({
+          id: newChatId,
+          ownerId,
+          title: input.title || `${character.name}'s world`,
+        });
+        // Fresh memory island: successor chats never join a shared legacy history.
+        await tx
+          .insert(chatParticipants)
+          .values({ chatId: newChatId, characterId: character.id, memoryGroupId: newId(), sort: 0 });
+        await tx
+          .update(simProvisioningRequests)
+          .set({ state: "chat_created", chatId: newChatId })
+          .where(
+            and(eq(simProvisioningRequests.ownerId, ownerId), eq(simProvisioningRequests.requestId, requestId)),
+          );
+      });
+    }
+    built.chatId = chatId;
+
+    // --- Step 3: relationships. R5: an AUTHORED starting relationship becomes
+    // an authored_prior ledger entry pair, weighted so the §21 read round-trips
+    // the authored regard exactly (trust 36r + attraction 8r ⇒ blended 40r ⇒
+    // regard r). No authored record ⇒ no prior ⇒ the ledger starts honest-empty
+    // and the chip keeps the legacy seed until evidence accumulates. The
+    // idempotency keys are branch-derived and the branch id is now stable, so a
+    // resume replays the recorded acceptance instead of writing a second pair.
+    if (reached < STATE_RANK.relationships_seeded) {
+      if (profile.playerRelationship) {
+        const live = authoredRecordToLive(profile.playerRelationship);
+        const weightOverride = {
+          trustFixedPoint: live.regard * 36,
+          attractionFixedPoint: live.regard * 8,
+          resentmentFixedPoint: 0,
+        };
+        const detail = profile.playerRelationship.history.trim() || "authored starting relationship";
+        for (const [from, to, name] of [
+          [world.playerActorId, world.primaryActorId, "prior-toward-primary"],
+          [world.primaryActorId, world.playerActorId, "prior-toward-player"],
+        ] as const) {
+          const seeded = await submitDurableRecordRelationshipEntry(
+            {
+              id: `${world.branchId}-cmd-${name}`,
+              branchId: world.branchId,
+              expectedVersion: 0,
+              idempotencyKey: `${world.branchId}-${name}`,
+              principal: { kind: "storyteller" as const, principalId: ownerId, controlledActorIds: [] },
+              submittedAtWallClock: new Date().toISOString(),
+              correlationId: `stw-seed-${world.branchId}`,
+              type: "record_relationship_entry",
+              schemaVersion: 1,
+              // No storySecond override: the prior lands "now" so the §21 read's
+              // time decay starts from the story's first moment, not before it.
+              payload: { fromActorId: from, toActorId: to, kind: "authored_prior", detail: detail.slice(0, 500), weightOverride },
+            },
+            { admitAtLockedVersion: true },
+          );
+          if (seeded.status !== "accepted") {
+            throw new Error(`the authored relationship could not seed: ${JSON.stringify(seeded)}`);
+          }
+        }
+      }
+      await updateRecord(ownerId, requestId, { state: "relationships_seeded" });
+    }
+
+    // --- Step 4: the authority flip, then `ready` with the recorded response.
+    // The flip is a plain UPDATE, so re-running it after a crash is a no-op.
+    const flipped = await setChatEngineAuthority({
+      chatId,
+      byUserId: ownerId,
+      authority: "successor_narrative_view",
+      // R5 knowledge/memory: §24 recall routes for successor chats from birth.
+      ragEligibility: true,
+      simBranchId: world.branchId,
+      simPlayerActorId: world.playerActorId,
+      simPrimaryActorId: world.primaryActorId,
+    });
+    if (!flipped) throw new Error("the chat could not be routed to the successor engine");
+
+    const response: ProvisionResponse = { id: chatId, worldId: world.worldId, branchId: world.branchId };
+    await updateRecord(ownerId, requestId, {
+      state: "ready",
+      response,
+      httpStatus: 201,
+      completedAt: new Date(),
+    });
+    return jsonOk(response, 201);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    await cleanupPartialProvision(built, ownerId, requestId);
+    await updateRecord(ownerId, requestId, {
+      state: "failed",
+      worldId: null,
+      branchId: null,
+      chatId: null,
+      error: detail.slice(0, 1_000),
+      completedAt: new Date(),
+    }).catch((updateError: unknown) => {
+      log.warn("engine.sim.provisioning", "could not record the provisioning failure", {
+        code: "provisioning.record_failed",
+        ownerId,
+        requestId,
+        error: updateError instanceof Error ? updateError.message : String(updateError),
+      });
+    });
+    // ONE honest diagnostic — the old `seed_failed` / `flip_failed` pair named
+    // half-states that no longer exist, because nothing partial survives.
+    log.warn("engine.sim.provisioning", "world provisioning failed and was rolled back", {
+      code: "provisioning.failed",
+      ownerId,
+      requestId,
+      error: detail,
+    });
+    return jsonError("provision_failed", "the world could not be created; nothing was left behind — try again", 500);
+  }
+}
 
 export const POST = withUser(async (user, req) => {
   const body = await readBody(req, createBodySchema);
   if (!body.ok) return body.response;
 
-  const [character] = await db()
-    .select({ id: characters.id, name: characters.name, profile: characters.profile })
-    .from(characters)
-    .where(and(eq(characters.id, body.value.characterId), eq(characters.ownerId, user.id)));
-  if (!character) return jsonError("not_found", "that character is not in your library", 404);
-
-  const existing = await db()
-    .select({ id: characterChats.id })
-    .from(characterChats)
-    .where(and(eq(characterChats.ownerId, user.id), ne(characterChats.engineAuthority, "legacy_chat")));
-  if (existing.length >= MAX_SUCCESSOR_CHATS) {
-    return jsonError("too_many_worlds", `you already have ${MAX_SUCCESSOR_CHATS} successor chats; delete one first`, 409);
-  }
-
-  // R5 slice 5: the character's authored default outfit becomes WORN world
-  // items at birth — resolved through the same wardrobe seam the chat seed
-  // uses, so the outfit chip shows the same clothes, now from world truth.
-  const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
-  const wornIds = seedChatState(profile).wornItemIds;
-  const wardrobeItems = wornIds.length > 0 ? await loadChatWardrobe(user.id, wornIds) : [];
-  const world = await provisionStarterWorld({
-    playerName: (user.name ?? "").split(/\s+/)[0] ?? "",
-    primaryName: character.name,
-    primaryGarments: wardrobeItems.map((item, index) => ({
-      name: item.name,
-      slotKey: `${item.coverage[0] ?? "garment"}-${index}`,
-    })),
-  });
-
-  const chatId = newId();
-  await db().transaction(async (tx) => {
-    await tx.insert(characterChats).values({
-      id: chatId,
+  // Slice 3: serialize per OWNER. This handler is then the single writer for
+  // this account's worlds — which is also what makes the quota count race-free
+  // (slice 4). Contention turns away with the message lane's quiet busy face
+  // (the `chat_busy` idiom, ruling A1-1) rather than queueing a second world.
+  const held = tryKeyedLock(`successor_provision:${user.id}`, () =>
+    runProvisioning({
       ownerId: user.id,
-      title: body.value.title?.trim() || `${character.name}'s world`,
-    });
-    // Fresh memory island: successor chats never join a shared legacy history.
-    await tx.insert(chatParticipants).values({ chatId, characterId: character.id, memoryGroupId: newId(), sort: 0 });
-  });
-  // R5 relationships: an AUTHORED starting relationship becomes an
-  // authored_prior ledger entry pair, weighted so the §21 read round-trips
-  // the authored regard exactly (trust 36r + attraction 8r ⇒ blended 40r ⇒
-  // regard r). No authored record ⇒ no prior ⇒ the ledger starts honest-empty
-  // and the chip keeps the legacy seed until evidence accumulates.
-  if (profile.playerRelationship) {
-    const live = authoredRecordToLive(profile.playerRelationship);
-    const weightOverride = {
-      trustFixedPoint: live.regard * 36,
-      attractionFixedPoint: live.regard * 8,
-      resentmentFixedPoint: 0,
-    };
-    const detail = profile.playerRelationship.history.trim() || "authored starting relationship";
-    for (const [from, to, name] of [
-      [world.playerActorId, world.primaryActorId, "prior-toward-primary"],
-      [world.primaryActorId, world.playerActorId, "prior-toward-player"],
-    ] as const) {
-      const seeded = await submitDurableRecordRelationshipEntry(
-        {
-          id: `${world.branchId}-cmd-${name}`,
-          branchId: world.branchId,
-          expectedVersion: 0,
-          idempotencyKey: `${world.branchId}-${name}`,
-          principal: { kind: "storyteller" as const, principalId: user.id, controlledActorIds: [] },
-          submittedAtWallClock: new Date().toISOString(),
-          correlationId: `stw-seed-${world.branchId}`,
-          type: "record_relationship_entry",
-          schemaVersion: 1,
-          // No storySecond override: the prior lands "now" so the §21 read's
-          // time decay starts from the story's first moment, not before it.
-          payload: { fromActorId: from, toActorId: to, kind: "authored_prior", detail: detail.slice(0, 500), weightOverride },
-        },
-        { admitAtLockedVersion: true },
-      );
-      if (seeded.status !== "accepted") {
-        return jsonError("seed_failed", `the authored relationship could not seed: ${JSON.stringify(seeded)}`, 500);
-      }
-    }
+      ownerName: user.name ?? "",
+      requestId: body.value.requestId,
+      characterId: body.value.characterId,
+      title: body.value.title?.trim() ?? "",
+    }),
+  );
+  if (held === null) {
+    return jsonError("provision_busy", "another world is already being created for you; try again in a moment", 409);
   }
-
-  const flipped = await setChatEngineAuthority({
-    chatId,
-    byUserId: user.id,
-    authority: "successor_narrative_view",
-    // R5 knowledge/memory: §24 recall routes for successor chats from birth.
-    ragEligibility: true,
-    simBranchId: world.branchId,
-    simPlayerActorId: world.playerActorId,
-    simPrimaryActorId: world.primaryActorId,
-  });
-  if (!flipped) return jsonError("flip_failed", "the world was provisioned but the chat could not be routed", 500);
-
-  return jsonOk({ id: chatId, worldId: world.worldId, branchId: world.branchId }, 201);
+  return held;
 });
 
 /** GET /api/successor-chats — the caller's successor chats, newest first, with each world's clock. */

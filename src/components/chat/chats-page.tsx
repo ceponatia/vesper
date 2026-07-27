@@ -324,7 +324,12 @@ export function ChatsPage({ newCharacterId }: { newCharacterId?: string }) {
       >
         This permanently deletes your conversation with{" "}
         <span className="text-paper-100">{deleteTarget?.characterName ?? "this character"}</span> — the transcript and
-        everything they remember from it. Scene images stay in the Gallery.
+        everything they remember from it.{" "}
+        {/* E20-1: a successor chat owns its world 1:1, and the world dies with it — say so before the click. */}
+        {deleteTarget?.isSuccessor
+          ? "Its world goes too — the people, places, and everything that has happened there. That cannot be undone. "
+          : ""}
+        Scene images stay in the Gallery.
       </Dialog>
     </PageContainer>
   );

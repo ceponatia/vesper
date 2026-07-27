@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
-import { charactersApi, successorChatsApi } from "@/lib/client/api";
+import { newId } from "@/lib/ids";
+import { charactersApi, chatsApi, successorChatsApi, type SuccessorChatSummary } from "@/lib/client/api";
 import { formatStoryClockShort, storyClockAt } from "@/lib/simulation";
 
 /**
@@ -30,17 +32,57 @@ export function SuccessorWorldsPage() {
   const [characterId, setCharacterId] = useState("");
   const [title, setTitle] = useState("");
   const [creating, setCreating] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<SuccessorChatSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  /**
+   * The idempotency key for the current create INTENT
+   * (successor-world-lifecycle.plan.md slice 3). Minted lazily on the first tap
+   * (never during render — a render-time id would differ between the server and
+   * client passes) and HELD through a failure, so tapping Create again resumes
+   * the same world instead of provisioning a second one. Cleared on success and
+   * whenever the form changes — a different ask is a different intent, and
+   * reusing the key for it would answer `idempotency_mismatch`.
+   */
+  const requestIdRef = useRef<string | null>(null);
+  const freshIntent = () => {
+    requestIdRef.current = null;
+  };
 
   const create = async () => {
     if (!characterId || creating) return;
     setCreating(true);
-    const result = await successorChatsApi.create({ characterId, ...(title.trim() ? { title: title.trim() } : {}) });
+    requestIdRef.current ??= newId();
+    const result = await successorChatsApi.create({
+      characterId,
+      requestId: requestIdRef.current,
+      ...(title.trim() ? { title: title.trim() } : {}),
+    });
     setCreating(false);
     if (!result.ok) {
       toast.push({ title: "Couldn't create the world", description: result.error.message, tone: "error" });
       return;
     }
+    freshIntent();
     router.push(`/chat/${result.data.id}`);
+  };
+
+  /**
+   * Delete a world = delete its chat (successor-world-lifecycle.plan.md slice 1,
+   * owner ruling E20-1): the front door is 1:1 chat↔world, so the ordinary chat
+   * DELETE is the whole verb — `deleteChat` takes the `sim_worlds` graph with the
+   * chat row in one transaction. No world-specific endpoint exists or is wanted.
+   */
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    const result = await chatsApi.remove(deleteTarget.id);
+    setDeleting(false);
+    if (!result.ok) {
+      toast.push({ title: "Couldn't delete the world", description: result.error.message, tone: "error" });
+      return;
+    }
+    setDeleteTarget(null);
+    chats.reload({ silent: true });
   };
 
   return (
@@ -73,7 +115,10 @@ export function SuccessorWorldsPage() {
               <span className="text-xs text-paper-400">Character</span>
               <select
                 value={characterId}
-                onChange={(e) => setCharacterId(e.target.value)}
+                onChange={(e) => {
+                  setCharacterId(e.target.value);
+                  freshIntent();
+                }}
                 className="h-9 min-w-52 rounded-md border border-ink-600 bg-ink-900 px-2 text-sm text-paper-200"
               >
                 <option value="">Choose…</option>
@@ -88,7 +133,10 @@ export function SuccessorWorldsPage() {
               <span className="text-xs text-paper-400">Title (optional)</span>
               <input
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  freshIntent();
+                }}
                 placeholder="Their world"
                 maxLength={120}
                 className="h-9 min-w-52 rounded-md border border-ink-600 bg-ink-900 px-2 text-sm text-paper-200 placeholder:text-paper-600"
@@ -120,27 +168,65 @@ export function SuccessorWorldsPage() {
         ) : (
           <ul className="flex flex-col gap-2">
             {chats.data?.chats.map((chat) => (
-              <li key={chat.id}>
+              // The overlay Link navigates the whole row; the action cluster paints
+              // above it so a slightly-off tap deletes nothing by accident (the
+              // Chats hub's idiom — `.touch-target` gives a ≥44px coarse tap height).
+              <li
+                key={chat.id}
+                className="relative rounded-card border border-ink-600 bg-ink-850 transition-colors hover:border-accent-500/50"
+              >
                 <Link
                   href={`/chat/${chat.id}`}
-                  className="flex items-center justify-between gap-3 rounded-card border border-ink-600 bg-ink-850 px-4 py-3 transition-colors hover:border-accent-500/50"
-                >
+                  className="absolute inset-0 rounded-card"
+                  aria-label={`Open ${chat.title || chat.characterName}`}
+                />
+                <div className="flex items-center justify-between gap-3 px-4 py-3">
                   <span className="min-w-0">
                     <span className="block truncate text-sm text-paper-200">{chat.title || chat.characterName}</span>
                     <span className="block text-xs text-paper-500">{chat.characterName}</span>
                   </span>
-                  <span className="flex shrink-0 items-center gap-1.5">
+                  <span className="relative flex shrink-0 items-center gap-1.5">
                     {chat.storySecond !== null ? (
                       <Tag>{formatStoryClockShort(storyClockAt(chat.storySecond))}</Tag>
                     ) : null}
                     <Tag tone="accent">{chat.authority.replace("successor_", "").replace(/_/g, " ")}</Tag>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(chat)}
+                      className="touch-target inline-flex cursor-pointer items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-danger-400"
+                    >
+                      Delete…
+                    </button>
                   </span>
-                </Link>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      <Dialog
+        open={deleteTarget !== null}
+        onClose={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
+        title="Delete this world?"
+        footer={
+          <>
+            <Button onClick={() => setDeleteTarget(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="danger" busy={deleting} onClick={() => void confirmDelete()}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        This permanently deletes{" "}
+        <span className="text-paper-100">{deleteTarget?.title || deleteTarget?.characterName || "this world"}</span> —
+        the conversation and the world it plays in: its people, places, and everything that has happened there. Nothing
+        about the world can be recovered. Scene images stay in the Gallery.
+      </Dialog>
     </PageContainer>
   );
 }

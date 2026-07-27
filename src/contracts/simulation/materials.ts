@@ -177,7 +177,13 @@ const materialWorldSeedSchema = z
   .refine((value) => value.trim() === value, "World seeds cannot have surrounding whitespace")
   .refine((value) => !/\s/u.test(value), "World seeds cannot contain whitespace");
 
-export const materialWorldStatuses = ["active", "paused", "archived"] as const;
+/**
+ * World lifecycle vocabulary. "archived" was dropped with the `sim_worlds.status`
+ * column's enum (successor-world-lifecycle.plan.md slice 1, owner ruling E20-1):
+ * nothing ever set it and a successor world is hard-deleted with its chat, so an
+ * archived world had no way back and no UI. "paused" stays unused-but-reserved.
+ */
+export const materialWorldStatuses = ["active", "paused"] as const;
 export const materialWorldStatusSchema = z.enum(materialWorldStatuses);
 
 /**
