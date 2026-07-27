@@ -6,45 +6,40 @@ promote with the plan)
 
 ## Purpose
 
-Hair is the proving domain for the body-attribute affordance architecture. It
-must show that canonical appearance attributes and live state can be assembled
-into current, physically consistent visual observations without asking the
-narrator to perform the physics.
+Hair is the proving domain for the
+[profile → mechanics → frame architecture](body-attribute-affordances.spec.architecture.md).
+It must show that canonical appearance attributes and live state can produce
+current, physically consistent visual observations without asking every
+phenomenon—or the narrator—to reinterpret raw hair vocabulary.
 
-The flagship contrast is:
+The flagship contrast:
 
 - dry, fine, loose hair may lift in a moderate breeze;
 - saturated, dense/coarse hair should clump, load with water, and resist the
   same breeze;
-- wet loose strands may adhere to exposed skin only when current contact is
-  asserted;
-- binding and coverage suppress otherwise-valid motion.
+- wet loose strands may adhere to exposed skin only when contact is asserted;
+- binding and coverage constrain otherwise-valid motion.
 
-## Canonical inputs
+## Inputs and ownership
 
-### Attribute-owned inputs
-
-Promotion should replace or quarantine the current entangled `hair.quality`
-value before it becomes authoritative physics.
+### Canonical attributes
 
 Preferred executable axes:
 
 - `hair.length` → length scale and nominal anatomical reach;
-- `hair.strand_thickness` → fine / medium / coarse strand mass band;
-- `hair.density` → sparse / average / dense / very_dense bulk density;
-- `hair.texture` → curl retention and flexibility;
-- `hair.condition` → dry/damaged friction and breakage response;
-- optional `hair.surface` → matte / soft / silky / glossy appearance response;
-- `hair.color` → realization metadata only, except for calibrated relative
-  wet-darkening behavior.
+- `hair.strand_thickness` → strand mass band;
+- `hair.density` → bulk density;
+- `hair.texture` → flexibility and curl retention;
+- `hair.condition` → surface friction, water absorption, and clump affinity;
+- optional `hair.surface` → appearance response metadata;
+- `hair.color` → cue-realization metadata, not adhesion or motion mechanics.
 
-Each axis owns orthogonal profile paths. `hair.length` and `hair.density` must
-not both write an unexplained final `mass`; effective load is derived in the
-phenomenon rule.
+The current `hair.quality` entangles several of these dimensions. Promotion
+must split it or quarantine ambiguous mappings as provisional.
 
-### Presentation-owned inputs
+### Presentation state
 
-Free-text `hair.style` remains display text. Runtime rules consume validated
+Free-text `hair.style` remains display text. Runtime mechanics consume validated
 structure:
 
 ```ts
@@ -57,43 +52,127 @@ interface HairPresentationState {
 }
 ```
 
-### Live inputs
+### Live state
 
-- wetness at the hair location;
-- current contamination;
-- current wind and subject motion;
-- current pose/contact pairs;
-- current coverage at hair and target skin regions;
+- wetness and contamination at the hair location;
+- current wind, subject motion, and committed impulses;
+- current hair-to-body contact pairs;
+- validated hair binding/coverage for mechanics, plus observer coverage/opacity
+  for downstream perception;
 - recent rain, immersion, splash, shake, gust, turn, run, or impact events.
 
-Missing live inputs fail closed for specific effects.
+Missing force, contact, or exposure fails closed for the corresponding claim.
 
-## Hair physical profile
+## Structural profile
+
+Each attribute map contributes only its own axes:
 
 ```ts
-interface HairPhysicalProfile {
-  lengthBand: HairLengthBand;
-  nominalReach: readonly BodyLocationId[];
-  strandThickness: UnitInterval;
+interface HairStructuralProfile {
+  lengthScale: UnitInterval;
+  nominalReach: ReadonlySet<BodyLocationId>;
   bulkDensity: UnitInterval;
+  strandThickness: UnitInterval;
   flexibility: UnitInterval;
-  surfaceFriction: UnitInterval;
-  waterLoading: UnitInterval;
-  clumpAffinity: UnitInterval;
   curlRetention: UnitInterval;
+  surfaceFriction: UnitInterval;
+  waterAbsorption: UnitInterval;
+  clumpAffinity: UnitInterval;
 }
 ```
 
-The profile stores semantic calibration, not laboratory measurements.
+The profile is stable for a resolved attribute snapshot. It contains no current
+wetness, binding, coverage, contact, or force.
+
+`hair.length` and `hair.density` do not both write a vague final `mass`.
+Combined terms belong to `deriveHairMechanics`.
+
+## Effective mechanics
+
+Hair structure and current presentation/body state compile once into reusable
+current mechanics:
+
+```ts
+interface HairEffectiveMechanics {
+  dryBulkLoad: UnitInterval;
+  waterLoad: UnitInterval;
+  effectiveLoad: UnitInterval;
+  freeMovingFraction: UnitInterval;
+  exposedFreeArea: UnitInterval;
+  clumpStrength: UnitInterval;
+  retainedWater: UnitInterval;
+  mobilityCapacity: UnitInterval;
+}
+```
+
+Conceptually:
+
+```text
+dryBulkLoad =
+  lengthScale × bulkDensity × strandThickness
+
+waterLoad =
+  dryBulkLoad × waterAbsorption × wetness
+
+freeMovingFraction =
+  inverse(bound) × inverse(pinned) × inverse(covered)
+
+exposedFreeArea =
+  lengthScale × bulkDensity × freeMovingFraction
+
+clumpStrength =
+  wetness × clumpAffinity × surfaceFriction adjustment
+
+retainedWater =
+  waterLoad × clump retention adjustment
+
+mobilityCapacity =
+  flexibility × exposedFreeArea × inverse(clumpStrength)
+  ----------------------------------------------------
+  effectiveLoad
+```
+
+The implementation uses bounded fixed-point helpers and calibrated reducers,
+not floating-point pseudo-precision. Division uses a declared nonzero floor.
+
+These fields are shared because:
+
+- effective load matters to wind and body-motion response;
+- free moving fraction matters to motion, adhesion, and droplet shedding;
+- clump strength matters to clumping, adhesion, and retained water;
+- retained water matters to droplet eligibility;
+- mobility capacity is a stable present response capacity.
+
+High `mobilityCapacity` does not mean hair is moving. Actual motion still needs
+a current force or committed impulse.
+
+## Domain frame
+
+```ts
+interface HairAffordanceFrame {
+  subjectId: CharacterId;
+  storyTime: StoryTimestamp;
+  profile: HairStructuralProfile;
+  mechanics: HairEffectiveMechanics;
+  presentation: HairPresentationState;
+  wetness: UnitInterval;
+  contamination?: ContaminationRead;
+  actualContacts: readonly BodyContactPair[];
+  wind?: WindRead;
+  motion?: MotionRead;
+  recentEvents: readonly AffordanceCausalEvent[];
+}
+```
+
+The lane adapter assembles the frame from authoritative current-cut reads.
+Hair code performs no persistence access.
 
 ## Phenomena
 
 ### `hair.wet_clumping`
 
-A standing visual observation derived from current wetness, clump affinity,
-texture, condition, contamination, and arrangement.
-
-Possible semantic tags:
+Consumes profile/mechanics, wetness, contamination, and arrangement. It may
+emit:
 
 - `slightly_gathered`;
 - `distinct_strands`;
@@ -101,20 +180,16 @@ Possible semantic tags:
 - `wet_darkened_relative_to_base`;
 - `retains_droplets`.
 
-No rain cause may be attached unless a recent authoritative exposure event
+A rain cause is attached only when a recent authoritative exposure event
 supports it.
 
 ### `hair.wind_or_motion_response`
 
-An actual motion observation, not a generic statement that the hair “can” move.
-It requires current wind, subject motion, or an impulse event.
-
-Conceptually:
+Consumes only mechanics, presentation, current wind/motion, and relevant
+impulse events.
 
 ```text
-force × exposed loose fraction × flexibility
--------------------------------------------------
-effective strand/bulk load × water load × binding
+response = current force × mobilityCapacity × exposedFreeArea
 ```
 
 Output bands:
@@ -124,29 +199,36 @@ Output bands:
 - clear — loose strands lift or sweep across a region;
 - strong — unbound hair whips or streams.
 
-Wetness must not increase whole-hair mobility. A strong gust may produce an
-ends-only observation while the soaked or bound bulk remains constrained.
+Wetness must not increase whole-hair mobility. A strong gust may move exposed
+ends while soaked or bound bulk remains constrained.
 
 ### `hair.strands_adhere_to_skin`
 
+Consumes profile reach, clump/retained-water mechanics, presentation, actual
+contacts, and final effective coverage.
+
 Hard requirements:
 
-- current clumping/wetness above threshold;
-- nominal reach includes the target region;
-- a current hair ↔ skin contact pair is asserted by the geometry owner;
-- source and target are not blocked by opaque coverage.
+- nominal reach includes the target;
+- a current hair ↔ target contact is asserted;
+- sufficient wetness/clumping exists;
+- enough loose hair exists.
 
-Hair length licenses possible reach only. It never invents contact.
+Reach licenses possible contact; it never invents contact.
+Coverage/opacity may hide a physically present adhesion read during perception;
+it does not erase the underlying contact.
 
 ### `hair.sheds_droplets`
 
-Requires retained water plus a committed impulse such as a shake, sudden turn,
-run, impact, or gust. The read may describe visible shedding but must not reduce
-wetness as a side effect.
+Consumes retained water, free moving fraction, and current impulse events. A
+shake, sudden turn, run, impact, or gust is required.
 
-## Constraints and suppression
+The read may describe visible shedding but cannot reduce authoritative wetness
+as a side effect.
 
-Expected suppression codes include:
+## Constraints and diagnostics
+
+Expected suppression codes:
 
 - `no_current_force`;
 - `bound`;
@@ -156,39 +238,47 @@ Expected suppression codes include:
 - `insufficient_wetness`;
 - `target_out_of_reach`;
 - `no_asserted_contact`;
-- `target_opaque`.
+- `no_current_impulse`;
+- `below_response_threshold`.
 
-Suppression evidence is diagnostic and test-facing. It is not prose material.
+Debug output exposes attribute contributions, derived mechanics, the
+phenomenon-specific response, and the final threshold/suppression reason.
+Perception diagnostics separately record `target_opaque`, occlusion, distance,
+light, and unavailable channels.
 
 ## Worked cases
 
-### A — dry, fine, shoulder-length, loose; moderate breeze
+### Dry, fine, shoulder-length, loose; moderate breeze
 
-- motion observation may resolve at clear strength;
-- no adhesion without wetness and asserted contact;
-- no wet-clumping cue.
+- low effective load and high free-moving fraction support a clear motion read;
+- no wet clumping;
+- no adhesion without wetness and contact.
 
-### B — saturated, dense/coarse, shoulder-length; light breeze; exposed neck contact
+### Saturated, dense/coarse, shoulder-length; light breeze; exposed neck contact
 
-- whole-hair wind motion is suppressed by water load and density;
+- high effective load suppresses whole-hair wind motion;
 - wet clumping resolves;
-- neck adhesion resolves;
-- recent-rain cause is included only if the event exists.
+- asserted exposed neck contact licenses adhesion;
+- rain provenance appears only if the event exists.
 
-### C — same as B, braided under a hood
+### Same hair braided under a hood
 
-- binding and coverage suppress motion;
-- hood/coverage prevents visible neck adhesion;
-- no cue is emitted merely because static hair attributes make it theoretically
-  possible.
+- binding and coverage reduce free-moving fraction and exposed area;
+- visible motion is suppressed;
+- any authoritative under-hood adhesion remains physically valid but is hidden
+  by perception;
+- no cue is emitted merely because structural reach made contact possible.
 
-### D — damp thick hair, strong sudden gust, loose ends below hood
+### Damp thick hair; strong gust; loose ends below hood
 
-- bound/covered bulk remains constrained;
-- exposed ends may stir at subtle strength;
-- the narrator may mention the ends, not claim the hairstyle flies free.
+- covered bulk remains constrained;
+- exposed loose ends may stir;
+- the observation is ends-only and cannot be narrated as the whole style flying
+  free.
 
 ## Narrator projection
+
+Physics emits semantic facts:
 
 ```ts
 {
@@ -198,38 +288,45 @@ Suppression evidence is diagnostic and test-facing. It is not prose material.
   targetLocationId: "neck",
   intensityBand: "clear",
   semanticTags: ["damp", "clumped", "several_strands"],
-  cause: { kind: "recent_rain_exposure", endedMinutesAgo: 2 },
   repeatKey: "hair:adhesion:neck",
 }
 ```
 
-The cue may include the resolved hair color for natural realization, but color
-is not itself the reason adhesion occurred.
+Cue projection may enrich this with resolved hair color and recent-cause
+metadata. Color helps phrase the observation but never affects whether
+adhesion occurred.
+
+The prompt gets only a ranked, perception-safe cue—not the hair profile,
+mechanics object, equations, or suppressed alternatives.
 
 ## Reference-image extraction
 
-A vision model may propose hair length, texture, color, density, and strand
-thickness during character authoring. Only canonical values accepted into the
-attribute registry are physics-authoritative. Raw image descriptions and
-low-confidence guesses do not enter this resolver.
+A vision model may propose length, texture, color, density, and strand
+thickness during authoring. Only accepted canonical values become profile
+inputs. Raw image descriptions and low-confidence guesses never enter the
+runtime frame.
 
 ## Acceptance tests
 
+- phenomena never receive raw hair enum values;
+- structural profile compilation is deterministic and registration-order
+  independent;
+- greater density, strand thickness, or wetness never lowers effective load;
+- stronger binding/pinning/coverage never increases free-moving fraction;
 - wet dense hair in light wind never produces whole-hair flight;
-- increasing wetness beyond the loading band never increases whole-hair
-  mobility;
-- stronger binding never increases exposed loose fraction;
-- reach without current contact never produces adhesion;
-- current wet contact behind opaque coverage produces no visual cue;
-- droplet shedding requires an impulse event;
+- reach without asserted contact never produces adhesion;
+- contact behind opaque coverage produces no visual cue;
+- retained water without an impulse produces no droplet-shedding observation;
 - no force/motion input produces no motion observation;
-- identical inputs and registry version produce byte-identical output;
+- a strong gust may move exposed ends without moving constrained bulk;
 - repeated cues are capped downstream without changing the physical read.
 
 ## Open questions
 
 - Final `hair.quality` split and stored-value sweep.
 - Which authoring/presentation system owns `HairPresentationState`.
+- First authoritative coarse hair/body contact producer.
 - Whether wet darkening needs per-color lightness metadata or only a relative
   semantic tag.
-- Exact calibration tables and thresholds after fixture testing.
+- Exact chat/successor frame-adapter and cut-capture seams.
+- Calibration tables and thresholds after fixture testing.

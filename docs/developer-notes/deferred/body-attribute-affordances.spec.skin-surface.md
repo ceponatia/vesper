@@ -11,6 +11,13 @@ Derive observable skin-surface detail from canonical skin attributes plus
 It answers how an already-established state reads on this body, under this
 coverage and lighting, to this observer.
 
+It follows the shared
+[domain architecture](body-attribute-affordances.spec.architecture.md), but it
+should not invent an `EffectiveMechanics` object merely for symmetry. The first
+implementation compiles reusable per-region appearance structure, assembles a
+current frame, and leaves phenomenon-specific response calculations in their
+own files until two or more consumers genuinely share one.
+
 Examples:
 
 - sweat supplied by physiology appears as a faint sheen, beads, or running
@@ -40,16 +47,23 @@ automatic per-turn cue.
 - piloerection supplied by physiology;
 - contamination placement and kind;
 - any persistent pressure mark supplied by body/presentation state or an
-  explicit recent event;
-- coverage, light, distance, orientation, and contact.
+  explicit recent event.
+
+### Perception inputs
+
+Coverage, light, distance, orientation, line of sight, and asserted contact are
+applied after surface-state resolution. They decide whether a current physical
+surface state is visually or tactilely available; they do not decide whether
+the state exists.
 
 No sign means no derived observation. The affordance layer never decides that a
 character “must be blushing.”
 
-## Profile vocabulary
+## Structural profile
 
 ```ts
-interface SkinSurfaceProfile {
+interface SkinSurfaceRegionProfile {
+  locationId: BodyLocationId;
   baselineReflectivity: UnitInterval;
   moistureFilmAffinity: UnitInterval;
   dropletBeadingAffinity: UnitInterval;
@@ -58,8 +72,10 @@ interface SkinSurfaceProfile {
     toneDeepeningVisibility: UnitInterval;
     luminosityChangeVisibility: UnitInterval;
   };
-  bodyHairVisibilityByLocation: ReadonlyMap<BodyLocationId, UnitInterval>;
+  bodyHairVisibility: UnitInterval;
 }
+
+type SkinSurfaceProfile = readonly SkinSurfaceRegionProfile[];
 ```
 
 Do not encode darker skin as simply “low flush contrast.” The response profile
@@ -68,12 +84,37 @@ only valid expression. Calibration should be reviewed against diverse reference
 fixtures and should never imply that physiological change is absent merely
 because red coloration is less prominent.
 
+The compiler creates entries only for locations present on the realized body.
+The same surface phenomena run over each region profile; adding a region does
+not create a second moisture or color-response implementation.
+
+## Effective mechanics and frame
+
+V1 has no standalone `SkinSurfaceEffectiveMechanics`. Current moisture mode,
+color-response visibility, and contamination mode are phenomenon-specific
+results, not reusable capacities yet.
+
+```ts
+interface SkinSurfaceAffordanceFrame {
+  subjectId: CharacterId;
+  storyTime: StoryTimestamp;
+  regions: SkinSurfaceProfile;
+  wetnessByLocation: ReadonlyMap<BodyLocationId, UnitInterval>;
+  physiologySigns: readonly PhysiologySignRead[];
+  contaminationByLocation: ReadonlyMap<BodyLocationId, ContaminationRead>;
+  persistentMarks: readonly BodySurfaceMarkRead[];
+}
+```
+
+The physiology/body-state adapter supplies signs and marks. The domain never
+receives raw emotional drivers or infers a sign from prose.
+
 ## Phenomena
 
-### `skin.moisture_visibility`
+### `skin.moisture_surface_state`
 
-Combines authoritative wetness with texture, grooming/surface state, light,
-coverage, and region.
+Combines authoritative wetness with texture, grooming/surface state, and
+region.
 
 Output bands may include:
 
@@ -83,12 +124,18 @@ Output bands may include:
 - `running_droplets`;
 - `dampened_body_hair`.
 
-A `highlights_contour` tag is allowed only when the current light and visible
-surface actually support it; musculature alone is not sufficient.
+`highlights_contour` is not a physical surface tag. Cue projection may add it
+only after the perception read proves that current light, angle, and visible
+surface support the effect; musculature alone is not sufficient.
 
-### `skin.color_response_visibility`
+The phenomenon computes its moisture response from one
+`SkinSurfaceRegionProfile` plus the region's live inputs. If later phenomena
+need the same film/beading intermediate, promote it to a named mechanics field
+then—not before.
 
-Requires an authoritative physiology/body-state sign and emits only the visible
+### `skin.color_response_surface_state`
+
+Requires an authoritative physiology/body-state sign and emits only the
 surface response. Possible tags include:
 
 - `redness`;
@@ -97,15 +144,16 @@ surface response. Possible tags include:
 - `pallor`;
 - `mottling`.
 
-Cause comes from the supplied sign/event, not from narrator inference.
+Cause comes from the supplied sign/event, not from narrator inference. Whether
+an observer can distinguish the response is decided by perception.
 
-### `skin.piloerection_visibility`
+### `skin.piloerection_surface_state`
 
-Requires an authoritative piloerection sign. Visual strength depends on region,
-body hair, light, distance, and coverage. A tactile observation may survive when
-current asserted skin contact exists even if the visual channel does not.
+Requires an authoritative piloerection sign. The physical response is
+region-specific. Visual availability depends on body hair, light, distance,
+and coverage; tactile availability requires current asserted skin contact.
 
-### `skin.contamination_visibility`
+### `skin.contamination_surface_state`
 
 Consumes authoritative contamination placement. Moisture changes the visual
 mode — dry dust, damp smears, mud streaks — but the affordance read does not
@@ -136,13 +184,19 @@ response. With temples and collarbone exposed in useful light:
 - Prefer meaningful changes from baseline, not permanent skin facts.
 - Do not mention a surface observation every turn because it remains valid.
 - Preserve region, channel, and intensity.
+- Apply coverage/light/distance/contact only in perception and cue projection,
+  never by deleting the underlying surface state.
 - Never translate a low-visibility red response into “no reaction.”
 - Do not infer the emotional or physiological cause beyond supplied provenance.
 
 ## Acceptance tests
 
+- phenomena never receive raw skin/body-hair enum values;
+- structural compilation creates profiles only for realized body locations;
+- one region can be added without duplicating surface phenomenon code;
 - absent physiology sign means no flush/pallor/goosebump observation;
-- opaque coverage blocks the visual channel;
+- opaque coverage blocks the visual channel without changing surface-state
+  resolution;
 - asserted contact may license a tactile channel without licensing sight;
 - different skin response profiles produce different semantic modes without
   changing underlying physiology intensity;

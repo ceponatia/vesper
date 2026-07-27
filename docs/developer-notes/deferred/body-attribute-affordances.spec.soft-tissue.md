@@ -11,6 +11,12 @@ asserted contact on soft body regions. This is mechanics of an already-existing
 body state, not physiology, behavior, or an invitation to mention body motion in
 every scene.
 
+This is the proving case for the shared architecture's
+[regional-collection pattern](body-attribute-affordances.spec.architecture.md#regional-collections):
+one set of profile/mechanics/phenomenon contracts should serve every applicable
+body region rather than duplicating “breast physics,” “buttocks physics,” and
+“thigh physics.”
+
 The domain is high-value for visual consistency and high-risk for repetitive or
 voyeuristic narration. The common case must be silence; only meaningful change,
 current motion, contact, or a support transition should produce a cue.
@@ -64,20 +70,69 @@ Potential canonical contributors:
 Attribute presence/body configuration gates whether a region profile exists.
 Do not create negligible phantom regions merely to simplify a formula.
 
-## Physical profile
+## Structural profile
 
 ```ts
 interface SoftTissueRegionProfile {
+  locationId: BodyLocationId;
   restMassBand: UnitInterval;
   compliance: UnitInterval;
   damping: UnitInterval;
   freeMobility: UnitInterval;
   restGeometry: SoftTissueRestGeometry;
 }
+
+type SoftTissueProfile = readonly SoftTissueRegionProfile[];
 ```
 
 Current support, coverage, physiological modifiers, and pose are live inputs,
-not profile fields.
+not profile fields. Compile entries only for regions present on the realized
+body and supported by trustworthy attribute mappings.
+
+## Effective mechanics
+
+Each region combines its structure with current support and authoritative
+physiological modifiers:
+
+```ts
+interface SoftTissueRegionEffectiveMechanics {
+  locationId: BodyLocationId;
+  effectiveMass: UnitInterval;
+  effectiveDamping: UnitInterval;
+  supportedMobility: UnitInterval;
+  compressionResponse: UnitInterval;
+  restContour: SoftTissueRestGeometry;
+}
+```
+
+These terms are shared:
+
+- supported mobility and effective damping feed both rest-state and impulse
+  response;
+- effective mass feeds impulse response and gravity-dependent rest state;
+- compression response feeds body contact and tight-garment pressure.
+
+They describe current capacity and material condition. They do not prove an
+impulse, contact, or narratively relevant change.
+
+## Domain frame
+
+```ts
+interface SoftTissueAffordanceFrame {
+  subjectId: CharacterId;
+  storyTime: StoryTimestamp;
+  profile: SoftTissueProfile;
+  mechanics: readonly SoftTissueRegionEffectiveMechanics[];
+  pose: PostureRead;
+  supportByLocation: ReadonlyMap<BodyLocationId, SupportRead>;
+  actualContacts: readonly BodyContactPair[];
+  motion?: MotionRead;
+  recentEvents: readonly AffordanceCausalEvent[];
+}
+```
+
+Phenomena operate over narrowed region frames, so adding another region reuses
+the same motion/compression implementation.
 
 ## Phenomena
 
@@ -99,22 +154,25 @@ Requires an actual current motion read or committed impulse event: running,
 stairs, jumping, sudden turn, collision, laughter, vehicle motion, and similar.
 
 Motion strength is scaled by rest mass and mobility, then reduced by support and
-damping. Ordinary walking should usually remain below the narrator threshold.
-No impulse means no bounce/sway observation.
+damping. The phenomenon consumes the shared effective mechanics plus a current
+impulse; it does not reinterpret raw regional attributes. Ordinary walking
+should usually remain below the narrator threshold. No impulse means no
+bounce/sway observation.
 
 ### `soft_tissue.contact_compression`
 
 Requires an asserted contact pair or an authoritative tight-garment pressure
 read. It may produce:
 
-- visible deformation where exposure/coverage permits;
-- tactile pressure/deformation for the participating contact observer;
+- physical deformation at the asserted contact region;
+- channel-agnostic pressure/deformation evidence for perception;
 - a constraint on incompatible narration.
 
 The resolver never infers that bodies are pressed together merely because
-characters are close.
+characters are close. Coverage and observer participation decide downstream
+visual/tactile availability without deleting the physical read.
 
-## Suppression
+## Suppression and filtering
 
 Expected reasons include:
 
@@ -122,19 +180,19 @@ Expected reasons include:
 - `strong_support`;
 - `high_damping`;
 - `no_asserted_contact`;
-- `opaque_heavy_coverage`;
 - `observer_channel_unavailable`;
 - `below_narrative_threshold`.
 
-A physically valid hidden effect may remain in diagnostics while producing no
-visual cue.
+`observer_channel_unavailable` and opaque coverage are perception-stage
+suppression, not physical-phenomenon failure. A physically valid hidden effect
+may remain in the captured read while producing no visual cue.
 
 ## Worked cases
 
 ### Unsupported region during a committed stair-running motion
 
 A clear motion observation may resolve if mass/mobility exceed the threshold and
-coverage permits it.
+perception permits it.
 
 ### Same body with strong support
 
@@ -167,6 +225,10 @@ At minimum:
 
 ## Acceptance tests
 
+- phenomena never receive raw regional attribute enums;
+- adding a compatible region reuses the shared profile/mechanics/phenomenon
+  pipeline;
+- absent body regions do not receive phantom profiles;
 - no impulse produces no impulse-motion observation;
 - stronger support never increases free motion;
 - higher damping never increases post-impulse motion;

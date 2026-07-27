@@ -16,8 +16,8 @@ and motion to derive current visual garment effects:
 - pose-dependent drape.
 
 Garments are not body attributes. This spec is an integration consumer of the
-same phenomenon machinery because body-adjacent visual narration needs clothing
-and body state to agree.
+same [domain architecture](body-attribute-affordances.spec.architecture.md)
+because body-adjacent visual narration needs clothing and body state to agree.
 
 ## Ownership boundary
 
@@ -30,25 +30,27 @@ The wardrobe/item system owns:
 - worn location and current fastened state;
 - persistent garment wetness, dirt, damage, displacement, and riding-up state.
 
-The affordance layer receives a normalized `GarmentPhysicalRead`. It must not
-create a second garment catalog or mutate worn state.
+## Structural profile
+
+The affordance layer receives a normalized structural profile from wardrobe. It
+must not create a second garment catalog or mutate worn state.
 
 ```ts
-interface GarmentPhysicalRead {
+interface GarmentStructuralProfile {
   garmentId: ItemId;
-  regions: readonly GarmentRegionPhysicalRead[];
+  regions: readonly GarmentRegionStructuralProfile[];
 }
 
-interface GarmentRegionPhysicalRead {
+interface GarmentRegionStructuralProfile {
+  regionId: GarmentRegionId;
   coveredBodyLocations: readonly BodyLocationId[];
   materialClass: GarmentMaterialClass;
   absorbency: UnitInterval;
-  saturation: UnitInterval;
   clingAffinity: UnitInterval;
   baselineOpacity: UnitInterval;
   wetOpacityResponse: UnitInterval;
-  flutterMass: UnitInterval;
-  drapeStiffness: UnitInterval;
+  dryMass: UnitInterval;
+  dryDrapeStiffness: UnitInterval;
   fit: "loose" | "fitted" | "tight" | "structured";
 }
 ```
@@ -56,15 +58,66 @@ interface GarmentRegionPhysicalRead {
 Base color/lightness metadata may affect visible wet-opacity change, but it
 belongs to the garment read, not to body attributes.
 
+Saturation, persistent displacement, damage, and fastened state remain live
+wardrobe/presentation state. They are not structural profile fields.
+
+## Effective mechanics
+
+Each garment region compiles once per cut:
+
+```ts
+interface GarmentRegionEffectiveMechanics {
+  regionId: GarmentRegionId;
+  saturation: UnitInterval;
+  waterLoad: UnitInterval;
+  effectiveFlutterLoad: UnitInterval;
+  effectiveDrapeStiffness: UnitInterval;
+  contourConformance: UnitInterval;
+  effectiveOpacity: UnitInterval;
+}
+```
+
+These are named because several phenomena share them:
+
+- water load affects surface state, motion, and drape;
+- effective flutter load affects wind and body-motion response;
+- contour conformance affects wet cling and pose drape;
+- effective opacity feeds both the garment observation and final coverage read.
+
+Actual cling still requires current garment/body contact. High contour
+conformance is capacity, not proof that cling is occurring.
+
+## Domain frame
+
+```ts
+interface GarmentAffordanceFrame {
+  subjectId: CharacterId;
+  storyTime: StoryTimestamp;
+  profile: GarmentStructuralProfile;
+  mechanics: readonly GarmentRegionEffectiveMechanics[];
+  currentState: GarmentPresentationRead;
+  actualContacts: readonly GarmentBodyContactRead[];
+  pose: PostureRead;
+  wind?: WindRead;
+  motion?: MotionRead;
+  recentEvents: readonly AffordanceCausalEvent[];
+}
+```
+
+Phenomena consume narrowed region views instead of the entire wardrobe.
+
 ## Resolution order
 
 Do not build a general cyclic phenomenon graph. Use an explicit staged pipeline:
 
-1. wardrobe supplies authored coverage and current garment state;
-2. garment phenomena derive current cling, displacement, and effective opacity;
-3. those results produce a final `EffectiveCoverageRead`;
-4. body-surface perception uses that final read;
-5. narrator ranking happens after both garment and body observations exist.
+1. wardrobe supplies structural profiles and authoritative current state;
+2. garment mechanics derive saturation-dependent regional terms once;
+3. garment phenomena derive current surface, cling, motion, drape, and opacity
+   observations;
+4. effective opacity plus authored coverage produce final
+   `EffectiveCoverageRead`;
+5. body-surface perception uses that final read;
+6. narrator ranking happens after garment and body observations exist.
 
 A garment phenomenon may change the **read** of coverage/opacity but cannot
 silently rewrite the garment or body substrate.
@@ -85,7 +138,9 @@ A leather jacket and cotton shirt should not use the same response.
 ### `garment.wet_cling`
 
 Requires sufficient saturation and cling affinity. Fit, stiffness, lining, and
-body contact determine where cling occurs.
+body contact determine where cling occurs. It consumes the shared contour-
+conformance mechanics and asserted regional contacts rather than recalculating
+wet flexibility from raw material fields.
 
 The observation carries affected garment/body regions and a contour-read band.
 It does not invent uncovered anatomy; downstream exposure policy remains
@@ -93,9 +148,8 @@ binding.
 
 ### `garment.effective_opacity`
 
-Derives a current opacity band from baseline opacity, saturation response,
-material/construction, and color/lightness metadata. This feeds the staged
-`EffectiveCoverageRead`.
+Projects the shared current `effectiveOpacity` into a semantic observation band
+and the staged `EffectiveCoverageRead`.
 
 Do not treat all white fabric as transparent when wet or all dark fabric as
 unchanged. The authored garment/material profile decides the response.
@@ -103,7 +157,9 @@ unchanged. The authored garment/material profile decides the response.
 ### `garment.wind_or_motion_response`
 
 Requires current wind, subject motion, or an impulse. Soaked fabric generally
-loads and hangs more heavily; fit and construction constrain movement.
+loads and hangs more heavily; fit and construction constrain movement. The
+phenomenon consumes `effectiveFlutterLoad` and current force rather than raw
+absorbency/saturation.
 
 Outputs describe actual current movement — a hem stirring, loose sleeve
 fluttering, cape snapping — not generic capability.
@@ -156,6 +212,9 @@ This layer must preserve:
 ## Acceptance tests
 
 - wardrobe is the sole owner of garment material and persistent garment state;
+- phenomena never receive raw item enum values or duplicate material
+  calibration;
+- each garment region derives shared effective mechanics once per cut;
 - wet cotton and wet leather produce materially different observations;
 - saturation cannot increase flutter for a fabric whose authored water loading
   should suppress it;
