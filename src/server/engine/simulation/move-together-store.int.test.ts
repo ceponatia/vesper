@@ -9,6 +9,7 @@ import { submitDurableMoveTogether } from "./move-together-store";
 import { seedDurableMaterialBranch } from "./material-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * command-integrity A4 — the atomic walk-with-me. The old three-transaction
@@ -47,6 +48,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("move-together-store.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {

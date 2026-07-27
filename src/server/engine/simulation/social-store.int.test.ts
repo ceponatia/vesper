@@ -33,6 +33,7 @@ import {
   submitDurableRecordRelationshipEntry,
 } from "./social-store";
 import { seedDurableSpaceTopology } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E5.5 slice 1 durable relationship-ledger substrate (engine.spec §21.3):
@@ -71,6 +72,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("social-store.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {

@@ -12,6 +12,7 @@ import { seedDurableMaterialBranch } from "./material-store";
 import { branchEventFromRow } from "./observation-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { seedDurableSpaceTopology, submitDurableMoveActor } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 const SEED_SECOND = 80_000;
 const WALK = 600;
@@ -42,6 +43,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("observation-store.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {

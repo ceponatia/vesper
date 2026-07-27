@@ -41,6 +41,7 @@ import { forkBranch } from "./branch-store";
 import { seedDurableMaterialBranch, submitDurableTransferItem } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { readDurableSpaceBranch, seedDurableSpaceTopology, submitDurableMoveActor } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 const SEED_SECOND = 20_000;
 const NAP_SECONDS = 1_800;
@@ -72,6 +73,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("activity-store.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {
