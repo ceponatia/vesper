@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { attributeRegistry, type AttributeDefinition, type AttributeValue } from "@/contracts/attributes";
+import { attributeRegistry, promptValueWithNoneElided, type AttributeDefinition, type AttributeValue } from "@/contracts/attributes";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { exposedRegions, resolveWardrobeVisibility, type RegionExposure, type WornItemInput } from "@/contracts/items/visibility";
 import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
@@ -366,9 +366,13 @@ function formatAttribute(def: AttributeDefinition, value: string | string[] | nu
 
 /** Value-only token (no label noun) for the grouped avatar prompt (scene-images C). */
 function formatAttributeValue(def: AttributeDefinition, value: string | string[] | number | boolean): string {
-  if (typeof value === "boolean") return value ? humanize(def.label).toLowerCase() : "";
-  if (typeof value === "number") return `${value}${def.unit ? ` ${def.unit}` : ""}`;
-  return Array.isArray(value) ? value.map(humanize).join(", ") : humanize(value);
+  // "none" is elided unless the definition opts in (contracts/attributes/value.ts) —
+  // "piercings: none" plants the very noun the image model then paints anyway.
+  const rendered = promptValueWithNoneElided(def, value);
+  if (rendered === null) return "";
+  if (typeof rendered === "boolean") return rendered ? humanize(def.label).toLowerCase() : "";
+  if (typeof rendered === "number") return `${rendered}${def.unit ? ` ${def.unit}` : ""}`;
+  return Array.isArray(rendered) ? rendered.map(humanize).join(", ") : humanize(rendered);
 }
 
 function humanize(value: string): string {

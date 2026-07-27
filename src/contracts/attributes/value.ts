@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { attributeIdPatternSchema, type AttributeMutability } from "./types";
+import { attributeIdPatternSchema, type AttributeDefinition, type AttributeMutability } from "./types";
 import {
   provenanceSourceSchema,
   provenanceSources,
@@ -39,6 +39,32 @@ export type AttributeValue = z.infer<typeof attributeValueSchema>;
  */
 export function resolveAttributes(base: readonly AttributeValue[], overlays: readonly AttributeValue[]): AttributeValue[] {
   return resolveProvenance(base, overlays);
+}
+
+/**
+ * Prompt-side "none" elision — the single rule every prompt builder (image,
+ * narrator, chat) runs a resolved value through before rendering it. A `"none"`
+ * (no piercings, no freckles, no glow) is DROPPED unless the definition opts in
+ * via `renderNoneInPrompts`: "nose piercings: none" both spends tokens and
+ * plants the very noun we don't want the model dwelling on — image models
+ * sometimes paint the mentioned feature anyway. Enum-list values have their
+ * "none" members filtered out; a list left empty elides whole. Storage and
+ * editing are untouched — a stored "none" still pins the attribute down in the
+ * editor (unlike *unset*, which invites the forge/narrator to infer).
+ *
+ * Returns the (possibly filtered) value, or null when nothing renderable remains.
+ */
+export function promptValueWithNoneElided(
+  def: Pick<AttributeDefinition, "renderNoneInPrompts">,
+  value: AttributeValue["value"],
+): AttributeValue["value"] | null {
+  if (def.renderNoneInPrompts) return value;
+  if (typeof value === "string") return value.trim().toLowerCase() === "none" ? null : value;
+  if (Array.isArray(value)) {
+    const kept = value.filter((v) => v.trim().toLowerCase() !== "none");
+    return kept.length > 0 ? kept : null;
+  }
+  return value;
 }
 
 /**

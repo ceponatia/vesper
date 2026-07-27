@@ -115,6 +115,24 @@ describe("attribute registry invariants", () => {
     ).toThrow(/not in allowedValues/);
   });
 
+  it('defineAttributeGroup rejects renderNoneInPrompts when "none" is not in the vocabulary', () => {
+    expect(() =>
+      defineAttributeGroup("build", [
+        {
+          id: "build.bogus",
+          label: "Bogus",
+          kind: "physical",
+          category: "build",
+          valueType: "enum",
+          description: "Flagged none-keeper with no none member.",
+          mutability: "inherent",
+          allowedValues: ["a", "b"],
+          renderNoneInPrompts: true,
+        },
+      ]),
+    ).toThrow(/"none" is not in allowedValues/);
+  });
+
   it("buildRegistry rejects duplicate ids", () => {
     const dup = registry.definitions[0];
     expect(dup).toBeDefined();

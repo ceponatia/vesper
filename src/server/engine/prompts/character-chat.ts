@@ -1,4 +1,4 @@
-import { attributeRegistry, type AttributeDefinition } from "@/contracts/attributes";
+import { attributeRegistry, promptValueWithNoneElided, type AttributeDefinition } from "@/contracts/attributes";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
 import { isIntimateAttributeCategory } from "@/contracts/body/locations";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
@@ -850,22 +850,26 @@ const humanize = (value: string): string => value.replaceAll("_", " ").trim();
  * token (attribute-narrator-guidance.plan.md). No gloss ⇒ byte-identical to before.
  */
 function attributePhrase(
-  def: Pick<AttributeDefinition, "label" | "unit" | "narratorGuidance">,
+  def: Pick<AttributeDefinition, "label" | "unit" | "narratorGuidance" | "renderNoneInPrompts">,
   value: AttributeValue["value"],
 ): string | null {
+  // "none" is elided unless the definition opts in (contracts/attributes/value.ts) —
+  // "nose piercings: none" plants the very noun the narrator then riffs on.
+  const rendered = promptValueWithNoneElided(def, value);
+  if (rendered === null) return null;
   const glossed = (raw: string): string => {
     const text = humanize(raw);
     const gloss = def.narratorGuidance?.[raw];
     return gloss ? `${text} (${gloss})` : text;
   };
   const label = def.label.toLowerCase();
-  if (typeof value === "boolean") return value ? label : null;
-  if (typeof value === "number") return `${label}: ${value}${def.unit ? ` ${def.unit}` : ""}`;
-  if (Array.isArray(value)) {
-    const joined = value.map((v) => glossed(String(v))).join(", ");
+  if (typeof rendered === "boolean") return rendered ? label : null;
+  if (typeof rendered === "number") return `${label}: ${rendered}${def.unit ? ` ${def.unit}` : ""}`;
+  if (Array.isArray(rendered)) {
+    const joined = rendered.map((v) => glossed(String(v))).join(", ");
     return joined ? `${label}: ${joined}` : null;
   }
-  const text = value.trim() ? glossed(value) : "";
+  const text = rendered.trim() ? glossed(rendered) : "";
   return text ? `${label}: ${text}` : null;
 }
 

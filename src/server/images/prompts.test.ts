@@ -668,6 +668,41 @@ describe("characterAppearanceSummary", () => {
   });
 });
 
+describe('prompt-side "none" elision (renderNoneInPrompts)', () => {
+  it('drops a "none" attribute from the avatar prompt — stating it plants the noun the model then paints', () => {
+    const p = profileWith({
+      attributes: [
+        { id: "nose.piercings", value: "none", source: "base" },
+        { id: "face.freckles", value: "none", source: "base" },
+        { id: "hair.color", value: "red", source: "base" },
+      ],
+    });
+    const prompt = buildAvatarPrompt("Mira", p, "realistic");
+    expect(prompt).toContain("Hair: red");
+    // The whole bucket vanishes — no "Nose: none" / "Face: none" clause survives.
+    expect(prompt).not.toContain("Nose:");
+    expect(prompt).not.toContain("Face:");
+    expect(prompt).not.toMatch(/\bnone\b/);
+  });
+
+  it('drops "none" from the scene appearance summary but keeps real values', () => {
+    const summary = characterAppearanceSummary([
+      { id: "ears.piercings", value: "none", source: "base" },
+      { id: "eyes.luminosity", value: "none", source: "base" },
+      { id: "hair.color", value: "red", source: "base" },
+    ]);
+    expect(summary).toBe("Hair color: red");
+  });
+
+  it('keeps a flagged none — bare pubic hair is itself the look (renderNoneInPrompts)', () => {
+    const exposed = intimateSceneAppearance(
+      [{ id: "vulva.pubic_hair_density", value: "none", source: "base" }],
+      { torso: "covered", pelvis: "bare", legs: "bare", feet: "bare" },
+    );
+    expect(exposed).toContain("Pubic hair density: none");
+  });
+});
+
 describe("intimateSceneAppearance (exposure-gated)", () => {
   const attrs: AttributeValue[] = [
     { id: "penis.size", value: "average", source: "base" },
