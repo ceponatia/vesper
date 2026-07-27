@@ -23,6 +23,7 @@ Vitest 4, one root config (`vitest.config.ts`) including `src/**/*.test.ts` and 
 - Degradation tests assert the fallback **and** the diagnostic code ([resilience.md](resilience.md) §8).
 - Every bug fix lands with the regression test that would have caught it.
 - Embedding-dependent logic tests use `pseudoEmbed` (deterministic, from `server/ai/embeddings`) so similarity thresholds are exact.
+- The symlink-escape containment cases (`server/images/paths.test.ts`, `server/images/assets.test.ts`) gate on `canCreateSymlinks()` (`@/server/test-support`), which probes once by planting a symlink in a temp dir: on Windows without Developer Mode or elevation `fs.symlink` fails with EPERM, so those cases self-skip with a stderr note rather than failing on fixture setup. On CI (`CI=true`) a failed probe **throws** — the escape tests are a security gate and must never silently vanish there. The containment logic itself is never weakened by the skip.
 
 ## Commands
 

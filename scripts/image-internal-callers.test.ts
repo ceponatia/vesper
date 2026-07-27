@@ -27,6 +27,10 @@ const APPROVED: Readonly<Record<string, readonly string[]>> = {
 
 function filesUnder(root: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    // `__name__` directories are transient lint fixtures another suite plants in
+    // the live tree mid-run (image-internal-imports.test.ts); racing their
+    // lifetime from a parallel worker made this census flaky.
+    if (entry.isDirectory() && /^__.*__$/.test(entry.name)) continue;
     const absolute = path.join(root, entry.name);
     if (entry.isDirectory()) filesUnder(absolute, out);
     else if (/\.(?:ts|tsx)$/.test(entry.name) && !/\.(?:int\.)?test\.(?:ts|tsx)$/.test(entry.name)) out.push(absolute);
