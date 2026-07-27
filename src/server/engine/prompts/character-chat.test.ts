@@ -446,6 +446,34 @@ describe("buildCharacterChatSystemPrompt", () => {
   });
 });
 
+describe('buildCharacterChatSystemPrompt — prompt-side "none" elision', () => {
+  it('drops a "none" attribute line — "nose piercings: none" invites the narrator to riff on the piercing', () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile({ attributes: [attr("nose.piercings", "none"), attr("hair.color", "red")] }),
+    });
+    expect(prompt).toContain("hair color: red");
+    expect(prompt).not.toMatch(/nose piercings/i);
+    // Control: a real value still renders.
+    const pierced = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile({ attributes: [attr("nose.piercings", "septum")] }),
+    });
+    expect(pierced).toContain("nose piercings: septum");
+  });
+
+  it("keeps a flagged none with its gloss — there the absence is the fact (renderNoneInPrompts)", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile({
+        intimateRegions: ["vulva"],
+        attributes: [attr("vulva.pubic_hair_density", "none")],
+      }),
+    });
+    expect(prompt).toContain("pubic hair density: none (fully bare — no hair at all)");
+  });
+});
+
 describe("buildCharacterChatSystemPrompt — player-input perception (player-input-perception.plan.md slice 1)", () => {
   const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
 

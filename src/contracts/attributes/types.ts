@@ -134,6 +134,19 @@ export const attributeDefinitionSchema = z.object({
    */
   excludeFromPrompts: z.boolean().optional(),
   /**
+   * Opt-in for rendering a resolved `"none"` value in generated prompts. By
+   * default every prompt builder ELIDES a `"none"` (see `promptValueWithNoneElided`
+   * in value.ts): "nose piercings: none" spends tokens to plant the very noun we
+   * don't want the model dwelling on, and image models sometimes paint the
+   * mentioned feature anyway. Set this only where "none" is itself the appearance
+   * fact — a deliberate absence the model would otherwise invent around (e.g.
+   * `vulva.pubic_hair_density: none` = fully bare; unstated, the narrator/render
+   * is free to imagine hair). Requires "none" in `allowedValues` (enforced at
+   * group definition time). Storage/editing is never affected — elision is
+   * strictly a prompt-rendering rule.
+   */
+  renderNoneInPrompts: z.boolean().optional(),
+  /**
    * Enum members that are valid vocabulary but must never be chosen as an
    * *automatic* default — neither the forge's tier-3 unconstrained fallback
    * fill (character-forge.ts §fillVisualDefaults) nor the picker's initial
@@ -194,6 +207,11 @@ export function defineAttributeGroup(category: AttributeCategory, definitions: r
           throw new Error(`Attribute ${def.id} defaultValue "${value}" is not in allowedValues`);
         }
       }
+    }
+    // The flag only means anything when "none" is actually in the vocabulary —
+    // set anywhere else it would silently do nothing (or mask a rename).
+    if (def.renderNoneInPrompts && !def.allowedValues?.includes("none")) {
+      throw new Error(`Attribute ${def.id} sets renderNoneInPrompts but "none" is not in allowedValues`);
     }
     // Narrator glosses key off enum members — a stray key would never render (or worse,
     // mask a vocabulary rename), so it fails loudly at definition time.

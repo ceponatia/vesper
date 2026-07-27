@@ -216,6 +216,12 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
       "heavy",
       "wild",
     ],
+    // "none" here IS the look (fully bare) — elided, the narrator/render is free
+    // to imagine hair, so it survives the prompt-side "none" elision.
+    renderNoneInPrompts: true,
+    narratorGuidance: {
+      none: "fully bare — no hair at all",
+    },
     bodyLocationId: "mons",
   },
   {
@@ -281,6 +287,13 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
       "How much the vulva visibly swells and puffs when aroused — a response tendency, not live state (current arousal rides the arousal meter).",
     mutability: "mutable",
     allowedValues: ["none", "slight", "puffy", "moderate", "heavy", "engorged", "distended"],
+    // A response tendency where the absence IS the information: "none" pins down
+    // that she doesn't swell — elided, the narrator defaults to engorgement
+    // writing at high arousal.
+    renderNoneInPrompts: true,
+    narratorGuidance: {
+      none: "doesn't visibly swell or puff, even fully aroused",
+    },
     bodyLocationId: "vulva",
     promptHints: [
       "Only surfaces when arousal is high or during close examination.",

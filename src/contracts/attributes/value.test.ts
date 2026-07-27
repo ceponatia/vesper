@@ -3,6 +3,7 @@ import {
   attributeValueSchema,
   attributeValueSources,
   overlaySourceMayChange,
+  promptValueWithNoneElided,
   resolveAttributes,
   type AttributeValue,
 } from "./value";
@@ -124,6 +125,28 @@ describe("attributeValueSchema degradation", () => {
       expect(arr.data[0]?.source).toBe("creation");
       expect(arr.data[1]?.source).toBe("manual");
     }
+  });
+});
+
+describe("promptValueWithNoneElided", () => {
+  it('drops a "none" string by default — "piercings: none" plants the noun we don\'t want rendered', () => {
+    expect(promptValueWithNoneElided({}, "none")).toBeNull();
+    expect(promptValueWithNoneElided({}, " None ")).toBeNull();
+  });
+
+  it("passes every non-none value through untouched", () => {
+    expect(promptValueWithNoneElided({}, "septum")).toBe("septum");
+    expect(promptValueWithNoneElided({}, 172)).toBe(172);
+    expect(promptValueWithNoneElided({}, true)).toBe(true);
+  });
+
+  it('filters "none" out of an enum_list, eliding the list only when nothing remains', () => {
+    expect(promptValueWithNoneElided({}, ["none", "crimson"])).toEqual(["crimson"]);
+    expect(promptValueWithNoneElided({}, ["none"])).toBeNull();
+  });
+
+  it("keeps a flagged definition's none — there, the absence IS the appearance fact", () => {
+    expect(promptValueWithNoneElided({ renderNoneInPrompts: true }, "none")).toBe("none");
   });
 });
 
