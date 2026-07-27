@@ -1,7 +1,11 @@
 # Clothing state graph and condition gradients
 
-Status: draft (stub — parked 2026-07-27, owner request; promote per
-[CLAUDE.md](CLAUDE.md) before building)
+Status: next (graduated 2026-07-27 from the deferred parking lot, same day as
+parking. Promotion rulings below settled OQ3/OQ4/OQ5/OQ9; the remaining open
+questions resolve in slice 0. Queued at the top of [roadmap.md](roadmap.md)
+§Next. This plan is the upstream wardrobe-truth prerequisite for the
+still-parked body-attribute-affordances companion set — promoted alone, per
+ruling R1.)
 
 ## What
 
@@ -50,7 +54,7 @@ material**:
 - the successor engine has real item identities/loci and fixed-point
   cleanliness/wear meters, but its chat surface renders only worn item names;
 - the deferred
-  [garment-affordance spec](body-attribute-affordances.spec.garment-interaction.md)
+  [garment-affordance spec](deferred/body-attribute-affordances.spec.garment-interaction.md)
   expects wardrobe-owned material profiles and persistent wetness, dirt,
   damage, displacement, and fastened state that do not exist yet.
 
@@ -131,9 +135,25 @@ The narrator receives:
 
 The graph, coefficients, and percentages remain inspector/debug data.
 
-## Sketch
+## Promotion rulings (owner, 2026-07-27)
 
-### Garment blueprint
+- **R1 (OQ9) — promoted alone, as the prerequisite.** This plan graduates by
+  itself; [deferred/body-attribute-affordances.plan.md](deferred/body-attribute-affordances.plan.md)
+  stays parked and consumes this plan's digest when it later promotes. No
+  shared perception/ranking slice now — slice 8 remains the integration seam.
+- **R2 (OQ3) — continuity may mint ad-hoc garment instances.** An unowned
+  garment the fiction introduces ("a borrowed hoodie") becomes a real
+  chat-scoped instance minted from a validated minimal category template
+  (sparse graph, conservative material, degraded defaults). Guarded exactly as
+  the design rulings demand: never free-text, and a minted garment never
+  decides intimate coverage on its own.
+- **R3 (OQ4) — a left garment stays at its place.** The scene locus persists
+  across scene moves; returning to the room finds the jacket still over the
+  chair. Continuity narrates retrieval as an ordinary transfer operation —
+  never a silent rejoin of the wardrobe.
+- **R4 (OQ5, recommendation adopted) — wetness + crease_load ship first**,
+  with cleanliness/wear bridged for compatibility; contaminants and damage
+  stay sparse located facts, not additional global meters.
 
 The schema belongs under `src/contracts/items`, not in an untyped `fields`
 convention:
@@ -493,22 +513,16 @@ memory work. It supplies garment observations to those consumers.
 
 ## Open questions
 
+_OQ3, OQ4, OQ5, and OQ9 were resolved at promotion — see §Promotion rulings.
+The rest resolve in slice 0, before schema work._
+
 - **OQ1 — v1 authoring depth.** Confirm sparse category topology plus an
   advanced editor, and the smallest useful material registry.
 - **OQ2 — chat instance identity.** Snapshot the normalized blueprint or store
   definition id + immutable revision/hash? How are duplicate copies authored?
-- **OQ3 — ad-hoc garments.** May continuity mint a category-grounded chat
-  instance, or must unowned garments remain non-mechanical until adopted?
-- **OQ4 — scene placement lifetime.** On a scene move, does a left garment stay,
-  follow by default, or require explicit continuity resolution?
-- **OQ5 — first channel set.** Recommended: wetness + crease load first while
-  preserving cleanliness/wear compatibility; contaminants and damage are
-  sparse facts, not more global meters.
 - **OQ6 — coverage behaviors.** Exact rules for plackets, zippers, sleeves,
   straps, skirts/hems, and asymmetric layering.
 - **OQ7 — extraction confidence.** Always drop ambiguous part operations, or
   fall back to the garment root when conservative?
 - **OQ8 — image invalidation.** Which presentation bands refresh `chat_look`
   versus only the next scene image?
-- **OQ9 — plan boundary.** Promote this as the wardrobe-state prerequisite to
-  body affordances, or promote both with one shared perception/ranking slice?

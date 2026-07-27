@@ -41,6 +41,20 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
+- **Clothing state graph & condition gradients — the wardrobe becomes state** —
+  [clothing-state-graph.plan.md](clothing-state-graph.plan.md) (next; graduated 2026-07-27
+  same day as parking, queued at the top on the owner's call). Garments stop being
+  worn-name strings: authored blueprint graphs (sparse parts/materials/closures)
+  instantiate into located chat instances whose presentation (buttons, rolls, tucks,
+  displacement) and condition (fixed-point wetness/cleanliness/crease/wear with regional
+  overrides, deposits, and damage marks) mutate through typed operations the continuity
+  leg proposes semantically — never raw state — and one derived coverage/visibility read
+  serves narration, exposure gates, and images. Chat proves it first (slices 0–6); the
+  successor adapter (slice 7) extends `item-condition-v1` rather than forking a store.
+  Upstream prerequisite for the parked body-attribute-affordances companion set.
+  Promotion rulings R1–R4 recorded in the plan (promoted alone; ad-hoc garments mint
+  from category templates; left garments stay at their place; wetness + crease first).
+
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
   [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly
   optional** (owner ruling 2026-07-21 — recorded in
