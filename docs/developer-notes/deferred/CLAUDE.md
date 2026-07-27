@@ -67,7 +67,7 @@ maintainability.
 - D17 [sim-chat-capabilities.plan.md](sim-chat-capabilities.plan.md)
 - D18 [sim-stop-cancellation.plan.md](sim-stop-cancellation.plan.md)
 - D19 [sim-branch-ux.plan.md](sim-branch-ux.plan.md)
-- E20 [successor-world-lifecycle.plan.md](successor-world-lifecycle.plan.md)
+- E20 — graduated 2026-07-27 → [../successor-world-lifecycle.plan.md](../successor-world-lifecycle.plan.md)
 - F21 [sim-typed-stream.plan.md](sim-typed-stream.plan.md)
 - F22 [sim-world-surface-ux.plan.md](sim-world-surface-ux.plan.md)
 - F23 [sim-turn-time-honesty.plan.md](sim-turn-time-honesty.plan.md)
