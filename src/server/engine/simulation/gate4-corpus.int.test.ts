@@ -29,6 +29,7 @@ import { queryMemoryDocuments } from "./memory-query-store";
 import { loadPersistedCut } from "./narrative-cut-store";
 import { branchEventFromRow } from "./observation-store";
 import { seedDurableSpaceTopology } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * The Gate 4 exit corpus (engine.plan §"Gate 4 exit", ruled 2026-07-18):
@@ -75,6 +76,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("gate4-corpus.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {

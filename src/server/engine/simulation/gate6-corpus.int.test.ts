@@ -33,6 +33,7 @@ import { branchEventFromRow } from "./observation-store";
 import { submitDurablePromoteActorFromCohort } from "./promotion-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { seedDurableSpaceTopology } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * The Gate 6 exit corpus + scaling proof (engine.gate6.dual-lod.md §"Gate 6
@@ -76,6 +77,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("gate6-corpus.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {

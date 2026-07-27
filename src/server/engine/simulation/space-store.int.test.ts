@@ -19,6 +19,7 @@ import {
   seedDurableSpaceTopology,
   submitDurableMoveActor,
 } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 const SEED_SECOND = 10_000;
 const WALK_AB = 600;
@@ -52,6 +53,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("space-store.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {

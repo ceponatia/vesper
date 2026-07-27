@@ -24,6 +24,7 @@ import { submitDurableAssignActorLod } from "./lod-store";
 import { seedDurableMaterialBranch } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { seedDurableSpaceTopology } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E6.2 durable routine controller (engine.spec §19.1–19.2, §27–28): entering
@@ -60,6 +61,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("routine-store.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {
