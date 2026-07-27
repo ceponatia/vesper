@@ -6,3 +6,4 @@
 export * from "./int-db";
 export * from "./simulation-fixtures";
 export * from "./image-fixtures";
+export * from "./symlink-support";

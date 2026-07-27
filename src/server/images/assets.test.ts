@@ -3,8 +3,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
+import { canCreateSymlinks } from "@/server/test-support";
 import { absoluteImagePath, dataRoot, imageRelativePath, writeWebpAtomic } from "./assets";
 import { monogramSvg } from "./monogram";
+
+const symlinksAvailable = canCreateSymlinks();
 
 let tmp: string;
 
@@ -73,7 +76,7 @@ describe("writeWebpAtomic", () => {
     await expect(fs.access(outside)).rejects.toThrow();
   });
 
-  it("does not follow a pre-planted pending-file symlink", async () => {
+  it.skipIf(!symlinksAvailable)("does not follow a pre-planted pending-file symlink", async () => {
     const ownerDir = path.join(tmp, "images", "owner1");
     const target = path.join(ownerDir, "img1.webp");
     const pending = path.join(ownerDir, "img1.pending.webp");
