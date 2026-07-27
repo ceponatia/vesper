@@ -103,5 +103,8 @@ Added after the review:
   observations or constraints. V1 is a pure current-cut read with no persisted
   dirty flags or affordance-owned hysteresis. Active companions: the shared
   domain-architecture spec plus hair, skin-surface, garment-interaction,
-  appendages, soft-tissue, and narrator-relevant relative geometry. Passive
-  thermal observations are out of scope and live only as a ruling in the plan.
+  appendages, soft-tissue, narrator-relevant relative geometry, and
+  recognizable features/visual memory (distributed body truth projected
+  through visibility × uniqueness × importance; no duplicate feature array).
+  Passive thermal observations are out of scope and live only as a ruling in
+  the plan.

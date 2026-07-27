@@ -45,6 +45,8 @@ This work exists to improve visual narration:
 - current forces, contact, support, and coverage produce concrete consequences;
 - impossible or contradicted effects are suppressed before prompting;
 - the narrator gets one or two high-value details instead of a coefficient dump;
+- distinctive located features help characters remain recognizable without
+  being restated every turn;
 - the same structured read can later ground scene-image composition.
 
 Success is not “more body description.” Success is fewer contradictions and
@@ -97,6 +99,8 @@ Keep these owners separate:
    constraints without writing any owner state.
 7. **Perception and ranking** decide what an observer can notice and whether it
    is worth a cue.
+8. **Recognition memory** records which perception-safe identity details a
+   specific observer has noticed; it never becomes body truth.
 
 The [physiology stub](physiology.plan.md) owns processes such as exertion →
 sweat or cold → piloerection. Affordances may consume the authoritative result,
@@ -149,6 +153,11 @@ body motion, or an impulse.
 The full contracts, domain abstraction, code layout, regional-collection
 pattern, diagnostics, and architecture tests live in the
 [architecture spec](body-attribute-affordances.spec.architecture.md).
+
+Recognizable features are a read-side consumer across all domains, not another
+physics phenomenon. They project stable attributes, located marks, anatomy
+changes, conditions, and presentation into observer-specific candidates; see
+the [recognizable-features spec](body-attribute-affordances.spec.recognizable-features.md).
 
 ## Output taxonomy
 
@@ -314,7 +323,16 @@ measurements.
 Implement either skin surface or garment wet-state/cling. It must reuse the
 generic core without making the core hair-aware.
 
-### Slice 7 — shared visual consumers
+### Slice 7 — recognizable features and visual memory
+
+- Project existing body truth into stable feature keys and fingerprints.
+- Score current visibility, uniqueness, and importance separately.
+- Track player-observer notice/mention history without a
+  `recognizable_features[]` profile field.
+- Prove first-notice, change-detection, hidden-feature, and anti-repetition
+  fixtures before adding acquired topology.
+
+### Slice 8 — shared visual consumers
 
 Only after narration is stable, evaluate feeding the same captured observations
 and relative-geometry reads into scene-image composition. Do not create a
@@ -337,6 +355,9 @@ second image-only physics path.
   regional profiles for support, contact, and impulse-driven effects.
 - [Relative geometry](body-attribute-affordances.spec.relative-geometry.md) —
   action-relevant eye-line and body blocking, not generic reach/carry rules.
+- [Recognizable features](body-attribute-affordances.spec.recognizable-features.md)
+  — distributed body truth projected into salience-ranked, observer-remembered
+  identity cues without a duplicate feature list.
 
 Passive thermal observations are out of scope. Visible breath belongs to
 environment/perception; contact temperature belongs to physiology/body state
@@ -367,6 +388,11 @@ plus tactile perception.
 - Relative-stature calibration, posture/surface inputs, and first scene-image
   consumer
   ([relative-geometry spec](body-attribute-affordances.spec.relative-geometry.md#open-questions)).
+- Recognizable-feature storage, fine-detail schemas, definition-vs-cast
+  uniqueness, importance ownership, intimate gates, recognizable-motion scope,
+  and visual-memory notice/decay/mention/RAG boundaries
+  ([feature spec](body-attribute-affordances.spec.recognizable-features.md#open-questions);
+  [memory detail](body-attribute-affordances.recognizable-features.memory.md#open-questions)).
 - Which second domain follows hair: skin surface or garment wet state.
 - How reference-image confidence becomes an accepted canonical value without
   filling uncertain mechanics axes.
