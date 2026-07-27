@@ -41,6 +41,17 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
+- **Successor world lifecycle — provision once, delete honestly, count what's real** —
+  [successor-world-lifecycle.plan.md](successor-world-lifecycle.plan.md) (next; graduated
+  2026-07-27 from backlog item E20, queued at the top on the owner's call — continues the
+  hardening arc that just shipped command-integrity, sim-read-seam-guards, security-authz,
+  and rate-limits). The successor lane's last HIGH-risk review items: resumable idempotent
+  provisioning behind a durable request record (a retry resumes instead of minting a second
+  world; `seed_failed`/`flip_failed` partial states retired), hard-delete of the world graph
+  with its chat plus a Worlds-page delete control (today every deletion permanently leaks
+  the world on Neon), an orphan sweeper for the rows already leaked, and a locked quota that
+  counts playable worlds. Owner rulings E20-1..3 recorded in the plan. One migration.
+
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
   [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly
   optional** (owner ruling 2026-07-21 — recorded in

@@ -53,10 +53,12 @@ already shipped with drain-hardening)._
   successor turn (D18); branch/fork/replay UX — the complete fix for honest
   rerun and history editing, surfacing `forkBranch`/ancestry/
   `explainItemPlacement`, none of which has a production caller (D19).
-- **E. Lifecycle integrity** — successor world provisioning (non-atomic
-  five-step front door, no idempotency), deletion (orphans every world —
-  no sim-table cleanup), and the racy shadow-counting quota, as one
-  lifecycle plan (E20).
+- **E. Lifecycle integrity** — _E20 (provisioning atomicity/idempotency +
+  world-leaking deletion + racy quota) graduated 2026-07-27 →
+  [successor-world-lifecycle.plan.md](successor-world-lifecycle.plan.md)
+  (provision once, delete honestly, count what's real; rulings E20-1..3
+  recorded there; queued at the top of the roadmap's Next). Nothing left in
+  this group._
 - **F. Honest progress & status** — typed reply stream replacing the ZWSP
   heartbeat, preserving successor failure codes the reply-failure contract
   currently flattens to `unknown` (F21); world-surface UX — degraded reads
