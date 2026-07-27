@@ -24,7 +24,7 @@ import {
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { classifyProviderError } from "../ai";
-import { characterChats, characterChatMessages, chatParticipants, db, images } from "../db";
+import { characterChats, characterChatMessages, chatParticipants, db, images, simBranches, simWorlds } from "../db";
 import { chatAttachmentPaths, claimChatAttachments, deleteChatAssets, deleteChatUploads } from "../images";
 import { log } from "../log";
 import { QueryEmbeddings } from "../memory";
@@ -1969,6 +1969,15 @@ export async function previewChatPrompt(input: {
  * references it** — shared-history siblings keep the relationship's memory
  * alive (D7).
  *
+ * A SUCCESSOR chat takes its whole simulated world with it
+ * (successor-world-lifecycle.plan.md, owner ruling E20-1): the front door is
+ * 1:1 chat↔world and nothing else can ever reach that world again, so the
+ * `sim_worlds` row is deleted in the same transaction. One statement suffices —
+ * `sim_branches` cascades from `sim_worlds` and every branch-scoped table
+ * cascades from `sim_branches` — and the chat-side FK's `set null` never fires
+ * because the chat row dies in the same tx. Every delete confirm dialog (Worlds
+ * page, Chats hub, in-conversation) states that consequence before the call.
+ *
  * Ownership is re-read here rather than trusted from the caller
  * (security-authz.plan.md slice 2): a destructive service takes only ids and
  * proves the pairing itself, so no route-supplied `ownerId` — or an anomalous
@@ -1977,7 +1986,7 @@ export async function previewChatPrompt(input: {
  */
 export async function deleteChat(chatId: string, ownerId: string): Promise<void> {
   const [chat] = await db()
-    .select({ id: characterChats.id, ownerId: characterChats.ownerId })
+    .select({ id: characterChats.id, ownerId: characterChats.ownerId, simBranchId: characterChats.simBranchId })
     .from(characterChats)
     .where(and(eq(characterChats.id, chatId), eq(characterChats.ownerId, ownerId)))
     .limit(1);
@@ -1988,6 +1997,28 @@ export async function deleteChat(chatId: string, ownerId: string): Promise<void>
       ownerId,
     });
     return;
+  }
+
+  // The linked world, resolved through the branch the chat points at. A dangling
+  // link (branch already gone) is a degraded default, not a failure: the chat
+  // still deletes, the diagnostic records what was unreachable
+  // (docs/resilience.md — diagnostics over exceptions).
+  let simWorldId: string | null = null;
+  if (chat.simBranchId !== null) {
+    const [branch] = await db()
+      .select({ worldId: simBranches.worldId })
+      .from(simBranches)
+      .where(eq(simBranches.id, chat.simBranchId))
+      .limit(1);
+    if (branch) {
+      simWorldId = branch.worldId;
+    } else {
+      log.warn("engine.chat", "chat links a sim branch that no longer exists; deleting the chat alone", {
+        code: "chat.delete_sim_branch_missing",
+        chatId: chat.id,
+        simBranchId: chat.simBranchId,
+      });
+    }
   }
 
   const participants = await db()
@@ -2018,6 +2049,8 @@ export async function deleteChat(chatId: string, ownerId: string): Promise<void>
         );
     }
     await tx.delete(characterChats).where(eq(characterChats.id, chat.id));
+    // E20-1: the world graph goes with the chat that owned it.
+    if (simWorldId !== null) await tx.delete(simWorlds).where(eq(simWorlds.id, simWorldId));
     for (const p of participants) {
       const [survivor] = await tx
         .select({ chatId: chatParticipants.chatId })

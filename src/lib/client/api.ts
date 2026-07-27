@@ -798,6 +798,13 @@ export const chatSummarySchema = z.object({
    * about exactly this.
    */
   say: textOr(""),
+  /**
+   * This conversation is bound to its own simulated world (engine authority is
+   * not `legacy_chat`) — so deleting it deletes that world too
+   * (successor-world-lifecycle.plan.md, owner ruling E20-1). Read only by the
+   * delete confirm's copy; the row itself renders identically either way.
+   */
+  isSuccessor: z.boolean().catch(false),
 });
 export type ChatSummary = z.infer<typeof chatSummarySchema>;
 
@@ -1284,10 +1291,15 @@ export type SuccessorChatSummary = z.infer<typeof successorChatSummarySchema>;
  * The successor front door (engine.rollout.plan.md, Worlds page): create a
  * complete successor chat — fresh isolated world, actors mapped, authority
  * flipped — in one call, and list the caller's existing ones.
+ *
+ * `requestId` is REQUIRED (successor-world-lifecycle.plan.md slice 3): it is the
+ * caller's idempotency key for one create INTENT. Resend the same id to retry a
+ * failed create — the server resumes that world instead of minting a second —
+ * and mint a fresh one for a genuinely new world.
  */
 export const successorChatsApi = {
   list: () => apiGet(z.object({ chats: z.array(successorChatSummarySchema).catch([]) }), "/api/successor-chats"),
-  create: (body: { characterId: string; title?: string }) =>
+  create: (body: { characterId: string; title?: string; requestId: string }) =>
     apiPost(z.object({ id: z.string().min(1) }), "/api/successor-chats", body),
   /** R5 calendar (ruling 17): set (or clear) the linked world's calendar anchor. */
   setCalendar: (chatId: string, calendarStart: { year: number; month: number; day: number } | null) =>

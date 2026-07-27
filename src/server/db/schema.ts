@@ -1072,7 +1072,14 @@ export const simWorlds = pgTable(
     worldTypeId: text("world_type_id").notNull(),
     seed: text("seed").notNull(),
     rulesetVersion: text("ruleset_version").notNull(),
-    status: text("status", { enum: ["active", "paused", "archived"] }).notNull().default("active"),
+    /**
+     * `active` plays; `paused` is unused vocabulary held for a future need.
+     * "archived" was dropped (successor-world-lifecycle.plan.md slice 1, E20-1):
+     * nothing ever set it, and a successor world is now hard-deleted with its
+     * chat rather than shelved. App-level enum on a text column — no CHECK
+     * constraint, so narrowing it needs no migration.
+     */
+    status: text("status", { enum: ["active", "paused"] }).notNull().default("active"),
     /** Ruling 3: whether explicit forced-entry attempts are admissible here. */
     permitsTrespass: boolean("permits_trespass").notNull().default(false),
     /**
@@ -1245,6 +1252,70 @@ export const simCommandRequests = pgTable(
   (t) => [
     primaryKey({ name: "sim_command_requests_chat_request_pk", columns: [t.chatId, t.requestId] }),
     index("sim_command_requests_state_idx").on(t.state, t.startedAt),
+  ],
+);
+
+/**
+ * The non-terminal provisioning states — a request that has begun but has not
+ * yet reached `ready` or `failed`. These hold a quota slot (an in-flight world
+ * is a world) and, from slice 2, protect their world from the orphan sweeper.
+ */
+export const simProvisioningPendingStates = [
+  "requested",
+  "world_created",
+  "chat_created",
+  "relationships_seeded",
+] as const;
+
+/**
+ * Resumable successor-world provisioning (successor-world-lifecycle.plan.md
+ * slice 3, ruling E20-3) — the `sim_command_requests` shape, owner-scoped.
+ *
+ * One row per `(ownerId, requestId)`: the stable token the Worlds page mints
+ * per create intent. The POST runs under `successor_provision:<ownerId>` and
+ * advances this record after each committed step, so a crash leaves a durable
+ * resume point instead of the old `seed_failed` / `flip_failed` half-states —
+ * an unrouted chat plus a live orphan world that no retry could ever reclaim.
+ * Because the world identity is DERIVED from this key
+ * (`deriveProvisioningStamp`), a resume re-runs the remaining steps against the
+ * SAME ids and converges to one world / one chat.
+ *
+ * `worldId` / `branchId` / `chatId` are SOFT pointers (no FK): compensating
+ * cleanup deletes the graph they name while this row survives to record the
+ * failure, and a later chat delete (E20-1) must not cascade the audit away.
+ */
+export const simProvisioningRequests = pgTable(
+  "sim_provisioning_requests",
+  {
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    requestId: text("request_id").notNull(),
+    /** Canonical hash of `(characterId, title)` — a same-key different-ask is `idempotency_mismatch`. */
+    payloadHash: text("payload_hash").notNull(),
+    state: text("state", {
+      enum: ["requested", "world_created", "chat_created", "relationships_seeded", "ready", "failed"],
+    })
+      .notNull()
+      .default("requested"),
+    /** Derived identities, recorded as each step commits — null until that step is reached. */
+    worldId: text("world_id"),
+    branchId: text("branch_id"),
+    chatId: text("chat_id"),
+    /** The recorded 201 — replayed verbatim for a same-key re-POST. Null until `ready`. */
+    response: jsonb("response"),
+    httpStatus: integer("http_status"),
+    /** Why it failed, for the operator — never returned to the caller. */
+    error: text("error"),
+    startedAt: createdAt(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_provisioning_requests_owner_request_pk", columns: [t.ownerId, t.requestId] }),
+    // The honest quota (slice 4) counts this owner's non-terminal records; the
+    // orphan sweeper (slice 2) reads them by state to spare in-flight worlds.
+    index("sim_provisioning_requests_owner_state_idx").on(t.ownerId, t.state),
   ],
 );
 

@@ -1659,6 +1659,14 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             disposition (regard, mood, scenario), and everything {who} remembers about you from it. Archiving
             keeps all of that — this can&rsquo;t be undone.
           </p>
+          {/* E20-1 (successor-world-lifecycle.plan.md): a world-bound chat owns its
+              world 1:1, and the world is hard-deleted with it — say so here too. */}
+          {simRouted ? (
+            <p>
+              This conversation has its own world, and the world goes with it: its people, places, and everything
+              that has happened there.
+            </p>
+          ) : null}
           <p className="text-xs text-paper-500">Generated scene images are kept — find them in the Gallery.</p>
         </div>
       </Dialog>

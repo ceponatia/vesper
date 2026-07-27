@@ -127,7 +127,8 @@ afterAll(async () => {
 describe.runIf(ready)("successor-chats front door", () => {
   it("provisions a fresh world, routes the chat, and plays a full sim turn", async () => {
     const created = await successorCreate(
-      jsonReq("/api/successor-chats", { characterId: ids.characterId, title: "Front Door Test" }),
+      // slice 3: `requestId` is the required per-intent idempotency key.
+      jsonReq("/api/successor-chats", { characterId: ids.characterId, title: "Front Door Test", requestId: "front-door-1" }),
       { params: Promise.resolve({}) },
     );
     expect(created.status).toBe(201);
@@ -204,13 +205,16 @@ describe.runIf(ready)("successor-chats front door", () => {
   });
 
   it("rejects a character outside the caller's library", async () => {
-    const res = await successorCreate(jsonReq("/api/successor-chats", { characterId: "not-a-real-id" }), { params: Promise.resolve({}) });
+    const res = await successorCreate(
+      jsonReq("/api/successor-chats", { characterId: "not-a-real-id", requestId: "foreign-character-1" }),
+      { params: Promise.resolve({}) },
+    );
     expect(res.status).toBe(404);
   });
 
   it("input admission: 'I hand her the keepsake' executes a real transfer (R5 slice 2)", async () => {
     const created = await successorCreate(
-      jsonReq("/api/successor-chats", { characterId: ids.characterId, title: "Admission Test" }),
+      jsonReq("/api/successor-chats", { characterId: ids.characterId, title: "Admission Test", requestId: "admission-1" }),
       { params: Promise.resolve({}) },
     );
     expect(created.status).toBe(201);
