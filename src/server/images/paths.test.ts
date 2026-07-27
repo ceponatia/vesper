@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { canCreateSymlinks } from "@/server/test-support";
 import { absoluteImagePath, dataRoot, imageRelativePath, ImagePathError } from "./paths";
+
+const symlinksAvailable = canCreateSymlinks();
 
 let sandbox: string;
 let root: string;
@@ -20,7 +23,7 @@ afterEach(async () => {
 });
 
 describe("canonical DATA_ROOT", () => {
-  it("returns an absolute canonical path, including through a configured symlink", async () => {
+  it.skipIf(!symlinksAvailable)("returns an absolute canonical path, including through a configured symlink", async () => {
     const real = path.join(sandbox, "real-data");
     const linked = path.join(sandbox, "linked-data");
     await fs.mkdir(real);
@@ -66,7 +69,7 @@ describe("stored image path containment", () => {
     expect(() => imageRelativePath("owner-1", "folder/image-1")).toThrow(ImagePathError);
   });
 
-  it("blocks a directory symlink escape", async () => {
+  it.skipIf(!symlinksAvailable)("blocks a directory symlink escape", async () => {
     const ownerDir = path.join(root, "images", "owner-1");
     const outside = path.join(sandbox, "outside");
     await fs.mkdir(ownerDir, { recursive: true });
@@ -76,7 +79,7 @@ describe("stored image path containment", () => {
     expect(() => absoluteImagePath({ path: "images/owner-1/linked/secret.webp" })).toThrow("symbolic link");
   });
 
-  it("blocks a final-file symlink escape", async () => {
+  it.skipIf(!symlinksAvailable)("blocks a final-file symlink escape", async () => {
     const ownerDir = path.join(root, "images", "owner-1");
     const outside = path.join(sandbox, "outside.webp");
     await fs.mkdir(ownerDir, { recursive: true });
