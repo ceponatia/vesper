@@ -10,6 +10,7 @@ import { submitDurableSetMeansBand } from "./household-store";
 import { seedDurableMaterialBranch } from "./material-store";
 import { branchEventFromRow } from "./observation-store";
 import { seedDurableSpaceTopology } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E6.3 durable cohort authority (engine.spec §27.6): create/adjust end to
@@ -44,6 +45,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("cohort-store.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {

@@ -43,6 +43,7 @@ import {
   rebuildDurableBranchProjection,
 } from "./snapshot-store";
 import { seedDurableSpaceTopology } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 const SEED_STORY_SECOND = 57_600;
 
@@ -73,6 +74,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("branch-store.int.test");
 const seededWorldIds: string[] = [];
 
 interface CaseIds {

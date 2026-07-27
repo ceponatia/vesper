@@ -56,12 +56,25 @@ VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1 pnpm test:int
 The low-level engine suites seed bare branches and submit the shared synthetic
 player fixture, which the simulation authorization seam refuses without this
 opt-in (deliberately — authorization tests leave it unset and keep proving that
-ordinary unanchored players fail). CI exports it for the `pnpm test:engine` step,
-so a plain local `pnpm test:int` reports **~120 spurious failures** in
-`simulation/*-store` and the gate corpora that CI never sees. Note also that CI
-runs `test:engine`'s curated glob rather than the whole suite, so the route-level
-suites (`gallery`, `chat`, `library-routes`, `authz-matrix`, `public-dto`,
-`variants`) are **not** gated on merge — see `rate-limits.plan.md` OQ3.
+ordinary unanchored players fail). CI exports it for the `pnpm test:engine` step.
+
+A flagless run **fails fast at collection** instead of drowning you in denials
+(guard added 2026-07-27, after exactly that misread): each player-principal
+suite calls `requireLegacyUnanchoredEngineTestMode(suite)`
+(`@/server/test-support`) right after its DB probe succeeds, and the guard
+throws a message naming the flag and this section — previously a plain local
+`pnpm test:int` reported ~120 opaque "expected accepted, got rejected" domain
+failures. An unreachable database still self-skips as before (the guard only
+fires when the suite would otherwise run), and `command-authz.int.test` never
+calls it, so denial coverage stays independent of the flag. A suite that
+submits `kind: "player"` commands against directly-seeded branches must call
+this guard; suites using only `npc_policy`/`system` principals (material,
+scheduler, time-job stores) don't need it.
+
+Note also that CI runs `test:engine`'s curated glob rather than the whole
+suite, so the route-level suites (`gallery`, `chat`, `library-routes`,
+`authz-matrix`, `public-dto`, `variants`) are **not** gated on merge — see
+`rate-limits.plan.md` OQ3.
 
 Fixtures inserting `images` rows must go through **`canonicalImageRow`**
 (`@/server/test-support`): the `images_path_canonical` CHECK requires the stored

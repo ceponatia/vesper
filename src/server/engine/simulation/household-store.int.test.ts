@@ -80,6 +80,7 @@ import {
 import { InjectedSimulationCrash, seedDurableMaterialBranch, submitDurableTransferItem } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { seedDurableSpaceTopology } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E5.4 slice 1 durable households/lots/means substrate (engine.spec
@@ -123,6 +124,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("household-store.int.test");
 const seededWorldIds: string[] = [];
 const seededBranchIds: string[] = [];
 

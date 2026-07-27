@@ -33,6 +33,7 @@ import { forkBranch } from "./branch-store";
 import { seedDurableMaterialBranch } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { seedDurableSpaceTopology } from "./space-store";
+import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 const SEED_SECOND = 50_000;
 // Registry v1: hygiene 9 000 → 2 500 at 150/h = 156 000s after seeding.
@@ -64,6 +65,7 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+if (ready) requireLegacyUnanchoredEngineTestMode("body-store.int.test");
 const seededWorldIds: string[] = [];
 
 afterAll(async () => {
