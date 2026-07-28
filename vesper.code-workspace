@@ -8,32 +8,10 @@
   ],
   "settings": {
     // ── Explorer: file nesting ────────────────────────────────────────────
-    // Tests nest under the file they exercise (merge.ts ▸ merge.test.ts,
-    // merge.affinity.test.ts, merge.time.test.ts, engine.int.test.ts …);
-    // root tooling configs nest under package.json. Note: setting
-    // `patterns` replaces the defaults, so the useful defaults are
-    // restated here.
-    "explorer.fileNesting.enabled": true,
-    "explorer.fileNesting.expand": false,
-    "explorer.fileNesting.patterns": {
-      "*.ts": "${capture}.test.ts, ${capture}.int.test.ts, ${capture}.*.test.ts",
-      "*.tsx": "${capture}.test.ts, ${capture}.test.tsx, ${capture}.*.test.ts",
-      "package.json": "pnpm-lock.yaml, pnpm-workspace.yaml, .npmrc, eslint.config.*, postcss.config.*, vitest.config.*, drizzle.config.*, .gitignore",
-      "next.config.ts": "next-env.d.ts",
-      "tsconfig.json": "tsconfig.*.json, tsconfig.tsbuildinfo",
-      "docker-compose.yml": "docker-compose.*.yml",
-      ".env.example": ".env, .env.*",
-      "README.md": "AGENTS.md, CLAUDE.md",
-      // developer-notes convention (topic-named): <topic>.plan.md is the anchor;
-      // <topic>.spec.md (design), <topic>.followups.md, and any <topic>.<sub>.md
-      // nest under it — the shared topic name determines the parent.
-      "*.plan.md": "${capture}.spec.md, ${capture}.followups.md, ${capture}.*.md",
-      // deferred ideas: deferred.plan.md is the anchor; *.deferred.md nest under it.
-      "deferred.plan.md": "*.deferred.md",
-      // legacy phase docs (historical, not renamed): phase-N-plan.md is the anchor;
-      // *.phaseN.md nests under it, as do phase-N.md findings + multi-character plans.
-      "phase-*-plan.md": "phase-${capture}.md, multi-character-phase-${capture}-plan.md, *.phase${capture}.md"
-    },
+    // Nesting patterns live in .vscode/settings.json — the folder settings
+    // take precedence over this file for that object setting, so a second
+    // copy here would be masked (that split is exactly what once left
+    // deferred/ plan families flat). Keep all nesting config there.
     // ── TypeScript ────────────────────────────────────────────────────────
     "js/ts.tsdk.path": "node_modules/typescript/lib",
     "js/ts.tsdk.promptToUseWorkspaceVersion": true,
