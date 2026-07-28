@@ -1,10 +1,14 @@
 # Body-attribute visual affordances
 
-Status: active (build started 2026-07-28; committed scope for the first run is
-slices 0–5 — owner ruling. The shared visual-affordance foundation and
-hair proof build before the
-[romantic-contact plan](romantic-contact-affordances.plan.md), which reuses
-that foundation)
+Status: active — **slices 0–5 shipped 2026-07-28** (hair vocabulary split,
+shared core, hair domain, chat-lane wetness/environment owners + adapter +
+retake capture, `CHAT_AFFORDANCE_CUES` narrator trial flag, default OFF).
+Remaining before the release contract closes: the owner-gated cue comparison
+trial, slice 6 (garment second domain — ruled 2026-07-28), slice 7
+(recognition memory), slice 8 (image decision), the successor-lane adapter
+follow-up, and per-companion rulings. The shared foundation the
+[romantic-contact plan](romantic-contact-affordances.plan.md) consumes is
+live.
 
 ## In one sentence
 

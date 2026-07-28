@@ -5,6 +5,24 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Body-attribute visual affordances — slices 0–5: hair vocabulary split,
+  shared affordance core, hair domain, chat-lane owners, flagged narrator
+  cues** —
+  [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) ·
+  [architecture spec](body-attribute-affordances.spec.architecture.md) —
+  2026-07-28 — `hair.quality` replaced by executable axes (density,
+  strand_thickness, condition) + structured `hair.arrangement`; the
+  lane-neutral core (fixed-point profiles → mechanics → phenomena,
+  adapter result law, fail-closed perception, ≤2-cue repeat-gated ranking)
+  under `src/contracts/affordances/`; the four hair phenomena fixture-proven
+  against the spec's worked cases; new authoritative chat-lane owners for
+  body-surface wetness + scene environment (extraction-committed, migration
+  0091) with the `buildChatAffordanceRead` adapter and retake capture via
+  deterministic recompute + anchor-riding cue memory; narrator cues behind
+  `CHAT_AFFORDANCE_CUES` (env, default OFF — the comparison trial gates
+  default-on). Remainder (slices 6–8 + companion rulings) stays queued in
+  roadmap Next.
+
 - **Test consolidation — shared fixtures, strict-gate integrity, de-brittling** —
   [test-consolidation.plan.md](test-consolidation.plan.md) — 2026-07-28 — the
   whole suite now runs on shared utilities (`src/server/test-support` +

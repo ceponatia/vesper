@@ -300,8 +300,21 @@ lane does.
   sits on the SCENARIO because the read is a pure function of committed state plus this
   memory (`engine/chat-affordances.ts` `buildChatAffordanceRead`), so restoring both from
   one anchor is what makes a retake reproduce the identical read rather than resolving
-  against later weather. Written when the read reaches the prompt; until then it rides
-  through untouched.
+  against later weather. Written when the read reaches the prompt; with the narration flag
+  off it rides through untouched (never cleared).
+- **Narration** (slice 5, behind `CHAT_AFFORDANCE_CUES`, default OFF until the trial run):
+  the pipeline takes the read from the committed **pre-fan-out** cut — the drifted state
+  row, the ticked scenario, and the wardrobe rows that turn already resolved — and projects
+  `read.cues` into at most two short factual clauses ("Wren's auburn hair has separated into
+  damp, clinging strands, still wet from the rain") via `engine/chat-affordance-cues.ts`.
+  They render as one **attention-only** prompt block after the garment cue block; there is
+  deliberately no affordance digest, because the appearance they decorate is already
+  authoritative in the Attributes section. Cue projection is the one place `hair.color` is
+  read — it is excluded from the domain's required attributes so it can never move a band.
+  The block is primary-character-only (it leans on the one Attributes section this prompt
+  carries), and `previewChatPrompt` re-derives it read-only, so opening the inspector never
+  spends the repeat gate. With the flag off nothing is computed at all and the prompt is
+  byte-identical to the pre-feature build (int-tested by splicing the ON block back out).
 
 The adapter itself reports what this lane can honestly answer and refuses the rest:
 arrangement/wetness/coverage/wind are owned, while **contact, body motion and
