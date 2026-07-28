@@ -13,8 +13,8 @@ default OFF)** — the tuning gate stands: contradiction/repetition/extraction
 accuracy get a live-model comparison run (owner-gated spend) before the flag
 defaults on. The OQ8 `chat_look` pre/post key-comparison trigger shipped
 unconditionally (correctness fix). **Slices 7–8 remain**: the successor
-adapter (7) and body-affordance integration (8 — waits on the parked
-companion set per ruling R1). **Recorded leftovers** from 5/6: ensemble
+adapter (7) and body-affordance integration (8 — coordinated with the
+companion set promoted 2026-07-28). **Recorded leftovers** from 5/6: ensemble
 members beyond the primary still mutate via the legacy bridge
 (`finalizeChatState` receives roster names, not ids — widening is a small
 pipeline change); the digest/cue scope is primary + player pending the tuning
@@ -23,8 +23,9 @@ model); preset-by-name matching lives only on the bridge. Graduated
 2026-07-27 from the deferred parking lot, same day as parking; the slice-0
 seam map and rulings live in
 [clothing-state-graph.audit.md](clothing-state-graph.audit.md). This plan is
-the upstream wardrobe-truth prerequisite for the still-parked
-body-attribute-affordances companion set — promoted alone, per ruling R1.
+the upstream wardrobe-truth prerequisite for the
+[body-attribute-affordances](body-attribute-affordances.plan.md) companion set,
+which promoted on 2026-07-28 after clothing slices 0–6 shipped.
 
 ## What
 

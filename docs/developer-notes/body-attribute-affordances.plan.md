@@ -1,403 +1,317 @@
 # Body-attribute visual affordances
 
-Status: next (promoted from deferred/ 2026-07-28, owner ruling: the shared
-affordance core — structural profiles, phenomenon registry, evidence,
-perception + cue ranking — builds under this plan first; the foot-first
-[romantic contact plan](romantic-contact-affordances.plan.md) queues directly
-behind it and consumes that core. Companion specs ship and move to `finished/`
-individually as their domains land; this plan ships when the owner is
-satisfied the necessary domains are covered.)
-
-## What
-
-Build a deterministic read layer that turns **resolved body/appearance
-attributes plus authoritative live state** into a small number of grounded
-visual observations for narration and, later, scene composition.
-
-The motivating case is hair. Given:
-
-- shoulder-length, dense, coarse blonde hair;
-- authoritative wetness after rain;
-- a validated loose-hair presentation;
-- asserted hair-to-neck contact;
-- a light breeze;
-
-the system can derive that damp clumps and neck adhesion are visible while
-whole-hair lift is suppressed by water load. The narrator receives compact
-structured observations and does not have to improvise the physical result
-from unrelated prose attributes.
-
-```ts
-{
-  kind: "visual_observation",
-  id: "hair.strands_adhere_to_skin",
-  sourceLocationId: "hair",
-  targetLocationId: "neck",
-  intensityBand: "clear",
-  semanticTags: ["damp", "clumped", "several_strands"],
-  cause: { kind: "recent_rain_exposure", endedMinutesAgo: 2 },
-}
-```
-
-The narrator might realize that as “Damp strands of blonde hair cling to her
-neck.” Prose is never stored in the affordance registry.
-
-## Product outcome
-
-This work exists to improve visual narration:
-
-- body and garment details behave consistently across conditions;
-- current forces, contact, support, and coverage produce concrete consequences;
-- impossible or contradicted effects are suppressed before prompting;
-- the narrator gets one or two high-value details instead of a coefficient dump;
-- distinctive located features help characters remain recognizable without
-  being restated every turn;
-- the same structured read can later ground scene-image composition.
-
-Success is not “more body description.” Success is fewer contradictions and
-more selective, causally grounded visual detail.
-
-The common case for every domain is silence. Static appearance still comes from
-the existing appearance/impression paths; affordance cues describe a current
-effect, meaningful transition, or action-relevant body relationship.
-
-## Product boundary
-
-This is a **visual-observation layer**, not a general physics or capability
-engine.
-
-It should answer:
-
-- What visible state follows from these attributes and current conditions?
-- What motion or deformation is actually occurring because of a current force,
-  contact, pose, or committed impulse?
-- What current constraint prevents a plausible visual effect?
-- Which observation is relevant enough to offer the narrator now?
-
-It should not become:
-
-- rigid-body, fluid, or cloth simulation;
-- strength, carrying, shelf-reach, passage-fit, or action-success rules;
-- a behavior generator that decides what a character chooses to do;
-- a second physiology, wardrobe, pose, contact, or image-generation system;
-- a prompt-time vision-model call;
-- a tick loop, worker, or persisted dirty-set cache.
-
-Future action-capability consumers may reuse structural profiles through a
-separate query contract. Possibility must never leak into ambient narration as
-an effect that is actually happening.
-
-## System boundaries
-
-Keep these owners separate:
-
-1. **Canonical attributes** own stable or slowly mutable appearance vocabulary.
-2. **Physiology/body state** owns wetness, vascular signs, piloerection,
-   swelling, temperature, and persistent marks.
-3. **Wardrobe/presentation** owns garments, material identity, fit, support,
-   binding, coverage, displacement, and structured hair arrangement.
-4. **Pose/contact/space** owns current geometry, posture, contact pairs, and
-   clearance facts.
-5. **Events and environment** own wind, precipitation, subject motion, and
-   committed impulses/exposures.
-6. **Affordances** compile those reads into current physical observations and
-   constraints without writing any owner state.
-7. **Perception and ranking** decide what an observer can notice and whether it
-   is worth a cue.
-8. **Recognition memory** records which perception-safe identity details a
-   specific observer has noticed; it never becomes body truth.
-
-The [physiology stub](deferred/physiology.plan.md) owns processes such as exertion →
-sweat or cold → piloerection. Affordances may consume the authoritative result,
-never rederive the process.
-
-Garments are an integration domain, not body attributes. The wardrobe/material
-system remains the sole owner of their authored and persistent state.
-
-## Architecture ruling
-
-The shared implementation is organized by domain and compiles through named
-layers:
-
-```text
-resolved canonical attributes
-              ↓
-typed structural profile
-              ↓  + authoritative current body/presentation state
-effective mechanics
-              ↓  + forces, contact, pose, environment, events
-domain frame
-              ↓
-narrow phenomenon functions
-              ↓
-actual observations and constraints
-              ↓
-perception, relevance, novelty, cue cap
-              ↓
-structured narrator cues
-```
-
-Individual phenomena generally do **not** receive raw values such as
-`hair.density = "dense"`, and attributes do not collapse into an opaque
-`hair.xyz`.
-
-Reusable sub-calculations earn names when multiple phenomena consume them or
-when they encode a stable domain invariant. Hair, for example, may derive:
-
-- `dryBulkLoad`;
-- `freeMovingFraction`;
-- `exposedFreeArea`;
-- `clumpStrength`;
-- `retainedWater`;
-- `mobilityCapacity`.
-
-Wind-specific response remains inside the wind phenomenon. High mobility
-capacity does not mean the hair is moving; actual motion still requires wind,
-body motion, or an impulse.
-
-The full contracts, domain abstraction, code layout, regional-collection
-pattern, diagnostics, and architecture tests live in the
-[architecture spec](body-attribute-affordances.spec.architecture.md).
-
-Recognizable features are a read-side consumer across all domains, not another
-physics phenomenon. They project stable attributes, located marks, anatomy
-changes, conditions, and presentation into observer-specific candidates; see
-the [recognizable-features spec](body-attribute-affordances.spec.recognizable-features.md).
-
-## Output taxonomy
-
-### Visual observation
-
-An effect actually present now:
-
-- damp hair gathered into clumps;
-- loose wet strands adhering to exposed skin;
-- a hem moving in current wind;
-- moisture beading on skin;
-- a tail pinned by the current chair and posture;
-- a current eye-line or embrace alignment relevant to the action.
-
-These may become narrator cues after perception and ranking.
-
-### Constraint read
-
-A current fact that suppresses or limits an effect:
-
-- hair is bound, pinned, or covered;
-- a wing is blocked by furniture or space;
-- tissue motion is damped by support;
-- a surface is hidden by opaque coverage.
-
-Constraints normally remain diagnostic. Surface one only when it must prevent a
-specific contradiction or explain a current action.
-
-### Capability query
-
-“Can she reach the shelf?”, “Can the wing shelter both people?”, and similar
-questions are future consumers. They use a separate output type and never enter
-the ambient visual-cue list.
-
-Suppressed candidates and equations are diagnostics, not prose material.
-
-## Resolution and capture
-
-V1 is a pure current-cut read:
-
-```text
-authoritative inputs at story time
-              ↓
-compile relevant domain frames
-              ↓
-resolve phenomena
-              ↓
-perception-safe observations
-              ↓
-rank and select at most one or two cues
-              ↓
-capture the selected read with the committed presentation cut
-```
+Status: next (promoted 2026-07-28; the shared visual-affordance foundation and
+hair proof build before the
+[romantic-contact plan](romantic-contact-affordances.plan.md), which reuses
+that foundation)
 
-Retakes reuse the captured read instead of resolving against later state.
+## In one sentence
 
-The resolver performs no persistence reads or writes, creates no events, and
-owns no hysteresis. Persistent aftermath such as a pressure mark, displaced
-strap, or tangled hair must be explicit body/presentation state or an event
-owned elsewhere.
+Turn stable appearance details and trustworthy live state into a few grounded
+visual observations, so bodies, hair, skin, and clothing behave consistently
+without asking the narrator to invent the physical result.
 
-Recompute the few relevant domains first. Dependency declarations support
-validation, selective assembly, and debug explanations; they do not imply
-persisted dirty sets. Fingerprint memoization is allowed only after profiling
-proves it useful and the fingerprint covers every declared input.
+## The experience we want
 
-## Reference-image boundary
+Consider shoulder-length, dense hair after rain. If the hair is loose, wet,
+touching an exposed neck, and caught in a light breeze, the system should know
+that damp strands may clump and cling while the water weight suppresses most
+wind movement. The narrator may then say that damp blonde strands cling to the
+character's neck.
+
+The narrator should receive that current observation, not a page of hair
+measurements and not a prewritten sentence. It still decides how—or
+whether—to use the detail.
+
+The common result should be silence. Existing appearance descriptions still
+introduce ordinary, stable features. This system speaks up only for a current
+effect, meaningful change, useful constraint, or action-relevant relationship.
+
+## Why it matters
+
+This work should:
+
+- reduce contradictions between appearance, clothing, pose, weather, and live
+  body state;
+- make the same physical situation behave consistently across turns;
+- suppress attractive-sounding effects when their cause is missing;
+- give the narrator one or two useful details instead of a body inventory;
+- help distinctive features make characters recognizable without repeating
+  them every turn;
+- eventually give scene images the same grounded visual facts as prose.
+
+Success means more selective and reliable detail, not simply more body
+description.
+
+## What exists today—and what does not
+
+Promotion does not make every required source fact available. The first slice
+must preserve this distinction:
+
+| Area | Current position |
+| --- | --- |
+| Stable appearance | Canonical attributes, body locations, body configuration, and provenance already exist. Some vocabularies still mix several physical ideas in one value and need cleanup before calculation. |
+| Clothing | Legacy character chat has structured garment instances, coverage, presentation, wetness, and local garment marks. Its narrator cues are still behind a tuning flag. The successor clothing adapter and affordance integration remain unfinished. |
+| Pose and contact | Neither chat lane currently owns dependable body-region pose, support, or surface-contact truth. Free-text narration and image-pose text are not authoritative substitutes. |
+| Weather and force | Current wind, precipitation, impulses, and body motion are not yet available as one dependable cross-lane read. A phenomenon that lacks its actual cause must remain silent. |
+| Physiology and body surfaces | The general physiology system is still deferred. There is no complete shared source yet for regional sweat, piloerection, vascular changes, body-surface residue, or persistent pressure marks. |
+| Perception | Successor observations provide a stronger witness/channel model. Legacy chat has coverage and a turn-level sensory allowance, but no full per-sense exposure or proximity model. |
+| Retakes | Both lanes support retakes, but through different state/cut mechanisms. The new read must be captured through each lane's real rollback boundary. |
+| Recognition memory | General memory exists, but precise observer-specific visual notice and mention history do not yet. |
+
+A missing owner is real work or a reason to defer that phenomenon. It is never
+permission to infer state from genre, narrator prose, or what would make the
+scene prettier.
+
+The [readiness audit](body-attribute-affordances.audit.md) records the current
+lane capability matrix. The
+[architecture spec](body-attribute-affordances.spec.architecture.md) owns the
+implementation boundaries.
+
+## What this layer owns
+
+The visual-affordance layer brings together facts owned elsewhere:
+
+- stable appearance comes from canonical attributes and realized anatomy;
+- current wetness, vascular signs, swelling, temperature, and lasting marks
+  come from physiology or body state;
+- garments, fit, material, support, coverage, and displacement come from the
+  clothing system;
+- posture, contact, clearance, and movement come from pose, space, and action
+  state;
+- rain, wind, motion, and impacts come from environment and committed events.
+
+This layer reads those facts and works out the current visible consequence. It
+does not rewrite them, remember hidden aftermath, choose behavior, or decide
+that a possible action occurred.
+
+Perception then decides what a particular observer can notice. Ranking decides
+whether the result is useful enough to offer the narrator. Recognition memory
+may remember what that observer noticed, but it never becomes body truth.
 
-Reference photographs are authoring inputs, never runtime physics inputs:
+## The three kinds of answer
+
+### A current visual observation
+
+Something is actually present now, such as damp hair clumping, moisture beading
+on exposed skin, a wet hem hanging heavily, or a tail pinned by the current
+chair and posture.
 
-```text
-reference image / manual authoring
-              ↓
-vision proposes canonical values
-              ↓
-confidence policy + validation + optional correction
-              ↓
-resolved AttributeValue records with provenance
-              ↓
-domain profile compilation
-```
+### A useful constraint
+
+A current fact prevents a contradiction: hair is bound, a wing is blocked, a
+surface is covered, or support limits visible movement. Constraints normally
+stay behind the scenes unless explaining them matters to the action.
+
+### A future capability answer
 
-Raw vision prose and low-confidence guesses do not drive mechanics. Manual edits
-and authoritative overlays win through the existing attribute-resolution law.
+Questions such as whether a wing can shelter someone or whether a character can
+reach a shelf may reuse some body information later. They are not ambient
+visual observations and cannot enter narration as though the action happened.
 
-## Vocabulary prerequisites
+## Important boundaries
 
-### Hair
+- This is not a full physics, cloth, collision, strength, or fluid simulator.
+- It does not decide what a character chooses, feels, or attempts.
+- It does not create a second wardrobe, physiology, pose, contact, memory, or
+  image system.
+- It does not call a vision model while composing a turn.
+- It does not run a background tick or keep private aftereffect timers.
+- It recomputes the few relevant body areas from the committed story moment.
+- Retakes reuse the captured physical/perception read rather than later live
+  state.
+- Persistent tangles, marks, displacement, dirt, and damage must be recorded by
+  the system that owns them.
+- Missing or malformed inputs produce conservative silence and diagnostics,
+  not guessed detail.
 
-`hair.quality` currently entangles strand thickness, density, condition, and
-surface appearance. Before it drives mechanics, split or conservatively
-quarantine it in favor of orthogonal axes such as:
+## Recognizable features
 
-- `hair.strand_thickness`;
-- `hair.density`;
-- `hair.condition`;
-- optional `hair.surface`.
+Recognizability is a view of existing truth, not a
+`recognizable_features[]` list on the character.
 
-The rename/removal requires the repository’s documented stored-value sweep
-pattern; ambiguous old values must not silently expand into several
-high-confidence facts.
+A crooked nose can remain a nose attribute. Shoulder freckles can be a located
+appearance fact. A missing finger must come from evented anatomy state. A scar,
+prosthetic cover, favorite ribbon, or newly visible mark stays with its natural
+owner.
 
-Free-text `hair.style` remains display text. Runtime mechanics require validated
-structured presentation such as arrangement, bound fraction, pinned fraction,
-covered fraction, and loose-end length.
+The recognition layer asks:
 
-### Soft tissue
+- Is the detail visible to this observer now?
+- How unusual is it?
+- How important is it to identity, history, or the relationship?
+- Has this observer noticed it before?
+- Has it changed, become newly relevant, or been mentioned too recently?
 
-`breasts.fullness` mixes structural material language with live physiological
-states. Promotion must separate rest geometry/material properties from current
-swelling or other body state, or mark conservative mappings as provisional.
+That allows a feature to strengthen recognition without being redescribed in
+every reply.
 
-Attribute labels are descriptive vocabulary, not permission to invent precise
-measurements.
+## Current release contract
 
-## Rollout slices
+The first usable release requires:
 
-### Slice 0 — vocabulary and ownership audit
+1. the shared read, evidence, perception, ranking, and capture foundation;
+2. hair as the first production proving domain, with every proposed hair
+   observation either backed by an authoritative source or explicitly deferred;
+3. one second domain proving the foundation is not secretly hair-specific;
+4. a feature-flagged romantic-chat comparison showing that cues reduce
+   contradictions without causing repetition;
+5. observer-specific recognizable-feature notice and mention behavior.
 
-- Resolve the `hair.quality` split/quarantine and stored-value sweep.
-- Add validated structured hair presentation.
-- Inventory authoritative wetness, coverage, contact, force, event, and cut
-  seams in both chat lanes.
-- Record lane adapters and prove they target one lane-neutral core.
+Scene-image reuse requires a recorded decision after narration is stable. It
+does not have to ship merely to close the first narrator release.
 
-### Slice 1 — core contracts and domain registry
+Appendage, soft-tissue, garment, skin, and relative-geometry specs are
+design-ready companions, not silent promises that every domain ships in the
+first release. Before this plan closes, each companion must be explicitly
+recorded as implemented, moved to a named follow-up, or parked. The active
+plan/spec family stays together; it may be archived to `finished/` only after
+the plan ships.
 
-- Add fixed-point, evidence, diagnostic, observation, constraint, perception,
-  and registry contracts.
-- Add the typed domain definition and explicit domain tuple.
-- Add attribute-axis registration with ownership/reducer validation.
-- No narrator consumer.
+## Delivery outline
 
-### Slice 2 — hair profile and mechanics
+### Slice 0 — confirm vocabulary and truth sources
 
-- Compile raw hair axes into `HairStructuralProfile`.
-- Derive reusable `HairEffectiveMechanics` once per frame.
-- Add fixtures and monotonic/invariant tests before phenomena.
+- Clean up or quarantine ambiguous hair vocabulary.
+- Add a structured way to say whether hair is loose, bound, pinned, or covered.
+- Publish a lane-by-lane source map for wetness, coverage, contact, force,
+  events, perception, and retakes.
+- For every missing source, either include an owner in the slice plan or defer
+  the affected observation. Narrator text is never promoted to authority.
 
-### Slice 3 — hair phenomena
+### Slice 1 — shared visual-affordance foundation
 
-- Implement wet clumping, wind/body-motion response, skin adhesion, and droplet
-  shedding over narrowed frame inputs.
-- Add actual-versus-possible, fail-closed, suppression, and diagnostic tests.
+- Add one lane-neutral way for domains to receive stable appearance, current
+  state, evidence, and safe diagnostics.
+- Add the registry, perception, ranking, and strict cue cap.
+- Keep it disconnected from the narrator until fixture tests pass.
 
-### Slice 4 — production frame assembly and cut capture
+### Slice 2 — hair structure and current behavior
 
-- Assemble authoritative current-cut inputs through lane adapters.
-- Resolve relevant domains by pure recomputation.
-- Capture the selected physical/perception read with the committed cut.
-- Prove retake stability and hidden-state safety.
+- Turn trustworthy hair attributes into a stable hair description for
+  calculation.
+- Combine that structure with current wetness, arrangement, and coverage.
+- Prove expected relationships such as more binding never creating more free
+  movement.
 
-### Slice 5 — perception, ranking, and chat narrator evaluation
+### Slice 3 — hair observations
 
-- Gate by coverage, light, distance, orientation, contact, and channel.
-- Rank by change, current action relevance, salience, novelty, and repeat key.
-- Add a bounded cue block behind a feature flag.
-- Compare contradiction rate, repetition, and concrete visual grounding against
-  the current static-attribute path.
+- Add wet clumping, wind or body-motion response, skin adhesion, and droplet
+  shedding.
+- Require the actual contact, force, or recent impulse each observation needs.
+- Keep any observation whose source is unavailable out of production.
 
-### Slice 6 — second-domain architecture proof
+### Slice 4 — production inputs and retakes
+
+- Connect the pure calculations to each lane's authoritative sources.
+- Capture selected physical and perception results through the lane's real
+  rollback/cut boundary.
+- Prove that hidden state cannot leak and that retakes reuse the same moment.
+
+### Slice 5 — narrator trial
+
+- Offer at most one or two perception-safe cues behind a feature flag.
+- Compare contradiction rate, repetition, specificity, and prose naturalness
+  with the current appearance path.
+- Keep stable appearance and affordance cues from duplicating one another.
+
+### Slice 6 — second-domain proof
 
 Implement either skin surface or garment wet-state/cling. It must reuse the
-generic core without making the core hair-aware.
+same foundation without adding hair knowledge to the shared core. Choose based
+on a ready truth owner: garment work waits for the relevant clothing-state
+integration, while skin work waits for authoritative regional surface/
+physiology inputs. Synthetic fixtures may prove calculations, but do not count
+as production source parity.
 
 ### Slice 7 — recognizable features and visual memory
 
-- Project existing body truth into stable feature keys and fingerprints.
-- Score current visibility, uniqueness, and importance separately.
-- Track player-observer notice/mention history without a
-  `recognizable_features[]` profile field.
-- Prove first-notice, change-detection, hidden-feature, and anti-repetition
-  fixtures before adding acquired topology.
+- Derive stable identity candidates from existing body truth.
+- Keep visibility, uniqueness, and importance separate.
+- Track what the player viewpoint has noticed and what the narrator recently
+  mentioned.
+- Prove first notice, change detection, hidden-feature safety, long-absence
+  recognition, and repetition control before adding acquired fine anatomy.
 
-### Slice 8 — shared visual consumers
+### Slice 8 — image-consumer decision
 
-Only after narration is stable, evaluate feeding the same captured observations
-and relative-geometry reads into scene-image composition. Do not create a
-second image-only physics path.
+Evaluate whether the captured observations improve scene-image composition.
+Record a ship, follow-up, or rejection decision; do not build a separate
+image-only body model.
 
-## Companion specs
+## How we will judge it
 
-- [Architecture](body-attribute-affordances.spec.architecture.md) — normative
-  profile → mechanics → frame → phenomenon design and code organization.
-- [Hair](body-attribute-affordances.spec.hair.md) — proving domain and
-  calibration target.
-- [Skin surface](body-attribute-affordances.spec.skin-surface.md) —
-  authoritative body/physiology state turned into visible surface detail.
-- [Garment interaction](body-attribute-affordances.spec.garment-interaction.md)
-  — wardrobe-owned material profiles composed with saturation, contact, pose,
-  and force.
-- [Appendages](body-attribute-affordances.spec.appendages.md) — current
-  constraints and actual motion for wings, tails, and horns.
-- [Soft tissue](body-attribute-affordances.spec.soft-tissue.md) — reusable
-  regional profiles for support, contact, and impulse-driven effects.
-- [Relative geometry](body-attribute-affordances.spec.relative-geometry.md) —
-  action-relevant eye-line and body blocking, not generic reach/carry rules.
-- [Recognizable features](body-attribute-affordances.spec.recognizable-features.md)
-  — distributed body truth projected into salience-ranked, observer-remembered
-  identity cues without a duplicate feature list.
+- A missing cause never produces an effect.
+- Covered or unseen state never reaches the narrator.
+- Possibility never becomes an event.
+- Stronger binding, support, or coverage does not increase the motion it
+  constrains.
+- Static appearance is not repeated as a current effect.
+- The narrator gets at most one or two useful cues and does not sound like a
+  physics report.
+- The same committed moment gives the same result on a retake.
+- Legacy and successor adapters produce the same answer for the same normalized
+  fixture, while honestly omitting phenomena their lane cannot support.
+- Recognition memory is observer-specific and cannot rewrite anatomy.
 
-Passive thermal observations are out of scope. Visible breath belongs to
-environment/perception; contact temperature belongs to physiology/body state
-plus tactile perception.
+## Dependencies and related plans
+
+- [Clothing state graph](clothing-state-graph.plan.md) owns garment truth and
+  must finish the relevant adapter/integration work before garment affordances
+  claim lane parity.
+- [Physiology](deferred/physiology.plan.md) owns live responses. Skin and
+  intimate physiology observations wait for its authoritative outputs.
+- [Romantic contact](romantic-contact-affordances.plan.md) reuses the shared
+  evidence, perception, ranking, and capture foundation but owns contact
+  commitment and contact-caused effects.
 
 ## Open questions
 
-- Hair vocabulary split, stored-value sweep, structured-presentation owner, and
-  wet-darkening calibration
-  ([hair spec](body-attribute-affordances.spec.hair.md#open-questions)).
-- Domain-registry type erasure, lane-adapter location, and whether mechanics
-  merit a developer preview
-  ([architecture spec](body-attribute-affordances.spec.architecture.md#open-questions)).
-- First authoritative coarse contact/pose producer and exact cut-capture seam
-  ([hair spec](body-attribute-affordances.spec.hair.md#open-questions)).
-- Physiology-sign contract, diverse skin-response calibration, grooming state,
-  and persistent-mark owner
-  ([skin spec](body-attribute-affordances.spec.skin-surface.md#open-questions)).
-- Garment material vocabulary, contact owner, first phenomenon subset, and
-  effective-coverage capture
-  ([garment spec](body-attribute-affordances.spec.garment-interaction.md#open-questions)).
-- Appendage material/flexibility vocabulary, clearance producer, concealment
-  owner, and first fixture
-  ([appendage spec](body-attribute-affordances.spec.appendages.md#open-questions)).
-- Soft-tissue vocabulary, first regional collection, support owner, and shared
-  intimate narrative-focus policy
-  ([soft-tissue spec](body-attribute-affordances.spec.soft-tissue.md#open-questions)).
-- Relative-stature calibration, posture/surface inputs, and first scene-image
-  consumer
-  ([relative-geometry spec](body-attribute-affordances.spec.relative-geometry.md#open-questions)).
-- Recognizable-feature storage, fine-detail schemas, definition-vs-cast
-  uniqueness, importance ownership, intimate gates, recognizable-motion scope,
-  and visual-memory notice/decay/mention/RAG boundaries
+- How should ambiguous hair vocabulary be split or conservatively mapped, and
+  who owns structured hair arrangement?
+  ([hair spec](body-attribute-affordances.spec.hair.md#open-questions))
+- Where do lane-specific adapters live, how is the mixed domain registry typed,
+  and is a developer preview useful?
+  ([architecture spec](body-attribute-affordances.spec.architecture.md#open-questions))
+- Which authoritative source first supplies coarse pose, hair/body contact,
+  current force, and the exact retake capture seam?
+  ([hair spec](body-attribute-affordances.spec.hair.md#open-questions))
+- What is the shared physiology-sign shape, how are diverse skin responses
+  calibrated, and who owns products and persistent marks?
+  ([skin spec](body-attribute-affordances.spec.skin-surface.md#open-questions))
+- What garment material vocabulary and contact read are required, which garment
+  observations ship first, and what coverage result is captured?
+  ([garment spec](body-attribute-affordances.spec.garment-interaction.md#open-questions))
+- Which appendage materials and flexibility facts are trustworthy, who owns
+  clearance/concealment, and which fixture comes first?
+  ([appendage spec](body-attribute-affordances.spec.appendages.md#open-questions))
+- Which soft-tissue vocabulary and first regions are safe to calculate, who
+  supplies support, and what narrative-focus rule prevents voyeuristic
+  repetition?
+  ([soft-tissue spec](body-attribute-affordances.spec.soft-tissue.md#open-questions))
+- How should height bands, posture, surfaces, and footwear produce relative
+  geometry, and when should images consume it?
+  ([relative-geometry spec](body-attribute-affordances.spec.relative-geometry.md#open-questions))
+- Where do located features and anatomy changes live, how are uniqueness and
+  importance set, and how do intimate gates, motion identity, notice decay,
+  mention history, and semantic memory interact?
   ([feature spec](body-attribute-affordances.spec.recognizable-features.md#open-questions);
-  [memory detail](body-attribute-affordances.recognizable-features.memory.md#open-questions)).
-- Which second domain follows hair: skin surface or garment wet state.
-- How reference-image confidence becomes an accepted canonical value without
-  filling uncertain mechanics axes.
+  [memory detail](body-attribute-affordances.recognizable-features.memory.md#open-questions))
+- Which second domain follows hair: skin surface or garment wet-state/cling?
+- What confidence is required before a reference-image proposal becomes a
+  canonical value that may drive calculation?
+
+## Technical companions
+
+- [Current readiness audit](body-attribute-affordances.audit.md)
+- [Shared architecture](body-attribute-affordances.spec.architecture.md)
+- [Code organization](body-attribute-affordances.spec.code-organization.md)
+- [Hair](body-attribute-affordances.spec.hair.md)
+- [Skin surface](body-attribute-affordances.spec.skin-surface.md)
+- [Garment interaction](body-attribute-affordances.spec.garment-interaction.md)
+- [Appendages](body-attribute-affordances.spec.appendages.md)
+- [Soft tissue](body-attribute-affordances.spec.soft-tissue.md)
+- [Relative geometry](body-attribute-affordances.spec.relative-geometry.md)
+- [Recognizable features](body-attribute-affordances.spec.recognizable-features.md)
+- [Visual-memory detail](body-attribute-affordances.recognizable-features.memory.md)
+- [Feature catalog](body-attribute-affordances.recognizable-features.catalog.md)

@@ -15,6 +15,7 @@ fixtures.
 | Document | Technical responsibility |
 | --- | --- |
 | [Shared contact core](romantic-contact-affordances.spec.contact-core.md) | Attempted action versus committed contact, access result, contact frame, policy/perception gates, effects, cue ranking, retake capture, and shared tests. |
+| [Observations, effects, and presentation](romantic-contact-affordances.spec.effects.md) | Observation/constraint contracts, perception and repetition rules, plus atomic, conservative, idempotent effect commits. |
 | [Foot contact](romantic-contact-affordances.spec.foot.md) | Foot surface topology, structural profiles, footwear integration, foot phenomena, and foot fixtures. |
 | [Intimate contact](romantic-contact-affordances.spec.intimate.md) | Intimate topology, exposure and consent requirements, physiology inputs, intimate phenomena, and leak-prevention fixtures. |
 
@@ -61,6 +62,24 @@ The affordance read begins only after the action resolver commits contact.
 Proposed effects are not observations until their owning event has committed
 them.
 
+## Current lane capability audit
+
+| Capability | Legacy character chat | Successor chat | Implementation consequence |
+| --- | --- | --- | --- |
+| Actor control and NPC agency | Prompt rules forbid puppeting, but there is no typed physical-action admission contract. | Command/deliberation authority is stronger. | Contact admission needs an explicit control/agency result; model prose cannot commit another actor's voluntary movement. |
+| Adult eligibility | Known numeric minors are fenced. Unknown/nonnumeric/fantasy ages and player eligibility are not explicit adult proofs. | Shares character profile rules; no contact-specific eligibility contract. | Intimate slices are blocked until a product-level eligibility result exists for every participant. |
+| Consent/permission | Intimate-scene and touch-welcomeness signals exist, but neither is a consent grant. | Consent ledger and `consent_covered` action preconditions are fail-closed. | Shared contact consumes a normalized decision while preserving lane strength/provenance; never derive consent from intimacy or arousal. |
+| Fine pose, reach, articulation, and support | Not authoritative. | Not authoritative at body-region level. | Slice 0/1 must add the minimum owner or reduce production scope. |
+| Active body-surface contact | No typed lifecycle. | No typed regional contact lifecycle. | The contact core must own/bridge start, update, continue, and end before phenomena run. |
+| Clothing/material-between | Structured legacy garment graph exists. | Shared successor garment adapter is pending clothing-state Slice 7. | First product proof may target legacy chat; successor parity waits for its adapter. |
+| Body-surface moisture/residue/marks | No shared regional owner. | No shared regional owner. | Unknown suppresses dependent reads; Slice 4 must add/choose an atomic effect owner. |
+| Physiology/temperature | General physiology is deferred. | General physiology is deferred. | Foot warmth is conditional; intimate live-state phenomena remain blocked. |
+| Perception | Turn-level allowance plus coverage, no full per-sense proximity model. | Structured witness/channel observations. | Normalize unavailable channels as unavailable, not open. |
+| Retake | Snapshot rollback. | Same-cut re-render. | Capture adapters differ but must produce stable contact/effect/cue fingerprints. |
+
+The body-side evidence is recorded in the
+[body-affordance readiness audit](body-attribute-affordances.audit.md).
+
 ## State ownership
 
 | Truth | Owner | Contact layer usage |
@@ -69,8 +88,10 @@ them.
 | Current posture, articulation, support, proximity | Pose/space owner | Validate access; never infer whole posture from one local fact. |
 | Garment instances, layer order, closures, displacement, material condition | Clothing state graph | Resolve material-between, exposure, compression, and filtering. |
 | Wetness, sweat, vascular state, erection, swelling, lubrication, temperature | Physiology/body state | Read current values; never infer from genre, action, or anatomy. |
+| Adult-content eligibility | Product/life-stage policy owner | Hard precondition for romantic/intimate contact; known minors always fail. |
+| Actor control and target agency | Lane action/behavior authority | Prove who may commit each voluntary movement. |
 | Interaction permission and consent | Lane's authoritative policy/consent owner | Mandatory precondition; mechanics cannot manufacture consent. |
-| Actual contact, motion, and implicit pose adjustment | Action/contact resolver | Authoritative cause for contact phenomena. |
+| Active contact lifecycle, motion, and implicit pose adjustment | Action/contact resolver | Authoritative start/update/end cause for contact phenomena. |
 | Marks, residues, fluid/product transfer | Body/garment/effect event owner | Affordances calculate eligibility; owner commits state. |
 | Sensory access and point of view | Perception/exposure owner | Filter observations before ranking. |
 | Mention and notice history | Presentation/visual-sensory memory | Suppress unchanged repetition without deleting physical truth. |
@@ -80,8 +101,10 @@ them.
 
 1. An attempted or merely possible contact never enters a contact frame as
    current truth.
-2. Intimate contact requires an authoritative adult-policy and consent pass.
-   Missing or malformed policy data fails closed.
+2. Interpersonal contact requires an actor-control/agency decision and the
+   applicable interaction permission. Intimate contact additionally requires
+   an authoritative adult-eligibility and scope-compatible consent pass.
+   Missing or malformed required policy data fails closed.
 3. Stable attributes never store current erection, swelling, lubrication,
    sweat, garment displacement, contact, or residue.
 4. A garment layer remains present until wardrobe state commits its movement or
@@ -92,7 +115,7 @@ them.
    requires sight; scent requires an olfactory path; taste requires qualifying
    oral contact.
 7. A transfer, scratch, mark, or displacement is proposed first and narrated
-   as present only after the owner commits it.
+   as present only after the owner commits it atomically and idempotently.
 8. Identical authoritative inputs produce identical profiles, frames,
    observations, diagnostics, and repeat keys.
 9. Retakes consume captured contact and presentation context, not later live
@@ -160,9 +183,14 @@ and successor lanes provide adapters for current truth:
 ```ts
 interface ContactLaneAdapter {
   readActionContext(input: ContactActionIntent): ContactActionContext;
-  commitResolution(resolution: ContactResolution): CommittedContactRead;
+  startContact(resolution: CommittableContactResolution): ContactLifecycleCommit;
+  updateContact(contactId: ContactId, patch: CommittedContactUpdate): ContactLifecycleCommit;
+  endContact(contactId: ContactId, reason: ContactEndReason): ContactLifecycleCommit;
+  readActiveContact(contactId: ContactId): CommittedContactRead | undefined;
   readFrame(contact: CommittedContactRead): RegionalContactFrame;
-  commitEffects(effects: readonly ProposedContactEffect[]): CommittedEffectRead;
+  commitEffects(
+    effects: readonly ProposedContactEffect[],
+  ): readonly ContactEffectCommitResult[];
   capturePresentation(capture: ContactPresentationCapture): void;
 }
 ```
@@ -185,11 +213,12 @@ safe degraded result:
 
 | Missing input | Required behavior |
 | --- | --- |
-| Consent/policy for an intimate attempt | Reject or withhold intimate contact; never guess. |
+| Actor control/agency for interpersonal contact | Reject commitment; never turn player-authored NPC movement into truth. |
+| Adult eligibility or consent/policy for an intimate attempt | Reject or withhold intimate contact; never guess. |
 | Pose or reach | Require explicit reposition or return geometry unavailable. |
 | Clothing layer state | Treat potentially covered intimate skin as unavailable. |
 | Live physiology | Omit physiology-derived phenomena; baseline anatomy may remain. |
-| Surface moisture | Use dry/unknown semantics, never wet/slippery. |
+| Surface moisture/substance | Suppress moisture-dependent phenomena; unknown is not dry and never becomes wet/slippery. |
 | Perception channel | Suppress the observation. |
 | Mention history | Preserve truth and use conservative selection; never expose more detail. |
 | Effect commit result | Do not narrate the effect as present. |
@@ -197,13 +226,17 @@ safe degraded result:
 Diagnostics remain bounded and structured. Suggested codes:
 
 - `contact_action_context_invalid`;
+- `contact_actor_control_unavailable`;
+- `contact_participant_eligibility_unavailable`;
 - `contact_pose_unavailable`;
 - `contact_policy_unavailable`;
 - `contact_consent_required`;
+- `contact_lifecycle_invalid`;
 - `contact_wardrobe_unavailable`;
 - `contact_surface_state_unavailable`;
 - `contact_perception_unavailable`;
 - `contact_effect_not_committed`;
+- `contact_effect_conflict`;
 - `contact_observation_suppressed`;
 - `contact_capture_degraded`.
 
@@ -214,6 +247,7 @@ A committed turn that uses contact cues captures:
 ```ts
 interface ContactPresentationCapture {
   contactIds: readonly ContactId[];
+  contactLifecycleEventIds: readonly EventId[];
   contactFingerprints: readonly string[];
   committedEffectEventIds: readonly EventId[];
   observationFingerprints: readonly string[];

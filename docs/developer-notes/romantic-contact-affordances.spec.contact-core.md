@@ -2,8 +2,7 @@
 
 Status: technical companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(promoted 2026-07-28 — in the committed foot-first scope, slices 0–4; ships
-to finished/ when implemented)
+(promoted 2026-07-28 — in the committed foot-first scope, slices 0–4)
 
 ## Boundary: attempt, resolution, commitment
 
@@ -41,14 +40,19 @@ type ContactResolution =
       evidence: readonly AffordanceEvidence[];
     };
 
+type CommittableContactResolution = Extract<ContactResolution, { status: "committable" }>;
+
 interface CommittedContactRead {
   contactId: ContactId;
-  provenanceEventId: EventId;
-  storyTime: StoryTimestamp;
+  startedByEventId: EventId;
+  lastUpdatedByEventId: EventId;
+  startedAt: StoryTimestamp;
+  lastUpdatedAt: StoryTimestamp;
+  phase: "active";
   source: BodySurfaceHandle;
   target: SurfaceHandle;
-  pressureIntent: ContactPressureIntent;
-  contactAreaHint: ContactAreaHint;
+  pressure: CommittedContactPressureRead;
+  contactArea: CommittedContactAreaRead;
   motion?: CommittedContactMotionRead;
   materialBetween: readonly MaterialLayerRead[];
   implicitAdjustments: readonly MinimalPoseAdjustment[];
@@ -59,12 +63,48 @@ Only `CommittedContactRead` enters an observation frame. A rejected attempt may
 produce a normal action-result cue through the action system, not a physical
 contact observation.
 
+The committed read is the active projection of lifecycle events:
+
+```ts
+type ContactLifecycleCommit =
+  | { kind: "contact_started"; contact: CommittedContactRead }
+  | {
+      kind: "contact_updated";
+      eventId: EventId;
+      contactId: ContactId;
+      patch: CommittedContactUpdate;
+      storyTime: StoryTimestamp;
+    }
+  | {
+      kind: "contact_ended";
+      eventId: EventId;
+      contactId: ContactId;
+      reason: ContactEndReason;
+      storyTime: StoryTimestamp;
+    };
+
+type CommittedContactUpdate = Partial<Pick<
+  CommittedContactRead,
+  "pressure" | "contactArea" | "motion" | "materialBetween" | "implicitAdjustments"
+>>;
+
+type ContactEndReason = "withdrawn" | "separated" | "scene_changed"
+  | "policy_withdrawn" | "state_invalidated";
+```
+
+An end commit removes the contact from the active projection. Scene separation,
+an incompatible pose/garment transition, explicit withdrawal, and branch/
+retake restoration must end or restore contacts deterministically. A prior
+narrative mention cannot keep a contact active.
+
 ## Action context
 
 The resolver consumes authoritative reads without taking ownership of them.
 
 ```ts
 interface ContactActionContext {
+  actorControl: ActorControlDecision;
+  participantEligibility: ParticipantEligibilityRead;
   pose: PairPoseRead;
   sourceSupport: RegionalSupportRead;
   targetSupport: RegionalSupportRead;
@@ -74,14 +114,53 @@ interface ContactActionContext {
   environment: ContactEnvironmentRead;
   bodyStateCut: BodyStateCutRef;
 }
+
+interface ActorControlDecision {
+  status: "allowed" | "denied" | "unresolved";
+  actorId: CharacterId;
+  evidence: readonly AffordanceEvidence[];
+}
+
+interface ParticipantEligibilityRead {
+  status: "eligible" | "ineligible" | "unresolved" | "not_required";
+  participantIds: readonly EntityId[];
+  evidence: readonly AffordanceEvidence[];
+}
+
+interface InteractionPolicyRead {
+  status: "allowed" | "denied" | "withdrawn" | "unresolved";
+  scopes: readonly ContactPolicyScope[];
+  evidence: readonly AffordanceEvidence[];
+}
 ```
 
-`InteractionPolicyRead` is a result from the lane's existing consent/policy
-owner. It is not calculated from attraction, arousal, relationship score,
-narrative framing, or the physical action's feasibility.
+`ActorControlDecision` proves that the initiating principal may author the
+actor's voluntary movement. Player-authored narration about an NPC is not
+control. A target's voluntary adjustment or reaction needs its own behavior/
+agency decision before commitment.
 
-For adult intimate actions:
+`ParticipantEligibilityRead` reuses the product life-stage/minor fence and any
+future explicit adult-participant policy. Known minors always fail
+romantic/intimate eligibility. Unknown, nonnumeric, fantasy-scaled, and player
+ages need an explicit product ruling; absence cannot be hidden inside the
+contact calculation.
 
+`InteractionPolicyRead` is a result from the lane's existing permission/
+consent owner. It is not calculated from attraction, arousal, relationship
+score, narrative framing, touch welcomeness, or the physical action's
+feasibility.
+
+For interpersonal contact:
+
+- the actor-control decision must cover the initiating movement;
+- target permission uses the lane's applicable interaction policy;
+- a voluntary target adjustment/reaction must be committed by the target's
+  behavior authority;
+- missing required control or permission rejects commitment.
+
+For romantic/intimate actions in addition:
+
+- all participants must pass the adult-eligibility rule;
 - `allowed` must be explicit and scope-compatible;
 - withdrawal or contradiction rejects the action;
 - missing/invalid policy fails closed;
@@ -143,6 +222,25 @@ articulation, crossing a room, or choosing an expressive toe curl or thrust.
 
 The accepted adjustments are stored on the committed contact for replay and
 diagnostics.
+
+## Contact lifecycle
+
+Contact identity survives ordinary updates across turns. A lifecycle fold:
+
+- starts a new id only from an accepted action;
+- updates the same id when pressure, area, motion, material-between, or locus
+  changes continuously;
+- continues without a write when the active state is unchanged and the lane's
+  cut still carries it;
+- ends on explicit release, separation, incompatible movement/coverage,
+  scene exit, policy withdrawal, or a state transition that invalidates the
+  contact;
+- never uses wall-clock timeout as story truth;
+- replays and branches from lifecycle events or rollback-owned chat state.
+
+The active-contact projection is bounded. Its key is the stable participant/
+surface pair plus contact identity, not a narrator sentence. Ended contacts
+remain historical events but cannot enter a current frame.
 
 ## Regional contact frame
 
@@ -224,106 +322,24 @@ interface MaterialTransmissionRead {
 
 ## Observations, constraints, and effects
 
-```ts
-interface ContactObservation {
-  id: ContactObservationId;
-  phenomenonId: ContactPhenomenonId;
-  subjectIds: readonly EntityId[];
-  locus: BodyLocusRef;
-  channel: "visual" | "tactile" | "olfactory" | "gustatory";
-  tags: readonly string[];
-  strength: UnitInterval;
-  evidence: readonly AffordanceEvidence[];
-  repeatKey: string;
-}
-
-interface ContactConstraint {
-  kind:
-    | "contact_blocked"
-    | "direct_surface_hidden"
-    | "motion_restricted"
-    | "effect_not_committed";
-  locus: BodyLocusRef;
-  evidence: readonly AffordanceEvidence[];
-}
-
-interface ProposedContactEffect {
-  kind:
-    | "surface_transfer"
-    | "pressure_mark"
-    | "scratch"
-    | "garment_displacement";
-  sourceSurface: SurfaceHandle;
-  targetSurface: SurfaceHandle;
-  magnitude: UnitInterval;
-  payload?: SurfaceMaterialPayload;
-  causedByContactId: ContactId;
-  evidence: readonly AffordanceEvidence[];
-}
-```
-
-`ProposedContactEffect` is submitted to the owning action/body/garment
-transaction. The next frame may observe the committed result by event id. A
-failed or rolled-back effect remains absent.
-
-## Perception and intimate gating
-
-Perception gating is evaluated before cue ranking.
-
-| Channel | Minimum evidence |
-| --- | --- |
-| Visual | Unoccluded path, sufficient light/distance/orientation, exposure appropriate to region and viewer. |
-| Tactile | Actor is a participant in committed contact and material transmission is nonzero. |
-| Olfactory | Current contributor, exposure/permeability, proximity, and airflow. |
-| Gustatory | Direct qualifying oral contact, current contributor, and intimate policy pass where required. |
-
-Intimate status is an additional hard gate, not a score. High salience,
-uniqueness, action relevance, or narrator focus cannot bypass it.
-
-The narrator gets no observations about what another actor privately feels.
-A character's internal tactile observation may inform that character's own
-behavior/narration only through the lane's established point-of-view rules.
-
-## Ranking and repetition
-
-Physical truth and mention state remain separate.
-
-```ts
-interface ContactMentionRead {
-  observation: ContactObservation;
-  novelty: UnitInterval;
-  changeSignificance: UnitInterval;
-  actionRelevance: UnitInterval;
-  narrativeFocus: UnitInterval;
-  repetitionCooldown: UnitInterval;
-}
-
-function contactMentionPriority(read: ContactMentionRead): number {
-  return (
-    Math.max(read.novelty, read.changeSignificance, read.actionRelevance) *
-    read.narrativeFocus *
-    read.repetitionCooldown
-  );
-}
-```
-
-This formula is a proposed shape, not calibrated truth. Rank after hard gates
-and select at most one or two cues. A repeat key includes phenomenon, subjects,
-locus, channel, and stable result band. New pressure, path, material, motion,
-surface condition, effect commit, or perception can change the fingerprint and
-restore priority.
-
-Keep separate timestamps for:
-
-- last physically observed/noticed;
-- last offered to the narrator;
-- last realized in narration, if the lane can report it.
-
-Do not require RAG retrieval for immediate cooldown correctness.
+The contracts, presentation rules, and commit laws for narrator-safe
+observations, resolver constraints, marks, scratches, garment displacement,
+and conserved surface transfer live in the
+[effects companion](romantic-contact-affordances.spec.effects.md). The core
+may propose an effect; only that companion's owner transaction can make it
+current truth.
 
 ## Required shared tests
 
 - attempt cannot masquerade as committed contact;
+- ended contact cannot enter a current frame;
+- scene separation or incompatible pose deterministically ends contact;
+- an unchanged sustained contact keeps its id without a duplicate start event;
+- player-authored NPC movement fails without an actor-control decision;
+- a voluntary target adjustment requires target behavior authority;
+- ordinary interpersonal contact applies its permission rule;
+- a known minor cannot enter romantic/intimate contact;
+- unresolved adult eligibility fails the intimate gate;
 - permission missing or withdrawn rejects intimate contact;
 - legacy intimacy framing does not become a consent grant;
 - direct skin action fails while a material layer remains;
@@ -331,7 +347,10 @@ Do not require RAG retrieval for immediate cooldown correctness.
 - visual access does not grant tactile or gustatory access;
 - no motion produces no glide;
 - no moisture/product source produces no slippery band;
+- unknown moisture suppresses moisture-dependent phenomena rather than
+  becoming dry;
 - possible transfer is silent until committed;
+- transfer conserves material across source/target and is idempotent on retry;
 - effect rollback leaves no mark/residue observation;
 - impossible implicit adjustment becomes an explicit requirement;
 - physical possibility never emits an emotional/pleasure reaction;

@@ -1,15 +1,10 @@
 # Romantic contact affordances
 
-Status: next (promoted from deferred/ 2026-07-28 — foot-first. The committed
-first scope is delivery slices 0–4: everything needed to make the
-[foot domain](romantic-contact-affordances.spec.foot.md) fully work in romantic
-chat, including committed contact effects. Intimate regions — slices 5–6 — stay
-in this plan and queue behind the foot proof. Each technical companion spec
-ships and moves to `finished/` individually as its slice lands; this plan moves
-to shipped only when the owner is satisfied all necessary contact affordances
-are covered. Sequenced directly behind
-[body-attribute-affordances.plan.md](body-attribute-affordances.plan.md), which
-builds the shared affordance core this plan consumes.)
+Status: next (promoted 2026-07-28; slices 0–4 prove foot contact in legacy
+romantic chat through lane-neutral contracts; intimate work waits for the foot
+proof and authoritative adult-eligibility, consent, exposure, and physiology;
+the plan follows [body-attribute affordances](body-attribute-affordances.plan.md)
+and its active doc family stays together until ship)
 
 ## In one sentence
 
@@ -61,6 +56,24 @@ They add stricter access, consent, exposure, anatomy, live physiology, and
 privacy requirements. Proving the common contact rules on feet first keeps
 those concerns easier to separate.
 
+## What exists today—and what does not
+
+The first implementation cannot treat narrator prose as physical truth. At
+promotion:
+
+| Area | Current position |
+| --- | --- |
+| Legacy romantic chat | It has structured clothing and coverage, retake snapshots, a minor fence, and a turn-level sensory allowance. It does not have authoritative fine pose, distance, support, body-surface contact, per-sense exposure, or a consent ledger. Its intimate-scene signal and touch-welcomeness reaction are not consent grants. |
+| Successor chat | It has world location, event cuts, observations, and a fail-closed consent ledger. It still lacks the regional pose, articulation, support, and active body-surface contact required here. Its structured clothing adapter is also unfinished. |
+| Body surfaces | Stable anatomy and appearance attributes exist. Shared regional moisture, products, body residue, pressure marks, and contact temperature do not yet have complete owners. |
+| Physiology | The general physiology plan is still deferred. Erection, swelling, lubrication, vascular change, sweat, and temperature cannot be inferred merely because the scene is intimate. |
+| Adult eligibility | Known numeric minors are fenced from intimate prompt surfaces. Unknown, nonnumeric, and fantasy-scaled ages do not yet provide an explicit adult-eligibility proof for every participant. |
+
+Slice 0 must turn every missing source into one of three recorded outcomes:
+build the minimal owner in this plan, depend on a named prerequisite, or omit
+the affected observation. “The narrator said it last turn” is not a fourth
+option.
+
 ## What the system would work out
 
 For a current or proposed contact, it should answer six plain questions.
@@ -83,6 +96,10 @@ It identifies both body surfaces and every material between them. A hand on a
 sock, a foot against a skirt, and bare skin on bare skin are different
 contacts, even if they involve the same general body areas.
 
+It also knows whether a contact has just started, changed, continued, or ended.
+An ended contact cannot keep producing pressure, texture, or glide merely
+because it appeared in an earlier turn.
+
 ### 3. What does the current contact feel or look like?
 
 It combines the actual pressure, contact area, motion, surface texture,
@@ -97,6 +114,10 @@ garment, transferred lotion, or new residue becomes true only after the system
 that owns that state records the change. Contact affordances may say that a
 change is possible and help an action resolver calculate it, but they do not
 quietly rewrite body or clothing state.
+
+Transfers must be atomic and conservative: material removed from one surface
+and placed on another is one committed change, and retries or retakes cannot
+duplicate it.
 
 ### 5. Who can notice it?
 
@@ -121,7 +142,7 @@ The first trial should cover:
 | --- | --- |
 | Contact pressure and area | Distinguishes a light toe trace, narrow heel contact, and a broad sole press. |
 | Regional texture | Allows an arch, ball, heel, toe pad, nail, and top of foot to feel different without authoring each as a separate character description. |
-| Glide and drag | Combines current sliding motion with lotion, sweat, water, fabric, skin texture, and pressure. |
+| Glide and drag | Combines current sliding motion with the known substance, fabric, skin texture, and pressure. Water, sweat, lotion, and oil do not share one “more moisture means less friction” rule. |
 | Foot and toe position | Describes a position that already exists, including footwear restrictions, without turning touch into an invented emotional toe curl. |
 | Nail contact | Distinguishes a nail trace or edge from soft toe contact; a scratch still requires a recorded event. |
 | Footwear filtering | Blocks bare-skin claims and reports what flexible fabric or rigid footwear can actually transmit. |
@@ -157,15 +178,22 @@ It gives us a test catalog without committing to simulate every case at once.
 - This system describes physical consequences. It does not decide desire,
   consent, attraction, pleasure, climax, withdrawal, or any other character
   choice or emotional response.
+- Any interpersonal body contact must respect actor control, target agency, and
+  the lane's applicable interaction policy. A player describing an NPC's
+  voluntary movement does not make that movement committed truth.
 - Adult intimate contact must pass the authoritative consent and policy check
-  before a committed contact exists. Missing or uncertain permission fails
-  safely.
+  before a committed contact exists. Known minors are always ineligible.
+  Intimate rollout remains blocked until every participant—including
+  unknown/fantasy-age characters and the player persona—has an authoritative
+  adult-eligibility ruling. Missing or uncertain permission fails safely.
 - Possibility is not actuality. Reachable, sensitive, compressible, or capable
   of becoming wet does not mean touched, aroused, compressed, or wet.
 - Clothing changes require real wardrobe actions. The contact layer cannot
   undress or reposition garments for narrative convenience.
 - Live body changes come from physiology and body state. Stable character
   attributes describe baseline anatomy, not the current response.
+- Unknown is not the same as dry, cool, clean, or unmarked. A missing current
+  surface read suppresses the dependent observation.
 - The narrator receives only what the current point of view can perceive and
   only a small number of relevant observations.
 - Retakes must use the same captured physical moment and observation choices,
@@ -183,9 +211,11 @@ This plan connects several existing systems rather than replacing them:
   consumes it.
 - [Clothing state graph](clothing-state-graph.plan.md) owns what garments
   exist, how they are worn, and whether they are wet, shifted, opened, or
-  removed.
+  removed. Legacy chat has the main substrate; successor adaptation and direct
+  affordance integration are still outstanding.
 - [Physiology](deferred/physiology.plan.md) owns live responses such as erection,
-  swelling, lubrication, flushing, temperature, and sweat.
+  swelling, lubrication, flushing, temperature, and sweat. Intimate physiology
+  work in slices 5–6 cannot begin until that plan provides authoritative reads.
 - [Skin surface](body-attribute-affordances.spec.skin-surface.md) owns the
   readable surface effects of moisture, products, marks, and residue.
 - [Soft tissue](body-attribute-affordances.spec.soft-tissue.md) supplies the
@@ -198,27 +228,37 @@ answers together for one interaction.
 
 ## Delivery outline
 
-The committed first roadmap scope is slices 0–4 — the foot proof, end to end.
-Slices 5–6 follow under this same plan once the foot trial passes; slice 7
-closes the loop.
+The committed first roadmap scope is slices 0–4: a foot proof end to end in
+legacy romantic chat, using shared contracts that can later accept successor
+state. Successor parity is not claimed until its pose/contact and clothing
+adapters exist. Slices 5–6 remain blocked behind the foot trial and their
+explicit intimate prerequisites; slice 7 records the generalization and parity
+decision.
 
 ### Slice 0 — confirm the truth sources
 
 Inventory what chat and successor chats already know about pose, reach,
 clothing, body surfaces, physiology, consent, perception, and turn capture.
-Resolve gaps before treating any field as authoritative.
+Publish the capability matrix. Resolve or explicitly defer gaps before
+treating any field as authoritative. The slice must also settle adult
+eligibility, actor control, and the permission rule used for the first foot
+trial.
 
 ### Slice 1 — shared contact foundation
 
-Add one small, lane-neutral way to represent an allowed contact: the two
-surfaces, any material between them, pressure, movement, time, and evidence.
-Separate an attempted action from a committed contact.
+Add one lane-neutral contact lifecycle: attempt, reject or require a visible
+transition, start, update, continue, and end. Preserve the two surfaces,
+material between them, pressure, movement, time, actor-control decision,
+permission decision, and evidence. Only an active committed contact reaches
+physical observations.
 
 ### Slice 2 — foot contact proof
 
 Add the foot surface map and ship pressure, regional texture, and footwear
-filtering first. Then add sliding and contact warmth. Use authored fixtures
-rather than open-ended narrator interpretation.
+filtering first. Add sliding only for known, substance-specific surface state.
+Add contact warmth only if Slice 0 identifies an authoritative temperature
+source; otherwise record it as deferred rather than guessing. Use authored
+fixtures rather than open-ended narrator interpretation.
 
 ### Slice 3 — romantic-chat evaluation
 
@@ -229,25 +269,32 @@ specificity, and prose quality with the existing path.
 ### Slice 4 — changes caused by contact
 
 Connect marks and material transfer through explicit events owned by body,
-clothing, or action state. Prove that retakes and branches restore the same
-result.
+clothing, or action state. Commit source removal and target deposition
+atomically, with idempotency and provenance. Prove that retries, retakes, and
+branches neither duplicate material nor leave half an effect.
 
 ### Slice 5 — intimate access and contact
 
 Reuse the proven contact foundation for adult intimate regions. Start with
 effective exposure, material-between, contact pressure, clothing contour,
-friction, and current surface moisture. Keep intimate gates fail-closed.
+friction, and current surface moisture. This slice cannot start until adult
+eligibility, consent scope, actor control, exposure, and point-of-view gates are
+authoritative for the selected lane.
 
 ### Slice 6 — live physiology and aftermath
 
 Add only the physiology-owned shape and surface changes that have authoritative
 inputs. Connect visible or tactile aftermath without creating a second arousal
-model.
+model. If the physiology plan has not shipped the required reads, this slice
+remains blocked rather than implementing local substitutes.
 
 ### Slice 7 — decide what generalizes
 
 After foot and intimate fixtures work, decide which helpers truly belong in a
-general body-contact library and which should remain region-specific.
+general body-contact library and which should remain region-specific. Record
+whether successor parity ships here or becomes a named follow-up. Keep all
+active plan/spec files together until the plan closes, then archive the family
+as one unit if desired.
 
 ## How we would judge the trial
 
@@ -257,11 +304,15 @@ Review:
 
 - physical contradictions;
 - clothing and exposure contradictions;
+- stale contacts that continue after they ended;
+- unauthorized or player-puppeted NPC movement;
+- minor or unresolved adult-eligibility leakage;
 - invented arousal, consent, movement, or reactions;
 - useful sensory specificity;
 - repetition across sustained contact;
 - whether a change becomes mentionable at the right time;
 - consistency between original replies and retakes;
+- conservation and idempotency of marks and transferred material;
 - whether the narrator sounds natural rather than like a physics report.
 
 The trial succeeds when it reduces contradictions and adds concrete variation
@@ -280,15 +331,24 @@ without making replies longer, more clinical, or repetitive.
 
 ## Open questions
 
-- **Which pose and contact facts are dependable today?** The first slice must
-  identify the authoritative source in both chat lanes
+- **Which pose and contact facts are dependable today?** Slice 0 must identify
+  the authoritative source in both chat lanes
+  ([shared-contact spec](romantic-contact-affordances.spec.contact-core.md)).
+- **Which lane owns the first production proof, and what counts as successor
+  parity?** Legacy chat is first, but its weaker state is not successor parity
+  ([technical index](romantic-contact-affordances.spec.md)).
+- **How do actor control and target permission apply to all interpersonal
+  contact?** Ordinary or fetish-framed foot contact cannot bypass NPC agency
+  ([shared-contact spec](romantic-contact-affordances.spec.contact-core.md)).
+- **What ends a contact?** The owner must define start/update/end events,
+  cleanup, branch behavior, and sustained contact across turns
   ([shared-contact spec](romantic-contact-affordances.spec.contact-core.md)).
 - **How much movement may be treated as an ordinary part of an action?** A
-  slight lean or ankle turn may be harmless; clothing removal, major posture
-  changes, and resistance never are
+  slight lean may be harmless; removal, major posture changes, and resistance
+  never are
   ([shared-contact spec](romantic-contact-affordances.spec.contact-core.md)).
-- **Where should a committed contact live?** It may be a turn event, captured
-  scene state, or both; it cannot be only an inference made while prompting
+- **Where should committed contact live?** It may be an event, captured scene
+  state, or both; it cannot exist only while prompting
   ([shared-contact spec](romantic-contact-affordances.spec.contact-core.md)).
 - **How detailed should foot regions be?** The surface map should distinguish
   meaningful play without becoming an anatomy mesh
@@ -298,25 +358,32 @@ without making replies longer, more clinical, or repetitive.
   ([foot spec](romantic-contact-affordances.spec.foot.md);
   [intimate spec](romantic-contact-affordances.spec.intimate.md)).
 - **Which intimate changes are ready to consume?** Erection, swelling,
-  lubrication, flushing, and similar reads depend on the physiology plan's
-  authoritative first slice
+  lubrication, and flushing require authoritative physiology
   ([intimate spec](romantic-contact-affordances.spec.intimate.md)).
 - **What is the minimum intimate consent scope?** The successor consent ledger
-  is stronger than legacy chat's current signals; the trial must not pretend
-  those lanes provide the same guarantee
+  is stronger than legacy chat's signals; the lanes are not equivalent
   ([intimate spec](romantic-contact-affordances.spec.intimate.md)).
+- **How is adult eligibility proven for every participant?** The existing minor
+  fence misses unknown, nonnumeric, fantasy-scaled, and some player ages
+  ([intimate spec](romantic-contact-affordances.spec.intimate.md)).
+- **Can contact warmth join the foot milestone?** Only if there is an
+  authoritative temperature source; otherwise the observation is suppressed
+  ([foot spec](romantic-contact-affordances.spec.foot.md)).
+- **Which state owner commits body-surface marks and conserves transferred
+  material?** The operation must be atomic, repeat-safe, and branch-safe
+  ([shared-contact spec](romantic-contact-affordances.spec.contact-core.md)).
 - **How should scent and taste be phrased?** The vocabulary must stay grounded
-  in authored baseline and current condition without turning bodies into
-  repetitive value judgments
+  in current truth without repetitive value judgments
   ([foot spec](romantic-contact-affordances.spec.foot.md);
   [intimate spec](romantic-contact-affordances.spec.intimate.md)).
-- **What must be captured for retakes?** The committed contact, state changes,
-  perception result, selected cues, and repetition history may all matter
+- **What must retakes capture?** Contact, effects, perception, selected cues,
+  and repetition history may all matter
   ([shared-contact spec](romantic-contact-affordances.spec.contact-core.md)).
 
 ## Technical companions
 
 - [Technical index and ownership map](romantic-contact-affordances.spec.md)
 - [Shared contact and action contracts](romantic-contact-affordances.spec.contact-core.md)
+- [Observations, effects, and presentation](romantic-contact-affordances.spec.effects.md)
 - [Foot-contact domain](romantic-contact-affordances.spec.foot.md)
 - [Intimate-region domain](romantic-contact-affordances.spec.intimate.md)

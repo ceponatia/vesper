@@ -31,9 +31,9 @@ The central boundary is:
 - `tail.type`, `tail.length`, `tail.tip`;
 - `horns.shape`, `horns.length`, `horns.count`.
 
-Promotion must audit whether type values encode hidden dimensions such as mass,
-prehensility, flexibility, or material. When a value is ambiguous, use a
-conservative provisional mapping or add an orthogonal attribute.
+Before implementation, audit whether type values encode hidden dimensions such
+as mass, prehensility, flexibility, or material. When a value is ambiguous, use
+a conservative provisional mapping or add an orthogonal attribute.
 
 ## Structural profiles
 

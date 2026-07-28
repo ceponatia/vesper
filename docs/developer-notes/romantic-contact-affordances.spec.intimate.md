@@ -9,8 +9,14 @@ Status: technical companion to
 This domain applies the
 [shared contact core](romantic-contact-affordances.spec.contact-core.md) to
 adult intimate contact. It handles only anatomy present in the character's body
-configuration and only after the lane's authoritative policy, consent,
-exposure, and point-of-view checks.
+configuration and only after the lane's authoritative adult-eligibility,
+actor-control, consent, exposure, and point-of-view checks.
+
+The existing `isMinorAge` fence is mandatory but not sufficient as a positive
+adult proof: it rejects known numeric minors while unknown, nonnumeric,
+fantasy-scaled, and player ages need an explicit product eligibility ruling.
+This domain remains unshippable until the selected lane can provide that ruling
+for every participant.
 
 The domain calculates physical and sensory observations. It never decides or
 infers desire, consent, attraction, pleasure, orgasm, withdrawal, resistance,
@@ -66,7 +72,8 @@ interface IntimateStructuralProfile extends RegionalStructuralProfile {
 
 interface IntimateCurrentConditionRead extends SurfaceConditionRead {
   physiology: IntimatePhysiologyRead;
-  moisture: IntimateMoistureRead;
+  moisture?: IntimateMoistureRead;
+  moistureContributors: readonly SurfaceSubstanceRead[];
   temperatureBand?: ContactTemperatureBand;
   residues: readonly SurfaceResidueRead[];
   marks: readonly BodySurfaceMarkRead[];
@@ -110,6 +117,7 @@ interface IntimateAccessRead {
   materialBetween: readonly GarmentLayerRead[];
   contactPath: ContactPathRead;
   visualPath: PerceptionPathRead;
+  participantEligibilityRef: ParticipantEligibilityDecisionRef;
   policyDecisionRef: PolicyDecisionRef;
   evidence: readonly AffordanceEvidence[];
 }
@@ -122,10 +130,11 @@ Rules:
 - sheer visibility does not imply tactile access;
 - displacement applies to the garment part and body locus actually affected;
 - internal access requires a compatible explicit action, aligned path,
-  committed exposure, and policy pass;
+  committed exposure, adult-eligibility pass, and policy pass;
 - a general intimate-scene signal is not sufficient evidence for specific
   contact or access;
-- missing clothing, path, or policy evidence degrades toward covered/blocked.
+- missing eligibility, clothing, path, or policy evidence degrades toward
+  blocked.
 
 ## Phenomena
 
@@ -164,6 +173,10 @@ Outputs are local semantic bands and provenance. An intimate frame, high
 arousal meter, or contact alone cannot synthesize wetness unless physiology has
 produced the corresponding read.
 
+Known dry and unknown are separate. If no authoritative source establishes
+current moisture, the phenomenon is silent and friction cannot assume a dry
+surface.
+
 ### `intimate.friction_glide`
 
 Requires committed relative motion. Combines both structural surfaces, current
@@ -179,6 +192,11 @@ Outputs:
 - `grip_breaks`.
 
 This is a contact mechanic, not an evaluation of comfort or pleasure.
+
+Friction curves are keyed by the actual substance/material combination.
+Water, sweat, physiology-owned lubrication, oil/lotion, and wet fabric are not
+one monotonic moisture scale; low water or sweat films may increase skin
+friction.
 
 ### `intimate.soft_tissue_deformation`
 
@@ -233,6 +251,10 @@ Calculates a proposed transfer from a current source, actual contact path,
 pressure/motion, receiving surface, and material permeability. The body or
 garment owner commits amount, locus, timestamp, and provenance.
 
+Source removal and target or intermediate-garment deposition commit atomically
+under one idempotency key. Retry and retake cannot duplicate material or leave
+only one side applied.
+
 The observation appears only after commit and may then feed:
 
 - surface moisture;
@@ -265,6 +287,7 @@ Validates that the action semantics match the physical frame:
 - external versus internal destination is correct;
 - motion direction/path remains compatible;
 - required support and free movement exist;
+- actor control and adult eligibility cover every participant;
 - consent/policy scope covers the action.
 
 It yields a resolver constraint or diagnostic, not a prompt claim about a
@@ -291,11 +314,11 @@ at most one relevant sensory cue, not a catalog.
 2. Same garment, sheer but not displaced: visual allowance may change; direct
    tactile access does not.
 3. Garment explicitly displaced after policy pass: direct external contact
-   becomes eligible only at the exposed locus.
+   becomes eligible only at the exposed locus and after adult eligibility.
 4. Direct contact with dry current state: pressure/texture may resolve; glide
    must not become slippery.
-5. Same contact after authoritative product/lubrication state: friction band
-   changes monotonically and remains locally scoped.
+5. Same contact after authoritative product/lubrication state: the calibrated
+   substance curve changes the friction band and remains locally scoped.
 6. Physiology-owned erection beneath opaque underwear: contour may resolve;
    bare anatomy detail remains suppressed.
 7. Swelling/lubrication absent from physiology: genre and narrator framing
@@ -310,6 +333,8 @@ at most one relevant sensory cue, not a catalog.
 ## Leak-prevention and property tests
 
 - absent/body-config-disabled region cannot be targeted or narrated;
+- a known minor always fails intimate access;
+- unresolved adult eligibility for any participant fails intimate access;
 - universal sensitive regions still require exposure/policy gates;
 - intimate scene signal without committed contact produces no contact cue;
 - high arousal without physiology-owned surface state produces no wetness or
@@ -320,11 +345,13 @@ at most one relevant sensory cue, not a catalog.
 - tactile transmission through fabric never flips to direct skin;
 - no relative motion produces no glide;
 - zero moisture/product input cannot produce a slippery result;
-- increasing authoritative moisture does not increase friction under identical
-  contact;
+- unknown moisture cannot produce either a known-dry or slippery result;
+- substance-specific friction fixtures cover low and high water/sweat films
+  separately from confirmed lubricants;
 - increasing pressure does not reduce deformation under identical support and
   profile unless a domain constraint explicitly saturates it;
 - transfer and aftereffects require committed event provenance;
+- transfer conserves material and is idempotent on retry/retake;
 - unperceived intimate observations never reach ranking or capture;
 - malformed policy/wardrobe/body reads fail closed with bounded diagnostics;
 - narrator cues contain semantic results, not policy, anatomy coefficients, or

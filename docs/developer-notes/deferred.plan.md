@@ -133,11 +133,11 @@ _Graduated 2026-07-28 →
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md),
 queued in [roadmap.md](roadmap.md) §Next directly behind the body-attribute
 plan. Foot-first: the committed scope is slices 0–4 (the shared contact
-foundation plus the foot domain fully working — evaluated in romantic chat,
-with committed contact effects); intimate regions (slices 5–6) stay in the
-plan and follow. Each spec ships and moves to finished/ individually; the plan
-ships when the owner is satisfied the necessary contact affordances are
-covered._
+foundation plus the foot domain working in legacy romantic chat, with
+contact lifecycle, actor-control/permission gates, and atomic committed
+effects); intimate regions stay behind the foot proof and their explicit
+adult-eligibility, consent, exposure, and physiology prerequisites. Active
+plan/spec files stay together until the plan ships._
 
 ## Clothing state graph and condition gradients
 

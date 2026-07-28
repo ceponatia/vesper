@@ -234,7 +234,7 @@ At minimum:
 - higher damping never increases post-impulse motion;
 - contact compression requires asserted contact or garment pressure;
 - opaque coverage blocks visual output without changing hidden mechanics;
-- physiological modifiers affect live profile resolution but never rewrite
+- physiological modifiers affect live mechanics but never rewrite
   canonical attributes;
 - current entangled attributes are marked provisional rather than treated as
   precise material facts;
