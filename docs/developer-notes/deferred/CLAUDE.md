@@ -102,27 +102,15 @@ Added after the review:
   (arousal → blood flow → swelling/lubrication, cold → shivering, fear →
   trembling, …) whose results — not the processes — surface to the narrator;
   generalizes the meter-economy OQ2 ruling into a response registry
-- [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) —
-  owner-requested body-attribute physics and visual-observation layer
-  (2026-07-26; reviewed/refocused 2026-07-26; architecture cleanup 2026-07-27):
-  each body domain compiles canonical attributes into a structural profile,
-  derives reusable current mechanics, assembles a frame with authoritative
-  force/contact/state, then runs narrow phenomena that emit actual visual
-  observations or constraints. V1 is a pure current-cut read with no persisted
-  dirty flags or affordance-owned hysteresis. Active companions: the shared
-  domain-architecture spec plus hair, skin-surface, garment-interaction,
-  appendages, soft-tissue, narrator-relevant relative geometry, and
-  recognizable features/visual memory (distributed body truth projected
-  through visibility × uniqueness × importance; no duplicate feature array).
-  Passive thermal observations are out of scope and live only as a ruling in
-  the plan.
-- [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-  — owner-requested grounded physical/sensory contact for romantic chat
-  (2026-07-27; broadened and split into reader plan + coding specs 2026-07-28):
-  prove the shared contact rules through foot play, then apply them to adult,
-  consent-gated intimate regions. Technical companions cover the common
-  attempted-versus-committed boundary, foot surfaces/footwear, intimate
-  exposure/physiology, perception, effect commits, repetition, and retakes.
+- body-attribute-affordances — graduated 2026-07-28 →
+  [../body-attribute-affordances.plan.md](../body-attribute-affordances.plan.md)
+  (promoted with its full companion-spec set; owner ruling: the shared
+  affordance core builds under this plan first, and the romantic-contact plan
+  queues directly behind and consumes it)
+- romantic-contact-affordances — graduated 2026-07-28 →
+  [../romantic-contact-affordances.plan.md](../romantic-contact-affordances.plan.md)
+  (foot-first: slices 0–4 committed, intimate regions queued behind the foot
+  proof; sequenced directly after the body-attribute plan)
 - clothing-state-graph — graduated 2026-07-27 (same day as parking) →
   [../clothing-state-graph.plan.md](../clothing-state-graph.plan.md)
   (owner-requested clothing object graph + condition gradients; the upstream

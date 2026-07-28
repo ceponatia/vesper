@@ -41,6 +41,28 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
+- **Body-attribute visual affordances — the shared affordance core + hair proving
+  domain** — [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
+  (next; promoted from deferred 2026-07-28 with its full companion-spec set —
+  architecture, hair, skin-surface, garment-interaction, appendages, soft-tissue,
+  relative-geometry, recognizable-features + visual memory). A deterministic read
+  layer turning authored body attributes plus authoritative live state into
+  perception-gated visual observations. Owner ruling at promotion: the shared
+  affordance core (structural profiles, phenomenon registry, evidence, perception +
+  cue ranking) builds here first; the romantic-contact plan below consumes it.
+  Companion specs ship and move to finished/ individually as their domains land; the
+  plan ships when the owner calls the domain set covered.
+- **Romantic contact affordances — foot-first grounded contact** —
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
+  [spec index](romantic-contact-affordances.spec.md) (next; promoted from deferred
+  2026-07-28, sequenced directly behind the body-attribute plan whose core it
+  consumes). Committed scope is slices 0–4: the truth-source audit, the shared
+  attempted-versus-committed contact foundation, the foot domain (surface map,
+  footwear filtering, pressure/texture/glide/warmth), romantic-chat cue evaluation
+  behind a flag, and contact-caused effect commits (marks, transfer). Intimate
+  regions (slices 5–6) stay in the plan and queue behind the foot proof. Specs ship
+  and move to finished/ individually; the plan ships when all necessary contact
+  affordances are covered.
 - **Clothing state graph — remainder: the `CHAT_GARMENT_CUES` tuning run, then slices
   7–8 (successor adapter, affordance integration)** —
   [clothing-state-graph.plan.md](clothing-state-graph.plan.md) (active; **slices 0–6
@@ -51,7 +73,7 @@ umbrella further down.)
   baseline first; the small pipeline change widening the extraction lane to ensemble
   members (they still mutate via the legacy bridge); slice 7 mapping the contracts onto
   successor items via `item-condition-v1`; and slice 8 integrating with body affordances
-  once that parked set promotes.
+  (promoted 2026-07-28 — queued above).
 
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
   [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly

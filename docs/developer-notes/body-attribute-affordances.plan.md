@@ -1,7 +1,12 @@
 # Body-attribute visual affordances
 
-Status: draft (stub — parked 2026-07-26, owner request; promote per
-[CLAUDE.md](CLAUDE.md) before building)
+Status: next (promoted from deferred/ 2026-07-28, owner ruling: the shared
+affordance core — structural profiles, phenomenon registry, evidence,
+perception + cue ranking — builds under this plan first; the foot-first
+[romantic contact plan](romantic-contact-affordances.plan.md) queues directly
+behind it and consumes that core. Companion specs ship and move to `finished/`
+individually as their domains land; this plan ships when the owner is
+satisfied the necessary domains are covered.)
 
 ## What
 
@@ -102,7 +107,7 @@ Keep these owners separate:
 8. **Recognition memory** records which perception-safe identity details a
    specific observer has noticed; it never becomes body truth.
 
-The [physiology stub](physiology.plan.md) owns processes such as exertion →
+The [physiology stub](deferred/physiology.plan.md) owns processes such as exertion →
 sweat or cold → piloerection. Affordances may consume the authoritative result,
 never rederive the process.
 

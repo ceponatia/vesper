@@ -1,7 +1,8 @@
 # Recognizable features — salience and visual memory
 
-Status: draft (detail for
-[body-attribute-affordances.spec.recognizable-features.md](body-attribute-affordances.spec.recognizable-features.md))
+Status: detail for
+[body-attribute-affordances.spec.recognizable-features.md](body-attribute-affordances.spec.recognizable-features.md)
+(promoted with the plan 2026-07-28)
 
 ## Purpose
 

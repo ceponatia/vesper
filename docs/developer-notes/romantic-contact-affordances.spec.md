@@ -1,7 +1,9 @@
 # Romantic contact affordances — technical index
 
-Status: draft companion to
+Status: companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
+(promoted 2026-07-28, foot-first: contact-core + foot are the committed
+slices 0–4 scope; the intimate spec queues behind the foot proof)
 
 This is the coding-agent entry point. The plan owns the product intent,
 reader-facing rollout, success criteria, and all open questions. These specs

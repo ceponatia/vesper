@@ -1,8 +1,8 @@
 # Affordance spec draft — garment interaction
 
-Status: draft (companion to
-[body-attribute-affordances.plan.md](body-attribute-affordances.plan.md);
-promote with the plan)
+Status: companion to
+[body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
+(promoted with the plan 2026-07-28)
 
 ## Purpose
 
