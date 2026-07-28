@@ -12,6 +12,7 @@ import {
   seedRolloutTestWorld,
 } from "./simulation";
 import { submitDurableOpenEngagement } from "./simulation/engagement-store";
+import { legacyEngineTestPlayerPrincipal, requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * R2 (engine.rollout.plan.md) — the live-narrator leg with the model seam
@@ -48,6 +49,12 @@ async function probe(): Promise<boolean> {
 }
 
 const ready = await probe();
+// This suite submits a player command against the directly-seeded (unanchored)
+// rollout branch, so it needs the same aggregate-run opt-in as the store
+// suites — without it the authz seam refuses the open as `unanchored_player`
+// and the failure reads as a domain bug. (Missed by the 2026-07-27 fail-fast
+// conversion; CI's `pnpm test:engine` already exports the flag.)
+if (ready) requireLegacyUnanchoredEngineTestMode("sim-narrator.int.test");
 
 async function teardown(): Promise<void> {
   await db().delete(simWorlds).where(eq(simWorlds.id, ROLLOUT_WORLD_ID));
@@ -86,11 +93,7 @@ describe.runIf(ready)("R2 sim narrator over the committed cut", () => {
         branchId: ROLLOUT_BRANCH_ID,
         expectedVersion: 0,
         idempotencyKey: openCommandId,
-        principal: {
-          kind: "player" as const,
-          principalId: "r2-player",
-          controlledActorIds: [ROLLOUT_ACTORS.mara],
-        },
+        principal: legacyEngineTestPlayerPrincipal([ROLLOUT_ACTORS.mara]),
         submittedAtWallClock: new Date().toISOString(),
         correlationId: "r2-test",
         type: "open_engagement",

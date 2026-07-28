@@ -52,28 +52,37 @@ export async function activeJobCount(ownerId: string, staleMs = JOB_SLOT_STALE_M
 /**
  * Insert a running job row only if the owner is under their concurrency cap.
  *
- * Count and insert are one statement on purpose. A read-then-write check loses
- * the race that matters most here — the UI fires several renders at once, so
- * "both requests counted 3 and both inserted" is the normal case, not the
- * exotic one. Postgres evaluates the subquery against the same snapshot as the
- * insert, so the cap is enforced by the database rather than by timing.
+ * The count and the insert run inside one transaction that first takes a
+ * per-owner advisory lock, because the conditional-INSERT form alone does NOT
+ * hold under concurrency: at READ COMMITTED each parallel statement's subquery
+ * counts against a snapshot that excludes the other in-flight uncommitted
+ * inserts, so twenty simultaneous submits can all read "under the cap" and all
+ * insert (observed: 13 of 20 admitted at a cap of 4). `pg_advisory_xact_lock`
+ * serializes claims per owner — the race the UI actually produces (several
+ * renders fired at once) queues on the lock and the second claimant counts the
+ * first's committed row. The lock releases with the transaction, and distinct
+ * owners never contend. The conditional insert stays as the in-transaction
+ * check so a refusal writes nothing.
  */
 export async function claimJobSlot(input: ClaimJobSlotInput): Promise<JobSlotClaim> {
   const limit = input.limit ?? MAX_CONCURRENT_JOBS_PER_USER;
   const id = newId();
   const staleCutoff = sql`now() - ${JOB_SLOT_STALE_MS} * interval '1 millisecond'`;
 
-  const inserted = await db().execute(sql`
-    INSERT INTO "jobs" ("id", "type", "status", "owner_id", "payload", "attempts", "started_at", "heartbeat_at")
-    SELECT ${id}, ${input.type}, 'running', ${input.ownerId}, ${JSON.stringify(input.payload)}::jsonb, 1, now(), now()
-    WHERE (
-      SELECT count(*) FROM "jobs"
-      WHERE "jobs"."owner_id" = ${input.ownerId}
-        AND "jobs"."status" IN ('queued', 'running')
-        AND "jobs"."created_at" > ${staleCutoff}
-    ) < ${limit}
-    RETURNING "id"
-  `);
+  const inserted = await db().transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`job_slot:${input.ownerId}`}, 0))`);
+    return tx.execute(sql`
+      INSERT INTO "jobs" ("id", "type", "status", "owner_id", "payload", "attempts", "started_at", "heartbeat_at")
+      SELECT ${id}, ${input.type}, 'running', ${input.ownerId}, ${JSON.stringify(input.payload)}::jsonb, 1, now(), now()
+      WHERE (
+        SELECT count(*) FROM "jobs"
+        WHERE "jobs"."owner_id" = ${input.ownerId}
+          AND "jobs"."status" IN ('queued', 'running')
+          AND "jobs"."created_at" > ${staleCutoff}
+      ) < ${limit}
+      RETURNING "id"
+    `);
+  });
 
   if (inserted.rows.length > 0) return { ok: true, jobId: id };
   return { ok: false, active: await activeJobCount(input.ownerId), limit };
