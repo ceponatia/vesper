@@ -309,17 +309,22 @@ const idsOf = (read: AffordanceRead): string[] => read.observations.map((entry) 
 // ---------------------------------------------------------------------------
 
 describe("the shipped registry", () => {
-  it("is empty — slice 1 ships the core disconnected from the narrator", () => {
-    expect(affordanceDomains).toEqual([]);
+  it("holds the domains a production read walks — hair joined in slice 2", () => {
+    expect(affordanceDomains.map((domain) => domain.id)).toEqual(["hair"]);
+  });
+
+  it("a subject with no hair structure and no payload resolves to silence, not invention", () => {
+    const sink = new DiagnosticCollector();
     const empty = deriveAffordanceRead({
       subjectId: SUBJECT,
       storyTime: 0,
       attributes: attributesOf(BLUE_EYES),
       perception: seen(),
+      sink,
     });
     expect(empty.observations).toEqual([]);
     expect(empty.cues).toEqual([]);
-    expect(empty.diagnostics).toEqual([]);
+    expectDiagnostic(sink, AFFORDANCE_INPUT_UNAVAILABLE);
   });
 });
 

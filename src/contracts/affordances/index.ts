@@ -7,5 +7,6 @@
  * than forking the calculation.
  */
 export * from "./core";
+export * from "./domains/hair";
 export * from "./domains";
 export * from "./derive-affordance-read";
