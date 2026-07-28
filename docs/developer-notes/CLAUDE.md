@@ -3,6 +3,27 @@
 This folder contains plan and spec files for development phases. Whenever possible, keep these documents up-to-date. When we develop something that conflicts with planned work, please update the planned work to reflect what has changed.
 If a complete reanalysis and rewrite of the planned work is needed due to other changes in code, say so in the relevant document. Do not do this analysis unless asked to, but tell the user in your response that it is needed.
 
+## Plan and spec audiences
+
+- **Plans are for regular readers, including non-technical product readers.**
+  Write them in plain English and make them understandable without reading code
+  or the matching spec. A plan should explain the user experience, why the work
+  matters, product boundaries, delivery slices, success criteria, and open
+  questions. Prefer ordinary examples over type names, algorithms, file trees,
+  schema sketches, or implementation pseudocode.
+- **Specs are the technical version for coding agents.** Put contracts, type
+  shapes, ownership tables, algorithms, persistence decisions, diagnostics,
+  code organization, migrations, and detailed fixtures in `<topic>.spec.md` or
+  `<topic>.spec.<area>.md`.
+- A plan may link to a technical term or summarize a key invariant when the
+  product decision depends on it, but implementation detail belongs in the
+  matching spec. The plan remains the source of truth for scope, rollout,
+  success criteria, and all open questions; the spec is the source of truth for
+  how coding agents implement those decisions.
+- When an existing `.plan.md` reads like a coding design, move that detail into
+  a matching spec as part of the next substantive edit instead of continuing to
+  grow the technical plan.
+
 ## Engine gate docs (split 2026-07-21)
 
 The successor-engine plan and spec are split so no single file has to be read or

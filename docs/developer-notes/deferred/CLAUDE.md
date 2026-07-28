@@ -10,6 +10,14 @@ Rules for agents working in this folder:
 
 - **Do not build from a stub.** Building requires promotion first, on the
   owner's request (usually after a fleshing-out discussion).
+- **Keep plans readable by non-technical readers.** A deferred `<topic>.plan.md`
+  explains the experience, purpose, boundaries, likely slices, success
+  criteria, and open questions in plain English. It must stand alone without
+  code knowledge. Put type definitions, algorithms, storage design,
+  diagnostics, code layout, and detailed coding fixtures in
+  `<topic>.spec.md` / `<topic>.spec.<area>.md` companions. The audience and
+  ownership rules in [../CLAUDE.md](../CLAUDE.md#plan-and-spec-audiences)
+  apply here too.
 - **Promotion:** flesh the stub into a real plan, `git mv` it up to
   `docs/developer-notes/<topic>.plan.md` (add a `<topic>.spec.md` beside it
   when design detail warrants one), set `Status: next` (or `active`), add the
@@ -108,6 +116,13 @@ Added after the review:
   through visibility × uniqueness × importance; no duplicate feature array).
   Passive thermal observations are out of scope and live only as a ruling in
   the plan.
+- [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
+  — owner-requested grounded physical/sensory contact for romantic chat
+  (2026-07-27; broadened and split into reader plan + coding specs 2026-07-28):
+  prove the shared contact rules through foot play, then apply them to adult,
+  consent-gated intimate regions. Technical companions cover the common
+  attempted-versus-committed boundary, foot surfaces/footwear, intimate
+  exposure/physiology, perception, effect commits, repetition, and retakes.
 - clothing-state-graph — graduated 2026-07-27 (same day as parking) →
   [../clothing-state-graph.plan.md](../clothing-state-graph.plan.md)
   (owner-requested clothing object graph + condition gradients; the upstream

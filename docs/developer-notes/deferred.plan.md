@@ -138,6 +138,20 @@ specs, plus a recognizable-features projection that derives identity cues from
 located body truth and observer visual memory rather than storing a duplicate
 feature array. Thermal observations remain explicitly out of scope.
 
+## Romantic contact affordances
+
+_Owner direction 2026-07-27; broadened 2026-07-28. Stub:
+[deferred/romantic-contact-affordances.plan.md](deferred/romantic-contact-affordances.plan.md)._
+Give romantic chat a grounded understanding of current physical contact:
+whether a contact can happen, which body and garment surfaces are involved,
+what pressure/motion/texture/moisture imply, which changes were actually
+committed, what the point of view can perceive, and what is worth mentioning
+without repetition. Foot play is the first proving domain; adult,
+consent-gated intimate regions are the second. The technical companion set
+separates the shared contact/action boundary from foot and intimate-region
+phenomena and consumes—without duplicating—wardrobe, physiology, pose,
+consent, perception, body state, and narrator memory.
+
 ## Clothing state graph and condition gradients
 
 _Graduated 2026-07-27 (same day as parking) →
