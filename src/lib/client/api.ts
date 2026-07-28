@@ -26,6 +26,21 @@ import {
   type ChatSceneModel,
   characterProfileSchema,
   chatPlayerStateSchema,
+  garmentBehaviors,
+  garmentCleanlinessBands,
+  garmentConditionKeys,
+  garmentCreaseBands,
+  garmentDamageKinds,
+  garmentDegreeBands,
+  garmentDepositFreshnessBands,
+  garmentDepositKinds,
+  garmentDisplacementKinds,
+  garmentPresentationChannels,
+  garmentTuckStates,
+  garmentWearBands,
+  garmentWetnessBands,
+  GARMENT_CONDITION_NEUTRAL_BANDS,
+  type GarmentOperation,
   emptyCharacterProfile,
   emptyChatPlayerState,
   emptyPersonaProfile,
@@ -333,6 +348,88 @@ export const chatMessageSchema = z.object({
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 
+/**
+ * One presentation control on a worn garment (clothing-state-graph slice 3): a
+ * part with a behavior binding, its current reading as a BAND (never fixed
+ * point), and what that reading currently subtracts from coverage.
+ */
+export const garmentPartControlSchema = z.object({
+  partId: z.string(),
+  label: textOr(""),
+  behavior: z.enum(garmentBehaviors).catch("tuckable_hem"),
+  channel: z.enum(garmentPresentationChannels).catch("tuck"),
+  /** Declared fastener count for a `fastener_series` closure; null otherwise. */
+  fastenerCount: z.number().int().nullable().catch(null),
+  openFasteners: z.array(z.number().int()).catch([]),
+  band: z.enum(garmentDegreeBands).nullable().catch(null),
+  tuck: z.enum(garmentTuckStates).nullable().catch(null),
+  displacementKind: z.enum(garmentDisplacementKinds).nullable().catch(null),
+  dropped: z.array(z.string()).catch([]),
+});
+export type GarmentPartControl = z.infer<typeof garmentPartControlSchema>;
+
+/**
+ * The material state of one garment or one of its parts, as BANDS
+ * (clothing-state-graph slice 4). Fixed point never crosses this boundary; each
+ * channel reads in its own direction (`cleanliness` runs filthy → fresh).
+ */
+const garmentConditionBandSchema = z.enum([
+  ...garmentWetnessBands,
+  ...garmentCleanlinessBands,
+  ...garmentCreaseBands,
+  ...garmentWearBands,
+]);
+const garmentConditionBandsSchema = z
+  .record(z.enum(garmentConditionKeys), garmentConditionBandSchema)
+  .catch(() => ({ ...GARMENT_CONDITION_NEUTRAL_BANDS }));
+
+/** A part reading differently from the garment baseline (a wet hem on a dry shirt). */
+export const garmentPartConditionSchema = z.object({
+  partId: z.string(),
+  label: textOr(""),
+  /** Only the channels this part overrides, so the record is deliberately sparse. */
+  bands: z.record(z.string(), garmentConditionBandSchema).catch({}),
+});
+export type GarmentPartCondition = z.infer<typeof garmentPartConditionSchema>;
+
+/** A located contaminant: what it is, where, how much, how recent. */
+export const garmentDepositReadoutSchema = z.object({
+  id: z.string(),
+  kind: z.enum(garmentDepositKinds).catch("unknown"),
+  partIds: z.array(z.string()).catch([]),
+  labels: z.array(z.string()).catch([]),
+  intensity: z.enum(garmentDegreeBands).nullable().catch(null),
+  freshness: z.enum(garmentDepositFreshnessBands).catch("set"),
+});
+export type GarmentDepositReadout = z.infer<typeof garmentDepositReadoutSchema>;
+
+/** A located damage mark. */
+export const garmentDamageReadoutSchema = z.object({
+  id: z.string(),
+  kind: z.enum(garmentDamageKinds).catch("scuff"),
+  partId: z.string(),
+  label: textOr(""),
+  severity: z.enum(garmentDegreeBands).nullable().catch(null),
+});
+export type GarmentDamageReadout = z.infer<typeof garmentDamageReadoutSchema>;
+
+/** One worn garment's presentation controls, the coverage they produce, and its condition. */
+export const garmentReadoutSchema = z.object({
+  garmentId: z.string(),
+  name: textOr("garment"),
+  locus: textOr("worn"),
+  controls: z.array(garmentPartControlSchema).catch([]),
+  covers: z.array(z.string()).catch([]),
+  dropped: z.array(z.string()).catch([]),
+  condition: garmentConditionBandsSchema,
+  /** Channels currently off their neutral band — the "worth showing" subset. */
+  notableChannels: z.array(z.enum(garmentConditionKeys)).catch([]),
+  conditionParts: z.array(garmentPartConditionSchema).catch([]),
+  deposits: z.array(garmentDepositReadoutSchema).catch([]),
+  damage: z.array(garmentDamageReadoutSchema).catch([]),
+});
+export type GarmentReadout = z.infer<typeof garmentReadoutSchema>;
+
 /** Light chat-state snapshot (character-chat-state.spec.md §5) for the strip, premise bar, and state tools. */
 export const chatStateSnapshotSchema = z.object({
   meters: z.record(z.string(), z.number()).catch({}),
@@ -389,6 +486,10 @@ export const chatStateSnapshotSchema = z.object({
   // Rendered garment phrase (worn items + overlay) for the read-only strip chip.
   outfitLabel: textOr(""),
   outfitExposed: z.boolean().catch(false),
+  /** The presentation graph for this member's worn garments (clothing-state-graph slice 3). */
+  garments: z.array(garmentReadoutSchema).catch([]),
+  /** Garment operations this save REJECTED, with their stable codes — the sheet's diagnostics row. */
+  garmentDiagnostics: z.array(z.object({ code: z.string(), message: textOr("") })).catch([]),
   /** Who the player is here + what they're wearing (persona-library.plan.md) — chat-wide. */
   playerState: chatPlayerStateSchema.catch(() => emptyChatPlayerState()),
   activeSocialCards: z.array(socialReactionCardSchema).catch([]),
@@ -451,6 +552,8 @@ export interface ChatStateEdit {
   outfitPresetId?: string;
   outfit?: string;
   outfitExposed?: boolean;
+  /** Typed garment operations (clothing-state-graph slice 3) — the sheet's presentation controls. */
+  garmentOperations?: GarmentOperation[];
   /** Who the player is here + what they're wearing — the "Playing as" pick. */
   playerState?: ChatPlayerState;
   activeSocialCards?: SocialReactionCard[];

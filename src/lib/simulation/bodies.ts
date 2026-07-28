@@ -59,6 +59,13 @@ import {
   rhythmSelfCareEffects,
 } from "@/contracts/simulation/bodies";
 import { composeSimulationId } from "@/contracts/simulation/identity";
+import {
+  clampFixedPoint,
+  linearDriftStep,
+  proportionalDecayStep,
+  EXP2_SCALE,
+  exp2NegativeFixedPoint,
+} from "../fixed-point";
 import { simulationHash } from "./hash";
 import { deriveCircadianPressure } from "./body-reads";
 import { buildDepartureInterruptEvent } from "./engagements";
@@ -88,49 +95,13 @@ function compareStableText(left: string, right: string): number {
   return 0;
 }
 
-// ---------------------------------------------------------------------------
-// Deterministic fixed-point 2^(-x) (engine.spec §32 — no libm transcendentals)
-// ---------------------------------------------------------------------------
-
-// Exported — E5.5's social.ts reuses this scale constant directly for its own
-// decay-combination formula, rather than duplicating the literal (which would
-// silently drift if this fixed-point scale is ever retuned).
-export const EXP2_SCALE = 1_000_000;
-const EXP2_FRACTION_BITS = 20;
-/** c[i] = round(2^(-1/2^(i+1)) · EXP2_SCALE), so multiplying the constants for
- * a fraction's set bits composes 2^(-fraction) in pure integer math. */
-const EXP2_FRACTION_CONSTANTS = [
-  707107, 840896, 917004, 957603, 978572, 989228, 994599, 997296, 998647, 999323,
-  999662, 999831, 999915, 999958, 999979, 999989, 999995, 999997, 999999, 999999,
-] as const;
-/** Beyond 2^-40 the scaled result is zero; skip the bit walk entirely. */
-const EXP2_UNDERFLOW_WHOLE = 40;
-
 /**
- * floor-ish deterministic EXP2_SCALE · 2^(-numerator/denominator) for
- * nonnegative integer inputs. Every intermediate stays a safe integer for
- * denominators up to 10^9 (the contract bound on half-lives).
+ * The deterministic 2^(-x) primitive and its scale now live in the shared
+ * `lib/fixed-point.ts` kernel (both lanes run one implementation — see that
+ * file's header). Re-exported here unchanged so `social.ts`, this module's
+ * tests and any other §25 consumer keep importing them from `./bodies`.
  */
-export function exp2NegativeFixedPoint(numerator: number, denominator: number): number {
-  if (!Number.isSafeInteger(numerator) || numerator < 0) {
-    throw new RangeError("exp2 numerator must be a nonnegative safe integer");
-  }
-  if (!Number.isSafeInteger(denominator) || denominator <= 0) {
-    throw new RangeError("exp2 denominator must be a positive safe integer");
-  }
-  const whole = Math.floor(numerator / denominator);
-  if (whole >= EXP2_UNDERFLOW_WHOLE) return 0;
-  const remainder = numerator - whole * denominator;
-  const fraction = Math.floor((remainder * (1 << EXP2_FRACTION_BITS)) / denominator);
-  let scaled = EXP2_SCALE;
-  for (const [bit, constant] of EXP2_FRACTION_CONSTANTS.entries()) {
-    if (fraction & (1 << (EXP2_FRACTION_BITS - 1 - bit))) {
-      scaled = Math.floor((scaled * constant) / EXP2_SCALE);
-    }
-  }
-  for (let halvings = 0; halvings < whole; halvings++) scaled = Math.floor(scaled / 2);
-  return scaled;
-}
+export { EXP2_SCALE, exp2NegativeFixedPoint };
 
 // ---------------------------------------------------------------------------
 // Piecewise analytic integration (engine.spec §25.2)
@@ -219,31 +190,31 @@ function effectiveDrift(
 }
 
 function clampMeter(value: number): number {
-  return Math.max(0, Math.min(METER_FIXED_POINT_ONE, value));
+  return clampFixedPoint(value, METER_FIXED_POINT_ONE);
 }
 
-/** One closed-form drift step under a constant modifier set. */
+/**
+ * One closed-form drift step under a constant modifier set. The numerics are the
+ * shared `lib/fixed-point.ts` kernel's; this function only decides WHICH law the
+ * effective drift selects.
+ */
 function driftStep(valueFixedPoint: number, drift: EffectiveDrift, elapsedSeconds: number): number {
   if (elapsedSeconds <= 0 || drift.kind === "none") return valueFixedPoint;
   if (drift.kind === "linear") {
-    const magnitude = Math.floor((Math.abs(drift.ratePerHourFixedPoint) * elapsedSeconds) / 3_600);
-    if (drift.ratePerHourFixedPoint >= 0) {
-      // Approach: move toward the target and stop there.
-      if (valueFixedPoint > drift.targetFixedPoint) {
-        return Math.max(drift.targetFixedPoint, valueFixedPoint - magnitude);
-      }
-      return Math.min(drift.targetFixedPoint, valueFixedPoint + magnitude);
-    }
-    // Negative composed rate: flee the target, clamped to the meter range.
-    if (valueFixedPoint >= drift.targetFixedPoint) return clampMeter(valueFixedPoint + magnitude);
-    return clampMeter(valueFixedPoint - magnitude);
+    return linearDriftStep({
+      value: valueFixedPoint,
+      target: drift.targetFixedPoint,
+      ratePerHourFixedPoint: drift.ratePerHourFixedPoint,
+      elapsedSeconds,
+      one: METER_FIXED_POINT_ONE,
+    });
   }
-  const scaled = exp2NegativeFixedPoint(elapsedSeconds, drift.halfLifeSeconds);
-  const distance = Math.abs(valueFixedPoint - drift.targetFixedPoint);
-  const remaining = Math.floor((distance * scaled) / EXP2_SCALE);
-  return valueFixedPoint >= drift.targetFixedPoint
-    ? drift.targetFixedPoint + remaining
-    : drift.targetFixedPoint - remaining;
+  return proportionalDecayStep({
+    value: valueFixedPoint,
+    target: drift.targetFixedPoint,
+    halfLife: drift.halfLifeSeconds,
+    elapsed: elapsedSeconds,
+  });
 }
 
 export interface MeterIntegrationView {

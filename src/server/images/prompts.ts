@@ -1,7 +1,14 @@
 import { z } from "zod";
 import { attributeRegistry, promptValueWithNoneElided, type AttributeDefinition, type AttributeValue } from "@/contracts/attributes";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { exposedRegions, resolveWardrobeVisibility, type RegionExposure, type WornItemInput } from "@/contracts/items/visibility";
+import {
+  exposedRegions,
+  resolveGarmentVisibility,
+  type RegionExposure,
+  type WornGarmentPart,
+  type WornItemInput,
+} from "@/contracts/items/visibility";
+import type { ClothingLayer } from "@/contracts/items/item";
 import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { INTIMATE_ATTRIBUTE_CATEGORIES, isBelowWaist, isFeatureAttributeCategory } from "@/contracts/body/locations";
 import { realizeBody, speciesLabelPhrase } from "@/contracts/species";
@@ -89,6 +96,27 @@ export interface AvatarWardrobeItem {
   appearance?: string;
   /** Clothing subtype id (contracts/items/subtypes) — resolved to its label for the prompt. */
   subtype?: string | null;
+  /**
+   * `clothingCategories` id. NEVER prompt-bearing (docs/prompts.md) — it rides
+   * here only so the garment store can pick a part template when it instantiates
+   * this definition (clothing-state-graph.plan.md slice 2).
+   */
+  category?: string;
+  /** Authoring tags — a material-inference input for the garment store, never prompt text. */
+  tags?: readonly string[];
+  /**
+   * The garment INSTANCE id when this item came from the chat garment store
+   * (clothing-state-graph slice 3). Absent for a plain definition list, which
+   * then keys on its position — see `wardrobeGarmentKey`.
+   */
+  garmentId?: string;
+  /**
+   * Presentation-aware per-part coverage from the garment store. When present it
+   * REPLACES the flat `coverage` for occlusion, so a rolled left sleeve exposes a
+   * left forearm without the right one following. `coverage` still carries the
+   * union (the flat read every other consumer uses).
+   */
+  parts?: readonly WornGarmentPart[];
 }
 
 /**
@@ -105,27 +133,56 @@ export interface AvatarWardrobeItem {
  * props (jewelry) stay. Scene images never call this, so they keep full-body
  * garments (docs/images.md, followups.phase3.md §1).
  */
+/**
+ * The GARMENT key for one wardrobe row — the instance id when the garment store
+ * owns this item, else its position in the list. The single place a key is
+ * derived, so a renderer never re-invents `String(index)` and then mismatches a
+ * per-part expansion (slice-0 audit finding 3).
+ */
+export function wardrobeGarmentKey(item: AvatarWardrobeItem, index: number): string {
+  return item.garmentId ?? `w${index}`;
+}
+
+function clampWornLayer(layer: number): ClothingLayer {
+  return layer <= 0 ? 0 : layer === 1 ? 1 : layer === 2 ? 2 : 3;
+}
+
 /** Map raw avatar-wardrobe items to the shared worn-item shape — the single
  * source for BOTH visibility (visibleAvatarOutfit) and coverage/exposure
- * (exposedRegions), so the two can never disagree about what a garment covers. */
+ * (exposedRegions), so the two can never disagree about what a garment covers.
+ *
+ * A store-backed item expands to ONE ROW PER COVERING PART (slice 3): each row
+ * carries its own coverage and the garment's id, so occlusion is resolved at part
+ * granularity and renderers roll back up by `garmentId`. Parts covering nothing
+ * never occlude anything, so they are omitted; a garment covering nothing at all
+ * still gets one row, which keeps coverage-less pieces (jewelry, props) visible. */
 export function toWornInputs(items: ReadonlyArray<AvatarWardrobeItem>): WornItemInput[] {
-  return items.map((item, index) => ({
-    instanceId: String(index),
-    name: item.name,
-    coverage: item.coverage,
-    layer: item.layer === 0 || item.layer === 1 || item.layer === 2 || item.layer === 3 ? item.layer : 1,
-    opacity: item.opacity ?? "opaque",
-  }));
+  return items.flatMap((item, index): WornItemInput[] => {
+    const garmentId = wardrobeGarmentKey(item, index);
+    const layer = clampWornLayer(item.layer ?? 1);
+    const opacity = item.opacity ?? "opaque";
+    const covering = (item.parts ?? []).filter((part) => part.coverage.length > 0);
+    if (covering.length === 0) {
+      return [{ instanceId: garmentId, garmentId, name: item.name, coverage: item.coverage, layer, opacity }];
+    }
+    return covering.map((part) => ({
+      instanceId: `${garmentId}:${part.partId}`,
+      garmentId,
+      name: item.name,
+      coverage: part.coverage,
+      layer: clampWornLayer(layer + (part.layerOffset ?? 0)),
+      opacity,
+    }));
+  });
 }
 
 export function visibleAvatarOutfit(items: ReadonlyArray<AvatarWardrobeItem>): AvatarOutfitItem[] {
-  const views = resolveWardrobeVisibility(toWornInputs(items));
-  const viewById = new Map(views.map((v) => [v.instanceId, v]));
+  const byGarment = resolveGarmentVisibility(toWornInputs(items));
   return items.flatMap((item, index) => {
     if (item.coverage.length > 0 && item.coverage.every(isBelowWaist)) return []; // below the waist — outside a waist-up portrait
-    const view = viewById.get(String(index));
-    if (view?.visibility === "hidden") return [];
-    if (view?.visibility === "hinted") {
+    const visibility = byGarment.get(wardrobeGarmentKey(item, index));
+    if (visibility === "hidden") return [];
+    if (visibility === "hinted") {
       return [{ name: `${item.name} (only a vague hint beneath sheer layers)` }];
     }
     const subtypeLabel = clothingSubtypeLabel(item.subtype);

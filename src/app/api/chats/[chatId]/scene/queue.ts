@@ -3,6 +3,7 @@ import {
   characterProfileSchema,
   currentScenePlace,
   emptyCharacterProfile,
+  garmentActorForCharacter,
   personaToCharacterProfile,
   resolveAttributes,
   timeOfDayFor,
@@ -96,9 +97,19 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     // The scene's outfit comes from the conversation's structured worn state
     // (chat-wardrobe-parity): the rendered garment phrase + coverage-computed exposure, via
     // the shared wardrobe seam — the same source the narrator prompt and look key read.
-    const stored = await loadChatState(args.chatId, args.character.id);
-    const wardrobe = stored ? await resolveChatWardrobe(stored, args.userId, profile) : null;
     const scenario = await loadChatScenario(args.chatId);
+    const stored = await loadChatState(args.chatId, args.character.id);
+    const wardrobe = stored
+      ? await resolveChatWardrobe(
+          {
+            ...stored,
+            ...(scenario ? { garments: scenario.garments } : {}),
+            garmentActorId: garmentActorForCharacter(args.character.id),
+          },
+          args.userId,
+          profile,
+        )
+      : null;
 
     // The PLAYER's own body + coverage (scene-pov-embodiment.plan.md slice 4): the persona
     // the chat is played as, dressed from the same wardrobe seam. Their coverage is what
@@ -106,7 +117,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     // never a flag. No persona ⇒ no body ⇒ the gate stays shut and the shot is today's.
     const player = await resolveChatPersona({ ownerId: args.userId, chatId: args.chatId });
     const playerWardrobe = scenario
-      ? await resolvePlayerWardrobe(scenario.playerState, args.userId, player.profile)
+      ? await resolvePlayerWardrobe(scenario.playerState, args.userId, player.profile, undefined, scenario.garments)
       : null;
     const playerProfile = player.profile ? personaToCharacterProfile(player.profile) : undefined;
     const playerResolved = playerProfile ? resolveAttributes(playerProfile.attributes, []) : [];

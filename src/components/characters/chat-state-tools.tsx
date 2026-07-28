@@ -9,11 +9,13 @@ import {
   regardBandForValue,
   splitStateCues,
   type ActiveCondition,
+  type GarmentOperation,
 } from "@/contracts";
 import { charactersApi, chatsApi, type ChatStateSnapshot } from "@/lib/client/api";
 import { wearerHintForGender } from "@/lib/clothing-slots";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
+import { ChatGarmentControls } from "./chat-garment-controls";
 import { ChatWardrobeEditor } from "./chat-wardrobe-editor";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -104,6 +106,11 @@ function StateToolsForm({
   const [outfitPresetId, setOutfitPresetId] = useState(snapshot.outfitPresetId);
   const [outfit, setOutfit] = useState(snapshot.outfit);
   const [outfitExposed, setOutfitExposed] = useState(snapshot.outfitExposed);
+  // The presentation graph (clothing-state-graph slice 3): the last-saved readout
+  // plus the operations this sheet has queued but not yet sent.
+  const [garments, setGarments] = useState(snapshot.garments);
+  const [garmentOperations, setGarmentOperations] = useState<GarmentOperation[]>([]);
+  const [garmentDiagnostics, setGarmentDiagnostics] = useState(snapshot.garmentDiagnostics);
   const [livePresence, setLivePresence] = useState(presence);
   const [presenceBusy, setPresenceBusy] = useState(false);
   const [newCondition, setNewCondition] = useState("");
@@ -169,6 +176,7 @@ function StateToolsForm({
         outfitPresetId,
         outfit,
         outfitExposed,
+        ...(garmentOperations.length > 0 ? { garmentOperations } : {}),
         openLoops: toLines(openLoops),
         memoryQueries: toLines(memoryQueries),
       },
@@ -177,6 +185,15 @@ function StateToolsForm({
     setSaving(false);
     if (result.ok) {
       onSaved(result.data);
+      // A rejected garment operation is a diagnostic, not a failed save — keep the
+      // sheet open so the reason is readable instead of vanishing with the modal.
+      if (result.data.garmentDiagnostics.length > 0) {
+        setGarments(result.data.garments);
+        setGarmentOperations([]);
+        setGarmentDiagnostics(result.data.garmentDiagnostics);
+        toast.push({ title: "State updated", description: "Some garment changes were rejected — see the sheet." });
+        return;
+      }
       toast.push({ title: "State updated" });
       onClose();
     } else {
@@ -382,6 +399,13 @@ function StateToolsForm({
           if (patch.outfit !== undefined) setOutfit(patch.outfit);
           if (patch.outfitExposed !== undefined) setOutfitExposed(patch.outfitExposed);
         }}
+      />
+
+      <ChatGarmentControls
+        garments={garments}
+        operations={garmentOperations}
+        diagnostics={garmentDiagnostics}
+        onChange={setGarmentOperations}
       />
 
       <label className="flex flex-col gap-1">

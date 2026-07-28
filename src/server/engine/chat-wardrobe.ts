@@ -1,13 +1,21 @@
 import {
+  actorHasGarmentInstances,
   exposedRegions,
   FULLY_COVERED,
+  garmentBlueprintFor,
+  garmentEffectiveCoverage,
+  GARMENT_PLAYER_ACTOR,
   intimateRegionsBare,
   outfitItems,
   resolveOutfitPreset,
+  wornGarmentInstances,
+  type ChatGarmentStore,
   type ChatPlayerState,
   type CharacterProfile,
   type DiagnosticSink,
+  type GarmentBlueprint,
   type GarmentDescriptor,
+  type GarmentInstanceState,
   type PersonaProfile,
   type RegionExposure,
 } from "@/contracts";
@@ -73,6 +81,60 @@ export async function loadChatWardrobe(
   return loadDefaultWardrobe(ownerId, itemIds, sink);
 }
 
+/**
+ * One worn garment INSTANCE as a wardrobe item (clothing-state-graph slice 3).
+ *
+ * The split of authority: the STORE owns coverage — per part, after presentation
+ * has subtracted whatever a rolled sleeve or open placket takes away (OQ6) — and
+ * the library DEFINITION owns phrasing plus the layer/opacity semantics the
+ * occlusion pass has always used. A garment whose library row is gone still reads
+ * (its name and blueprint were snapshotted at mint time), it simply drops out of
+ * the definition-id look key.
+ */
+export function garmentWardrobeItem(
+  instance: GarmentInstanceState,
+  blueprint: GarmentBlueprint,
+  definition: AvatarWardrobeItem | undefined,
+): AvatarWardrobeItem {
+  const effective = garmentEffectiveCoverage(instance, blueprint);
+  return {
+    ...(definition ?? { name: instance.name, coverage: [] }),
+    garmentId: instance.id,
+    name: definition?.name ?? instance.name,
+    coverage: effective.covers,
+    parts: effective.parts.map((part) => ({
+      partId: part.partId,
+      coverage: part.covers,
+      ...(part.layerOffset === 0 ? {} : { layerOffset: part.layerOffset }),
+    })),
+  };
+}
+
+/**
+ * An actor's worn garments as wardrobe items, presentation-aware. ONE item per
+ * worn INSTANCE (not per definition id), so two copies of the same shirt are two
+ * items and a garment with no library provenance still appears.
+ */
+export async function loadGarmentWardrobeItems(
+  store: ChatGarmentStore,
+  actorId: string,
+  ownerId: string,
+  sink?: DiagnosticSink,
+): Promise<AvatarWardrobeItem[]> {
+  const instances = wornGarmentInstances(store, actorId);
+  if (instances.length === 0) return [];
+  const definitionIds = [...new Set(instances.flatMap((i) => (i.definitionId ? [i.definitionId] : [])))];
+  const definitions = definitionIds.length > 0 ? await loadChatWardrobe(ownerId, definitionIds, sink) : [];
+  const byId = new Map(definitions.flatMap((item) => (item.id ? [[item.id, item] as const] : [])));
+  return instances.map((instance) =>
+    garmentWardrobeItem(
+      instance,
+      garmentBlueprintFor(store, instance),
+      instance.definitionId ? byId.get(instance.definitionId) : undefined,
+    ),
+  );
+}
+
 /** Loaded wardrobe items → the pure garment-matching descriptors the archivist fold resolves against. */
 export function wardrobeDescriptors(items: readonly AvatarWardrobeItem[]): GarmentDescriptor[] {
   return items.flatMap((item) =>
@@ -97,40 +159,83 @@ export interface ResolvedChatWardrobe {
 }
 
 /**
+ * True when this actor's wardrobe has actually been MODELLED as garment
+ * instances (clothing-state-graph.plan.md slice 2). Two things follow:
+ *
+ * - the worn ids come from the store's projection rather than the column, so the
+ *   store is the truth at the read seam too (the two are equal by construction —
+ *   every writer re-derives the column from the store);
+ * - `outfitExposed` stops being authoritative (audit finding 6). It was an
+ *   author/model-settable coverage BYPASS on the free-text path; once we know
+ *   what this actor is wearing, coverage decides. A modelled actor with nothing
+ *   worn reads as stripped — the same `seeded` trick `resolvePlayerWardrobe`
+ *   already uses — and the flag can no longer say otherwise in either direction.
+ *
+ * An UNMODELLED actor (legacy chat, roster member never materialized, degraded
+ * store) keeps the legacy flag: we do not know what they have on, and guessing
+ * "bare" would be spectacularly wrong.
+ */
+function garmentActorModelled(garments: ChatGarmentStore | undefined, actorId: string | undefined): boolean {
+  return Boolean(garments?.seeded && actorId && actorHasGarmentInstances(garments, actorId));
+}
+
+/**
  * Resolve a chat's wardrobe to its rendered phrase + computed exposure. Takes the minimal
  * state slice (not the full ChatState) so the module stays decoupled. IO-capable (loads the
  * worn items); degrades to the free-text path if the load returns nothing.
+ *
+ * `garments` + `garmentActorId` are optional: callers that hold the scenario pass
+ * them so the garment store is the wardrobe truth; callers that do not fall back
+ * to the projection column, which the store keeps in sync.
  */
 export async function resolveChatWardrobe(
-  state: { wornItemIds: readonly string[]; outfit: string; outfitExposed: boolean },
+  state: {
+    wornItemIds: readonly string[];
+    outfit: string;
+    outfitExposed: boolean;
+    garments?: ChatGarmentStore;
+    garmentActorId?: string;
+  },
   ownerId: string,
   profile: CharacterProfile,
   sink?: DiagnosticSink,
 ): Promise<ResolvedChatWardrobe> {
   const overlay = state.outfit.trim();
-  if (state.wornItemIds.length > 0) {
-    const items = await loadChatWardrobe(ownerId, state.wornItemIds, sink);
-    if (items.length > 0) {
-      const garmentPhrase = wardrobeOutfitText(items);
-      const exposure = exposedRegions(toWornInputs(items));
-      const garments = [garmentPhrase, overlay].filter(Boolean).join("; ");
-      return {
-        garments,
-        exposure,
-        exposed: intimateRegionsBare(exposure),
-        // Only the ids that actually resolved key the look (a deleted item drops out).
-        wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
-        overlay,
-      };
-    }
+  const modelled = garmentActorModelled(state.garments, state.garmentActorId);
+  // The garment store is the truth once this actor is modelled: its instances
+  // carry presentation-aware per-part coverage (slice 3), which the shared
+  // renderers below consume exactly as they consume a plain definition list.
+  const items =
+    modelled && state.garments && state.garmentActorId
+      ? await loadGarmentWardrobeItems(state.garments, state.garmentActorId, ownerId, sink)
+      : state.wornItemIds.length > 0
+        ? await loadChatWardrobe(ownerId, state.wornItemIds, sink)
+        : [];
+  if (items.length > 0) {
+    const garmentPhrase = wardrobeOutfitText(items);
+    const exposure = exposedRegions(toWornInputs(items));
+    const garments = [garmentPhrase, overlay].filter(Boolean).join("; ");
+    return {
+      garments,
+      exposure,
+      exposed: intimateRegionsBare(exposure),
+      // Only the ids that actually resolved key the look (a deleted item drops out).
+      wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
+      overlay,
+    };
   }
-  // Free-text / legacy path: heal any id-marker, derive exposure from the manual flag.
+  // Free-text / legacy path: heal any id-marker, then decide exposure.
   const healed = (await healOutfitMarker(state.outfit, ownerId, profile, sink)).trim();
-  const exposure = state.outfitExposed ? exposedRegions([]) : FULLY_COVERED;
+  // A MODELLED actor wearing nothing is stripped — coverage says so, not the flag
+  // (finding 6). Except while non-mechanical overlay prose still stands in for a
+  // look nobody modelled ("a borrowed hoodie"), where the conservative read wins.
+  const stripped = modelled && healed.length === 0;
+  const exposed = stripped || state.outfitExposed;
+  const exposure = exposed ? exposedRegions([]) : FULLY_COVERED;
   return {
     garments: healed,
     exposure,
-    exposed: state.outfitExposed,
+    exposed,
     wornItemIds: [],
     overlay: healed,
   };
@@ -184,14 +289,27 @@ export async function resolvePlayerWardrobe(
   ownerId: string,
   persona: PersonaProfile | undefined,
   sink?: DiagnosticSink,
+  /** The chat's garment store — when the player is modelled it is the worn truth (slice 2). */
+  garments?: ChatGarmentStore,
 ): Promise<ResolvedPlayerWardrobe> {
   const overlay = state.overlay.trim();
-  const ids = playerWornIds(state, persona);
-  const items = ids.length > 0 ? await loadChatWardrobe(ownerId, ids, sink) : [];
+  const modelled = garmentActorModelled(garments, GARMENT_PLAYER_ACTOR);
+  const ids = modelled ? [] : playerWornIds(state, persona);
+  const items =
+    modelled && garments
+      ? await loadGarmentWardrobeItems(garments, GARMENT_PLAYER_ACTOR, ownerId, sink)
+      : ids.length > 0
+        ? await loadChatWardrobe(ownerId, ids, sink)
+        : [];
   if (items.length === 0) {
     // Nothing resolvable. Read as COVERED, never bare: an unauthored wardrobe is
-    // unknown, not nude. Only a seeded-then-emptied list means stripped (below).
-    const strippedAfterSeeding = state.seeded && ids.length === 0 && persona !== undefined;
+    // unknown, not nude. Only a seeded-then-emptied list means stripped (below) —
+    // which the garment store now answers directly for a modelled player.
+    // `ids.length === 0` is load-bearing on the LEGACY path: a transient item-load
+    // failure must never strip the player, only a genuinely empty worn set. A
+    // MODELLED player has no ids at all — one item per worn instance means an
+    // empty list there is an empty wardrobe, never a failed lookup.
+    const strippedAfterSeeding = ids.length === 0 && (modelled || (state.seeded && persona !== undefined));
     return {
       garments: overlay,
       exposure: strippedAfterSeeding ? exposedRegions([]) : FULLY_COVERED,

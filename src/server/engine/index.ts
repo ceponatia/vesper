@@ -24,6 +24,7 @@ export * from "./chat-selfie";
 export * from "./chat-vision";
 export * from "./chat-summary";
 export * from "./chat-wardrobe";
+export * from "./chat-garments";
 export * from "./chat-state";
 export * from "./chat-memory";
 export * from "./chat-scene-sketch";

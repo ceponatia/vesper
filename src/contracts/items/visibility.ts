@@ -1,18 +1,43 @@
 import type { ClothingLayer } from "./item";
 import { bodyLocationRegistry, type BodyLocationRegistry } from "../body/locations";
 
+/**
+ * One coverage-bearing row handed to the resolver: a whole garment, or ONE PART
+ * of one once presentation makes a garment's parts differ
+ * (clothing-state-graph.plan.md slice 3; slice-0 audit finding 3).
+ */
 export interface WornItemInput {
+  /**
+   * Identity of THIS row. Must be unique across the input — never a positional
+   * index that a per-part expansion would then collide on.
+   */
   instanceId: string;
+  /**
+   * The garment this row belongs to. Per-part coverage makes ONE garment several
+   * rows, so every renderer rolls views back up by this id (`rollUpGarmentVisibility`)
+   * instead of looking a view up by position. Equal to `instanceId` for
+   * whole-garment rows.
+   */
+  garmentId: string;
   name: string;
   coverage: readonly string[];
   layer: ClothingLayer;
   opacity: "opaque" | "sheer";
 }
 
+/** One coverage-bearing part of a garment — the per-part row a presentation-aware caller supplies. */
+export interface WornGarmentPart {
+  partId: string;
+  coverage: readonly string[];
+  /** Layer nudge relative to the garment's own layer (a lining sits inside). */
+  layerOffset?: number;
+}
+
 export type WornVisibility = "visible" | "hinted" | "hidden";
 
 export interface WornItemView {
   instanceId: string;
+  garmentId: string;
   name: string;
   visibility: WornVisibility;
   /** Body locations where this item is the outermost cover. */
@@ -64,8 +89,35 @@ export function resolveWardrobeVisibility(
   return worn.map((item) => {
     const at = outermostAt.get(item.instanceId) ?? [];
     const visibility: WornVisibility = at.length > 0 ? "visible" : (buriedStatus.get(item.instanceId) ?? "visible");
-    return { instanceId: item.instanceId, name: item.name, visibility, visibleAt: at };
+    return { instanceId: item.instanceId, garmentId: item.garmentId, name: item.name, visibility, visibleAt: at };
   });
+}
+
+/** Most-revealing wins: a garment showing anywhere is visible, hinted beats hidden. */
+const VISIBILITY_RANK: Readonly<Record<WornVisibility, number>> = { hidden: 0, hinted: 1, visible: 2 };
+
+/**
+ * Roll part views up to their garments (audit finding 3). Renderers phrase whole
+ * GARMENTS — "the shirt", not "the shirt's left sleeve" — so every consumer of
+ * the resolver reduces through here rather than assuming one row per garment.
+ */
+export function rollUpGarmentVisibility(views: readonly WornItemView[]): Map<string, WornVisibility> {
+  const rolled = new Map<string, WornVisibility>();
+  for (const view of views) {
+    const prior = rolled.get(view.garmentId);
+    if (prior === undefined || VISIBILITY_RANK[view.visibility] > VISIBILITY_RANK[prior]) {
+      rolled.set(view.garmentId, view.visibility);
+    }
+  }
+  return rolled;
+}
+
+/** Per-garment visibility in one step — the shape both image renderers consume. */
+export function resolveGarmentVisibility(
+  worn: readonly WornItemInput[],
+  registry: BodyLocationRegistry = bodyLocationRegistry,
+): Map<string, WornVisibility> {
+  return rollUpGarmentVisibility(resolveWardrobeVisibility(worn, registry));
 }
 
 export type RegionCoverage = "covered" | "sheer" | "bare";

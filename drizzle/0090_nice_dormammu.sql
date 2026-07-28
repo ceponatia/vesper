@@ -1,0 +1,1 @@
+ALTER TABLE "character_chats" ADD COLUMN "garments" jsonb DEFAULT '{}'::jsonb NOT NULL;
