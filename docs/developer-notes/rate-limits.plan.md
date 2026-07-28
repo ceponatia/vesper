@@ -119,6 +119,26 @@ allow-listed shape: route, policy name, scope, decision, owner id, and a
 enforced by construction rather than by remembering — the signal type has no
 free-form content field at all.
 
+## Follow-ups
+
+- **2026-07-28 — the concurrency cap did not hold under parallel submits
+  (fixed).** `claimJobSlot`'s conditional INSERT claimed "Postgres evaluates
+  the subquery against the same snapshot as the insert, so the cap is enforced
+  by the database" — false at READ COMMITTED: each concurrent statement's
+  count subquery runs against a snapshot excluding the other in-flight
+  uncommitted inserts, so parallel submits all read "under the cap" and all
+  insert (observed locally: 13 of 20 admitted at a cap of 4 — exactly the
+  "UI fires several renders at once" case the cap exists for; it had passed
+  only because the author's pool serialized the statements). Fix: the claim
+  now runs in a transaction that first takes
+  `pg_advisory_xact_lock(hashtextextended('job_slot:' || owner, 0))` —
+  per-owner serialization, cross-owner concurrency untouched, refusals still
+  write nothing. The same investigation converted `sim-narrator.int.test.ts`
+  to the legacy-fixture opt-in (missed by the 2026-07-27 fail-fast pass), and
+  with both fixes the FULL local `pnpm test:int` run is green for the first
+  time (593/593 with the flag set) — strengthening OQ3's case for running it
+  in CI.
+
 ## Open questions
 
 - **OQ1 — cost in currency, or calls?** This plan counts *calls* per lane, not
