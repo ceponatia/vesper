@@ -1,11 +1,17 @@
 # Clothing state graph and condition gradients
 
-Status: next (graduated 2026-07-27 from the deferred parking lot, same day as
-parking. Promotion rulings below settled OQ3/OQ4/OQ5/OQ9; the remaining open
-questions resolve in slice 0. Queued at the top of [roadmap.md](roadmap.md)
-§Next. This plan is the upstream wardrobe-truth prerequisite for the
-still-parked body-attribute-affordances companion set — promoted alone, per
-ruling R1.)
+Status: active — **slices 0–4 shipped 2026-07-27** (the deterministic
+substrate: audit + rulings, contracts, chat instances + migration 0090,
+presentation graph, condition gradients — one commit, built by four Opus
+subagents audit-first; every open question now resolved, see §Open questions).
+**Slices 5–8 remain**: grounded continuity extraction (5), narrator digest +
+cue block + image consumers (6, carries the live-model tuning gate), the
+successor adapter (7), and body-affordance integration (8 — waits on the
+parked companion set per ruling R1). Graduated 2026-07-27 from the deferred
+parking lot, same day as parking; the slice-0 seam map and rulings live in
+[clothing-state-graph.audit.md](clothing-state-graph.audit.md). This plan is
+the upstream wardrobe-truth prerequisite for the still-parked
+body-attribute-affordances companion set — promoted alone, per ruling R1.
 
 ## What
 

@@ -135,6 +135,40 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
   (`components/characters/chat-wardrobe-editor.tsx` — [ui.md](../ui.md) §The conversation
   page).
 
+### The garment store — instances under the projection
+
+Since clothing-state-graph slices 0–4 (2026-07-27,
+[clothing-state-graph.plan.md](../developer-notes/clothing-state-graph.plan.md) · audit:
+[clothing-state-graph.audit.md](../developer-notes/clothing-state-graph.audit.md)) the worn
+lists above are a **derived projection** of a deeper truth: the chat-wide garment store on
+`ChatScenario.garments` (`character_chats.garments` jsonb, migration 0090). Each worn
+definition materializes lazily — on the next state write, never on read — into a
+**garment instance**: a content-hash-deduplicated blueprint snapshot (sparse part graph
+from its category template, rescoped so node coverage equals the definition's coverage
+exactly), a locus (`worn`/`held`/`wardrobe`/`scene`/`gone` — a `scene` garment stays at its
+snapshotted place name across scene moves, promotion ruling R3), typed **presentation**
+(closures, rolls, tucks, displacement; 0 = fastened → 1 = open), and a **condition** state
+(fixed-point wetness/cleanliness/crease/wear base vector + per-part regional overrides +
+located deposits and damage marks, integrated lazily to story minutes — only wetness moves
+autonomously, drying at a material-scaled rate via the shared `lib/fixed-point.ts` kernel).
+
+- **One dispatcher.** Every mutation is a typed `GarmentOperation` through
+  `applyGarmentOperations` (contracts) — transfers, five presentation ops, five condition
+  ops — validated against the blueprint's behavior bindings; rejections are stable
+  `garment_op.*` diagnostics, never throws. The state route PATCH accepts
+  `garmentOperations`; the state-tools sheet queues them per part.
+- **One read.** Per-part effective coverage (baseline minus subtraction-only behavior
+  deltas, `garment-effective-coverage.ts`) feeds the rewritten visibility resolver — the
+  same resolution the narrator exposure gate and image prompts consume. Bands (with ±500
+  hysteresis) surface in `garmentReadout`; raw fixed point never leaves the server.
+- **Rollback for free.** The store rides the `pre_exchange_scenario` blob, so retakes
+  restore blueprints, loci, presentation, and gradients byte-identically (int-tested).
+- **`outfit_exposed` demoted.** Authoritative only for unmodelled actors (no instances);
+  a modelled actor's exposure always derives from coverage.
+- **Still to come** (plan slices 5–8): grounded continuity extraction over opaque
+  handles, the narrator digest + ranked garment cues, the successor adapter, and the
+  body-affordance integration.
+
 ### The player's wardrobe
 
 The **player** has one too (persona-library.plan.md slice 8) — "she pulls your shirt over
