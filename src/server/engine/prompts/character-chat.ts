@@ -168,6 +168,20 @@ export interface CharacterChatPromptInput {
      */
     garmentCues?: string[];
     /**
+     * The bounded AFFORDANCE cue block (body-attribute-affordances slice 5, behind
+     * `CHAT_AFFORDANCE_CUES`): ≤2 ranked, perception-safe, already repeat-gated
+     * physical observations — damp hair gathering into strands, loose ends moving
+     * in the wind — pre-rendered into short clauses by the pipeline.
+     *
+     * Attention with NO authority twin, unlike the garment pair: the state these
+     * read from is already authoritative in the Attributes section and the wardrobe
+     * lines, so a second guard block would only invite repetition. They describe a
+     * CURRENT EFFECT by construction (every phenomenon requires a live cause), which
+     * is what keeps them from restating the static appearance above. Absent/empty ⇒
+     * no block (the flag-off default, byte-identical to today).
+     */
+    affordanceCues?: readonly string[];
+    /**
      * The character's unfinished business (character-chat-standalone.spec.md §6.2) —
      * rendered as a standing "Unfinished business" state line (never-recite discipline),
      * so long conversations get narrative pull, not just recall. Absent/empty ⇒ no line.
@@ -783,6 +797,20 @@ function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>
   if (garmentCues.length) {
     blocks.push(
       `Worth noticing about the clothes this turn (weave at most one into the beat, in action — never a head-to-toe inventory, never restated once said):\n${garmentCues
+        .map((cue) => `- ${cue}`)
+        .join("\n")}`,
+    );
+  }
+  // The affordance cue block (body-attribute-affordances slice 5, `CHAT_AFFORDANCE_CUES`),
+  // AFTER the garment blocks: clothes are the nearer, more actionable read, and a body
+  // cue that follows them lands as an added detail rather than competing for the same
+  // slot. Attention only — there is deliberately no affordance digest, because the
+  // underlying appearance is already authoritative in the Attributes section. Absent
+  // when the flag is off, which is what keeps this section byte-identical to today.
+  const affordanceCues = (state.affordanceCues ?? []).map((cue) => cue.trim()).filter(Boolean);
+  if (affordanceCues.length) {
+    blocks.push(
+      `Physical detail worth noticing this turn (weave at most one into the beat, in action — never a physics report, never restated once said):\n${affordanceCues
         .map((cue) => `- ${cue}`)
         .join("\n")}`,
     );

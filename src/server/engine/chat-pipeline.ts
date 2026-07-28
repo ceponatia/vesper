@@ -33,6 +33,8 @@ import { QueryEmbeddings } from "../memory";
 import { resolveChatPersona, type PlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
 import { buildActionBeatCue } from "./chat-action-beat";
+import { renderChatAffordanceCues } from "./chat-affordance-cues";
+import { buildChatAffordanceRead } from "./chat-affordances";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
 import { buildInitiativeCue } from "./chat-initiative";
 import { loadChatRelationships } from "./chat-relationships";
@@ -118,7 +120,12 @@ import {
   type EnsemblePairInput,
   type EnsemblePromptExtras,
 } from "./prompts/character-chat";
-import { chatGarmentCuesEnabled, chatPromptLayout, narrationShapeId } from "./prompts/constants";
+import {
+  chatAffordanceCuesEnabled,
+  chatGarmentCuesEnabled,
+  chatPromptLayout,
+  narrationShapeId,
+} from "./prompts/constants";
 
 /**
  * The character-chat exchange pipeline (docs/character-chat/pipeline.md) — the chat lane's
@@ -1031,6 +1038,40 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           }),
         })
       : null;
+    // The affordance cue block (body-attribute-affordances slice 5,
+    // `CHAT_AFFORDANCE_CUES`, default OFF). Same committed pre-fan-out cut as the
+    // garment narration above — the drifted state row, the ticked scenario, the
+    // wardrobe rows this turn already resolved — because that is exactly what the
+    // two rollback anchors restore, so "another take" rebuilds an identical read.
+    // Flag off ⇒ this whole seam is unreached: no adapter call, no projection, and
+    // the finalizer leaves `scenario.affordanceCues` alone.
+    const affordanceRead = chatAffordanceCuesEnabled()
+      ? buildChatAffordanceRead({
+          subjectId: characterId,
+          attributes: profile.attributes,
+          attributeOverlays: driftedState.attributeOverlays,
+          conditions: driftedState.conditions,
+          // Absent on the free-text wardrobe path — unknown coverage fails closed.
+          ...(wardrobe.worn === undefined ? {} : { wardrobe: { worn: wardrobe.worn } }),
+          bodySurface: driftedState.bodySurface,
+          environment: scenario.environment,
+          clockMinutes: scenario.clockMinutes,
+          previousCues: scenario.affordanceCues,
+          sink,
+        })
+      : null;
+    // PRIMARY ONLY, and that is a prompt invariant rather than a scoping choice:
+    // these cues lean on the character's own Attributes block for the appearance
+    // they decorate, and this prompt carries exactly one. (The ensemble builder
+    // renders no state section at all, so a roster member cannot receive one by
+    // accident — same as the garment cue block.)
+    const affordanceCues = affordanceRead
+      ? renderChatAffordanceCues({
+          cues: affordanceRead.read.cues,
+          attributes: affordanceRead.attributes,
+          possessive: `${characterName}'s`,
+        })
+      : [];
 
     const promptInput: CharacterChatPromptInput = {
       name: characterName,
@@ -1038,7 +1079,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       priorSummary: summaryState?.summary,
       memory,
       player: playerPromptSlice(player, playerWardrobe),
-      state: promptStateSlice(driftedState, scenario, wardrobe, profile, garmentNarration),
+      state: promptStateSlice(driftedState, scenario, wardrobe, profile, garmentNarration, affordanceCues),
       opening,
       narrationShape: narrationShapeId("chat"),
       // Chat scene memory: whether the setting changed this exchange (movement / time skip),
@@ -1354,6 +1395,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           // bands the narrator SAW. Absent when the flag is off, and the finalizer
           // then leaves the store's mention history untouched.
           ...(garmentNarration ? { garmentCueState: garmentNarration.nextCues } : {}),
+          // The affordance cue memory this exchange's prompt surfaced (slice 5) —
+          // threaded, never recomputed, for the same reason: it must record the cut
+          // the narrator actually saw. Absent when the flag is off, and the finalizer
+          // then leaves the scenario's stored memory untouched.
+          ...(affordanceRead ? { affordanceCueState: affordanceRead.nextCues } : {}),
           // The ensemble context (multi-character-chat.plan.md): the roster line
           // arms the archivist's presence field; every present witness's group
           // gets the same extraction filed as their own memory.
@@ -1946,12 +1992,18 @@ function promptStateSlice(
   profile?: CharacterProfile,
   /** The slice-6 digest + cues; null/absent (the flag-off default) renders neither block. */
   garments?: ChatGarmentNarration | null,
+  /** The affordance cue lines (body-attribute-affordances slice 5); empty/absent renders no block. */
+  affordanceCues?: readonly string[],
 ): NonNullable<CharacterChatPromptInput["state"]> {
   return {
     // Authority + attention (clothing-state-graph slice 6) — flag-gated upstream, so
     // the fields are simply absent when off and the prompt is unchanged.
     ...(garments?.digest ? { garmentDigest: garments.digest } : {}),
     ...(garments && garments.cues.length > 0 ? { garmentCues: garments.cues } : {}),
+    // Attention only — an affordance read has no authority half (slice 5). Same
+    // conditional-spread discipline: absent when the flag is off, so the prompt is
+    // byte-identical to the pre-feature build.
+    ...(affordanceCues && affordanceCues.length > 0 ? { affordanceCues } : {}),
     meters: state.meters,
     regard: state.regard,
     familiarity: state.familiarity,
@@ -2051,6 +2103,23 @@ export async function previewChatPrompt(input: {
   // The inspector must show exactly what the live turn would build, garment
   // blocks included (slice 6) — same builder, same flag, one place to be wrong.
   const previewPlaceName = currentScenePlace(scenario.sceneMemory)?.name;
+  // Same for the affordance cues (slice 5): re-derived read-only from the STORED
+  // cut. The preview never persists `nextCues`, so looking at a prompt can't spend
+  // the repeat gate — the read is pure, so rebuilding it costs nothing but CPU.
+  const previewAffordance = chatAffordanceCuesEnabled()
+    ? buildChatAffordanceRead({
+        subjectId: input.character.id,
+        attributes: profile.attributes,
+        attributeOverlays: state.attributeOverlays,
+        conditions: state.conditions,
+        ...(wardrobe.worn === undefined ? {} : { wardrobe: { worn: wardrobe.worn } }),
+        bodySurface: state.bodySurface,
+        environment: scenario.environment,
+        clockMinutes: scenario.clockMinutes,
+        previousCues: scenario.affordanceCues,
+        sink,
+      })
+    : null;
   const parts = buildCharacterChatPromptParts({
     name: input.character.name,
     profile,
@@ -2076,6 +2145,13 @@ export async function previewChatPrompt(input: {
             }),
           })
         : null,
+      previewAffordance
+        ? renderChatAffordanceCues({
+            cues: previewAffordance.read.cues,
+            attributes: previewAffordance.attributes,
+            possessive: `${input.character.name}'s`,
+          })
+        : [],
     ),
     narrationShape: narrationShapeId("chat"),
   });

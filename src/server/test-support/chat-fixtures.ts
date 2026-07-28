@@ -1,3 +1,4 @@
+import type { AffordanceCueState } from "@/contracts/affordances/core/ranking";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import type { GarmentCueState } from "@/contracts/items/garment-instance";
 import { characterProfileSchema, type CharacterProfile } from "@/contracts/world/profile";
@@ -278,6 +279,8 @@ export interface SettleChatExchangeArgs {
   wornItemIds?: readonly string[];
   /** Slice-6 cue memory the prompt surfaced; omitted ⇒ the store's memory is untouched. */
   garmentCueState?: GarmentCueState;
+  /** Affordance cue memory the prompt surfaced; omitted ⇒ the scenario's memory is untouched. */
+  affordanceCueState?: AffordanceCueState;
   assistantMessageId?: string;
   exchange?: { player: string; assistant: string };
   characterName?: string;
@@ -324,6 +327,7 @@ export async function settleChatExchange(
     scenario,
     preExchangeScenario: args.preExchangeScenario === undefined ? scenario : args.preExchangeScenario,
     ...(args.garmentCueState === undefined ? {} : { garmentCueState: args.garmentCueState }),
+    ...(args.affordanceCueState === undefined ? {} : { affordanceCueState: args.affordanceCueState }),
     sink,
   });
 

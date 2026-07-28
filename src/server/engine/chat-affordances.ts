@@ -27,6 +27,7 @@ import {
   type HairCausalEvent,
   type HairEventKind,
   type HairLanePayload,
+  type ResolvedAttributeSnapshot,
   type WornItemInput,
 } from "@/contracts";
 
@@ -67,8 +68,10 @@ import {
  * a rolled-back exchange rebuilds a byte-identical read and byte-identical next
  * cues. There is no hysteresis and no hidden latch anywhere in the path.
  *
- * **Not wired into the prompt or the pipeline.** Slice 5 does that behind its
- * flag; this slice ships the seam and its proof.
+ * Wired into the narrator prompt by slice 5, behind `CHAT_AFFORDANCE_CUES`
+ * (default OFF): the pipeline takes this read from the committed pre-fan-out cut,
+ * projects `read.cues` into clauses (`chat-affordance-cues.ts`), and threads
+ * `nextCues` into the finalizer. With the flag off nothing here is called at all.
  */
 
 // ---------------------------------------------------------------------------
@@ -154,6 +157,13 @@ export interface ChatAffordanceReadResult {
   readonly read: AffordanceRead;
   /** The cue memory to persist onto `ChatScenario.affordanceCues` beside this cut. */
   readonly nextCues: AffordanceCueState;
+  /**
+   * The resolved attributes this read was taken over — handed back so CUE
+   * PROJECTION (`chat-affordance-cues.ts`) can reach stable appearance the
+   * mechanics deliberately never see (`hair.color`), without resolving overlays
+   * a second time and risking a cue that disagrees with the read it decorates.
+   */
+  readonly attributes: ResolvedAttributeSnapshot;
 }
 
 // ---------------------------------------------------------------------------
@@ -267,10 +277,11 @@ export function buildChatAffordanceRead(input: ChatAffordanceReadInput): ChatAff
     // `motion`, `contacts` and `contamination` are deliberately absent — no owner.
   };
 
+  const attributes = resolvedAttributeSnapshot(resolveSubjectAttributes(input));
   const read = deriveAffordanceRead({
     subjectId: affordanceSubjectId(input.subjectId),
     storyTime,
-    attributes: resolvedAttributeSnapshot(resolveSubjectAttributes(input)),
+    attributes,
     perception: affordancePerceptionView({
       // Unlisted locations read `unknown` and fail closed, so naming only `hair`
       // is not a gap: it is the only location this lane can speak for.
@@ -285,5 +296,5 @@ export function buildChatAffordanceRead(input: ChatAffordanceReadInput): ChatAff
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });
 
-  return { read, nextCues: read.nextCues };
+  return { read, nextCues: read.nextCues, attributes };
 }

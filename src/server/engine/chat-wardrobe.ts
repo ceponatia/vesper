@@ -19,6 +19,7 @@ import {
   type GarmentInstanceState,
   type PersonaProfile,
   type RegionExposure,
+  type WornItemInput,
   type WornVisibility,
 } from "@/contracts";
 import {
@@ -168,13 +169,25 @@ export interface ResolvedChatWardrobe {
    * Empty on the free-text path, where there are no parts to hide.
    */
   partVisibility: Record<string, WornVisibility>;
+  /**
+   * The coverage rows this resolve was computed from — the SAME `toWornInputs`
+   * pass that produced `exposure` and `partVisibility`, handed on so the
+   * affordance adapter (body-attribute-affordances slice 4) can read coverage of
+   * an arbitrary body location without a second item load or a second occlusion
+   * model.
+   *
+   * **`undefined` means the wardrobe could not be read at all** — the free-text /
+   * legacy path, where nobody knows what is actually on this body. That is a
+   * different claim from `[]` ("read it; they are wearing nothing"), and the
+   * distinction is load-bearing: the adapter fails closed on `undefined` and goes
+   * silent rather than assuming an uncovered head.
+   */
+  worn?: readonly WornItemInput[];
 }
 
 /** Per-row occlusion from the shared worn inputs (one pass, reused by exposure). */
-function partVisibilityOf(items: readonly AvatarWardrobeItem[]): Record<string, WornVisibility> {
-  return Object.fromEntries(
-    resolveWardrobeVisibility(toWornInputs(items)).map((view) => [view.instanceId, view.visibility]),
-  );
+function partVisibilityOf(worn: readonly WornItemInput[]): Record<string, WornVisibility> {
+  return Object.fromEntries(resolveWardrobeVisibility([...worn]).map((view) => [view.instanceId, view.visibility]));
 }
 
 /**
@@ -232,7 +245,10 @@ export async function resolveChatWardrobe(
         : [];
   if (items.length > 0) {
     const garmentPhrase = wardrobeOutfitText(items);
-    const exposure = exposedRegions(toWornInputs(items));
+    // ONE pass over the coverage rows feeds exposure, occlusion, and the
+    // affordance adapter's coverage read — three consumers, one truth.
+    const worn = toWornInputs(items);
+    const exposure = exposedRegions(worn);
     const garments = [garmentPhrase, overlay].filter(Boolean).join("; ");
     return {
       garments,
@@ -241,7 +257,8 @@ export async function resolveChatWardrobe(
       // Only the ids that actually resolved key the look (a deleted item drops out).
       wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
       overlay,
-      partVisibility: partVisibilityOf(items),
+      partVisibility: partVisibilityOf(worn),
+      worn,
     };
   }
   // Free-text / legacy path: heal any id-marker, then decide exposure.
@@ -341,11 +358,12 @@ export async function resolvePlayerWardrobe(
       partVisibility: {},
     };
   }
+  const worn = toWornInputs(items);
   return {
     garments: [wardrobeOutfitText(items), overlay].filter(Boolean).join("; "),
-    exposure: exposedRegions(toWornInputs(items)),
+    exposure: exposedRegions(worn),
     wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
     overlay,
-    partVisibility: partVisibilityOf(items),
+    partVisibility: partVisibilityOf(worn),
   };
 }

@@ -1721,6 +1721,16 @@ export async function finalizeChatState(input: {
    * all. Absent (the `CHAT_GARMENT_CUES` default) ⇒ the store's memory is untouched.
    */
   garmentCueState?: GarmentCueState;
+  /**
+   * The AFFORDANCE cue memory this exchange's prompt surfaced
+   * (body-attribute-affordances slice 5): repeat keys, the band each was last
+   * reported in, and the story time each band moved. Persisted onto the SCENARIO
+   * beside `environment`, so it rides `pre_exchange_scenario` with the state the
+   * read was taken from — a retake restores both or neither, which is what makes
+   * the rebuilt read byte-identical. Absent (the `CHAT_AFFORDANCE_CUES` default)
+   * ⇒ the stored memory rides through untouched, never cleared.
+   */
+  affordanceCueState?: AffordanceCueState;
   sink?: DiagnosticSink;
 }): Promise<{
   /** True when this exchange landed a stage crossing or strong reaction (slice 9 "auto at big moments"). */
@@ -2266,6 +2276,10 @@ export async function finalizeChatState(input: {
       playerState,
       garments: garmentStore,
       environment: environmentFold.environment,
+      // Mention history rides the scenario beside the weather it was read against
+      // (slice 5). Flag off ⇒ the prior memory passes through, exactly as the
+      // garment cue map does.
+      ...(input.affordanceCueState ? { affordanceCues: input.affordanceCueState } : {}),
       pendingSkipNote: "",
       pendingMeanwhileNote: "",
     },

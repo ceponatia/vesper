@@ -23,17 +23,7 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Body-attribute visual affordances — shared affordance core + hair proving
-  domain (slices 0–5)** —
-  [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-  (active; build started 2026-07-28). Owner rulings at kickoff: full
-  `hair.quality` split (no legacy preservation; new axes blank on existing
-  characters, authored via the registry-driven form), chat-lane wetness +
-  wind/precipitation owners added via the extraction pattern, contact/pose
-  unowned (adhesion fixture-only), second domain = garment wet-state/cling
-  (later run). First production lane is legacy chat; the successor adapter is
-  a recorded follow-up. Source map:
-  [audit](body-attribute-affordances.audit.md) §"Slice 0 source map".
+_(Nothing active — pick up the top of Next.)_
 
 ## Next (queued)
 
@@ -51,6 +41,20 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
+- **Body-attribute visual affordances — remainder: second domain (garment
+  wet-state/cling), recognition memory, image decision, companion rulings** —
+  [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
+  (**slices 0–5 shipped 2026-07-28** — see
+  [roadmap.shipped.md](roadmap.shipped.md); plan stays open until the release
+  contract closes). What remains: the owner-gated `CHAT_AFFORDANCE_CUES`
+  comparison trial (contradiction/repetition/specificity vs the current
+  appearance path — gates default-on), slice 6 garment second-domain proof
+  (ruled 2026-07-28; dovetails with clothing slice 8), slice 7
+  observer-specific recognizable features + visual memory, slice 8's recorded
+  image-consumer decision, the successor-lane adapter follow-up named in the
+  [audit source map](body-attribute-affordances.audit.md), and an explicit
+  implemented/follow-up/parked ruling per companion spec before the plan
+  closes.
 - **Romantic contact affordances — foot-first grounded contact** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) (next; promoted from deferred

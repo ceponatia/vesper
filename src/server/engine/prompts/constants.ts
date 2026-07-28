@@ -126,6 +126,29 @@ export function chatGarmentCuesEnabled(): boolean {
   return process.env.CHAT_GARMENT_CUES === "on";
 }
 
+/**
+ * The AFFORDANCE NARRATION switch (body-attribute-affordances.plan.md slice 5) —
+ * experimental, default-off, the same shape and the same reason as
+ * `CHAT_GARMENT_CUES` above: slice 5 is explicitly a *trial* ("compare
+ * contradiction rate, repetition, specificity, and prose naturalness with the
+ * current appearance path"), and that live-model comparison is owner-gated.
+ *
+ * OFF (the default, and anything other than `on`) is today's behavior to the
+ * byte: no affordance read is taken at all — no adapter call, no cue rendering,
+ * no cue block on the narrator prompt — and `character_chats.affordance_cues`
+ * rides through untouched rather than being cleared. ON adds exactly one block:
+ * the ≤2 ranked, perception-safe, repeat-gated physical cues for this exchange,
+ * plus the cue-memory write that makes the repeat gate work. Env-only, no dev route.
+ *
+ * Note what is NOT behind it: the slice-4 owners themselves. The environment and
+ * body-surface extraction, their folds, and the rollback anchors all ship
+ * unconditionally — they are authoritative state, not a prompt experiment, and the
+ * cue memory has to roll back with them whether or not anything reads it.
+ */
+export function chatAffordanceCuesEnabled(): boolean {
+  return process.env.CHAT_AFFORDANCE_CUES === "on";
+}
+
 /** Max characters of player input echoed inside agent prompts. */
 export const AGENT_INPUT_CAP = 2000;
 /** Max characters of narration echoed inside agent prompts. */
