@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectCleanSink, expectDiagnostics } from "@/test/diagnostics";
 import { DiagnosticCollector } from "../diagnostics";
 import {
   DEFAULT_FACT_CHANNEL,
@@ -83,7 +84,7 @@ describe("parseFactChannel — the fact-channel trust boundary (slice 6)", () =>
     expect(parseFactChannel("private", sink)).toBe("private");
     expect(parseFactChannel("ooc", sink)).toBe("ooc");
     expect(parseFactChannel("perceived", sink)).toBe("perceived");
-    expect(sink.items).toHaveLength(0);
+    expectCleanSink(sink);
   });
 
   it("degrades a missing/absent channel to perceived SILENTLY (ordinary un-classified write)", () => {
@@ -91,13 +92,14 @@ describe("parseFactChannel — the fact-channel trust boundary (slice 6)", () =>
     expect(parseFactChannel(undefined, sink)).toBe(DEFAULT_FACT_CHANNEL);
     expect(parseFactChannel(null, sink)).toBe(DEFAULT_FACT_CHANNEL);
     expect(parseFactChannel("", sink)).toBe(DEFAULT_FACT_CHANNEL);
-    expect(sink.items).toHaveLength(0);
+    expectCleanSink(sink);
   });
 
   it("degrades an UNKNOWN channel to perceived WITH a boundary diagnostic (fail closed)", () => {
     const sink = new DiagnosticCollector();
     expect(parseFactChannel("telepathic", sink, "facts.channel")).toBe(DEFAULT_FACT_CHANNEL);
-    expect(sink.items.some((d) => d.code === "parse.boundary_failed" && d.path === "facts.channel")).toBe(true);
+    expectDiagnostics(sink, ["parse.boundary_failed"]);
+    expect(sink.items[0]?.path, "the diagnostic must name the boundary it failed at").toBe("facts.channel");
   });
 });
 

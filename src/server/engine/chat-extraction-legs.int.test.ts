@@ -1,10 +1,5 @@
-import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { mergeChatExtractions, type ChatExtractionLegs } from "@/contracts/turns/chat-archivist";
-import { emptyCharacterProfile } from "@/contracts/world/profile";
-import { newId } from "@/lib/ids";
-import { characterChatMessages, characterChats, characters, chatParticipants, db, users } from "@/server/db";
+import { mergeChatExtractions, type ChatArchivist, type ChatExtractionLegs } from "@/contracts/turns/chat-archivist";
 
 /**
  * Per-leg degradation (chat-agent-improvements.plan.md slice 1b). The whole point of
@@ -21,114 +16,77 @@ import { characterChatMessages, characterChats, characters, chatParticipants, db
  * following chat-memory-failure.int.test.ts.
  */
 
-process.env.AI_FAKE = "1";
-
 const mock = vi.hoisted(() => ({
-  result: {
-    value: null as ReturnType<typeof mergeChatExtractions> | null,
-    degraded: false,
-    legs: { memory: false, continuity: false, character: false } as ChatExtractionLegs,
-  },
+  archivist: { value: null as ChatArchivist | null, degraded: false },
+  legs: { memory: false, continuity: false, character: false },
 }));
 
-vi.mock("./chat-memory", () => ({
-  runChatExtraction: () => Promise.resolve(mock.result),
-  writeChatMemory: () => Promise.resolve(),
-}));
+vi.mock("./chat-memory", async () => {
+  const { chatMemoryMockModule } = await import("../test-support/chat-archivist-mock");
+  return chatMemoryMockModule(mock);
+});
 
-import { finalizeChatState, loadChatState, seedChatScenario, seedChatState } from "./chat-state";
+import { seedChatState } from "./chat-state";
+import {
+  dropChatFixture,
+  emptyChatFixture,
+  HEALTHY_EXTRACTION_LEGS,
+  newChat,
+  probeIntegrationDb,
+  seedChatFixture,
+  settleChatExchange,
+  type ChatFixture,
+  type ChatSeat,
+} from "@/server/test-support";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from character_chat_state limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(
-      `[chat-extraction-legs.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("chat-extraction-legs.int.test", "character_chat_state");
 
-const ready = await probe();
-const fixture = { userId: "", characterId: "", chatId: "", memoryGroupId: "", messageId: "" };
+let fixture: ChatFixture = emptyChatFixture();
+let chat: ChatSeat = { chatId: "", memoryGroupId: "", messageId: "" };
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `chat-legs-int-${stamp}@test.local`, name: "Legs Int", role: "admin" })
-    .returning();
-  if (!user) throw new Error("failed to create test user");
-  fixture.userId = user.id;
-  const [character] = await db().insert(characters).values({ ownerId: user.id, name: "Wren", profile: {} }).returning();
-  if (!character) throw new Error("failed to create test character");
-  fixture.characterId = character.id;
-  const [chat] = await db().insert(characterChats).values({ ownerId: user.id }).returning({ id: characterChats.id });
-  if (!chat) throw new Error("failed to create test chat");
-  fixture.chatId = chat.id;
-  fixture.memoryGroupId = newId();
-  await db().insert(chatParticipants).values({ chatId: chat.id, characterId: character.id, memoryGroupId: fixture.memoryGroupId });
-  const [message] = await db()
-    .insert(characterChatMessages)
-    .values({ chatId: chat.id, role: "user", content: "Hi" })
-    .returning();
-  if (!message) throw new Error("failed to create test message");
-  fixture.messageId = message.id;
+  fixture = await seedChatFixture({ slug: "chat-legs-int", userName: "Legs Int" });
+  chat = await newChat(fixture);
 });
 
 afterAll(async () => {
-  if (!ready) return;
-  await db().delete(characterChats).where(eq(characterChats.id, fixture.chatId));
-  await db().delete(characters).where(eq(characters.ownerId, fixture.userId));
-  await db().delete(users).where(eq(users.id, fixture.userId));
-  await globalThis.__vesperPool?.end();
+  await dropChatFixture(fixture);
 });
 
 /** Run one exchange through the finalizer with the given standing loops + mocked legs. */
 async function settle(args: {
   standingLoops: readonly string[];
   legs: ChatExtractionLegs;
-  value: ReturnType<typeof mergeChatExtractions> | null;
+  value: ChatArchivist | null;
 }) {
-  mock.result = { value: args.value, degraded: args.legs.memory && args.legs.continuity && args.legs.character, legs: args.legs };
-  const sink = new DiagnosticCollector();
-  const profile = emptyCharacterProfile();
-  await finalizeChatState({
-    assistantMessageId: `int-legs-${newId()}`,
+  mock.archivist = {
+    value: args.value,
+    degraded: args.legs.memory && args.legs.continuity && args.legs.character,
+  };
+  mock.legs = args.legs;
+  const { state } = await settleChatExchange(fixture, {
+    chat,
+    driftedState: { ...seedChatState(fixture.profile), openLoops: [...args.standingLoops] },
     preExchangeState: null,
-    chatId: fixture.chatId,
-    characterId: fixture.characterId,
-    ownerId: fixture.userId,
-    memoryGroupId: fixture.memoryGroupId,
-    promptMessageId: fixture.messageId,
-    profile,
-    characterName: "Wren",
-    playerName: "You",
-    driftedState: { ...seedChatState(profile), openLoops: [...args.standingLoops] },
-    now: new Date(),
-    exchange: { player: "Hi", assistant: "Hello." },
-    scenario: seedChatScenario(profile),
     preExchangeScenario: null,
-    sink,
   });
-  const state = await loadChatState(fixture.chatId, fixture.characterId, sink);
   if (!state) throw new Error("state row missing after finalize");
   return state;
 }
 
-describe("finalizeChatState — per-leg extraction degradation (slice 1b)", () => {
-  it("a degraded CHARACTER leg keeps the standing open loops (an empty list never wipes them)", async (t) => {
-    if (!ready) return t.skip();
+/** The character leg's full re-emitted note set — only `openLoops` varies across cases. */
+const characterNotes = (openLoops: readonly string[]) => ({
+  openLoops: [...openLoops],
+  plans: [],
+  driveUpdates: [],
+  voiceExemplar: "",
+  characterSlip: "",
+  traitShifts: [],
+});
+
+describe.runIf(ready)("finalizeChatState — per-leg extraction degradation (slice 1b)", () => {
+  it("a degraded CHARACTER leg keeps the standing open loops (an empty list never wipes them)", async () => {
     const state = await settle({
       standingLoops: ["hear how the toast goes"],
       legs: { memory: false, continuity: false, character: true },
@@ -146,43 +104,27 @@ describe("finalizeChatState — per-leg extraction degradation (slice 1b)", () =
     expect(state.lastMemoryTrace.degraded).toBe(false);
   });
 
-  it("a HEALTHY character leg replaces the loops with its full re-emitted list", async (t) => {
-    if (!ready) return t.skip();
+  it("a HEALTHY character leg replaces the loops with its full re-emitted list", async () => {
     const state = await settle({
       standingLoops: ["hear how the toast goes"],
-      legs: { memory: false, continuity: false, character: false },
+      legs: HEALTHY_EXTRACTION_LEGS,
       value: mergeChatExtractions({
         memory: null,
         continuity: null,
-        character: {
-          openLoops: ["show him the studio"],
-          plans: [],
-          driveUpdates: [],
-          voiceExemplar: "",
-          characterSlip: "",
-          traitShifts: [],
-        },
+        character: characterNotes(["show him the studio"]),
       }),
     });
     expect(state.openLoops).toEqual(["show him the studio"]);
   });
 
-  it("a degraded MEMORY leg flags the memory trace and drops stale queries — without touching the loops", async (t) => {
-    if (!ready) return t.skip();
+  it("a degraded MEMORY leg flags the memory trace and drops stale queries — without touching the loops", async () => {
     const state = await settle({
       standingLoops: ["hear how the toast goes"],
       legs: { memory: true, continuity: false, character: false },
       value: mergeChatExtractions({
         memory: null,
         continuity: null,
-        character: {
-          openLoops: ["show him the studio"],
-          plans: [],
-          driveUpdates: [],
-          voiceExemplar: "",
-          characterSlip: "",
-          traitShifts: [],
-        },
+        character: characterNotes(["show him the studio"]),
       }),
     });
     expect(state.lastMemoryTrace.degraded).toBe(true);

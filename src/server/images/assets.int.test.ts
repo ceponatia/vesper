@@ -1,10 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import sharp from "sharp";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { characters, db, images, items, locations, users } from "../db";
+import { and, eq, inArray } from "drizzle-orm";
+import {
+  endTestPool,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  seedTestUser,
+  testPngDataUrl,
+  withTempDataRoot,
+  type TempDataRoot,
+} from "@/server/test-support";
+import { characters, db, images, items, locations } from "../db";
 import {
   absoluteImagePath,
   createImageAsset,
@@ -20,47 +27,31 @@ import { uploadAvatar } from "./upload";
 import { generateVariant, promoteVariant } from "./variants";
 
 // Exercises the full row-before-file protocol and the demo-mode pipelines
-// against DATABASE_URL. Self-skips when the database is unreachable.
+// against DATABASE_URL. Self-skips when the database is unreachable, except
+// under strict integration mode (`pnpm test:int:strict`), where it fails.
 
-let available = false;
-let tmp = "";
+const ready = await probeIntegrationDb("images assets.int.test", "images");
+
+let temp: TempDataRoot | undefined;
 let userId = "";
 
 beforeAll(async () => {
-  try {
-    await db().execute(sql`select 1 from images limit 0`);
-    available = true;
-  } catch (err) {
-    console.warn(
-      `[images assets.int] skipping: database unreachable or unmigrated (${err instanceof Error ? err.message : String(err)})`,
-    );
-    return;
-  }
-  tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vesper-images-int-"));
-  process.env.DATA_ROOT = tmp;
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `images-int-${Date.now()}@test.local`, name: "Images Int" })
-    .returning();
-  if (!user) throw new Error("failed to create test user");
-  userId = user.id;
+  if (!ready) return;
+  temp = await withTempDataRoot("vesper-images-int");
+  userId = (await seedTestUser("images-int")).id;
 });
 
 afterAll(async () => {
-  delete process.env.DATA_ROOT;
-  if (!available) return;
-  await fs.rm(tmp, { recursive: true, force: true });
-  await db().delete(images).where(eq(images.ownerId, userId));
-  await db().delete(characters).where(eq(characters.ownerId, userId));
-  await db().delete(items).where(eq(items.ownerId, userId));
-  await db().delete(locations).where(eq(locations.ownerId, userId));
-  await db().delete(users).where(eq(users.id, userId));
-  await globalThis.__vesperPool?.end();
+  // Files first, then rows: nothing below reads the sandbox, and restoring
+  // DATA_ROOT before the database work keeps the env untouched even if a delete
+  // throws. `cleanup` restores the PREVIOUS DATA_ROOT rather than deleting it.
+  await temp?.cleanup();
+  await purgeOwnerRows([userId]);
+  await endTestPool();
 });
 
-describe("asset registry protocol", () => {
-  it("creates a pending row, then writes the file and flips to ready", async (ctx) => {
-    if (!available) return ctx.skip();
+describe.skipIf(!ready)("asset registry protocol", () => {
+  it("creates a pending row, then writes the file and flips to ready", async () => {
     const asset = await createImageAsset({ ownerId: userId, kind: "entity", entityKind: "world", prompt: "p" });
     expect(asset.status).toBe("pending");
     expect(asset.path).toBe(`images/${userId}/${asset.id}.webp`);
@@ -72,24 +63,21 @@ describe("asset registry protocol", () => {
     await expect(fs.access(absoluteImagePath(asset))).resolves.toBeUndefined();
   });
 
-  it("marks the row failed on unconvertible input instead of throwing", async (ctx) => {
-    if (!available) return ctx.skip();
+  it("marks the row failed on unconvertible input instead of throwing", async () => {
     const asset = await createImageAsset({ ownerId: userId, kind: "entity", entityKind: "world" });
     const saved = await saveImageBuffer(asset.id, Buffer.from("not an image"));
     expect(saved?.status).toBe("failed");
     expect((saved?.meta as Record<string, unknown>).error).toBeTruthy();
   });
 
-  it("failImage records the error on the row", async (ctx) => {
-    if (!available) return ctx.skip();
+  it("failImage records the error on the row", async () => {
     const asset = await createImageAsset({ ownerId: userId, kind: "entity", entityKind: "world" });
     const failed = await failImage(asset.id, "provider exploded");
     expect(failed?.status).toBe("failed");
     expect((failed?.meta as Record<string, unknown>).error).toBe("provider exploded");
   });
 
-  it("sweepOrphans reconciles both directions and never throws", async (ctx) => {
-    if (!available) return ctx.skip();
+  it("sweepOrphans reconciles both directions and never throws", async () => {
     const old = new Date(Date.now() - 20 * 60_000);
 
     // orphan file (no row) + stale pending temp, both past the grace period
@@ -130,9 +118,8 @@ describe("asset registry protocol", () => {
   });
 });
 
-describe("demo-mode pipelines (AI_FAKE=1)", () => {
-  it("generateAvatar produces a ready monogram and promotes it to the character", async (ctx) => {
-    if (!available) return ctx.skip();
+describe.skipIf(!ready)("demo-mode pipelines (AI_FAKE=1)", () => {
+  it("generateAvatar produces a ready monogram and promotes it to the character", async () => {
     const [character] = await db()
       .insert(characters)
       .values({ ownerId: userId, name: "Mira Vale", profile: { bio: "Cartographer." } })
@@ -169,15 +156,13 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     expect(denied.ok).toBe(false);
   });
 
-  it("generateAvatar for a missing character returns a failed image id, never throws", async (ctx) => {
-    if (!available) return ctx.skip();
+  it("generateAvatar for a missing character returns a failed image id, never throws", async () => {
     const imageId = await generateAvatar({ characterId: "missing-character", userId });
     const [row] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
     expect(row?.status).toBe("failed");
   });
 
-  it("uploadAvatar crops a user image to 768×1024, saves it, and promotes it to the avatar", async (ctx) => {
-    if (!available) return ctx.skip();
+  it("uploadAvatar crops a user image to 768×1024, saves it, and promotes it to the avatar", async () => {
     const [character] = await db()
       .insert(characters)
       .values({ ownerId: userId, name: "Upload Sub", profile: { bio: "Has a real photo." } })
@@ -185,10 +170,7 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     if (!character) throw new Error("failed to create character");
 
     // A 1200×800 landscape source — cover-resize must crop it to the 3:4 portrait.
-    const png = await sharp({ create: { width: 1200, height: 800, channels: 3, background: { r: 12, g: 120, b: 200 } } })
-      .png()
-      .toBuffer();
-    const dataUrl = `data:image/png;base64,${png.toString("base64")}`;
+    const dataUrl = await testPngDataUrl(1200, 800);
 
     const result = await uploadAvatar({ characterId: character.id, userId, dataUrl });
     expect(result.ok).toBe(true);
@@ -204,8 +186,7 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     expect(updated?.avatarImageId).toBe(result.avatarImageId);
   });
 
-  it("uploadAvatar rejects a non-image payload without writing a row", async (ctx) => {
-    if (!available) return ctx.skip();
+  it("uploadAvatar rejects a non-image payload without writing a row", async () => {
     const before = await db().select({ id: images.id }).from(images).where(eq(images.ownerId, userId));
     const result = await uploadAvatar({ characterId: "anything", userId, dataUrl: "not a data url" });
     expect(result.ok).toBe(false);
@@ -213,8 +194,7 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     expect(after.length).toBe(before.length); // bailed before creating an asset
   });
 
-  it("generateEntityImage paints an item product image, sets imageId, and reclaims the old one on regenerate", async (ctx) => {
-    if (!available) return ctx.skip();
+  it("generateEntityImage paints an item product image, sets imageId, and reclaims the old one on regenerate", async () => {
     const [item] = await db()
       .insert(items)
       .values({ ownerId: userId, kind: "object", name: "Brass Compass", description: "a worn navigator's compass" })
@@ -241,8 +221,7 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     expect(remaining.map((r) => r.id)).toEqual([secondId]); // single image per entity
   });
 
-  it("generateEntityImage paints a location establishing image and sets imageId", async (ctx) => {
-    if (!available) return ctx.skip();
+  it("generateEntityImage paints a location establishing image and sets imageId", async () => {
     const [loc] = await db()
       .insert(locations)
       .values({ ownerId: userId, name: "Tidal Flats", description: "a windswept salt marsh", scale: "expanse" })
@@ -256,8 +235,7 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     expect(row?.imageId).toBe(imageId);
   });
 
-  it("generateAvatarsBatch fills avatars for the given characters (new-world backfill)", async (ctx) => {
-    if (!available) return ctx.skip();
+  it("generateAvatarsBatch fills avatars for the given characters (new-world backfill)", async () => {
     const made = await db()
       .insert(characters)
       .values([
@@ -275,8 +253,7 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     expect(rows.every((r) => r.avatarImageId)).toBe(true);
   });
 
-  it("generateEntityImagesBatch fills only the entities missing an image", async (ctx) => {
-    if (!available) return ctx.skip();
+  it("generateEntityImagesBatch fills only the entities missing an image", async () => {
     const made = await db()
       .insert(items)
       .values([

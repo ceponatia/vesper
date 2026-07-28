@@ -2,8 +2,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DiagnosticCollector, itemDefinitionSchema } from "@/contracts";
 import { pseudoEmbed } from "@/server/ai";
-import { db, items, locations, users } from "@/server/db";
-import { probeIntegrationDb } from "@/server/test-support";
+import { db, items, locations } from "@/server/db";
+import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
 import {
   connectedLocationIds,
   loadLocationLinks,
@@ -22,30 +22,19 @@ import {
 
 const ready = await probeIntegrationDb("library.int.test", "items");
 
-let ownerId: string;
-let facetOwnerId: string;
+let ownerId = "";
+let facetOwnerId = "";
 
 const suggest = (name: string) => itemDefinitionSchema.parse({ kind: "clothing", name });
 
 afterAll(async () => {
-  for (const owner of [ownerId, facetOwnerId]) {
-    if (!ready || !owner) continue;
-    await db().delete(items).where(eq(items.ownerId, owner));
-    await db().delete(locations).where(eq(locations.ownerId, owner)); // cascades location_links
-    await db().delete(users).where(eq(users.id, owner));
-  }
-  await globalThis.__vesperPool?.end();
-  globalThis.__vesperPool = undefined;
+  if (ready) await purgeOwnerRows([ownerId, facetOwnerId]);
+  await endTestPool();
 });
 
 describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
   beforeAll(async () => {
-    const [user] = await db()
-      .insert(users)
-      .values({ email: `library-int-${Date.now()}@test.local`, name: "Library Int" })
-      .returning({ id: users.id });
-    if (!user) throw new Error("user insert failed");
-    ownerId = user.id;
+    ownerId = (await seedTestUser("library-int")).id;
   });
 
   it("reuses an existing same-name item without inserting a duplicate", async () => {
@@ -158,12 +147,7 @@ describe.skipIf(!ready)("searchLibraryIds item facets", () => {
   let kettle: string;
 
   beforeAll(async () => {
-    const [user] = await db()
-      .insert(users)
-      .values({ email: `library-facets-${Date.now()}@test.local`, name: "Facet Int" })
-      .returning({ id: users.id });
-    if (!user) throw new Error("user insert failed");
-    facetOwnerId = user.id;
+    facetOwnerId = (await seedTestUser("library-facets")).id;
     const made = await db()
       .insert(items)
       .values([

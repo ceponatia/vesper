@@ -1,21 +1,7 @@
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { eq, gte, inArray, sql } from "drizzle-orm";
-import { NextRequest } from "next/server";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import {
-  characters,
-  db,
-  images,
-  items,
-  jobs,
-  locations,
-  personas,
-  users,
-} from "@/server/db";
+import { characters, db, images, items, jobs, locations } from "@/server/db";
 import { resetRateLimits } from "@/server/api";
-import { canonicalImageRow } from "@/server/test-support";
 
 // Demo-mode route-handler integration suite (docs/testing.md §api): handlers
 // invoked directly with mocked auth against DATABASE_URL. Self-skips when the
@@ -25,13 +11,23 @@ const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Routes Int", role: "admin" as const },
 }));
 
-vi.mock("@/server/auth", () => ({
-  getCurrentUser: async () => authState.user,
-  // respond.ts imports this for the 401 instanceof check; resolution never
-  // throws here (getCurrentUser always resolves), so a stand-in class suffices.
-  Unauthenticated: class Unauthenticated extends Error {},
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
+import {
+  apiRequest,
+  bindAuthUser,
+  canonicalImageRow,
+  endTestPool,
+  expectApiError,
+  expectJson,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  routeCtx,
+  seedTestUser,
+  withAuthUser,
+  withTempDataRoot,
+  type TempDataRoot,
+} from "@/server/test-support";
 import { GET as listCharactersRoute, POST as createCharacterRoute } from "./characters/route";
 import {
   DELETE as deleteCharacterRoute,
@@ -62,46 +58,16 @@ import {
 } from "./personas/[id]/route";
 import { GET as devMeRoute } from "./dev/me/route";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from characters limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[library-routes.int.test] skipping: database unreachable or unmigrated: ${reason}\n`);
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("library-routes.int.test", "characters");
+const noParams = routeCtx();
+let dataRoot: TempDataRoot | undefined;
 
-const ready = await probe();
-const testStart = new Date();
-let tmpDataRoot = "";
-
-function get(url: string): NextRequest {
-  return new NextRequest(url);
-}
-function send(url: string, method: string, body?: unknown): NextRequest {
-  return new NextRequest(url, {
-    method,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    headers: { "content-type": "application/json" },
-  });
-}
-function ctx<P>(params: P): { params: Promise<P> } {
-  return { params: Promise.resolve(params) };
-}
-const noParams = ctx({});
-
-async function json(res: Response): Promise<Record<string, unknown>> {
-  return (await res.json()) as Record<string, unknown>;
+/** The `?kind` / `?ids` item list, shared by the filter and result-cap cases. */
+async function listItemRows(query: Record<string, string> = {}): Promise<{ id: string; kind: string }[]> {
+  const body = await expectJson<{ items: { id: string; kind: string }[] }>(
+    await listItemsRoute(apiRequest("/api/items", { query }), noParams),
+  );
+  return body.items;
 }
 
 async function waitForJob(jobId: string, timeoutMs = 10_000): Promise<typeof jobs.$inferSelect> {
@@ -116,30 +82,19 @@ async function waitForJob(jobId: string, timeoutMs = 10_000): Promise<typeof job
 
 beforeAll(async () => {
   if (!ready) return;
-  tmpDataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "vesper-api-int-"));
-  process.env.DATA_ROOT = tmpDataRoot;
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `routes-int-${Date.now()}@test.local`, name: "Routes Int", role: "admin" })
-    .returning();
-  if (!user) throw new Error("failed to create test user");
-  authState.user = { ...authState.user, id: user.id, email: user.email };
+  dataRoot = await withTempDataRoot("vesper-api-int");
+  bindAuthUser(authState, await seedTestUser("routes-int", { role: "admin" }));
   resetRateLimits();
 });
 
 afterAll(async () => {
-  delete process.env.DATA_ROOT;
-  if (!ready) return;
-  await fs.rm(tmpDataRoot, { recursive: true, force: true });
-  const ownerId = authState.user.id;
-  await db().delete(images).where(eq(images.ownerId, ownerId));
-  await db().delete(items).where(eq(items.ownerId, ownerId));
-  await db().delete(locations).where(eq(locations.ownerId, ownerId));
-  await db().delete(characters).where(eq(characters.ownerId, ownerId));
-  await db().delete(personas).where(eq(personas.ownerId, ownerId));
-  await db().delete(jobs).where(gte(jobs.createdAt, testStart));
-  await db().delete(users).where(eq(users.id, ownerId));
-  await globalThis.__vesperPool?.end();
+  await dataRoot?.cleanup();
+  // Owner-scoped teardown reaches this suite's jobs too — every route here hands
+  // `startJob` an `ownerId`. The old sweep deleted `jobs` by wall-clock start
+  // time, which would also take rows belonging to any other suite running
+  // against the same database.
+  if (ready) await purgeOwnerRows([authState.user.id]);
+  await endTestPool();
 });
 
 let characterId = "";
@@ -147,39 +102,46 @@ let locationId = "";
 let clothingItemId = "";
 let personaId = "";
 
-describe("characters CRUD + search", () => {
-  it("creates a character and lists it via ?q and ?tag", async (t) => {
-    if (!ready) return t.skip();
-    const created = await createCharacterRoute(
-      send("http://t/api/characters", "POST", {
-        name: "Mireille Voss",
-        tags: ["harbor", "stoic"],
-        profile: { bio: "A weary harbor-master.", personality: "dry humor", aliases: ["Captain Voss"] },
-      }),
-      noParams,
+describe.skipIf(!ready)("characters CRUD + search", () => {
+  it("creates a character and lists it via ?q and ?tag", async () => {
+    const created = await expectJson<{ character: { id: string } }>(
+      await createCharacterRoute(
+        apiRequest("/api/characters", {
+          body: {
+            name: "Mireille Voss",
+            tags: ["harbor", "stoic"],
+            profile: { bio: "A weary harbor-master.", personality: "dry humor", aliases: ["Captain Voss"] },
+          },
+        }),
+        noParams,
+      ),
+      201,
     );
-    expect(created.status).toBe(201);
-    const body = await json(created);
-    characterId = (body.character as { id: string }).id;
+    characterId = created.character.id;
 
-    const byName = await json(await listCharactersRoute(get("http://t/api/characters?q=mireille"), noParams));
-    expect((byName.characters as unknown[]).length).toBe(1);
-    const byTag = await json(await listCharactersRoute(get("http://t/api/characters?tag=harbor"), noParams));
-    expect((byTag.characters as Array<{ id: string }>).map((c) => c.id)).toContain(characterId);
-    const miss = await json(await listCharactersRoute(get("http://t/api/characters?q=zzz-nonexistent"), noParams));
+    const byName = await expectJson<{ characters: unknown[] }>(
+      await listCharactersRoute(apiRequest("/api/characters", { query: { q: "mireille" } }), noParams),
+    );
+    expect(byName.characters.length).toBe(1);
+    const byTag = await expectJson<{ characters: { id: string }[] }>(
+      await listCharactersRoute(apiRequest("/api/characters", { query: { tag: "harbor" } }), noParams),
+    );
+    expect(byTag.characters.map((c) => c.id)).toContain(characterId);
+    const miss = await expectJson<{ characters: unknown[] }>(
+      await listCharactersRoute(apiRequest("/api/characters", { query: { q: "zzz-nonexistent" } }), noParams),
+    );
     expect(miss.characters).toEqual([]);
   });
 
-  it("rejects an invalid create body with the envelope", async (t) => {
-    if (!ready) return t.skip();
-    const res = await createCharacterRoute(send("http://t/api/characters", "POST", { name: "" }), noParams);
-    expect(res.status).toBe(400);
-    const body = await json(res);
-    expect((body.error as { code: string }).code).toBe("invalid_body");
+  it("rejects an invalid create body with the envelope", async () => {
+    await expectApiError(
+      await createCharacterRoute(apiRequest("/api/characters", { body: { name: "" } }), noParams),
+      400,
+      "invalid_body",
+    );
   });
 
-  it("materializes suggested outfit items on save, reusing by name", async (t) => {
-    if (!ready) return t.skip();
+  it("materializes suggested outfit items on save, reusing by name", async () => {
     const suggestion = {
       kind: "clothing",
       name: "Storm Slicker",
@@ -187,306 +149,370 @@ describe("characters CRUD + search", () => {
       coverage: ["torso", "arms"],
       layer: 3,
     };
-    const created = await createCharacterRoute(
-      send("http://t/api/characters", "POST", {
-        name: "Suggestion Tester",
-        suggestedItems: [suggestion, { kind: "clothing", name: "Odd Hat", coverage: ["head", "not-a-location"] }],
-      }),
-      noParams,
-    );
-    expect(created.status).toBe(201);
-    const body = await json(created);
     // Materialized ids land in the DEFAULT preset (outfits[0] — ux-improvements slice 8).
     type PresetProfile = { profile: { outfits: { id: string; items: string[] }[] } };
-    const outfit = (body.character as PresetProfile).profile.outfits[0]?.items ?? [];
+    const created = await expectJson<{ character: PresetProfile; diagnostics: { code: string }[] }>(
+      await createCharacterRoute(
+        apiRequest("/api/characters", {
+          body: {
+            name: "Suggestion Tester",
+            suggestedItems: [suggestion, { kind: "clothing", name: "Odd Hat", coverage: ["head", "not-a-location"] }],
+          },
+        }),
+        noParams,
+      ),
+      201,
+    );
+    const outfit = created.character.profile.outfits[0]?.items ?? [];
     expect(outfit.length).toBe(2);
 
     const [slicker] = await db().select().from(items).where(eq(items.id, outfit[0]!)).limit(1);
     expect(slicker?.name).toBe("Storm Slicker");
     expect(slicker?.tags).toContain("suggested");
     // invalid coverage id degrades to the valid subset, with a diagnostic
-    expect((body.diagnostics as Array<{ code: string }>).map((d) => d.code)).toContain(
-      "api.library.suggested_item.coverage_dropped",
-    );
+    expect(created.diagnostics.map((d) => d.code)).toContain("api.library.suggested_item.coverage_dropped");
     const [hat] = await db().select().from(items).where(eq(items.id, outfit[1]!)).limit(1);
     expect((hat?.definition as { coverage: string[] }).coverage).toEqual(["head"]);
 
     // a second save with the same suggestion reuses the existing item
-    const again = await createCharacterRoute(
-      send("http://t/api/characters", "POST", { name: "Suggestion Tester II", suggestedItems: [suggestion] }),
-      noParams,
+    const again = await expectJson<{ character: PresetProfile }>(
+      await createCharacterRoute(
+        apiRequest("/api/characters", { body: { name: "Suggestion Tester II", suggestedItems: [suggestion] } }),
+        noParams,
+      ),
+      201,
     );
-    expect(again.status).toBe(201);
-    const againOutfit = ((await json(again)).character as PresetProfile).profile.outfits[0]?.items;
-    expect(againOutfit).toEqual([outfit[0]]);
+    expect(again.character.profile.outfits[0]?.items).toEqual([outfit[0]]);
   });
 
-  it("PATCH merges a partial profile without clobbering unsent fields", async (t) => {
-    if (!ready) return t.skip();
-    const res = await patchCharacterRoute(
-      send(`http://t/api/characters/${characterId}`, "PATCH", { profile: { bio: "Updated bio." } }),
-      ctx({ id: characterId }),
+  it("PATCH merges a partial profile without clobbering unsent fields", async () => {
+    const patched = await expectJson<{ character: { profile: { bio: string; personality: string; aliases: string[] } } }>(
+      await patchCharacterRoute(
+        apiRequest(`/api/characters/${characterId}`, { method: "PATCH", body: { profile: { bio: "Updated bio." } } }),
+        routeCtx({ id: characterId }),
+      ),
+      200,
     );
-    expect(res.status).toBe(200);
-    const body = await json(res);
-    const profile = (body.character as { profile: { bio: string; personality: string; aliases: string[] } }).profile;
+    const profile = patched.character.profile;
     expect(profile.bio).toBe("Updated bio.");
     expect(profile.personality).toBe("dry humor");
     expect(profile.aliases).toEqual(["Captain Voss"]);
   });
 
-  it("404s for a character owned by someone else", async (t) => {
-    if (!ready) return t.skip();
-    const original = authState.user;
-    const [other] = await db()
-      .insert(users)
-      .values({ email: `routes-int-other-${Date.now()}@test.local`, name: "Other" })
-      .returning();
-    if (!other) throw new Error("failed to create second user");
+  it("404s for a character owned by someone else", async () => {
+    const other = await seedTestUser("routes-int-other");
     try {
-      authState.user = { ...original, id: other.id, email: other.email };
-      const res = await getCharacterRoute(get(`http://t/api/characters/${characterId}`), ctx({ id: characterId }));
-      expect(res.status).toBe(404);
+      await withAuthUser(authState, { id: other.id, email: other.email }, async () => {
+        await expectApiError(
+          await getCharacterRoute(apiRequest(`/api/characters/${characterId}`), routeCtx({ id: characterId })),
+          404,
+        );
+      });
     } finally {
-      authState.user = original;
-      await db().delete(users).where(eq(users.id, other.id));
+      await purgeOwnerRows([other.id]);
     }
   });
 });
 
-describe("entity visibility (auth.plan.md)", () => {
-  it("public entities read cross-owner but never write; private stay owner-only", async (t) => {
-    if (!ready) return t.skip();
-    const owner = authState.user;
+describe.skipIf(!ready)("entity visibility (auth.plan.md)", () => {
+  it("public entities read cross-owner but never write; private stay owner-only", async () => {
     const mkChar = async (name: string) =>
-      ((await json(await createCharacterRoute(send("http://t/api/characters", "POST", { name }), noParams))).character as {
-        id: string;
-      }).id;
+      (
+        await expectJson<{ character: { id: string } }>(
+          await createCharacterRoute(apiRequest("/api/characters", { body: { name } }), noParams),
+        )
+      ).character.id;
     const privateId = await mkChar("Secret Muse");
     const publicId = await mkChar("Public Muse");
 
-    const published = await patchCharacterRoute(
-      send(`http://t/api/characters/${publicId}`, "PATCH", { visibility: "public" }),
-      ctx({ id: publicId }),
+    const published = await expectJson<{ character: { visibility: string } }>(
+      await patchCharacterRoute(
+        apiRequest(`/api/characters/${publicId}`, { method: "PATCH", body: { visibility: "public" } }),
+        routeCtx({ id: publicId }),
+      ),
+      200,
     );
-    expect(published.status).toBe(200);
-    expect(((await json(published)).character as { visibility: string }).visibility).toBe("public");
+    expect(published.character.visibility).toBe("public");
 
-    const [other] = await db()
-      .insert(users)
-      .values({ email: `routes-int-vis-${Date.now()}@test.local`, name: "Viewer" })
-      .returning();
-    if (!other) throw new Error("failed to create second user");
+    const other = await seedTestUser("routes-int-vis");
     try {
-      authState.user = { ...owner, id: other.id, email: other.email };
-      // Read widens to owner-or-public: a public entity reads cross-owner, a private one 404s.
-      expect((await getCharacterRoute(get(`http://t/api/characters/${publicId}`), ctx({ id: publicId }))).status).toBe(200);
-      expect((await getCharacterRoute(get(`http://t/api/characters/${privateId}`), ctx({ id: privateId }))).status).toBe(404);
-      // Writes never cross owner — even on a public entity (treated as not-found).
-      expect(
-        (await patchCharacterRoute(send(`http://t/api/characters/${publicId}`, "PATCH", { name: "hijack" }), ctx({ id: publicId }))).status,
-      ).toBe(404);
-      expect((await deleteCharacterRoute(get(`http://t/api/characters/${publicId}`), ctx({ id: publicId }))).status).toBe(404);
+      await withAuthUser(authState, { id: other.id, email: other.email }, async () => {
+        // Read widens to owner-or-public: a public entity reads cross-owner, a private one 404s.
+        expect(
+          (await getCharacterRoute(apiRequest(`/api/characters/${publicId}`), routeCtx({ id: publicId }))).status,
+        ).toBe(200);
+        await expectApiError(
+          await getCharacterRoute(apiRequest(`/api/characters/${privateId}`), routeCtx({ id: privateId })),
+          404,
+        );
+        // Writes never cross owner — even on a public entity (treated as not-found).
+        await expectApiError(
+          await patchCharacterRoute(
+            apiRequest(`/api/characters/${publicId}`, { method: "PATCH", body: { name: "hijack" } }),
+            routeCtx({ id: publicId }),
+          ),
+          404,
+        );
+        await expectApiError(
+          await deleteCharacterRoute(apiRequest(`/api/characters/${publicId}`), routeCtx({ id: publicId })),
+          404,
+        );
+      });
     } finally {
-      authState.user = owner;
-      await db().delete(users).where(eq(users.id, other.id));
+      await purgeOwnerRows([other.id]);
     }
 
     // Owner still sees the public entity, and the cross-owner PATCH never landed.
-    const ownerView = await json(await getCharacterRoute(get(`http://t/api/characters/${publicId}`), ctx({ id: publicId })));
-    expect((ownerView.character as { name: string }).name).toBe("Public Muse");
+    const ownerView = await expectJson<{ character: { name: string } }>(
+      await getCharacterRoute(apiRequest(`/api/characters/${publicId}`), routeCtx({ id: publicId })),
+    );
+    expect(ownerView.character.name).toBe("Public Muse");
 
-    await deleteCharacterRoute(get(`http://t/api/characters/${publicId}`), ctx({ id: publicId }));
-    await deleteCharacterRoute(get(`http://t/api/characters/${privateId}`), ctx({ id: privateId }));
+    await deleteCharacterRoute(apiRequest(`/api/characters/${publicId}`), routeCtx({ id: publicId }));
+    await deleteCharacterRoute(apiRequest(`/api/characters/${privateId}`), routeCtx({ id: privateId }));
   });
 
-  it("clones a public entity into an owned, private copy that survives source deletion", async (t) => {
-    if (!ready) return t.skip();
+  it("clones a public entity into an owned, private copy that survives source deletion", async () => {
     const owner = authState.user;
-    const srcId = ((await json(await createCharacterRoute(send("http://t/api/characters", "POST", { name: "Shared Muse", tags: ["origin"] }), noParams))).character as { id: string }).id;
-    await patchCharacterRoute(send(`http://t/api/characters/${srcId}`, "PATCH", { visibility: "public" }), ctx({ id: srcId }));
+    const srcId = (
+      await expectJson<{ character: { id: string } }>(
+        await createCharacterRoute(
+          apiRequest("/api/characters", { body: { name: "Shared Muse", tags: ["origin"] } }),
+          noParams,
+        ),
+      )
+    ).character.id;
+    await patchCharacterRoute(
+      apiRequest(`/api/characters/${srcId}`, { method: "PATCH", body: { visibility: "public" } }),
+      routeCtx({ id: srcId }),
+    );
 
-    const [other] = await db()
-      .insert(users)
-      .values({ email: `routes-int-clone-${Date.now()}@test.local`, name: "Cloner" })
-      .returning();
-    if (!other) throw new Error("failed to create second user");
-    const asOther = { ...owner, id: other.id, email: other.email };
+    const other = await seedTestUser("routes-int-clone");
+    const asOther = { id: other.id, email: other.email };
     let cloneId = "";
     try {
-      authState.user = asOther;
-      const cloned = await cloneCharacterRoute(send(`http://t/api/characters/${srcId}/clone`, "POST", {}), ctx({ id: srcId }));
-      expect(cloned.status).toBe(201);
-      cloneId = ((await json(cloned)) as { id: string }).id;
+      await withAuthUser(authState, asOther, async () => {
+        cloneId = (
+          await expectJson<{ id: string }>(
+            await cloneCharacterRoute(
+              apiRequest(`/api/characters/${srcId}/clone`, { body: {} }),
+              routeCtx({ id: srcId }),
+            ),
+            201,
+          )
+        ).id;
 
-      const copy = (await json(await getCharacterRoute(get(`http://t/api/characters/${cloneId}`), ctx({ id: cloneId })))).character as {
-        visibility: string;
-        tags: string[];
-        clonedFromId: string | null;
-      };
-      expect(copy.visibility).toBe("private");
-      expect(copy.tags).toContain("origin");
-      expect(copy.clonedFromId).toBe(srcId);
+        const copy = (
+          await expectJson<{ character: { visibility: string; tags: string[]; clonedFromId: string | null } }>(
+            await getCharacterRoute(apiRequest(`/api/characters/${cloneId}`), routeCtx({ id: cloneId })),
+          )
+        ).character;
+        expect(copy.visibility).toBe("private");
+        expect(copy.tags).toContain("origin");
+        expect(copy.clonedFromId).toBe(srcId);
 
-      // Owner deletes the source; the cross-owner clone must survive intact.
-      authState.user = owner;
-      expect((await deleteCharacterRoute(get(`http://t/api/characters/${srcId}`), ctx({ id: srcId }))).status).toBe(200);
-      authState.user = asOther;
-      expect((await getCharacterRoute(get(`http://t/api/characters/${cloneId}`), ctx({ id: cloneId }))).status).toBe(200);
+        // Owner deletes the source; the cross-owner clone must survive intact.
+        await withAuthUser(authState, owner, async () => {
+          expect(
+            (await deleteCharacterRoute(apiRequest(`/api/characters/${srcId}`), routeCtx({ id: srcId }))).status,
+          ).toBe(200);
+        });
+        expect(
+          (await getCharacterRoute(apiRequest(`/api/characters/${cloneId}`), routeCtx({ id: cloneId }))).status,
+        ).toBe(200);
+      });
     } finally {
-      authState.user = asOther;
-      if (cloneId) await deleteCharacterRoute(get(`http://t/api/characters/${cloneId}`), ctx({ id: cloneId }));
-      authState.user = owner;
-      await db().delete(users).where(eq(users.id, other.id));
+      if (cloneId) {
+        await withAuthUser(authState, asOther, () =>
+          deleteCharacterRoute(apiRequest(`/api/characters/${cloneId}`), routeCtx({ id: cloneId })),
+        );
+      }
+      await purgeOwnerRows([other.id]);
     }
   });
 });
 
-describe("library list facets, sort & scope (library-ux.plan.md §Follow-up pass)", () => {
-  it("character list carries speciesId/gender and honors ?sort=name", async (t) => {
-    if (!ready) return t.skip();
+describe.skipIf(!ready)("library list facets, sort & scope (library-ux.plan.md §Follow-up pass)", () => {
+  it("character list carries speciesId/gender and honors ?sort=name", async () => {
     const mk = async (name: string) =>
-      ((await json(await createCharacterRoute(send("http://t/api/characters", "POST", { name, tags: ["facet-sort"] }), noParams)))
-        .character as { id: string }).id;
+      (
+        await expectJson<{ character: { id: string } }>(
+          await createCharacterRoute(apiRequest("/api/characters", { body: { name, tags: ["facet-sort"] } }), noParams),
+        )
+      ).character.id;
     // Created in reverse-alphabetical order so updated-recency and name order disagree.
     const aaId = await mk("Aa Facet Muse");
     const zzId = await mk("Zz Facet Muse");
 
-    const byRecency = (await json(await listCharactersRoute(get("http://t/api/characters?tag=facet-sort"), noParams)))
-      .characters as Array<{ id: string; speciesId: string | null; gender: string | null }>;
+    const byRecency = (
+      await expectJson<{ characters: { id: string; speciesId: string | null; gender: string | null }[] }>(
+        await listCharactersRoute(apiRequest("/api/characters", { query: { tag: "facet-sort" } }), noParams),
+      )
+    ).characters;
     expect(byRecency.map((c) => c.id)).toEqual([zzId, aaId]);
     const aa = byRecency.find((c) => c.id === aaId);
     // A blank-created character carries the registry defaults (human, female).
     expect(aa?.speciesId).toBe("human");
     expect(aa?.gender).toBe("female");
 
-    const byName = (await json(await listCharactersRoute(get("http://t/api/characters?tag=facet-sort&sort=name"), noParams)))
-      .characters as Array<{ id: string }>;
+    const byName = (
+      await expectJson<{ characters: { id: string }[] }>(
+        await listCharactersRoute(
+          apiRequest("/api/characters", { query: { tag: "facet-sort", sort: "name" } }),
+          noParams,
+        ),
+      )
+    ).characters;
     expect(byName.map((c) => c.id)).toEqual([aaId, zzId]);
 
-    for (const id of [aaId, zzId]) await deleteCharacterRoute(get(`http://t/api/characters/${id}`), ctx({ id }));
+    for (const id of [aaId, zzId]) await deleteCharacterRoute(apiRequest(`/api/characters/${id}`), routeCtx({ id }));
   });
 
-  it("location list carries scale", async (t) => {
-    if (!ready) return t.skip();
-    const created = await createLocationRoute(
-      send("http://t/api/locations", "POST", { name: "Facet Harbor", tags: ["facet-scale"] }),
-      noParams,
+  it("location list carries scale", async () => {
+    const created = await expectJson<{ location: { id: string } }>(
+      await createLocationRoute(
+        apiRequest("/api/locations", { body: { name: "Facet Harbor", tags: ["facet-scale"] } }),
+        noParams,
+      ),
     );
-    const locId = ((await json(created)).location as { id: string }).id;
+    const locId = created.location.id;
 
-    const listed = (await json(await listLocationsRoute(get("http://t/api/locations?tag=facet-scale"), noParams)))
-      .locations as Array<{ id: string; scale: string }>;
+    const listed = (
+      await expectJson<{ locations: { id: string; scale: string }[] }>(
+        await listLocationsRoute(apiRequest("/api/locations", { query: { tag: "facet-scale" } }), noParams),
+      )
+    ).locations;
     const row = listed.find((l) => l.id === locId);
     expect(row?.scale).toBe("room"); // the column default rides the list payload
 
     await db().delete(locations).where(eq(locations.id, locId));
   });
 
-  it("?scope=public surfaces another owner's published rows; owned stays private", async (t) => {
-    if (!ready) return t.skip();
-    const owner = authState.user;
-    const charId = ((await json(await createCharacterRoute(send("http://t/api/characters", "POST", { name: "Scope Muse", tags: ["scope-test"] }), noParams))).character as { id: string }).id;
-    await patchCharacterRoute(send(`http://t/api/characters/${charId}`, "PATCH", { visibility: "public" }), ctx({ id: charId }));
-    const itemId = ((await json(await createItemRoute(send("http://t/api/items", "POST", { name: "Scope Cloak", kind: "clothing", tags: ["scope-test"] }), noParams))).item as { id: string }).id;
-    await patchItemRoute(send(`http://t/api/items/${itemId}`, "PATCH", { visibility: "public" }), ctx({ id: itemId }));
+  it("?scope=public surfaces another owner's published rows; owned stays private", async () => {
+    const charId = (
+      await expectJson<{ character: { id: string } }>(
+        await createCharacterRoute(
+          apiRequest("/api/characters", { body: { name: "Scope Muse", tags: ["scope-test"] } }),
+          noParams,
+        ),
+      )
+    ).character.id;
+    await patchCharacterRoute(
+      apiRequest(`/api/characters/${charId}`, { method: "PATCH", body: { visibility: "public" } }),
+      routeCtx({ id: charId }),
+    );
+    const itemId = (
+      await expectJson<{ item: { id: string } }>(
+        await createItemRoute(
+          apiRequest("/api/items", { body: { name: "Scope Cloak", kind: "clothing", tags: ["scope-test"] } }),
+          noParams,
+        ),
+      )
+    ).item.id;
+    await patchItemRoute(
+      apiRequest(`/api/items/${itemId}`, { method: "PATCH", body: { visibility: "public" } }),
+      routeCtx({ id: itemId }),
+    );
 
-    const [other] = await db()
-      .insert(users)
-      .values({ email: `routes-int-scope-${Date.now()}@test.local`, name: "Scoper" })
-      .returning();
-    if (!other) throw new Error("failed to create second user");
+    const other = await seedTestUser("routes-int-scope");
     try {
-      authState.user = { ...owner, id: other.id, email: other.email };
-      const pubChars = (await json(await listCharactersRoute(get("http://t/api/characters?tag=scope-test&scope=public"), noParams)))
-        .characters as Array<{ id: string }>;
-      expect(pubChars.map((c) => c.id)).toContain(charId);
-      const ownChars = (await json(await listCharactersRoute(get("http://t/api/characters?tag=scope-test"), noParams)))
-        .characters as Array<{ id: string }>;
-      expect(ownChars).toEqual([]);
-      const pubItems = (await json(await listItemsRoute(get("http://t/api/items?tag=scope-test&scope=all"), noParams)))
-        .items as Array<{ id: string }>;
-      expect(pubItems.map((i) => i.id)).toContain(itemId);
-      const ownItems = (await json(await listItemsRoute(get("http://t/api/items?tag=scope-test"), noParams)))
-        .items as Array<{ id: string }>;
-      expect(ownItems).toEqual([]);
+      await withAuthUser(authState, { id: other.id, email: other.email }, async () => {
+        const pubChars = (
+          await expectJson<{ characters: { id: string }[] }>(
+            await listCharactersRoute(
+              apiRequest("/api/characters", { query: { tag: "scope-test", scope: "public" } }),
+              noParams,
+            ),
+          )
+        ).characters;
+        expect(pubChars.map((c) => c.id)).toContain(charId);
+        const ownChars = (
+          await expectJson<{ characters: unknown[] }>(
+            await listCharactersRoute(apiRequest("/api/characters", { query: { tag: "scope-test" } }), noParams),
+          )
+        ).characters;
+        expect(ownChars).toEqual([]);
+        const pubItems = await listItemRows({ tag: "scope-test", scope: "all" });
+        expect(pubItems.map((i) => i.id)).toContain(itemId);
+        expect(await listItemRows({ tag: "scope-test" })).toEqual([]);
+      });
     } finally {
-      authState.user = owner;
-      await db().delete(users).where(eq(users.id, other.id));
+      await purgeOwnerRows([other.id]);
     }
-    await deleteCharacterRoute(get(`http://t/api/characters/${charId}`), ctx({ id: charId }));
+    await deleteCharacterRoute(apiRequest(`/api/characters/${charId}`), routeCtx({ id: charId }));
     await db().delete(items).where(eq(items.id, itemId));
   });
 });
 
-describe("locations and items", () => {
-  it("creates a location", async (t) => {
-    if (!ready) return t.skip();
-    const res = await createLocationRoute(
-      send("http://t/api/locations", "POST", {
-        name: "Harbor Office",
-        description: "Cramped, salt-stained.",
-        ambient: { scent: "tar and kelp" },
-        tags: ["harbor"],
-      }),
-      noParams,
+describe.skipIf(!ready)("locations and items", () => {
+  it("creates a location", async () => {
+    const created = await expectJson<{ location: { id: string } }>(
+      await createLocationRoute(
+        apiRequest("/api/locations", {
+          body: {
+            name: "Harbor Office",
+            description: "Cramped, salt-stained.",
+            ambient: { scent: "tar and kelp" },
+            tags: ["harbor"],
+          },
+        }),
+        noParams,
+      ),
+      201,
     );
-    expect(res.status).toBe(201);
-    locationId = ((await json(res)).location as { id: string }).id;
+    locationId = created.location.id;
   });
 
-  it("creates a clothing item and rejects unknown coverage ids", async (t) => {
-    if (!ready) return t.skip();
-    const bad = await createItemRoute(
-      send("http://t/api/items", "POST", {
-        name: "Oilskin Coat",
-        kind: "clothing",
-        definition: { coverage: ["torso_dorsal_fin"], layer: 3 },
-      }),
-      noParams,
+  it("creates a clothing item and rejects unknown coverage ids", async () => {
+    await expectApiError(
+      await createItemRoute(
+        apiRequest("/api/items", {
+          body: { name: "Oilskin Coat", kind: "clothing", definition: { coverage: ["torso_dorsal_fin"], layer: 3 } },
+        }),
+        noParams,
+      ),
+      400,
+      "invalid_coverage",
     );
-    expect(bad.status).toBe(400);
-    expect(((await json(bad)).error as { code: string }).code).toBe("invalid_coverage");
 
-    const good = await createItemRoute(
-      send("http://t/api/items", "POST", {
-        name: "Oilskin Coat",
-        kind: "clothing",
-        description: "Heavy, weatherproof.",
-        definition: { coverage: ["neck"], layer: 3 },
-      }),
-      noParams,
+    const good = await expectJson<{ item: { id: string } }>(
+      await createItemRoute(
+        apiRequest("/api/items", {
+          body: {
+            name: "Oilskin Coat",
+            kind: "clothing",
+            description: "Heavy, weatherproof.",
+            definition: { coverage: ["neck"], layer: 3 },
+          },
+        }),
+        noParams,
+      ),
+      201,
     );
-    expect(good.status).toBe(201);
-    clothingItemId = ((await json(good)).item as { id: string }).id;
+    clothingItemId = good.item.id;
   });
 
-  it("filters the item list by ?kind, ignoring an unknown kind", async (t) => {
-    if (!ready) return t.skip();
-    const obj = await createItemRoute(
-      send("http://t/api/items", "POST", { name: "Brass Lantern", kind: "object" }),
-      noParams,
+  it("filters the item list by ?kind, ignoring an unknown kind", async () => {
+    const obj = await expectJson<{ item: { id: string } }>(
+      await createItemRoute(apiRequest("/api/items", { body: { name: "Brass Lantern", kind: "object" } }), noParams),
+      201,
     );
-    expect(obj.status).toBe(201);
-    const objectItemId = ((await json(obj)).item as { id: string }).id;
-
-    const kindsOf = (body: Record<string, unknown>) => (body.items as { id: string; kind: string }[]);
+    const objectItemId = obj.item.id;
 
     // ?kind=clothing returns only the coat, never the object.
-    const clothing = kindsOf(await json(await listItemsRoute(get("http://t/api/items?kind=clothing"), noParams)));
+    const clothing = await listItemRows({ kind: "clothing" });
     expect(clothing.every((i) => i.kind === "clothing")).toBe(true);
     expect(clothing.map((i) => i.id)).toContain(clothingItemId);
     expect(clothing.map((i) => i.id)).not.toContain(objectItemId);
 
     // No kind → both kinds present; an unknown kind degrades to no filter.
-    const all = kindsOf(await json(await listItemsRoute(get("http://t/api/items"), noParams)));
+    const all = await listItemRows();
     expect(all.map((i) => i.id)).toEqual(expect.arrayContaining([clothingItemId, objectItemId]));
-    const bogus = kindsOf(await json(await listItemsRoute(get("http://t/api/items?kind=weapon"), noParams)));
+    const bogus = await listItemRows({ kind: "weapon" });
     expect(bogus.map((i) => i.id)).toEqual(expect.arrayContaining([clothingItemId, objectItemId]));
   });
 
-  it("applies the result cap per-kind and resolves ids past the cap (defaultOutfit regression)", async (t) => {
-    if (!ready) return t.skip();
+  it("applies the result cap per-kind and resolves ids past the cap (defaultOutfit regression)", async () => {
     const ownerId = authState.user.id;
     // Flood the library with >LIST_LIMIT (100) NEWER items of another kind. Pre-fix,
     // the global cap (order by updated_at desc) filled with these and pushed the
@@ -495,50 +521,48 @@ describe("locations and items", () => {
     const flood = Array.from({ length: 105 }, (_, i) => ({ ownerId, kind: "object" as const, name: `Flood Object ${i}` }));
     const inserted = await db().insert(items).values(flood).returning({ id: items.id });
     try {
-      const kindsOf = (body: Record<string, unknown>) => body.items as { id: string; kind: string }[];
       // The per-kind cap keeps the (older) coat in the clothing list.
-      const clothing = kindsOf(await json(await listItemsRoute(get("http://t/api/items?kind=clothing"), noParams)));
+      const clothing = await listItemRows({ kind: "clothing" });
       expect(clothing.every((i) => i.kind === "clothing")).toBe(true);
       expect(clothing.map((i) => i.id)).toContain(clothingItemId);
       // ?ids resolves a specific reference (outfit item) regardless of the cap.
-      const byIds = kindsOf(await json(await listItemsRoute(get(`http://t/api/items?ids=${clothingItemId}`), noParams)));
+      const byIds = await listItemRows({ ids: clothingItemId });
       expect(byIds.map((i) => i.id)).toEqual([clothingItemId]);
       // empty ids → empty (must not fall through to the unfiltered list).
-      const none = kindsOf(await json(await listItemsRoute(get("http://t/api/items?ids="), noParams)));
-      expect(none).toEqual([]);
+      expect(await listItemRows({ ids: "" })).toEqual([]);
     } finally {
       await db().delete(items).where(inArray(items.id, inserted.map((r) => r.id)));
     }
   });
 
-  it("404s cross-user PATCH for character, location and item without modifying rows", async (t) => {
-    if (!ready) return t.skip();
-    const original = authState.user;
-    const [other] = await db()
-      .insert(users)
-      .values({ email: `routes-int-patcher-${Date.now()}@test.local`, name: "Other Patcher" })
-      .returning();
-    if (!other) throw new Error("failed to create second user");
+  it("404s cross-user PATCH for character, location and item without modifying rows", async () => {
+    const other = await seedTestUser("routes-int-patcher");
     try {
-      authState.user = { ...original, id: other.id, email: other.email };
-      const charRes = await patchCharacterRoute(
-        send(`http://t/api/characters/${characterId}`, "PATCH", { name: "Hijacked" }),
-        ctx({ id: characterId }),
-      );
-      expect(charRes.status).toBe(404);
-      const locRes = await patchLocationRoute(
-        send(`http://t/api/locations/${locationId}`, "PATCH", { name: "Hijacked" }),
-        ctx({ id: locationId }),
-      );
-      expect(locRes.status).toBe(404);
-      const itemRes = await patchItemRoute(
-        send(`http://t/api/items/${clothingItemId}`, "PATCH", { name: "Hijacked" }),
-        ctx({ id: clothingItemId }),
-      );
-      expect(itemRes.status).toBe(404);
+      await withAuthUser(authState, { id: other.id, email: other.email }, async () => {
+        await expectApiError(
+          await patchCharacterRoute(
+            apiRequest(`/api/characters/${characterId}`, { method: "PATCH", body: { name: "Hijacked" } }),
+            routeCtx({ id: characterId }),
+          ),
+          404,
+        );
+        await expectApiError(
+          await patchLocationRoute(
+            apiRequest(`/api/locations/${locationId}`, { method: "PATCH", body: { name: "Hijacked" } }),
+            routeCtx({ id: locationId }),
+          ),
+          404,
+        );
+        await expectApiError(
+          await patchItemRoute(
+            apiRequest(`/api/items/${clothingItemId}`, { method: "PATCH", body: { name: "Hijacked" } }),
+            routeCtx({ id: clothingItemId }),
+          ),
+          404,
+        );
+      });
     } finally {
-      authState.user = original;
-      await db().delete(users).where(eq(users.id, other.id));
+      await purgeOwnerRows([other.id]);
     }
     // The UPDATE itself is owner-scoped (defense-in-depth), so nothing changed.
     const [charRow] = await db().select().from(characters).where(eq(characters.id, characterId)).limit(1);
@@ -550,42 +574,38 @@ describe("locations and items", () => {
   });
 });
 
-describe("batch entity images: malformed body must 400, never widen scope (codebase-review A4)", () => {
-  it("rejects invalid JSON instead of queueing an unscoped paid batch", async (t) => {
-    if (!ready) return t.skip();
+describe.skipIf(!ready)("batch entity images: malformed body must 400, never widen scope (codebase-review A4)", () => {
+  it("rejects invalid JSON instead of queueing an unscoped paid batch", async () => {
     for (const [route, url] of [
-      [itemImagesBatchRoute, "http://t/api/items/images"],
-      [locationImagesBatchRoute, "http://t/api/locations/images"],
+      [itemImagesBatchRoute, "/api/items/images"],
+      [locationImagesBatchRoute, "/api/locations/images"],
     ] as const) {
-      const res = await route(
-        new NextRequest(url, { method: "POST", body: "{not json", headers: { "content-type": "application/json" } }),
-        noParams,
-      );
-      expect(res.status).toBe(400);
+      // A string body rides through verbatim, so the handler really does see
+      // `{not json` rather than a JSON-encoded string of it.
+      await expectApiError(await route(apiRequest(url, { body: "{not json" }), noParams), 400);
     }
   });
 
-  it("still accepts an empty object as the deliberate generate-all scope", async (t) => {
-    if (!ready) return t.skip();
+  it("still accepts an empty object as the deliberate generate-all scope", async () => {
     // {} (no ids) is the client's "all missing" request — must not 400. AI_FAKE
     // makes any queued render a no-op placeholder; the assertion is only the status.
-    const res = await itemImagesBatchRoute(send("http://t/api/items/images", "POST", {}), noParams);
+    const res = await itemImagesBatchRoute(apiRequest("/api/items/images", { body: {} }), noParams);
     expect([200, 202]).toContain(res.status);
   });
 });
 
-describe("images: avatar job, portraits, serving", () => {
+describe.skipIf(!ready)("images: avatar job, portraits, serving", () => {
   let avatarImageId = "";
   let variantImageId = "";
 
-  it("runs the avatar job and serves the file with immutable caching", async (t) => {
-    if (!ready) return t.skip();
-    const res = await avatarRoute(
-      send(`http://t/api/characters/${characterId}/avatar`, "POST", { style: "stylized" }),
-      ctx({ id: characterId }),
+  it("runs the avatar job and serves the file with immutable caching", async () => {
+    const { jobId } = await expectJson<{ jobId: string }>(
+      await avatarRoute(
+        apiRequest(`/api/characters/${characterId}/avatar`, { body: { style: "stylized" } }),
+        routeCtx({ id: characterId }),
+      ),
+      202,
     );
-    expect(res.status).toBe(202);
-    const { jobId } = (await json(res)) as { jobId: string };
     const job = await waitForJob(jobId);
     expect(job.status).toBe("done");
     avatarImageId = (job.payload as { imageId: string }).imageId;
@@ -596,105 +616,108 @@ describe("images: avatar job, portraits, serving", () => {
     const [charRow] = await db().select().from(characters).where(eq(characters.id, characterId)).limit(1);
     expect(charRow?.avatarImageId).toBe(avatarImageId);
 
-    const file = await imageFileRoute(get(`http://t/api/images/${avatarImageId}/file`), ctx({ id: avatarImageId }));
+    const file = await imageFileRoute(apiRequest(`/api/images/${avatarImageId}/file`), routeCtx({ id: avatarImageId }));
     expect(file.status).toBe(200);
     expect(file.headers.get("content-type")).toBe("image/webp");
     expect(file.headers.get("cache-control")).toContain("immutable");
   });
 
-  it("404s for missing and non-ready images", async (t) => {
-    if (!ready) return t.skip();
-    const missing = await imageFileRoute(get("http://t/api/images/nope/file"), ctx({ id: "nope" }));
+  it("404s for missing and non-ready images", async () => {
+    // The file route serves bytes, not an envelope, so these stay status-only.
+    const missing = await imageFileRoute(apiRequest("/api/images/nope/file"), routeCtx({ id: "nope" }));
     expect(missing.status).toBe(404);
     const [pendingRow] = await db()
       .insert(images)
-      .values(
-        canonicalImageRow({ ownerId: authState.user.id, kind: "entity" as const, entityKind: "world" as const }),
-      )
+      .values(canonicalImageRow({ ownerId: authState.user.id, kind: "entity" as const, entityKind: "world" as const }))
       .returning();
     if (!pendingRow) throw new Error("failed to insert pending image");
-    const pending = await imageFileRoute(get(`http://t/api/images/${pendingRow.id}/file`), ctx({ id: pendingRow.id }));
+    const pending = await imageFileRoute(
+      apiRequest(`/api/images/${pendingRow.id}/file`),
+      routeCtx({ id: pendingRow.id }),
+    );
     expect(pending.status).toBe(404);
   });
 
-  it("generates, fetches, promotes and deletes a portrait variant", async (t) => {
-    if (!ready) return t.skip();
-    const res = await portraitRoute(
-      send(`http://t/api/characters/${characterId}/portraits`, "POST", { kind: "pose", instruction: "leaning on the rail" }),
-      ctx({ id: characterId }),
+  it("generates, fetches, promotes and deletes a portrait variant", async () => {
+    const { jobId } = await expectJson<{ jobId: string }>(
+      await portraitRoute(
+        apiRequest(`/api/characters/${characterId}/portraits`, {
+          body: { kind: "pose", instruction: "leaning on the rail" },
+        }),
+        routeCtx({ id: characterId }),
+      ),
+      202,
     );
-    expect(res.status).toBe(202);
-    const { jobId } = (await json(res)) as { jobId: string };
     const job = await waitForJob(jobId);
     expect(job.status).toBe("done");
     variantImageId = (job.payload as { imageId: string }).imageId;
 
-    const list = await listPortraitsRoute(get(`http://t/api/characters/${characterId}/portraits`), ctx({ id: characterId }));
-    expect(list.status).toBe(200);
-    const listed = (await json(list)).portraits as Array<{ id: string }>;
-    expect(listed.map((p) => p.id)).toContain(variantImageId);
+    const listed = await expectJson<{ portraits: { id: string }[] }>(
+      await listPortraitsRoute(apiRequest(`/api/characters/${characterId}/portraits`), routeCtx({ id: characterId })),
+      200,
+    );
+    expect(listed.portraits.map((p) => p.id)).toContain(variantImageId);
 
     const single = await getPortraitRoute(
-      get(`http://t/api/characters/${characterId}/portraits/${variantImageId}`),
-      ctx({ id: characterId, imageId: variantImageId }),
+      apiRequest(`/api/characters/${characterId}/portraits/${variantImageId}`),
+      routeCtx({ id: characterId, imageId: variantImageId }),
     );
     expect(single.status).toBe(200);
 
     const promoted = await promotePortraitRoute(
-      send(`http://t/api/characters/${characterId}/portraits/${variantImageId}/promote`, "POST"),
-      ctx({ id: characterId, imageId: variantImageId }),
+      apiRequest(`/api/characters/${characterId}/portraits/${variantImageId}/promote`, { method: "POST" }),
+      routeCtx({ id: characterId, imageId: variantImageId }),
     );
     expect(promoted.status).toBe(200);
     const [charRow] = await db().select().from(characters).where(eq(characters.id, characterId)).limit(1);
     expect(charRow?.avatarImageId).toBe(variantImageId);
 
     const deleted = await deletePortraitRoute(
-      get(`http://t/api/characters/${characterId}/portraits/${variantImageId}`),
-      ctx({ id: characterId, imageId: variantImageId }),
+      apiRequest(`/api/characters/${characterId}/portraits/${variantImageId}`),
+      routeCtx({ id: characterId, imageId: variantImageId }),
     );
     expect(deleted.status).toBe(200);
     const [afterDelete] = await db().select().from(characters).where(eq(characters.id, characterId)).limit(1);
     expect(afterDelete?.avatarImageId).toBeNull(); // promoted-then-deleted avatar never dangles
 
     // character detail lists remaining portraits (the original avatar)
-    const detail = await json(await getCharacterRoute(get(`http://t/api/characters/${characterId}`), ctx({ id: characterId })));
-    expect((detail.portraits as Array<{ id: string }>).map((p) => p.id)).toContain(avatarImageId);
-  });
-});
-
-describe("forge endpoints (demo mode) and rate limiting", () => {
-  it("drafts a character without saving", async (t) => {
-    if (!ready) return t.skip();
-    resetRateLimits();
-    const before = await db().select({ id: characters.id }).from(characters).where(eq(characters.ownerId, authState.user.id));
-    const res = await forgeCharacterRoute(
-      send("http://t/api/characters/forge", "POST", { prompt: "a weary harbor-master in her forties" }),
-      noParams,
+    const detail = await expectJson<{ portraits: { id: string }[] }>(
+      await getCharacterRoute(apiRequest(`/api/characters/${characterId}`), routeCtx({ id: characterId })),
     );
-    expect(res.status).toBe(200);
-    const body = await json(res);
-    const draft = body.draft as { name: string; profile: { bio: string } };
-    expect(draft.name.length).toBeGreaterThan(0);
-    expect(Array.isArray(body.diagnostics)).toBe(true);
-    const after = await db().select({ id: characters.id }).from(characters).where(eq(characters.ownerId, authState.user.id));
-    expect(after.length).toBe(before.length); // drafts never save
+    expect(detail.portraits.map((p) => p.id)).toContain(avatarImageId);
   });
 });
 
-describe("dev identity", () => {
-  it("dev/me returns the resolved user", async (t) => {
-    if (!ready) return t.skip();
-    const me = await json(await devMeRoute(get("http://t/api/dev/me"), noParams));
-    expect((me.user as { id: string }).id).toBe(authState.user.id);
+describe.skipIf(!ready)("forge endpoints (demo mode) and rate limiting", () => {
+  it("drafts a character without saving", async () => {
+    resetRateLimits();
+    const owned = () => db().select({ id: characters.id }).from(characters).where(eq(characters.ownerId, authState.user.id));
+    const before = await owned();
+    const body = await expectJson<{ draft: { name: string; profile: { bio: string } }; diagnostics: unknown }>(
+      await forgeCharacterRoute(
+        apiRequest("/api/characters/forge", { body: { prompt: "a weary harbor-master in her forties" } }),
+        noParams,
+      ),
+      200,
+    );
+    expect(body.draft.name.length).toBeGreaterThan(0);
+    expect(Array.isArray(body.diagnostics)).toBe(true);
+    expect((await owned()).length).toBe(before.length); // drafts never save
+  });
+});
+
+describe.skipIf(!ready)("dev identity", () => {
+  it("dev/me returns the resolved user", async () => {
+    const me = await expectJson<{ user: { id: string } }>(await devMeRoute(apiRequest("/api/dev/me"), noParams));
+    expect(me.user.id).toBe(authState.user.id);
   });
 
-  it("dev/me 404s in production (the dev-route gate)", async (t) => {
-    if (!ready) return t.skip();
+  it("dev/me 404s in production (the dev-route gate)", async () => {
     const prev = process.env.NODE_ENV;
     // NODE_ENV is read-only in the Next types; assign through a cast for the test.
     (process.env as Record<string, string | undefined>).NODE_ENV = "production";
     try {
-      const gated = await devMeRoute(get("http://t/api/dev/me"), noParams);
+      const gated = await devMeRoute(apiRequest("/api/dev/me"), noParams);
       expect(gated.status).toBe(404);
     } finally {
       (process.env as Record<string, string | undefined>).NODE_ENV = prev;
@@ -702,83 +725,95 @@ describe("dev identity", () => {
   });
 });
 
-describe("personas CRUD", () => {
-  it("creates a persona and lists it", async (t) => {
-    if (!ready) return t.skip();
-    const res = await createPersonaRoute(
-      send("http://t/api/personas", "POST", {
-        title: "Brian, 22",
-        name: "Brian",
-        tags: ["young"],
-        profile: { bio: "A quiet man who fixes things.", intimateRegions: ["penis"] },
-      }),
-      noParams,
+describe.skipIf(!ready)("personas CRUD", () => {
+  it("creates a persona and lists it", async () => {
+    const created = await expectJson<{ persona: { id: string } }>(
+      await createPersonaRoute(
+        apiRequest("/api/personas", {
+          body: {
+            title: "Brian, 22",
+            name: "Brian",
+            tags: ["young"],
+            profile: { bio: "A quiet man who fixes things.", intimateRegions: ["penis"] },
+          },
+        }),
+        noParams,
+      ),
+      201,
     );
-    expect(res.status).toBe(201);
-    personaId = ((await json(res)).persona as { id: string }).id;
+    personaId = created.persona.id;
 
-    const list = await listPersonasRoute(get("http://t/api/personas"), noParams);
-    const rows = (await json(list)).personas as { id: string; title: string; name: string }[];
+    const rows = (
+      await expectJson<{ personas: { id: string; title: string; name: string }[] }>(
+        await listPersonasRoute(apiRequest("/api/personas"), noParams),
+      )
+    ).personas;
     expect(rows.map((r) => r.id)).toContain(personaId);
     expect(rows.find((r) => r.id === personaId)?.title).toBe("Brian, 22");
   });
 
   // The whole reason `title` exists: `name` must be free to repeat across personas.
-  it("allows a duplicate name under a different title", async (t) => {
-    if (!ready) return t.skip();
+  it("allows a duplicate name under a different title", async () => {
     const res = await createPersonaRoute(
-      send("http://t/api/personas", "POST", { title: "Brian, 40", name: "Brian" }),
+      apiRequest("/api/personas", { body: { title: "Brian, 40", name: "Brian" } }),
       noParams,
     );
     expect(res.status).toBe(201);
   });
 
-  it("rejects a duplicate title with a typed 409, not a raw unique-violation 500", async (t) => {
-    if (!ready) return t.skip();
-    const res = await createPersonaRoute(
-      send("http://t/api/personas", "POST", { title: "Brian, 22", name: "Someone Else" }),
-      noParams,
+  it("rejects a duplicate title with a typed 409, not a raw unique-violation 500", async () => {
+    await expectApiError(
+      await createPersonaRoute(
+        apiRequest("/api/personas", { body: { title: "Brian, 22", name: "Someone Else" } }),
+        noParams,
+      ),
+      409,
+      "title_conflict",
     );
-    expect(res.status).toBe(409);
-    expect(((await json(res)).error as { code: string }).code).toBe("title_conflict");
   });
 
-  it("merges a partial profile PATCH instead of replacing it", async (t) => {
-    if (!ready) return t.skip();
+  it("merges a partial profile PATCH instead of replacing it", async () => {
     // Seed a wardrobe, then PATCH only `attributes` — the outfits must survive.
     const seeded = await patchPersonaRoute(
-      send("http://t/api/personas/x", "PATCH", {
-        profile: { outfits: [{ id: "everyday", name: "Everyday", items: ["shirt"] }] },
+      apiRequest("/api/personas/x", {
+        method: "PATCH",
+        body: { profile: { outfits: [{ id: "everyday", name: "Everyday", items: ["shirt"] }] } },
       }),
-      ctx({ id: personaId }),
+      routeCtx({ id: personaId }),
     );
     expect(seeded.status).toBe(200);
 
-    const patched = await patchPersonaRoute(
-      send("http://t/api/personas/x", "PATCH", {
-        profile: { attributes: [{ id: "skin.tone", value: "tan", source: "manual" }] },
-      }),
-      ctx({ id: personaId }),
+    const patched = await expectJson<{ persona: { profile: Record<string, unknown> } }>(
+      await patchPersonaRoute(
+        apiRequest("/api/personas/x", {
+          method: "PATCH",
+          body: { profile: { attributes: [{ id: "skin.tone", value: "tan", source: "manual" }] } },
+        }),
+        routeCtx({ id: personaId }),
+      ),
+      200,
     );
-    expect(patched.status).toBe(200);
-    const profile = ((await json(patched)).persona as { profile: Record<string, unknown> }).profile;
+    const profile = patched.persona.profile;
     expect(profile.attributes).toHaveLength(1);
     // The invariant partialWithoutDefaults exists to protect: unsent fields keep their value.
     expect(profile.outfits).toHaveLength(1);
     expect(profile.bio).toBe("A quiet man who fixes things.");
   });
 
-  it("gets and deletes a persona; a foreign id is a 404", async (t) => {
-    if (!ready) return t.skip();
-    const got = await getPersonaRoute(get("http://t/api/personas/x"), ctx({ id: personaId }));
+  it("gets and deletes a persona; a foreign id is a 404", async () => {
+    const got = await getPersonaRoute(apiRequest("/api/personas/x"), routeCtx({ id: personaId }));
     expect(got.status).toBe(200);
 
-    const missing = await getPersonaRoute(get("http://t/api/personas/x"), ctx({ id: "nope-not-a-real-id" }));
-    expect(missing.status).toBe(404);
+    await expectApiError(
+      await getPersonaRoute(apiRequest("/api/personas/x"), routeCtx({ id: "nope-not-a-real-id" })),
+      404,
+    );
 
-    const gone = await deletePersonaRoute(send("http://t/api/personas/x", "DELETE"), ctx({ id: personaId }));
+    const gone = await deletePersonaRoute(
+      apiRequest("/api/personas/x", { method: "DELETE" }),
+      routeCtx({ id: personaId }),
+    );
     expect(gone.status).toBe(200);
-    const after = await getPersonaRoute(get("http://t/api/personas/x"), ctx({ id: personaId }));
-    expect(after.status).toBe(404);
+    await expectApiError(await getPersonaRoute(apiRequest("/api/personas/x"), routeCtx({ id: personaId })), 404);
   });
 });

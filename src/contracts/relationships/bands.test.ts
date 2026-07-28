@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectContiguousBands, expectUniqueIds } from "@/test/registry-invariants";
 import {
   clampFamiliarity,
   clampRegard,
@@ -19,31 +20,27 @@ import {
   stageFamiliarity,
   stageToAxes,
   tickFamiliarity,
-  type AxisBand,
 } from "./bands";
 import { relationshipStages, stageMidpoint } from "./stages";
 
-function assertContiguous(bands: readonly AxisBand[], min: number, max: number): void {
-  const sorted = [...bands].sort((a, b) => a.min - b.min);
-  expect(sorted[0]?.min).toBe(min);
-  expect(sorted[sorted.length - 1]?.max).toBe(max);
-  for (let i = 1; i < sorted.length; i++) {
-    expect(sorted[i]?.min).toBe((sorted[i - 1]?.max ?? NaN) + 1);
-  }
-}
-
 describe("regard bands", () => {
   it("ids are unique and cover [-100, 100] contiguously", () => {
-    const ids = regardBands.map((b) => b.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    assertContiguous(regardBands, REGARD_MIN, REGARD_MAX);
+    expectUniqueIds(regardBands, "regardBands");
+    expectContiguousBands(regardBands, { min: REGARD_MIN, max: REGARD_MAX });
   });
 
   it("is the old stage ladder minus the familiarity-flavored rungs", () => {
-    expect(regardBands.map((b) => b.id)).toEqual([
-      "hostile", "wary", "cool", "neutral", "friendly",
-      "warm", "close", "cherished", "devoted", "smitten",
-    ]);
+    // Derived, not enumerated: the ladder is authored coldest-first, so its
+    // declaration order IS its `min` order and a new rung slots in untouched.
+    expect(regardBands.map((b) => b.id)).toEqual([...regardBands].sort((a, b) => a.min - b.min).map((b) => b.id));
+    // Pinned anchors — the poles other systems name directly.
+    expect(regardBands[0]?.id).toBe("hostile");
+    expect(regardBands.at(-1)?.id).toBe("smitten");
+    // The policy tripwire the split exists for: the two familiarity-flavored
+    // rungs are the OTHER axis's vocabulary and must never reappear here.
+    for (const rung of ["stranger", "acquaintance"]) {
+      expect(regardBands.some((b) => b.id === rung), rung).toBe(false);
+    }
     // Old acquaintance values (15..32) now read friendly-low.
     expect(regardBandForValue(24).id).toBe("friendly");
     expect(regardBandForValue(0).id).toBe("neutral");
@@ -61,9 +58,8 @@ describe("regard bands", () => {
 
 describe("familiarity bands", () => {
   it("ids are unique and cover [0, 100] contiguously", () => {
-    const ids = familiarityBands.map((b) => b.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    assertContiguous(familiarityBands, FAMILIARITY_MIN, FAMILIARITY_MAX);
+    expectUniqueIds(familiarityBands, "familiarityBands");
+    expectContiguousBands(familiarityBands, { min: FAMILIARITY_MIN, max: FAMILIARITY_MAX });
   });
 
   it("band lookup clamps and self-heals", () => {

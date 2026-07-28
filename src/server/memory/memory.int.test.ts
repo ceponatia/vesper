@@ -1,8 +1,16 @@
 import { and, eq , sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import type { FactDraft } from "@/contracts/facts/taxonomy";
 import { newId } from "@/lib/ids";
+import {
+  endTestPool,
+  factDraft,
+  pinnedPlayerDraft,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  seedTestUser,
+  SIMILARITY_TEXTS,
+} from "@/server/test-support";
 
 // Wrap the batch embedder so the fused-retrieval degradation tests can fail ONE
 // call (mockRejectedValueOnce); every other call passes through to the real
@@ -15,7 +23,7 @@ vi.mock("../ai", async (importOriginal) => {
 
 import { embedTexts } from "../ai";
 import { pseudoEmbed } from "../ai/embeddings";
-import { characters, db, episodes, events, facts, items, locations, users } from "../db";
+import { characters, db, episodes, events, facts, items, locations } from "../db";
 import {
   addFacts,
   appendEpisode,
@@ -40,53 +48,21 @@ import {
 
 const mockEmbedTexts = vi.mocked(embedTexts);
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from episodes limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    // stderr directly: vitest swallows console.* emitted during collection
-    process.stderr.write(`[memory.int.test] skipping integration suite — database unreachable or unmigrated: ${reason}\n`);
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("memory.int.test", "episodes");
 
-const ready = await probe();
-
-let ownerId: string;
-
-function draft(over: Partial<FactDraft> & Pick<FactDraft, "subjectName" | "text">): FactDraft {
-  return { kind: "knowledge", subjectKind: "character", tags: [], confidence: 0.9, ...over };
-}
+let ownerId = "";
 
 afterAll(async () => {
-  if (ready && ownerId) {
-    await db().delete(characters).where(eq(characters.ownerId, ownerId));
-    await db().delete(locations).where(eq(locations.ownerId, ownerId));
-    await db().delete(items).where(eq(items.ownerId, ownerId));
-    await db().delete(users).where(eq(users.id, ownerId));
-  }
-  await globalThis.__vesperPool?.end();
-  globalThis.__vesperPool = undefined;
+  // `facts` / `episodes` are memory-group-keyed, not owner-keyed, so
+  // `purgeOwnerRows` cannot reach them; every group id here is freshly minted
+  // per run (or namespaced by it), which is what keeps runs from colliding.
+  await purgeOwnerRows([ownerId]);
+  await endTestPool();
 });
 
 describe.skipIf(!ready)("memory integration", () => {
   beforeAll(async () => {
-    const [user] = await db()
-      .insert(users)
-      .values({ email: `memory-int-${Date.now()}@test.local`, name: "Memory Int" })
-      .returning({ id: users.id });
-    if (!user) throw new Error("user insert failed");
-    ownerId = user.id;
+    ownerId = (await seedTestUser("memory-int")).id;
   });
 
   describe("episodes", () => {
@@ -182,8 +158,8 @@ describe.skipIf(!ready)("memory integration", () => {
       const result = await addFacts(
         chatScope(groupId),
         [
-          draft({ subjectName: "Mara", text: "Mara might be hiding something.", confidence: 0.2 }),
-          draft({ subjectName: "Mara", text: "Mara's hair is red." }),
+          factDraft({ subjectName: "Mara", text: "Mara might be hiding something.", confidence: 0.2 }),
+          factDraft({ subjectName: "Mara", text: SIMILARITY_TEXTS.subject }),
         ],
         { turnId: "turn-a" },
         sink,
@@ -200,7 +176,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("supersedes a same-subject fact above the similarity threshold in one transaction", async () => {
-      const result = await addFacts(chatScope(groupId), [draft({ subjectName: "MARA", text: "Mara's hair is red." })], { turnId: turnB });
+      const result = await addFacts(chatScope(groupId), [factDraft({ subjectName: "MARA", text: SIMILARITY_TEXTS.subject })], { turnId: turnB });
       expect(result.insertedIds).toHaveLength(1);
       expect(result.supersededIds).toEqual([firstId]);
       secondId = result.insertedIds[0]!;
@@ -212,12 +188,12 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("does not supersede across subjects even at similarity 1", async () => {
-      const result = await addFacts(chatScope(groupId), [draft({ subjectName: "Tobias", text: "Mara's hair is red." })], { turnId: "turn-c" });
+      const result = await addFacts(chatScope(groupId), [factDraft({ subjectName: "Tobias", text: SIMILARITY_TEXTS.subject })], { turnId: "turn-c" });
       expect(result.supersededIds).toHaveLength(0);
     });
 
     it("retrieves only active facts", async () => {
-      const hits = await retrieveFacts(chatScope(groupId), "Mara's hair is red.");
+      const hits = await retrieveFacts(chatScope(groupId), SIMILARITY_TEXTS.subject);
       const ids = hits.map((h) => h.id);
       expect(ids).toContain(secondId);
       expect(ids).not.toContain(firstId);
@@ -230,7 +206,7 @@ describe.skipIf(!ready)("memory integration", () => {
       const [oldRow] = await db().select({ status: facts.status }).from(facts).where(eq(facts.id, firstId));
       expect(oldRow?.status).toBe("superseded");
 
-      const hits = await retrieveFacts(chatScope(groupId), "Mara's hair is red.");
+      const hits = await retrieveFacts(chatScope(groupId), SIMILARITY_TEXTS.subject);
       expect(hits.map((h) => h.id)).not.toContain(secondId);
       expect(hits.map((h) => h.subjectName)).toContain("tobias");
     });
@@ -240,8 +216,8 @@ describe.skipIf(!ready)("memory integration", () => {
       const result = await addFacts(
         chatScope(batchGroup),
         [
-          draft({ subjectName: "Mara", text: "Mara likes chamomile tea." }),
-          draft({ subjectName: "Mara", text: "Mara likes chamomile tea." }),
+          factDraft({ subjectName: "Mara", text: "Mara likes chamomile tea." }),
+          factDraft({ subjectName: "Mara", text: "Mara likes chamomile tea." }),
         ],
         { turnId: "turn-batch" },
       );
@@ -324,7 +300,7 @@ describe.skipIf(!ready)("memory integration", () => {
       expect(await latestEpisodeNumber(scope)).toBe(0);
       await appendEpisode(scope, 1, episodeText, []);
       expect(await latestEpisodeNumber(scope)).toBe(1);
-      await addFacts(scope, [draft({ subjectName: "the player", subjectKind: "player", text: factText })], null);
+      await addFacts(scope, [factDraft({ subjectName: "the player", subjectKind: "player", text: factText })], null);
 
       const epHits = await retrieveEpisodes(scope, episodeText, { window: 0 });
       expect(epHits.map((h) => h.summary)).toContain(episodeText);
@@ -336,7 +312,7 @@ describe.skipIf(!ready)("memory integration", () => {
       const chat = chatScope(groupId);
       const otherSecret = "Mara keeps a secret in another group.";
       const other = chatScope(newId());
-      await addFacts(other, [draft({ subjectName: "Mara", text: otherSecret })], { turnId: "turn-iso" });
+      await addFacts(other, [factDraft({ subjectName: "Mara", text: otherSecret })], { turnId: "turn-iso" });
 
       const chatSees = await retrieveFacts(chat, otherSecret);
       expect(chatSees.map((h) => h.text)).not.toContain(otherSecret);
@@ -360,12 +336,11 @@ describe.skipIf(!ready)("memory integration", () => {
     it("applies the relevance floor: a dissimilar fact is a candidate but never a hit", async () => {
       const scope = chatScope(newId());
       const onTopic = "Mara keeps a spare key under the third floorboard.";
-      const offTopic = "The eastern gate collapsed during the siege.";
       const { insertedIds } = await addFacts(
         scope,
         [
-          draft({ subjectName: "Mara", text: onTopic }),
-          draft({ subjectName: "gate", subjectKind: "location", text: offTopic }),
+          factDraft({ subjectName: "Mara", text: onTopic }),
+          factDraft({ subjectName: "gate", subjectKind: "location", text: SIMILARITY_TEXTS.offTopic }),
         ],
         { turnId: "turn-floor" },
       );
@@ -379,18 +354,8 @@ describe.skipIf(!ready)("memory integration", () => {
       const scope = chatScope(newId());
       const pinnedText = "The player is allergic to shellfish.";
       const scoredText = "Tobias hums sea shanties while cooking.";
-      const pinnedRes = await addFacts(
-        scope,
-        [
-          {
-            ...draft({ subjectName: "the player", subjectKind: "player", text: pinnedText, confidence: 1 }),
-            pinned: true,
-            origin: "player" as const,
-          },
-        ],
-        null,
-      );
-      const scoredRes = await addFacts(scope, [draft({ subjectName: "Tobias", text: scoredText })], {
+      const pinnedRes = await addFacts(scope, [pinnedPlayerDraft(pinnedText)], null);
+      const scoredRes = await addFacts(scope, [factDraft({ subjectName: "Tobias", text: scoredText })], {
         turnId: "turn-p",
       });
 
@@ -404,20 +369,10 @@ describe.skipIf(!ready)("memory integration", () => {
     it("an extracted draft never retires a similar pinned player fact (asymmetry, blocked direction)", async () => {
       const scope = chatScope(newId());
       const text = "The player's cat is named Biscuit.";
-      const pinnedRes = await addFacts(
-        scope,
-        [
-          {
-            ...draft({ subjectName: "the player", subjectKind: "player", text, confidence: 1 }),
-            pinned: true,
-            origin: "player" as const,
-          },
-        ],
-        null,
-      );
+      const pinnedRes = await addFacts(scope, [pinnedPlayerDraft(text)], null);
       const extractedRes = await addFacts(
         scope,
-        [draft({ subjectName: "the player", subjectKind: "player", text })],
+        [factDraft({ subjectName: "the player", subjectKind: "player", text })],
         { turnId: "turn-asym" },
       );
       expect(extractedRes.insertedIds).toHaveLength(1);
@@ -432,10 +387,10 @@ describe.skipIf(!ready)("memory integration", () => {
     it("a player draft supersedes a similar extracted fact (asymmetry, allowed direction)", async () => {
       const scope = chatScope(newId());
       const text = "Mara's hair is auburn.";
-      const extracted = await addFacts(scope, [draft({ subjectName: "Mara", text })], { turnId: "turn-e" });
+      const extracted = await addFacts(scope, [factDraft({ subjectName: "Mara", text })], { turnId: "turn-e" });
       const player = await addFacts(
         scope,
-        [{ ...draft({ subjectName: "Mara", text, confidence: 1 }), pinned: true, origin: "player" as const }],
+        [pinnedPlayerDraft(text, { subjectName: "Mara", subjectKind: "character" })],
         null,
       );
       expect(player.supersededIds).toEqual(extracted.insertedIds);
@@ -449,18 +404,18 @@ describe.skipIf(!ready)("memory integration", () => {
     it("prefers subjectId equality in supersedence: differing ids block, matching ids pass a rename", async () => {
       const scope = chatScope(newId());
       const text = "The twin wears a silver locket.";
-      const first = await addFacts(scope, [{ ...draft({ subjectName: "Twin", text }), subjectId: "char-a" }], {
+      const first = await addFacts(scope, [{ ...factDraft({ subjectName: "Twin", text }), subjectId: "char-a" }], {
         turnId: "turn-s1",
       });
       // same name + identical text, different id ⇒ two entities, no supersede
-      const second = await addFacts(scope, [{ ...draft({ subjectName: "Twin", text }), subjectId: "char-b" }], {
+      const second = await addFacts(scope, [{ ...factDraft({ subjectName: "Twin", text }), subjectId: "char-b" }], {
         turnId: "turn-s2",
       });
       expect(second.supersededIds).toEqual([]);
       // different name, same id ⇒ same entity, supersedes exactly the id-matched row
       const renamed = await addFacts(
         scope,
-        [{ ...draft({ subjectName: "Twin Renamed", text }), subjectId: "char-a" }],
+        [{ ...factDraft({ subjectName: "Twin Renamed", text }), subjectId: "char-a" }],
         { turnId: "turn-s3" },
       );
       expect(renamed.supersededIds).toEqual(first.insertedIds);
@@ -475,23 +430,13 @@ describe.skipIf(!ready)("memory integration", () => {
       await addFacts(
         scope,
         [
-          draft({ subjectName: "Mara", text: t1 }),
-          draft({ subjectName: "Tobias", text: t2 }),
-          draft({ subjectName: "archive", subjectKind: "location", text: t3 }),
+          factDraft({ subjectName: "Mara", text: t1 }),
+          factDraft({ subjectName: "Tobias", text: t2 }),
+          factDraft({ subjectName: "archive", subjectKind: "location", text: t3 }),
         ],
         { turnId: "turn-fu" },
       );
-      await addFacts(
-        scope,
-        [
-          {
-            ...draft({ subjectName: "the player", subjectKind: "player", text: tp, confidence: 1 }),
-            pinned: true,
-            origin: "player" as const,
-          },
-        ],
-        null,
-      );
+      await addFacts(scope, [pinnedPlayerDraft(tp)], null);
 
       const hits = await retrieveFactsFused(scope, [t1, t2], 5);
       expect(hits).toHaveLength(3);
@@ -514,18 +459,8 @@ describe.skipIf(!ready)("memory integration", () => {
     it("zero usable queries degrade fused facts to the pinned-only result", async () => {
       const scope = chatScope(newId());
       const tp = "The player never drinks coffee after dusk.";
-      await addFacts(
-        scope,
-        [
-          {
-            ...draft({ subjectName: "the player", subjectKind: "player", text: tp, confidence: 1 }),
-            pinned: true,
-            origin: "player" as const,
-          },
-        ],
-        null,
-      );
-      await addFacts(scope, [draft({ subjectName: "Mara", text: "Mara naps at noon." })], { turnId: "turn-b" });
+      await addFacts(scope, [pinnedPlayerDraft(tp)], null);
+      await addFacts(scope, [factDraft({ subjectName: "Mara", text: "Mara naps at noon." })], { turnId: "turn-b" });
       const hits = await retrieveFactsFused(scope, ["", "   "], 5);
       expect(hits.map((h) => h.text)).toEqual([tp]);
       expect(hits[0]).toMatchObject({ sources: [], score: 0 });
@@ -534,17 +469,7 @@ describe.skipIf(!ready)("memory integration", () => {
     it("query-embed failure degrades fused facts to pinned-only with a diagnostic", async () => {
       const scope = chatScope(newId());
       const tp = "The player owns a one-eyed parrot.";
-      await addFacts(
-        scope,
-        [
-          {
-            ...draft({ subjectName: "the player", subjectKind: "player", text: tp, confidence: 1 }),
-            pinned: true,
-            origin: "player" as const,
-          },
-        ],
-        null,
-      );
+      await addFacts(scope, [pinnedPlayerDraft(tp)], null);
       const sink = new DiagnosticCollector();
       mockEmbedTexts.mockRejectedValueOnce(new Error("provider down"));
       const hits = await retrieveFactsFused(scope, ["anything at all"], 5, sink);
@@ -583,9 +508,9 @@ describe.skipIf(!ready)("memory integration", () => {
     it("listFactsForScope hides superseded/retracted rows unless includeInactive", async () => {
       const scope = chatScope(newId());
       const text = "Mara owes the guild forty crowns.";
-      const first = await addFacts(scope, [draft({ subjectName: "Mara", text })], { turnId: "turn-l1" });
-      const second = await addFacts(scope, [draft({ subjectName: "Mara", text })], { turnId: "turn-l2" });
-      await addFacts(scope, [draft({ subjectName: "Tobias", text: "Tobias lost his spectacles." })], {
+      const first = await addFacts(scope, [factDraft({ subjectName: "Mara", text })], { turnId: "turn-l1" });
+      const second = await addFacts(scope, [factDraft({ subjectName: "Mara", text })], { turnId: "turn-l2" });
+      await addFacts(scope, [factDraft({ subjectName: "Tobias", text: "Tobias lost his spectacles." })], {
         turnId: "turn-l3",
       });
       await retractFactsFromTurn("turn-l3");
@@ -640,9 +565,9 @@ describe.skipIf(!ready)("memory integration", () => {
       await addFacts(
         scope,
         [
-          draft({ subjectName: "the player", subjectKind: "player", text: perceivedText, channel: "perceived" }),
-          draft({ subjectName: "the player", subjectKind: "player", text: privateText, channel: "private" }),
-          draft({ subjectName: "the player", subjectKind: "player", text: oocText, channel: "ooc" }),
+          factDraft({ subjectName: "the player", subjectKind: "player", text: perceivedText, channel: "perceived" }),
+          factDraft({ subjectName: "the player", subjectKind: "player", text: privateText, channel: "private" }),
+          factDraft({ subjectName: "the player", subjectKind: "player", text: oocText, channel: "ooc" }),
         ],
         null,
       );
@@ -666,7 +591,7 @@ describe.skipIf(!ready)("memory integration", () => {
       const scope = chatScope(`${groupId}-degraded`);
       const text = "The player mentioned a cat named Biscuit.";
       const sink = new DiagnosticCollector();
-      await addFacts(scope, [draft({ subjectName: "the player", subjectKind: "player", text, channel: "telepathic" })], null, sink);
+      await addFacts(scope, [factDraft({ subjectName: "the player", subjectKind: "player", text, channel: "telepathic" })], null, sink);
 
       expect(sink.items.some((d) => d.code === "parse.boundary_failed" && d.path === "facts.channel")).toBe(true);
       const listed = await listFactsForScope(scope);
@@ -690,10 +615,10 @@ describe.skipIf(!ready)("memory integration", () => {
       await addFacts(
         scope,
         [
-          { ...draft({ subjectName: "harbor", text: globalFact }), witnessedBy: [] },
-          { ...draft({ subjectName: "mara", text: observerFact }), witnessedBy: [observer] },
+          { ...factDraft({ subjectName: "harbor", text: globalFact }), witnessedBy: [] },
+          { ...factDraft({ subjectName: "mara", text: observerFact }), witnessedBy: [observer] },
           {
-            ...draft({ subjectName: "tobias", text: hiddenPinnedFact }),
+            ...factDraft({ subjectName: "tobias", text: hiddenPinnedFact }),
             witnessedBy: [other],
             pinned: true,
             origin: "dev",

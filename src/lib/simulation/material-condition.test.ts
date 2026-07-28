@@ -28,12 +28,12 @@ import {
 } from "./material-condition";
 import type { MaterialResolutionView } from "./material-locus";
 import {
-  itemLocusSchema,
   simulationMaterialItemSchema,
-  type ItemLocus,
   type ItemLocusInput,
   type SimulationMaterialItemInput,
 } from "@/contracts/simulation/materials";
+import { bindSimEnvelopes, testPrincipal, type CommandEnvelopeSpec } from "@/test/sim-envelopes";
+import { atZone, heldBy, wornBy } from "@/test/sim-material-fixtures";
 
 const WORLD = "world-e5-3-slice3";
 const BRANCH = "branch-e5-3-slice3";
@@ -42,18 +42,17 @@ const ZONE_A = "zone-a";
 const ITEM = "jacket";
 const ACTOR = "mara";
 
-const meta = {
-  worldId: WORLD,
-  branchId: BRANCH,
-  rulesetVersion: RULESET,
-  headSequence: 0,
-  storySecond: 10_000,
-};
+/**
+ * This suite carries its own world/branch/ruleset, so bind them once: a view's
+ * `branchId` is compared against the command's, and a mismatch flips every
+ * resolver to `branch_mismatch`.
+ */
+const env = bindSimEnvelopes({ worldId: WORLD, branchId: BRANCH, rulesetVersion: RULESET });
 
-const heldBy = (actorId: string): ItemLocus => itemLocusSchema.parse({ kind: "held", actorId });
-const wornBy = (actorId: string, slotKey: string): ItemLocus =>
-  itemLocusSchema.parse({ kind: "worn", actorId, slotKey });
-const atZone = (zoneId: string): ItemLocus => itemLocusSchema.parse({ kind: "zone", zoneId });
+/** Everything a call site may override; `type`/`payload` are pinned per builder. */
+type CmdSpec = Omit<CommandEnvelopeSpec, "type" | "payload">;
+
+const meta = env.meta();
 
 function freshCondition(overrides: Partial<ItemConditionView> = {}): ItemConditionView {
   return {
@@ -74,49 +73,21 @@ function freshCondition(overrides: Partial<ItemConditionView> = {}): ItemConditi
   };
 }
 
-function principal(kind: "player" | "system" = "player") {
-  return {
-    kind,
-    principalId: "principal-1",
-    controlledActorIds: kind === "player" ? [ACTOR] : [],
-  };
-}
-
-function sourceCommand(
-  payload: Record<string, unknown>,
-  overrides: Record<string, unknown> = {},
-): ApplyItemConditionSourceCommand {
-  return applyItemConditionSourceCommandSchema.parse({
-    id: "cmd-source",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-source",
-    principal: principal("player"),
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+function sourceCommand(payload: Record<string, unknown>, spec: CmdSpec = {}): ApplyItemConditionSourceCommand {
+  return env.command(applyItemConditionSourceCommandSchema, {
     type: "apply_item_condition_source",
-    schemaVersion: 1,
-    correlationId: "corr-1",
+    principal: testPrincipal("player", [ACTOR]),
     payload,
-    ...overrides,
+    ...spec,
   });
 }
 
-function thresholdCommand(
-  payload: Record<string, unknown>,
-  overrides: Record<string, unknown> = {},
-): ResolveItemConditionThresholdCommand {
-  return resolveItemConditionThresholdCommandSchema.parse({
-    id: "cmd-threshold",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-threshold",
-    principal: principal("system"),
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+function thresholdCommand(payload: Record<string, unknown>, spec: CmdSpec = {}): ResolveItemConditionThresholdCommand {
+  return env.command(resolveItemConditionThresholdCommandSchema, {
     type: "resolve_item_condition_threshold",
-    schemaVersion: 1,
-    correlationId: "corr-1",
+    principal: testPrincipal("system"),
     payload,
-    ...overrides,
+    ...spec,
   });
 }
 
@@ -145,12 +116,8 @@ function materialView(input: {
   );
   const reservedBy = input.reservedBy ?? {};
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: RULESET,
+    ...meta,
     version: 0,
-    headSequence: meta.headSequence,
-    storySecond: meta.storySecond,
     actorById: (id) => (id === ACTOR || id === "iris" ? { id, name: id } : undefined),
     actorZoneId: (id) => {
       if (id !== ACTOR && id !== "iris") return null;
@@ -463,7 +430,7 @@ describe("E5.3 slice 3 — resolveItemConditionThreshold (fire-time re-validatio
     expect(
       resolveItemConditionThreshold(
         { ...meta, condition, coLocatedActorIds: [] },
-        thresholdCommand(command.payload, { principal: principal("player") }),
+        thresholdCommand(command.payload, { principal: testPrincipal("player", [ACTOR]) }),
       ),
     ).toMatchObject({ ok: false, code: "unauthorized_principal" });
 

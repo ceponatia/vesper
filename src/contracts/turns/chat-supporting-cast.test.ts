@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseOr } from "@/lib/parse";
+import { expectCleanSink } from "@/test/diagnostics";
 import { DiagnosticCollector } from "../diagnostics";
 import {
   CAST_MAX_DETAILS,
@@ -24,6 +25,11 @@ describe("supportingCastSchema", () => {
     const sink = new DiagnosticCollector();
     expect(parseOr(supportingCastSchema, "not-a-cast", [], sink, "character_chats.supporting_cast")).toEqual([]);
     expect(parseOr(supportingCastSchema, null, [], sink, "character_chats.supporting_cast")).toEqual([]);
+    // No boundary diagnostic: the schema's OWN array-level `.catch([])` absorbs
+    // this, so `parseOr` sees a successful parse and never reports a failure.
+    // The healing is the schema's, not the boundary's — that's where to look
+    // when a bad cast blob turns up empty in production.
+    expectCleanSink(sink);
   });
 
   it("drops bad rows, dedupes details, and enforces the member cap (newest kept)", () => {

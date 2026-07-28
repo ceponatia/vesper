@@ -1,18 +1,9 @@
-import { and, eq, sql } from "drizzle-orm";
-import { NextRequest } from "next/server";
+import { and, eq } from "drizzle-orm";
+import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { composeSimulationId } from "@/contracts/simulation/identity";
 import { simulationHash } from "@/lib/simulation";
-import {
-  characterChatMessages,
-  characterChats,
-  characters,
-  db,
-  simBranches,
-  simCommandRequests,
-  simWorlds,
-  users,
-} from "@/server/db";
+import { characterChatMessages, db, simBranches, simCommandRequests } from "@/server/db";
 import { log } from "@/server/log";
 
 // command-integrity.plan.md A1 (slices 1, 3, 4) — the per-chat lock, the
@@ -22,88 +13,49 @@ import { log } from "@/server/log";
 // a crash mid-composition resumes through the request-derived step + beat ids.
 // Self-skips without a database (AI_FAKE keeps it zero live model calls).
 
-process.env.AI_FAKE = "1";
-
 const authState = vi.hoisted(() => ({
-  user: { id: "", email: "", name: "Cmd Integrity Int", role: "user" as "admin" | "user" },
+  user: { id: "", email: "", name: "Cmd Integrity Int", role: "user" as const },
 }));
 
-vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
-  getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
 import {
   CHAT_LOCK_LABEL_REPLY,
   CHAT_LOCK_LABEL_WORLD,
   ROLLOUT_ACTORS,
   ROLLOUT_BRANCH_ID,
-  ROLLOUT_WORLD_ID,
   ROLLOUT_ZONES,
   drainBranchTo,
   moveArrivalTarget,
   readDurableSpaceBranch,
-  seedRolloutTestWorld,
-  setChatEngineAuthority,
   submitDurableMoveActor,
   tryKeyedLock,
   writeWorldBeat,
 } from "@/server/engine";
+import {
+  apiRequest,
+  dropRoutedSimChat,
+  emptyRoutedSimChat,
+  expectApiError,
+  expectJson,
+  newSimChat,
+  probeIntegrationDb,
+  resetRolloutWorld,
+  routeCtx,
+  seedRoutedSimChat,
+} from "@/server/test-support";
 import { POST as chatsCreate } from "./route";
 import { POST as simCommand } from "./[chatId]/sim-command/route";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from character_chats limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(
-      `[sim-command-integrity.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("sim-command-integrity.int.test", "character_chats");
 
-const ready = await probe();
-const ctx = (chatId: string) => ({ params: Promise.resolve({ chatId }) });
-function jsonReq(path: string, body: unknown): NextRequest {
-  return new NextRequest(`http://t${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
+const ctx = (chatId: string) => routeCtx({ chatId });
+const jsonReq = (path: string, body: unknown): NextRequest => apiRequest(path, { body });
 
-const ids = { user: "", characterId: "" };
+let fixture = emptyRoutedSimChat(chatsCreate);
 
 /** A fresh successor chat mapped to the shared rollout branch (Mara player / Ana primary). */
-async function freshChat(): Promise<string> {
-  const res = await chatsCreate(
-    jsonReq("/api/chats", { characterIds: [ids.characterId], memory: "fresh" }),
-    { params: Promise.resolve({}) },
-  );
-  if (res.status !== 201) throw new Error(`chat create failed: ${res.status}`);
-  const chat = ((await res.json()) as { id: string }).id;
-  await setChatEngineAuthority({
-    chatId: chat,
-    byUserId: ids.user,
-    authority: "successor_narrative_view",
-    simBranchId: ROLLOUT_BRANCH_ID,
-    simPlayerActorId: ROLLOUT_ACTORS.mara,
-    simPrimaryActorId: ROLLOUT_ACTORS.ana,
-  });
-  return chat;
-}
+const freshChat = (): Promise<string> => newSimChat(fixture, { authority: "successor_narrative_view" });
 
 async function clock(): Promise<number> {
   const [row] = await db()
@@ -144,7 +96,7 @@ function moveEnvelope(chatId: string, commandId: string, toZoneId: string) {
     branchId: ROLLOUT_BRANCH_ID,
     expectedVersion: 0,
     idempotencyKey: commandId,
-    principal: { kind: "player" as const, principalId: ids.user, controlledActorIds: [ROLLOUT_ACTORS.mara] },
+    principal: { kind: "player" as const, principalId: fixture.userId, controlledActorIds: [ROLLOUT_ACTORS.mara] },
     submittedAtWallClock: new Date().toISOString(),
     correlationId: `sim-${chatId}`,
     schemaVersion: 1,
@@ -155,36 +107,19 @@ function moveEnvelope(chatId: string, commandId: string, toZoneId: string) {
 
 beforeAll(async () => {
   if (!ready) return;
-  await db().delete(simWorlds).where(eq(simWorlds.id, ROLLOUT_WORLD_ID));
-  const stamp = Date.now();
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `cmd-integrity-${stamp}@test.local`, name: "Cmd Integrity" })
-    .returning();
-  if (!user) throw new Error("failed to create test user");
-  authState.user = { ...authState.user, id: user.id, email: user.email };
-  ids.user = user.id;
-  const [character] = await db()
-    .insert(characters)
-    .values({ ownerId: user.id, name: "Ana", profile: {} })
-    .returning();
-  if (!character) throw new Error("failed to seed character");
-  ids.characterId = character.id;
+  // The world is seeded per test below, not here.
+  fixture = await seedRoutedSimChat({ slug: "cmd-integrity", authState, chatsCreate, chats: 0, seedWorld: false });
 });
 
 // Each test starts from a freshly-seeded world (Mara/Ana co-present at home, Day 2 10:00).
 beforeEach(async () => {
   if (!ready) return;
-  await db().delete(simWorlds).where(eq(simWorlds.id, ROLLOUT_WORLD_ID));
-  await seedRolloutTestWorld();
+  await resetRolloutWorld();
 });
 
 afterAll(async () => {
-  if (!ready || !ids.user) return;
-  await db().delete(simWorlds).where(eq(simWorlds.id, ROLLOUT_WORLD_ID));
-  await db().delete(characterChats).where(eq(characterChats.ownerId, ids.user));
-  await db().delete(characters).where(eq(characters.ownerId, ids.user));
-  await db().delete(users).where(eq(users.id, ids.user));
+  if (!ready || !fixture.userId) return;
+  await dropRoutedSimChat(fixture);
 });
 
 describe.runIf(ready)("command-integrity A1: lock + busy face + idempotency", () => {
@@ -206,8 +141,8 @@ describe.runIf(ready)("command-integrity A1: lock + busy face + idempotency", ()
     const landed = [a, b].find((r) => r.status === 200);
     const bounced = [a, b].find((r) => r.status === 409);
     if (!landed || !bounced) throw new Error("expected exactly one landed + one bounced");
-    expect(((await bounced.json()) as { error: { code: string } }).error.code).toBe("chat_busy");
-    expect(((await landed.json()) as { status: string }).status).toBe("traveled");
+    await expectApiError(bounced, 409, "chat_busy");
+    expect((await expectJson<{ status: string }>(landed)).status).toBe("traveled");
     // Exactly one drain / one beat: the loser never ran.
     expect(await beatsOfKind(chat, "traveled")).toBe(1);
     expect(await maraZone()).toBe(ROLLOUT_ZONES.square);
@@ -227,10 +162,8 @@ describe.runIf(ready)("command-integrity A1: lock + busy face + idempotency", ()
       jsonReq(`/api/chats/${replyChat}/sim-command`, { kind: "advance_time", minutes: 30, requestId: "busy-reply" }),
       ctx(replyChat),
     );
-    expect(duringReply.status).toBe(409);
-    const replyBody = (await duringReply.json()) as { error: { code: string; message: string } };
-    expect(replyBody.error.code).toBe("chat_busy");
-    expect(replyBody.error.message).toContain("reply");
+    const replyBody = await expectApiError(duringReply, 409, "chat_busy");
+    expect(replyBody.message).toContain("reply");
     releaseReply();
     await replyHeld;
 
@@ -246,8 +179,7 @@ describe.runIf(ready)("command-integrity A1: lock + busy face + idempotency", ()
       jsonReq(`/api/chats/${worldChat}/sim-command`, { kind: "advance_time", minutes: 30, requestId: "busy-world" }),
       ctx(worldChat),
     );
-    expect(duringWorld.status).toBe(409);
-    expect(((await duringWorld.json()) as { error: { message: string } }).error.message).toContain("catching up");
+    expect((await expectApiError(duringWorld, 409)).message).toContain("catching up");
     releaseWorld();
     await worldHeld;
   });
@@ -262,8 +194,7 @@ describe.runIf(ready)("command-integrity A1: lock + busy face + idempotency", ()
       jsonReq(`/api/chats/${chat}/sim-command`, { kind: "advance_time", minutes: 30, requestId: "adv-1" }),
       ctx(chat),
     );
-    expect(first.status).toBe(200);
-    const firstBody = (await first.json()) as { status: string; toStorySecond: number };
+    const firstBody = await expectJson<{ status: string; toStorySecond: number }>(first, 200);
     expect(firstBody.status).toBe("advanced");
     expect(firstBody.toStorySecond).toBe(origin + 30 * 60);
     expect(await clock()).toBe(origin + 30 * 60);
@@ -273,8 +204,7 @@ describe.runIf(ready)("command-integrity A1: lock + busy face + idempotency", ()
       jsonReq(`/api/chats/${chat}/sim-command`, { kind: "advance_time", minutes: 30, requestId: "adv-1" }),
       ctx(chat),
     );
-    expect(replay.status).toBe(200);
-    expect(await replay.json()).toEqual(firstBody);
+    expect(await expectJson(replay, 200)).toEqual(firstBody);
     expect(await clock()).toBe(origin + 30 * 60);
     expect(await beatsOfKind(chat, "time_skipped")).toBe(1);
 
@@ -294,8 +224,7 @@ describe.runIf(ready)("command-integrity A1: lock + busy face + idempotency", ()
       jsonReq(`/api/chats/${chat}/sim-command`, { kind: "travel", toZoneId: ROLLOUT_ZONES.square, requestId: "trav-1" }),
       ctx(chat),
     );
-    expect(first.status).toBe(200);
-    const firstBody = (await first.json()) as { status: string };
+    const firstBody = await expectJson<{ status: string }>(first, 200);
     expect(firstBody.status).toBe("traveled");
     expect(await maraZone()).toBe(ROLLOUT_ZONES.square);
 
@@ -303,8 +232,7 @@ describe.runIf(ready)("command-integrity A1: lock + busy face + idempotency", ()
       jsonReq(`/api/chats/${chat}/sim-command`, { kind: "travel", toZoneId: ROLLOUT_ZONES.square, requestId: "trav-1" }),
       ctx(chat),
     );
-    expect(replay.status).toBe(200);
-    expect(await replay.json()).toEqual(firstBody);
+    expect(await expectJson(replay, 200)).toEqual(firstBody);
     expect(await beatsOfKind(chat, "traveled")).toBe(1);
     expect(await maraZone()).toBe(ROLLOUT_ZONES.square);
   });
@@ -323,8 +251,7 @@ describe.runIf(ready)("command-integrity A1: lock + busy face + idempotency", ()
       jsonReq(`/api/chats/${chat}/sim-command`, { kind: "advance_time", minutes: 90, requestId: "mm-1" }),
       ctx(chat),
     );
-    expect(mismatch.status).toBe(409);
-    expect(((await mismatch.json()) as { error: { code: string } }).error.code).toBe("idempotency_mismatch");
+    await expectApiError(mismatch, 409, "idempotency_mismatch");
     // The mismatched resubmit never executed — the clock only moved once.
     expect(await clock()).toBe(origin + 30 * 60);
   });
@@ -355,8 +282,7 @@ describe.runIf(ready)("command-integrity A1: lock + busy face + idempotency", ()
       jsonReq(`/api/chats/${chat}/sim-command`, { kind: "travel", toZoneId: ROLLOUT_ZONES.square, requestId }),
       ctx(chat),
     );
-    expect(retry.status).toBe(200);
-    expect(((await retry.json()) as { status: string }).status).toBe("traveled");
+    expect((await expectJson<{ status: string }>(retry, 200)).status).toBe("traveled");
     expect(await maraZone()).toBe(ROLLOUT_ZONES.square);
     expect(await beatsOfKind(chat, "traveled")).toBe(1);
     expect((await requestRow(chat, requestId))?.state).toBe("completed");
@@ -435,8 +361,7 @@ describe.runIf(ready)("command-integrity A1: lock + busy face + idempotency", ()
       jsonReq(`/api/chats/${chat}/sim-command`, { kind: "advance_time", minutes: 30, requestId }),
       ctx(chat),
     );
-    expect(retry.status).toBe(200);
-    expect(((await retry.json()) as { status: string }).status).toBe("advanced");
+    expect((await expectJson<{ status: string }>(retry, 200)).status).toBe("advanced");
     // Anchored: the clock is exactly the original target, NOT target + another 30 minutes.
     expect(await clock()).toBe(target);
     expect(await beatsOfKind(chat, "time_skipped")).toBe(1);
@@ -453,8 +378,7 @@ describe.runIf(ready)("command-integrity A1: lock + busy face + idempotency", ()
       ctx(chat),
     );
     // Fallback: the command still ran.
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as { status: string }).status).toBe("advanced");
+    expect((await expectJson<{ status: string }>(res, 200)).status).toBe("advanced");
     expect(await clock()).toBe(origin + 30 * 60);
     // Diagnostic: the coded warning fired.
     expect(warnSpy.mock.calls.some((call) => call[0] === "engine.sim.command_request")).toBe(true);

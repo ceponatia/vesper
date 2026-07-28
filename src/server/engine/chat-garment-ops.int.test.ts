@@ -1,13 +1,7 @@
-import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { degradedChatArchivist, type ChatArchivist } from "@/contracts/turns/chat-archivist";
-import type { GarmentOperationProposal } from "@/contracts/turns/chat-garment-ops";
+import type { ChatArchivist } from "@/contracts/turns/chat-archivist";
 import { switchScenePlace } from "@/contracts/turns/chat-scene-memory";
-import { characterProfileSchema, type CharacterProfile } from "@/contracts/world/profile";
 import { garmentActorForCharacter, garmentsAtScenePlace, wornGarmentDefinitionIds } from "@/contracts/items/garment-store";
-import { newId } from "@/lib/ids";
-import { characterChatMessages, characterChats, characters, chatParticipants, db, items, users } from "@/server/db";
 
 /**
  * Slice 5 — grounded continuity extraction, end to end
@@ -22,136 +16,79 @@ import { characterChatMessages, characterChats, characters, chatParticipants, db
  * garment operations whole, because the store rides `pre_exchange_scenario`.
  */
 
-process.env.AI_FAKE = "1";
-
 const mock = vi.hoisted(() => ({ archivist: { value: null as ChatArchivist | null, degraded: false } }));
 
-vi.mock("./chat-memory", () => ({
-  runChatExtraction: () =>
-    Promise.resolve({ ...mock.archivist, legs: { memory: false, continuity: false, character: false } }),
-  writeChatMemory: () => Promise.resolve(),
-}));
+vi.mock("./chat-memory", async () => {
+  const { chatMemoryMockModule } = await import("../test-support/chat-archivist-mock");
+  return chatMemoryMockModule(mock);
+});
 
 import {
   editChatState,
-  finalizeChatState,
   loadChatScenario,
-  loadChatState,
   loadPreExchangeScenario,
   rollbackScenario,
   saveChatScenario,
   seedChatScenario,
-  seedChatState,
   type ChatScenario,
 } from "./chat-state";
+import {
+  chatArchivist,
+  dropChatFixture,
+  emptyChatFixture,
+  GARMENT_SEEDS,
+  itemId,
+  newChat,
+  probeIntegrationDb,
+  seedChatFixture,
+  settleChatExchange,
+  withOps,
+  type ChatFixture,
+  type ChatSeat,
+} from "@/server/test-support";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from character_chats limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(
-      `[chat-garment-ops.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("chat-garment-ops.int.test", "character_chats");
 
-const ready = await probe();
-const fixture = { userId: "", characterId: "", shirtId: "", jacketId: "", cardiganId: "" };
-let profile: CharacterProfile = characterProfileSchema.parse({});
+let fixture: ChatFixture = emptyChatFixture();
+
+/** The library definition ids the store's instances point back at. */
+const shirtDef = () => itemId(fixture, "cottonShirt");
+const jacketDef = () => itemId(fixture, "denimJacket");
+const cardiganDef = () => itemId(fixture, "woolCardigan");
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `chat-garment-ops-int-${stamp}@test.local`, name: "Garment Ops Int", role: "admin" })
-    .returning();
-  if (!user) throw new Error("failed to create test user");
-  fixture.userId = user.id;
-
-  const insertItem = async (name: string, definition: Record<string, unknown>) => {
-    const [row] = await db()
-      .insert(items)
-      .values({ ownerId: user.id, kind: "clothing", name, description: name, definition })
-      .returning({ id: items.id });
-    if (!row) throw new Error("failed to create item");
-    return row.id;
-  };
-  fixture.shirtId = await insertItem("cotton shirt", {
-    category: "top",
-    coverage: ["shoulders", "chest", "back", "waist", "upper_arms"],
-    layer: 1,
-  });
-  fixture.jacketId = await insertItem("denim jacket", {
-    category: "outerwear",
-    coverage: ["shoulders", "chest", "back", "waist", "upper_arms", "forearms", "wrists"],
-    layer: 3,
-  });
-  fixture.cardiganId = await insertItem("wool cardigan", {
-    category: "outerwear",
-    coverage: ["shoulders", "chest", "back", "waist", "upper_arms"],
-    layer: 2,
-  });
-
-  profile = characterProfileSchema.parse({
+  fixture = await seedChatFixture({
+    slug: "chat-garment-ops-int",
+    userName: "Garment Ops Int",
+    garments: [GARMENT_SEEDS.cottonShirt, GARMENT_SEEDS.denimJacket, GARMENT_SEEDS.woolCardigan],
     outfits: [
-      { id: "everyday", name: "Everyday", items: [fixture.shirtId, fixture.jacketId] },
+      { id: "everyday", name: "Everyday", items: ["cottonShirt", "denimJacket"] },
       // The cardigan is in the wardrobe POOL but not worn — what the legacy
       // name-matching bridge resolves an `added` phrase against.
-      { id: "cozy", name: "Cozy", items: [fixture.cardiganId] },
+      { id: "cozy", name: "Cozy", items: ["woolCardigan"] },
     ],
   });
-  const [character] = await db().insert(characters).values({ ownerId: user.id, name: "Wren", profile }).returning();
-  if (!character) throw new Error("failed to create test character");
-  fixture.characterId = character.id;
 });
 
 afterAll(async () => {
-  if (!ready) return;
-  await db().delete(characterChats).where(eq(characterChats.ownerId, fixture.userId));
-  await db().delete(characters).where(eq(characters.ownerId, fixture.userId));
-  await db().delete(items).where(eq(items.ownerId, fixture.userId));
-  await db().delete(users).where(eq(users.id, fixture.userId));
-  await globalThis.__vesperPool?.end();
+  await dropChatFixture(fixture);
 });
 
 const ACTOR = () => garmentActorForCharacter(fixture.characterId);
-
-async function newChat(): Promise<{ chatId: string; memoryGroupId: string; messageId: string }> {
-  const [chat] = await db().insert(characterChats).values({ ownerId: fixture.userId }).returning({ id: characterChats.id });
-  if (!chat) throw new Error("failed to create test chat");
-  const memoryGroupId = newId();
-  await db().insert(chatParticipants).values({ chatId: chat.id, characterId: fixture.characterId, memoryGroupId });
-  const [message] = await db()
-    .insert(characterChatMessages)
-    .values({ chatId: chat.id, role: "user", content: "Hi" })
-    .returning();
-  if (!message) throw new Error("failed to create test message");
-  return { chatId: chat.id, memoryGroupId, messageId: message.id };
-}
 
 /**
  * A conversation whose wardrobe is already MODELLED and standing in a named
  * place — the state in which the continuity prompt actually carries handles.
  * Handles are then `wren.shirt` / `wren.jacket` by construction.
  */
-async function dressedChat(): Promise<{ chatId: string; memoryGroupId: string; messageId: string; scenario: ChatScenario }> {
-  const chat = await newChat();
+async function dressedChat(): Promise<ChatSeat & { scenario: ChatScenario }> {
+  const chat = await newChat(fixture);
   await editChatState({
     chatId: chat.chatId,
     characterId: fixture.characterId,
     ownerId: fixture.userId,
-    profile,
+    profile: fixture.profile,
     patch: { mindNote: "start" },
   });
   const loaded = await loadChatScenario(chat.chatId);
@@ -163,54 +100,28 @@ async function dressedChat(): Promise<{ chatId: string; memoryGroupId: string; m
 
 /** Run one exchange whose continuity leg returned exactly these fields. */
 async function settle(args: {
-  chat: { chatId: string; memoryGroupId: string; messageId: string };
+  chat: ChatSeat;
   scenario: ChatScenario;
   archivist: Partial<ChatArchivist>;
-  preExchangeScenario?: ChatScenario | null;
   wornItemIds?: readonly string[];
 }) {
-  mock.archivist = { value: { ...degradedChatArchivist(), ...args.archivist }, degraded: false };
-  const sink = new DiagnosticCollector();
-  const driftedState = {
-    ...seedChatState(profile),
-    wornItemIds: [...(args.wornItemIds ?? [fixture.shirtId, fixture.jacketId])],
-  };
-  await finalizeChatState({
-    assistantMessageId: newId(),
-    preExchangeState: driftedState,
-    chatId: args.chat.chatId,
-    characterId: fixture.characterId,
-    ownerId: fixture.userId,
-    memoryGroupId: args.chat.memoryGroupId,
-    promptMessageId: args.chat.messageId,
-    profile,
-    characterName: "Wren",
-    playerName: "You",
-    driftedState,
-    now: new Date(),
-    exchange: { player: "Hi", assistant: "Hello." },
+  mock.archivist = { value: chatArchivist(args.archivist), degraded: false };
+  const { scenario, state, sink } = await settleChatExchange(fixture, {
+    chat: args.chat,
     scenario: args.scenario,
-    preExchangeScenario: args.preExchangeScenario ?? args.scenario,
-    sink,
+    wornItemIds: args.wornItemIds ?? [shirtDef(), jacketDef()],
   });
-  const scenario = await loadChatScenario(args.chat.chatId, sink);
-  const state = await loadChatState(args.chat.chatId, fixture.characterId, sink);
   if (!scenario || !state) throw new Error("chat rows missing after finalize");
   return { scenario, state, sink };
 }
 
-const ops = (proposals: readonly GarmentOperationProposal[]): Partial<ChatArchivist> => ({
-  garmentOperations: [...proposals],
-});
-
-describe("the grounded lane mutates the store and its projections in one write", () => {
-  it("applies typed proposals over the enumerated handles", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("the grounded lane mutates the store and its projections in one write", () => {
+  it("applies typed proposals over the enumerated handles", async () => {
     const chat = await dressedChat();
     const { scenario, state, sink } = await settle({
       chat,
       scenario: chat.scenario,
-      archivist: ops([
+      archivist: withOps([
         { op: "move", garment: "wren.jacket", to: "left_here", anchor: "over the desk chair" },
         { op: "roll", garment: "wren.shirt", part: "sleeve_left", degree: "substantial" },
         {
@@ -226,13 +137,13 @@ describe("the grounded lane mutates the store and its projections in one write",
 
     // The jacket is located, not destroyed — and it left the derived worn list.
     const left = garmentsAtScenePlace(scenario.garments, "the study");
-    expect(left.map((i) => i.definitionId)).toEqual([fixture.jacketId]);
+    expect(left.map((i) => i.definitionId)).toEqual([jacketDef()]);
     expect(left[0]?.locus).toEqual({ kind: "scene", placeName: "the study", anchor: "over the desk chair" });
-    expect(wornGarmentDefinitionIds(scenario.garments, ACTOR())).toEqual([fixture.shirtId]);
+    expect(wornGarmentDefinitionIds(scenario.garments, ACTOR())).toEqual([shirtDef()]);
     // The projection column is re-derived from the store in the SAME write.
-    expect(state.wornItemIds).toEqual([fixture.shirtId]);
+    expect(state.wornItemIds).toEqual([shirtDef()]);
 
-    const shirt = scenario.garments.instances.find((i) => i.definitionId === fixture.shirtId);
+    const shirt = scenario.garments.instances.find((i) => i.definitionId === shirtDef());
     expect(shirt?.presentation.roll.sleeve_left).toBeGreaterThan(0);
     expect(shirt?.condition.base.wetness).toBeGreaterThan(0);
 
@@ -246,13 +157,12 @@ describe("the grounded lane mutates the store and its projections in one write",
     ]);
   });
 
-  it("R2 — `introduce` mints a real, located instance with no library provenance", async (t) => {
-    if (!ready) return t.skip();
+  it("R2 — `introduce` mints a real, located instance with no library provenance", async () => {
     const chat = await dressedChat();
     const { scenario, state } = await settle({
       chat,
       scenario: chat.scenario,
-      archivist: ops([
+      archivist: withOps([
         {
           op: "introduce",
           handle: "wren.hoodie",
@@ -274,7 +184,7 @@ describe("the grounded lane mutates the store and its projections in one write",
     );
     // A minted garment has no definition id, so the compatibility projection is
     // unchanged by it — it can never smuggle itself into the id-keyed look key.
-    expect(state.wornItemIds).toEqual([fixture.shirtId, fixture.jacketId]);
+    expect(state.wornItemIds).toEqual([shirtDef(), jacketDef()]);
     expect(state.lastMemoryTrace.garmentOperations[0]).toMatchObject({
       op: "introduce",
       garment: "wren.hoodie",
@@ -282,14 +192,13 @@ describe("the grounded lane mutates the store and its projections in one write",
     });
   });
 
-  it("a rejected proposal lands in the diagnostics AND the inspector trace, leaving the store alone", async (t) => {
-    if (!ready) return t.skip();
+  it("a rejected proposal lands in the diagnostics AND the inspector trace, leaving the store alone", async () => {
     const chat = await dressedChat();
     const before = JSON.stringify(chat.scenario.garments);
     const { scenario, state, sink } = await settle({
       chat,
       scenario: chat.scenario,
-      archivist: ops([
+      archivist: withOps([
         { op: "roll", garment: "wren.shirt", part: "sleeve_middle", degree: "substantial" },
         { op: "tuck", garment: "wren.trenchcoat", part: "hem", state: "in" },
       ]),
@@ -312,9 +221,8 @@ describe("the grounded lane mutates the store and its projections in one write",
   });
 });
 
-describe("the legacy free-text bridge", () => {
-  it("still folds an outfit-only reply, with one diagnostic marking its use", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("the legacy free-text bridge", () => {
+  it("still folds an outfit-only reply, with one diagnostic marking its use", async () => {
     const chat = await dressedChat();
     const { scenario, state, sink } = await settle({
       chat,
@@ -326,18 +234,17 @@ describe("the legacy free-text bridge", () => {
     expect(state.lastMemoryTrace.garmentLane).toBe("legacy");
     expect(state.lastMemoryTrace.garmentOperations).toEqual([]);
     // Unchanged behaviour: the name matcher still swapped the pieces.
-    expect(wornGarmentDefinitionIds(scenario.garments, ACTOR())).toEqual([fixture.shirtId, fixture.cardiganId]);
-    expect(state.wornItemIds).toEqual([fixture.shirtId, fixture.cardiganId]);
+    expect(wornGarmentDefinitionIds(scenario.garments, ACTOR())).toEqual([shirtDef(), cardiganDef()]);
+    expect(state.wornItemIds).toEqual([shirtDef(), cardiganDef()]);
   });
 
-  it("never runs alongside the grounded lane — operations win outright", async (t) => {
-    if (!ready) return t.skip();
+  it("never runs alongside the grounded lane — operations win outright", async () => {
     const chat = await dressedChat();
     const { scenario, state, sink } = await settle({
       chat,
       scenario: chat.scenario,
       archivist: {
-        ...ops([{ op: "move", garment: "wren.jacket", to: "put_away" }]),
+        ...withOps([{ op: "move", garment: "wren.jacket", to: "put_away" }]),
         // A model that answered in BOTH grammars: the free text is ignored whole.
         outfit: { description: "", exposed: false, removed: [], added: ["a wool cardigan"] },
       },
@@ -346,12 +253,11 @@ describe("the legacy free-text bridge", () => {
     expect(sink.items.map((d) => d.code)).not.toContain("chat_garments.legacy_outfit_bridge");
     expect(state.lastMemoryTrace.garmentLane).toBe("operations");
     // The cardigan was never added; only the operation landed.
-    expect(wornGarmentDefinitionIds(scenario.garments, ACTOR())).toEqual([fixture.shirtId]);
-    expect(scenario.garments.instances.some((i) => i.definitionId === fixture.cardiganId)).toBe(false);
+    expect(wornGarmentDefinitionIds(scenario.garments, ACTOR())).toEqual([shirtDef()]);
+    expect(scenario.garments.instances.some((i) => i.definitionId === cardiganDef())).toBe(false);
   });
 
-  it("no proposals and no free text ⇒ neither path runs", async (t) => {
-    if (!ready) return t.skip();
+  it("no proposals and no free text ⇒ neither path runs", async () => {
     const chat = await dressedChat();
     const before = JSON.stringify(chat.scenario.garments);
     const { scenario, state, sink } = await settle({ chat, scenario: chat.scenario, archivist: {} });
@@ -361,18 +267,15 @@ describe("the legacy free-text bridge", () => {
   });
 });
 
-describe("rollback — a retake discards the exchange's garment operations entirely", () => {
-  it("restores the pre-exchange store byte-for-byte", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("rollback — a retake discards the exchange's garment operations entirely", () => {
+  it("restores the pre-exchange store byte-for-byte", async () => {
     const chat = await dressedChat();
-    const anchor = chat.scenario;
-    const anchorJson = JSON.stringify(anchor.garments);
+    const anchorJson = JSON.stringify(chat.scenario.garments);
 
     const { scenario, state } = await settle({
       chat,
-      scenario: anchor,
-      preExchangeScenario: anchor,
-      archivist: ops([
+      scenario: chat.scenario,
+      archivist: withOps([
         { op: "move", garment: "wren.jacket", to: "left_here", anchor: "over the desk chair" },
         { op: "roll", garment: "wren.shirt", part: "sleeve_right", degree: "extreme" },
         { op: "deposit", garment: "wren.shirt", parts: ["hem"], substance: "mud", degree: "substantial" },
@@ -402,24 +305,23 @@ describe("rollback — a retake discards the exchange's garment operations entir
   });
 });
 
-describe("an unmodelled chat never arms the grounded lane", () => {
-  it("seeds through the legacy bridge on the first exchange, then has handles", async (t) => {
-    if (!ready) return t.skip();
-    const chat = await newChat();
+describe.runIf(ready)("an unmodelled chat never arms the grounded lane", () => {
+  it("seeds through the legacy bridge on the first exchange, then has handles", async () => {
+    const chat = await newChat(fixture);
     // Nothing has written state yet, so the store is unseeded and has no handles.
-    const seeded = seedChatScenario(profile);
+    const seeded = seedChatScenario(fixture.profile);
     expect(seeded.garments.instances).toEqual([]);
     const { scenario, state } = await settle({
       chat,
       scenario: seeded,
       // A model answering with proposals it could not have been shown: every handle
       // is unresolvable, so every one drops — the store is materialized, not mangled.
-      archivist: ops([{ op: "roll", garment: "wren.shirt", part: "sleeve_left", degree: "slight" }]),
+      archivist: withOps([{ op: "roll", garment: "wren.shirt", part: "sleeve_left", degree: "slight" }]),
     });
     expect(state.lastMemoryTrace.garmentOperations[0]?.code).toBe("garment_op.garment_unresolved");
     // …and the lazy materialization still happened on this write, so the NEXT
     // exchange's prompt does carry handles.
     expect(scenario.garments.seeded).toBe(true);
-    expect(wornGarmentDefinitionIds(scenario.garments, ACTOR())).toEqual([fixture.shirtId, fixture.jacketId]);
+    expect(wornGarmentDefinitionIds(scenario.garments, ACTOR())).toEqual([shirtDef(), jacketDef()]);
   });
 });

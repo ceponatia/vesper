@@ -15,6 +15,11 @@ import {
   bodyMeterRegistryByVersion,
   bodyMeterStateSchema,
 } from "@/contracts/simulation/bodies";
+import {
+  bindSimEnvelopes,
+  type CommandEnvelopeSpec,
+  type TestPrincipal,
+} from "@/test/sim-envelopes";
 import { buildMaterialLotInitializedEvent } from "./households";
 import {
   applyActorLodEvent,
@@ -30,6 +35,24 @@ import {
 const WORLD = "world-1";
 const BRANCH = "branch-1";
 const MARA = "mara";
+const RULESET = "ruleset-v1";
+
+/**
+ * This suite carries its own ruleset, so bind the trio once: the view's
+ * `branchId` must stay equal to the command's, or every resolver answers
+ * `branch_mismatch` instead of the law under test.
+ */
+const env = bindSimEnvelopes({ worldId: WORLD, branchId: BRANCH, rulesetVersion: RULESET });
+
+/** Everything a call site may override; `type`/`payload` are pinned by the builder. */
+type CmdSpec = Omit<CommandEnvelopeSpec, "type" | "payload">;
+
+/** The privileged default carries its own principal id, so it stays explicit. */
+const STORYTELLER: TestPrincipal = {
+  kind: "storyteller",
+  principalId: "storyteller-1",
+  controlledActorIds: [],
+};
 
 const noGuards: AssignActorLodGuardCounts = {
   claimHoldingActivityCount: 0,
@@ -68,11 +91,7 @@ function energyAlarmViews(): NonNullable<AssignActorLodResolutionView["bodyAlarm
 
 function view(overrides: Partial<AssignActorLodResolutionView> = {}): AssignActorLodResolutionView {
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: "ruleset-v1",
-    headSequence: 7,
-    storySecond: 3_600,
+    ...env.meta({ headSequence: 7, storySecond: 3_600 }),
     actorExists: true,
     current: undefined,
     guards: noGuards,
@@ -82,25 +101,13 @@ function view(overrides: Partial<AssignActorLodResolutionView> = {}): AssignActo
   };
 }
 
-function assignCmd(
-  payload: AssignActorLodCommandInput["payload"],
-  overrides: Partial<Pick<AssignActorLodCommandInput, "branchId" | "principal" | "id">> = {},
-): AssignActorLodCommand {
-  return assignActorLodCommandSchema.parse({
-    id: overrides.id ?? "cmd-lod-1",
-    branchId: overrides.branchId ?? BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "lod-key-1",
-    principal: overrides.principal ?? {
-      kind: "storyteller",
-      principalId: "storyteller-1",
-      controlledActorIds: [],
-    },
-    submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-    correlationId: "corr-1",
+function assignCmd(payload: AssignActorLodCommandInput["payload"], spec: CmdSpec = {}): AssignActorLodCommand {
+  return env.command(assignActorLodCommandSchema, {
     type: "assign_actor_lod",
-    schemaVersion: 1,
+    idSlug: "lod-1",
+    principal: STORYTELLER,
     payload,
+    ...spec,
   });
 }
 
@@ -454,12 +461,12 @@ describe("actor-LOD replay (E6.1)", () => {
   function acceptedEvent(
     payload: AssignActorLodCommandInput["payload"],
     sequence: number,
-    commandId: string,
+    idSlug: string,
     current?: ActorLodState,
   ) {
     const resolution = resolveAssignActorLodFromView(
       view({ headSequence: sequence - 1, current }),
-      assignCmd(payload, { id: commandId }),
+      assignCmd(payload, { idSlug }),
     );
     if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
     const event = resolution.events[0];
@@ -468,11 +475,11 @@ describe("actor-LOD replay (E6.1)", () => {
   }
 
   it("folds assignments into one row per actor, a later assignment superseding", () => {
-    const first = acceptedEvent({ actorId: MARA, simulationLod: "event", inferenceLod: "no_model" }, 1, "cmd-a");
+    const first = acceptedEvent({ actorId: MARA, simulationLod: "event", inferenceLod: "no_model" }, 1, "a");
     const second = acceptedEvent(
       { actorId: MARA, simulationLod: "exact", inferenceLod: "deliberator" },
       2,
-      "cmd-b",
+      "b",
       first.state,
     );
     const replayed = replayActorLodHistory({
@@ -491,7 +498,7 @@ describe("actor-LOD replay (E6.1)", () => {
 
   it("advances the boundary without rows for a non-LOD event", () => {
     const other = buildMaterialLotInitializedEvent({
-      view: { worldId: WORLD, branchId: BRANCH, rulesetVersion: "ruleset-v1", headSequence: 0, storySecond: 60 },
+      view: env.meta({ headSequence: 0, storySecond: 60 }),
       command: { id: "cmd-lot", correlationId: "corr-1", submittedAtWallClock: "2026-07-20T12:00:00.000Z" },
       locus: { kind: "zone", zoneId: zoneIdSchema.parse("zone-a") },
       materialKindKey: "food",
@@ -504,7 +511,7 @@ describe("actor-LOD replay (E6.1)", () => {
   });
 
   it("throws on a sequence gap", () => {
-    const first = acceptedEvent({ actorId: MARA, simulationLod: "event", inferenceLod: "no_model" }, 2, "cmd-a");
+    const first = acceptedEvent({ actorId: MARA, simulationLod: "event", inferenceLod: "no_model" }, 2, "a");
     expect(() =>
       replayActorLodHistory({ seed: emptyActorLodsSeed(BRANCH, 0), events: [first.event] }),
     ).toThrow(/sequence gap/);

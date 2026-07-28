@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { expectCleanSink, expectDiagnostic, expectDiagnostics } from "@/test/diagnostics";
 import { DiagnosticCollector } from "../diagnostics";
-import { clothingCategoryById } from "../items/clothing-categories";
+import { counterIds, garmentSeed } from "../items/garment-test-fixtures";
 import { buildGarmentHandleTable, type GarmentHandleTable } from "../items/garment-handles";
 import { emptyChatGarmentStore, type ChatGarmentStore } from "../items/garment-instance";
 import { GARMENT_UNIT_ONE } from "../items/garment-material";
@@ -34,14 +35,9 @@ import {
 
 const MARA = garmentActorForCharacter("mara");
 
-function counterIds(prefix = "g"): () => string {
-  let n = 0;
-  return () => `${prefix}${++n}`;
-}
-
-function seed(definitionId: string, name: string, categoryId: string): GarmentSeed {
-  return { definitionId, name, categoryId, coverage: clothingCategoryById(categoryId)?.coverage ?? [] };
-}
+/** Positional shorthand over the shared fixture — coverage defaults to the category's. */
+const seed = (definitionId: string, name: string, categoryId: string): GarmentSeed =>
+  garmentSeed({ definitionId, name, categoryId });
 
 const ACTORS = [
   { actorId: MARA, label: "Mara" },
@@ -74,8 +70,6 @@ function fold(proposals: readonly GarmentOperationProposal[], world = scene(), p
   });
   return { ...result, sink, before: world.store, table: world.table };
 }
-
-const codes = (sink: DiagnosticCollector): string[] => sink.items.map((d) => d.code);
 
 describe("the proposal list schema", () => {
   it("drops one malformed proposal without voiding the rest, and caps the list", () => {
@@ -168,7 +162,7 @@ describe("every proposal kind maps", () => {
     const result = fold([{ op: "closure", garment: "mara.jacket", part: "placket", state: "open" }], world);
     // The outerwear template binds the closure to the coverage-bearing front panel
     // (OQ6), so the placket strip itself has no channel — the dispatcher says so.
-    expect(codes(result.sink)).toContain("garment_op.channel_unbound");
+    expectDiagnostic(result.sink, "garment_op.channel_unbound");
     expect(result.trace[0]?.outcome).toBe("rejected");
 
     const onPanel = fold([{ op: "closure", garment: "mara.jacket", part: "front_panel", state: "open" }], scene());
@@ -237,7 +231,7 @@ describe("every proposal kind maps", () => {
     expect(garmentInstanceById(result.store, shirtId)?.condition.base.wetness).toBeGreaterThan(0);
     expect(result.trace[0]?.outcome).toBe("applied");
     // No diagnostic at all — a garment-scoped change is first class (OQ7).
-    expect(codes(result.sink)).toEqual([]);
+    expectCleanSink(result.sink);
   });
 
   it("deposit / clean / damage land as located facts", () => {
@@ -282,7 +276,7 @@ describe("unresolvable handles drop with the right code (OQ7)", () => {
     const result = fold([{ op: "roll", garment: "mara.trenchcoat", part: "sleeve_left", degree: "slight" }], world);
     expect(result.applied).toBe(0);
     expect(JSON.stringify(result.store)).toBe(before);
-    expect(codes(result.sink)).toEqual(["garment_op.garment_unresolved"]);
+    expectDiagnostics(result.sink, ["garment_op.garment_unresolved"]);
     expect(result.trace[0]).toMatchObject({
       op: "roll",
       garment: "mara.trenchcoat",
@@ -298,7 +292,7 @@ describe("unresolvable handles drop with the right code (OQ7)", () => {
     const result = fold([{ op: "roll", garment: "mara.shirt", part: "sleeve_middle", degree: "substantial" }], world);
     expect(result.applied).toBe(0);
     expect(JSON.stringify(result.store)).toBe(before);
-    expect(codes(result.sink)).toEqual(["garment_op.part_unresolved"]);
+    expectDiagnostics(result.sink, ["garment_op.part_unresolved"]);
     expect(result.trace[0]?.code).toBe("garment_op.part_unresolved");
   });
 
@@ -308,7 +302,7 @@ describe("unresolvable handles drop with the right code (OQ7)", () => {
     const result = fold([{ op: "restore", garment: "mara.shirt", parts: [] }], world);
     expect(result.applied).toBe(0);
     expect(JSON.stringify(result.store)).toBe(before);
-    expect(codes(result.sink)).toEqual(["garment_op.restore_no_parts"]);
+    expectDiagnostics(result.sink, ["garment_op.restore_no_parts"]);
   });
 
   it("an unknown part inside a condition op's LIST drops the whole operation", () => {
@@ -327,7 +321,7 @@ describe("unresolvable handles drop with the right code (OQ7)", () => {
       world,
     );
     expect(result.applied).toBe(0);
-    expect(codes(result.sink)).toEqual(["garment_op.part_unresolved"]);
+    expectDiagnostics(result.sink, ["garment_op.part_unresolved"]);
   });
 
   it("`left_here` with no named place drops rather than inventing a room", () => {
@@ -341,7 +335,7 @@ describe("unresolvable handles drop with the right code (OQ7)", () => {
       sink,
     });
     expect(result.applied).toBe(0);
-    expect(codes(sink)).toEqual(["garment_op.place_unresolved"]);
+    expectDiagnostics(sink, ["garment_op.place_unresolved"]);
   });
 
   it("a same-locus move is a legal no-op, distinct from a rejection", () => {
@@ -350,7 +344,7 @@ describe("unresolvable handles drop with the right code (OQ7)", () => {
     expect(result.applied).toBe(0);
     expect(result.trace[0]?.outcome).toBe("no_change");
     expect(result.trace[0]?.code).toBe("");
-    expect(codes(result.sink)).toEqual([]);
+    expectCleanSink(result.sink);
   });
 });
 
@@ -402,7 +396,7 @@ describe("introduce — R2's guarded mint (F21)", () => {
     );
     expect(result.applied).toBe(0);
     expect(result.store.instances).toHaveLength(world.store.instances.length);
-    expect(codes(result.sink)).toEqual(["garment_op.introduce_duplicate"]);
+    expectDiagnostics(result.sink, ["garment_op.introduce_duplicate"]);
   });
 
   it("never mints twice under one handle inside the same exchange", () => {
@@ -417,7 +411,7 @@ describe("introduce — R2's guarded mint (F21)", () => {
     };
     const result = fold([introduce, introduce], world);
     expect(result.store.instances.filter((i) => i.name === "a grey hoodie")).toHaveLength(1);
-    expect(codes(result.sink)).toEqual(["garment_op.introduce_duplicate"]);
+    expectDiagnostics(result.sink, ["garment_op.introduce_duplicate"]);
   });
 
   it("an unknown category still mints — as a bare garment that covers nothing", () => {
@@ -439,7 +433,7 @@ describe("introduce — R2's guarded mint (F21)", () => {
     const blueprint = minted ? result.store.blueprints[minted.blueprintHash] : undefined;
     expect(blueprint?.nodes).toHaveLength(1);
     expect(blueprint?.nodes[0]?.baselineCoverage).toEqual([]);
-    expect(codes(result.sink)).toContain("garment_op.introduce_category_unknown");
+    expectDiagnostic(result.sink, "garment_op.introduce_category_unknown");
   });
 
   it("an ambiguous wearer drops rather than dressing the wrong body", () => {
@@ -460,7 +454,7 @@ describe("introduce — R2's guarded mint (F21)", () => {
       { store, table, atMinutes: 120, mintId: counterIds("m"), sink },
     );
     expect(result.applied).toBe(0);
-    expect(codes(sink)).toEqual(["garment_op.actor_unresolved"]);
+    expectDiagnostics(sink, ["garment_op.actor_unresolved"]);
   });
 
   it("is capped per exchange", () => {
@@ -475,7 +469,7 @@ describe("introduce — R2's guarded mint (F21)", () => {
     }));
     const result = fold(proposals, world);
     expect(result.applied).toBe(GARMENT_INTRODUCE_MAX);
-    expect(codes(result.sink).filter((c) => c === "garment_op.introduce_capped")).toHaveLength(2);
+    expectDiagnostic(result.sink, "garment_op.introduce_capped", { times: 2 });
   });
 });
 

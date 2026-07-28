@@ -5,6 +5,20 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Test consolidation — shared fixtures, strict-gate integrity, de-brittling** —
+  [test-consolidation.plan.md](test-consolidation.plan.md) — 2026-07-28 — the
+  whole suite now runs on shared utilities (`src/server/test-support` +
+  pure `src/test/`): the last 51 inline DB probes converted so
+  `test:int:strict` genuinely gates every integration suite; the drifted auth
+  mocks (dead exports, missing `Unauthenticated`) replaced; ~5.9k lines of
+  copy-pasted scaffolding removed across ~130 test files; hand-enumerated
+  assertions derived from registries/schemas (vocabulary adds no longer break
+  tests; corpora footprints reflect the schema); jscpd now covers tests
+  (threshold 3). Found and fixed en route: `route-safe.int.test.ts` was a dead
+  security suite (collection-time `runIf` — its 4 cross-owner denial tests
+  never ran), three admin suites leaked swapped roles on failure, and
+  `PUBLIC_DTO_KEYS` now backs both public-surface tripwires from one constant.
+
 - **Clothing state graph — slices 5–6: grounded extraction + flag-gated
   narration** — [clothing-state-graph.plan.md](clothing-state-graph.plan.md) —
   2026-07-27 — the substrate becomes visible in play. The archivist proposes

@@ -1,16 +1,23 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   findViewable,
   isPublicEntityImage,
+  PUBLIC_DTO_KEYS,
   toPublicCharacter,
   toPublicEntityImage,
   toPublicItem,
   toPublicLocation,
   toPublicSocialCard,
 } from "@/server/api";
-import { characters, db, images, items, locations, socialCards, users } from "@/server/db";
-import { canonicalImageRow, probeIntegrationDb } from "@/server/test-support";
+import { characters, db, images, items, locations, socialCards } from "@/server/db";
+import {
+  canonicalImageRow,
+  endTestPool,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  seedTestUsers,
+} from "@/server/test-support";
 
 // Integration suite for the public-read hardening (security-authz.plan.md
 // slices 3 + 4): the allow-listed public representation a FOREIGN viewer gets
@@ -24,9 +31,9 @@ import { canonicalImageRow, probeIntegrationDb } from "@/server/test-support";
 const ready = await probeIntegrationDb("public-dto.int.test", "characters");
 
 /** The author. */
-let ownerA: string;
+let ownerA = "";
 /** The foreign viewer — sees only the public representation. */
-let ownerB: string;
+let ownerB = "";
 
 let publicCharacterId: string;
 let privateCharacterId: string;
@@ -39,29 +46,15 @@ let authorImageId: string;
 let impostorImageId: string;
 
 afterAll(async () => {
-  if (ready) {
-    const owners = [ownerA, ownerB].filter(Boolean);
-    if (owners.length > 0) {
-      await db().delete(images).where(inArray(images.ownerId, owners));
-      await db().delete(characters).where(inArray(characters.ownerId, owners));
-      await db().delete(locations).where(inArray(locations.ownerId, owners));
-      await db().delete(items).where(inArray(items.ownerId, owners));
-      await db().delete(socialCards).where(inArray(socialCards.ownerId, owners));
-      await db().delete(users).where(inArray(users.id, owners));
-    }
-  }
-  await globalThis.__vesperPool?.end();
-  globalThis.__vesperPool = undefined;
+  if (ready) await purgeOwnerRows([ownerA, ownerB]);
+  await endTestPool();
 });
 
 describe.skipIf(!ready)("public representations for foreign viewers", () => {
   beforeAll(async () => {
-    const stamp = Date.now();
-    const [a] = await db().insert(users).values({ email: `pd-a-${stamp}@test.local`, name: "PD A" }).returning({ id: users.id });
-    const [b] = await db().insert(users).values({ email: `pd-b-${stamp}@test.local`, name: "PD B" }).returning({ id: users.id });
-    if (!a || !b) throw new Error("user insert failed");
-    ownerA = a.id;
-    ownerB = b.id;
+    const [a, b] = await seedTestUsers("pd", 2);
+    ownerA = a!.id;
+    ownerB = b!.id;
 
     // Authored in every section, so the OQ2 profile projection has something
     // real to withhold — a bio-only fixture would pass a broken allow-list.
@@ -157,15 +150,7 @@ describe.skipIf(!ready)("public representations for foreign viewers", () => {
   it("a foreign public character is exactly the allow-listed keys", async () => {
     const row = await findViewable("character", publicCharacterId, ownerB);
     expect(row).toBeTruthy();
-    expect(Object.keys(toPublicCharacter(row!)).sort()).toEqual([
-      "avatarImageId",
-      "createdAt",
-      "id",
-      "name",
-      "profile",
-      "tags",
-      "visibility",
-    ]);
+    expect(Object.keys(toPublicCharacter(row!)).sort()).toEqual(PUBLIC_DTO_KEYS.character);
   });
 
   it("the public profile is presentation only — narrator guidance and secrets are withheld", async () => {
@@ -219,56 +204,26 @@ describe.skipIf(!ready)("public representations for foreign viewers", () => {
   it("a foreign public location is exactly the allow-listed keys", async () => {
     const row = await findViewable("location", publicLocationId, ownerB);
     expect(row).toBeTruthy();
-    expect(Object.keys(toPublicLocation(row!)).sort()).toEqual([
-      "affordances",
-      "ambient",
-      "area",
-      "createdAt",
-      "description",
-      "id",
-      "imageId",
-      "name",
-      "scale",
-      "tags",
-      "visibility",
-    ]);
+    expect(Object.keys(toPublicLocation(row!)).sort()).toEqual(PUBLIC_DTO_KEYS.location);
   });
 
   it("a foreign public item is exactly the allow-listed keys", async () => {
     const row = await findViewable("item", publicItemId, ownerB);
     expect(row).toBeTruthy();
-    expect(Object.keys(toPublicItem(row!)).sort()).toEqual([
-      "createdAt",
-      "definition",
-      "description",
-      "id",
-      "imageId",
-      "kind",
-      "name",
-      "tags",
-      "visibility",
-    ]);
+    expect(Object.keys(toPublicItem(row!)).sort()).toEqual(PUBLIC_DTO_KEYS.item);
   });
 
   it("a foreign public social card is exactly the allow-listed keys", async () => {
     const row = await findViewable("social_card", publicSocialCardId, ownerB);
     expect(row).toBeTruthy();
-    expect(Object.keys(toPublicSocialCard(row!)).sort()).toEqual([
-      "createdAt",
-      "definition",
-      "description",
-      "id",
-      "name",
-      "tags",
-      "visibility",
-    ]);
+    expect(Object.keys(toPublicSocialCard(row!)).sort()).toEqual(PUBLIC_DTO_KEYS.social_card);
   });
 
   it("the portrait shape carries no path, prompt or provider internals", async () => {
     const [row] = await db().select().from(images).where(eq(images.id, authorImageId)).limit(1);
     expect(row).toBeTruthy();
     const projected = toPublicEntityImage(row!);
-    expect(Object.keys(projected).sort()).toEqual(["createdAt", "entityId", "entityKind", "id", "kind"]);
+    expect(Object.keys(projected).sort()).toEqual(PUBLIC_DTO_KEYS.entity_image);
     // The row it came from really did carry the sensitive columns.
     expect(row!.prompt).toContain("prompt");
     expect(row!.path.length).toBeGreaterThan(0);

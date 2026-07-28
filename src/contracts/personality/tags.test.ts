@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { expectAllValidate, expectRefsResolve, expectUniqueIds } from "@/test/registry-invariants";
 import { interactionFamilies } from "./interactions";
 import { canonicalTagId, dispositionTags, dispositionTagSchema, normalizeTag } from "./tags";
 
 describe("disposition tags", () => {
   it("ids are unique, normalized, and every tag validates", () => {
-    const ids = dispositionTags.map((t) => t.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    expectUniqueIds(dispositionTags, "dispositionTags");
+    expectAllValidate(dispositionTags, dispositionTagSchema);
     for (const tag of dispositionTags) {
-      expect(() => dispositionTagSchema.parse(tag)).not.toThrow();
       expect(tag.id).toBe(normalizeTag(tag.id)); // canonical ids are already normalized
     }
   });
@@ -16,9 +16,13 @@ describe("disposition tags", () => {
     const families = new Set(interactionFamilies());
     const warmthValues = new Set(["cold", "neutral", "warm"]);
     for (const tag of dispositionTags) {
-      expect(warmthValues.has(tag.warmth)).toBe(true);
-      for (const family of tag.wontInitiate) expect(families.has(family)).toBe(true);
+      expect(warmthValues.has(tag.warmth), `${tag.id}: warmth ${tag.warmth}`).toBe(true);
     }
+    expectRefsResolve(
+      dispositionTags,
+      (tag) => tag.wontInitiate,
+      (family) => (families.has(family) ? family : undefined),
+    );
   });
 
   it("normalizeTag lowercases, hyphenates, and strips", () => {

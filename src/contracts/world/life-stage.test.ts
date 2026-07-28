@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectContiguousBands } from "@/test/registry-invariants";
 import {
   isMinorAge,
   LIFE_STAGE_MAX_HUMAN_YEARS,
@@ -7,15 +8,12 @@ import {
   lifeStageThirdPersonLine,
 } from "./life-stage";
 
+/** The age at which a character stops being fenced as a minor. */
+const ADULTHOOD_YEARS = 18;
+
 describe("life-stage registry (character-fidelity.plan.md slices 1–2)", () => {
   it("covers 0..max contiguously with no gaps or overlaps", () => {
-    let expected = 0;
-    for (const band of LIFE_STAGES) {
-      expect(band.min).toBe(expected);
-      expect(band.max).toBeGreaterThanOrEqual(band.min);
-      expected = band.max + 1;
-    }
-    expect(expected).toBe(LIFE_STAGE_MAX_HUMAN_YEARS + 1);
+    expectContiguousBands(LIFE_STAGES, { min: 0, max: LIFE_STAGE_MAX_HUMAN_YEARS });
   });
 
   it("maps every in-range year to exactly one band", () => {
@@ -45,8 +43,21 @@ describe("life-stage registry (character-fidelity.plan.md slices 1–2)", () => 
     expect(lifeStageForAge(String(LIFE_STAGE_MAX_HUMAN_YEARS + 1))).toBeUndefined(); // fantasy-scaled
   });
 
-  it("flags exactly the below-adulthood bands as minors", () => {
-    expect(LIFE_STAGES.filter((b) => b.minor).map((b) => b.id)).toEqual(["child", "teen"]);
+  it("flags exactly the below-18 bands as minors", () => {
+    // A POLICY tripwire, kept — but derived from the band boundaries rather than
+    // naming ids, so renaming or splitting a band cannot quietly unfence it. The
+    // 18 itself stays a literal: it IS the rule.
+    for (const band of LIFE_STAGES) {
+      expect(
+        band.min < ADULTHOOD_YEARS === band.max < ADULTHOOD_YEARS,
+        `${band.id} (${band.min}..${band.max}) straddles the adulthood line — its \`minor\` flag cannot be truthful`,
+      ).toBe(true);
+      expect(band.minor, `${band.id} (${band.min}..${band.max})`).toBe(band.max < ADULTHOOD_YEARS);
+    }
+    expect(
+      LIFE_STAGES.some((b) => b.minor),
+      "the ladder must still HAVE a minor band — an empty fence is not a passing fence",
+    ).toBe(true);
     expect(isMinorAge("9")).toBe(true);
     expect(isMinorAge("17")).toBe(true);
     expect(isMinorAge("18")).toBe(false);
@@ -54,17 +65,21 @@ describe("life-stage registry (character-fidelity.plan.md slices 1–2)", () => 
     expect(isMinorAge("")).toBe(false);
   });
 
-  it("only child/teen/elder carry register rules; the adult default carries no hint", () => {
+  it("register rules and the third-person rule travel together; the adult default carries no hint", () => {
     for (const band of LIFE_STAGES) {
-      if (["child", "teen", "elder"].includes(band.id)) {
-        expect(band.registerRules.length).toBeGreaterThan(0);
-        expect(band.thirdPersonRule).not.toBe(""); // by-name surfaces get the compact form
-      } else {
-        expect(band.registerRules).toHaveLength(0);
-        expect(band.thirdPersonRule).toBe("");
-      }
+      // Which bands constrain register is authoring vocabulary — that a band
+      // authoring rules ALSO authors the compact by-name form is the contract.
+      expect(band.registerRules.length > 0, `${band.id}`).toBe(band.thirdPersonRule !== "");
     }
-    expect(LIFE_STAGES.find((b) => b.id === "adult")?.promptHint).toBe("");
+    // Every minor band must constrain register: the fence, not a style choice.
+    for (const band of LIFE_STAGES.filter((b) => b.minor)) {
+      expect(band.registerRules.length, band.id).toBeGreaterThan(0);
+    }
+    // Pinned: `adult` is the unmarked default — no hint, no rules, nothing.
+    const adult = LIFE_STAGES.find((b) => b.id === "adult");
+    expect(adult?.promptHint).toBe("");
+    expect(adult?.registerRules).toEqual([]);
+    expect(adult?.thirdPersonRule).toBe("");
   });
 
   it("renders the third-person line with every {name} token replaced", () => {

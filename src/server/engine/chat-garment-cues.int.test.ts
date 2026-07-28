@@ -1,12 +1,7 @@
-import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { degradedChatArchivist, type ChatArchivist } from "@/contracts/turns/chat-archivist";
+import type { ChatArchivist } from "@/contracts/turns/chat-archivist";
 import type { GarmentOperationProposal } from "@/contracts/turns/chat-garment-ops";
 import { switchScenePlace } from "@/contracts/turns/chat-scene-memory";
-import { characterProfileSchema, type CharacterProfile } from "@/contracts/world/profile";
-import { newId } from "@/lib/ids";
-import { characterChatMessages, characterChats, characters, chatParticipants, db, items, users } from "@/server/db";
 
 /**
  * Slice 6 end to end — the narrator digest, the bounded cue block, and OQ8's
@@ -25,28 +20,20 @@ import { characterChatMessages, characterChats, characters, chatParticipants, db
  *   fires it, a sub-`wet` wetness drift does not (fixture F19, audit OQ8).
  */
 
-process.env.AI_FAKE = "1";
+const mock = vi.hoisted(() => ({ archivist: { value: null as ChatArchivist | null, degraded: false } }));
+const enqueued = vi.hoisted(() => ({ look: [] as string[] }));
 
-const mock = vi.hoisted(() => ({
-  archivist: { value: null as ChatArchivist | null, degraded: false },
-  lookEnqueues: [] as string[],
-}));
-
-vi.mock("./chat-memory", () => ({
-  runChatExtraction: () =>
-    Promise.resolve({ ...mock.archivist, legs: { memory: false, continuity: false, character: false } }),
-  writeChatMemory: () => Promise.resolve(),
-  // The prompt preview retrieves RAG recall; this test is about the wardrobe blocks,
-  // so recall is stubbed empty rather than seeded.
-  retrieveChatMemory: () => Promise.resolve({ facts: [], episodes: [], detail: [] }),
-}));
+vi.mock("./chat-memory", async () => {
+  const { chatMemoryMockModule } = await import("../test-support/chat-archivist-mock");
+  return chatMemoryMockModule(mock);
+});
 
 // The enqueue is fire-and-forget (`void`), so observing the jobs table would race.
 // Recording the CALL is the honest assertion anyway: OQ8 is about whether the
 // trigger fires, not about how the job row lands.
 vi.mock("./chat-reference-enqueue", () => ({
   enqueueChatLookImage: (args: { chatId: string }) => {
-    mock.lookEnqueues.push(args.chatId);
+    enqueued.look.push(args.chatId);
     return Promise.resolve();
   },
   enqueueChatPlaceImage: () => Promise.resolve(),
@@ -54,140 +41,90 @@ vi.mock("./chat-reference-enqueue", () => ({
 
 import {
   editChatState,
-  finalizeChatState,
   loadChatScenario,
   loadPreExchangeScenario,
   rollbackScenario,
   saveChatScenario,
   savePreExchangeScenario,
-  seedChatState,
   type ChatScenario,
 } from "./chat-state";
 import { buildChatGarmentNarration, chatGarmentNarrationActors } from "./chat-garments";
 import { previewChatPrompt } from "./chat-pipeline";
+import {
+  dropChatFixture,
+  emptyChatFixture,
+  GARMENT_SEEDS,
+  itemId,
+  newChat,
+  probeIntegrationDb,
+  seedChatFixture,
+  settleChatExchange,
+  withOps,
+  type ChatFixture,
+  type ChatSeat,
+} from "@/server/test-support";
 
 const DIGEST_HEADING = "Wardrobe right now";
 const CUE_HEADING = "Worth noticing about the clothes";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from character_chats limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(
-      `[chat-garment-cues.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("chat-garment-cues.int.test", "character_chats");
 
-const ready = await probe();
-const fixture = { userId: "", characterId: "", shirtId: "", jacketId: "" };
-let profile: CharacterProfile = characterProfileSchema.parse({});
+let fixture: ChatFixture = emptyChatFixture();
+
+const shirtDef = () => itemId(fixture, "cottonShirt");
+const jacketDef = () => itemId(fixture, "denimJacket");
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `chat-garment-cues-int-${stamp}@test.local`, name: "Garment Cues Int", role: "admin" })
-    .returning();
-  if (!user) throw new Error("failed to create test user");
-  fixture.userId = user.id;
-
-  const insertItem = async (name: string, definition: Record<string, unknown>) => {
-    const [row] = await db()
-      .insert(items)
-      .values({ ownerId: user.id, kind: "clothing", name, description: name, definition })
-      .returning({ id: items.id });
-    if (!row) throw new Error("failed to create item");
-    return row.id;
-  };
-  fixture.shirtId = await insertItem("cotton shirt", {
-    category: "top",
-    coverage: ["shoulders", "chest", "back", "waist", "upper_arms"],
-    layer: 1,
+  fixture = await seedChatFixture({
+    slug: "chat-garment-cues-int",
+    userName: "Garment Cues Int",
+    garments: [GARMENT_SEEDS.cottonShirt, GARMENT_SEEDS.denimJacket],
+    outfits: [{ id: "everyday", name: "Everyday", items: ["cottonShirt", "denimJacket"] }],
   });
-  fixture.jacketId = await insertItem("denim jacket", {
-    category: "outerwear",
-    coverage: ["shoulders", "chest", "back", "waist", "upper_arms", "forearms", "wrists"],
-    layer: 3,
-  });
-
-  profile = characterProfileSchema.parse({
-    outfits: [{ id: "everyday", name: "Everyday", items: [fixture.shirtId, fixture.jacketId] }],
-  });
-  const [character] = await db().insert(characters).values({ ownerId: user.id, name: "Wren", profile }).returning();
-  if (!character) throw new Error("failed to create test character");
-  fixture.characterId = character.id;
 });
 
 afterAll(async () => {
-  if (!ready) return;
   delete process.env.CHAT_GARMENT_CUES;
-  await db().delete(characterChats).where(eq(characterChats.ownerId, fixture.userId));
-  await db().delete(characters).where(eq(characters.ownerId, fixture.userId));
-  await db().delete(items).where(eq(items.ownerId, fixture.userId));
-  await db().delete(users).where(eq(users.id, fixture.userId));
-  await globalThis.__vesperPool?.end();
+  await dropChatFixture(fixture);
 });
 
 /** A conversation with a MODELLED wardrobe, standing in a named place. */
-async function dressedChat(): Promise<{ chatId: string; memoryGroupId: string; messageId: string; scenario: ChatScenario }> {
-  const [chat] = await db().insert(characterChats).values({ ownerId: fixture.userId }).returning({ id: characterChats.id });
-  if (!chat) throw new Error("failed to create test chat");
-  const memoryGroupId = newId();
-  await db().insert(chatParticipants).values({ chatId: chat.id, characterId: fixture.characterId, memoryGroupId });
-  const [message] = await db()
-    .insert(characterChatMessages)
-    .values({ chatId: chat.id, role: "user", content: "Hi" })
-    .returning();
-  if (!message) throw new Error("failed to create test message");
+async function dressedChat(): Promise<ChatSeat & { scenario: ChatScenario }> {
+  const chat = await newChat(fixture);
   await editChatState({
-    chatId: chat.id,
+    chatId: chat.chatId,
     characterId: fixture.characterId,
     ownerId: fixture.userId,
-    profile,
+    profile: fixture.profile,
     patch: { mindNote: "start" },
   });
-  const loaded = await loadChatScenario(chat.id);
+  const loaded = await loadChatScenario(chat.chatId);
   if (!loaded) throw new Error("scenario missing");
   const scenario: ChatScenario = { ...loaded, sceneMemory: switchScenePlace(loaded.sceneMemory, "the study") };
-  await saveChatScenario(chat.id, scenario);
-  return { chatId: chat.id, memoryGroupId, messageId: message.id, scenario };
+  await saveChatScenario(chat.chatId, scenario);
+  return { ...chat, scenario };
 }
 
 /** "What reaches the narrator right now", as the dev inspector renders it. */
-async function narratorPrompt(chatId: string, memoryGroupId: string): Promise<string> {
+async function narratorPrompt(chat: ChatSeat): Promise<string> {
   const preview = await previewChatPrompt({
-    chatId,
-    memoryGroupId,
-    character: { id: fixture.characterId, name: "Wren", profile },
+    chatId: chat.chatId,
+    memoryGroupId: chat.memoryGroupId,
+    character: { id: fixture.characterId, name: fixture.characterName, profile: fixture.profile },
   });
   return `${preview.prefix}\n${preview.tail}`;
 }
 
 /** Run one exchange whose continuity leg returned exactly these garment proposals. */
 async function settle(args: {
-  chat: { chatId: string; memoryGroupId: string; messageId: string };
+  chat: ChatSeat;
   scenario: ChatScenario;
   proposals?: readonly GarmentOperationProposal[];
   /** Pass the slice-6 cue memory (what the prompt surfaced) — omit to leave it untouched. */
   withCues?: boolean;
 }): Promise<ChatScenario> {
-  mock.archivist = {
-    value: { ...degradedChatArchivist(), garmentOperations: [...(args.proposals ?? [])] },
-    degraded: false,
-  };
-  const driftedState = { ...seedChatState(profile), wornItemIds: [fixture.shirtId, fixture.jacketId] };
+  mock.archivist = { value: withOps(args.proposals ?? []), degraded: false };
   const narration = args.withCues
     ? buildChatGarmentNarration({
         store: args.scenario.garments,
@@ -195,31 +132,17 @@ async function settle(args: {
         placeName: "the study",
         actors: chatGarmentNarrationActors({
           characterId: fixture.characterId,
-          characterName: "Wren",
+          characterName: fixture.characterName,
           playerName: "You",
         }),
       })
     : null;
-  await finalizeChatState({
-    assistantMessageId: newId(),
-    preExchangeState: driftedState,
-    chatId: args.chat.chatId,
-    characterId: fixture.characterId,
-    ownerId: fixture.userId,
-    memoryGroupId: args.chat.memoryGroupId,
-    promptMessageId: args.chat.messageId,
-    profile,
-    characterName: "Wren",
-    playerName: "You",
-    driftedState,
-    now: new Date(),
-    exchange: { player: "Hi", assistant: "Hello." },
+  const { scenario } = await settleChatExchange(fixture, {
+    chat: args.chat,
     scenario: args.scenario,
-    preExchangeScenario: args.scenario,
+    wornItemIds: [shirtDef(), jacketDef()],
     ...(narration ? { garmentCueState: narration.nextCues } : {}),
-    sink: new DiagnosticCollector(),
   });
-  const scenario = await loadChatScenario(args.chat.chatId);
   if (!scenario) throw new Error("scenario missing after finalize");
   return scenario;
 }
@@ -236,13 +159,12 @@ const ROLL_LEFT: GarmentOperationProposal = {
   degree: "substantial",
 };
 
-describe("the flag — off is today, to the character", () => {
-  it("renders neither block when CHAT_GARMENT_CUES is unset", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("the flag — off is today, to the character", () => {
+  it("renders neither block when CHAT_GARMENT_CUES is unset", async () => {
     delete process.env.CHAT_GARMENT_CUES;
     const chat = await dressedChat();
     await settle({ chat, scenario: chat.scenario, proposals: [ROLL_LEFT] });
-    const prompt = await narratorPrompt(chat.chatId, chat.memoryGroupId);
+    const prompt = await narratorPrompt(chat);
     expect(prompt).not.toContain(DIGEST_HEADING);
     expect(prompt).not.toContain(CUE_HEADING);
     // The rolled sleeve really is in the store — the flag is hiding it, not the state.
@@ -252,15 +174,14 @@ describe("the flag — off is today, to the character", () => {
     expect(prompt).toContain("You're wearing");
   });
 
-  it("adds exactly the two blocks when it is on, and nothing else changes", async (t) => {
-    if (!ready) return t.skip();
+  it("adds exactly the two blocks when it is on, and nothing else changes", async () => {
     const chat = await dressedChat();
     await settle({ chat, scenario: chat.scenario, proposals: [ROLL_LEFT] });
 
     delete process.env.CHAT_GARMENT_CUES;
-    const off = await narratorPrompt(chat.chatId, chat.memoryGroupId);
+    const off = await narratorPrompt(chat);
     process.env.CHAT_GARMENT_CUES = "on";
-    const on = await narratorPrompt(chat.chatId, chat.memoryGroupId);
+    const on = await narratorPrompt(chat);
 
     expect(on).toContain(DIGEST_HEADING);
     expect(on).toContain("denim jacket: left sleeve rolled");
@@ -272,16 +193,15 @@ describe("the flag — off is today, to the character", () => {
   });
 });
 
-describe("the repeat gate, through jsonb", () => {
-  it("cues the roll once, then guards it in the digest and says nothing more", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("the repeat gate, through jsonb", () => {
+  it("cues the roll once, then guards it in the digest and says nothing more", async () => {
     process.env.CHAT_GARMENT_CUES = "on";
     const chat = await dressedChat();
     // Exchange 1 rolls the sleeve. The prompt is built BEFORE the fan-out (as it
     // is live), so this exchange's cue memory records the pre-roll cut — the
     // narrator hears about the roll on the NEXT prompt, exactly like `surfacedCues`.
     const afterRoll = await settle({ chat, scenario: chat.scenario, proposals: [ROLL_LEFT], withCues: true });
-    const first = await narratorPrompt(chat.chatId, chat.memoryGroupId);
+    const first = await narratorPrompt(chat);
     expect(first).toContain(CUE_HEADING);
     expect(first).toContain("Wren's denim jacket is rolled back at the left sleeve");
     const cueLines = first.slice(first.indexOf(CUE_HEADING)).split("\n\n")[0]?.split("\n").slice(1) ?? [];
@@ -290,7 +210,7 @@ describe("the repeat gate, through jsonb", () => {
     // Exchange 2 changes nothing about the clothes — and records that the roll
     // has now been said. The read is standing state from here on.
     await settle({ chat, scenario: afterRoll, withCues: true });
-    const second = await narratorPrompt(chat.chatId, chat.memoryGroupId);
+    const second = await narratorPrompt(chat);
     expect(second).toContain(DIGEST_HEADING);
     expect(second).toContain("left sleeve rolled");
     expect(second).not.toContain(CUE_HEADING);
@@ -300,8 +220,7 @@ describe("the repeat gate, through jsonb", () => {
     expect(Object.values(stored?.garments.cues.cues ?? {})).toContain("rolled");
   });
 
-  it("F12 — a buried garment stays in the digest and out of the cue block", async (t) => {
-    if (!ready) return t.skip();
+  it("F12 — a buried garment stays in the digest and out of the cue block", async () => {
     process.env.CHAT_GARMENT_CUES = "on";
     const chat = await dressedChat();
     // The shirt's sleeve is under the jacket's. The state is real and the guard
@@ -311,15 +230,14 @@ describe("the repeat gate, through jsonb", () => {
       scenario: chat.scenario,
       proposals: [{ op: "roll", garment: "wren.shirt", part: "sleeve_left", degree: "substantial" }],
     });
-    const prompt = await narratorPrompt(chat.chatId, chat.memoryGroupId);
+    const prompt = await narratorPrompt(chat);
     expect(prompt).toContain("cotton shirt: left sleeve rolled");
     expect(prompt).not.toContain(CUE_HEADING);
   });
 });
 
-describe("F13 — a retake restores mention history WITH the wardrobe", () => {
-  it("rolls the cue memory back on the store's own anchor", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("F13 — a retake restores mention history WITH the wardrobe", () => {
+  it("rolls the cue memory back on the store's own anchor", async () => {
     process.env.CHAT_GARMENT_CUES = "on";
     const chat = await dressedChat();
     // Two exchanges: one to roll the sleeve, one for the narrator to say it —
@@ -349,18 +267,17 @@ describe("F13 — a retake restores mention history WITH the wardrobe", () => {
   });
 });
 
-describe("OQ8 — the look refresh is a key comparison, not a proposal count", () => {
-  it("enqueues on a structural change and stays quiet on a damp drift", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("OQ8 — the look refresh is a key comparison, not a proposal count", () => {
+  it("enqueues on a structural change and stays quiet on a damp drift", async () => {
     const chat = await dressedChat();
 
-    mock.lookEnqueues = [];
+    enqueued.look = [];
     const afterRoll = await settle({ chat, scenario: chat.scenario, proposals: [ROLL_LEFT] });
-    expect(mock.lookEnqueues).toEqual([chat.chatId]);
+    expect(enqueued.look).toEqual([chat.chatId]);
 
     // A wetness change that stays under `wet` moves the store but NOT the look:
     // drying is continuous, and reminting a portrait per step is what OQ8 refused.
-    mock.lookEnqueues = [];
+    enqueued.look = [];
     const afterDamp = await settle({
       chat,
       scenario: afterRoll,
@@ -368,17 +285,17 @@ describe("OQ8 — the look refresh is a key comparison, not a proposal count", (
         { op: "condition", garment: "wren.jacket", parts: [], channel: "wetness", direction: "increase", degree: "slight" },
       ],
     });
-    const jacket = afterDamp.garments.instances.find((i) => i.definitionId === fixture.jacketId);
+    const jacket = afterDamp.garments.instances.find((i) => i.definitionId === jacketDef());
     expect(jacket?.condition.base.wetness).toBeGreaterThan(0);
-    expect(mock.lookEnqueues).toEqual([]);
+    expect(enqueued.look).toEqual([]);
 
     // Taking the jacket off is a worn-set change — the key moves and so does the anchor.
-    mock.lookEnqueues = [];
+    enqueued.look = [];
     await settle({
       chat,
       scenario: afterDamp,
       proposals: [{ op: "move", garment: "wren.jacket", to: "left_here", anchor: "over the desk chair" }],
     });
-    expect(mock.lookEnqueues).toEqual([chat.chatId]);
+    expect(enqueued.look).toEqual([chat.chatId]);
   });
 });

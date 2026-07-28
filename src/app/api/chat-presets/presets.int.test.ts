@@ -1,9 +1,9 @@
-import { and, eq, sql } from "drizzle-orm";
-import { NextRequest } from "next/server";
+import { and, eq } from "drizzle-orm";
+import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { regardBandMidpoint } from "@/contracts";
 import { newId } from "@/lib/ids";
-import { characterChats, characterChatState, characters, chatScenarioPresets, db, users } from "@/server/db";
+import { characterChats, characterChatState, characters, chatScenarioPresets, db } from "@/server/db";
 
 // Scenario-presets integration suite (character-chat-standalone.spec.md §1.5):
 // the /api/chat-presets CRUD handlers plus the create-a-chat-with-presetId
@@ -12,63 +12,34 @@ import { characterChats, characterChatState, characters, chatScenarioPresets, db
 // auth against DATABASE_URL; AI_FAKE keeps everything provider-free. Self-skips
 // when the database is unreachable.
 
-process.env.AI_FAKE = "1";
-
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Preset Int", role: "admin" as const },
 }));
 
-vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
-  getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
+import {
+  apiRequest,
+  bindAuthUser,
+  endTestPool,
+  expectJson,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  routeCtx,
+  seedTestUser,
+} from "@/server/test-support";
 import { GET as presetsList, POST as presetCreate } from "./route";
 import { DELETE as presetDelete } from "./[presetId]/route";
 import { POST as chatsCreate } from "../chats/route";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from chat_scenario_presets limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(
-      `[presets.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("presets.int.test", "chat_scenario_presets");
 
-const ready = await probe();
-const collectionCtx = { params: Promise.resolve({}) };
-const presetCtx = (presetId: string) => ({ params: Promise.resolve({ presetId }) });
+const presetCtx = (presetId: string) => routeCtx({ presetId });
 
-const listReq = () => new NextRequest("http://t/api/chat-presets");
-function createReq(body: unknown): NextRequest {
-  return new NextRequest("http://t/api/chat-presets", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-const delReq = (presetId: string) => new NextRequest(`http://t/api/chat-presets/${presetId}`, { method: "DELETE" });
-function chatCreateReq(body: unknown): NextRequest {
-  return new NextRequest("http://t/api/chats", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
+const listReq = (): NextRequest => apiRequest("/api/chat-presets");
+const createReq = (body: unknown): NextRequest => apiRequest("/api/chat-presets", { body });
+const delReq = (presetId: string): NextRequest => apiRequest(`/api/chat-presets/${presetId}`, { method: "DELETE" });
+const chatCreateReq = (body: unknown): NextRequest => apiRequest("/api/chats", { body });
 
 interface PresetRow {
   id: string;
@@ -81,23 +52,17 @@ interface PresetRow {
 }
 
 async function listPresets(): Promise<PresetRow[]> {
-  const res = await presetsList(listReq(), collectionCtx);
-  expect(res.status).toBe(200);
-  return ((await res.json()) as { presets: PresetRow[] }).presets;
+  const res = await presetsList(listReq(), routeCtx());
+  return (await expectJson<{ presets: PresetRow[] }>(res, 200)).presets;
 }
 
 const ids = { otherUser: "", character: "" };
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `preset-int-${stamp}@test.local`, name: "Preset Int", role: "admin" })
-    .returning();
-  const [other] = await db().insert(users).values({ email: `preset-int-other-${stamp}@test.local`, name: "Other" }).returning();
-  if (!user || !other) throw new Error("failed to create test users");
-  authState.user = { ...authState.user, id: user.id, email: user.email };
+  const user = await seedTestUser("preset-int", { name: "Preset Int", role: "admin" });
+  const other = await seedTestUser("preset-int-other", { name: "Other" });
+  bindAuthUser(authState, user);
   ids.otherUser = other.id;
 
   const [character] = await db().insert(characters).values({ ownerId: user.id, name: "Sable", profile: {} }).returning();
@@ -107,19 +72,13 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!ready) return;
-  // Presets and chats FK users without cascade — clear them before the users go.
-  await db().delete(chatScenarioPresets).where(eq(chatScenarioPresets.ownerId, authState.user.id));
-  await db().delete(chatScenarioPresets).where(eq(chatScenarioPresets.ownerId, ids.otherUser));
-  await db().delete(characterChats).where(eq(characterChats.ownerId, authState.user.id));
-  await db().delete(characters).where(eq(characters.ownerId, authState.user.id));
-  await db().delete(users).where(eq(users.id, authState.user.id));
-  await db().delete(users).where(eq(users.id, ids.otherUser));
-  await globalThis.__vesperPool?.end();
+  // Presets, chats and characters FK users without cascade — `purgeOwnerRows` owns that order.
+  await purgeOwnerRows([authState.user.id, ids.otherUser]);
+  await endTestPool();
 });
 
-describe("chat-presets CRUD (spec §1.5)", () => {
-  it("creates, lists (round-tripping every field), and deletes a preset", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("chat-presets CRUD (spec §1.5)", () => {
+  it("creates, lists (round-tripping every field), and deletes a preset", async () => {
     const res = await presetCreate(
       createReq({
         name: "Rainy rooftop",
@@ -135,10 +94,9 @@ describe("chat-presets CRUD (spec §1.5)", () => {
           looming: true,
         },
       }),
-      collectionCtx,
+      routeCtx(),
     );
-    expect(res.status).toBe(201);
-    const { id } = (await res.json()) as { id: string };
+    const { id } = await expectJson<{ id: string }>(res, 201);
 
     const listed = await listPresets();
     const preset = listed.find((p) => p.id === id);
@@ -160,11 +118,9 @@ describe("chat-presets CRUD (spec §1.5)", () => {
     expect((await listPresets()).some((p) => p.id === id)).toBe(false);
   });
 
-  it("applies the schema defaults on a minimal create (strangers/neutral record)", async (t) => {
-    if (!ready) return t.skip();
-    const res = await presetCreate(createReq({ name: "Bare minimum" }), collectionCtx);
-    expect(res.status).toBe(201);
-    const { id } = (await res.json()) as { id: string };
+  it("applies the schema defaults on a minimal create (strangers/neutral record)", async () => {
+    const res = await presetCreate(createReq({ name: "Bare minimum" }), routeCtx());
+    const { id } = await expectJson<{ id: string }>(res, 201);
 
     const preset = (await listPresets()).find((p) => p.id === id);
     expect(preset).toMatchObject({
@@ -176,8 +132,7 @@ describe("chat-presets CRUD (spec §1.5)", () => {
     });
   });
 
-  it("404s deleting another user's preset, leaving it untouched", async (t) => {
-    if (!ready) return t.skip();
+  it("404s deleting another user's preset, leaving it untouched", async () => {
     const foreignId = newId();
     await db().insert(chatScenarioPresets).values({ id: foreignId, ownerId: ids.otherUser, name: "Not yours" });
 
@@ -192,9 +147,8 @@ describe("chat-presets CRUD (spec §1.5)", () => {
   });
 });
 
-describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () => {
-  it("seeds the new conversation's state row from the preset's full record (bands + texture)", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("POST /api/chats with presetId — scenario seeding (spec §1.5)", () => {
+  it("seeds the new conversation's state row from the preset's full record (bands + texture)", async () => {
     const created = await presetCreate(
       createReq({
         name: "Winter cabin",
@@ -210,17 +164,15 @@ describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () =
           looming: false,
         },
       }),
-      collectionCtx,
+      routeCtx(),
     );
-    expect(created.status).toBe(201);
-    const { id: presetId } = (await created.json()) as { id: string };
+    const { id: presetId } = await expectJson<{ id: string }>(created, 201);
 
     const chatRes = await chatsCreate(
       chatCreateReq({ characterIds: [ids.character], memory: "fresh", presetId }),
-      collectionCtx,
+      routeCtx(),
     );
-    expect(chatRes.status).toBe(201);
-    const { id: chatId } = (await chatRes.json()) as { id: string };
+    const { id: chatId } = await expectJson<{ id: string }>(chatRes, 201);
 
     // The chat-wide half seeds the SCENARIO on the chat row (followups ruling 8)…
     const [scenario] = await db()
@@ -249,8 +201,7 @@ describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () =
     expect(state?.relationshipRecord).toMatchObject({ kind: "ski-trip acquaintances" });
   });
 
-  it("ignores a presetId the user does not own — the chat is created unseeded", async (t) => {
-    if (!ready) return t.skip();
+  it("ignores a presetId the user does not own — the chat is created unseeded", async () => {
     const foreignId = newId();
     await db().insert(chatScenarioPresets).values({
       id: foreignId,
@@ -261,10 +212,10 @@ describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () =
 
     const chatRes = await chatsCreate(
       chatCreateReq({ characterIds: [ids.character], memory: "fresh", presetId: foreignId }),
-      collectionCtx,
+      routeCtx(),
     );
-    expect(chatRes.status).toBe(201); // a stale/foreign preset never fails the create
-    const { id: chatId } = (await chatRes.json()) as { id: string };
+    // A stale/foreign preset never fails the create.
+    const { id: chatId } = await expectJson<{ id: string }>(chatRes, 201);
 
     const [state] = await db()
       .select({ chatId: characterChatState.chatId })

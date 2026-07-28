@@ -1,8 +1,6 @@
-import { eq, sql } from "drizzle-orm";
-import { NextRequest } from "next/server";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { characters, db, imageReferences, images, locations, users } from "@/server/db";
-import { canonicalImageRow } from "@/server/test-support";
+import { characters, db, imageReferences, images, locations } from "@/server/db";
 
 // Gallery route integration suite (docs/testing.md §api): the GET handler invoked
 // directly with mocked auth against DATABASE_URL. Self-skips when the database is
@@ -12,44 +10,26 @@ const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Gallery Int", role: "admin" as const },
 }));
 
-vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
-  getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
+import {
+  apiRequest,
+  bindAuthUser,
+  canonicalImageRow,
+  endTestPool,
+  expectApiError,
+  expectJson,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  routeCtx,
+  seedTestUser,
+} from "@/server/test-support";
 import { GET as galleryRoute } from "./gallery/route";
 import { DELETE as galleryDelete, PATCH as galleryPatch } from "./gallery/[id]/route";
 import { POST as galleryDeleteAll } from "./gallery/delete/route";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from images limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(`[gallery.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`);
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-const noCtx = { params: Promise.resolve({}) };
-
-function req(url: string): NextRequest {
-  return new NextRequest(url);
-}
-async function json(res: Response): Promise<Record<string, unknown>> {
-  return (await res.json()) as Record<string, unknown>;
-}
+const ready = await probeIntegrationDb("gallery.int.test", "images");
+const noCtx = routeCtx();
 
 interface SceneOut {
   id: string;
@@ -82,10 +62,9 @@ const ids = {
 beforeAll(async () => {
   if (!ready) return;
   const stamp = Date.now();
-  const [user] = await db().insert(users).values({ email: `gallery-int-${stamp}@test.local`, name: "Gallery Int", role: "admin" }).returning();
-  const [other] = await db().insert(users).values({ email: `gallery-int-other-${stamp}@test.local`, name: "Other" }).returning();
-  if (!user || !other) throw new Error("failed to create test users");
-  authState.user = { ...authState.user, id: user.id, email: user.email };
+  const user = await seedTestUser("gallery-int", { role: "admin" });
+  const other = await seedTestUser("gallery-int-other");
+  bindAuthUser(authState, user);
   ids.otherUser = other.id;
 
   const [character] = await db().insert(characters).values({ ownerId: user.id, name: "Alice Char" }).returning();
@@ -150,20 +129,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (!ready) return;
-  await db().delete(images).where(eq(images.ownerId, authState.user.id));
-  await db().delete(images).where(eq(images.ownerId, ids.otherUser));
-  await db().delete(characters).where(eq(characters.ownerId, authState.user.id));
-  await db().delete(locations).where(eq(locations.ownerId, authState.user.id));
-  await db().delete(users).where(eq(users.id, authState.user.id));
-  await db().delete(users).where(eq(users.id, ids.otherUser));
-  await globalThis.__vesperPool?.end();
+  if (ready) await purgeOwnerRows([authState.user.id, ids.otherUser]);
+  await endTestPool();
 });
 
-describe("GET /api/gallery", () => {
-  it("scenes tab: the owner's ready character-chat scenes newest-first, with references", async (t) => {
-    if (!ready) return t.skip();
-    const body = (await json(await galleryRoute(req("http://t/api/gallery"), noCtx))) as unknown as GalleryOut;
+describe.skipIf(!ready)("GET /api/gallery", () => {
+  it("scenes tab: the owner's ready character-chat scenes newest-first, with references", async () => {
+    const body = await expectJson<GalleryOut>(await galleryRoute(apiRequest("/api/gallery"), noCtx));
     const scenes = body.images;
 
     // Only the four ready owned scenes — not pending, failed, the character-less
@@ -187,58 +159,57 @@ describe("GET /api/gallery", () => {
     expect(scenes.find((s) => s.id === ids.sceneOld)!.references).toEqual([]);
   });
 
-  it("pages by keyset cursor without overlap or gaps", async (t) => {
-    if (!ready) return t.skip();
-    const page1 = (await json(await galleryRoute(req("http://t/api/gallery?limit=2"), noCtx))) as unknown as GalleryOut;
+  it("pages by keyset cursor without overlap or gaps", async () => {
+    const page1 = await expectJson<GalleryOut>(
+      await galleryRoute(apiRequest("/api/gallery", { query: { limit: "2" } }), noCtx),
+    );
     expect(page1.images.map((s) => s.id)).toEqual([ids.sceneNew1, ids.sceneNew2]);
     expect(page1.nextCursor).toBeTruthy();
 
-    const page2 = (await json(
-      await galleryRoute(req(`http://t/api/gallery?limit=2&cursor=${encodeURIComponent(page1.nextCursor ?? "")}`), noCtx),
-    )) as unknown as GalleryOut;
+    const page2 = await expectJson<GalleryOut>(
+      await galleryRoute(apiRequest("/api/gallery", { query: { limit: "2", cursor: page1.nextCursor ?? "" } }), noCtx),
+    );
     expect(page2.images.map((s) => s.id)).toEqual([ids.sceneNew3, ids.sceneOld]);
 
     // A garbage cursor degrades to the first page, never a failed request.
-    const garbage = (await json(await galleryRoute(req("http://t/api/gallery?limit=2&cursor=nonsense"), noCtx))) as unknown as GalleryOut;
+    const garbage = await expectJson<GalleryOut>(
+      await galleryRoute(apiRequest("/api/gallery", { query: { limit: "2", cursor: "nonsense" } }), noCtx),
+    );
     expect(garbage.images.map((s) => s.id)).toEqual([ids.sceneNew1, ids.sceneNew2]);
   });
 
-  it("portraits tab: portrait variants joined to their character", async (t) => {
-    if (!ready) return t.skip();
-    const body = (await json(await galleryRoute(req("http://t/api/gallery?tab=portraits"), noCtx))) as unknown as GalleryOut;
+  it("portraits tab: portrait variants joined to their character", async () => {
+    const body = await expectJson<GalleryOut>(
+      await galleryRoute(apiRequest("/api/gallery", { query: { tab: "portraits" } }), noCtx),
+    );
     expect(body.images.map((p) => p.id)).toEqual([ids.portrait]);
     expect(body.images[0]!.characterName).toBe("Alice Char");
   });
 
-  it("entity tab: entity art with the source entity's name resolved", async (t) => {
-    if (!ready) return t.skip();
-    const body = (await json(await galleryRoute(req("http://t/api/gallery?tab=entity"), noCtx))) as unknown as GalleryOut;
+  it("entity tab: entity art with the source entity's name resolved", async () => {
+    const body = await expectJson<GalleryOut>(
+      await galleryRoute(apiRequest("/api/gallery", { query: { tab: "entity" } }), noCtx),
+    );
     expect(body.images.map((e) => e.id)).toEqual([ids.entityArt]);
     expect(body.images[0]!.entityKind).toBe("location");
     expect(body.images[0]!.entityName).toBe("Quay House");
   });
 });
 
-describe("PATCH /api/gallery/:id (favorite)", () => {
-  const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+describe.skipIf(!ready)("PATCH /api/gallery/:id (favorite)", () => {
+  const ctx = (id: string) => routeCtx({ id });
   const patchReq = (id: string, favorite: boolean) =>
-    new NextRequest(`http://t/api/gallery/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ favorite }),
-    });
+    apiRequest(`/api/gallery/${id}`, { method: "PATCH", body: { favorite } });
 
-  it("toggles the favorite flag and serves it on the list payload", async (t) => {
-    if (!ready) return t.skip();
+  it("toggles the favorite flag and serves it on the list payload", async () => {
     const res = await galleryPatch(patchReq(ids.sceneNew1, true), ctx(ids.sceneNew1));
     expect(res.status).toBe(200);
-    const body = (await json(await galleryRoute(req("http://t/api/gallery"), noCtx))) as unknown as GalleryOut;
+    const body = await expectJson<GalleryOut>(await galleryRoute(apiRequest("/api/gallery"), noCtx));
     expect(body.images.find((s) => s.id === ids.sceneNew1)?.favorite).toBe(true);
     await galleryPatch(patchReq(ids.sceneNew1, false), ctx(ids.sceneNew1));
   });
 
-  it("404s another owner's image and non-gallery kinds", async (t) => {
-    if (!ready) return t.skip();
+  it("404s another owner's image and non-gallery kinds", async () => {
     const [foreign] = await db()
       .insert(images)
       .values(canonicalImageRow({
@@ -257,13 +228,12 @@ describe("PATCH /api/gallery/:id (favorite)", () => {
   });
 });
 
-describe("DELETE /api/gallery/:id", () => {
-  const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+describe.skipIf(!ready)("DELETE /api/gallery/:id", () => {
+  const ctx = (id: string) => routeCtx({ id });
   const exists = async (id: string) =>
     (await db().select({ id: images.id }).from(images).where(eq(images.id, id))).length === 1;
 
-  it("hard-deletes an owned scene image", async (t) => {
-    if (!ready) return t.skip();
+  it("hard-deletes an owned scene image", async () => {
     const [row] = await db()
       .insert(images)
       .values(canonicalImageRow({
@@ -278,13 +248,12 @@ describe("DELETE /api/gallery/:id", () => {
       .returning();
     if (!row) throw new Error("failed to seed scene to delete");
 
-    const res = await galleryDelete(req(`http://t/api/gallery/${row.id}`), ctx(row.id));
+    const res = await galleryDelete(apiRequest(`/api/gallery/${row.id}`), ctx(row.id));
     expect(res.status).toBe(200);
     expect(await exists(row.id)).toBe(false);
   });
 
-  it("404s and preserves a scene owned by someone else", async (t) => {
-    if (!ready) return t.skip();
+  it("404s and preserves a scene owned by someone else", async () => {
     const [row] = await db()
       .insert(images)
       .values(canonicalImageRow({
@@ -299,13 +268,12 @@ describe("DELETE /api/gallery/:id", () => {
       .returning();
     if (!row) throw new Error("failed to seed other-owner scene");
 
-    const res = await galleryDelete(req(`http://t/api/gallery/${row.id}`), ctx(row.id));
+    const res = await galleryDelete(apiRequest(`/api/gallery/${row.id}`), ctx(row.id));
     expect(res.status).toBe(404);
     expect(await exists(row.id)).toBe(true);
   });
 
-  it("404s and preserves a non-gallery asset (kind guard)", async (t) => {
-    if (!ready) return t.skip();
+  it("404s and preserves a non-gallery asset (kind guard)", async () => {
     const [row] = await db()
       .insert(images)
       .values(canonicalImageRow({
@@ -320,13 +288,12 @@ describe("DELETE /api/gallery/:id", () => {
       .returning();
     if (!row) throw new Error("failed to seed avatar");
 
-    const res = await galleryDelete(req(`http://t/api/gallery/${row.id}`), ctx(row.id));
+    const res = await galleryDelete(apiRequest(`/api/gallery/${row.id}`), ctx(row.id));
     expect(res.status).toBe(404);
     expect(await exists(row.id)).toBe(true);
   });
 
-  it("deletes a portrait variant and clears a character avatar pointer at it", async (t) => {
-    if (!ready) return t.skip();
+  it("deletes a portrait variant and clears a character avatar pointer at it", async () => {
     const [row] = await db()
       .insert(images)
       .values(canonicalImageRow({
@@ -342,7 +309,7 @@ describe("DELETE /api/gallery/:id", () => {
     if (!row) throw new Error("failed to seed portrait");
     await db().update(characters).set({ avatarImageId: row.id }).where(eq(characters.id, ids.character));
 
-    const res = await galleryDelete(req(`http://t/api/gallery/${row.id}`), ctx(row.id));
+    const res = await galleryDelete(apiRequest(`/api/gallery/${row.id}`), ctx(row.id));
     expect(res.status).toBe(200);
     expect(await exists(row.id)).toBe(false);
     // The soft pointer is nulled, never left dangling (the portrait studio's own rule).
@@ -351,15 +318,10 @@ describe("DELETE /api/gallery/:id", () => {
   });
 });
 
-describe("POST /api/gallery/delete (bulk)", () => {
+describe.skipIf(!ready)("POST /api/gallery/delete (bulk)", () => {
   const exists = async (id: string) =>
     (await db().select({ id: images.id }).from(images).where(eq(images.id, id))).length === 1;
-  const postReq = (ids: string[]) =>
-    new NextRequest("http://t/api/gallery/delete", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ids }),
-    });
+  const postReq = (ids: string[]) => apiRequest("/api/gallery/delete", { body: { ids } });
   const scene = (over: Partial<typeof images.$inferInsert>) =>
     canonicalImageRow({
       ownerId: authState.user.id,
@@ -372,8 +334,7 @@ describe("POST /api/gallery/delete (bulk)", () => {
       ...over,
     });
 
-  it("bulk-deletes only the owner's scene rows in the list, skipping foreign + non-scene ids", async (t) => {
-    if (!ready) return t.skip();
+  it("bulk-deletes only the owner's scene rows in the list, skipping foreign + non-scene ids", async () => {
     const [a] = await db().insert(images).values(scene({})).returning();
     const [b] = await db().insert(images).values(scene({})).returning();
     const [avatar] = await db()
@@ -386,9 +347,11 @@ describe("POST /api/gallery/delete (bulk)", () => {
       .returning();
     if (!a || !b || !avatar || !foreign) throw new Error("failed to seed bulk-delete scenes");
 
-    const res = await galleryDeleteAll(postReq([a.id, b.id, avatar.id, foreign.id]), noCtx);
-    expect(res.status).toBe(200);
-    expect((await json(res)).deleted).toBe(2);
+    const deleted = await expectJson<{ deleted: number }>(
+      await galleryDeleteAll(postReq([a.id, b.id, avatar.id, foreign.id]), noCtx),
+      200,
+    );
+    expect(deleted.deleted).toBe(2);
 
     // The two owned scenes are gone; the avatar (kind guard) and the other
     // owner's scene (owner scope) survive.
@@ -398,9 +361,7 @@ describe("POST /api/gallery/delete (bulk)", () => {
     expect(await exists(foreign.id)).toBe(true);
   });
 
-  it("400s an empty id list", async (t) => {
-    if (!ready) return t.skip();
-    const res = await galleryDeleteAll(postReq([]), noCtx);
-    expect(res.status).toBe(400);
+  it("400s an empty id list", async () => {
+    await expectApiError(await galleryDeleteAll(postReq([]), noCtx), 400);
   });
 });

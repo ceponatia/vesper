@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { expectCleanSink, expectDiagnostic, expectDiagnostics } from "@/test/diagnostics";
 import { DiagnosticCollector } from "../diagnostics";
 import { clothingCategoryById } from "./clothing-categories";
 import { expandCoverage } from "./coverage";
+import { counterIds, garmentSeed, garmentSeedMap } from "./garment-test-fixtures";
 import { garmentBlueprintHash } from "./garment-blueprint";
 import { garmentCategoryTemplates } from "./garment-templates";
 import { exposedRegions, type WornItemInput } from "./visibility";
@@ -39,24 +41,14 @@ import {
 const ALICE = garmentActorForCharacter("alice");
 const BEN = garmentActorForCharacter("ben");
 
-/** Deterministic instance ids so assertions read. */
-function counterIds(prefix = "g"): () => string {
-  let n = 0;
-  return () => `${prefix}${++n}`;
-}
-
-function seed(definitionId: string, categoryId: string, coverage?: readonly string[]): GarmentSeed {
-  return {
-    definitionId,
-    name: definitionId,
-    categoryId,
-    coverage: coverage ?? clothingCategoryById(categoryId)?.coverage ?? [],
-  };
-}
-
-function seedMap(...seeds: GarmentSeed[]): Map<string, GarmentSeed> {
-  return new Map(seeds.map((s) => [s.definitionId, s]));
-}
+/**
+ * Positional shorthand over the shared `garmentSeed` fixture — this suite names
+ * dozens of seeds inline, where the spec-object form would bury the assertions.
+ * The defaulting (name = definition id, coverage = the category's) lives in the
+ * fixture, not here.
+ */
+const seed = (definitionId: string, categoryId: string, coverage?: readonly string[]): GarmentSeed =>
+  garmentSeed(coverage === undefined ? { definitionId, categoryId } : { definitionId, categoryId, coverage });
 
 function sync(
   store: ChatGarmentStore,
@@ -91,7 +83,7 @@ describe("garment actor handles", () => {
 
 describe("materialization from worn ids", () => {
   it("mints one instance per worn definition and projects the ids straight back", () => {
-    const store = sync(emptyChatGarmentStore(), ALICE, ["shirt", "jeans"], seedMap(seed("shirt", "top"), seed("jeans", "pants")), counterIds());
+    const store = sync(emptyChatGarmentStore(), ALICE, ["shirt", "jeans"], garmentSeedMap([seed("shirt", "top"), seed("jeans", "pants")]), counterIds());
     expect(store.seeded).toBe(true);
     expect(store.instances).toHaveLength(2);
     // The compatibility bridge: old readers see exactly the ids they saw before.
@@ -140,7 +132,7 @@ describe("materialization from worn ids", () => {
   });
 
   it("deduplicates identical blueprints by content hash (F5: two copies, one snapshot)", () => {
-    const seeds = seedMap(seed("shirt", "top"));
+    const seeds = garmentSeedMap([seed("shirt", "top")]);
     const store = sync(emptyChatGarmentStore(), ALICE, ["shirt", "shirt"], seeds, counterIds());
     expect(store.instances).toHaveLength(2);
     expect(store.instances[0]?.blueprintHash).toBe(store.instances[1]?.blueprintHash);
@@ -150,7 +142,7 @@ describe("materialization from worn ids", () => {
   });
 
   it("F5: doffing one copy leaves the other worn", () => {
-    const seeds = seedMap(seed("shirt", "top"));
+    const seeds = garmentSeedMap([seed("shirt", "top")]);
     const first = sync(emptyChatGarmentStore(), ALICE, ["shirt", "shirt"], seeds, counterIds());
     const second = sync(first, ALICE, ["shirt"], seeds, counterIds("m"));
     expect(wornGarmentDefinitionIds(second, ALICE)).toEqual(["shirt"]);
@@ -159,7 +151,7 @@ describe("materialization from worn ids", () => {
   });
 
   it("F6: an instance's blueprint is a snapshot — later seed changes cannot reach it", () => {
-    const seeds = seedMap(seed("shirt", "top"));
+    const seeds = garmentSeedMap([seed("shirt", "top")]);
     const store = sync(emptyChatGarmentStore(), ALICE, ["shirt"], seeds, counterIds());
     const instance = store.instances[0];
     expect(instance).toBeDefined();
@@ -167,7 +159,7 @@ describe("materialization from worn ids", () => {
     const hashBefore = instance.blueprintHash;
     const coverageBefore = garmentBlueprintFor(store, instance).nodes.flatMap((n) => n.baselineCoverage);
     // "Edit the library row": a different coverage on the same definition id.
-    const edited = seedMap(seed("shirt", "top", ["chest"]));
+    const edited = garmentSeedMap([seed("shirt", "top", ["chest"])]);
     const after = sync(store, ALICE, ["shirt"], edited, counterIds("m"));
     const still = after.instances[0];
     expect(still?.blueprintHash).toBe(hashBefore);
@@ -188,13 +180,13 @@ describe("materialization from worn ids", () => {
     expect(wornGarmentDefinitionIds(store, ALICE)).toEqual(["ghost"]);
     const instance = store.instances[0];
     expect(instance && garmentBlueprintFor(store, instance).nodes.flatMap((n) => n.baselineCoverage)).toEqual([]);
-    expect(sink.items.map((d) => d.code)).toContain("chat_garments.definition_unresolved");
+    expectDiagnostic(sink, "chat_garments.definition_unresolved");
   });
 });
 
 describe("worn-list projection round trip", () => {
   it("reproduces the id list verbatim, in order, for many shapes", () => {
-    const seeds = seedMap(seed("a", "top"), seed("b", "pants"), seed("c", "socks"), seed("d", "footwear"));
+    const seeds = garmentSeedMap([seed("a", "top"), seed("b", "pants"), seed("c", "socks"), seed("d", "footwear")]);
     for (const ids of [[], ["a"], ["a", "b"], ["d", "c", "b", "a"], ["a", "a", "b"]]) {
       const store = sync(emptyChatGarmentStore(), ALICE, ids, seeds, counterIds());
       expect(wornGarmentDefinitionIds(store, ALICE)).toEqual(ids);
@@ -202,7 +194,7 @@ describe("worn-list projection round trip", () => {
   });
 
   it("keeps each actor's projection separate", () => {
-    const seeds = seedMap(seed("a", "top"), seed("b", "pants"));
+    const seeds = garmentSeedMap([seed("a", "top"), seed("b", "pants")]);
     let store = sync(emptyChatGarmentStore(), ALICE, ["a"], seeds, counterIds("a"));
     store = sync(store, BEN, ["b"], seeds, counterIds("b"));
     store = sync(store, GARMENT_PLAYER_ACTOR, ["a", "b"], seeds, counterIds("p"));
@@ -212,14 +204,14 @@ describe("worn-list projection round trip", () => {
   });
 
   it("is idempotent — re-syncing the same list changes nothing", () => {
-    const seeds = seedMap(seed("a", "top"), seed("b", "pants"));
+    const seeds = garmentSeedMap([seed("a", "top"), seed("b", "pants")]);
     const first = sync(emptyChatGarmentStore(), ALICE, ["a", "b"], seeds, counterIds());
     const second = sync(first, ALICE, ["a", "b"], seeds, counterIds("m"));
     expect(second).toEqual(first);
   });
 
   it("reorders the projection without disturbing other actors' slots", () => {
-    const seeds = seedMap(seed("a", "top"), seed("b", "pants"), seed("z", "socks"));
+    const seeds = garmentSeedMap([seed("a", "top"), seed("b", "pants"), seed("z", "socks")]);
     let store = sync(emptyChatGarmentStore(), ALICE, ["a", "b"], seeds, counterIds("a"));
     store = sync(store, BEN, ["z"], seeds, counterIds("b"));
     const benInstanceId = store.instances.find((i) => i.definitionId === "z")?.id;
@@ -232,7 +224,7 @@ describe("worn-list projection round trip", () => {
 
 describe("outfit presets compile to transfers, not a replacement", () => {
   it("keeps already-worn instances, mints the missing, and wardrobes the extras", () => {
-    const seeds = seedMap(seed("shirt", "top"), seed("jeans", "pants"), seed("coat", "outerwear"));
+    const seeds = garmentSeedMap([seed("shirt", "top"), seed("jeans", "pants"), seed("coat", "outerwear")]);
     const before = sync(emptyChatGarmentStore(), ALICE, ["shirt", "jeans"], seeds, counterIds());
     const shirtId = before.instances.find((i) => i.definitionId === "shirt")?.id;
     // "Apply the Outdoors preset": shirt stays on, jeans come off, a coat goes on.
@@ -246,7 +238,7 @@ describe("outfit presets compile to transfers, not a replacement", () => {
   });
 
   it("re-dons the same instance rather than minting a twin", () => {
-    const seeds = seedMap(seed("coat", "outerwear"));
+    const seeds = garmentSeedMap([seed("coat", "outerwear")]);
     const worn = sync(emptyChatGarmentStore(), ALICE, ["coat"], seeds, counterIds());
     const coatId = worn.instances[0]?.id;
     const doffed = sync(worn, ALICE, [], seeds, counterIds("m"));
@@ -257,7 +249,7 @@ describe("outfit presets compile to transfers, not a replacement", () => {
   });
 
   it("never claims another actor's garment", () => {
-    const seeds = seedMap(seed("coat", "outerwear"));
+    const seeds = garmentSeedMap([seed("coat", "outerwear")]);
     let store = sync(emptyChatGarmentStore(), ALICE, ["coat"], seeds, counterIds("a"));
     store = sync(store, ALICE, [], seeds, counterIds("a2")); // Alice's coat is in her wardrobe
     store = sync(store, BEN, ["coat"], seeds, counterIds("b"));
@@ -266,7 +258,7 @@ describe("outfit presets compile to transfers, not a replacement", () => {
   });
 
   it("picks a garment up off the scene floor when it is the only copy (R3 retrieval)", () => {
-    const seeds = seedMap(seed("coat", "outerwear"));
+    const seeds = garmentSeedMap([seed("coat", "outerwear")]);
     const worn = sync(emptyChatGarmentStore(), ALICE, ["coat"], seeds, counterIds());
     const coatId = worn.instances[0]?.id ?? "";
     const left = applyGarmentTransfers(
@@ -280,7 +272,7 @@ describe("outfit presets compile to transfers, not a replacement", () => {
   });
 
   it("never resurrects a gone garment", () => {
-    const seeds = seedMap(seed("coat", "outerwear"));
+    const seeds = garmentSeedMap([seed("coat", "outerwear")]);
     const worn = sync(emptyChatGarmentStore(), ALICE, ["coat"], seeds, counterIds());
     const coatId = worn.instances[0]?.id ?? "";
     const burned = applyGarmentTransfers(
@@ -295,7 +287,7 @@ describe("outfit presets compile to transfers, not a replacement", () => {
 });
 
 describe("transfer reducer", () => {
-  const seeds = seedMap(seed("coat", "outerwear"));
+  const seeds = garmentSeedMap([seed("coat", "outerwear")]);
   const base = sync(emptyChatGarmentStore(), ALICE, ["coat"], seeds, counterIds());
   const coatId = base.instances[0]?.id ?? "";
 
@@ -317,7 +309,7 @@ describe("transfer reducer", () => {
       expect(result.applied).toBe(1);
       expect(result.store.instances[0]?.locus).toEqual(target.to);
       expect(result.store.instances[0]?.lastChange).toEqual({ kind: "transfer", atMinutes: 5 });
-      expect(sink.items).toHaveLength(0);
+      expectCleanSink(sink);
     });
   }
 
@@ -330,7 +322,7 @@ describe("transfer reducer", () => {
     );
     expect(result.applied).toBe(0);
     expect(result.store).toBe(base);
-    expect(sink.items.map((d) => d.code)).toEqual(["garment_op.garment_unresolved"]);
+    expectDiagnostics(sink, ["garment_op.garment_unresolved"]);
   });
 
   it("refuses to move a gone garment", () => {
@@ -343,7 +335,7 @@ describe("transfer reducer", () => {
       sink,
     });
     expect(result.applied).toBe(0);
-    expect(sink.items.map((d) => d.code)).toEqual(["garment_op.transfer_from_gone"]);
+    expectDiagnostics(sink, ["garment_op.transfer_from_gone"]);
   });
 
   it("treats a same-locus transfer as a legal no-op", () => {
@@ -354,7 +346,7 @@ describe("transfer reducer", () => {
     });
     expect(result.applied).toBe(0);
     expect(result.store).toBe(base);
-    expect(sink.items).toHaveLength(0);
+    expectCleanSink(sink);
   });
 
   it("drops the operations later slices own, with a diagnostic", () => {
@@ -365,7 +357,7 @@ describe("transfer reducer", () => {
       { atMinutes: 5, sink },
     );
     expect(result.applied).toBe(0);
-    expect(sink.items.map((d) => d.code)).toEqual(["garment_op.unsupported_kind"]);
+    expectDiagnostics(sink, ["garment_op.unsupported_kind"]);
   });
 
   it("applies operations in fiction order", () => {
@@ -395,7 +387,7 @@ describe("transfer reducer", () => {
 });
 
 describe("scene loci (R3)", () => {
-  const seeds = seedMap(seed("coat", "outerwear"));
+  const seeds = garmentSeedMap([seed("coat", "outerwear")]);
   const worn = sync(emptyChatGarmentStore(), ALICE, ["coat"], seeds, counterIds());
   const coatId = worn.instances[0]?.id ?? "";
   const left = applyGarmentTransfers(
@@ -433,7 +425,7 @@ describe("scene loci (R3)", () => {
 
 describe("modelled-actor test", () => {
   it("is false until an actor actually has instances, and true for a stripped one", () => {
-    const seeds = seedMap(seed("shirt", "top"));
+    const seeds = garmentSeedMap([seed("shirt", "top")]);
     const empty = sync(emptyChatGarmentStore(), ALICE, [], seeds, counterIds());
     expect(empty.seeded).toBe(true);
     // Seeded store, but this actor was never modelled: callers must not read
@@ -448,7 +440,7 @@ describe("modelled-actor test", () => {
 
 describe("retiring an actor's garments (persona switch)", () => {
   it("makes them ownerless so the actor reads as unmodelled again", () => {
-    const seeds = seedMap(seed("dress", "dress"));
+    const seeds = garmentSeedMap([seed("dress", "dress")]);
     const store = sync(emptyChatGarmentStore(), GARMENT_PLAYER_ACTOR, ["dress"], seeds, counterIds());
     expect(actorHasGarmentInstances(store, GARMENT_PLAYER_ACTOR)).toBe(true);
     const retired = retireActorGarments(store, GARMENT_PLAYER_ACTOR, 120);
@@ -489,7 +481,7 @@ describe("cap and eviction", () => {
 
   it("caps the store on sync so a runaway wardrobe cannot grow the blob", () => {
     const ids = Array.from({ length: CHAT_GARMENTS_MAX + 6 }, (_, i) => `item${i}`);
-    const seeds = seedMap(...ids.map((id) => seed(id, "jewelry")));
+    const seeds = garmentSeedMap(ids.map((id) => seed(id, "jewelry")));
     const store = sync(emptyChatGarmentStore(), ALICE, ids, seeds, counterIds());
     expect(store.instances.length).toBeLessThanOrEqual(CHAT_GARMENTS_MAX);
   });
@@ -505,7 +497,7 @@ describe("degradation (F17)", () => {
   });
 
   it("drops individual malformed instances rather than the whole store", () => {
-    const good = sync(emptyChatGarmentStore(), ALICE, ["shirt"], seedMap(seed("shirt", "top")), counterIds());
+    const good = sync(emptyChatGarmentStore(), ALICE, ["shirt"], garmentSeedMap([seed("shirt", "top")]), counterIds());
     const store = chatGarmentStoreSchema
       .catch(emptyChatGarmentStore())
       .parse({ ...good, instances: [...good.instances, { id: "", blueprintHash: "" }] });
@@ -515,7 +507,7 @@ describe("degradation (F17)", () => {
   });
 
   it("survives a blueprint hash that no longer resolves", () => {
-    const store = sync(emptyChatGarmentStore(), ALICE, ["shirt"], seedMap(seed("shirt", "top")), counterIds());
+    const store = sync(emptyChatGarmentStore(), ALICE, ["shirt"], garmentSeedMap([seed("shirt", "top")]), counterIds());
     const orphan: ChatGarmentStore = { ...store, blueprints: {} };
     const instance = orphan.instances[0];
     expect(instance).toBeDefined();

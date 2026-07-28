@@ -1,8 +1,8 @@
 import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activeJobCount, claimJobSlot, JOB_SLOT_STALE_MS, MAX_CONCURRENT_JOBS_PER_USER } from "./concurrency";
-import { db, jobs, users } from "@/server/db";
-import { probeIntegrationDb } from "@/server/test-support";
+import { db, jobs } from "@/server/db";
+import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
 
 // Integration suite for the per-user concurrency cap (rate-limits.plan.md slice
 // 5). The cap is enforced by a conditional INSERT rather than a read-then-write,
@@ -11,8 +11,8 @@ import { probeIntegrationDb } from "@/server/test-support";
 
 const ready = await probeIntegrationDb("concurrency.int.test", "jobs");
 
-let ownerA: string;
-let ownerB: string;
+let ownerA = "";
+let ownerB = "";
 
 async function clearJobs(): Promise<void> {
   const owners = [ownerA, ownerB].filter(Boolean);
@@ -20,23 +20,14 @@ async function clearJobs(): Promise<void> {
 }
 
 afterAll(async () => {
-  if (ready) {
-    await clearJobs();
-    const owners = [ownerA, ownerB].filter(Boolean);
-    if (owners.length > 0) await db().delete(users).where(inArray(users.id, owners));
-  }
-  await globalThis.__vesperPool?.end();
-  globalThis.__vesperPool = undefined;
+  if (ready) await purgeOwnerRows([ownerA, ownerB]);
+  await endTestPool();
 });
 
 describe.skipIf(!ready)("per-user job concurrency cap", () => {
   beforeAll(async () => {
-    const stamp = Date.now();
-    const [a] = await db().insert(users).values({ email: `conc-a-${stamp}@test.local`, name: "Conc A" }).returning({ id: users.id });
-    const [b] = await db().insert(users).values({ email: `conc-b-${stamp}@test.local`, name: "Conc B" }).returning({ id: users.id });
-    if (!a || !b) throw new Error("user insert failed");
-    ownerA = a.id;
-    ownerB = b.id;
+    ownerA = (await seedTestUser("conc-a")).id;
+    ownerB = (await seedTestUser("conc-b")).id;
   });
 
   beforeEach(clearJobs);

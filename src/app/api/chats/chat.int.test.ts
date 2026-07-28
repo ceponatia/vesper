@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { newId } from "@/lib/ids";
 import {
@@ -14,7 +14,6 @@ import {
   episodes,
   facts,
   images,
-  users,
 } from "@/server/db";
 
 // Conversation-route integration suite (character-chat-standalone.spec.md §1–§2):
@@ -24,18 +23,11 @@ import {
 // deterministic placeholder — no provider key or network. Self-skips when the
 // database is unreachable.
 
-process.env.AI_FAKE = "1";
-
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Chat Int", role: "admin" as const },
 }));
 
-vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
-  getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
 import {
   deleteChat,
@@ -49,7 +41,19 @@ import {
 } from "@/server/engine";
 import { resetRateLimits } from "@/server/api";
 import { log } from "@/server/log";
-import { canonicalImageRow, probeIntegrationDb } from "@/server/test-support";
+import {
+  apiRequest,
+  bindAuthUser,
+  canonicalImageRow,
+  drainStream,
+  endTestPool,
+  expectApiError,
+  expectJson,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  routeCtx,
+  seedTestUser,
+} from "@/server/test-support";
 import { POST as chatsCreate } from "./route";
 import { DELETE as characterDelete } from "../characters/[id]/route";
 import { DELETE as chatDelete, GET as chatGet, POST as chatSend } from "./[chatId]/route";
@@ -74,50 +78,25 @@ const ready = await probeIntegrationDb("chat.int.test", "character_chats");
 // one test can't 429 an unrelated one.
 beforeEach(() => resetRateLimits());
 
-const collectionCtx = { params: Promise.resolve({}) };
-const ctx = (chatId: string) => ({ params: Promise.resolve({ chatId }) });
-const msgCtx = (chatId: string, messageId: string) => ({ params: Promise.resolve({ chatId, messageId }) });
+const ctx = (chatId: string) => routeCtx({ chatId });
+const msgCtx = (chatId: string, messageId: string) => routeCtx({ chatId, messageId });
 
-function createReq(body: unknown): NextRequest {
-  return new NextRequest("http://t/api/chats", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-function postReq(chatId: string, body: unknown): NextRequest {
-  return new NextRequest(`http://t/api/chats/${chatId}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-const getReq = (chatId: string) => new NextRequest(`http://t/api/chats/${chatId}`);
-const delReq = (chatId: string) => new NextRequest(`http://t/api/chats/${chatId}`, { method: "DELETE" });
-function patchMsgReq(chatId: string, messageId: string, body: unknown): NextRequest {
-  return new NextRequest(`http://t/api/chats/${chatId}/messages/${messageId}`, {
+const createReq = (body: unknown): NextRequest => apiRequest("/api/chats", { body });
+const postReq = (chatId: string, body: unknown): NextRequest => apiRequest(`/api/chats/${chatId}`, { body });
+const getReq = (chatId: string): NextRequest => apiRequest(`/api/chats/${chatId}`);
+const delReq = (chatId: string): NextRequest => apiRequest(`/api/chats/${chatId}`, { method: "DELETE" });
+const patchMsgReq = (chatId: string, messageId: string, body: unknown): NextRequest =>
+  apiRequest(`/api/chats/${chatId}/messages/${messageId}`, { method: "PATCH", body });
+const delMsgReq = (chatId: string, messageId: string): NextRequest =>
+  apiRequest(`/api/chats/${chatId}/messages/${messageId}`, { method: "DELETE" });
+const stateReq = (chatId: string, body: unknown, characterId?: string): NextRequest =>
+  apiRequest(`/api/chats/${chatId}/state`, {
     method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body,
+    ...(characterId === undefined ? {} : { query: { characterId } }),
   });
-}
-const delMsgReq = (chatId: string, messageId: string) =>
-  new NextRequest(`http://t/api/chats/${chatId}/messages/${messageId}`, { method: "DELETE" });
-function stateReq(chatId: string, body: unknown, characterId?: string): NextRequest {
-  const target = characterId ? `?characterId=${encodeURIComponent(characterId)}` : "";
-  return new NextRequest(`http://t/api/chats/${chatId}/state${target}`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-function takeReq(chatId: string, messageId: string, body: unknown): NextRequest {
-  return new NextRequest(`http://t/api/chats/${chatId}/messages/${messageId}/take`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
+const takeReq = (chatId: string, messageId: string, body: unknown): NextRequest =>
+  apiRequest(`/api/chats/${chatId}/messages/${messageId}/take`, { method: "PATCH", body });
 
 /** Retry a probe until it returns non-null (fire-and-forget follow-ups), or null after ~3s. */
 async function pollUntil<T>(probe: () => Promise<T | null>): Promise<T | null> {
@@ -131,15 +110,13 @@ async function pollUntil<T>(probe: () => Promise<T | null>): Promise<T | null> {
 
 /** Create a conversation through the real POST /api/chats handler (the D7 memory choice). */
 async function createChat(characterId: string, memory: "shared" | "fresh" = "fresh"): Promise<{ id: string; memoryGroupId: string }> {
-  const res = await chatsCreate(createReq({ characterIds: [characterId], memory }), collectionCtx);
-  if (res.status !== 201) throw new Error(`chat create failed: ${res.status}`);
-  return (await res.json()) as { id: string; memoryGroupId: string };
+  const res = await chatsCreate(createReq({ characterIds: [characterId], memory }), routeCtx());
+  return expectJson<{ id: string; memoryGroupId: string }>(res, 201);
 }
 
 async function createGroupChat(characterIds: string[]): Promise<{ id: string; memoryGroupId: string }> {
-  const res = await chatsCreate(createReq({ characterIds, memory: "fresh" }), collectionCtx);
-  if (res.status !== 201) throw new Error(`group chat create failed: ${res.status}`);
-  return (await res.json()) as { id: string; memoryGroupId: string };
+  const res = await chatsCreate(createReq({ characterIds, memory: "fresh" }), routeCtx());
+  return expectJson<{ id: string; memoryGroupId: string }>(res, 201);
 }
 
 async function insertMessage(chatId: string, role: "user" | "assistant", content: string): Promise<string> {
@@ -157,11 +134,9 @@ const plantedGroups: string[] = [];
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [user] = await db().insert(users).values({ email: `chat-int-${stamp}@test.local`, name: "Chat Int", role: "admin" }).returning();
-  const [other] = await db().insert(users).values({ email: `chat-int-other-${stamp}@test.local`, name: "Other" }).returning();
-  if (!user || !other) throw new Error("failed to create test users");
-  authState.user = { ...authState.user, id: user.id, email: user.email };
+  const user = await seedTestUser("chat-int", { name: "Chat Int", role: "admin" });
+  const other = await seedTestUser("chat-int-other", { name: "Other" });
+  bindAuthUser(authState, user);
   ids.otherUser = other.id;
 
   const [character] = await db().insert(characters).values({ ownerId: user.id, name: "Mara", profile: {} }).returning();
@@ -187,18 +162,10 @@ afterAll(async () => {
     await db().delete(facts).where(inArray(facts.chatMemoryGroupId, plantedGroups));
     await db().delete(episodes).where(inArray(episodes.chatMemoryGroupId, plantedGroups));
   }
-  // images.owner_id has no ON DELETE cascade, so clear test assets before users;
-  // chats own the transcript/state/summary cascades and users FK them (no cascade).
-  await db().delete(images).where(eq(images.ownerId, authState.user.id));
-  await db().delete(images).where(eq(images.ownerId, ids.otherUser));
-  await db().delete(characterChats).where(eq(characterChats.ownerId, authState.user.id));
-  await db().delete(characterChats).where(eq(characterChats.ownerId, ids.otherUser));
-  await db().delete(characters).where(eq(characters.ownerId, authState.user.id));
-  await db().delete(characters).where(eq(characters.ownerId, ids.otherUser));
-  await db().delete(chatScenarioPresets).where(eq(chatScenarioPresets.ownerId, authState.user.id));
-  await db().delete(users).where(eq(users.id, authState.user.id));
-  await db().delete(users).where(eq(users.id, ids.otherUser));
-  await globalThis.__vesperPool?.end();
+  // images.owner_id has no ON DELETE cascade, chats own the transcript/state/summary
+  // cascades, and users FK them (no cascade) — `purgeOwnerRows` owns that whole order.
+  await purgeOwnerRows([authState.user.id, ids.otherUser]);
+  await endTestPool();
 });
 
 async function rows(chatId: string) {
@@ -284,14 +251,13 @@ async function plantMemory(groupId: string, messageId: string): Promise<void> {
   });
 }
 
-describe("POST /api/chats/:chatId — send", () => {
-  it("streams a demo reply and persists both the user line and the speaker-tagged reply", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("POST /api/chats/:chatId — send", () => {
+  it("streams a demo reply and persists both the user line and the speaker-tagged reply", async () => {
     const res = await chatSend(postReq(ids.chat, { content: "Hello there" }), ctx(ids.chat));
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/plain");
 
-    const text = await res.text();
+    const text = await drainStream(res);
     expect(text).toContain("[Mara]");
     expect(text).toContain("Demo mode");
 
@@ -303,34 +269,32 @@ describe("POST /api/chats/:chatId — send", () => {
     expect(persisted[1]?.speakerCharacterId).toBe(ids.character); // the participant spoke it
   });
 
-  it("404s for a chat the user does not own", async (t) => {
-    if (!ready) return t.skip();
+  it("404s for a chat the user does not own", async () => {
     const res = await chatSend(postReq(ids.otherChat, { content: "hi" }), ctx(ids.otherChat));
     expect(res.status).toBe(404);
   });
 
-  it("400s on an empty message", async (t) => {
-    if (!ready) return t.skip();
+  it("400s on an empty message", async () => {
     const res = await chatSend(postReq(ids.chat, { content: "   " }), ctx(ids.chat));
     expect(res.status).toBe(400);
   });
 });
 
-describe("GET /api/chats/:chatId — transcript pagination (ux-improvements slice 2)", () => {
+describe.runIf(ready)("GET /api/chats/:chatId — transcript pagination (ux-improvements slice 2)", () => {
   interface Page {
     messages: { id: string; content: string }[];
     hasMore: boolean;
     nextBefore: string | null;
   }
   const getPage = async (chatId: string, before?: string): Promise<Page> => {
-    const url = `http://t/api/chats/${chatId}${before ? `?before=${before}` : ""}`;
-    const res = await chatGet(new NextRequest(url), ctx(chatId));
-    expect(res.status).toBe(200);
-    return (await res.json()) as Page;
+    const res = await chatGet(
+      apiRequest(`/api/chats/${chatId}`, { ...(before === undefined ? {} : { query: { before } }) }),
+      ctx(chatId),
+    );
+    return expectJson<Page>(res, 200);
   };
 
-  it("pages the whole history via ?before with no gaps or duplicates, ties included", async (t) => {
-    if (!ready) return t.skip();
+  it("pages the whole history via ?before with no gaps or duplicates, ties included", async () => {
     const chat = await createChat(ids.character);
     // 250 rows, mostly 1s apart — except a same-millisecond cluster (rows
     // 100–104) so the (createdAt, id) tiebreak is exercised across a boundary.
@@ -366,30 +330,28 @@ describe("GET /api/chats/:chatId — transcript pagination (ux-improvements slic
     await chatDelete(delReq(chat.id), ctx(chat.id));
   });
 
-  it("400s on a cursor that is not a message of this chat", async (t) => {
-    if (!ready) return t.skip();
+  it("400s on a cursor that is not a message of this chat", async () => {
     const chat = await createChat(ids.character);
     const foreign = await insertMessage(ids.chat, "user", "someone else's line");
-    const bad = await chatGet(new NextRequest(`http://t/api/chats/${chat.id}?before=${foreign}`), ctx(chat.id));
+    const bad = await chatGet(apiRequest(`/api/chats/${chat.id}`, { query: { before: foreign } }), ctx(chat.id));
     expect(bad.status).toBe(400);
-    const nonsense = await chatGet(new NextRequest(`http://t/api/chats/${chat.id}?before=nope`), ctx(chat.id));
+    const nonsense = await chatGet(apiRequest(`/api/chats/${chat.id}`, { query: { before: "nope" } }), ctx(chat.id));
     expect(nonsense.status).toBe(400);
     await chatDelete(delReq(chat.id), ctx(chat.id));
   });
 });
 
-describe("GET + DELETE /api/chats/:chatId", () => {
-  it("returns the transcript oldest-first with the chat + character envelope, then hard-deletes", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("GET + DELETE /api/chats/:chatId", () => {
+  it("returns the transcript oldest-first with the chat + character envelope, then hard-deletes", async () => {
     const chat = await createChat(ids.character);
     await insertMessage(chat.id, "user", "first line");
     await insertMessage(chat.id, "assistant", "second line");
 
-    const got = (await (await chatGet(getReq(chat.id), ctx(chat.id))).json()) as {
+    const got = await expectJson<{
       messages: { role: string; content: string }[];
       chat: { id: string };
       character: { id: string; name: string };
-    };
+    }>(await chatGet(getReq(chat.id), ctx(chat.id)));
     expect(got.messages.length).toBeGreaterThanOrEqual(2);
     expect(got.messages[0]?.role).toBe("user");
     expect(got.chat.id).toBe(chat.id);
@@ -402,8 +364,7 @@ describe("GET + DELETE /api/chats/:chatId", () => {
     expect(gone.status).toBe(404); // the conversation itself is gone
   });
 
-  it("scrubs surviving scene-image prompts so deleted chat context isn't shown", async (t) => {
-    if (!ready) return t.skip();
+  it("scrubs surviving scene-image prompts so deleted chat context isn't shown", async () => {
     // A chat scene's prompt embeds recent chat lines; the asset must survive a
     // delete, but its chat-derived prompt must not (gallery enlarge shows it).
     const chat = await createChat(ids.character);
@@ -428,8 +389,7 @@ describe("GET + DELETE /api/chats/:chatId", () => {
     expect(scene?.prompt).toBe(""); // but its chat-derived prompt is blanked
   });
 
-  it("chat-keyed scenes scrub per conversation — a sibling chat's scenes keep their prompts (slice 9)", async (t) => {
-    if (!ready) return t.skip();
+  it("chat-keyed scenes scrub per conversation — a sibling chat's scenes keep their prompts (slice 9)", async () => {
     const chatA = await createChat(ids.character);
     const chatB = await createChat(ids.character);
     const [sceneA] = await db()
@@ -472,8 +432,7 @@ describe("GET + DELETE /api/chats/:chatId", () => {
     await chatDelete(delReq(chatB.id), ctx(chatB.id));
   });
 
-  it("scene list is scoped to the conversation — sibling and un-chat-keyed scenes never leak in", async (t) => {
-    if (!ready) return t.skip();
+  it("scene list is scoped to the conversation — sibling and un-chat-keyed scenes never leak in", async () => {
     const chatA = await createChat(ids.character);
     const chatB = await createChat(ids.character);
     const seed = (chatId: string | null) =>
@@ -497,12 +456,11 @@ describe("GET + DELETE /api/chats/:chatId", () => {
     ]);
 
     const res = await sceneList(getReq(chatA.id), ctx(chatA.id));
-    expect(res.status).toBe(200);
-    const { scenes } = (await res.json()) as { scenes: { id: string }[] };
+    const { scenes } = await expectJson<{ scenes: { id: string }[] }>(res, 200);
     expect(scenes.map((s) => s.id)).toEqual([sceneA!.id]); // A's own scene only — no sibling, no legacy
 
     const resB = await sceneList(getReq(chatB.id), ctx(chatB.id));
-    const { scenes: scenesB } = (await resB.json()) as { scenes: { id: string }[] };
+    const { scenes: scenesB } = await expectJson<{ scenes: { id: string }[] }>(resB, 200);
     expect(scenesB.map((s) => s.id)).toEqual([sceneB!.id]);
 
     await chatDelete(delReq(chatA.id), ctx(chatA.id));
@@ -510,9 +468,8 @@ describe("GET + DELETE /api/chats/:chatId", () => {
   });
 });
 
-describe("PATCH + DELETE /api/chats/:chatId/messages/:messageId", () => {
-  it("overwrites one message's text in place (rewrite a refusal)", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("PATCH + DELETE /api/chats/:chatId/messages/:messageId", () => {
+  it("overwrites one message's text in place (rewrite a refusal)", async () => {
     const messageId = await insertMessage(ids.chat, "assistant", "I cannot continue this roleplay.");
     const res = await msgPatch(patchMsgReq(ids.chat, messageId, { content: '[Mara] "Mmm — come closer."' }), msgCtx(ids.chat, messageId));
     expect(res.status).toBe(200);
@@ -522,8 +479,7 @@ describe("PATCH + DELETE /api/chats/:chatId/messages/:messageId", () => {
     expect(after.some((m) => m.content.includes("cannot continue"))).toBe(false);
   });
 
-  it("deletes a single message, leaving the rest (snip a refusal out of the window)", async (t) => {
-    if (!ready) return t.skip();
+  it("deletes a single message, leaving the rest (snip a refusal out of the window)", async () => {
     await insertMessage(ids.chat, "user", "keep me");
     const drop = await insertMessage(ids.chat, "assistant", "remove me");
     const res = await msgDelete(delMsgReq(ids.chat, drop), msgCtx(ids.chat, drop));
@@ -534,8 +490,7 @@ describe("PATCH + DELETE /api/chats/:chatId/messages/:messageId", () => {
     expect(after.some((m) => m.content === "keep me")).toBe(true);
   });
 
-  it("404s editing a message in a chat the user does not own, leaving it untouched", async (t) => {
-    if (!ready) return t.skip();
+  it("404s editing a message in a chat the user does not own, leaving it untouched", async () => {
     const foreign = await insertMessage(ids.otherChat, "assistant", "not yours");
     const res = await msgPatch(patchMsgReq(ids.otherChat, foreign, { content: "hijacked" }), msgCtx(ids.otherChat, foreign));
     expect(res.status).toBe(404);
@@ -548,9 +503,8 @@ describe("PATCH + DELETE /api/chats/:chatId/messages/:messageId", () => {
   });
 });
 
-describe("assistant-reply persist guard (delete-mid-stream race)", () => {
-  it("persists the reply when its prompting line still exists", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("assistant-reply persist guard (delete-mid-stream race)", () => {
+  it("persists the reply when its prompting line still exists", async () => {
     const promptId = await insertMessage(ids.chat, "user", "race: keep me");
     await persistAssistantReply({
       id: newId(),
@@ -565,8 +519,7 @@ describe("assistant-reply persist guard (delete-mid-stream race)", () => {
     await db().delete(characterChatMessages).where(eq(characterChatMessages.chatId, ids.chat));
   });
 
-  it("drops the reply when its prompting line was deleted mid-stream", async (t) => {
-    if (!ready) return t.skip();
+  it("drops the reply when its prompting line was deleted mid-stream", async () => {
     const promptId = await insertMessage(ids.chat, "user", "race: gone");
     // Simulate a delete (whole-chat or single-message) landing before the stream settles.
     await db().delete(characterChatMessages).where(eq(characterChatMessages.id, promptId));
@@ -583,9 +536,8 @@ describe("assistant-reply persist guard (delete-mid-stream race)", () => {
   });
 });
 
-describe("one exchange in flight per chat (codebase-review A6)", () => {
-  it("409s while the chat lock is held, without inserting the second user line, then recovers", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("one exchange in flight per chat (codebase-review A6)", () => {
+  it("409s while the chat lock is held, without inserting the second user line, then recovers", async () => {
     // Hold the exact lock the pipeline acquires — deterministic stand-in for a
     // still-streaming first exchange (racing two real streams is timing-flaky).
     let release!: () => void;
@@ -595,21 +547,19 @@ describe("one exchange in flight per chat (codebase-review A6)", () => {
 
     const before = await messageCount(ids.chat);
     const busy = await chatSend(postReq(ids.chat, { content: "double send" }), ctx(ids.chat));
-    expect(busy.status).toBe(409);
-    expect(((await busy.json()) as { error: { code: string } }).error.code).toBe("chat_busy");
+    await expectApiError(busy, 409, "chat_busy");
     expect(await messageCount(ids.chat)).toBe(before); // rejected before the user line landed
 
     release();
     await held;
     const ok = await chatSend(postReq(ids.chat, { content: "after release" }), ctx(ids.chat));
     expect(ok.status).toBe(200);
-    await ok.text(); // drain so the lock releases before the suite ends
+    await drainStream(ok);
   });
 });
 
-describe("memory-choice semantics (character-chat-standalone.spec.md §1.3, D7)", () => {
-  it("shared chats share a group, fresh mints an island, and delete purges only unreferenced groups", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("memory-choice semantics (character-chat-standalone.spec.md §1.3, D7)", () => {
+  it("shared chats share a group, fresh mints an island, and delete purges only unreferenced groups", async () => {
     // A dedicated character so this test owns its whole memory-group history.
     const [nyx] = await db().insert(characters).values({ ownerId: authState.user.id, name: "Nyx", profile: {} }).returning();
     if (!nyx) throw new Error("failed to seed character");
@@ -639,9 +589,8 @@ describe("memory-choice semantics (character-chat-standalone.spec.md §1.3, D7)"
   });
 });
 
-describe("DELETE /api/characters/:id — conversations go through deleteChat (deletion-leak audit 2026-07-10)", () => {
-  it("hard-deletes the character's chats: transcript gone, memory group purged, no orphaned rows", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("DELETE /api/characters/:id — conversations go through deleteChat (deletion-leak audit 2026-07-10)", () => {
+  it("hard-deletes the character's chats: transcript gone, memory group purged, no orphaned rows", async () => {
     const [vex] = await db().insert(characters).values({ ownerId: authState.user.id, name: "Vex", profile: {} }).returning();
     if (!vex) throw new Error("failed to seed character");
     const chat = await createChat(vex.id, "shared");
@@ -652,9 +601,10 @@ describe("DELETE /api/characters/:id — conversations go through deleteChat (de
       .values({ chatMemoryGroupId: chat.memoryGroupId, kind: "knowledge", subjectName: "vex", text: "vex likes rooftop rain" });
     plantedGroups.push(chat.memoryGroupId); // afterAll safety net if this test fails mid-way
 
-    const res = await characterDelete(new NextRequest(`http://t/api/characters/${vex.id}`, { method: "DELETE" }), {
-      params: Promise.resolve({ id: vex.id }),
-    });
+    const res = await characterDelete(
+      apiRequest(`/api/characters/${vex.id}`, { method: "DELETE" }),
+      routeCtx({ id: vex.id }),
+    );
     expect(res.status).toBe(200);
 
     // Pre-fix, deleting the character cascaded participants/state away and stranded the
@@ -670,8 +620,7 @@ describe("DELETE /api/characters/:id — conversations go through deleteChat (de
     expect(await factCount(chat.memoryGroupId)).toBe(0);
   });
 
-  it("leaves another owner's conversation intact when the character anomalously participates in it", async (t) => {
-    if (!ready) return t.skip();
+  it("leaves another owner's conversation intact when the character anomalously participates in it", async () => {
     // The cross-owner participant row violates today's "chat owner == character owner"
     // invariant, so it is seeded directly — no route can produce it. That is the shape
     // security-authz.plan.md slice 2 hardens against.
@@ -690,9 +639,10 @@ describe("DELETE /api/characters/:id — conversations go through deleteChat (de
       .values({ chatMemoryGroupId: foreignGroup, kind: "knowledge", subjectName: "other", text: "the other owner's memory" });
     plantedGroups.push(foreignGroup);
 
-    const res = await characterDelete(new NextRequest(`http://t/api/characters/${mole.id}`, { method: "DELETE" }), {
-      params: Promise.resolve({ id: mole.id }),
-    });
+    const res = await characterDelete(
+      apiRequest(`/api/characters/${mole.id}`, { method: "DELETE" }),
+      routeCtx({ id: mole.id }),
+    );
     expect(res.status).toBe(200);
 
     // The owned character is gone; the foreign conversation, its transcript and its
@@ -703,8 +653,7 @@ describe("DELETE /api/characters/:id — conversations go through deleteChat (de
     expect(await factCount(foreignGroup)).toBe(1);
   });
 
-  it("deleteChat refuses a chat the caller does not own: no-op plus a warn diagnostic (docs/resilience.md)", async (t) => {
-    if (!ready) return t.skip();
+  it("deleteChat refuses a chat the caller does not own: no-op plus a warn diagnostic (docs/resilience.md)", async () => {
     const [foreignChat] = await db().insert(characterChats).values({ ownerId: ids.otherUser }).returning({ id: characterChats.id });
     if (!foreignChat) throw new Error("failed to seed foreign chat");
     await db().insert(chatParticipants).values({ chatId: foreignChat.id, characterId: ids.otherCharacter, memoryGroupId: newId() });
@@ -726,16 +675,15 @@ describe("DELETE /api/characters/:id — conversations go through deleteChat (de
   });
 });
 
-describe("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)", () => {
-  it("replaces the reply in place, keeps the old take browsable, rolls back state, and retracts the old take's memory", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)", () => {
+  it("replaces the reply in place, keeps the old take browsable, rolls back state, and retracts the old take's memory", async () => {
     const chat = await createChat(ids.character);
     // A stored state BEFORE the first exchange gives the pre-exchange snapshot a
     // distinctive value to roll back to (the demo pulse degrades to drift-only,
     // and drift never moves regard, so it only moves via PATCH here).
     expect((await statePatch(stateReq(chat.id, { regard: 10 }), ctx(chat.id))).status).toBe(200);
 
-    await (await chatSend(postReq(chat.id, { content: "Tell me a secret" }), ctx(chat.id))).text();
+    await drainStream(await chatSend(postReq(chat.id, { content: "Tell me a secret" }), ctx(chat.id)));
     const reply = await assistantReply(chat.id);
     // Make take 1 distinguishable (demo replies are deterministic) and plant the
     // memory the archivist would have extracted from it (demo mode skips it).
@@ -747,7 +695,7 @@ describe("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)
 
     const res = await chatSend(postReq(chat.id, { kind: "regenerate" }), ctx(chat.id));
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("Demo mode");
+    expect(await drainStream(res)).toContain("Demo mode");
 
     const after = await assistantReply(chat.id);
     expect(after.id).toBe(reply.id); // updated in place, never a new row
@@ -771,8 +719,7 @@ describe("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)
     expect(await roleCounts(chat.id)).toEqual({ user: 1, assistant: 1 });
   });
 
-  it("restores and re-snapshots every roster member from the same exchange boundary", async (t) => {
-    if (!ready) return t.skip();
+  it("restores and re-snapshots every roster member from the same exchange boundary", async () => {
     const [nia, oren] = await db()
       .insert(characters)
       .values([
@@ -816,12 +763,9 @@ describe("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)
       baselines.set(member.id, baseline);
     }
 
-    await (
-      await chatSend(
-        postReq(chat.id, { content: "Mara, Nia, and Oren: tell me what happened." }),
-        ctx(chat.id),
-      )
-    ).text();
+    await drainStream(
+      await chatSend(postReq(chat.id, { content: "Mara, Nia, and Oren: tell me what happened." }), ctx(chat.id)),
+    );
 
     // The first settle records an anchor for PRIMARY and non-primary members alike.
     for (const member of members) {
@@ -879,7 +823,7 @@ describe("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)
 
     const regenerated = await chatSend(postReq(chat.id, { kind: "regenerate" }), ctx(chat.id));
     expect(regenerated.status).toBe(200);
-    await regenerated.text();
+    await drainStream(regenerated);
 
     for (const [index, member] of members.entries()) {
       const baseline = baselines.get(member.id);
@@ -891,14 +835,13 @@ describe("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)
     }
   });
 
-  it("caps browsable takes at 4 across repeated regenerates, newest take always active", async (t) => {
-    if (!ready) return t.skip();
+  it("caps browsable takes at 4 across repeated regenerates, newest take always active", async () => {
     const chat = await createChat(ids.character);
-    await (await chatSend(postReq(chat.id, { content: "cap me" }), ctx(chat.id))).text();
+    await drainStream(await chatSend(postReq(chat.id, { content: "cap me" }), ctx(chat.id)));
     for (let i = 0; i < 4; i++) {
       const res = await chatSend(postReq(chat.id, { kind: "regenerate" }), ctx(chat.id));
       expect(res.status).toBe(200);
-      await res.text(); // drain so the exchange settles + the lock releases
+      await drainStream(res); // the exchange settles + the lock releases
     }
     const reply = await assistantReply(chat.id);
     // 5 takes were minted (the seed + 4 regenerates); the oldest was evicted.
@@ -907,23 +850,20 @@ describe("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)
     expect(reply.takes.takes.find((tk) => tk.id === reply.takes.activeId)?.content).toBe(reply.content);
   });
 
-  it("400s nothing_to_regenerate on an empty chat", async (t) => {
-    if (!ready) return t.skip();
+  it("400s nothing_to_regenerate on an empty chat", async () => {
     const chat = await createChat(ids.character);
     const res = await chatSend(postReq(chat.id, { kind: "regenerate" }), ctx(chat.id));
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("nothing_to_regenerate");
+    await expectApiError(res, 400, "nothing_to_regenerate");
   });
 });
 
-describe("PATCH /api/chats/:chatId/messages/:messageId/take (spec §4.1)", () => {
-  it("flips content to the picked take without minting one, and 404s a bogus takeId", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("PATCH /api/chats/:chatId/messages/:messageId/take (spec §4.1)", () => {
+  it("flips content to the picked take without minting one, and 404s a bogus takeId", async () => {
     const chat = await createChat(ids.character);
-    await (await chatSend(postReq(chat.id, { content: "switch me" }), ctx(chat.id))).text();
+    await drainStream(await chatSend(postReq(chat.id, { content: "switch me" }), ctx(chat.id)));
     const reply = await assistantReply(chat.id);
     await db().update(characterChatMessages).set({ content: "FIRST TAKE" }).where(eq(characterChatMessages.id, reply.id));
-    await (await chatSend(postReq(chat.id, { kind: "regenerate" }), ctx(chat.id))).text();
+    await drainStream(await chatSend(postReq(chat.id, { kind: "regenerate" }), ctx(chat.id)));
 
     const regenerated = await assistantReply(chat.id);
     const firstTake = regenerated.takes.takes[0];
@@ -932,8 +872,7 @@ describe("PATCH /api/chats/:chatId/messages/:messageId/take (spec §4.1)", () =>
     expect(regenerated.content).not.toBe("FIRST TAKE"); // the fresh take is displayed
 
     const res = await takePatch(takeReq(chat.id, reply.id, { takeId: firstTake.id }), msgCtx(chat.id, reply.id));
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as { content: string }).content).toBe("FIRST TAKE");
+    expect((await expectJson<{ content: string }>(res, 200)).content).toBe("FIRST TAKE");
 
     const flipped = await assistantReply(chat.id);
     expect(flipped.content).toBe("FIRST TAKE"); // the row's content mirrors the pick
@@ -945,16 +884,15 @@ describe("PATCH /api/chats/:chatId/messages/:messageId/take (spec §4.1)", () =>
   });
 });
 
-describe("POST /api/chats/:chatId — kind=continue (go on, spec §4.2)", () => {
-  it("adds an assistant beat with no new user row and never persists the synthetic cue", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("POST /api/chats/:chatId — kind=continue (go on, spec §4.2)", () => {
+  it("adds an assistant beat with no new user row and never persists the synthetic cue", async () => {
     const chat = await createChat(ids.character);
-    await (await chatSend(postReq(chat.id, { content: "say more" }), ctx(chat.id))).text();
+    await drainStream(await chatSend(postReq(chat.id, { content: "say more" }), ctx(chat.id)));
     expect(await roleCounts(chat.id)).toEqual({ user: 1, assistant: 1 });
 
     const res = await chatSend(postReq(chat.id, { kind: "continue" }), ctx(chat.id));
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("[Mara]");
+    expect(await drainStream(res)).toContain("[Mara]");
 
     expect(await roleCounts(chat.id)).toEqual({ user: 1, assistant: 2 }); // a beat, not a turn
     // The one user row is still the player's line — the continue cue was never persisted.
@@ -965,9 +903,8 @@ describe("POST /api/chats/:chatId — kind=continue (go on, spec §4.2)", () => 
   });
 });
 
-describe("message delete reconciles provenanced memory (spec §4.3)", () => {
-  it("retracts the fact and deletes the episode sourced from the snipped assistant line", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("message delete reconciles provenanced memory (spec §4.3)", () => {
+  it("retracts the fact and deletes the episode sourced from the snipped assistant line", async () => {
     const chat = await createChat(ids.character);
     const messageId = await insertMessage(chat.id, "assistant", "she admits she's afraid of storms");
     await plantMemory(chat.memoryGroupId, messageId);
@@ -988,11 +925,10 @@ describe("message delete reconciles provenanced memory (spec §4.3)", () => {
   });
 });
 
-describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-rerun fix)", () => {
-  it("snips the latest reply, reuses its player guard row, and streams a fresh reply", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-rerun fix)", () => {
+  it("snips the latest reply, reuses its player guard row, and streams a fresh reply", async () => {
     const chat = await createChat(ids.character);
-    await (await chatSend(postReq(chat.id, { content: "latest prompt" }), ctx(chat.id))).text();
+    await drainStream(await chatSend(postReq(chat.id, { content: "latest prompt" }), ctx(chat.id)));
     expect(await roleCounts(chat.id)).toEqual({ user: 1, assistant: 1 });
     const before = await fullRows(chat.id);
     const user1 = before.find((m) => m.role === "user");
@@ -1001,7 +937,7 @@ describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-reru
 
     const res = await chatSend(postReq(chat.id, { kind: "rerun", messageId: user1.id }), ctx(chat.id));
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("[Mara]");
+    expect(await drainStream(res)).toContain("[Mara]");
 
     expect(await roleCounts(chat.id)).toEqual({ user: 1, assistant: 1 });
     const after = await fullRows(chat.id);
@@ -1011,8 +947,7 @@ describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-reru
     expect(freshReply?.id).not.toBe(oldReply.id);
   });
 
-  it("stops an in-flight reply, re-acquires the lock, and completes the rerun", async (t) => {
-    if (!ready) return t.skip();
+  it("stops an in-flight reply, re-acquires the lock, and completes the rerun", async () => {
     const chat = await createChat(ids.character);
     // Drive the pipeline directly and pull ONE token, so the exchange is genuinely
     // mid-stream: holding the lock and registered for abort (the route eagerly drains,
@@ -1067,10 +1002,9 @@ describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-reru
     expect(reply?.meta).toEqual({}); // the surviving reply is the complete rerun, not the stopped partial
   });
 
-  it("409s chat_busy with the transcript byte-identical when the lock can't be re-acquired", async (t) => {
-    if (!ready) return t.skip();
+  it("409s chat_busy with the transcript byte-identical when the lock can't be re-acquired", async () => {
     const chat = await createChat(ids.character);
-    await (await chatSend(postReq(chat.id, { content: "leave me be" }), ctx(chat.id))).text();
+    await drainStream(await chatSend(postReq(chat.id, { content: "leave me be" }), ctx(chat.id)));
     const user1 = (await fullRows(chat.id)).find((m) => m.role === "user");
     if (!user1) throw new Error("missing user line");
     const before = await fullRows(chat.id);
@@ -1099,10 +1033,9 @@ describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-reru
     await held;
   });
 
-  it("rejects an absent / bogus / non-user / foreign rerun target and modifies nothing", async (t) => {
-    if (!ready) return t.skip();
+  it("rejects an absent / bogus / non-user / foreign rerun target and modifies nothing", async () => {
     const chat = await createChat(ids.character);
-    await (await chatSend(postReq(chat.id, { content: "keep me" }), ctx(chat.id))).text();
+    await drainStream(await chatSend(postReq(chat.id, { content: "keep me" }), ctx(chat.id)));
     const asst = (await fullRows(chat.id)).find((m) => m.role === "assistant");
     if (!asst) throw new Error("missing assistant reply");
     const sibling = await createChat(ids.character);
@@ -1113,8 +1046,7 @@ describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-reru
     expect((await chatSend(postReq(chat.id, { kind: "rerun" }), ctx(chat.id))).status).toBe(400);
     // (b) a bogus id → invalid_rerun_target 400.
     const missing = await chatSend(postReq(chat.id, { kind: "rerun", messageId: "no-such-id" }), ctx(chat.id));
-    expect(missing.status).toBe(400);
-    expect(((await missing.json()) as { error: { code: string } }).error.code).toBe("invalid_rerun_target");
+    await expectApiError(missing, 400, "invalid_rerun_target");
     // (c) an assistant line (not a player line) → 400.
     expect((await chatSend(postReq(chat.id, { kind: "rerun", messageId: asst.id }), ctx(chat.id))).status).toBe(400);
     // (d) a user line from a sibling conversation → 400 (scoped by chatId).
@@ -1124,29 +1056,27 @@ describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-reru
     await chatDelete(delReq(sibling.id), ctx(sibling.id));
   });
 
-  it("rolls back to the pre-exchange snapshot when the target is the latest exchange's prompt", async (t) => {
-    if (!ready) return t.skip();
+  it("rolls back to the pre-exchange snapshot when the target is the latest exchange's prompt", async () => {
     const chat = await createChat(ids.character);
     expect((await statePatch(stateReq(chat.id, { regard: 12 }), ctx(chat.id))).status).toBe(200); // pre-exchange baseline
-    await (await chatSend(postReq(chat.id, { content: "tell me" }), ctx(chat.id))).text();
+    await drainStream(await chatSend(postReq(chat.id, { content: "tell me" }), ctx(chat.id)));
     const user1 = (await fullRows(chat.id)).find((m) => m.role === "user");
     if (!user1) throw new Error("missing user line");
     expect((await statePatch(stateReq(chat.id, { regard: 80 }), ctx(chat.id))).status).toBe(200); // perturb AFTER
 
     const res = await chatSend(postReq(chat.id, { kind: "rerun", messageId: user1.id }), ctx(chat.id));
     expect(res.status).toBe(200);
-    await res.text();
+    await drainStream(res);
 
     // The rerun IS the last exchange (its only successor was the newest reply), so it rolls
     // back the post-exchange perturbation to the snapshot, exactly like regenerate.
     expect(await stateAffinity(chat.id)).toBe(12);
   });
 
-  it("reruns a prompt whose reply never persisted (zero successors) without a false rollback", async (t) => {
-    if (!ready) return t.skip();
+  it("reruns a prompt whose reply never persisted (zero successors) without a false rollback", async () => {
     const chat = await createChat(ids.character);
     expect((await statePatch(stateReq(chat.id, { regard: 12 }), ctx(chat.id))).status).toBe(200);
-    await (await chatSend(postReq(chat.id, { content: "first" }), ctx(chat.id))).text(); // settles: anchor holds regard 12
+    await drainStream(await chatSend(postReq(chat.id, { content: "first" }), ctx(chat.id))); // settles: anchor holds regard 12
     expect((await statePatch(stateReq(chat.id, { regard: 64 }), ctx(chat.id))).status).toBe(200); // live state moves on
     // A failed exchange: the player line persisted but the model produced no text, so
     // no assistant row and no settle — exactly what a stream failure/timeout leaves.
@@ -1154,7 +1084,7 @@ describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-reru
 
     const res = await chatSend(postReq(chat.id, { kind: "rerun", messageId: orphanId }), ctx(chat.id));
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("[Mara]");
+    expect(await drainStream(res)).toContain("[Mara]");
 
     // The orphan line was reused (not re-inserted) and got its fresh reply.
     expect(await roleCounts(chat.id)).toEqual({ user: 2, assistant: 2 });
@@ -1165,20 +1095,18 @@ describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-reru
     expect(await stateAffinity(chat.id)).toBe(64);
   });
 
-  it("rejects an earlier exchange with rerun_requires_branch and modifies nothing", async (t) => {
-    if (!ready) return t.skip();
+  it("rejects an earlier exchange with rerun_requires_branch and modifies nothing", async () => {
     const chat = await createChat(ids.character);
     expect((await statePatch(stateReq(chat.id, { regard: 5 }), ctx(chat.id))).status).toBe(200);
-    await (await chatSend(postReq(chat.id, { content: "first" }), ctx(chat.id))).text();
+    await drainStream(await chatSend(postReq(chat.id, { content: "first" }), ctx(chat.id)));
     const user1 = (await fullRows(chat.id)).find((m) => m.role === "user" && m.content === "first");
     if (!user1) throw new Error("missing first user line");
-    await (await chatSend(postReq(chat.id, { content: "second" }), ctx(chat.id))).text();
+    await drainStream(await chatSend(postReq(chat.id, { content: "second" }), ctx(chat.id)));
     expect((await statePatch(stateReq(chat.id, { regard: 90 }), ctx(chat.id))).status).toBe(200);
     const before = await fullRows(chat.id);
 
     const res = await chatSend(postReq(chat.id, { kind: "rerun", messageId: user1.id }), ctx(chat.id));
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("rerun_requires_branch");
+    await expectApiError(res, 400, "rerun_requires_branch");
 
     // No false rollback and no destructive reach-back: transcript and live state
     // remain exactly as they were until a real branch operation exists.
@@ -1187,9 +1115,8 @@ describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-reru
   });
 });
 
-describe("stopped replies (spec §4.2)", () => {
-  it("persists meta.stopped and the transcript GET carries it", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("stopped replies (spec §4.2)", () => {
+  it("persists meta.stopped and the transcript GET carries it", async () => {
     const chat = await createChat(ids.character);
     const promptId = await insertMessage(chat.id, "user", "keep going");
     const replyId = newId();
@@ -1205,31 +1132,23 @@ describe("stopped replies (spec §4.2)", () => {
       meta: { stopped: true },
     });
 
-    const got = (await (await chatGet(getReq(chat.id), ctx(chat.id))).json()) as {
-      messages: { id: string; meta: unknown }[];
-    };
+    const got = await expectJson<{ messages: { id: string; meta: unknown }[] }>(
+      await chatGet(getReq(chat.id), ctx(chat.id)),
+    );
     const reply = got.messages.find((m) => m.id === replyId);
     expect(reply).toBeDefined();
     expect(reply?.meta).toEqual({ stopped: true });
   });
 });
 
-describe("roster — participants add/remove/presence (multi-character-chat.plan.md slice 1)", () => {
-  const pCtx = (chatId: string, characterId: string) => ({ params: Promise.resolve({ chatId, characterId }) });
-  const addReq = (chatId: string, body: unknown) =>
-    new NextRequest(`http://t/api/chats/${chatId}/participants`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  const presenceReq = (chatId: string, characterId: string, presence: string) =>
-    new NextRequest(`http://t/api/chats/${chatId}/participants/${characterId}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ presence }),
-    });
-  const removeReq = (chatId: string, characterId: string) =>
-    new NextRequest(`http://t/api/chats/${chatId}/participants/${characterId}`, { method: "DELETE" });
+describe.runIf(ready)("roster — participants add/remove/presence (multi-character-chat.plan.md slice 1)", () => {
+  const pCtx = (chatId: string, characterId: string) => routeCtx({ chatId, characterId });
+  const addReq = (chatId: string, body: unknown): NextRequest =>
+    apiRequest(`/api/chats/${chatId}/participants`, { body });
+  const presenceReq = (chatId: string, characterId: string, presence: string): NextRequest =>
+    apiRequest(`/api/chats/${chatId}/participants/${characterId}`, { method: "PATCH", body: { presence } });
+  const removeReq = (chatId: string, characterId: string): NextRequest =>
+    apiRequest(`/api/chats/${chatId}/participants/${characterId}`, { method: "DELETE" });
 
   const mkCharacter = async (name: string): Promise<string> => {
     const [row] = await db().insert(characters).values({ ownerId: authState.user.id, name, profile: {} }).returning();
@@ -1237,17 +1156,16 @@ describe("roster — participants add/remove/presence (multi-character-chat.plan
     return row.id;
   };
 
-  it("adds a member, reflects it in the GET roster, and flips presence through the state row", async (t) => {
-    if (!ready) return t.skip();
+  it("adds a member, reflects it in the GET roster, and flips presence through the state row", async () => {
     const chat = await createChat(ids.character);
     const joinerId = await mkCharacter("Rhett");
 
     const added = await participantAdd(addReq(chat.id, { characterId: joinerId }), ctx(chat.id));
     expect(added.status).toBe(201);
 
-    const got = (await (await chatGet(getReq(chat.id), ctx(chat.id))).json()) as {
-      roster: Array<{ characterId: string; sort: number; presence: string }>;
-    };
+    const got = await expectJson<{ roster: Array<{ characterId: string; sort: number; presence: string }> }>(
+      await chatGet(getReq(chat.id), ctx(chat.id)),
+    );
     expect(got.roster.map((m) => m.characterId)).toEqual([ids.character, joinerId]);
     expect(got.roster.map((m) => m.sort)).toEqual([0, 1]);
     expect(got.roster.every((m) => m.presence === "present")).toBe(true);
@@ -1258,9 +1176,9 @@ describe("roster — participants add/remove/presence (multi-character-chat.plan
     // Presence flip persists on the (lazily seeded) state row and rides the GET.
     const flipped = await participantPatch(presenceReq(chat.id, joinerId, "away"), pCtx(chat.id, joinerId));
     expect(flipped.status).toBe(200);
-    const after = (await (await chatGet(getReq(chat.id), ctx(chat.id))).json()) as {
-      roster: Array<{ characterId: string; presence: string }>;
-    };
+    const after = await expectJson<{ roster: Array<{ characterId: string; presence: string }> }>(
+      await chatGet(getReq(chat.id), ctx(chat.id)),
+    );
     expect(after.roster.find((m) => m.characterId === joinerId)?.presence).toBe("away");
     const [stateRow] = await db()
       .select({ presence: characterChatState.presence })
@@ -1269,17 +1187,12 @@ describe("roster — participants add/remove/presence (multi-character-chat.plan
     expect(stateRow?.presence).toBe("away");
   });
 
-  it("state GET/PATCH target any roster member via ?characterId= (followups ruling 13)", async (t) => {
-    if (!ready) return t.skip();
+  it("state GET/PATCH target any roster member via ?characterId= (followups ruling 13)", async () => {
     const chat = await createChat(ids.character);
     const joinerId = await mkCharacter("Sheet Target");
     await participantAdd(addReq(chat.id, { characterId: joinerId }), ctx(chat.id));
 
-    const targetPatch = new NextRequest(`http://t/api/chats/${chat.id}/state?characterId=${joinerId}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ regard: 33, outfit: "a borrowed jacket" }),
-    });
+    const targetPatch = stateReq(chat.id, { regard: 33, outfit: "a borrowed jacket" }, joinerId);
     expect((await statePatch(targetPatch, ctx(chat.id))).status).toBe(200);
     const [row] = await db()
       .select({ regard: characterChatState.regard, outfit: characterChatState.outfit })
@@ -1289,19 +1202,20 @@ describe("roster — participants add/remove/presence (multi-character-chat.plan
     expect(row?.outfit).toBe("a borrowed jacket");
 
     // GET returns the member's own snapshot…
-    const get = await stateGet(new NextRequest(`http://t/api/chats/${chat.id}/state?characterId=${joinerId}`), ctx(chat.id));
-    expect(get.status).toBe(200);
-    expect(((await get.json()) as { regard: number }).regard).toBe(33);
+    const get = await stateGet(
+      apiRequest(`/api/chats/${chat.id}/state`, { query: { characterId: joinerId } }),
+      ctx(chat.id),
+    );
+    expect((await expectJson<{ regard: number }>(get, 200)).regard).toBe(33);
     // …and an out-of-roster id 404s.
     const bad = await stateGet(
-      new NextRequest(`http://t/api/chats/${chat.id}/state?characterId=${ids.otherCharacter}`),
+      apiRequest(`/api/chats/${chat.id}/state`, { query: { characterId: ids.otherCharacter } }),
       ctx(chat.id),
     );
     expect(bad.status).toBe(404);
   });
 
-  it("caps the roster at 4 and refuses foreign characters", async (t) => {
-    if (!ready) return t.skip();
+  it("caps the roster at 4 and refuses foreign characters", async () => {
     const chat = await createChat(ids.character);
     for (const name of ["Cap B", "Cap C", "Cap D"]) {
       const memberId = await mkCharacter(name);
@@ -1314,8 +1228,7 @@ describe("roster — participants add/remove/presence (multi-character-chat.plan
     expect((await participantAdd(addReq(fresh.id, { characterId: ids.otherCharacter }), ctx(fresh.id))).status).toBe(404);
   });
 
-  it("never removes the last member; removing the primary promotes the next (sort renumbers)", async (t) => {
-    if (!ready) return t.skip();
+  it("never removes the last member; removing the primary promotes the next (sort renumbers)", async () => {
     const chat = await createChat(ids.character);
     expect((await participantRemove(removeReq(chat.id, ids.character), pCtx(chat.id, ids.character))).status).toBe(409);
 
@@ -1323,17 +1236,16 @@ describe("roster — participants add/remove/presence (multi-character-chat.plan
     await participantAdd(addReq(chat.id, { characterId: joinerId }), ctx(chat.id));
     const removed = await participantRemove(removeReq(chat.id, ids.character), pCtx(chat.id, ids.character));
     expect(removed.status).toBe(200);
-    const got = (await (await chatGet(getReq(chat.id), ctx(chat.id))).json()) as {
+    const got = await expectJson<{
       roster: Array<{ characterId: string; sort: number }>;
       character: { id: string };
-    };
+    }>(await chatGet(getReq(chat.id), ctx(chat.id)));
     expect(got.roster).toEqual([expect.objectContaining({ characterId: joinerId, sort: 0 })]);
     // The promoted member is now the envelope's primary character card.
     expect(got.character.id).toBe(joinerId);
   });
 
-  it("seeds a preset's premise onto the shared scenario; outfit/bands to the primary only", async (t) => {
-    if (!ready) return t.skip();
+  it("seeds a preset's premise onto the shared scenario; outfit/bands to the primary only", async () => {
     const [preset] = await db()
       .insert(chatScenarioPresets)
       .values({
@@ -1349,10 +1261,9 @@ describe("roster — participants add/remove/presence (multi-character-chat.plan
 
     const res = await chatsCreate(
       createReq({ characterIds: [ids.character, secondId], memory: "fresh", presetId: preset.id }),
-      collectionCtx,
+      routeCtx(),
     );
-    expect(res.status).toBe(201);
-    const { id: chatId } = (await res.json()) as { id: string };
+    const { id: chatId } = await expectJson<{ id: string }>(res, 201);
 
     // The premise lives once on the chat row (followups ruling 8) — every
     // roster member reads the same scenario.
@@ -1376,28 +1287,19 @@ describe("roster — participants add/remove/presence (multi-character-chat.plan
   });
 });
 
-describe("relationship matrix — seeding + routes (relationship-model.plan.md slice 6)", () => {
+describe.runIf(ready)("relationship matrix — seeding + routes (relationship-model.plan.md slice 6)", () => {
   const mkCharacter = async (name: string): Promise<string> => {
     const [row] = await db().insert(characters).values({ ownerId: authState.user.id, name, profile: {} }).returning();
     if (!row) throw new Error("failed to seed character");
     return row.id;
   };
-  const matrixReq = (chatId: string, body: unknown) =>
-    new NextRequest(`http://t/api/chats/${chatId}/relationships`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  const libReq = (id: string, body: unknown) =>
-    new NextRequest(`http://t/api/characters/${id}/relationships`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  const idCtx = (id: string) => ({ params: Promise.resolve({ id }) });
+  const matrixReq = (chatId: string, body: unknown): NextRequest =>
+    apiRequest(`/api/chats/${chatId}/relationships`, { method: "PUT", body });
+  const libReq = (id: string, body: unknown): NextRequest =>
+    apiRequest(`/api/characters/${id}/relationships`, { method: "PUT", body });
+  const idCtx = (id: string) => routeCtx({ id });
 
-  it("creation seeds the matrix from library defaults at band midpoints", async (t) => {
-    if (!ready) return t.skip();
+  it("creation seeds the matrix from library defaults at band midpoints", async () => {
     const aId = await mkCharacter("Edge A");
     const bId = await mkCharacter("Edge B");
     await db().insert(characterRelationships).values({
@@ -1406,12 +1308,11 @@ describe("relationship matrix — seeding + routes (relationship-model.plan.md s
       record: { familiarity: "deeply_known", regard: "cool", kind: "estranged friends", history: "", looming: false },
     });
 
-    const res = await chatsCreate(createReq({ characterIds: [aId, bId], memory: "fresh" }), collectionCtx);
-    expect(res.status).toBe(201);
-    const { id: chatId } = (await res.json()) as { id: string };
+    const res = await chatsCreate(createReq({ characterIds: [aId, bId], memory: "fresh" }), routeCtx());
+    const { id: chatId } = await expectJson<{ id: string }>(res, 201);
 
-    const got = await matrixGet(new NextRequest(`http://t/api/chats/${chatId}/relationships`), ctx(chatId));
-    const body = (await got.json()) as { edges: Array<{ fromCharacterId: string; toCharacterId: string; record: { familiarity: number; regard: number; kind: string } }> };
+    const got = await matrixGet(apiRequest(`/api/chats/${chatId}/relationships`), ctx(chatId));
+    const body = await expectJson<{ edges: Array<{ fromCharacterId: string; toCharacterId: string; record: { familiarity: number; regard: number; kind: string } }> }>(got);
     const edge = body.edges.find((e) => e.fromCharacterId === aId && e.toCharacterId === bId);
     expect(edge).toBeDefined();
     expect(edge!.record.kind).toBe("estranged friends");
@@ -1419,12 +1320,11 @@ describe("relationship matrix — seeding + routes (relationship-model.plan.md s
     expect(edge!.record.regard).toBeLessThan(0); // cool midpoint
   });
 
-  it("PUT upserts roster edges and refuses foreign characters", async (t) => {
-    if (!ready) return t.skip();
+  it("PUT upserts roster edges and refuses foreign characters", async () => {
     const aId = await mkCharacter("Put A");
     const bId = await mkCharacter("Put B");
-    const res = await chatsCreate(createReq({ characterIds: [aId, bId], memory: "fresh" }), collectionCtx);
-    const { id: chatId } = (await res.json()) as { id: string };
+    const res = await chatsCreate(createReq({ characterIds: [aId, bId], memory: "fresh" }), routeCtx());
+    const { id: chatId } = await expectJson<{ id: string }>(res, 201);
 
     const put = await matrixPut(
       matrixReq(chatId, {
@@ -1434,8 +1334,7 @@ describe("relationship matrix — seeding + routes (relationship-model.plan.md s
       }),
       ctx(chatId),
     );
-    expect(put.status).toBe(200);
-    const body = (await put.json()) as { edges: Array<{ record: { kind: string; looming: boolean } }> };
+    const body = await expectJson<{ edges: Array<{ record: { kind: string; looming: boolean } }> }>(put, 200);
     expect(body.edges[0]?.record.kind).toBe("old flames");
     expect(body.edges[0]?.record.looming).toBe(true);
 
@@ -1448,8 +1347,7 @@ describe("relationship matrix — seeding + routes (relationship-model.plan.md s
     expect(bad.status).toBe(404);
   });
 
-  it("library defaults PUT/GET roundtrip with replace-set semantics", async (t) => {
-    if (!ready) return t.skip();
+  it("library defaults PUT/GET roundtrip with replace-set semantics", async () => {
     const aId = await mkCharacter("Lib A");
     const bId = await mkCharacter("Lib B");
     const cId = await mkCharacter("Lib C");
@@ -1472,9 +1370,9 @@ describe("relationship matrix — seeding + routes (relationship-model.plan.md s
       }),
       idCtx(aId),
     );
-    const got = (await (await libGet(new NextRequest(`http://t/api/characters/${aId}/relationships`), idCtx(aId))).json()) as {
+    const got = await expectJson<{
       edges: Array<{ toCharacterId: string; toName: string; record: { familiarity: string } }>;
-    };
+    }>(await libGet(apiRequest(`/api/characters/${aId}/relationships`), idCtx(aId)));
     expect(got.edges).toHaveLength(1);
     expect(got.edges[0]?.toCharacterId).toBe(bId);
     expect(got.edges[0]?.toName).toBe("Lib B");

@@ -1,15 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { expectCaseInsensitiveLookup, expectUniqueIds } from "@/test/registry-invariants";
 import { wearerMatchesFilter, wearerTargetById, wearerTargets } from "./wearer";
 
 describe("wearer-target registry", () => {
   it("has unique ids", () => {
-    const ids = wearerTargets.map((w) => w.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    expectUniqueIds(wearerTargets, "wearerTargets");
   });
 
   it("looks up case-insensitively and misses cleanly", () => {
-    expect(wearerTargetById("Feminine")?.label).toBe("Women's");
-    expect(wearerTargetById("androgynous")).toBeUndefined();
+    expectCaseInsensitiveLookup(
+      wearerTargetById,
+      [
+        { raw: "Feminine", id: "feminine" },
+        { raw: " Unisex ", id: "unisex" },
+      ],
+      "androgynous",
+    );
   });
 
   it("absent and unisex match every filter — unisex is additive, never a silo", () => {

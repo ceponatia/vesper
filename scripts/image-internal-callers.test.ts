@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { repoRelative, sourceFilesUnder } from "@/server/test-support";
 
 const ROOTS = [path.join(process.cwd(), "src"), path.join(process.cwd(), "scripts")];
 const INTERNAL_NAMES = new Set(["saveImageBuffer", "deleteChatUploads", "deleteChatAssets"]);
@@ -25,23 +26,6 @@ const APPROVED: Readonly<Record<string, readonly string[]>> = {
   deleteChatAssets: ["src/server/engine/chat-pipeline.ts", "src/server/images/internal.ts"],
 };
 
-function filesUnder(root: string, out: string[] = []): string[] {
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    // `__name__` directories are transient lint fixtures another suite plants in
-    // the live tree mid-run (image-internal-imports.test.ts); racing their
-    // lifetime from a parallel worker made this census flaky.
-    if (entry.isDirectory() && /^__.*__$/.test(entry.name)) continue;
-    const absolute = path.join(root, entry.name);
-    if (entry.isDirectory()) filesUnder(absolute, out);
-    else if (/\.(?:ts|tsx)$/.test(entry.name) && !/\.(?:int\.)?test\.(?:ts|tsx)$/.test(entry.name)) out.push(absolute);
-  }
-  return out;
-}
-
-function repoPath(absolute: string): string {
-  return path.relative(process.cwd(), absolute).split(path.sep).join("/");
-}
-
 function importedInternalNames(source: string): string[] {
   const found = new Set<string>();
   const declaration = /(?:import|export)\s*{([^}]+)}\s*from\s*["'][^"']+["']/g;
@@ -60,8 +44,13 @@ describe("internal image helper caller census", () => {
   it("contains only reviewed worker, adapter, and cascade imports", () => {
     const actual: Record<string, string[]> = Object.fromEntries([...INTERNAL_NAMES].map((name) => [name, []]));
 
-    for (const absolute of ROOTS.flatMap((root) => filesUnder(root))) {
-      const file = repoPath(absolute);
+    // `sourceFilesUnder` defaults to .ts/.tsx, excludes `*.test.ts` /
+    // `*.int.test.ts`, and skips `__name__` directories — the last of which is
+    // load-bearing here: image-internal-imports.test.ts plants a transient
+    // fixture route under src/app/api mid-run, and racing its lifetime from a
+    // parallel worker made this census flaky.
+    for (const absolute of ROOTS.flatMap((root) => sourceFilesUnder(root))) {
+      const file = repoRelative(absolute);
       for (const name of importedInternalNames(fs.readFileSync(absolute, "utf8"))) actual[name]?.push(file);
     }
     for (const files of Object.values(actual)) files.sort();

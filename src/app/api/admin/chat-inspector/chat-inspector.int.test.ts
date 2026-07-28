@@ -1,33 +1,27 @@
 import { eq, inArray, sql } from "drizzle-orm";
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@/lib/ids";
-import {
-  characterChats,
-  characters,
-  chatParticipants,
-  db,
-  episodes,
-  events,
-  facts,
-  images,
-  users,
-} from "@/server/db";
-
-process.env.AI_FAKE = "1";
+import { characterChats, characters, chatParticipants, db, episodes, events, facts } from "@/server/db";
 
 const authState = vi.hoisted(() => ({
-  user: { id: "", email: "", name: "Inspector Int", role: "admin" as "admin" | "user" },
+  user: { id: "", email: "", name: "Inspector Int", role: "admin" as const },
 }));
 
-vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
-  getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
 import { recordAgentFailure } from "@/server/ai";
+import {
+  apiRequest,
+  bindAuthUser,
+  endTestPool,
+  expectJson,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  routeCtx,
+  seedTestUser,
+  withAuthUser,
+} from "@/server/test-support";
 import { POST as chatsCreate } from "../../chats/route";
 import { GET as inspectorGet } from "./[chatId]/route";
 import { GET as failuresGet } from "./[chatId]/agent-failures/route";
@@ -38,50 +32,23 @@ import { DELETE as episodeDelete, PATCH as episodePatch } from "./[chatId]/episo
 import { GET as scoreGet } from "./[chatId]/episodes/score/route";
 import { PATCH as summaryPatch } from "./[chatId]/summary/route";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from character_chats limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(
-      `[chat-inspector.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("chat-inspector.int.test", "character_chats");
 
-const ready = await probe();
-const collectionCtx = { params: Promise.resolve({}) };
-const ctx = (chatId: string) => ({ params: Promise.resolve({ chatId }) });
-const factCtx = (chatId: string, factId: string) => ({ params: Promise.resolve({ chatId, factId }) });
-const episodeCtx = (chatId: string, episodeId: string) => ({ params: Promise.resolve({ chatId, episodeId }) });
+const ctx = (chatId: string) => routeCtx({ chatId });
+const factCtx = (chatId: string, factId: string) => routeCtx({ chatId, factId });
+const episodeCtx = (chatId: string, episodeId: string) => routeCtx({ chatId, episodeId });
 const inspectorPath = (chatId: string, suffix = "") => `/api/admin/self/chat-inspector/${chatId}${suffix}`;
 
-function jsonReq(path: string, method: string, body: unknown): NextRequest {
-  return new NextRequest(`http://t${path}`, {
-    method,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-const getReq = (path: string) => new NextRequest(`http://t${path}`);
-const delReq = (path: string) => new NextRequest(`http://t${path}`, { method: "DELETE" });
+const jsonReq = (path: string, method: string, body: unknown): NextRequest => apiRequest(path, { method, body });
+const getReq = (path: string): NextRequest => apiRequest(path);
+const delReq = (path: string): NextRequest => apiRequest(path, { method: "DELETE" });
 
 async function createChat(characterId: string): Promise<{ id: string; memoryGroupId: string }> {
   const response = await chatsCreate(
-    jsonReq("/api/chats", "POST", { characterIds: [characterId], memory: "fresh" }),
-    collectionCtx,
+    apiRequest("/api/chats", { body: { characterIds: [characterId], memory: "fresh" } }),
+    routeCtx(),
   );
-  if (response.status !== 201) throw new Error(`chat create failed: ${response.status}`);
-  return (await response.json()) as { id: string; memoryGroupId: string };
+  return expectJson<{ id: string; memoryGroupId: string }>(response, 201);
 }
 
 interface OverviewFact {
@@ -97,13 +64,12 @@ interface OverviewFact {
 
 async function overviewFor(chatId: string) {
   const response = await inspectorGet(getReq(inspectorPath(chatId)), ctx(chatId));
-  expect(response.status).toBe(200);
-  return (await response.json()) as {
+  return expectJson<{
     facts: OverviewFact[];
     episodes: { id: string; turnNumber: number; summary: string; embedded: boolean }[];
     summary: { summary: string; watermarkAt: string | null; coveredExchanges: number } | null;
     character: { id: string; name: string };
-  };
+  }>(response, 200);
 }
 
 const ids = { character: "", chat: "", memoryGroupId: "", otherUser: "", otherCharacter: "", otherChat: "" };
@@ -111,17 +77,9 @@ const plantedGroups: string[] = [];
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `inspector-int-${stamp}@test.local`, name: "Inspector Int", role: "admin" })
-    .returning();
-  const [other] = await db()
-    .insert(users)
-    .values({ email: `inspector-int-other-${stamp}@test.local`, name: "Other" })
-    .returning();
-  if (!user || !other) throw new Error("failed to create test users");
-  authState.user = { ...authState.user, id: user.id, email: user.email };
+  const user = await seedTestUser("inspector-int", { name: "Inspector Int", role: "admin" });
+  const other = await seedTestUser("inspector-int-other", { name: "Other" });
+  bindAuthUser(authState, user);
   ids.otherUser = other.id;
 
   const [character] = await db()
@@ -163,22 +121,14 @@ afterAll(async () => {
   await db()
     .delete(events)
     .where(sql`${events.type} = 'agent_failure' and ${events.payload} ->> 'chatId' in (${ids.chat}, ${ids.otherChat})`);
-  await db().delete(images).where(eq(images.ownerId, authState.user.id));
-  await db().delete(images).where(eq(images.ownerId, ids.otherUser));
-  await db().delete(characterChats).where(eq(characterChats.ownerId, authState.user.id));
-  await db().delete(characterChats).where(eq(characterChats.ownerId, ids.otherUser));
-  await db().delete(characters).where(eq(characters.ownerId, authState.user.id));
-  await db().delete(characters).where(eq(characters.ownerId, ids.otherUser));
-  await db().delete(users).where(eq(users.id, authState.user.id));
-  await db().delete(users).where(eq(users.id, ids.otherUser));
-  await globalThis.__vesperPool?.end();
+  await purgeOwnerRows([authState.user.id, ids.otherUser]);
+  await endTestPool();
 });
 
 let devFactId = "";
 
-describe("self-scoped chat inspector memory tools", () => {
-  it("creates, edits, retracts, restores, and lists a development fact", async (test) => {
-    if (!ready) return test.skip();
+describe.runIf(ready)("self-scoped chat inspector memory tools", () => {
+  it("creates, edits, retracts, restores, and lists a development fact", async () => {
     const created = await factCreate(
       jsonReq(inspectorPath(ids.chat, "/facts"), "POST", {
         text: "the player always brings mara tea",
@@ -186,8 +136,7 @@ describe("self-scoped chat inspector memory tools", () => {
       }),
       ctx(ids.chat),
     );
-    expect(created.status).toBe(201);
-    devFactId = ((await created.json()) as { id: string }).id;
+    devFactId = (await expectJson<{ id: string }>(created, 201)).id;
 
     let fact = (await overviewFor(ids.chat)).facts.find((row) => row.id === devFactId);
     expect(fact).toMatchObject({ origin: "dev", pinned: true, confidence: 1, subjectName: "mara" });
@@ -196,8 +145,7 @@ describe("self-scoped chat inspector memory tools", () => {
       jsonReq(inspectorPath(ids.chat, `/facts/${devFactId}`), "PATCH", { pinned: false }),
       factCtx(ids.chat, devFactId),
     );
-    expect(toggled.status).toBe(200);
-    expect(((await toggled.json()) as { fact: { pinned: boolean } }).fact.pinned).toBe(false);
+    expect((await expectJson<{ fact: { pinned: boolean } }>(toggled, 200)).fact.pinned).toBe(false);
 
     const retracted = await factPatch(
       jsonReq(inspectorPath(ids.chat, `/facts/${devFactId}`), "PATCH", { status: "retracted" }),
@@ -216,8 +164,7 @@ describe("self-scoped chat inspector memory tools", () => {
       }),
       factCtx(ids.chat, devFactId),
     );
-    expect(restored.status).toBe(200);
-    const restoredBody = (await restored.json()) as { fact: OverviewFact; embedDegraded: boolean };
+    const restoredBody = await expectJson<{ fact: OverviewFact; embedDegraded: boolean }>(restored, 200);
     expect(restoredBody.fact).toMatchObject({
       status: "active",
       supersededById: null,
@@ -229,8 +176,7 @@ describe("self-scoped chat inspector memory tools", () => {
     expect(fact?.status).toBe("active");
   });
 
-  it("edits, scores, and deletes an owned episode", async (test) => {
-    if (!ready) return test.skip();
+  it("edits, scores, and deletes an owned episode", async () => {
     const [row] = await db()
       .insert(episodes)
       .values({ chatMemoryGroupId: ids.memoryGroupId, turnNumber: 1, summary: "she asked about the weather" })
@@ -243,8 +189,7 @@ describe("self-scoped chat inspector memory tools", () => {
       }),
       episodeCtx(ids.chat, row.id),
     );
-    expect(edited.status).toBe(200);
-    expect((await edited.json()) as unknown).toMatchObject({
+    expect(await expectJson(edited, 200)).toMatchObject({
       episode: { id: row.id, summary: "she confessed her fear of storms", embedded: true },
       embedDegraded: false,
     });
@@ -253,8 +198,9 @@ describe("self-scoped chat inspector memory tools", () => {
       getReq(`${inspectorPath(ids.chat, "/episodes/score")}?q=storms`),
       ctx(ids.chat),
     );
-    expect(scored.status).toBe(200);
-    expect(((await scored.json()) as { scores: { id: string }[] }).scores.some((score) => score.id === row.id)).toBe(true);
+    expect((await expectJson<{ scores: { id: string }[] }>(scored, 200)).scores.some((score) => score.id === row.id)).toBe(
+      true,
+    );
 
     const deleted = await episodeDelete(
       delReq(inspectorPath(ids.chat, `/episodes/${row.id}`)),
@@ -264,28 +210,24 @@ describe("self-scoped chat inspector memory tools", () => {
     expect((await overviewFor(ids.chat)).episodes.some((episode) => episode.id === row.id)).toBe(false);
   });
 
-  it("round-trips the rolling summary and prompt preview", async (test) => {
-    if (!ready) return test.skip();
+  it("round-trips the rolling summary and prompt preview", async () => {
     const summary = await summaryPatch(
       jsonReq(inspectorPath(ids.chat, "/summary"), "PATCH", { summary: "A quiet evening of confessions." }),
       ctx(ids.chat),
     );
-    expect(summary.status).toBe(200);
-    expect(await summary.json()).toMatchObject({
+    expect(await expectJson(summary, 200)).toMatchObject({
       summary: "A quiet evening of confessions.",
       watermarkAt: null,
       coveredExchanges: 0,
     });
 
     const prompt = await promptGet(getReq(inspectorPath(ids.chat, "/prompt")), ctx(ids.chat));
-    expect(prompt.status).toBe(200);
-    expect(await prompt.json()).toMatchObject({ prefix: expect.stringContaining("Mara") });
+    expect(await expectJson(prompt, 200)).toMatchObject({ prefix: expect.stringContaining("Mara") });
   });
 });
 
-describe("self-admin route boundary", () => {
-  it("hides foreign chats, the old namespace, and non-admin access", async (test) => {
-    if (!ready) return test.skip();
+describe.runIf(ready)("self-admin route boundary", () => {
+  it("hides foreign chats, the old namespace, and non-admin access", async () => {
 
     const foreign = await inspectorGet(getReq(inspectorPath(ids.otherChat)), ctx(ids.otherChat));
     expect(foreign.status).toBe(404);
@@ -301,20 +243,16 @@ describe("self-admin route boundary", () => {
     );
     expect(oldNamespace.status).toBe(404);
 
-    authState.user = { ...authState.user, role: "user" };
-    try {
+    await withAuthUser(authState, { role: "user" }, async () => {
       const denied = await inspectorGet(getReq(inspectorPath(ids.chat)), ctx(ids.chat));
       expect(denied.status).toBe(404);
-    } finally {
-      authState.user = { ...authState.user, role: "admin" };
-    }
+    });
     expect((await inspectorGet(getReq(inspectorPath(ids.chat)), ctx(ids.chat))).status).toBe(200);
   });
 });
 
-describe("self-scoped agent telemetry", () => {
-  it("returns only the owned chat's failures and omits global telemetry fields", async (test) => {
-    if (!ready) return test.skip();
+describe.runIf(ready)("self-scoped agent telemetry", () => {
+  it("returns only the owned chat's failures and omits global telemetry fields", async () => {
     recordAgentFailure({
       legId: "chat_continuity",
       chatId: ids.chat,
@@ -337,12 +275,11 @@ describe("self-scoped agent telemetry", () => {
         getReq(inspectorPath(ids.chat, "/agent-failures")),
         ctx(ids.chat),
       );
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as {
+      const body = await expectJson<{
         days: number;
         chat: { total: number; recent: { legId: string; cause: string }[]; byLeg: { key: string; count: number }[] };
         runs: { recent: unknown[]; total: number; byLeg: unknown[] };
-      };
+      }>(response, 200);
       expect(Object.keys(body).sort()).toEqual(["chat", "days", "runs"]);
       expect(body.chat.recent.some((failure) => failure.legId === "chat_state.pulse")).toBe(false);
       expect(body.chat.recent.find((failure) => failure.legId === "chat_continuity")?.cause).toBe("prompt_too_large");

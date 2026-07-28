@@ -7,7 +7,11 @@ import {
   chatPersonalNotesSchema,
   mergeChatExtractions,
 } from "@/contracts/turns/chat-archivist";
-import { garmentOperationProposalListSchema, type GarmentHandleTable } from "@/contracts";
+import {
+  garmentOperationProposalListSchema,
+  garmentOperationProposalSchema,
+  type GarmentHandleTable,
+} from "@/contracts";
 import {
   buildChatExtractorPrompt,
   buildChatExtractorSystem,
@@ -62,6 +66,27 @@ function armedKeys(legId: ChatExtractorLegId, context: ChatExtractorContext): st
     .sort();
 }
 
+/**
+ * The (leg, wardrobe lane) pairs both sheet-shape properties are checked over.
+ * Both properties must see BOTH lanes, so the matrix lives here once rather than
+ * being retyped per `it.each` — a lane added to one and not the other is exactly
+ * the gap this file exists to close.
+ */
+/**
+ * Every operation kind the proposal contract accepts, in schema order — read off
+ * the discriminated union itself so the sheet's bullet list can never drift from
+ * what the parser will take.
+ */
+const PROPOSAL_OPS: string[] = garmentOperationProposalSchema.options.map((option) => option.shape.op.value);
+
+const LANE_CASES: [ChatExtractorLegId, "legacy" | "grounded"][] = [
+  ["memory", "legacy"],
+  ["continuity", "legacy"],
+  ["continuity", "grounded"],
+  ["character", "legacy"],
+  ["personal", "legacy"],
+];
+
 /** A minimal in-scope handle table — the switch that arms the grounded lane. */
 const HANDLES: GarmentHandleTable = {
   entries: [
@@ -96,26 +121,14 @@ describe("the extractor legs are composed from the field library", () => {
   // scope (the operations field arms), `armed` has none (the legacy pair arms).
   const grounded = ctx({ ...armed, garmentHandles: HANDLES });
 
-  it.each<[ChatExtractorLegId, "legacy" | "grounded"]>([
-    ["memory", "legacy"],
-    ["continuity", "legacy"],
-    ["continuity", "grounded"],
-    ["character", "legacy"],
-    ["personal", "legacy"],
-  ])("%s (%s wardrobe lane): every instructed field is an armed schema field, and vice versa", (legId, lane) => {
+  it.each(LANE_CASES)("%s (%s wardrobe lane): every instructed field is an armed schema field, and vice versa", (legId, lane) => {
     const context = lane === "grounded" ? grounded : armed;
     const instructed = instructedKeys(buildChatExtractorSystem(legId, context));
     // The `outfit` field's instruction spans several lines; it still leads with its key.
     expect(instructed.sort()).toEqual(armedKeys(legId, context));
   });
 
-  it.each<[ChatExtractorLegId, "legacy" | "grounded"]>([
-    ["memory", "legacy"],
-    ["continuity", "legacy"],
-    ["continuity", "grounded"],
-    ["character", "legacy"],
-    ["personal", "legacy"],
-  ])("%s (%s wardrobe lane): every worked example carries every armed key", (legId, lane) => {
+  it.each(LANE_CASES)("%s (%s wardrobe lane): every worked example carries every armed key", (legId, lane) => {
     const context = lane === "grounded" ? grounded : armed;
     const system = buildChatExtractorSystem(legId, context);
     const keys = armedKeys(legId, context);
@@ -190,10 +203,13 @@ describe("unarmed fields disappear from the sheet entirely", () => {
     expect(grounded).toContain('"garmentOperations"');
     expect(grounded).not.toContain('"outfit"');
     expect(grounded).not.toContain('"playerOutfit"');
-    // The vocabulary is rendered from the registries, so a contract edit reaches the sheet.
-    for (const op of ["move", "closure", "roll", "tuck", "displace", "restore", "condition", "deposit", "clean", "damage", "introduce"]) {
+    // The vocabulary is rendered from the registries, so a contract edit reaches the
+    // sheet — and this list is the CONTRACT's own, not a retyped copy: a proposal kind
+    // added to the discriminated union fails here until the sheet teaches it.
+    for (const op of PROPOSAL_OPS) {
       expect(grounded).toContain(`"op":"${op}"`);
     }
+    expect(PROPOSAL_OPS.length).toBeGreaterThan(0);
     expect(grounded).toContain("slight | moderate | substantial | extreme");
   });
 
@@ -221,8 +237,15 @@ describe("unarmed fields disappear from the sheet entirely", () => {
 
   it("numbering is contiguous whatever is armed", () => {
     const bare = buildChatExtractorSystem("character", ctx());
-    expect(bare).toContain("Produce a single JSON object with these 4 fields:");
-    expect(instructedKeys(bare)).toEqual(["openLoops", "plans", "voiceExemplar", "characterSlip"]);
+    const instructed = instructedKeys(bare);
+    // The leg's own schema fields, in schema order, minus the two this context
+    // disarms (no drives, no developable traits) — derived, so a new unconditional
+    // field on the schema updates the expectation instead of breaking it.
+    expect(instructed).toEqual(
+      Object.keys(chatCharacterNotesSchema.shape).filter((key) => !["driveUpdates", "traitShifts"].includes(key)),
+    );
+    // …and the header's count is that list's length, so the sentence cannot go stale.
+    expect(bare).toContain(`Produce a single JSON object with these ${instructed.length} fields:`);
   });
 });
 

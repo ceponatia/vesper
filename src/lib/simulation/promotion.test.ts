@@ -6,6 +6,11 @@ import {
   type PromoteActorFromCohortCommandInput,
   type SimulationCohort,
 } from "@/contracts/simulation";
+import {
+  bindSimEnvelopes,
+  type CommandEnvelopeSpec,
+  type TestPrincipal,
+} from "@/test/sim-envelopes";
 import { storySecondAt } from "./body-reads";
 import {
   derivedPromotedActorId,
@@ -18,6 +23,24 @@ const BRANCH = "branch-1";
 const SQUARE = "zone-square";
 const TAVERN = "zone-tavern";
 const LOCATION = "location-town";
+const RULESET = "ruleset-v1";
+
+/**
+ * This suite carries its own ruleset, so bind the trio once: the view's
+ * `branchId` must stay equal to the command's or the resolver would answer
+ * `branch_mismatch` instead of the law under test.
+ */
+const env = bindSimEnvelopes({ worldId: WORLD, branchId: BRANCH, rulesetVersion: RULESET });
+
+/** Everything a call site may override; `type`/`payload` are pinned by the builder. */
+type CmdSpec = Omit<CommandEnvelopeSpec, "type" | "payload">;
+
+/** The privileged default carries its own principal id, so it stays explicit. */
+const STORYTELLER: TestPrincipal = {
+  kind: "storyteller",
+  principalId: "storyteller-1",
+  controlledActorIds: [],
+};
 
 /** Market regulars: 200 people, at the square 08:00–18:00 at 80% strength. */
 function marketCohort(
@@ -39,12 +62,8 @@ function view(
   overrides: Partial<PromoteActorFromCohortResolutionView> = {},
 ): PromoteActorFromCohortResolutionView {
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: "ruleset-v1",
-    headSequence: 10,
     // 10:00 on day 1 — inside the market window.
-    storySecond: storySecondAt(1, 600),
+    ...env.meta({ headSequence: 10, storySecond: storySecondAt(1, 600) }),
     worldSeed: "seed-1",
     cohort: marketCohort(),
     zoneLocationId: LOCATION,
@@ -56,22 +75,13 @@ function view(
 
 function cmd(
   payload: Partial<PromoteActorFromCohortCommandInput["payload"]> = {},
-  overrides: Partial<Pick<PromoteActorFromCohortCommandInput, "branchId" | "principal" | "id">> = {},
+  spec: CmdSpec = {},
 ): PromoteActorFromCohortCommand {
-  return promoteActorFromCohortCommandSchema.parse({
-    id: overrides.id ?? "cmd-promote-1",
-    branchId: overrides.branchId ?? BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "promote-key-1",
-    principal: overrides.principal ?? {
-      kind: "storyteller",
-      principalId: "storyteller-1",
-      controlledActorIds: [],
-    },
-    submittedAtWallClock: "2026-07-21T12:00:00.000Z",
-    correlationId: "corr-1",
+  return env.command(promoteActorFromCohortCommandSchema, {
     type: "promote_actor_from_cohort",
-    schemaVersion: 1,
+    // The derived actor id hashes the command id — `cmd-promote-1` is load-bearing.
+    idSlug: "promote-1",
+    principal: STORYTELLER,
     payload: {
       cohortId: "cohort-market",
       zoneId: SQUARE,
@@ -79,6 +89,7 @@ function cmd(
       landing: { simulationLod: "event", inferenceLod: "no_model" },
       ...payload,
     },
+    ...spec,
   });
 }
 

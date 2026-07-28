@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectAllValidate, expectRefsResolve, expectUniqueIds } from "@/test/registry-invariants";
 import { attributeCategories } from "./category-ids";
 import { attributeGroups } from "./categories";
 import { buildRegistry } from "./registry";
@@ -9,15 +10,11 @@ const registry = buildRegistry(attributeGroups);
 
 describe("attribute registry invariants", () => {
   it("every definition validates against the definition schema", () => {
-    for (const def of registry.definitions) {
-      const result = attributeDefinitionSchema.safeParse(def);
-      expect(result.success, `${def.id}: ${result.success ? "" : result.error.message}`).toBe(true);
-    }
+    expectAllValidate(registry.definitions, attributeDefinitionSchema);
   });
 
   it("all attribute ids are unique", () => {
-    const ids = registry.definitions.map((d) => d.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    expectUniqueIds(registry.definitions, "attributeRegistry");
   });
 
   it("every enum/enum_list attribute has at least 2 allowed values", () => {
@@ -29,11 +26,12 @@ describe("attribute registry invariants", () => {
   });
 
   it("every bodyLocationId references a known body location", () => {
-    for (const def of registry.definitions) {
-      if (def.bodyLocationId !== undefined) {
-        expect(bodyLocationRegistry.byId(def.bodyLocationId), `${def.id} → ${def.bodyLocationId}`).toBeDefined();
-      }
-    }
+    expectRefsResolve(
+      registry.definitions,
+      (def) => (def.bodyLocationId === undefined ? [] : [def.bodyLocationId]),
+      (id) => bodyLocationRegistry.byId(id),
+      (def, id) => `${def.id} → ${id}`,
+    );
   });
 
   it("registers exactly one group per category, covering the full category list", () => {

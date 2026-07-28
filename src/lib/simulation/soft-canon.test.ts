@@ -8,6 +8,7 @@ import {
   type SoftCanonEntry,
   type SoftCanonProposal,
 } from "@/contracts/simulation/soft-canon";
+import { eventEnvelope } from "@/test/sim-envelopes";
 import {
   isSoftCanonEntryLive,
   replaySoftCanonHistory,
@@ -218,21 +219,14 @@ function canonEvent(
   type: "soft_canon_recorded" | "soft_canon_promoted" | "soft_canon_demoted",
   entry: SoftCanonEntry,
 ): SimulationBranchEvent {
-  return simulationBranchEventSchema.parse({
-    id: `event-canon-${sequence}`,
-    worldId: "world-1",
-    branchId: "branch-1",
+  return eventEnvelope(simulationBranchEventSchema, {
+    type,
+    idSlug: "canon",
     sequence,
     storySecond: NOW,
-    type,
-    schemaVersion: 1,
     rulesetVersion: "test-v1",
-    derivationVersion: "soft-canon-v1",
     commandId: `cmd-${sequence}`,
-    correlationId: "corr-1",
-    actorIds: [],
-    entityIds: [],
-    recordedAtWallClock: "2026-07-19T12:00:00.000Z",
+    overrides: { derivationVersion: "soft-canon-v1" },
     payload:
       type === "soft_canon_recorded"
         ? { proposal: proposal(), derived: { entry, reused: false } }

@@ -1,15 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { collectStream } from "@/server/test-support";
 import { collapseRepeatedBlocks, collapseRepeatedBlocksStream } from "./narrator-repeats";
 
 /** Feed an array of deltas through the streaming suppressor and join the result. */
-async function streamCollapse(chunks: string[]): Promise<string> {
-  async function* gen(): AsyncGenerator<string> {
-    for (const c of chunks) yield c;
-  }
-  let out = "";
-  for await (const piece of collapseRepeatedBlocksStream(gen())) out += piece;
-  return out;
-}
+const streamCollapse = (chunks: readonly string[]): Promise<string> =>
+  collectStream(chunks, collapseRepeatedBlocksStream);
 
 /** Split a string into token-sized deltas to simulate a live model stream. */
 function tokenize(text: string, size = 6): string[] {

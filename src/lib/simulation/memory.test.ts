@@ -9,6 +9,7 @@ import {
 import { speechActDeliveredEventSchema } from "@/contracts/simulation/narrative";
 import { observationSchema } from "@/contracts/simulation/perception";
 import { softCanonEntrySchema } from "@/contracts/simulation/soft-canon";
+import { eventEnvelope } from "@/test/sim-envelopes";
 import {
   projectAssertionDocument,
   projectAuthoredLoreDocument,
@@ -23,21 +24,16 @@ import {
 const NOW = 100_000;
 
 function departureEvent() {
-  return simulationBranchEventSchema.parse({
-    id: "event-departed-5",
-    worldId: "world-1",
-    branchId: "branch-1",
+  return eventEnvelope(simulationBranchEventSchema, {
+    type: "actor_departed",
+    idSlug: "departed",
     sequence: 5,
     storySecond: NOW,
-    type: "actor_departed",
-    schemaVersion: 1,
     rulesetVersion: "test-v1",
     commandId: "cmd-move",
-    correlationId: "corr-1",
     actorIds: ["mara"],
     entityIds: ["journey-1"],
-    locationId: "loc-cafe",
-    recordedAtWallClock: "2026-07-19T12:00:00.000Z",
+    overrides: { locationId: "loc-cafe" },
     payload: { journeyId: "journey-1", fromZoneId: "zone-cafe", linkId: "link-cs", departedAt: NOW },
   });
 }
@@ -139,21 +135,16 @@ describe("E4.4 document projectors (redaction and eligibility)", () => {
   });
 
   it("keeps spoken detail inside the participants' speech-act document", () => {
-    const event = speechActDeliveredEventSchema.parse({
-      id: "event-speech-7",
-      worldId: "world-1",
-      branchId: "branch-1",
+    const event = eventEnvelope(speechActDeliveredEventSchema, {
+      type: "speech_act_delivered",
+      idSlug: "speech",
       sequence: 7,
       storySecond: NOW,
-      type: "speech_act_delivered",
-      schemaVersion: 1,
       rulesetVersion: "test-v1",
       commandId: "cmd-confirm",
-      correlationId: "corr-1",
       actorIds: ["mara"],
       entityIds: ["engagement-1", "mara", "player"],
-      locationId: "loc-cafe",
-      recordedAtWallClock: "2026-07-19T12:00:00.000Z",
+      overrides: { locationId: "loc-cafe" },
       payload: {
         cutId: "cut-1",
         engagementId: "engagement-1",

@@ -1,15 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { collectStream } from "@/server/test-support";
 import { stripNarratorArtifacts, stripNarratorArtifactStream } from "./narrator-artifacts";
 
 /** Feed an array of deltas through the streaming stripper and join the result. */
-async function streamStrip(chunks: string[]): Promise<string> {
-  async function* gen(): AsyncGenerator<string> {
-    for (const c of chunks) yield c;
-  }
-  let out = "";
-  for await (const piece of stripNarratorArtifactStream(gen())) out += piece;
-  return out;
-}
+const streamStrip = (chunks: readonly string[]): Promise<string> =>
+  collectStream(chunks, stripNarratorArtifactStream);
 
 describe("stripNarratorArtifacts (one-shot)", () => {
   it("removes every observed Aion tag variant, opening and closing", () => {

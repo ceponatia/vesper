@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { exposedRegions, type WornItemInput } from "./visibility";
-import { garmentTemplateForCategory } from "./garment-templates";
 import type { GarmentBlueprint } from "./garment-blueprint";
 import { GARMENT_DEGREE_BAND_VALUES } from "./garment-material";
 import {
@@ -12,12 +11,11 @@ import {
   GARMENT_ROLL_WRISTS_THRESHOLD,
 } from "./garment-coverage";
 import {
-  emptyGarmentPresentationState,
-  pristineGarmentConditionState,
+  emptyGarmentCueState,
   type GarmentInstanceState,
   type GarmentPresentationState,
-  emptyGarmentCueState,
 } from "./garment-instance";
+import { templateFor, wornGarment } from "./garment-test-fixtures";
 import { applyGarmentOperations } from "./garment-presentation";
 import { garmentEffectiveCoverage, garmentReadout } from "./garment-effective-coverage";
 
@@ -32,29 +30,14 @@ import { garmentEffectiveCoverage, garmentReadout } from "./garment-effective-co
  * down twice.
  */
 
-const templateFor = (categoryId: string): GarmentBlueprint => {
-  const blueprint = garmentTemplateForCategory(categoryId, "woven_cotton_linen");
-  if (!blueprint) throw new Error(`no template for ${categoryId}`);
-  return blueprint;
-};
-
 const TOP = templateFor("top");
 const OUTERWEAR = templateFor("outerwear");
 const SKIRT = templateFor("skirt");
 const BRA = templateFor("bra");
 
 /** One worn instance carrying the given presentation — no store needed for a derived read. */
-function worn(presentation: Partial<GarmentPresentationState> = {}): GarmentInstanceState {
-  return {
-    id: "g1",
-    blueprintHash: "h1",
-    name: "garment",
-    locus: { kind: "worn", actorId: "c:alice" },
-    presentation: { ...emptyGarmentPresentationState(), ...presentation },
-    condition: pristineGarmentConditionState(),
-    lastChange: { kind: "mint", atMinutes: 0 },
-  };
-}
+const worn = (presentation: Partial<GarmentPresentationState> = {}): GarmentInstanceState =>
+  wornGarment({ id: "g1", name: "garment", actorId: "c:alice", presentation });
 
 /** Coverage of one named part after its behavior has been applied. */
 function partCovers(blueprint: GarmentBlueprint, instance: GarmentInstanceState, partId: string): string[] {

@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { journeySchema, physicalLocusSchema, type Journey, type PhysicalLocus } from "@/contracts/simulation/space";
 import { activityInstanceSchema, type ActivityInstance } from "@/contracts/simulation/activities";
 import { commitmentSchema, type Commitment } from "@/contracts/simulation/commitments";
+import {
+  atLocus,
+  journeyTo,
+  transitLocus,
+  SPACE_HOME_ZONE,
+  SPACE_NEIGHBOR,
+  SPACE_NOW,
+  SPACE_PLAYER,
+  SPACE_PRIMARY,
+  SPACE_SQUARE_ZONE,
+} from "@/test/sim-space-fixtures";
 import {
   buildSoloFallbackProse,
   buildSoloPlayerSide,
@@ -12,52 +22,21 @@ import {
 
 /**
  * Pure solo-cut shaping tests (world-ui.plan.md slice 0). No IO — every
- * projection piece is a fixture, so the two-block context and its deterministic
- * fallback prose are asserted directly.
+ * projection piece is a fixture (@/test/sim-space-fixtures), so the two-block
+ * context and its deterministic fallback prose are asserted directly.
  */
 
-const PLAYER = "actor-player";
-const PRIMARY = "actor-primary";
-const NEIGHBOR = "actor-neighbor";
-const HOME = "zone-home";
-const SQUARE = "zone-square";
-const NOW = 8 * 3_600;
+const PLAYER = SPACE_PLAYER;
+const PRIMARY = SPACE_PRIMARY;
+const NEIGHBOR = SPACE_NEIGHBOR;
+const HOME = SPACE_HOME_ZONE;
+const SQUARE = SPACE_SQUARE_ZONE;
+const NOW = SPACE_NOW;
 
 const LABELS: Record<string, string> = { [HOME]: "home", [SQUARE]: "town square" };
 const NAMES: Record<string, string> = { [PLAYER]: "Bri", [PRIMARY]: "Nora", [NEIGHBOR]: "Sable" };
 const zoneLabelOf = (zoneId: string): string => LABELS[zoneId] ?? zoneId;
 const actorNameOf = (actorId: string): string => NAMES[actorId] ?? actorId;
-
-function atLocus(actorId: string, zoneId: string): PhysicalLocus {
-  return physicalLocusSchema.parse({ kind: "at", actorId, locationId: "loc-town", zoneId, since: NOW });
-}
-
-function transitLocus(actorId: string, journeyId: string): PhysicalLocus {
-  return physicalLocusSchema.parse({
-    kind: "in_transit",
-    actorId,
-    journeyId,
-    linkId: "link-home-square",
-    enteredAt: NOW,
-    earliestExitAt: NOW + 300,
-  });
-}
-
-function journeyTo(id: string, destinationZoneId: string, earliestArrivalAt: number): Journey {
-  return journeySchema.parse({
-    id,
-    actorIds: [PLAYER],
-    originZoneId: HOME,
-    destinationZoneId,
-    routeLinkIds: ["link-home-square"],
-    travelMode: "walk",
-    earliestArrivalAt,
-    expectedArrivalAt: earliestArrivalAt,
-    status: "active",
-    currentLinkIndex: 0,
-    routeDerivationVersion: "gate3-route-v1",
-  });
-}
 
 function activity(actorId: string, actionDefinitionId: string, zoneId: string): ActivityInstance {
   return activityInstanceSchema.parse({
@@ -126,7 +105,7 @@ describe("buildSoloPlayerSide", () => {
       playerActorId: PLAYER,
       primaryActorId: PRIMARY,
       loci: [transitLocus(PLAYER, "jrn-1"), atLocus(NEIGHBOR, SQUARE)],
-      journeys: [journeyTo("jrn-1", SQUARE, NOW + 240)],
+      journeys: [journeyTo("jrn-1", { destinationZoneId: SQUARE, earliestArrivalAt: NOW + 240 })],
       activities: [],
       heldItems: [],
       zoneLabelOf,
@@ -190,7 +169,7 @@ describe("buildSoloVignette", () => {
       primaryActorId: PRIMARY,
       primaryName: "Nora",
       loci: [transitLocus(PRIMARY, "jrn-2")],
-      journeys: [journeyTo("jrn-2", SQUARE, NOW + 120)],
+      journeys: [journeyTo("jrn-2", { destinationZoneId: SQUARE, earliestArrivalAt: NOW + 120 })],
       activities: [],
       commitments: [],
       zoneLabelOf,

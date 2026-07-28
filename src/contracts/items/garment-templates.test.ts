@@ -35,8 +35,15 @@ describe("garment category templates", () => {
     }
   });
 
-  it("nine categories are sparse; the rest are root-only", () => {
-    expect(garmentSparseTemplateCategoryIds).toHaveLength(9);
+  it("the sparse-template categories are sparse; every other category is root-only", () => {
+    // A FLOOR, not a fixed count: authoring a NEW sparse template is a pure
+    // vocabulary addition, while silently losing one (or shipping none) is a
+    // regression. What the count used to stand in for — that the list and the
+    // templates agree — is the per-category assertion below.
+    expect(garmentSparseTemplateCategoryIds.length).toBeGreaterThanOrEqual(9);
+    for (const id of garmentSparseTemplateCategoryIds) {
+      expect(clothingCategories.some((category) => category.id === id), `sparse list names ${id}`).toBe(true);
+    }
     for (const category of clothingCategories) {
       const template = garmentCategoryTemplates[category.id];
       if (!template) continue;

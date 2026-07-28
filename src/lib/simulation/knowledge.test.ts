@@ -8,6 +8,7 @@ import {
   type DisclosureMadeEvent,
 } from "@/contracts/simulation/knowledge";
 import type { Observation } from "@/contracts/simulation/perception";
+import { bindSimEnvelopes, testPrincipal, type TestPrincipal } from "@/test/sim-envelopes";
 import {
   applyDisclosureEvent,
   emptyKnowledgeState,
@@ -19,6 +20,16 @@ import {
 import { deriveEventObservations, type PerceptionSpaceView } from "./perception";
 
 const NOW = 200_000;
+const WORLD = "world-1";
+const BRANCH = "branch-1";
+const RULESET = "e4-2-test-v1";
+
+/**
+ * This suite carries its own ruleset, so bind the trio once. The raw command
+ * below feeds its `branchId` from the same constant the view's meta does — a
+ * mismatch would flip every resolution to `branch_mismatch`.
+ */
+const env = bindSimEnvelopes({ worldId: WORLD, branchId: BRANCH, rulesetVersion: RULESET });
 
 /** Ana and Ben share the cafe hall, Dex is in its kitchen, Cam is at the shop. */
 function fixtureSpace(): PerceptionSpaceView {
@@ -48,7 +59,7 @@ interface DiscloseInput {
   targetsCoPresent?: boolean;
   referencedAssertion?: Assertion;
   speakerBelief?: Belief;
-  principal?: Record<string, unknown>;
+  principal?: TestPrincipal;
   speakerExists?: boolean;
   missingTargetIds?: string[];
 }
@@ -56,11 +67,7 @@ interface DiscloseInput {
 function resolveDisclosure(input: DiscloseInput) {
   return resolveMakeDisclosure(
     {
-      worldId: "world-1",
-      branchId: "branch-1",
-      rulesetVersion: "e4-2-test-v1",
-      headSequence: input.headSequence,
-      storySecond: input.storySecond ?? NOW,
+      ...env.meta({ headSequence: input.headSequence, storySecond: input.storySecond ?? NOW }),
       speakerExists: input.speakerExists ?? true,
       missingTargetIds: input.missingTargetIds ?? [],
       ...(input.speakerLocationId === undefined ? {} : { speakerLocationId: input.speakerLocationId }),
@@ -70,12 +77,10 @@ function resolveDisclosure(input: DiscloseInput) {
     } as never,
     {
       id: input.commandId,
-      branchId: "branch-1",
+      branchId: BRANCH,
       expectedVersion: 0,
       idempotencyKey: `key-${input.commandId}`,
-      principal:
-        input.principal ??
-        ({ kind: "player", principalId: "principal-1", controlledActorIds: [input.speakerActorId] } as never),
+      principal: input.principal ?? testPrincipal("player", [input.speakerActorId]),
       submittedAtWallClock: "2026-07-19T12:00:00.000Z",
       correlationId: "corr-1",
       type: "make_disclosure",
@@ -148,7 +153,7 @@ describe("E4.2 resolveMakeDisclosure", () => {
       targetActorIds: ["ben"],
       content: quitClaim,
       headSequence: 10,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["ben"] },
+      principal: testPrincipal("player", ["ben"]),
     });
     expect(unauthorized.ok).toBe(false);
     if (!unauthorized.ok) expect(unauthorized.code).toBe("unauthorized_actor");

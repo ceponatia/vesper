@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { z } from "zod";
 import { activityInstanceSchema } from "@/contracts/simulation/activities";
 import { engagementSchema } from "@/contracts/simulation/engagements";
 import type { TriggerScheduledEvent } from "@/contracts/simulation/scheduler";
@@ -6,8 +7,6 @@ import {
   applyBodyConditionCommandSchema,
   applyBodyModifierCommandSchema,
   applyBodySourceCommandSchema,
-  bodyMeterDefinitionSchema,
-  bodyMeterStateSchema,
   bodyModifierSchema,
   bodyMeterRegistryV1,
   bodyRhythmRowSchema,
@@ -16,11 +15,20 @@ import {
   initializeActorBodyCommandSchema,
   resolveBodyCollapseCommandSchema,
   resolveBodyThresholdCommandSchema,
+  type bodyMeterDefinitionSchema,
+  type bodyMeterStateSchema,
   type BodyMeterDefinition,
   type BodyMeterState,
   type BodyModifier,
   type BodyRhythmRow,
 } from "@/contracts/simulation/bodies";
+import {
+  bindSimEnvelopes,
+  testPrincipal,
+  type CommandEnvelopeSpec,
+  type TestPrincipal,
+} from "@/test/sim-envelopes";
+import { meterDefinition, meterState as sharedMeterState } from "@/test/sim-material-fixtures";
 import {
   applyBodyEvent,
   buildMeterView,
@@ -42,42 +50,28 @@ import {
 
 const BRANCH = "branch-e5-1";
 const WORLD = "world-e5-1";
+const RULESET = "e5-1-test-v1";
 const ACTOR = "actor-mara";
 
-const meta = {
-  worldId: WORLD,
-  branchId: BRANCH,
-  rulesetVersion: "e5-1-test-v1",
-  headSequence: 0,
-  storySecond: 10_000,
-};
+/**
+ * This suite carries its own world/branch/ruleset trio, so the shared envelope
+ * builders are bound to it once: a view's `branchId` must match the command's or
+ * every resolver short-circuits to `branch_mismatch`.
+ */
+const sim = bindSimEnvelopes({ worldId: WORLD, branchId: BRANCH, rulesetVersion: RULESET });
 
-function principal(kind: "player" | "system" | "storyteller" = "storyteller") {
-  return {
-    kind,
-    principalId: "principal-1",
-    controlledActorIds: kind === "player" ? [ACTOR] : [],
-  };
-}
+const meta = sim.meta();
 
-function envelope(type: string, payload: unknown, overrides: Record<string, unknown> = {}) {
-  return {
-    id: `cmd-${type}`,
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: `key-${type}`,
-    principal: principal(),
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: "corr-1",
-    type,
-    schemaVersion: 1,
-    payload,
-    ...overrides,
-  };
-}
+/**
+ * The scheduler's own principal — deliberately NOT `testPrincipal`'s
+ * `principal-1`, because a due alarm fires as the system, not as an author.
+ */
+const SIM_SCHEDULER: TestPrincipal = { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] };
 
-function reserveDefinition(overrides: Partial<BodyMeterDefinition> = {}): BodyMeterDefinition {
-  return bodyMeterDefinitionSchema.parse({
+type MeterDefinitionOverrides = Partial<z.input<typeof bodyMeterDefinitionSchema>>;
+
+function reserveDefinition(overrides: MeterDefinitionOverrides = {}): BodyMeterDefinition {
+  return meterDefinition({
     key: "energy",
     class: "reserve",
     driftLaw: {
@@ -86,23 +80,13 @@ function reserveDefinition(overrides: Partial<BodyMeterDefinition> = {}): BodyMe
       target: { kind: "fixed", valueFixedPoint: 0 },
     },
     initialFixedPoint: 8_000,
-    baselineFixedPoint: 0,
-    thresholds: [],
     ...overrides,
   });
 }
 
-function linearDefinition(overrides: Partial<BodyMeterDefinition> = {}): BodyMeterDefinition {
-  return bodyMeterDefinitionSchema.parse({
+function linearDefinition(overrides: MeterDefinitionOverrides = {}): BodyMeterDefinition {
+  return meterDefinition({
     key: "hygiene",
-    class: "rate",
-    driftLaw: {
-      kind: "linear",
-      ratePerHourFixedPoint: 150,
-      target: { kind: "fixed", valueFixedPoint: 0 },
-    },
-    initialFixedPoint: 9_000,
-    baselineFixedPoint: 0,
     thresholds: [
       {
         key: "grimy",
@@ -116,19 +100,12 @@ function linearDefinition(overrides: Partial<BodyMeterDefinition> = {}): BodyMet
   });
 }
 
+/** The shared meter-state fixture, re-based onto this suite's actor. */
 function meterState(
   definition: BodyMeterDefinition,
-  overrides: Partial<BodyMeterState> = {},
+  overrides: Partial<z.input<typeof bodyMeterStateSchema>> = {},
 ): BodyMeterState {
-  return bodyMeterStateSchema.parse({
-    actorId: ACTOR,
-    meterKey: definition.key,
-    valueFixedPoint: definition.initialFixedPoint,
-    baselineFixedPoint: definition.baselineFixedPoint,
-    lastIntegratedAtStorySecond: 0,
-    registryVersion: "body-v1",
-    ...overrides,
-  });
+  return sharedMeterState(definition, { actorId: ACTOR, ...overrides });
 }
 
 function modifier(overrides: Record<string, unknown> & { id: string; meterKey: string }): BodyModifier {
@@ -319,15 +296,15 @@ describe("E5.1 threshold solving", () => {
 
 describe("E5.1 resolvers and replay parity", () => {
   it("seeds the registry, arms initial alarms, and replays bit-identically", () => {
-    const command = envelope("initialize_actor_body", {
+    // Envelope schemas validate inside the resolver's callers; the builder parses here.
+    const command = initializeCmd({
       actorId: ACTOR,
       registryVersion: "body-v1",
       baselineOverrides: { arousal: 1_500 },
     });
     const resolution = resolveInitializeActorBody(
       { ...meta, actorExists: true, existingMeterKeys: [] },
-      // Envelope schemas validate inside the resolver's callers; parse here.
-      parseInitialize(command),
+      command,
     );
     if (!resolution.ok) throw new Error(`unexpected rejection ${resolution.code}`);
     expect(resolution.meters).toHaveLength(bodyMeterRegistryV1.length);
@@ -347,12 +324,9 @@ describe("E5.1 resolvers and replay parity", () => {
   });
 
   it("rejects player-principal seeding and double initialization", () => {
-    const command = parseInitialize(
-      envelope(
-        "initialize_actor_body",
-        { actorId: ACTOR, registryVersion: "body-v1", baselineOverrides: {} },
-        { principal: principal("player") },
-      ),
+    const command = initializeCmd(
+      { actorId: ACTOR, registryVersion: "body-v1", baselineOverrides: {} },
+      { principal: testPrincipal("player", [ACTOR]) },
     );
     const rejected = resolveInitializeActorBody(
       { ...meta, actorExists: true, existingMeterKeys: [] },
@@ -362,7 +336,7 @@ describe("E5.1 resolvers and replay parity", () => {
     if (!rejected.ok) expect(rejected.code).toBe("unauthorized_principal");
     const doubled = resolveInitializeActorBody(
       { ...meta, actorExists: true, existingMeterKeys: bodyMeterRegistryV1.map((definition) => definition.key) },
-      parseInitialize(envelope("initialize_actor_body", { actorId: ACTOR, registryVersion: "body-v1", baselineOverrides: {} })),
+      initializeCmd({ actorId: ACTOR, registryVersion: "body-v1", baselineOverrides: {} }),
     );
     expect(doubled.ok).toBe(false);
     if (!doubled.ok) expect(doubled.code).toBe("body_already_initialized");
@@ -374,7 +348,7 @@ describe("E5.1 resolvers and replay parity", () => {
     // rows untouched, and no alarms arm (the newcomers carry no thresholds).
     const resolution = resolveInitializeActorBody(
       { ...meta, actorExists: true, existingMeterKeys: ["energy", "hygiene", "arousal"] },
-      parseInitialize(envelope("initialize_actor_body", { actorId: ACTOR, registryVersion: "body-v1", baselineOverrides: {} })),
+      initializeCmd({ actorId: ACTOR, registryVersion: "body-v1", baselineOverrides: {} }),
     );
     if (!resolution.ok) throw new Error(`unexpected rejection ${resolution.code}`);
     expect(resolution.meters.map((meter) => meter.meterKey).sort()).toEqual(["intoxication", "mood", "stress"]);
@@ -386,14 +360,12 @@ describe("E5.1 resolvers and replay parity", () => {
   it("applies a source at the integrated value and re-arms the meter's alarm", () => {
     const definition = linearDefinition();
     const state = meterState(definition, { lastIntegratedAtStorySecond: 0 });
-    const command = parseSource(
-      envelope("apply_body_source", {
-        actorId: ACTOR,
-        meterKey: definition.key,
-        sourceKind: "wash",
-        operation: { kind: "set", valueFixedPoint: 9_500 },
-      }),
-    );
+    const command = sourceCmd({
+      actorId: ACTOR,
+      meterKey: definition.key,
+      sourceKind: "wash",
+      operation: { kind: "set", valueFixedPoint: 9_500 },
+    });
     const resolution = resolveApplyBodySource(
       { ...meta, bodyInitialized: true, meter: state, definition, modifiers: [] },
       command,
@@ -413,14 +385,12 @@ describe("E5.1 resolvers and replay parity", () => {
 
   it("clamps additive sources into the meter range", () => {
     const definition = linearDefinition();
-    const command = parseSource(
-      envelope("apply_body_source", {
-        actorId: ACTOR,
-        meterKey: definition.key,
-        sourceKind: "exertion",
-        operation: { kind: "add", deltaFixedPoint: 5_000 },
-      }),
-    );
+    const command = sourceCmd({
+      actorId: ACTOR,
+      meterKey: definition.key,
+      sourceKind: "exertion",
+      operation: { kind: "add", deltaFixedPoint: 5_000 },
+    });
     const resolution = resolveApplyBodySource(
       { ...meta, bodyInitialized: true, meter: meterState(definition), definition, modifiers: [] },
       command,
@@ -431,16 +401,14 @@ describe("E5.1 resolvers and replay parity", () => {
 
   it("refuses a rate_add on a decay-law meter", () => {
     const definition = reserveDefinition();
-    const command = parseModifier(
-      envelope("apply_body_modifier", {
-        actorId: ACTOR,
-        modifier: {
-          meterKey: definition.key,
-          operation: { kind: "rate_add", ratePerHourFixedPoint: 100 },
-          stackingGroup: "test",
-        },
-      }),
-    );
+    const command = modifierCmd({
+      actorId: ACTOR,
+      modifier: {
+        meterKey: definition.key,
+        operation: { kind: "rate_add", ratePerHourFixedPoint: 100 },
+        stackingGroup: "test",
+      },
+    });
     const resolution = resolveApplyBodyModifier(
       { ...meta, bodyInitialized: true, meter: meterState(definition), definition, modifiers: [] },
       command,
@@ -457,17 +425,13 @@ describe("E5.1 resolvers and replay parity", () => {
     ]);
     const applied = resolveApplyBodyCondition(
       { ...meta, bodyInitialized: true, activeSameKey: false, meterViews },
-      parseCondition(
-        envelope("apply_body_condition", {
-          actorId: ACTOR,
-          conditionKey: "asleep",
-          durationSeconds: 5_400,
-          modifiers: [
-            { meterKey: definition.key, operation: { kind: "suspend" }, stackingGroup: "sleep" },
-          ],
-          observerActorIds: [],
-        }),
-      ),
+      conditionCmd({
+        actorId: ACTOR,
+        conditionKey: "asleep",
+        durationSeconds: 5_400,
+        modifiers: [{ meterKey: definition.key, operation: { kind: "suspend" }, stackingGroup: "sleep" }],
+        observerActorIds: [],
+      }),
     );
     if (!applied.ok) throw new Error(`unexpected rejection ${applied.code}`);
     expect(applied.condition.expiresAtStorySecond).toBe(meta.storySecond + 5_400);
@@ -488,12 +452,9 @@ describe("E5.1 resolvers and replay parity", () => {
         ownedModifiers: applied.modifiers,
         meterViews,
       },
-      parseEnd(
-        envelope(
-          "end_body_condition",
-          { actorId: ACTOR, conditionId: applied.condition.id, basis: "expired" },
-          { principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] } },
-        ),
+      endConditionCmd(
+        { actorId: ACTOR, conditionId: applied.condition.id, basis: "expired" },
+        { principal: SIM_SCHEDULER },
       ),
     );
     expect(early.ok).toBe(false);
@@ -506,12 +467,9 @@ describe("E5.1 resolvers and replay parity", () => {
         ownedModifiers: applied.modifiers,
         meterViews,
       },
-      parseEnd(
-        envelope(
-          "end_body_condition",
-          { actorId: ACTOR, conditionId: applied.condition.id, basis: "expired" },
-          { principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] } },
-        ),
+      endConditionCmd(
+        { actorId: ACTOR, conditionId: applied.condition.id, basis: "expired" },
+        { principal: SIM_SCHEDULER },
       ),
     );
     if (!ended.ok) throw new Error(`unexpected rejection ${ended.code}`);
@@ -535,12 +493,9 @@ describe("E5.1 resolvers and replay parity", () => {
     });
     const state = meterState(definition, { lastIntegratedAtStorySecond: 0 });
     const dueMeta = { ...meta, storySecond: 156_000 };
-    const command = parseThreshold(
-      envelope(
-        "resolve_body_threshold",
-        { actorId: ACTOR, meterKey: definition.key, thresholdKey: "grimy", armedAtSequence: 1 },
-        { principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] } },
-      ),
+    const command = thresholdCmd(
+      { actorId: ACTOR, meterKey: definition.key, thresholdKey: "grimy", armedAtSequence: 1 },
+      { principal: SIM_SCHEDULER },
     );
     const resolution = resolveBodyThreshold(
       {
@@ -579,7 +534,7 @@ describe("E5.1 resolvers and replay parity", () => {
   it("replays a full material history onto the same projection the resolvers produced", () => {
     const initialize = resolveInitializeActorBody(
       { ...meta, actorExists: true, existingMeterKeys: [] },
-      parseInitialize(envelope("initialize_actor_body", { actorId: ACTOR, registryVersion: "body-v1", baselineOverrides: {} })),
+      initializeCmd({ actorId: ACTOR, registryVersion: "body-v1", baselineOverrides: {} }),
     );
     if (!initialize.ok) throw new Error("initialize rejected");
     const afterInit = replayBodiesHistory({
@@ -601,17 +556,15 @@ describe("E5.1 resolvers and replay parity", () => {
         definition,
         modifiers: [],
       },
-      parseSource(
-        envelope(
-          "apply_body_source",
-          {
-            actorId: ACTOR,
-            meterKey: "hygiene",
-            sourceKind: "wash",
-            operation: { kind: "set", valueFixedPoint: 9_500 },
-          },
-          { id: "cmd-source-2", idempotencyKey: "key-source-2" },
-        ),
+      // The second command in this replayed history; its slug names it as such.
+      sourceCmd(
+        {
+          actorId: ACTOR,
+          meterKey: "hygiene",
+          sourceKind: "wash",
+          operation: { kind: "set", valueFixedPoint: 9_500 },
+        },
+        { idSlug: "source-2" },
       ),
     );
     if (!source.ok) throw new Error("source rejected");
@@ -638,13 +591,11 @@ describe("E5.1 resolvers and replay parity", () => {
 
 describe("E5.2 climax and exertion couplings (§25.4)", () => {
   function arousalDefinition(): BodyMeterDefinition {
-    return bodyMeterDefinitionSchema.parse({
+    return meterDefinition({
       key: "arousal",
       class: "load",
       driftLaw: { kind: "linear", ratePerHourFixedPoint: 2_000, target: { kind: "baseline" } },
       initialFixedPoint: 0,
-      baselineFixedPoint: 0,
-      thresholds: [],
     });
   }
 
@@ -655,14 +606,12 @@ describe("E5.2 climax and exertion couplings (§25.4)", () => {
       baselineFixedPoint: 1_500,
       lastIntegratedAtStorySecond: meta.storySecond,
     });
-    const command = parseSource(
-      envelope("apply_body_source", {
-        actorId: ACTOR,
-        meterKey: "arousal",
-        sourceKind: "climax",
-        operation: { kind: "reset_to_baseline" },
-      }),
-    );
+    const command = sourceCmd({
+      actorId: ACTOR,
+      meterKey: "arousal",
+      sourceKind: "climax",
+      operation: { kind: "reset_to_baseline" },
+    });
     const resolution = resolveApplyBodySource(
       {
         ...meta,
@@ -707,14 +656,12 @@ describe("E5.2 climax and exertion couplings (§25.4)", () => {
   it("drains hygiene at half the energy cost of exertion, one causal record each", () => {
     const energy = reserveDefinition();
     const hygiene = linearDefinition();
-    const command = parseSource(
-      envelope("apply_body_source", {
-        actorId: ACTOR,
-        meterKey: "energy",
-        sourceKind: "exertion",
-        operation: { kind: "add", deltaFixedPoint: -1_000 },
-      }),
-    );
+    const command = sourceCmd({
+      actorId: ACTOR,
+      meterKey: "energy",
+      sourceKind: "exertion",
+      operation: { kind: "add", deltaFixedPoint: -1_000 },
+    });
     const resolution = resolveApplyBodySource(
       {
         ...meta,
@@ -780,13 +727,7 @@ describe("E5.2 slice 2b — collapse resolves into forced sleep and interruption
   }
 
   function collapseCommand() {
-    return parseCollapse(
-      envelope(
-        "resolve_body_collapse",
-        { actorId: ACTOR, armedAtSequence: 5 },
-        { principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] } },
-      ),
-    );
+    return collapseCmd({ actorId: ACTOR, armedAtSequence: 5 }, { principal: SIM_SCHEDULER });
   }
 
   it("emits the collapse, interrupts held work, and forces the denied sleep", () => {
@@ -966,26 +907,29 @@ describe("buildMeterView — the shared integration-view seam (slice 2 dedup)", 
   });
 });
 
-// --- Command parsing helpers (the stores parse at their trust boundary) ------
+// --- Command builders (each parses at the trust boundary the stores enforce) --
 
-function parseInitialize(raw: unknown) {
-  return initializeActorBodyCommandSchema.parse(raw);
+/** Envelope-shaped tweaks a call site may layer on top of a command builder. */
+type CmdSpec = Omit<CommandEnvelopeSpec, "type" | "payload">;
+
+function initializeCmd(payload: unknown, spec: CmdSpec = {}) {
+  return sim.command(initializeActorBodyCommandSchema, { type: "initialize_actor_body", payload, ...spec });
 }
-function parseSource(raw: unknown) {
-  return applyBodySourceCommandSchema.parse(raw);
+function sourceCmd(payload: unknown, spec: CmdSpec = {}) {
+  return sim.command(applyBodySourceCommandSchema, { type: "apply_body_source", payload, ...spec });
 }
-function parseModifier(raw: unknown) {
-  return applyBodyModifierCommandSchema.parse(raw);
+function modifierCmd(payload: unknown, spec: CmdSpec = {}) {
+  return sim.command(applyBodyModifierCommandSchema, { type: "apply_body_modifier", payload, ...spec });
 }
-function parseCondition(raw: unknown) {
-  return applyBodyConditionCommandSchema.parse(raw);
+function conditionCmd(payload: unknown, spec: CmdSpec = {}) {
+  return sim.command(applyBodyConditionCommandSchema, { type: "apply_body_condition", payload, ...spec });
 }
-function parseEnd(raw: unknown) {
-  return endBodyConditionCommandSchema.parse(raw);
+function endConditionCmd(payload: unknown, spec: CmdSpec = {}) {
+  return sim.command(endBodyConditionCommandSchema, { type: "end_body_condition", payload, ...spec });
 }
-function parseThreshold(raw: unknown) {
-  return resolveBodyThresholdCommandSchema.parse(raw);
+function thresholdCmd(payload: unknown, spec: CmdSpec = {}) {
+  return sim.command(resolveBodyThresholdCommandSchema, { type: "resolve_body_threshold", payload, ...spec });
 }
-function parseCollapse(raw: unknown) {
-  return resolveBodyCollapseCommandSchema.parse(raw);
+function collapseCmd(payload: unknown, spec: CmdSpec = {}) {
+  return sim.command(resolveBodyCollapseCommandSchema, { type: "resolve_body_collapse", payload, ...spec });
 }

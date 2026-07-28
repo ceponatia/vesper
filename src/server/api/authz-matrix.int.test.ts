@@ -1,9 +1,11 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import type { PgColumn, PgTable, PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
 import {
   findViewable,
   isPublicEntityImage,
+  PUBLIC_DTO_KEYS,
   searchLibraryIds,
   toPublicCharacter,
   toPublicEntityImage,
@@ -26,9 +28,14 @@ import {
   simBranches,
   simWorlds,
   socialCards,
-  users,
 } from "@/server/db";
-import { canonicalImageRow, probeIntegrationDb } from "@/server/test-support";
+import {
+  canonicalImageRow,
+  endTestPool,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  seedTestUser,
+} from "@/server/test-support";
 // The ownership gates these rows drive live in the route tree rather than a
 // server barrel (`src/app/api/**/owned.ts`), but they are plain exported async
 // functions, so the matrix calls the REAL seam the route calls instead of a
@@ -70,8 +77,6 @@ import { findPersona } from "../../app/api/personas/[id]/owned";
 // unreachable database fails the suite instead. A release gate that skips the
 // whole authorization matrix is worse than no gate.
 // =============================================================================
-
-process.env.AI_FAKE = "1";
 
 const ready = await probeIntegrationDb("authz-matrix.int.test", "characters");
 
@@ -129,33 +134,19 @@ async function seedChat(ownerId: string, title: string): Promise<{ chatId: strin
 
 afterAll(async () => {
   if (ready) {
-    const owners = [ownerA, ownerB].filter(Boolean);
-    if (owners.length > 0) {
-      // Chats first (they cascade participants + messages and hold the branch
-      // link), then images, then the entities images/participants point at.
-      await db().delete(characterChats).where(inArray(characterChats.ownerId, owners));
-      await db().delete(images).where(inArray(images.ownerId, owners));
-      await db().delete(characters).where(inArray(characters.ownerId, owners));
-      await db().delete(locations).where(inArray(locations.ownerId, owners));
-      await db().delete(items).where(inArray(items.ownerId, owners));
-      await db().delete(socialCards).where(inArray(socialCards.ownerId, owners));
-      await db().delete(personas).where(inArray(personas.ownerId, owners));
-      if (fixture.world) await db().delete(simWorlds).where(eq(simWorlds.id, fixture.world)); // cascades branches
-      await db().delete(users).where(inArray(users.id, owners));
-    }
+    // `sim_worlds` carries no owner column, so it is `purgeOwnerRows`' documented
+    // exception and goes first — the delete cascades its branches, which nulls
+    // the successor chat's `sim_branch_id` before the owner sweep runs.
+    if (fixture.world) await db().delete(simWorlds).where(eq(simWorlds.id, fixture.world));
+    await purgeOwnerRows([ownerA, ownerB]);
   }
-  await globalThis.__vesperPool?.end();
-  globalThis.__vesperPool = undefined;
+  await endTestPool();
 });
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [a] = await db().insert(users).values({ email: `authz-a-${stamp}@test.local`, name: "Authz A" }).returning({ id: users.id });
-  const [b] = await db().insert(users).values({ email: `authz-b-${stamp}@test.local`, name: "Authz B" }).returning({ id: users.id });
-  if (!a || !b) throw new Error("user insert failed");
-  ownerA = a.id;
-  ownerB = b.id;
+  ownerA = (await seedTestUser("authz-a")).id;
+  ownerB = (await seedTestUser("authz-b")).id;
 
   fixture.publicCharacter = await seedCharacter(ownerA, "Published author", "public");
   fixture.privateCharacter = await seedCharacter(ownerA, "Private draft");
@@ -262,6 +253,50 @@ interface OwnedResource {
   raw: (id: string) => Promise<unknown>;
 }
 
+/**
+ * The write half of a matrix row for an owner-scoped table: the UPDATE a PATCH
+ * route runs, the DELETE a DELETE route runs, and the ownership-blind read that
+ * witnesses byte identity. All three are the same drizzle chain over `(id,
+ * ownerId)`; only the table and the column a tamper attempt writes differ.
+ *
+ * Spelled out per row it was ~25 lines each, and the CONVENTION above asks for a
+ * matrix row in the same change as every new route — a cost worth removing.
+ * With this, a uniform resource is `seed` + `read` + one spread.
+ *
+ * The two rows whose delete is a real exported seam (`deleteOwnedImage`,
+ * `deleteChat`) spread this for `update`/`raw` and then override `remove`, so
+ * the matrix keeps calling the function the route calls rather than a replica
+ * that could drift away from an insecure original.
+ */
+function ownedTableOps<T extends PgTable & { id: PgColumn; ownerId: PgColumn }>(
+  table: T,
+  tamper: PgUpdateSetSource<T>,
+): Pick<OwnedResource, "update" | "remove" | "raw"> {
+  return {
+    update: async (id, userId) =>
+      (
+        await db()
+          .update(table)
+          .set(tamper)
+          .where(and(eq(table.id, id), eq(table.ownerId, userId)))
+          .returning({ id: table.id })
+      ).map((row) => String(row.id)),
+    remove: async (id, userId) =>
+      (
+        await db()
+          .delete(table)
+          .where(and(eq(table.id, id), eq(table.ownerId, userId)))
+          .returning({ id: table.id })
+      ).map((row) => String(row.id)),
+    // Widened to the base `PgTable` for the `from`: drizzle guards `select()`
+    // with a conditional type that rejects an empty selection, and it cannot be
+    // evaluated against an unresolved type parameter. The row is returned as
+    // `unknown` either way — `raw` is a byte-identity witness, never read field
+    // by field.
+    raw: async (id) => (await db().select().from(table as PgTable).where(eq(table.id, id)).limit(1))[0],
+  };
+}
+
 const resources: OwnedResource[] = [
   {
     resource: "character",
@@ -269,22 +304,7 @@ const resources: OwnedResource[] = [
     // src/app/api/characters/[id]/route.ts writes go through findOwnedCharacter;
     // reads widen to owner-or-public via findViewable (a private row stays owner-only).
     read: (id, userId) => findViewable("character", id, userId),
-    update: async (id, userId) =>
-      (
-        await db()
-          .update(characters)
-          .set({ name: "tampered" })
-          .where(and(eq(characters.id, id), eq(characters.ownerId, userId)))
-          .returning({ id: characters.id })
-      ).map((r) => r.id),
-    remove: async (id, userId) =>
-      (
-        await db()
-          .delete(characters)
-          .where(and(eq(characters.id, id), eq(characters.ownerId, userId)))
-          .returning({ id: characters.id })
-      ).map((r) => r.id),
-    raw: async (id) => (await db().select().from(characters).where(eq(characters.id, id)).limit(1))[0],
+    ...ownedTableOps(characters, { name: "tampered" }),
   },
   {
     resource: "location",
@@ -293,22 +313,7 @@ const resources: OwnedResource[] = [
       return row!.id;
     },
     read: (id, userId) => findViewable("location", id, userId),
-    update: async (id, userId) =>
-      (
-        await db()
-          .update(locations)
-          .set({ name: "tampered" })
-          .where(and(eq(locations.id, id), eq(locations.ownerId, userId)))
-          .returning({ id: locations.id })
-      ).map((r) => r.id),
-    remove: async (id, userId) =>
-      (
-        await db()
-          .delete(locations)
-          .where(and(eq(locations.id, id), eq(locations.ownerId, userId)))
-          .returning({ id: locations.id })
-      ).map((r) => r.id),
-    raw: async (id) => (await db().select().from(locations).where(eq(locations.id, id)).limit(1))[0],
+    ...ownedTableOps(locations, { name: "tampered" }),
   },
   {
     resource: "item",
@@ -320,22 +325,7 @@ const resources: OwnedResource[] = [
       return row!.id;
     },
     read: (id, userId) => findViewable("item", id, userId),
-    update: async (id, userId) =>
-      (
-        await db()
-          .update(items)
-          .set({ name: "tampered" })
-          .where(and(eq(items.id, id), eq(items.ownerId, userId)))
-          .returning({ id: items.id })
-      ).map((r) => r.id),
-    remove: async (id, userId) =>
-      (
-        await db()
-          .delete(items)
-          .where(and(eq(items.id, id), eq(items.ownerId, userId)))
-          .returning({ id: items.id })
-      ).map((r) => r.id),
-    raw: async (id) => (await db().select().from(items).where(eq(items.id, id)).limit(1))[0],
+    ...ownedTableOps(items, { name: "tampered" }),
   },
   {
     resource: "social_card",
@@ -351,22 +341,7 @@ const resources: OwnedResource[] = [
       return row!.id;
     },
     read: (id, userId) => findViewable("social_card", id, userId),
-    update: async (id, userId) =>
-      (
-        await db()
-          .update(socialCards)
-          .set({ name: "tampered" })
-          .where(and(eq(socialCards.id, id), eq(socialCards.ownerId, userId)))
-          .returning({ id: socialCards.id })
-      ).map((r) => r.id),
-    remove: async (id, userId) =>
-      (
-        await db()
-          .delete(socialCards)
-          .where(and(eq(socialCards.id, id), eq(socialCards.ownerId, userId)))
-          .returning({ id: socialCards.id })
-      ).map((r) => r.id),
-    raw: async (id) => (await db().select().from(socialCards).where(eq(socialCards.id, id)).limit(1))[0],
+    ...ownedTableOps(socialCards, { name: "tampered" }),
   },
   {
     // Personas are owner-STRICT: no `visibility` column, so they never widen.
@@ -379,22 +354,7 @@ const resources: OwnedResource[] = [
       return row!.id;
     },
     read: (id, userId) => findPersona(userId, id),
-    update: async (id, userId) =>
-      (
-        await db()
-          .update(personas)
-          .set({ name: "tampered" })
-          .where(and(eq(personas.id, id), eq(personas.ownerId, userId)))
-          .returning({ id: personas.id })
-      ).map((r) => r.id),
-    remove: async (id, userId) =>
-      (
-        await db()
-          .delete(personas)
-          .where(and(eq(personas.id, id), eq(personas.ownerId, userId)))
-          .returning({ id: personas.id })
-      ).map((r) => r.id),
-    raw: async (id) => (await db().select().from(personas).where(eq(personas.id, id)).limit(1))[0],
+    ...ownedTableOps(personas, { name: "tampered" }),
   },
   {
     // Images are owner-strict on every owned path; the ONE widening is the
@@ -409,30 +369,15 @@ const resources: OwnedResource[] = [
     },
     read: async (id, userId) =>
       (await db().select().from(images).where(and(eq(images.id, id), eq(images.ownerId, userId))).limit(1))[0],
-    update: async (id, userId) =>
-      (
-        await db()
-          .update(images)
-          .set({ favorite: true })
-          .where(and(eq(images.id, id), eq(images.ownerId, userId)))
-          .returning({ id: images.id })
-      ).map((r) => r.id),
+    ...ownedTableOps(images, { favorite: true }),
     // The real exported seam (`@/server/images`), not a replica.
     remove: async (id, userId) => ((await deleteOwnedImage(id, userId)) ? [id] : []),
-    raw: async (id) => (await db().select().from(images).where(eq(images.id, id)).limit(1))[0],
   },
   {
     resource: "character_chat",
     seed: async (ownerId) => (await seedChat(ownerId, label("chat"))).chatId,
     read: (id, userId) => loadOwnedChat(id, userId),
-    update: async (id, userId) =>
-      (
-        await db()
-          .update(characterChats)
-          .set({ title: "tampered" })
-          .where(and(eq(characterChats.id, id), eq(characterChats.ownerId, userId)))
-          .returning({ id: characterChats.id })
-      ).map((r) => r.id),
+    ...ownedTableOps(characterChats, { title: "tampered" }),
     // slice 2: deleteChat re-reads the chat under (id, ownerId) and no-ops with a
     // `chat.delete_denied` warn when nothing matches — it no longer trusts a
     // caller-supplied ownerId.
@@ -441,7 +386,6 @@ const resources: OwnedResource[] = [
       const [still] = await db().select({ id: characterChats.id }).from(characterChats).where(eq(characterChats.id, id)).limit(1);
       return still ? [] : [id];
     },
-    raw: async (id) => (await db().select().from(characterChats).where(eq(characterChats.id, id)).limit(1))[0],
   },
 ];
 
@@ -498,14 +442,20 @@ interface ShareableView {
 const shareables: {
   /** Doubles as the `searchLibraryIds` kind — the discovery seam's vocabulary. */
   resource: "character" | "location" | "item" | "social_card";
-  publicKeys: string[];
+  /**
+   * The expected key set, taken from the ONE exported allow-list in
+   * `visibility.ts`. It used to be re-typed here as well as in
+   * `public-dto.int.test.ts`, so editing one copy silently weakened the other
+   * tripwire while both suites stayed green.
+   */
+  publicKeys: readonly string[];
   publicId: () => string;
   privateId: () => string | undefined;
   view: (id: string, viewer: string) => Promise<ShareableView | undefined>;
 }[] = [
   {
     resource: "character",
-    publicKeys: ["avatarImageId", "createdAt", "id", "name", "profile", "tags", "visibility"],
+    publicKeys: PUBLIC_DTO_KEYS.character,
     publicId: () => fixture.publicCharacter,
     privateId: () => fixture.privateCharacter,
     view: async (id, viewer) => {
@@ -515,7 +465,7 @@ const shareables: {
   },
   {
     resource: "location",
-    publicKeys: ["affordances", "ambient", "area", "createdAt", "description", "id", "imageId", "name", "scale", "tags", "visibility"],
+    publicKeys: PUBLIC_DTO_KEYS.location,
     publicId: () => fixture.publicLocation,
     privateId: () => undefined,
     view: async (id, viewer) => {
@@ -525,7 +475,7 @@ const shareables: {
   },
   {
     resource: "item",
-    publicKeys: ["createdAt", "definition", "description", "id", "imageId", "kind", "name", "tags", "visibility"],
+    publicKeys: PUBLIC_DTO_KEYS.item,
     publicId: () => fixture.publicItem,
     privateId: () => undefined,
     view: async (id, viewer) => {
@@ -535,7 +485,7 @@ const shareables: {
   },
   {
     resource: "social_card",
-    publicKeys: ["createdAt", "definition", "description", "id", "name", "tags", "visibility"],
+    publicKeys: PUBLIC_DTO_KEYS.social_card,
     publicId: () => fixture.publicSocialCard,
     privateId: () => undefined,
     view: async (id, viewer) => {
@@ -578,7 +528,7 @@ describe.skipIf(!ready)("authorization matrix — public reads", () => {
 
   it("the portrait projection carries no path, prompt or provider internals", async () => {
     const [row] = await db().select().from(images).where(eq(images.id, fixture.portrait)).limit(1);
-    expect(Object.keys(toPublicEntityImage(row!)).sort()).toEqual(["createdAt", "entityId", "entityKind", "id", "kind"]);
+    expect(Object.keys(toPublicEntityImage(row!)).sort()).toEqual(PUBLIC_DTO_KEYS.entity_image);
     expect(row!.prompt).toContain("prompt"); // the row really did carry the sensitive columns
   });
 });

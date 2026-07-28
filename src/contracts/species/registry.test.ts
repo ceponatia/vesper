@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectUniqueIds } from "@/test/registry-invariants";
 import {
   heritageFor,
   heritagesForSpecies,
@@ -13,6 +14,25 @@ import { realizeBody } from "./realize";
 import { attributeRegistry } from "../attributes";
 import { bodyPlanById } from "../body/plans";
 import { FEATURE_GROUPS } from "../body/locations";
+import type { SpeciesDefinition } from "./types";
+
+/**
+ * One forge-style prompt per species, phrased through an ALIAS rather than the
+ * bare id (the case that actually exercises the matcher). The cases below are
+ * auto-enumerated from `speciesCatalog`, so authoring a new species fails this
+ * suite until it adds its line here — the forcing function that stops inference
+ * coverage from silently lagging the vocabulary.
+ */
+const SPECIES_INFERENCE_PROMPTS: Readonly<Record<string, string>> = {
+  human: "a human dockworker",
+  succubus: "one of the succubi who owns the club",
+  elf: "an elven ranger",
+  dwarf: "a dwarven smith",
+  gnome: "a gnomish inventor",
+  faerie: "a fae courtier",
+  orc: "an orcish mercenary",
+  goblin: "a goblinoid thief",
+};
 
 describe("inferSpeciesFromText", () => {
   it("detects species ids and labels from forge prompt text", () => {
@@ -20,14 +40,14 @@ describe("inferSpeciesFromText", () => {
     expect(inferSpeciesFromText("a Succubus bartender")?.matchedTerm).toBe("succubus");
   });
 
-  it("detects aliases and requested fantasy species", () => {
-    expect(inferSpeciesFromText("one of the succubi who owns the club")?.species.id).toBe("succubus");
-    expect(inferSpeciesFromText("an elven ranger")?.species.id).toBe("elf");
-    expect(inferSpeciesFromText("a dwarven smith")?.species.id).toBe("dwarf");
-    expect(inferSpeciesFromText("a gnomish inventor")?.species.id).toBe("gnome");
-    expect(inferSpeciesFromText("a fae courtier")?.species.id).toBe("faerie");
-    expect(inferSpeciesFromText("an orcish mercenary")?.species.id).toBe("orc");
-    expect(inferSpeciesFromText("a goblinoid thief")?.species.id).toBe("goblin");
+  it.each(speciesCatalog.map((species) => species.id))("infers %s from an aliased prompt", (id) => {
+    const prompt = SPECIES_INFERENCE_PROMPTS[id];
+    expect(
+      prompt,
+      `species "${id}" has no inference prompt — add one to SPECIES_INFERENCE_PROMPTS in this file`,
+    ).toBeDefined();
+    if (prompt === undefined) return;
+    expect(inferSpeciesFromText(prompt)?.species.id, prompt).toBe(id);
   });
 
   it("resolves the parent species from a heritage name", () => {
@@ -49,8 +69,7 @@ describe("inferSpeciesFromText", () => {
     expect(inferSpeciesFromText("a goblet collector")).toBeUndefined();
   });
 
-  it("allows explicit human while leaving no-match prompts undefined", () => {
-    expect(inferSpeciesFromText("a human dockworker")?.species.id).toBe("human");
+  it("leaves a no-match prompt undefined rather than guessing", () => {
     expect(inferSpeciesFromText("a weary harbor-master")).toBeUndefined();
   });
 
@@ -61,8 +80,13 @@ describe("inferSpeciesFromText", () => {
 
 describe("species catalog invariants", () => {
   it("has unique ids", () => {
-    const ids = speciesCatalog.map((s) => s.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    expectUniqueIds(speciesCatalog, "speciesCatalog");
+  });
+
+  it("heritage ids are unique within their species", () => {
+    for (const species of speciesCatalog) {
+      expectUniqueIds(species.heritages, `${species.id} heritages`);
+    }
   });
 
   for (const species of speciesCatalog) {
@@ -181,65 +205,60 @@ describe("heritage lookups and inference", () => {
   });
 });
 
-describe("heritage definitions are valid registry references", () => {
-  for (const species of speciesCatalog) {
-    for (const heritage of species.heritages) {
-      it(`${species.id}/${heritage.id}: unique id, rules target real attributes with in-vocabulary values`, () => {
-        // unique within the species
-        expect(species.heritages.filter((h) => h.id === heritage.id).length).toBe(1);
-        const body = realizeBody({ speciesId: species.id, heritageId: heritage.id });
-        for (const rule of heritage.attributeRules) {
-          const d = attributeRegistry.byId(rule.attributeId);
-          expect(d, `${heritage.id}: rule targets unknown attribute ${rule.attributeId}`).toBeDefined();
-          if (!d) continue;
-          if (d.valueType === "enum" || d.valueType === "enum_list") {
-            const inVocab = (v: unknown) =>
-              expect(d.allowedValues?.includes(String(v)), `${heritage.id}.${rule.attributeId}: "${String(v)}" not in allowedValues`).toBe(true);
-            if (rule.defaultValue !== undefined) inVocab(rule.defaultValue);
-            for (const v of rule.allowedValues ?? []) inVocab(v);
-            for (const v of rule.disallowedValues ?? []) inVocab(v);
-            // A narrowing rule's own default must stay selectable within it.
-            if (rule.allowedValues && rule.defaultValue !== undefined) {
-              expect(
-                rule.allowedValues.map(String).includes(String(rule.defaultValue)),
-                `${heritage.id}.${rule.attributeId}: default "${String(rule.defaultValue)}" not in the rule's allowedValues`,
-              ).toBe(true);
-            }
-            expect((body.allowedValuesFor(d)?.length ?? 0) > 0, `${heritage.id}.${rule.attributeId}: narrowed to empty`).toBe(true);
-          }
-        }
-      });
-    }
-  }
-});
+/**
+ * Every authored `attributeRules` block in the catalog — a species' own and each
+ * of its heritages' overlays. The two used to be near-identical describe blocks;
+ * the only real difference was the label, so they are one parameterized run now.
+ */
+const attributeRuleCases: readonly {
+  label: string;
+  rules: SpeciesDefinition["attributeRules"];
+  realize: () => ReturnType<typeof realizeBody>;
+}[] = speciesCatalog.flatMap((species) => [
+  {
+    label: species.id,
+    rules: species.attributeRules,
+    realize: () => realizeBody({ speciesId: species.id }),
+  },
+  ...species.heritages.map((heritage) => ({
+    label: `${species.id}/${heritage.id}`,
+    rules: heritage.attributeRules,
+    realize: () => realizeBody({ speciesId: species.id, heritageId: heritage.id }),
+  })),
+]);
 
-describe("species attributeRules are valid registry references", () => {
-  for (const species of speciesCatalog) {
-    it(`${species.id}: rules target real attributes with in-vocabulary values and never narrow to empty`, () => {
-      const body = realizeBody({ speciesId: species.id });
+describe("attributeRules are valid registry references (species rules and heritage overlays alike)", () => {
+  for (const ruleSet of attributeRuleCases) {
+    it(`${ruleSet.label}: rules target real attributes with in-vocabulary values and never narrow to empty`, () => {
+      const body = ruleSet.realize();
       const seen = new Set<string>();
-      for (const rule of species.attributeRules) {
-        const d = attributeRegistry.byId(rule.attributeId);
-        expect(d, `${species.id}: rule targets unknown attribute ${rule.attributeId}`).toBeDefined();
-        if (!d) continue;
-        expect(seen.has(rule.attributeId), `${species.id}: duplicate rule for ${rule.attributeId}`).toBe(false);
+      for (const rule of ruleSet.rules) {
+        const def = attributeRegistry.byId(rule.attributeId);
+        expect(def, `${ruleSet.label}: rule targets unknown attribute ${rule.attributeId}`).toBeDefined();
+        if (!def) continue;
+        expect(seen.has(rule.attributeId), `${ruleSet.label}: duplicate rule for ${rule.attributeId}`).toBe(false);
         seen.add(rule.attributeId);
-        const inVocab = (v: unknown) =>
-          expect(d.allowedValues?.includes(String(v)), `${species.id}.${rule.attributeId}: "${String(v)}" not in allowedValues`).toBe(true);
-        if (d.valueType === "enum" || d.valueType === "enum_list") {
-          if (rule.defaultValue !== undefined) inVocab(rule.defaultValue);
-          for (const v of rule.allowedValues ?? []) inVocab(v);
-          for (const v of rule.disallowedValues ?? []) inVocab(v);
-          // A narrowing rule's own default must stay selectable within it.
-          if (rule.allowedValues && rule.defaultValue !== undefined) {
-            expect(
-              rule.allowedValues.map(String).includes(String(rule.defaultValue)),
-              `${species.id}.${rule.attributeId}: default "${String(rule.defaultValue)}" not in the rule's allowedValues`,
-            ).toBe(true);
-          }
-          // narrowing must leave at least one selectable value
-          expect((body.allowedValuesFor(d)?.length ?? 0) > 0, `${species.id}.${rule.attributeId}: narrowed to empty`).toBe(true);
+        if (def.valueType !== "enum" && def.valueType !== "enum_list") continue;
+        const inVocab = (value: unknown) =>
+          expect(
+            def.allowedValues?.includes(String(value)),
+            `${ruleSet.label}.${rule.attributeId}: "${String(value)}" not in allowedValues`,
+          ).toBe(true);
+        if (rule.defaultValue !== undefined) inVocab(rule.defaultValue);
+        for (const value of rule.allowedValues ?? []) inVocab(value);
+        for (const value of rule.disallowedValues ?? []) inVocab(value);
+        // A narrowing rule's own default must stay selectable within it.
+        if (rule.allowedValues && rule.defaultValue !== undefined) {
+          expect(
+            rule.allowedValues.map(String).includes(String(rule.defaultValue)),
+            `${ruleSet.label}.${rule.attributeId}: default "${String(rule.defaultValue)}" not in the rule's allowedValues`,
+          ).toBe(true);
         }
+        // Narrowing must leave at least one selectable value.
+        expect(
+          (body.allowedValuesFor(def)?.length ?? 0) > 0,
+          `${ruleSet.label}.${rule.attributeId}: narrowed to empty`,
+        ).toBe(true);
       }
     });
   }

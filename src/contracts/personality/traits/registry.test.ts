@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectAllValidate, expectUniqueIds } from "@/test/registry-invariants";
 import { traitCategories } from "./category-ids";
 import { traitDefinitions } from "./definitions";
 import { bandIndexForValue, buildTraitRegistry, clampValueToBandSteps } from "./registry";
@@ -27,15 +28,14 @@ const narrowDef: PersonalityTraitDefinition = {
 
 describe("trait registry invariants", () => {
   it("every definition validates and has a category-prefixed id", () => {
+    expectAllValidate(traitDefinitions, personalityTraitDefinitionSchema);
     for (const def of traitDefinitions) {
-      expect(() => personalityTraitDefinitionSchema.parse(def)).not.toThrow();
       expect(def.id.startsWith(`${def.category}.`), def.id).toBe(true);
     }
   });
 
   it("ids are unique", () => {
-    const ids = traitDefinitions.map((d) => d.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    expectUniqueIds(traitDefinitions, "traitDefinitions");
   });
 
   it("bands are ascending and cover the axis maximum (every value maps to a band)", () => {

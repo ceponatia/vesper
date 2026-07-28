@@ -1,6 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  callArguments,
+  functionBody,
+  methodCallArguments,
+  repoRelative,
+  sourceFilesUnder,
+  stripComments,
+} from "@/server/test-support";
+import { APPROVED_ROUTE_AUTHZ_WRAPPERS } from "../../../scripts/check-route-authz";
 
 /**
  * S4's architectural tripwire (security-authz.plan.md slice 6). Ownership in
@@ -27,8 +36,11 @@ import { describe, expect, it } from "vitest";
  * no env — it runs under `pnpm test`. Precision comes from parsing *just
  * enough* (comment stripping + balanced-delimiter extraction) that a token in
  * `.set({ ownerId })`, `.returning({ ownerId })` or a comment can no longer
- * satisfy the check. The escape hatch is an explicit, justified allow-list
- * rather than a loosened matcher.
+ * satisfy the check. Those primitives live in `@/server/test-support`
+ * (`source-scan.ts`) and are shared with the other tripwire scanners; the
+ * POLICY — which helpers assert ownership, which sites are exempt — stays here.
+ * The escape hatch is an explicit, justified allow-list rather than a loosened
+ * matcher.
  *
  * RLS remains open question OQ1 in the plan — this guardrail is the pragmatic
  * middle, not a decision against it.
@@ -114,104 +126,8 @@ const STATEMENT_MAX_LINES = 60;
 const GUARD_EXIT_LOOKAHEAD = 3;
 
 /* ------------------------------------------------------------------------ *
- * Text primitives — the "parse just enough" layer.                          *
+ * Ownership evidence.                                                        *
  * ------------------------------------------------------------------------ */
-
-/**
- * Blank every comment, preserving offsets and line breaks so line numbers and
- * slices still line up. String literals are deliberately LEFT INTACT: a raw
- * `sql`owner_id = ...`` predicate is genuine ownership evidence, and blanking
- * it would turn a scoped write into a false failure. The cost is that a literal
- * string containing "ownerId" would count — a shape that does not exist in the
- * tree and would be a bizarre way to write a predicate.
- */
-function stripComments(source: string): string {
-  const out = source.split("");
-  let mode: "code" | "line" | "block" | "quote" = "code";
-  let quote = "";
-  for (let i = 0; i < out.length; i += 1) {
-    const c = out[i] ?? "";
-    const next = out[i + 1] ?? "";
-    if (mode === "code") {
-      if (c === "/" && (next === "/" || next === "*")) {
-        mode = next === "/" ? "line" : "block";
-        out[i] = " ";
-        out[i + 1] = " ";
-        i += 1;
-      } else if (c === '"' || c === "'" || c === "`") {
-        mode = "quote";
-        quote = c;
-      }
-      continue;
-    }
-    if (mode === "line") {
-      if (c === "\n") mode = "code";
-      else out[i] = " ";
-      continue;
-    }
-    if (mode === "block") {
-      if (c === "*" && next === "/") {
-        out[i] = " ";
-        out[i + 1] = " ";
-        i += 1;
-        mode = "code";
-      } else if (c !== "\n") {
-        out[i] = " ";
-      }
-      continue;
-    }
-    // quote: only the matching delimiter closes it; escapes consume the next char.
-    if (c === "\\") i += 1;
-    else if (c === quote) mode = "code";
-  }
-  return out.join("");
-}
-
-/**
- * Index of the delimiter closing the one at `open`, skipping string literals so
- * a paren or brace inside a literal cannot unbalance the count. `-1` when the
- * text runs out first (a truncated statement window).
- */
-function matchDelimiter(text: string, open: number, openChar: string, closeChar: string): number {
-  let depth = 0;
-  let quote = "";
-  for (let i = open; i < text.length; i += 1) {
-    const c = text[i] ?? "";
-    if (quote !== "") {
-      if (c === "\\") i += 1;
-      else if (c === quote) quote = "";
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") quote = c;
-    else if (c === openChar) depth += 1;
-    else if (c === closeChar) {
-      depth -= 1;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
-}
-
-/** The argument text of the call whose `(` sits at `open`. */
-function callArguments(text: string, open: number): string {
-  const close = matchDelimiter(text, open, "(", ")");
-  // Unbalanced means the statement window was cut short. Return the tail rather
-  // than nothing: this test's first duty is zero false failures.
-  return close === -1 ? text.slice(open + 1) : text.slice(open + 1, close);
-}
-
-/** Every `.where(...)` argument in a statement, comments already blanked. */
-function whereArguments(statement: string): string[] {
-  const stripped = stripComments(statement);
-  const spans: string[] = [];
-  const call = /\.where\s*\(/g;
-  let match = call.exec(stripped);
-  while (match !== null) {
-    spans.push(callArguments(stripped, match.index + match[0].length - 1));
-    match = call.exec(stripped);
-  }
-  return spans;
-}
 
 /**
  * The mutation is owner-scoped by its own predicate. Only the `.where(...)`
@@ -221,7 +137,9 @@ function whereArguments(statement: string): string[] {
  * hit the whole table).
  */
 function hasWhereOwnership(statement: string): boolean {
-  return whereArguments(statement).some((span) => INLINE_OWNERSHIP_TOKENS.some((token) => token.test(span)));
+  return methodCallArguments(statement, "where").some((span) =>
+    INLINE_OWNERSHIP_TOKENS.some((token) => token.test(span)),
+  );
 }
 
 /* ------------------------------------------------------------------------ *
@@ -377,22 +295,9 @@ function scanSource(file: string, source: string): MutationSite[] {
   return sites;
 }
 
-function routeFiles(dir: string, acc: string[] = []): string[] {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) routeFiles(full, acc);
-    else if (entry.name === "route.ts") acc.push(full);
-  }
-  return acc;
-}
-
-function repoRelative(absolute: string): string {
-  return path.relative(process.cwd(), absolute).split(path.sep).join("/");
-}
-
 function collectSites(): MutationSite[] {
   if (!fs.existsSync(API_DIR)) return []; // let the discovery assertion below report it
-  return routeFiles(API_DIR)
+  return sourceFilesUnder(API_DIR, { fileName: "route.ts" })
     .sort()
     .flatMap((abs) => scanSource(repoRelative(abs), fs.readFileSync(abs, "utf8")));
 }
@@ -446,116 +351,110 @@ const SIM_WRITE_CALL = /\.transaction\s*\(|\.(?:insert|update|delete)\s*\(/;
 /** Exported durable command entry points — the shells plus everything that must delegate to one. */
 const DURABLE_EXPORT = /^export\s+async\s+function\s+(submitDurable[A-Za-z0-9_$]*)\b/gm;
 
-/**
- * The body of `export async function <name>`, brace-matched. Generic parameter
- * lists (`<TResult extends { status: … }>`) carry braces of their own, so the
- * body's `{` is the first one seen at angle- AND paren-depth zero.
- */
-function functionBody(source: string, name: string): string | undefined {
-  const stripped = stripComments(source);
-  const decl = new RegExp(String.raw`export\s+async\s+function\s+${name}\b`).exec(stripped);
-  if (!decl) return undefined;
-  let angle = 0;
-  let paren = 0;
-  let open = -1;
-  for (let i = decl.index + decl[0].length; i < stripped.length; i += 1) {
-    const c = stripped[i] ?? "";
-    if (c === "<") angle += 1;
-    else if (c === ">" && angle > 0) angle -= 1;
-    else if (c === "(") paren += 1;
-    else if (c === ")") paren -= 1;
-    else if (c === "{" && angle === 0 && paren === 0) {
-      open = i;
-      break;
-    }
-  }
-  if (open === -1) return undefined;
-  const close = matchDelimiter(stripped, open, "{", "}");
-  return close === -1 ? stripped.slice(open) : stripped.slice(open, close + 1);
-}
-
 /** 0-based index of the first line matching `pattern`, or `-1`. */
 function firstLineMatching(body: string, pattern: RegExp): number {
   return body.split("\n").findIndex((line) => pattern.test(line));
 }
 
+/** The store modules themselves — one directory level, no test files. */
 function simulationSources(): { file: string; source: string }[] {
   if (!fs.existsSync(SIM_DIR)) return [];
-  return fs
-    .readdirSync(SIM_DIR)
-    .filter((name) => name.endsWith(".ts") && !name.includes(".test."))
+  return sourceFilesUnder(SIM_DIR, { recursive: false, extensions: [".ts"] })
     .sort()
-    .map((name) => ({ file: name, source: fs.readFileSync(path.join(SIM_DIR, name), "utf8") }));
+    .map((absolute) => ({ file: path.basename(absolute), source: fs.readFileSync(absolute, "utf8") }));
 }
 
 /* ------------------------------------------------------------------------ *
  * Fixtures — the classifier's own regression tests.                          *
  * ------------------------------------------------------------------------ */
 
-/** `ownerId` in `.set(...)` is a value being written, not a predicate. */
-const FIXTURE_TOKEN_IN_SET = `
+/**
+ * One row per source shape the classifier must judge, with the verdict sequence
+ * `scanSource` has to produce for it. A new shape is a new row — the `name`
+ * carries WHY the verdict is what it is, which is the part worth reading.
+ */
+const CLASSIFIER_CASES: readonly { name: string; source: string; want: Verdict[] }[] = [
+  {
+    name: "`ownerId` in `.set(...)` is a value being written, not a predicate",
+    source: `
 export const PATCH = withUser(async (user, req, ctx) => {
   db().update(characters).set({ ownerId: user.id }).where(eq(characters.id, id));
 });
-`;
-
-/** `ownerId` in `.returning(...)` is a column being read back. */
-const FIXTURE_TOKEN_IN_RETURNING = `
+`,
+    want: ["unscoped"],
+  },
+  {
+    name: "`ownerId` in `.returning(...)` is a column being read back",
+    source: `
 export const DELETE = withUser(async (user, _req, ctx) => {
   db().delete(characters).where(eq(characters.id, id)).returning({ ownerId: characters.ownerId });
 });
-`;
-
-/** A claim in a comment is not a predicate — trailing and inline, both blanked. */
-const FIXTURE_TOKEN_IN_COMMENT = `
+`,
+    want: ["unscoped"],
+  },
+  {
+    name: "a claim in a comment is not a predicate — trailing and inline, both blanked",
+    source: `
 export const DELETE = withUser(async (user, _req, ctx) => {
   await db().delete(items).where(/* ownerId proven above */ eq(items.id, id)); // user.id checked by the caller
 });
-`;
-
-/** No `where` at all: an update that hits every row in the table. */
-const FIXTURE_NO_WHERE = `
+`,
+    want: ["unscoped"],
+  },
+  {
+    name: "no `where` at all: a delete that hits every row in the table",
+    source: `
 export const DELETE = withUser(async (user, _req, ctx) => {
   await db().delete(items);
 });
-`;
-
-/** The helper never sees `user.id`, so it asserts nothing about this caller. */
-const FIXTURE_HELPER_WITHOUT_USER = `
+`,
+    want: ["unscoped"],
+  },
+  {
+    name: "the helper never sees `user.id`, so it asserts nothing about this caller",
+    source: `
 export const PATCH = withUser(async (user, req, ctx) => {
   const owned = await loadOwnedChat(chatId, body.value.ownerId);
   if (!owned) return jsonError("not_found", "chat not found", 404);
   await db().update(characterChats).set({ title }).where(eq(characterChats.id, chatId));
 });
-`;
-
-/** Called, but the answer is thrown away — no branch, no guard. */
-const FIXTURE_HELPER_RESULT_IGNORED = `
+`,
+    want: ["unscoped"],
+  },
+  {
+    name: "the helper is called, but the answer is thrown away — no branch, no guard",
+    source: `
 export const PATCH = withUser(async (user, req, ctx) => {
   const owned = await loadOwnedChat(chatId, user.id);
   await db().update(characterChats).set({ title }).where(eq(characterChats.id, chatId));
   if (!owned) return jsonError("not_found", "chat not found", 404);
 });
-`;
-
-/** The guard runs after the write — too late to stop it. */
-const FIXTURE_HELPER_AFTER_MUTATION = `
+`,
+    want: ["unscoped"],
+  },
+  {
+    name: "the guard runs after the write — too late to stop it",
+    source: `
 export const PATCH = withUser(async (user, req, ctx) => {
   await db().update(characterChats).set({ title }).where(eq(characterChats.id, chatId));
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
 });
-`;
-
-/** The owner predicate where it belongs. */
-const FIXTURE_WHERE_OWNED = `
+`,
+    want: ["unscoped"],
+  },
+  {
+    name: "the owner predicate where it belongs",
+    source: `
 export const PATCH = withUser(async (user, req, ctx) => {
   await db().update(items).set(update).where(and(eq(items.id, id), eq(items.ownerId, user.id)));
 });
-`;
-
-/** Same, wrapped across lines — the span extraction is not line-based. */
-const FIXTURE_WHERE_OWNED_MULTILINE = `
+`,
+    want: ["where-owned"],
+  },
+  {
+    name: "the same predicate wrapped across lines — the span extraction is not line-based",
+    source: `
 export const PATCH = withUser(async (user, req, ctx) => {
   const [row] = await db()
     .update(items)
@@ -568,27 +467,33 @@ export const PATCH = withUser(async (user, req, ctx) => {
     )
     .returning();
 });
-`;
-
-/** Bind, null-check, early return — the house shape. */
-const FIXTURE_HELPER_GUARDED = `
+`,
+    want: ["where-owned"],
+  },
+  {
+    name: "bind, null-check, early return — the house shape",
+    source: `
 export const PATCH = withUser(async (user, req, ctx) => {
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
   await db().update(characterChats).set({ title }).where(eq(characterChats.id, chatId));
 });
-`;
-
-/** The negated-call shape, with no binding at all. */
-const FIXTURE_HELPER_GUARDED_INLINE = `
+`,
+    want: ["helper-guarded"],
+  },
+  {
+    name: "the negated-call shape, with no binding at all",
+    source: `
 export const DELETE = withUser(async (user, _req, ctx) => {
   if (!(await loadOwnedChat(chatId, user.id))) return jsonError("not_found", "chat not found", 404);
   await db().delete(characterChatMessages).where(eq(characterChatMessages.id, messageId));
 });
-`;
-
-/** A guard proven by the handler, a write issued from its nested continuation. */
-const FIXTURE_HELPER_GUARDED_NESTED = `
+`,
+    want: ["helper-guarded"],
+  },
+  {
+    name: "a guard proven by the handler, a write issued from its nested continuation",
+    source: `
 export const POST = withUser(async (user, req, ctx) => {
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
@@ -599,11 +504,10 @@ export const POST = withUser(async (user, req, ctx) => {
       .where(eq(characterChats.id, chatId));
   })();
 });
-`;
-
-function fixtureVerdicts(source: string): Verdict[] {
-  return scanSource("fixture.ts", source).map(verdictOf);
-}
+`,
+    want: ["helper-guarded"],
+  },
+];
 
 /* ------------------------------------------------------------------------ *
  * Tests.                                                                     *
@@ -648,6 +552,56 @@ describe("route-layer ownership guardrail (security-authz S4)", () => {
     }
   });
 
+  /**
+   * Cross-check against the other hand-maintained route-authz allow-list,
+   * `APPROVED_ROUTE_AUTHZ_WRAPPERS` in `scripts/check-route-authz.ts` (`pnpm
+   * lint:authz`). Both answer "this route proves ownership", but they name
+   * DIFFERENT mechanisms at different layers, so the invariant is DISJOINTNESS,
+   * not equality:
+   *
+   *   OWNER_ASSERTING_HELPERS  row lookups declared inside `src/app/api/**`
+   *     (this file)            route modules — several module-private — each
+   *                            re-reading its row with `owner_id = :userId`.
+   *                            One counts only when the call is passed
+   *                            `user.id` AND its result is branched on.
+   *   APPROVED_ROUTE_AUTHZ_     higher-order handler wrappers exported from
+   *   WRAPPERS (the script)     `src/server/api/authz.ts`, which run the check
+   *                            on behalf of the handler they wrap.
+   *
+   * A name in both lists means one of the two files has misclassified it, and
+   * each misclassification fails silently: a wrapper listed here could never
+   * satisfy `helperGuardBefore` (a wrapper receives the handler, not `user.id`),
+   * so it would sit dead in the list looking like coverage; a lookup helper
+   * listed in the script would bless any resource route that merely *mentions*
+   * the name, since the script's test is a bare regex over the file's source.
+   */
+  it("keeps the two route-authz allow-lists distinct and live", () => {
+    const wrappers = new Set<string>(APPROVED_ROUTE_AUTHZ_WRAPPERS);
+    const shared = OWNER_ASSERTING_HELPERS.filter((helper) => wrappers.has(helper));
+    expect(
+      shared,
+      "\nName(s) in BOTH OWNER_ASSERTING_HELPERS (row lookups, here) and APPROVED_ROUTE_AUTHZ_WRAPPERS " +
+        "(handler wrappers, scripts/check-route-authz.ts). The two lists police different mechanisms and " +
+        "must stay disjoint — decide which one this name is and remove it from the other list.\n",
+    ).toEqual([]);
+
+    // Staleness, in the direction that fails silently. A wrapper renamed or
+    // deleted from authz.ts leaves a dead alternative in the script's regex and
+    // nothing complains. (The opposite direction — a NEW wrapper missing from
+    // the script — already fails loudly, because routes adopting it get
+    // reported as unsafe.)
+    const authz = stripComments(fs.readFileSync(path.join(process.cwd(), "src/server/api/authz.ts"), "utf8"));
+    const missing = APPROVED_ROUTE_AUTHZ_WRAPPERS.filter(
+      (wrapper) => !new RegExp(String.raw`export\s+function\s+${wrapper}\b`).test(authz),
+    );
+    expect(
+      missing,
+      "\nAPPROVED_ROUTE_AUTHZ_WRAPPERS entries no longer exported by src/server/api/authz.ts — the wrapper " +
+        "was renamed or removed, so `pnpm lint:authz` is matching a name that cannot appear. Update the list " +
+        "in scripts/check-route-authz.ts.\n",
+    ).toEqual([]);
+  });
+
   it("keeps every bucket of the census populated", () => {
     // Baseline census, 2026-07-26 (18 route files): 31 mutation sites —
     // 14 owner-scoped by their own `where`, 13 helper-guarded, 4 allow-listed
@@ -666,31 +620,8 @@ describe("route-layer ownership guardrail (security-authz S4)", () => {
 });
 
 describe("ownership classifier (fixtures)", () => {
-  it("rejects an ownership token outside the where clause", () => {
-    expect(fixtureVerdicts(FIXTURE_TOKEN_IN_SET)).toEqual(["unscoped"]);
-    expect(fixtureVerdicts(FIXTURE_TOKEN_IN_RETURNING)).toEqual(["unscoped"]);
-    expect(fixtureVerdicts(FIXTURE_TOKEN_IN_COMMENT)).toEqual(["unscoped"]);
-  });
-
-  it("rejects a mutation with no where clause at all", () => {
-    expect(fixtureVerdicts(FIXTURE_NO_WHERE)).toEqual(["unscoped"]);
-  });
-
-  it("rejects a helper that is not a guard", () => {
-    expect(fixtureVerdicts(FIXTURE_HELPER_WITHOUT_USER)).toEqual(["unscoped"]);
-    expect(fixtureVerdicts(FIXTURE_HELPER_RESULT_IGNORED)).toEqual(["unscoped"]);
-    expect(fixtureVerdicts(FIXTURE_HELPER_AFTER_MUTATION)).toEqual(["unscoped"]);
-  });
-
-  it("accepts an owner predicate inside the where clause", () => {
-    expect(fixtureVerdicts(FIXTURE_WHERE_OWNED)).toEqual(["where-owned"]);
-    expect(fixtureVerdicts(FIXTURE_WHERE_OWNED_MULTILINE)).toEqual(["where-owned"]);
-  });
-
-  it("accepts a mutation guarded by an owner-asserting helper", () => {
-    expect(fixtureVerdicts(FIXTURE_HELPER_GUARDED)).toEqual(["helper-guarded"]);
-    expect(fixtureVerdicts(FIXTURE_HELPER_GUARDED_INLINE)).toEqual(["helper-guarded"]);
-    expect(fixtureVerdicts(FIXTURE_HELPER_GUARDED_NESTED)).toEqual(["helper-guarded"]);
+  it.each(CLASSIFIER_CASES)("$name", ({ source, want }) => {
+    expect(scanSource("fixture.ts", source).map(verdictOf)).toEqual(want);
   });
 });
 

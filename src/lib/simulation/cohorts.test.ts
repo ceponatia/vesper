@@ -7,9 +7,13 @@ import {
   type AdjustCohortCommand,
   type AdjustCohortCommandInput,
   type CreateCohortCommand,
-  type CreateCohortCommandInput,
   type SimulationCohort,
 } from "@/contracts/simulation/cohorts";
+import {
+  bindSimEnvelopes,
+  type CommandEnvelopeSpec,
+  type TestPrincipal,
+} from "@/test/sim-envelopes";
 import { storySecondAt } from "./body-reads";
 import {
   applyCohortEvent,
@@ -29,6 +33,24 @@ const WORLD = "world-1";
 const BRANCH = "branch-1";
 const SQUARE = "zone-square";
 const TAVERN = "zone-tavern";
+const RULESET = "ruleset-v1";
+
+/**
+ * This suite carries its own ruleset, so bind the trio once: a view's
+ * `branchId` is compared against the command's, and a mismatch would flip
+ * every resolver to `branch_mismatch`.
+ */
+const env = bindSimEnvelopes({ worldId: WORLD, branchId: BRANCH, rulesetVersion: RULESET });
+
+/** Everything a call site may override; `type`/`payload` are pinned per builder. */
+type CmdSpec = Omit<CommandEnvelopeSpec, "type" | "payload">;
+
+/** The privileged default carries its own principal id, so it stays explicit. */
+const STORYTELLER: TestPrincipal = {
+  kind: "storyteller",
+  principalId: "storyteller-1",
+  controlledActorIds: [],
+};
 
 /** Market regulars: 200 people, at the square 08:00–18:00 at 80% strength. */
 function marketCohort(overrides: Partial<Parameters<typeof simulationCohortSchema.parse>[0]> & object = {}): SimulationCohort {
@@ -46,68 +68,36 @@ function marketCohort(overrides: Partial<Parameters<typeof simulationCohortSchem
 
 function createView(overrides: Partial<CreateCohortResolutionView> = {}): CreateCohortResolutionView {
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: "ruleset-v1",
-    headSequence: 7,
-    storySecond: 3_600,
+    ...env.meta({ headSequence: 7, storySecond: 3_600 }),
     alreadyExists: false,
     zoneExists: (zoneId) => zoneId === SQUARE || zoneId === TAVERN,
     ...overrides,
   };
 }
 
-function createCmd(
-  cohort: SimulationCohort,
-  overrides: Partial<Pick<CreateCohortCommandInput, "branchId" | "principal" | "id">> = {},
-): CreateCohortCommand {
-  return createCohortCommandSchema.parse({
-    id: overrides.id ?? "cmd-cohort-1",
-    branchId: overrides.branchId ?? BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "cohort-key-1",
-    principal: overrides.principal ?? {
-      kind: "storyteller",
-      principalId: "storyteller-1",
-      controlledActorIds: [],
-    },
-    submittedAtWallClock: "2026-07-21T12:00:00.000Z",
-    correlationId: "corr-1",
+function createCmd(cohort: SimulationCohort, spec: CmdSpec = {}): CreateCohortCommand {
+  return env.command(createCohortCommandSchema, {
     type: "create_cohort",
-    schemaVersion: 1,
+    idSlug: "cohort-1",
+    principal: STORYTELLER,
     payload: { cohort },
+    ...spec,
   });
 }
 
-function adjustCmd(
-  payload: AdjustCohortCommandInput["payload"],
-  overrides: Partial<Pick<AdjustCohortCommandInput, "branchId" | "principal" | "id">> = {},
-): AdjustCohortCommand {
-  return adjustCohortCommandSchema.parse({
-    id: overrides.id ?? "cmd-adjust-1",
-    branchId: overrides.branchId ?? BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "adjust-key-1",
-    principal: overrides.principal ?? {
-      kind: "storyteller",
-      principalId: "storyteller-1",
-      controlledActorIds: [],
-    },
-    submittedAtWallClock: "2026-07-21T12:00:00.000Z",
-    correlationId: "corr-1",
+function adjustCmd(payload: AdjustCohortCommandInput["payload"], spec: CmdSpec = {}): AdjustCohortCommand {
+  return env.command(adjustCohortCommandSchema, {
     type: "adjust_cohort",
-    schemaVersion: 1,
+    idSlug: "adjust-1",
+    principal: STORYTELLER,
     payload,
+    ...spec,
   });
 }
 
 function adjustView(current: SimulationCohort | undefined): AdjustCohortResolutionView {
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: "ruleset-v1",
-    headSequence: 8,
-    storySecond: 7_200,
+    ...env.meta({ headSequence: 8, storySecond: 7_200 }),
     current,
   };
 }

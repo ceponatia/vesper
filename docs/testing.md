@@ -17,11 +17,56 @@ Vitest 4, one root config (`vitest.config.ts`) including `src/**/*.test.ts` and 
 | db integration | `src/**/*.int.test.ts` (engine, memory, images) | The **successor simulation engine** (`server/engine/simulation/*.int.test.ts` — branch/command/event durability, idempotency, typed holdings, injected-crash atomicity, the scheduler, and the gate corpora E2–E6), the chat lane (`chat-*.int.test.ts` — extraction legs, wardrobe, state fidelity, memory-failure), the successor narrator (`sim-narrator.int.test.ts`), plus memory vector queries and image asset lifecycle | `DATABASE_URL` database (suites probe at collection and self-skip locally with a stderr warning if unreachable; CI applies migrations, runs the gate targets explicitly, and treats an unavailable or unmigrated database as failure) |
 | api | `src/app/api/**/*.int.test.ts` | Route handlers called directly with mocked auth (`vi.mock` of `server/auth`): validation, envelopes, the chat SSE event sequence in demo mode, the atomic chat **rerun** (stop→wait→acquire→transact: snips successors + reuses the guard row; stops an in-flight reply then succeeds; byte-identical transcript + 409 when the lock can't be re-acquired; 4xx on a non-user/missing/foreign target; snapshot rollback vs. the degraded `chat_state.rerun.no_rollback`), and the successor `/api/chats` sim routes | demo mode, `DATABASE_URL` database |
 
+## Shared test utilities
+
+Two homes, split by the purity fence (`eslint.config.mjs` bans `@/server/**`
+imports from contracts/lib, tests included):
+
+- **`src/server/test-support/`** (import via the `@/server/test-support`
+  barrel — lint-enforced) — for server-side suites. Auth mock
+  (`routeAuthModule`/`bindAuthUser`/`withAuthUser` — restore-safe role swaps),
+  request builders (`apiRequest`/`routeCtx`), response assertions
+  (`expectJson`/`expectApiError`/`drainStream`), DB fixtures
+  (`seedTestUser`/`purgeOwnerRows`/`endTestPool` — ends AND clears the shared
+  pool), the simulation suite scaffold (`simulationSuiteHarness`, `simCommand` +
+  principals, `seedSimBranch`/`seedSimpleBranch`, `readBranchEvents`/`forkAtHead`,
+  `expectAccepted`/`expectRejected`, schema-derived `branchFootprint` — a new
+  `sim_*` table is footprint-covered automatically), chat-lane fixtures
+  (`seedChatFixture`/`newChat`/`settleChatExchange`, `chatMemoryMockModule`),
+  routed-sim-chat fixtures (fixed rollout world — those suites must not run
+  file-parallel), profile/prompt fixtures + prompt assertions
+  (`expectOrder`/`expectNumberedRule`/`expectFenced` — assert content, not
+  ordinals or nonce literals), image/tmp-dir/memory/png fixtures, authoring/ai
+  fixtures, and `source-scan` (the guardrail's scanner primitives, shared with
+  `scripts/image-internal-callers.test.ts`).
+  **No production code may import this barrel** — several modules import vitest.
+  The one production consumer (the authorization seam's legacy-mode read) lives
+  in the engine (`simulation/legacy-test-mode.ts`) and is re-exported here.
+- **`src/test/`** (import via `@/test/...`) — pure helpers importable from
+  contracts/lib tests: registry invariants (`expectUniqueIds`,
+  `expectAllValidate`, `expectRefsResolve`, `expectCaseInsensitiveLookup`,
+  `expectContiguousBands`), sim command/event envelope builders
+  (`commandEnvelope`/`eventEnvelope`/`bindSimEnvelopes`/`testPrincipal`),
+  space/material/meter fixtures, diagnostics assertions
+  (`codes`/`expectDiagnostics`/`expectDiagnostic`/`expectCleanSink`). These
+  modules import only contracts/lib/vitest/zod — never `@/server`.
+- Garment blueprint fixtures are colocated at
+  `src/contracts/items/garment-test-fixtures.ts` (contracts-only imports).
+
+Prefer deriving expectations from the registry/schema under test over
+hand-enumerating entries (the pattern in `attributes/registry.test.ts` and
+`scripts/fixtures/harbor-house.test.ts`): a vocabulary addition should never
+force test edits, while broken production logic and crossed policy tripwires
+(which stay literal, commented) still fail.
+
 ## Rules
 
-- LLM calls are **never** mocked at the fetch layer — `server/ai` exposes a fake provider (`AI_FAKE=1` / demo mode, forced globally by `src/test/setup.ts`) returning canned typed results; tests exercise real parsing/degradation paths.
-- Degradation tests assert the fallback **and** the diagnostic code ([resilience.md](resilience.md) §8).
+- LLM calls are **never** mocked at the fetch layer — `server/ai` exposes a fake provider (`AI_FAKE=1` / demo mode, forced globally by `src/test/setup.ts` — don't re-set it per file) returning canned typed results; tests exercise real parsing/degradation paths.
+- Degradation tests assert the fallback **and** the diagnostic code ([resilience.md](resilience.md) §8) — via `@/test/diagnostics` so the idiom stays uniform.
 - Every bug fix lands with the regression test that would have caught it.
+- `pnpm jscpd` covers test files too (threshold 3; they were excluded until
+  2026-07-28, which is how ~3.2k duplicated test lines accumulated) — reuse the
+  shared utilities instead of copy-pasting scaffolding.
 - Embedding-dependent logic tests use `pseudoEmbed` (deterministic, from `server/ai/embeddings`) so similarity thresholds are exact.
 - The symlink-escape containment cases (`server/images/paths.test.ts`, `server/images/assets.test.ts`) gate on `canCreateSymlinks()` (`@/server/test-support`), which probes once by planting a symlink in a temp dir: on Windows without Developer Mode or elevation `fs.symlink` fails with EPERM, so those cases self-skip with a stderr note rather than failing on fixture setup. On CI (`CI=true`) a failed probe **throws** — the escape tests are a security gate and must never silently vanish there. The containment logic itself is never weakened by the skip.
 
@@ -82,4 +127,4 @@ Fixtures inserting `images` rows must go through **`canonicalImageRow`**
 path to be exactly `images/<owner_id>/<id>.webp`, and the helper derives the id
 and the path together so a suite cannot pick one without the other.
 
-The probe lives in one place, `src/server/test-support/int-db.ts` (`probeIntegrationDb(suite, table)`), imported through the `@/server/test-support` barrel. **A suite honors strict mode only once it uses that helper**; suites still carrying their own inline probe skip regardless of the flag. Converted so far: the security surface — `server/api/authz-matrix`, `server/api/public-dto`, `server/api/library`, `server/api/social-cards`, `server/images/variants`, `server/engine/simulation/command-authz`, `app/api/chats/chat`. Everything else (the engine `simulation/*-store` and gate-corpus suites, the remaining `app/api/**` route suites, `server/memory`, `server/images/assets`, the chat-lane `server/engine/chat-*` suites) still self-skips — convert a suite's probe to the helper when you next touch it.
+The probe lives in one place, `src/server/test-support/int-db.ts` (`probeIntegrationDb(suite, table)`), imported through the `@/server/test-support` barrel (the simulation suites get it via `simulationSuiteHarness`). **Every `.int.test.ts` suite uses it as of 2026-07-28** — the last 51 inline copies were converted, so strict mode genuinely gates the whole integration surface. A new suite must use the helper (or the harness) from day one; an inline probe silently opts the suite out of the release gate.

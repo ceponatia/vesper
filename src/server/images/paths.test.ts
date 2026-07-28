@@ -1,25 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { canCreateSymlinks } from "@/server/test-support";
+import { canCreateSymlinks, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
 import { absoluteImagePath, dataRoot, imageRelativePath, ImagePathError } from "./paths";
 
 const symlinksAvailable = canCreateSymlinks();
 
+// `subdir` matters here: the symlink cases plant siblings of the configured root
+// (a real directory plus a link to it), which only works when the temp directory
+// is the root's PARENT rather than the root itself.
+let temp: TempDataRoot;
 let sandbox: string;
 let root: string;
 
 beforeEach(async () => {
-  sandbox = await fs.mkdtemp(path.join(os.tmpdir(), "vesper-image-paths-"));
-  root = path.join(sandbox, "data");
-  await fs.mkdir(root, { recursive: true });
-  process.env.DATA_ROOT = root;
+  temp = await withTempDataRoot("vesper-image-paths", { subdir: "data" });
+  sandbox = temp.sandbox;
+  root = temp.root;
 });
 
 afterEach(async () => {
-  delete process.env.DATA_ROOT;
-  await fs.rm(sandbox, { recursive: true, force: true });
+  await temp.cleanup();
 });
 
 describe("canonical DATA_ROOT", () => {

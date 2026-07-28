@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { codes, expectCleanSink, expectDiagnostics } from "@/test/diagnostics";
 import { DiagnosticCollector } from "../diagnostics";
-import { garmentTemplateForCategory } from "./garment-templates";
+import { templateFor } from "./garment-test-fixtures";
 import { garmentBlueprintHash, type GarmentBlueprint } from "./garment-blueprint";
 import { GARMENT_DEGREE_BAND_VALUES } from "./garment-material";
 import {
@@ -30,12 +31,6 @@ import {
  * garment the fiction destroyed. Every rejection must DROP with a stable code and
  * leave the store byte-identical (docs/resilience.md §2).
  */
-
-const templateFor = (categoryId: string): GarmentBlueprint => {
-  const blueprint = garmentTemplateForCategory(categoryId, "woven_cotton_linen");
-  if (!blueprint) throw new Error(`no template for ${categoryId}`);
-  return blueprint;
-};
 
 const TOP = templateFor("top");
 const DRESS = templateFor("dress");
@@ -72,7 +67,7 @@ function run(store: ChatGarmentStore, ...operations: GarmentOperation[]) {
   const result = applyGarmentOperations(store, operations, { atMinutes: 12, sink });
   return {
     ...result,
-    codes: sink.items.map((d) => d.code),
+    sink,
     presentation: result.store.instances[0]?.presentation ?? emptyGarmentPresentationState(),
   };
 }
@@ -88,7 +83,7 @@ describe("set_closure", () => {
       state: { kind: "fastener_series", openFastenerIndexes: [0, 1] },
     });
     expect(applied.applied).toBe(1);
-    expect(applied.codes).toEqual([]);
+    expectCleanSink(applied.sink);
     expect(applied.presentation.closure.front_panel).toEqual({
       kind: "fastener_series",
       openFastenerIndexes: [0, 1],
@@ -118,7 +113,7 @@ describe("set_closure", () => {
       state: { kind: "fastener_series", openFastenerIndexes: [0] },
     });
     expect(applied.applied).toBe(0);
-    expect(applied.codes).toEqual(["garment_op.part_unresolved"]);
+    expectDiagnostics(applied.sink, ["garment_op.part_unresolved"]);
     expect(applied.store).toEqual(store);
   });
 
@@ -129,7 +124,7 @@ describe("set_closure", () => {
       partId: "collar",
       state: { kind: "fastener_series", openFastenerIndexes: [0] },
     });
-    expect(applied.codes).toEqual(["garment_op.channel_unbound"]);
+    expectDiagnostics(applied.sink, ["garment_op.channel_unbound"]);
   });
 
   it("drops a continuous state on a fastener-series binding with garment_op.closure_shape", () => {
@@ -140,7 +135,7 @@ describe("set_closure", () => {
       state: { kind: "continuous", openness: 6_000 },
     });
     expect(applied.applied).toBe(0);
-    expect(applied.codes).toEqual(["garment_op.closure_shape"]);
+    expectDiagnostics(applied.sink, ["garment_op.closure_shape"]);
   });
 
   it("drops a fastener series on a zipper binding with garment_op.closure_shape", () => {
@@ -150,7 +145,7 @@ describe("set_closure", () => {
       partId: "bodice_back",
       state: { kind: "fastener_series", openFastenerIndexes: [0] },
     });
-    expect(applied.codes).toEqual(["garment_op.closure_shape"]);
+    expectDiagnostics(applied.sink, ["garment_op.closure_shape"]);
   });
 
   it("accepts a continuous state on a zipper binding", () => {
@@ -174,12 +169,12 @@ describe("set_roll", () => {
 
   it("is unbound on a closure part", () => {
     const applied = run(topStore(), { kind: "set_roll", garmentId: "g_top", partId: "front_panel", degree: "slight" });
-    expect(applied.codes).toEqual(["garment_op.channel_unbound"]);
+    expectDiagnostics(applied.sink, ["garment_op.channel_unbound"]);
   });
 
   it("is unresolved on a part the blueprint does not have", () => {
     const applied = run(topStore(), { kind: "set_roll", garmentId: "g_top", partId: "sleeve_middle", degree: "slight" });
-    expect(applied.codes).toEqual(["garment_op.part_unresolved"]);
+    expectDiagnostics(applied.sink, ["garment_op.part_unresolved"]);
   });
 });
 
@@ -191,7 +186,7 @@ describe("set_tuck", () => {
 
   it("is unbound on a sleeve", () => {
     const applied = run(topStore(), { kind: "set_tuck", garmentId: "g_top", partId: "sleeve_left", state: "in" });
-    expect(applied.codes).toEqual(["garment_op.channel_unbound"]);
+    expectDiagnostics(applied.sink, ["garment_op.channel_unbound"]);
   });
 });
 
@@ -230,7 +225,7 @@ describe("set_displacement", () => {
       degree: "extreme",
     });
     expect(applied.applied).toBe(0);
-    expect(applied.codes).toEqual(["garment_op.displacement_kind"]);
+    expectDiagnostics(applied.sink, ["garment_op.displacement_kind"]);
   });
 
   it("replaces the same part+kind rather than accumulating entries", () => {
@@ -287,7 +282,7 @@ describe("restore_presentation", () => {
     const store = dressed();
     const applied = run(store, { kind: "restore_presentation", garmentId: "g_top", partIds: [] });
     expect(applied.applied).toBe(0);
-    expect(applied.codes).toEqual(["garment_op.restore_no_parts"]);
+    expectDiagnostics(applied.sink, ["garment_op.restore_no_parts"]);
     expect(applied.store).toEqual(store);
   });
 
@@ -298,7 +293,7 @@ describe("restore_presentation", () => {
       garmentId: "g_top",
       partIds: ["front_panel", "sleeve_middle"],
     });
-    expect(applied.codes).toEqual(["garment_op.part_unresolved"]);
+    expectDiagnostics(applied.sink, ["garment_op.part_unresolved"]);
     // Nothing partially applied — the front panel is still open.
     expect(applied.store).toEqual(store);
   });
@@ -319,7 +314,7 @@ describe("the locus rule", () => {
         degree: "moderate",
       });
       expect(applied.applied, locus.kind).toBe(1);
-      expect(applied.codes, locus.kind).toEqual([]);
+      expect(codes(applied.sink), locus.kind).toEqual([]);
     }
   });
 
@@ -327,14 +322,14 @@ describe("the locus rule", () => {
     const store = storeOf(["g_top", TOP, { kind: "gone", basis: "destroyed" }]);
     const applied = run(store, { kind: "set_roll", garmentId: "g_top", partId: "sleeve_left", degree: "moderate" });
     expect(applied.applied).toBe(0);
-    expect(applied.codes).toEqual(["garment_op.presentation_on_gone"]);
+    expectDiagnostics(applied.sink, ["garment_op.presentation_on_gone"]);
     expect(applied.store).toEqual(store);
   });
 
   it("drops an operation naming a garment the store does not have", () => {
     const store = topStore();
     const applied = run(store, { kind: "set_roll", garmentId: "g_nope", partId: "sleeve_left", degree: "moderate" });
-    expect(applied.codes).toEqual(["garment_op.garment_unresolved"]);
+    expectDiagnostics(applied.sink, ["garment_op.garment_unresolved"]);
     expect(applied.store).toEqual(store);
   });
 });
@@ -365,7 +360,7 @@ describe("the operation dispatcher", () => {
       channel: "wetness",
       change: { direction: "increase", degree: "substantial" },
     });
-    expect(applied.codes).toEqual([]);
+    expectCleanSink(applied.sink);
     expect(applied.applied).toBe(1);
     expect(applied.store.instances[0]?.condition.base.wetness).toBeGreaterThan(0);
     expect(applied.store.instances[0]?.lastChange.kind).toBe("condition");
@@ -457,7 +452,7 @@ describe("nextGarmentPresentation", () => {
       sink,
     );
     expect(result).toBeNull();
-    expect(sink.items[0]?.severity).toBe("info");
-    expect(sink.items[0]?.code).toBe("garment_op.part_unresolved");
+    expectDiagnostics(sink, ["garment_op.part_unresolved"]);
+    expect(sink.items[0]?.severity, "a dropped operation is INFO, never an error").toBe("info");
   });
 });

@@ -1,9 +1,14 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { checkStorageQuota, consumeDailyBudget, dailyBudget, readDailyUsage, utcDayKey } from "./quota";
-import { db, images, usageCounters, users } from "@/server/db";
-import { newId } from "@/lib/ids";
-import { probeIntegrationDb } from "@/server/test-support";
+import { db, images, usageCounters } from "@/server/db";
+import {
+  canonicalImageRow,
+  endTestPool,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  seedTestUser,
+} from "@/server/test-support";
 
 // Integration suite for the durable half of rate-limits.plan.md: the counter
 // upsert's atomicity and conditional increment, the UTC-day reset boundary, and
@@ -12,30 +17,18 @@ import { probeIntegrationDb } from "@/server/test-support";
 
 const ready = await probeIntegrationDb("quota.int.test", "usage_counters");
 
-let ownerA: string;
-let ownerB: string;
+let ownerA = "";
+let ownerB = "";
 
 afterAll(async () => {
-  if (ready) {
-    const owners = [ownerA, ownerB].filter(Boolean);
-    if (owners.length > 0) {
-      await db().delete(images).where(inArray(images.ownerId, owners));
-      await db().delete(usageCounters).where(inArray(usageCounters.ownerId, owners));
-      await db().delete(users).where(inArray(users.id, owners));
-    }
-  }
-  await globalThis.__vesperPool?.end();
-  globalThis.__vesperPool = undefined;
+  if (ready) await purgeOwnerRows([ownerA, ownerB]);
+  await endTestPool();
 });
 
 describe.skipIf(!ready)("durable usage counters", () => {
   beforeAll(async () => {
-    const stamp = Date.now();
-    const [a] = await db().insert(users).values({ email: `quota-a-${stamp}@test.local`, name: "Quota A" }).returning({ id: users.id });
-    const [b] = await db().insert(users).values({ email: `quota-b-${stamp}@test.local`, name: "Quota B" }).returning({ id: users.id });
-    if (!a || !b) throw new Error("user insert failed");
-    ownerA = a.id;
-    ownerB = b.id;
+    ownerA = (await seedTestUser("quota-a")).id;
+    ownerB = (await seedTestUser("quota-b")).id;
   });
 
   it("accumulates across calls within one UTC day", async () => {
@@ -135,11 +128,10 @@ describe.skipIf(!ready)("storage quota", () => {
 
   it("sums stored bytes per owner and isolates owners", async () => {
     // `images_path_canonical` (the security-authz hardening CHECK) requires the
-    // path to be exactly images/<owner>/<id>.webp, so fixtures build it.
-    const row = (ownerId: string, bytes: number) => {
-      const id = newId();
-      return { id, ownerId, kind: "avatar" as const, path: `images/${ownerId}/${id}.webp`, bytes, status: "ready" as const };
-    };
+    // path to be exactly images/<owner>/<id>.webp; canonicalImageRow derives the
+    // id and the path together so the two can never disagree.
+    const row = (ownerId: string, bytes: number) =>
+      canonicalImageRow({ ownerId, kind: "avatar" as const, bytes, status: "ready" as const });
     await db().insert(images).values([row(ownerA, 1000), row(ownerA, 2500), row(ownerB, 700)]);
     expect((await checkStorageQuota(ownerA)).used).toBe(3500);
     expect((await checkStorageQuota(ownerB)).used).toBe(700);

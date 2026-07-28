@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
-import { spaceProjectionSchema, type SpaceProjection } from "@/contracts/simulation/space";
+import {
+  arriveJourneyCommandSchema,
+  moveActorCommandSchema,
+  spaceProjectionSchema,
+  type SpaceProjection,
+} from "@/contracts/simulation/space";
+import { walkTopology } from "@/test/sim-space-fixtures";
+import {
+  commandEnvelope,
+  simMeta,
+  testPrincipal,
+  TEST_BRANCH_ID,
+  TEST_RULESET_VERSION,
+  TEST_WORLD_ID,
+  type CommandEnvelopeSpec,
+} from "@/test/sim-envelopes";
 import { simulationHash } from "./hash";
 import {
   applySpaceEvent,
@@ -16,11 +31,12 @@ import {
 
 const SEED_SECOND = 100;
 
+/** The shared walk topology widened to four zones and four links this suite routes over. */
 function topology(): SpaceTopology {
-  return {
+  return walkTopology({
     locations: [
-      { id: "loc-home", worldId: "world-1", kind: "home", defaultAccessPolicy: "private" },
-      { id: "loc-cafe", worldId: "world-1", kind: "cafe", defaultAccessPolicy: "public" },
+      { id: "loc-home", worldId: TEST_WORLD_ID, kind: "home", defaultAccessPolicy: "private" },
+      { id: "loc-cafe", worldId: TEST_WORLD_ID, kind: "cafe", defaultAccessPolicy: "public" },
     ],
     zones: [
       { id: "zone-a", locationId: "loc-home", kind: "room", privacyPolicy: "private" },
@@ -66,15 +82,15 @@ function topology(): SpaceTopology {
         state: "open",
       },
     ],
-  } as unknown as SpaceTopology;
+  });
 }
 
 function seedProjection(): SpaceProjection {
   const shape = topology();
   return spaceProjectionSchema.parse({
-    worldId: "world-1",
-    branchId: "branch-1",
-    rulesetVersion: "gate3-test-v1",
+    worldId: TEST_WORLD_ID,
+    branchId: TEST_BRANCH_ID,
+    rulesetVersion: TEST_RULESET_VERSION,
     version: 0,
     headSequence: 0,
     storySecond: SEED_SECOND,
@@ -91,12 +107,8 @@ function seedProjection(): SpaceProjection {
 function moveView(overrides: Record<string, unknown> = {}) {
   const projection = seedProjection();
   return {
-    worldId: projection.worldId,
-    branchId: projection.branchId,
-    rulesetVersion: projection.rulesetVersion,
+    ...simMeta({ storySecond: SEED_SECOND }),
     version: projection.version,
-    headSequence: projection.headSequence,
-    storySecond: projection.storySecond,
     topology: { locations: projection.locations, zones: projection.zones, links: projection.links },
     actorExists: true,
     locus: projection.loci[0],
@@ -104,20 +116,14 @@ function moveView(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function moveCommand(payloadOverrides: Record<string, unknown> = {}, overrides: Record<string, unknown> = {}) {
-  return {
-    id: "cmd-move-1",
-    branchId: "branch-1",
-    expectedVersion: 0,
-    idempotencyKey: "move-key-1",
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-1"] },
-    submittedAtWallClock: "2026-07-17T12:00:00.000Z",
-    correlationId: "corr-1",
+function moveCommand(payloadOverrides: Record<string, unknown> = {}, spec: Partial<CommandEnvelopeSpec> = {}) {
+  return commandEnvelope(moveActorCommandSchema, {
     type: "move_actor",
-    schemaVersion: 1,
+    idSlug: "move-1",
+    principal: testPrincipal("player", ["actor-1"]),
     payload: { actorId: "actor-1", destinationZoneId: "zone-c", travelMode: "walk", ...payloadOverrides },
-    ...overrides,
-  };
+    ...spec,
+  });
 }
 
 describe("E3.1 planRoute", () => {
@@ -197,7 +203,7 @@ describe("E3.1 resolveMoveActor", () => {
     expect(planned.payload.earliestArrivalAt).toBe(SEED_SECOND + 900);
     expect(trigger.payload.kind).toBe("journey_arrival_due");
     expect(trigger.payload.dueStorySecond).toBe(SEED_SECOND + 900);
-    const journeyId = deriveJourneyId("branch-1", "cmd-move-1");
+    const journeyId = deriveJourneyId(TEST_BRANCH_ID, "cmd-move-1");
     expect(resolution.journey.id).toBe(journeyId);
     expect(trigger.payload.uniquenessKey).toBe(journeyArrivalUniquenessKey(journeyId));
     expect(trigger.payload.command.type).toBe("arrive_journey");
@@ -216,9 +222,7 @@ describe("E3.1 resolveMoveActor", () => {
   });
 
   it("rejects the movement failure taxonomy", () => {
-    const uncontrolled = moveCommand({}, {
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-2"] },
-    });
+    const uncontrolled = moveCommand({}, { principal: testPrincipal("player", ["actor-2"]) });
     const cases: [unknown, unknown, string][] = [
       [moveView({ actorExists: false }), moveCommand(), "actor_not_found"],
       [moveView(), uncontrolled, "unauthorized_actor"],
@@ -238,7 +242,7 @@ describe("E3.1 resolveMoveActor", () => {
     const transitLocus = {
       kind: "in_transit",
       actorId: "actor-1",
-      journeyId: deriveJourneyId("branch-1", "cmd-earlier"),
+      journeyId: deriveJourneyId(TEST_BRANCH_ID, "cmd-earlier"),
       linkId: "link-ab",
       enteredAt: SEED_SECOND,
       earliestExitAt: SEED_SECOND + 600,
@@ -255,32 +259,25 @@ function acceptedMove() {
   return resolution;
 }
 
-function arriveCommand(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "cmd-arrive-1",
-    branchId: "branch-1",
-    expectedVersion: 1,
-    idempotencyKey: "arrive-key-1",
-    principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] },
-    submittedAtWallClock: "2026-07-17T12:15:00.000Z",
-    correlationId: "corr-1",
+function arriveCommand(spec: Partial<CommandEnvelopeSpec> = {}) {
+  return commandEnvelope(arriveJourneyCommandSchema, {
     type: "arrive_journey",
-    schemaVersion: 1,
-    payload: { journeyId: deriveJourneyId("branch-1", "cmd-move-1") },
-    ...overrides,
-  };
+    idSlug: "arrive-1",
+    expectedVersion: 1,
+    // The scheduler fires the arrival — a system principal, deliberately not the
+    // suite default (an arrival submitted by a player is the rejection below).
+    principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] },
+    payload: { journeyId: deriveJourneyId(TEST_BRANCH_ID, "cmd-move-1") },
+    ...spec,
+  });
 }
 
 function arrivalView(overrides: Record<string, unknown> = {}) {
   const move = acceptedMove();
   const projection = seedProjection();
   return {
-    worldId: projection.worldId,
-    branchId: projection.branchId,
-    rulesetVersion: projection.rulesetVersion,
+    ...simMeta({ headSequence: 3, storySecond: SEED_SECOND + 900 }),
     version: 1,
-    headSequence: 3,
-    storySecond: SEED_SECOND + 900,
     topology: { locations: projection.locations, zones: projection.zones, links: projection.links },
     journey: move.journey,
     ...overrides,
@@ -311,9 +308,7 @@ describe("E3.1 resolveJourneyArrival", () => {
 
     const player = resolveJourneyArrival(
       arrivalView() as never,
-      arriveCommand({
-        principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-1"] },
-      }) as never,
+      arriveCommand({ principal: testPrincipal("player", ["actor-1"]) }) as never,
     );
     expect(player.ok).toBe(false);
     if (!player.ok) expect(player.code).toBe("unauthorized_principal");
@@ -364,7 +359,7 @@ describe("E3.1 space replay", () => {
     const events = journeyEvents();
     const current = replaySpaceHistory({ seed: seedProjection(), events });
     const seed = spaceSeedForReplay({
-      branchId: "branch-1",
+      branchId: TEST_BRANCH_ID,
       current,
       events,
       originStorySecond: SEED_SECOND,

@@ -1,8 +1,14 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
-import { characters, db, images, users } from "@/server/db";
-import { canonicalImageRow, probeIntegrationDb } from "@/server/test-support";
+import { characters, db, images } from "@/server/db";
+import {
+  canonicalImageRow,
+  endTestPool,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  seedTestUser,
+} from "@/server/test-support";
 import { promoteVariant } from "./variants";
 
 // Ownership coverage for the avatar-promotion seam (security-authz.plan.md
@@ -70,26 +76,14 @@ async function avatarOf(characterId: string): Promise<string | null> {
 }
 
 afterAll(async () => {
-  if (ready) {
-    const owners = [ownerA, ownerB].filter(Boolean);
-    if (owners.length > 0) {
-      await db().delete(images).where(inArray(images.ownerId, owners));
-      await db().delete(characters).where(inArray(characters.ownerId, owners));
-      await db().delete(users).where(inArray(users.id, owners));
-    }
-  }
-  await globalThis.__vesperPool?.end();
-  globalThis.__vesperPool = undefined;
+  await purgeOwnerRows([ownerA, ownerB]);
+  await endTestPool();
 });
 
 describe.skipIf(!ready)("promoteVariant ownership", () => {
   beforeAll(async () => {
-    const stamp = Date.now();
-    const [a] = await db().insert(users).values({ email: `pv-a-${stamp}@test.local`, name: "PV A" }).returning({ id: users.id });
-    const [b] = await db().insert(users).values({ email: `pv-b-${stamp}@test.local`, name: "PV B" }).returning({ id: users.id });
-    if (!a || !b) throw new Error("user insert failed");
-    ownerA = a.id;
-    ownerB = b.id;
+    ownerA = (await seedTestUser("pv-a")).id;
+    ownerB = (await seedTestUser("pv-b")).id;
 
     fixture.character = await seedCharacter(ownerA, "Promotion target");
     fixture.otherCharacter = await seedCharacter(ownerA, "Second draft");

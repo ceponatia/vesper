@@ -22,10 +22,8 @@ import {
   partitionOutfitReuse,
   type OutfitItem,
 } from "./character-forge";
-import type { ClothingCandidateLookup, LibraryLookup } from "./library";
-
-const noLibrary: LibraryLookup = async () => [];
-const noCandidates: ClothingCandidateLookup = async () => [];
+import type { LibraryLookup } from "./library";
+import { noCandidates, noLibrary } from "@/server/test-support";
 
 // A species' default body features, sourced from the catalog (the single source of
 // truth) rather than re-hardcoded here — so a catalog change doesn't break these

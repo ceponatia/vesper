@@ -1,11 +1,26 @@
 import { describe, expect, it } from "vitest";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import {
+  createCommitmentCommandSchema,
   deriveCommitmentTimes,
   derivePressureSeverity,
+  fulfillCommitmentCommandSchema,
+  raisePressureCommandSchema,
+  resolveCommitmentDeadlineCommandSchema,
   temporalPressureSchema,
 } from "@/contracts/simulation/commitments";
 import { pressureAcknowledgedEventSchema } from "@/contracts/simulation/engagements";
+import { walkTopology } from "@/test/sim-space-fixtures";
+import {
+  commandEnvelope,
+  eventEnvelope,
+  simMeta,
+  testPrincipal,
+  TEST_BRANCH_ID,
+  TEST_WORLD_ID,
+  type CommandEnvelopeSpec,
+  type TestPrincipal,
+} from "@/test/sim-envelopes";
 import { simulationHash } from "./hash";
 import {
   applyCommitmentEvent,
@@ -25,9 +40,13 @@ const NOW = 30_000;
 const SHIFT_AT = 40_000; // latest arrival
 const WALK_AB = 600;
 
+/** Both trigger-dispatched commands are system-only — the scheduler, never the suite default. */
+const SCHEDULER: TestPrincipal = { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] };
+
+/** The shared walk topology re-cast as one town with a home→work link. */
 function topology(): SpaceTopology {
-  return {
-    locations: [{ id: "loc-1", worldId: "world-1", kind: "town", defaultAccessPolicy: "public" }],
+  return walkTopology({
+    locations: [{ id: "loc-1", worldId: TEST_WORLD_ID, kind: "town", defaultAccessPolicy: "public" }],
     zones: [
       { id: "zone-home", locationId: "loc-1", kind: "room", privacyPolicy: "private" },
       { id: "zone-work", locationId: "loc-1", kind: "shop", privacyPolicy: "public" },
@@ -43,16 +62,12 @@ function topology(): SpaceTopology {
         state: "open",
       },
     ],
-  } as unknown as SpaceTopology;
+  });
 }
 
 function createView(overrides: Record<string, unknown> = {}) {
   return {
-    worldId: "world-1",
-    branchId: "branch-1",
-    rulesetVersion: "gate3-test-v1",
-    headSequence: 0,
-    storySecond: NOW,
+    ...simMeta({ storySecond: NOW }),
     actorExists: true,
     originZoneId: "zone-home",
     destinationZoneExists: true,
@@ -61,17 +76,11 @@ function createView(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function createCommand(overrides: Record<string, unknown> = {}, payloadOverrides: Record<string, unknown> = {}) {
-  return {
-    id: "cmd-commit-1",
-    branchId: "branch-1",
-    expectedVersion: 0,
-    idempotencyKey: "commit-key-1",
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-1"] },
-    submittedAtWallClock: "2026-07-17T12:00:00.000Z",
-    correlationId: "corr-1",
+function createCommand(spec: Partial<CommandEnvelopeSpec> = {}, payloadOverrides: Record<string, unknown> = {}) {
+  return commandEnvelope(createCommitmentCommandSchema, {
     type: "create_commitment",
-    schemaVersion: 1,
+    idSlug: "commit-1",
+    principal: testPrincipal("player", ["actor-1"]),
     payload: {
       actorId: "actor-1",
       kind: "shift",
@@ -85,8 +94,8 @@ function createCommand(overrides: Record<string, unknown> = {}, payloadOverrides
       knowledgeSource: { kind: "authored" },
       ...payloadOverrides,
     },
-    ...overrides,
-  };
+    ...spec,
+  });
 }
 
 describe("E3.3 derivation math", () => {
@@ -127,7 +136,7 @@ describe("E3.3 resolveCreateCommitment", () => {
     if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
     const [created, notice, deadline] = resolution.events;
     expect([created.sequence, notice.sequence, deadline.sequence]).toEqual([1, 2, 3]);
-    const commitmentId = deriveCommitmentId("branch-1", "cmd-commit-1");
+    const commitmentId = deriveCommitmentId(TEST_BRANCH_ID, "cmd-commit-1");
     expect(created.payload.derived.minimumRouteDurationSeconds).toBe(WALK_AB);
     expect(created.payload.derived.latestDeparture).toBe(SHIFT_AT - WALK_AB - 300 - 120);
     expect(notice.payload.kind).toBe("commitment_notice_due");
@@ -149,6 +158,8 @@ describe("E3.3 resolveCreateCommitment", () => {
   });
 
   it("lets a director commit an uncontrolled actor but not a player", () => {
+    // Both principals are deliberately NOT the suite default: a director with no
+    // controlled actors, and a player who controls somebody else entirely.
     const director = createCommand({
       principal: { kind: "director", principalId: "director-1", controlledActorIds: [] },
     });
@@ -185,7 +196,7 @@ describe("E3.3 resolveCreateCommitment", () => {
     const [created] = resolution.events;
     expect(created.payload.derived.minimumRouteDurationSeconds).toBe(0);
     expect("destinationZoneId" in created.payload).toBe(false);
-    const commitmentId = deriveCommitmentId("branch-1", "cmd-commit-1");
+    const commitmentId = deriveCommitmentId(TEST_BRANCH_ID, "cmd-commit-1");
     expect(created.entityIds).toEqual(["actor-1", commitmentId].sort());
     expect(resolution.commitment.destinationZoneId).toBeUndefined();
   });
@@ -215,29 +226,32 @@ function acceptedDestinationlessCreate(overrides: {
   return resolution;
 }
 
-function systemCommand(type: string, id: string, payload: Record<string, unknown>) {
-  return {
-    id,
-    branchId: "branch-1",
+/** The notice trigger's system-only dispatch. */
+function raiseCommand(idSlug: string, commitmentId: string) {
+  return commandEnvelope(raisePressureCommandSchema, {
+    type: "raise_pressure",
+    idSlug,
     expectedVersion: 1,
-    idempotencyKey: `${id}-key`,
-    principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] },
-    submittedAtWallClock: "2026-07-17T13:00:00.000Z",
-    correlationId: "corr-1",
-    type,
-    schemaVersion: 1,
-    payload,
-  };
+    principal: SCHEDULER,
+    payload: { commitmentId },
+  });
+}
+
+/** The deadline trigger's system-only dispatch. */
+function deadlineCommand(idSlug: string, commitmentId: string) {
+  return commandEnvelope(resolveCommitmentDeadlineCommandSchema, {
+    type: "resolve_commitment_deadline",
+    idSlug,
+    expectedVersion: 1,
+    principal: SCHEDULER,
+    payload: { commitmentId },
+  });
 }
 
 describe("E3.3 resolveRaisePressure", () => {
   function raiseView(overrides: Record<string, unknown> = {}) {
     return {
-      worldId: "world-1",
-      branchId: "branch-1",
-      rulesetVersion: "gate3-test-v1",
-      headSequence: 3,
-      storySecond: NOW + 1_000,
+      ...simMeta({ headSequence: 3, storySecond: NOW + 1_000 }),
       originZoneId: "zone-home",
       topology: topology(),
       ...overrides,
@@ -248,7 +262,7 @@ describe("E3.3 resolveRaisePressure", () => {
     const commitment = acceptedCreate().commitment;
     const resolution = resolveRaisePressure(
       raiseView({ commitment }) as never,
-      systemCommand("raise_pressure", "cmd-raise-1", { commitmentId: commitment.id }) as never,
+      raiseCommand("raise-1", commitment.id) as never,
     );
     if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
     expect(resolution.event.payload.severity).toBe("urgent");
@@ -261,7 +275,7 @@ describe("E3.3 resolveRaisePressure", () => {
 
     const again = resolveRaisePressure(
       raiseView({ headSequence: 4, storySecond: NOW + 1_100, commitment: resolution.commitment }) as never,
-      systemCommand("raise_pressure", "cmd-raise-2", { commitmentId: commitment.id }) as never,
+      raiseCommand("raise-2", commitment.id) as never,
     );
     expect(again.ok).toBe(false);
     if (!again.ok) expect(again.code).toBe("commitment_not_open");
@@ -276,14 +290,14 @@ describe("E3.3 resolveRaisePressure", () => {
       const commitment = { ...base, knowledgeSource };
       const blocked = resolveRaisePressure(
         raiseView({ commitment }) as never,
-        systemCommand("raise_pressure", "cmd-raise-k1", { commitmentId: base.id }) as never,
+        raiseCommand("raise-k1", base.id) as never,
       );
       expect(blocked.ok).toBe(false);
       if (!blocked.ok) expect(blocked.code).toBe("knowledge_unavailable");
 
       const held = resolveRaisePressure(
         raiseView({ commitment, knowledgeSourceHeld: true }) as never,
-        systemCommand("raise_pressure", "cmd-raise-k2", { commitmentId: base.id }) as never,
+        raiseCommand("raise-k2", base.id) as never,
       );
       expect(held.ok).toBe(true);
     }
@@ -294,7 +308,7 @@ describe("E3.3 resolveRaisePressure", () => {
     const lateSecond = SHIFT_AT - 10;
     const resolution = resolveRaisePressure(
       raiseView({ commitment, storySecond: lateSecond }) as never,
-      systemCommand("raise_pressure", "cmd-raise-late", { commitmentId: commitment.id }) as never,
+      raiseCommand("raise-late", commitment.id) as never,
     );
     if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
     expect(resolution.pressure.noticeAt).toBe(lateSecond);
@@ -306,20 +320,13 @@ describe("E3.3 resolveRaisePressure", () => {
 describe("E3.3 resolveCommitmentDeadline", () => {
   function deadlineView(overrides: Record<string, unknown> = {}) {
     return {
-      worldId: "world-1",
-      branchId: "branch-1",
-      rulesetVersion: "gate3-test-v1",
-      headSequence: 4,
-      storySecond: SHIFT_AT,
+      ...simMeta({ headSequence: 4, storySecond: SHIFT_AT }),
       commitment: acceptedCreate().commitment,
       actorLocus: { kind: "at", actorId: "actor-1", locationId: "loc-1", zoneId: "zone-home", since: NOW },
       ...overrides,
     };
   }
-  const command = () =>
-    systemCommand("resolve_commitment_deadline", "cmd-deadline-1", {
-      commitmentId: deriveCommitmentId("branch-1", "cmd-commit-1"),
-    });
+  const command = () => deadlineCommand("deadline-1", deriveCommitmentId(TEST_BRANCH_ID, "cmd-commit-1"));
 
   it("keeps when present, lates when inbound, misses when absent", () => {
     const kept = resolveCommitmentDeadline(
@@ -383,9 +390,7 @@ describe("E3.3 resolveCommitmentDeadline", () => {
 
 describe("E5.5 slice 2 — resolveCommitmentDeadline over a destinationless commitment", () => {
   const destinationlessCommand = () =>
-    systemCommand("resolve_commitment_deadline", "cmd-deadline-destless", {
-      commitmentId: deriveCommitmentId("branch-1", "cmd-commit-1"),
-    });
+    deadlineCommand("deadline-destless", deriveCommitmentId(TEST_BRANCH_ID, "cmd-commit-1"));
 
   it("always resolves missed — present, in-transit-with-an-active-journey, and absent all fall through the same way, and entityIds omit the absent destination", () => {
     const commitment = acceptedDestinationlessCreate().commitment;
@@ -421,11 +426,7 @@ describe("E5.5 slice 2 — resolveCommitmentDeadline over a destinationless comm
     for (const { actorLocus, actorJourney } of loci) {
       const resolution = resolveCommitmentDeadline(
         {
-          worldId: "world-1",
-          branchId: "branch-1",
-          rulesetVersion: "gate3-test-v1",
-          headSequence: 4,
-          storySecond: SHIFT_AT,
+          ...simMeta({ headSequence: 4, storySecond: SHIFT_AT }),
           commitment,
           actorLocus,
           ...(actorJourney ? { actorJourney } : {}),
@@ -444,7 +445,7 @@ describe("E5.5 slice 2 — repair chain validation", () => {
   it("end to end: A (promise) misses, then B repairs it with a matching promisedToActorId → accepted and linked", () => {
     const createA = resolveCreateCommitment(
       createView({ destinationZoneExists: false, promisedToActorExists: true }) as never,
-      createCommand({ id: "cmd-promise-a", idempotencyKey: "promise-a-key" }, {
+      createCommand({ idSlug: "promise-a" }, {
         kind: "promise",
         destinationZoneId: undefined,
         promisedToActorId: "actor-2",
@@ -453,15 +454,11 @@ describe("E5.5 slice 2 — repair chain validation", () => {
     if (!createA.ok) throw new Error("fixture A create must resolve");
     const missedA = resolveCommitmentDeadline(
       {
-        worldId: "world-1",
-        branchId: "branch-1",
-        rulesetVersion: "gate3-test-v1",
-        headSequence: 4,
-        storySecond: SHIFT_AT,
+        ...simMeta({ headSequence: 4, storySecond: SHIFT_AT }),
         commitment: createA.commitment,
         actorLocus: { kind: "at", actorId: "actor-1", locationId: "loc-1", zoneId: "zone-home", since: NOW },
       } as never,
-      systemCommand("resolve_commitment_deadline", "cmd-deadline-a", { commitmentId: createA.commitment.id }) as never,
+      deadlineCommand("deadline-a", createA.commitment.id) as never,
     );
     if (!missedA.ok) throw new Error("fixture A miss must resolve");
     expect(missedA.outcome).toBe("missed");
@@ -472,7 +469,7 @@ describe("E5.5 slice 2 — repair chain validation", () => {
         repairTarget: { actorId: missedA.commitment.actorId, kind: missedA.commitment.kind, status: missedA.commitment.status },
         promisedToActorExists: true,
       }) as never,
-      createCommand({ id: "cmd-promise-b", idempotencyKey: "promise-b-key" }, {
+      createCommand({ idSlug: "promise-b" }, {
         kind: "promise",
         destinationZoneId: undefined,
         promisedToActorId: "actor-2",
@@ -562,29 +559,17 @@ describe("E5.5 slice 2 — repair chain validation", () => {
 
 describe("E5.5 slice 2 — resolveFulfillCommitment", () => {
   function fulfillView(overrides: Record<string, unknown> = {}) {
-    return {
-      worldId: "world-1",
-      branchId: "branch-1",
-      rulesetVersion: "gate3-test-v1",
-      headSequence: 4,
-      storySecond: NOW + 100,
-      ...overrides,
-    };
+    return { ...simMeta({ headSequence: 4, storySecond: NOW + 100 }), ...overrides };
   }
-  function fulfillCommand(overrides: Record<string, unknown> = {}) {
-    return {
-      id: "cmd-fulfill-1",
-      branchId: "branch-1",
-      expectedVersion: 1,
-      idempotencyKey: "fulfill-key-1",
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-1"] },
-      submittedAtWallClock: "2026-07-17T13:00:00.000Z",
-      correlationId: "corr-1",
+  function fulfillCommand(spec: Partial<CommandEnvelopeSpec> = {}) {
+    return commandEnvelope(fulfillCommitmentCommandSchema, {
       type: "fulfill_commitment",
-      schemaVersion: 1,
-      payload: { commitmentId: deriveCommitmentId("branch-1", "cmd-commit-1") },
-      ...overrides,
-    };
+      idSlug: "fulfill-1",
+      expectedVersion: 1,
+      principal: testPrincipal("player", ["actor-1"]),
+      payload: { commitmentId: deriveCommitmentId(TEST_BRANCH_ID, "cmd-commit-1") },
+      ...spec,
+    });
   }
 
   it("keeps a destinationless open commitment before its deadline, with a self_reported evaluation naming the fulfilling command", () => {
@@ -638,20 +623,13 @@ describe("E5.5 slice 2 — resolveFulfillCommitment", () => {
 
 describe("E5.5 slice 3 — pressure_acknowledged real fold case", () => {
   function ackEvent(pressureId: string, overrides: { sequence?: number; acknowledgedSeverity?: string } = {}) {
-    return pressureAcknowledgedEventSchema.parse({
-      id: `event-ack-${pressureId}-${overrides.sequence ?? 1}`,
-      worldId: "world-1",
-      branchId: "branch-1",
+    return eventEnvelope(pressureAcknowledgedEventSchema, {
+      type: "pressure_acknowledged",
+      idSlug: `ack-${pressureId}`,
       sequence: overrides.sequence ?? 1,
       storySecond: NOW + 100,
-      rulesetVersion: "gate3-test-v1",
-      correlationId: "corr-1",
       actorIds: ["actor-1"],
-      entityIds: [],
-      recordedAtWallClock: "2026-07-20T12:00:00.000Z",
       commandId: "cmd-ack",
-      type: "pressure_acknowledged",
-      schemaVersion: 1,
       payload: {
         engagementId: "engagement-1",
         pressureId,
@@ -664,7 +642,7 @@ describe("E5.5 slice 3 — pressure_acknowledged real fold case", () => {
 
   it("stamps the matching pressure's acknowledgedAt/acknowledgedSeverity, leaving a different pressure untouched", () => {
     const seed = {
-      ...emptyCommitmentsSeed("branch-1", NOW),
+      ...emptyCommitmentsSeed(TEST_BRANCH_ID, NOW),
       pressures: [
         temporalPressureSchema.parse({
           id: "pressure-a",
@@ -702,31 +680,21 @@ describe("E3.3 commitments replay", () => {
     const create = acceptedCreate();
     const raise = resolveRaisePressure(
       {
-        worldId: "world-1",
-        branchId: "branch-1",
-        rulesetVersion: "gate3-test-v1",
-        headSequence: 3,
-        storySecond: NOW + 1_000,
+        ...simMeta({ headSequence: 3, storySecond: NOW + 1_000 }),
         commitment: create.commitment,
         originZoneId: "zone-home",
         topology: topology(),
       } as never,
-      systemCommand("raise_pressure", "cmd-raise-1", { commitmentId: create.commitment.id }) as never,
+      raiseCommand("raise-1", create.commitment.id) as never,
     );
     if (!raise.ok) throw new Error("fixture raise must resolve");
     const miss = resolveCommitmentDeadline(
       {
-        worldId: "world-1",
-        branchId: "branch-1",
-        rulesetVersion: "gate3-test-v1",
-        headSequence: 4,
-        storySecond: SHIFT_AT,
+        ...simMeta({ headSequence: 4, storySecond: SHIFT_AT }),
         commitment: raise.commitment,
         actorLocus: { kind: "at", actorId: "actor-1", locationId: "loc-1", zoneId: "zone-home", since: NOW },
       } as never,
-      systemCommand("resolve_commitment_deadline", "cmd-deadline-1", {
-        commitmentId: create.commitment.id,
-      }) as never,
+      deadlineCommand("deadline-1", create.commitment.id) as never,
     );
     if (!miss.ok) throw new Error("fixture miss must resolve");
     return [...create.events, { ...raise.event, sequence: 4 }, { ...miss.event, sequence: 5 }] as SimulationBranchEvent[];
@@ -734,7 +702,7 @@ describe("E3.3 commitments replay", () => {
 
   it("folds the full stream to the missed commitment with a resolved pressure", () => {
     const replayed = replayCommitmentsHistory({
-      seed: emptyCommitmentsSeed("branch-1", NOW),
+      seed: emptyCommitmentsSeed(TEST_BRANCH_ID, NOW),
       events: lifecycleEvents(),
     });
     expect(replayed.headSequence).toBe(5);
@@ -747,8 +715,8 @@ describe("E3.3 commitments replay", () => {
 
   it("matches an event-at-a-time fold", () => {
     const events = lifecycleEvents();
-    const wholesale = replayCommitmentsHistory({ seed: emptyCommitmentsSeed("branch-1", NOW), events });
-    let stepwise = emptyCommitmentsSeed("branch-1", NOW);
+    const wholesale = replayCommitmentsHistory({ seed: emptyCommitmentsSeed(TEST_BRANCH_ID, NOW), events });
+    let stepwise = emptyCommitmentsSeed(TEST_BRANCH_ID, NOW);
     for (const event of events) stepwise = applyCommitmentEvent(stepwise, event);
     expect(simulationHash({ ...wholesale, version: 0 })).toBe(simulationHash({ ...stepwise, version: 0 }));
   });

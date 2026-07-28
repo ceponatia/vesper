@@ -8,8 +8,9 @@ import {
   isFeatureAttributeCategory,
   isIntimateAttributeCategory,
 } from "@/contracts/body/locations";
-import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
+import type { CharacterProfile } from "@/contracts/world/profile";
 import { viewerBodyPartById } from "@/contracts/images/viewer-body";
+import { attr, makeProfile } from "@/server/test-support";
 import {
   buildAvatarPrompt,
   buildItemImagePrompt,
@@ -45,18 +46,22 @@ import {
   type SceneRenderPlan,
 } from "./prompts";
 
-function profileWith(overrides: Partial<CharacterProfile>): CharacterProfile {
-  return { ...emptyCharacterProfile(), ...overrides };
-}
+/**
+ * A character-SHEET attribute: every fixture in this file is `source: "base"`,
+ * because the image path reads the authored sheet, not a chat overlay. The id is
+ * the contract's template type, so a typo is a compile error.
+ */
+const baseAttr = (id: AttributeValue["id"], value: AttributeValue["value"]): AttributeValue =>
+  attr(id, value, "base");
 
 describe("buildAvatarPrompt", () => {
-  const profile = profileWith({
+  const profile = makeProfile({
     bio: "A wandering cartographer of the northern reaches.",
     personality: "Dry wit, endlessly curious.",
     attributes: [
-      { id: "hair.color", value: "red", source: "base" },
-      { id: "hair.length", value: "shoulder_length", source: "base" },
-      { id: "identity.apparent_age", value: "mid_twenties", source: "base" },
+      baseAttr("hair.color", "red"),
+      baseAttr("hair.length", "shoulder_length"),
+      baseAttr("identity.apparent_age", "mid_twenties"),
     ],
   });
 
@@ -79,8 +84,8 @@ describe("buildAvatarPrompt", () => {
   });
 
   it("differs by style and never leaks unknown attribute ids", () => {
-    const odd = profileWith({
-      attributes: [{ id: "hair.nonexistent_attr", value: "x", source: "base" }],
+    const odd = makeProfile({
+      attributes: [baseAttr("hair.nonexistent_attr", "x")],
     });
     const realistic = buildAvatarPrompt("Mira", odd, "realistic");
     const stylized = buildAvatarPrompt("Mira", odd, "stylized");
@@ -91,17 +96,17 @@ describe("buildAvatarPrompt", () => {
   });
 
   it("tolerates an empty profile", () => {
-    const prompt = buildAvatarPrompt("", emptyCharacterProfile(), "realistic");
+    const prompt = buildAvatarPrompt("", makeProfile(), "realistic");
     expect(prompt).toContain("an unnamed character");
     expect(prompt).not.toContain("Appearance:");
   });
 
   it("never includes intimate anatomy — bare or dressed, the portrait studio is intimate-free", () => {
-    const p = profileWith({
+    const p = makeProfile({
       intimateRegions: ["breasts"],
       attributes: [
-        { id: "hair.color", value: "red", source: "base" },
-        { id: "breasts.size", value: "full", source: "base" },
+        baseAttr("hair.color", "red"),
+        baseAttr("breasts.size", "full"),
       ],
     });
     // Chest bare (no top): still withheld — intimate detail is scene-render-only.
@@ -116,15 +121,15 @@ describe("buildAvatarPrompt", () => {
   it("drops every below-waist attribute from the waist-up portrait", () => {
     // Mirrors Maya: pelvic + feet + leg anatomy must never reach a waist-up
     // portrait. Above-waist, non-intimate chest detail stays.
-    const p = profileWith({
+    const p = makeProfile({
       intimateRegions: ["vulva"],
       attributes: [
-        { id: "hair.color", value: "red", source: "base" },
-        { id: "chest.size", value: "full", source: "base" }, // chest (general) — above waist, not intimate
-        { id: "feet.size", value: "average", source: "base" },
-        { id: "legs.length", value: "proportionate", source: "base" },
-        { id: "hips.width", value: "rounded", source: "base" },
-        { id: "vulva.labia_minora", value: "protruding", source: "base" }, // pelvic intimate
+        baseAttr("hair.color", "red"),
+        baseAttr("chest.size", "full"), // chest (general) — above waist, not intimate
+        baseAttr("feet.size", "average"),
+        baseAttr("legs.length", "proportionate"),
+        baseAttr("hips.width", "rounded"),
+        baseAttr("vulva.labia_minora", "protruding"), // pelvic intimate
       ],
     });
     const prompt = buildAvatarPrompt("Mira", p, "realistic", []);
@@ -138,24 +143,24 @@ describe("buildAvatarPrompt", () => {
 
   it("filters feature attributes through the realized body", () => {
     const attrs: AttributeValue[] = [
-      { id: "horns.shape", value: "swept_back", source: "base" },
-      { id: "wings.type", value: "membranous", source: "base" },
-      { id: "tail.type", value: "spaded", source: "base" },
+      baseAttr("horns.shape", "swept_back"),
+      baseAttr("wings.type", "membranous"),
+      baseAttr("tail.type", "spaded"),
     ];
-    const human = buildAvatarPrompt("Mira", profileWith({ speciesId: "human", attributes: attrs }), "realistic");
+    const human = buildAvatarPrompt("Mira", makeProfile({ speciesId: "human", attributes: attrs }), "realistic");
     expect(human).not.toContain("Horns:");
     expect(human).not.toContain("Wings:");
     expect(human).not.toContain("Tail:");
 
     // Morphology leads the appearance section and each feature is one grouped clause.
-    const succubus = buildAvatarPrompt("Mira", profileWith({ speciesId: "succubus", attributes: attrs }), "realistic");
+    const succubus = buildAvatarPrompt("Mira", makeProfile({ speciesId: "succubus", attributes: attrs }), "realistic");
     expect(succubus).toContain("Horns: swept back");
     expect(succubus).toContain("Wings: membranous");
     expect(succubus).toContain("Tail: spaded");
 
     const winglessSuccubus = buildAvatarPrompt(
       "Mira",
-      profileWith({ speciesId: "succubus", bodyFeatures: ["horns"], attributes: attrs }),
+      makeProfile({ speciesId: "succubus", bodyFeatures: ["horns"], attributes: attrs }),
       "realistic",
     );
     expect(winglessSuccubus).toContain("Horns:");
@@ -187,16 +192,16 @@ describe("buildAvatarPrompt", () => {
   });
 
   it("omits low-value waist-up attributes — including ALL teeth (scene-images D)", () => {
-    const p = profileWith({
+    const p = makeProfile({
       speciesId: "succubus",
       attributes: [
-        { id: "hair.color", value: "black", source: "base" },
-        { id: "teeth.shape", value: "sharp_canines", source: "base" }, // "sharp canines" makes SDXL render a mess
-        { id: "teeth.condition", value: "pristine", source: "base" },
-        { id: "build.height", value: "short", source: "base" }, // no height reference in a waist-up crop
-        { id: "skin.undertone", value: "cool", source: "base" },
-        { id: "hands.nails", value: "manicured", source: "base" },
-        { id: "movement.gait", value: "graceful", source: "base" }, // motion — invisible in a still
+        baseAttr("hair.color", "black"),
+        baseAttr("teeth.shape", "sharp_canines"), // "sharp canines" makes SDXL render a mess
+        baseAttr("teeth.condition", "pristine"),
+        baseAttr("build.height", "short"), // no height reference in a waist-up crop
+        baseAttr("skin.undertone", "cool"),
+        baseAttr("hands.nails", "manicured"),
+        baseAttr("movement.gait", "graceful"), // motion — invisible in a still
       ],
     });
     const prompt = buildAvatarPrompt("Kianna", p, "realistic", []);
@@ -212,12 +217,12 @@ describe("buildAvatarPrompt", () => {
   it("appends ethnicity (heritage) as a comma after the species in the subject phrase", () => {
     const succubus = buildAvatarPrompt(
       "Kianna",
-      profileWith({
+      makeProfile({
         speciesId: "succubus",
         attributes: [
-          { id: "identity.gender", value: "female", source: "base" },
-          { id: "identity.apparent_age", value: "young_adult", source: "base" },
-          { id: "identity.heritage", value: "Latina", source: "base" },
+          baseAttr("identity.gender", "female"),
+          baseAttr("identity.apparent_age", "young_adult"),
+          baseAttr("identity.heritage", "Latina"),
         ],
       }),
       "realistic",
@@ -227,11 +232,11 @@ describe("buildAvatarPrompt", () => {
     // Human (no species noun): ethnicity follows gender.
     const human = buildAvatarPrompt(
       "Mira",
-      profileWith({
+      makeProfile({
         attributes: [
-          { id: "identity.gender", value: "female", source: "base" },
-          { id: "identity.apparent_age", value: "young_adult", source: "base" },
-          { id: "identity.heritage", value: "Igbo", source: "base" },
+          baseAttr("identity.gender", "female"),
+          baseAttr("identity.apparent_age", "young_adult"),
+          baseAttr("identity.heritage", "Igbo"),
         ],
       }),
       "realistic",
@@ -241,7 +246,7 @@ describe("buildAvatarPrompt", () => {
   });
 
   it("states chest hair only when the torso is bare, never under clothing", () => {
-    const p = profileWith({ attributes: [{ id: "chest.hair", value: "dense", source: "base" }] });
+    const p = makeProfile({ attributes: [baseAttr("chest.hair", "dense")] });
     // Clothed (a top covering the chest) → hidden.
     const clothed = buildAvatarPrompt("Sayed", p, "realistic", [{ name: "Shirt", coverage: ["chest"] }]);
     expect(clothed).not.toContain("Chest");
@@ -251,12 +256,12 @@ describe("buildAvatarPrompt", () => {
   });
 
   it("drops non-visual (sensory) attributes — voice and scent never reach an image prompt", () => {
-    const p = profileWith({
+    const p = makeProfile({
       attributes: [
-        { id: "hair.color", value: "red", source: "base" },
-        { id: "voice.pitch", value: "high", source: "base" },
-        { id: "voice.cadence", value: "melodic", source: "base" },
-        { id: "presentation.scent_baseline", value: "lavender and cedar", source: "base" },
+        baseAttr("hair.color", "red"),
+        baseAttr("voice.pitch", "high"),
+        baseAttr("voice.cadence", "melodic"),
+        baseAttr("presentation.scent_baseline", "lavender and cedar"),
       ],
     });
     const prompt = buildAvatarPrompt("Mira", p, "realistic", []);
@@ -268,10 +273,10 @@ describe("buildAvatarPrompt", () => {
   });
 
   it("names a non-human species by label only (no appearance description) in the subject phrase, omitted for human", () => {
-    const succubus = buildAvatarPrompt("Mira", profileWith({ speciesId: "succubus" }), "realistic");
+    const succubus = buildAvatarPrompt("Mira", makeProfile({ speciesId: "succubus" }), "realistic");
     expect(succubus).toContain("Subject: Mira — a succubus.");
     expect(succubus).not.toContain("leathery bat-like wings"); // appearance description dropped — feature attributes carry it
-    const human = buildAvatarPrompt("Mira", profileWith({ speciesId: "human" }), "realistic");
+    const human = buildAvatarPrompt("Mira", makeProfile({ speciesId: "human" }), "realistic");
     expect(human).toContain("Subject: Mira.");
     expect(human).not.toContain("succubus");
   });
@@ -306,14 +311,14 @@ describe("buildAvatarPrompt field-gating invariants (whole attribute registry)",
     }
   };
   const profileFor = (id: string): CharacterProfile =>
-    profileWith({
+    makeProfile({
       // Switch on every intimate region + feature group so the attribute under
       // test is applicable — then the ONLY thing that can drop it is the gate.
       intimateRegions: [...INTIMATE_ATTRIBUTE_CATEGORIES],
       bodyFeatures: [...FEATURE_ATTRIBUTE_CATEGORIES],
       attributes: [
-        { id: "hair.color", value: "red", source: "base" },
-        { id: id as AttributeDefinition["id"], value: sampleValue(attributeRegistry.byId(id) as AttributeDefinition), source: "base" },
+        baseAttr("hair.color", "red"),
+        baseAttr(id as AttributeValue["id"], sampleValue(attributeRegistry.byId(id) as AttributeDefinition)),
       ],
     });
   const fullSuit = {
@@ -619,15 +624,15 @@ describe("wardrobeOutfitSummary", () => {
 describe("characterAppearanceSummary", () => {
   it("formats registry labels, skips unknown ids, and caps length", () => {
     const summary = characterAppearanceSummary([
-      { id: "hair.color", value: "red", source: "base" },
-      { id: "hair.nonexistent_attr", value: "x", source: "base" },
+      baseAttr("hair.color", "red"),
+      baseAttr("hair.nonexistent_attr", "x"),
     ]);
     expect(summary).toContain("Hair color: red");
     expect(summary).not.toContain("nonexistent_attr");
     const long = characterAppearanceSummary(
       [
-        { id: "hair.color", value: "red", source: "base" },
-        { id: "hair.length", value: "shoulder_length", source: "base" },
+        baseAttr("hair.color", "red"),
+        baseAttr("hair.length", "shoulder_length"),
       ],
       12,
     );
@@ -635,17 +640,17 @@ describe("characterAppearanceSummary", () => {
   });
 
   it("can filter feature attributes when profile context is supplied", () => {
-    const attrs: AttributeValue[] = [{ id: "wings.type", value: "membranous", source: "base" }];
-    expect(characterAppearanceSummary(attrs, undefined, false, profileWith({ speciesId: "human" }))).toBe("");
-    expect(characterAppearanceSummary(attrs, undefined, false, profileWith({ speciesId: "succubus" }))).toContain(
+    const attrs: AttributeValue[] = [baseAttr("wings.type", "membranous")];
+    expect(characterAppearanceSummary(attrs, undefined, false, makeProfile({ speciesId: "human" }))).toBe("");
+    expect(characterAppearanceSummary(attrs, undefined, false, makeProfile({ speciesId: "succubus" }))).toContain(
       "Wing type: membranous",
     );
   });
 
   it("omits apparent age — scene images lean on the avatar reference for how old a character looks", () => {
     const summary = characterAppearanceSummary([
-      { id: "identity.apparent_age", value: "late_thirties", source: "base" },
-      { id: "hair.color", value: "red", source: "base" },
+      baseAttr("identity.apparent_age", "late_thirties"),
+      baseAttr("hair.color", "red"),
     ]);
     expect(summary).toContain("Hair color: red");
     expect(summary).not.toContain("late thirties");
@@ -654,15 +659,15 @@ describe("characterAppearanceSummary", () => {
 
   it("never leaks an excludeFromPrompts attribute (identity.natal_sex) — gender still renders", () => {
     const attrs: AttributeValue[] = [
-      { id: "identity.gender", value: "androgynous_born_female", source: "base" },
-      { id: "identity.natal_sex", value: "female", source: "base" },
-      { id: "hair.color", value: "red", source: "base" },
+      baseAttr("identity.gender", "androgynous_born_female"),
+      baseAttr("identity.natal_sex", "female"),
+      baseAttr("hair.color", "red"),
     ];
     const summary = characterAppearanceSummary(attrs);
     expect(summary).toContain("androgynous born female"); // the gender variant does steer rendering
     expect(summary).not.toContain("Natal sex");
     // The avatar prompt (subject phrase) also carries gender but never natal sex.
-    const avatar = buildAvatarPrompt("Mira", profileWith({ attributes: attrs }), "realistic");
+    const avatar = buildAvatarPrompt("Mira", makeProfile({ attributes: attrs }), "realistic");
     expect(avatar).toMatch(/Subject: Mira\b.*androgynous born female/);
     expect(avatar).not.toContain("Natal sex");
   });
@@ -670,11 +675,11 @@ describe("characterAppearanceSummary", () => {
 
 describe('prompt-side "none" elision (renderNoneInPrompts)', () => {
   it('drops a "none" attribute from the avatar prompt — stating it plants the noun the model then paints', () => {
-    const p = profileWith({
+    const p = makeProfile({
       attributes: [
-        { id: "nose.piercings", value: "none", source: "base" },
-        { id: "face.freckles", value: "none", source: "base" },
-        { id: "hair.color", value: "red", source: "base" },
+        baseAttr("nose.piercings", "none"),
+        baseAttr("face.freckles", "none"),
+        baseAttr("hair.color", "red"),
       ],
     });
     const prompt = buildAvatarPrompt("Mira", p, "realistic");
@@ -687,16 +692,16 @@ describe('prompt-side "none" elision (renderNoneInPrompts)', () => {
 
   it('drops "none" from the scene appearance summary but keeps real values', () => {
     const summary = characterAppearanceSummary([
-      { id: "ears.piercings", value: "none", source: "base" },
-      { id: "eyes.luminosity", value: "none", source: "base" },
-      { id: "hair.color", value: "red", source: "base" },
+      baseAttr("ears.piercings", "none"),
+      baseAttr("eyes.luminosity", "none"),
+      baseAttr("hair.color", "red"),
     ]);
     expect(summary).toBe("Hair color: red");
   });
 
   it('keeps a flagged none — bare pubic hair is itself the look (renderNoneInPrompts)', () => {
     const exposed = intimateSceneAppearance(
-      [{ id: "vulva.pubic_hair_density", value: "none", source: "base" }],
+      [baseAttr("vulva.pubic_hair_density", "none")],
       { torso: "covered", pelvis: "bare", legs: "bare", feet: "bare" },
     );
     expect(exposed).toContain("Pubic hair density: none");
@@ -705,9 +710,9 @@ describe('prompt-side "none" elision (renderNoneInPrompts)', () => {
 
 describe("intimateSceneAppearance (exposure-gated)", () => {
   const attrs: AttributeValue[] = [
-    { id: "penis.size", value: "average", source: "base" },
-    { id: "breasts.size", value: "full", source: "base" },
-    { id: "vulva.scent", value: "musky", source: "base" }, // sensory — never visual
+    baseAttr("penis.size", "average"),
+    baseAttr("breasts.size", "full"),
+    baseAttr("vulva.scent", "musky"), // sensory — never visual
   ];
   it("includes intimate detail only for an exposed region, skipping covered regions and sensory", () => {
     const exposed = intimateSceneAppearance(attrs, { torso: "covered", pelvis: "bare", legs: "bare", feet: "bare" });
@@ -723,19 +728,19 @@ describe("intimateSceneAppearance (exposure-gated)", () => {
 
 describe("sceneRevealAppearance (shape reads through clothing; skin needs exposure)", () => {
   const attrs: AttributeValue[] = [
-    { id: "breasts.size", value: "full", source: "base" }, // shape
-    { id: "breasts.shape", value: "round", source: "base" }, // shape
-    { id: "breasts.nipples", value: "large", source: "base" }, // skin (torso)
-    { id: "vulva.labia_minora", value: "protruding", source: "base" }, // untagged intimate → exposure-only
-    { id: "waist.definition", value: "defined", source: "base" }, // shape
-    { id: "hips.width", value: "wide", source: "base" }, // shape
-    { id: "legs.build", value: "toned", source: "base" }, // shape
-    { id: "legs.length", value: "long", source: "base" }, // shape
-    { id: "legs.hair", value: "fine", source: "base" }, // skin (legs)
-    { id: "feet.size", value: "average", source: "base" }, // shape
-    { id: "feet.arch", value: "high", source: "base" }, // skin (feet)
+    baseAttr("breasts.size", "full"), // shape
+    baseAttr("breasts.shape", "round"), // shape
+    baseAttr("breasts.nipples", "large"), // skin (torso)
+    baseAttr("vulva.labia_minora", "protruding"), // untagged intimate → exposure-only
+    baseAttr("waist.definition", "defined"), // shape
+    baseAttr("hips.width", "wide"), // shape
+    baseAttr("legs.build", "toned"), // shape
+    baseAttr("legs.length", "long"), // shape
+    baseAttr("legs.hair", "fine"), // skin (legs)
+    baseAttr("feet.size", "average"), // shape
+    baseAttr("feet.arch", "high"), // skin (feet)
   ];
-  const profile = profileWith({ intimateRegions: ["breasts", "vulva"] });
+  const profile = makeProfile({ intimateRegions: ["breasts", "vulva"] });
 
   it("SFW lower-body line: shape always; skin only when the region is bare; never intimate", () => {
     const dressed = sceneRevealAppearance(
@@ -812,18 +817,18 @@ describe("buildSceneRenderPrompt — subject body line (the waist-up portrait's 
 describe("identityAnchorSummary + render emission (chat-scene-fidelity slice 3)", () => {
   it("picks only whitelisted identity-critical attributes, and returns '' when none are authored", () => {
     const summary = identityAnchorSummary([
-      { id: "skin.tone", value: "warm brown", source: "base" },
-      { id: "lips.fullness", value: "full", source: "base" },
-      { id: "eyes.color", value: "hazel", source: "base" },
-      { id: "build.height", value: 170, source: "base" }, // not identity-critical — excluded
-      { id: "presentation.grooming", value: "polished", source: "base" }, // not identity-critical — excluded
+      baseAttr("skin.tone", "warm brown"),
+      baseAttr("lips.fullness", "full"),
+      baseAttr("eyes.color", "hazel"),
+      baseAttr("build.height", 170), // not identity-critical — excluded
+      baseAttr("presentation.grooming", "polished"), // not identity-critical — excluded
     ]);
     expect(summary).toContain("warm brown");
     expect(summary).toContain("full");
     expect(summary).toContain("hazel");
     expect(summary).not.toContain("170");
     expect(summary).not.toContain("polished");
-    expect(identityAnchorSummary([{ id: "build.height", value: 170, source: "base" }])).toBe("");
+    expect(identityAnchorSummary([baseAttr("build.height", 170)])).toBe("");
     expect(identityAnchorSummary([])).toBe("");
   });
 
@@ -1405,13 +1410,13 @@ describe("scrubPlayerFromAction when the viewer has a body (slice 3)", () => {
 });
 
 describe("the viewer's own body facts (slice 4)", () => {
-  const persona = profileWith({
+  const persona = makeProfile({
     intimateRegions: ["penis"],
     attributes: [
-      { id: "skin.tone", value: "tan", source: "base" },
-      { id: "arms.hair", value: "moderate", source: "base" },
-      { id: "legs.hair", value: "heavy", source: "base" },
-      { id: "build.frame", value: "broad", source: "base" },
+      baseAttr("skin.tone", "tan"),
+      baseAttr("arms.hair", "moderate"),
+      baseAttr("legs.hair", "heavy"),
+      baseAttr("build.frame", "broad"),
     ],
   });
   const planWith = (over: Partial<SceneRenderPlan>): SceneRenderPlan => ({

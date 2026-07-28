@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectCleanSink, expectDiagnostic } from "@/test/diagnostics";
 import { DiagnosticCollector } from "../diagnostics";
 import { FULLY_COVERED, intimateRegionsBare, type RegionExposure } from "./visibility";
 import { applyWornGarmentChanges, matchGarment, type GarmentDescriptor } from "./chat-wardrobe";
@@ -40,7 +41,7 @@ describe("applyWornGarmentChanges", () => {
     });
     expect(result.wornIds).toEqual(["tee", "jeans"]);
     expect(result.overlay).toBe("");
-    expect(sink.items).toHaveLength(0);
+    expectCleanSink(sink);
   });
 
   it("adds a matched pool garment's id (deduped against the worn list)", () => {
@@ -66,7 +67,7 @@ describe("applyWornGarmentChanges", () => {
     });
     expect(result.wornIds).toEqual(["tee"]);
     expect(result.overlay).toBe("a borrowed hoodie");
-    expect(sink.items.map((d) => d.code)).toContain("chat_wardrobe.add_overlay");
+    expectDiagnostic(sink, "chat_wardrobe.add_overlay");
   });
 
   it("degrades an unmatched removal with a diagnostic (never fails the fold)", () => {
@@ -81,7 +82,7 @@ describe("applyWornGarmentChanges", () => {
     });
     expect(result.wornIds).toEqual(["tee", "jeans"]); // untouched
     expect(result.overlay).toBe("keep me"); // existing overlay preserved
-    expect(sink.items.map((d) => d.code)).toContain("chat_wardrobe.remove_unmatched");
+    expectDiagnostic(sink, "chat_wardrobe.remove_unmatched");
   });
 
   it("swaps a piece: removes one and adds another in a single fold", () => {

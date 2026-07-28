@@ -1,8 +1,8 @@
 import { and, desc, eq, sql } from "drizzle-orm";
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { stageMidpoint } from "@/contracts";
-import { characterChatMessages, characterChats, characterChatState, characters, db, users } from "@/server/db";
+import { characterChatMessages, characterChats, characterChatState, characters, db } from "@/server/db";
 
 // Conversation light-state integration suite (character-chat-state.spec.md §9,
 // re-keyed per participant — character-chat-standalone.spec.md §1.2): the POST
@@ -13,63 +13,39 @@ import { characterChatMessages, characterChats, characterChatState, characters, 
 // (not curve movement, which the pure suite covers). Self-skips when the
 // database is unreachable.
 
-process.env.AI_FAKE = "1";
-
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Chat State Int", role: "admin" as const },
 }));
 
-vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
-  getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
 import { withKeyedLock } from "@/server/engine";
+import {
+  apiRequest,
+  bindAuthUser,
+  drainStream,
+  endTestPool,
+  expectJson,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  routeCtx,
+  seedTestUser,
+} from "@/server/test-support";
 import { POST as chatsCreate } from "./route";
 import { DELETE as chatDelete, POST as chatSend } from "./[chatId]/route";
 import { GET as stateGet, PATCH as statePatch } from "./[chatId]/state/route";
 import { POST as markMoment } from "./[chatId]/milestones/route";
 import { POST as timeSkip } from "./[chatId]/time-skip/route";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from character_chat_state limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(`[chat-state.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`);
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("chat-state.int.test", "character_chat_state");
 
-const ready = await probe();
-const ctx = (chatId: string) => ({ params: Promise.resolve({ chatId }) });
+const ctx = (chatId: string) => routeCtx({ chatId });
 
-function postReq(chatId: string, body: unknown): NextRequest {
-  return new NextRequest(`http://t/api/chats/${chatId}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-const getReq = () => new NextRequest("http://t/api/chats/x/state");
-function patchReq(chatId: string, body: unknown): NextRequest {
-  return new NextRequest(`http://t/api/chats/${chatId}/state`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-const delReq = (chatId: string) => new NextRequest(`http://t/api/chats/${chatId}`, { method: "DELETE" });
+const postReq = (chatId: string, body: unknown): NextRequest => apiRequest(`/api/chats/${chatId}`, { body });
+const getReq = (): NextRequest => apiRequest("/api/chats/x/state");
+const patchReq = (chatId: string, body: unknown): NextRequest =>
+  apiRequest(`/api/chats/${chatId}/state`, { method: "PATCH", body });
+const delReq = (chatId: string): NextRequest => apiRequest(`/api/chats/${chatId}`, { method: "DELETE" });
 
 type Fixture = { characterId: string; chatId: string };
 const ids = {
@@ -121,23 +97,16 @@ async function messageCount(chatId: string): Promise<number> {
 /** Create the conversation for a seeded character through the real POST /api/chats handler. */
 async function createChat(characterId: string): Promise<string> {
   const res = await chatsCreate(
-    new NextRequest("http://t/api/chats", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ characterIds: [characterId], memory: "fresh" }),
-    }),
-    { params: Promise.resolve({}) },
+    apiRequest("/api/chats", { body: { characterIds: [characterId], memory: "fresh" } }),
+    routeCtx(),
   );
-  if (res.status !== 201) throw new Error(`chat create failed: ${res.status}`);
-  return ((await res.json()) as { id: string }).id;
+  return (await expectJson<{ id: string }>(res, 201)).id;
 }
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [user] = await db().insert(users).values({ email: `chat-state-int-${stamp}@test.local`, name: "Chat State Int", role: "admin" }).returning();
-  if (!user) throw new Error("failed to create test user");
-  authState.user = { ...authState.user, id: user.id, email: user.email };
+  const user = await seedTestUser("chat-state-int", { name: "Chat State Int", role: "admin" });
+  bindAuthUser(authState, user);
 
   const [warm] = await db()
     .insert(characters)
@@ -182,18 +151,16 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!ready) return;
-  // The chat rows cascade state/summary/messages/participants; characters and users FK them.
-  await db().delete(characterChats).where(eq(characterChats.ownerId, authState.user.id));
-  await db().delete(characters).where(eq(characters.ownerId, authState.user.id));
-  await db().delete(users).where(eq(users.id, authState.user.id));
-  await globalThis.__vesperPool?.end();
+  // The chat rows cascade state/summary/messages/participants; characters and users FK
+  // them — `purgeOwnerRows` owns that order.
+  await purgeOwnerRows([authState.user.id]);
+  await endTestPool();
 });
 
-describe("POST seeds a state row from the authored stage", () => {
-  it("creates a (chatId, characterId) row with regard from playerRelationship and a degraded pulse trace (demo)", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("POST seeds a state row from the authored stage", () => {
+  it("creates a (chatId, characterId) row with regard from playerRelationship and a degraded pulse trace (demo)", async () => {
     const res = await chatSend(postReq(ids.warm.chatId, { content: "Hello again" }), ctx(ids.warm.chatId));
-    await res.text(); // drains the stream ⇒ the finalizer (pulse + save) has run
+    await drainStream(res);
 
     const row = await stateRow(ids.warm);
     expect(row).not.toBeNull();
@@ -203,8 +170,7 @@ describe("POST seeds a state row from the authored stage", () => {
     expect((await scenarioRow(ids.warm.chatId))?.premise).toBe("childhood friend");
   });
 
-  it("no time passes between visits — meters and regard hold however long the gap (D3/D8)", async (t) => {
-    if (!ready) return t.skip();
+  it("no time passes between visits — meters and regard hold however long the gap (D3/D8)", async () => {
     // Degraded meters from a previous visit; there is no wall-clock anchor anymore,
     // so a "return" exchange applies only the within-visit tick — no recovery lerp.
     await db()
@@ -213,7 +179,7 @@ describe("POST seeds a state row from the authored stage", () => {
       .where(and(eq(characterChatState.chatId, ids.warm.chatId), eq(characterChatState.characterId, ids.warm.characterId)));
 
     const res = await chatSend(postReq(ids.warm.chatId, { content: "Back again" }), ctx(ids.warm.chatId));
-    await res.text();
+    await drainStream(res);
 
     const row = await stateRow(ids.warm);
     const meters = row?.meters as Record<string, number>;
@@ -223,20 +189,14 @@ describe("POST seeds a state row from the authored stage", () => {
   });
 });
 
-describe("POST …/time-skip (spec §8.1 — flavor-only v1, D14)", () => {
-  const skipReq = (chatId: string, amount: string) =>
-    new NextRequest(`http://t/api/chats/${chatId}/time-skip`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ amount }),
-    });
+describe.runIf(ready)("POST …/time-skip (spec §8.1 — flavor-only v1, D14)", () => {
+  const skipReq = (chatId: string, amount: string): NextRequest =>
+    apiRequest(`/api/chats/${chatId}/time-skip`, { body: { amount } });
 
-  it("degrades a skip on a missing state row to seed + skip (spec §11), persisting the seeded row", async (t) => {
-    if (!ready) return t.skip();
+  it("degrades a skip on a missing state row to seed + skip (spec §11), persisting the seeded row", async () => {
     expect(await stateRow(ids.skipper)).toBeNull(); // no exchange yet ⇒ no row
     const res = await timeSkip(skipReq(ids.skipper.chatId, "hours"), ctx(ids.skipper.chatId));
-    expect(res.status).toBe(200);
-    const snapshot = (await res.json()) as { clockMinutes: number };
+    const snapshot = await expectJson<{ clockMinutes: number }>(res, 200);
     expect(snapshot.clockMinutes).toBe(180);
     const row = await stateRow(ids.skipper);
     expect(row).not.toBeNull(); // the per-character half persisted the seed
@@ -245,8 +205,7 @@ describe("POST …/time-skip (spec §8.1 — flavor-only v1, D14)", () => {
     expect(scenario?.pendingSkipNote).not.toBe("");
   });
 
-  it("expires timed conditions, leaves meters untouched, records the ring, and the next exchange clears the note", async (t) => {
-    if (!ready) return t.skip();
+  it("expires timed conditions, leaves meters untouched, records the ring, and the next exchange clears the note", async () => {
     // Plant a timed condition + distinctive meters on the row the previous test seeded.
     await db()
       .update(characterChatState)
@@ -268,12 +227,11 @@ describe("POST …/time-skip (spec §8.1 — flavor-only v1, D14)", () => {
 
     // The next exchange renders the note once, then clears it (one-shot).
     const send = await chatSend(postReq(ids.skipper.chatId, { content: "Morning." }), ctx(ids.skipper.chatId));
-    await send.text();
+    await drainStream(send);
     expect((await scenarioRow(ids.skipper.chatId))?.pendingSkipNote).toBe("");
   });
 
-  it("409s a skip into an archived conversation", async (t) => {
-    if (!ready) return t.skip();
+  it("409s a skip into an archived conversation", async () => {
     await db().update(characterChats).set({ archivedAt: new Date() }).where(eq(characterChats.id, ids.skipper.chatId));
     const res = await timeSkip(skipReq(ids.skipper.chatId, "days"), ctx(ids.skipper.chatId));
     expect(res.status).toBe(409);
@@ -281,26 +239,23 @@ describe("POST …/time-skip (spec §8.1 — flavor-only v1, D14)", () => {
   });
 });
 
-describe("sceneAuto toggle (slice 9)", () => {
-  it("PATCH persists the auto-scene mode and it round-trips on GET", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("sceneAuto toggle (slice 9)", () => {
+  it("PATCH persists the auto-scene mode and it round-trips on GET", async () => {
     const res = await statePatch(patchReq(ids.fresh.chatId, { sceneAuto: "milestones" }), ctx(ids.fresh.chatId));
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as { sceneAuto: string }).sceneAuto).toBe("milestones");
+    expect((await expectJson<{ sceneAuto: string }>(res, 200)).sceneAuto).toBe("milestones");
     const get = await stateGet(getReq(), ctx(ids.fresh.chatId));
-    expect(((await get.json()) as { sceneAuto: string }).sceneAuto).toBe("milestones");
+    expect((await expectJson<{ sceneAuto: string }>(get)).sceneAuto).toBe("milestones");
   });
 });
 
-describe("creation seeds the scenario's setting-wide cards (followups ruling 9)", () => {
-  it("seeds the primary's profile cards onto the chat row and the first exchange preserves them", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("creation seeds the scenario's setting-wide cards (followups ruling 9)", () => {
+  it("seeds the primary's profile cards onto the chat row and the first exchange preserves them", async () => {
     // The scenario seeds at CREATION from the primary's own cards (ruling 9).
     const seeded = (await scenarioRow(ids.carded.chatId))?.activeSocialCards as { id: string }[];
     expect(seeded.map((c) => c.id)).toContain("card_feet");
 
     const res = await chatSend(postReq(ids.carded.chatId, { content: "Hey there" }), ctx(ids.carded.chatId));
-    await res.text(); // drains the stream ⇒ the finalizer (pulse + scenario save) has run
+    await drainStream(res);
 
     // Regression (codebase-review A2 lineage): the finalize save must not clobber
     // the authored taboos back to the DB default [].
@@ -309,29 +264,26 @@ describe("creation seeds the scenario's setting-wide cards (followups ruling 9)"
   });
 });
 
-describe("PATCH …/chats/:chatId/state { premise }", () => {
-  it("creates the row before any message and the premise survives a later pulse", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("PATCH …/chats/:chatId/state { premise }", () => {
+  it("creates the row before any message and the premise survives a later pulse", async () => {
     const res = await statePatch(patchReq(ids.fresh.chatId, { premise: "it's the night before she moves away" }), ctx(ids.fresh.chatId));
-    expect(res.status).toBe(200);
-    const snapshot = (await res.json()) as { premise: string };
+    const snapshot = await expectJson<{ premise: string }>(res, 200);
     expect(snapshot.premise).toBe("it's the night before she moves away");
     expect(await messageCount(ids.fresh.chatId)).toBe(0); // set before any message
 
     // A subsequent exchange must not touch the player-owned premise.
     const post = await chatSend(postReq(ids.fresh.chatId, { content: "Hi" }), ctx(ids.fresh.chatId));
-    await post.text();
+    await drainStream(post);
     expect((await scenarioRow(ids.fresh.chatId))?.premise).toBe("it's the night before she moves away");
   });
 });
 
-describe("regenerating the FIRST exchange rolls back cleanly (followups F3)", () => {
-  it("re-seeds from the authored defaults — no double clock tick, no stacked milestone", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("regenerating the FIRST exchange rolls back cleanly (followups F3)", () => {
+  it("re-seeds from the authored defaults — no double clock tick, no stacked milestone", async () => {
     // The first send creates the row: one clock tick, one first_exchange milestone, one baseline sample,
     // and the recorded rollback anchor is the `{}` sentinel (there was no prior state).
     const send = await chatSend(postReq(ids.regen.chatId, { content: "Hello" }), ctx(ids.regen.chatId));
-    await send.text();
+    await drainStream(send);
     const first = await stateRow(ids.regen);
     expect(first).not.toBeNull();
     const tick = (await scenarioRow(ids.regen.chatId))?.clockMinutes ?? 0;
@@ -343,7 +295,7 @@ describe("regenerating the FIRST exchange rolls back cleanly (followups F3)", ()
     // fell back to the POST-exchange state — so drift ticked the clock a SECOND time. Now the
     // scenario rolls back through its own pre-exchange anchor, so the clock lands on one tick.
     const regen = await chatSend(postReq(ids.regen.chatId, { kind: "regenerate" }), ctx(ids.regen.chatId));
-    await regen.text();
+    await drainStream(regen);
     const after = await stateRow(ids.regen);
     expect((await scenarioRow(ids.regen.chatId))?.clockMinutes).toBe(tick); // NOT 2×tick (the double-apply bug)
     expect((after?.milestones as { kind: string }[]).filter((m) => m.kind === "first_exchange")).toHaveLength(1);
@@ -351,39 +303,28 @@ describe("regenerating the FIRST exchange rolls back cleanly (followups F3)", ()
   });
 });
 
-describe("first_exchange survives a pre-existing state row (followups F4)", () => {
-  it("records the baseline sample + first_exchange even when a premise Save created the row first", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("first_exchange survives a pre-existing state row (followups F4)", () => {
+  it("records the baseline sample + first_exchange even when a premise Save created the row first", async () => {
     // A premise Save creates the state row BEFORE any message — so on the first send
     // `loadChatState` returns non-null and the old `preExchangeState === null` test missed it.
     await statePatch(patchReq(ids.premised.chatId, { premise: "reunited after years" }), ctx(ids.premised.chatId));
     expect(await stateRow(ids.premised)).not.toBeNull();
 
     const send = await chatSend(postReq(ids.premised.chatId, { content: "It's really you." }), ctx(ids.premised.chatId));
-    await send.text();
+    await drainStream(send);
     const row = await stateRow(ids.premised);
     expect((row?.milestones as { kind: string }[]).filter((m) => m.kind === "first_exchange")).toHaveLength(1);
     expect((row?.relationshipHistory as unknown[]).length).toBeGreaterThanOrEqual(1);
   });
 });
 
-describe("state mutations 409 while a reply streams (followups F1)", () => {
-  it("time-skip / PATCH / action beat / mark-moment are all rejected while the chat_exchange lock is held", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("state mutations 409 while a reply streams (followups F1)", () => {
+  it("time-skip / PATCH / action beat / mark-moment are all rejected while the chat_exchange lock is held", async () => {
     const chatId = ids.busy.chatId;
     // A NextRequest body is a single-use stream, so build a fresh one per call.
-    const skipReq = () =>
-      new NextRequest(`http://t/api/chats/${chatId}/time-skip`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ amount: "hours" }),
-      });
-    const markReq = () =>
-      new NextRequest(`http://t/api/chats/${chatId}/milestones`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messageId: "whatever", label: "x" }),
-      });
+    const skipReq = (): NextRequest => apiRequest(`/api/chats/${chatId}/time-skip`, { body: { amount: "hours" } });
+    const markReq = (): NextRequest =>
+      apiRequest(`/api/chats/${chatId}/milestones`, { body: { messageId: "whatever", label: "x" } });
     // Hold the exchange lock (what a live streaming reply holds across its whole settle),
     // then every state-row mutation must 409 rather than clobber the pending finalize —
     // including an action beat, now a real exchange that takes the same keyed lock.
@@ -398,29 +339,27 @@ describe("state mutations 409 while a reply streams (followups F1)", () => {
   });
 });
 
-describe("GET …/chats/:chatId/state", () => {
-  it("returns a drift-on-read snapshot with the band chip and last-turn trace", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("GET …/chats/:chatId/state", () => {
+  it("returns a drift-on-read snapshot with the band chip and last-turn trace", async () => {
     const res = await stateGet(getReq(), ctx(ids.warm.chatId));
-    expect(res.status).toBe(200);
-    const snap = (await res.json()) as { regard: number; regardBand: { id: string }; lastPulseTrace: { degraded: boolean } };
+    const snap = await expectJson<{ regard: number; regardBand: { id: string }; lastPulseTrace: { degraded: boolean } }>(
+      res,
+      200,
+    );
     expect(snap.regardBand.id).toBeTruthy();
     expect(snap.lastPulseTrace.degraded).toBe(true);
   });
 
-  it("returns a rested seed snapshot for a chat with no row yet", async (t) => {
-    if (!ready) return t.skip();
+  it("returns a rested seed snapshot for a chat with no row yet", async () => {
     // ids.fresh may have a row by now; assert the GET shape is well-formed regardless.
     const res = await stateGet(getReq(), ctx(ids.fresh.chatId));
-    expect(res.status).toBe(200);
-    const snap = (await res.json()) as { meters: Record<string, number> };
+    const snap = await expectJson<{ meters: Record<string, number> }>(res, 200);
     expect(typeof snap.meters).toBe("object");
   });
 });
 
-describe("state-tools edit (PATCH)", () => {
-  it("PATCH edits regard / meters / mindNote", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("state-tools edit (PATCH)", () => {
+  it("PATCH edits regard / meters / mindNote", async () => {
     const res = await statePatch(
       patchReq(ids.fresh.chatId, { regard: 40, meters: { hygiene: 0.4, mood: 0.7 }, mindNote: "set by hand" }),
       ctx(ids.fresh.chatId),
@@ -432,14 +371,13 @@ describe("state-tools edit (PATCH)", () => {
     expect(row?.mindNote).toBe("set by hand");
   });
 
-  it("clamps an out-of-range meter on edit", async (t) => {
-    if (!ready) return t.skip();
+  it("clamps an out-of-range meter on edit", async () => {
     await statePatch(patchReq(ids.fresh.chatId, { meters: { arousal: 5 } }), ctx(ids.fresh.chatId));
     expect((((await stateRow(ids.fresh))?.meters) as Record<string, number>).arousal).toBe(1);
   });
 });
 
-describe("action beats (chat-action-beats.plan.md) — a tapped chip is a narrated exchange", () => {
+describe.runIf(ready)("action beats (chat-action-beats.plan.md) — a tapped chip is a narrated exchange", () => {
   /** The newest message row (role + meta) for a chat. */
   async function lastMessage(chatId: string): Promise<{ role: string; meta: unknown } | null> {
     const [row] = await db()
@@ -451,11 +389,10 @@ describe("action beats (chat-action-beats.plan.md) — a tapped chip is a narrat
     return row ?? null;
   }
 
-  it("streams a beat with NO player line, applies the deterministic effect, and rides the chip id on the reply meta", async (t) => {
-    if (!ready) return t.skip();
+  it("streams a beat with NO player line, applies the deterministic effect, and rides the chip id on the reply meta", async () => {
     const res = await chatSend(postReq(ids.beat.chatId, { kind: "action_beat", action: "drink" }), ctx(ids.beat.chatId));
     expect(res.status).toBe(200);
-    const text = await res.text(); // drains the stream ⇒ the finalizer (effect persist + snapshot) has run
+    const text = await drainStream(res);
     expect(text).toContain("[Nyx]"); // the character played the beat (demo reply)
 
     // Only the assistant beat was inserted — no synthetic player line persisted.
@@ -473,14 +410,13 @@ describe("action beats (chat-action-beats.plan.md) — a tapped chip is a narrat
     expect((await lastMessage(ids.beat.chatId))?.meta).toMatchObject({ actionBeat: "drink" });
   });
 
-  it("regenerating the beat rolls back the effect and re-applies it exactly once (no double-apply)", async (t) => {
-    if (!ready) return t.skip();
+  it("regenerating the beat rolls back the effect and re-applies it exactly once (no double-apply)", async () => {
     const intoxBefore = (((await stateRow(ids.beat))?.meters) as Record<string, number>).intoxication ?? 0;
     const clockBefore = (await scenarioRow(ids.beat.chatId))?.clockMinutes ?? 0;
 
     const regen = await chatSend(postReq(ids.beat.chatId, { kind: "regenerate" }), ctx(ids.beat.chatId));
     expect(regen.status).toBe(200);
-    await regen.text();
+    await drainStream(regen);
 
     // The snapshot rolled back to the pre-effect state, then the effect re-applied — so
     // intoxication lands on the SAME value (not doubled) and the clock ticked only once.
@@ -491,8 +427,7 @@ describe("action beats (chat-action-beats.plan.md) — a tapped chip is a narrat
     expect((await lastMessage(ids.beat.chatId))?.meta).toMatchObject({ actionBeat: "drink" });
   });
 
-  it("400s an action beat with a missing or unknown chip id", async (t) => {
-    if (!ready) return t.skip();
+  it("400s an action beat with a missing or unknown chip id", async () => {
     expect((await chatSend(postReq(ids.beat.chatId, { kind: "action_beat" }), ctx(ids.beat.chatId))).status).toBe(400);
     expect(
       (await chatSend(postReq(ids.beat.chatId, { kind: "action_beat", action: "nuke" }), ctx(ids.beat.chatId))).status,
@@ -500,12 +435,11 @@ describe("action beats (chat-action-beats.plan.md) — a tapped chip is a narrat
   });
 });
 
-describe("Prompt Character (opening beat)", () => {
-  it("streams a character-authored opening with no player line, and seeds the state row", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("Prompt Character (opening beat)", () => {
+  it("streams a character-authored opening with no player line, and seeds the state row", async () => {
     const res = await chatSend(postReq(ids.open.chatId, { kind: "open" }), ctx(ids.open.chatId));
     expect(res.status).toBe(200);
-    const text = await res.text();
+    const text = await drainStream(res);
     expect(text).toContain("[Rell]"); // the character spoke (demo reply)
 
     const msgs = await db()
@@ -518,11 +452,10 @@ describe("Prompt Character (opening beat)", () => {
   });
 });
 
-describe("DELETE — the one destructive verb (character-chat-standalone.spec.md §1.4)", () => {
-  it("removes the conversation with its messages AND its state row in one action", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("DELETE — the one destructive verb (character-chat-standalone.spec.md §1.4)", () => {
+  it("removes the conversation with its messages AND its state row in one action", async () => {
     // Ensure a state row + a message exist.
-    await chatSend(postReq(ids.warm.chatId, { content: "seed a message" }), ctx(ids.warm.chatId)).then((r) => r.text());
+    await chatSend(postReq(ids.warm.chatId, { content: "seed a message" }), ctx(ids.warm.chatId)).then(drainStream);
     expect(await messageCount(ids.warm.chatId)).toBeGreaterThan(0);
     expect(await stateRow(ids.warm)).not.toBeNull();
 

@@ -5,6 +5,7 @@ import {
 } from "@/contracts/simulation/branching";
 import { GATE3_ROUTE_VERSION } from "@/contracts/simulation/space";
 import { spaceProjectionSchema, type SpaceProjection } from "@/contracts/simulation/space";
+import { bindSimEnvelopes } from "@/test/sim-envelopes";
 import {
   PERCEPTION_DERIVATION_VERSION,
   deriveCommandObservations,
@@ -14,6 +15,9 @@ import {
 
 const NOW = 100_000;
 
+/** This suite carries its own ruleset, so bind the world/branch/ruleset trio once. */
+const env = bindSimEnvelopes({ worldId: "world-1", branchId: "branch-1", rulesetVersion: "e4-1-test-v1" });
+
 /**
  * Fixture: the cafe has a hall and a kitchen (one location, two zones); the
  * shop is its own location. Player and Mara stand in the hall, Iris in the
@@ -21,12 +25,8 @@ const NOW = 100_000;
  */
 function fixtureSpace(overrides: { loci?: unknown[] } = {}): SpaceProjection {
   return spaceProjectionSchema.parse({
-    worldId: "world-1",
-    branchId: "branch-1",
-    rulesetVersion: "e4-1-test-v1",
+    ...env.meta({ headSequence: 10, storySecond: NOW }),
     version: 3,
-    headSequence: 10,
-    storySecond: NOW,
     locations: [
       { id: "loc-cafe", worldId: "world-1", kind: "cafe", defaultAccessPolicy: "public" },
       { id: "loc-shop", worldId: "world-1", kind: "shop", defaultAccessPolicy: "public" },
@@ -81,19 +81,14 @@ function fixtureSpace(overrides: { loci?: unknown[] } = {}): SpaceProjection {
 }
 
 function event(overrides: Record<string, unknown>): SimulationBranchEvent {
-  return simulationBranchEventSchema.parse({
-    id: `event-${String(overrides.type)}-${String(overrides.sequence ?? 11)}`,
-    worldId: "world-1",
-    branchId: "branch-1",
-    sequence: 11,
+  return env.event(simulationBranchEventSchema, {
+    type: String(overrides.type),
+    sequence: typeof overrides.sequence === "number" ? overrides.sequence : 11,
     storySecond: NOW,
-    schemaVersion: 1,
-    rulesetVersion: "e4-1-test-v1",
     commandId: "cmd-1",
-    correlationId: "corr-1",
-    entityIds: [],
-    recordedAtWallClock: "2026-07-18T12:00:00.000Z",
-    ...overrides,
+    payload: overrides.payload,
+    // The caller's record still has the last word on every field.
+    overrides,
   });
 }
 

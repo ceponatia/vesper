@@ -1,19 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { DiagnosticCollector, type AttributeValue } from "@/contracts";
-import { emptyCharacterDraft, type CharacterDraft } from "./drafts";
+import { DiagnosticCollector } from "@/contracts";
+import { attr, draftWith } from "@/server/test-support";
+import { emptyCharacterDraft } from "./drafts";
 import { derivePortraitAttributes, mergePortraitReadings, portraitAttributeDefinitions } from "./portrait-attributes";
-
-const attr = (id: string, value: AttributeValue["value"], source: AttributeValue["source"] = "creation"): AttributeValue => ({
-  id: id as AttributeValue["id"],
-  value,
-  source,
-});
-
-function draftWith(mutate: (draft: CharacterDraft) => void): CharacterDraft {
-  const draft = emptyCharacterDraft();
-  mutate(draft);
-  return draft;
-}
 
 describe("portraitAttributeDefinitions", () => {
   it("offers appearance categories and excludes personality + intimate ones", () => {

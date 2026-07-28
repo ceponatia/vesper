@@ -6,62 +6,46 @@ import {
   engagementSchema,
   type Engagement,
 } from "@/contracts/simulation/engagements";
+import { moveTogetherCommandSchema, type MoveTogetherCommand, type PhysicalLocus } from "@/contracts/simulation/space";
 import {
-  moveTogetherCommandSchema,
-  physicalLocusSchema,
-  type MoveTogetherCommand,
-  type PhysicalLocus,
-} from "@/contracts/simulation/space";
+  atLocus as spaceAtLocus,
+  transitLocus as spaceTransitLocus,
+  walkTopology,
+  SPACE_PLAYER,
+  SPACE_PRIMARY,
+  WALK_LINK_SECONDS,
+} from "@/test/sim-space-fixtures";
+import {
+  commandEnvelope,
+  simMeta,
+  testPrincipal,
+  TEST_BRANCH_ID,
+  type CommandEnvelopeSpec,
+} from "@/test/sim-envelopes";
 import { resolveMoveTogether, type MoveTogetherResolutionView } from "./move-together";
-import { deriveJourneyId, journeyArrivalUniquenessKey, resolveJourneyArrival, type SpaceTopology } from "./space";
+import { deriveJourneyId, journeyArrivalUniquenessKey, resolveJourneyArrival } from "./space";
 
 /**
  * command-integrity A4 pure resolver tests. The composed walk-with-me is now ONE
  * indivisible action: decide (re-run inside the locked view) + scene-end grace +
  * ONE shared journey carrying BOTH actors + one arrival — no three-transaction
  * window to strand the pair. Every accept/decline/taxonomy cell is asserted from
- * fixtures; the multi-actor arrival re-uses `resolveJourneyArrival` (already
- * covered for one traveller) to prove both land together.
+ * fixtures (@/test/sim-space-fixtures, @/test/sim-envelopes); the multi-actor
+ * arrival re-uses `resolveJourneyArrival` (already covered for one traveller) to
+ * prove both land together.
  */
 
 const SEED_SECOND = 100;
-const PLAYER = "actor-player";
-const PRIMARY = "actor-primary";
-const WALK_SECONDS = 600;
-
-function topology(): SpaceTopology {
-  return {
-    locations: [
-      { id: "loc-home", worldId: "world-1", kind: "home", defaultAccessPolicy: "private" },
-      { id: "loc-cafe", worldId: "world-1", kind: "cafe", defaultAccessPolicy: "public" },
-    ],
-    zones: [
-      { id: "zone-a", locationId: "loc-home", kind: "room", privacyPolicy: "private" },
-      { id: "zone-b", locationId: "loc-cafe", kind: "hall", privacyPolicy: "public" },
-    ],
-    links: [
-      {
-        id: "link-ab",
-        fromZoneId: "zone-a",
-        toZoneId: "zone-b",
-        modes: ["walk"],
-        minimumDurationSeconds: WALK_SECONDS,
-        accessPolicy: "public",
-        state: "open",
-      },
-    ],
-  } as unknown as SpaceTopology;
-}
+const PLAYER = SPACE_PLAYER;
+const PRIMARY = SPACE_PRIMARY;
+const WALK_SECONDS = WALK_LINK_SECONDS;
 
 function atLocus(actorId: string, zoneId: string, locationId: string): PhysicalLocus {
-  return physicalLocusSchema.parse({ kind: "at", actorId, locationId, zoneId, since: SEED_SECOND });
+  return spaceAtLocus(actorId, zoneId, { locationId, since: SEED_SECOND });
 }
 
 function transitLocus(actorId: string): PhysicalLocus {
-  return physicalLocusSchema.parse({
-    kind: "in_transit",
-    actorId,
-    journeyId: deriveJourneyId("branch-1", "cmd-earlier"),
+  return spaceTransitLocus(actorId, deriveJourneyId(TEST_BRANCH_ID, "cmd-earlier"), {
     linkId: "link-ab",
     enteredAt: SEED_SECOND,
     earliestExitAt: SEED_SECOND + WALK_SECONDS,
@@ -119,14 +103,9 @@ function firmCommitment(actorId: string, latestArrival: number): Commitment {
 // test asserts the engagement_ended prefix) — avoids assigning `undefined` to the
 // optional `standingEngagement` under exactOptionalPropertyTypes.
 function view(overrides: Partial<MoveTogetherResolutionView> = {}): MoveTogetherResolutionView {
-  const shape = topology();
   return {
-    worldId: "world-1",
-    branchId: "branch-1",
-    rulesetVersion: "gate3-test-v1",
-    headSequence: 0,
-    storySecond: SEED_SECOND,
-    topology: shape,
+    ...simMeta({ storySecond: SEED_SECOND }),
+    topology: walkTopology(),
     playerExists: true,
     coTravelerExists: true,
     playerLocus: atLocus(PLAYER, "zone-a", "loc-home"),
@@ -138,19 +117,16 @@ function view(overrides: Partial<MoveTogetherResolutionView> = {}): MoveTogether
   };
 }
 
-function command(payloadOverrides: Record<string, unknown> = {}, overrides: Record<string, unknown> = {}): MoveTogetherCommand {
-  return moveTogetherCommandSchema.parse({
-    id: "cmd-together-1",
-    branchId: "branch-1",
-    expectedVersion: 0,
-    idempotencyKey: "together-key-1",
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [PLAYER] },
-    submittedAtWallClock: "2026-07-24T12:00:00.000Z",
-    correlationId: "corr-1",
+function command(
+  payloadOverrides: Record<string, unknown> = {},
+  spec: Partial<CommandEnvelopeSpec> = {},
+): MoveTogetherCommand {
+  return commandEnvelope(moveTogetherCommandSchema, {
     type: "move_together",
-    schemaVersion: 1,
+    idSlug: "together-1",
+    principal: testPrincipal("player", [PLAYER]),
     payload: { actorId: PLAYER, coTravelerActorId: PRIMARY, destinationZoneId: "zone-b", travelMode: "walk", ...payloadOverrides },
-    ...overrides,
+    ...spec,
   });
 }
 
@@ -251,10 +227,7 @@ describe("resolveMoveTogether — the refusal taxonomy", () => {
   });
 
   it("refuses a principal that does not control the player (§14.2)", () => {
-    const uncontrolled = command(
-      {},
-      { principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-other"] } },
-    );
+    const uncontrolled = command({}, { principal: testPrincipal("player", ["actor-other"]) });
     const resolution = resolveMoveTogether(view(), uncontrolled);
     expect(resolution.ok).toBe(false);
     if (resolution.ok) return;
@@ -279,20 +252,18 @@ describe("resolveMoveTogether — the shared journey lands both", () => {
     if (!resolution.ok) throw new Error("fixture move_together must resolve");
     const arrival = resolveJourneyArrival(
       {
-        worldId: "world-1",
-        branchId: "branch-1",
-        rulesetVersion: "gate3-test-v1",
+        ...simMeta({ headSequence: resolution.triggerEvent.sequence, storySecond: SEED_SECOND + WALK_SECONDS }),
         version: 1,
-        headSequence: resolution.triggerEvent.sequence,
-        storySecond: SEED_SECOND + WALK_SECONDS,
-        topology: topology(),
+        topology: walkTopology(),
         journey: resolution.journey,
       } as never,
       {
         id: "cmd-arrive-1",
-        branchId: "branch-1",
+        branchId: TEST_BRANCH_ID,
         expectedVersion: 1,
         idempotencyKey: "arrive-key-1",
+        // A scheduler-fired arrival: the system principal is the point of the
+        // fixture, so it stays explicit rather than taking testPrincipal's.
         principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] },
         submittedAtWallClock: "2026-07-24T12:15:00.000Z",
         correlationId: "corr-1",
