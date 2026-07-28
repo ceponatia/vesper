@@ -298,6 +298,31 @@ export const characterChats = pgTable(
      * state write. Parsed with `parseOr` at the read boundary.
      */
     garments: jsonb("garments").notNull().default({}),
+    /**
+     * `ChatEnvironment` (contracts/state/chat-environment.ts) — the scene's WIND,
+     * PRECIPITATION and enclosure (body-attribute-affordances slice 4). The chat
+     * lane's first authoritative weather owner: the continuity extraction leg
+     * proposes a typed patch, `applyEnvironmentProposal` commits it, and the
+     * affordance adapter reads THIS rather than the narrator's sentence about the
+     * sky. Chat-wide like `scene_memory` (one setting for the roster) and on the
+     * scenario, so it rides `pre_exchange_scenario` and rolls back for free.
+     *
+     * Nullable: pre-feature rows are `null`, which the load boundary reads as the
+     * empty (indoors, still, dry) environment without a diagnostic.
+     */
+    environment: jsonb("environment"),
+    /**
+     * `AffordanceCueState` (contracts/affordances/core/ranking.ts) — what the
+     * affordance read has already offered the narrator, and in which band
+     * (body-attribute-affordances slice 4; the garment `cues` precedent).
+     *
+     * It lives beside the state it describes for ONE reason: the affordance read
+     * is a pure function of committed state plus this memory, so restoring both
+     * from the same rollback anchor is what makes a retake reproduce the identical
+     * read (architecture spec §"Recompute and capture"). Written by slice 5, when
+     * the read reaches the prompt; until then it rides through untouched.
+     */
+    affordanceCues: jsonb("affordance_cues"),
     /** SupportingCastMember[] — recurring named side characters (chat-supporting-cast.plan.md). */
     supportingCast: jsonb("supporting_cast").notNull().default([]),
     /** ChatPlan[] — tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */
@@ -715,6 +740,18 @@ export const characterChatState = pgTable(
      * `resolved`. The drive prompt law and the archivist's driveUpdates read/write it.
      */
     drives: jsonb("drives").notNull().default([]),
+    /**
+     * `BodySurfaceState` (contracts/state/body-surface.ts) — this character's
+     * per-body-location surface wetness (body-attribute-affordances slice 4):
+     * fixed-point levels with the story minute they last changed and what wet
+     * them, drying lazily on the story clock (the garment-condition precedent).
+     *
+     * PER CHARACTER, so it lives here rather than on the scenario — one head of
+     * hair belongs to one person. Extraction-proposed and clamped by the reducer;
+     * it rides `storedChatStateSchema`, so "another take" restores the soaking
+     * along with everything else. Nullable: pre-feature rows read as dry.
+     */
+    bodySurface: jsonb("body_surface"),
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.chatId, t.characterId] })],

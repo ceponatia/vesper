@@ -1,4 +1,8 @@
 import {
+  bodySurfaceWetnessCauses,
+  chatPrecipitationLevels,
+  chatWindLevels,
+  surfaceWetnessLocations,
   clothingCategoryIds,
   garmentCleanTargets,
   garmentConditionKeys,
@@ -52,6 +56,8 @@ export type ChatExtractorFieldKey =
   | "facts"
   | "memoryQueries"
   | "scene"
+  | "environment"
+  | "surfaceWetness"
   | "garmentOperations"
   | "outfit"
   | "playerOutfit"
@@ -215,6 +221,28 @@ const FIELDS: Record<ChatExtractorFieldKey, ExtractorField> = {
     empty: {},
     instruction: () =>
       `"scene": the setting the narration established or CHANGED this exchange — chat locations are imagined by the narrator, so this keeps them consistent. Omit it entirely (or {}) unless the fiction actually established something new. Shape: { "current": "<the place the scene is in now, if it was named/changed>", "places": [{ "name": "<place>", "details": ["<durable fact, e.g. 'blue sofa'>"], "connections": ["<e.g. 'kitchen through the doorway'>"] }] }. ONLY record what the text actually established — a concrete object or layout — never invent decor, and never record the time of day (the story clock owns time). Short noun phrases, a few at most. Physical STATE (weather changing, a door opening) is not a durable detail.`,
+  },
+
+  environment: {
+    key: "environment",
+    empty: {},
+    instruction: () =>
+      [
+        `"environment": the scene's WEATHER and whether it is under cover, only when this exchange ESTABLISHED or CHANGED it. {} when nothing about the conditions moved (the common case) — an omitted key means "unchanged", never "back to normal".`,
+        `   Shape: { "wind": "${alt(chatWindLevels)}", "precipitation": "${alt(chatPrecipitationLevels)}", "indoors": <true when they are under cover — inside a building, a car, a tent; false out in the open> }. Send only the keys the fiction actually settled.`,
+        `   Only what the text established — never infer weather from a season, a mood, or a place name, and never carry a remembered forecast forward. Weather belongs HERE and never in "scene", which records durable places and fixtures.`,
+      ].join("\n"),
+  },
+
+  surfaceWetness: {
+    key: "surfaceWetness",
+    empty: [],
+    instruction: (ctx) =>
+      [
+        `"surfaceWetness": how much wetter or drier ${ctx.characterName}'s ${alt(surfaceWetnessLocations)} got THIS exchange — rain on it, a shower, a dunking, a towel, an hour by the fire. [] when it did not move (the overwhelming common case).`,
+        `   Shape: [{ "location": "${alt(surfaceWetnessLocations)}", "direction": "increase" | "decrease", "degree": 1 | 2 | 3, "cause": "${alt(bodySurfaceWetnessCauses)}" }]. Degree is how far it moved this exchange: 1 slightly, 2 clearly, 3 completely (soaked through, or dried right out). "cause" is only for an increase — what wet it.`,
+        `   Only ${ctx.characterName}'s own body; never ${ctx.playerName}'s, and never clothing (wet clothes belong in the wardrobe fields). Only a change the fiction actually played — hair does not need re-reporting for staying damp, and it dries on its own between exchanges.`,
+      ].join("\n"),
   },
 
   garmentOperations: {
@@ -415,8 +443,15 @@ interface ExtractorExample {
   values: Partial<Record<ChatExtractorFieldKey, unknown>>;
 }
 
-/** Worked examples per leg (the generated empty-output example rides on top of these). */
-const EXAMPLES_PER_LEG = 5;
+/**
+ * Worked examples per leg (the generated empty-output example rides on top of
+ * these). Raised from 5 to 6 with the environment/surface fields
+ * (body-attribute-affordances slice 4): the continuity leg gained two
+ * assignments, and at 5 the new weather example would have evicted the
+ * supporting-cast one. The other two legs have exactly 5 relevant examples each,
+ * so the bump changes only the sheet that grew.
+ */
+const EXAMPLES_PER_LEG = 6;
 
 const EXAMPLES: readonly ExtractorExample[] = [
   {
@@ -474,6 +509,15 @@ const EXAMPLES: readonly ExtractorExample[] = [
     },
   },
   {
+    caption: "the sky opens on them crossing the car park and they duck inside soaked",
+    values: {
+      episodeSummary:
+        "The rain came down hard halfway across the car park; they got inside laughing, Mara's hair plastered flat to her head.",
+      environment: { wind: "windy", precipitation: "downpour", indoors: true },
+      surfaceWetness: [{ location: "hair", direction: "increase", degree: 3, cause: "rain" }],
+    },
+  },
+  {
     caption: "the character has her long hair cut to a bob during the scene",
     values: {
       episodeSummary:
@@ -516,6 +560,10 @@ const EXAMPLES: readonly ExtractorExample[] = [
     values: {
       episodeSummary:
         "They came in soaked from the downpour; Mara pulled a hoodie off the hook by the door and handed the player a towel.",
+      // Deliberately garment-ONLY, even though this beat also soaked her hair: the
+      // weather/surface example above already teaches those two fields, and adding
+      // them here would make this example relevant to the legacy wardrobe lane too,
+      // evicting the supporting-cast example from that sheet's six.
       garmentOperations: [
         { op: "condition", garment: "mara.shirt", parts: [], channel: "wetness", direction: "increase", degree: "substantial" },
         {
@@ -648,7 +696,17 @@ const LEGS: Record<ChatExtractorLegId, ExtractorLeg> = {
     // `garmentOperations` and the `outfit`/`playerOutfit` pair are mutually
     // exclusive by arming (clothing-state-graph slice 5) — the leg lists all three
     // and exactly one grammar is ever rendered.
-    fields: ["scene", "garmentOperations", "outfit", "playerOutfit", "attributeChanges", "presence", "cast"],
+    fields: [
+      "scene",
+      "environment",
+      "surfaceWetness",
+      "garmentOperations",
+      "outfit",
+      "playerOutfit",
+      "attributeChanges",
+      "presence",
+      "cast",
+    ],
   },
 
   // The character tracker: the character's own thread through the exchange.
