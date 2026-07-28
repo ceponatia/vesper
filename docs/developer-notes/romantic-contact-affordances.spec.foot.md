@@ -2,8 +2,7 @@
 
 Status: technical companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(promoted 2026-07-28 — the first proving domain, committed slices 0–4; ships
-to finished/ when implemented)
+(promoted 2026-07-28 — the first proving domain, committed slices 0–4)
 
 ## Scope
 
@@ -70,16 +69,17 @@ Child surfaces inherit a sparse parent profile and apply calibrated modifiers:
 - toenails use hard-surface structure rather than skin inheritance.
 
 Character authoring should not require a complete profile per subregion.
-Canonical attribute ids need a promotion-time registry audit; no new field is
-added merely to encode a derived heel/arch difference.
+Slice 0 must audit the current `feet.*` registry and record any orthogonal
+fields actually needed. No new field is added merely to encode a derived
+heel/arch difference.
 
 ## Current condition
 
 ```ts
 interface FootSurfaceConditionRead extends SurfaceConditionRead {
   surfaceId: FootSurfaceId;
-  moisture: UnitInterval;
-  sweatContribution: UnitInterval;
+  moisture?: UnitInterval;
+  moistureContributors: readonly SurfaceSubstanceRead[];
   temperatureBand?: ContactTemperatureBand;
   cleanlinessBand?: CleanlinessBand;
   residues: readonly SurfaceResidueRead[];
@@ -98,6 +98,11 @@ no source wetness → no regional wetness
 no residue event → no residue
 no mark event → no mark
 ```
+
+Known dry (`moisture = 0`) and unknown (`moisture = undefined`) are different.
+Unknown suppresses moisture-, scent-, and temperature-dependent claims whose
+other contributors cannot establish the result. It must not be rendered as
+dry, clean, cool, odorless, or high-friction.
 
 Regional distribution permits:
 
@@ -166,8 +171,8 @@ Invariants:
 
 ### `foot.contact_pressure`
 
-Consumes committed contact, pressure intent, surface geometry, support, area
-hint, and motion.
+Consumes committed contact pressure/area, surface geometry, support, and
+motion.
 
 Outputs:
 
@@ -210,7 +215,13 @@ Outputs:
 - `grip_breaks`;
 - `rough_surface_catch` only when the path reaches a qualifying surface.
 
-An absent moisture/product source cannot produce `slippery`.
+An absent moisture/product source cannot produce `slippery`. Unknown surface
+state suppresses the moisture-dependent result.
+
+Friction response is substance-specific. Oil/lotion, water, sweat, and a wet
+garment each use an explicit calibrated curve; the domain must not apply a
+global “more wetness means less friction” rule. In particular, small amounts of
+water or sweat may increase skin drag before a thicker film reduces it.
 
 ### `foot.articulation_observation`
 
@@ -242,6 +253,9 @@ Calculates transfer eligibility from contact, motion, pressure, permeability,
 and source residue. It proposes an effect with source amount and target locus.
 Only a committed effect event makes the resulting residue observable.
 
+The effect follows the shared conservation law: source removal and target (or
+intermediate garment) deposition commit atomically under one idempotency key.
+
 ### `foot.scent_proximity`
 
 Requires current contributors plus olfactory access:
@@ -259,6 +273,8 @@ Scent is a current perception result, not a permanent moral or hygiene label.
 Requires tactile contact and body/environment temperature reads. It emits only
 a relative band (`cooler | similar | warmer`) and confidence. It is not the
 passive visual thermal phenomenon excluded from body-attribute affordances.
+If either necessary temperature read is unavailable, the phenomenon is silent;
+ordinary body warmth is not an implicit default.
 
 ## First calibration fixture
 
@@ -310,13 +326,18 @@ then in romantic chat.
 
 - parent inheritance and regional overrides are deterministic;
 - increasing callus does not increase softness at the same locus;
-- increasing authoritative moisture does not increase effective dry drag under
-  an otherwise identical direct-skin sliding fixture;
+- within a single calibrated lubricant curve, increasing a confirmed
+  lubricating film does not increase drag before a declared saturation/
+  transition point; water, sweat, oil, and lotion are tested separately;
 - zero source moisture remains zero across regional distribution;
+- unknown moisture never becomes a known-dry or slippery observation;
 - no committed contact yields no pressure, texture, glide, nail, or transfer
   observation;
 - footwear filters the correct surfaces rather than the whole foot;
 - state owner rollback removes the corresponding mark/residue read;
+- a retried transfer cannot duplicate residue and always conserves the
+  committed amount;
+- missing temperature suppresses contact-temperature output;
 - identical fixtures produce identical observations, evidence, and repeat keys.
 
 Open questions are centralized in the

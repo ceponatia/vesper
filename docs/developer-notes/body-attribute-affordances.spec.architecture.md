@@ -313,66 +313,9 @@ numerical profile if a tagged union is clearer.
 ## Code organization
 
 Co-locate each domain so its vocabulary mapping, reusable calculations,
-phenomena, fixtures, and registration are reviewed together:
-
-```text
-src/contracts/affordances/
-  core/
-    types.ts
-    fixed-point.ts
-    evidence.ts
-    perception.ts
-    ranking.ts
-    registry.ts
-    index.ts
-
-  domains/
-    hair/
-      attribute-maps/
-        length.ts
-        density.ts
-        strand-thickness.ts
-        texture.ts
-        condition.ts
-        index.ts
-      profile.ts
-      mechanics.ts
-      frame.ts
-      phenomena/
-        wet-clumping.ts
-        wind-motion.ts
-        skin-adhesion.ts
-        droplet-shedding.ts
-        index.ts
-      domain.ts
-      fixtures.ts
-      hair.test.ts
-
-    skin-surface/
-    garment/
-    appendages/
-    soft-tissue/
-    relative-geometry/
-
-  recognition/
-    candidates.ts
-    salience.ts
-    visual-memory.ts
-    mention-policy.ts
-
-  domains.ts
-  derive-affordance-read.ts
-  index.ts
-```
-
-Rulings:
-
-- organize by domain, not by global `attributes/` and `phenomena/` trees;
-- keep the generic core ignorant of hair, skin, garments, and anatomy names;
-- use explicit registry imports, never filesystem discovery;
-- keep all resolution code pure and lane-neutral;
-- chat and successor callers adapt authoritative state into the same contracts
-  rather than forking the physics.
+phenomena, fixtures, and registration are reviewed together. The proposed
+tree and module-boundary rulings live in the
+[code-organization companion](body-attribute-affordances.spec.code-organization.md).
 
 ## Recompute and capture
 

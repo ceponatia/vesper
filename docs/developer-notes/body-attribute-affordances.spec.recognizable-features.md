@@ -2,7 +2,7 @@
 
 Status: companion to
 [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-(promoted with the plan 2026-07-28)
+(promoted 2026-07-28)
 
 ## Purpose
 
@@ -140,9 +140,9 @@ condition and creates a persistent appearance fact or anatomy delta. The
 recognition layer cannot decide that an injury “probably scarred.”
 
 The current chat `ActiveCondition` overlays attributes, while successor
-`BodyCondition` is meter/condition focused. Promotion should add a lane-neutral
-located body-state read rather than forcing lasting marks into either existing
-shape.
+`BodyCondition` is meter/condition focused. Before this family ships, add a
+lane-neutral located body-state read rather than forcing lasting marks into
+either existing shape.
 
 ### Wardrobe and presentation
 
@@ -319,29 +319,10 @@ fixtures live in the
 
 ## Code organization
 
-```text
-src/contracts/appearance-features/
-  locus.ts
-  definitions.ts
-  registry.ts
-  facts.ts
-  anatomy-state.ts
-  projection.ts
-
-src/contracts/affordances/recognition/
-  candidates.ts
-  salience.ts
-  visual-memory.ts
-  mention-policy.ts
-
-src/server/.../
-  chat-recognition-adapter.ts
-  sim-recognition-projector.ts
-  visual-memory-store.ts
-```
-
-Body truth remains outside affordances. Recognition consumes normalized
-projections and stays lane-neutral; adapters bridge chat and successor state.
+The proposed module tree and dependency rules live in the
+[shared code-organization spec](body-attribute-affordances.spec.code-organization.md#recognition-ownership).
+Body truth remains outside affordances; recognition consumes normalized
+projections, and lane adapters bridge authoritative state and observer memory.
 
 ## Anti-patterns
 

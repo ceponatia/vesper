@@ -73,7 +73,12 @@ interface RelativeBodyGeometryRead {
   subjectId: CharacterId;
   otherId: CharacterId;
   eyeLine: "far_below" | "below" | "near_level" | "above" | "far_above";
-  kissBlocking?: "tiptoe" | "slight_reach" | "level" | "other_bends" | "both_adjust";
+  kissAdjustments?: readonly (
+    | "subject_rises"
+    | "subject_bends"
+    | "other_rises"
+    | "other_bends"
+  )[];
   embraceAlignment?: "head_below_shoulder" | "head_at_shoulder" | "near_level" | "head_above_shoulder";
   evidence: readonly AffordanceEvidence[];
 }
@@ -115,7 +120,7 @@ Footwear modifies effective stature at read time. It never rewrites
 The pair read may resolve:
 
 - eye line: `far_above` from the shorter character's perspective;
-- kiss blocking: `tiptoe` plus `other_bends` or `both_adjust`, depending on the
+- kiss adjustments: `subject_rises` plus `other_bends`, depending on the
   calibrated differential;
 - embrace alignment: head below or near the taller partner's shoulder/chest
   band.

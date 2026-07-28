@@ -50,19 +50,25 @@ umbrella further down.)
   perception-gated visual observations. Owner ruling at promotion: the shared
   affordance core (structural profiles, phenomenon registry, evidence, perception +
   cue ranking) builds here first; the romantic-contact plan below consumes it.
-  Companion specs ship and move to finished/ individually as their domains land; the
-  plan ships when the owner calls the domain set covered.
+  The promotion audit records real gaps in pose/contact, force/weather,
+  physiology/body-surface state, perception parity, and visual memory; missing
+  inputs suppress dependent phenomena rather than being inferred from prose. The
+  first release requires core + hair + a second-domain proof + recognition memory.
+  Every other companion gets an explicit implemented/follow-up/parked ruling before
+  closure, and the active doc family archives together only after the plan ships.
 - **Romantic contact affordances — foot-first grounded contact** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) (next; promoted from deferred
   2026-07-28, sequenced directly behind the body-attribute plan whose core it
   consumes). Committed scope is slices 0–4: the truth-source audit, the shared
-  attempted-versus-committed contact foundation, the foot domain (surface map,
-  footwear filtering, pressure/texture/glide/warmth), romantic-chat cue evaluation
-  behind a flag, and contact-caused effect commits (marks, transfer). Intimate
-  regions (slices 5–6) stay in the plan and queue behind the foot proof. Specs ship
-  and move to finished/ individually; the plan ships when all necessary contact
-  affordances are covered.
+  attempted-versus-active contact lifecycle with actor-control/permission gates,
+  the foot domain (surface map, footwear filtering, pressure/texture and
+  substance-specific glide; warmth only with an authoritative source),
+  legacy-romantic-chat cue evaluation behind a flag, and atomic/idempotent
+  contact-caused effects. Successor parity waits for regional pose/contact and
+  clothing adapters. Intimate regions stay behind the foot proof plus explicit
+  adult-eligibility, consent, exposure, and physiology prerequisites. The active
+  doc family archives together only after the plan ships.
 - **Clothing state graph — remainder: the `CHAT_GARMENT_CUES` tuning run, then slices
   7–8 (successor adapter, affordance integration)** —
   [clothing-state-graph.plan.md](clothing-state-graph.plan.md) (active; **slices 0–6

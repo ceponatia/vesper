@@ -106,11 +106,14 @@ Added after the review:
   [../body-attribute-affordances.plan.md](../body-attribute-affordances.plan.md)
   (promoted with its full companion-spec set; owner ruling: the shared
   affordance core builds under this plan first, and the romantic-contact plan
-  queues directly behind and consumes it)
+  queues directly behind and consumes it; the 2026-07-28 review added a
+  current-source readiness audit and explicit completion/archive rules)
 - romantic-contact-affordances — graduated 2026-07-28 →
   [../romantic-contact-affordances.plan.md](../romantic-contact-affordances.plan.md)
-  (foot-first: slices 0–4 committed, intimate regions queued behind the foot
-  proof; sequenced directly after the body-attribute plan)
+  (foot-first in legacy romantic chat: slices 0–4 committed with contact
+  lifecycle, agency/permission gates, and atomic effects; intimate regions
+  wait for the foot proof plus adult-eligibility, consent, exposure, and
+  physiology prerequisites)
 - clothing-state-graph — graduated 2026-07-27 (same day as parking) →
   [../clothing-state-graph.plan.md](../clothing-state-graph.plan.md)
   (owner-requested clothing object graph + condition gradients; the upstream
