@@ -23,7 +23,17 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-_(Nothing active — pick up the top of Next.)_
+- **Body-attribute visual affordances — shared affordance core + hair proving
+  domain (slices 0–5)** —
+  [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
+  (active; build started 2026-07-28). Owner rulings at kickoff: full
+  `hair.quality` split (no legacy preservation; new axes blank on existing
+  characters, authored via the registry-driven form), chat-lane wetness +
+  wind/precipitation owners added via the extraction pattern, contact/pose
+  unowned (adhesion fixture-only), second domain = garment wet-state/cling
+  (later run). First production lane is legacy chat; the successor adapter is
+  a recorded follow-up. Source map:
+  [audit](body-attribute-affordances.audit.md) §"Slice 0 source map".
 
 ## Next (queued)
 
@@ -41,21 +51,6 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
-- **Body-attribute visual affordances — the shared affordance core + hair proving
-  domain** — [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-  (next; promoted from deferred 2026-07-28 with its full companion-spec set —
-  architecture, hair, skin-surface, garment-interaction, appendages, soft-tissue,
-  relative-geometry, recognizable-features + visual memory). A deterministic read
-  layer turning authored body attributes plus authoritative live state into
-  perception-gated visual observations. Owner ruling at promotion: the shared
-  affordance core (structural profiles, phenomenon registry, evidence, perception +
-  cue ranking) builds here first; the romantic-contact plan below consumes it.
-  The promotion audit records real gaps in pose/contact, force/weather,
-  physiology/body-surface state, perception parity, and visual memory; missing
-  inputs suppress dependent phenomena rather than being inferred from prose. The
-  first release requires core + hair + a second-domain proof + recognition memory.
-  Every other companion gets an explicit implemented/follow-up/parked ruling before
-  closure, and the active doc family archives together only after the plan ships.
 - **Romantic contact affordances — foot-first grounded contact** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) (next; promoted from deferred

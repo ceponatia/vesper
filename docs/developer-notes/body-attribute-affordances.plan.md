@@ -1,6 +1,7 @@
 # Body-attribute visual affordances
 
-Status: next (promoted 2026-07-28; the shared visual-affordance foundation and
+Status: active (build started 2026-07-28; committed scope for the first run is
+slices 0–5 — owner ruling. The shared visual-affordance foundation and
 hair proof build before the
 [romantic-contact plan](romantic-contact-affordances.plan.md), which reuses
 that foundation)
@@ -217,12 +218,12 @@ the plan ships.
 
 ### Slice 6 — second-domain proof
 
-Implement either skin surface or garment wet-state/cling. It must reuse the
-same foundation without adding hair knowledge to the shared core. Choose based
-on a ready truth owner: garment work waits for the relevant clothing-state
-integration, while skin work waits for authoritative regional surface/
-physiology inputs. Synthetic fixtures may prove calculations, but do not count
-as production source parity.
+**Ruled 2026-07-28: the second domain is garment wet-state/cling** (legacy
+clothing truth shipped in slices 0–6 of the clothing plan; skin surface waits
+for authoritative physiology inputs). It must reuse the same foundation
+without adding hair knowledge to the shared core. Synthetic fixtures may
+prove calculations, but do not count as production source parity. Outside the
+committed first run (slices 0–5).
 
 ### Slice 7 — recognizable features and visual memory
 
@@ -267,15 +268,13 @@ image-only body model.
 
 ## Open questions
 
-- How should ambiguous hair vocabulary be split or conservatively mapped, and
-  who owns structured hair arrangement?
-  ([hair spec](body-attribute-affordances.spec.hair.md#open-questions))
 - Where do lane-specific adapters live, how is the mixed domain registry typed,
   and is a developer preview useful?
   ([architecture spec](body-attribute-affordances.spec.architecture.md#open-questions))
-- Which authoritative source first supplies coarse pose, hair/body contact,
-  current force, and the exact retake capture seam?
-  ([hair spec](body-attribute-affordances.spec.hair.md#open-questions))
+- Which authoritative source first supplies coarse pose and hair/body contact?
+  (Current force and the retake capture seam were resolved in Slice 0 — see the
+  [hair spec resolutions](body-attribute-affordances.spec.hair.md#resolved-slice-0-2026-07-28);
+  contact/pose remains unowned and adhesion stays fixture-only.)
 - What is the shared physiology-sign shape, how are diverse skin responses
   calibrated, and who owns products and persistent marks?
   ([skin spec](body-attribute-affordances.spec.skin-surface.md#open-questions))
@@ -297,7 +296,6 @@ image-only body model.
   mention history, and semantic memory interact?
   ([feature spec](body-attribute-affordances.spec.recognizable-features.md#open-questions);
   [memory detail](body-attribute-affordances.recognizable-features.memory.md#open-questions))
-- Which second domain follows hair: skin surface or garment wet-state/cling?
 - What confidence is required before a reference-image proposal becomes a
   canonical value that may drive calculation?
 
