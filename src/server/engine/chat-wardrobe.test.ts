@@ -18,6 +18,7 @@ import {
   type GarmentBlueprint,
   type GarmentInstanceState,
   type GarmentSeed,
+  emptyGarmentCueState,
 } from "@/contracts";
 import { toWornInputs, wardrobeOutfitText, type AvatarWardrobeItem } from "../images";
 import { garmentWardrobeItem, playerWornIds, resolveChatWardrobe, resolvePlayerWardrobe } from "./chat-wardrobe";
@@ -249,6 +250,7 @@ describe("the presentation-aware wardrobe read", () => {
         [garmentBlueprintHash(TEE_BLUEPRINT)]: TEE_BLUEPRINT,
       },
       instances: [instance("g_shirt", SHIRT_BLUEPRINT, "def_shirt"), instance("g_tee", TEE_BLUEPRINT, "def_tee")],
+      cues: emptyGarmentCueState(),
     };
   }
 

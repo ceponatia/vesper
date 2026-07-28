@@ -342,6 +342,7 @@ function describeContinuity(v: ChatContinuity): AgentRunDescription {
   return {
     summary: joinParts([
       v.scene.current ? `scene: ${v.scene.current}` : "",
+      v.garmentOperations.length ? plural(v.garmentOperations.length, "garment op") : "",
       outfitChanged(v.outfit) ? "outfit change" : "",
       v.attributeChanges.length ? `${v.attributeChanges.length} appearance` : "",
       v.presence.length ? `${v.presence.length} presence` : "",
@@ -349,6 +350,14 @@ function describeContinuity(v: ChatContinuity): AgentRunDescription {
     ]),
     details: compact([
       v.scene.current ? { label: "Scene", items: [v.scene.current] } : null,
+      v.garmentOperations.length
+        ? {
+            label: `Garment operations (${v.garmentOperations.length})`,
+            items: v.garmentOperations.map((op) =>
+              op.op === "introduce" ? `introduce ${op.handle} (${op.name})` : `${op.op} ${op.garment}`,
+            ),
+          }
+        : null,
       outfitSection(v.outfit),
       attrSection(v.attributeChanges),
       v.presence.length ? { label: "Presence", items: v.presence.map((p) => `${p.name}: ${p.presence}`) } : null,
@@ -427,6 +436,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       schema: chatContinuitySchema,
       fallback: () => ({
         scene: empty.scene,
+        garmentOperations: empty.garmentOperations,
         outfit: empty.outfit,
         playerOutfit: empty.playerOutfit,
         attributeChanges: empty.attributeChanges,

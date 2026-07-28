@@ -6,6 +6,7 @@ import {
   chatSceneMemorySchema,
   emptyCharacterProfile,
   emptyChatSceneMemory,
+  garmentActorForCharacter,
   samePlaceName,
   withPlaceImage,
 } from "@/contracts";
@@ -13,7 +14,8 @@ import { parseOr, parseOrNull } from "@/lib/parse";
 import { isDemoMode } from "../ai";
 import { characterChats, characters, db, images } from "../db";
 import { absoluteImagePath, chatHasRenders, chatLookKey, latestChatLook, renderChatLookImage, renderChatPlaceImage } from "../images";
-import { loadChatState } from "./chat-state";
+import { chatGarmentLookKey } from "./chat-garments";
+import { loadChatScenario, loadChatState } from "./chat-state";
 import { resolveChatWardrobe } from "./chat-wardrobe";
 import { registerJobHandler } from "./jobs";
 
@@ -61,12 +63,22 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>)
   if (!stored) return;
   // Structured wardrobe (chat-wardrobe-parity): resolve the worn state to its rendered look +
   // coverage-computed exposure, and key on the sorted worn ids + overlay + exposure fingerprint.
-  const wardrobe = await resolveChatWardrobe(stored, ctx.ownerId, ctx.profile);
+  // The garment store is the worn truth once the actor is modelled (slice 2) — this job read
+  // only the projection column until slice 6, so an arrangement change could not reach it at all.
+  const scenario = await loadChatScenario(input.chatId);
+  const actorId = garmentActorForCharacter(input.characterId);
+  const wardrobe = await resolveChatWardrobe(
+    { ...stored, ...(scenario ? { garments: scenario.garments } : {}), garmentActorId: actorId },
+    ctx.ownerId,
+    ctx.profile,
+  );
   const lookKey = chatLookKey({
     wornItemIds: wardrobe.wornItemIds,
     overlay: wardrobe.overlay,
     exposure: wardrobe.exposure,
     attributeOverlays: stored.attributeOverlays,
+    // OQ8: the two gates must agree, or the enqueue fires and the job no-ops.
+    ...(scenario ? { garmentKey: chatGarmentLookKey(scenario.garments, [actorId], scenario.clockMinutes) } : {}),
   });
   if (await latestChatLook(input.chatId, lookKey)) return; // already fresh (a lost race, or a no-op change)
 

@@ -52,6 +52,17 @@ export function chatLookKey(input: {
   overlay: string;
   exposure: RegionExposure;
   attributeOverlays: readonly AttributeValue[];
+  /**
+   * The garment store's structural fingerprint (audit OQ8, `chatGarmentLookKey`):
+   * worn INSTANCE set + presentation bands + wetness from `wet` up + deposit/damage
+   * presence. Without it, arranging a garment — opening a placket, rolling a
+   * sleeve, doffing one of two identical shirts — leaves the definition-id list
+   * unchanged and the anchor stale.
+   *
+   * Appended only when non-empty, so an unmodelled chat hashes exactly as before
+   * and no cached look invalidates on this change alone.
+   */
+  garmentKey?: string;
 }): string {
   const worn = [...input.wornItemIds].sort().join(",");
   const { torso, pelvis, legs, feet } = input.exposure;
@@ -60,7 +71,8 @@ export function chatLookKey(input: {
     .map((o) => `${o.id}=${JSON.stringify(o.value)}`)
     .sort()
     .join(";");
-  return fnv1a(`${worn}|${input.overlay.trim().toLowerCase()}|${exposure}|${overlays}`);
+  const garments = input.garmentKey?.trim() ? `|${input.garmentKey.trim()}` : "";
+  return fnv1a(`${worn}|${input.overlay.trim().toLowerCase()}|${exposure}|${overlays}${garments}`);
 }
 
 /** The identity-locked look-edit instruction: same person, new outfit, neutral framing. */

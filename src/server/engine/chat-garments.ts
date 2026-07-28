@@ -1,20 +1,31 @@
 import {
   actorHasGarmentInstances,
+  buildGarmentDigest,
   emptyChatGarmentStore,
   garmentActorForCharacter,
   garmentBlueprintFor,
+  garmentLookFingerprint,
+  garmentObservations,
+  garmentPreviousBands,
   garmentReadout,
+  garmentSceneNotes,
+  garmentsAtScenePlace,
   GARMENT_PLAYER_ACTOR,
   inferGarmentMaterialProfile,
+  renderGarmentDigest,
+  splitGarmentCues,
   syncWornGarments,
   wornGarmentDefinitionIds,
   wornGarmentInstances,
   type ChatGarmentStore,
   type ChatPlayerState,
   type DiagnosticSink,
+  type GarmentCueState,
+  type GarmentObservationActor,
   type GarmentReadout,
   type GarmentSeed,
   type PersonaProfile,
+  type WornVisibility,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { loadChatWardrobe, playerWornIds } from "./chat-wardrobe";
@@ -134,12 +145,191 @@ export function garmentReadoutsFor(
   store: ChatGarmentStore,
   actorId: string,
   atMinutes?: number,
+  /**
+   * Read bands hysteretically against what was last REPORTED (slice 4's
+   * `previousBands`, whose durable home slice 6 promised to build). Absent ⇒ the
+   * plain reading, which is what the inspector and the state sheet want; the
+   * narrator path passes the store's cue memory so a value parked on a boundary
+   * cannot alternate damp/wet between exchanges.
+   */
+  reportedBands?: GarmentCueState,
 ): GarmentReadout[] {
   return wornGarmentInstances(store, actorId).map((instance) =>
     garmentReadout(instance, garmentBlueprintFor(store, instance), {
       ...(atMinutes === undefined ? {} : { atMinutes }),
+      ...(reportedBands === undefined ? {} : { previousBands: garmentPreviousBands(reportedBands, instance.id) }),
     }),
   );
+}
+
+// --- Narration + image consumers (slice 6) ------------------------------------
+
+/** One actor the narrator block speaks about. */
+export interface ChatGarmentNarrationActor {
+  /** `garmentActorForCharacter(id)` or `GARMENT_PLAYER_ACTOR`. */
+  actorId: string;
+  /** How the digest names them ("Wren", "you"). */
+  label: string;
+  /** How the cue phrases refer to them ("Wren's", "your"). */
+  possessive: string;
+  /** The resolved wardrobe's `partVisibility` — absent ⇒ nothing is assumed hidden. */
+  visibility?: Readonly<Record<string, WornVisibility>>;
+}
+
+/** Everything slice 6 hands its three consumers, from ONE pass over the store. */
+export interface ChatGarmentNarration {
+  /** The authoritative digest block; "" when nothing is modelled. */
+  digest: string;
+  /** ≤2 ranked, repeat-gated cue lines for this exchange. */
+  cues: string[];
+  /** Compact garment facts for the per-scene image prompt — NOT repeat-gated. */
+  sceneNotes: string[];
+  /** The cue memory to persist onto the store (mention history + reported bands). */
+  nextCues: GarmentCueState;
+}
+
+/**
+ * Build the narrator digest + the bounded cue block for one exchange
+ * (clothing-state-graph.plan.md slice 6). PURE given the store — every read
+ * integrates lazily and nothing is written back, so building a prompt can never
+ * dry a garment.
+ *
+ * The order matters and is the plan's: readouts (hysteretic, against the cue
+ * memory's reported bands) → digest (authority, standing state included) →
+ * observations (perception-gated) → split (attention, changed bands only).
+ *
+ * Scope is the actors whose wardrobe this turn actually resolved — the primary
+ * and the player. Ensemble members keep today's behavior; widening the block to a
+ * whole roster is a token decision to make after the tuning run, not before.
+ */
+export function buildChatGarmentNarration(input: {
+  store: ChatGarmentStore;
+  actors: readonly ChatGarmentNarrationActor[];
+  /** Chat-clock minute to read at — the integration target and the `changedAt` stamp. */
+  atMinutes: number;
+  /** The place the fiction is in; garments left HERE join the digest (R3). */
+  placeName?: string;
+}): ChatGarmentNarration {
+  const cueState = input.store.cues;
+  const perActor = input.actors.map((actor) => ({
+    actor,
+    readouts: garmentReadoutsFor(input.store, actor.actorId, input.atMinutes, cueState),
+  }));
+  const observationActors: GarmentObservationActor[] = perActor.map((entry) => ({
+    possessive: entry.actor.possessive,
+    readouts: entry.readouts,
+    ...(entry.actor.visibility === undefined ? {} : { visibility: entry.actor.visibility }),
+  }));
+  const readouts = perActor.flatMap((entry) => entry.readouts);
+  const placed = garmentsAtScenePlace(input.store, input.placeName).map((instance) => ({
+    garmentId: instance.id,
+    name: instance.name,
+    anchor: instance.locus.kind === "scene" ? instance.locus.anchor : "",
+  }));
+  const digest = buildGarmentDigest({
+    actors: perActor.map((entry) => ({ label: entry.actor.label, readouts: entry.readouts })),
+    placed,
+    ...(input.placeName === undefined ? {} : { placeName: input.placeName }),
+  });
+  const split = splitGarmentCues({
+    observations: garmentObservations(observationActors),
+    readouts,
+    previous: cueState,
+    atMinutes: input.atMinutes,
+  });
+  return {
+    digest: renderGarmentDigest(digest),
+    cues: split.selected.map((entry) => entry.phrase),
+    sceneNotes: garmentSceneNotes(observationActors),
+    nextCues: split.next,
+  };
+}
+
+/**
+ * The narration actor list one exchange speaks about: the primary character and
+ * the player. Built in ONE place so the prompt build and the finalizer's cue-memory
+ * write can never disagree about who was in scope (they would then persist mention
+ * history for a different set than the narrator saw).
+ */
+export function chatGarmentNarrationActors(input: {
+  characterId: string;
+  characterName: string;
+  playerName: string;
+  characterVisibility?: Readonly<Record<string, WornVisibility>>;
+  playerVisibility?: Readonly<Record<string, WornVisibility>>;
+}): ChatGarmentNarrationActor[] {
+  const player = input.playerName.trim() || "you";
+  return [
+    {
+      actorId: garmentActorForCharacter(input.characterId),
+      label: input.characterName,
+      possessive: `${input.characterName}'s`,
+      ...(input.characterVisibility === undefined ? {} : { visibility: input.characterVisibility }),
+    },
+    {
+      actorId: GARMENT_PLAYER_ACTOR,
+      label: player,
+      possessive: "your",
+      ...(input.playerVisibility === undefined ? {} : { visibility: input.playerVisibility }),
+    },
+  ];
+}
+
+/**
+ * The GARMENT half of the `chat_look` identity key (audit OQ8), for the actors a
+ * look render depicts. "" when no listed actor is modelled — which keeps a legacy
+ * chat's key byte-identical to today's, so materializing a store never invalidates
+ * a cached look on its own.
+ */
+export function chatGarmentLookKey(
+  store: ChatGarmentStore,
+  actorIds: readonly string[],
+  atMinutes?: number,
+  /**
+   * The band memory to read hysteretically against. Defaults to the store's own —
+   * the right answer for a live render. A pre/post COMPARISON must pin both sides
+   * to one memory (see `chatGarmentLookChanged`), or the memory moving underneath
+   * could read as the wardrobe moving.
+   */
+  reportedBands?: GarmentCueState,
+): string {
+  const modelled = actorIds.filter((actorId) => actorHasGarmentInstances(store, actorId));
+  if (modelled.length === 0) return "";
+  const bands = reportedBands ?? store.cues;
+  return modelled
+    .map((actorId) => garmentLookFingerprint(garmentReadoutsFor(store, actorId, atMinutes, bands)))
+    .join("~");
+}
+
+/**
+ * Did the LOOK change across this exchange's state writes? The audit's pre/post
+ * key comparison, replacing the proposal-shaped trigger: the enqueue fired only
+ * on an archivist outfit proposal, so a typed operation (or anything else that
+ * moved the wardrobe) left the anchor silently stale — and adding bands to the
+ * key alone could never fix that, because the two are independent gates.
+ *
+ * An actor that was UNMODELLED before is not a change: lazy materialization is
+ * behavior-neutral by construction (the same worn set, now as instances), so
+ * treating it as one would mint a look for every legacy chat's first state write.
+ * Real changes there still reach the enqueue through the free-text `outfitChanged`
+ * signal that lane never stopped using.
+ */
+export function chatGarmentLookChanged(input: {
+  before: ChatGarmentStore;
+  after: ChatGarmentStore;
+  actorIds: readonly string[];
+  atMinutes?: number;
+}): boolean {
+  // Both sides read against the BEFORE memory: this exchange also rewrote the cue
+  // map, and a hysteresis reference that moved is not a wardrobe that moved.
+  const bands = input.before.cues;
+  return input.actorIds.some((actorId) => {
+    if (!actorHasGarmentInstances(input.before, actorId)) return false;
+    return (
+      chatGarmentLookKey(input.before, [actorId], input.atMinutes, bands) !==
+      chatGarmentLookKey(input.after, [actorId], input.atMinutes, bands)
+    );
+  });
 }
 
 /**

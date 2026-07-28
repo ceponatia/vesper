@@ -13,6 +13,7 @@ import {
   type AttributeValue,
   type ChatActionId,
   chatMemoryTraceSchema,
+  emptyChatMemoryTrace,
   chatPulseTraceSchema,
   chatReplyFailureSchema,
   milestoneSchema,
@@ -499,18 +500,10 @@ export const chatStateSnapshotSchema = z.object({
   // Persisted narrative attribute overlays (character-chat-primary.spec.md §3) + the last-turn
   // RAG debug trace (§5) — both surfaced to the chat inspector in the state-tools modal.
   attributeOverlays: z.array(attributeValueSchema).catch([]),
-  lastMemoryTrace: chatMemoryTraceSchema.catch(() => ({
-    retrievedFacts: [],
-    retrievedEpisodes: [],
-    episodeSummary: "",
-    factsAdded: 0,
-    memoryQueries: [],
-    attributeChanges: [],
-    retrievedDetail: [],
-    degraded: false,
-    // Character-consistency corrective (character-fidelity slice 9) — "" when the reply held character.
-    characterSlip: "",
-  })),
+  // The degraded default is the schema's OWN empty value (docs/resilience.md §1:
+  // "fallbacks are schema defaults, defined next to the schema") — a hand-written
+  // literal here drifted every time a trace field was added.
+  lastMemoryTrace: chatMemoryTraceSchema.catch(() => emptyChatMemoryTrace()),
   // The character's unfinished business (character-chat-standalone.spec.md §6.2) — shown in
   // the relationship panel and driving the hub's "has something to say" marker (§8.4).
   openLoops: z.array(z.string()).catch([]),

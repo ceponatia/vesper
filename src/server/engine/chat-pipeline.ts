@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   characterProfileSchema,
   chatActionIdSchema,
+  currentScenePlace,
   derivePlanSalience,
   DiagnosticCollector,
   diag,
@@ -87,7 +88,13 @@ import {
   type ResolvedChatWardrobe,
   type ResolvedPlayerWardrobe,
 } from "./chat-wardrobe";
-import { reconcileActorWardrobes, type ChatGarmentWardrobeChange } from "./chat-garments";
+import {
+  buildChatGarmentNarration,
+  chatGarmentNarrationActors,
+  reconcileActorWardrobes,
+  type ChatGarmentNarration,
+  type ChatGarmentWardrobeChange,
+} from "./chat-garments";
 import { enqueueChatSummary, loadChatSummary, loadVerbatimWindow } from "./chat-summary";
 import {
   CHARACTER_CHAT_SUMMARIZE_AT,
@@ -111,7 +118,7 @@ import {
   type EnsemblePairInput,
   type EnsemblePromptExtras,
 } from "./prompts/character-chat";
-import { chatPromptLayout, narrationShapeId } from "./prompts/constants";
+import { chatGarmentCuesEnabled, chatPromptLayout, narrationShapeId } from "./prompts/constants";
 
 /**
  * The character-chat exchange pipeline (docs/character-chat/pipeline.md) — the chat lane's
@@ -1005,6 +1012,25 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       sink,
       scenario.garments,
     );
+    // The garment digest + cue block (clothing-state-graph slice 6, `CHAT_GARMENT_CUES`,
+    // default OFF). Built from the store as it stands BEFORE the fan-out — the cut the
+    // narrator is actually writing from — and re-derived identically by the finalizer,
+    // which persists the cue memory the same way `surfacedCues` is persisted.
+    const narrationPlaceName = currentScenePlace(scenario.sceneMemory)?.name;
+    const garmentNarration = chatGarmentCuesEnabled()
+      ? buildChatGarmentNarration({
+          store: scenario.garments,
+          atMinutes: scenario.clockMinutes,
+          ...(narrationPlaceName === undefined ? {} : { placeName: narrationPlaceName }),
+          actors: chatGarmentNarrationActors({
+            characterId,
+            characterName,
+            playerName: player.name,
+            characterVisibility: wardrobe.partVisibility,
+            playerVisibility: playerWardrobe.partVisibility,
+          }),
+        })
+      : null;
 
     const promptInput: CharacterChatPromptInput = {
       name: characterName,
@@ -1012,7 +1038,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       priorSummary: summaryState?.summary,
       memory,
       player: playerPromptSlice(player, playerWardrobe),
-      state: promptStateSlice(driftedState, scenario, wardrobe, profile),
+      state: promptStateSlice(driftedState, scenario, wardrobe, profile, garmentNarration),
       opening,
       narrationShape: narrationShapeId("chat"),
       // Chat scene memory: whether the setting changed this exchange (movement / time skip),
@@ -1136,7 +1162,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           {
             name: characterName,
             profile,
-            state: promptStateSlice(driftedState, scenario, wardrobe, profile),
+            state: promptStateSlice(driftedState, scenario, wardrobe, profile, garmentNarration),
             memory,
             presence: driftedState.presence,
             quietExchanges: driftedState.quietExchanges,
@@ -1323,6 +1349,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             : { requested: selfieRequested, offerEligible: selfieOfferEligible || openerSelfieEligible },
           scenario,
           preExchangeScenario,
+          // The cue memory this exchange's prompt actually surfaced (slice 6) —
+          // threaded rather than recomputed, exactly like `surfacedCues` records the
+          // bands the narrator SAW. Absent when the flag is off, and the finalizer
+          // then leaves the store's mention history untouched.
+          ...(garmentNarration ? { garmentCueState: garmentNarration.nextCues } : {}),
           // The ensemble context (multi-character-chat.plan.md): the roster line
           // arms the archivist's presence field; every present witness's group
           // gets the same extraction filed as their own memory.
@@ -1913,8 +1944,14 @@ function promptStateSlice(
   scenario: ChatScenario,
   wardrobe: ResolvedChatWardrobe,
   profile?: CharacterProfile,
+  /** The slice-6 digest + cues; null/absent (the flag-off default) renders neither block. */
+  garments?: ChatGarmentNarration | null,
 ): NonNullable<CharacterChatPromptInput["state"]> {
   return {
+    // Authority + attention (clothing-state-graph slice 6) — flag-gated upstream, so
+    // the fields are simply absent when off and the prompt is unchanged.
+    ...(garments?.digest ? { garmentDigest: garments.digest } : {}),
+    ...(garments && garments.cues.length > 0 ? { garmentCues: garments.cues } : {}),
     meters: state.meters,
     regard: state.regard,
     familiarity: state.familiarity,
@@ -2011,13 +2048,35 @@ export async function previewChatPrompt(input: {
     input: "",
     sink,
   });
+  // The inspector must show exactly what the live turn would build, garment
+  // blocks included (slice 6) — same builder, same flag, one place to be wrong.
+  const previewPlaceName = currentScenePlace(scenario.sceneMemory)?.name;
   const parts = buildCharacterChatPromptParts({
     name: input.character.name,
     profile,
     priorSummary: summaryState?.summary,
     memory,
     player: playerPromptSlice(player, playerWardrobe),
-    state: promptStateSlice(state, scenario, wardrobe, profile),
+    state: promptStateSlice(
+      state,
+      scenario,
+      wardrobe,
+      profile,
+      chatGarmentCuesEnabled()
+        ? buildChatGarmentNarration({
+            store: scenario.garments,
+            atMinutes: scenario.clockMinutes,
+            ...(previewPlaceName === undefined ? {} : { placeName: previewPlaceName }),
+            actors: chatGarmentNarrationActors({
+              characterId: input.character.id,
+              characterName: input.character.name,
+              playerName: player.name,
+              characterVisibility: wardrobe.partVisibility,
+              playerVisibility: playerWardrobe.partVisibility,
+            }),
+          })
+        : null,
+    ),
     narrationShape: narrationShapeId("chat"),
   });
   return {

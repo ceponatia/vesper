@@ -128,6 +128,7 @@ describe("the extraction legs (chat-agent-improvements slice 1b)", () => {
     expect(scribe).toEqual({ episodeSummary: whole.episodeSummary, facts: whole.facts, memoryQueries: whole.memoryQueries });
     expect(continuity).toEqual({
       scene: whole.scene,
+      garmentOperations: whole.garmentOperations,
       outfit: whole.outfit,
       playerOutfit: whole.playerOutfit,
       attributeChanges: whole.attributeChanges,

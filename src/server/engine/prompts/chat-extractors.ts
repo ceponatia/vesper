@@ -1,3 +1,16 @@
+import {
+  clothingCategoryIds,
+  garmentCleanTargets,
+  garmentConditionKeys,
+  garmentDamageKinds,
+  garmentDegreeBands,
+  garmentDepositKinds,
+  garmentDisplacementKinds,
+  garmentTuckStates,
+  garmentClosureIntents,
+  garmentMoveTargets,
+  type GarmentHandleTable,
+} from "@/contracts";
 import { channelHint } from "./notation";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
@@ -39,6 +52,7 @@ export type ChatExtractorFieldKey =
   | "facts"
   | "memoryQueries"
   | "scene"
+  | "garmentOperations"
   | "outfit"
   | "playerOutfit"
   | "attributeChanges"
@@ -70,6 +84,14 @@ export interface ChatExtractorContext {
   openPlans?: readonly { what: string; who: string; when: string }[];
   /** The character's DEVELOPABLE traits at their current band — the traitShifts id list. */
   developableTraits?: readonly { id: string; label: string; band: string }[];
+  /**
+   * The exchange's in-scope garment/part HANDLES (clothing-state-graph slice 5).
+   * Present and non-empty ⇒ the grounded `garmentOperations` field arms and the
+   * free-text `outfit` / `playerOutfit` instructions are REPLACED by it; absent
+   * (an unmodelled chat, the per-member personal pass) ⇒ the legacy grammar
+   * stands and its bridge runs.
+   */
+  garmentHandles?: GarmentHandleTable;
   /** A compact voice reference — what "in-voice" and an age/voice slip sound like. */
   voiceReference?: {
     petPhrases?: readonly string[];
@@ -110,6 +132,45 @@ interface ExtractorField {
   rules?: (ctx: ChatExtractorContext) => readonly string[];
   /** The value this key shows in a rendered example that does not exercise it. */
   empty: unknown;
+}
+
+/* ------------------------------------------------------------------------- *
+ * The grounded wardrobe lane (clothing-state-graph.plan.md slice 5).
+ * ------------------------------------------------------------------------- */
+
+/**
+ * True when this exchange has real garment handles to address. The ONE switch:
+ * it arms `garmentOperations` and disarms the free-text `outfit` /
+ * `playerOutfit` instructions, so the sheet never carries two ways to move the
+ * same wardrobe (and `garmentMutationLane` never has two paths to choose from).
+ */
+function garmentLaneArmed(ctx: ChatExtractorContext): boolean {
+  return (ctx.garmentHandles?.entries.length ?? 0) > 0;
+}
+
+/** Vocabulary lists rendered from the registries, so a contract edit can never drift from the sheet. */
+const alt = (values: readonly string[]): string => values.join(" | ");
+
+/**
+ * The handle block. Garment handles are opaque and quoted verbatim; the parts
+ * under each are that garment's own addressable part ids (a part handle is
+ * `<garment>.<part>`, and the bare id under its garment is accepted too).
+ * FENCED: the garment NAMES are author-written library text.
+ */
+function garmentHandleBlock(ctx: ChatExtractorContext): string {
+  const table = ctx.garmentHandles;
+  if (!table || table.entries.length === 0) return "";
+  const lines = table.entries.map(
+    (entry) => `${entry.handle} — ${entry.name}, ${entry.where}; parts: ${entry.partHandles.join(" ")}`,
+  );
+  const actors = table.actors.map((actor) => `${actor.handle} = ${actor.label}`).join(", ");
+  return [
+    `Garments in scene (copy these handles EXACTLY; nothing else is addressable${
+      table.trimmed ? "; longer lists are trimmed to what is most in view" : ""
+    }):`,
+    fenceUntrusted("garment handles", lines.join("\n")),
+    `Actor handles: ${actors}`,
+  ].join("\n");
 }
 
 /* ------------------------------------------------------------------------- *
@@ -156,9 +217,36 @@ const FIELDS: Record<ChatExtractorFieldKey, ExtractorField> = {
       `"scene": the setting the narration established or CHANGED this exchange — chat locations are imagined by the narrator, so this keeps them consistent. Omit it entirely (or {}) unless the fiction actually established something new. Shape: { "current": "<the place the scene is in now, if it was named/changed>", "places": [{ "name": "<place>", "details": ["<durable fact, e.g. 'blue sofa'>"], "connections": ["<e.g. 'kitchen through the doorway'>"] }] }. ONLY record what the text actually established — a concrete object or layout — never invent decor, and never record the time of day (the story clock owns time). Short noun phrases, a few at most. Physical STATE (weather changing, a door opening) is not a durable detail.`,
   },
 
+  garmentOperations: {
+    key: "garmentOperations",
+    empty: [],
+    // Armed only when there are real handles to address; when it arms it REPLACES
+    // the free-text outfit fields below (clothing-state-graph slice 5).
+    armed: garmentLaneArmed,
+    context: garmentHandleBlock,
+    instruction: () =>
+      [
+        `"garmentOperations": what the fiction DID to clothing this exchange, as typed operations on the handles in the "Garments in scene" block. [] when clothing was untouched (the common case). Copy handles verbatim — never invent one, never use a garment's name as a handle, never report clothing that only stayed the same.`,
+        `   Every entry is { "op": …, "garment": "<garment handle>", … }. "part" is one part handle from that garment's list; "parts" is a list, and [] there means the WHOLE garment. Degrees are ${alt(garmentDegreeBands)}.`,
+        `   • move — it changed place: { "op":"move", "garment":H, "to":"${alt(garmentMoveTargets)}", "wearer":"<actor handle, only when it goes onto someone else>", "anchor":"<'over the desk chair', only with left_here>" }`,
+        `   • closure — buttons/zip/clasp: { "op":"closure", "garment":H, "part":P, "state":"${alt(garmentClosureIntents)}", "openFasteners":<how many are undone, optional> }`,
+        `   • roll — a sleeve or cuff pushed up: { "op":"roll", "garment":H, "part":P, "degree":D }`,
+        `   • tuck — a hem tucked in or out: { "op":"tuck", "garment":H, "part":P, "state":"${alt(garmentTuckStates)}" }`,
+        `   • displace — a strap off a shoulder, a hem lifted: { "op":"displace", "garment":H, "part":P, "displacement":"${alt(garmentDisplacementKinds)}", "degree":D }`,
+        `   • restore — an arrangement put back (unrolled, untucked, straightened): { "op":"restore", "garment":H, "parts":[P, …] }`,
+        `   • condition — the material state moved: { "op":"condition", "garment":H, "parts":[…], "channel":"${alt(garmentConditionKeys)}", "direction":"increase" | "decrease", "degree":D }`,
+        `   • deposit — something landed on it: { "op":"deposit", "garment":H, "parts":[…], "substance":"${alt(garmentDepositKinds)}", "degree":D }`,
+        `   • clean — wiped, sponged, washed: { "op":"clean", "garment":H, "parts":[…], "target":"${alt(garmentCleanTargets)}" }`,
+        `   • damage — it tore, burned, scuffed: { "op":"damage", "garment":H, "part":P, "damage":"${alt(garmentDamageKinds)}", "degree":D }`,
+        `   • introduce — ONLY for a garment genuinely new to the fiction that no handle covers (a borrowed hoodie, a coat off a hook): { "op":"introduce", "handle":"<a new handle you coin, same shape as the others>", "name":"<short garment name>", "category":"<${alt(clothingCategoryIds)}>", "material":"<wool, denim, cotton… optional>", "wearer":"<actor handle>", "at":"worn" | "held" | "here" }. Pick the plainest category that fits; never introduce something the handle block already lists.`,
+      ].join("\n"),
+  },
+
   outfit: {
     key: "outfit",
     empty: {},
+    // Demoted to the legacy bridge: it only appears when there are no handles.
+    armed: (ctx) => !garmentLaneArmed(ctx),
     instruction: (ctx) =>
       [
         `"outfit": what ${ctx.characterName} is WEARING, only when this exchange CHANGED it. Two ways to say it — pick whichever fits, or {} when nothing changed (the common case). Never record anyone else's clothing here.`,
@@ -171,6 +259,9 @@ const FIELDS: Record<ChatExtractorFieldKey, ExtractorField> = {
   playerOutfit: {
     key: "playerOutfit",
     empty: {},
+    // Same demotion as `outfit`: the grounded lane addresses the player's garments
+    // through the same handle table, so two grammars never ship together.
+    armed: (ctx) => !garmentLaneArmed(ctx),
     instruction: (ctx) =>
       [
         `"playerOutfit": the same, but for what ${ctx.playerName} — the PLAYER — is wearing, only when this exchange CHANGED it. {} when nothing changed (the common case).`,
@@ -408,6 +499,38 @@ const EXAMPLES: readonly ExtractorExample[] = [
     },
   },
   {
+    caption:
+      "she shrugs out of her cardigan onto the chair and pushes her shirtsleeves up (grounded handles, not garment names)",
+    values: {
+      episodeSummary:
+        "The apartment was warm, so Mara shrugged out of her cardigan, draped it over the chair and pushed her sleeves up, still mid-story.",
+      garmentOperations: [
+        { op: "move", garment: "mara.cardigan", to: "left_here", anchor: "over the back of the chair" },
+        { op: "roll", garment: "mara.shirt", part: "sleeve_left", degree: "substantial" },
+        { op: "roll", garment: "mara.shirt", part: "sleeve_right", degree: "substantial" },
+      ],
+    },
+  },
+  {
+    caption: "they get caught in the rain, and she pulls on a hoodie that was hanging by the door (a NEW garment)",
+    values: {
+      episodeSummary:
+        "They came in soaked from the downpour; Mara pulled a hoodie off the hook by the door and handed the player a towel.",
+      garmentOperations: [
+        { op: "condition", garment: "mara.shirt", parts: [], channel: "wetness", direction: "increase", degree: "substantial" },
+        {
+          op: "introduce",
+          handle: "mara.hoodie",
+          name: "an oversized grey hoodie",
+          category: "outerwear",
+          material: "knit",
+          wearer: "mara",
+          at: "worn",
+        },
+      ],
+    },
+  },
+  {
     caption: "the player mentions their coworker Abby (a recurring friend) for the first time",
     values: {
       episodeSummary: "The player vented about a rough shift and mentioned their coworker Abby covering for them; Mara asked what Abby is like.",
@@ -522,7 +645,10 @@ const LEGS: Record<ChatExtractorLegId, ExtractorLeg> = {
     id: "continuity",
     role: (ctx) =>
       `You are the continuity tracker for a private in-character chat. After each exchange you read the player's latest message and the reply, then record what the fiction CHANGED about the world — where they are, what ${ctx.characterName} and ${ctx.playerName} are wearing, how they look, who is in the scene. You track changes only: an unchanged world produces empty fields, which is the common case.`,
-    fields: ["scene", "outfit", "playerOutfit", "attributeChanges", "presence", "cast"],
+    // `garmentOperations` and the `outfit`/`playerOutfit` pair are mutually
+    // exclusive by arming (clothing-state-graph slice 5) — the leg lists all three
+    // and exactly one grammar is ever rendered.
+    fields: ["scene", "garmentOperations", "outfit", "playerOutfit", "attributeChanges", "presence", "cast"],
   },
 
   // The character tracker: the character's own thread through the exchange.

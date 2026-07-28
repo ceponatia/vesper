@@ -19,6 +19,11 @@ import { DRIVES_MAX, driveUpdateSchema } from "../personality/drives";
 import { chatSceneProposalSchema } from "./chat-scene-memory";
 import { chatCastProposalSchema } from "./chat-supporting-cast";
 import { chatPlanProposalSchema } from "./chat-plans";
+import {
+  garmentMutationLaneSchema,
+  garmentOperationProposalListSchema,
+  garmentOperationTraceSchema,
+} from "./chat-garment-ops";
 
 /**
  * The character-chat extraction contract. Historically ONE "archivist-lite" agent call
@@ -106,8 +111,32 @@ export const chatArchivistSchema = z.object({
    */
   scene: chatSceneProposalSchema,
   /**
+   * **Grounded wardrobe operations** (clothing-state-graph.plan.md slice 5) — the
+   * field that demotes `outfit` / `playerOutfit` below to a degraded legacy bridge.
+   *
+   * The continuity prompt enumerates the exchange's in-scope garment and part
+   * HANDLES (`contracts/items/garment-handles.ts`); this field carries semantic
+   * operations back over exactly those handles — "the left sleeve is rolled
+   * substantially", never `roll: 0.73`, and never a garment name to fuzzy-match.
+   * `applyGarmentProposals` maps them onto the typed `GarmentOperation` union in
+   * fiction order, dropping any unresolvable handle with a stable
+   * `garment_op.*` diagnostic (audit OQ7).
+   *
+   * The field only ARMS when the chat actually has modelled garments to address,
+   * and it is mutually exclusive with the free-text grammar below
+   * (`garmentMutationLane`) — one exchange never runs both mutation paths.
+   * `[]` is the common no-clothing-change case.
+   */
+  garmentOperations: garmentOperationProposalListSchema,
+  /**
    * Optional outfit change (chat-scene-fidelity.plan.md slice 1; structured worn state —
-   * chat-wardrobe-parity.plan.md). Two grammars, both optional and lenient:
+   * chat-wardrobe-parity.plan.md). **Demoted to the legacy bridge by
+   * `garmentOperations` above** (clothing-state-graph slice 5): it still runs, and
+   * runs unchanged, for a chat whose wardrobe is not modelled yet, an older cached
+   * prompt, or a model that returned the old grammar — recorded with
+   * `chat_garments.legacy_outfit_bridge` so its use stays observable.
+   *
+   * Two grammars, both optional and lenient:
    *
    * - `description` — a WHOLE-outfit swap: the complete current look (never a delta). When
    *   it names an authored outfit preset ("her work clothes" → the "Work" preset) the fold
@@ -273,6 +302,7 @@ export function degradedChatArchivist(): ChatArchivist {
     attributeChanges: [],
     openLoops: [],
     scene: { places: [] },
+    garmentOperations: [],
     outfit: { description: "", exposed: false, removed: [], added: [] },
     playerOutfit: { description: "", removed: [], added: [] },
     driveUpdates: [],
@@ -308,6 +338,11 @@ export type ChatMemoryScribe = z.infer<typeof chatMemoryScribeSchema>;
 
 export const chatContinuitySchema = chatArchivistSchema.pick({
   scene: true,
+  // The grounded wardrobe lane (clothing-state-graph slice 5) rides the SHARED
+  // continuity leg for the same reason `playerOutfit` does: the garment store is
+  // chat-wide, and several members proposing operations over one store would
+  // fight each other.
+  garmentOperations: true,
   outfit: true,
   // The player's wardrobe is chat-wide, so it rides the SHARED continuity leg and is
   // deliberately absent from `chatPersonalNotesSchema` below — that pass runs once per
@@ -425,6 +460,17 @@ export const chatMemoryTraceSchema = z.object({
     )
     .catch([])
     .default([]),
+  /**
+   * Per-exchange garment-operation trace (clothing-state-graph slice 5): every
+   * proposal the continuity leg returned, the instance its handle resolved to, and
+   * whether it applied, changed nothing, or was rejected under which
+   * `garment_op.*` code. Riding the memory trace puts it in the admin inspector's
+   * existing JSON view AND inside the rollback snapshot, so a retake discards the
+   * record of the operations it discarded. Old rows parse to [].
+   */
+  garmentOperations: garmentOperationTraceSchema,
+  /** Which wardrobe-mutation path ran this exchange (`operations` / `legacy` / `none`). */
+  garmentLane: garmentMutationLaneSchema.catch("none").default("none"),
   /** True when the archivist leg degraded (demo / timeout / parse) — no memory written. */
   degraded: z.boolean().catch(false).default(false),
   /**

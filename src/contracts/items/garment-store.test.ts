@@ -13,6 +13,7 @@ import {
   type ChatGarmentStore,
   type GarmentInstanceState,
   type GarmentOperation,
+  emptyGarmentCueState,
 } from "./garment-instance";
 import {
   actorHasGarmentInstances,
@@ -577,6 +578,7 @@ describe("R2 minted ad-hoc garments (F21)", () => {
           lastChange: { kind: "mint", atMinutes: 0 },
         },
       ],
+      cues: emptyGarmentCueState(),
     };
     // It is real state — but has no library id, so it never enters the
     // definition-id projection the legacy readers consume.

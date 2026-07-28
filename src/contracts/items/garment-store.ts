@@ -221,6 +221,48 @@ function registerBlueprint(
   return hash;
 }
 
+/**
+ * Instantiate ONE garment from a blueprint at a given locus — R2's ad-hoc minting
+ * path (plan §Promotion rulings: "an unowned garment the fiction introduces
+ * becomes a real chat-scoped instance minted from a validated minimal category
+ * template"). The blueprint joins the content-hash map like any other, so a
+ * borrowed hoodie costs one entry however many times it is borrowed.
+ *
+ * Safe in the direction that matters: a mint can only ADD a garment's own
+ * template coverage and never subtract anyone's, so it cannot decide intimate
+ * coverage. `seeded` is deliberately left alone — minting is not materialization,
+ * and flipping the flag would skip the lazy worn-list migration.
+ */
+export function instantiateGarment(
+  store: ChatGarmentStore,
+  input: {
+    id: string;
+    blueprint: GarmentBlueprint;
+    name: string;
+    locus: GarmentLocus;
+    atMinutes: number;
+    /** Library provenance, when there is any (an ad-hoc mint has none). */
+    definitionId?: string;
+  },
+  sink?: DiagnosticSink,
+): { store: ChatGarmentStore; instance: GarmentInstanceState } {
+  const blueprints = { ...store.blueprints };
+  const instance: GarmentInstanceState = {
+    id: input.id,
+    blueprintHash: registerBlueprint(blueprints, input.blueprint, sink),
+    ...(input.definitionId ? { definitionId: input.definitionId } : {}),
+    name: input.name,
+    locus: input.locus,
+    presentation: emptyGarmentPresentationState(),
+    condition: pristineGarmentConditionState(),
+    lastChange: { kind: "mint", atMinutes: input.atMinutes },
+  };
+  return {
+    store: { ...store, blueprints, instances: capGarmentInstances([...store.instances, instance]) },
+    instance,
+  };
+}
+
 // --- Material inference -------------------------------------------------------
 
 /**
@@ -412,7 +454,9 @@ export function syncWornGarments(input: SyncWornGarmentsInput): ChatGarmentStore
     });
   }
 
-  return { seeded: true, blueprints, instances: capGarmentInstances(instances) };
+  // Spread first: the cue memory (slice 6) is store state a reconcile must carry
+  // through, never re-mint — losing it would re-fire every standing garment cue.
+  return { ...input.store, seeded: true, blueprints, instances: capGarmentInstances(instances) };
 }
 
 /**

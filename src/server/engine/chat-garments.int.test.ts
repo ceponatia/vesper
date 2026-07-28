@@ -377,7 +377,11 @@ describe("the scenario seed", () => {
   it("starts a brand-new conversation with an empty, unseeded store", (t) => {
     if (!ready) return t.skip();
     const scenario = seedChatScenario(profile);
-    expect(scenario.garments).toEqual({ seeded: false, blueprints: {}, instances: [] });
+    expect(scenario.garments).toEqual(emptyChatGarmentStore());
+    expect(scenario.garments.seeded).toBe(false);
+    expect(scenario.garments.instances).toEqual([]);
+    // Mention history starts empty too (slice 6) — it rides the store, not a second blob.
+    expect(scenario.garments.cues).toEqual({ cues: {}, bands: {}, changedAt: {} });
   });
 });
 

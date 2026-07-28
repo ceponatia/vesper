@@ -526,6 +526,23 @@ function StateToolsForm({
                 Attribute changes: <span className="text-paper-300">{memory.attributeChanges.join(", ")}</span>
               </li>
             ) : null}
+            {/* The grounded wardrobe lane (clothing-state-graph slice 5): every proposal's
+                fate, so a drop rate is measured rather than guessed (audit OQ7). */}
+            {memory.garmentOperations.length ? (
+              <li>
+                Garment ops ({memory.garmentLane}):{" "}
+                <span className="text-paper-300">
+                  {memory.garmentOperations
+                    .map(
+                      (op) =>
+                        `${op.op} ${op.garment}${op.outcome === "applied" ? "" : ` — ${op.code || op.outcome}`}`,
+                    )
+                    .join(" · ")}
+                </span>
+              </li>
+            ) : memory.garmentLane === "legacy" ? (
+              <li className="text-paper-500">Wardrobe folded through the legacy free-text bridge.</li>
+            ) : null}
           </ul>
         )}
       </div>

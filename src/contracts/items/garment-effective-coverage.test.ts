@@ -16,6 +16,7 @@ import {
   pristineGarmentConditionState,
   type GarmentInstanceState,
   type GarmentPresentationState,
+  emptyGarmentCueState,
 } from "./garment-instance";
 import { applyGarmentOperations } from "./garment-presentation";
 import { garmentEffectiveCoverage, garmentReadout } from "./garment-effective-coverage";
@@ -222,7 +223,7 @@ describe("restore, determinism, and the readout", () => {
   });
 
   it("a restore returns the garment to its baseline coverage", () => {
-    const store = { seeded: true, blueprints: { h1: TOP }, instances: [dressed] };
+    const store = { seeded: true, blueprints: { h1: TOP }, instances: [dressed], cues: emptyGarmentCueState() };
     const restored = applyGarmentOperations(
       store,
       [{ kind: "restore_presentation", garmentId: "g1", partIds: ["front_panel", "sleeve_left", "hem"] }],

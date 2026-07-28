@@ -5,6 +5,19 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Clothing state graph — slices 5–6: grounded extraction + flag-gated
+  narration** — [clothing-state-graph.plan.md](clothing-state-graph.plan.md) —
+  2026-07-27 — the substrate becomes visible in play. The archivist proposes
+  typed garment operations over enumerated opaque handles (drop-don't-guess
+  per OQ7; introduce-mints ride R2's guarded templates; the free-text name
+  matcher survives only as an observable degraded bridge), with per-exchange
+  traces in the admin inspector. The narrator digest + ≤2 ranked garment cues
+  ship behind `CHAT_GARMENT_CUES` (env, default OFF — the tuning run gates
+  default-on); cue/mention history rides the store's rollback anchor so
+  retakes restore it with state; the OQ8 `chat_look` pre/post key-comparison
+  trigger shipped unconditionally. Remainder: the tuning run, ensemble-lane
+  widening, slices 7–8.
+
 - **Clothing state graph — slices 0–4: the deterministic wardrobe substrate**
   — [clothing-state-graph.plan.md](clothing-state-graph.plan.md) ·
   [audit](clothing-state-graph.audit.md) — 2026-07-27 — promoted and built the
