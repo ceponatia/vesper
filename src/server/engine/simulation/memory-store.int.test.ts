@@ -1,16 +1,24 @@
-import { eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import { eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import type { MemoryRecallResponse } from "@/contracts/simulation/memory";
 import { proposedArmedEffectSchema } from "@/contracts/simulation/narrative";
 import { newId } from "@/lib/ids";
 import { deriveEngagementId } from "@/lib/simulation";
-import { db, simSoftCanon, simWorlds } from "@/server/db";
+import { db, simSoftCanon } from "@/server/db";
+import {
+  ADMIT_AT_LOCKED_VERSION,
+  expectAccepted,
+  gmPrincipal,
+  playerPrincipal,
+  seedSimBranch,
+  simCommand,
+  simulationSuiteHarness,
+  systemPrincipal,
+} from "@/server/test-support";
 import { prepareEngagementTurn, submitDurableConfirmNarratorResult } from "./arbiter-store";
 import { forkBranch } from "./branch-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
 import { submitDurableMakeDisclosure } from "./knowledge-store";
-import { seedDurableMaterialBranch } from "./material-store";
 import {
   drainMemoryIndexOutbox,
   memoryIndexLag,
@@ -19,9 +27,7 @@ import {
   type MemoryEmbedder,
 } from "./memory-index-store";
 import { queryMemoryDocuments } from "./memory-query-store";
-import { seedDurableSpaceTopology } from "./space-store";
 import { submitDurableDemoteSoftCanon } from "./soft-canon-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E4.4 integration: outbox-driven indexing, the §24.1 eligibility-before-
@@ -33,38 +39,9 @@ import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 const SEED_SECOND = 100_000;
 const TURN_SPAN = 400;
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_memory_documents limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[memory-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("memory-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
+const harness = await simulationSuiteHarness({
+  suite: "memory-store.int.test",
+  table: "sim_memory_documents",
 });
 
 /** Cafe (hall + shop) and a park: iris overhears from the shop, noor is away. */
@@ -80,24 +57,6 @@ interface MemoryCase {
   zoneCafe: string;
   zoneShop: string;
   zonePark: string;
-}
-
-function branchSeed(ids: MemoryCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e4-4-tests",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e4-4-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.player, name: "Pia" },
-      { id: ids.mara, name: "Mara" },
-      { id: ids.iris, name: "Iris" },
-      { id: ids.noor, name: "Noor" },
-    ],
-    items: [],
-  });
 }
 
 async function seedMemoryCase(): Promise<MemoryCase> {
@@ -116,9 +75,18 @@ async function seedMemoryCase(): Promise<MemoryCase> {
     zoneShop: `${branchId}-zone-shop`,
     zonePark: `${branchId}-zone-park`,
   };
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology({
+  await seedSimBranch({
+    worldId,
     branchId,
+    worldTypeId: "e4-4-tests",
+    rulesetVersion: "e4-4-test-v1",
+    originStorySecond: SEED_SECOND,
+    actors: [
+      { id: ids.player, name: "Pia" },
+      { id: ids.mara, name: "Mara" },
+      { id: ids.iris, name: "Iris" },
+      { id: ids.noor, name: "Noor" },
+    ],
     locations: [
       { id: ids.locCafe, worldId, kind: "town", defaultAccessPolicy: "public" },
       { id: ids.locPark, worldId, kind: "park", defaultAccessPolicy: "public" },
@@ -148,52 +116,29 @@ async function seedMemoryCase(): Promise<MemoryCase> {
         state: "open",
       },
     ],
-    loci: [
-      { kind: "at", actorId: ids.player, locationId: ids.locCafe, zoneId: ids.zoneCafe, since: SEED_SECOND },
-      { kind: "at", actorId: ids.mara, locationId: ids.locCafe, zoneId: ids.zoneCafe, since: SEED_SECOND },
-      { kind: "at", actorId: ids.iris, locationId: ids.locCafe, zoneId: ids.zoneShop, since: SEED_SECOND },
-      { kind: "at", actorId: ids.noor, locationId: ids.locPark, zoneId: ids.zonePark, since: SEED_SECOND },
+    placements: [
+      { actorId: ids.player, locationId: ids.locCafe, zoneId: ids.zoneCafe },
+      { actorId: ids.mara, locationId: ids.locCafe, zoneId: ids.zoneCafe },
+      { actorId: ids.iris, locationId: ids.locCafe, zoneId: ids.zoneShop },
+      { actorId: ids.noor, locationId: ids.locPark, zoneId: ids.zonePark },
     ],
   });
-  seededWorldIds.push(worldId);
+  harness.trackWorld(worldId);
   return ids;
 }
 
-function command(
-  ids: MemoryCase,
-  name: string,
-  type: string,
-  principal: { kind: string; principalId: string; controlledActorIds: string[] },
-  payload: Record<string, unknown>,
-) {
-  return {
-    id: `cmd-${name}-${ids.branchId}`,
-    branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `${name}-key-${ids.branchId}`,
-    principal,
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
-    type,
-    schemaVersion: type === "confirm_narrator_result" ? 2 : 1,
-    payload,
-  };
-}
-
-const admit = { admitAtLockedVersion: true };
-
 async function openChat(ids: MemoryCase): Promise<string> {
   const opened = await submitDurableOpenEngagement(
-    command(
-      ids,
-      "chat",
-      "open_engagement",
-      { kind: "player", principalId: "player-1", controlledActorIds: [ids.player] },
-      { participantIds: [ids.player, ids.mara].sort(), channel: "co_present" },
-    ),
-    admit,
+    simCommand({
+      branchId: ids.branchId,
+      name: "chat",
+      type: "open_engagement",
+      principal: playerPrincipal(ids.player),
+      payload: { participantIds: [ids.player, ids.mara].sort(), channel: "co_present" },
+    }),
+    ADMIT_AT_LOCKED_VERSION,
   );
-  expect(opened.status).toBe("accepted");
+  expectAccepted(opened, "chat open");
   return deriveEngagementId(ids.branchId, `cmd-chat-${ids.branchId}`);
 }
 
@@ -227,12 +172,12 @@ async function confideQuitting(
   const disclosureEffect = turn.cut.armedEffects.find((effect) => effect.effectType === "disclosure_made");
   if (!disclosureEffect) throw new Error("Disclosure effect missing from cut");
   const confirmed = await submitDurableConfirmNarratorResult(
-    command(
-      ids,
-      "confirm-quitting",
-      "confirm_narrator_result",
-      { kind: "system", principalId: "system-1", controlledActorIds: [] },
-      {
+    simCommand({
+      branchId: ids.branchId,
+      name: "confirm-quitting",
+      type: "confirm_narrator_result",
+      principal: systemPrincipal,
+      payload: {
         engagementId,
         cutId: turn.cut.id,
         enactedArmedEffectIds: [disclosureEffect.id],
@@ -250,10 +195,10 @@ async function confideQuitting(
               ]
             : [],
       },
-    ),
-    admit,
+    }),
+    ADMIT_AT_LOCKED_VERSION,
   );
-  expect(confirmed.status).toBe("accepted");
+  expectAccepted(confirmed, "narrator confirmation");
   return { throughStorySecond: turn.cut.throughStorySecond };
 }
 
@@ -278,7 +223,7 @@ function texts(response: MemoryRecallResponse): string {
   return response.results.map((result) => result.text).join(" | ");
 }
 
-describe.runIf(ready)("E4.4 memory indexing and eligibility-before-similarity", () => {
+describe.runIf(harness.ready)("E4.4 memory indexing and eligibility-before-similarity", () => {
   it("indexes from the outbox with visible lag, then gates recall by eligibility — similarity never widens it (§24.1, §24.3)", async () => {
     const ids = await seedMemoryCase();
     const engagementId = await openChat(ids);
@@ -377,20 +322,20 @@ describe.runIf(ready)("E4.4 memory indexing and eligibility-before-similarity", 
         throw new Error("Assertion doc missing before retraction");
       })();
     const retracted = await submitDurableMakeDisclosure(
-      command(
-        ids,
-        "retract",
-        "make_disclosure",
-        { kind: "player", principalId: "npc-mara", controlledActorIds: [ids.mara] },
-        {
+      simCommand({
+        branchId: ids.branchId,
+        name: "retract",
+        type: "make_disclosure",
+        principal: playerPrincipal(ids.mara),
+        payload: {
           speakerActorId: ids.mara,
           targetActorIds: [ids.player],
           content: { kind: "retraction", assertionId: retractTarget },
         },
-      ),
-      admit,
+      }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(retracted.status).toBe("accepted");
+    expectAccepted(retracted, "Mara retracts");
     await drainMemoryIndexOutbox({ workerId: "w-drain" });
 
     const afterRetraction = await query(ids, ids.player, at + 1);
@@ -406,16 +351,16 @@ describe.runIf(ready)("E4.4 memory indexing and eligibility-before-similarity", 
       .limit(1);
     if (!entryRow) throw new Error("Soft canon entry missing");
     const demoted = await submitDurableDemoteSoftCanon(
-      command(
-        ids,
-        "demote",
-        "demote_soft_canon",
-        { kind: "storyteller", principalId: "storyteller-1", controlledActorIds: [] },
-        { entryId: entryRow.entryId, reason: "the nickname reads as demeaning" },
-      ),
-      admit,
+      simCommand({
+        branchId: ids.branchId,
+        name: "demote",
+        type: "demote_soft_canon",
+        principal: gmPrincipal,
+        payload: { entryId: entryRow.entryId, reason: "the nickname reads as demeaning" },
+      }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(demoted.status).toBe("accepted");
+    expectAccepted(demoted, "soft-canon demotion");
     await drainMemoryIndexOutbox({ workerId: "w-drain" });
     const afterDemotion = await query(ids, ids.player, at + 2);
     expect(texts(afterDemotion)).not.toContain("nickname_for_player");
@@ -432,12 +377,15 @@ describe.runIf(ready)("E4.4 memory indexing and eligibility-before-similarity", 
     expect(texts(parentRecall)).toContain("quitting_job");
     const parentHead = (await memoryIndexLag(ids.branchId)).headSequence;
 
+    // Forked at the parent's head, but the head comes from the memory-index lag
+    // report the test already reads — so this stays a direct `forkBranch`.
     const childBranchId = newId();
+    const { kind, principalId } = playerPrincipal(ids.player);
     await forkBranch({
       parentBranchId: ids.branchId,
       childBranchId,
       atSequence: parentHead,
-      principal: { kind: "player", principalId: "player-1" },
+      principal: { kind, principalId },
       reason: "what if she takes it back",
     });
 
@@ -449,23 +397,20 @@ describe.runIf(ready)("E4.4 memory indexing and eligibility-before-similarity", 
     const assertionId = childRecall.results.find((result) => result.sourceKind === "assertion")?.sourceId;
     if (!assertionId) throw new Error("Assertion doc missing on child");
     const retracted = await submitDurableMakeDisclosure(
-      {
-        ...command(
-          ids,
-          "retract-child",
-          "make_disclosure",
-          { kind: "player", principalId: "npc-mara", controlledActorIds: [ids.mara] },
-          {
-            speakerActorId: ids.mara,
-            targetActorIds: [ids.player],
-            content: { kind: "retraction", assertionId },
-          },
-        ),
+      simCommand({
         branchId: childBranchId,
-      },
-      admit,
+        name: "retract-child",
+        type: "make_disclosure",
+        principal: playerPrincipal(ids.mara),
+        payload: {
+          speakerActorId: ids.mara,
+          targetActorIds: [ids.player],
+          content: { kind: "retraction", assertionId },
+        },
+      }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(retracted.status).toBe("accepted");
+    expectAccepted(retracted, "child-branch retraction");
     await drainMemoryIndexOutbox({ workerId: "w-drain" });
 
     const childAfter = await query(ids, ids.player, at + 1, {}, childBranchId);
@@ -505,12 +450,12 @@ describe.runIf(ready)("E4.4 memory indexing and eligibility-before-similarity", 
     // lands text-only, lexical recall finds it, and the vector path reports
     // the gap instead of silently shrinking (§24.3 degradation).
     const gossip = await submitDurableMakeDisclosure(
-      command(
-        ids,
-        "gossip-rent",
-        "make_disclosure",
-        { kind: "player", principalId: "npc-mara", controlledActorIds: [ids.mara] },
-        {
+      simCommand({
+        branchId: ids.branchId,
+        name: "gossip-rent",
+        type: "make_disclosure",
+        principal: playerPrincipal(ids.mara),
+        payload: {
           speakerActorId: ids.mara,
           targetActorIds: [ids.player],
           content: {
@@ -520,10 +465,10 @@ describe.runIf(ready)("E4.4 memory indexing and eligibility-before-similarity", 
             claimedValue: { monthsBehind: 2 },
           },
         },
-      ),
-      admit,
+      }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(gossip.status).toBe("accepted");
+    expectAccepted(gossip, "rent gossip");
     const failingEmbedder: MemoryEmbedder = () => Promise.reject(new Error("embedding service down"));
     const degraded = await drainMemoryIndexOutbox({ workerId: "w-drain", embed: failingEmbedder });
     expect(degraded.failed).toBe(0);

@@ -1,14 +1,16 @@
 import { and, eq, sql } from "drizzle-orm";
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import {
-  materialBranchSeedSchema,
-  transferItemCommandSchema,
-  type MaterialBranchSeed,
-  type TransferItemCommand,
-} from "@/contracts/simulation/materials";
+import { describe, expect, it, vi } from "vitest";
+import { transferItemCommandSchema, type TransferItemCommand } from "@/contracts/simulation/materials";
 import { schedulerDerivationVersion } from "@/contracts/simulation/scheduler";
 import { newId } from "@/lib/ids";
-import { db, simBranches, simEvents, simTriggers, simWorlds } from "@/server/db";
+import { db, simBranches, simEvents, simTriggers } from "@/server/db";
+import {
+  expectAccepted,
+  seedSimpleBranch,
+  simCommand,
+  simulationSuiteHarness,
+  systemPrincipal,
+} from "@/server/test-support";
 
 // Wrap the transfer submit so the A6 backoff test can make ONE trigger dispatch throw
 // (a transient DB blip) via mockImplementationOnce; every other call — including the
@@ -18,47 +20,33 @@ vi.mock("./material-store", async (importOriginal) => {
   return { ...actual, submitDurableTransferItem: vi.fn(actual.submitDurableTransferItem) };
 });
 
-import { seedDurableMaterialBranch, submitDurableTransferItem } from "./material-store";
+import { submitDurableTransferItem } from "./material-store";
 import {
   advanceBranchStoryTime,
   resolveNextDueTrigger,
   scheduleDurableTrigger,
 } from "./scheduler-store";
-import { seedDurableSpaceTopology } from "./space-store";
+
+/**
+ * E2.4 durable scheduler. Probe, per-test world sweep (`cleanup: "afterEach"`)
+ * and the pool close come from `simulationSuiteHarness`; the probe reads
+ * `sim_triggers`, which is itself the from-zero migration check (an orphaned
+ * migration leaves that table absent and every case below fails).
+ * `legacyPlayerMode: false`: every command here is scheduler/system-authored, so
+ * this suite must keep running without the aggregate-run opt-in flag.
+ */
 
 const mockedTransfer = vi.mocked(submitDurableTransferItem);
 
 const SEED_STORY_SECOND = 57_600;
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      // Selecting from sim_triggers is itself the from-zero migration check: an
-      // orphaned migration leaves this table absent and every case below fails.
-      db().execute(sql`select 1 from sim_triggers limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[scheduler-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-const seededWorldIds: string[] = [];
+const harness = await simulationSuiteHarness({
+  suite: "scheduler-store.int.test",
+  table: "sim_triggers",
+  legacyPlayerMode: false,
+  cleanup: "afterEach",
+});
+const ready = harness.ready;
 
 interface CaseIds {
   worldId: string;
@@ -85,15 +73,19 @@ function makeIds(itemCount = 1, worldId = newId()): CaseIds {
   };
 }
 
-function branchSeed(ids: CaseIds): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
+/** Mara in a cafe hall, holding a bag and a table, with the loose items in the bag. */
+async function seedCase(ids: CaseIds): Promise<void> {
+  harness.trackWorld(ids.worldId);
+  await seedSimpleBranch({
+    prefix: "e2-4-test",
     worldId: ids.worldId,
-    worldTypeId: "e2-4-test-world",
-    worldSeed: "0011223344556677",
     branchId: ids.branchId,
-    rulesetVersion: "e2-4-test-v1",
     originStorySecond: SEED_STORY_SECOND,
     actors: [{ id: ids.actorId, name: "Mara" }],
+    locationSlug: "cafe",
+    zoneSlug: "hall",
+    locationKind: "cafe",
+    zoneKind: "hall",
     items: [
       {
         id: ids.sourceId,
@@ -116,46 +108,34 @@ function branchSeed(ids: CaseIds): MaterialBranchSeed {
   });
 }
 
-function topologySeed(ids: CaseIds) {
-  return {
-    branchId: ids.branchId,
-    locations: [{ id: ids.locationId, worldId: ids.worldId, kind: "cafe", defaultAccessPolicy: "public" as const }],
-    zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "hall", privacyPolicy: "public" as const }],
-    links: [],
-    loci: [
-      { kind: "at" as const, actorId: ids.actorId, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_STORY_SECOND },
-    ],
-  };
-}
-
+/**
+ * A transfer envelope. Re-parsed through the REAL per-type schema because a
+ * trigger payload takes a branded `TransferItemCommand`, not a bare envelope.
+ * `simCommand`'s deterministic ids are safe here: the dispatcher overwrites
+ * `id`/`idempotencyKey` with its own derived pair, and every direct submit below
+ * carries its own `name`.
+ */
 function command(
   ids: CaseIds,
+  name: string,
   itemId = ids.itemIds[0]!,
   overrides: Partial<{ branchId: string; expectedVersion: number }> = {},
 ): TransferItemCommand {
-  return transferItemCommandSchema.parse({
-    id: newId(),
-    branchId: overrides.branchId ?? ids.branchId,
-    expectedVersion: overrides.expectedVersion ?? 0,
-    idempotencyKey: newId(),
-    principal: { kind: "system", principalId: newId(), controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-17T16:00:00.000Z",
-    type: "transfer_item",
-    schemaVersion: 2,
-    correlationId: newId(),
-    payload: {
-      actorId: ids.actorId,
-      itemId,
-      fromLocus: { kind: "container", containerItemId: ids.sourceId },
-      toLocus: { kind: "container", containerItemId: ids.destinationId },
-    },
-  });
-}
-
-async function seedCase(ids: CaseIds): Promise<void> {
-  if (!seededWorldIds.includes(ids.worldId)) seededWorldIds.push(ids.worldId);
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology(topologySeed(ids));
+  return transferItemCommandSchema.parse(
+    simCommand({
+      branchId: overrides.branchId ?? ids.branchId,
+      name,
+      type: "transfer_item",
+      ...(overrides.expectedVersion === undefined ? {} : { expectedVersion: overrides.expectedVersion }),
+      principal: { ...systemPrincipal, controlledActorIds: [ids.actorId] },
+      payload: {
+        actorId: ids.actorId,
+        itemId,
+        fromLocus: { kind: "container", containerItemId: ids.sourceId },
+        toLocus: { kind: "container", containerItemId: ids.destinationId },
+      },
+    }),
+  );
 }
 
 function scheduleAt(ids: CaseIds, dueStorySecond: number, uniquenessKey: string, itemIndex = 0) {
@@ -166,7 +146,7 @@ function scheduleAt(ids: CaseIds, dueStorySecond: number, uniquenessKey: string,
     schemaVersion: 1,
     dueStorySecond,
     uniquenessKey,
-    payload: { command: command(ids, ids.itemIds[itemIndex]!) },
+    payload: { command: command(ids, uniquenessKey, ids.itemIds[itemIndex]!) },
   });
 }
 
@@ -186,17 +166,6 @@ async function triggerRow(triggerId: string) {
   const [row] = await db().select().from(simTriggers).where(eq(simTriggers.id, triggerId)).limit(1);
   return row;
 }
-
-afterEach(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  for (const worldId of seededWorldIds.splice(0)) {
-    await db().delete(simWorlds).where(eq(simWorlds.id, worldId));
-  }
-});
-
-afterAll(async () => {
-  await globalThis.__vesperPool?.end();
-});
 
 describe.skipIf(!ready)("E2.4 durable scheduler", () => {
   it("creates sim_triggers from a zero-state migration", async () => {
@@ -255,8 +224,8 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
 
     // The schedule command advanced the branch to version 1 (its
     // trigger_scheduled event is a committed part of history).
-    const player = await submitDurableTransferItem(command(ids, ids.itemIds[1]!, { expectedVersion: 1 }));
-    expect(player.status).toBe("accepted");
+    const player = await submitDurableTransferItem(command(ids, "player-transfer", ids.itemIds[1]!, { expectedVersion: 1 }));
+    expectAccepted(player, "the player transfer that lands before the trigger resolves");
 
     const resolved = await resolveNextDueTrigger(ids.branchId, { workerId: "worker_a" });
     expect(resolved.status).toBe("completed");
@@ -274,7 +243,7 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
       schemaVersion: 1,
       dueStorySecond: SEED_STORY_SECOND,
       uniquenessKey: "transfer-missing-item",
-      payload: { command: command(ids, newId()) },
+      payload: { command: command(ids, "transfer-missing-item", newId()) },
     });
 
     const resolved = await resolveNextDueTrigger(ids.branchId, { workerId: "worker_a" });
@@ -470,7 +439,7 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
       schemaVersion: 1,
       dueStorySecond: SEED_STORY_SECOND + 100,
       uniquenessKey: "poison-missing-item",
-      payload: { command: command(ids, newId()) },
+      payload: { command: command(ids, "poison-missing-item", newId()) },
     });
     await scheduleAt(ids, SEED_STORY_SECOND + 200, "healthy-at-200", 0);
 
@@ -543,7 +512,7 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
         schemaVersion: 1,
         dueStorySecond: SEED_STORY_SECOND,
         uniquenessKey: "cross-branch",
-        payload: { command: command(ids, ids.itemIds[0]!, { branchId: other.branchId }) },
+        payload: { command: command(ids, "cross-branch", ids.itemIds[0]!, { branchId: other.branchId }) },
       }),
     ).rejects.toThrow(/own branch/u);
 
@@ -562,7 +531,7 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
           dueStorySecond: SEED_STORY_SECOND,
           stableOrder: 99,
           uniquenessKey: "cross-branch-raw",
-          payload: { command: command(ids, ids.itemIds[0]!, { branchId: other.branchId }) },
+          payload: { command: command(ids, "cross-branch-raw", ids.itemIds[0]!, { branchId: other.branchId }) },
         }),
     ).rejects.toMatchObject({ cause: { constraint: "sim_triggers_payload_branch_matches" } });
   });

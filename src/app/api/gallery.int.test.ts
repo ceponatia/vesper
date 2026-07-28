@@ -247,7 +247,6 @@ describe("PATCH /api/gallery/:id (favorite)", () => {
         status: "ready" as const,
         entityKind: "character" as const,
         entityId: ids.character,
-        path: `images/${ids.otherUser}/fav.webp`,
         prompt: "",
         meta: {},
       }))
@@ -273,7 +272,6 @@ describe("DELETE /api/gallery/:id", () => {
         status: "ready" as const,
         entityKind: "character" as const,
         entityId: ids.character,
-        path: `images/${authState.user.id}/del.webp`,
         prompt: "",
         meta: {},
       }))
@@ -295,7 +293,6 @@ describe("DELETE /api/gallery/:id", () => {
         status: "ready" as const,
         entityKind: "character" as const,
         entityId: ids.character,
-        path: `images/${ids.otherUser}/del.webp`,
         prompt: "",
         meta: {},
       }))
@@ -317,7 +314,6 @@ describe("DELETE /api/gallery/:id", () => {
         status: "ready" as const,
         entityKind: "character" as const,
         entityId: ids.character,
-        path: `images/${authState.user.id}/avatar-del.webp`,
         prompt: "",
         meta: {},
       }))
@@ -339,7 +335,6 @@ describe("DELETE /api/gallery/:id", () => {
         status: "ready" as const,
         entityKind: "character" as const,
         entityId: ids.character,
-        path: `images/${authState.user.id}/portrait-del.webp`,
         prompt: "",
         meta: {},
       }))

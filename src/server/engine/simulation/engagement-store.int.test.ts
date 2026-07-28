@@ -1,7 +1,4 @@
-import { asc, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
-import { simulationBranchEventSchema } from "@/contracts/simulation/branching";
+import { describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
 import {
   deriveEngagementId,
@@ -9,7 +6,6 @@ import {
   replayEngagementsHistory,
   simulationHash,
 } from "@/lib/simulation";
-import { db, simEvents, simWorlds } from "@/server/db";
 import { seedDurableActionDefinitions, submitDurableStartActivity } from "./activity-store";
 import { forkBranch } from "./branch-store";
 import {
@@ -17,46 +13,29 @@ import {
   submitDurableEndEngagement,
   submitDurableOpenEngagement,
 } from "./engagement-store";
-import { seedDurableMaterialBranch } from "./material-store";
-import { readDurableSpaceBranch, seedDurableSpaceTopology, submitDurableMoveActor } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
+import { readDurableSpaceBranch, submitDurableMoveActor } from "./space-store";
+import {
+  expectAccepted,
+  expectRejected,
+  LEGACY_ENGINE_TEST_PLAYER_ID,
+  playerPrincipal,
+  readBranchEvents,
+  seedSimBranch,
+  simCommand,
+  simulationSuiteHarness,
+} from "@/server/test-support";
+
+/**
+ * E3.4 durable engagements: one co-present scene per body, claim conflicts
+ * against activities, departure interrupts, and fork/rebuild parity. Runs on
+ * the shared `simulationSuiteHarness` scaffold (probe + legacy-player guard +
+ * world teardown + pool close).
+ */
+
+const harness = await simulationSuiteHarness({ suite: "engagement-store.int.test", table: "sim_engagements" });
 
 const SEED_SECOND = 60_000;
 const WALK = 600;
-
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_engagements limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[engagement-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("engagement-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
-});
 
 interface SceneCase {
   worldId: string;
@@ -66,22 +45,6 @@ interface SceneCase {
   zoneA: string;
   zoneB: string;
   napActionId: string;
-}
-
-function branchSeed(ids: SceneCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e3-4-tests",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e3-4-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.mara, name: "Mara" },
-      { id: ids.iris, name: "Iris" },
-    ],
-    items: [],
-  });
 }
 
 async function seedSceneCase(): Promise<SceneCase> {
@@ -97,9 +60,16 @@ async function seedSceneCase(): Promise<SceneCase> {
     napActionId: `${branchId}-action-nap`,
   };
   const locHome = `${worldId}-loc-home`;
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology({
+  await seedSimBranch({
+    worldId,
     branchId,
+    worldTypeId: "e3-4-tests",
+    rulesetVersion: "e3-4-test-v1",
+    originStorySecond: SEED_SECOND,
+    actors: [
+      { id: ids.mara, name: "Mara" },
+      { id: ids.iris, name: "Iris" },
+    ],
     locations: [{ id: locHome, worldId, kind: "home", defaultAccessPolicy: "private" }],
     zones: [
       { id: ids.zoneA, locationId: locHome, kind: "room", privacyPolicy: "private" },
@@ -116,9 +86,9 @@ async function seedSceneCase(): Promise<SceneCase> {
         state: "open",
       },
     ],
-    loci: [
-      { kind: "at", actorId: ids.mara, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
-      { kind: "at", actorId: ids.iris, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
+    placements: [
+      { actorId: ids.mara, locationId: locHome, zoneId: ids.zoneA },
+      { actorId: ids.iris, locationId: locHome, zoneId: ids.zoneA },
     ],
   });
   await seedDurableActionDefinitions({
@@ -136,101 +106,82 @@ async function seedSceneCase(): Promise<SceneCase> {
       },
     ],
   });
-  seededWorldIds.push(worldId);
+  harness.trackWorld(worldId);
   return ids;
 }
 
-function openCommand(ids: SceneCase, overrides: Record<string, unknown> = {}, payload: Record<string, unknown> = {}) {
-  return {
-    id: `cmd-open-${ids.branchId}`,
+function openCommand(
+  ids: SceneCase,
+  options: { name?: string; expectedVersion?: number; payload?: Record<string, unknown> } = {},
+) {
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `open-key-${ids.branchId}`,
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.mara] },
-    submittedAtWallClock: "2026-07-17T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name: options.name ?? "open",
     type: "open_engagement",
-    schemaVersion: 1,
-    payload: { participantIds: [ids.mara, ids.iris].sort(), channel: "co_present", ...payload },
-    ...overrides,
-  };
+    expectedVersion: options.expectedVersion ?? 0,
+    principal: playerPrincipal(ids.mara),
+    payload: { participantIds: [ids.mara, ids.iris].sort(), channel: "co_present", ...options.payload },
+  });
 }
 
 function napCommand(ids: SceneCase, actorId: string, expectedVersion: number, suffix: string) {
-  return {
-    id: `cmd-nap-${suffix}-${ids.branchId}`,
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion,
-    idempotencyKey: `nap-${suffix}-key-${ids.branchId}`,
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [actorId] },
-    submittedAtWallClock: "2026-07-17T12:01:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name: `nap-${suffix}`,
     type: "start_activity",
-    schemaVersion: 1,
+    expectedVersion,
+    principal: playerPrincipal(actorId),
     payload: { actionDefinitionId: ids.napActionId, actorId },
-  };
+  });
 }
 
-describe.runIf(ready)("E3.4 durable engagements", () => {
+describe.runIf(harness.ready)("E3.4 durable engagements", () => {
   it("opens one co-present scene and refuses a second for an occupied body", async () => {
     const ids = await seedSceneCase();
     const open = await submitDurableOpenEngagement(openCommand(ids));
-    expect(open.status).toBe("accepted");
+    expectAccepted(open, "open the first co-present scene");
     const projection = await readDurableEngagements(ids.branchId);
     expect(projection.engagements[0]).toMatchObject({ state: "active", channel: "co_present", zoneId: ids.zoneA });
 
     const second = await submitDurableOpenEngagement(
-      openCommand(ids, {
-        id: `cmd-open2-${ids.branchId}`,
-        idempotencyKey: `open2-key-${ids.branchId}`,
-        expectedVersion: 1,
-      }),
+      openCommand(ids, { name: "open2", expectedVersion: 1 }),
     );
-    expect(second.status).toBe("rejected");
-    if (second.status === "rejected") expect(second.code).toBe("participant_already_engaged");
+    expectRejected(second, "participant_already_engaged", "a second scene for an already-engaged body");
   });
 
   it("naps block conversations and conversations block naps", async () => {
     const ids = await seedSceneCase();
     // Iris naps (body + full attention).
-    const nap = await submitDurableStartActivity({
-      ...napCommand(ids, ids.iris, 0, "iris"),
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.iris] },
-    });
-    expect(nap.status).toBe("accepted");
+    const nap = await submitDurableStartActivity(napCommand(ids, ids.iris, 0, "iris"));
+    expectAccepted(nap, "Iris starts a nap");
 
     // Even a text thread cannot reach a napping mind (ruling 11 adjacent).
     const text = await submitDurableOpenEngagement(
-      openCommand(ids, { expectedVersion: 1 }, { channel: "text" }),
+      openCommand(ids, { expectedVersion: 1, payload: { channel: "text" } }),
     );
-    expect(text.status).toBe("rejected");
-    if (text.status === "rejected") expect(text.code).toBe("participant_unavailable");
+    expectRejected(text, "participant_unavailable", "a text thread reaching a napping mind");
 
     // In a second world: an open conversation blocks starting a nap.
     const other = await seedSceneCase();
     await submitDurableOpenEngagement(openCommand(other));
     const napDuring = await submitDurableStartActivity(napCommand(other, other.mara, 1, "mara"));
-    expect(napDuring.status).toBe("rejected");
-    if (napDuring.status === "rejected") expect(napDuring.code).toBe("claim_conflict");
+    expectRejected(napDuring, "claim_conflict", "a nap started under a live conversation");
   });
 
   it("a departure interrupts the scene atomically with the journey events", async () => {
     const ids = await seedSceneCase();
     await submitDurableOpenEngagement(openCommand(ids));
-    const move = await submitDurableMoveActor({
-      id: `cmd-move-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: `move-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.mara] },
-      submittedAtWallClock: "2026-07-17T12:05:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "move_actor",
-      schemaVersion: 1,
-      payload: { actorId: ids.mara, destinationZoneId: ids.zoneB, travelMode: "walk" },
-    });
-    expect(move.status).toBe("accepted");
-    if (move.status !== "accepted") return;
+    const move = await submitDurableMoveActor(
+      simCommand({
+        branchId: ids.branchId,
+        name: "move",
+        type: "move_actor",
+        expectedVersion: 1,
+        principal: playerPrincipal(ids.mara),
+        payload: { actorId: ids.mara, destinationZoneId: ids.zoneB, travelMode: "walk" },
+      }),
+    );
+    expectAccepted(move, "Mara departs mid-scene");
     // journey_planned + actor_departed + arrival trigger + engagement interrupt.
     expect(move.eventIds).toHaveLength(3);
     expect(move.lastSequence - move.firstSequence).toBe(3);
@@ -250,57 +201,33 @@ describe.runIf(ready)("E3.4 durable engagements", () => {
       parentBranchId: ids.branchId,
       childBranchId,
       atSequence: 1,
-      principal: { kind: "player", principalId: "principal-1" },
+      principal: { kind: "player", principalId: LEGACY_ENGINE_TEST_PLAYER_ID },
       reason: "mid-conversation retake",
     });
     expect(fork.inheritedEventCount).toBe(1);
     const child = await readDurableEngagements(childBranchId);
     expect(child.engagements[0]?.state).toBe("active");
 
-    const end = await submitDurableEndEngagement({
-      id: `cmd-end-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: `end-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.mara] },
-      submittedAtWallClock: "2026-07-17T12:20:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "end_engagement",
-      schemaVersion: 1,
-      payload: { engagementId: deriveEngagementId(ids.branchId, `cmd-open-${ids.branchId}`), reason: "participant_choice" },
-    });
-    expect(end.status).toBe("accepted");
-    // Released: the nap that a live conversation would block now starts.
-    const nap = await submitDurableStartActivity(napCommand(ids, ids.mara, 2, "after-end"));
-    expect(nap.status).toBe("accepted");
-
-    const live = await readDurableEngagements(ids.branchId);
-    const eventRows = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(asc(simEvents.sequence));
-    const events = eventRows.map((row) =>
-      simulationBranchEventSchema.parse({
-        id: row.id,
-        worldId: row.worldId,
-        branchId: row.branchId,
-        sequence: row.sequence,
-        storySecond: row.storySecond,
-        type: row.type,
-        schemaVersion: row.schemaVersion,
-        rulesetVersion: row.rulesetVersion,
-        ...(row.derivationVersion ? { derivationVersion: row.derivationVersion } : {}),
-        ...(row.commandId ? { commandId: row.commandId } : {}),
-        ...(row.causationId ? { causationId: row.causationId } : {}),
-        correlationId: row.correlationId,
-        actorIds: row.actorIds,
-        entityIds: row.entityIds,
-        ...(row.locationId ? { locationId: row.locationId } : {}),
-        recordedAtWallClock: row.recordedAt.toISOString(),
-        payload: row.payload,
+    const end = await submitDurableEndEngagement(
+      simCommand({
+        branchId: ids.branchId,
+        name: "end",
+        type: "end_engagement",
+        expectedVersion: 1,
+        principal: playerPrincipal(ids.mara),
+        payload: {
+          engagementId: deriveEngagementId(ids.branchId, `cmd-open-${ids.branchId}`),
+          reason: "participant_choice",
+        },
       }),
     );
+    expectAccepted(end, "end the conversation");
+    // Released: the nap that a live conversation would block now starts.
+    const nap = await submitDurableStartActivity(napCommand(ids, ids.mara, 2, "after-end"));
+    expectAccepted(nap, "a nap after the scene released attention");
+
+    const live = await readDurableEngagements(ids.branchId);
+    const events = await readBranchEvents(ids.branchId);
     const rebuilt = replayEngagementsHistory({
       seed: emptyEngagementsSeed(ids.branchId, SEED_SECOND),
       events,

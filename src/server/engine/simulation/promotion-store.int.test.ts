@@ -1,29 +1,26 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import { and, eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
 import { derivedPromotedActorId } from "@/lib/simulation";
+import { db, simActorLods, simBranches, simCharacters, simCohorts, simPhysicalLoci, simTriggers } from "@/server/db";
 import {
-  db,
-  simActorLods,
-  simBranches,
-  simCharacters,
-  simCohorts,
-  simEvents,
-  simPhysicalLoci,
-  simTriggers,
-  simWorlds,
-} from "@/server/db";
+  ADMIT_AT_LOCKED_VERSION,
+  expectAccepted,
+  expectRejected,
+  forkAtHead,
+  legacyEngineTestPlayerPrincipal,
+  playerPrincipal,
+  readBranchEvents,
+  seedSimBranch,
+  simCommand,
+  simulationSuiteHarness,
+} from "@/server/test-support";
 import { submitDurableInitializeActorBody } from "./body-store";
 import { forkBranch } from "./branch-store";
 import { submitDurableCreateCohort } from "./cohort-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
 import { submitDurableAssignActorLod } from "./lod-store";
-import { seedDurableMaterialBranch } from "./material-store";
-import { branchEventFromRow } from "./observation-store";
 import { submitDurablePromoteActorFromCohort } from "./promotion-store";
-import { seedDurableSpaceTopology } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E6.4 durable actor promotion and dependency wake (engine.spec §27.2, §27.7):
@@ -31,42 +28,15 @@ import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
  * (character + locus + landing LOD in one transaction), presence legality,
  * conservation across the read, idempotency, fork parity on both sides of the
  * promotion — and an engagement waking a dormant participant with catch-up
- * alarms re-solved from law. Mirrors cohort-store.int.test.ts's harness.
+ * alarms re-solved from law. Probe, legacy-player opt-in, seeded-world teardown
+ * and pool close come from the shared `simulationSuiteHarness`.
  */
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_cohorts limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[promotion-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("promotion-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
+const harness = await simulationSuiteHarness({
+  suite: "promotion-store.int.test",
+  table: "sim_cohorts",
 });
+const ready = harness.ready;
 
 /** Day 2, 10:00 — mid market window (08:00–18:00), so presence legality bites. */
 const SEED_SECOND = 2 * 86_400 + 600 * 60;
@@ -81,22 +51,6 @@ interface PromotionCase {
   riven: string;
 }
 
-function branchSeed(ids: PromotionCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e6-4-test-world",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e6-4-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.ana, name: "Ana" },
-      { id: ids.riven, name: "Riven" },
-    ],
-    items: [],
-  });
-}
-
 async function seedCase(): Promise<PromotionCase> {
   const worldId = newId();
   const branchId = newId();
@@ -109,46 +63,46 @@ async function seedCase(): Promise<PromotionCase> {
     ana: newId(),
     riven: newId(),
   };
-  seededWorldIds.push(worldId);
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology({
+  await seedSimBranch({
+    worldId,
     branchId,
+    worldTypeId: "e6-4-test-world",
+    rulesetVersion: "e6-4-test-v1",
+    originStorySecond: SEED_SECOND,
+    actors: [
+      { id: ids.ana, name: "Ana" },
+      { id: ids.riven, name: "Riven" },
+    ],
     locations: [{ id: ids.locationId, worldId, kind: "town", defaultAccessPolicy: "public" }],
     zones: [
       { id: ids.squareZoneId, locationId: ids.locationId, kind: "plaza", privacyPolicy: "public" },
       { id: ids.tavernZoneId, locationId: ids.locationId, kind: "tavern", privacyPolicy: "public" },
     ],
-    links: [],
-    loci: [
-      { kind: "at", actorId: ids.ana, locationId: ids.locationId, zoneId: ids.squareZoneId, since: SEED_SECOND },
-      { kind: "at", actorId: ids.riven, locationId: ids.locationId, zoneId: ids.squareZoneId, since: SEED_SECOND },
+    placements: [
+      { actorId: ids.ana, locationId: ids.locationId, zoneId: ids.squareZoneId },
+      { actorId: ids.riven, locationId: ids.locationId, zoneId: ids.squareZoneId },
     ],
   });
+  harness.trackWorld(worldId);
   return ids;
 }
 
-const admit = { admitAtLockedVersion: true };
-const gmPrincipal = { kind: "storyteller" as const, principalId: "gm-1", controlledActorIds: [] };
+const admit = ADMIT_AT_LOCKED_VERSION;
 
 function command(
   ids: PromotionCase,
   name: string,
   type: string,
   payload: Record<string, unknown>,
-  principal: object = gmPrincipal,
+  principal?: Parameters<typeof simCommand>[0]["principal"],
 ) {
-  return {
-    id: `cmd-${name}-${ids.branchId}`,
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `${name}-key-${ids.branchId}`,
-    principal,
-    submittedAtWallClock: "2026-07-21T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name,
     type,
-    schemaVersion: 1,
     payload,
-  };
+    ...(principal === undefined ? {} : { principal }),
+  });
 }
 
 function cohortPayload(
@@ -170,6 +124,23 @@ function cohortPayload(
   };
 }
 
+/** The branch's current head — the fork boundary a test captures before a step. */
+async function branchHeadSequence(branchId: string): Promise<number> {
+  const [row] = await db()
+    .select({ headSequence: simBranches.headSequence })
+    .from(simBranches)
+    .where(eq(simBranches.id, branchId))
+    .limit(1);
+  if (!row) throw new Error(`branch row missing: ${branchId}`);
+  return row.headSequence;
+}
+
+/** The events one command appended, in sequence order. */
+async function eventsForCommand(branchId: string, commandId: string) {
+  const events = await readBranchEvents(branchId);
+  return events.filter((event) => event.commandId === commandId);
+}
+
 async function pendingTriggersFor(branchId: string, actorId: string) {
   const rows = await db()
     .select({ kind: simTriggers.kind, uniquenessKey: simTriggers.uniquenessKey })
@@ -186,7 +157,7 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
       command(ids, "create-market", "create_cohort", cohortPayload(ids, marketId, 50, 10_000)),
       admit,
     );
-    expect(created.status).toBe("accepted");
+    expectAccepted(created, "seeding the market cohort");
 
     const landing = { simulationLod: "event", inferenceLod: "no_model" };
 
@@ -197,11 +168,11 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
         "player-promote",
         "promote_actor_from_cohort",
         { cohortId: marketId, zoneId: ids.squareZoneId, name: "Maren", landing },
-        { kind: "player", principalId: "player-1", controlledActorIds: [ids.ana] },
+        playerPrincipal(ids.ana),
       ),
       admit,
     );
-    expect(unauthorized).toMatchObject({ status: "rejected", code: "unauthorized_principal" });
+    expectRejected(unauthorized, "unauthorized_principal", "a player promoting from a cohort");
     const ghostCohort = await submitDurablePromoteActorFromCohort(
       command(ids, "ghost-cohort", "promote_actor_from_cohort", {
         cohortId: newId(),
@@ -211,7 +182,7 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
       }),
       admit,
     );
-    expect(ghostCohort).toMatchObject({ status: "rejected", code: "cohort_not_found" });
+    expectRejected(ghostCohort, "cohort_not_found", "promoting from a cohort that does not exist");
     const ghostZone = await submitDurablePromoteActorFromCohort(
       command(ids, "ghost-zone", "promote_actor_from_cohort", {
         cohortId: marketId,
@@ -221,7 +192,7 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
       }),
       admit,
     );
-    expect(ghostZone).toMatchObject({ status: "rejected", code: "zone_not_found" });
+    expectRejected(ghostZone, "zone_not_found", "promoting into a zone that does not exist");
     // Mid-window at share 10 000 the whole crowd is at the square — the
     // tavern's read says none of them are there (§27.2 step 5).
     const notPresent = await submitDurablePromoteActorFromCohort(
@@ -233,7 +204,7 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
       }),
       admit,
     );
-    expect(notPresent).toMatchObject({ status: "rejected", code: "cohort_not_present" });
+    expectRejected(notPresent, "cohort_not_present", "promoting in the tavern while the crowd is at the square");
     // No name pool is authored anywhere yet — an omitted name fails closed.
     const unnamed = await submitDurablePromoteActorFromCohort(
       command(ids, "unnamed", "promote_actor_from_cohort", {
@@ -243,12 +214,10 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
       }),
       admit,
     );
-    expect(unnamed).toMatchObject({ status: "rejected", code: "name_required" });
+    expectRejected(unnamed, "name_required", "promoting without a name and with no name pool authored");
 
     // The fork boundary BEFORE the promotion, for the parity check below.
-    const [preRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!preRow) throw new Error("branch row missing");
-    const prePromotionSequence = preRow.headSequence;
+    const prePromotionSequence = await branchHeadSequence(ids.branchId);
 
     const promoted = await submitDurablePromoteActorFromCohort(
       command(ids, "promote-maren", "promote_actor_from_cohort", {
@@ -259,8 +228,7 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
       }),
       admit,
     );
-    expect(promoted.status).toBe("accepted");
-    if (promoted.status !== "accepted") throw new Error("promotion rejected");
+    expectAccepted(promoted, "the five-step promotion of Maren");
     expect(promoted.eventIds).toHaveLength(3);
     expect(promoted.lastSequence - promoted.firstSequence).toBe(2);
     // Idempotency: the same command replays its cached result.
@@ -278,12 +246,7 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
     const actorId = derivedPromotedActorId(ids.branchId, `cmd-promote-maren-${ids.branchId}`);
 
     // The causation-chained train, re-read from rows.
-    const eventRows = await db()
-      .select()
-      .from(simEvents)
-      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.commandId, `cmd-promote-maren-${ids.branchId}`)))
-      .orderBy(simEvents.sequence)
-      .then((rows) => rows.map(branchEventFromRow));
+    const eventRows = await eventsForCommand(ids.branchId, `cmd-promote-maren-${ids.branchId}`);
     expect(eventRows.map((event) => event.type)).toEqual([
       "cohort_adjusted",
       "actor_materialized_from_aggregate",
@@ -358,20 +321,14 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
       }),
       admit,
     );
-    expect(embodied.status).toBe("accepted");
+    expectAccepted(embodied, "embodying the freshly promoted Maren");
     const maremAlarms = await pendingTriggersFor(ids.branchId, actorId);
     expect(maremAlarms.map((row) => row.kind)).toContain("routine_policy_due");
 
     // Fork AT HEAD: the child rebuilds the actor, locus, LOD row, and count
     // from inherited events alone.
-    const [headRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!headRow) throw new Error("branch row missing");
-    const childAfter = newId();
-    await forkBranch({
+    const { childBranchId: childAfter } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId: childAfter,
-      atSequence: headRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "E6.4 post-promotion fork parity",
     });
     const [childCharacter] = await db()
@@ -397,6 +354,7 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
 
     // Fork BEFORE the promotion: the child carries neither the actor nor any
     // of their rows, and the crowd is whole — history is not retroactive.
+    // Explicitly BELOW the head, so `forkAtHead` cannot serve here.
     const childBefore = newId();
     await forkBranch({
       parentBranchId: ids.branchId,
@@ -435,7 +393,7 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
       }),
       admit,
     );
-    expect(embodied.status).toBe("accepted");
+    expectAccepted(embodied, "embodying Riven before tucking them dormant");
     const demoted = await submitDurableAssignActorLod(
       command(ids, "tuck-riven", "assign_actor_lod", {
         actorId: ids.riven,
@@ -444,7 +402,7 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
       }),
       admit,
     );
-    expect(demoted.status).toBe("accepted");
+    expectAccepted(demoted, "tucking Riven into dormancy");
     expect(await pendingTriggersFor(ids.branchId, ids.riven)).toHaveLength(0);
 
     // A rejected open wakes no one: the ghost participant kills the command
@@ -455,11 +413,11 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
         "ghost-open",
         "open_engagement",
         { participantIds: [ids.riven, newId()].sort(), channel: "co_present" },
-        { kind: "player", principalId: "player-1", controlledActorIds: [ids.ana, ids.riven].sort() },
+        legacyEngineTestPlayerPrincipal([ids.ana, ids.riven].sort()),
       ),
       admit,
     );
-    expect(ghostOpen).toMatchObject({ status: "rejected", code: "participant_not_found" });
+    expectRejected(ghostOpen, "participant_not_found", "opening a scene with a participant who does not exist");
     const [stillDormant] = await db()
       .select()
       .from(simActorLods)
@@ -476,12 +434,11 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
         "open-scene",
         "open_engagement",
         { participantIds: [ids.ana, ids.riven].sort(), channel: "co_present" },
-        { kind: "player", principalId: "player-1", controlledActorIds: [ids.ana] },
+        playerPrincipal(ids.ana),
       ),
       admit,
     );
-    expect(opened.status).toBe("accepted");
-    if (opened.status !== "accepted") throw new Error("open rejected");
+    expectAccepted(opened, "Ana opening a co-present scene with dormant Riven");
     expect(opened.lastSequence).toBeGreaterThan(opened.firstSequence);
 
     const [wokenLod] = await db()
@@ -490,12 +447,7 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
       .where(and(eq(simActorLods.branchId, ids.branchId), eq(simActorLods.actorId, ids.riven)));
     expect(wokenLod).toMatchObject({ simulationLod: "event", inferenceLod: "no_model" });
 
-    const wakeEvents = await db()
-      .select()
-      .from(simEvents)
-      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.commandId, `cmd-open-scene-${ids.branchId}`)))
-      .orderBy(simEvents.sequence)
-      .then((rows) => rows.map(branchEventFromRow));
+    const wakeEvents = await eventsForCommand(ids.branchId, `cmd-open-scene-${ids.branchId}`);
     const kinds = wakeEvents.map((event) =>
       event.type === "trigger_scheduled" ? event.payload.kind : event.type,
     );
@@ -518,14 +470,8 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
 
     // Fork at head: the woken LOD row and re-armed alarms replay into the
     // child (the wake's events are ordinary inherited history).
-    const [headRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!headRow) throw new Error("branch row missing");
-    const child = newId();
-    await forkBranch({
+    const { childBranchId: child } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId: child,
-      atSequence: headRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "E6.4 wake fork parity",
     });
     const [childLod] = await db()

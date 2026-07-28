@@ -1,16 +1,7 @@
-import { and, eq, sql } from "drizzle-orm";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
-import {
-  consumeItemCommandSchema,
-  destroyItemCommandSchema,
-  setItemOwnershipCommandSchema,
-  transferItemCommandSchema,
-  type ConsumeItemCommand,
-  type DestroyItemCommand,
-  type ItemLocusInput,
-  type SetItemOwnershipCommand,
-  type TransferItemCommand,
-} from "@/contracts/simulation/materials";
+import { and, eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
+import { itemConditionRegistryV1 } from "@/contracts/simulation/material-condition";
+import type { ItemLocusInput } from "@/contracts/simulation/materials";
 import { newId } from "@/lib/ids";
 import {
   db,
@@ -23,12 +14,22 @@ import {
   simItemTransferFeed,
   simObservations,
   simTriggers,
-  simWorlds,
 } from "@/server/db";
+import {
+  expectAccepted,
+  expectRejected,
+  gmPrincipal,
+  npcPrincipal,
+  seedSimBranch,
+  seedSimpleBranch,
+  simCommand,
+  simulationSuiteHarness,
+  type SimCommandEnvelope,
+  type SimTestPrincipal,
+} from "@/server/test-support";
 import { seedDurableActionDefinitions, submitDurableStartActivity } from "./activity-store";
 import { submitDurableInitializeActorBody } from "./body-store";
 import {
-  seedDurableMaterialBranch,
   submitDurableApplyItemConditionSource,
   submitDurableConsumeItem,
   submitDurableDestroyItem,
@@ -37,45 +38,21 @@ import {
 } from "./material-store";
 import { consumeNextItemTransferOutbox } from "./outbox-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
-import { seedDurableSpaceTopology } from "./space-store";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_item_holdings limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[material-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-const seededWorldIds: string[] = [];
-
-afterEach(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  for (const worldId of seededWorldIds.splice(0)) {
-    await db().delete(simWorlds).where(eq(simWorlds.id, worldId));
-  }
-});
-
-afterAll(async () => {
-  await globalThis.__vesperPool?.end();
+/**
+ * E5.3 durable material lane: transfers, destruction, ownership, consumption
+ * (§26.6) and item condition (§26.7). Every principal here is `npc_policy` or
+ * `storyteller`, neither of which needs the branch-owner match, so the suite
+ * runs without the legacy-player opt-in (`legacyPlayerMode: false`).
+ *
+ * Cases are numerous and each seeds its own world, so teardown runs after EVERY
+ * test (`cleanup: "afterEach"`) instead of piling hundreds of rows up to the end.
+ */
+const harness = await simulationSuiteHarness({
+  suite: "material-store.int.test",
+  table: "sim_item_holdings",
+  legacyPlayerMode: false,
+  cleanup: "afterEach",
 });
 
 const SEED_SECOND = 40_000;
@@ -140,12 +117,11 @@ function makeIds(): MaterialCase {
 }
 
 async function seedCase(ids: MaterialCase): Promise<void> {
-  seededWorldIds.push(ids.worldId);
-  await seedDurableMaterialBranch({
+  harness.trackWorld(ids.worldId);
+  await seedSimBranch({
     worldId: ids.worldId,
-    worldTypeId: "e5-3-test-world",
-    worldSeed: `seed-${ids.worldId}`,
     branchId: ids.branchId,
+    worldTypeId: "e5-3-test-world",
     rulesetVersion: "e5-3-test-v1",
     originStorySecond: SEED_SECOND,
     actors: [
@@ -179,9 +155,6 @@ async function seedCase(ids: MaterialCase): Promise<void> {
       { id: ids.looseId, name: "coin purse", ownerActorId: null, locus: { kind: "held", actorId: ids.actorId } },
       { id: ids.otherHeldId, name: "iris's fan", ownerActorId: null, locus: { kind: "held", actorId: ids.otherId } },
     ],
-  });
-  await seedDurableSpaceTopology({
-    branchId: ids.branchId,
     locations: [
       { id: ids.locationId, worldId: ids.worldId, kind: "home", defaultAccessPolicy: "private" },
       { id: ids.remoteLocationId, worldId: ids.worldId, kind: "home", defaultAccessPolicy: "private" },
@@ -191,44 +164,36 @@ async function seedCase(ids: MaterialCase): Promise<void> {
       { id: ids.zoneB, locationId: ids.remoteLocationId, kind: "room", privacyPolicy: "private" },
     ],
     links: [],
-    loci: [
-      { kind: "at", actorId: ids.actorId, locationId: ids.locationId, zoneId: ids.zoneA, since: SEED_SECOND },
-      { kind: "at", actorId: ids.otherId, locationId: ids.locationId, zoneId: ids.zoneA, since: SEED_SECOND },
-      { kind: "at", actorId: ids.remoteId, locationId: ids.remoteLocationId, zoneId: ids.zoneB, since: SEED_SECOND },
+    placements: [
+      { actorId: ids.actorId, locationId: ids.locationId, zoneId: ids.zoneA },
+      { actorId: ids.otherId, locationId: ids.locationId, zoneId: ids.zoneA },
+      { actorId: ids.remoteId, locationId: ids.remoteLocationId, zoneId: ids.zoneB },
     ],
   });
 }
 
+interface TransferOverrides {
+  expectedVersion: number;
+  actorId: string;
+  itemId: string;
+  fromLocus: ItemLocusInput;
+  toLocus: ItemLocusInput;
+}
+
 function transferCommand(
   ids: MaterialCase,
-  overrides: Partial<{
-    id: string;
-    idempotencyKey: string;
-    expectedVersion: number;
-    actorId: string;
-    itemId: string;
-    fromLocus: ItemLocusInput;
-    toLocus: ItemLocusInput;
-    controlledActorIds: string[];
-    principalKind: string;
-  }> = {},
-): TransferItemCommand {
-  return transferItemCommandSchema.parse({
-    id: overrides.id ?? newId(),
+  name: string,
+  overrides: Partial<TransferOverrides> = {},
+): SimCommandEnvelope {
+  const actorId = overrides.actorId ?? ids.actorId;
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: overrides.expectedVersion ?? 0,
-    idempotencyKey: overrides.idempotencyKey ?? newId(),
-    principal: {
-      kind: overrides.principalKind ?? "npc_policy",
-      principalId: newId(),
-      controlledActorIds: overrides.controlledActorIds ?? [overrides.actorId ?? ids.actorId],
-    },
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+    name,
     type: "transfer_item",
-    schemaVersion: 2,
-    correlationId: newId(),
+    expectedVersion: overrides.expectedVersion ?? 0,
+    principal: npcPrincipal(actorId),
     payload: {
-      actorId: overrides.actorId ?? ids.actorId,
+      actorId,
       itemId: overrides.itemId ?? ids.ringId,
       fromLocus: overrides.fromLocus ?? { kind: "held", actorId: ids.actorId },
       toLocus: overrides.toLocus ?? { kind: "held", actorId: ids.otherId },
@@ -238,31 +203,18 @@ function transferCommand(
 
 function destroyCommand(
   ids: MaterialCase,
-  overrides: Partial<{
-    id: string;
-    idempotencyKey: string;
-    expectedVersion: number;
-    actorId: string;
-    itemId: string;
-    basis: "destroyed" | "lost";
-  }> = {},
-): DestroyItemCommand {
-  return destroyItemCommandSchema.parse({
-    id: overrides.id ?? newId(),
+  name: string,
+  overrides: Partial<{ expectedVersion: number; actorId: string; itemId: string; basis: "destroyed" | "lost" }> = {},
+): SimCommandEnvelope {
+  const actorId = overrides.actorId ?? ids.actorId;
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: overrides.expectedVersion ?? 0,
-    idempotencyKey: overrides.idempotencyKey ?? newId(),
-    principal: {
-      kind: "npc_policy",
-      principalId: newId(),
-      controlledActorIds: [overrides.actorId ?? ids.actorId],
-    },
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+    name,
     type: "destroy_item",
-    schemaVersion: 1,
-    correlationId: newId(),
+    expectedVersion: overrides.expectedVersion ?? 0,
+    principal: npcPrincipal(actorId),
     payload: {
-      actorId: overrides.actorId ?? ids.actorId,
+      actorId,
       itemId: overrides.itemId ?? ids.ringId,
       basis: overrides.basis ?? "destroyed",
     },
@@ -271,30 +223,20 @@ function destroyCommand(
 
 function ownershipCommand(
   ids: MaterialCase,
+  name: string,
   overrides: Partial<{
-    id: string;
-    idempotencyKey: string;
     expectedVersion: number;
     itemId: string;
-    newOwnerActorId: string | null;
-    principalKind: string;
-    controlledActorIds: string[];
+    newOwnerActorId: string;
+    principal: SimTestPrincipal;
   }> = {},
-): SetItemOwnershipCommand {
-  return setItemOwnershipCommandSchema.parse({
-    id: overrides.id ?? newId(),
+): SimCommandEnvelope {
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: overrides.expectedVersion ?? 0,
-    idempotencyKey: overrides.idempotencyKey ?? newId(),
-    principal: {
-      kind: overrides.principalKind ?? "storyteller",
-      principalId: newId(),
-      controlledActorIds: overrides.controlledActorIds ?? [],
-    },
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+    name,
     type: "set_item_ownership",
-    schemaVersion: 1,
-    correlationId: newId(),
+    expectedVersion: overrides.expectedVersion ?? 0,
+    principal: overrides.principal ?? gmPrincipal,
     payload: {
       itemId: overrides.itemId ?? ids.ownedRingId,
       newOwnerActorId: overrides.newOwnerActorId ?? ids.actorId,
@@ -310,16 +252,18 @@ async function readHolding(branchId: string, itemId: string) {
   return row;
 }
 
-describe("E5.3 durable material branch transaction", () => {
-  it("accepts a held-to-held give between co-located actors and projects the feed row", async (test) => {
-    if (!ready) return test.skip();
+describe.runIf(harness.ready)("E5.3 durable material branch transaction", () => {
+  it("accepts a held-to-held give between co-located actors and projects the feed row", async () => {
     const ids = makeIds();
     await seedCase(ids);
-    const command = transferCommand(ids, { itemId: ids.ringId, toLocus: { kind: "held", actorId: ids.otherId } });
+    const command = transferCommand(ids, "give", {
+      itemId: ids.ringId,
+      toLocus: { kind: "held", actorId: ids.otherId },
+    });
 
     const result = await submitDurableTransferItem(command);
-    expect(result).toMatchObject({ status: "accepted", branchVersion: 1, firstSequence: 1, lastSequence: 1 });
-    if (result.status !== "accepted") throw new Error("expected acceptance");
+    expectAccepted(result, "held-to-held give");
+    expect(result).toMatchObject({ branchVersion: 1, firstSequence: 1, lastSequence: 1 });
 
     const events = await db().select().from(simEvents).where(eq(simEvents.branchId, ids.branchId));
     expect(events).toHaveLength(1);
@@ -351,103 +295,115 @@ describe("E5.3 durable material branch transaction", () => {
     });
   });
 
-  it("rejects taking an item held by another actor", async (test) => {
-    if (!ready) return test.skip();
+  it("rejects taking an item held by another actor", async () => {
     const ids = makeIds();
     await seedCase(ids);
-    const command = transferCommand(ids, {
+    const command = transferCommand(ids, "take", {
       itemId: ids.otherHeldId,
       fromLocus: { kind: "held", actorId: ids.otherId },
       toLocus: { kind: "held", actorId: ids.actorId },
     });
 
     const result = await submitDurableTransferItem(command);
-    expect(result).toMatchObject({ status: "rejected", code: "held_by_other" });
+    expectRejected(result, "held_by_other", "taking another actor's item");
     const holding = await readHolding(ids.branchId, ids.otherHeldId);
     expect(holding).toMatchObject({ locusKind: "held", actorId: ids.otherId });
   });
 
-  it("rejects a transfer into an already-full container", async (test) => {
-    if (!ready) return test.skip();
+  it("rejects a transfer into an already-full container", async () => {
     const ids = makeIds();
     await seedCase(ids);
-    const command = transferCommand(ids, { itemId: ids.ringId, toLocus: { kind: "container", containerItemId: ids.bagId } });
+    const command = transferCommand(ids, "into-bag", {
+      itemId: ids.ringId,
+      toLocus: { kind: "container", containerItemId: ids.bagId },
+    });
 
     const result = await submitDurableTransferItem(command);
-    expect(result).toMatchObject({ status: "rejected", code: "destination_full" });
+    expectRejected(result, "destination_full", "transfer into a full container");
   });
 
-  it("rejects a transfer into a container the actor is not on the allow list for", async (test) => {
-    if (!ready) return test.skip();
+  it("rejects a transfer into a container the actor is not on the allow list for", async () => {
     const ids = makeIds();
     await seedCase(ids);
-    const command = transferCommand(ids, { itemId: ids.ringId, toLocus: { kind: "container", containerItemId: ids.lockedBoxId } });
+    const command = transferCommand(ids, "into-box", {
+      itemId: ids.ringId,
+      toLocus: { kind: "container", containerItemId: ids.lockedBoxId },
+    });
 
     const result = await submitDurableTransferItem(command);
-    expect(result).toMatchObject({ status: "rejected", code: "container_access_denied" });
+    expectRejected(result, "container_access_denied", "transfer into a locked container");
 
     // The allow-listed actor succeeds against the same container.
-    const allowed = transferCommand(ids, {
+    const allowed = transferCommand(ids, "into-box-allowed", {
       actorId: ids.otherId,
       itemId: ids.otherHeldId,
       fromLocus: { kind: "held", actorId: ids.otherId },
       toLocus: { kind: "container", containerItemId: ids.lockedBoxId },
     });
-    expect(await submitDurableTransferItem(allowed)).toMatchObject({ status: "accepted" });
+    expectAccepted(await submitDurableTransferItem(allowed), "allow-listed transfer");
   });
 
-  it("carries an item through a zone drop and pickup arc", async (test) => {
-    if (!ready) return test.skip();
+  it("carries an item through a zone drop and pickup arc", async () => {
     const ids = makeIds();
     await seedCase(ids);
 
-    const drop = transferCommand(ids, { itemId: ids.looseId, toLocus: { kind: "zone", zoneId: ids.zoneA } });
-    expect(await submitDurableTransferItem(drop)).toMatchObject({ status: "accepted", branchVersion: 1 });
+    const drop = await submitDurableTransferItem(
+      transferCommand(ids, "drop", { itemId: ids.looseId, toLocus: { kind: "zone", zoneId: ids.zoneA } }),
+    );
+    expectAccepted(drop, "zone drop");
+    expect(drop).toMatchObject({ branchVersion: 1 });
     expect(await readHolding(ids.branchId, ids.looseId)).toMatchObject({ locusKind: "zone", zoneId: ids.zoneA });
 
-    const pickup = transferCommand(ids, {
-      actorId: ids.otherId,
-      itemId: ids.looseId,
-      expectedVersion: 1,
-      fromLocus: { kind: "zone", zoneId: ids.zoneA },
-      toLocus: { kind: "held", actorId: ids.otherId },
-    });
-    expect(await submitDurableTransferItem(pickup)).toMatchObject({ status: "accepted", branchVersion: 2 });
+    const pickup = await submitDurableTransferItem(
+      transferCommand(ids, "pickup", {
+        actorId: ids.otherId,
+        itemId: ids.looseId,
+        expectedVersion: 1,
+        fromLocus: { kind: "zone", zoneId: ids.zoneA },
+        toLocus: { kind: "held", actorId: ids.otherId },
+      }),
+    );
+    expectAccepted(pickup, "zone pickup");
+    expect(pickup).toMatchObject({ branchVersion: 2 });
     expect(await readHolding(ids.branchId, ids.looseId)).toMatchObject({ locusKind: "held", actorId: ids.otherId });
   });
 
-  it("accepts self-dressing but rejects dressing another actor", async (test) => {
-    if (!ready) return test.skip();
+  it("accepts self-dressing but rejects dressing another actor", async () => {
     const ids = makeIds();
     await seedCase(ids);
 
-    const wearSelf = transferCommand(ids, {
-      itemId: ids.cloakId,
-      toLocus: { kind: "worn", actorId: ids.actorId, slotKey: WORN_SLOT },
-    });
-    expect(await submitDurableTransferItem(wearSelf)).toMatchObject({ status: "accepted" });
+    const wearSelf = await submitDurableTransferItem(
+      transferCommand(ids, "wear-self", {
+        itemId: ids.cloakId,
+        toLocus: { kind: "worn", actorId: ids.actorId, slotKey: WORN_SLOT },
+      }),
+    );
+    expectAccepted(wearSelf, "self-dressing");
     expect(await readHolding(ids.branchId, ids.cloakId)).toMatchObject({
       locusKind: "worn",
       actorId: ids.actorId,
       slotKey: WORN_SLOT,
     });
 
-    const dressOther = transferCommand(ids, {
-      itemId: ids.looseId,
-      expectedVersion: 1,
-      toLocus: { kind: "worn", actorId: ids.otherId, slotKey: WORN_SLOT },
-    });
-    expect(await submitDurableTransferItem(dressOther)).toMatchObject({ status: "rejected", code: "not_self_dressing" });
+    const dressOther = await submitDurableTransferItem(
+      transferCommand(ids, "dress-other", {
+        itemId: ids.looseId,
+        expectedVersion: 1,
+        toLocus: { kind: "worn", actorId: ids.otherId, slotKey: WORN_SLOT },
+      }),
+    );
+    expectRejected(dressOther, "not_self_dressing", "dressing another actor");
   });
 
-  it("destroys an item to a terminal gone locus and rejects a later transfer of it", async (test) => {
-    if (!ready) return test.skip();
+  it("destroys an item to a terminal gone locus and rejects a later transfer of it", async () => {
     const ids = makeIds();
     await seedCase(ids);
 
-    const destroy = destroyCommand(ids, { itemId: ids.ringId, basis: "destroyed" });
-    const result = await submitDurableDestroyItem(destroy);
-    expect(result).toMatchObject({ status: "accepted", branchVersion: 1 });
+    const result = await submitDurableDestroyItem(
+      destroyCommand(ids, "destroy", { itemId: ids.ringId, basis: "destroyed" }),
+    );
+    expectAccepted(result, "item destruction");
+    expect(result).toMatchObject({ branchVersion: 1 });
     expect(await readHolding(ids.branchId, ids.ringId)).toMatchObject({ locusKind: "gone", goneBasis: "destroyed" });
 
     const [event] = await db().select().from(simEvents).where(eq(simEvents.branchId, ids.branchId));
@@ -461,55 +417,57 @@ describe("E5.3 durable material branch transaction", () => {
       .where(and(eq(simItemTransferFeed.branchId, ids.branchId), eq(simItemTransferFeed.itemId, ids.ringId)));
     expect(feedRow).toMatchObject({ eventKind: "item_destroyed", toLocus: { kind: "gone", basis: "destroyed" } });
 
-    const afterGone = transferCommand(ids, {
-      itemId: ids.ringId,
-      expectedVersion: 1,
-      fromLocus: { kind: "held", actorId: ids.actorId },
-    });
-    expect(await submitDurableTransferItem(afterGone)).toMatchObject({ status: "rejected", code: "item_gone" });
+    const afterGone = await submitDurableTransferItem(
+      transferCommand(ids, "after-gone", {
+        itemId: ids.ringId,
+        expectedVersion: 1,
+        fromLocus: { kind: "held", actorId: ids.actorId },
+      }),
+    );
+    expectRejected(afterGone, "item_gone", "transferring a destroyed item");
   });
 
-  it("stamps againstOwnership on a non-owner transfer and lets the storyteller reassign ownership", async (test) => {
-    if (!ready) return test.skip();
+  it("stamps againstOwnership on a non-owner transfer and lets the storyteller reassign ownership", async () => {
     const ids = makeIds();
     await seedCase(ids);
 
-    const give = transferCommand(ids, { itemId: ids.ownedRingId, toLocus: { kind: "held", actorId: ids.otherId } });
-    const result = await submitDurableTransferItem(give);
-    expect(result).toMatchObject({ status: "accepted" });
-    if (result.status !== "accepted") throw new Error("expected acceptance");
+    const result = await submitDurableTransferItem(
+      transferCommand(ids, "give-owned", {
+        itemId: ids.ownedRingId,
+        toLocus: { kind: "held", actorId: ids.otherId },
+      }),
+    );
+    expectAccepted(result, "non-owner give");
     const [event] = await db()
       .select({ payload: simEvents.payload })
       .from(simEvents)
       .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.id, result.eventIds[0]!)));
     expect(event?.payload).toMatchObject({ againstOwnership: true });
 
-    const reassign = ownershipCommand(ids, { expectedVersion: 1, newOwnerActorId: ids.actorId });
-    const ownershipResult = await submitDurableSetItemOwnership(reassign);
-    expect(ownershipResult).toMatchObject({ status: "accepted" });
+    const ownershipResult = await submitDurableSetItemOwnership(
+      ownershipCommand(ids, "reassign", { expectedVersion: 1, newOwnerActorId: ids.actorId }),
+    );
+    expectAccepted(ownershipResult, "storyteller reassignment");
     const [itemRow] = await db().select().from(simItems).where(and(eq(simItems.branchId, ids.branchId), eq(simItems.itemId, ids.ownedRingId)));
     expect(itemRow).toMatchObject({ ownerActorId: ids.actorId });
 
-    const deniedReassign = ownershipCommand(ids, {
-      expectedVersion: 2,
-      newOwnerActorId: ids.otherId,
-      principalKind: "npc_policy",
-      controlledActorIds: [ids.otherId],
-    });
-    expect(await submitDurableSetItemOwnership(deniedReassign)).toMatchObject({
-      status: "rejected",
-      code: "unauthorized_principal",
-    });
+    const deniedReassign = await submitDurableSetItemOwnership(
+      ownershipCommand(ids, "reassign-denied", {
+        expectedVersion: 2,
+        newOwnerActorId: ids.otherId,
+        principal: npcPrincipal(ids.otherId),
+      }),
+    );
+    expectRejected(deniedReassign, "unauthorized_principal", "npc reassignment");
   });
 
-  it("replays an idempotent resubmission as the cached result without a second event", async (test) => {
-    if (!ready) return test.skip();
+  it("replays an idempotent resubmission as the cached result without a second event", async () => {
     const ids = makeIds();
     await seedCase(ids);
-    const command = transferCommand(ids, { itemId: ids.ringId });
+    const command = transferCommand(ids, "replay", { itemId: ids.ringId });
 
     const first = await submitDurableTransferItem(command);
-    expect(first).toMatchObject({ status: "accepted" });
+    expectAccepted(first, "first transfer");
     const replay = await submitDurableTransferItem(command);
     expect(replay).toEqual(first);
 
@@ -517,14 +475,18 @@ describe("E5.3 durable material branch transaction", () => {
     expect(events).toHaveLength(1);
   });
 
-  it("serializes concurrent same-version submissions to one acceptance and one conflict", async (test) => {
-    if (!ready) return test.skip();
+  it("serializes concurrent same-version submissions to one acceptance and one conflict", async () => {
     const ids = makeIds();
     await seedCase(ids);
 
     const [outcomeA, outcomeB] = await Promise.all([
-      submitDurableTransferItem(transferCommand(ids, { itemId: ids.ringId })),
-      submitDurableTransferItem(transferCommand(ids, { itemId: ids.cloakId, toLocus: { kind: "held", actorId: ids.otherId } })),
+      submitDurableTransferItem(transferCommand(ids, "concurrent-a", { itemId: ids.ringId })),
+      submitDurableTransferItem(
+        transferCommand(ids, "concurrent-b", {
+          itemId: ids.cloakId,
+          toLocus: { kind: "held", actorId: ids.otherId },
+        }),
+      ),
     ]);
     expect([outcomeA.status, outcomeB.status].sort()).toEqual(["accepted", "conflict"]);
 
@@ -532,15 +494,14 @@ describe("E5.3 durable material branch transaction", () => {
     expect(events).toHaveLength(1);
   });
 
-  it("derives a same-zone witness observation and excludes a different-zone actor", async (test) => {
-    if (!ready) return test.skip();
+  it("derives a same-zone witness observation and excludes a different-zone actor", async () => {
     const ids = makeIds();
     await seedCase(ids);
-    const command = transferCommand(ids, { itemId: ids.looseId, toLocus: { kind: "zone", zoneId: ids.zoneA } });
 
-    const result = await submitDurableTransferItem(command);
-    expect(result).toMatchObject({ status: "accepted" });
-    if (result.status !== "accepted") throw new Error("expected acceptance");
+    const result = await submitDurableTransferItem(
+      transferCommand(ids, "drop-witness", { itemId: ids.looseId, toLocus: { kind: "zone", zoneId: ids.zoneA } }),
+    );
+    expectAccepted(result, "witnessed drop");
 
     const witnesses = await db()
       .select({ witnessActorId: simObservations.witnessActorId })
@@ -571,108 +532,82 @@ interface ConsumeCase {
   rockId: string;
 }
 
-function makeConsumeIds(): ConsumeCase {
+async function seedConsumeCase(): Promise<ConsumeCase> {
   const worldId = newId();
-  const branchId = newId();
-  return {
+  const actorId = newId();
+  const mealId = newId();
+  const waterId = newId();
+  const rockId = newId();
+  harness.trackWorld(worldId);
+  const seeded = await seedSimpleBranch({
+    prefix: "e5-3-test",
     worldId,
-    branchId,
-    locationId: `${worldId}-loc-kitchen`,
-    zoneId: `${branchId}-zone-kitchen`,
-    actorId: newId(),
-    mealId: newId(),
-    waterId: newId(),
-    rockId: newId(),
-  };
-}
-
-async function seedConsumeCase(ids: ConsumeCase): Promise<void> {
-  seededWorldIds.push(ids.worldId);
-  await seedDurableMaterialBranch({
-    worldId: ids.worldId,
-    worldTypeId: "e5-3-test-world",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e5-3-test-v1",
     originStorySecond: SEED_SECOND,
-    actors: [{ id: ids.actorId, name: "Mara" }],
+    actors: [{ id: actorId, name: "Mara" }],
+    locationSlug: "kitchen",
+    zoneSlug: "kitchen",
+    defaultAccessPolicy: "private",
+    privacyPolicy: "private",
     items: [
       {
-        id: ids.mealId,
+        id: mealId,
         name: "a bowl of stew",
         materialKindKey: "food",
         ownerActorId: null,
         consumptionEffects: [
           { meterKey: "energy", sourceKind: "meal", operation: { kind: "set", valueFixedPoint: 9_999 } },
         ],
-        locus: { kind: "held", actorId: ids.actorId },
+        locus: { kind: "held", actorId },
       },
       {
-        id: ids.waterId,
+        id: waterId,
         name: "a canteen of water",
         materialKindKey: "drink",
         ownerActorId: null,
         consumptionEffects: [
           { meterKey: "hygiene", sourceKind: "drink", operation: { kind: "set", valueFixedPoint: 9_500 } },
         ],
-        locus: { kind: "held", actorId: ids.actorId },
+        locus: { kind: "held", actorId },
       },
-      { id: ids.rockId, name: "a plain rock", ownerActorId: null, locus: { kind: "held", actorId: ids.actorId } },
+      { id: rockId, name: "a plain rock", ownerActorId: null, locus: { kind: "held", actorId } },
     ],
   });
-  await seedDurableSpaceTopology({
-    branchId: ids.branchId,
-    locations: [{ id: ids.locationId, worldId: ids.worldId, kind: "home", defaultAccessPolicy: "private" }],
-    zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "room", privacyPolicy: "private" }],
-    links: [],
-    loci: [{ kind: "at", actorId: ids.actorId, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND }],
-  });
+  return {
+    worldId: seeded.worldId,
+    branchId: seeded.branchId,
+    locationId: seeded.locationId,
+    zoneId: seeded.zoneId,
+    actorId,
+    mealId,
+    waterId,
+    rockId,
+  };
 }
 
 function consumeCommand(
   ids: ConsumeCase,
-  overrides: Partial<{
-    id: string;
-    idempotencyKey: string;
-    expectedVersion: number;
-    actorId: string;
-    itemId: string;
-  }> = {},
-): ConsumeItemCommand {
-  return consumeItemCommandSchema.parse({
-    id: overrides.id ?? newId(),
+  name: string,
+  overrides: Partial<{ expectedVersion: number; actorId: string; itemId: string }> = {},
+): SimCommandEnvelope {
+  const actorId = overrides.actorId ?? ids.actorId;
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: overrides.expectedVersion ?? 0,
-    idempotencyKey: overrides.idempotencyKey ?? newId(),
-    principal: {
-      kind: "npc_policy",
-      principalId: newId(),
-      controlledActorIds: [overrides.actorId ?? ids.actorId],
-    },
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+    name,
     type: "consume_item",
-    schemaVersion: 1,
-    correlationId: newId(),
-    payload: {
-      actorId: overrides.actorId ?? ids.actorId,
-      itemId: overrides.itemId ?? ids.mealId,
-    },
+    expectedVersion: overrides.expectedVersion ?? 0,
+    principal: npcPrincipal(actorId),
+    payload: { actorId, itemId: overrides.itemId ?? ids.mealId },
   });
 }
 
-function initializeBodyCommand(ids: ConsumeCase) {
-  return {
-    id: `cmd-init-${ids.branchId}`,
+function initializeBodyCommand(ids: ConsumeCase): SimCommandEnvelope {
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `init-key-${ids.branchId}`,
-    principal: { kind: "storyteller", principalId: "principal-1", controlledActorIds: [] },
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name: "init",
     type: "initialize_actor_body",
-    schemaVersion: 1,
+    principal: gmPrincipal,
     payload: { actorId: ids.actorId, registryVersion: "body-v1", baselineOverrides: {} },
-  };
+  });
 }
 
 async function pendingDepletedTriggers(branchId: string) {
@@ -683,21 +618,19 @@ async function pendingDepletedTriggers(branchId: string) {
     .then((rows) => rows.filter((row) => row.uniquenessKey.includes("depleted")));
 }
 
-describe("E5.3 slice 2 — consume_item (§26.6)", () => {
-  it("consumes a held meal: holdings go gone/consumed, the body meter moves, the stale alarm retires and a fresh one arms, and the feed carries item_consumed", async (test) => {
-    if (!ready) return test.skip();
-    const ids = makeConsumeIds();
-    await seedConsumeCase(ids);
+describe.runIf(harness.ready)("E5.3 slice 2 — consume_item (§26.6)", () => {
+  it("consumes a held meal: holdings go gone/consumed, the body meter moves, the stale alarm retires and a fresh one arms, and the feed carries item_consumed", async () => {
+    const ids = await seedConsumeCase();
     const initialized = await submitDurableInitializeActorBody(initializeBodyCommand(ids));
-    expect(initialized.status).toBe("accepted");
+    expectAccepted(initialized, "body initialization");
 
     const beforeConsume = await pendingDepletedTriggers(ids.branchId);
     expect(beforeConsume.map((row) => row.state)).toEqual(["pending"]);
 
-    const command = consumeCommand(ids, { itemId: ids.mealId, expectedVersion: 1 });
+    const command = consumeCommand(ids, "consume", { itemId: ids.mealId, expectedVersion: 1 });
     const result = await submitDurableConsumeItem(command);
-    expect(result).toMatchObject({ status: "accepted", branchVersion: 2 });
-    if (result.status !== "accepted") throw new Error("expected acceptance");
+    expectAccepted(result, "meal consumption");
+    expect(result).toMatchObject({ branchVersion: 2 });
     // item_consumed + body_source_applied + its threshold re-arm.
     expect(result.eventIds).toHaveLength(3);
 
@@ -748,14 +681,12 @@ describe("E5.3 slice 2 — consume_item (§26.6)", () => {
     });
   });
 
-  it("consumes without an initialized body: succeeds with zero body events", async (test) => {
-    if (!ready) return test.skip();
-    const ids = makeConsumeIds();
-    await seedConsumeCase(ids);
+  it("consumes without an initialized body: succeeds with zero body events", async () => {
+    const ids = await seedConsumeCase();
 
-    const result = await submitDurableConsumeItem(consumeCommand(ids, { itemId: ids.mealId }));
-    expect(result).toMatchObject({ status: "accepted", branchVersion: 1 });
-    if (result.status !== "accepted") throw new Error("expected acceptance");
+    const result = await submitDurableConsumeItem(consumeCommand(ids, "consume", { itemId: ids.mealId }));
+    expectAccepted(result, "consumption without a body");
+    expect(result).toMatchObject({ branchVersion: 1 });
     expect(result.eventIds).toHaveLength(1);
 
     const events = await db().select().from(simEvents).where(eq(simEvents.branchId, ids.branchId));
@@ -767,27 +698,23 @@ describe("E5.3 slice 2 — consume_item (§26.6)", () => {
     });
   });
 
-  it("rejects an item without authored consumption effects", async (test) => {
-    if (!ready) return test.skip();
-    const ids = makeConsumeIds();
-    await seedConsumeCase(ids);
+  it("rejects an item without authored consumption effects", async () => {
+    const ids = await seedConsumeCase();
 
-    const result = await submitDurableConsumeItem(consumeCommand(ids, { itemId: ids.rockId }));
-    expect(result).toMatchObject({ status: "rejected", code: "not_consumable" });
+    const result = await submitDurableConsumeItem(consumeCommand(ids, "consume-rock", { itemId: ids.rockId }));
+    expectRejected(result, "not_consumable", "consuming a rock");
     expect(await readHolding(ids.branchId, ids.rockId)).toMatchObject({
       locusKind: "held",
       actorId: ids.actorId,
     });
   });
 
-  it("replays an idempotent resubmission as the cached result without a second event", async (test) => {
-    if (!ready) return test.skip();
-    const ids = makeConsumeIds();
-    await seedConsumeCase(ids);
-    const command = consumeCommand(ids, { itemId: ids.mealId });
+  it("replays an idempotent resubmission as the cached result without a second event", async () => {
+    const ids = await seedConsumeCase();
+    const command = consumeCommand(ids, "consume", { itemId: ids.mealId });
 
     const first = await submitDurableConsumeItem(command);
-    expect(first).toMatchObject({ status: "accepted" });
+    expectAccepted(first, "first consumption");
     const replay = await submitDurableConsumeItem(command);
     expect(replay).toEqual(first);
 
@@ -795,14 +722,12 @@ describe("E5.3 slice 2 — consume_item (§26.6)", () => {
     expect(events).toHaveLength(1);
   });
 
-  it("serializes concurrent same-version submissions to one acceptance and one conflict", async (test) => {
-    if (!ready) return test.skip();
-    const ids = makeConsumeIds();
-    await seedConsumeCase(ids);
+  it("serializes concurrent same-version submissions to one acceptance and one conflict", async () => {
+    const ids = await seedConsumeCase();
 
     const [outcomeA, outcomeB] = await Promise.all([
-      submitDurableConsumeItem(consumeCommand(ids, { itemId: ids.mealId })),
-      submitDurableConsumeItem(consumeCommand(ids, { itemId: ids.waterId })),
+      submitDurableConsumeItem(consumeCommand(ids, "consume-a", { itemId: ids.mealId })),
+      submitDurableConsumeItem(consumeCommand(ids, "consume-b", { itemId: ids.waterId })),
     ]);
     expect([outcomeA.status, outcomeB.status].sort()).toEqual(["accepted", "conflict"]);
 
@@ -812,10 +737,8 @@ describe("E5.3 slice 2 — consume_item (§26.6)", () => {
 
   // The end-to-end §26.5 leg: a start-time reservation held by a live
   // activity must block a bystander's consume_item with item_reserved.
-  it("rejects consuming an item a live activity has reserved", async (test) => {
-    if (!ready) return test.skip();
-    const ids = makeConsumeIds();
-    await seedConsumeCase(ids);
+  it("rejects consuming an item a live activity has reserved", async () => {
+    const ids = await seedConsumeCase();
     await seedDurableActionDefinitions({
       branchId: ids.branchId,
       definitions: [
@@ -832,22 +755,21 @@ describe("E5.3 slice 2 — consume_item (§26.6)", () => {
         },
       ],
     });
-    const started = await submitDurableStartActivity({
-      id: newId(),
-      branchId: ids.branchId,
-      expectedVersion: 0,
-      idempotencyKey: newId(),
-      principal: { kind: "npc_policy", principalId: newId(), controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-      correlationId: newId(),
-      type: "start_activity",
-      schemaVersion: 1,
-      payload: { actionDefinitionId: "cook-with-food", actorId: ids.actorId },
-    });
-    expect(started).toMatchObject({ status: "accepted" });
+    const started = await submitDurableStartActivity(
+      simCommand({
+        branchId: ids.branchId,
+        name: "start-cooking",
+        type: "start_activity",
+        principal: npcPrincipal(ids.actorId),
+        payload: { actionDefinitionId: "cook-with-food", actorId: ids.actorId },
+      }),
+    );
+    expectAccepted(started, "activity start");
 
-    const result = await submitDurableConsumeItem(consumeCommand(ids, { itemId: ids.mealId, expectedVersion: 1 }));
-    expect(result).toMatchObject({ status: "rejected", code: "item_reserved" });
+    const result = await submitDurableConsumeItem(
+      consumeCommand(ids, "consume", { itemId: ids.mealId, expectedVersion: 1 }),
+    );
+    expectRejected(result, "item_reserved", "consuming a reserved item");
   });
 });
 
@@ -874,76 +796,64 @@ interface ConditionCase {
   plainItemId: string;
 }
 
-function makeConditionIds(): ConditionCase {
+async function seedConditionCase(): Promise<ConditionCase> {
   const worldId = newId();
-  const branchId = newId();
-  return {
+  const actorId = newId();
+  const witnessId = newId();
+  const garmentId = newId();
+  const plainItemId = newId();
+  harness.trackWorld(worldId);
+  const seeded = await seedSimpleBranch({
+    prefix: "e5-3-test",
     worldId,
-    branchId,
-    locationId: `${worldId}-loc-condition`,
-    zoneId: `${branchId}-zone-condition`,
-    actorId: newId(),
-    witnessId: newId(),
-    garmentId: newId(),
-    plainItemId: newId(),
-  };
-}
-
-async function seedConditionCase(ids: ConditionCase): Promise<void> {
-  seededWorldIds.push(ids.worldId);
-  await seedDurableMaterialBranch({
-    worldId: ids.worldId,
-    worldTypeId: "e5-3-test-world",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e5-3-test-v1",
     originStorySecond: SEED_SECOND,
     actors: [
-      { id: ids.actorId, name: "Mara" },
-      { id: ids.witnessId, name: "Iris" },
+      { id: actorId, name: "Mara" },
+      { id: witnessId, name: "Iris" },
     ],
+    locationSlug: "condition",
+    zoneSlug: "condition",
+    defaultAccessPolicy: "private",
+    privacyPolicy: "private",
     items: [
       {
-        id: ids.garmentId,
+        id: garmentId,
         name: "a linen shirt",
         ownerActorId: null,
         conditionTracked: true,
-        locus: { kind: "held", actorId: ids.actorId },
+        locus: { kind: "held", actorId },
       },
       {
-        id: ids.plainItemId,
+        id: plainItemId,
         name: "a plain stone",
         ownerActorId: null,
-        locus: { kind: "held", actorId: ids.actorId },
+        locus: { kind: "held", actorId },
       },
     ],
   });
-  await seedDurableSpaceTopology({
-    branchId: ids.branchId,
-    locations: [{ id: ids.locationId, worldId: ids.worldId, kind: "home", defaultAccessPolicy: "private" }],
-    zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "room", privacyPolicy: "private" }],
-    links: [],
-    loci: [
-      { kind: "at", actorId: ids.actorId, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND },
-      { kind: "at", actorId: ids.witnessId, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND },
-    ],
-  });
+  return {
+    worldId: seeded.worldId,
+    branchId: seeded.branchId,
+    locationId: seeded.locationId,
+    zoneId: seeded.zoneId,
+    actorId,
+    witnessId,
+    garmentId,
+    plainItemId,
+  };
 }
 
 function donCommand(
   ids: ConditionCase,
-  overrides: Partial<{ id: string; idempotencyKey: string; expectedVersion: number; itemId: string }> = {},
-): TransferItemCommand {
-  return transferItemCommandSchema.parse({
-    id: overrides.id ?? newId(),
+  name = "don",
+  overrides: Partial<{ expectedVersion: number; itemId: string }> = {},
+): SimCommandEnvelope {
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: overrides.expectedVersion ?? 0,
-    idempotencyKey: overrides.idempotencyKey ?? newId(),
-    principal: { kind: "npc_policy", principalId: newId(), controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+    name,
     type: "transfer_item",
-    schemaVersion: 2,
-    correlationId: newId(),
+    expectedVersion: overrides.expectedVersion ?? 0,
+    principal: npcPrincipal(ids.actorId),
     payload: {
       actorId: ids.actorId,
       itemId: overrides.itemId ?? ids.garmentId,
@@ -955,18 +865,15 @@ function donCommand(
 
 function doffCommand(
   ids: ConditionCase,
-  overrides: Partial<{ id: string; idempotencyKey: string; expectedVersion: number; itemId: string }> = {},
-): TransferItemCommand {
-  return transferItemCommandSchema.parse({
-    id: overrides.id ?? newId(),
+  name = "doff",
+  overrides: Partial<{ expectedVersion: number; itemId: string }> = {},
+): SimCommandEnvelope {
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: overrides.expectedVersion ?? 1,
-    idempotencyKey: overrides.idempotencyKey ?? newId(),
-    principal: { kind: "npc_policy", principalId: newId(), controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+    name,
     type: "transfer_item",
-    schemaVersion: 2,
-    correlationId: newId(),
+    expectedVersion: overrides.expectedVersion ?? 1,
+    principal: npcPrincipal(ids.actorId),
     payload: {
       actorId: ids.actorId,
       itemId: overrides.itemId ?? ids.garmentId,
@@ -1001,15 +908,13 @@ async function pendingItemConditionTriggers(branchId: string) {
     .where(and(eq(simTriggers.branchId, branchId), eq(simTriggers.kind, "item_condition_threshold_due")));
 }
 
-describe("E5.3 slice 3 — item condition (§26.7)", () => {
-  it("dons a tracked garment: meters lazily initialize, the worn-window modifier applies, and the grimy alarm arms at the exact solved second", async (test) => {
-    if (!ready) return test.skip();
-    const ids = makeConditionIds();
-    await seedConditionCase(ids);
+describe.runIf(harness.ready)("E5.3 slice 3 — item condition (§26.7)", () => {
+  it("dons a tracked garment: meters lazily initialize, the worn-window modifier applies, and the grimy alarm arms at the exact solved second", async () => {
+    const ids = await seedConditionCase();
 
     const result = await submitDurableTransferItem(donCommand(ids));
-    expect(result).toMatchObject({ status: "accepted", branchVersion: 1, firstSequence: 1, lastSequence: 4 });
-    if (result.status !== "accepted") throw new Error("expected acceptance");
+    expectAccepted(result, "donning a tracked garment");
+    expect(result).toMatchObject({ branchVersion: 1, firstSequence: 1, lastSequence: 4 });
     expect(result.eventIds).toHaveLength(4);
 
     const events = await db()
@@ -1025,7 +930,11 @@ describe("E5.3 slice 3 — item condition (§26.7)", () => {
     ]);
 
     const meters = await itemConditionMeterRows(ids.branchId, ids.garmentId);
-    expect(meters.map((meter) => meter.meterKey).sort()).toEqual(["cleanliness", "wear"]);
+    // Every meter the registry defines is initialized — derived, not restated,
+    // so a new registry meter fails here instead of passing silently.
+    expect(meters.map((meter) => meter.meterKey).sort()).toEqual(
+      itemConditionRegistryV1.map((definition) => definition.key).sort(),
+    );
     expect(meters.every((meter) => meter.lastIntegratedAt === SEED_SECOND)).toBe(true);
     expect(meters.find((meter) => meter.meterKey === "cleanliness")).toMatchObject({ valueFixedPoint: 10_000 });
     expect(meters.find((meter) => meter.meterKey === "wear")).toMatchObject({ valueFixedPoint: 0 });
@@ -1047,12 +956,10 @@ describe("E5.3 slice 3 — item condition (§26.7)", () => {
     });
   });
 
-  it("doffing ends the worn-window modifier and retires the alarm without a stale re-arm", async (test) => {
-    if (!ready) return test.skip();
-    const ids = makeConditionIds();
-    await seedConditionCase(ids);
+  it("doffing ends the worn-window modifier and retires the alarm without a stale re-arm", async () => {
+    const ids = await seedConditionCase();
     const donResult = await submitDurableTransferItem(donCommand(ids));
-    expect(donResult).toMatchObject({ status: "accepted" });
+    expectAccepted(donResult, "donning before the doff");
 
     // Three real worn-hours pass before doffing — advancing to a second still
     // well short of the grimy alarm's due second, so nothing drains here.
@@ -1061,8 +968,7 @@ describe("E5.3 slice 3 — item condition (§26.7)", () => {
     expect(advanced).toMatchObject({ status: "advanced", drained: 0 });
 
     const doffResult = await submitDurableTransferItem(doffCommand(ids));
-    expect(doffResult).toMatchObject({ status: "accepted" });
-    if (doffResult.status !== "accepted") throw new Error("expected acceptance");
+    expectAccepted(doffResult, "doffing the garment");
 
     const modifiers = await itemConditionModifierRows(ids.branchId, ids.garmentId);
     expect(modifiers).toHaveLength(1);
@@ -1077,11 +983,9 @@ describe("E5.3 slice 3 — item condition (§26.7)", () => {
     expect(triggers[0]).toMatchObject({ state: "completed" });
   });
 
-  it("drains a due grimy alarm through the scheduler and witnesses the co-located actor, excluding the wearer", async (test) => {
-    if (!ready) return test.skip();
-    const ids = makeConditionIds();
-    await seedConditionCase(ids);
-    await submitDurableTransferItem(donCommand(ids));
+  it("drains a due grimy alarm through the scheduler and witnesses the co-located actor, excluding the wearer", async () => {
+    const ids = await seedConditionCase();
+    expectAccepted(await submitDurableTransferItem(donCommand(ids)), "donning before the drain");
 
     const crossingSecond = SEED_SECOND + GRIMY_CROSSING_SECONDS;
     const outcome = await advanceBranchStoryTime(ids.branchId, crossingSecond, { workerId: "w-condition-grimy" });
@@ -1113,26 +1017,20 @@ describe("E5.3 slice 3 — item condition (§26.7)", () => {
     expect(triggers.every((trigger) => trigger.state === "completed")).toBe(true);
   });
 
-  it("apply_item_condition_source cleans a worn garment, restoring cleanliness and re-arming from the new second", async (test) => {
-    if (!ready) return test.skip();
-    const ids = makeConditionIds();
-    await seedConditionCase(ids);
-    await submitDurableTransferItem(donCommand(ids));
+  it("apply_item_condition_source cleans a worn garment, restoring cleanliness and re-arming from the new second", async () => {
+    const ids = await seedConditionCase();
+    expectAccepted(await submitDurableTransferItem(donCommand(ids)), "donning before the clean");
 
     const cleanSecond = SEED_SECOND + 14 * 3_600;
     const advanced = await advanceBranchStoryTime(ids.branchId, cleanSecond, { workerId: "w-condition-clean" });
     expect(advanced).toMatchObject({ status: "advanced", drained: 0 });
 
-    const cleanCommand = {
-      id: newId(),
+    const cleanCommand = simCommand({
       branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: newId(),
-      principal: { kind: "npc_policy", principalId: newId(), controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-      correlationId: newId(),
+      name: "clean",
       type: "apply_item_condition_source",
-      schemaVersion: 1,
+      expectedVersion: 1,
+      principal: npcPrincipal(ids.actorId),
       payload: {
         actorId: ids.actorId,
         itemId: ids.garmentId,
@@ -1140,9 +1038,9 @@ describe("E5.3 slice 3 — item condition (§26.7)", () => {
         meterKey: "cleanliness",
         operation: { kind: "set", valueFixedPoint: 10_000 },
       },
-    };
+    });
     const result = await submitDurableApplyItemConditionSource(cleanCommand);
-    expect(result).toMatchObject({ status: "accepted" });
+    expectAccepted(result, "cleaning the garment");
 
     const meters = await itemConditionMeterRows(ids.branchId, ids.garmentId);
     expect(meters.find((meter) => meter.meterKey === "cleanliness")).toMatchObject({
@@ -1167,48 +1065,36 @@ describe("E5.3 slice 3 — item condition (§26.7)", () => {
     expect(sourceAppliedEvents).toHaveLength(1);
   });
 
-  it("rejects apply_item_condition_source against an untracked item", async (test) => {
-    if (!ready) return test.skip();
-    const ids = makeConditionIds();
-    await seedConditionCase(ids);
+  it("rejects apply_item_condition_source against an untracked item", async () => {
+    const ids = await seedConditionCase();
 
-    const result = await submitDurableApplyItemConditionSource({
-      id: newId(),
-      branchId: ids.branchId,
-      expectedVersion: 0,
-      idempotencyKey: newId(),
-      principal: { kind: "npc_policy", principalId: newId(), controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-      correlationId: newId(),
-      type: "apply_item_condition_source",
-      schemaVersion: 1,
-      payload: {
-        actorId: ids.actorId,
-        itemId: ids.plainItemId,
-        sourceKind: "adjustment",
-        meterKey: "cleanliness",
-        operation: { kind: "set", valueFixedPoint: 10_000 },
-      },
-    });
-    expect(result).toMatchObject({ status: "rejected", code: "condition_not_tracked" });
+    const result = await submitDurableApplyItemConditionSource(
+      simCommand({
+        branchId: ids.branchId,
+        name: "clean-untracked",
+        type: "apply_item_condition_source",
+        principal: npcPrincipal(ids.actorId),
+        payload: {
+          actorId: ids.actorId,
+          itemId: ids.plainItemId,
+          sourceKind: "adjustment",
+          meterKey: "cleanliness",
+          operation: { kind: "set", valueFixedPoint: 10_000 },
+        },
+      }),
+    );
+    expectRejected(result, "condition_not_tracked", "cleaning an untracked item");
   });
 
-  it("an untracked item's transfers never produce condition rows or events", async (test) => {
-    if (!ready) return test.skip();
-    const ids = makeConditionIds();
-    await seedConditionCase(ids);
+  it("an untracked item's transfers never produce condition rows or events", async () => {
+    const ids = await seedConditionCase();
 
     const result = await submitDurableTransferItem(
-      transferItemCommandSchema.parse({
-        id: newId(),
+      simCommand({
         branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: newId(),
-        principal: { kind: "npc_policy", principalId: newId(), controlledActorIds: [ids.actorId] },
-        submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+        name: "wear-plain",
         type: "transfer_item",
-        schemaVersion: 2,
-        correlationId: newId(),
+        principal: npcPrincipal(ids.actorId),
         payload: {
           actorId: ids.actorId,
           itemId: ids.plainItemId,
@@ -1217,8 +1103,8 @@ describe("E5.3 slice 3 — item condition (§26.7)", () => {
         },
       }),
     );
-    expect(result).toMatchObject({ status: "accepted", branchVersion: 1, firstSequence: 1, lastSequence: 1 });
-    if (result.status !== "accepted") throw new Error("expected acceptance");
+    expectAccepted(result, "wearing an untracked item");
+    expect(result).toMatchObject({ branchVersion: 1, firstSequence: 1, lastSequence: 1 });
     expect(result.eventIds).toHaveLength(1);
 
     expect(await itemConditionMeterRows(ids.branchId, ids.plainItemId)).toHaveLength(0);

@@ -1,6 +1,7 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, simActorLods, simEvents, simTriggers, simWorlds } from "@/server/db";
+import { simulationSuiteHarness } from "@/server/test-support";
 import {
   ROLLOUT_ACTORS,
   ROLLOUT_BRANCH_ID,
@@ -15,34 +16,21 @@ import {
  * provisioning under fixed ids, and a drain that runs the E6.2 routine life
  * exactly as the Gate 6 corpus does. This is the local half of R1's exit
  * criterion; the Fly half is the same two `pnpm sim:*` commands over SSH.
+ *
+ * `simulationSuiteHarness` supplies the probe and the pool close; the world's
+ * ids are FIXED so this file keeps its own explicit both-ends teardown rather
+ * than tracking the id (tracking it too would delete the same world twice).
+ * `legacyPlayerMode: false` because every seed command here is authored by the
+ * `rollout-seeder` SYSTEM principal — no legacy player fixture is submitted, so
+ * this suite must keep running without the aggregate-run opt-in flag.
  */
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_worlds limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[rollout-world.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
+const harness = await simulationSuiteHarness({
+  suite: "rollout-world.int.test",
+  table: "sim_worlds",
+  legacyPlayerMode: false,
+});
+const ready = harness.ready;
 
 /** The world's ids are FIXED, so the suite owns them exclusively: clear both ends. */
 async function teardownRolloutWorld(): Promise<void> {

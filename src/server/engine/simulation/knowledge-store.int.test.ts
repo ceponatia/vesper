@@ -1,56 +1,36 @@
-import { asc, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import { asc, eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import { deriveAssertionId } from "@/contracts/simulation/knowledge";
 import { spaceProjectionSchema, type SpaceProjection } from "@/contracts/simulation/space";
 import { newId } from "@/lib/ids";
 import { replayKnowledgeHistory, replayObservationsHistory } from "@/lib/simulation";
-import { db, simAssertions, simBeliefs, simEvents, simWorlds } from "@/server/db";
+import { db, simAssertions, simBeliefs } from "@/server/db";
 import { forkBranch } from "./branch-store";
 import { readDurableCommitments, submitDurableCreateCommitment } from "./commitment-store";
 import { submitDurableMakeDisclosure } from "./knowledge-store";
-import { seedDurableMaterialBranch } from "./material-store";
-import { branchEventFromRow } from "./observation-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
-import { seedDurableSpaceTopology } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
+import {
+  expectAccepted,
+  expectRejected,
+  LEGACY_ENGINE_TEST_PLAYER_ID,
+  playerPrincipal,
+  readBranchEvents,
+  seedSimBranch,
+  simCommand,
+  simulationSuiteHarness,
+} from "@/server/test-support";
+
+/**
+ * E4.2 durable knowledge: claims, gossip provenance, retraction reach, replay
+ * parity and the knowledge gate on commitment notice. Runs on the shared
+ * `simulationSuiteHarness` scaffold (probe + legacy-player guard + world
+ * teardown + pool close).
+ */
+
+const harness = await simulationSuiteHarness({ suite: "knowledge-store.int.test", table: "sim_beliefs" });
 
 const SEED_SECOND = 90_000;
 const WALK = 600;
-
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_beliefs limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[knowledge-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("knowledge-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
-});
 
 /**
  * Fixture: home has a living room (mara, iris) and a kitchen (noor) — one
@@ -69,24 +49,6 @@ interface KnowledgeCase {
   zoneLiving: string;
   zoneKitchen: string;
   zoneShop: string;
-}
-
-function branchSeed(ids: KnowledgeCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e4-2-tests",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e4-2-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.mara, name: "Mara" },
-      { id: ids.iris, name: "Iris" },
-      { id: ids.noor, name: "Noor" },
-      { id: ids.rook, name: "Rook" },
-    ],
-    items: [],
-  });
 }
 
 function topologySeed(ids: KnowledgeCase) {
@@ -137,9 +99,29 @@ async function seedKnowledgeCase(): Promise<KnowledgeCase> {
     zoneKitchen: `${branchId}-zone-kitchen`,
     zoneShop: `${branchId}-zone-shop`,
   };
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology(topologySeed(ids));
-  seededWorldIds.push(worldId);
+  const topology = topologySeed(ids);
+  await seedSimBranch({
+    worldId,
+    branchId,
+    worldTypeId: "e4-2-tests",
+    rulesetVersion: "e4-2-test-v1",
+    originStorySecond: SEED_SECOND,
+    actors: [
+      { id: ids.mara, name: "Mara" },
+      { id: ids.iris, name: "Iris" },
+      { id: ids.noor, name: "Noor" },
+      { id: ids.rook, name: "Rook" },
+    ],
+    locations: topology.locations,
+    zones: topology.zones,
+    links: topology.links,
+    placements: topology.loci.map((locus) => ({
+      actorId: locus.actorId,
+      locationId: locus.locationId,
+      zoneId: locus.zoneId,
+    })),
+  });
+  harness.trackWorld(worldId);
   return ids;
 }
 
@@ -166,10 +148,6 @@ function spaceSeedProjection(ids: KnowledgeCase): SpaceProjection {
   });
 }
 
-function principalFor(actorId: string) {
-  return { kind: "player", principalId: "principal-1", controlledActorIds: [actorId] };
-}
-
 function discloseCommand(
   ids: KnowledgeCase,
   input: {
@@ -180,22 +158,18 @@ function discloseCommand(
     content: Record<string, unknown>;
   },
 ) {
-  return {
-    id: `cmd-${input.tag}-${ids.branchId}`,
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: input.expectedVersion,
-    idempotencyKey: `${input.tag}-key-${ids.branchId}`,
-    principal: principalFor(input.speakerActorId),
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name: input.tag,
     type: "make_disclosure",
-    schemaVersion: 1,
+    expectedVersion: input.expectedVersion,
+    principal: playerPrincipal(input.speakerActorId),
     payload: {
       speakerActorId: input.speakerActorId,
       targetActorIds: [...input.targetActorIds].sort(),
       content: input.content,
     },
-  };
+  });
 }
 
 function quitClaim(ids: KnowledgeCase) {
@@ -223,15 +197,6 @@ async function beliefRows(branchId: string) {
     .orderBy(asc(simBeliefs.beliefId));
 }
 
-async function branchEvents(branchId: string) {
-  const rows = await db()
-    .select()
-    .from(simEvents)
-    .where(eq(simEvents.branchId, branchId))
-    .orderBy(asc(simEvents.sequence));
-  return rows.map(branchEventFromRow);
-}
-
 /** Mara confides in Iris at home; returns the claim's assertion id. */
 async function speakClaim(ids: KnowledgeCase, expectedVersion = 0): Promise<string> {
   const result = await submitDurableMakeDisclosure(
@@ -243,14 +208,13 @@ async function speakClaim(ids: KnowledgeCase, expectedVersion = 0): Promise<stri
       content: quitClaim(ids),
     }),
   );
-  expect(result.status).toBe("accepted");
-  if (result.status !== "accepted") throw new Error("expected acceptance");
+  expectAccepted(result, "Mara confides the quitting claim to Iris");
   const eventId = result.eventIds[0];
   if (!eventId) throw new Error("expected the disclosure event id");
   return deriveAssertionId(eventId);
 }
 
-describe.runIf(ready)("E4.2 durable knowledge", () => {
+describe.runIf(harness.ready)("E4.2 durable knowledge", () => {
   it("commits a claim's event, observations, assertion, and beliefs atomically", async () => {
     const ids = await seedKnowledgeCase();
     const assertionId = await speakClaim(ids);
@@ -295,7 +259,7 @@ describe.runIf(ready)("E4.2 durable knowledge", () => {
         content: { kind: "relay", assertionId },
       }),
     );
-    expect(relay.status).toBe("accepted");
+    expectAccepted(relay, "Iris relays the claim to Rook");
 
     const afterRelay = await beliefRows(ids.branchId);
     const rookBelief = afterRelay.find((row) => row.holderActorId === ids.rook);
@@ -317,7 +281,7 @@ describe.runIf(ready)("E4.2 durable knowledge", () => {
         content: { kind: "relay", assertionId },
       }),
     );
-    expect(unbelieved).toMatchObject({ status: "rejected", code: "relay_unbelieved" });
+    expectRejected(unbelieved, "relay_unbelieved", "Noor relaying a claim she never heard");
 
     // Mara takes it back — but only Iris is there to hear it.
     const retraction = await submitDurableMakeDisclosure(
@@ -329,7 +293,7 @@ describe.runIf(ready)("E4.2 durable knowledge", () => {
         content: { kind: "retraction", assertionId },
       }),
     );
-    expect(retraction.status).toBe("accepted");
+    expectAccepted(retraction, "Mara retracts the claim to Iris");
 
     const assertions = await assertionRows(ids.branchId);
     expect(assertions[0]?.status).toBe("retracted");
@@ -356,7 +320,7 @@ describe.runIf(ready)("E4.2 durable knowledge", () => {
       }),
     );
 
-    const events = await branchEvents(ids.branchId);
+    const events = await readBranchEvents(ids.branchId);
     const replayedObservations = replayObservationsHistory({
       spaceSeed: spaceSeedProjection(ids),
       events,
@@ -443,7 +407,7 @@ describe.runIf(ready)("E4.2 durable knowledge", () => {
       parentBranchId: ids.branchId,
       childBranchId: midBranchId,
       atSequence: 1,
-      principal: { kind: "player", principalId: "principal-1" },
+      principal: { kind: "player", principalId: LEGACY_ENGINE_TEST_PLAYER_ID },
       reason: "before the gossip spread",
     });
     const midBeliefs = await beliefRows(midBranchId);
@@ -456,7 +420,7 @@ describe.runIf(ready)("E4.2 durable knowledge", () => {
       parentBranchId: ids.branchId,
       childBranchId: headBranchId,
       atSequence: 2,
-      principal: { kind: "player", principalId: "principal-1" },
+      principal: { kind: "player", principalId: LEGACY_ENGINE_TEST_PLAYER_ID },
       reason: "full retake",
     });
     const strip = (rows: { beliefId: string; holderActorId: string; status: string; confidenceFixedPoint: number }[]) =>
@@ -487,32 +451,28 @@ describe.runIf(ready)("E4.2 durable knowledge", () => {
       knowledgeSource: { kind: "asserted", assertionId },
     };
     // Iris holds a live belief in the claim; Rook has never heard it.
-    const forIris = await submitDurableCreateCommitment({
-      id: `cmd-commit-iris-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: `commit-iris-key-${ids.branchId}`,
-      principal: principalFor(ids.iris),
-      submittedAtWallClock: "2026-07-19T12:02:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "create_commitment",
-      schemaVersion: 1,
-      payload: { ...commitmentPayload, actorId: ids.iris },
-    });
-    expect(forIris.status).toBe("accepted");
-    const forRook = await submitDurableCreateCommitment({
-      id: `cmd-commit-rook-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 2,
-      idempotencyKey: `commit-rook-key-${ids.branchId}`,
-      principal: principalFor(ids.rook),
-      submittedAtWallClock: "2026-07-19T12:02:30.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "create_commitment",
-      schemaVersion: 1,
-      payload: { ...commitmentPayload, actorId: ids.rook },
-    });
-    expect(forRook.status).toBe("accepted");
+    const forIris = await submitDurableCreateCommitment(
+      simCommand({
+        branchId: ids.branchId,
+        name: "commit-iris",
+        type: "create_commitment",
+        expectedVersion: 1,
+        principal: playerPrincipal(ids.iris),
+        payload: { ...commitmentPayload, actorId: ids.iris },
+      }),
+    );
+    expectAccepted(forIris, "Iris commits on a claim she believes");
+    const forRook = await submitDurableCreateCommitment(
+      simCommand({
+        branchId: ids.branchId,
+        name: "commit-rook",
+        type: "create_commitment",
+        expectedVersion: 2,
+        principal: playerPrincipal(ids.rook),
+        payload: { ...commitmentPayload, actorId: ids.rook },
+      }),
+    );
+    expectAccepted(forRook, "Rook commits on a claim he has never heard");
 
     const outcome = await advanceBranchStoryTime(ids.branchId, latestArrival - 200, {
       workerId: "w-notice",

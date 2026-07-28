@@ -120,6 +120,8 @@ export interface SeedSimpleBranchInput {
   items?: MaterialBranchSeedInput["items"];
   worldId?: string;
   branchId?: string;
+  /** Pin the deterministic world seed — defaults to `seed-<worldId>`. */
+  worldSeed?: string;
   /** Suffixes for the two derived ids — override when a test asserts on them. */
   locationSlug?: string;
   zoneSlug?: string;
@@ -156,6 +158,7 @@ export async function seedSimpleBranch(input: SeedSimpleBranchInput): Promise<Si
     originStorySecond: input.originStorySecond,
     actors: input.actors,
     ...(input.items === undefined ? {} : { items: input.items }),
+    ...(input.worldSeed === undefined ? {} : { worldSeed: input.worldSeed }),
     locations: [
       {
         id: locationId,

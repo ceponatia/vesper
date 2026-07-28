@@ -1,57 +1,31 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import { and, eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
 import { cohortPresenceAt, emptyCohortsSeed, replayCohortHistory, zonePresenceAt } from "@/lib/simulation";
-import { db, simBranches, simCohorts, simEvents, simMeansBands, simTriggers, simWorlds } from "@/server/db";
-import { forkBranch } from "./branch-store";
+import { db, simCohorts, simMeansBands, simTriggers } from "@/server/db";
 import { loadBranchCohorts, submitDurableAdjustCohort, submitDurableCreateCohort } from "./cohort-store";
 import { submitDurableSetMeansBand } from "./household-store";
-import { seedDurableMaterialBranch } from "./material-store";
-import { branchEventFromRow } from "./observation-store";
-import { seedDurableSpaceTopology } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
+import {
+  ADMIT_AT_LOCKED_VERSION,
+  expectAccepted,
+  expectRejected,
+  forkAtHead,
+  readBranchEvents,
+  seedSimpleBranch,
+  simCommand,
+  simulationSuiteHarness,
+  type SimTestPrincipal,
+} from "@/server/test-support";
 
 /**
  * E6.3 durable cohort authority (engine.spec §27.6): create/adjust end to
  * end — zone validation, conservation, idempotency, authorization, the
  * cohort means band, fork parity, and the aggregate no-work guarantee (a
- * cohort never arms a trigger). Mirrors lod-store.int.test.ts's harness.
+ * cohort never arms a trigger). Runs on the shared `simulationSuiteHarness`
+ * scaffold (probe + legacy-player guard + world teardown + pool close).
  */
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_cohorts limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[cohort-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("cohort-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
-});
+const harness = await simulationSuiteHarness({ suite: "cohort-store.int.test", table: "sim_cohorts" });
 
 /** Day 2, 07:33. The market window (08:00–18:00) opens 27 minutes later. */
 const SEED_SECOND = 200_000;
@@ -65,65 +39,41 @@ interface CohortCase {
   ana: string;
 }
 
-function branchSeed(ids: CohortCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e6-3-test-world",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e6-3-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [{ id: ids.ana, name: "Ana" }],
-    items: [],
-  });
-}
-
 async function seedCase(): Promise<CohortCase> {
-  const worldId = newId();
-  const branchId = newId();
-  const ids: CohortCase = {
-    worldId,
-    branchId,
-    locationId: `${worldId}-loc-town`,
-    squareZoneId: `${branchId}-zone-square`,
-    ana: newId(),
-  };
-  seededWorldIds.push(worldId);
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology({
-    branchId,
-    locations: [{ id: ids.locationId, worldId, kind: "town", defaultAccessPolicy: "public" }],
-    zones: [{ id: ids.squareZoneId, locationId: ids.locationId, kind: "plaza", privacyPolicy: "public" }],
-    links: [],
-    loci: [
-      { kind: "at", actorId: ids.ana, locationId: ids.locationId, zoneId: ids.squareZoneId, since: SEED_SECOND },
-    ],
+  const ana = newId();
+  const seeded = await seedSimpleBranch({
+    prefix: "e6-3-test",
+    actors: [{ id: ana, name: "Ana" }],
+    originStorySecond: SEED_SECOND,
+    locationSlug: "town",
+    locationKind: "town",
+    zoneSlug: "square",
+    zoneKind: "plaza",
   });
-  return ids;
+  harness.trackWorld(seeded.worldId);
+  return {
+    worldId: seeded.worldId,
+    branchId: seeded.branchId,
+    locationId: seeded.locationId,
+    squareZoneId: seeded.zoneId,
+    ana,
+  };
 }
-
-const admit = { admitAtLockedVersion: true };
-const gmPrincipal = { kind: "storyteller" as const, principalId: "gm-1", controlledActorIds: [] };
 
 function command(
   ids: CohortCase,
   name: string,
   type: string,
   payload: Record<string, unknown>,
-  principal: object = gmPrincipal,
+  principal?: SimTestPrincipal,
 ) {
-  return {
-    id: `cmd-${name}-${ids.branchId}`,
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `${name}-key-${ids.branchId}`,
-    principal,
-    submittedAtWallClock: "2026-07-21T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name,
     type,
-    schemaVersion: 1,
     payload,
-  };
+    ...(principal === undefined ? {} : { principal }),
+  });
 }
 
 function marketPayload(ids: CohortCase, cohortId: string, population = 200) {
@@ -140,7 +90,7 @@ function marketPayload(ids: CohortCase, cohortId: string, population = 200) {
   };
 }
 
-describe.runIf(ready)("E6.3 durable cohort authority", () => {
+describe.runIf(harness.ready)("E6.3 durable cohort authority", () => {
   it("creates, adjusts conservatively, wears a means band, and forks with parity", async () => {
     const ids = await seedCase();
     const cohortId = newId();
@@ -155,9 +105,9 @@ describe.runIf(ready)("E6.3 durable cohort authority", () => {
           ],
         },
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(ghostZone).toMatchObject({ status: "rejected", code: "zone_not_found" });
+    expectRejected(ghostZone, "zone_not_found", "a cohort gathering in a zone that does not exist");
 
     // A player principal cannot people the background.
     const unauthorized = await submitDurableCreateCohort(
@@ -166,24 +116,24 @@ describe.runIf(ready)("E6.3 durable cohort authority", () => {
         principalId: "player-1",
         controlledActorIds: [ids.ana],
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(unauthorized).toMatchObject({ status: "rejected", code: "unauthorized_principal" });
+    expectRejected(unauthorized, "unauthorized_principal", "a player peopling the background");
 
     const created = await submitDurableCreateCohort(
       command(ids, "create-market", "create_cohort", marketPayload(ids, cohortId)),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(created.status).toBe("accepted");
+    expectAccepted(created, "create the market cohort");
     const duplicated = await submitDurableCreateCohort(
       command(ids, "create-market-again", "create_cohort", marketPayload(ids, cohortId)),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(duplicated).toMatchObject({ status: "rejected", code: "cohort_already_exists" });
+    expectRejected(duplicated, "cohort_already_exists", "a second cohort under the same id");
     // Idempotency: the same command replays its cached result.
     const replayedCreate = await submitDurableCreateCohort(
       command(ids, "create-market", "create_cohort", marketPayload(ids, cohortId)),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
     expect(replayedCreate).toEqual(created);
 
@@ -207,23 +157,20 @@ describe.runIf(ready)("E6.3 durable cohort authority", () => {
         deltaCount: -1,
         reason: "promotion_reservation",
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(debited.status).toBe("accepted");
+    expectAccepted(debited, "debit one of the market regulars");
     const overdrawn = await submitDurableAdjustCohort(
       command(ids, "overdraw", "adjust_cohort", { cohortId, deltaCount: -500, reason: "attrition" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(overdrawn).toMatchObject({ status: "rejected", code: "insufficient_population" });
+    expectRejected(overdrawn, "insufficient_population", "draining the cohort below zero");
     const [adjustedRow] = await db()
       .select()
       .from(simCohorts)
       .where(and(eq(simCohorts.branchId, ids.branchId), eq(simCohorts.cohortId, cohortId)));
     expect(adjustedRow).toMatchObject({ population: 199 });
-    const adjustEvents = await db()
-      .select({ payload: simEvents.payload })
-      .from(simEvents)
-      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "cohort_adjusted")));
+    const adjustEvents = await readBranchEvents(ids.branchId, { types: ["cohort_adjusted"] });
     expect(adjustEvents).toHaveLength(1);
     expect(adjustEvents[0]?.payload).toMatchObject({
       cohortId,
@@ -239,17 +186,17 @@ describe.runIf(ready)("E6.3 durable cohort authority", () => {
         subject: { kind: "cohort", cohortId },
         bandKey: "modest",
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(banded.status).toBe("accepted");
+    expectAccepted(banded, "band the market cohort");
     const ghostBand = await submitDurableSetMeansBand(
       command(ids, "band-ghost", "set_means_band", {
         subject: { kind: "cohort", cohortId: newId() },
         bandKey: "modest",
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(ghostBand).toMatchObject({ status: "rejected", code: "subject_not_found" });
+    expectRejected(ghostBand, "subject_not_found", "banding a cohort that never existed");
     const bandRows = await db()
       .select({ subjectKind: simMeansBands.subjectKind, cohortId: simMeansBands.cohortId, bandKey: simMeansBands.bandKey })
       .from(simMeansBands)
@@ -265,22 +212,10 @@ describe.runIf(ready)("E6.3 durable cohort authority", () => {
 
     // Fork at head: the child's cohort rows replay bit-identical from events
     // and the child's presence read matches the parent's.
-    const [parentRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!parentRow) throw new Error("parent branch row missing");
-    const childBranchId = newId();
-    await forkBranch({
+    const { childBranchId, parentEvents } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId,
-      atSequence: parentRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "E6.3 cohort fork parity",
     });
-    const parentEvents = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(simEvents.sequence)
-      .then((rows) => rows.map(branchEventFromRow));
     const replayedProjection = replayCohortHistory({
       seed: emptyCohortsSeed(childBranchId, SEED_SECOND),
       events: parentEvents,

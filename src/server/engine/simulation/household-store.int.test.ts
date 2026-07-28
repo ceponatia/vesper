@@ -1,27 +1,15 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import { simulationBranchEventSchema, type SimulationBranchEvent } from "@/contracts/simulation/branching";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import {
   RESERVED_CURRENCY_MATERIAL_KIND,
-  adjustMaterialLotCommandSchema,
-  configureRestockRoutineCommandSchema,
-  createHouseholdCommandSchema,
   householdMembershipSchema,
   householdRestockRoutineSchema,
   lotLocusSchema,
   materialLotStateSchema,
   meansBandStateSchema,
   meansSubjectSchema,
-  promoteItemFromStockCommandSchema,
   promotedItemInputSchema,
-  runHouseholdRestockCommandSchema,
-  setHouseholdMembershipCommandSchema,
-  setMeansBandCommandSchema,
   simulationHouseholdSchema,
-  transferLotQuantityCommandSchema,
-  type AdjustMaterialLotCommand,
-  type ConfigureRestockRoutineCommand,
-  type CreateHouseholdCommand,
   type HouseholdMembership,
   type HouseholdRestockRoutine,
   type LotLocus,
@@ -29,19 +17,9 @@ import {
   type MeansBandKey,
   type MeansBandState,
   type MeansSubject,
-  type PromoteItemFromStockCommand,
   type PromotionFunding,
-  type RunHouseholdRestockCommand,
-  type SetHouseholdMembershipCommand,
-  type SetMeansBandCommand,
   type SimulationHousehold,
-  type TransferLotQuantityCommand,
 } from "@/contracts/simulation/households";
-import {
-  materialBranchSeedSchema,
-  transferItemCommandSchema,
-  type MaterialBranchSeed,
-} from "@/contracts/simulation/materials";
 import { newId } from "@/lib/ids";
 import {
   deriveMaterialLotRowKey,
@@ -64,9 +42,21 @@ import {
   simMaterialLots,
   simMeansBands,
   simTriggers,
-  simWorlds,
 } from "@/server/db";
-import { forkBranch } from "./branch-store";
+import {
+  expectAccepted,
+  expectRejected,
+  forkAtHead,
+  gmPrincipal,
+  latestEventPayload,
+  playerPrincipal,
+  readBranchEvents,
+  seedSimBranch,
+  simCommand,
+  simulationSuiteHarness,
+  systemPrincipal,
+  type SimCommandEnvelope,
+} from "@/server/test-support";
 import {
   submitDurableAdjustMaterialLot,
   submitDurableConfigureRestockRoutine,
@@ -77,65 +67,29 @@ import {
   submitDurableSetMeansBand,
   submitDurableTransferLotQuantity,
 } from "./household-store";
-import { InjectedSimulationCrash, seedDurableMaterialBranch, submitDurableTransferItem } from "./material-store";
+import { InjectedSimulationCrash, submitDurableTransferItem } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
-import { seedDurableSpaceTopology } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E5.4 slice 1 durable households/lots/means substrate (engine.spec
- * §26.8–26.10). Mirrors body-store.int.test.ts's harness shape: a single
- * `describe.runIf(ready)` block, `afterAll` teardown of every seeded world.
+ * §26.8–26.10), on the shared `simulationSuiteHarness` scaffold.
  *
  * `sim_household_members` has no direct `branch_id -> sim_branches` cascade
  * FK (unlike `sim_households`/`sim_material_lots`/`sim_means_bands`, which
  * all declare one) — only deferred, non-cascading FKs to `sim_households`
  * and `sim_characters`. Deleting a world whose branch carries membership
  * rows therefore fails at commit (the deferred household/actor FK finds its
- * parent row already cascade-gone). Teardown below deletes
- * `sim_household_members` explicitly, ahead of the `sim_worlds` delete, to
- * route around that gap without touching schema/migrations (out of this
- * slice's scope — see the final report for the follow-up).
+ * parent row already cascade-gone). That is exactly what the harness's
+ * `trackBranchMembers` option handles: it deletes `sim_household_members`
+ * for every tracked branch (including forked children — hence the
+ * `harness.trackBranch` call at each fork) ahead of the `sim_worlds` delete,
+ * routing around the gap without touching schema/migrations.
  */
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_households limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[household-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("household-store.int.test");
-const seededWorldIds: string[] = [];
-const seededBranchIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready) return;
-  if (seededBranchIds.length > 0) {
-    await db().delete(simHouseholdMembers).where(inArray(simHouseholdMembers.branchId, seededBranchIds));
-  }
-  if (seededWorldIds.length > 0) {
-    await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
-  }
+const harness = await simulationSuiteHarness({
+  suite: "household-store.int.test",
+  table: "sim_households",
+  trackBranchMembers: true,
 });
 
 const SEED_SECOND = 60_000;
@@ -171,13 +125,12 @@ function makeIds(): HouseholdCase {
 }
 
 async function seedCase(ids: HouseholdCase): Promise<void> {
-  seededWorldIds.push(ids.worldId);
-  seededBranchIds.push(ids.branchId);
-  const seed: MaterialBranchSeed = materialBranchSeedSchema.parse({
+  harness.trackWorld(ids.worldId);
+  harness.trackBranch(ids.branchId);
+  await seedSimBranch({
     worldId: ids.worldId,
-    worldTypeId: "e5-4-test-world",
-    worldSeed: `seed-${ids.worldId}`,
     branchId: ids.branchId,
+    worldTypeId: "e5-4-test-world",
     rulesetVersion: "e5-4-test-v1",
     originStorySecond: SEED_SECOND,
     actors: [
@@ -185,59 +138,49 @@ async function seedCase(ids: HouseholdCase): Promise<void> {
       { id: ids.iris, name: "Iris" },
       { id: ids.outsider, name: "Rhea" },
     ],
-    items: [],
-  });
-  await seedDurableMaterialBranch(seed);
-  await seedDurableSpaceTopology({
-    branchId: ids.branchId,
     locations: [{ id: ids.locationId, worldId: ids.worldId, kind: "home", defaultAccessPolicy: "private" }],
     zones: [
       { id: ids.zoneHome, locationId: ids.locationId, kind: "room", privacyPolicy: "private" },
       { id: ids.zoneAway, locationId: ids.locationId, kind: "room", privacyPolicy: "private" },
     ],
     links: [],
-    loci: [
-      { kind: "at", actorId: ids.mara, locationId: ids.locationId, zoneId: ids.zoneHome, since: SEED_SECOND },
-      { kind: "at", actorId: ids.iris, locationId: ids.locationId, zoneId: ids.zoneHome, since: SEED_SECOND },
-      { kind: "at", actorId: ids.outsider, locationId: ids.locationId, zoneId: ids.zoneAway, since: SEED_SECOND },
+    placements: [
+      { actorId: ids.mara, locationId: ids.locationId, zoneId: ids.zoneHome },
+      { actorId: ids.iris, locationId: ids.locationId, zoneId: ids.zoneHome },
+      { actorId: ids.outsider, locationId: ids.locationId, zoneId: ids.zoneAway },
     ],
   });
 }
 
 // ---------------------------------------------------------------------------
-// Locus / subject builders + command builders — mirror material-store.int
-// .test.ts's `transferCommand`-style shape (explicit required fields, no IO).
+// Locus / subject builders + command builders. Each keeps its TYPED input
+// object (so a fixture's `funding`/`locus`/`subject` is still checked at
+// compile time) and delegates the envelope itself to the shared `simCommand`.
+// `name` is the per-command label the shared builder derives the command id
+// and idempotency key from, so it must be unique per branch within a test.
 // ---------------------------------------------------------------------------
 
 const householdLocus = (householdId: string): LotLocus => lotLocusSchema.parse({ kind: "household", householdId });
 const actorLocus = (actorId: string): LotLocus => lotLocusSchema.parse({ kind: "actor", actorId });
 
-const gmPrincipal = { kind: "storyteller" as const, principalId: "gm-1", controlledActorIds: [] };
-
 function createHouseholdCmd(input: {
   branchId: string;
-  householdId: string;
   name: string;
+  householdId: string;
+  householdName: string;
   residenceZoneIds: string[];
-  /** Unbranded input shape (mirrors `CreateHouseholdCommandInput`) — `.parse()`
-   * below brands `actorIds`, matching how `residenceZoneIds`/actor-id fields
-   * accept plain strings on input throughout this file. */
   stockAccessPolicy: { kind: "members_only" } | { kind: "allow_list"; actorIds: string[] };
   expectedVersion: number;
-}): CreateHouseholdCommand {
-  return createHouseholdCommandSchema.parse({
-    id: newId(),
+}): SimCommandEnvelope {
+  return simCommand({
     branchId: input.branchId,
-    expectedVersion: input.expectedVersion,
-    idempotencyKey: newId(),
-    principal: gmPrincipal,
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: newId(),
+    name: input.name,
     type: "create_household",
-    schemaVersion: 1,
+    expectedVersion: input.expectedVersion,
+    principal: gmPrincipal,
     payload: {
       householdId: input.householdId,
-      name: input.name,
+      name: input.householdName,
       residenceZoneIds: input.residenceZoneIds,
       stockAccessPolicy: input.stockAccessPolicy,
     },
@@ -246,22 +189,19 @@ function createHouseholdCmd(input: {
 
 function setMembershipCmd(input: {
   branchId: string;
+  name: string;
   householdId: string;
   actorId: string;
   role: "resident" | "dependent" | "guest";
   status: "active" | "ended";
   expectedVersion: number;
-}): SetHouseholdMembershipCommand {
-  return setHouseholdMembershipCommandSchema.parse({
-    id: newId(),
+}): SimCommandEnvelope {
+  return simCommand({
     branchId: input.branchId,
-    expectedVersion: input.expectedVersion,
-    idempotencyKey: newId(),
-    principal: gmPrincipal,
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: newId(),
+    name: input.name,
     type: "set_household_membership",
-    schemaVersion: 1,
+    expectedVersion: input.expectedVersion,
+    principal: gmPrincipal,
     payload: {
       householdId: input.householdId,
       actorId: input.actorId,
@@ -273,44 +213,38 @@ function setMembershipCmd(input: {
 
 function adjustLotCmd(input: {
   branchId: string;
+  name: string;
   locus: LotLocus;
   materialKindKey: string;
   deltaRaw: number;
   expectedVersion: number;
-}): AdjustMaterialLotCommand {
-  return adjustMaterialLotCommandSchema.parse({
-    id: newId(),
+}): SimCommandEnvelope {
+  return simCommand({
     branchId: input.branchId,
-    expectedVersion: input.expectedVersion,
-    idempotencyKey: newId(),
-    principal: gmPrincipal,
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: newId(),
+    name: input.name,
     type: "adjust_material_lot",
-    schemaVersion: 1,
+    expectedVersion: input.expectedVersion,
+    principal: gmPrincipal,
     payload: { locus: input.locus, materialKindKey: input.materialKindKey, deltaRaw: input.deltaRaw },
   });
 }
 
 function transferLotCmd(input: {
   branchId: string;
+  name: string;
   actorId: string;
   fromLocus: LotLocus;
   toLocus: LotLocus;
   materialKindKey: string;
   quantityRaw: number;
   expectedVersion: number;
-}): TransferLotQuantityCommand {
-  return transferLotQuantityCommandSchema.parse({
-    id: newId(),
+}): SimCommandEnvelope {
+  return simCommand({
     branchId: input.branchId,
-    expectedVersion: input.expectedVersion,
-    idempotencyKey: newId(),
-    principal: { kind: "player", principalId: "player-1", controlledActorIds: [input.actorId] },
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: newId(),
+    name: input.name,
     type: "transfer_lot_quantity",
-    schemaVersion: 1,
+    expectedVersion: input.expectedVersion,
+    principal: playerPrincipal(input.actorId),
     payload: {
       actorId: input.actorId,
       fromLocus: input.fromLocus,
@@ -323,26 +257,24 @@ function transferLotCmd(input: {
 
 function setMeansBandCmd(input: {
   branchId: string;
+  name: string;
   subject: MeansSubject;
   bandKey: MeansBandKey;
   expectedVersion: number;
-}): SetMeansBandCommand {
-  return setMeansBandCommandSchema.parse({
-    id: newId(),
+}): SimCommandEnvelope {
+  return simCommand({
     branchId: input.branchId,
-    expectedVersion: input.expectedVersion,
-    idempotencyKey: newId(),
-    principal: gmPrincipal,
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: newId(),
+    name: input.name,
     type: "set_means_band",
-    schemaVersion: 1,
+    expectedVersion: input.expectedVersion,
+    principal: gmPrincipal,
     payload: { subject: input.subject, bandKey: input.bandKey },
   });
 }
 
 function configureRestockCmd(input: {
   branchId: string;
+  name: string;
   householdId: string;
   materialKindKey: string;
   targetQuantityRaw: number;
@@ -351,19 +283,13 @@ function configureRestockCmd(input: {
   funding: HouseholdRestockRoutine["funding"];
   active: boolean;
   expectedVersion: number;
-  id?: string;
-  idempotencyKey?: string;
-}): ConfigureRestockRoutineCommand {
-  return configureRestockRoutineCommandSchema.parse({
-    id: input.id ?? newId(),
+}): SimCommandEnvelope {
+  return simCommand({
     branchId: input.branchId,
-    expectedVersion: input.expectedVersion,
-    idempotencyKey: input.idempotencyKey ?? newId(),
-    principal: gmPrincipal,
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: newId(),
+    name: input.name,
     type: "configure_restock_routine",
-    schemaVersion: 1,
+    expectedVersion: input.expectedVersion,
+    principal: gmPrincipal,
     payload: {
       householdId: input.householdId,
       materialKindKey: input.materialKindKey,
@@ -378,26 +304,21 @@ function configureRestockCmd(input: {
 
 function runHouseholdRestockCmd(input: {
   branchId: string;
+  name: string;
   householdId: string;
   materialKindKey: string;
   armedAtSequence: number;
-  id?: string;
-  idempotencyKey?: string;
-}): RunHouseholdRestockCommand {
-  return runHouseholdRestockCommandSchema.parse({
-    id: input.id ?? newId(),
+}): SimCommandEnvelope {
+  return simCommand({
     branchId: input.branchId,
+    name: input.name,
+    type: "run_household_restock",
     // Overridden to the locked branch's own version by `admitAtLockedVersion`
     // (mirrors the scheduler's own dispatch, scheduler-store.ts) — this test
     // calls the durable submit function directly rather than through the
     // scheduler, so the value here is never actually checked.
     expectedVersion: 0,
-    idempotencyKey: input.idempotencyKey ?? newId(),
-    principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] },
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: newId(),
-    type: "run_household_restock",
-    schemaVersion: 1,
+    principal: systemPrincipal,
     payload: {
       householdId: input.householdId,
       materialKindKey: input.materialKindKey,
@@ -408,23 +329,18 @@ function runHouseholdRestockCmd(input: {
 
 function promoteItemCmd(input: {
   branchId: string;
+  name: string;
   actorId: string;
   funding: PromotionFunding;
   item: { name?: string; materialKindKey?: string };
   expectedVersion: number;
-  id?: string;
-  idempotencyKey?: string;
-}): PromoteItemFromStockCommand {
-  return promoteItemFromStockCommandSchema.parse({
-    id: input.id ?? newId(),
+}): SimCommandEnvelope {
+  return simCommand({
     branchId: input.branchId,
-    expectedVersion: input.expectedVersion,
-    idempotencyKey: input.idempotencyKey ?? newId(),
-    principal: { kind: "player", principalId: "player-1", controlledActorIds: [input.actorId] },
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: newId(),
+    name: input.name,
     type: "promote_item_from_stock",
-    schemaVersion: 1,
+    expectedVersion: input.expectedVersion,
+    principal: playerPrincipal(input.actorId),
     payload: {
       actorId: input.actorId,
       funding: input.funding,
@@ -434,11 +350,15 @@ function promoteItemCmd(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Row -> domain-shape mappers (local test copies of household-store.ts's
-// private FromRow functions — that file exports only the insert direction,
-// mirroring bodyMeterRowInsert/itemConditionMeterRowInsert's precedent).
+// Row -> domain-shape mappers. household-store.ts exports only the INSERT
+// direction (`householdRowInsert`, `householdMemberRowInsert`,
+// `materialLotRowInsert`, `meansBandRowInsert`,
+// `householdRestockRoutineRowInsert`) — there is no durable-read function to
+// assert against — so each mapper below is the inverse of the named exported
+// writer and must be kept in step with it.
 // ---------------------------------------------------------------------------
 
+/** Inverse of household-store.ts's exported `householdRowInsert`. */
 function householdFromDbRow(row: typeof simHouseholds.$inferSelect): SimulationHousehold {
   return simulationHouseholdSchema.parse({
     id: row.householdId,
@@ -448,6 +368,7 @@ function householdFromDbRow(row: typeof simHouseholds.$inferSelect): SimulationH
   });
 }
 
+/** Inverse of household-store.ts's exported `householdMemberRowInsert`. */
 function membershipFromDbRow(row: typeof simHouseholdMembers.$inferSelect): HouseholdMembership {
   return householdMembershipSchema.parse({
     householdId: row.householdId,
@@ -458,6 +379,7 @@ function membershipFromDbRow(row: typeof simHouseholdMembers.$inferSelect): Hous
   });
 }
 
+/** The locus half of `materialLotRowInsert`'s column split, read back. */
 function lotLocusFromDbRow(row: {
   locusKind: "household" | "actor" | "zone";
   householdId: string | null;
@@ -474,6 +396,7 @@ function lotLocusFromDbRow(row: {
   }
 }
 
+/** Inverse of household-store.ts's exported `materialLotRowInsert`. */
 function lotFromDbRow(row: typeof simMaterialLots.$inferSelect): MaterialLotState {
   return materialLotStateSchema.parse({
     locus: lotLocusFromDbRow(row),
@@ -484,6 +407,7 @@ function lotFromDbRow(row: typeof simMaterialLots.$inferSelect): MaterialLotStat
   });
 }
 
+/** Inverse of household-store.ts's exported `meansBandRowInsert`. */
 function bandFromDbRow(row: typeof simMeansBands.$inferSelect): MeansBandState {
   const subject: MeansSubject =
     row.subjectKind === "actor"
@@ -497,6 +421,7 @@ function bandFromDbRow(row: typeof simMeansBands.$inferSelect): MeansBandState {
   });
 }
 
+/** Inverse of household-store.ts's exported `householdRestockRoutineRowInsert`. */
 function routineFromDbRow(row: typeof simHouseholdRestockRoutines.$inferSelect): HouseholdRestockRoutine {
   return householdRestockRoutineSchema.parse({
     householdId: row.householdId,
@@ -531,34 +456,7 @@ async function loadBandRow(branchId: string, subject: MeansSubject): Promise<Mea
   return row ? bandFromDbRow(row) : undefined;
 }
 
-function rowToEvent(row: typeof simEvents.$inferSelect): SimulationBranchEvent {
-  return simulationBranchEventSchema.parse({
-    id: row.id,
-    worldId: row.worldId,
-    branchId: row.branchId,
-    sequence: row.sequence,
-    storySecond: row.storySecond,
-    type: row.type,
-    schemaVersion: row.schemaVersion,
-    rulesetVersion: row.rulesetVersion,
-    ...(row.derivationVersion ? { derivationVersion: row.derivationVersion } : {}),
-    ...(row.commandId ? { commandId: row.commandId } : {}),
-    ...(row.causationId ? { causationId: row.causationId } : {}),
-    correlationId: row.correlationId,
-    actorIds: row.actorIds,
-    entityIds: row.entityIds,
-    ...(row.locationId ? { locationId: row.locationId } : {}),
-    recordedAtWallClock: row.recordedAt.toISOString(),
-    payload: row.payload,
-  });
-}
-
-async function readBranchEvents(branchId: string): Promise<SimulationBranchEvent[]> {
-  const rows = await db().select().from(simEvents).where(eq(simEvents.branchId, branchId)).orderBy(asc(simEvents.sequence));
-  return rows.map(rowToEvent);
-}
-
-describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", () => {
+describe.runIf(harness.ready)("E5.4 slice 1 durable households/lots/means substrate", () => {
   it("runs create_household -> set_household_membership -> adjust_material_lot -> transfer_lot_quantity end to end, and the DB CHECK independently rejects a negative quantity", async () => {
     const ids = makeIds();
     await seedCase(ids);
@@ -567,18 +465,20 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     const create = await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Vance household",
+        householdName: "Vance household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
       }),
     );
-    expect(create.status).toBe("accepted");
+    expectAccepted(create, "household creation");
 
     const membership = await submitDurableSetHouseholdMembership(
       setMembershipCmd({
         branchId: ids.branchId,
+        name: "member-mara",
         householdId,
         actorId: ids.mara,
         role: "resident",
@@ -586,22 +486,24 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
         expectedVersion: 1,
       }),
     );
-    expect(membership.status).toBe("accepted");
+    expectAccepted(membership, "membership");
 
     const stock = await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-bread",
         locus: householdLocus(householdId),
         materialKindKey: "bread",
         deltaRaw: 10,
         expectedVersion: 2,
       }),
     );
-    expect(stock.status).toBe("accepted");
+    expectAccepted(stock, "stocking bread");
 
     const transfer = await submitDurableTransferLotQuantity(
       transferLotCmd({
         branchId: ids.branchId,
+        name: "transfer",
         actorId: ids.mara,
         fromLocus: householdLocus(householdId),
         toLocus: actorLocus(ids.mara),
@@ -610,7 +512,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
         expectedVersion: 3,
       }),
     );
-    expect(transfer.status).toBe("accepted");
+    expectAccepted(transfer, "lot transfer");
 
     const [householdRow] = await db()
       .select()
@@ -662,8 +564,9 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
@@ -673,6 +576,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     const result = await submitDurableTransferLotQuantity(
       transferLotCmd({
         branchId: ids.branchId,
+        name: "transfer",
         actorId: ids.outsider,
         fromLocus: householdLocus(householdId),
         toLocus: actorLocus(ids.outsider),
@@ -681,7 +585,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
         expectedVersion: 1,
       }),
     );
-    expect(result).toMatchObject({ status: "rejected", code: "root_not_colocated" });
+    expectRejected(result, "root_not_colocated", "transfer from outside the residence");
   });
 
   it("rejects transfer_lot_quantity as household_access_denied under an allow_list policy", async () => {
@@ -691,8 +595,9 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "allow_list", actorIds: [ids.iris] },
         expectedVersion: 0,
@@ -704,6 +609,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     const result = await submitDurableTransferLotQuantity(
       transferLotCmd({
         branchId: ids.branchId,
+        name: "transfer",
         actorId: ids.mara,
         fromLocus: householdLocus(householdId),
         toLocus: actorLocus(ids.mara),
@@ -712,7 +618,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
         expectedVersion: 1,
       }),
     );
-    expect(result).toMatchObject({ status: "rejected", code: "household_access_denied" });
+    expectRejected(result, "household_access_denied", "transfer against the allow list");
   });
 
   it("rejects transfer_lot_quantity as insufficient_balance against a never-stocked lot, leaving no lazily-built row behind", async () => {
@@ -722,8 +628,9 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
@@ -732,6 +639,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableSetHouseholdMembership(
       setMembershipCmd({
         branchId: ids.branchId,
+        name: "member-mara",
         householdId,
         actorId: ids.mara,
         role: "resident",
@@ -743,6 +651,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     const result = await submitDurableTransferLotQuantity(
       transferLotCmd({
         branchId: ids.branchId,
+        name: "transfer",
         actorId: ids.mara,
         fromLocus: householdLocus(householdId),
         toLocus: actorLocus(ids.mara),
@@ -751,7 +660,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
         expectedVersion: 2,
       }),
     );
-    expect(result).toMatchObject({ status: "rejected", code: "insufficient_balance" });
+    expectRejected(result, "insufficient_balance", "transfer from a never-stocked lot");
 
     // A rejected command never persists its lazily-built init event/row — the
     // store only commits the lazy init after the resolver accepts (§26.9's
@@ -767,8 +676,9 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
@@ -776,9 +686,9 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     );
     const subject: MeansSubject = meansSubjectSchema.parse({ kind: "household", householdId });
     const bandResult = await submitDurableSetMeansBand(
-      setMeansBandCmd({ branchId: ids.branchId, subject, bandKey: "modest", expectedVersion: 1 }),
+      setMeansBandCmd({ branchId: ids.branchId, name: "band", subject, bandKey: "modest", expectedVersion: 1 }),
     );
-    expect(bandResult.status).toBe("accepted");
+    expectAccepted(bandResult, "means band");
 
     const bandOnlyRead = deriveMeansRead(subject, {
       currencyLot: () => undefined,
@@ -796,13 +706,14 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     const lotResult = await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-currency",
         locus: householdLocus(householdId),
         materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
         deltaRaw: 50_000,
         expectedVersion: 2,
       }),
     );
-    expect(lotResult.status).toBe("accepted");
+    expectAccepted(lotResult, "currency lot");
 
     const persistedLot = await loadLotRow(ids.branchId, householdLocus(householdId), RESERVED_CURRENCY_MATERIAL_KIND);
     const stillPersistedBand = await loadBandRow(ids.branchId, subject);
@@ -822,8 +733,9 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
@@ -832,6 +744,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableSetHouseholdMembership(
       setMembershipCmd({
         branchId: ids.branchId,
+        name: "member-mara",
         householdId,
         actorId: ids.mara,
         role: "resident",
@@ -842,6 +755,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-bread",
         locus: householdLocus(householdId),
         materialKindKey: "bread",
         deltaRaw: 10,
@@ -851,6 +765,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableTransferLotQuantity(
       transferLotCmd({
         branchId: ids.branchId,
+        name: "transfer",
         actorId: ids.mara,
         fromLocus: householdLocus(householdId),
         toLocus: actorLocus(ids.mara),
@@ -861,23 +776,15 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     );
     const subject: MeansSubject = meansSubjectSchema.parse({ kind: "household", householdId });
     await submitDurableSetMeansBand(
-      setMeansBandCmd({ branchId: ids.branchId, subject, bandKey: "modest", expectedVersion: 4 }),
+      setMeansBandCmd({ branchId: ids.branchId, name: "band", subject, bandKey: "modest", expectedVersion: 4 }),
     );
 
-    const [parentBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!parentBranchRow) throw new Error("parent branch row missing");
-
-    const childBranchId = newId();
-    seededBranchIds.push(childBranchId);
-    await forkBranch({
+    const { childBranchId, parentEvents } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId,
-      atSequence: parentBranchRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "E5.4 slice 1 fork parity",
     });
+    harness.trackBranch(childBranchId);
 
-    const parentEvents = await readBranchEvents(ids.branchId);
     const expected = replayHouseholdsHistory({
       seed: emptyHouseholdsSeed(childBranchId, SEED_SECOND),
       events: parentEvents,
@@ -904,13 +811,14 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     const diverge = await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: childBranchId,
+        name: "diverge",
         locus: householdLocus(householdId),
         materialKindKey: "bread",
         deltaRaw: 100,
         expectedVersion: childBranchRow.version,
       }),
     );
-    expect(diverge.status).toBe("accepted");
+    expectAccepted(diverge, "child divergence");
 
     const childLotAfter = await loadLotRow(childBranchId, householdLocus(householdId), "bread");
     expect(childLotAfter?.quantityRaw).toBe(107);
@@ -927,8 +835,9 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
@@ -937,6 +846,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableSetHouseholdMembership(
       setMembershipCmd({
         branchId: ids.branchId,
+        name: "member-mara",
         householdId,
         actorId: ids.mara,
         role: "resident",
@@ -947,6 +857,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-bread",
         locus: householdLocus(householdId),
         materialKindKey: "bread",
         deltaRaw: 10,
@@ -956,6 +867,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-currency",
         locus: householdLocus(householdId),
         materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
         deltaRaw: 50_000,
@@ -965,6 +877,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     await submitDurableTransferLotQuantity(
       transferLotCmd({
         branchId: ids.branchId,
+        name: "transfer",
         actorId: ids.mara,
         fromLocus: householdLocus(householdId),
         toLocus: actorLocus(ids.mara),
@@ -975,7 +888,7 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
     );
     const subject: MeansSubject = meansSubjectSchema.parse({ kind: "household", householdId });
     await submitDurableSetMeansBand(
-      setMeansBandCmd({ branchId: ids.branchId, subject, bandKey: "comfortable", expectedVersion: 5 }),
+      setMeansBandCmd({ branchId: ids.branchId, name: "band", subject, bandKey: "comfortable", expectedVersion: 5 }),
     );
 
     const [branchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
@@ -1010,16 +923,6 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
 // E5.4 slice 2 — promotion, restock routine, crash recovery, fork parity
 // ---------------------------------------------------------------------------
 
-async function latestEventPayload(branchId: string, type: string): Promise<unknown> {
-  const [row] = await db()
-    .select({ payload: simEvents.payload })
-    .from(simEvents)
-    .where(and(eq(simEvents.branchId, branchId), eq(simEvents.type, type)))
-    .orderBy(desc(simEvents.sequence))
-    .limit(1);
-  return row?.payload;
-}
-
 async function pendingRestockTriggers(branchId: string) {
   return db()
     .select({ state: simTriggers.state, dueStorySecond: simTriggers.dueStorySecond })
@@ -1028,7 +931,7 @@ async function pendingRestockTriggers(branchId: string) {
     .orderBy(asc(simTriggers.dueStorySecond));
 }
 
-describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, and fork parity", () => {
+describe.runIf(harness.ready)("E5.4 slice 2 promotion, restock routine, crash recovery, and fork parity", () => {
   it("promotes an item via stock funding end to end: debits the household lot, creates sim_items + sim_item_holdings, and the item is immediately usable through transfer_item", async () => {
     const ids = makeIds();
     await seedCase(ids);
@@ -1036,8 +939,9 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
@@ -1046,6 +950,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableSetHouseholdMembership(
       setMembershipCmd({
         branchId: ids.branchId,
+        name: "member-mara",
         householdId,
         actorId: ids.mara,
         role: "resident",
@@ -1056,6 +961,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-bread",
         locus: householdLocus(householdId),
         materialKindKey: "bread",
         deltaRaw: 10,
@@ -1066,13 +972,14 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     const promote = await submitDurablePromoteItemFromStock(
       promoteItemCmd({
         branchId: ids.branchId,
+        name: "promote",
         actorId: ids.mara,
         funding: { kind: "stock", sourceLocus: householdLocus(householdId), quantityRaw: 1 },
         item: { name: "Fresh Loaf", materialKindKey: "bread" },
         expectedVersion: 3,
       }),
     );
-    expect(promote.status).toBe("accepted");
+    expectAccepted(promote, "item promotion");
 
     const promotedPayload = (await latestEventPayload(ids.branchId, "item_instantiated_from_promotion")) as {
       item: { id: string };
@@ -1093,16 +1000,12 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     // Immediately usable through the EXISTING transfer_item command — proves
     // the cross-domain event train didn't produce a second-class item.
     const transfer = await submitDurableTransferItem(
-      transferItemCommandSchema.parse({
-        id: newId(),
+      simCommand({
         branchId: ids.branchId,
-        expectedVersion: 4,
-        idempotencyKey: newId(),
-        principal: { kind: "player", principalId: "player-1", controlledActorIds: [ids.mara] },
-        submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+        name: "transfer-item",
         type: "transfer_item",
-        schemaVersion: 2,
-        correlationId: newId(),
+        expectedVersion: 4,
+        principal: playerPrincipal(ids.mara),
         payload: {
           actorId: ids.mara,
           itemId,
@@ -1111,7 +1014,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
         },
       }),
     );
-    expect(transfer.status).toBe("accepted");
+    expectAccepted(transfer, "promoted item transfer");
   });
 
   it("promotes an item via purchase funding end to end, debiting the reserved currency lot by unitPriceRaw x quantityRaw", async () => {
@@ -1121,8 +1024,9 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
@@ -1131,6 +1035,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableSetHouseholdMembership(
       setMembershipCmd({
         branchId: ids.branchId,
+        name: "member-mara",
         householdId,
         actorId: ids.mara,
         role: "resident",
@@ -1141,6 +1046,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-currency",
         locus: householdLocus(householdId),
         materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
         deltaRaw: 50_000,
@@ -1151,13 +1057,14 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     const promote = await submitDurablePromoteItemFromStock(
       promoteItemCmd({
         branchId: ids.branchId,
+        name: "promote",
         actorId: ids.mara,
         funding: { kind: "purchase", currencyLocus: householdLocus(householdId), unitPriceRaw: 1_000, quantityRaw: 3 },
         item: { name: "Brass Compass" },
         expectedVersion: 3,
       }),
     );
-    expect(promote.status).toBe("accepted");
+    expectAccepted(promote, "item promotion");
 
     const currencyLot = await loadLotRow(ids.branchId, householdLocus(householdId), RESERVED_CURRENCY_MATERIAL_KIND);
     expect(currencyLot?.quantityRaw).toBe(50_000 - 3_000);
@@ -1177,8 +1084,9 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
       await submitDurableCreateHousehold(
         createHouseholdCmd({
           branchId: ids.branchId,
+          name: "create",
           householdId,
-          name: "Household",
+          householdName: "Household",
           residenceZoneIds: [ids.zoneHome],
           stockAccessPolicy: { kind: "members_only" },
           expectedVersion: 0,
@@ -1187,6 +1095,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
       await submitDurableSetHouseholdMembership(
         setMembershipCmd({
           branchId: ids.branchId,
+          name: "member-mara",
           householdId,
           actorId: ids.mara,
           role: "resident",
@@ -1197,6 +1106,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
       await submitDurableAdjustMaterialLot(
         adjustLotCmd({
           branchId: ids.branchId,
+          name: "stock-bread",
           locus: householdLocus(householdId),
           materialKindKey: "bread",
           deltaRaw: 10,
@@ -1206,6 +1116,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
 
       const command = promoteItemCmd({
         branchId: ids.branchId,
+        name: "promote",
         actorId: ids.mara,
         funding: { kind: "stock", sourceLocus: householdLocus(householdId), quantityRaw: 1 },
         item: { name: "Crash Loaf", materialKindKey: "bread" },
@@ -1235,7 +1146,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
       // Retry the SAME command (same id + idempotencyKey) with no crash —
       // must recover to exactly one debit and one item, never double-applying.
       const retry = await submitDurablePromoteItemFromStock(command);
-      expect(retry.status).toBe("accepted");
+      expectAccepted(retry, `retry after the ${crashAt} crash`);
 
       const lotAfterRetry = await loadLotRow(ids.branchId, householdLocus(householdId), "bread");
       const itemsAfterRetry = await db().select().from(simItems).where(eq(simItems.branchId, ids.branchId));
@@ -1251,8 +1162,9 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
@@ -1261,6 +1173,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-currency",
         locus: householdLocus(householdId),
         materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
         deltaRaw: 100_000,
@@ -1270,6 +1183,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-bread",
         locus: householdLocus(householdId),
         materialKindKey: "bread",
         deltaRaw: 5,
@@ -1280,6 +1194,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     const configure = await submitDurableConfigureRestockRoutine(
       configureRestockCmd({
         branchId: ids.branchId,
+        name: "configure-1",
         householdId,
         materialKindKey: "bread",
         targetQuantityRaw: 20,
@@ -1290,7 +1205,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
         expectedVersion: 3,
       }),
     );
-    expect(configure.status).toBe("accepted");
+    expectAccepted(configure, "restock configuration");
 
     const [armed] = (await pendingRestockTriggers(ids.branchId)).filter((t) => t.state === "pending");
     if (!armed) throw new Error("expected an armed restock trigger");
@@ -1318,13 +1233,14 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     const deplete = await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "deplete",
         locus: householdLocus(householdId),
         materialKindKey: "bread",
         deltaRaw: -15,
         expectedVersion: branchAfterFirst.version,
       }),
     );
-    expect(deplete.status).toBe("accepted");
+    expectAccepted(deplete, "stock depletion");
 
     const drain2 = await advanceBranchStoryTime(ids.branchId, rearmed.dueStorySecond, { workerId: "w-restock-2" });
     expect(drain2.status).toBe("advanced");
@@ -1346,8 +1262,9 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
@@ -1356,6 +1273,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-currency",
         locus: householdLocus(householdId),
         materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
         deltaRaw: 100_000,
@@ -1365,6 +1283,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-bread",
         locus: householdLocus(householdId),
         materialKindKey: "bread",
         deltaRaw: 5,
@@ -1375,6 +1294,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableConfigureRestockRoutine(
       configureRestockCmd({
         branchId: ids.branchId,
+        name: "configure-1",
         householdId,
         materialKindKey: "bread",
         targetQuantityRaw: 20,
@@ -1391,6 +1311,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     const configure2 = await submitDurableConfigureRestockRoutine(
       configureRestockCmd({
         branchId: ids.branchId,
+        name: "configure-2",
         householdId,
         materialKindKey: "bread",
         targetQuantityRaw: 30,
@@ -1401,7 +1322,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
         expectedVersion: 4,
       }),
     );
-    expect(configure2.status).toBe("accepted");
+    expectAccepted(configure2, "reconfiguration");
 
     const triggers = await pendingRestockTriggers(ids.branchId);
     expect(triggers.map((t) => t.state).sort()).toEqual(["completed", "pending"]);
@@ -1439,8 +1360,9 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
@@ -1449,6 +1371,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-currency",
         locus: householdLocus(householdId),
         materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
         deltaRaw: 100_000,
@@ -1458,6 +1381,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-bread",
         locus: householdLocus(householdId),
         materialKindKey: "bread",
         deltaRaw: 5,
@@ -1468,6 +1392,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     const configure1 = await submitDurableConfigureRestockRoutine(
       configureRestockCmd({
         branchId: ids.branchId,
+        name: "configure-1",
         householdId,
         materialKindKey: "bread",
         targetQuantityRaw: 20,
@@ -1478,8 +1403,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
         expectedVersion: 3,
       }),
     );
-    expect(configure1.status).toBe("accepted");
-    if (configure1.status !== "accepted") return;
+    expectAccepted(configure1, "first restock configuration");
     const armedAtSequence1 = configure1.firstSequence;
 
     const [armedTrigger] = await pendingRestockTriggers(ids.branchId);
@@ -1497,6 +1421,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     const configure2 = await submitDurableConfigureRestockRoutine(
       configureRestockCmd({
         branchId: ids.branchId,
+        name: "configure-2",
         householdId,
         materialKindKey: "bread",
         targetQuantityRaw: 30,
@@ -1507,7 +1432,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
         expectedVersion: 4,
       }),
     );
-    expect(configure2.status).toBe("accepted");
+    expectAccepted(configure2, "reconfiguration");
 
     // The claimed (processing) row is retired too, not just pending rows.
     const triggersAfterReconfigure = await db()
@@ -1522,13 +1447,14 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     const staleDispatch = await submitDurableRunHouseholdRestock(
       runHouseholdRestockCmd({
         branchId: ids.branchId,
+        name: "stale-dispatch",
         householdId,
         materialKindKey: "bread",
         armedAtSequence: armedAtSequence1,
       }),
       { admitAtLockedVersion: true },
     );
-    expect(staleDispatch).toMatchObject({ status: "rejected", code: "threshold_stale" });
+    expectRejected(staleDispatch, "threshold_stale", "stale claimed dispatch");
 
     // Exactly one live trigger remains — the fresh arm from the reconfigure —
     // never two.
@@ -1549,8 +1475,9 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
@@ -1559,6 +1486,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-currency",
         locus: householdLocus(householdId),
         materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
         deltaRaw: 100_000,
@@ -1568,6 +1496,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-bread",
         locus: householdLocus(householdId),
         materialKindKey: "bread",
         deltaRaw: 5,
@@ -1577,6 +1506,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableConfigureRestockRoutine(
       configureRestockCmd({
         branchId: ids.branchId,
+        name: "configure-1",
         householdId,
         materialKindKey: "bread",
         targetQuantityRaw: 20,
@@ -1588,17 +1518,11 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
       }),
     );
 
-    const [parentBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!parentBranchRow) throw new Error("parent branch missing");
-    const childBranchId = newId();
-    seededBranchIds.push(childBranchId);
-    await forkBranch({
+    const { childBranchId } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId,
-      atSequence: parentBranchRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "E5.4 slice 2 fork mid-pending-restock",
     });
+    harness.trackBranch(childBranchId);
 
     const [childTrigger] = await pendingRestockTriggers(childBranchId);
     expect(childTrigger).toMatchObject({ state: "pending" });
@@ -1626,8 +1550,9 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
@@ -1636,6 +1561,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableSetHouseholdMembership(
       setMembershipCmd({
         branchId: ids.branchId,
+        name: "member-mara",
         householdId,
         actorId: ids.mara,
         role: "resident",
@@ -1646,6 +1572,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-bread",
         locus: householdLocus(householdId),
         materialKindKey: "bread",
         deltaRaw: 10,
@@ -1653,28 +1580,23 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
       }),
     );
 
-    const [preBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!preBranchRow) throw new Error("branch missing");
-    const childBeforeId = newId();
-    seededBranchIds.push(childBeforeId);
-    await forkBranch({
+    const { childBranchId: childBeforeId } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId: childBeforeId,
-      atSequence: preBranchRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "pre-promotion fork",
     });
+    harness.trackBranch(childBeforeId);
 
     const promote = await submitDurablePromoteItemFromStock(
       promoteItemCmd({
         branchId: ids.branchId,
+        name: "promote",
         actorId: ids.mara,
         funding: { kind: "stock", sourceLocus: householdLocus(householdId), quantityRaw: 1 },
         item: { name: "Fork Loaf", materialKindKey: "bread" },
         expectedVersion: 3,
       }),
     );
-    expect(promote.status).toBe("accepted");
+    expectAccepted(promote, "item promotion");
 
     const [promotedEventRow] = await db()
       .select({ payload: simEvents.payload, sequence: simEvents.sequence })
@@ -1685,17 +1607,11 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     if (!promotedEventRow) throw new Error("expected a promotion event");
     const itemId = (promotedEventRow.payload as { item: { id: string } }).item.id;
 
-    const [postBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!postBranchRow) throw new Error("branch missing");
-    const childAfterId = newId();
-    seededBranchIds.push(childAfterId);
-    await forkBranch({
+    const { childBranchId: childAfterId } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId: childAfterId,
-      atSequence: postBranchRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "post-promotion fork",
     });
+    harness.trackBranch(childAfterId);
 
     const [childBeforeItem] = await db()
       .select()
@@ -1728,8 +1644,9 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableCreateHousehold(
       createHouseholdCmd({
         branchId: ids.branchId,
+        name: "create",
         householdId,
-        name: "Household",
+        householdName: "Household",
         residenceZoneIds: [ids.zoneHome],
         stockAccessPolicy: { kind: "members_only" },
         expectedVersion: 0,
@@ -1738,6 +1655,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableSetHouseholdMembership(
       setMembershipCmd({
         branchId: ids.branchId,
+        name: "member-mara",
         householdId,
         actorId: ids.mara,
         role: "resident",
@@ -1748,6 +1666,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-bread",
         locus: householdLocus(householdId),
         materialKindKey: "bread",
         deltaRaw: 10,
@@ -1757,6 +1676,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableAdjustMaterialLot(
       adjustLotCmd({
         branchId: ids.branchId,
+        name: "stock-currency",
         locus: householdLocus(householdId),
         materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
         deltaRaw: 100_000,
@@ -1766,6 +1686,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurableTransferLotQuantity(
       transferLotCmd({
         branchId: ids.branchId,
+        name: "transfer",
         actorId: ids.mara,
         fromLocus: householdLocus(householdId),
         toLocus: actorLocus(ids.mara),
@@ -1776,11 +1697,12 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     );
     const subject: MeansSubject = meansSubjectSchema.parse({ kind: "household", householdId });
     await submitDurableSetMeansBand(
-      setMeansBandCmd({ branchId: ids.branchId, subject, bandKey: "comfortable", expectedVersion: 5 }),
+      setMeansBandCmd({ branchId: ids.branchId, name: "band", subject, bandKey: "comfortable", expectedVersion: 5 }),
     );
     await submitDurableConfigureRestockRoutine(
       configureRestockCmd({
         branchId: ids.branchId,
+        name: "configure-1",
         householdId,
         materialKindKey: "bread",
         targetQuantityRaw: 20,
@@ -1794,6 +1716,7 @@ describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, 
     await submitDurablePromoteItemFromStock(
       promoteItemCmd({
         branchId: ids.branchId,
+        name: "promote",
         actorId: ids.mara,
         funding: { kind: "stock", sourceLocus: householdLocus(householdId), quantityRaw: 1 },
         item: { name: "Full Catalog Loaf", materialKindKey: "bread" },

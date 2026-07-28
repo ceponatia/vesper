@@ -46,11 +46,11 @@ export function expectAccepted<T extends { status: string }>(
  * two separate `toBe`s) so a rejection with the RIGHT status and the WRONG code
  * reports both halves at once.
  */
-export function expectRejected(
-  outcome: { status: string; code?: string },
+export function expectRejected<T extends { status: string; code?: string }>(
+  outcome: T,
   code: string,
   context?: string,
-): void {
+): asserts outcome is T & { status: "rejected" } {
   expect(outcome, outcomeMessage(`rejected as "${code}"`, outcome, context)).toMatchObject({
     status: "rejected",
     code,

@@ -1,30 +1,30 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import {
-  materialBranchSeedSchema,
-  type MaterialBranchSeed,
-  type MaterialBranchSeedInput,
-} from "@/contracts/simulation/materials";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
+import type { MaterialBranchSeedInput } from "@/contracts/simulation/materials";
 import { itemTransferFeedConsumerKind } from "@/contracts/simulation/outbox";
 import { newId } from "@/lib/ids";
 import {
   db,
   simBodyConditions,
-  simBranches,
   simEvents,
   simItemHoldings,
   simOutbox,
   simTriggers,
-  simWorlds,
 } from "@/server/db";
-import { seedDurableBodyRhythms, submitDurableInitializeActorBody } from "./body-store";
-import { forkBranch } from "./branch-store";
+import {
+  ADMIT_AT_LOCKED_VERSION,
+  expectAccepted,
+  forkAtHead,
+  playerPrincipal,
+  seedReferenceRhythms,
+  seedSimpleBranch,
+  simCommand,
+  simulationSuiteHarness,
+} from "@/server/test-support";
+import { submitDurableInitializeActorBody } from "./body-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
 import { submitDurableAssignActorLod } from "./lod-store";
-import { seedDurableMaterialBranch } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
-import { seedDurableSpaceTopology } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E6.2 durable routine controller (engine.spec §19.1–19.2, §27–28): entering
@@ -32,42 +32,18 @@ import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
  * sleep at bedtime through the ordinary body law, the expiry wakes them with
  * a sleep credit, the cycle re-arms itself indefinitely, engagements hold,
  * a meal boundary eats through the §26.6 consumption train (slice 2), and a
- * fork mid-cycle carries the alarms. Zero model calls anywhere.
+ * fork mid-cycle carries the alarms. Zero model calls anywhere. Probe,
+ * legacy-player opt-in, seeded-world teardown and pool close come from the
+ * shared `simulationSuiteHarness`; the 23:00–07:00 sleep and 12:00–13:00 meal
+ * windows come from `seedReferenceRhythms`, which is where the minute
+ * boundaries the constants below are derived from now live.
  */
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_actor_lods limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[routine-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("routine-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
+const harness = await simulationSuiteHarness({
+  suite: "routine-store.int.test",
+  table: "sim_actor_lods",
 });
+const ready = harness.ready;
 
 /** Day 2, 07:33 — mid-morning, hours before the 23:00 bedtime. */
 const SEED_SECOND = 200_000;
@@ -76,12 +52,6 @@ const LUNCH_DAY2 = 2 * DAY + 720 * 60; // 216 000
 const BEDTIME_DAY2 = 2 * DAY + 1_380 * 60; // 255 600
 const WAKE_DAY3 = 3 * DAY + 420 * 60; // 284 400
 const BEDTIME_DAY3 = 3 * DAY + 1_380 * 60; // 342 000
-
-const sleepRhythmRow = (actorId: string) =>
-  ({ actorId, kind: "sleep", startMinuteOfDay: 1_380, endMinuteOfDay: 420 }) as const;
-
-const lunchRhythmRow = (actorId: string) =>
-  ({ actorId, kind: "meal", startMinuteOfDay: 720, endMinuteOfDay: 780 }) as const;
 
 interface RoutineCase {
   worldId: string;
@@ -92,79 +62,50 @@ interface RoutineCase {
   ben: string;
 }
 
-function branchSeed(ids: RoutineCase, items: MaterialBranchSeedInput["items"]): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e6-2-test-world",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e6-2-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.ana, name: "Ana" },
-      { id: ids.ben, name: "Ben" },
-    ],
-    items,
-  });
-}
-
 async function seedCase(
-  itemsFor: (ids: RoutineCase) => MaterialBranchSeedInput["items"] = () => [],
+  itemsFor: (ids: { ana: string; ben: string }) => MaterialBranchSeedInput["items"] = () => [],
 ): Promise<RoutineCase> {
-  const worldId = newId();
-  const branchId = newId();
-  const ids: RoutineCase = {
-    worldId,
-    branchId,
-    locationId: `${worldId}-loc-home`,
-    zoneId: `${branchId}-zone-home`,
-    ana: newId(),
-    ben: newId(),
-  };
-  seededWorldIds.push(worldId);
-  await seedDurableMaterialBranch(branchSeed(ids, itemsFor(ids)));
-  await seedDurableSpaceTopology({
-    branchId,
-    locations: [{ id: ids.locationId, worldId, kind: "home", defaultAccessPolicy: "public" }],
-    zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "home", privacyPolicy: "public" }],
-    links: [],
-    loci: [
-      { kind: "at", actorId: ids.ana, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND },
-      { kind: "at", actorId: ids.ben, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND },
+  const actors = { ana: newId(), ben: newId() };
+  const seeded = await seedSimpleBranch({
+    prefix: "e6-2-test",
+    actors: [
+      { id: actors.ana, name: "Ana" },
+      { id: actors.ben, name: "Ben" },
     ],
+    originStorySecond: SEED_SECOND,
+    items: itemsFor(actors),
+    zoneKind: "home",
   });
-  return ids;
+  harness.trackWorld(seeded.worldId);
+  return { ...seeded, ...actors };
 }
 
-const admit = { admitAtLockedVersion: true };
-const gmPrincipal = { kind: "storyteller" as const, principalId: "gm-1", controlledActorIds: [] };
+const admit = ADMIT_AT_LOCKED_VERSION;
 
-function command(ids: RoutineCase, name: string, type: string, payload: Record<string, unknown>, principal: object = gmPrincipal) {
-  return {
-    id: `cmd-${name}-${ids.branchId}`,
+function command(ids: RoutineCase, name: string, type: string, payload: Record<string, unknown>, principal?: Parameters<typeof simCommand>[0]["principal"]) {
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `${name}-key-${ids.branchId}`,
-    principal,
-    submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name,
     type,
-    schemaVersion: 1,
     payload,
-  };
+    ...(principal === undefined ? {} : { principal }),
+  });
 }
 
+/**
+ * Seed one actor's reference rhythms (sleep, plus lunch when asked) and give
+ * them a body. Rhythms land FIRST: alarms armed before a rhythm seed re-validate
+ * at fire time and may retire stale.
+ */
 async function trackBody(
   ids: RoutineCase,
   actorId: string,
   name: string,
-  rows: readonly { actorId: string; kind: "sleep" | "wash" | "meal"; startMinuteOfDay: number; endMinuteOfDay: number }[] = [
-    sleepRhythmRow(actorId),
-  ],
+  options: { meal?: boolean } = {},
 ): Promise<void> {
-  await seedDurableBodyRhythms({
-    branchId: ids.branchId,
-    rows: [...rows],
+  await seedReferenceRhythms(ids.branchId, actorId, {
+    wash: false,
+    ...(options.meal === undefined ? {} : { meal: options.meal }),
   });
   const initialized = await submitDurableInitializeActorBody(
     command(ids, `init-${name}`, "initialize_actor_body", {
@@ -174,7 +115,7 @@ async function trackBody(
     }),
     admit,
   );
-  expect(initialized.status).toBe("accepted");
+  expectAccepted(initialized, `initializing ${name}'s body`);
 }
 
 async function pendingTriggers(branchId: string) {
@@ -221,7 +162,7 @@ describe.runIf(ready)("E6.2 durable routine controller", () => {
       }),
       admit,
     );
-    expect(assigned.status).toBe("accepted");
+    expectAccepted(assigned, "putting Ana at event LOD");
     const armed = await pendingTriggers(ids.branchId);
     expect(armed.some((row) => row.kind === "routine_policy_due" && row.dueStorySecond === BEDTIME_DAY2)).toBe(
       true,
@@ -267,14 +208,8 @@ describe.runIf(ready)("E6.2 durable routine controller", () => {
     expect(decisions[1]).toMatchObject({ chosenCandidateId: "begin_sleep" });
 
     // Fork mid-sleep: the child carries the active condition and both alarms.
-    const [parentBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!parentBranchRow) throw new Error("parent branch row missing");
-    const childBranchId = newId();
-    await forkBranch({
+    const { childBranchId } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId,
-      atSequence: parentBranchRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "E6.2 routine fork parity",
     });
     const childTriggers = await pendingTriggers(childBranchId);
@@ -304,7 +239,7 @@ describe.runIf(ready)("E6.2 durable routine controller", () => {
       }),
       admit,
     );
-    expect(assigned.status).toBe("accepted");
+    expectAccepted(assigned, "putting Ben at event LOD");
 
     const opened = await submitDurableOpenEngagement(
       command(
@@ -312,11 +247,11 @@ describe.runIf(ready)("E6.2 durable routine controller", () => {
         "chat",
         "open_engagement",
         { participantIds: [ids.ana, ids.ben].sort(), channel: "co_present" },
-        { kind: "player", principalId: "player-1", controlledActorIds: [ids.ana] },
+        playerPrincipal(ids.ana),
       ),
       admit,
     );
-    expect(opened.status).toBe("accepted");
+    expectAccepted(opened, "opening the scene that must hold Ben past bedtime");
 
     await advanceBranchStoryTime(ids.branchId, BEDTIME_DAY2 + 1, { workerId: "routine-test-2" });
     const [decision] = await routineDecisions(ids.branchId, ids.ben);
@@ -348,7 +283,7 @@ describe.runIf(ready)("E6.2 durable routine controller", () => {
         locus: { kind: "held", actorId: seededIds.ana },
       },
     ]);
-    await trackBody(ids, ids.ana, "ana", [sleepRhythmRow(ids.ana), lunchRhythmRow(ids.ana)]);
+    await trackBody(ids, ids.ana, "ana", { meal: true });
 
     const assigned = await submitDurableAssignActorLod(
       command(ids, "ana-event", "assign_actor_lod", {
@@ -358,7 +293,7 @@ describe.runIf(ready)("E6.2 durable routine controller", () => {
       }),
       admit,
     );
-    expect(assigned.status).toBe("accepted");
+    expectAccepted(assigned, "putting Ana at event LOD for the meal cycle");
     // The meal start is the earliest boundary after the mid-morning seed.
     const armed = await pendingTriggers(ids.branchId);
     expect(armed.some((row) => row.kind === "routine_policy_due" && row.dueStorySecond === LUNCH_DAY2)).toBe(true);
@@ -423,14 +358,8 @@ describe.runIf(ready)("E6.2 durable routine controller", () => {
     expect(decisions[1]).toMatchObject({ chosenCandidateId: "begin_sleep" });
 
     // Fork mid-sleep: the child carries the consumed loaf and the live alarms.
-    const [parentBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!parentBranchRow) throw new Error("parent branch row missing");
-    const childBranchId = newId();
-    await forkBranch({
+    const { childBranchId } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId,
-      atSequence: parentBranchRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "E6.2 meal fork parity",
     });
     const [childHolding] = await db()
@@ -458,7 +387,7 @@ describe.runIf(ready)("E6.2 durable routine controller", () => {
         locus: { kind: "held", actorId: seededIds.ben },
       },
     ]);
-    await trackBody(ids, ids.ben, "ben", [sleepRhythmRow(ids.ben), lunchRhythmRow(ids.ben)]);
+    await trackBody(ids, ids.ben, "ben", { meal: true });
     const assigned = await submitDurableAssignActorLod(
       command(ids, "ben-event", "assign_actor_lod", {
         actorId: ids.ben,
@@ -467,7 +396,7 @@ describe.runIf(ready)("E6.2 durable routine controller", () => {
       }),
       admit,
     );
-    expect(assigned.status).toBe("accepted");
+    expectAccepted(assigned, "putting Ben at event LOD for the bare-pantry mealtime");
 
     await advanceBranchStoryTime(ids.branchId, LUNCH_DAY2 + 1, { workerId: "routine-test-4" });
     const [decision] = await routineDecisions(ids.branchId, ids.ben);

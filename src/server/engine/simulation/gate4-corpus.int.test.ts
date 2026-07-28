@@ -1,35 +1,29 @@
-import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import type { MemoryRecallResponse } from "@/contracts/simulation/memory";
 import { proposedArmedEffectSchema } from "@/contracts/simulation/narrative";
 import { newId } from "@/lib/ids";
 import { auditPresentation, deriveEngagementId, parseNarratorResult } from "@/lib/simulation";
+import { db, simAssertions, simBeliefs } from "@/server/db";
 import {
-  db,
-  simAssertions,
-  simBeliefs,
-  simEvents,
-  simItemHoldings,
-  simItems,
-  simMemoryDocuments,
-  simNarrativeCuts,
-  simObservations,
-  simOutbox,
-  simSoftCanon,
-  simWorlds,
-} from "@/server/db";
+  ADMIT_AT_LOCKED_VERSION,
+  branchFootprint,
+  expectAccepted,
+  footprintDelta,
+  playerPrincipal,
+  readBranchEvents,
+  seedSimBranch,
+  simCommand,
+  simulationSuiteHarness,
+  systemPrincipal,
+} from "@/server/test-support";
 import { prepareEngagementTurn, submitDurableConfirmNarratorResult } from "./arbiter-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
 import { submitDurableMakeDisclosure } from "./knowledge-store";
 import { beliefFromRow } from "./knowledge-recorder";
-import { seedDurableMaterialBranch } from "./material-store";
 import { drainMemoryIndexOutbox } from "./memory-index-store";
 import { queryMemoryDocuments } from "./memory-query-store";
 import { loadPersistedCut } from "./narrative-cut-store";
-import { branchEventFromRow } from "./observation-store";
-import { seedDurableSpaceTopology } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * The Gate 4 exit corpus (engine.plan §"Gate 4 exit", ruled 2026-07-18):
@@ -50,38 +44,9 @@ import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 const SEED_SECOND = 100_000;
 const TURN_SPAN = 400;
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_memory_documents limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[gate4-corpus.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("gate4-corpus.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
+const harness = await simulationSuiteHarness({
+  suite: "gate4-corpus.int.test",
+  table: "sim_memory_documents",
 });
 
 /** Cafe (hall: player+mara; shop: iris) and a park (noor) — two locations. */
@@ -97,24 +62,6 @@ interface CorpusCase {
   zoneCafe: string;
   zoneShop: string;
   zonePark: string;
-}
-
-function branchSeed(ids: CorpusCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "gate4-corpus",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "gate4-corpus-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.player, name: "Pia" },
-      { id: ids.mara, name: "Mara" },
-      { id: ids.iris, name: "Iris" },
-      { id: ids.noor, name: "Noor" },
-    ],
-    items: [],
-  });
 }
 
 async function seedCorpusCase(): Promise<CorpusCase> {
@@ -133,9 +80,18 @@ async function seedCorpusCase(): Promise<CorpusCase> {
     zoneShop: `${branchId}-zone-shop`,
     zonePark: `${branchId}-zone-park`,
   };
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology({
+  await seedSimBranch({
+    worldId,
     branchId,
+    worldTypeId: "gate4-corpus",
+    rulesetVersion: "gate4-corpus-v1",
+    originStorySecond: SEED_SECOND,
+    actors: [
+      { id: ids.player, name: "Pia" },
+      { id: ids.mara, name: "Mara" },
+      { id: ids.iris, name: "Iris" },
+      { id: ids.noor, name: "Noor" },
+    ],
     locations: [
       { id: ids.locCafe, worldId, kind: "town", defaultAccessPolicy: "public" },
       { id: ids.locPark, worldId, kind: "park", defaultAccessPolicy: "public" },
@@ -165,38 +121,15 @@ async function seedCorpusCase(): Promise<CorpusCase> {
         state: "open",
       },
     ],
-    loci: [
-      { kind: "at", actorId: ids.player, locationId: ids.locCafe, zoneId: ids.zoneCafe, since: SEED_SECOND },
-      { kind: "at", actorId: ids.mara, locationId: ids.locCafe, zoneId: ids.zoneCafe, since: SEED_SECOND },
-      { kind: "at", actorId: ids.iris, locationId: ids.locCafe, zoneId: ids.zoneShop, since: SEED_SECOND },
-      { kind: "at", actorId: ids.noor, locationId: ids.locPark, zoneId: ids.zonePark, since: SEED_SECOND },
+    placements: [
+      { actorId: ids.player, locationId: ids.locCafe, zoneId: ids.zoneCafe },
+      { actorId: ids.mara, locationId: ids.locCafe, zoneId: ids.zoneCafe },
+      { actorId: ids.iris, locationId: ids.locCafe, zoneId: ids.zoneShop },
+      { actorId: ids.noor, locationId: ids.locPark, zoneId: ids.zonePark },
     ],
   });
-  seededWorldIds.push(worldId);
+  harness.trackWorld(worldId);
   return ids;
-}
-
-const admit = { admitAtLockedVersion: true };
-
-function command(
-  ids: CorpusCase,
-  name: string,
-  type: string,
-  principal: { kind: string; principalId: string; controlledActorIds: string[] },
-  payload: Record<string, unknown>,
-) {
-  return {
-    id: `cmd-${name}-${ids.branchId}`,
-    branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `${name}-key-${ids.branchId}`,
-    principal,
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
-    type,
-    schemaVersion: type === "confirm_narrator_result" ? 2 : 1,
-    payload,
-  };
 }
 
 async function openEngagement(
@@ -207,16 +140,16 @@ async function openEngagement(
   channel: "co_present" | "text",
 ): Promise<string> {
   const opened = await submitDurableOpenEngagement(
-    command(
-      ids,
+    simCommand({
+      branchId: ids.branchId,
       name,
-      "open_engagement",
-      { kind: "player", principalId: "player-1", controlledActorIds: [initiatorId] },
-      { participantIds: [...participantIds].sort(), channel },
-    ),
-    admit,
+      type: "open_engagement",
+      principal: playerPrincipal(initiatorId),
+      payload: { participantIds: [...participantIds].sort(), channel },
+    }),
+    ADMIT_AT_LOCKED_VERSION,
   );
-  expect(opened.status).toBe("accepted");
+  expectAccepted(opened, `engagement ${name}`);
   return deriveEngagementId(ids.branchId, `cmd-${name}-${ids.branchId}`);
 }
 
@@ -228,14 +161,14 @@ function disclose(
   content: Record<string, unknown>,
 ) {
   return submitDurableMakeDisclosure(
-    command(
-      ids,
+    simCommand({
+      branchId: ids.branchId,
       name,
-      "make_disclosure",
-      { kind: "player", principalId: "speaker-principal", controlledActorIds: [speakerActorId] },
-      { speakerActorId, targetActorIds: [...targetActorIds].sort(), content },
-    ),
-    admit,
+      type: "make_disclosure",
+      principal: playerPrincipal(speakerActorId),
+      payload: { speakerActorId, targetActorIds: [...targetActorIds].sort(), content },
+    }),
+    ADMIT_AT_LOCKED_VERSION,
   );
 }
 
@@ -257,40 +190,6 @@ function recall(
 
 function recallText(response: MemoryRecallResponse): string {
   return response.results.map((result) => result.text).join(" | ");
-}
-
-/** Every row a "new memory or event" could hide in — the invariance surface. */
-async function worldFootprint(branchId: string): Promise<Record<string, number>> {
-  const value = (rows: { value: number }[]): number => rows[0]?.value ?? 0;
-  return {
-    events: value(await db().select({ value: count() }).from(simEvents).where(eq(simEvents.branchId, branchId))),
-    cuts: value(
-      await db().select({ value: count() }).from(simNarrativeCuts).where(eq(simNarrativeCuts.branchId, branchId)),
-    ),
-    observations: value(
-      await db().select({ value: count() }).from(simObservations).where(eq(simObservations.branchId, branchId)),
-    ),
-    assertions: value(
-      await db().select({ value: count() }).from(simAssertions).where(eq(simAssertions.branchId, branchId)),
-    ),
-    beliefs: value(await db().select({ value: count() }).from(simBeliefs).where(eq(simBeliefs.branchId, branchId))),
-    softCanon: value(
-      await db().select({ value: count() }).from(simSoftCanon).where(eq(simSoftCanon.branchId, branchId)),
-    ),
-    memoryDocuments: value(
-      await db()
-        .select({ value: count() })
-        .from(simMemoryDocuments)
-        .where(eq(simMemoryDocuments.branchId, branchId)),
-    ),
-    outbox: value(await db().select({ value: count() }).from(simOutbox).where(eq(simOutbox.branchId, branchId))),
-    // E5.3: the material lane's own persisted rows join the invariance
-    // surface (replacing the retired sim_holding_containers count).
-    items: value(await db().select({ value: count() }).from(simItems).where(eq(simItems.branchId, branchId))),
-    itemHoldings: value(
-      await db().select({ value: count() }).from(simItemHoldings).where(eq(simItemHoldings.branchId, branchId)),
-    ),
-  };
 }
 
 /** Mara confides the secret to the player inside a rendered turn. */
@@ -323,25 +222,25 @@ async function confideSecret(
   const effect = turn.cut.armedEffects.find((candidate) => candidate.effectType === "disclosure_made");
   if (!effect) throw new Error("Disclosure effect missing from cut");
   const confirmed = await submitDurableConfirmNarratorResult(
-    command(
-      ids,
+    simCommand({
+      branchId: ids.branchId,
       name,
-      "confirm_narrator_result",
-      { kind: "system", principalId: "system-1", controlledActorIds: [] },
-      {
+      type: "confirm_narrator_result",
+      principal: systemPrincipal,
+      payload: {
         engagementId,
         cutId: turn.cut.id,
         enactedArmedEffectIds: [effect.id],
         softCanonProposals: [],
       },
-    ),
-    admit,
+    }),
+    ADMIT_AT_LOCKED_VERSION,
   );
-  expect(confirmed.status).toBe("accepted");
+  expectAccepted(confirmed, `confirmation ${name}`);
   return { cutId: turn.cut.id, throughStorySecond: turn.cut.throughStorySecond };
 }
 
-describe.runIf(ready)("Gate 4 exit corpus (deterministic, zero model calls)", () => {
+describe.runIf(harness.ready)("Gate 4 exit corpus (deterministic, zero model calls)", () => {
   it("EXIT 1 — sweeps every viewpoint's cut and retrieval for the secret: only those who learned it hold it", async () => {
     const ids = await seedCorpusCase();
     const chatId = await openEngagement(ids, "chat", ids.player, [ids.player, ids.mara], "co_present");
@@ -406,14 +305,14 @@ describe.runIf(ready)("Gate 4 exit corpus (deterministic, zero model calls)", ()
       subjectIds: [ids.mara],
       claimedValue: { employer: "florist" },
     });
-    expect(claimed.status).toBe("accepted");
+    expectAccepted(claimed, "florist claim");
     const countered = await disclose(ids, "claim-bakery", ids.iris, [ids.player], {
       kind: "claim",
       propositionKey: "works_at",
       subjectIds: [ids.mara],
       claimedValue: { employer: "bakery" },
     });
-    expect(countered.status).toBe("accepted");
+    expectAccepted(countered, "bakery claim");
     await drainMemoryIndexOutbox({ workerId: "w-gate4-drain" });
 
     // Both assertions are contradicted (§3.3): neither is presentable truth.
@@ -442,7 +341,7 @@ describe.runIf(ready)("Gate 4 exit corpus (deterministic, zero model calls)", ()
       kind: "retraction",
       assertionId: retractTarget,
     });
-    expect(retracted.status).toBe("accepted");
+    expectAccepted(retracted, "florist retraction");
     await drainMemoryIndexOutbox({ workerId: "w-gate4-drain" });
 
     const afterRecall = await recall(ids, ids.player, at + 1);
@@ -486,7 +385,10 @@ describe.runIf(ready)("Gate 4 exit corpus (deterministic, zero model calls)", ()
 
     // Ruling 8: the first render "fails" — nothing to roll back, because the
     // committed cut row is the whole render state. Retry re-reads it.
-    const footprint = await worldFootprint(ids.branchId);
+    // `branchFootprint` counts every branch-scoped sim_ table the drizzle
+    // schema knows about, so a lane added later is covered without editing
+    // this file.
+    const footprint = await branchFootprint(ids.branchId);
     const retried = await loadPersistedCut(ids.branchId, turn.cut.id);
     expect(retried).toEqual(turn.cut);
     // Rerender: parse a narrator reply and audit it — pure presentation.
@@ -502,29 +404,28 @@ describe.runIf(ready)("Gate 4 exit corpus (deterministic, zero model calls)", ()
     const audit = auditPresentation(retried, parsed.result);
     expect(audit.verdict).toBe("accept");
     expect(await loadPersistedCut(ids.branchId, turn.cut.id)).toEqual(turn.cut);
-    expect(await worldFootprint(ids.branchId)).toEqual(footprint);
+    expect(footprintDelta(footprint, await branchFootprint(ids.branchId))).toEqual({});
 
     // Only explicit confirmation commits — once; replaying it adds nothing.
-    const confirmPayload = {
-      engagementId: chatId,
-      cutId: turn.cut.id,
-      enactedArmedEffectIds: parsed.result.enactedArmedEffectIds,
-      softCanonProposals: [],
-    };
-    const confirmCommand = command(
-      ids,
-      "confirm-apology",
-      "confirm_narrator_result",
-      { kind: "system", principalId: "system-1", controlledActorIds: [] },
-      confirmPayload,
-    );
-    const confirmed = await submitDurableConfirmNarratorResult(confirmCommand, admit);
-    expect(confirmed.status).toBe("accepted");
+    const confirmCommand = simCommand({
+      branchId: ids.branchId,
+      name: "confirm-apology",
+      type: "confirm_narrator_result",
+      principal: systemPrincipal,
+      payload: {
+        engagementId: chatId,
+        cutId: turn.cut.id,
+        enactedArmedEffectIds: parsed.result.enactedArmedEffectIds,
+        softCanonProposals: [],
+      },
+    });
+    const confirmed = await submitDurableConfirmNarratorResult(confirmCommand, ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(confirmed, "apology confirmation");
     await drainMemoryIndexOutbox({ workerId: "w-gate4-drain" });
-    const afterConfirm = await worldFootprint(ids.branchId);
-    expect(await submitDurableConfirmNarratorResult(confirmCommand, admit)).toEqual(confirmed);
+    const afterConfirm = await branchFootprint(ids.branchId);
+    expect(await submitDurableConfirmNarratorResult(confirmCommand, ADMIT_AT_LOCKED_VERSION)).toEqual(confirmed);
     expect(await loadPersistedCut(ids.branchId, turn.cut.id)).toEqual(turn.cut);
-    expect(await worldFootprint(ids.branchId)).toEqual(afterConfirm);
+    expect(footprintDelta(afterConfirm, await branchFootprint(ids.branchId))).toEqual({});
   });
 
   it("EXIT sweep — gossip provenance chains stay reconstructible, decay per hop, and retraction reaches only earshot", async () => {
@@ -538,7 +439,7 @@ describe.runIf(ready)("Gate 4 exit corpus (deterministic, zero model calls)", ()
       subjectIds: [ids.mara],
       claimedValue: { quitting: true },
     });
-    expect(original.status).toBe("accepted");
+    expectAccepted(original, "hop 1");
     const [assertionRow] = await db()
       .select({ assertionId: simAssertions.assertionId })
       .from(simAssertions)
@@ -546,8 +447,8 @@ describe.runIf(ready)("Gate 4 exit corpus (deterministic, zero model calls)", ()
       .limit(1);
     if (!assertionRow) throw new Error("Assertion missing after hop 1");
     const relayContent = { kind: "relay", assertionId: assertionRow.assertionId };
-    expect((await disclose(ids, "hop-2", ids.player, [ids.iris], relayContent)).status).toBe("accepted");
-    expect((await disclose(ids, "hop-3", ids.iris, [ids.noor], relayContent)).status).toBe("accepted");
+    expectAccepted(await disclose(ids, "hop-2", ids.player, [ids.iris], relayContent), "hop 2");
+    expectAccepted(await disclose(ids, "hop-3", ids.iris, [ids.noor], relayContent), "hop 3");
     await drainMemoryIndexOutbox({ workerId: "w-gate4-drain" });
 
     // Confidence decays hop by hop; the provenance path is the route.
@@ -578,13 +479,8 @@ describe.runIf(ready)("Gate 4 exit corpus (deterministic, zero model calls)", ()
     // that committed event carries the captured chain (§6.4).
     const noorBelief = byHolder.get(ids.noor);
     if (!noorBelief) throw new Error("Noor's belief missing");
-    const [hopEventRow] = await db()
-      .select()
-      .from(simEvents)
-      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.id, noorBelief.sourceEventId)))
-      .limit(1);
-    if (!hopEventRow) throw new Error("Hop event missing");
-    const hopEvent = branchEventFromRow(hopEventRow);
+    const hopEvent = (await readBranchEvents(ids.branchId)).find((event) => event.id === noorBelief.sourceEventId);
+    if (!hopEvent) throw new Error("Hop event missing");
     if (hopEvent.type !== "disclosure_made") throw new Error("Hop event is not a disclosure");
     expect(hopEvent.payload.speakerActorId).toBe(ids.iris);
     expect(hopEvent.payload.derived.learnedFromActorIds).toEqual([ids.mara, ids.player, ids.iris]);
@@ -602,7 +498,7 @@ describe.runIf(ready)("Gate 4 exit corpus (deterministic, zero model calls)", ()
       kind: "retraction",
       assertionId: assertionRow.assertionId,
     });
-    expect(retracted.status).toBe("accepted");
+    expectAccepted(retracted, "earshot retraction");
     await drainMemoryIndexOutbox({ workerId: "w-gate4-drain" });
     const at = SEED_SECOND + 20;
     expect(recallText(await recall(ids, ids.player, at))).not.toContain("quitting_job");

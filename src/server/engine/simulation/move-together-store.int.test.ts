@@ -1,15 +1,21 @@
-import { eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import { eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
-import { db, simEngagements, simTriggers, simWorlds } from "@/server/db";
-import type { SpaceTopologySeed } from "./space-store";
-import { readDurableSpaceBranch, seedDurableSpaceTopology } from "./space-store";
+import { db, simEngagements, simTriggers } from "@/server/db";
+import {
+  ADMIT_AT_LOCKED_VERSION,
+  expectAccepted,
+  expectRejected,
+  playerPrincipal,
+  seedSimBranch,
+  simCommand,
+  simulationSuiteHarness,
+  type SimCommandEnvelope,
+} from "@/server/test-support";
+import { readDurableSpaceBranch } from "./space-store";
 import { submitDurableMoveTogether } from "./move-together-store";
-import { seedDurableMaterialBranch } from "./material-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * command-integrity A4 — the atomic walk-with-me. The old three-transaction
@@ -24,36 +30,9 @@ import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 const SEED_SECOND = 10_000;
 const WALK_AB = 600;
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_physical_loci limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") throw error;
-    process.stderr.write(
-      `[move-together-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("move-together-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
+const harness = await simulationSuiteHarness({
+  suite: "move-together-store.int.test",
+  table: "sim_physical_loci",
 });
 
 interface TogetherCase {
@@ -66,44 +45,44 @@ interface TogetherCase {
   zoneD: string;
 }
 
-function branchSeed(ids: TogetherCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
+async function seedTogetherCase(): Promise<TogetherCase> {
+  const worldId = newId();
+  const branchId = newId();
+  const playerId = newId();
+  const primaryId = newId();
+  const locHome = `${worldId}-loc-home`;
+  const locCafe = `${worldId}-loc-cafe`;
+  const locIsle = `${worldId}-loc-isle`;
+  const zoneA = `${branchId}-zone-a`;
+  const zoneB = `${branchId}-zone-b`;
+  const zoneD = `${branchId}-zone-d`;
+
+  await seedSimBranch({
+    worldId,
+    branchId,
     worldTypeId: "a4-tests",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
     rulesetVersion: "a4-test-v1",
     originStorySecond: SEED_SECOND,
     actors: [
-      { id: ids.playerId, name: "You" },
-      { id: ids.primaryId, name: "Nora" },
+      { id: playerId, name: "You" },
+      { id: primaryId, name: "Nora" },
     ],
-    items: [],
-  });
-}
-
-function topologySeed(ids: TogetherCase): SpaceTopologySeed {
-  const locHome = `${ids.worldId}-loc-home`;
-  const locCafe = `${ids.worldId}-loc-cafe`;
-  const locIsle = `${ids.worldId}-loc-isle`;
-  return {
-    branchId: ids.branchId,
     locations: [
-      { id: locHome, worldId: ids.worldId, kind: "home", defaultAccessPolicy: "private" },
-      { id: locCafe, worldId: ids.worldId, kind: "cafe", defaultAccessPolicy: "public" },
-      { id: locIsle, worldId: ids.worldId, kind: "isle", defaultAccessPolicy: "public" },
+      { id: locHome, worldId, kind: "home", defaultAccessPolicy: "private" },
+      { id: locCafe, worldId, kind: "cafe", defaultAccessPolicy: "public" },
+      { id: locIsle, worldId, kind: "isle", defaultAccessPolicy: "public" },
     ],
     zones: [
-      { id: ids.zoneA, locationId: locHome, kind: "room", privacyPolicy: "private" },
-      { id: ids.zoneB, locationId: locCafe, kind: "hall", privacyPolicy: "public" },
+      { id: zoneA, locationId: locHome, kind: "room", privacyPolicy: "private" },
+      { id: zoneB, locationId: locCafe, kind: "hall", privacyPolicy: "public" },
       // Disconnected — no link reaches it, so a move there is `no_route`.
-      { id: ids.zoneD, locationId: locIsle, kind: "cellar", privacyPolicy: "public" },
+      { id: zoneD, locationId: locIsle, kind: "cellar", privacyPolicy: "public" },
     ],
     links: [
       {
-        id: `${ids.branchId}-link-ab`,
-        fromZoneId: ids.zoneA,
-        toZoneId: ids.zoneB,
+        id: `${branchId}-link-ab`,
+        fromZoneId: zoneA,
+        toZoneId: zoneB,
         modes: ["walk"],
         minimumDurationSeconds: WALK_AB,
         accessPolicy: "public",
@@ -111,73 +90,46 @@ function topologySeed(ids: TogetherCase): SpaceTopologySeed {
       },
     ],
     // Both co-present at zone-a.
-    loci: [
-      { kind: "at", actorId: ids.playerId, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
-      { kind: "at", actorId: ids.primaryId, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
+    placements: [
+      { actorId: playerId, locationId: locHome, zoneId: zoneA },
+      { actorId: primaryId, locationId: locHome, zoneId: zoneA },
     ],
-  };
-}
-
-async function seedTogetherCase(): Promise<TogetherCase> {
-  const worldId = newId();
-  const branchId = newId();
-  const ids: TogetherCase = {
-    worldId,
-    branchId,
-    playerId: newId(),
-    primaryId: newId(),
-    zoneA: `${branchId}-zone-a`,
-    zoneB: `${branchId}-zone-b`,
-    zoneD: `${branchId}-zone-d`,
-  };
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology(topologySeed(ids));
-  seededWorldIds.push(worldId);
-  return ids;
+  });
+  harness.trackWorld(worldId);
+  return { worldId, branchId, playerId, primaryId, zoneA, zoneB, zoneD };
 }
 
 async function openScene(ids: TogetherCase): Promise<void> {
   const result = await submitDurableOpenEngagement(
-    {
-      id: `cmd-open-${ids.branchId}`,
+    simCommand({
       branchId: ids.branchId,
-      expectedVersion: 0,
-      idempotencyKey: `open-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.playerId] },
-      submittedAtWallClock: "2026-07-24T12:00:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
+      name: "open",
       type: "open_engagement",
-      schemaVersion: 1,
+      principal: playerPrincipal(ids.playerId),
       payload: { participantIds: [ids.playerId, ids.primaryId].sort(), channel: "co_present" },
-    },
-    { admitAtLockedVersion: true },
+    }),
+    ADMIT_AT_LOCKED_VERSION,
   );
-  if (result.status !== "accepted") throw new Error(`scene open failed: ${result.status}`);
+  expectAccepted(result, "scene open");
 }
 
-function togetherCommand(ids: TogetherCase, destinationZoneId: string, overrides: { id?: string } = {}) {
-  return {
-    id: overrides.id ?? `cmd-together-${ids.branchId}`,
+function togetherCommand(ids: TogetherCase, destinationZoneId: string): SimCommandEnvelope {
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: overrides.id ?? `together-key-${ids.branchId}`,
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.playerId] },
-    submittedAtWallClock: "2026-07-24T12:05:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name: "together",
     type: "move_together",
-    schemaVersion: 1,
+    principal: playerPrincipal(ids.playerId),
     payload: { actorId: ids.playerId, coTravelerActorId: ids.primaryId, destinationZoneId, travelMode: "walk" },
-  };
+  });
 }
 
-describe.runIf(ready)("command-integrity A4 — atomic move_together", () => {
+describe.runIf(harness.ready)("command-integrity A4 — atomic move_together", () => {
   it("walk-with-me: one shared journey carries BOTH, and a drain lands both together", async () => {
     const ids = await seedTogetherCase();
     await openScene(ids);
 
-    const result = await submitDurableMoveTogether(togetherCommand(ids, ids.zoneB), { admitAtLockedVersion: true });
-    expect(result.status).toBe("accepted");
-    if (result.status !== "accepted") return;
+    const result = await submitDurableMoveTogether(togetherCommand(ids, ids.zoneB), ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(result, "walk-with-me");
     // engagement_ended + journey_planned + actor_departed + trigger_scheduled — ONE batch.
     expect(result.eventIds).toHaveLength(4);
 
@@ -221,10 +173,8 @@ describe.runIf(ready)("command-integrity A4 — atomic move_together", () => {
     // An unroutable destination is refused. In the old two-move flow a crash after
     // the player's move left the player in transit + the primary at origin; here the
     // WHOLE batch is one transaction, so a failure commits nothing at all.
-    const result = await submitDurableMoveTogether(togetherCommand(ids, ids.zoneD), { admitAtLockedVersion: true });
-    expect(result.status).toBe("rejected");
-    if (result.status !== "rejected") return;
-    expect(result.code).toBe("no_route");
+    const result = await submitDurableMoveTogether(togetherCommand(ids, ids.zoneD), ADMIT_AT_LOCKED_VERSION);
+    expectRejected(result, "no_route", "unroutable walk-together");
 
     const after = await readDurableSpaceBranch(ids.branchId);
     // Nobody moved: both still AT zone-a, no journey exists.
@@ -242,9 +192,9 @@ describe.runIf(ready)("command-integrity A4 — atomic move_together", () => {
   it("re-running the same command id replays the stored result (branch-level idempotency)", async () => {
     const ids = await seedTogetherCase();
     await openScene(ids);
-    const first = await submitDurableMoveTogether(togetherCommand(ids, ids.zoneB), { admitAtLockedVersion: true });
-    expect(first.status).toBe("accepted");
-    const replay = await submitDurableMoveTogether(togetherCommand(ids, ids.zoneB), { admitAtLockedVersion: true });
+    const first = await submitDurableMoveTogether(togetherCommand(ids, ids.zoneB), ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(first, "first walk-together");
+    const replay = await submitDurableMoveTogether(togetherCommand(ids, ids.zoneB), ADMIT_AT_LOCKED_VERSION);
     expect(replay).toEqual(first);
     // Still exactly one journey — the replay did not depart the pair a second time.
     const after = await readDurableSpaceBranch(ids.branchId);

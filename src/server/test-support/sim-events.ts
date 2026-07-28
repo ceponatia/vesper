@@ -1,5 +1,5 @@
 import { asc, eq } from "drizzle-orm";
-import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
+import type { BranchForkResult, SimulationBranchEvent } from "@/contracts/simulation/branching";
 import type { PrincipalKind } from "@/contracts/simulation/envelopes";
 import { newId } from "@/lib/ids";
 import { db, simBranches, simEvents } from "@/server/db";
@@ -88,6 +88,8 @@ export interface ForkAtHeadResult {
   atSequence: number;
   /** The parent's own event stream, for the replay-parity assertion that follows. */
   parentEvents: SimulationBranchEvent[];
+  /** The production fork result — trigger inheritance assertions read this. */
+  fork: BranchForkResult;
 }
 
 /**
@@ -105,7 +107,7 @@ export async function forkAtHead(input: ForkAtHeadInput): Promise<ForkAtHeadResu
   if (!parent) throw new Error(`parent branch row missing: ${input.parentBranchId}`);
 
   const childBranchId = input.childBranchId ?? newId();
-  await forkBranch({
+  const fork = await forkBranch({
     parentBranchId: input.parentBranchId,
     childBranchId,
     atSequence: parent.headSequence,
@@ -117,5 +119,6 @@ export async function forkAtHead(input: ForkAtHeadInput): Promise<ForkAtHeadResu
     childBranchId,
     atSequence: parent.headSequence,
     parentEvents: await readBranchEvents(input.parentBranchId),
+    fork,
   };
 }

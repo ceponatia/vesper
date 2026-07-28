@@ -1,12 +1,8 @@
-import { and, eq, sql } from "drizzle-orm";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { and, eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import { isMaterialEvent } from "@/contracts/simulation/branching";
-import {
-  materialBranchSeedSchema,
-  transferItemCommandSchema,
-  type MaterialBranchSeed,
-  type TransferItemCommand,
-} from "@/contracts/simulation/materials";
+import { itemConditionRegistryV1 } from "@/contracts/simulation/material-condition";
+import { transferItemCommandSchema, type TransferItemCommand } from "@/contracts/simulation/materials";
 import {
   deriveScheduleCommandId,
   deriveTriggerCommandId,
@@ -21,7 +17,6 @@ import {
   simItemConditionModifiers,
   simSnapshots,
   simTriggers,
-  simWorlds,
 } from "@/server/db";
 import { explainItemPlacement } from "./audit-store";
 import {
@@ -30,7 +25,7 @@ import {
   readDurableBranchState,
   loadBranchAncestry,
 } from "./branch-store";
-import { seedDurableMaterialBranch, submitDurableTransferItem } from "./material-store";
+import { submitDurableTransferItem } from "./material-store";
 import { consumeNextItemTransferOutbox, rebuildItemTransferFeed } from "./outbox-store";
 import {
   advanceBranchStoryTime,
@@ -42,40 +37,29 @@ import {
   discardBranchSnapshots,
   rebuildDurableBranchProjection,
 } from "./snapshot-store";
-import { seedDurableSpaceTopology } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
+import {
+  expectAccepted,
+  LEGACY_ENGINE_TEST_PLAYER_ID,
+  playerPrincipal,
+  seedSimBranch,
+  simulationSuiteHarness,
+} from "@/server/test-support";
+
+/**
+ * E2.5 forks, snapshots and audit, plus E5.3 slice 3's item-condition
+ * fork/replay parity. Runs on the shared `simulationSuiteHarness` scaffold
+ * (probe + legacy-player guard + pool close) with per-test world teardown —
+ * every case seeds its own world and none of them read another's rows.
+ */
+
+const harness = await simulationSuiteHarness({
+  suite: "branch-store.int.test",
+  // Selecting from sim_snapshots is itself the from-zero migration check.
+  table: "sim_snapshots",
+  cleanup: "afterEach",
+});
 
 const SEED_STORY_SECOND = 57_600;
-
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      // Selecting from sim_snapshots is itself the from-zero migration check.
-      db().execute(sql`select 1 from sim_snapshots limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[branch-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("branch-store.int.test");
-const seededWorldIds: string[] = [];
 
 interface CaseIds {
   worldId: string;
@@ -102,49 +86,12 @@ function makeIds(itemCount = 1, worldId = newId()): CaseIds {
   };
 }
 
-function branchSeed(ids: CaseIds): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e2-5-test-world",
-    worldSeed: "8899aabbccddeeff",
-    branchId: ids.branchId,
-    rulesetVersion: "e2-5-test-v1",
-    originStorySecond: SEED_STORY_SECOND,
-    actors: [{ id: ids.actorId, name: "Mara" }],
-    items: [
-      {
-        id: ids.sourceId,
-        name: "Mara's bag",
-        container: { capacityCount: 8, access: { kind: "holder_only" } },
-        locus: { kind: "held", actorId: ids.actorId },
-      },
-      {
-        id: ids.destinationId,
-        name: "the cafe table",
-        container: { capacityCount: 8, access: { kind: "holder_only" } },
-        locus: { kind: "held", actorId: ids.actorId },
-      },
-      ...ids.itemIds.map((id, index) => ({
-        id,
-        name: index === 0 ? "gold ring" : `test item ${index + 1}`,
-        locus: { kind: "container" as const, containerItemId: ids.sourceId },
-      })),
-    ],
-  });
-}
-
-function topologySeed(ids: CaseIds) {
-  return {
-    branchId: ids.branchId,
-    locations: [{ id: ids.locationId, worldId: ids.worldId, kind: "cafe", defaultAccessPolicy: "public" as const }],
-    zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "hall", privacyPolicy: "public" as const }],
-    links: [],
-    loci: [
-      { kind: "at" as const, actorId: ids.actorId, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_STORY_SECOND },
-    ],
-  };
-}
-
+/**
+ * Kept as a hand-built, schema-PARSED command: it is embedded verbatim in a
+ * scheduled trigger's payload (`scheduleAt`), so it must be a real
+ * `TransferItemCommand`, and its identities are freshly minted per call because
+ * several cases submit the same item twice on one branch.
+ */
 function command(
   ids: CaseIds,
   itemId = ids.itemIds[0]!,
@@ -170,9 +117,39 @@ function command(
 }
 
 async function seedCase(ids: CaseIds): Promise<void> {
-  if (!seededWorldIds.includes(ids.worldId)) seededWorldIds.push(ids.worldId);
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology(topologySeed(ids));
+  harness.trackWorld(ids.worldId);
+  await seedSimBranch({
+    worldId: ids.worldId,
+    branchId: ids.branchId,
+    worldTypeId: "e2-5-test-world",
+    worldSeed: "8899aabbccddeeff",
+    rulesetVersion: "e2-5-test-v1",
+    originStorySecond: SEED_STORY_SECOND,
+    actors: [{ id: ids.actorId, name: "Mara" }],
+    items: [
+      {
+        id: ids.sourceId,
+        name: "Mara's bag",
+        container: { capacityCount: 8, access: { kind: "holder_only" } },
+        locus: { kind: "held", actorId: ids.actorId },
+      },
+      {
+        id: ids.destinationId,
+        name: "the cafe table",
+        container: { capacityCount: 8, access: { kind: "holder_only" } },
+        locus: { kind: "held", actorId: ids.actorId },
+      },
+      ...ids.itemIds.map((id, index) => ({
+        id,
+        name: index === 0 ? "gold ring" : `test item ${index + 1}`,
+        locus: { kind: "container" as const, containerItemId: ids.sourceId },
+      })),
+    ],
+    locations: [{ id: ids.locationId, worldId: ids.worldId, kind: "cafe", defaultAccessPolicy: "public" }],
+    zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "hall", privacyPolicy: "public" }],
+    links: [],
+    placements: [{ actorId: ids.actorId, locationId: ids.locationId, zoneId: ids.zoneId }],
+  });
 }
 
 function scheduleAt(ids: CaseIds, dueStorySecond: number, uniquenessKey: string, itemIndex = 0) {
@@ -187,6 +164,11 @@ function scheduleAt(ids: CaseIds, dueStorySecond: number, uniquenessKey: string,
   });
 }
 
+/**
+ * Forks at an EXPLICIT sequence — the whole point of this suite, including the
+ * out-of-bounds and self-fork failure cases. `forkAtHead` (test-support) reads
+ * the parent's head and cannot express any of that.
+ */
 function fork(ids: CaseIds, atSequence: number, childBranchId = newId()) {
   return forkBranch({
     parentBranchId: ids.branchId,
@@ -211,18 +193,7 @@ function containerLocus(containerItemId: string) {
   return { kind: "container" as const, containerItemId };
 }
 
-afterEach(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  for (const worldId of seededWorldIds.splice(0)) {
-    await db().delete(simWorlds).where(eq(simWorlds.id, worldId));
-  }
-});
-
-afterAll(async () => {
-  await globalThis.__vesperPool?.end();
-});
-
-describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
+describe.runIf(harness.ready)("E2.5 forks, snapshots, and audit", () => {
   it("forks at N re-creating exactly the alarms set at or before N (R1/R2)", async () => {
     const ids = makeIds(3);
     await seedCase(ids);
@@ -594,7 +565,7 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
   });
 });
 
-describe.skipIf(!ready)("E5.3 slice 3 — item condition fork/replay parity (§26.7)", () => {
+describe.runIf(harness.ready)("E5.3 slice 3 — item condition fork/replay parity (§26.7)", () => {
   it("forks mid-worn-window: the child carries the meter + live modifier rows and a re-armed pending alarm, and its own drain fires the crossing independently", async () => {
     const worldId = newId();
     const branchId = newId();
@@ -602,33 +573,28 @@ describe.skipIf(!ready)("E5.3 slice 3 — item condition fork/replay parity (§2
     const garmentId = newId();
     const locationId = `${worldId}-loc-home`;
     const zoneId = `${branchId}-zone-room`;
-    seededWorldIds.push(worldId);
+    harness.trackWorld(worldId);
 
-    await seedDurableMaterialBranch(
-      materialBranchSeedSchema.parse({
-        worldId,
-        worldTypeId: "e5-3-slice3-fork-tests",
-        worldSeed: "8899aabbccddeeff",
-        branchId,
-        rulesetVersion: "e5-3-slice3-fork-test-v1",
-        originStorySecond: SEED_STORY_SECOND,
-        actors: [{ id: actorId, name: "Mara" }],
-        items: [
-          {
-            id: garmentId,
-            name: "Linen shirt",
-            conditionTracked: true,
-            locus: { kind: "held", actorId },
-          },
-        ],
-      }),
-    );
-    await seedDurableSpaceTopology({
+    await seedSimBranch({
+      worldId,
       branchId,
-      locations: [{ id: locationId, worldId, kind: "home", defaultAccessPolicy: "private" as const }],
-      zones: [{ id: zoneId, locationId, kind: "room", privacyPolicy: "private" as const }],
+      worldTypeId: "e5-3-slice3-fork-tests",
+      worldSeed: "8899aabbccddeeff",
+      rulesetVersion: "e5-3-slice3-fork-test-v1",
+      originStorySecond: SEED_STORY_SECOND,
+      actors: [{ id: actorId, name: "Mara" }],
+      items: [
+        {
+          id: garmentId,
+          name: "Linen shirt",
+          conditionTracked: true,
+          locus: { kind: "held", actorId },
+        },
+      ],
+      locations: [{ id: locationId, worldId, kind: "home", defaultAccessPolicy: "private" }],
+      zones: [{ id: zoneId, locationId, kind: "room", privacyPolicy: "private" }],
       links: [],
-      loci: [{ kind: "at" as const, actorId, locationId, zoneId, since: SEED_STORY_SECOND }],
+      placements: [{ actorId, locationId, zoneId }],
     });
 
     // Don the garment: the worn-window transition (`buildWornWindowTransition`
@@ -642,7 +608,7 @@ describe.skipIf(!ready)("E5.3 slice 3 — item condition fork/replay parity (§2
         branchId,
         expectedVersion: 0,
         idempotencyKey: newId(),
-        principal: { kind: "player", principalId: "principal-1", controlledActorIds: [actorId] },
+        principal: playerPrincipal(actorId),
         submittedAtWallClock: "2026-07-19T21:00:00.000Z",
         type: "transfer_item",
         schemaVersion: 2,
@@ -655,7 +621,7 @@ describe.skipIf(!ready)("E5.3 slice 3 — item condition fork/replay parity (§2
         },
       }),
     );
-    if (don.status !== "accepted") throw new Error(`expected the don transfer to be accepted, got ${don.status}`);
+    expectAccepted(don, "don the linen shirt");
 
     const [modifierRow] = await db()
       .select()
@@ -683,7 +649,7 @@ describe.skipIf(!ready)("E5.3 slice 3 — item condition fork/replay parity (§2
       parentBranchId: branchId,
       childBranchId: childId,
       atSequence: don.lastSequence,
-      principal: { kind: "player", principalId: "principal-1" },
+      principal: { kind: "player", principalId: LEGACY_ENGINE_TEST_PLAYER_ID },
       reason: "mid-worn-window retake",
     });
     expect(forkResult.pendingTriggerIds).toHaveLength(1);
@@ -692,7 +658,10 @@ describe.skipIf(!ready)("E5.3 slice 3 — item condition fork/replay parity (§2
       .select()
       .from(simItemConditionMeters)
       .where(and(eq(simItemConditionMeters.branchId, childId), eq(simItemConditionMeters.itemId, garmentId)));
-    expect(childMeterRows.map((row) => row.meterKey).sort()).toEqual(["cleanliness", "wear"]);
+    // Derived from the registry, so adding a meter to it is a one-file change.
+    expect(childMeterRows.map((row) => row.meterKey).sort()).toEqual(
+      itemConditionRegistryV1.map((definition) => definition.key).sort(),
+    );
 
     const [childModifierRow] = await db()
       .select()

@@ -1,39 +1,29 @@
-import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import {
-  materialBranchSeedSchema,
-  type MaterialBranchSeedInput,
-} from "@/contracts/simulation/materials";
+import { and, asc, count, eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
 import { cohortPresenceAt, emptyCohortsSeed, replayCohortHistory } from "@/lib/simulation";
+import { db, simActorLods, simCohorts, simEvents, simPhysicalLoci, simTriggers } from "@/server/db";
 import {
-  db,
-  simActorLods,
-  simBodyConditions,
-  simBodyMeters,
-  simBodyModifiers,
-  simBranches,
-  simCharacters,
-  simCohorts,
-  simCommands,
-  simEvents,
-  simObservations,
-  simOutbox,
-  simPhysicalLoci,
-  simTriggers,
-  simWorlds,
-} from "@/server/db";
-import { readDurableBodies, seedDurableBodyRhythms, submitDurableInitializeActorBody } from "./body-store";
-import { forkBranch } from "./branch-store";
+  ADMIT_AT_LOCKED_VERSION,
+  branchFootprint,
+  expectAccepted,
+  footprintDelta,
+  forkAtHead,
+  gmPrincipal,
+  playerPrincipal,
+  readBranchEvents,
+  seedReferenceRhythms,
+  seedSimBranch,
+  simCommand,
+  simulationSuiteHarness,
+  type SimTestPrincipal,
+} from "@/server/test-support";
+import { readDurableBodies, submitDurableInitializeActorBody } from "./body-store";
 import { submitDurableAdjustCohort, submitDurableCreateCohort } from "./cohort-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
 import { submitDurableAssignActorLod } from "./lod-store";
-import { seedDurableMaterialBranch } from "./material-store";
-import { branchEventFromRow } from "./observation-store";
 import { submitDurablePromoteActorFromCohort } from "./promotion-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
-import { seedDurableSpaceTopology } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * The Gate 6 exit corpus + scaling proof (engine.gate6.dual-lod.md §"Gate 6
@@ -51,38 +41,9 @@ import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
  *     dependency wake (EXIT 3).
  */
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_cohorts limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[gate6-corpus.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("gate6-corpus.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
+const harness = await simulationSuiteHarness({
+  suite: "gate6-corpus.int.test",
+  table: "sim_cohorts",
 });
 
 const DAY = 86_400;
@@ -90,8 +51,12 @@ const DAY = 86_400;
 const SEED_SECOND = 2 * DAY + 600 * 60;
 const BEDTIME_D2 = 2 * DAY + 1_380 * 60;
 
-const sleepRhythmRow = (actorId: string) =>
-  ({ actorId, kind: "sleep", startMinuteOfDay: 1_380, endMinuteOfDay: 420 }) as const;
+/**
+ * Sleep only, no wash window — the shared reference rhythms with the hygiene
+ * half switched off, which is what this corpus has always seeded.
+ */
+const seedSleepRhythm = (branchId: string, actorId: string): Promise<unknown> =>
+  seedReferenceRhythms(branchId, actorId, { wash: false });
 
 interface CorpusCase {
   worldId: string;
@@ -124,77 +89,54 @@ async function seedCase(extraActorCount = 0, extrasApart = false): Promise<Corpu
     ana: newId(),
     extras: Array.from({ length: extraActorCount }, () => newId()),
   };
-  seededWorldIds.push(worldId);
-  const actors: MaterialBranchSeedInput["actors"] = [
+  harness.trackWorld(worldId);
+  const actors: readonly { id: string; name: string }[] = [
     { id: ids.ana, name: "Ana" },
     ...ids.extras.map((id, index) => ({ id, name: `Background ${index}` })),
   ];
-  await seedDurableMaterialBranch(
-    materialBranchSeedSchema.parse({
-      worldId,
-      worldTypeId: "gate6-corpus-world",
-      worldSeed: `seed-${worldId}`,
-      branchId,
-      rulesetVersion: "gate6-corpus-v1",
-      originStorySecond: SEED_SECOND,
-      actors,
-      items: [],
-    }),
-  );
-  await seedDurableSpaceTopology({
+  await seedSimBranch({
+    worldId,
     branchId,
+    worldTypeId: "gate6-corpus-world",
+    rulesetVersion: "gate6-corpus-v1",
+    originStorySecond: SEED_SECOND,
+    actors,
     locations: [{ id: ids.locationId, worldId, kind: "town", defaultAccessPolicy: "public" }],
     zones: [
       { id: ids.squareZoneId, locationId: ids.locationId, kind: "plaza", privacyPolicy: "public" },
       { id: ids.outskirtsZoneId, locationId: ids.locationId, kind: "district", privacyPolicy: "public" },
     ],
     links: [],
-    loci: actors.map((actor) => ({
-      kind: "at" as const,
+    placements: actors.map((actor) => ({
       actorId: actor.id,
       locationId: ids.locationId,
       zoneId: extrasApart && actor.id !== ids.ana ? ids.outskirtsZoneId : ids.squareZoneId,
-      since: SEED_SECOND,
     })),
   });
   return ids;
 }
-
-const admit = { admitAtLockedVersion: true };
-const gmPrincipal = { kind: "storyteller" as const, principalId: "gm-1", controlledActorIds: [] };
 
 function command(
   ids: CorpusCase,
   name: string,
   type: string,
   payload: Record<string, unknown>,
-  principal: object = gmPrincipal,
+  principal: SimTestPrincipal = gmPrincipal,
 ) {
-  return {
-    id: `cmd-${name}-${ids.branchId}`,
-    branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `${name}-key-${ids.branchId}`,
-    principal,
-    submittedAtWallClock: "2026-07-21T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
-    type,
-    schemaVersion: 1,
-    payload,
-  };
+  return simCommand({ branchId: ids.branchId, name, type, payload, principal });
 }
 
 async function trackBody(ids: CorpusCase, actorId: string, name: string): Promise<void> {
-  await seedDurableBodyRhythms({ branchId: ids.branchId, rows: [sleepRhythmRow(actorId)] });
+  await seedSleepRhythm(ids.branchId, actorId);
   const initialized = await submitDurableInitializeActorBody(
     command(ids, `init-${name}`, "initialize_actor_body", {
       actorId,
       registryVersion: "body-v1",
       baselineOverrides: {},
     }),
-    admit,
+    ADMIT_AT_LOCKED_VERSION,
   );
-  expect(initialized.status).toBe("accepted");
+  expectAccepted(initialized, `body init ${name}`);
 }
 
 async function assignLod(
@@ -209,83 +151,9 @@ async function assignLod(
       simulationLod,
       inferenceLod: "no_model",
     }),
-    admit,
+    ADMIT_AT_LOCKED_VERSION,
   );
-  expect(assigned.status).toBe("accepted");
-}
-
-async function branchEvents(branchId: string) {
-  const rows = await db()
-    .select()
-    .from(simEvents)
-    .where(eq(simEvents.branchId, branchId))
-    .orderBy(asc(simEvents.sequence));
-  return rows.map(branchEventFromRow);
-}
-
-/** Row counts across every table the Gate 6 lanes can write — the "rows
- * written" meter (the gate5-corpus `worldFootprint` idiom). */
-async function worldFootprint(branchId: string): Promise<Record<string, number>> {
-  const value = (rows: { value: number }[]) => rows[0]?.value ?? 0;
-  return {
-    events: value(
-      await db().select({ value: count() }).from(simEvents).where(eq(simEvents.branchId, branchId)),
-    ),
-    commands: value(
-      await db().select({ value: count() }).from(simCommands).where(eq(simCommands.branchId, branchId)),
-    ),
-    triggers: value(
-      await db().select({ value: count() }).from(simTriggers).where(eq(simTriggers.branchId, branchId)),
-    ),
-    bodyMeters: value(
-      await db().select({ value: count() }).from(simBodyMeters).where(eq(simBodyMeters.branchId, branchId)),
-    ),
-    bodyConditions: value(
-      await db()
-        .select({ value: count() })
-        .from(simBodyConditions)
-        .where(eq(simBodyConditions.branchId, branchId)),
-    ),
-    bodyModifiers: value(
-      await db()
-        .select({ value: count() })
-        .from(simBodyModifiers)
-        .where(eq(simBodyModifiers.branchId, branchId)),
-    ),
-    actorLods: value(
-      await db().select({ value: count() }).from(simActorLods).where(eq(simActorLods.branchId, branchId)),
-    ),
-    cohorts: value(
-      await db().select({ value: count() }).from(simCohorts).where(eq(simCohorts.branchId, branchId)),
-    ),
-    characters: value(
-      await db().select({ value: count() }).from(simCharacters).where(eq(simCharacters.branchId, branchId)),
-    ),
-    loci: value(
-      await db()
-        .select({ value: count() })
-        .from(simPhysicalLoci)
-        .where(eq(simPhysicalLoci.branchId, branchId)),
-    ),
-    observations: value(
-      await db()
-        .select({ value: count() })
-        .from(simObservations)
-        .where(eq(simObservations.branchId, branchId)),
-    ),
-    outbox: value(
-      await db().select({ value: count() }).from(simOutbox).where(eq(simOutbox.branchId, branchId)),
-    ),
-  };
-}
-
-function footprintDelta(
-  before: Record<string, number>,
-  after: Record<string, number>,
-): Record<string, number> {
-  const delta: Record<string, number> = {};
-  for (const key of Object.keys(after)) delta[key] = (after[key] ?? 0) - (before[key] ?? 0);
-  return delta;
+  expectAccepted(assigned, `LOD ${name}`);
 }
 
 async function firedTriggerCount(branchId: string): Promise<number> {
@@ -296,7 +164,7 @@ async function firedTriggerCount(branchId: string): Promise<number> {
   return row?.value ?? 0;
 }
 
-describe.runIf(ready)(
+describe.runIf(harness.ready)(
   "Gate 6 exit corpus — dual LOD and autonomous background life (E6.5)",
   () => {
     // -----------------------------------------------------------------------
@@ -322,19 +190,19 @@ describe.runIf(ready)(
             registryVersion: "cohort-v1",
           },
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(created.status).toBe("accepted");
+      expectAccepted(created, "cohort creation");
       const influx = await submitDurableAdjustCohort(
         command(ids, "influx", "adjust_cohort", { cohortId, deltaCount: 5, reason: "influx" }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(influx.status).toBe("accepted");
+      expectAccepted(influx, "cohort influx");
       const attrition = await submitDurableAdjustCohort(
         command(ids, "attrition", "adjust_cohort", { cohortId, deltaCount: -3, reason: "attrition" }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(attrition.status).toBe("accepted");
+      expectAccepted(attrition, "cohort attrition");
 
       const promoted = await submitDurablePromoteActorFromCohort(
         command(ids, "promote-maren", "promote_actor_from_cohort", {
@@ -343,11 +211,11 @@ describe.runIf(ready)(
           name: "Maren",
           landing: { simulationLod: "event", inferenceLod: "no_model" },
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(promoted.status).toBe("accepted");
+      expectAccepted(promoted, "promotion");
 
-      const preEmbodyEvents = await branchEvents(ids.branchId);
+      const preEmbodyEvents = await readBranchEvents(ids.branchId);
       const materialized = preEmbodyEvents.find(
         (event) => event.type === "actor_materialized_from_aggregate",
       );
@@ -356,16 +224,16 @@ describe.runIf(ready)(
       }
       const maren = materialized.payload.actorId;
 
-      await seedDurableBodyRhythms({ branchId: ids.branchId, rows: [sleepRhythmRow(maren)] });
+      await seedSleepRhythm(ids.branchId, maren);
       const embodied = await submitDurableInitializeActorBody(
         command(ids, "embody-maren", "initialize_actor_body", {
           actorId: maren,
           registryVersion: "body-v1",
           baselineOverrides: {},
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(embodied.status).toBe("accepted");
+      expectAccepted(embodied, "Maren's embodiment");
 
       const drained = await advanceBranchStoryTime(ids.branchId, BEDTIME_D2 + 1, {
         workerId: "w-gate6-exit1",
@@ -373,7 +241,7 @@ describe.runIf(ready)(
       expect(drained.status).toBe("advanced");
 
       // ---- The hop-by-hop walk, from events alone. --------------------------
-      const events = await branchEvents(ids.branchId);
+      const events = await readBranchEvents(ids.branchId);
       const byId = new Map(events.map((event) => [event.id, event]));
 
       // Hop 1: Maren is asleep — and the asleep condition belongs to the SAME
@@ -490,6 +358,15 @@ describe.runIf(ready)(
     // allowed to scale; LIFE cost must not: model calls, triggers fired,
     // events appended, and rows written during the drain must be EQUAL, not
     // merely sublinear.
+    //
+    // TIMEOUT: this case seeds TWO worlds, the larger one authoring 30 cohorts
+    // and 30 embodied dormant actors — ~4s of pure authoring, which the exit
+    // criterion explicitly ALLOWS to scale. That alone sat at ~98% of vitest's
+    // 5s default, and the derived `branchFootprint` (every branch-scoped sim_
+    // table, not a hand-listed twelve) tipped it over. The wall-time claim this
+    // test actually makes is the `big.lifeMillis` bound below — the harness
+    // timeout is not a proof, so it is raised rather than the measurement
+    // weakened.
     // -----------------------------------------------------------------------
     it("EXIT 2 — 100× the background population is the same routine-life work: equal triggers, events, and rows; zero model calls", async () => {
       interface ScaleRun {
@@ -535,26 +412,28 @@ describe.runIf(ready)(
                 registryVersion: "cohort-v1",
               },
             }),
-            admit,
+            ADMIT_AT_LOCKED_VERSION,
           );
-          expect(created.status).toBe("accepted");
+          expectAccepted(created, `cohort ${index}`);
         }
         for (const [index, extra] of ids.extras.entries()) {
-          await seedDurableBodyRhythms({ branchId: ids.branchId, rows: [sleepRhythmRow(extra)] });
+          await seedSleepRhythm(ids.branchId, extra);
           const initialized = await submitDurableInitializeActorBody(
             command(ids, `init-extra-${index}`, "initialize_actor_body", {
               actorId: extra,
               registryVersion: "body-v1",
               baselineOverrides: {},
             }),
-            admit,
+            ADMIT_AT_LOCKED_VERSION,
           );
-          expect(initialized.status).toBe("accepted");
+          expectAccepted(initialized, `extra ${index} body init`);
           await assignLod(ids, extra, `extra-${index}`, "dormant");
         }
         const seedMillis = performance.now() - seedStarted;
 
-        const beforeFootprint = await worldFootprint(ids.branchId);
+        // `branchFootprint` derives its table list from the drizzle schema, so
+        // a lane added later is measured here without editing this file.
+        const beforeFootprint = await branchFootprint(ids.branchId);
         const beforeFired = await firedTriggerCount(ids.branchId);
         const lifeStarted = performance.now();
         const drained = await advanceBranchStoryTime(ids.branchId, SEED_SECOND + 3 * DAY, {
@@ -562,7 +441,7 @@ describe.runIf(ready)(
         });
         const lifeMillis = performance.now() - lifeStarted;
         expect(drained.status).toBe("advanced");
-        const afterFootprint = await worldFootprint(ids.branchId);
+        const afterFootprint = await branchFootprint(ids.branchId);
         const decisionsRows = await db()
           .select({ value: count() })
           .from(simEvents)
@@ -592,9 +471,11 @@ describe.runIf(ready)(
       // (no model client exists in this suite; nothing to count).
       expect(big.lifeTriggersFired).toBe(small.lifeTriggersFired);
       expect(big.lifeDelta).toEqual(small.lifeDelta);
-      expect(big.lifeDelta.cohorts).toBe(0);
-      expect(big.lifeDelta.characters).toBe(0);
-      expect(big.lifeDelta.actorLods).toBe(0);
+      // `footprintDelta` drops the zeros, so an ABSENT key is "nothing was
+      // written to that table" — the same claim the old exact-zero read made.
+      expect(big.lifeDelta.sim_cohorts ?? 0).toBe(0);
+      expect(big.lifeDelta.sim_characters ?? 0).toBe(0);
+      expect(big.lifeDelta.sim_actor_lods ?? 0).toBe(0);
 
       // The dormant background did no work at all during three story-days.
       const dormantTriggers = await db()
@@ -611,7 +492,7 @@ describe.runIf(ready)(
       process.stderr.write(
         `[gate6 scaling] background 3,003 → 300,030 people | seed ${small.seedMillis.toFixed(0)}ms → ${big.seedMillis.toFixed(0)}ms (authoring, may scale) | life ${small.lifeMillis.toFixed(0)}ms → ${big.lifeMillis.toFixed(0)}ms | triggers fired ${small.lifeTriggersFired} → ${big.lifeTriggersFired} | life row deltas equal: ${JSON.stringify(small.lifeDelta)}\n`,
       );
-    });
+    }, 30_000);
 
     // -----------------------------------------------------------------------
     // 3 — Partition invariance across the routine and dormant lanes: one big
@@ -625,34 +506,28 @@ describe.runIf(ready)(
       if (!riven) throw new Error("expected the dormant extra");
       await trackBody(ids, ids.ana, "ana");
       await assignLod(ids, ids.ana, "ana", "event");
-      await seedDurableBodyRhythms({ branchId: ids.branchId, rows: [sleepRhythmRow(riven)] });
+      await seedSleepRhythm(ids.branchId, riven);
       const initialized = await submitDurableInitializeActorBody(
         command(ids, "init-riven", "initialize_actor_body", {
           actorId: riven,
           registryVersion: "body-v1",
           baselineOverrides: {},
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(initialized.status).toBe("accepted");
+      expectAccepted(initialized, "Riven's body init");
       await assignLod(ids, riven, "riven", "dormant");
 
-      const [parentRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-      if (!parentRow) throw new Error("parent branch row missing");
-      const childA = newId();
-      const childB = newId();
-      for (const [childId, reason] of [
-        [childA, "gate6 partition — one big jump"],
-        [childB, "gate6 partition — smaller jumps"],
-      ] as const) {
-        await forkBranch({
-          parentBranchId: ids.branchId,
-          childBranchId: childId,
-          atSequence: parentRow.headSequence,
-          principal: { kind: "storyteller", principalId: "gm-1" },
-          reason,
-        });
-      }
+      // Both children fork at the SAME parent head, so the two partitionings
+      // start from bit-identical inherited history.
+      const { childBranchId: childA } = await forkAtHead({
+        parentBranchId: ids.branchId,
+        reason: "gate6 partition — one big jump",
+      });
+      const { childBranchId: childB } = await forkAtHead({
+        parentBranchId: ids.branchId,
+        reason: "gate6 partition — smaller jumps",
+      });
 
       // Day 5, 08:00 — past three bedtimes and three wakes for Ana; Riven
       // dormant throughout.
@@ -670,21 +545,16 @@ describe.runIf(ready)(
       // The wake at the far end, identical command shape in both children.
       for (const childId of [childA, childB]) {
         const opened = await submitDurableOpenEngagement(
-          {
-            id: `cmd-wake-${childId}`,
+          simCommand({
             branchId: childId,
-            expectedVersion: 0,
-            idempotencyKey: `wake-key-${childId}`,
-            principal: { kind: "player", principalId: "player-1", controlledActorIds: [ids.ana] },
-            submittedAtWallClock: "2026-07-21T12:00:00.000Z",
-            correlationId: `corr-${childId}`,
+            name: "wake",
             type: "open_engagement",
-            schemaVersion: 1,
+            principal: playerPrincipal(ids.ana),
             payload: { participantIds: [ids.ana, riven].sort(), channel: "co_present" },
-          },
-          admit,
+          }),
+          ADMIT_AT_LOCKED_VERSION,
         );
-        expect(opened.status).toBe("accepted");
+        expectAccepted(opened, `wake on ${childId}`);
       }
 
       // Bit-identical bodies across the partitionings — meters, conditions,

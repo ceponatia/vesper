@@ -1,6 +1,5 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import { and, asc, eq, sql } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
 import { emptyActorLodsSeed, replayActorLodHistory } from "@/lib/simulation";
 import {
@@ -8,61 +7,36 @@ import {
   simActorLods,
   simBodyConditions,
   simBodyMeters,
-  simBranches,
   simEvents,
   simTriggers,
-  simWorlds,
 } from "@/server/db";
-import { seedDurableBodyRhythms, submitDurableInitializeActorBody } from "./body-store";
-import { forkBranch } from "./branch-store";
+import { submitDurableInitializeActorBody } from "./body-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
 import { readEffectiveActorLod, submitDurableAssignActorLod } from "./lod-store";
-import { seedDurableMaterialBranch } from "./material-store";
-import { branchEventFromRow } from "./observation-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
-import { seedDurableSpaceTopology } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
+import {
+  ADMIT_AT_LOCKED_VERSION,
+  expectAccepted,
+  expectRejected,
+  forkAtHead,
+  gmPrincipal,
+  readBranchEvents,
+  seedReferenceRhythms,
+  seedSimpleBranch,
+  simCommand,
+  simulationSuiteHarness,
+  type SimTestPrincipal,
+} from "@/server/test-support";
 
 /**
  * E6.1 durable actor-LOD ledger (engine.spec §27–§28): `assign_actor_lod` end
  * to end — defaults, assignment, idempotency, authorization, the §27.3
  * demotion guards against a live engagement, and fork-mid-ledger parity.
- * Mirrors social-store.int.test.ts's harness shape.
+ * Runs on the shared `simulationSuiteHarness` scaffold (probe + legacy-player
+ * guard + world teardown + pool close).
  */
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_actor_lods limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[lod-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("lod-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
-});
+const harness = await simulationSuiteHarness({ suite: "lod-store.int.test", table: "sim_actor_lods" });
 
 const SEED_SECOND = 200_000;
 
@@ -76,75 +50,45 @@ interface LodCase {
   cy: string;
 }
 
-function branchSeed(ids: LodCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e6-1-test-world",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e6-1-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.ana, name: "Ana" },
-      { id: ids.ben, name: "Ben" },
-      { id: ids.cy, name: "Cy" },
-    ],
-    items: [],
-  });
-}
-
 async function seedCase(): Promise<LodCase> {
-  const worldId = newId();
-  const branchId = newId();
-  const ids: LodCase = {
-    worldId,
-    branchId,
-    locationId: `${worldId}-loc-cafe`,
-    zoneId: `${branchId}-zone-cafe`,
-    ana: newId(),
-    ben: newId(),
-    cy: newId(),
-  };
-  seededWorldIds.push(worldId);
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology({
-    branchId,
-    locations: [{ id: ids.locationId, worldId, kind: "cafe", defaultAccessPolicy: "public" }],
-    zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "cafe", privacyPolicy: "public" }],
-    links: [],
-    loci: [
-      { kind: "at", actorId: ids.ana, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND },
-      { kind: "at", actorId: ids.ben, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND },
-      { kind: "at", actorId: ids.cy, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND },
+  const ana = newId();
+  const ben = newId();
+  const cy = newId();
+  const seeded = await seedSimpleBranch({
+    prefix: "e6-1-test",
+    actors: [
+      { id: ana, name: "Ana" },
+      { id: ben, name: "Ben" },
+      { id: cy, name: "Cy" },
     ],
+    originStorySecond: SEED_SECOND,
+    locationSlug: "cafe",
+    locationKind: "cafe",
+    zoneSlug: "cafe",
+    zoneKind: "cafe",
   });
-  return ids;
+  harness.trackWorld(seeded.worldId);
+  return {
+    worldId: seeded.worldId,
+    branchId: seeded.branchId,
+    locationId: seeded.locationId,
+    zoneId: seeded.zoneId,
+    ana,
+    ben,
+    cy,
+  };
 }
-
-const admit = { admitAtLockedVersion: true };
-const gmPrincipal = { kind: "storyteller" as const, principalId: "gm-1", controlledActorIds: [] };
 
 function assignCmd(
   ids: LodCase,
   name: string,
   payload: { actorId: string; simulationLod: string; inferenceLod: string },
-  principal: { kind: string; principalId: string; controlledActorIds: string[] } = gmPrincipal,
+  principal: SimTestPrincipal = gmPrincipal,
 ) {
-  return {
-    id: `cmd-${name}-${ids.branchId}`,
-    branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `${name}-key-${ids.branchId}`,
-    principal,
-    submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
-    type: "assign_actor_lod",
-    schemaVersion: 1,
-    payload,
-  };
+  return simCommand({ branchId: ids.branchId, name, type: "assign_actor_lod", payload, principal });
 }
 
-describe.runIf(ready)("E6.1 durable actor-LOD ledger", () => {
+describe.runIf(harness.ready)("E6.1 durable actor-LOD ledger", () => {
   it("assigns, reads, defends idempotency and authorization, and forks with parity", async () => {
     const ids = await seedCase();
 
@@ -155,9 +99,9 @@ describe.runIf(ready)("E6.1 durable actor-LOD ledger", () => {
     // Assigning the defaults verbatim is a structured no_op, not a row.
     const noop = await submitDurableAssignActorLod(
       assignCmd(ids, "noop", { actorId: ids.ana, simulationLod: "exact", inferenceLod: "deliberator" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(noop).toMatchObject({ status: "rejected", code: "no_op" });
+    expectRejected(noop, "no_op", "assigning the registry defaults verbatim");
 
     // A non-privileged principal cannot touch the dial.
     const unauthorized = await submitDurableAssignActorLod(
@@ -167,34 +111,28 @@ describe.runIf(ready)("E6.1 durable actor-LOD ledger", () => {
         { actorId: ids.ana, simulationLod: "event", inferenceLod: "no_model" },
         { kind: "player", principalId: "player-1", controlledActorIds: [ids.ana] },
       ),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(unauthorized).toMatchObject({ status: "rejected", code: "unauthorized_principal" });
+    expectRejected(unauthorized, "unauthorized_principal", "a player turning the LOD dial");
 
     const unknown = await submitDurableAssignActorLod(
       assignCmd(ids, "ghost", { actorId: newId(), simulationLod: "event", inferenceLod: "no_model" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(unknown).toMatchObject({ status: "rejected", code: "actor_not_found" });
+    expectRejected(unknown, "actor_not_found", "assigning an actor that does not exist");
 
     // A real assignment lands the event, the row, and the read.
     const assigned = await submitDurableAssignActorLod(
       assignCmd(ids, "ana-event", { actorId: ids.ana, simulationLod: "event", inferenceLod: "small_model" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(assigned.status).toBe("accepted");
-    if (assigned.status !== "accepted") throw new Error("unreachable");
+    expectAccepted(assigned, "assign Ana to event/small_model");
     const after = await readEffectiveActorLod(db(), ids.branchId, ids.ana);
     expect(after).toMatchObject({ simulationLod: "event", inferenceLod: "small_model", source: "assigned" });
 
-    const [eventRow] = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(asc(simEvents.sequence))
-      .then((rows) => rows.filter((row) => row.type === "actor_lod_assigned"));
-    expect(eventRow).toBeDefined();
-    expect(eventRow?.payload).toMatchObject({
+    const [assignedEvent] = await readBranchEvents(ids.branchId, { types: ["actor_lod_assigned"] });
+    expect(assignedEvent).toBeDefined();
+    expect(assignedEvent?.payload).toMatchObject({
       actorId: ids.ana,
       simulationLod: "event",
       inferenceLod: "small_model",
@@ -206,21 +144,17 @@ describe.runIf(ready)("E6.1 durable actor-LOD ledger", () => {
     // Idempotency: the same command replays its cached result, appends nothing.
     const replayed = await submitDurableAssignActorLod(
       assignCmd(ids, "ana-event", { actorId: ids.ana, simulationLod: "event", inferenceLod: "small_model" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
     expect(replayed).toEqual(assigned);
-    const lodEventCount = await db()
-      .select({ count: sql<number>`count(*)::int` })
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .then((rows) => rows[0]?.count ?? 0);
+    const lodEventCount = (await readBranchEvents(ids.branchId)).length;
 
     // A later promotion supersedes the row (one row per actor).
     const promoted = await submitDurableAssignActorLod(
       assignCmd(ids, "ana-back", { actorId: ids.ana, simulationLod: "exact", inferenceLod: "deliberator" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(promoted.status).toBe("accepted");
+    expectAccepted(promoted, "promote Ana back to exact/deliberator");
     const rows = await db()
       .select()
       .from(simActorLods)
@@ -230,23 +164,10 @@ describe.runIf(ready)("E6.1 durable actor-LOD ledger", () => {
     expect(lodEventCount).toBeGreaterThan(0);
 
     // Fork at head: the child's ledger rows replay bit-identical from events.
-    const [parentBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!parentBranchRow) throw new Error("parent branch row missing");
-    const childBranchId = newId();
-    await forkBranch({
+    const { childBranchId, parentEvents } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId,
-      atSequence: parentBranchRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "E6.1 fork parity",
     });
-
-    const parentEvents = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(asc(simEvents.sequence))
-      .then((eventRows) => eventRows.map(branchEventFromRow));
     const replayedProjection = replayActorLodHistory({
       seed: emptyActorLodsSeed(childBranchId, SEED_SECOND),
       events: parentEvents,
@@ -277,42 +198,37 @@ describe.runIf(ready)("E6.1 durable actor-LOD ledger", () => {
     const ids = await seedCase();
 
     const opened = await submitDurableOpenEngagement(
-      {
-        id: `cmd-chat-${ids.branchId}`,
+      simCommand({
         branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `chat-key-${ids.branchId}`,
-        principal: { kind: "player", principalId: "player-1", controlledActorIds: [ids.ana] },
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: `corr-${ids.branchId}`,
+        name: "chat",
         type: "open_engagement",
-        schemaVersion: 1,
+        principal: { kind: "player", principalId: "player-1", controlledActorIds: [ids.ana] },
         payload: { participantIds: [ids.ana, ids.ben].sort(), channel: "co_present" },
-      },
-      admit,
+      }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(opened.status).toBe("accepted");
+    expectAccepted(opened, "open the Ana/Ben scene");
 
     // A participant cannot be demoted out from under a live scene.
     const blocked = await submitDurableAssignActorLod(
       assignCmd(ids, "ben-demote", { actorId: ids.ben, simulationLod: "dormant", inferenceLod: "no_model" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(blocked).toMatchObject({ status: "rejected", code: "demotion_blocked_open_engagement" });
+    expectRejected(blocked, "demotion_blocked_open_engagement", "demoting a live scene participant");
 
     // The inference axis stays a free dial for the same engaged actor.
     const inferenceOnly = await submitDurableAssignActorLod(
       assignCmd(ids, "ben-quiet", { actorId: ids.ben, simulationLod: "exact", inferenceLod: "no_model" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(inferenceOnly.status).toBe("accepted");
+    expectAccepted(inferenceOnly, "an inference-only change for an engaged actor");
 
     // A bystander outside the scene demotes freely.
     const bystander = await submitDurableAssignActorLod(
       assignCmd(ids, "cy-demote", { actorId: ids.cy, simulationLod: "dormant", inferenceLod: "no_model" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(bystander.status).toBe("accepted");
+    expectAccepted(bystander, "demote a bystander outside the scene");
   });
 
   it("dormant actors provably do no scheduled work, and waking re-arms life (E6.3)", async () => {
@@ -320,26 +236,18 @@ describe.runIf(ready)("E6.1 durable actor-LOD ledger", () => {
     const ids = await seedCase();
 
     async function trackBody(actorId: string, name: string): Promise<void> {
-      await seedDurableBodyRhythms({
-        branchId: ids.branchId,
-        rows: [{ actorId, kind: "sleep", startMinuteOfDay: 1_380, endMinuteOfDay: 420 }],
-      });
+      // Sleep only — no wash window; the hygiene reset is not what this proves.
+      await seedReferenceRhythms(ids.branchId, actorId, { wash: false });
       const initialized = await submitDurableInitializeActorBody(
-        {
-          id: `cmd-init-${name}-${ids.branchId}`,
+        simCommand({
           branchId: ids.branchId,
-          expectedVersion: 0,
-          idempotencyKey: `init-${name}-key-${ids.branchId}`,
-          principal: gmPrincipal,
-          submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-          correlationId: `corr-${ids.branchId}`,
+          name: `init-${name}`,
           type: "initialize_actor_body",
-          schemaVersion: 1,
           payload: { actorId, registryVersion: "body-v1", baselineOverrides: {} },
-        },
-        admit,
+        }),
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(initialized.status).toBe("accepted");
+      expectAccepted(initialized, `initialize ${name}'s body`);
     }
     async function pendingTriggersFor(branchId: string, actorId: string) {
       const rows = await db()
@@ -366,9 +274,9 @@ describe.runIf(ready)("E6.1 durable actor-LOD ledger", () => {
     // Event LOD arms the routine boundary plus the re-solved body alarms.
     const toEvent = await submitDurableAssignActorLod(
       assignCmd(ids, "ana-live", { actorId: ids.ana, simulationLod: "event", inferenceLod: "no_model" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(toEvent.status).toBe("accepted");
+    expectAccepted(toEvent, "move Ana to event LOD");
     const live = await pendingTriggersFor(ids.branchId, ids.ana);
     expect(live.some((row) => row.kind === "routine_policy_due")).toBe(true);
     expect(live.some((row) => row.kind === "body_threshold_due")).toBe(true);
@@ -376,9 +284,9 @@ describe.runIf(ready)("E6.1 durable actor-LOD ledger", () => {
     // Demotion to dormant retires every alarm the actor owns.
     const toDormant = await submitDurableAssignActorLod(
       assignCmd(ids, "ana-dormant", { actorId: ids.ana, simulationLod: "dormant", inferenceLod: "no_model" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(toDormant.status).toBe("accepted");
+    expectAccepted(toDormant, "demote Ana to dormant");
     expect(await pendingTriggersFor(ids.branchId, ids.ana)).toHaveLength(0);
 
     // Three story-days pass — across two would-be bedtimes and both meters'
@@ -406,14 +314,8 @@ describe.runIf(ready)("E6.1 durable actor-LOD ledger", () => {
     expect(metersAfter).toEqual(metersBefore);
 
     // A fork of the sleeping-nothing branch carries no phantom alarms.
-    const [parentRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!parentRow) throw new Error("parent branch row missing");
-    const childBranchId = newId();
-    await forkBranch({
+    const { childBranchId } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId,
-      atSequence: parentRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "E6.3 dormant fork parity",
     });
     expect(await pendingTriggersFor(childBranchId, ids.ana)).toHaveLength(0);
@@ -422,9 +324,9 @@ describe.runIf(ready)("E6.1 durable actor-LOD ledger", () => {
     // the next bedtime puts the actor to sleep through ordinary law.
     const wake = await submitDurableAssignActorLod(
       assignCmd(ids, "ana-wake", { actorId: ids.ana, simulationLod: "event", inferenceLod: "no_model" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(wake.status).toBe("accepted");
+    expectAccepted(wake, "wake Ana back to event LOD");
     const rearmed = await pendingTriggersFor(ids.branchId, ids.ana);
     expect(rearmed.some((row) => row.kind === "routine_policy_due")).toBe(true);
     const nextBedtime = 5 * DAY + 1_380 * 60;
@@ -445,16 +347,16 @@ describe.runIf(ready)("E6.1 durable actor-LOD ledger", () => {
     // is a §27.3 near-boundary hazard, named in the rejection.
     const tuckedAway = await submitDurableAssignActorLod(
       assignCmd(ids, "ana-tuck", { actorId: ids.ana, simulationLod: "dormant", inferenceLod: "no_model" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(tuckedAway).toMatchObject({ status: "rejected", code: "demotion_blocked_active_condition" });
+    expectRejected(tuckedAway, "demotion_blocked_active_condition", "tucking a sleeping actor below event");
 
     // A body initialized for an already-dormant actor arms nothing at all.
     const cyDormant = await submitDurableAssignActorLod(
       assignCmd(ids, "cy-dormant", { actorId: ids.cy, simulationLod: "dormant", inferenceLod: "no_model" }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(cyDormant.status).toBe("accepted");
+    expectAccepted(cyDormant, "demote Cy to dormant");
     await trackBody(ids.cy, "cy");
     expect(await pendingTriggersFor(ids.branchId, ids.cy)).toHaveLength(0);
   });

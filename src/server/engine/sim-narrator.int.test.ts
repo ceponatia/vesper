@@ -1,8 +1,15 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { proposedArmedEffectSchema } from "@/contracts/simulation/narrative";
 import { deriveEngagementId } from "@/lib/simulation";
 import { db, simEvents, simWorlds } from "@/server/db";
+import {
+  ADMIT_AT_LOCKED_VERSION,
+  expectAccepted,
+  playerPrincipal,
+  simCommand,
+  simulationSuiteHarness,
+} from "@/server/test-support";
 import { renderCommittedCut, type RenderSeam } from "./sim-narrator";
 import {
   ROLLOUT_ACTORS,
@@ -12,7 +19,6 @@ import {
   seedRolloutTestWorld,
 } from "./simulation";
 import { submitDurableOpenEngagement } from "./simulation/engagement-store";
-import { legacyEngineTestPlayerPrincipal, requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * R2 (engine.rollout.plan.md) — the live-narrator leg with the model seam
@@ -21,40 +27,21 @@ import { legacyEngineTestPlayerPrincipal, requireLegacyUnanchoredEngineTestMode 
  * (ruling 8), a persistently bad render WITHHOLDS without touching state,
  * and an enacted armed effect lands a real speech_act_delivered through
  * confirm_narrator_result.
+ *
+ * `simulationSuiteHarness` supplies the probe, the legacy-player opt-in guard
+ * (this suite submits a player command against the directly-seeded, unanchored
+ * rollout branch — without the flag the authz seam refuses the open as
+ * `unanchored_player` and the failure reads as a domain bug) and the pool
+ * close. The rollout world's ids are FIXED, so the explicit both-ends teardown
+ * below stays hand-written rather than tracked (tracking it would delete the
+ * same world twice).
  */
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_narrative_cuts limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[sim-narrator.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-// This suite submits a player command against the directly-seeded (unanchored)
-// rollout branch, so it needs the same aggregate-run opt-in as the store
-// suites — without it the authz seam refuses the open as `unanchored_player`
-// and the failure reads as a domain bug. (Missed by the 2026-07-27 fail-fast
-// conversion; CI's `pnpm test:engine` already exports the flag.)
-if (ready) requireLegacyUnanchoredEngineTestMode("sim-narrator.int.test");
+const harness = await simulationSuiteHarness({
+  suite: "sim-narrator.int.test",
+  table: "sim_narrative_cuts",
+});
+const ready = harness.ready;
 
 async function teardown(): Promise<void> {
   await db().delete(simWorlds).where(eq(simWorlds.id, ROLLOUT_WORLD_ID));
@@ -85,27 +72,19 @@ function seamOf(replies: unknown[]): { seam: RenderSeam; calls: () => number } {
 describe.runIf(ready)("R2 sim narrator over the committed cut", () => {
   it("renders, retries hidden from the same cut, withholds cleanly, and confirms enacted effects", async () => {
     await seedRolloutTestWorld();
-    const openCommandId = "r2-test-open-ana-mara";
-    const engagementId = deriveEngagementId(ROLLOUT_BRANCH_ID, openCommandId);
-    const opened = await submitDurableOpenEngagement(
-      {
-        id: openCommandId,
-        branchId: ROLLOUT_BRANCH_ID,
-        expectedVersion: 0,
-        idempotencyKey: openCommandId,
-        principal: legacyEngineTestPlayerPrincipal([ROLLOUT_ACTORS.mara]),
-        submittedAtWallClock: new Date().toISOString(),
-        correlationId: "r2-test",
-        type: "open_engagement",
-        schemaVersion: 1,
-        payload: {
-          participantIds: [ROLLOUT_ACTORS.ana, ROLLOUT_ACTORS.mara].sort(),
-          channel: "co_present",
-        },
+    const openCommand = simCommand({
+      branchId: ROLLOUT_BRANCH_ID,
+      name: "r2-test-open-ana-mara",
+      type: "open_engagement",
+      principal: playerPrincipal(ROLLOUT_ACTORS.mara),
+      payload: {
+        participantIds: [ROLLOUT_ACTORS.ana, ROLLOUT_ACTORS.mara].sort(),
+        channel: "co_present",
       },
-      { admitAtLockedVersion: true },
-    );
-    expect(opened.status).toBe("accepted");
+    });
+    const engagementId = deriveEngagementId(ROLLOUT_BRANCH_ID, openCommand.id);
+    const opened = await submitDurableOpenEngagement(openCommand, ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(opened, "opening the Ana/Mara engagement on the rollout branch");
 
     const turn = await prepareEngagementTurn({
       branchId: ROLLOUT_BRANCH_ID,
