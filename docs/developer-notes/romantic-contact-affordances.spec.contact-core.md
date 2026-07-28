@@ -1,7 +1,9 @@
 # Romantic contact affordances — shared contact core
 
-Status: draft technical companion to
+Status: technical companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
+(promoted 2026-07-28 — in the committed foot-first scope, slices 0–4; ships
+to finished/ when implemented)
 
 ## Boundary: attempt, resolution, commitment
 

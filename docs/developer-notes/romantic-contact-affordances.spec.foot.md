@@ -1,7 +1,9 @@
 # Romantic contact affordances — foot domain
 
-Status: draft technical companion to
+Status: technical companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
+(promoted 2026-07-28 — the first proving domain, committed slices 0–4; ships
+to finished/ when implemented)
 
 ## Scope
 

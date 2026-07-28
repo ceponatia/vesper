@@ -120,37 +120,24 @@ which intermediates earn their keep, anti-tedium cap) live in the stub.
 
 ## Body-attribute physics and visual affordances
 
-_Owner direction 2026-07-26. Stub:
-[deferred/body-attribute-affordances.plan.md](deferred/body-attribute-affordances.plan.md)._
-A deterministic layer that turns authored body attributes plus live state
-(wetness, binding, coverage, pose, environment) into currently valid,
-perception-gated **visual observations** — structured facts like
-`hair.strands_adhere_to_skin`, realized by the narrator rather than improvised.
-Each domain compiles resolved attributes into a structural profile, derives
-reusable current mechanics, assembles a frame with actual force/contact/state,
-then resolves narrow phenomena. V1 recomputes the current cut: no tick loop,
-persisted dirty sets, or affordance-owned hysteresis. Reads physiology results
-but never duplicates its transfer functions
-([deferred/physiology.plan.md](deferred/physiology.plan.md)). Hair is the proving
-domain; the companion set contains one shared architecture spec plus hair,
-skin-surface, garment, appendage, soft-tissue, and relative-geometry domain
-specs, plus a recognizable-features projection that derives identity cues from
-located body truth and observer visual memory rather than storing a duplicate
-feature array. Thermal observations remain explicitly out of scope.
+_Graduated 2026-07-28 →
+[body-attribute-affordances.plan.md](body-attribute-affordances.plan.md), queued
+at the top of [roadmap.md](roadmap.md) §Next with its full companion-spec set.
+Owner ruling at promotion: the shared affordance core (structural profiles,
+phenomenon registry, evidence, perception + cue ranking) builds under this plan
+first; the romantic-contact plan queues directly behind and consumes it._
 
 ## Romantic contact affordances
 
-_Owner direction 2026-07-27; broadened 2026-07-28. Stub:
-[deferred/romantic-contact-affordances.plan.md](deferred/romantic-contact-affordances.plan.md)._
-Give romantic chat a grounded understanding of current physical contact:
-whether a contact can happen, which body and garment surfaces are involved,
-what pressure/motion/texture/moisture imply, which changes were actually
-committed, what the point of view can perceive, and what is worth mentioning
-without repetition. Foot play is the first proving domain; adult,
-consent-gated intimate regions are the second. The technical companion set
-separates the shared contact/action boundary from foot and intimate-region
-phenomena and consumes—without duplicating—wardrobe, physiology, pose,
-consent, perception, body state, and narrator memory.
+_Graduated 2026-07-28 →
+[romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md),
+queued in [roadmap.md](roadmap.md) §Next directly behind the body-attribute
+plan. Foot-first: the committed scope is slices 0–4 (the shared contact
+foundation plus the foot domain fully working — evaluated in romantic chat,
+with committed contact effects); intimate regions (slices 5–6) stay in the
+plan and follow. Each spec ships and moves to finished/ individually; the plan
+ships when the owner is satisfied the necessary contact affordances are
+covered._
 
 ## Clothing state graph and condition gradients
 

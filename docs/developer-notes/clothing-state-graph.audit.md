@@ -3,7 +3,7 @@
 Status: complete — 2026-07-27 (detail doc for
 [clothing-state-graph.plan.md](clothing-state-graph.plan.md) §Slice 0; downstream
 companion:
-[deferred/body-attribute-affordances.spec.garment-interaction.md](deferred/body-attribute-affordances.spec.garment-interaction.md)).
+[body-attribute-affordances.spec.garment-interaction.md](body-attribute-affordances.spec.garment-interaction.md)).
 Every file:line below was re-verified against the tree at `d3e09ac4`, superseding
 the review evidence captured at parking time.
 

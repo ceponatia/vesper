@@ -1,6 +1,15 @@
 # Romantic contact affordances
 
-Status: draft (parked 2026-07-28; not scheduled or approved for implementation)
+Status: next (promoted from deferred/ 2026-07-28 — foot-first. The committed
+first scope is delivery slices 0–4: everything needed to make the
+[foot domain](romantic-contact-affordances.spec.foot.md) fully work in romantic
+chat, including committed contact effects. Intimate regions — slices 5–6 — stay
+in this plan and queue behind the foot proof. Each technical companion spec
+ships and moves to `finished/` individually as its slice lands; this plan moves
+to shipped only when the owner is satisfied all necessary contact affordances
+are covered. Sequenced directly behind
+[body-attribute-affordances.plan.md](body-attribute-affordances.plan.md), which
+builds the shared affordance core this plan consumes.)
 
 ## In one sentence
 
@@ -168,11 +177,14 @@ This plan connects several existing systems rather than replacing them:
 
 - [Body-attribute affordances](body-attribute-affordances.plan.md) turns stable
   appearance and live state into grounded observations. Romantic contact reuses
-  its read-and-rank approach.
-- [Clothing state graph](../clothing-state-graph.plan.md) owns what garments
+  its read-and-rank approach. Promoted together 2026-07-28 and sequenced first:
+  the shared affordance core (structural profiles, phenomenon registry,
+  evidence, perception + cue ranking) is built under that plan, and this plan
+  consumes it.
+- [Clothing state graph](clothing-state-graph.plan.md) owns what garments
   exist, how they are worn, and whether they are wet, shifted, opened, or
   removed.
-- [Physiology](physiology.plan.md) owns live responses such as erection,
+- [Physiology](deferred/physiology.plan.md) owns live responses such as erection,
   swelling, lubrication, flushing, temperature, and sweat.
 - [Skin surface](body-attribute-affordances.spec.skin-surface.md) owns the
   readable surface effects of moisture, products, marks, and residue.
@@ -185,6 +197,10 @@ The contact layer owns none of those source facts. It brings their current
 answers together for one interaction.
 
 ## Delivery outline
+
+The committed first roadmap scope is slices 0–4 — the foot proof, end to end.
+Slices 5–6 follow under this same plan once the foot trial passes; slice 7
+closes the loop.
 
 ### Slice 0 — confirm the truth sources
 

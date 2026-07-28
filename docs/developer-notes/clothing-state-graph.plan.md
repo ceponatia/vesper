@@ -72,8 +72,8 @@ material**:
   is not a live chat wardrobe substrate;
 - the successor engine has real item identities/loci and fixed-point
   cleanliness/wear meters, but its chat surface renders only worn item names;
-- the deferred
-  [garment-affordance spec](deferred/body-attribute-affordances.spec.garment-interaction.md)
+- the
+  [garment-affordance spec](body-attribute-affordances.spec.garment-interaction.md)
   expects wardrobe-owned material profiles and persistent wetness, dirt,
   damage, displacement, and fastened state that do not exist yet.
 
@@ -157,8 +157,9 @@ The graph, coefficients, and percentages remain inspector/debug data.
 ## Promotion rulings (owner, 2026-07-27)
 
 - **R1 (OQ9) — promoted alone, as the prerequisite.** This plan graduates by
-  itself; [deferred/body-attribute-affordances.plan.md](deferred/body-attribute-affordances.plan.md)
-  stays parked and consumes this plan's digest when it later promotes. No
+  itself; [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
+  stays parked and consumes this plan's digest when it later promotes (it
+  promoted 2026-07-28). No
   shared perception/ranking slice now — slice 8 remains the integration seam.
 - **R2 (OQ3) — continuity may mint ad-hoc garment instances.** An unowned
   garment the fiction introduces ("a borrowed hoodie") becomes a real

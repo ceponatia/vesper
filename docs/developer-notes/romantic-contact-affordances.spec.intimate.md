@@ -1,7 +1,8 @@
 # Romantic contact affordances — intimate-region domain
 
-Status: draft technical companion to
+Status: technical companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
+(promoted 2026-07-28 — later scope: slices 5–6, queued behind the foot proof)
 
 ## Scope and safety boundary
 
