@@ -1,5 +1,6 @@
 export * from "./diagnostics";
 export * from "./attributes";
+export * from "./affordances";
 export * from "./body/locations";
 export * from "./body/plans";
 export * from "./rules/attribute-rule";
