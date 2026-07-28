@@ -1,19 +1,35 @@
-import { eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import { eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
 import { deriveCommitmentId } from "@/lib/simulation";
-import { db, simTriggers, simWorlds } from "@/server/db";
+import { db, simTriggers } from "@/server/db";
 import { forkBranch } from "./branch-store";
 import {
   readDurableCommitments,
   submitDurableCreateCommitment,
   submitDurableFulfillCommitment,
 } from "./commitment-store";
-import { seedDurableMaterialBranch } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
-import { readDurableSpaceBranch, seedDurableSpaceTopology, submitDurableMoveActor } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
+import { readDurableSpaceBranch, submitDurableMoveActor } from "./space-store";
+import {
+  expectAccepted,
+  expectRejected,
+  LEGACY_ENGINE_TEST_PLAYER_ID,
+  playerPrincipal,
+  seedSimBranch,
+  seedSimpleBranch,
+  simCommand,
+  simulationSuiteHarness,
+} from "@/server/test-support";
+
+/**
+ * E3.3 durable commitments and temporal pressure, plus E5.5 slice 2's
+ * destinationless promises, `fulfill_commitment` and repair chains. Runs on the
+ * shared `simulationSuiteHarness` scaffold (probe + legacy-player guard + world
+ * teardown + pool close).
+ */
+
+const harness = await simulationSuiteHarness({ suite: "commitment-store.int.test", table: "sim_commitments" });
 
 const SEED_SECOND = 50_000;
 const WALK = 600;
@@ -23,59 +39,12 @@ const PREPARATION = 100;
 // latestDeparture = 52_000 - 600 - 100 = 51_300; noticeAt = 50_800.
 const NOTICE_AT = SHIFT_AT - WALK - PREPARATION - NOTICE_LEAD;
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_commitments limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[commitment-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("commitment-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
-});
-
 interface ShiftCase {
   worldId: string;
   branchId: string;
   actorId: string;
   zoneHome: string;
   zoneWork: string;
-}
-
-function branchSeed(ids: ShiftCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e3-3-tests",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e3-3-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [{ id: ids.actorId, name: "Mara" }],
-    items: [],
-  });
 }
 
 async function seedShiftCase(): Promise<ShiftCase> {
@@ -89,9 +58,13 @@ async function seedShiftCase(): Promise<ShiftCase> {
     zoneWork: `${branchId}-zone-work`,
   };
   const locTown = `${worldId}-loc-town`;
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology({
+  await seedSimBranch({
+    worldId,
     branchId,
+    worldTypeId: "e3-3-tests",
+    rulesetVersion: "e3-3-test-v1",
+    originStorySecond: SEED_SECOND,
+    actors: [{ id: ids.actorId, name: "Mara" }],
     locations: [{ id: locTown, worldId, kind: "town", defaultAccessPolicy: "public" }],
     zones: [
       { id: ids.zoneHome, locationId: locTown, kind: "room", privacyPolicy: "private" },
@@ -108,23 +81,18 @@ async function seedShiftCase(): Promise<ShiftCase> {
         state: "open",
       },
     ],
-    loci: [{ kind: "at", actorId: ids.actorId, locationId: locTown, zoneId: ids.zoneHome, since: SEED_SECOND }],
+    placements: [{ actorId: ids.actorId, locationId: locTown, zoneId: ids.zoneHome }],
   });
-  seededWorldIds.push(worldId);
+  harness.trackWorld(worldId);
   return ids;
 }
 
 function createCommand(ids: ShiftCase) {
-  return {
-    id: `cmd-shift-${ids.branchId}`,
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `shift-key-${ids.branchId}`,
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-17T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name: "shift",
     type: "create_commitment",
-    schemaVersion: 1,
+    principal: playerPrincipal(ids.actorId),
     payload: {
       actorId: ids.actorId,
       kind: "shift",
@@ -137,30 +105,25 @@ function createCommand(ids: ShiftCase) {
       noticeLeadSeconds: NOTICE_LEAD,
       knowledgeSource: { kind: "authored" },
     },
-  };
+  });
 }
 
 function moveCommand(ids: ShiftCase, expectedVersion: number) {
-  return {
-    id: `cmd-depart-${ids.branchId}`,
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion,
-    idempotencyKey: `depart-key-${ids.branchId}`,
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-17T12:05:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name: "depart",
     type: "move_actor",
-    schemaVersion: 1,
+    expectedVersion,
+    principal: playerPrincipal(ids.actorId),
     payload: { actorId: ids.actorId, destinationZoneId: ids.zoneWork, travelMode: "walk" },
-  };
+  });
 }
 
-describe.runIf(ready)("E3.3 durable commitments and temporal pressure", () => {
+describe.runIf(harness.ready)("E3.3 durable commitments and temporal pressure", () => {
   it("creates a shift with captured derivation and both triggers pending", async () => {
     const ids = await seedShiftCase();
     const result = await submitDurableCreateCommitment(createCommand(ids));
-    expect(result.status).toBe("accepted");
-    if (result.status !== "accepted") return;
+    expectAccepted(result, "create the shift commitment");
     expect(result.eventIds).toHaveLength(3);
 
     const projection = await readDurableCommitments(ids.branchId);
@@ -191,7 +154,7 @@ describe.runIf(ready)("E3.3 durable commitments and temporal pressure", () => {
     await advanceBranchStoryTime(ids.branchId, NOTICE_AT, { workerId: "w-kept-notice" });
     // Departure after the pressure: v2 (create, pressure) → move.
     const move = await submitDurableMoveActor(moveCommand(ids, 2));
-    expect(move.status).toBe("accepted");
+    expectAccepted(move, "depart in time for the shift");
 
     const outcome = await advanceBranchStoryTime(ids.branchId, SHIFT_AT, { workerId: "w-kept" });
     expect(outcome.status).toBe("advanced");
@@ -210,7 +173,7 @@ describe.runIf(ready)("E3.3 durable commitments and temporal pressure", () => {
     // at 52_500, after the 52_000 deadline.
     await advanceBranchStoryTime(ids.branchId, SHIFT_AT - 100, { workerId: "w-late-dawdle" });
     const move = await submitDurableMoveActor(moveCommand(ids, 2));
-    expect(move.status).toBe("accepted");
+    expectAccepted(move, "depart too late for the shift");
 
     const outcome = await advanceBranchStoryTime(ids.branchId, SHIFT_AT + WALK, { workerId: "w-late" });
     expect(outcome.status).toBe("advanced");
@@ -246,7 +209,7 @@ describe.runIf(ready)("E3.3 durable commitments and temporal pressure", () => {
       parentBranchId: ids.branchId,
       childBranchId,
       atSequence: 3,
-      principal: { kind: "player", principalId: "principal-1" },
+      principal: { kind: "player", principalId: LEGACY_ENGINE_TEST_PLAYER_ID },
       reason: "pre-deadline retake",
     });
     expect(fork.pendingTriggerIds).toHaveLength(2);
@@ -298,63 +261,43 @@ interface PromiseCase {
   zoneHome: string;
 }
 
-function promiseBranchSeed(ids: PromiseCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e5-5-slice2-tests",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e5-5-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.actorId, name: "Mara" },
-      { id: ids.counterpartId, name: "Ben" },
-    ],
-    items: [],
-  });
-}
-
 async function seedPromiseCase(): Promise<PromiseCase> {
-  const worldId = newId();
-  const branchId = newId();
-  const ids: PromiseCase = {
-    worldId,
-    branchId,
-    actorId: newId(),
-    counterpartId: newId(),
-    zoneHome: `${branchId}-zone-home`,
-  };
-  const locTown = `${worldId}-loc-town`;
-  await seedDurableMaterialBranch(promiseBranchSeed(ids));
-  await seedDurableSpaceTopology({
-    branchId,
-    locations: [{ id: locTown, worldId, kind: "town", defaultAccessPolicy: "public" }],
-    zones: [{ id: ids.zoneHome, locationId: locTown, kind: "room", privacyPolicy: "private" }],
-    links: [],
-    loci: [
-      { kind: "at", actorId: ids.actorId, locationId: locTown, zoneId: ids.zoneHome, since: SEED_SECOND },
-      { kind: "at", actorId: ids.counterpartId, locationId: locTown, zoneId: ids.zoneHome, since: SEED_SECOND },
+  const actorId = newId();
+  const counterpartId = newId();
+  const seeded = await seedSimpleBranch({
+    prefix: "e5-5-test",
+    actors: [
+      { id: actorId, name: "Mara" },
+      { id: counterpartId, name: "Ben" },
     ],
+    originStorySecond: SEED_SECOND,
+    locationSlug: "town",
+    locationKind: "town",
+    zoneSlug: "home",
+    zoneKind: "room",
+    privacyPolicy: "private",
   });
-  seededWorldIds.push(worldId);
-  return ids;
+  harness.trackWorld(seeded.worldId);
+  return {
+    worldId: seeded.worldId,
+    branchId: seeded.branchId,
+    actorId,
+    counterpartId,
+    zoneHome: seeded.zoneId,
+  };
 }
 
 function promiseCommand(
   ids: PromiseCase,
-  overrides: Record<string, unknown> = {},
+  options: { name?: string; expectedVersion?: number } = {},
   payloadOverrides: Record<string, unknown> = {},
 ) {
-  return {
-    id: `cmd-promise-${ids.branchId}`,
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `promise-key-${ids.branchId}`,
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-17T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name: options.name ?? "promise",
     type: "create_commitment",
-    schemaVersion: 1,
+    expectedVersion: options.expectedVersion ?? 0,
+    principal: playerPrincipal(ids.actorId),
     payload: {
       actorId: ids.actorId,
       kind: "promise",
@@ -368,30 +311,25 @@ function promiseCommand(
       knowledgeSource: { kind: "authored" },
       ...payloadOverrides,
     },
-    ...overrides,
-  };
+  });
 }
 
 function fulfillCommand(ids: PromiseCase, commitmentId: string, expectedVersion: number, suffix = "fulfill") {
-  return {
-    id: `cmd-${suffix}-${ids.branchId}`,
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion,
-    idempotencyKey: `${suffix}-key-${ids.branchId}`,
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-17T12:05:00.000Z",
-    correlationId: `corr-${suffix}-${ids.branchId}`,
+    name: suffix,
     type: "fulfill_commitment",
-    schemaVersion: 1,
+    expectedVersion,
+    principal: playerPrincipal(ids.actorId),
     payload: { commitmentId },
-  };
+  });
 }
 
-describe.runIf(ready)("E5.5 slice 2 — destinationless commitments, fulfill_commitment, and repair chains", () => {
+describe.runIf(harness.ready)("E5.5 slice 2 — destinationless commitments, fulfill_commitment, and repair chains", () => {
   it("creates a destinationless promise (no destinationZoneId) successfully", async () => {
     const ids = await seedPromiseCase();
     const result = await submitDurableCreateCommitment(promiseCommand(ids));
-    expect(result.status).toBe("accepted");
+    expectAccepted(result, "create a destinationless promise");
 
     const projection = await readDurableCommitments(ids.branchId);
     expect(projection.commitments[0]?.destinationZoneId).toBeUndefined();
@@ -404,7 +342,7 @@ describe.runIf(ready)("E5.5 slice 2 — destinationless commitments, fulfill_com
     const commitmentId = deriveCommitmentId(ids.branchId, `cmd-promise-${ids.branchId}`);
 
     const result = await submitDurableFulfillCommitment(fulfillCommand(ids, commitmentId, 1));
-    expect(result.status).toBe("accepted");
+    expectAccepted(result, "fulfill the promise before its deadline");
 
     const projection = await readDurableCommitments(ids.branchId);
     expect(projection.commitments[0]?.status).toBe("kept");
@@ -415,19 +353,17 @@ describe.runIf(ready)("E5.5 slice 2 — destinationless commitments, fulfill_com
     await submitDurableCreateCommitment(createCommand(ids));
     const commitmentId = deriveCommitmentId(ids.branchId, `cmd-shift-${ids.branchId}`);
 
-    const result = await submitDurableFulfillCommitment({
-      id: `cmd-fulfill-shift-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: `fulfill-shift-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-17T12:05:00.000Z",
-      correlationId: `corr-fulfill-shift-${ids.branchId}`,
-      type: "fulfill_commitment",
-      schemaVersion: 1,
-      payload: { commitmentId },
-    });
-    expect(result).toMatchObject({ status: "rejected", code: "commitment_has_destination" });
+    const result = await submitDurableFulfillCommitment(
+      simCommand({
+        branchId: ids.branchId,
+        name: "fulfill-shift",
+        type: "fulfill_commitment",
+        expectedVersion: 1,
+        principal: playerPrincipal(ids.actorId),
+        payload: { commitmentId },
+      }),
+    );
+    expectRejected(result, "commitment_has_destination", "fulfilling a commitment that has a destination");
   });
 
   it("rejects commitment_not_found and commitment_not_open", async () => {
@@ -435,14 +371,14 @@ describe.runIf(ready)("E5.5 slice 2 — destinationless commitments, fulfill_com
     const missing = await submitDurableFulfillCommitment(
       fulfillCommand(ids, "commitment-does-not-exist", 0, "fulfill-missing"),
     );
-    expect(missing).toMatchObject({ status: "rejected", code: "commitment_not_found" });
+    expectRejected(missing, "commitment_not_found", "fulfilling a commitment that never existed");
 
     await submitDurableCreateCommitment(promiseCommand(ids));
     const commitmentId = deriveCommitmentId(ids.branchId, `cmd-promise-${ids.branchId}`);
     const firstFulfill = await submitDurableFulfillCommitment(fulfillCommand(ids, commitmentId, 1, "fulfill-first"));
-    expect(firstFulfill.status).toBe("accepted");
+    expectAccepted(firstFulfill, "the first fulfillment");
     const again = await submitDurableFulfillCommitment(fulfillCommand(ids, commitmentId, 2, "fulfill-again"));
-    expect(again).toMatchObject({ status: "rejected", code: "commitment_not_open" });
+    expectRejected(again, "commitment_not_open", "fulfilling an already-kept commitment");
   });
 
   it("repair chain: A misses, B repairs it with a matching promisedToActorId → accepted and linked to A", async () => {
@@ -458,15 +394,11 @@ describe.runIf(ready)("E5.5 slice 2 — destinationless commitments, fulfill_com
     const repairResult = await submitDurableCreateCommitment(
       promiseCommand(
         ids,
-        {
-          id: `cmd-repair-${ids.branchId}`,
-          idempotencyKey: `repair-key-${ids.branchId}`,
-          expectedVersion: afterMiss.version,
-        },
+        { name: "repair", expectedVersion: afterMiss.version },
         { repairsCommitmentId: commitmentAId },
       ),
     );
-    expect(repairResult.status).toBe("accepted");
+    expectAccepted(repairResult, "repair the missed promise");
 
     const after = await readDurableCommitments(ids.branchId);
     const repaired = after.commitments.find((commitment) => commitment.id !== commitmentAId);
@@ -479,27 +411,19 @@ describe.runIf(ready)("E5.5 slice 2 — destinationless commitments, fulfill_com
     const badRepair = await submitDurableCreateCommitment(
       promiseCommand(ids, {}, { repairsCommitmentId: "commitment-does-not-exist" }),
     );
-    expect(badRepair).toMatchObject({ status: "rejected", code: "repair_target_not_found" });
+    expectRejected(badRepair, "repair_target_not_found", "repairing a commitment that never existed");
 
     const badPromisee = await submitDurableCreateCommitment(
-      promiseCommand(
-        ids,
-        { id: `cmd-promise2-${ids.branchId}`, idempotencyKey: `promise2-key-${ids.branchId}` },
-        { promisedToActorId: "actor-does-not-exist" },
-      ),
+      promiseCommand(ids, { name: "promise2" }, { promisedToActorId: "actor-does-not-exist" }),
     );
-    expect(badPromisee).toMatchObject({ status: "rejected", code: "promised_to_actor_not_found" });
+    expectRejected(badPromisee, "promised_to_actor_not_found", "a promise to an actor that never existed");
   });
 
   it("rejects promised_to_self as a structured rejection instead of throwing — a self-promise resolves promisedToActorExists true (the actor's own row) and must not reach the raw commitmentSchema.parse throw", async () => {
     const ids = await seedPromiseCase();
     const selfPromise = await submitDurableCreateCommitment(
-      promiseCommand(
-        ids,
-        { id: `cmd-promise-self-${ids.branchId}`, idempotencyKey: `promise-self-key-${ids.branchId}` },
-        { promisedToActorId: ids.actorId },
-      ),
+      promiseCommand(ids, { name: "promise-self" }, { promisedToActorId: ids.actorId }),
     );
-    expect(selfPromise).toMatchObject({ status: "rejected", code: "promised_to_self" });
+    expectRejected(selfPromise, "promised_to_self", "a promise the actor made to themselves");
   });
 });

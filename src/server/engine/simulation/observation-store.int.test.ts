@@ -1,54 +1,30 @@
-import { asc, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import { asc, eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import { spaceProjectionSchema, type SpaceProjection } from "@/contracts/simulation/space";
 import { newId } from "@/lib/ids";
 import { replayObservationsHistory } from "@/lib/simulation";
-import { db, simEvents, simObservations, simWorlds } from "@/server/db";
+import { db, simEvents, simObservations } from "@/server/db";
+import {
+  expectAccepted,
+  playerPrincipal,
+  readBranchEvents,
+  seedSimBranch,
+  simCommand,
+  simulationSuiteHarness,
+  type SimActorPlacement,
+} from "@/server/test-support";
 import { forkBranch } from "./branch-store";
 import { readDurableCommitments, submitDurableCreateCommitment } from "./commitment-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
-import { seedDurableMaterialBranch } from "./material-store";
-import { branchEventFromRow } from "./observation-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
-import { seedDurableSpaceTopology, submitDurableMoveActor } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
+import { submitDurableMoveActor, type SpaceTopologySeed } from "./space-store";
 
 const SEED_SECOND = 80_000;
 const WALK = 600;
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_observations limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[observation-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("observation-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
+const harness = await simulationSuiteHarness({
+  suite: "observation-store.int.test",
+  table: "sim_observations",
 });
 
 /**
@@ -70,52 +46,43 @@ interface PerceptionCase {
   zoneShop: string;
 }
 
-function branchSeed(ids: PerceptionCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e4-1-tests",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e4-1-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.mara, name: "Mara" },
-      { id: ids.iris, name: "Iris" },
-      { id: ids.noor, name: "Noor" },
-      { id: ids.rook, name: "Rook" },
-    ],
-    items: [],
-  });
+const RULESET_VERSION = "e4-1-test-v1";
+
+interface PerceptionTopology {
+  locations: SpaceTopologySeed["locations"];
+  zones: SpaceTopologySeed["zones"];
+  links: SpaceTopologySeed["links"];
+  placements: SimActorPlacement[];
 }
 
-function topologySeed(ids: PerceptionCase) {
+/** The seeded space, shared by the seeder and the replay-seed projection below. */
+function topology(ids: PerceptionCase): PerceptionTopology {
   return {
-    branchId: ids.branchId,
     locations: [
-      { id: ids.locHome, worldId: ids.worldId, kind: "home", defaultAccessPolicy: "private" as const },
-      { id: ids.locShop, worldId: ids.worldId, kind: "shop", defaultAccessPolicy: "public" as const },
+      { id: ids.locHome, worldId: ids.worldId, kind: "home", defaultAccessPolicy: "private" },
+      { id: ids.locShop, worldId: ids.worldId, kind: "shop", defaultAccessPolicy: "public" },
     ],
     zones: [
-      { id: ids.zoneLiving, locationId: ids.locHome, kind: "room", privacyPolicy: "semi_private" as const },
-      { id: ids.zoneKitchen, locationId: ids.locHome, kind: "kitchen", privacyPolicy: "semi_private" as const },
-      { id: ids.zoneShop, locationId: ids.locShop, kind: "shop", privacyPolicy: "public" as const },
+      { id: ids.zoneLiving, locationId: ids.locHome, kind: "room", privacyPolicy: "semi_private" },
+      { id: ids.zoneKitchen, locationId: ids.locHome, kind: "kitchen", privacyPolicy: "semi_private" },
+      { id: ids.zoneShop, locationId: ids.locShop, kind: "shop", privacyPolicy: "public" },
     ],
     links: [
       {
         id: `${ids.branchId}-link-ls`,
         fromZoneId: ids.zoneLiving,
         toZoneId: ids.zoneShop,
-        modes: ["walk" as const],
+        modes: ["walk"],
         minimumDurationSeconds: WALK,
-        accessPolicy: "public" as const,
-        state: "open" as const,
+        accessPolicy: "public",
+        state: "open",
       },
     ],
-    loci: [
-      { kind: "at" as const, actorId: ids.mara, locationId: ids.locHome, zoneId: ids.zoneLiving, since: SEED_SECOND },
-      { kind: "at" as const, actorId: ids.iris, locationId: ids.locHome, zoneId: ids.zoneLiving, since: SEED_SECOND },
-      { kind: "at" as const, actorId: ids.noor, locationId: ids.locHome, zoneId: ids.zoneKitchen, since: SEED_SECOND },
-      { kind: "at" as const, actorId: ids.rook, locationId: ids.locShop, zoneId: ids.zoneShop, since: SEED_SECOND },
+    placements: [
+      { actorId: ids.mara, locationId: ids.locHome, zoneId: ids.zoneLiving },
+      { actorId: ids.iris, locationId: ids.locHome, zoneId: ids.zoneLiving },
+      { actorId: ids.noor, locationId: ids.locHome, zoneId: ids.zoneKitchen },
+      { actorId: ids.rook, locationId: ids.locShop, zoneId: ids.zoneShop },
     ],
   };
 }
@@ -136,67 +103,56 @@ async function seedPerceptionCase(): Promise<PerceptionCase> {
     zoneKitchen: `${branchId}-zone-kitchen`,
     zoneShop: `${branchId}-zone-shop`,
   };
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology(topologySeed(ids));
-  seededWorldIds.push(worldId);
+  const space = topology(ids);
+  await seedSimBranch({
+    worldId,
+    branchId,
+    worldTypeId: "e4-1-tests",
+    rulesetVersion: RULESET_VERSION,
+    originStorySecond: SEED_SECOND,
+    actors: [
+      { id: ids.mara, name: "Mara" },
+      { id: ids.iris, name: "Iris" },
+      { id: ids.noor, name: "Noor" },
+      { id: ids.rook, name: "Rook" },
+    ],
+    locations: space.locations,
+    zones: space.zones,
+    links: space.links,
+    placements: space.placements,
+  });
+  harness.trackWorld(worldId);
   return ids;
 }
 
 /** The replay seed: the space exactly as seeded, before any event. */
 function spaceSeedProjection(ids: PerceptionCase): SpaceProjection {
-  const seed = topologySeed(ids);
+  const space = topology(ids);
   return spaceProjectionSchema.parse({
     worldId: ids.worldId,
     branchId: ids.branchId,
-    rulesetVersion: "e4-1-test-v1",
+    rulesetVersion: RULESET_VERSION,
     version: 0,
     headSequence: 0,
     storySecond: SEED_SECOND,
-    locations: seed.locations.map(({ id, worldId: world, kind, defaultAccessPolicy }) => ({
+    locations: space.locations.map(({ id, worldId: world, kind, defaultAccessPolicy }) => ({
       id,
       worldId: world,
       kind,
       defaultAccessPolicy,
     })),
-    zones: seed.zones.map(({ id, locationId, kind, privacyPolicy }) => ({ id, locationId, kind, privacyPolicy })),
-    links: seed.links,
-    loci: seed.loci,
+    zones: space.zones.map(({ id, locationId, kind, privacyPolicy }) => ({ id, locationId, kind, privacyPolicy })),
+    links: space.links,
+    // `seedSimBranch` places every actor with an `at` locus stamped at the origin second.
+    loci: space.placements.map(({ actorId, locationId, zoneId }) => ({
+      kind: "at" as const,
+      actorId,
+      locationId,
+      zoneId,
+      since: SEED_SECOND,
+    })),
     journeys: [],
   });
-}
-
-function principalFor(actorId: string) {
-  return { kind: "player", principalId: "principal-1", controlledActorIds: [actorId] };
-}
-
-function openCommand(ids: PerceptionCase) {
-  return {
-    id: `cmd-open-${ids.branchId}`,
-    branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `open-key-${ids.branchId}`,
-    principal: principalFor(ids.mara),
-    submittedAtWallClock: "2026-07-18T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
-    type: "open_engagement",
-    schemaVersion: 1,
-    payload: { participantIds: [ids.mara, ids.iris].sort(), channel: "co_present" },
-  };
-}
-
-function moveCommand(ids: PerceptionCase, expectedVersion: number) {
-  return {
-    id: `cmd-move-${ids.branchId}`,
-    branchId: ids.branchId,
-    expectedVersion,
-    idempotencyKey: `move-key-${ids.branchId}`,
-    principal: principalFor(ids.mara),
-    submittedAtWallClock: "2026-07-18T12:01:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
-    type: "move_actor",
-    schemaVersion: 1,
-    payload: { actorId: ids.mara, destinationZoneId: ids.zoneShop, travelMode: "walk" },
-  };
 }
 
 interface ObservationFact {
@@ -232,26 +188,34 @@ async function liveObservationFacts(branchId: string): Promise<ObservationFact[]
   }));
 }
 
-async function branchEvents(branchId: string) {
-  const rows = await db()
-    .select()
-    .from(simEvents)
-    .where(eq(simEvents.branchId, branchId))
-    .orderBy(asc(simEvents.sequence));
-  return rows.map(branchEventFromRow);
-}
-
 /** Run the shared arc: open the living-room scene, depart Mara, arrive her. */
 async function runDepartureArc(ids: PerceptionCase): Promise<void> {
-  const open = await submitDurableOpenEngagement(openCommand(ids));
-  expect(open.status).toBe("accepted");
-  const move = await submitDurableMoveActor(moveCommand(ids, 1));
-  expect(move.status).toBe("accepted");
+  const open = await submitDurableOpenEngagement(
+    simCommand({
+      branchId: ids.branchId,
+      name: "open",
+      type: "open_engagement",
+      principal: playerPrincipal(ids.mara),
+      payload: { participantIds: [ids.mara, ids.iris].sort(), channel: "co_present" },
+    }),
+  );
+  expectAccepted(open, "scene open");
+  const move = await submitDurableMoveActor(
+    simCommand({
+      branchId: ids.branchId,
+      name: "move",
+      type: "move_actor",
+      expectedVersion: 1,
+      principal: playerPrincipal(ids.mara),
+      payload: { actorId: ids.mara, destinationZoneId: ids.zoneShop, travelMode: "walk" },
+    }),
+  );
+  expectAccepted(move, "Mara departs");
   const outcome = await advanceBranchStoryTime(ids.branchId, SEED_SECOND + WALK, { workerId: "w-arrive" });
   expect(outcome).toMatchObject({ status: "advanced" });
 }
 
-describe.runIf(ready)("E4.1 durable observations", () => {
+describe.runIf(harness.ready)("E4.1 durable observations", () => {
   it("commits typed observations atomically with each command's events", async () => {
     const ids = await seedPerceptionCase();
     await runDepartureArc(ids);
@@ -308,7 +272,7 @@ describe.runIf(ready)("E4.1 durable observations", () => {
 
     const replayed = replayObservationsHistory({
       spaceSeed: spaceSeedProjection(ids),
-      events: await branchEvents(ids.branchId),
+      events: await readBranchEvents(ids.branchId),
     });
     const rows = await db()
       .select()
@@ -343,13 +307,15 @@ describe.runIf(ready)("E4.1 durable observations", () => {
       ...parentFacts.filter((fact) => fact.type === "actor_arrived").map((fact) => fact.sequence),
     );
 
-    // Fork just before the arrival: the child is mid-journey.
+    // Fork just before the arrival: the child is mid-journey — NOT at head, so this
+    // stays a direct `forkBranch` rather than the shared `forkAtHead` helper.
     const childBranchId = newId();
+    const { kind, principalId } = playerPrincipal(ids.mara);
     const fork = await forkBranch({
       parentBranchId: ids.branchId,
       childBranchId,
       atSequence: arrivalSequence - 1,
-      principal: { kind: "player", principalId: "principal-1" },
+      principal: { kind, principalId },
       reason: "mid-journey retake",
     });
     expect(fork.inheritedEventCount).toBe(arrivalSequence - 1);
@@ -380,7 +346,7 @@ describe.runIf(ready)("E4.1 durable observations", () => {
   it("gates commitment notice on real perception: observed knowledge fires, unobserved fails closed", async () => {
     const ids = await seedPerceptionCase();
     await runDepartureArc(ids);
-    const departedEvent = (await branchEvents(ids.branchId)).find(
+    const departedEvent = (await readBranchEvents(ids.branchId)).find(
       (candidate) => candidate.type === "actor_departed",
     );
     if (!departedEvent) throw new Error("Departure event missing");
@@ -401,32 +367,28 @@ describe.runIf(ready)("E4.1 durable observations", () => {
       knowledgeSource: { kind: "observed", sourceEventId: departedEvent.id },
     };
     // Iris watched Mara leave; Rook was a location away and never saw it.
-    const forIris = await submitDurableCreateCommitment({
-      id: `cmd-commit-iris-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 3,
-      idempotencyKey: `commit-iris-key-${ids.branchId}`,
-      principal: principalFor(ids.iris),
-      submittedAtWallClock: "2026-07-18T12:02:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "create_commitment",
-      schemaVersion: 1,
-      payload: { ...commitmentPayload, actorId: ids.iris },
-    });
-    expect(forIris.status).toBe("accepted");
-    const forRook = await submitDurableCreateCommitment({
-      id: `cmd-commit-rook-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 4,
-      idempotencyKey: `commit-rook-key-${ids.branchId}`,
-      principal: principalFor(ids.rook),
-      submittedAtWallClock: "2026-07-18T12:02:30.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "create_commitment",
-      schemaVersion: 1,
-      payload: { ...commitmentPayload, actorId: ids.rook },
-    });
-    expect(forRook.status).toBe("accepted");
+    const forIris = await submitDurableCreateCommitment(
+      simCommand({
+        branchId: ids.branchId,
+        name: "commit-iris",
+        type: "create_commitment",
+        expectedVersion: 3,
+        principal: playerPrincipal(ids.iris),
+        payload: { ...commitmentPayload, actorId: ids.iris },
+      }),
+    );
+    expectAccepted(forIris, "Iris commitment");
+    const forRook = await submitDurableCreateCommitment(
+      simCommand({
+        branchId: ids.branchId,
+        name: "commit-rook",
+        type: "create_commitment",
+        expectedVersion: 4,
+        principal: playerPrincipal(ids.rook),
+        payload: { ...commitmentPayload, actorId: ids.rook },
+      }),
+    );
+    expectAccepted(forRook, "Rook commitment");
 
     const outcome = await advanceBranchStoryTime(ids.branchId, noticeAt + 10, { workerId: "w-notice" });
     expect(outcome).toMatchObject({ status: "advanced" });

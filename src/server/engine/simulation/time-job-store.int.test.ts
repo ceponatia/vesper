@@ -1,17 +1,11 @@
-import { and, eq, or, sql } from "drizzle-orm";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
-import {
-  materialBranchSeedSchema,
-  transferItemCommandSchema,
-  type MaterialBranchSeed,
-  type TransferItemCommand,
-} from "@/contracts/simulation/materials";
+import { and, eq, or } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
+import { transferItemCommandSchema, type TransferItemCommand } from "@/contracts/simulation/materials";
 import { newId } from "@/lib/ids";
 import { escalateToTimeJob, runDueTimeJobs, runSkipWithEscalation } from "@/server/engine";
-import { db, simTimeJobs, simWorlds } from "@/server/db";
-import { seedDurableMaterialBranch } from "./material-store";
+import { db, simTimeJobs } from "@/server/db";
+import { seedSimpleBranch, simCommand, simulationSuiteHarness, systemPrincipal } from "@/server/test-support";
 import { scheduleDurableTrigger } from "./scheduler-store";
-import { seedDurableSpaceTopology } from "./space-store";
 import {
   claimDueTimeJob,
   enqueueTimeJob,
@@ -25,35 +19,22 @@ import {
  * the tests that had to run against a real Postgres — the whole point of building this slice with
  * a DB up: the partial unique index (one active job per branch), the lease/fence (a stale worker
  * can't overwrite live work), reclaim-after-expiry, and the drain-to-completion outcome.
+ *
+ * Probe, per-test world sweep (`cleanup: "afterEach"` — these cases would
+ * otherwise pile up rows) and the pool close come from `simulationSuiteHarness`.
+ * `legacyPlayerMode: false`: every command here is scheduler/system-authored, so
+ * this suite must keep running without the aggregate-run opt-in flag.
  */
 
 const SEED_STORY_SECOND = 57_600;
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_time_jobs limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") throw error;
-    process.stderr.write(
-      `[time-job-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-const seededWorldIds: string[] = [];
+const harness = await simulationSuiteHarness({
+  suite: "time-job-store.int.test",
+  table: "sim_time_jobs",
+  legacyPlayerMode: false,
+  cleanup: "afterEach",
+});
+const ready = harness.ready;
 
 interface CaseIds {
   worldId: string;
@@ -83,15 +64,19 @@ function makeIds(itemCount = 1): CaseIds {
   };
 }
 
-function branchSeed(ids: CaseIds): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
+/** Mara in a cafe hall, holding a bag and a table, with the loose items in the bag. */
+async function seedCase(ids: CaseIds): Promise<void> {
+  harness.trackWorld(ids.worldId);
+  await seedSimpleBranch({
+    prefix: "time-job-test",
     worldId: ids.worldId,
-    worldTypeId: "time-job-test-world",
-    worldSeed: "0011223344556677",
     branchId: ids.branchId,
-    rulesetVersion: "time-job-test-v1",
     originStorySecond: SEED_STORY_SECOND,
     actors: [{ id: ids.actorId, name: "Mara" }],
+    locationSlug: "cafe",
+    zoneSlug: "hall",
+    locationKind: "cafe",
+    zoneKind: "hall",
     items: [
       {
         id: ids.sourceId,
@@ -114,40 +99,27 @@ function branchSeed(ids: CaseIds): MaterialBranchSeed {
   });
 }
 
-function topologySeed(ids: CaseIds) {
-  return {
-    branchId: ids.branchId,
-    locations: [{ id: ids.locationId, worldId: ids.worldId, kind: "cafe", defaultAccessPolicy: "public" as const }],
-    zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "hall", privacyPolicy: "public" as const }],
-    links: [],
-    loci: [{ kind: "at" as const, actorId: ids.actorId, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_STORY_SECOND }],
-  };
-}
-
-function command(ids: CaseIds, itemId: string): TransferItemCommand {
-  return transferItemCommandSchema.parse({
-    id: newId(),
-    branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: newId(),
-    principal: { kind: "system", principalId: newId(), controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-23T16:00:00.000Z",
-    type: "transfer_item",
-    schemaVersion: 2,
-    correlationId: newId(),
-    payload: {
-      actorId: ids.actorId,
-      itemId,
-      fromLocus: { kind: "container", containerItemId: ids.sourceId },
-      toLocus: { kind: "container", containerItemId: ids.destinationId },
-    },
-  });
-}
-
-async function seedCase(ids: CaseIds): Promise<void> {
-  if (!seededWorldIds.includes(ids.worldId)) seededWorldIds.push(ids.worldId);
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology(topologySeed(ids));
+/**
+ * A trigger's payload command. Re-parsed through the REAL per-type schema so the
+ * scheduler's payload contract (which takes a branded `TransferItemCommand`, not
+ * a bare envelope) is honored. The dispatcher overwrites `id`/`idempotencyKey`
+ * with its own derived pair, so `simCommand`'s deterministic ids are free here.
+ */
+function command(ids: CaseIds, name: string, itemId: string): TransferItemCommand {
+  return transferItemCommandSchema.parse(
+    simCommand({
+      branchId: ids.branchId,
+      name,
+      type: "transfer_item",
+      principal: { ...systemPrincipal, controlledActorIds: [ids.actorId] },
+      payload: {
+        actorId: ids.actorId,
+        itemId,
+        fromLocus: { kind: "container", containerItemId: ids.sourceId },
+        toLocus: { kind: "container", containerItemId: ids.destinationId },
+      },
+    }),
+  );
 }
 
 function scheduleAt(ids: CaseIds, dueStorySecond: number, uniquenessKey: string, itemId: string) {
@@ -158,7 +130,7 @@ function scheduleAt(ids: CaseIds, dueStorySecond: number, uniquenessKey: string,
     schemaVersion: 1,
     dueStorySecond,
     uniquenessKey,
-    payload: { command: command(ids, itemId) },
+    payload: { command: command(ids, uniquenessKey, itemId) },
   });
 }
 
@@ -173,17 +145,6 @@ async function activeJobCount(branchId: string): Promise<number> {
     .where(and(eq(simTimeJobs.branchId, branchId), or(eq(simTimeJobs.state, "pending"), eq(simTimeJobs.state, "processing"))));
   return rows.length;
 }
-
-afterEach(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  for (const worldId of seededWorldIds.splice(0)) {
-    await db().delete(simWorlds).where(eq(simWorlds.id, worldId));
-  }
-});
-
-afterAll(async () => {
-  await globalThis.__vesperPool?.end();
-});
 
 describe.skipIf(!ready)("durable time jobs", () => {
   it("enqueues one job per branch — a repeat enqueue returns the same job, bumping the target", async () => {
@@ -302,7 +263,7 @@ describe.skipIf(!ready)("durable time jobs", () => {
       schemaVersion: 1,
       dueStorySecond: SEED_STORY_SECOND + 100,
       uniquenessKey: "poison",
-      payload: { command: command(ids, newId()) },
+      payload: { command: command(ids, "poison", newId()) },
     });
     await scheduleAt(ids, SEED_STORY_SECOND + 200, "healthy", ids.itemIds[0]!);
     await enqueueFor(ids, SEED_STORY_SECOND + 300);

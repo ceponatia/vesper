@@ -1,7 +1,8 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
+import { and, eq, sql } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import { itemConditionRegistryV1 } from "@/contracts/simulation/material-condition";
+import type { MaterialBranchSeedInput } from "@/contracts/simulation/materials";
 import { itemTransferFeedConsumerKind } from "@/contracts/simulation/outbox";
 import { newId } from "@/lib/ids";
 import {
@@ -11,19 +12,16 @@ import {
   replayActivitiesHistory,
   simulationHash,
 } from "@/lib/simulation";
-import { simulationBranchEventSchema } from "@/contracts/simulation/branching";
 import { bodyThresholdUniquenessKeyPrefix } from "@/lib/simulation/bodies";
 import {
   db,
   simActivities,
   simBodyMeters,
   simBranches,
-  simEvents,
   simItemConditionMeters,
   simItemHoldings,
   simOutbox,
   simTriggers,
-  simWorlds,
 } from "@/server/db";
 import {
   readDurableActivities,
@@ -32,54 +30,38 @@ import {
   submitDurableResumeActivity,
   submitDurableStartActivity,
 } from "./activity-store";
-import {
-  seedDurableBodyRhythms,
-  submitDurableApplyBodyCondition,
-  submitDurableInitializeActorBody,
-} from "./body-store";
+import { submitDurableApplyBodyCondition, submitDurableInitializeActorBody } from "./body-store";
 import { forkBranch } from "./branch-store";
-import { seedDurableMaterialBranch, submitDurableTransferItem } from "./material-store";
+import { submitDurableTransferItem } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
-import { readDurableSpaceBranch, seedDurableSpaceTopology, submitDurableMoveActor } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
+import { readDurableSpaceBranch, submitDurableMoveActor } from "./space-store";
+import {
+  expectAccepted,
+  expectRejected,
+  gmPrincipal,
+  LEGACY_ENGINE_TEST_PLAYER_ID,
+  playerPrincipal,
+  readBranchEvents,
+  readBranchEventTypes,
+  seedReferenceRhythms,
+  seedSimBranch,
+  seedSimpleBranch,
+  simCommand,
+  simulationSuiteHarness,
+} from "@/server/test-support";
+
+/**
+ * E3.2 durable activity authority, plus E5.3 slices 2–3 (resource reservation,
+ * consumption, and item-condition use-deltas at completion). Runs on the shared
+ * `simulationSuiteHarness` scaffold (probe + legacy-player guard + world
+ * teardown + pool close).
+ */
+
+const harness = await simulationSuiteHarness({ suite: "activity-store.int.test", table: "sim_activities" });
 
 const SEED_SECOND = 20_000;
 const NAP_SECONDS = 1_800;
 const WALK_AB = 600;
-
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_activities limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[activity-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("activity-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
-});
 
 interface ActivityCase {
   worldId: string;
@@ -89,22 +71,6 @@ interface ActivityCase {
   zoneA: string;
   zoneB: string;
   napActionId: string;
-}
-
-function branchSeed(ids: ActivityCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e3-2-tests",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e3-2-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.actorId, name: "Mara" },
-      { id: ids.witnessId, name: "Iris" },
-    ],
-    items: [],
-  });
 }
 
 async function seedActivityCase(): Promise<ActivityCase> {
@@ -120,9 +86,16 @@ async function seedActivityCase(): Promise<ActivityCase> {
     napActionId: `${branchId}-action-nap`,
   };
   const locHome = `${worldId}-loc-home`;
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology({
+  await seedSimBranch({
+    worldId,
     branchId,
+    worldTypeId: "e3-2-tests",
+    rulesetVersion: "e3-2-test-v1",
+    originStorySecond: SEED_SECOND,
+    actors: [
+      { id: ids.actorId, name: "Mara" },
+      { id: ids.witnessId, name: "Iris" },
+    ],
     locations: [{ id: locHome, worldId, kind: "home", defaultAccessPolicy: "private" }],
     zones: [
       { id: ids.zoneA, locationId: locHome, kind: "room", privacyPolicy: "private" },
@@ -139,9 +112,9 @@ async function seedActivityCase(): Promise<ActivityCase> {
         state: "open",
       },
     ],
-    loci: [
-      { kind: "at", actorId: ids.actorId, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
-      { kind: "at", actorId: ids.witnessId, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
+    placements: [
+      { actorId: ids.actorId, locationId: locHome, zoneId: ids.zoneA },
+      { actorId: ids.witnessId, locationId: locHome, zoneId: ids.zoneA },
     ],
   });
   await seedDurableActionDefinitions({
@@ -159,47 +132,48 @@ async function seedActivityCase(): Promise<ActivityCase> {
       },
     ],
   });
-  seededWorldIds.push(worldId);
+  harness.trackWorld(worldId);
   return ids;
 }
 
-function startCommand(ids: ActivityCase, overrides: Record<string, unknown> = {}) {
-  return {
-    id: `cmd-start-${ids.branchId}`,
+function startCommand(ids: ActivityCase, options: { name?: string; expectedVersion?: number } = {}) {
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `start-key-${ids.branchId}`,
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-17T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name: options.name ?? "start",
     type: "start_activity",
-    schemaVersion: 1,
+    expectedVersion: options.expectedVersion ?? 0,
+    principal: playerPrincipal(ids.actorId),
     payload: { actionDefinitionId: ids.napActionId, actorId: ids.actorId },
-    ...overrides,
-  };
+  });
 }
 
-function moveCommand(ids: ActivityCase, expectedVersion: number, suffix = "move") {
-  return {
-    id: `cmd-${suffix}-${ids.branchId}`,
+function moveCommand(ids: ActivityCase, expectedVersion: number, name = "move") {
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion,
-    idempotencyKey: `${suffix}-key-${ids.branchId}`,
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-17T12:05:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name,
     type: "move_actor",
-    schemaVersion: 1,
+    expectedVersion,
+    principal: playerPrincipal(ids.actorId),
     payload: { actorId: ids.actorId, destinationZoneId: ids.zoneB, travelMode: "walk" },
-  };
+  });
 }
 
-describe.runIf(ready)("E3.2 durable activity authority", () => {
+function cancelCommand(ids: ActivityCase, activityId: string, expectedVersion: number) {
+  return simCommand({
+    branchId: ids.branchId,
+    name: "cancel",
+    type: "cancel_activity",
+    expectedVersion,
+    principal: playerPrincipal(ids.actorId),
+    payload: { activityInstanceId: activityId, reason: "actor_choice" },
+  });
+}
+
+describe.runIf(harness.ready)("E3.2 durable activity authority", () => {
   it("starts an activity with claims, witnesses, and a pending completion trigger", async () => {
     const ids = await seedActivityCase();
     const result = await submitDurableStartActivity(startCommand(ids));
-    expect(result.status).toBe("accepted");
-    if (result.status !== "accepted") return;
+    expectAccepted(result, "start the nap");
     expect(result.eventIds).toHaveLength(2);
 
     const projection = await readDurableActivities(ids.branchId);
@@ -207,12 +181,7 @@ describe.runIf(ready)("E3.2 durable activity authority", () => {
     expect(projection.activities[0]?.phase).toBe("active");
     expect(projection.activities[0]?.expectedCompleteAt).toBe(SEED_SECOND + NAP_SECONDS);
 
-    const [startedRow] = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(asc(simEvents.sequence))
-      .limit(1);
+    const [startedRow] = await readBranchEvents(ids.branchId);
     expect(startedRow?.type).toBe("activity_started");
     const startedPayload = z
       .object({ observerActorIds: z.array(z.string()) })
@@ -241,12 +210,7 @@ describe.runIf(ready)("E3.2 durable activity authority", () => {
     expect(projection.activities[0]?.phase).toBe("completed");
     expect(projection.activities[0]?.progressFixedPoint).toBe(1_000_000);
 
-    const eventRows = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(asc(simEvents.sequence));
-    const completed = eventRows.at(-1);
+    const completed = (await readBranchEvents(ids.branchId)).at(-1);
     expect(completed?.type).toBe("activity_completed");
     expect(completed?.storySecond).toBe(dueSecond);
 
@@ -260,35 +224,24 @@ describe.runIf(ready)("E3.2 durable activity authority", () => {
 
     // A second body-claiming start conflicts.
     const second = await submitDurableStartActivity(
-      startCommand(ids, {
-        id: `cmd-start2-${ids.branchId}`,
-        idempotencyKey: `start2-key-${ids.branchId}`,
-        expectedVersion: 1,
-      }),
+      startCommand(ids, { name: "start2", expectedVersion: 1 }),
     );
-    expect(second.status).toBe("rejected");
-    if (second.status === "rejected") expect(second.code).toBe("claim_conflict");
+    expectRejected(second, "claim_conflict", "a second start claiming the same body");
 
     // Departure is blocked while the body claim is held.
     const blockedMove = await submitDurableMoveActor(moveCommand(ids, 1, "blocked"));
-    expect(blockedMove.status).toBe("rejected");
-    if (blockedMove.status === "rejected") expect(blockedMove.code).toBe("activity_conflict");
+    expectRejected(blockedMove, "activity_conflict", "departing under a held body claim");
 
     // After completion the claim releases and the same move succeeds.
     await advanceBranchStoryTime(ids.branchId, SEED_SECOND + NAP_SECONDS, { workerId: "w-claims" });
     const freedMove = await submitDurableMoveActor(moveCommand(ids, 2, "freed"));
-    expect(freedMove.status).toBe("accepted");
+    expectAccepted(freedMove, "the move that the released claim now permits");
 
     // And starting while in transit is refused.
     const whileTraveling = await submitDurableStartActivity(
-      startCommand(ids, {
-        id: `cmd-start3-${ids.branchId}`,
-        idempotencyKey: `start3-key-${ids.branchId}`,
-        expectedVersion: 3,
-      }),
+      startCommand(ids, { name: "start3", expectedVersion: 3 }),
     );
-    expect(whileTraveling.status).toBe("rejected");
-    if (whileTraveling.status === "rejected") expect(whileTraveling.code).toBe("actor_in_transit");
+    expectRejected(whileTraveling, "actor_in_transit", "starting an activity while in transit");
   });
 
   it("cancel releases the claim and retires the completion trigger", async () => {
@@ -296,19 +249,8 @@ describe.runIf(ready)("E3.2 durable activity authority", () => {
     await submitDurableStartActivity(startCommand(ids));
     const activityId = deriveActivityId(ids.branchId, `cmd-start-${ids.branchId}`);
 
-    const cancel = await submitDurableCancelActivity({
-      id: `cmd-cancel-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: `cancel-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-17T12:10:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "cancel_activity",
-      schemaVersion: 1,
-      payload: { activityInstanceId: activityId, reason: "actor_choice" },
-    });
-    expect(cancel.status).toBe("accepted");
+    const cancel = await submitDurableCancelActivity(cancelCommand(ids, activityId, 1));
+    expectAccepted(cancel, "cancel the nap");
 
     const [trigger] = await db()
       .select()
@@ -325,7 +267,7 @@ describe.runIf(ready)("E3.2 durable activity authority", () => {
 
     // The claim released: movement is legal again.
     const move = await submitDurableMoveActor(moveCommand(ids, 2, "after-cancel"));
-    expect(move.status).toBe("accepted");
+    expectAccepted(move, "movement after the cancellation released the claim");
   });
 
   it("forks mid-activity with claims held and the completion re-armed; cancelled forks stay retired", async () => {
@@ -337,7 +279,7 @@ describe.runIf(ready)("E3.2 durable activity authority", () => {
       parentBranchId: ids.branchId,
       childBranchId: midChild,
       atSequence: 2,
-      principal: { kind: "player", principalId: "principal-1" },
+      principal: { kind: "player", principalId: LEGACY_ENGINE_TEST_PLAYER_ID },
       reason: "mid-activity retake",
     });
     expect(midFork.pendingTriggerIds).toHaveLength(1);
@@ -351,24 +293,13 @@ describe.runIf(ready)("E3.2 durable activity authority", () => {
 
     // Cancel on the parent, fork after it: the child records the trigger retired.
     const activityId = deriveActivityId(ids.branchId, `cmd-start-${ids.branchId}`);
-    await submitDurableCancelActivity({
-      id: `cmd-cancel-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: `cancel-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-17T12:10:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "cancel_activity",
-      schemaVersion: 1,
-      payload: { activityInstanceId: activityId, reason: "actor_choice" },
-    });
+    await submitDurableCancelActivity(cancelCommand(ids, activityId, 1));
     const cancelChild = newId();
     const cancelFork = await forkBranch({
       parentBranchId: ids.branchId,
       childBranchId: cancelChild,
       atSequence: 3,
-      principal: { kind: "player", principalId: "principal-1" },
+      principal: { kind: "player", principalId: LEGACY_ENGINE_TEST_PLAYER_ID },
       reason: "post-cancel retake",
     });
     expect(cancelFork.pendingTriggerIds).toHaveLength(0);
@@ -383,32 +314,7 @@ describe.runIf(ready)("E3.2 durable activity authority", () => {
     await advanceBranchStoryTime(ids.branchId, SEED_SECOND + NAP_SECONDS, { workerId: "w-rebuild" });
 
     const live = await readDurableActivities(ids.branchId);
-    const eventRows = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(asc(simEvents.sequence));
-    const events = eventRows.map((row) =>
-      simulationBranchEventSchema.parse({
-        id: row.id,
-        worldId: row.worldId,
-        branchId: row.branchId,
-        sequence: row.sequence,
-        storySecond: row.storySecond,
-        type: row.type,
-        schemaVersion: row.schemaVersion,
-        rulesetVersion: row.rulesetVersion,
-        ...(row.derivationVersion ? { derivationVersion: row.derivationVersion } : {}),
-        ...(row.commandId ? { commandId: row.commandId } : {}),
-        ...(row.causationId ? { causationId: row.causationId } : {}),
-        correlationId: row.correlationId,
-        actorIds: row.actorIds,
-        entityIds: row.entityIds,
-        ...(row.locationId ? { locationId: row.locationId } : {}),
-        recordedAtWallClock: row.recordedAt.toISOString(),
-        payload: row.payload,
-      }),
-    );
+    const events = await readBranchEvents(ids.branchId);
     const rebuilt = replayActivitiesHistory({
       seed: emptyActivitiesSeed(ids.branchId, SEED_SECOND),
       events,
@@ -446,22 +352,16 @@ interface ConsumptionCase {
   eatFeastActionId: string;
 }
 
-function consumptionBranchSeed(ids: ConsumptionCase, includeMeal: boolean): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e5-3-slice2-tests",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e5-3-slice2-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.actorId, name: "Mara" },
-      { id: ids.witnessId, name: "Iris" },
-    ],
-    items: includeMeal
+async function seedConsumptionCase(options: { includeMeal?: boolean } = {}): Promise<ConsumptionCase> {
+  const actorId = newId();
+  const witnessId = newId();
+  const branchId = newId();
+  const mealItemId = `${branchId}-item-meal`;
+  const items: MaterialBranchSeedInput["items"] =
+    (options.includeMeal ?? true)
       ? [
           {
-            id: ids.mealItemId,
+            id: mealItemId,
             name: "Rice bowl",
             materialKindKey: "meal",
             consumptionEffects: [
@@ -471,38 +371,33 @@ function consumptionBranchSeed(ids: ConsumptionCase, includeMeal: boolean): Mate
                 operation: { kind: "add", deltaFixedPoint: MEAL_ENERGY_DELTA },
               },
             ],
-            locus: { kind: "held", actorId: ids.actorId },
+            locus: { kind: "held", actorId },
           },
         ]
-      : [],
-  });
-}
-
-async function seedConsumptionCase(options: { includeMeal?: boolean } = {}): Promise<ConsumptionCase> {
-  const worldId = newId();
-  const branchId = newId();
-  const ids: ConsumptionCase = {
-    worldId,
+      : [];
+  const seeded = await seedSimpleBranch({
+    prefix: "e5-3-slice2-test",
     branchId,
-    actorId: newId(),
-    witnessId: newId(),
-    zoneA: `${branchId}-zone-a`,
-    mealItemId: `${branchId}-item-meal`,
+    actors: [
+      { id: actorId, name: "Mara" },
+      { id: witnessId, name: "Iris" },
+    ],
+    originStorySecond: SEED_SECOND,
+    items,
+    zoneSlug: "a",
+    defaultAccessPolicy: "private",
+    privacyPolicy: "private",
+  });
+  const ids: ConsumptionCase = {
+    worldId: seeded.worldId,
+    branchId: seeded.branchId,
+    actorId,
+    witnessId,
+    zoneA: seeded.zoneId,
+    mealItemId,
     eatActionId: `${branchId}-action-eat`,
     eatFeastActionId: `${branchId}-action-eat-feast`,
   };
-  const locHome = `${worldId}-loc-home`;
-  await seedDurableMaterialBranch(consumptionBranchSeed(ids, options.includeMeal ?? true));
-  await seedDurableSpaceTopology({
-    branchId,
-    locations: [{ id: locHome, worldId, kind: "home", defaultAccessPolicy: "private" }],
-    zones: [{ id: ids.zoneA, locationId: locHome, kind: "room", privacyPolicy: "private" }],
-    links: [],
-    loci: [
-      { kind: "at", actorId: ids.actorId, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
-      { kind: "at", actorId: ids.witnessId, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
-    ],
-  });
   await seedDurableActionDefinitions({
     branchId,
     definitions: [
@@ -530,59 +425,52 @@ async function seedConsumptionCase(options: { includeMeal?: boolean } = {}): Pro
       },
     ],
   });
-  seededWorldIds.push(worldId);
+  harness.trackWorld(seeded.worldId);
   return ids;
 }
 
-function startEatCommand(ids: ConsumptionCase, overrides: Record<string, unknown> = {}) {
-  return {
-    id: `cmd-eat-${ids.branchId}`,
+function startEatCommand(
+  ids: ConsumptionCase,
+  options: { name?: string; expectedVersion?: number; actionDefinitionId?: string } = {},
+) {
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `eat-key-${ids.branchId}`,
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-19T18:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name: options.name ?? "eat",
     type: "start_activity",
-    schemaVersion: 1,
-    payload: { actionDefinitionId: ids.eatActionId, actorId: ids.actorId },
-    ...overrides,
-  };
+    expectedVersion: options.expectedVersion ?? 0,
+    principal: playerPrincipal(ids.actorId),
+    payload: {
+      actionDefinitionId: options.actionDefinitionId ?? ids.eatActionId,
+      actorId: ids.actorId,
+    },
+  });
 }
 
-function transferMealCommand(ids: ConsumptionCase, expectedVersion: number, suffix: string) {
-  return {
-    id: `cmd-${suffix}-${ids.branchId}`,
+function transferMealCommand(ids: ConsumptionCase, expectedVersion: number, name: string) {
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion,
-    idempotencyKey: `${suffix}-key-${ids.branchId}`,
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-19T18:05:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name,
     type: "transfer_item",
-    schemaVersion: 2,
+    expectedVersion,
+    principal: playerPrincipal(ids.actorId),
     payload: {
       actorId: ids.actorId,
       itemId: ids.mealItemId,
       fromLocus: { kind: "held", actorId: ids.actorId },
       toLocus: { kind: "zone", zoneId: ids.zoneA },
     },
-  };
+  });
 }
 
 function initializeBodyCommand(ids: ConsumptionCase, expectedVersion: number) {
-  return {
-    id: `cmd-init-${ids.branchId}`,
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion,
-    idempotencyKey: `init-key-${ids.branchId}`,
-    principal: { kind: "storyteller", principalId: "principal-1", controlledActorIds: [] },
-    submittedAtWallClock: "2026-07-19T18:00:30.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name: "init",
     type: "initialize_actor_body",
-    schemaVersion: 1,
+    expectedVersion,
+    principal: gmPrincipal,
     payload: { actorId: ids.actorId, registryVersion: "body-v1", baselineOverrides: {} },
-  };
+  });
 }
 
 async function currentBranchVersion(branchId: string): Promise<number> {
@@ -591,44 +479,35 @@ async function currentBranchVersion(branchId: string): Promise<number> {
   return row.version;
 }
 
-describe.runIf(ready)("E5.3 slice 2 — activity resource reservations and consumption", () => {
+describe.runIf(harness.ready)("E5.3 slice 2 — activity resource reservations and consumption", () => {
   it("reserves the held meal deterministically and persists reservedItemIds", async () => {
     const ids = await seedConsumptionCase();
     const result = await submitDurableStartActivity(startEatCommand(ids));
-    expect(result.status).toBe("accepted");
+    expectAccepted(result, "start the meal that reserves the rice bowl");
 
     const projection = await readDurableActivities(ids.branchId);
     expect(projection.activities[0]?.reservedItemIds).toEqual([ids.mealItemId]);
 
-    const [startedRow] = await db()
-      .select()
-      .from(simEvents)
-      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "activity_started")));
-    const startedPayload = z.object({ reservedItemIds: z.array(z.string()) }).loose().parse(startedRow?.payload);
+    const [startedEvent] = await readBranchEvents(ids.branchId, { types: ["activity_started"] });
+    const startedPayload = z.object({ reservedItemIds: z.array(z.string()) }).loose().parse(startedEvent?.payload);
     expect(startedPayload.reservedItemIds).toEqual([ids.mealItemId]);
   });
 
   it("rejects start with material_unavailable when the resource cost cannot be met", async () => {
     const ids = await seedConsumptionCase();
     const result = await submitDurableStartActivity(
-      startEatCommand(ids, {
-        id: `cmd-feast-${ids.branchId}`,
-        idempotencyKey: `feast-key-${ids.branchId}`,
-        payload: { actionDefinitionId: ids.eatFeastActionId, actorId: ids.actorId },
-      }),
+      startEatCommand(ids, { name: "feast", actionDefinitionId: ids.eatFeastActionId }),
     );
-    expect(result.status).toBe("rejected");
-    if (result.status === "rejected") expect(result.code).toBe("material_unavailable");
+    expectRejected(result, "material_unavailable", "a feast needing two meals with one in hand");
   });
 
   it("rejects a transfer of the reserved item while the activity holds it", async () => {
     const ids = await seedConsumptionCase();
     const start = await submitDurableStartActivity(startEatCommand(ids));
-    expect(start.status).toBe("accepted");
+    expectAccepted(start, "start the meal before the blocked transfer");
 
     const transfer = await submitDurableTransferItem(transferMealCommand(ids, 1, "transfer-blocked"));
-    expect(transfer.status).toBe("rejected");
-    if (transfer.status === "rejected") expect(transfer.code).toBe("item_reserved");
+    expectRejected(transfer, "item_reserved", "transferring the item an active meal reserved");
   });
 
   it("cancellation releases the reservation — a transfer then succeeds", async () => {
@@ -636,28 +515,26 @@ describe.runIf(ready)("E5.3 slice 2 — activity resource reservations and consu
     await submitDurableStartActivity(startEatCommand(ids));
     const activityId = deriveActivityId(ids.branchId, `cmd-eat-${ids.branchId}`);
 
-    const cancel = await submitDurableCancelActivity({
-      id: `cmd-cancel-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: `cancel-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T18:10:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "cancel_activity",
-      schemaVersion: 1,
-      payload: { activityInstanceId: activityId, reason: "actor_choice" },
-    });
-    expect(cancel.status).toBe("accepted");
+    const cancel = await submitDurableCancelActivity(
+      simCommand({
+        branchId: ids.branchId,
+        name: "cancel",
+        type: "cancel_activity",
+        expectedVersion: 1,
+        principal: playerPrincipal(ids.actorId),
+        payload: { activityInstanceId: activityId, reason: "actor_choice" },
+      }),
+    );
+    expectAccepted(cancel, "cancel the meal");
 
     const transfer = await submitDurableTransferItem(transferMealCommand(ids, 2, "transfer-after-cancel"));
-    expect(transfer.status).toBe("accepted");
+    expectAccepted(transfer, "the transfer the cancellation released");
   });
 
   it("completes through the drain: consumes the meal, applies the body effect, retires and re-arms the energy alarm, publishes the feed row", async () => {
     const ids = await seedConsumptionCase();
     const init = await submitDurableInitializeActorBody(initializeBodyCommand(ids, 0));
-    expect(init.status).toBe("accepted");
+    expectAccepted(init, "initialize the eater's body");
 
     const energyThresholdPrefix = bodyThresholdUniquenessKeyPrefix(ids.actorId, "energy");
     const beforeTriggers = await db()
@@ -672,8 +549,8 @@ describe.runIf(ready)("E5.3 slice 2 — activity resource reservations and consu
     expect(beforeTriggers.some((row) => row.state === "pending")).toBe(true);
     const staleTriggerIds = beforeTriggers.map((row) => row.id);
 
-    const start = await submitDurableStartActivity({ ...startEatCommand(ids), expectedVersion: 1 });
-    expect(start.status).toBe("accepted");
+    const start = await submitDurableStartActivity(startEatCommand(ids, { expectedVersion: 1 }));
+    expectAccepted(start, "start the meal that will complete through the drain");
     const dueSecond = SEED_SECOND + MEAL_SECONDS;
 
     const outcome = await advanceBranchStoryTime(ids.branchId, dueSecond + 10, { workerId: "w-eat-complete" });
@@ -689,14 +566,10 @@ describe.runIf(ready)("E5.3 slice 2 — activity resource reservations and consu
     expect(holdingRow?.locusKind).toBe("gone");
     expect(holdingRow?.goneBasis).toBe("consumed");
 
-    const eventRows = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(asc(simEvents.sequence));
-    const consumedEvent = eventRows.find((row) => row.type === "item_consumed");
+    const events = await readBranchEvents(ids.branchId);
+    const consumedEvent = events.find((event) => event.type === "item_consumed");
     expect(consumedEvent).toBeDefined();
-    const sourceEvent = eventRows.find((row) => row.type === "body_source_applied");
+    const sourceEvent = events.find((event) => event.type === "body_source_applied");
     expect(sourceEvent).toBeDefined();
     const sourcePayload = z
       .object({ meterKey: z.string(), valueAfterFixedPoint: z.number() })
@@ -748,36 +621,28 @@ describe.runIf(ready)("E5.3 slice 2 — activity resource reservations and consu
 
   it("keeps the reservation through an interruption and consumes normally after resume", async () => {
     const ids = await seedConsumptionCase();
-    await seedDurableBodyRhythms({
-      branchId: ids.branchId,
-      rows: [
-        { actorId: ids.actorId, kind: "sleep", startMinuteOfDay: 1_380, endMinuteOfDay: 420 },
-        { actorId: ids.actorId, kind: "wash", startMinuteOfDay: 405, endMinuteOfDay: 420 },
-      ],
-    });
+    await seedReferenceRhythms(ids.branchId, ids.actorId);
     await submitDurableInitializeActorBody(initializeBodyCommand(ids, 0));
 
     // A short nap creates real sleep history — the wake is what arms the
     // collapse alarm this test uses to force a mid-meal interruption
     // (mirrors body-store.int.test.ts's collapse-arc test).
-    await submitDurableApplyBodyCondition({
-      id: `cmd-nap-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: await currentBranchVersion(ids.branchId),
-      idempotencyKey: `nap-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T18:01:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "apply_body_condition",
-      schemaVersion: 1,
-      payload: {
-        actorId: ids.actorId,
-        conditionKey: "asleep",
-        durationSeconds: 5_400,
-        modifiers: [],
-        observerActorIds: [],
-      },
-    });
+    await submitDurableApplyBodyCondition(
+      simCommand({
+        branchId: ids.branchId,
+        name: "nap",
+        type: "apply_body_condition",
+        expectedVersion: await currentBranchVersion(ids.branchId),
+        principal: playerPrincipal(ids.actorId),
+        payload: {
+          actorId: ids.actorId,
+          conditionKey: "asleep",
+          durationSeconds: 5_400,
+          modifiers: [],
+          observerActorIds: [],
+        },
+      }),
+    );
     const wakeAt = SEED_SECOND + 5_400;
     await advanceBranchStoryTime(ids.branchId, wakeAt, { workerId: "w-eat-wake" });
 
@@ -794,11 +659,10 @@ describe.runIf(ready)("E5.3 slice 2 — activity resource reservations and consu
     expect(collapseAlarm).toBeDefined();
     if (!collapseAlarm) throw new Error("collapse alarm missing");
 
-    const start = await submitDurableStartActivity({
-      ...startEatCommand(ids),
-      expectedVersion: await currentBranchVersion(ids.branchId),
-    });
-    expect(start.status).toBe("accepted");
+    const start = await submitDurableStartActivity(
+      startEatCommand(ids, { expectedVersion: await currentBranchVersion(ids.branchId) }),
+    );
+    expectAccepted(start, "start the meal the collapse will interrupt");
     const activityId = deriveActivityId(ids.branchId, `cmd-eat-${ids.branchId}`);
 
     // The collapse fires mid-meal. Reservations are phase-derived like claims
@@ -815,27 +679,24 @@ describe.runIf(ready)("E5.3 slice 2 — activity resource reservations and consu
     const blockedTransfer = await submitDurableTransferItem(
       transferMealCommand(ids, await currentBranchVersion(ids.branchId), "transfer-while-interrupted"),
     );
-    expect(blockedTransfer.status).toBe("rejected");
-    if (blockedTransfer.status === "rejected") expect(blockedTransfer.code).toBe("item_reserved");
+    expectRejected(blockedTransfer, "item_reserved", "transferring the item an interrupted meal still reserves");
 
     // Sleep runs its course; resume picks the meal back up with the same
     // reservation, then finishes it normally.
     const wake2 = collapseAlarm.dueStorySecond + 28_800;
     await advanceBranchStoryTime(ids.branchId, wake2, { workerId: "w-eat-wake2" });
 
-    const resume = await submitDurableResumeActivity({
-      id: `cmd-resume-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: await currentBranchVersion(ids.branchId),
-      idempotencyKey: `resume-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T18:20:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "resume_activity",
-      schemaVersion: 1,
-      payload: { activityInstanceId: activityId },
-    });
-    expect(resume.status).toBe("accepted");
+    const resume = await submitDurableResumeActivity(
+      simCommand({
+        branchId: ids.branchId,
+        name: "resume",
+        type: "resume_activity",
+        expectedVersion: await currentBranchVersion(ids.branchId),
+        principal: playerPrincipal(ids.actorId),
+        payload: { activityInstanceId: activityId },
+      }),
+    );
+    expectAccepted(resume, "resume the interrupted meal");
 
     const [resumedRow] = await db().select().from(simActivities).where(eq(simActivities.branchId, ids.branchId));
     expect(resumedRow?.phase).toBe("active");
@@ -872,57 +733,44 @@ interface ItemConditionCase {
   craftActionId: string;
 }
 
-function itemConditionBranchSeed(ids: ItemConditionCase, conditionTracked: boolean): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e5-3-slice3-tests",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e5-3-slice3-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.actorId, name: "Mara" },
-      { id: ids.witnessId, name: "Iris" },
-    ],
-    items: [
-      {
-        id: ids.toolId,
-        name: "Whittling knife",
-        materialKindKey: "tool",
-        conditionTracked,
-        locus: { kind: "held", actorId: ids.actorId },
-      },
-    ],
-  });
-}
-
 async function seedItemConditionCase(options: {
   conditionTracked: boolean;
   wearDeltaFixedPoint: number;
 }): Promise<ItemConditionCase> {
-  const worldId = newId();
+  const actorId = newId();
+  const witnessId = newId();
   const branchId = newId();
-  const ids: ItemConditionCase = {
-    worldId,
+  const toolId = `${branchId}-item-tool`;
+  const seeded = await seedSimpleBranch({
+    prefix: "e5-3-slice3-test",
     branchId,
-    actorId: newId(),
-    witnessId: newId(),
-    zoneA: `${branchId}-zone-a`,
-    toolId: `${branchId}-item-tool`,
+    actors: [
+      { id: actorId, name: "Mara" },
+      { id: witnessId, name: "Iris" },
+    ],
+    originStorySecond: SEED_SECOND,
+    items: [
+      {
+        id: toolId,
+        name: "Whittling knife",
+        materialKindKey: "tool",
+        conditionTracked: options.conditionTracked,
+        locus: { kind: "held", actorId },
+      },
+    ],
+    zoneSlug: "a",
+    defaultAccessPolicy: "private",
+    privacyPolicy: "private",
+  });
+  const ids: ItemConditionCase = {
+    worldId: seeded.worldId,
+    branchId: seeded.branchId,
+    actorId,
+    witnessId,
+    zoneA: seeded.zoneId,
+    toolId,
     craftActionId: `${branchId}-action-craft`,
   };
-  const locHome = `${worldId}-loc-home`;
-  await seedDurableMaterialBranch(itemConditionBranchSeed(ids, options.conditionTracked));
-  await seedDurableSpaceTopology({
-    branchId,
-    locations: [{ id: locHome, worldId, kind: "home", defaultAccessPolicy: "private" }],
-    zones: [{ id: ids.zoneA, locationId: locHome, kind: "room", privacyPolicy: "private" }],
-    links: [],
-    loci: [
-      { kind: "at", actorId: ids.actorId, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
-      { kind: "at", actorId: ids.witnessId, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
-    ],
-  });
   await seedDurableActionDefinitions({
     branchId,
     definitions: [
@@ -946,24 +794,18 @@ async function seedItemConditionCase(options: {
       },
     ],
   });
-  seededWorldIds.push(worldId);
+  harness.trackWorld(seeded.worldId);
   return ids;
 }
 
-function startCraftCommand(ids: ItemConditionCase, overrides: Record<string, unknown> = {}) {
-  return {
-    id: `cmd-craft-${ids.branchId}`,
+function startCraftCommand(ids: ItemConditionCase) {
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `craft-key-${ids.branchId}`,
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-19T20:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name: "craft",
     type: "start_activity",
-    schemaVersion: 1,
+    principal: playerPrincipal(ids.actorId),
     payload: { actionDefinitionId: ids.craftActionId, actorId: ids.actorId },
-    ...overrides,
-  };
+  });
 }
 
 async function itemConditionMeterRow(branchId: string, itemId: string, meterKey: string) {
@@ -980,33 +822,33 @@ async function itemConditionMeterRow(branchId: string, itemId: string, meterKey:
   return row;
 }
 
-describe.runIf(ready)("E5.3 slice 3 — item condition use-deltas at completion (§26.7)", () => {
+describe.runIf(harness.ready)("E5.3 slice 3 — item condition use-deltas at completion (§26.7)", () => {
   it("lazily initializes and moves wear on a tracked reserved tool; the driftless meter never gets a scheduled rearm", async () => {
     const ids = await seedItemConditionCase({ conditionTracked: true, wearDeltaFixedPoint: 1_500 });
     const start = await submitDurableStartActivity(startCraftCommand(ids));
-    expect(start.status).toBe("accepted");
+    expectAccepted(start, "start the whittling");
 
     const outcome = await advanceBranchStoryTime(ids.branchId, SEED_SECOND + CRAFT_SECONDS + 10, {
       workerId: "w-craft-wear",
     });
     expect(outcome.status).toBe("advanced");
 
-    const eventRows = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(asc(simEvents.sequence));
-    const types = eventRows.map((row) => row.type);
-    // Full branch stream: [activity_started, trigger_scheduled] from the
-    // start command, then the completion's own train — the lazy-init event
-    // precedes activity_completed itself within THAT train (§26.7 store note).
-    const completionTypes = types.slice(2);
-    expect(completionTypes.indexOf("item_condition_initialized")).toBe(0);
-    expect(completionTypes.indexOf("activity_completed")).toBe(1);
-    expect(completionTypes).toContain("item_condition_source_applied");
-    expect(completionTypes).not.toContain("item_condition_threshold_crossed");
+    const events = await readBranchEvents(ids.branchId);
+    const types = events.map((event) => event.type);
+    // RELATIVE order, never absolute offsets into the whole branch stream: the
+    // completion's lazy-init event lands immediately BEFORE activity_completed
+    // (§26.7 store note), after the start command's own train.
+    const startedAt = types.indexOf("activity_started");
+    const completedAt = types.indexOf("activity_completed");
+    const initializedAt = types.indexOf("item_condition_initialized");
+    expect(startedAt).toBeGreaterThanOrEqual(0);
+    expect(types.filter((type) => type === "item_condition_initialized")).toHaveLength(1);
+    expect(initializedAt).toBe(completedAt - 1);
+    expect(startedAt).toBeLessThan(initializedAt);
+    expect(types).toContain("item_condition_source_applied");
+    expect(types).not.toContain("item_condition_threshold_crossed");
 
-    const initRow = eventRows.find((row) => row.type === "item_condition_initialized");
+    const initEvent = events.find((event) => event.type === "item_condition_initialized");
     const initPayload = z
       .object({
         itemId: z.string(),
@@ -1014,9 +856,12 @@ describe.runIf(ready)("E5.3 slice 3 — item condition use-deltas at completion 
         meters: z.array(z.object({ meterKey: z.string(), valueFixedPoint: z.number() })),
       })
       .loose()
-      .parse(initRow?.payload);
+      .parse(initEvent?.payload);
     expect(initPayload.itemId).toBe(ids.toolId);
-    expect(initPayload.meters.map((meter) => meter.meterKey).sort()).toEqual(["cleanliness", "wear"]);
+    // Derived from the registry, so adding a meter to it is a one-file change.
+    expect(initPayload.meters.map((meter) => meter.meterKey).sort()).toEqual(
+      itemConditionRegistryV1.map((definition) => definition.key).sort(),
+    );
 
     const meterRow = await itemConditionMeterRow(ids.branchId, ids.toolId, "wear");
     expect(meterRow?.valueFixedPoint).toBe(1_500);
@@ -1040,13 +885,9 @@ describe.runIf(ready)("E5.3 slice 3 — item condition use-deltas at completion 
     });
     expect(outcome.status).toBe("advanced");
 
-    const eventRows = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(asc(simEvents.sequence));
-    const sourceEvent = eventRows.find((row) => row.type === "item_condition_source_applied");
-    const crossedEvent = eventRows.find((row) => row.type === "item_condition_threshold_crossed");
+    const events = await readBranchEvents(ids.branchId);
+    const sourceEvent = events.find((event) => event.type === "item_condition_source_applied");
+    const crossedEvent = events.find((event) => event.type === "item_condition_threshold_crossed");
     expect(sourceEvent).toBeDefined();
     expect(crossedEvent).toBeDefined();
     expect(crossedEvent?.causationId).toBe(sourceEvent?.id);
@@ -1085,12 +926,8 @@ describe.runIf(ready)("E5.3 slice 3 — item condition use-deltas at completion 
     });
     expect(outcome.status).toBe("advanced");
 
-    const eventRows = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(asc(simEvents.sequence));
-    expect(eventRows.some((row) => row.type.startsWith("item_condition_"))).toBe(false);
+    const types = await readBranchEventTypes(ids.branchId);
+    expect(types.some((type) => type.startsWith("item_condition_"))).toBe(false);
 
     const meterRows = await db()
       .select()

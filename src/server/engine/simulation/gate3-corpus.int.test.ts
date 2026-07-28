@@ -1,7 +1,6 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
+import { and, eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import { proposedArmedEffectSchema } from "@/contracts/simulation/narrative";
 import { newId } from "@/lib/ids";
 import {
@@ -10,7 +9,7 @@ import {
   deriveEngagementId,
   journeyArrivalUniquenessKey,
 } from "@/lib/simulation";
-import { db, simTriggers, simWorlds } from "@/server/db";
+import { db, simTriggers } from "@/server/db";
 import {
   seedDurableAccessGrants,
   submitDurableAttemptEntry,
@@ -19,26 +18,34 @@ import {
 import { seedDurableActionDefinitions, submitDurableStartActivity } from "./activity-store";
 import { prepareEngagementTurn, submitDurableConfirmNarratorResult } from "./arbiter-store";
 import { loadPersistedCut } from "./narrative-cut-store";
-import { loadBranchAncestry, readBranchAncestryEvents } from "./branch-store";
 import { readDurableCommitments, submitDurableCreateCommitment } from "./commitment-store";
 import { readDurableEngagements, submitDurableOpenEngagement } from "./engagement-store";
-import { seedDurableMaterialBranch } from "./material-store";
 import { loadViewpointObservations } from "./observation-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import {
   readDurableSpaceBranch,
-  seedDurableSpaceTopology,
   submitDurableMoveActor,
 } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
+import {
+  ADMIT_AT_LOCKED_VERSION,
+  expectAccepted,
+  expectRejected,
+  readBranchEvents,
+  seedSimBranch,
+  simCommand,
+  simulationSuiteHarness,
+} from "@/server/test-support";
 
 /**
  * The Gate 3 exit corpus (engine.plan §"Gate 3 scenario corpus"): every
  * scenario runs against the durable stores with zero model calls, and each
  * asserts the exit invariants — one body, one physical locus, causal
  * movement, access separation, actor control, perspective safety, and
- * deadline consequences.
+ * deadline consequences. Runs on the shared `simulationSuiteHarness` scaffold
+ * (probe + legacy-player guard + world teardown + pool close).
  */
+
+const harness = await simulationSuiteHarness({ suite: "gate3-corpus.int.test", table: "sim_access_grants" });
 
 const SEED_SECOND = 100_000;
 /** Cafe → shop is the shift commute; cafe → doorstep is the walk home. */
@@ -52,40 +59,6 @@ const NOTICE_AT = ACT_BY - NOTICE_LEAD;
 /** Turn ends at 100_400 ≥ noticeAt, and 100_400 + 1_000 ≥ actBy ⇒ departure. */
 const TURN_SPAN = 400;
 const HORIZON = 1_000;
-
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_access_grants limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[gate3-corpus.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("gate3-corpus.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
-});
 
 interface CorpusCase {
   worldId: string;
@@ -108,24 +81,6 @@ interface CorpusSeedOptions {
   playerZone?: "cafe" | "doorstep";
   maraZone?: "cafe" | "doorstep";
   irisZone?: "parlor" | "cafe";
-}
-
-function branchSeed(ids: CorpusCase, permitsTrespass: boolean): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "gate3-corpus",
-    worldSeed: `seed-${ids.worldId}`,
-    permitsTrespass,
-    branchId: ids.branchId,
-    rulesetVersion: "gate3-corpus-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.player, name: "Pia" },
-      { id: ids.mara, name: "Mara" },
-      { id: ids.iris, name: "Iris" },
-    ],
-    items: [],
-  });
 }
 
 /**
@@ -157,9 +112,18 @@ async function seedCorpusCase(options: CorpusSeedOptions = {}): Promise<CorpusCa
   const playerZone = options.playerZone ?? "cafe";
   const maraZone = options.maraZone ?? "cafe";
   const irisZone = options.irisZone ?? "parlor";
-  await seedDurableMaterialBranch(branchSeed(ids, options.permitsTrespass ?? false));
-  await seedDurableSpaceTopology({
+  await seedSimBranch({
+    worldId,
     branchId,
+    worldTypeId: "gate3-corpus",
+    rulesetVersion: "gate3-corpus-v1",
+    originStorySecond: SEED_SECOND,
+    permitsTrespass: options.permitsTrespass ?? false,
+    actors: [
+      { id: ids.player, name: "Pia" },
+      { id: ids.mara, name: "Mara" },
+      { id: ids.iris, name: "Iris" },
+    ],
     locations: [
       { id: ids.locCafe, worldId, kind: "town", defaultAccessPolicy: "public" },
       { id: ids.locHome, worldId, kind: "home", defaultAccessPolicy: "private" },
@@ -199,28 +163,10 @@ async function seedCorpusCase(options: CorpusSeedOptions = {}): Promise<CorpusCa
         state: "open",
       },
     ],
-    loci: [
-      {
-        kind: "at",
-        actorId: ids.player,
-        locationId: locOf[playerZone],
-        zoneId: zoneOf[playerZone],
-        since: SEED_SECOND,
-      },
-      {
-        kind: "at",
-        actorId: ids.mara,
-        locationId: locOf[maraZone],
-        zoneId: zoneOf[maraZone],
-        since: SEED_SECOND,
-      },
-      {
-        kind: "at",
-        actorId: ids.iris,
-        locationId: locOf[irisZone],
-        zoneId: zoneOf[irisZone],
-        since: SEED_SECOND,
-      },
+    placements: [
+      { actorId: ids.player, locationId: locOf[playerZone], zoneId: zoneOf[playerZone] },
+      { actorId: ids.mara, locationId: locOf[maraZone], zoneId: zoneOf[maraZone] },
+      { actorId: ids.iris, locationId: locOf[irisZone], zoneId: zoneOf[irisZone] },
     ],
   });
   await seedDurableAccessGrants({
@@ -250,7 +196,7 @@ async function seedCorpusCase(options: CorpusSeedOptions = {}): Promise<CorpusCa
       },
     ],
   });
-  seededWorldIds.push(worldId);
+  harness.trackWorld(worldId);
   return ids;
 }
 
@@ -271,21 +217,8 @@ function command(
   principal: CorpusPrincipal,
   payload: Record<string, unknown>,
 ) {
-  return {
-    id: `cmd-${name}-${ids.branchId}`,
-    branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `${name}-key-${ids.branchId}`,
-    principal,
-    submittedAtWallClock: "2026-07-18T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
-    type,
-    schemaVersion: type === "confirm_narrator_result" ? 2 : 1,
-    payload,
-  };
+  return simCommand({ branchId: ids.branchId, name, type, principal, payload });
 }
-
-const admit = { admitAtLockedVersion: true };
 
 function shiftCommand(ids: CorpusCase) {
   return command(ids, "shift", "create_commitment", principalFor("npc_policy", [ids.mara]), {
@@ -313,22 +246,25 @@ function chatEngagementId(ids: CorpusCase): string {
   return deriveEngagementId(ids.branchId, `cmd-chat-${ids.branchId}`);
 }
 
+/** The forked-child-safe read: a branch's LOGICAL stream, ancestry included. */
 async function branchEvents(
   branchId: string,
   types?: readonly string[],
 ): Promise<SimulationBranchEvent[]> {
-  const ancestry = await loadBranchAncestry(db(), branchId);
-  return readBranchAncestryEvents(db(), ancestry, types === undefined ? {} : { types });
+  return readBranchEvents(branchId, {
+    includeAncestry: true,
+    ...(types === undefined ? {} : { types }),
+  });
 }
 
 async function seedShiftConversation(ids: CorpusCase): Promise<void> {
-  const commitment = await submitDurableCreateCommitment(shiftCommand(ids), admit);
-  expect(commitment.status).toBe("accepted");
-  const chat = await submitDurableOpenEngagement(chatCommand(ids), admit);
-  expect(chat.status).toBe("accepted");
+  const commitment = await submitDurableCreateCommitment(shiftCommand(ids), ADMIT_AT_LOCKED_VERSION);
+  expectAccepted(commitment, "seed Mara's shift commitment");
+  const chat = await submitDurableOpenEngagement(chatCommand(ids), ADMIT_AT_LOCKED_VERSION);
+  expectAccepted(chat, "seed the player/Mara conversation");
 }
 
-describe.runIf(ready)("Gate 3 scenario corpus", () => {
+describe.runIf(harness.ready)("Gate 3 scenario corpus", () => {
   it("departs Mara for her shift mid-conversation, redacts the cause, and survives rerender + confirm", async () => {
     const ids = await seedCorpusCase();
     await seedShiftConversation(ids);
@@ -435,9 +371,9 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
       enactedArmedEffectIds: [apologyEffectId, "armed-invented-by-the-model"],
       softCanonProposals: [],
     });
-    const confirmed = await submitDurableConfirmNarratorResult(confirmCommand, admit);
-    expect(confirmed.status).toBe("accepted");
-    if (confirmed.status === "accepted") expect(confirmed.eventIds).toHaveLength(1);
+    const confirmed = await submitDurableConfirmNarratorResult(confirmCommand, ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(confirmed, "confirm the narrator result");
+    expect(confirmed.eventIds).toHaveLength(1);
     const speech = (await branchEvents(ids.branchId, ["speech_act_delivered"]))[0];
     if (speech?.type !== "speech_act_delivered") throw new Error("Speech act event missing");
     expect(speech.payload).toMatchObject({
@@ -449,14 +385,13 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
     // Idempotency: replaying the same confirmation returns the cached result
     // without a second emission; reusing the command id under a new key is
     // rejected outright.
-    const replay = await submitDurableConfirmNarratorResult(confirmCommand, admit);
+    const replay = await submitDurableConfirmNarratorResult(confirmCommand, ADMIT_AT_LOCKED_VERSION);
     expect(replay).toEqual(confirmed);
     const reuse = await submitDurableConfirmNarratorResult(
       { ...confirmCommand, idempotencyKey: `confirm-reuse-key-${ids.branchId}` },
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(reuse.status).toBe("rejected");
-    if (reuse.status === "rejected") expect(reuse.code).toBe("duplicate_command_id");
+    expectRejected(reuse, "duplicate_command_id", "reusing the confirm command id under a new key");
     expect(await branchEvents(ids.branchId, ["speech_act_delivered"])).toHaveLength(1);
 
     // The departure causally satisfies the shift: arrival then kept — the
@@ -515,10 +450,9 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
         destinationZoneId: ids.zoneDoorstep,
         travelMode: "walk",
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(summon.status).toBe("rejected");
-    if (summon.status === "rejected") expect(summon.code).toBe("unauthorized_actor");
+    expectRejected(summon, "unauthorized_actor", "the player walking an actor they do not control");
 
     const playerRelocate = await submitDurableStorytellerRelocation(
       command(ids, "player-relocate", "storyteller_relocate_actor", principalFor("player", [ids.player]), {
@@ -526,10 +460,9 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
         destinationZoneId: ids.zoneParlor,
         reason: "Player asks the world to summon Mara.",
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(playerRelocate.status).toBe("rejected");
-    if (playerRelocate.status === "rejected") expect(playerRelocate.code).toBe("unauthorized_principal");
+    expectRejected(playerRelocate, "unauthorized_principal", "a player issuing a storyteller relocation");
 
     // Put Mara mid-journey, then relocate: the journey is abandoned first,
     // its arrival trigger is retired, and the bypass is a distinct event.
@@ -539,9 +472,9 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
         destinationZoneId: ids.zoneShop,
         travelMode: "walk",
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(walk.status).toBe("accepted");
+    expectAccepted(walk, "Mara's own policy walks her to the shop");
     const journeyId = (await readDurableSpaceBranch(ids.branchId)).journeys[0]?.id;
     if (!journeyId) throw new Error("Journey missing after accepted move");
 
@@ -551,10 +484,10 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
         destinationZoneId: ids.zoneParlor,
         reason: "Scene direction: Mara is needed at home.",
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(relocation.status).toBe("accepted");
-    if (relocation.status === "accepted") expect(relocation.eventIds).toHaveLength(2);
+    expectAccepted(relocation, "the storyteller relocates Mara mid-journey");
+    expect(relocation.eventIds).toHaveLength(2);
     const [abandoned, relocated] = await branchEvents(ids.branchId, [
       "journey_abandoned",
       "storyteller_relocation",
@@ -599,9 +532,9 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
         actionDefinitionId: ids.showerActionId,
         actorId: ids.iris,
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(shower.status).toBe("accepted");
+    expectAccepted(shower, "Iris starts her shower behind the private door");
 
     // Routes refuse to plan through the private front door at all.
     const walkIn = await submitDurableMoveActor(
@@ -610,10 +543,9 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
         destinationZoneId: ids.zoneParlor,
         travelMode: "walk",
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(walkIn.status).toBe("rejected");
-    if (walkIn.status === "rejected") expect(walkIn.code).toBe("route_access_denied");
+    expectRejected(walkIn, "route_access_denied", "routing through the private front door");
 
     // The unforced threshold attempt is denied with playable alternatives.
     const knock = await submitDurableAttemptEntry(
@@ -622,16 +554,17 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
         linkId: ids.frontDoor,
         forced: false,
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(knock.status).toBe("rejected");
+    expectRejected(knock, "entry_denied", "an unforced knock at the private front door");
     if (knock.status === "rejected") {
-      expect(knock.code).toBe("entry_denied");
-      expect(knock.legalAlternativeCommandTypes).toEqual([
-        "attempt_entry",
-        "move_actor",
-        "open_engagement",
-      ]);
+      // Containment, not equality: production builds this from a sorted Set of
+      // every currently-legal alternative, so a new legal alternative added
+      // anywhere in the engine must not break this scenario's proof — what
+      // matters here is that these three remain offered.
+      expect(knock.legalAlternativeCommandTypes).toEqual(
+        expect.arrayContaining(["attempt_entry", "move_actor", "open_engagement"]),
+      );
     }
 
     // Forced entry in a non-permitting world is a stated rule (§14.3), not a
@@ -642,10 +575,9 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
         linkId: ids.frontDoor,
         forced: true,
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(shoulder.status).toBe("rejected");
-    if (shoulder.status === "rejected") expect(shoulder.code).toBe("trespass_not_permitted");
+    expectRejected(shoulder, "trespass_not_permitted", "forcing the door in a non-permitting world");
 
     // §14.4 redaction: no refusal names the shower or the person behind the door.
     for (const refusal of [walkIn, knock, shoulder]) {
@@ -661,9 +593,9 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
         linkId: ids.frontDoor,
         forced: false,
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(homecoming.status).toBe("accepted");
+    expectAccepted(homecoming, "Mara's resident grant admits her");
     const granted = (await branchEvents(ids.branchId, ["zone_entered"]))[0];
     if (granted?.type !== "zone_entered") throw new Error("Entry event missing");
     expect(granted.payload).toMatchObject({ actorId: ids.mara, basis: "granted", toZoneId: ids.zoneParlor });
@@ -681,9 +613,9 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
         linkId: permissive.frontDoor,
         forced: true,
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(bargeIn.status).toBe("accepted");
+    expectAccepted(bargeIn, "forced entry where the world type permits trespass");
     const forcedEntry = (await branchEvents(permissive.branchId, ["zone_entered"]))[0];
     if (forcedEntry?.type !== "zone_entered") throw new Error("Forced entry event missing");
     expect(forcedEntry.payload).toMatchObject({ basis: "forced", toZoneId: permissive.zoneParlor });
@@ -697,24 +629,23 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
 
   it("refuses a second co-present scene competing for one body", async () => {
     const ids = await seedCorpusCase({ irisZone: "cafe" });
-    const first = await submitDurableOpenEngagement(chatCommand(ids), admit);
-    expect(first.status).toBe("accepted");
+    const first = await submitDurableOpenEngagement(chatCommand(ids), ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(first, "the first co-present scene");
     const rival = await submitDurableOpenEngagement(
       command(ids, "rival-chat", "open_engagement", principalFor("npc_policy", [ids.iris]), {
         participantIds: [ids.iris, ids.mara].sort(),
         channel: "co_present",
       }),
-      admit,
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(rival.status).toBe("rejected");
-    if (rival.status === "rejected") expect(rival.code).toBe("participant_already_engaged");
+    expectRejected(rival, "participant_already_engaged", "a rival scene competing for Mara's body");
   });
 
   // command-integrity.plan.md slice 2 (A2). Ruling A2-1 — the world's clock wins.
   it("lands a co-present turn overtaken by a concurrent drain instead of crashing (A2)", async () => {
     const ids = await seedCorpusCase();
-    const opened = await submitDurableOpenEngagement(chatCommand(ids), admit);
-    expect(opened.status).toBe("accepted");
+    const opened = await submitDurableOpenEngagement(chatCommand(ids), ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(opened, "open the scene the drain will overtake");
 
     // The race A2 fixes: a skip/travel drain advances the branch clock FAR past where this
     // co-present turn's span (SEED_SECOND + TURN_SPAN) would land, at the same time the turn

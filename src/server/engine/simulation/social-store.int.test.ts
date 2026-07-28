@@ -1,6 +1,5 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import { and, asc, desc, eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import { proposedArmedEffectSchema, type ProposedArmedEffect } from "@/contracts/simulation/narrative";
 import {
   recordRelationshipChangeCommandSchema,
@@ -17,14 +16,25 @@ import {
   replaySocialLedgerHistory,
   simulationHash,
 } from "@/lib/simulation";
-import { db, simBranches, simEvents, simRelationshipLedger, simTemporalPressures, simWorlds } from "@/server/db";
+import { db, simBranches, simEvents, simRelationshipLedger, simTemporalPressures } from "@/server/db";
+import {
+  ADMIT_AT_LOCKED_VERSION,
+  expectAccepted,
+  expectRejected,
+  forkAtHead,
+  playerPrincipal,
+  readBranchEvents,
+  seedSimpleBranch,
+  simCommand,
+  simulationSuiteHarness,
+  systemPrincipal,
+  type SimTestPrincipal,
+} from "@/server/test-support";
 import { seedDurableActionDefinitions, submitDurableStartActivity } from "./activity-store";
 import { prepareEngagementTurn, submitDurableConfirmNarratorResult } from "./arbiter-store";
-import { forkBranch } from "./branch-store";
 import { submitDurableCreateCommitment, submitDurableFulfillCommitment } from "./commitment-store";
 import { submitDurableAcknowledgePressure, submitDurableOpenEngagement } from "./engagement-store";
-import { InjectedSimulationCrash, seedDurableMaterialBranch } from "./material-store";
-import { branchEventFromRow } from "./observation-store";
+import { InjectedSimulationCrash } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { loadRelationshipLedgerProjection } from "./social-recorder";
 import {
@@ -32,8 +42,6 @@ import {
   submitDurableRecordRelationshipChange,
   submitDurableRecordRelationshipEntry,
 } from "./social-store";
-import { seedDurableSpaceTopology } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E5.5 slice 1 durable relationship-ledger substrate (engine.spec §21.3):
@@ -41,44 +49,20 @@ import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
  * speech-act/disclosure-derived entries landing through the recorder on REAL
  * `confirm_narrator_result` commands (mirrors narrative-store.int.test.ts's
  * harness), fork-mid-ledger parity, crash-injection atomicity, and
- * rebuild-from-zero hash parity. Mirrors household-store.int.test.ts's shape:
- * a single `describe.runIf(ready)` block, `afterAll` teardown of every
- * seeded world.
+ * rebuild-from-zero hash parity.
+ *
+ * Probe, legacy-player opt-in, seeded-world teardown and pool close all come
+ * from the shared `simulationSuiteHarness`; the seeded cafe comes from
+ * `seedSimpleBranch`. Command ids stay DERIVED from a per-command `name`
+ * (`cmd-<name>-<branchId>`), which is what the `deriveEngagementId` /
+ * `deriveCommitmentId` call sites below read back.
  */
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_relationship_ledger limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[social-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("social-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
+const harness = await simulationSuiteHarness({
+  suite: "social-store.int.test",
+  table: "sim_relationship_ledger",
 });
+const ready = harness.ready;
 
 const SEED_SECOND = 200_000;
 
@@ -92,56 +76,28 @@ interface SocialCase {
   cy: string;
 }
 
-function branchSeed(ids: SocialCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e5-5-test-world",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e5-5-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.ana, name: "Ana" },
-      { id: ids.ben, name: "Ben" },
-      { id: ids.cy, name: "Cy" },
-    ],
-    items: [],
-  });
-}
-
 async function seedCase(): Promise<SocialCase> {
-  const worldId = newId();
-  const branchId = newId();
-  const ids: SocialCase = {
-    worldId,
-    branchId,
-    locationId: `${worldId}-loc-cafe`,
-    zoneId: `${branchId}-zone-cafe`,
-    ana: newId(),
-    ben: newId(),
-    cy: newId(),
-  };
-  seededWorldIds.push(worldId);
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology({
-    branchId,
-    locations: [{ id: ids.locationId, worldId, kind: "cafe", defaultAccessPolicy: "public" }],
-    zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "cafe", privacyPolicy: "public" }],
-    links: [],
-    loci: [
-      { kind: "at", actorId: ids.ana, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND },
-      { kind: "at", actorId: ids.ben, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND },
-      { kind: "at", actorId: ids.cy, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND },
+  const actors = { ana: newId(), ben: newId(), cy: newId() };
+  const seeded = await seedSimpleBranch({
+    prefix: "e5-5-test",
+    actors: [
+      { id: actors.ana, name: "Ana" },
+      { id: actors.ben, name: "Ben" },
+      { id: actors.cy, name: "Cy" },
     ],
+    originStorySecond: SEED_SECOND,
+    locationSlug: "cafe",
+    zoneSlug: "cafe",
+    locationKind: "cafe",
+    zoneKind: "cafe",
   });
-  return ids;
+  harness.trackWorld(seeded.worldId);
+  return { ...seeded, ...actors };
 }
-
-const gmPrincipal = { kind: "storyteller" as const, principalId: "gm-1", controlledActorIds: [] };
-const playerPrincipal = (actorId: string) => ({ kind: "player" as const, principalId: "player-1", controlledActorIds: [actorId] });
 
 function recordEntryCmd(input: {
   branchId: string;
+  name: string;
   fromActorId: string;
   toActorId: string;
   kind: string;
@@ -150,54 +106,51 @@ function recordEntryCmd(input: {
   weightOverride?: { trustFixedPoint: number; attractionFixedPoint: number; resentmentFixedPoint: number };
   scopeKey?: string;
   expectedVersion: number;
-  principal?: { kind: string; principalId: string; controlledActorIds: string[] };
-  id?: string;
-  idempotencyKey?: string;
+  principal?: SimTestPrincipal;
 }): RecordRelationshipEntryCommand {
-  return recordRelationshipEntryCommandSchema.parse({
-    id: input.id ?? newId(),
-    branchId: input.branchId,
-    expectedVersion: input.expectedVersion,
-    idempotencyKey: input.idempotencyKey ?? newId(),
-    principal: input.principal ?? gmPrincipal,
-    submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-    correlationId: newId(),
-    type: "record_relationship_entry",
-    schemaVersion: 1,
-    payload: {
-      fromActorId: input.fromActorId,
-      toActorId: input.toActorId,
-      kind: input.kind,
-      detail: input.detail ?? "authored via the storyteller",
-      ...(input.storySecond === undefined ? {} : { storySecond: input.storySecond }),
-      ...(input.weightOverride === undefined ? {} : { weightOverride: input.weightOverride }),
-      ...(input.scopeKey === undefined ? {} : { scopeKey: input.scopeKey }),
-    },
-  });
+  return recordRelationshipEntryCommandSchema.parse(
+    simCommand({
+      branchId: input.branchId,
+      name: input.name,
+      type: "record_relationship_entry",
+      expectedVersion: input.expectedVersion,
+      ...(input.principal === undefined ? {} : { principal: input.principal }),
+      payload: {
+        fromActorId: input.fromActorId,
+        toActorId: input.toActorId,
+        kind: input.kind,
+        detail: input.detail ?? "authored via the storyteller",
+        ...(input.storySecond === undefined ? {} : { storySecond: input.storySecond }),
+        ...(input.weightOverride === undefined ? {} : { weightOverride: input.weightOverride }),
+        ...(input.scopeKey === undefined ? {} : { scopeKey: input.scopeKey }),
+      },
+    }),
+  );
 }
 
 function recordChangeCmd(input: {
   branchId: string;
+  name: string;
   fromActorId: string;
   toActorId: string;
   changeKey: string;
   detail?: string;
   expectedVersion: number;
-  id?: string;
-  idempotencyKey?: string;
 }): RecordRelationshipChangeCommand {
-  return recordRelationshipChangeCommandSchema.parse({
-    id: input.id ?? newId(),
-    branchId: input.branchId,
-    expectedVersion: input.expectedVersion,
-    idempotencyKey: input.idempotencyKey ?? newId(),
-    principal: gmPrincipal,
-    submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-    correlationId: newId(),
-    type: "record_relationship_change",
-    schemaVersion: 1,
-    payload: { fromActorId: input.fromActorId, toActorId: input.toActorId, changeKey: input.changeKey, detail: input.detail ?? "a change" },
-  });
+  return recordRelationshipChangeCommandSchema.parse(
+    simCommand({
+      branchId: input.branchId,
+      name: input.name,
+      type: "record_relationship_change",
+      expectedVersion: input.expectedVersion,
+      payload: {
+        fromActorId: input.fromActorId,
+        toActorId: input.toActorId,
+        changeKey: input.changeKey,
+        detail: input.detail ?? "a change",
+      },
+    }),
+  );
 }
 
 /** Bridges an unbranded literal into `ProposedArmedEffect` via the real
@@ -205,6 +158,85 @@ function recordChangeCmd(input: {
  * `*CommandInput` idiom for the same unbranded-literal-into-`.parse()` shape. */
 function armedEffect(input: Record<string, unknown>): ProposedArmedEffect {
   return proposedArmedEffectSchema.parse(input);
+}
+
+/** The co-present `open_engagement` every scene in this file starts from. */
+function openEngagement(
+  ids: SocialCase,
+  name: string,
+  openerActorId: string,
+  otherActorId: string,
+  expectedVersion = 0,
+) {
+  return simCommand({
+    branchId: ids.branchId,
+    name,
+    type: "open_engagement",
+    expectedVersion,
+    principal: playerPrincipal(openerActorId),
+    payload: { participantIds: [openerActorId, otherActorId].sort(), channel: "co_present" },
+  });
+}
+
+/** The system-authored `confirm_narrator_result` enacting every armed effect on a cut. */
+function confirmNarratorResult(
+  ids: SocialCase,
+  name: string,
+  engagementId: string,
+  turn: Awaited<ReturnType<typeof prepareEngagementTurn>>,
+) {
+  return simCommand({
+    branchId: ids.branchId,
+    name,
+    type: "confirm_narrator_result",
+    principal: systemPrincipal,
+    payload: {
+      engagementId,
+      cutId: turn.cut.id,
+      enactedArmedEffectIds: turn.cut.armedEffects.map((effect) => effect.id),
+      softCanonProposals: [],
+    },
+  });
+}
+
+/** Ana's destinationless `create_commitment` — the promise shape every slice-2 case makes. */
+function promiseCommand(
+  ids: SocialCase,
+  name: string,
+  promisedToActorId: string,
+  latestArrival: number,
+  payloadOverrides: Record<string, unknown> = {},
+) {
+  return simCommand({
+    branchId: ids.branchId,
+    name,
+    type: "create_commitment",
+    principal: playerPrincipal(ids.ana),
+    payload: {
+      actorId: ids.ana,
+      kind: "promise",
+      promisedToActorId,
+      window: { latestArrival },
+      priority: 0,
+      flexibility: "soft",
+      preparationSeconds: 0,
+      reliabilityBufferSeconds: 0,
+      noticeLeadSeconds: 0,
+      knowledgeSource: { kind: "authored" },
+      ...payloadOverrides,
+    },
+  });
+}
+
+function fulfillCommand(ids: SocialCase, name: string, commitmentId: string) {
+  return simCommand({
+    branchId: ids.branchId,
+    name,
+    type: "fulfill_commitment",
+    principal: playerPrincipal(ids.ana),
+    submittedAtWallClock: "2026-07-20T12:05:00.000Z",
+    payload: { commitmentId },
+  });
 }
 
 async function ledgerRows(branchId: string) {
@@ -220,13 +252,14 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
     const ids = await seedCase();
 
     const helpGiven = await submitDurableRecordRelationshipEntry(
-      recordEntryCmd({ branchId: ids.branchId, fromActorId: ids.ana, toActorId: ids.ben, kind: "help_given", expectedVersion: 0 }),
+      recordEntryCmd({ branchId: ids.branchId, name: "help-given", fromActorId: ids.ana, toActorId: ids.ben, kind: "help_given", expectedVersion: 0 }),
     );
-    expect(helpGiven.status).toBe("accepted");
+    expectAccepted(helpGiven, "recording help_given ana -> ben");
 
     const boundaryViolated = await submitDurableRecordRelationshipEntry(
       recordEntryCmd({
         branchId: ids.branchId,
+        name: "boundary-violated",
         fromActorId: ids.ben,
         toActorId: ids.ana,
         kind: "boundary_violated",
@@ -234,11 +267,12 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
         expectedVersion: 1,
       }),
     );
-    expect(boundaryViolated.status).toBe("accepted");
+    expectAccepted(boundaryViolated, "recording boundary_violated with a consent scope");
 
     const authoredPrior = await submitDurableRecordRelationshipEntry(
       recordEntryCmd({
         branchId: ids.branchId,
+        name: "authored-prior",
         fromActorId: ids.cy,
         toActorId: ids.ana,
         kind: "authored_prior",
@@ -247,12 +281,12 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
         expectedVersion: 2,
       }),
     );
-    expect(authoredPrior.status).toBe("accepted");
+    expectAccepted(authoredPrior, "recording a backdated authored_prior");
 
     const change = await submitDurableRecordRelationshipChange(
-      recordChangeCmd({ branchId: ids.branchId, fromActorId: ids.ana, toActorId: ids.ben, changeKey: "became_lovers", expectedVersion: 3 }),
+      recordChangeCmd({ branchId: ids.branchId, name: "became-lovers", fromActorId: ids.ana, toActorId: ids.ben, changeKey: "became_lovers", expectedVersion: 3 }),
     );
-    expect(change.status).toBe("accepted");
+    expectAccepted(change, "recording the became_lovers change");
 
     const projection = await loadRelationshipLedgerProjection(ids.branchId);
     expect(projection).toHaveLength(4);
@@ -278,6 +312,7 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
     const unauthorized = await submitDurableRecordRelationshipEntry(
       recordEntryCmd({
         branchId: ids.branchId,
+        name: "unauthorized",
         fromActorId: ids.ana,
         toActorId: ids.ben,
         kind: "help_given",
@@ -285,12 +320,12 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
         principal: playerPrincipal(ids.ana),
       }),
     );
-    expect(unauthorized).toMatchObject({ status: "rejected", code: "unauthorized_principal" });
+    expectRejected(unauthorized, "unauthorized_principal", "a player authoring a ledger entry");
 
     const unknownActor = await submitDurableRecordRelationshipEntry(
-      recordEntryCmd({ branchId: ids.branchId, fromActorId: ids.ana, toActorId: "actor-does-not-exist", kind: "help_given", expectedVersion: 0 }),
+      recordEntryCmd({ branchId: ids.branchId, name: "unknown-actor", fromActorId: ids.ana, toActorId: "actor-does-not-exist", kind: "help_given", expectedVersion: 0 }),
     );
-    expect(unknownActor).toMatchObject({ status: "rejected", code: "actor_not_found" });
+    expectRejected(unknownActor, "actor_not_found", "a ledger entry naming an actor that does not exist");
 
     // Neither rejection wrote a ledger row.
     expect(await loadRelationshipLedgerProjection(ids.branchId)).toHaveLength(0);
@@ -298,10 +333,10 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
 
   it("is idempotent: resubmitting the identical command (same id + idempotencyKey) never double-writes a ledger row", async () => {
     const ids = await seedCase();
-    const command = recordEntryCmd({ branchId: ids.branchId, fromActorId: ids.ana, toActorId: ids.ben, kind: "help_given", expectedVersion: 0 });
+    const command = recordEntryCmd({ branchId: ids.branchId, name: "help-given", fromActorId: ids.ana, toActorId: ids.ben, kind: "help_given", expectedVersion: 0 });
 
     const first = await submitDurableRecordRelationshipEntry(command);
-    expect(first.status).toBe("accepted");
+    expectAccepted(first, "the first submission of the entry");
     const second = await submitDurableRecordRelationshipEntry(command);
     expect(second).toEqual(first);
 
@@ -313,7 +348,7 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
     const crashPoints = ["after_event_append", "after_branch_advance"] as const;
     for (const crashAt of crashPoints) {
       const ids = await seedCase();
-      const command = recordEntryCmd({ branchId: ids.branchId, fromActorId: ids.ana, toActorId: ids.ben, kind: "help_given", expectedVersion: 0 });
+      const command = recordEntryCmd({ branchId: ids.branchId, name: "help-given", fromActorId: ids.ana, toActorId: ids.ben, kind: "help_given", expectedVersion: 0 });
 
       let threw: unknown;
       try {
@@ -325,7 +360,7 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
       expect(await loadRelationshipLedgerProjection(ids.branchId)).toHaveLength(0);
 
       const retry = await submitDurableRecordRelationshipEntry(command);
-      expect(retry.status).toBe("accepted");
+      expectAccepted(retry, `the retry after an injected crash at ${crashAt}`);
       expect(await loadRelationshipLedgerProjection(ids.branchId)).toHaveLength(1);
     }
   });
@@ -333,23 +368,10 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
   it("derives boundary_stated (with its consentScopeKey) and confidence_shared entries from a REAL confirm_narrator_result, in the same transaction as the speech-act/disclosure events", async () => {
     const ids = await seedCase();
 
-    const opened = await submitDurableOpenEngagement(
-      {
-        id: `cmd-open-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `open-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
-        type: "open_engagement",
-        schemaVersion: 1,
-        payload: { participantIds: [ids.ana, ids.ben].sort(), channel: "co_present" },
-      },
-      { admitAtLockedVersion: true },
-    );
-    expect(opened.status).toBe("accepted");
-    const engagementId = deriveEngagementId(ids.branchId, `cmd-open-${ids.branchId}`);
+    const openCommand = openEngagement(ids, "open", ids.ana, ids.ben);
+    const opened = await submitDurableOpenEngagement(openCommand, ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(opened, "opening the ana/ben engagement");
+    const engagementId = deriveEngagementId(ids.branchId, openCommand.id);
 
     const turn = await prepareEngagementTurn({
       branchId: ids.branchId,
@@ -378,26 +400,10 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
     expect(turn.cut.armedEffects).toHaveLength(2);
 
     const confirmed = await submitDurableConfirmNarratorResult(
-      {
-        id: `cmd-confirm-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `confirm-key-${ids.branchId}`,
-        principal: { kind: "system", principalId: "system-1", controlledActorIds: [] },
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
-        type: "confirm_narrator_result",
-        schemaVersion: 2,
-        payload: {
-          engagementId,
-          cutId: turn.cut.id,
-          enactedArmedEffectIds: turn.cut.armedEffects.map((effect) => effect.id),
-          softCanonProposals: [],
-        },
-      },
-      { admitAtLockedVersion: true },
+      confirmNarratorResult(ids, "confirm", engagementId, turn),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(confirmed.status).toBe("accepted");
+    expectAccepted(confirmed, "confirming the boundary/disclosure cut");
 
     const projection = await loadRelationshipLedgerProjection(ids.branchId);
     const boundary = projection.find((entry) => entry.kind === "boundary_stated");
@@ -413,40 +419,36 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
 
   it("forks mid-ledger: the child's ledger rows exactly match a replaySocialLedgerHistory rebuild over the inherited stream, and a diverged child never touches the parent", async () => {
     const ids = await seedCase();
-    await submitDurableRecordRelationshipEntry(
-      recordEntryCmd({ branchId: ids.branchId, fromActorId: ids.ana, toActorId: ids.ben, kind: "help_given", expectedVersion: 0 }),
+    expectAccepted(
+      await submitDurableRecordRelationshipEntry(
+        recordEntryCmd({ branchId: ids.branchId, name: "help-given", fromActorId: ids.ana, toActorId: ids.ben, kind: "help_given", expectedVersion: 0 }),
+      ),
+      "recording help_given before the fork",
     );
-    await submitDurableRecordRelationshipEntry(
-      recordEntryCmd({
-        branchId: ids.branchId,
-        fromActorId: ids.ben,
-        toActorId: ids.cy,
-        kind: "affection_shown",
-        expectedVersion: 1,
-      }),
+    expectAccepted(
+      await submitDurableRecordRelationshipEntry(
+        recordEntryCmd({
+          branchId: ids.branchId,
+          name: "affection-shown",
+          fromActorId: ids.ben,
+          toActorId: ids.cy,
+          kind: "affection_shown",
+          expectedVersion: 1,
+        }),
+      ),
+      "recording affection_shown before the fork",
     );
-    await submitDurableRecordRelationshipChange(
-      recordChangeCmd({ branchId: ids.branchId, fromActorId: ids.ana, toActorId: ids.ben, changeKey: "became_lovers", expectedVersion: 2 }),
+    expectAccepted(
+      await submitDurableRecordRelationshipChange(
+        recordChangeCmd({ branchId: ids.branchId, name: "became-lovers", fromActorId: ids.ana, toActorId: ids.ben, changeKey: "became_lovers", expectedVersion: 2 }),
+      ),
+      "recording the became_lovers change before the fork",
     );
 
-    const [parentBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!parentBranchRow) throw new Error("parent branch row missing");
-
-    const childBranchId = newId();
-    await forkBranch({
+    const { childBranchId, parentEvents } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId,
-      atSequence: parentBranchRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "E5.5 slice 1 fork parity",
     });
-
-    const parentEventRows = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(asc(simEvents.sequence));
-    const parentEvents = parentEventRows.map(branchEventFromRow);
 
     const expected = replaySocialLedgerHistory({ events: parentEvents, commitmentById: () => undefined });
     const childProjection = await loadRelationshipLedgerProjection(childBranchId);
@@ -465,13 +467,14 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
     const diverge = await submitDurableRecordRelationshipEntry(
       recordEntryCmd({
         branchId: childBranchId,
+        name: "diverge-conflict",
         fromActorId: ids.cy,
         toActorId: ids.ana,
         kind: "conflict",
         expectedVersion: childBranchRow.version,
       }),
     );
-    expect(diverge.status).toBe("accepted");
+    expectAccepted(diverge, "the child-only divergence");
 
     const childAfter = await loadRelationshipLedgerProjection(childBranchId);
     const parentAfter = await loadRelationshipLedgerProjection(ids.branchId);
@@ -481,30 +484,23 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
 
   it("rebuilds the ledger projection from zero to the live hash across authored entries, changes, and speech-act-derived entries together", async () => {
     const ids = await seedCase();
-    await submitDurableRecordRelationshipEntry(
-      recordEntryCmd({ branchId: ids.branchId, fromActorId: ids.ana, toActorId: ids.ben, kind: "help_given", expectedVersion: 0 }),
+    expectAccepted(
+      await submitDurableRecordRelationshipEntry(
+        recordEntryCmd({ branchId: ids.branchId, name: "help-given", fromActorId: ids.ana, toActorId: ids.ben, kind: "help_given", expectedVersion: 0 }),
+      ),
+      "recording help_given for the rebuild corpus",
     );
-    await submitDurableRecordRelationshipChange(
-      recordChangeCmd({ branchId: ids.branchId, fromActorId: ids.ana, toActorId: ids.ben, changeKey: "became_lovers", expectedVersion: 1 }),
+    expectAccepted(
+      await submitDurableRecordRelationshipChange(
+        recordChangeCmd({ branchId: ids.branchId, name: "became-lovers", fromActorId: ids.ana, toActorId: ids.ben, changeKey: "became_lovers", expectedVersion: 1 }),
+      ),
+      "recording the change for the rebuild corpus",
     );
 
-    const opened = await submitDurableOpenEngagement(
-      {
-        id: `cmd-open2-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 2,
-        idempotencyKey: `open2-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
-        type: "open_engagement",
-        schemaVersion: 1,
-        payload: { participantIds: [ids.ana, ids.ben].sort(), channel: "co_present" },
-      },
-      { admitAtLockedVersion: true },
-    );
-    expect(opened.status).toBe("accepted");
-    const engagementId = deriveEngagementId(ids.branchId, `cmd-open2-${ids.branchId}`);
+    const openCommand = openEngagement(ids, "open2", ids.ana, ids.ben, 2);
+    const opened = await submitDurableOpenEngagement(openCommand, ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(opened, "opening the engagement for the rebuild corpus");
+    const engagementId = deriveEngagementId(ids.branchId, openCommand.id);
     const turn = await prepareEngagementTurn({
       branchId: ids.branchId,
       engagementId,
@@ -516,29 +512,15 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
         armedEffect({ effectType: "apology_delivered", actorId: ids.ben, targetActorIds: [ids.ana], detail: "Ben apologizes." }),
       ],
     });
-    await submitDurableConfirmNarratorResult(
-      {
-        id: `cmd-confirm2-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `confirm2-key-${ids.branchId}`,
-        principal: { kind: "system", principalId: "system-1", controlledActorIds: [] },
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
-        type: "confirm_narrator_result",
-        schemaVersion: 2,
-        payload: {
-          engagementId,
-          cutId: turn.cut.id,
-          enactedArmedEffectIds: turn.cut.armedEffects.map((effect) => effect.id),
-          softCanonProposals: [],
-        },
-      },
-      { admitAtLockedVersion: true },
+    expectAccepted(
+      await submitDurableConfirmNarratorResult(
+        confirmNarratorResult(ids, "confirm2", engagementId, turn),
+        ADMIT_AT_LOCKED_VERSION,
+      ),
+      "confirming the apology cut for the rebuild corpus",
     );
 
-    const eventRows = await db().select().from(simEvents).where(eq(simEvents.branchId, ids.branchId)).orderBy(asc(simEvents.sequence));
-    const events = eventRows.map(branchEventFromRow);
+    const events = await readBranchEvents(ids.branchId);
     const rebuilt = replaySocialLedgerHistory({ events, commitmentById: () => undefined });
 
     const live = await ledgerRows(ids.branchId);
@@ -580,44 +562,26 @@ describe.runIf(ready)("E5.5 slice 2 durable consent gate, destinationless commit
 
     const startKiss = (suffix: string) =>
       submitDurableStartActivity(
-        {
-          id: `cmd-${suffix}-${ids.branchId}`,
+        simCommand({
           branchId: ids.branchId,
-          expectedVersion: 0,
-          idempotencyKey: `${suffix}-key-${ids.branchId}`,
-          principal: playerPrincipal(ids.ana),
-          submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-          correlationId: newId(),
+          name: suffix,
           type: "start_activity",
-          schemaVersion: 1,
+          principal: playerPrincipal(ids.ana),
           payload: { actionDefinitionId: kissActionId, actorId: ids.ana, targetActorId: ids.ben },
-        },
-        { admitAtLockedVersion: true },
+        }),
+        ADMIT_AT_LOCKED_VERSION,
       );
 
     const beforeConsent = await startKiss("kiss-before");
-    expect(beforeConsent).toMatchObject({ status: "rejected", code: "consent_required" });
+    expectRejected(beforeConsent, "consent_required", "kissing before any consent was spoken");
 
     // A single open engagement hosts both exchanges below — opening a SECOND
     // engagement between the same two participants would reject
     // participant_already_engaged, since the first is never closed.
-    const opened = await submitDurableOpenEngagement(
-      {
-        id: `cmd-open-consent-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `open-consent-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ben),
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
-        type: "open_engagement",
-        schemaVersion: 1,
-        payload: { participantIds: [ids.ana, ids.ben].sort(), channel: "co_present" },
-      },
-      { admitAtLockedVersion: true },
-    );
-    expect(opened.status).toBe("accepted");
-    const engagementId = deriveEngagementId(ids.branchId, `cmd-open-consent-${ids.branchId}`);
+    const openCommand = openEngagement(ids, "open-consent", ids.ben, ids.ana);
+    const opened = await submitDurableOpenEngagement(openCommand, ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(opened, "opening the single engagement that hosts both consent exchanges");
+    const engagementId = deriveEngagementId(ids.branchId, openCommand.id);
 
     async function speakConsent(effectType: "permission_granted" | "permission_withdrawn", suffix: string) {
       const turn = await prepareEngagementTurn({
@@ -638,32 +602,15 @@ describe.runIf(ready)("E5.5 slice 2 durable consent gate, destinationless commit
         ],
       });
       const confirmed = await submitDurableConfirmNarratorResult(
-        {
-          id: `cmd-confirm-${suffix}-${ids.branchId}`,
-          branchId: ids.branchId,
-          expectedVersion: 0,
-          idempotencyKey: `confirm-${suffix}-key-${ids.branchId}`,
-          principal: { kind: "system", principalId: "system-1", controlledActorIds: [] },
-          submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-          correlationId: newId(),
-          type: "confirm_narrator_result",
-          schemaVersion: 2,
-          payload: {
-            engagementId,
-            cutId: turn.cut.id,
-            enactedArmedEffectIds: turn.cut.armedEffects.map((effect) => effect.id),
-            softCanonProposals: [],
-          },
-        },
-        { admitAtLockedVersion: true },
+        confirmNarratorResult(ids, `confirm-${suffix}`, engagementId, turn),
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(confirmed.status).toBe("accepted");
+      expectAccepted(confirmed, `confirming the ${effectType} cut`);
     }
 
     await speakConsent("permission_granted", "grant");
     const afterGrant = await startKiss("kiss-after-grant");
-    expect(afterGrant.status).toBe("accepted");
-    if (afterGrant.status !== "accepted") return;
+    expectAccepted(afterGrant, "kissing once permission_granted covers the scope");
     const [startedRow] = await db()
       .select()
       .from(simEvents)
@@ -682,56 +629,21 @@ describe.runIf(ready)("E5.5 slice 2 durable consent gate, destinationless commit
 
     await speakConsent("permission_withdrawn", "withdraw");
     const afterWithdraw = await startKiss("kiss-after-withdraw");
-    expect(afterWithdraw).toMatchObject({ status: "rejected", code: "consent_required" });
+    expectRejected(afterWithdraw, "consent_required", "kissing after the consent was withdrawn (most-recent-wins)");
   });
 
   it("fulfill_commitment on a destinationless promise records commitment_kept AND a promise_kept ledger row in the same transaction, moving trust", async () => {
     const ids = await seedCase();
-    const create = await submitDurableCreateCommitment(
-      {
-        id: `cmd-promise-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `promise-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
-        type: "create_commitment",
-        schemaVersion: 1,
-        payload: {
-          actorId: ids.ana,
-          kind: "promise",
-          promisedToActorId: ids.ben,
-          window: { latestArrival: SEED_SECOND + 2_000 },
-          priority: 0,
-          flexibility: "soft",
-          preparationSeconds: 0,
-          reliabilityBufferSeconds: 0,
-          noticeLeadSeconds: 0,
-          knowledgeSource: { kind: "authored" },
-        },
-      },
-      { admitAtLockedVersion: true },
-    );
-    expect(create.status).toBe("accepted");
-    const commitmentId = deriveCommitmentId(ids.branchId, `cmd-promise-${ids.branchId}`);
+    const createCommand = promiseCommand(ids, "promise", ids.ben, SEED_SECOND + 2_000);
+    const create = await submitDurableCreateCommitment(createCommand, ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(create, "creating the destinationless promise");
+    const commitmentId = deriveCommitmentId(ids.branchId, createCommand.id);
 
     const fulfilled = await submitDurableFulfillCommitment(
-      {
-        id: `cmd-fulfill-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `fulfill-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:05:00.000Z",
-        correlationId: newId(),
-        type: "fulfill_commitment",
-        schemaVersion: 1,
-        payload: { commitmentId },
-      },
-      { admitAtLockedVersion: true },
+      fulfillCommand(ids, "fulfill", commitmentId),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(fulfilled.status).toBe("accepted");
+    expectAccepted(fulfilled, "fulfilling the destinationless promise");
 
     const projection = await loadRelationshipLedgerProjection(ids.branchId);
     const kept = projection.find((entry) => entry.kind === "promise_kept");
@@ -755,46 +667,20 @@ describe.runIf(ready)("E5.5 slice 2 durable consent gate, destinationless commit
 
   it("a repair chain end to end: A misses, B repairs it → a promise_repaired ledger row lands alongside B's creation", async () => {
     const ids = await seedCase();
-    const promiseCommand = (suffix: string, expectedVersion: number, payloadOverrides: Record<string, unknown> = {}) => ({
-      id: `cmd-${suffix}-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion,
-      idempotencyKey: `${suffix}-key-${ids.branchId}`,
-      principal: playerPrincipal(ids.ana),
-      submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-      correlationId: newId(),
-      type: "create_commitment",
-      schemaVersion: 1,
-      payload: {
-        actorId: ids.ana,
-        kind: "promise",
-        promisedToActorId: ids.ben,
-        window: { latestArrival: SEED_SECOND + 100 },
-        priority: 0,
-        flexibility: "soft",
-        preparationSeconds: 0,
-        reliabilityBufferSeconds: 0,
-        noticeLeadSeconds: 0,
-        knowledgeSource: { kind: "authored" },
-        ...payloadOverrides,
-      },
-    });
-
-    const createA = await submitDurableCreateCommitment(promiseCommand("promise-a", 0), { admitAtLockedVersion: true });
-    expect(createA.status).toBe("accepted");
-    const commitmentAId = deriveCommitmentId(ids.branchId, `cmd-promise-a-${ids.branchId}`);
+    const commandA = promiseCommand(ids, "promise-a", ids.ben, SEED_SECOND + 100);
+    const createA = await submitDurableCreateCommitment(commandA, ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(createA, "creating the promise that will be missed");
+    const commitmentAId = deriveCommitmentId(ids.branchId, commandA.id);
 
     const missResult = await advanceBranchStoryTime(ids.branchId, SEED_SECOND + 200, { workerId: "w-repair-miss" });
     expect(missResult.status).toBe("advanced");
 
     const createB = await submitDurableCreateCommitment(
-      promiseCommand("promise-b", 0, {
-        repairsCommitmentId: commitmentAId,
-        window: { latestArrival: SEED_SECOND + 2_000 }, // A's window has already elapsed by now
-      }),
-      { admitAtLockedVersion: true },
+      // A's window has already elapsed by now.
+      promiseCommand(ids, "promise-b", ids.ben, SEED_SECOND + 2_000, { repairsCommitmentId: commitmentAId }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(createB.status).toBe("accepted");
+    expectAccepted(createB, "creating the repairing promise");
 
     const projection = await loadRelationshipLedgerProjection(ids.branchId);
     const repaired = projection.find((entry) => entry.kind === "promise_repaired");
@@ -804,69 +690,21 @@ describe.runIf(ready)("E5.5 slice 2 durable consent gate, destinationless commit
   it("forks mid-ledger across the widened event shapes (commitment_kept, activity_started/consentGrant): child ledger rows exactly match a replaySocialLedgerHistory rebuild", async () => {
     const ids = await seedCase();
 
-    const create = await submitDurableCreateCommitment(
-      {
-        id: `cmd-promise-fork-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `promise-fork-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
-        type: "create_commitment",
-        schemaVersion: 1,
-        payload: {
-          actorId: ids.ana,
-          kind: "promise",
-          promisedToActorId: ids.ben,
-          window: { latestArrival: SEED_SECOND + 2_000 },
-          priority: 0,
-          flexibility: "soft",
-          preparationSeconds: 0,
-          reliabilityBufferSeconds: 0,
-          noticeLeadSeconds: 0,
-          knowledgeSource: { kind: "authored" },
-        },
-      },
-      { admitAtLockedVersion: true },
-    );
-    expect(create.status).toBe("accepted");
-    const commitmentId = deriveCommitmentId(ids.branchId, `cmd-promise-fork-${ids.branchId}`);
+    const createCommand = promiseCommand(ids, "promise-fork", ids.ben, SEED_SECOND + 2_000);
+    const create = await submitDurableCreateCommitment(createCommand, ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(create, "creating the promise the fork must inherit");
+    const commitmentId = deriveCommitmentId(ids.branchId, createCommand.id);
     const fulfilled = await submitDurableFulfillCommitment(
-      {
-        id: `cmd-fulfill-fork-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `fulfill-fork-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:05:00.000Z",
-        correlationId: newId(),
-        type: "fulfill_commitment",
-        schemaVersion: 1,
-        payload: { commitmentId },
-      },
-      { admitAtLockedVersion: true },
+      fulfillCommand(ids, "fulfill-fork", commitmentId),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(fulfilled.status).toBe("accepted");
+    expectAccepted(fulfilled, "fulfilling the promise the fork must inherit");
 
-    const [parentBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!parentBranchRow) throw new Error("parent branch row missing");
-
-    const childBranchId = newId();
-    await forkBranch({
+    const { childBranchId, parentEvents } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId,
-      atSequence: parentBranchRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "E5.5 slice 2 fork parity over the widened event shapes",
     });
 
-    const parentEventRows = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(asc(simEvents.sequence));
-    const parentEvents = parentEventRows.map(branchEventFromRow);
     const commitmentById = (id: string) => (id === commitmentId ? { kind: "promise", promisedToActorId: ids.ben } : undefined);
 
     const expected = replaySocialLedgerHistory({ events: parentEvents, commitmentById });
@@ -889,32 +727,27 @@ describe.runIf(ready)("E5.5 slice 2 durable consent gate, destinationless commit
 describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure acknowledgment", () => {
   function escalationCmd(input: {
     branchId: string;
+    name: string;
     actorId: string;
     targetActorId: string;
     scopeKey?: string;
     expectedVersion: number;
-    id?: string;
-    idempotencyKey?: string;
   }) {
-    return {
-      id: input.id ?? newId(),
+    return simCommand({
       branchId: input.branchId,
-      expectedVersion: input.expectedVersion,
-      idempotencyKey: input.idempotencyKey ?? newId(),
-      principal: playerPrincipal(input.actorId),
-      submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-      correlationId: newId(),
+      name: input.name,
       type: "attempt_consent_escalation",
-      schemaVersion: 1,
+      expectedVersion: input.expectedVersion,
+      principal: playerPrincipal(input.actorId),
       payload: { actorId: input.actorId, targetActorId: input.targetActorId, scopeKey: input.scopeKey ?? "kiss" },
-    };
+    });
   }
 
   it("admission refused (no model budget): decline lands as consent_declined, deliberate() is never invoked", async () => {
     const ids = await seedCase();
     let calls = 0;
     const result = await submitDurableAttemptConsentEscalation(
-      escalationCmd({ branchId: ids.branchId, actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 0 }),
+      escalationCmd({ branchId: ids.branchId, name: "escalate", actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 0 }),
       {
         playerControlledActorIds: [],
         modelBudgetRemaining: 0, // fails admission closed (no_model_budget)
@@ -924,7 +757,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
         },
       },
     );
-    expect(result.status).toBe("accepted");
+    expectAccepted(result, "the escalation refused admission for want of model budget");
     expect(calls).toBe(0);
 
     const projection = await loadRelationshipLedgerProjection(ids.branchId);
@@ -942,6 +775,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
     const prior = await submitDurableRecordRelationshipEntry(
       recordEntryCmd({
         branchId: ids.branchId,
+        name: "authored-prior",
         fromActorId: ids.ana,
         toActorId: ids.ben,
         kind: "authored_prior",
@@ -949,11 +783,11 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
         expectedVersion: 0,
       }),
     );
-    expect(prior.status).toBe("accepted");
+    expectAccepted(prior, "seeding the trust that makes the admission gap ambiguous");
 
     let calls = 0;
     const result = await submitDurableAttemptConsentEscalation(
-      escalationCmd({ branchId: ids.branchId, actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 1 }),
+      escalationCmd({ branchId: ids.branchId, name: "escalate", actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 1 }),
       {
         playerControlledActorIds: [],
         modelBudgetRemaining: 10,
@@ -963,7 +797,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
         },
       },
     );
-    expect(result.status).toBe("accepted");
+    expectAccepted(result, "the admitted escalation whose deliberator threw");
     expect(calls).toBe(1); // proves admission actually admitted (grant's score beat decline's, inside the gap)
 
     const projection = await loadRelationshipLedgerProjection(ids.branchId);
@@ -988,6 +822,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
     const prior = await submitDurableRecordRelationshipEntry(
       recordEntryCmd({
         branchId: ids.branchId,
+        name: "authored-prior",
         fromActorId: ids.ana,
         toActorId: ids.ben,
         kind: "authored_prior",
@@ -995,11 +830,11 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
         expectedVersion: 0,
       }),
     );
-    expect(prior.status).toBe("accepted");
+    expectAccepted(prior, "seeding the trust that makes the admission gap ambiguous");
 
     let calls = 0;
     const result = await submitDurableAttemptConsentEscalation(
-      escalationCmd({ branchId: ids.branchId, actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 1 }),
+      escalationCmd({ branchId: ids.branchId, name: "escalate", actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 1 }),
       {
         playerControlledActorIds: [],
         modelBudgetRemaining: 10,
@@ -1009,7 +844,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
         },
       },
     );
-    expect(result.status).toBe("accepted");
+    expectAccepted(result, "the admitted escalation whose deliberator answered unusably");
     expect(calls).toBe(1);
 
     const projection = await loadRelationshipLedgerProjection(ids.branchId);
@@ -1034,6 +869,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
     const prior = await submitDurableRecordRelationshipEntry(
       recordEntryCmd({
         branchId: ids.branchId,
+        name: "authored-prior",
         fromActorId: ids.ana,
         toActorId: ids.ben,
         kind: "authored_prior",
@@ -1041,11 +877,11 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
         expectedVersion: 0,
       }),
     );
-    expect(prior.status).toBe("accepted");
+    expectAccepted(prior, "seeding the trust that makes the admission gap ambiguous");
 
     let calls = 0;
     const result = await submitDurableAttemptConsentEscalation(
-      escalationCmd({ branchId: ids.branchId, actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 1 }),
+      escalationCmd({ branchId: ids.branchId, name: "escalate", actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 1 }),
       {
         playerControlledActorIds: [],
         modelBudgetRemaining: 10,
@@ -1055,7 +891,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
         },
       },
     );
-    expect(result.status).toBe("accepted");
+    expectAccepted(result, "the admitted escalation whose deliberator answered unusably");
     expect(calls).toBe(1);
 
     const projection = await loadRelationshipLedgerProjection(ids.branchId);
@@ -1102,6 +938,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
     const prior = await submitDurableRecordRelationshipEntry(
       recordEntryCmd({
         branchId: ids.branchId,
+        name: "authored-prior",
         fromActorId: ids.ana,
         toActorId: ids.ben,
         kind: "authored_prior",
@@ -1109,11 +946,11 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
         expectedVersion: 0,
       }),
     );
-    expect(prior.status).toBe("accepted");
+    expectAccepted(prior, "seeding just enough trust for admission to actually admit");
 
     let calls = 0;
     const result = await submitDurableAttemptConsentEscalation(
-      escalationCmd({ branchId: ids.branchId, actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 1 }),
+      escalationCmd({ branchId: ids.branchId, name: "escalate", actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 1 }),
       {
         playerControlledActorIds: [],
         modelBudgetRemaining: 10,
@@ -1123,7 +960,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
         },
       },
     );
-    expect(result.status).toBe("accepted");
+    expectAccepted(result, "the admitted escalation that grants");
     expect(calls).toBe(1); // proves this ran through a real admitted deliberation, not a fallback
 
     const projection = await loadRelationshipLedgerProjection(ids.branchId);
@@ -1134,28 +971,24 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
     });
 
     const started = await submitDurableStartActivity(
-      {
-        id: `cmd-kiss-after-escalation-${ids.branchId}`,
+      simCommand({
         branchId: ids.branchId,
-        expectedVersion: 1,
-        idempotencyKey: `kiss-after-escalation-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
+        name: "kiss-after-escalation",
         type: "start_activity",
-        schemaVersion: 1,
+        expectedVersion: 1,
+        principal: playerPrincipal(ids.ana),
         payload: { actionDefinitionId: kissActionId, actorId: ids.ana, targetActorId: ids.ben },
-      },
-      { admitAtLockedVersion: true },
+      }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(started.status).toBe("accepted");
+    expectAccepted(started, "kissing once the escalation granted the scope");
   });
 
   it("rejects a player-controlled target before any deliberation call", async () => {
     const ids = await seedCase();
     let calls = 0;
     const result = await submitDurableAttemptConsentEscalation(
-      escalationCmd({ branchId: ids.branchId, actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 0 }),
+      escalationCmd({ branchId: ids.branchId, name: "escalate", actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 0 }),
       {
         playerControlledActorIds: [ids.ben],
         modelBudgetRemaining: 10,
@@ -1165,7 +998,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
         },
       },
     );
-    expect(result).toMatchObject({ status: "rejected", code: "target_is_player_controlled" });
+    expectRejected(result, "target_is_player_controlled", "escalating against a player-controlled target");
     expect(calls).toBe(0);
     expect(await loadRelationshipLedgerProjection(ids.branchId)).toHaveLength(0);
   });
@@ -1178,7 +1011,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
     // so admission refuses closed and deliberate() is never called.
     let baselineCalls = 0;
     const baseline = await submitDurableAttemptConsentEscalation(
-      escalationCmd({ branchId: ids.branchId, actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 0 }),
+      escalationCmd({ branchId: ids.branchId, name: "escalate-baseline", actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 0 }),
       {
         playerControlledActorIds: [],
         modelBudgetRemaining: 10,
@@ -1188,7 +1021,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
         },
       },
     );
-    expect(baseline.status).toBe("accepted");
+    expectAccepted(baseline, "the baseline escalation, refused admission on a decisive gap");
     expect(baselineCalls).toBe(0);
     const [baselineEventRow] = await db()
       .select()
@@ -1205,6 +1038,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
     const prior = await submitDurableRecordRelationshipEntry(
       recordEntryCmd({
         branchId: ids.branchId,
+        name: "authored-prior",
         fromActorId: ids.ana,
         toActorId: ids.ben,
         kind: "authored_prior",
@@ -1212,7 +1046,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
         expectedVersion: 1,
       }),
     );
-    expect(prior.status).toBe("accepted");
+    expectAccepted(prior, "recording the authored_prior override that swings the dyad");
 
     // If the store failed to load/pass authoredPriorWeights (the "silently
     // zero" regression the review flagged — authored_prior has NO registry
@@ -1221,7 +1055,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
     // baseline above. Instead it must now admit and call deliberate().
     let overrideCalls = 0;
     const withOverride = await submitDurableAttemptConsentEscalation(
-      escalationCmd({ branchId: ids.branchId, actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 2 }),
+      escalationCmd({ branchId: ids.branchId, name: "escalate-with-override", actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 2 }),
       {
         playerControlledActorIds: [],
         modelBudgetRemaining: 10,
@@ -1231,7 +1065,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
         },
       },
     );
-    expect(withOverride.status).toBe("accepted");
+    expectAccepted(withOverride, "the escalation admitted once the override is loaded");
     expect(overrideCalls).toBe(1);
     // Two consent_escalation_resolved events now exist for this branch (the
     // baseline refusal, then this one) — order DESCENDING and take the
@@ -1251,7 +1085,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
     const crashPoints = ["after_event_append", "after_branch_advance"] as const;
     for (const crashAt of crashPoints) {
       const ids = await seedCase();
-      const command = escalationCmd({ branchId: ids.branchId, actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 0 });
+      const command = escalationCmd({ branchId: ids.branchId, name: "escalate", actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 0 });
       let calls = 0;
       const options = {
         playerControlledActorIds: [],
@@ -1272,7 +1106,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
       expect(await loadRelationshipLedgerProjection(ids.branchId)).toHaveLength(0);
 
       const retry = await submitDurableAttemptConsentEscalation(command, options);
-      expect(retry.status).toBe("accepted");
+      expectAccepted(retry, `the escalation retry after an injected crash at ${crashAt}`);
       expect(calls).toBe(0);
       const projection = await loadRelationshipLedgerProjection(ids.branchId);
       expect(projection.filter((entry) => entry.kind === "consent_declined")).toHaveLength(1);
@@ -1282,57 +1116,21 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
   it("acknowledge_pressure: prepareEngagementTurn marks an open pressure looked-at for a non-departing participant, and the NEXT cut omits it at unchanged severity", async () => {
     const ids = await seedCase();
     const create = await submitDurableCreateCommitment(
-      {
-        id: `cmd-promise-ack-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `promise-ack-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
-        type: "create_commitment",
-        schemaVersion: 1,
-        payload: {
-          actorId: ids.ana,
-          kind: "promise",
-          promisedToActorId: ids.ben,
-          window: { latestArrival: SEED_SECOND + 10_000 },
-          priority: 0,
-          flexibility: "soft",
-          preparationSeconds: 0,
-          reliabilityBufferSeconds: 0,
-          // A destinationless commitment's latestDeparture equals
-          // latestArrival (no route to subtract) — noticeAt = latestDeparture
-          // - noticeLeadSeconds. Set the lead so notice is due well before
-          // the advance below reaches it.
-          noticeLeadSeconds: 9_950,
-          knowledgeSource: { kind: "authored" },
-        },
-      },
-      { admitAtLockedVersion: true },
+      // A destinationless commitment's latestDeparture equals latestArrival (no
+      // route to subtract) — noticeAt = latestDeparture - noticeLeadSeconds. The
+      // lead is set so notice is due well before the advance below reaches it.
+      promiseCommand(ids, "promise-ack", ids.ben, SEED_SECOND + 10_000, { noticeLeadSeconds: 9_950 }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(create.status).toBe("accepted");
+    expectAccepted(create, "creating the promise whose pressure must be acknowledged");
 
     // Force the pressure to notice (due at SEED_SECOND + 50) so it's live for this turn.
     await advanceBranchStoryTime(ids.branchId, SEED_SECOND + 100, { workerId: "w-ack-notice" });
 
-    const opened = await submitDurableOpenEngagement(
-      {
-        id: `cmd-open-ack-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `open-ack-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
-        type: "open_engagement",
-        schemaVersion: 1,
-        payload: { participantIds: [ids.ana, ids.ben].sort(), channel: "co_present" },
-      },
-      { admitAtLockedVersion: true },
-    );
-    expect(opened.status).toBe("accepted");
-    const engagementId = deriveEngagementId(ids.branchId, `cmd-open-ack-${ids.branchId}`);
+    const openCommand = openEngagement(ids, "open-ack", ids.ana, ids.ben);
+    const opened = await submitDurableOpenEngagement(openCommand, ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(opened, "opening the engagement the pressure is acknowledged in");
+    const engagementId = deriveEngagementId(ids.branchId, openCommand.id);
 
     const firstTurn = await prepareEngagementTurn({
       branchId: ids.branchId,
@@ -1388,40 +1186,23 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
 
   it("submitDurableAcknowledgePressure rejects a non-system principal as unauthorized_principal", async () => {
     const ids = await seedCase();
-    const opened = await submitDurableOpenEngagement(
-      {
-        id: `cmd-open-unauth-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `open-unauth-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
-        type: "open_engagement",
-        schemaVersion: 1,
-        payload: { participantIds: [ids.ana, ids.ben].sort(), channel: "co_present" },
-      },
-      { admitAtLockedVersion: true },
-    );
-    expect(opened.status).toBe("accepted");
-    const engagementId = deriveEngagementId(ids.branchId, `cmd-open-unauth-${ids.branchId}`);
+    const openCommand = openEngagement(ids, "open-unauth", ids.ana, ids.ben);
+    const opened = await submitDurableOpenEngagement(openCommand, ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(opened, "opening the engagement the unauthorized ack targets");
+    const engagementId = deriveEngagementId(ids.branchId, openCommand.id);
 
     const result = await submitDurableAcknowledgePressure(
-      {
-        id: newId(),
+      simCommand({
         branchId: ids.branchId,
-        expectedVersion: 1,
-        idempotencyKey: newId(),
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
+        name: "ack-unauth",
         type: "acknowledge_pressure",
-        schemaVersion: 1,
+        expectedVersion: 1,
+        principal: playerPrincipal(ids.ana),
         payload: { engagementId, pressureId: "pressure-does-not-exist" },
-      },
-      { admitAtLockedVersion: true },
+      }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(result).toMatchObject({ status: "rejected", code: "unauthorized_principal" });
+    expectRejected(result, "unauthorized_principal", "a player acknowledging a pressure");
   });
 
   it("full-corpus fork-hash parity: authored entries, a change, derived speech-act entries, a kept commitment, a consentGrant-gated activity, and consent_escalation_resolved together — child ledger rows exactly match a replaySocialLedgerHistory rebuild across every ledger-producing E5.5 event type (slices 1–3; pressure_acknowledged is excluded by design, §1.7 — it produces no ledger row, and its own fork/replay safety is proven separately by engagements.ts's replay tests)", async () => {
@@ -1432,44 +1213,41 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
     // ana→ben dyad the escalation below reads, or its weight would stack
     // with confidence_shared's and push the admission gap past the
     // threshold (see the comment at the escalation call below).
-    await submitDurableRecordRelationshipEntry(
-      recordEntryCmd({ branchId: ids.branchId, fromActorId: ids.ana, toActorId: ids.cy, kind: "help_given", expectedVersion: 0 }),
-      { admitAtLockedVersion: true },
+    expectAccepted(
+      await submitDurableRecordRelationshipEntry(
+        recordEntryCmd({ branchId: ids.branchId, name: "help-given", fromActorId: ids.ana, toActorId: ids.cy, kind: "help_given", expectedVersion: 0 }),
+        ADMIT_AT_LOCKED_VERSION,
+      ),
+      "corpus: recording help_given ana -> cy",
     );
-    await submitDurableRecordRelationshipEntry(
-      recordEntryCmd({
-        branchId: ids.branchId,
-        fromActorId: ids.cy,
-        toActorId: ids.ana,
-        kind: "authored_prior",
-        weightOverride: { trustFixedPoint: 300, attractionFixedPoint: 0, resentmentFixedPoint: 0 },
-        expectedVersion: 0,
-      }),
-      { admitAtLockedVersion: true },
+    expectAccepted(
+      await submitDurableRecordRelationshipEntry(
+        recordEntryCmd({
+          branchId: ids.branchId,
+          name: "authored-prior",
+          fromActorId: ids.cy,
+          toActorId: ids.ana,
+          kind: "authored_prior",
+          weightOverride: { trustFixedPoint: 300, attractionFixedPoint: 0, resentmentFixedPoint: 0 },
+          expectedVersion: 0,
+        }),
+        ADMIT_AT_LOCKED_VERSION,
+      ),
+      "corpus: recording the cy -> ana authored_prior",
     );
-    await submitDurableRecordRelationshipChange(
-      recordChangeCmd({ branchId: ids.branchId, fromActorId: ids.ana, toActorId: ids.cy, changeKey: "became_lovers", expectedVersion: 0 }),
-      { admitAtLockedVersion: true },
+    expectAccepted(
+      await submitDurableRecordRelationshipChange(
+        recordChangeCmd({ branchId: ids.branchId, name: "became-lovers", fromActorId: ids.ana, toActorId: ids.cy, changeKey: "became_lovers", expectedVersion: 0 }),
+        ADMIT_AT_LOCKED_VERSION,
+      ),
+      "corpus: recording the became_lovers change",
     );
 
     // Slice 1 — derived boundary_stated/confidence_shared from a REAL confirm_narrator_result.
-    const opened = await submitDurableOpenEngagement(
-      {
-        id: `cmd-open-corpus-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `open-corpus-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
-        type: "open_engagement",
-        schemaVersion: 1,
-        payload: { participantIds: [ids.ana, ids.ben].sort(), channel: "co_present" },
-      },
-      { admitAtLockedVersion: true },
-    );
-    expect(opened.status).toBe("accepted");
-    const engagementId = deriveEngagementId(ids.branchId, `cmd-open-corpus-${ids.branchId}`);
+    const openCommand = openEngagement(ids, "open-corpus", ids.ana, ids.ben);
+    const opened = await submitDurableOpenEngagement(openCommand, ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(opened, "corpus: opening the ana/ben engagement");
+    const engagementId = deriveEngagementId(ids.branchId, openCommand.id);
 
     const turn = await prepareEngagementTurn({
       branchId: ids.branchId,
@@ -1497,78 +1275,27 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
     });
     expect(turn.cut.armedEffects).toHaveLength(2);
     const confirmed = await submitDurableConfirmNarratorResult(
-      {
-        id: `cmd-confirm-corpus-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `confirm-corpus-key-${ids.branchId}`,
-        principal: { kind: "system", principalId: "system-1", controlledActorIds: [] },
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
-        type: "confirm_narrator_result",
-        schemaVersion: 2,
-        payload: {
-          engagementId,
-          cutId: turn.cut.id,
-          enactedArmedEffectIds: turn.cut.armedEffects.map((effect) => effect.id),
-          softCanonProposals: [],
-        },
-      },
-      { admitAtLockedVersion: true },
+      confirmNarratorResult(ids, "confirm-corpus", engagementId, turn),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(confirmed.status).toBe("accepted");
+    expectAccepted(confirmed, "corpus: confirming the boundary/disclosure cut");
 
     // Slice 2 — a kept destinationless promise (promise_kept).
-    const create = await submitDurableCreateCommitment(
-      {
-        id: `cmd-promise-corpus-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `promise-corpus-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
-        type: "create_commitment",
-        schemaVersion: 1,
-        payload: {
-          actorId: ids.ana,
-          kind: "promise",
-          // Deliberately promised to Cy, not Ben — the escalation below reads
-          // the ana→ben dyad, and promise_kept's registry weight (+1500
-          // trust) would otherwise stack with the authored_prior override
-          // and push the gap back past the admission threshold (decisively
-          // "obviously grant" refuses admission just like "obviously
-          // decline" does — admission only fires for an AMBIGUOUS gap).
-          promisedToActorId: ids.cy,
-          window: { latestArrival: SEED_SECOND + 2_000 },
-          priority: 0,
-          flexibility: "soft",
-          preparationSeconds: 0,
-          reliabilityBufferSeconds: 0,
-          noticeLeadSeconds: 0,
-          knowledgeSource: { kind: "authored" },
-        },
-      },
-      { admitAtLockedVersion: true },
-    );
-    expect(create.status).toBe("accepted");
-    const commitmentId = deriveCommitmentId(ids.branchId, `cmd-promise-corpus-${ids.branchId}`);
+    // Deliberately promised to Cy, not Ben — the escalation below reads the
+    // ana→ben dyad, and promise_kept's registry weight (+1500 trust) would
+    // otherwise stack with the authored_prior override and push the gap back
+    // past the admission threshold (decisively "obviously grant" refuses
+    // admission just like "obviously decline" does — admission only fires for
+    // an AMBIGUOUS gap).
+    const createCommand = promiseCommand(ids, "promise-corpus", ids.cy, SEED_SECOND + 2_000);
+    const create = await submitDurableCreateCommitment(createCommand, ADMIT_AT_LOCKED_VERSION);
+    expectAccepted(create, "corpus: creating the promise to Cy");
+    const commitmentId = deriveCommitmentId(ids.branchId, createCommand.id);
     const fulfilled = await submitDurableFulfillCommitment(
-      {
-        id: `cmd-fulfill-corpus-${ids.branchId}`,
-        branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `fulfill-corpus-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:05:00.000Z",
-        correlationId: newId(),
-        type: "fulfill_commitment",
-        schemaVersion: 1,
-        payload: { commitmentId },
-      },
-      { admitAtLockedVersion: true },
+      fulfillCommand(ids, "fulfill-corpus", commitmentId),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(fulfilled.status).toBe("accepted");
+    expectAccepted(fulfilled, "corpus: fulfilling the promise to Cy");
 
     // Slice 3 — an admitted-and-granted escalation (permission_granted),
     // which also opens the consent_covered gate for the activity below. No
@@ -1581,10 +1308,10 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
     // failure mode this comment's sibling test, "authoredPriorWeights
     // wiring", exists to pin down).
     const escalation = await submitDurableAttemptConsentEscalation(
-      escalationCmd({ branchId: ids.branchId, actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 0 }),
+      escalationCmd({ branchId: ids.branchId, name: "escalate-corpus", actorId: ids.ana, targetActorId: ids.ben, expectedVersion: 0 }),
       { playerControlledActorIds: [], modelBudgetRemaining: 10, deliberate: async () => ({ chosenCandidateId: "grant" }), admitAtLockedVersion: true },
     );
-    expect(escalation.status).toBe("accepted");
+    expectAccepted(escalation, "corpus: the admitted-and-granted escalation");
 
     // Slice 2 — activity_started/consentGrant (boundary_respected), gated by
     // the permission_granted entry just recorded.
@@ -1605,21 +1332,16 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
       ],
     });
     const started = await submitDurableStartActivity(
-      {
-        id: `cmd-kiss-corpus-${ids.branchId}`,
+      simCommand({
         branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `kiss-corpus-key-${ids.branchId}`,
-        principal: playerPrincipal(ids.ana),
-        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-        correlationId: newId(),
+        name: "kiss-corpus",
         type: "start_activity",
-        schemaVersion: 1,
+        principal: playerPrincipal(ids.ana),
         payload: { actionDefinitionId: kissActionId, actorId: ids.ana, targetActorId: ids.ben },
-      },
-      { admitAtLockedVersion: true },
+      }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(started.status).toBe("accepted");
+    expectAccepted(started, "corpus: the consentGrant-gated kiss");
 
     const projectionBeforeFork = await loadRelationshipLedgerProjection(ids.branchId);
     expect(new Set(projectionBeforeFork.map((entry) => entry.kind))).toEqual(
@@ -1635,23 +1357,11 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
       ]),
     );
 
-    const [parentBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
-    if (!parentBranchRow) throw new Error("parent branch row missing");
-    const childBranchId = newId();
-    await forkBranch({
+    const { childBranchId, parentEvents } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId,
-      atSequence: parentBranchRow.headSequence,
-      principal: { kind: "storyteller", principalId: "gm-1" },
       reason: "E5.5 slice 3 full-corpus fork parity",
     });
 
-    const parentEventRows = await db()
-      .select()
-      .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId))
-      .orderBy(asc(simEvents.sequence));
-    const parentEvents = parentEventRows.map(branchEventFromRow);
     const commitmentById = (id: string) => (id === commitmentId ? { kind: "promise" as const, promisedToActorId: ids.cy } : undefined);
     const expected = replaySocialLedgerHistory({ events: parentEvents, commitmentById });
     const childProjection = await loadRelationshipLedgerProjection(childBranchId);

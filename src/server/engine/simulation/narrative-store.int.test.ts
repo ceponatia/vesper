@@ -1,28 +1,29 @@
-import { asc, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import { asc, eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import { narrativeCutSchema } from "@/contracts/simulation/narrative";
 import { newId } from "@/lib/ids";
 import { deriveCommitmentId, deriveEngagementId } from "@/lib/simulation";
+import { db, simBeliefs, simEvents, simNarrativeCuts, simTemporalPressures } from "@/server/db";
 import {
-  db,
-  simBeliefs,
-  simEvents,
-  simNarrativeCuts,
-  simTemporalPressures,
-  simWorlds,
-} from "@/server/db";
+  ADMIT_AT_LOCKED_VERSION,
+  expectAccepted,
+  expectRejected,
+  forkAtHead,
+  gmPrincipal,
+  npcPrincipal,
+  playerPrincipal,
+  seedSimBranch,
+  simCommand,
+  simulationSuiteHarness,
+  systemPrincipal,
+} from "@/server/test-support";
 import { prepareEngagementTurn, submitDurableConfirmNarratorResult } from "./arbiter-store";
-import { forkBranch } from "./branch-store";
 import { submitDurableCreateCommitment } from "./commitment-store";
 import { submitDurableAssignActorLod } from "./lod-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
-import { seedDurableMaterialBranch } from "./material-store";
 import { loadPersistedCut, NarrativeCutVersionError, persistNarrativeCut } from "./narrative-cut-store";
 import { loadSoftCanonProjection } from "./soft-canon-recorder";
 import { submitDurableDemoteSoftCanon } from "./soft-canon-store";
-import { seedDurableSpaceTopology } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * E4.3 integration: persisted cuts (immutable, addressable, retryable),
@@ -37,38 +38,9 @@ const TURN_SPAN = 400;
 const HORIZON = 1_000;
 const WALK = 300;
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_narrative_cuts limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[narrative-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("narrative-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
+const harness = await simulationSuiteHarness({
+  suite: "narrative-store.int.test",
+  table: "sim_narrative_cuts",
 });
 
 /** One cafe with three zones; player and Mara share the hall, Iris shelves stock. */
@@ -82,23 +54,6 @@ interface NarrativeCase {
   zoneCafe: string;
   zoneShop: string;
   zoneAnnex: string;
-}
-
-function branchSeed(ids: NarrativeCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e4-3-tests",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e4-3-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.player, name: "Pia" },
-      { id: ids.mara, name: "Mara" },
-      { id: ids.iris, name: "Iris" },
-    ],
-    items: [],
-  });
 }
 
 async function seedNarrativeCase(): Promise<NarrativeCase> {
@@ -115,9 +70,17 @@ async function seedNarrativeCase(): Promise<NarrativeCase> {
     zoneShop: `${branchId}-zone-shop`,
     zoneAnnex: `${branchId}-zone-annex`,
   };
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology({
+  await seedSimBranch({
+    worldId,
     branchId,
+    worldTypeId: "e4-3-tests",
+    rulesetVersion: "e4-3-test-v1",
+    originStorySecond: SEED_SECOND,
+    actors: [
+      { id: ids.player, name: "Pia" },
+      { id: ids.mara, name: "Mara" },
+      { id: ids.iris, name: "Iris" },
+    ],
     locations: [{ id: ids.locCafe, worldId, kind: "town", defaultAccessPolicy: "public" }],
     zones: [
       { id: ids.zoneCafe, locationId: ids.locCafe, kind: "cafe", privacyPolicy: "public" },
@@ -144,51 +107,28 @@ async function seedNarrativeCase(): Promise<NarrativeCase> {
         state: "open",
       },
     ],
-    loci: [
-      { kind: "at", actorId: ids.player, locationId: ids.locCafe, zoneId: ids.zoneCafe, since: SEED_SECOND },
-      { kind: "at", actorId: ids.mara, locationId: ids.locCafe, zoneId: ids.zoneCafe, since: SEED_SECOND },
-      { kind: "at", actorId: ids.iris, locationId: ids.locCafe, zoneId: ids.zoneShop, since: SEED_SECOND },
+    placements: [
+      { actorId: ids.player, locationId: ids.locCafe, zoneId: ids.zoneCafe },
+      { actorId: ids.mara, locationId: ids.locCafe, zoneId: ids.zoneCafe },
+      { actorId: ids.iris, locationId: ids.locCafe, zoneId: ids.zoneShop },
     ],
   });
-  seededWorldIds.push(worldId);
+  harness.trackWorld(worldId);
   return ids;
-}
-
-const admit = { admitAtLockedVersion: true };
-
-function command(
-  ids: NarrativeCase,
-  name: string,
-  type: string,
-  principal: { kind: string; principalId: string; controlledActorIds: string[] },
-  payload: Record<string, unknown>,
-) {
-  return {
-    id: `cmd-${name}-${ids.branchId}`,
-    branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `${name}-key-${ids.branchId}`,
-    principal,
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
-    type,
-    schemaVersion: type === "confirm_narrator_result" ? 2 : 1,
-    payload,
-  };
 }
 
 async function openChat(ids: NarrativeCase): Promise<string> {
   const opened = await submitDurableOpenEngagement(
-    command(
-      ids,
-      "chat",
-      "open_engagement",
-      { kind: "player", principalId: "player-1", controlledActorIds: [ids.player] },
-      { participantIds: [ids.player, ids.mara].sort(), channel: "co_present" },
-    ),
-    admit,
+    simCommand({
+      branchId: ids.branchId,
+      name: "chat",
+      type: "open_engagement",
+      principal: playerPrincipal(ids.player),
+      payload: { participantIds: [ids.player, ids.mara].sort(), channel: "co_present" },
+    }),
+    ADMIT_AT_LOCKED_VERSION,
   );
-  expect(opened.status).toBe("accepted");
+  expectAccepted(opened, "chat open");
   return deriveEngagementId(ids.branchId, `cmd-chat-${ids.branchId}`);
 }
 
@@ -212,14 +152,14 @@ function confirm(
   payload: Record<string, unknown>,
 ) {
   return submitDurableConfirmNarratorResult(
-    command(
-      ids,
+    simCommand({
+      branchId: ids.branchId,
       name,
-      "confirm_narrator_result",
-      { kind: "system", principalId: "system-1", controlledActorIds: [] },
-      { engagementId, cutId, enactedArmedEffectIds: [], softCanonProposals: [], ...payload },
-    ),
-    admit,
+      type: "confirm_narrator_result",
+      principal: systemPrincipal,
+      payload: { engagementId, cutId, enactedArmedEffectIds: [], softCanonProposals: [], ...payload },
+    }),
+    ADMIT_AT_LOCKED_VERSION,
   );
 }
 
@@ -240,7 +180,7 @@ async function tableCounts(branchId: string): Promise<{ events: number; cuts: nu
   return { events: events.length, cuts: cuts.length };
 }
 
-describe.runIf(ready)("E4.3 persisted cuts and narrator integration", () => {
+describe.runIf(harness.ready)("E4.3 persisted cuts and narrator integration", () => {
   it("persists cuts immutably: retry re-reads the row, rerender creates nothing, tampering fails loudly (§22.3, ruling 8)", async () => {
     const ids = await seedNarrativeCase();
     const engagementId = await openChat(ids);
@@ -302,8 +242,8 @@ describe.runIf(ready)("E4.3 persisted cuts and narrator integration", () => {
     const confirmed = await confirm(ids, "confirm1", engagementId, turn.cut.id, {
       enactedArmedEffectIds: [disclosureEffect.id, "armed-invented-by-the-model"],
     });
-    expect(confirmed.status).toBe("accepted");
-    if (confirmed.status === "accepted") expect(confirmed.eventIds).toHaveLength(2);
+    expectAccepted(confirmed, "narrator confirmation");
+    expect(confirmed.eventIds).toHaveLength(2);
 
     // The unknown id was ignored; the unenacted apology expired with its cut.
     const speechRows = await db()
@@ -341,13 +281,11 @@ describe.runIf(ready)("E4.3 persisted cuts and narrator integration", () => {
     const stale = await confirm(ids, "confirm-stale", engagementId, turn.cut.id, {
       enactedArmedEffectIds: [disclosureEffect.id],
     });
-    expect(stale.status).toBe("rejected");
-    if (stale.status === "rejected") expect(stale.code).toBe("cut_superseded");
+    expectRejected(stale, "cut_superseded", "confirming a superseded cut");
     const unknown = await confirm(ids, "confirm-unknown", engagementId, "cut-that-never-was", {
       enactedArmedEffectIds: [disclosureEffect.id],
     });
-    expect(unknown.status).toBe("rejected");
-    if (unknown.status === "rejected") expect(unknown.code).toBe("cut_not_found");
+    expectRejected(unknown, "cut_not_found", "confirming an unknown cut");
   });
 
   it("records soft canon, auto-promotes on the ruled third distinct cut, licenses it, and demotes only for a storyteller (ruling 14)", async () => {
@@ -361,7 +299,7 @@ describe.runIf(ready)("E4.3 persisted cuts and narrator integration", () => {
       const confirmed = await confirm(ids, `canon${round}`, engagementId, turn.cut.id, {
         softCanonProposals: [nicknameProposal(ids, turn.cut.id)],
       });
-      expect(confirmed.status).toBe("accepted");
+      expectAccepted(confirmed, `soft-canon round ${round}`);
     }
 
     const projection = await loadSoftCanonProjection(ids.branchId);
@@ -392,16 +330,11 @@ describe.runIf(ready)("E4.3 persisted cuts and narrator integration", () => {
     const duplicate = await confirm(ids, "canon-dup", engagementId, licensedTurn.cut.id, {
       softCanonProposals: [nicknameProposal(ids, licensedTurn.cut.id)],
     });
-    expect(duplicate.status).toBe("rejected");
-    if (duplicate.status === "rejected") expect(duplicate.code).toBe("nothing_to_record");
+    expectRejected(duplicate, "nothing_to_record", "re-proposing promoted canon");
 
     // Fork parity: the child's bounded store rebuilds row for row.
-    const childBranchId = newId();
-    await forkBranch({
+    const { childBranchId } = await forkAtHead({
       parentBranchId: ids.branchId,
-      childBranchId,
-      atSequence: (await tableCounts(ids.branchId)).events,
-      principal: { kind: "player", principalId: "player-1" },
       reason: "after the nickname stuck",
     });
     const childProjection = await loadSoftCanonProjection(childBranchId);
@@ -411,29 +344,28 @@ describe.runIf(ready)("E4.3 persisted cuts and narrator integration", () => {
 
     // Demotion is storyteller-only (ruling 4) and never touches history.
     const unauthorized = await submitDurableDemoteSoftCanon(
-      command(
-        ids,
-        "demote-nope",
-        "demote_soft_canon",
-        { kind: "system", principalId: "system-1", controlledActorIds: [] },
-        { entryId: entry.id, reason: "not yours to retract" },
-      ),
-      admit,
+      simCommand({
+        branchId: ids.branchId,
+        name: "demote-nope",
+        type: "demote_soft_canon",
+        principal: systemPrincipal,
+        payload: { entryId: entry.id, reason: "not yours to retract" },
+      }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(unauthorized.status).toBe("rejected");
-    if (unauthorized.status === "rejected") expect(unauthorized.code).toBe("unauthorized_principal");
+    expectRejected(unauthorized, "unauthorized_principal", "system demotion");
 
     const demoted = await submitDurableDemoteSoftCanon(
-      command(
-        ids,
-        "demote",
-        "demote_soft_canon",
-        { kind: "storyteller", principalId: "storyteller-1", controlledActorIds: [] },
-        { entryId: entry.id, reason: "the nickname reads as demeaning" },
-      ),
-      admit,
+      simCommand({
+        branchId: ids.branchId,
+        name: "demote",
+        type: "demote_soft_canon",
+        principal: gmPrincipal,
+        payload: { entryId: entry.id, reason: "the nickname reads as demeaning" },
+      }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(demoted.status).toBe("accepted");
+    expectAccepted(demoted, "storyteller demotion");
     const after = await loadSoftCanonProjection(ids.branchId);
     expect(after.entries[0]?.status).toBe("demoted");
     expect(
@@ -452,12 +384,12 @@ describe.runIf(ready)("E4.3 persisted cuts and narrator integration", () => {
       noticeLeadSeconds: number,
     ) => {
       const created = await submitDurableCreateCommitment(
-        command(
-          ids,
+        simCommand({
+          branchId: ids.branchId,
           name,
-          "create_commitment",
-          { kind: "npc_policy", principalId: "npc-1", controlledActorIds: [ids.mara] },
-          {
+          type: "create_commitment",
+          principal: npcPrincipal(ids.mara),
+          payload: {
             actorId: ids.mara,
             kind: "shift",
             destinationZoneId,
@@ -469,10 +401,10 @@ describe.runIf(ready)("E4.3 persisted cuts and narrator integration", () => {
             noticeLeadSeconds,
             knowledgeSource: { kind: "authored" },
           },
-        ),
-        admit,
+        }),
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(created.status).toBe("accepted");
+      expectAccepted(created, `commitment ${name}`);
     };
 
     // Case one: an admitted deliberator overrides the earliest-boundary rule.
@@ -515,16 +447,16 @@ describe.runIf(ready)("E4.3 persisted cuts and narrator integration", () => {
     await seedCommitment(fallbackIds, "shift-a", fallbackIds.zoneShop, SEED_SECOND + 1_500, 900);
     await seedCommitment(fallbackIds, "shift-b", fallbackIds.zoneAnnex, SEED_SECOND + 1_600, 1_000);
     const assigned = await submitDurableAssignActorLod(
-      command(
-        fallbackIds,
-        "lod-small",
-        "assign_actor_lod",
-        { kind: "storyteller", principalId: "storyteller-1", controlledActorIds: [] },
-        { actorId: fallbackIds.mara, simulationLod: "exact", inferenceLod: "small_model" },
-      ),
-      admit,
+      simCommand({
+        branchId: fallbackIds.branchId,
+        name: "lod-small",
+        type: "assign_actor_lod",
+        principal: gmPrincipal,
+        payload: { actorId: fallbackIds.mara, simulationLod: "exact", inferenceLod: "small_model" },
+      }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(assigned.status).toBe("accepted");
+    expectAccepted(assigned, "LOD assignment");
     const fallbackEngagementId = await openChat(fallbackIds);
     let asked = 0;
     const fallbackTurn = await prepare(fallbackIds, fallbackEngagementId, {

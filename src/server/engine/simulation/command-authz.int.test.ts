@@ -1,24 +1,21 @@
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import { newId } from "@/lib/ids";
-import {
-  characterChats,
-  db,
-  simBranches,
-  simCommands,
-  simEvents,
-  simJourneys,
-  simTriggers,
-  simWorlds,
-  users,
-} from "@/server/db";
+import { characterChats, db, simBranches, users } from "@/server/db";
 import { log } from "@/server/log";
-import { probeIntegrationDb } from "@/server/test-support";
+import {
+  branchFootprint,
+  expectAccepted,
+  expectRejected,
+  footprintDelta,
+  seedSimBranch,
+  simCommand,
+  simulationSuiteHarness,
+  type SimTestPrincipal,
+} from "@/server/test-support";
 import { SIM_COMMAND_DENIED } from "./command-authz";
 import { submitDurableCreateCohort } from "./cohort-store";
-import { seedDurableMaterialBranch } from "./material-store";
-import { seedDurableSpaceTopology, submitDurableMoveActor, type SpaceTopologySeed } from "./space-store";
+import { submitDurableMoveActor } from "./space-store";
 
 /**
  * security-authz.plan.md §Follow-ups item 1 — the durable command layer proves
@@ -30,13 +27,21 @@ import { seedDurableSpaceTopology, submitDurableMoveActor, type SpaceTopologySee
  * Both command shells are covered: the shared `runSimulationCommand` (via
  * `submitDurableCreateCohort`) and space-store's older inlined copy (via
  * `submitDurableMoveActor`).
+ *
+ * `legacyPlayerMode: false` is load-bearing: every denial below must hold with
+ * or without the aggregate-run opt-in, so this suite must never require it.
+ * The real-user + chat-anchor fixtures stay hand-written — they ARE the subject.
  */
 
 const SEED_SECOND = 10_000;
 const WALK_AB = 600;
 
-const ready = await probeIntegrationDb("command-authz.int.test", "sim_physical_loci");
-const seededWorldIds: string[] = [];
+const harness = await simulationSuiteHarness({
+  suite: "command-authz.int.test",
+  table: "sim_physical_loci",
+  legacyPlayerMode: false,
+});
+const ready = harness.ready;
 const seededUserIds: string[] = [];
 
 let ownerA = "";
@@ -50,61 +55,44 @@ interface AuthzCase {
   zoneB: string;
 }
 
-function branchSeed(ids: AuthzCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
+async function seedUnanchoredCase(): Promise<AuthzCase> {
+  const actorId = newId();
+  const branchId = newId();
+  const zoneA = `${branchId}-zone-a`;
+  const zoneB = `${branchId}-zone-b`;
+  const worldId = newId();
+  const locHome = `${worldId}-loc-home`;
+  const locCafe = `${worldId}-loc-cafe`;
+  await seedSimBranch({
+    worldId,
+    branchId,
     worldTypeId: "command-authz-tests",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
     rulesetVersion: "command-authz-v1",
     originStorySecond: SEED_SECOND,
-    actors: [{ id: ids.actorId, name: "Mara" }],
-    items: [],
-  });
-}
-
-function topologySeed(ids: AuthzCase): SpaceTopologySeed {
-  const locHome = `${ids.worldId}-loc-home`;
-  const locCafe = `${ids.worldId}-loc-cafe`;
-  return {
-    branchId: ids.branchId,
+    actors: [{ id: actorId, name: "Mara" }],
     locations: [
-      { id: locHome, worldId: ids.worldId, kind: "home", defaultAccessPolicy: "private" },
-      { id: locCafe, worldId: ids.worldId, kind: "cafe", defaultAccessPolicy: "public" },
+      { id: locHome, worldId, kind: "home", defaultAccessPolicy: "private" },
+      { id: locCafe, worldId, kind: "cafe", defaultAccessPolicy: "public" },
     ],
     zones: [
-      { id: ids.zoneA, locationId: locHome, kind: "room", privacyPolicy: "private" },
-      { id: ids.zoneB, locationId: locCafe, kind: "hall", privacyPolicy: "public" },
+      { id: zoneA, locationId: locHome, kind: "room", privacyPolicy: "private" },
+      { id: zoneB, locationId: locCafe, kind: "hall", privacyPolicy: "public" },
     ],
     links: [
       {
-        id: `${ids.branchId}-link-ab`,
-        fromZoneId: ids.zoneA,
-        toZoneId: ids.zoneB,
+        id: `${branchId}-link-ab`,
+        fromZoneId: zoneA,
+        toZoneId: zoneB,
         modes: ["walk"],
         minimumDurationSeconds: WALK_AB,
         accessPolicy: "public",
         state: "open",
       },
     ],
-    loci: [{ kind: "at", actorId: ids.actorId, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND }],
-  };
-}
-
-async function seedUnanchoredCase(): Promise<AuthzCase> {
-  const worldId = newId();
-  const branchId = newId();
-  const ids: AuthzCase = {
-    worldId,
-    branchId,
-    actorId: newId(),
-    zoneA: `${branchId}-zone-a`,
-    zoneB: `${branchId}-zone-b`,
-  };
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology(topologySeed(ids));
-  seededWorldIds.push(worldId);
-  return ids;
+    placements: [{ actorId, locationId: locHome, zoneId: zoneA }],
+  });
+  harness.trackWorld(worldId);
+  return { worldId, branchId, actorId, zoneA, zoneB };
 }
 
 async function seedAnchoredCase(ownerId: string): Promise<AuthzCase> {
@@ -122,19 +110,23 @@ async function anchorChat(branchId: string, ownerId: string): Promise<void> {
   });
 }
 
+/**
+ * A claimed player principal. The id is deliberately a PARAMETER — the whole
+ * subject here is which account id a command claims, so this never routes
+ * through the shared `playerPrincipal` helper (which pins the legacy fixture id).
+ */
+function claimedPlayer(ids: AuthzCase, principalId: string): SimTestPrincipal {
+  return { kind: "player", principalId, controlledActorIds: [ids.actorId] };
+}
+
 function moveCommand(ids: AuthzCase, principalId: string, key: string) {
-  return {
-    id: `cmd-move-${key}-${ids.branchId}`,
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `move-${key}-${ids.branchId}`,
-    principal: { kind: "player" as const, principalId, controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-26T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
-    type: "move_actor" as const,
-    schemaVersion: 1 as const,
-    payload: { actorId: ids.actorId, destinationZoneId: ids.zoneB, travelMode: "walk" as const },
-  };
+    name: `move-${key}`,
+    type: "move_actor",
+    principal: claimedPlayer(ids, principalId),
+    payload: { actorId: ids.actorId, destinationZoneId: ids.zoneB, travelMode: "walk" },
+  });
 }
 
 function systemMoveCommand(ids: AuthzCase, key: string) {
@@ -145,16 +137,11 @@ function systemMoveCommand(ids: AuthzCase, key: string) {
 }
 
 function cohortCommand(ids: AuthzCase, principalId: string, key: string) {
-  return {
-    id: `cmd-cohort-${key}-${ids.branchId}`,
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `cohort-${key}-${ids.branchId}`,
-    principal: { kind: "player" as const, principalId, controlledActorIds: [ids.actorId] },
-    submittedAtWallClock: "2026-07-26T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
-    type: "create_cohort" as const,
-    schemaVersion: 1 as const,
+    name: `cohort-${key}`,
+    type: "create_cohort",
+    principal: claimedPlayer(ids, principalId),
     payload: {
       cohort: {
         id: newId(),
@@ -166,29 +153,42 @@ function cohortCommand(ids: AuthzCase, principalId: string, key: string) {
         registryVersion: "cohort-v1",
       },
     },
-  };
+  });
 }
 
-async function footprint(branchId: string) {
-  const [commands, events, triggers, journeys, branch] = await Promise.all([
-    db().select({ id: simCommands.commandId }).from(simCommands).where(eq(simCommands.branchId, branchId)),
-    db().select({ id: simEvents.id }).from(simEvents).where(eq(simEvents.branchId, branchId)),
-    db().select({ id: simTriggers.id }).from(simTriggers).where(eq(simTriggers.branchId, branchId)),
-    db().select({ id: simJourneys.journeyId }).from(simJourneys).where(eq(simJourneys.branchId, branchId)),
-    db()
-      .select({ version: simBranches.version, headSequence: simBranches.headSequence })
-      .from(simBranches)
-      .where(eq(simBranches.id, branchId))
-      .limit(1),
-  ]);
-  return {
-    commands: commands.length,
-    events: events.length,
-    triggers: triggers.length,
-    journeys: journeys.length,
-    version: branch[0]?.version,
-    headSequence: branch[0]?.headSequence,
-  };
+/**
+ * The branch row's own counters. `branchFootprint` covers every branch-scoped
+ * `sim_` TABLE, but `sim_branches` is keyed by `id` (not `branch_id`) and so is
+ * out of its scope — and "the version never moved" is half of what the
+ * writes-nothing proofs assert, so it is read alongside.
+ */
+async function branchCounters(branchId: string): Promise<{ version?: number; headSequence?: number }> {
+  const [row] = await db()
+    .select({ version: simBranches.version, headSequence: simBranches.headSequence })
+    .from(simBranches)
+    .where(eq(simBranches.id, branchId))
+    .limit(1);
+  return { version: row?.version, headSequence: row?.headSequence };
+}
+
+interface BranchState {
+  footprint: Record<string, number>;
+  counters: { version?: number; headSequence?: number };
+}
+
+/** Snapshot everything a refused command must leave untouched. */
+async function wroteNothingBaseline(branchId: string): Promise<BranchState> {
+  return { footprint: await branchFootprint(branchId), counters: await branchCounters(branchId) };
+}
+
+/**
+ * The writes-NOTHING proof. `branchFootprint` widens the old hand-listed four
+ * tables (commands/events/triggers/journeys) to EVERY branch-scoped `sim_`
+ * table, so a refusal that leaked a row into any newer store now fails here too.
+ */
+async function expectWroteNothing(branchId: string, before: BranchState): Promise<void> {
+  expect(footprintDelta(before.footprint, await branchFootprint(branchId))).toEqual({});
+  expect(await branchCounters(branchId)).toEqual(before.counters);
 }
 
 async function warnScopes(body: () => Promise<void>): Promise<string[]> {
@@ -218,84 +218,85 @@ beforeAll(async () => {
   seededUserIds.push(a.id, b.id);
 });
 
+// The chat anchors must go before the harness's own world sweep (its afterAll is
+// registered first, so it runs LAST under vitest's stacked hook order), and the
+// users after their chats.
 afterAll(async () => {
-  if (!ready) return;
-  if (seededUserIds.length > 0) {
-    await db().delete(characterChats).where(inArray(characterChats.ownerId, seededUserIds));
-  }
-  if (seededWorldIds.length > 0) await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
-  if (seededUserIds.length > 0) await db().delete(users).where(inArray(users.id, seededUserIds));
+  if (!ready || seededUserIds.length === 0) return;
+  await db().delete(characterChats).where(inArray(characterChats.ownerId, seededUserIds));
+  await db().delete(users).where(inArray(users.id, seededUserIds));
 });
 
 describe.runIf(ready)("durable command ownership (security-authz §Follow-ups 1)", () => {
   it("admits the owning account's player principal", async () => {
     const ids = await seedAnchoredCase(ownerA);
     const result = await submitDurableMoveActor(moveCommand(ids, ownerA, "owner"));
-    expect(result.status).toBe("accepted");
-    expect(await footprint(ids.branchId)).toMatchObject({ commands: 1, version: 1 });
+    expectAccepted(result, "the owning account's move on its own anchored branch");
+    expect(await branchFootprint(ids.branchId)).toMatchObject({ sim_commands: 1 });
+    expect(await branchCounters(ids.branchId)).toMatchObject({ version: 1 });
   });
 
   it("refuses another account's player principal, and writes NOTHING", async () => {
     const ids = await seedAnchoredCase(ownerA);
-    const before = await footprint(ids.branchId);
+    const before = await wroteNothingBaseline(ids.branchId);
     let result: Awaited<ReturnType<typeof submitDurableMoveActor>> | undefined;
     const scopes = await warnScopes(async () => {
       result = await submitDurableMoveActor(moveCommand(ids, ownerB, "stranger"));
     });
     expect(result).toMatchObject({ status: "rejected", code: "branch_mismatch" });
     expect(scopes).toContain(SIM_COMMAND_DENIED);
-    expect(await footprint(ids.branchId)).toEqual(before);
+    await expectWroteNothing(ids.branchId, before);
   });
 
   it("refuses a principal id that belongs to no account at all", async () => {
     const ids = await seedAnchoredCase(ownerA);
-    const before = await footprint(ids.branchId);
+    const before = await wroteNothingBaseline(ids.branchId);
     let result: Awaited<ReturnType<typeof submitDurableMoveActor>> | undefined;
     const scopes = await warnScopes(async () => {
       result = await submitDurableMoveActor(moveCommand(ids, `ghost-${newId()}`, "ghost"));
     });
     expect(result).toMatchObject({ status: "rejected", code: "branch_mismatch" });
     expect(scopes).toContain(SIM_COMMAND_DENIED);
-    expect(await footprint(ids.branchId)).toEqual(before);
+    await expectWroteNothing(ids.branchId, before);
   });
 
   it("fails closed when two accounts' chats cross-link the same branch", async () => {
     const ids = await seedAnchoredCase(ownerA);
     await anchorChat(ids.branchId, ownerB);
-    const before = await footprint(ids.branchId);
+    const before = await wroteNothingBaseline(ids.branchId);
     let result: Awaited<ReturnType<typeof submitDurableMoveActor>> | undefined;
     const scopes = await warnScopes(async () => {
       result = await submitDurableMoveActor(moveCommand(ids, ownerA, "ambiguous"));
     });
     expect(result).toMatchObject({ status: "rejected", code: "branch_mismatch" });
     expect(scopes).toContain(SIM_COMMAND_DENIED);
-    expect(await footprint(ids.branchId)).toEqual(before);
+    await expectWroteNothing(ids.branchId, before);
   });
 
   it("refuses a PLAYER principal on an unanchored branch, and writes NOTHING", async () => {
     const ids = await seedUnanchoredCase();
-    const before = await footprint(ids.branchId);
+    const before = await wroteNothingBaseline(ids.branchId);
     let result: Awaited<ReturnType<typeof submitDurableMoveActor>> | undefined;
     const scopes = await warnScopes(async () => {
       result = await submitDurableMoveActor(moveCommand(ids, ownerA, "unanchored-player"));
     });
     expect(result).toMatchObject({ status: "rejected", code: "branch_mismatch" });
     expect(scopes).toContain(SIM_COMMAND_DENIED);
-    expect(await footprint(ids.branchId)).toEqual(before);
+    await expectWroteNothing(ids.branchId, before);
   });
 
   it("still admits an unanchored branch for an engine-internal principal", async () => {
     const ids = await seedUnanchoredCase();
     const result = await submitDurableMoveActor(systemMoveCommand(ids, "unanchored-system"));
-    expect(result.status).toBe("accepted");
+    expectAccepted(result, "an engine-internal system move on an unanchored branch");
   });
 
   it("guards the SHARED runner too, above its command-ledger insert", async () => {
     const ids = await seedAnchoredCase(ownerA);
     const owned = await submitDurableCreateCohort(cohortCommand(ids, ownerA, "owner"));
-    expect(owned).toMatchObject({ status: "rejected", code: "unauthorized_principal" });
-    const afterOwner = await footprint(ids.branchId);
-    expect(afterOwner.commands).toBe(1);
+    expectRejected(owned, "unauthorized_principal", "a player principal authoring a cohort");
+    const afterOwner = await wroteNothingBaseline(ids.branchId);
+    expect(afterOwner.footprint).toMatchObject({ sim_commands: 1 });
 
     let stranger: Awaited<ReturnType<typeof submitDurableCreateCohort>> | undefined;
     const scopes = await warnScopes(async () => {
@@ -303,6 +304,6 @@ describe.runIf(ready)("durable command ownership (security-authz §Follow-ups 1)
     });
     expect(stranger).toMatchObject({ status: "rejected", code: "branch_mismatch" });
     expect(scopes).toContain(SIM_COMMAND_DENIED);
-    expect(await footprint(ids.branchId)).toEqual(afterOwner);
+    await expectWroteNothing(ids.branchId, afterOwner);
   });
 });

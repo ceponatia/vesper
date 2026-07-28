@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { METER_FIXED_POINT_ONE } from "@/contracts/simulation/bodies";
 import { characterChats, db, simBodyMeters, simBranches, users } from "@/server/db";
@@ -10,33 +10,29 @@ import {
   readSimChatPresence,
   seedRolloutTestWorld,
 } from "@/server/engine";
+import { simulationSuiteHarness } from "@/server/test-support";
 
 // sim-read-seam-guards.plan.md slice 2: `readSimChatMeters` must INTEGRATE each
 // meter to the branch clock on read (via the shared `buildMeterView` seam),
 // not echo the last stored write. Needs Postgres; self-skips without it. The
 // slice-1 degradation guards are proven db-free in sim-surfaces.degradation.test.ts.
+//
+// The probe/pool handling comes from `simulationSuiteHarness`. That is a
+// behavioral FIX here: this file's hand-rolled probe had diverged to a plain
+// self-skip with no strict/CI rethrow at all, so an unreachable database
+// reported a silently green suite even under `pnpm test:int:strict`.
+// `legacyPlayerMode: false` — the rollout seed runs on a system principal and
+// nothing here submits the legacy player fixture, so the opt-in flag stays
+// irrelevant to this suite. The fixed rollout world is deliberately NOT tracked
+// for teardown: this suite restores the shared clock instead of deleting the
+// world, which is what lets the other rollout-world suites reuse it.
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from character_chats limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(
-      `[sim-surfaces.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
+const harness = await simulationSuiteHarness({
+  suite: "sim-surfaces.int.test",
+  table: "character_chats",
+  legacyPlayerMode: false,
+});
+const ready = harness.ready;
 
 describe.runIf(ready)("readSimChatMeters integrates to the branch clock (slice 2)", () => {
   const ids = { user: "", chat: "" };

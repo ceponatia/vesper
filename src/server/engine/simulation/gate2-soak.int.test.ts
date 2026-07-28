@@ -1,40 +1,24 @@
-import { eq, sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { db, simWorlds } from "@/server/db";
+import { beforeAll, describe, expect, it } from "vitest";
+import { simulationSuiteHarness } from "@/server/test-support";
 import { gate2SoakCiProfile, runGate2Soak, type Gate2SoakReport } from "./soak-harness";
 
 /**
  * E2.6 — Gate 2 soak at the CI profile. The heavy lifting happens once in
  * beforeAll; each case then asserts one proof domain of the report so a
  * failure names the proof that broke, with the harness detail attached.
+ *
+ * The soak drives every command through system/scheduler principals, so it opts
+ * OUT of the harness's legacy-player guard; the worlds it seeds are handed to
+ * the harness for teardown as the report names them.
  */
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      // Selecting from sim_snapshots is itself the from-zero migration check.
-      db().execute(sql`select 1 from sim_snapshots limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[gate2-soak.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
-const ready = await probe();
+const harness = await simulationSuiteHarness({
+  suite: "gate2-soak.int.test",
+  // Selecting from sim_snapshots is itself the from-zero migration check.
+  table: "sim_snapshots",
+  legacyPlayerMode: false,
+});
+
 const SOAK_TIMEOUT_MS = 240_000;
 
 let report: Gate2SoakReport | undefined;
@@ -52,20 +36,12 @@ function expectAllPass(current: Gate2SoakReport | undefined, name: string): void
 }
 
 beforeAll(async () => {
-  if (!ready) return;
+  if (!harness.ready) return;
   report = await runGate2Soak(gate2SoakCiProfile);
+  for (const worldId of report.worldIds) harness.trackWorld(worldId);
 }, SOAK_TIMEOUT_MS);
 
-afterAll(async () => {
-  if (ready && report) {
-    for (const worldId of report.worldIds) {
-      await db().delete(simWorlds).where(eq(simWorlds.id, worldId));
-    }
-  }
-  await globalThis.__vesperPool?.end();
-});
-
-describe.skipIf(!ready)("E2.6 Gate 2 soak and verdict", () => {
+describe.runIf(harness.ready)("E2.6 Gate 2 soak and verdict", () => {
   it("advances a synthetic month on every soaked branch", () => {
     expectAllPass(report, "G-month-advanced");
   });

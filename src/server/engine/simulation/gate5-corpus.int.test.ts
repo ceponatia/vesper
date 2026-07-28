@@ -1,11 +1,10 @@
-import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
-import type { z } from "zod";
+import { and, asc, eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import {
   RESERVED_CURRENCY_MATERIAL_KIND,
   lotLocusSchema,
 } from "@/contracts/simulation/households";
-import { materialBranchSeedSchema } from "@/contracts/simulation/materials";
+import type { MaterialBranchSeedInput } from "@/contracts/simulation/materials";
 import { proposedArmedEffectSchema } from "@/contracts/simulation/narrative";
 import type { SimulationTriggerKind } from "@/contracts/simulation/scheduler";
 import { relationshipLedgerWeightRegistryV1 } from "@/contracts/simulation/social";
@@ -23,32 +22,37 @@ import {
 } from "@/lib/simulation";
 import {
   db,
-  simBodyConditions,
   simBodyMeters,
-  simBodyModifiers,
   simBodyRhythms,
   simBranches,
-  simCommitments,
   simEvents,
-  simHouseholdMembers,
-  simHouseholdRestockRoutines,
   simHouseholds,
   simItemConditionMeters,
   simItemConditionModifiers,
   simItemHoldings,
   simItems,
   simMaterialLots,
-  simMeansBands,
-  simMemoryDocuments,
-  simNarrativeCuts,
   simObservations,
-  simOutbox,
-  simRelationshipLedger,
-  simSoftCanon,
-  simTemporalPressures,
   simTriggers,
-  simWorlds,
 } from "@/server/db";
+import {
+  ADMIT_AT_LOCKED_VERSION,
+  branchFootprint,
+  expectAccepted,
+  footprintDelta,
+  forkAtHead,
+  gmPrincipal,
+  npcPrincipal,
+  playerPrincipal,
+  readBranchEvents,
+  seedReferenceRhythms,
+  seedSimBranch,
+  simCommand,
+  simulationSuiteHarness,
+  systemPrincipal,
+  type SimCommandEnvelope,
+  type SimTestPrincipal,
+} from "@/server/test-support";
 import {
   prepareEngagementTurn,
   submitDurableConfirmNarratorResult,
@@ -57,16 +61,11 @@ import {
   bodyRhythmFromRow,
   computeEngagementBodilyReads,
   readDurableBodies,
-  seedDurableBodyRhythms,
   submitDurableApplyBodyCondition,
   submitDurableApplyBodySource,
   submitDurableInitializeActorBody,
 } from "./body-store";
-import {
-  forkBranch,
-  loadBranchAncestry,
-  readBranchAncestryEvents,
-} from "./branch-store";
+import { forkBranch } from "./branch-store";
 import {
   readDurableCommitments,
   submitDurableCreateCommitment,
@@ -84,7 +83,6 @@ import {
 import {
   itemConditionMeterFromRow,
   itemConditionModifierFromRow,
-  seedDurableMaterialBranch,
   submitDurableApplyItemConditionSource,
   submitDurableConsumeItem,
   submitDurableTransferItem,
@@ -92,25 +90,23 @@ import {
 import { drainMemoryIndexOutbox } from "./memory-index-store";
 import { queryMemoryDocuments } from "./memory-query-store";
 import { loadPersistedCut } from "./narrative-cut-store";
-import { branchEventFromRow } from "./observation-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { loadRelationshipLedgerProjection } from "./social-recorder";
 import { submitDurableAttemptConsentEscalation } from "./social-store";
-import { seedDurableSpaceTopology } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
 
 /**
  * The Gate 5 exit corpus (engine.plan.md §"Gate 5 exit" / §"Gate 5 build
  * order" item 6, E5.6): deterministic scenarios, ZERO model calls, proving
  * "the engine can explain why a body, item, household, or relationship is in
  * its current state from causal records, while the narrator sees only what
- * the viewpoint can perceive or believe." Mirrors gate4-corpus.int.test.ts's
- * harness: one probe(), one `seededWorldIds`/`seededBranchIds` teardown, a
- * per-scenario `CorpusCase`, a shared `command()` envelope builder submitted
- * with `admitAtLockedVersion: true` throughout — every command's
- * `expectedVersion` is a fixed `0`, admitted at whatever version the locked
- * branch actually holds (gate3/gate4-corpus's own convention, confirmed
- * universally supported by `runSimulationCommand`'s shared shell).
+ * the viewpoint can perceive or believe." Runs on the shared
+ * `simulationSuiteHarness` (probe + teardown, `trackBranchMembers` because
+ * these scenarios create households) with a per-scenario `CorpusCase` and the
+ * shared `simCommand` envelope builder submitted with
+ * `ADMIT_AT_LOCKED_VERSION` throughout — every command's `expectedVersion` is
+ * a fixed `0`, admitted at whatever version the locked branch actually holds
+ * (gate3/gate4-corpus's own convention, confirmed universally supported by
+ * `runSimulationCommand`'s shared shell).
  */
 
 // 50 000 mod 86 400 = 13:53:20 — mirrors body-store.int.test.ts's own SEED_SECOND
@@ -119,52 +115,10 @@ const SEED_SECOND = 50_000;
 const TURN_SPAN = 400;
 const WORN_SLOT = "torso";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_relationship_ledger limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (
-      process.env.CI === "true" ||
-      process.env.VESPER_REQUIRE_TEST_DB === "1"
-    ) {
-      throw error;
-    }
-    process.stderr.write(
-      `[gate5-corpus.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("gate5-corpus.int.test");
-const seededWorldIds: string[] = [];
-const seededBranchIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready) return;
-  // sim_household_members carries no cascading branch FK (household-store
-  // .int.test.ts's own teardown note) — delete it explicitly ahead of
-  // sim_worlds, same workaround.
-  if (seededBranchIds.length > 0) {
-    await db()
-      .delete(simHouseholdMembers)
-      .where(inArray(simHouseholdMembers.branchId, seededBranchIds));
-  }
-  if (seededWorldIds.length > 0) {
-    await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
-  }
+const harness = await simulationSuiteHarness({
+  suite: "gate5-corpus.int.test",
+  table: "sim_relationship_ledger",
+  trackBranchMembers: true,
 });
 
 /**
@@ -188,8 +142,6 @@ interface CorpusCase {
   zoneHome: string;
   zoneElsewhere: string;
 }
-
-type MaterialBranchSeedInput = z.input<typeof materialBranchSeedSchema>;
 
 async function seedCorpusCase(
   itemsFactory?: (
@@ -217,12 +169,12 @@ async function seedCorpusCase(
     zoneHome: `${branchId}-zone-home`,
     zoneElsewhere: `${branchId}-zone-elsewhere`,
   };
-  const items = itemsFactory?.(actorIds) ?? [];
-  const seed = materialBranchSeedSchema.parse({
+  harness.trackWorld(worldId);
+  harness.trackBranch(branchId);
+  await seedSimBranch({
     worldId,
-    worldTypeId: "gate5-corpus",
-    worldSeed: `seed-${worldId}`,
     branchId,
+    worldTypeId: "gate5-corpus",
     rulesetVersion: "gate5-corpus-v1",
     originStorySecond: SEED_SECOND,
     actors: [
@@ -232,11 +184,7 @@ async function seedCorpusCase(
       { id: ids.noor, name: "Noor" },
       { id: ids.ben, name: "Ben" },
     ],
-    items,
-  });
-  await seedDurableMaterialBranch(seed);
-  await seedDurableSpaceTopology({
-    branchId,
+    items: itemsFactory?.(actorIds) ?? [],
     locations: [
       {
         id: ids.locHome,
@@ -266,108 +214,52 @@ async function seedCorpusCase(
       },
     ],
     links: [],
-    loci: [
+    placements: [
       {
-        kind: "at",
         actorId: ids.player,
         locationId: ids.locHome,
         zoneId: ids.zoneHome,
-        since: SEED_SECOND,
       },
       {
-        kind: "at",
         actorId: ids.mara,
         locationId: ids.locHome,
         zoneId: ids.zoneHome,
-        since: SEED_SECOND,
       },
       {
-        kind: "at",
         actorId: ids.iris,
         locationId: ids.locHome,
         zoneId: ids.zoneHome,
-        since: SEED_SECOND,
       },
       {
-        kind: "at",
         actorId: ids.noor,
         locationId: ids.locElsewhere,
         zoneId: ids.zoneElsewhere,
-        since: SEED_SECOND,
       },
       {
-        kind: "at",
         actorId: ids.ben,
         locationId: ids.locElsewhere,
         zoneId: ids.zoneElsewhere,
-        since: SEED_SECOND,
       },
     ],
   });
-  seededWorldIds.push(worldId);
-  seededBranchIds.push(branchId);
   return ids;
 }
 
-const admit = { admitAtLockedVersion: true };
-const schemaVersion2Types = new Set([
-  "transfer_item",
-  "confirm_narrator_result",
-]);
-
+/**
+ * Positional wrapper over the shared `simCommand`, kept so the ~40 call sites
+ * below read unchanged. `name` is the label the shared builder derives the
+ * command id / idempotency key from, and the schema version comes from
+ * `SCHEMA_VERSION_BY_TYPE` rather than a local `transfer_item`/
+ * `confirm_narrator_result` set.
+ */
 function command(
   ids: { branchId: string },
   name: string,
   type: string,
-  principal: {
-    kind: string;
-    principalId: string;
-    controlledActorIds: string[];
-  },
+  principal: SimTestPrincipal,
   payload: Record<string, unknown>,
-) {
-  return {
-    id: `cmd-${name}-${ids.branchId}`,
-    branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `${name}-key-${ids.branchId}`,
-    principal,
-    submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-    correlationId: `corr-${name}-${ids.branchId}`,
-    type,
-    schemaVersion: schemaVersion2Types.has(type) ? 2 : 1,
-    payload,
-  };
-}
-
-const gmPrincipal = {
-  kind: "storyteller",
-  principalId: "gm-1",
-  controlledActorIds: [] as string[],
-};
-const systemPrincipal = {
-  kind: "system",
-  principalId: "sim-scheduler",
-  controlledActorIds: [] as string[],
-};
-const playerPrincipal = (actorId: string) => ({
-  kind: "player",
-  principalId: "player-1",
-  controlledActorIds: [actorId],
-});
-const npcPrincipal = (actorId: string) => ({
-  kind: "npc_policy",
-  principalId: "npc-1",
-  controlledActorIds: [actorId],
-});
-
-async function readBranchEvents(branchId: string) {
-  const rows = await db()
-    .select()
-    .from(simEvents)
-    .where(eq(simEvents.branchId, branchId))
-    .orderBy(asc(simEvents.sequence));
-  return rows.map(branchEventFromRow);
+): SimCommandEnvelope {
+  return simCommand({ branchId: ids.branchId, name, type, principal, payload });
 }
 
 async function pendingTriggers(branchId: string, kind: SimulationTriggerKind) {
@@ -391,28 +283,16 @@ async function branchHeadSequence(branchId: string): Promise<number> {
   return row.headSequence;
 }
 
-/** 11pm-7am sleep, 6:45am-7am wash — the same reference daily life
- * body-store.int.test.ts uses throughout. */
+/** 11pm-7am sleep, 6:45am-7am wash — the shared reference daily life. */
 async function seedRhythms(branchId: string, actorId: string) {
-  await seedDurableBodyRhythms({
-    branchId,
-    rows: [
-      { actorId, kind: "sleep", startMinuteOfDay: 1_380, endMinuteOfDay: 420 },
-      { actorId, kind: "wash", startMinuteOfDay: 405, endMinuteOfDay: 420 },
-    ],
-  });
+  await seedReferenceRhythms(branchId, actorId);
 }
 
 /** Sleep only, no wash — hygiene is left uncontested so its "grimy" alarm is
  * guaranteed to fire (body-store.int.test.ts's own precedent: WITH a wash
  * window the daily reset suppresses hygiene's alarm outright). */
 async function seedSleepOnlyRhythm(branchId: string, actorId: string) {
-  await seedDurableBodyRhythms({
-    branchId,
-    rows: [
-      { actorId, kind: "sleep", startMinuteOfDay: 1_380, endMinuteOfDay: 420 },
-    ],
-  });
+  await seedReferenceRhythms(branchId, actorId, { wash: false });
 }
 
 /** Registry v1: hygiene 9 000 (initial) -> "grimy" 2 500 at 150/h — the same
@@ -473,156 +353,7 @@ async function bodyRhythmRows(branchId: string, actorId: string) {
   return rows.map(bodyRhythmFromRow);
 }
 
-/** Every row a "new event or row" could hide in, across every Gate 1-5
- * persistence surface (gate4-corpus.int.test.ts's `worldFootprint`,
- * extended with every E5.1-E5.5 table). */
-async function worldFootprint(
-  branchId: string,
-): Promise<Record<string, number>> {
-  const value = (rows: { value: number }[]) => rows[0]?.value ?? 0;
-  return {
-    events: value(
-      await db()
-        .select({ value: count() })
-        .from(simEvents)
-        .where(eq(simEvents.branchId, branchId)),
-    ),
-    cuts: value(
-      await db()
-        .select({ value: count() })
-        .from(simNarrativeCuts)
-        .where(eq(simNarrativeCuts.branchId, branchId)),
-    ),
-    observations: value(
-      await db()
-        .select({ value: count() })
-        .from(simObservations)
-        .where(eq(simObservations.branchId, branchId)),
-    ),
-    memoryDocuments: value(
-      await db()
-        .select({ value: count() })
-        .from(simMemoryDocuments)
-        .where(eq(simMemoryDocuments.branchId, branchId)),
-    ),
-    outbox: value(
-      await db()
-        .select({ value: count() })
-        .from(simOutbox)
-        .where(eq(simOutbox.branchId, branchId)),
-    ),
-    softCanon: value(
-      await db()
-        .select({ value: count() })
-        .from(simSoftCanon)
-        .where(eq(simSoftCanon.branchId, branchId)),
-    ),
-    items: value(
-      await db()
-        .select({ value: count() })
-        .from(simItems)
-        .where(eq(simItems.branchId, branchId)),
-    ),
-    itemHoldings: value(
-      await db()
-        .select({ value: count() })
-        .from(simItemHoldings)
-        .where(eq(simItemHoldings.branchId, branchId)),
-    ),
-    bodyMeters: value(
-      await db()
-        .select({ value: count() })
-        .from(simBodyMeters)
-        .where(eq(simBodyMeters.branchId, branchId)),
-    ),
-    bodyConditions: value(
-      await db()
-        .select({ value: count() })
-        .from(simBodyConditions)
-        .where(eq(simBodyConditions.branchId, branchId)),
-    ),
-    bodyModifiers: value(
-      await db()
-        .select({ value: count() })
-        .from(simBodyModifiers)
-        .where(eq(simBodyModifiers.branchId, branchId)),
-    ),
-    bodyRhythms: value(
-      await db()
-        .select({ value: count() })
-        .from(simBodyRhythms)
-        .where(eq(simBodyRhythms.branchId, branchId)),
-    ),
-    itemConditionMeters: value(
-      await db()
-        .select({ value: count() })
-        .from(simItemConditionMeters)
-        .where(eq(simItemConditionMeters.branchId, branchId)),
-    ),
-    itemConditionModifiers: value(
-      await db()
-        .select({ value: count() })
-        .from(simItemConditionModifiers)
-        .where(eq(simItemConditionModifiers.branchId, branchId)),
-    ),
-    households: value(
-      await db()
-        .select({ value: count() })
-        .from(simHouseholds)
-        .where(eq(simHouseholds.branchId, branchId)),
-    ),
-    householdMembers: value(
-      await db()
-        .select({ value: count() })
-        .from(simHouseholdMembers)
-        .where(eq(simHouseholdMembers.branchId, branchId)),
-    ),
-    materialLots: value(
-      await db()
-        .select({ value: count() })
-        .from(simMaterialLots)
-        .where(eq(simMaterialLots.branchId, branchId)),
-    ),
-    meansBands: value(
-      await db()
-        .select({ value: count() })
-        .from(simMeansBands)
-        .where(eq(simMeansBands.branchId, branchId)),
-    ),
-    restockRoutines: value(
-      await db()
-        .select({ value: count() })
-        .from(simHouseholdRestockRoutines)
-        .where(eq(simHouseholdRestockRoutines.branchId, branchId)),
-    ),
-    relationshipLedger: value(
-      await db()
-        .select({ value: count() })
-        .from(simRelationshipLedger)
-        .where(eq(simRelationshipLedger.branchId, branchId)),
-    ),
-    commitments: value(
-      await db()
-        .select({ value: count() })
-        .from(simCommitments)
-        .where(eq(simCommitments.branchId, branchId)),
-    ),
-    pressures: value(
-      await db()
-        .select({ value: count() })
-        .from(simTemporalPressures)
-        .where(eq(simTemporalPressures.branchId, branchId)),
-    ),
-    triggers: value(
-      await db()
-        .select({ value: count() })
-        .from(simTriggers)
-        .where(eq(simTriggers.branchId, branchId)),
-    ),
-  };
-}
-
-describe.runIf(ready)(
+describe.runIf(harness.ready)(
   "Gate 5 exit corpus (deterministic, zero model calls)",
   () => {
     // -------------------------------------------------------------------------
@@ -637,9 +368,9 @@ describe.runIf(ready)(
       await seedSleepOnlyRhythm(ids.branchId, ids.mara);
       const init = await submitDurableInitializeActorBody(
         initializeBodyCommand(ids, "init-mara", ids.mara),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(init.status).toBe("accepted");
+      expectAccepted(init, "body init");
 
       // A real, but short, nap: this is the ONLY way a collapse alarm ever
       // arms (an assumed-rhythm actor who never really sleeps never
@@ -652,9 +383,9 @@ describe.runIf(ready)(
           modifiers: [],
           observerActorIds: [],
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(nap.status).toBe("accepted");
+      expectAccepted(nap, "the nap");
       const wakeAt = SEED_SECOND + 5_400;
       const wakeDrain = await advanceBranchStoryTime(ids.branchId, wakeAt, {
         workerId: "w-gate5-wake",
@@ -780,7 +511,7 @@ describe.runIf(ready)(
       const ids = await seedCorpusCase();
       await submitDurableInitializeActorBody(
         initializeBodyCommand(ids, "init-mara-meal", ids.mara),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
 
       const householdId = newId();
@@ -795,7 +526,7 @@ describe.runIf(ready)(
           residenceZoneIds: [ids.zoneHome],
           stockAccessPolicy: { kind: "members_only" },
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       await submitDurableSetHouseholdMembership(
         command(ids, "member-mara", "set_household_membership", gmPrincipal, {
@@ -804,7 +535,7 @@ describe.runIf(ready)(
           role: "resident",
           status: "active",
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       const stocked = await submitDurableAdjustMaterialLot(
         command(ids, "stock-bread", "adjust_material_lot", gmPrincipal, {
@@ -812,9 +543,9 @@ describe.runIf(ready)(
           materialKindKey: "bread",
           deltaRaw: 10,
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(stocked.status).toBe("accepted");
+      expectAccepted(stocked, "stocking bread");
 
       const promote = await submitDurablePromoteItemFromStock(
         command(
@@ -842,9 +573,9 @@ describe.runIf(ready)(
             },
           },
         ),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(promote.status).toBe("accepted");
+      expectAccepted(promote, "item promotion");
 
       const events1 = await readBranchEvents(ids.branchId);
       const lotDebit = events1.find(
@@ -898,9 +629,9 @@ describe.runIf(ready)(
           actorId: ids.mara,
           itemId,
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(consumed.status).toBe("accepted");
+      expectAccepted(consumed, "eating the loaf");
 
       const events2 = await readBranchEvents(ids.branchId);
       const consumedEvent = events2.find(
@@ -992,7 +723,7 @@ describe.runIf(ready)(
           residenceZoneIds: [ids.zoneHome],
           stockAccessPolicy: { kind: "members_only" },
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       await submitDurableSetHouseholdMembership(
         command(ids, "member-mara3", "set_household_membership", gmPrincipal, {
@@ -1001,7 +732,7 @@ describe.runIf(ready)(
           role: "resident",
           status: "active",
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
 
       // Means-band-funded "tea" routine, fired FIRST — while the household is
@@ -1013,7 +744,7 @@ describe.runIf(ready)(
           subject: { kind: "household", householdId },
           bandKey: "comfortable",
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       await submitDurableConfigureRestockRoutine(
         command(
@@ -1031,7 +762,7 @@ describe.runIf(ready)(
             active: true,
           },
         ),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       const teaAlarm = (
         await pendingTriggers(ids.branchId, "household_restock_due")
@@ -1095,7 +826,7 @@ describe.runIf(ready)(
           materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
           deltaRaw: 100_000,
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       await submitDurableAdjustMaterialLot(
         command(ids, "stock-bread3", "adjust_material_lot", gmPrincipal, {
@@ -1103,7 +834,7 @@ describe.runIf(ready)(
           materialKindKey: "bread",
           deltaRaw: 10,
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       const promote = await submitDurablePromoteItemFromStock(
         command(
@@ -1121,9 +852,9 @@ describe.runIf(ready)(
             item: { name: "a loaf", materialKindKey: "bread" },
           },
         ),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(promote.status).toBe("accepted"); // bread: 10 - 1 = 9
+      expectAccepted(promote, "item promotion"); // bread: 10 - 1 = 9
 
       await submitDurableConfigureRestockRoutine(
         command(
@@ -1145,7 +876,7 @@ describe.runIf(ready)(
             active: true,
           },
         ),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       const [breadAlarm1] = (
         await pendingTriggers(ids.branchId, "household_restock_due")
@@ -1164,7 +895,7 @@ describe.runIf(ready)(
           materialKindKey: "bread",
           deltaRaw: -15,
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       ); // bread: 20 -> 5, at the low-water line
 
       const [breadAlarm2] = (
@@ -1276,9 +1007,9 @@ describe.runIf(ready)(
 
       const createA = await submitDurableCreateCommitment(
         promiseCmd("promise-a", {}),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(createA.status).toBe("accepted");
+      expectAccepted(createA, "commitment A");
       const commitmentAId = deriveCommitmentId(
         ids.branchId,
         `cmd-promise-a-${ids.branchId}`,
@@ -1333,9 +1064,9 @@ describe.runIf(ready)(
           repairsCommitmentId: commitmentAId,
           window: { latestArrival: SEED_SECOND + 5_000 },
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(createB.status).toBe("accepted");
+      expectAccepted(createB, "commitment B");
 
       const projectionAfterRepair = await loadRelationshipLedgerProjection(
         ids.branchId,
@@ -1392,7 +1123,7 @@ describe.runIf(ready)(
       await seedRhythms(ids.branchId, ids.mara);
       await submitDurableInitializeActorBody(
         initializeBodyCommand(ids, "init-mara-signs", ids.mara),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       const arouse = await submitDurableApplyBodySource(
         command(ids, "arouse", "apply_body_source", playerPrincipal(ids.mara), {
@@ -1401,18 +1132,18 @@ describe.runIf(ready)(
           sourceKind: "adjustment",
           operation: { kind: "add", deltaFixedPoint: 7_000 },
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(arouse.status).toBe("accepted");
+      expectAccepted(arouse, "arousal source");
 
       const opened = await submitDurableOpenEngagement(
         command(ids, "scene", "open_engagement", playerPrincipal(ids.player), {
           participantIds: [ids.player, ids.mara, ids.iris].sort(),
           channel: "co_present",
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(opened.status).toBe("accepted");
+      expectAccepted(opened, "scene open");
       const engagementId = deriveEngagementId(
         ids.branchId,
         `cmd-scene-${ids.branchId}`,
@@ -1437,10 +1168,11 @@ describe.runIf(ready)(
         "flushed_skin",
         "quickened_breath",
       ]);
-      expect(Object.keys(maraObserved ?? {}).sort()).toEqual([
-        "actorId",
-        "signs",
-      ]);
+      // A SUBSET check, deliberately, not an exact key list: the redaction
+      // proof is the serialized-cut `not.toContain` pair immediately below
+      // (no raw meter name and no raw value anywhere in the prompt input), so
+      // a future optional field on an observed entry must not fail this case.
+      expect(maraObserved).toMatchObject({ actorId: ids.mara });
       expect(JSON.stringify(playerTurn.cut)).not.toContain("arousalFixedPoint");
       expect(JSON.stringify(playerTurn.cut)).not.toContain("7000");
 
@@ -1462,7 +1194,9 @@ describe.runIf(ready)(
       // phase), never the observed-sign redaction of her own body: a fresh
       // daytime energy read (bright) alongside the same +7 000 arousal that
       // reads "wound_tight" (>= 6 500, < 8 500, no afterglow).
-      expect(maraSelfView.self).toEqual({
+      // Subset again: the three fields below ARE the self-transparency claim;
+      // a later addition to the self read must not break it.
+      expect(maraSelfView.self).toMatchObject({
         energySignedFixedPoint: 7_687,
         energyBand: "bright",
         intimacyPhase: "wound_tight",
@@ -1509,9 +1243,9 @@ describe.runIf(ready)(
           participantIds: [ids.player, ids.mara].sort(),
           channel: "co_present",
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(opened.status).toBe("accepted");
+      expectAccepted(opened, "scene open");
       const engagementId = deriveEngagementId(
         ids.branchId,
         `cmd-chat5b-${ids.branchId}`,
@@ -1523,9 +1257,9 @@ describe.runIf(ready)(
           participantIds: [ids.noor, ids.ben].sort(),
           channel: "text",
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(sideOpened.status).toBe("accepted");
+      expectAccepted(sideOpened, "remote scene open");
       const sideEngagementId = deriveEngagementId(
         ids.branchId,
         `cmd-side5b-${ids.branchId}`,
@@ -1559,9 +1293,9 @@ describe.runIf(ready)(
           enactedArmedEffectIds: [effect.id],
           softCanonProposals: [],
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(confirmed.status).toBe("accepted");
+      expectAccepted(confirmed, "narrator confirmation");
       const throughStorySecond = turn.cut.throughStorySecond;
       await drainMemoryIndexOutbox({ workerId: "w-gate5-boundary-drain" });
 
@@ -1658,7 +1392,7 @@ describe.runIf(ready)(
       await seedRhythms(ids.branchId, ids.mara);
       await submitDurableInitializeActorBody(
         initializeBodyCommand(ids, "init-mara-partition", ids.mara),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       const don = await submitDurableTransferItem(
         command(ids, "don-garment", "transfer_item", npcPrincipal(ids.mara), {
@@ -1667,27 +1401,22 @@ describe.runIf(ready)(
           fromLocus: { kind: "held", actorId: ids.mara },
           toLocus: { kind: "worn", actorId: ids.mara, slotKey: WORN_SLOT },
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(don.status).toBe("accepted");
+      expectAccepted(don, "donning the garment");
 
-      const forkPointSequence = await branchHeadSequence(ids.branchId);
-      const childA = newId();
-      const childB = newId();
-      await forkBranch({
+      // Both children fork at the SAME parent head, so the two partitionings
+      // start from bit-identical inherited history.
+      const { childBranchId: childA } = await forkAtHead({
         parentBranchId: ids.branchId,
-        childBranchId: childA,
-        atSequence: forkPointSequence,
-        principal: { kind: "storyteller", principalId: "gm-1" },
         reason: "partition invariance — one big skip",
       });
-      await forkBranch({
+      harness.trackBranch(childA);
+      const { childBranchId: childB } = await forkAtHead({
         parentBranchId: ids.branchId,
-        childBranchId: childB,
-        atSequence: forkPointSequence,
-        principal: { kind: "storyteller", principalId: "gm-1" },
         reason: "partition invariance — several small skips",
       });
+      harness.trackBranch(childB);
 
       const target = SEED_SECOND + 3 * 24 * 3_600;
       const bigSkip = await advanceBranchStoryTime(childA, target, {
@@ -1770,7 +1499,7 @@ describe.runIf(ready)(
       const ids = await seedCorpusCase();
       await submitDurableInitializeActorBody(
         initializeBodyCommand(ids, "init-mara-7", ids.mara),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
 
       const householdId = newId();
@@ -1791,7 +1520,7 @@ describe.runIf(ready)(
         },
       );
       expect(
-        (await submitDurableCreateHousehold(createHouseholdCmd, admit)).status,
+        (await submitDurableCreateHousehold(createHouseholdCmd, ADMIT_AT_LOCKED_VERSION)).status,
       ).toBe("accepted");
       expect(
         (
@@ -1808,7 +1537,7 @@ describe.runIf(ready)(
                 status: "active",
               },
             ),
-            admit,
+            ADMIT_AT_LOCKED_VERSION,
           )
         ).status,
       ).toBe("accepted");
@@ -1820,7 +1549,7 @@ describe.runIf(ready)(
               materialKindKey: "bread",
               deltaRaw: 10,
             }),
-            admit,
+            ADMIT_AT_LOCKED_VERSION,
           )
         ).status,
       ).toBe("accepted");
@@ -1840,7 +1569,7 @@ describe.runIf(ready)(
         },
       );
       expect(
-        (await submitDurablePromoteItemFromStock(promoteCmd, admit)).status,
+        (await submitDurablePromoteItemFromStock(promoteCmd, ADMIT_AT_LOCKED_VERSION)).status,
       ).toBe("accepted");
 
       expect(
@@ -1851,7 +1580,7 @@ describe.runIf(ready)(
               materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
               deltaRaw: 100_000,
             }),
-            admit,
+            ADMIT_AT_LOCKED_VERSION,
           )
         ).status,
       ).toBe("accepted");
@@ -1875,7 +1604,7 @@ describe.runIf(ready)(
         },
       );
       expect(
-        (await submitDurableConfigureRestockRoutine(configureCmd, admit))
+        (await submitDurableConfigureRestockRoutine(configureCmd, ADMIT_AT_LOCKED_VERSION))
           .status,
       ).toBe("accepted");
 
@@ -1897,8 +1626,8 @@ describe.runIf(ready)(
           knowledgeSource: { kind: "authored" },
         },
       );
-      const created = await submitDurableCreateCommitment(promiseCmd, admit);
-      expect(created.status).toBe("accepted");
+      const created = await submitDurableCreateCommitment(promiseCmd, ADMIT_AT_LOCKED_VERSION);
+      expectAccepted(created, "household creation");
       const commitmentId = deriveCommitmentId(
         ids.branchId,
         `cmd-promise7-${ids.branchId}`,
@@ -1911,7 +1640,7 @@ describe.runIf(ready)(
         { commitmentId },
       );
       expect(
-        (await submitDurableFulfillCommitment(fulfillCmd, admit)).status,
+        (await submitDurableFulfillCommitment(fulfillCmd, ADMIT_AT_LOCKED_VERSION)).status,
       ).toBe("accepted");
 
       const escalationCmd = command(
@@ -1945,9 +1674,9 @@ describe.runIf(ready)(
           participantIds: [ids.player, ids.mara].sort(),
           channel: "co_present",
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(opened.status).toBe("accepted");
+      expectAccepted(opened, "scene open");
       const engagementId = deriveEngagementId(
         ids.branchId,
         `cmd-scene7-${ids.branchId}`,
@@ -1961,30 +1690,35 @@ describe.runIf(ready)(
       });
       await drainMemoryIndexOutbox({ workerId: "w-gate5-footprint-drain" });
 
-      const footprint = await worldFootprint(ids.branchId);
+      // `branchFootprint` derives its table list from the drizzle schema —
+      // every branch-scoped sim_ table, so a lane added after this file was
+      // written is covered without editing the list by hand.
+      const footprint = await branchFootprint(ids.branchId);
       expect(await loadPersistedCut(ids.branchId, turn.cut.id)).toEqual(
         turn.cut,
       );
-      expect(await worldFootprint(ids.branchId)).toEqual(footprint);
+      expect(
+        footprintDelta(footprint, await branchFootprint(ids.branchId)),
+      ).toEqual({});
 
       // Replay each already-accepted command across the new domains: an
       // identical cached result, and zero footprint change, every time.
       const replays: [string, () => Promise<{ status: string }>][] = [
         [
           "create_household",
-          () => submitDurableCreateHousehold(createHouseholdCmd, admit),
+          () => submitDurableCreateHousehold(createHouseholdCmd, ADMIT_AT_LOCKED_VERSION),
         ],
         [
           "promote_item_from_stock",
-          () => submitDurablePromoteItemFromStock(promoteCmd, admit),
+          () => submitDurablePromoteItemFromStock(promoteCmd, ADMIT_AT_LOCKED_VERSION),
         ],
         [
           "configure_restock_routine",
-          () => submitDurableConfigureRestockRoutine(configureCmd, admit),
+          () => submitDurableConfigureRestockRoutine(configureCmd, ADMIT_AT_LOCKED_VERSION),
         ],
         [
           "fulfill_commitment",
-          () => submitDurableFulfillCommitment(fulfillCmd, admit),
+          () => submitDurableFulfillCommitment(fulfillCmd, ADMIT_AT_LOCKED_VERSION),
         ],
         [
           "attempt_consent_escalation",
@@ -1996,12 +1730,17 @@ describe.runIf(ready)(
         ],
       ];
       for (const [name, replay] of replays) {
-        const before = await worldFootprint(ids.branchId);
+        const before = await branchFootprint(ids.branchId);
         const result = await replay();
-        expect(result.status, name).toBe("accepted");
-        expect(await worldFootprint(ids.branchId), name).toEqual(before);
+        expectAccepted(result, `${name} replay`);
+        expect(
+          footprintDelta(before, await branchFootprint(ids.branchId)),
+          name,
+        ).toEqual({});
       }
-      expect(await worldFootprint(ids.branchId)).toEqual(footprint);
+      expect(
+        footprintDelta(footprint, await branchFootprint(ids.branchId)),
+      ).toEqual({});
       expect(await loadPersistedCut(ids.branchId, turn.cut.id)).toEqual(
         turn.cut,
       );
@@ -2030,7 +1769,7 @@ describe.runIf(ready)(
       await seedRhythms(ids.branchId, ids.mara);
       await submitDurableInitializeActorBody(
         initializeBodyCommand(ids, "init-mara-8a", ids.mara),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       await submitDurableTransferItem(
         command(ids, "don-8a", "transfer_item", npcPrincipal(ids.mara), {
@@ -2039,7 +1778,7 @@ describe.runIf(ready)(
           fromLocus: { kind: "held", actorId: ids.mara },
           toLocus: { kind: "worn", actorId: ids.mara, slotKey: WORN_SLOT },
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       ); // mid-worn-window: cleanliness alarm now pending
 
       const householdId = newId();
@@ -2054,7 +1793,7 @@ describe.runIf(ready)(
           residenceZoneIds: [ids.zoneHome],
           stockAccessPolicy: { kind: "members_only" },
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       await submitDurableSetHouseholdMembership(
         command(ids, "member-mara8a", "set_household_membership", gmPrincipal, {
@@ -2063,7 +1802,7 @@ describe.runIf(ready)(
           role: "resident",
           status: "active",
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       await submitDurableAdjustMaterialLot(
         command(ids, "stock-bread8a", "adjust_material_lot", gmPrincipal, {
@@ -2071,7 +1810,7 @@ describe.runIf(ready)(
           materialKindKey: "bread",
           deltaRaw: 10,
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       await submitDurableAdjustMaterialLot(
         command(ids, "fund8a", "adjust_material_lot", gmPrincipal, {
@@ -2079,7 +1818,7 @@ describe.runIf(ready)(
           materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
           deltaRaw: 100_000,
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       // Post-promotion (item #1) — carried by BOTH branches.
       const promote1 = await submitDurablePromoteItemFromStock(
@@ -2098,9 +1837,9 @@ describe.runIf(ready)(
             item: { name: "loaf one", materialKindKey: "bread" },
           },
         ),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(promote1.status).toBe("accepted");
+      expectAccepted(promote1, "first promotion");
       // Mid-armed-restock: configured, cadence far out, never fired.
       await submitDurableConfigureRestockRoutine(
         command(ids, "configure8a", "configure_restock_routine", gmPrincipal, {
@@ -2116,7 +1855,7 @@ describe.runIf(ready)(
           },
           active: true,
         }),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
       const armedRestock = (
         await pendingTriggers(ids.branchId, "household_restock_due")
@@ -2144,7 +1883,7 @@ describe.runIf(ready)(
         },
       );
       expect(
-        (await submitDurableCreateCommitment(promiseCmd, admit)).status,
+        (await submitDurableCreateCommitment(promiseCmd, ADMIT_AT_LOCKED_VERSION)).status,
       ).toBe("accepted");
       await advanceBranchStoryTime(ids.branchId, SEED_SECOND + 100, {
         workerId: "w-gate5-8a-notice",
@@ -2160,9 +1899,9 @@ describe.runIf(ready)(
             channel: "co_present",
           },
         ),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(openedForAck.status).toBe("accepted");
+      expectAccepted(openedForAck, "acknowledgment scene");
       const ackEngagementId = deriveEngagementId(
         ids.branchId,
         `cmd-ack-scene-8a-${ids.branchId}`,
@@ -2187,13 +1926,17 @@ describe.runIf(ready)(
       // post-acknowledgment, and mid-escalation-pending-nothing (no boundary
       // or permission entry exists for mara/iris "kiss" yet — structurally
       // absent on both sides of the fork).
+      // Stays a direct `forkBranch`: the assertion below reads the fork
+      // RESULT's `pendingTriggerIds`, which the shared `forkAtHead` does not
+      // hand back.
       const forkPointSequence = await branchHeadSequence(ids.branchId);
       const childBranchId = newId();
+      harness.trackBranch(childBranchId);
       const forkResult = await forkBranch({
         parentBranchId: ids.branchId,
         childBranchId,
         atSequence: forkPointSequence,
-        principal: { kind: "storyteller", principalId: "gm-1" },
+        principal: { kind: gmPrincipal.kind, principalId: gmPrincipal.principalId },
         reason: "E5.6 adversarial multi-domain fork",
       });
       expect(forkResult.pendingTriggerIds.length).toBeGreaterThanOrEqual(2); // restock + item-condition alarms
@@ -2216,9 +1959,9 @@ describe.runIf(ready)(
             item: { name: "loaf two", materialKindKey: "bread" },
           },
         ),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(promote2.status).toBe("accepted");
+      expectAccepted(promote2, "second promotion");
 
       // Diverge the CHILD only: resolve the pending consent gap by escalation
       // (admission refused — deterministic decline, zero model calls).
@@ -2241,7 +1984,7 @@ describe.runIf(ready)(
           admitAtLockedVersion: true,
         },
       );
-      expect(childEscalation.status).toBe("accepted");
+      expectAccepted(childEscalation, "child escalation");
 
       // Households: the child's own from-events replay matches its own live
       // projection exactly, AND the child carries only item #1 while the
@@ -2249,12 +1992,9 @@ describe.runIf(ready)(
       // A forked child's OWN sim_events rows only carry its post-fork events —
       // the full logical stream (ancestry + child-only) is the ancestry reader
       // (mirrors gate3-corpus.int.test.ts's own `branchEvents` helper).
-      const childAncestry = await loadBranchAncestry(db(), childBranchId);
-      const childEvents = await readBranchAncestryEvents(
-        db(),
-        childAncestry,
-        {},
-      );
+      const childEvents = await readBranchEvents(childBranchId, {
+        includeAncestry: true,
+      });
       const rebuiltHouseholds = replayHouseholdsHistory({
         seed: emptyHouseholdsSeed(childBranchId, SEED_SECOND),
         events: childEvents,
@@ -2404,9 +2144,9 @@ describe.runIf(ready)(
             operation: { kind: "set", valueFixedPoint: 8_500 },
           },
         ),
-        admit,
+        ADMIT_AT_LOCKED_VERSION,
       );
-      expect(applied.status).toBe("accepted");
+      expectAccepted(applied, "the wear jump");
 
       const events = await readBranchEvents(ids.branchId);
       expect(events.map((event) => event.type)).toEqual([
@@ -2432,13 +2172,16 @@ describe.runIf(ready)(
       ).filter((t) => t.uniquenessKey.includes("wear"));
       expect(wearAlarms).toHaveLength(0);
 
+      // Direct `forkBranch` for the same reason as 8a: the fork RESULT's
+      // `pendingTriggerIds` is the assertion.
       const forkPointSequence = await branchHeadSequence(ids.branchId);
       const childBranchId = newId();
+      harness.trackBranch(childBranchId);
       const forkResult = await forkBranch({
         parentBranchId: ids.branchId,
         childBranchId,
         atSequence: forkPointSequence,
-        principal: { kind: "storyteller", principalId: "gm-1" },
+        principal: { kind: gmPrincipal.kind, principalId: gmPrincipal.principalId },
         reason: "E5.6 instant item-condition crossing fork parity",
       });
       // Only the cleanliness lane could ever arm anything, and this garment

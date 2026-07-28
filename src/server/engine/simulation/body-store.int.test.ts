@@ -1,7 +1,6 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 import { bodyMeterRegistryV1 } from "@/contracts/simulation/bodies";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import { newId } from "@/lib/ids";
 import {
   db,
@@ -12,13 +11,11 @@ import {
   simBodyRhythms,
   simEvents,
   simTriggers,
-  simWorlds,
 } from "@/server/db";
 import {
   computeEngagementBodilyReads,
   readDurableBodies,
   readDurableBodyReads,
-  seedDurableBodyRhythms,
   submitDurableApplyBodyCondition,
   submitDurableApplyBodySource,
   submitDurableInitializeActorBody,
@@ -30,48 +27,32 @@ import {
   submitDurableStartActivity,
 } from "./activity-store";
 import { forkBranch } from "./branch-store";
-import { seedDurableMaterialBranch } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
-import { seedDurableSpaceTopology } from "./space-store";
-import { requireLegacyUnanchoredEngineTestMode } from "@/server/test-support";
+import {
+  ADMIT_AT_LOCKED_VERSION,
+  expectAccepted,
+  expectRejected,
+  gmPrincipal,
+  playerPrincipal,
+  seedReferenceRhythms,
+  seedSimpleBranch,
+  simCommand,
+  simulationSuiteHarness,
+  systemPrincipal,
+} from "@/server/test-support";
+
+/**
+ * E5.1 durable body substrate: registry meters, crossing-aware alarms, the
+ * sleep/collapse arc, the engagement surface read, and fork parity. Runs on the
+ * shared `simulationSuiteHarness` scaffold (probe + legacy-player guard + world
+ * teardown + pool close).
+ */
+
+const harness = await simulationSuiteHarness({ suite: "body-store.int.test", table: "sim_body_meters" });
 
 const SEED_SECOND = 50_000;
 // Registry v1: hygiene 9 000 → 2 500 at 150/h = 156 000s after seeding.
 const HYGIENE_CROSSING = SEED_SECOND + 156_000;
-
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_body_meters limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (error) {
-    if (process.env.CI === "true" || process.env.VESPER_REQUIRE_TEST_DB === "1") {
-      throw error;
-    }
-    process.stderr.write(
-      `[body-store.int.test] skipping: database unreachable or unmigrated: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-if (ready) requireLegacyUnanchoredEngineTestMode("body-store.int.test");
-const seededWorldIds: string[] = [];
-
-afterAll(async () => {
-  if (!ready || seededWorldIds.length === 0) return;
-  await db().delete(simWorlds).where(inArray(simWorlds.id, seededWorldIds));
-});
 
 interface BodyCase {
   worldId: string;
@@ -81,72 +62,42 @@ interface BodyCase {
   zoneId: string;
 }
 
-function branchSeed(ids: BodyCase): MaterialBranchSeed {
-  return materialBranchSeedSchema.parse({
-    worldId: ids.worldId,
-    worldTypeId: "e5-1-tests",
-    worldSeed: `seed-${ids.worldId}`,
-    branchId: ids.branchId,
-    rulesetVersion: "e5-1-test-v1",
-    originStorySecond: SEED_SECOND,
-    actors: [
-      { id: ids.actorId, name: "Mara" },
-      { id: ids.witnessId, name: "Iris" },
-    ],
-    items: [],
-  });
-}
-
 async function seedBodyCase(): Promise<BodyCase> {
-  const worldId = newId();
-  const branchId = newId();
-  const ids: BodyCase = {
-    worldId,
-    branchId,
-    actorId: newId(),
-    witnessId: newId(),
-    zoneId: `${branchId}-zone-room`,
-  };
-  const locHome = `${worldId}-loc-home`;
-  await seedDurableMaterialBranch(branchSeed(ids));
-  await seedDurableSpaceTopology({
-    branchId,
-    locations: [{ id: locHome, worldId, kind: "home", defaultAccessPolicy: "public" }],
-    zones: [{ id: ids.zoneId, locationId: locHome, kind: "room", privacyPolicy: "private" }],
-    links: [],
-    loci: [
-      { kind: "at", actorId: ids.actorId, locationId: locHome, zoneId: ids.zoneId, since: SEED_SECOND },
-      { kind: "at", actorId: ids.witnessId, locationId: locHome, zoneId: ids.zoneId, since: SEED_SECOND },
+  const actorId = newId();
+  const witnessId = newId();
+  const seeded = await seedSimpleBranch({
+    prefix: "e5-1-test",
+    actors: [
+      { id: actorId, name: "Mara" },
+      { id: witnessId, name: "Iris" },
     ],
+    originStorySecond: SEED_SECOND,
+    zoneSlug: "room",
+    privacyPolicy: "private",
   });
-  seededWorldIds.push(worldId);
-  return ids;
+  harness.trackWorld(seeded.worldId);
+  return {
+    worldId: seeded.worldId,
+    branchId: seeded.branchId,
+    actorId,
+    witnessId,
+    zoneId: seeded.zoneId,
+  };
 }
 
 /** 7am wake / 11pm bed plus a wash ending 7am — the reference daily life. */
-async function seedRhythms(ids: BodyCase) {
-  await seedDurableBodyRhythms({
-    branchId: ids.branchId,
-    rows: [
-      { actorId: ids.actorId, kind: "sleep", startMinuteOfDay: 1_380, endMinuteOfDay: 420 },
-      { actorId: ids.actorId, kind: "wash", startMinuteOfDay: 405, endMinuteOfDay: 420 },
-    ],
-  });
+async function seedRhythms(ids: BodyCase): Promise<void> {
+  await seedReferenceRhythms(ids.branchId, ids.actorId);
 }
 
 function initializeCommand(ids: BodyCase) {
-  return {
-    id: `cmd-init-${ids.branchId}`,
+  return simCommand({
     branchId: ids.branchId,
-    expectedVersion: 0,
-    idempotencyKey: `init-key-${ids.branchId}`,
-    principal: { kind: "storyteller", principalId: "principal-1", controlledActorIds: [] },
-    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
-    correlationId: `corr-${ids.branchId}`,
+    name: "init",
     type: "initialize_actor_body",
-    schemaVersion: 1,
+    principal: gmPrincipal,
     payload: { actorId: ids.actorId, registryVersion: "body-v1", baselineOverrides: {} },
-  };
+  });
 }
 
 async function pendingBodyTriggers(branchId: string) {
@@ -167,11 +118,11 @@ async function pendingBodyTriggers(branchId: string) {
     .orderBy(asc(simTriggers.dueStorySecond));
 }
 
-describe.runIf(ready)("E5.1 durable body substrate", () => {
+describe.runIf(harness.ready)("E5.1 durable body substrate", () => {
   it("seeds the registry meters and arms the initial threshold alarms", async () => {
     const ids = await seedBodyCase();
     const result = await submitDurableInitializeActorBody(initializeCommand(ids));
-    expect(result.status).toBe("accepted");
+    expectAccepted(result, "initialize the actor's body");
 
     const bodies = await readDurableBodies(ids.branchId);
     expect(bodies.meters.map((meter) => meter.meterKey)).toEqual(
@@ -188,24 +139,22 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
   it("retires and re-arms a meter's alarm when a source moves the trajectory", async () => {
     const ids = await seedBodyCase();
     await submitDurableInitializeActorBody(initializeCommand(ids));
-    const wash = await submitDurableApplyBodySource({
-      id: `cmd-wash-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: `wash-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:01:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "apply_body_source",
-      schemaVersion: 1,
-      payload: {
-        actorId: ids.actorId,
-        meterKey: "hygiene",
-        sourceKind: "wash",
-        operation: { kind: "set", valueFixedPoint: 9_500 },
-      },
-    });
-    expect(wash.status).toBe("accepted");
+    const wash = await submitDurableApplyBodySource(
+      simCommand({
+        branchId: ids.branchId,
+        name: "wash",
+        type: "apply_body_source",
+        expectedVersion: 1,
+        principal: playerPrincipal(ids.actorId),
+        payload: {
+          actorId: ids.actorId,
+          meterKey: "hygiene",
+          sourceKind: "wash",
+          operation: { kind: "set", valueFixedPoint: 9_500 },
+        },
+      }),
+    );
+    expectAccepted(wash, "wash the actor back to 9 500 hygiene");
 
     const bodies = await readDurableBodies(ids.branchId);
     expect(bodies.meters.find((meter) => meter.meterKey === "hygiene")?.valueFixedPoint).toBe(9_500);
@@ -270,25 +219,23 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
   it("expires a condition through the drain, closing its modifiers and re-arming", async () => {
     const ids = await seedBodyCase();
     await submitDurableInitializeActorBody(initializeCommand(ids));
-    const nap = await submitDurableApplyBodyCondition({
-      id: `cmd-nap-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: `nap-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:02:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "apply_body_condition",
-      schemaVersion: 1,
-      payload: {
-        actorId: ids.actorId,
-        conditionKey: "asleep",
-        durationSeconds: 5_400,
-        modifiers: [{ meterKey: "energy", operation: { kind: "suspend" }, stackingGroup: "sleep" }],
-        observerActorIds: [],
-      },
-    });
-    expect(nap.status).toBe("accepted");
+    const nap = await submitDurableApplyBodyCondition(
+      simCommand({
+        branchId: ids.branchId,
+        name: "nap",
+        type: "apply_body_condition",
+        expectedVersion: 1,
+        principal: playerPrincipal(ids.actorId),
+        payload: {
+          actorId: ids.actorId,
+          conditionKey: "asleep",
+          durationSeconds: 5_400,
+          modifiers: [{ meterKey: "energy", operation: { kind: "suspend" }, stackingGroup: "sleep" }],
+          observerActorIds: [],
+        },
+      }),
+    );
+    expectAccepted(nap, "apply the asleep condition with an explicit suspend");
 
     const before = await readDurableBodies(ids.branchId);
     expect(before.conditions[0]).toMatchObject({ key: "asleep", status: "active" });
@@ -325,26 +272,24 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
     const ids = await seedBodyCase();
     await seedRhythms(ids);
     await submitDurableInitializeActorBody(initializeCommand(ids));
-    const nap = await submitDurableApplyBodyCondition({
-      id: `cmd-nap-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: `nap-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:02:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "apply_body_condition",
-      schemaVersion: 1,
-      payload: {
-        actorId: ids.actorId,
-        conditionKey: "asleep",
-        durationSeconds: 5_400,
-        // No modifiers supplied: the §25.4 coupling attaches the suspend.
-        modifiers: [],
-        observerActorIds: [],
-      },
-    });
-    expect(nap.status).toBe("accepted");
+    const nap = await submitDurableApplyBodyCondition(
+      simCommand({
+        branchId: ids.branchId,
+        name: "nap",
+        type: "apply_body_condition",
+        expectedVersion: 1,
+        principal: playerPrincipal(ids.actorId),
+        payload: {
+          actorId: ids.actorId,
+          conditionKey: "asleep",
+          durationSeconds: 5_400,
+          // No modifiers supplied: the §25.4 coupling attaches the suspend.
+          modifiers: [],
+          observerActorIds: [],
+        },
+      }),
+    );
+    expectAccepted(nap, "apply the asleep condition without explicit modifiers");
     const before = await readDurableBodies(ids.branchId);
     expect(before.modifiers[0]).toMatchObject({
       meterKey: "energy",
@@ -388,24 +333,22 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
     const ids = await seedBodyCase();
     await seedRhythms(ids);
     await submitDurableInitializeActorBody(initializeCommand(ids));
-    const arouse = await submitDurableApplyBodySource({
-      id: `cmd-arouse-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: `arouse-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:03:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "apply_body_source",
-      schemaVersion: 1,
-      payload: {
-        actorId: ids.actorId,
-        meterKey: "arousal",
-        sourceKind: "adjustment",
-        operation: { kind: "add", deltaFixedPoint: 7_000 },
-      },
-    });
-    expect(arouse.status).toBe("accepted");
+    const arouse = await submitDurableApplyBodySource(
+      simCommand({
+        branchId: ids.branchId,
+        name: "arouse",
+        type: "apply_body_source",
+        expectedVersion: 1,
+        principal: playerPrincipal(ids.actorId),
+        payload: {
+          actorId: ids.actorId,
+          meterKey: "arousal",
+          sourceKind: "adjustment",
+          operation: { kind: "add", deltaFixedPoint: 7_000 },
+        },
+      }),
+    );
+    expectAccepted(arouse, "raise arousal by 7 000");
 
     // The witness sees graded surface signs at engaged attention — never a meter.
     const before = await computeEngagementBodilyReads(db(), {
@@ -419,24 +362,22 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
       { actorId: ids.actorId, signs: ["flushed_skin", "quickened_breath"] },
     ]);
 
-    const climax = await submitDurableApplyBodySource({
-      id: `cmd-climax-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 2,
-      idempotencyKey: `climax-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:04:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "apply_body_source",
-      schemaVersion: 1,
-      payload: {
-        actorId: ids.actorId,
-        meterKey: "arousal",
-        sourceKind: "climax",
-        operation: { kind: "reset_to_baseline" },
-      },
-    });
-    expect(climax.status).toBe("accepted");
+    const climax = await submitDurableApplyBodySource(
+      simCommand({
+        branchId: ids.branchId,
+        name: "climax",
+        type: "apply_body_source",
+        expectedVersion: 2,
+        principal: playerPrincipal(ids.actorId),
+        payload: {
+          actorId: ids.actorId,
+          meterKey: "arousal",
+          sourceKind: "climax",
+          operation: { kind: "reset_to_baseline" },
+        },
+      }),
+    );
+    expectAccepted(climax, "reset arousal to baseline through climax");
 
     const bodies = await readDurableBodies(ids.branchId);
     expect(bodies.meters.find((meter) => meter.meterKey === "arousal")?.valueFixedPoint).toBe(0);
@@ -491,24 +432,22 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
 
     // A short nap creates REAL sleep history — the wake is what arms the
     // collapse alarm (assumed-rhythm actors never escalate, never collapse).
-    await submitDurableApplyBodyCondition({
-      id: `cmd-nap-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: `nap-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:05:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "apply_body_condition",
-      schemaVersion: 1,
-      payload: {
-        actorId: ids.actorId,
-        conditionKey: "asleep",
-        durationSeconds: 5_400,
-        modifiers: [],
-        observerActorIds: [],
-      },
-    });
+    await submitDurableApplyBodyCondition(
+      simCommand({
+        branchId: ids.branchId,
+        name: "nap",
+        type: "apply_body_condition",
+        expectedVersion: 1,
+        principal: playerPrincipal(ids.actorId),
+        payload: {
+          actorId: ids.actorId,
+          conditionKey: "asleep",
+          durationSeconds: 5_400,
+          modifiers: [],
+          observerActorIds: [],
+        },
+      }),
+    );
     const wakeAt = SEED_SECOND + 5_400;
     await advanceBranchStoryTime(ids.branchId, wakeAt, { workerId: "w-arc-wake" });
     const collapseAlarm = (await pendingBodyTriggers(ids.branchId)).find(
@@ -520,19 +459,17 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
     expect(collapseAlarm.dueStorySecond).toBeLessThan(wakeAt + 48 * 3_600);
 
     // She starts an open-ended vigil and never goes to bed.
-    const start = await submitDurableStartActivity({
-      id: `cmd-vigil-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 3,
-      idempotencyKey: `vigil-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:06:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "start_activity",
-      schemaVersion: 1,
-      payload: { actionDefinitionId: `${ids.branchId}-action-vigil`, actorId: ids.actorId },
-    });
-    expect(start.status).toBe("accepted");
+    const start = await submitDurableStartActivity(
+      simCommand({
+        branchId: ids.branchId,
+        name: "vigil",
+        type: "start_activity",
+        expectedVersion: 3,
+        principal: playerPrincipal(ids.actorId),
+        payload: { actionDefinitionId: `${ids.branchId}-action-vigil`, actorId: ids.actorId },
+      }),
+    );
+    expectAccepted(start, "start the open-ended vigil");
 
     // The drain reaches the alarm: the body gives out mid-vigil.
     const outcome = await advanceBranchStoryTime(ids.branchId, collapseAlarm.dueStorySecond, {
@@ -574,19 +511,17 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
 
     // The E3.4 note lands: resume re-arms completion under a versioned key
     // and the activity finishes through the ordinary drain.
-    const resume = await submitDurableResumeActivity({
-      id: `cmd-resume-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 6,
-      idempotencyKey: `resume-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:07:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "resume_activity",
-      schemaVersion: 1,
-      payload: { activityInstanceId: activityRow?.activityInstanceId ?? "" },
-    });
-    expect(resume.status).toBe("accepted");
+    const resume = await submitDurableResumeActivity(
+      simCommand({
+        branchId: ids.branchId,
+        name: "resume",
+        type: "resume_activity",
+        expectedVersion: 6,
+        principal: playerPrincipal(ids.actorId),
+        payload: { activityInstanceId: activityRow?.activityInstanceId ?? "" },
+      }),
+    );
+    expectAccepted(resume, "resume the interrupted vigil");
     const [resumedRow] = await db()
       .select()
       .from(simActivities)
@@ -638,24 +573,22 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
 
     // A short nap creates REAL sleep history — the wake is what arms the
     // collapse alarm.
-    await submitDurableApplyBodyCondition({
-      id: `cmd-race-nap-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 1,
-      idempotencyKey: `race-nap-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:05:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "apply_body_condition",
-      schemaVersion: 1,
-      payload: {
-        actorId: ids.actorId,
-        conditionKey: "asleep",
-        durationSeconds: 5_400,
-        modifiers: [],
-        observerActorIds: [],
-      },
-    });
+    await submitDurableApplyBodyCondition(
+      simCommand({
+        branchId: ids.branchId,
+        name: "race-nap",
+        type: "apply_body_condition",
+        expectedVersion: 1,
+        principal: playerPrincipal(ids.actorId),
+        payload: {
+          actorId: ids.actorId,
+          conditionKey: "asleep",
+          durationSeconds: 5_400,
+          modifiers: [],
+          observerActorIds: [],
+        },
+      }),
+    );
     const wakeAt = SEED_SECOND + 5_400;
     await advanceBranchStoryTime(ids.branchId, wakeAt, { workerId: "w-race-wake" });
     const collapseAlarm = (await pendingBodyTriggers(ids.branchId)).find(
@@ -664,19 +597,17 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
     if (!collapseAlarm) throw new Error("collapse alarm missing");
 
     // She starts an open-ended vigil and never goes to bed.
-    const start = await submitDurableStartActivity({
-      id: `cmd-vigil-race-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 3,
-      idempotencyKey: `vigil-race-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:06:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "start_activity",
-      schemaVersion: 1,
-      payload: { actionDefinitionId: `${ids.branchId}-action-vigil-race`, actorId: ids.actorId },
-    });
-    expect(start.status).toBe("accepted");
+    const start = await submitDurableStartActivity(
+      simCommand({
+        branchId: ids.branchId,
+        name: "vigil-race",
+        type: "start_activity",
+        expectedVersion: 3,
+        principal: playerPrincipal(ids.actorId),
+        payload: { actionDefinitionId: `${ids.branchId}-action-vigil-race`, actorId: ids.actorId },
+      }),
+    );
+    expectAccepted(start, "start the vigil the race interrupts");
 
     const [vigilRow] = await db().select().from(simActivities).where(eq(simActivities.branchId, ids.branchId));
     if (!vigilRow) throw new Error("vigil activity missing");
@@ -714,19 +645,17 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
     // attempt-versioned key with a LATER due second.
     const wake2 = collapseAlarm.dueStorySecond + 28_800;
     await advanceBranchStoryTime(ids.branchId, wake2, { workerId: "w-race-wake2" });
-    const resume = await submitDurableResumeActivity({
-      id: `cmd-resume-race-${ids.branchId}`,
-      branchId: ids.branchId,
-      expectedVersion: 6,
-      idempotencyKey: `resume-race-key-${ids.branchId}`,
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
-      submittedAtWallClock: "2026-07-19T12:07:00.000Z",
-      correlationId: `corr-${ids.branchId}`,
-      type: "resume_activity",
-      schemaVersion: 1,
-      payload: { activityInstanceId: vigilRow.activityInstanceId },
-    });
-    expect(resume.status).toBe("accepted");
+    const resume = await submitDurableResumeActivity(
+      simCommand({
+        branchId: ids.branchId,
+        name: "resume-race",
+        type: "resume_activity",
+        expectedVersion: 6,
+        principal: playerPrincipal(ids.actorId),
+        payload: { activityInstanceId: vigilRow.activityInstanceId },
+      }),
+    );
+    expectAccepted(resume, "resume the vigil after the raced collapse");
 
     // Exactly one live completion alarm remains — the fresh resumed arm —
     // never two.
@@ -740,21 +669,16 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
     // closed to `completion_not_due` instead of completing the activity under
     // the superseded (pre-interruption) schedule.
     const staleDispatch = await submitDurableCompleteActivity(
-      {
-        id: `cmd-stale-complete-${ids.branchId}`,
+      simCommand({
         branchId: ids.branchId,
-        expectedVersion: 0,
-        idempotencyKey: `stale-complete-key-${ids.branchId}`,
-        principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] },
-        submittedAtWallClock: "2026-07-19T12:08:00.000Z",
-        correlationId: `corr-${ids.branchId}`,
+        name: "stale-complete",
         type: "complete_activity",
-        schemaVersion: 1,
+        principal: systemPrincipal,
         payload: { activityInstanceId: vigilRow.activityInstanceId },
-      },
-      { admitAtLockedVersion: true },
+      }),
+      ADMIT_AT_LOCKED_VERSION,
     );
-    expect(staleDispatch).toMatchObject({ status: "rejected", code: "completion_not_due" });
+    expectRejected(staleDispatch, "completion_not_due", "the stale claim's dispatch after the interrupt");
 
     // No double completion: the activity finishes exactly once, through the
     // ordinary drain to its NEW resumed due second.
@@ -791,7 +715,7 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
       parentBranchId: ids.branchId,
       childBranchId,
       atSequence: parent.headSequence,
-      principal: { kind: "storyteller", principalId: "principal-1" },
+      principal: { kind: "storyteller", principalId: gmPrincipal.principalId },
       reason: "E5.1 body fork parity",
     });
     expect(fork.pendingTriggerIds.length).toBeGreaterThanOrEqual(1);
