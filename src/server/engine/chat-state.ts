@@ -15,6 +15,10 @@ import {
   CHAT_MIND_NOTE_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
   applyGarmentOperations,
+  applyGarmentProposals,
+  buildGarmentHandleTable,
+  garmentMutationLane,
+  type GarmentOperationTraceEntry,
   chatGarmentStoreSchema,
   chatPlayerStateSchema,
   chatPulseTraceSchema,
@@ -24,6 +28,7 @@ import {
   GARMENT_PLAYER_ACTOR,
   retireActorGarments,
   type ChatGarmentStore,
+  type GarmentCueState,
   type GarmentOperation,
   currentScenePlace,
   clampFamiliarity,
@@ -122,7 +127,7 @@ import type { AgentRunDescription, AgentRunDetailSection } from "@/contracts/tur
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import { characterChatMessages, characterChats, characterChatState, db } from "../db";
 import { healOutfitMarker, loadChatWardrobe, playerWornIds, wardrobeDescriptors } from "./chat-wardrobe";
-import { garmentProjectionOr, syncGarmentsForExchange } from "./chat-garments";
+import { chatGarmentLookChanged, garmentProjectionOr, syncGarmentsForExchange } from "./chat-garments";
 import { callbackHistorySchema, type CallbackEntry } from "./chat-callback";
 import {
   applyFeelingProposal,
@@ -1629,6 +1634,14 @@ export async function finalizeChatState(input: {
   scenario: ChatScenario;
   /** The scenario as stored before this exchange — the rollback anchor's other half. */
   preExchangeScenario: ChatScenario | null;
+  /**
+   * The garment cue memory this exchange's prompt surfaced (clothing-state-graph
+   * slice 6): repeat keys + the bands they were reported in + last-changed stamps.
+   * Persisted onto the store so it rides ONE rollback anchor with the garments it
+   * describes — a retake restores mention history and wardrobe together or not at
+   * all. Absent (the `CHAT_GARMENT_CUES` default) ⇒ the store's memory is untouched.
+   */
+  garmentCueState?: GarmentCueState;
   sink?: DiagnosticSink;
 }): Promise<{
   /** True when this exchange landed a stage crossing or strong reaction (slice 9 "auto at big moments"). */
@@ -1672,6 +1685,26 @@ export async function finalizeChatState(input: {
     const when = describePlanWhen(p.when, planLabelCtx);
     return `"${p.what}"${others ? ` ${others}` : ""}${when ? ` (${when})` : ""}`;
   };
+  // The grounded wardrobe lane (clothing-state-graph.plan.md slice 5): the exact
+  // garment/part handles this exchange may address. Built from the store as it
+  // stands BEFORE the fan-out, because that is what the extractor's prompt shows.
+  // Empty (an unmodelled chat, a first exchange) ⇒ the field never arms and the
+  // legacy free-text grammar stands — which is exactly the bridge.
+  //
+  // "Here" is the place the exchange STARTED in, not wherever the archivist's
+  // scene proposal moved them: the enumeration and the `left_here` locus then mean
+  // one and the same room, so a garment dropped this exchange is re-findable by
+  // exactly the handles the model was just shown (R3).
+  const scenePlaceName = currentScenePlace(input.scenario.sceneMemory)?.name;
+  const garmentHandles = buildGarmentHandleTable({
+    store: input.scenario.garments,
+    actors: [
+      { actorId: garmentActorForCharacter(input.characterId), label: input.characterName },
+      { actorId: GARMENT_PLAYER_ACTOR, label: input.playerName || "you", slug: "you" },
+    ],
+    ...(scenePlaceName === undefined ? {} : { placeName: scenePlaceName }),
+  });
+
   const preAdvance = advancePlans(input.scenario.plans, input.scenario.clockMinutes, input.playerName);
   const commitmentsDue =
     input.skipPulse || preAdvance.justMissed.length === 0
@@ -1710,6 +1743,9 @@ export async function finalizeChatState(input: {
         .map((p) => ({ what: p.what, who: p.participants.join(", "), when: describePlanWhen(p.when, planLabelCtx) })),
       developableTraits,
       voiceReference,
+      // The in-scope garment handles (clothing-state-graph slice 5) — present ⇒ the
+      // continuity leg proposes typed operations instead of free-text garments.
+      garmentHandles,
       // The recap's ledger grounds the scribe's facts in NAMES (chat-agent-improvements
       // open question D — a pronoun-heavy beat used to file a dangling referent).
       priorSummary: input.priorSummary,
@@ -1828,7 +1864,25 @@ export async function finalizeChatState(input: {
   // (rung 2) fold individual pieces against the loaded worn items + wardrobe pool. Empty
   // proposal / degraded archivist keeps the prior wardrobe; "another take" rolls it back via
   // the pre-exchange snapshot (wornItemIds/outfitPresetId ride `storedChatStateSchema`).
-  const outfitProposal = archivist.value?.outfit;
+  //
+  // Which of the two wardrobe-mutation paths runs is decided ONCE, for the whole
+  // exchange (clothing-state-graph slice 5): typed proposals win, and when they
+  // are present the free-text folds are skipped entirely — so no actor is ever
+  // mutated twice in one exchange.
+  const lane = garmentMutationLane({
+    garmentOperations: archivist.value?.garmentOperations ?? [],
+    ...(archivist.value ? { outfit: archivist.value.outfit, playerOutfit: archivist.value.playerOutfit } : {}),
+  });
+  if (lane === "legacy") {
+    input.sink?.push(
+      diag(
+        "info",
+        "chat_garments.legacy_outfit_bridge",
+        "no garment operations this exchange — folding the archivist's free-text outfit grammar through the legacy bridge",
+      ),
+    );
+  }
+  const outfitProposal = lane === "legacy" ? archivist.value?.outfit : undefined;
   const outfitChanged = Boolean(
     outfitProposal && (outfitProposal.description || outfitProposal.removed.length || outfitProposal.added.length),
   );
@@ -1848,7 +1902,7 @@ export async function finalizeChatState(input: {
     persona: input.playerPersona,
     ownerId: input.ownerId,
     playerState: input.scenario.playerState,
-    proposal: archivist.value?.playerOutfit,
+    proposal: lane === "legacy" ? archivist.value?.playerOutfit : undefined,
     sink: input.sink,
   });
 
@@ -1872,6 +1926,44 @@ export async function finalizeChatState(input: {
     playerStateAfterFold,
     sink: input.sink,
   });
+
+  // --- Grounded garment operations (slice 5) ---------------------------------
+  // The reconcile above lands first (so a garment this exchange's worn lists
+  // added exists to be addressed), then the extractor's typed proposals apply in
+  // FICTION ORDER on top, then the id projections are re-derived once. One store,
+  // persisted once by the scenario save below — and discarded whole by a retake,
+  // because it rides `pre_exchange_scenario` like every other scenario field.
+  const proposals = lane === "operations" ? (archivist.value?.garmentOperations ?? []) : [];
+  const garmentFold = applyGarmentProposals(proposals, {
+    store: garmentSync.store,
+    table: garmentHandles,
+    atMinutes: input.scenario.clockMinutes,
+    mintId: newId,
+    ...(scenePlaceName === undefined ? {} : { placeName: scenePlaceName }),
+    sink: input.sink,
+  });
+  // Mention history rides the store (slice 6): the cue memory the PROMPT produced,
+  // written onto the POST-fold store so one JSONB value carries the wardrobe and
+  // what has already been said about it. Flag off ⇒ the prior memory passes through.
+  const garmentStore = input.garmentCueState
+    ? { ...garmentFold.store, cues: input.garmentCueState }
+    : garmentFold.store;
+  const wornItemIds =
+    garmentFold.applied > 0
+      ? garmentProjectionOr(garmentStore, garmentActorForCharacter(input.characterId), garmentSync.wornItemIds)
+      : garmentSync.wornItemIds;
+  const playerState: ChatPlayerState =
+    garmentFold.applied > 0
+      ? {
+          ...garmentSync.playerState,
+          wornItemIds: garmentProjectionOr(
+            garmentStore,
+            GARMENT_PLAYER_ACTOR,
+            garmentSync.playerState.wornItemIds,
+          ),
+        }
+      : garmentSync.playerState;
+  const garmentTrace: GarmentOperationTraceEntry[] = garmentFold.trace;
 
   // The familiarity ratchet (owner ruling: moments + time). One trickle tick per
   // exchange (bounded by the acquainted ceiling), plus a moment tick when the
@@ -1986,6 +2078,12 @@ export async function finalizeChatState(input: {
     memoryQueries: archivist.value?.memoryQueries ?? [],
     attributeChanges: (archivist.value?.attributeChanges ?? []).map((c) => `${c.attributeId}=${String(c.value)}`),
     retrievedDetail: input.retrieved?.detail ?? [],
+    // Every garment proposal's fate (clothing-state-graph slice 5): proposed →
+    // resolved → applied / no_change / rejected + code. Riding the memory trace
+    // puts it in the admin inspector's existing view AND inside the rollback
+    // snapshot, so a retake discards the record along with the operations.
+    garmentOperations: garmentTrace,
+    garmentLane: lane,
     // The MEMORY trace's degraded flag tracks the leg that owns memory (the scribe): its
     // other fields — summary, facts, queries — all come from that leg, so a failed
     // continuity/character leg must not flag the memory read as degraded (slice 1b).
@@ -2031,8 +2129,9 @@ export async function finalizeChatState(input: {
       drives: driveResult.drives,
       ...outfitPatch,
       // The worn list is a PROJECTION of the garment store (slice 2), re-derived
-      // after the reconcile above so the column can never become a second truth.
-      wornItemIds: garmentSync.wornItemIds,
+      // after the reconcile AND the typed operations above so the column can never
+      // become a second truth.
+      wornItemIds,
     },
   });
   // The scenario save (followups ruling 8): the merged scene memory, the ticked
@@ -2047,8 +2146,8 @@ export async function finalizeChatState(input: {
       sceneMemory,
       supportingCast,
       plans,
-      playerState: garmentSync.playerState,
-      garments: garmentSync.store,
+      playerState,
+      garments: garmentStore,
       pendingSkipNote: "",
       pendingMeanwhileNote: "",
     },
@@ -2078,7 +2177,21 @@ export async function finalizeChatState(input: {
   // the character or landed a lasting appearance change — mint a fresh look anchor.
   // The job itself gates on image-active chats + key match (ruled), so this enqueue
   // is cheap and idempotent; fire-and-forget after the state write it reads.
-  if (outfitChanged || (archivist.value?.attributeChanges.length ?? 0) > 0) {
+  //
+  // The garment term is OQ8's pre/post KEY COMPARISON (audit Part 2), not a
+  // proposal count: the trigger used to be proposal-shaped, so anything that moved
+  // the wardrobe without an archivist outfit proposal left the anchor silently
+  // stale — and adding bands to `chatLookKey` alone could never fix that, because
+  // the enqueue and the key are independent gates. Both are wired now, off the same
+  // fingerprint (worn instance set + structural bands + wetness from `wet` up +
+  // deposit/damage presence). A damp→dry drift moves neither.
+  const lookChanged = chatGarmentLookChanged({
+    before: input.scenario.garments,
+    after: garmentStore,
+    actorIds: [garmentActorForCharacter(input.characterId), GARMENT_PLAYER_ACTOR],
+    atMinutes: input.scenario.clockMinutes,
+  });
+  if (outfitChanged || lookChanged || (archivist.value?.attributeChanges.length ?? 0) > 0) {
     void enqueueChatLookImage({ chatId: input.chatId, characterId: input.characterId });
   }
   return { bigMoment, selfieSend: selfieKind !== null, presenceChanges };

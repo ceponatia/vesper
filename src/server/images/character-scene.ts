@@ -61,6 +61,14 @@ export interface RenderCharacterSceneInput {
   /** Coverage-computed per-region exposure (chat-wardrobe-parity); overrides the boolean flag. */
   exposure?: RegionExposure;
   /**
+   * Compact garment-state facts for THIS shot (clothing-state-graph slice 6, behind
+   * `CHAT_GARMENT_CUES`): the same semantic reads the narrator digest and cue block
+   * are built from — "her shirt is soaked through", "mud has dried into the hem" —
+   * never a raw value. They ride the outfit description, which is exactly where the
+   * composer already looks for what the clothes are doing. Absent ⇒ today's prompt.
+   */
+  garmentNotes?: readonly string[];
+  /**
    * The PLAYER's coverage, from their persona's worn items (persona-library slice 8) — the
    * gate on whether the viewer's own anatomy may enter frame. Absent ⇒ covered ⇒ shut.
    */
@@ -153,6 +161,8 @@ export function buildCharacterSceneContext(input: {
   outfitExposed: boolean;
   /** Coverage-computed exposure (chat-wardrobe-parity); overrides the boolean flag when present. */
   exposure?: RegionExposure;
+  /** Compact garment-state facts appended to the outfit description (slice 6, flag-gated). */
+  garmentNotes?: readonly string[];
   /** The PLAYER's coverage — gates whether their own anatomy may render (scene-pov-embodiment). */
   playerExposure?: RegionExposure;
   playerAttributes?: ReadonlyArray<AttributeValue>;
@@ -175,7 +185,9 @@ export function buildCharacterSceneContext(input: {
     species: speciesLabelPhrase(input.profile.speciesId, input.profile.heritageId),
     // No structured items in chat — the free-text outfit overrides the (empty) wardrobe summary.
     wornVisible: [],
-    outfitDescription: input.outfit.trim(),
+    outfitDescription: [input.outfit.trim(), ...(input.garmentNotes ?? []).map((note) => note.trim())]
+      .filter(Boolean)
+      .join("; "),
     exposure,
     // Authoritative for this shot: the described outfit / exposed toggle overrides a clothed
     // reference avatar (same role exposedRegions played for the old default-outfit path).
@@ -274,6 +286,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     outfit: input.outfit ?? "",
     outfitExposed: input.outfitExposed ?? false,
     exposure: input.exposure,
+    garmentNotes: input.garmentNotes,
     playerExposure: input.playerExposure,
     playerAttributes: input.playerAttributes,
     playerProfile: input.playerProfile,

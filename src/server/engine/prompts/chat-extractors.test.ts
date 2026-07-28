@@ -7,6 +7,7 @@ import {
   chatPersonalNotesSchema,
   mergeChatExtractions,
 } from "@/contracts/turns/chat-archivist";
+import { garmentOperationProposalListSchema, type GarmentHandleTable } from "@/contracts";
 import {
   buildChatExtractorPrompt,
   buildChatExtractorSystem,
@@ -46,6 +47,38 @@ const LEG_SCHEMAS: Record<ChatExtractorLegId, { keyof: () => string[] }> = {
   personal: { keyof: () => Object.keys(chatPersonalNotesSchema.shape) },
 };
 
+/**
+ * The wardrobe grammars are MUTUALLY EXCLUSIVE (clothing-state-graph slice 5):
+ * with handles in scope the sheet carries `garmentOperations`, without them the
+ * legacy `outfit`/`playerOutfit` pair. So a leg's expected key set is its schema's
+ * minus whichever grammar this context disarms.
+ */
+function armedKeys(legId: ChatExtractorLegId, context: ChatExtractorContext): string[] {
+  const grounded = (context.garmentHandles?.entries.length ?? 0) > 0;
+  const disarmed = grounded ? ["outfit", "playerOutfit"] : ["garmentOperations"];
+  return LEG_SCHEMAS[legId]
+    .keyof()
+    .filter((key) => !disarmed.includes(key))
+    .sort();
+}
+
+/** A minimal in-scope handle table — the switch that arms the grounded lane. */
+const HANDLES: GarmentHandleTable = {
+  entries: [
+    {
+      handle: "mara.shirt",
+      garmentId: "g1",
+      name: "cotton shirt",
+      where: "worn by Mara",
+      locusKind: "worn",
+      partHandles: ["root", "front_panel", "sleeve_left", "sleeve_right", "hem"],
+      partIds: ["root", "front_panel", "sleeve_left", "sleeve_right", "hem", "collar"],
+    },
+  ],
+  actors: [{ handle: "mara", actorId: "c:mara", label: "Mara" }],
+  trimmed: false,
+};
+
 describe("the extractor legs are composed from the field library", () => {
   // Fully armed: every conditional field (presence / drives / trait shifts) has its data.
   const armed = ctx({
@@ -59,29 +92,41 @@ describe("the extractor legs are composed from the field library", () => {
     voiceReference: { petPhrases: ["don't make it a thing"], cadence: "dry, clipped" },
   });
 
-  it.each<ChatExtractorLegId>(["memory", "continuity", "character", "personal"])(
-    "%s: every instructed field is a schema field, and vice versa",
-    (legId) => {
-      const instructed = instructedKeys(buildChatExtractorSystem(legId, armed));
-      // The `outfit` field's instruction spans several lines; it still leads with its key.
-      expect(instructed.sort()).toEqual(LEG_SCHEMAS[legId].keyof().sort());
-    },
-  );
+  // Both wardrobe lanes, so neither grammar can rot: `grounded` has handles in
+  // scope (the operations field arms), `armed` has none (the legacy pair arms).
+  const grounded = ctx({ ...armed, garmentHandles: HANDLES });
 
-  it.each<ChatExtractorLegId>(["memory", "continuity", "character", "personal"])(
-    "%s: every worked example carries every armed key (they can no longer drift apart)",
-    (legId) => {
-      const system = buildChatExtractorSystem(legId, armed);
-      const keys = LEG_SCHEMAS[legId].keyof().sort();
-      const examples = examplesIn(system);
-      expect(examples.length).toBeGreaterThan(1);
-      for (const example of examples) {
-        expect(Object.keys(example).sort()).toEqual(keys);
-        // And every example parses as its leg's own output.
-        expect(() => chatArchivistSchema.parse(example)).not.toThrow();
-      }
-    },
-  );
+  it.each<[ChatExtractorLegId, "legacy" | "grounded"]>([
+    ["memory", "legacy"],
+    ["continuity", "legacy"],
+    ["continuity", "grounded"],
+    ["character", "legacy"],
+    ["personal", "legacy"],
+  ])("%s (%s wardrobe lane): every instructed field is an armed schema field, and vice versa", (legId, lane) => {
+    const context = lane === "grounded" ? grounded : armed;
+    const instructed = instructedKeys(buildChatExtractorSystem(legId, context));
+    // The `outfit` field's instruction spans several lines; it still leads with its key.
+    expect(instructed.sort()).toEqual(armedKeys(legId, context));
+  });
+
+  it.each<[ChatExtractorLegId, "legacy" | "grounded"]>([
+    ["memory", "legacy"],
+    ["continuity", "legacy"],
+    ["continuity", "grounded"],
+    ["character", "legacy"],
+    ["personal", "legacy"],
+  ])("%s (%s wardrobe lane): every worked example carries every armed key", (legId, lane) => {
+    const context = lane === "grounded" ? grounded : armed;
+    const system = buildChatExtractorSystem(legId, context);
+    const keys = armedKeys(legId, context);
+    const examples = examplesIn(system);
+    expect(examples.length).toBeGreaterThan(1);
+    for (const example of examples) {
+      expect(Object.keys(example).sort()).toEqual(keys);
+      // And every example parses as its leg's own output.
+      expect(() => chatArchivistSchema.parse(example)).not.toThrow();
+    }
+  });
 
   it.each<ChatExtractorLegId>(["memory", "continuity", "character", "personal"])(
     "%s: closes with the empty-output example — the single most common reply",
@@ -128,6 +173,50 @@ describe("unarmed fields disappear from the sheet entirely", () => {
     expect(bare).toContain('"openLoops"');
     expect(bare).toContain('"voiceExemplar"');
     expect(bare).toContain('"characterSlip"');
+  });
+
+  /**
+   * The grounded wardrobe lane (clothing-state-graph slice 5). The sheet must
+   * never carry both grammars: the handle table is what decides, and the same
+   * switch is what `garmentMutationLane` reads on the way back in.
+   */
+  it("handles in scope REPLACE the free-text outfit grammar with typed operations", () => {
+    const legacy = buildChatExtractorSystem("continuity", ctx());
+    expect(legacy).toContain('"outfit"');
+    expect(legacy).toContain('"playerOutfit"');
+    expect(legacy).not.toContain('"garmentOperations"');
+
+    const grounded = buildChatExtractorSystem("continuity", ctx({ garmentHandles: HANDLES }));
+    expect(grounded).toContain('"garmentOperations"');
+    expect(grounded).not.toContain('"outfit"');
+    expect(grounded).not.toContain('"playerOutfit"');
+    // The vocabulary is rendered from the registries, so a contract edit reaches the sheet.
+    for (const op of ["move", "closure", "roll", "tuck", "displace", "restore", "condition", "deposit", "clean", "damage", "introduce"]) {
+      expect(grounded).toContain(`"op":"${op}"`);
+    }
+    expect(grounded).toContain("slight | moderate | substantial | extreme");
+  });
+
+  it("the handle table reaches the user message, fenced, with its actor handles", () => {
+    const prompt = buildChatExtractorPrompt("continuity", ctx({ garmentHandles: HANDLES }));
+    expect(prompt).toContain("Garments in scene");
+    expect(prompt).toContain("mara.shirt — cotton shirt, worn by Mara; parts: root front_panel");
+    expect(prompt).toContain("Actor handles: mara = Mara");
+    expect(prompt).toMatch(/vsp-untrusted-[0-9a-f]+:garment handles/);
+    // No handles ⇒ no block at all (the field isn't on the sheet either).
+    expect(buildChatExtractorPrompt("continuity", ctx())).not.toContain("Garments in scene");
+  });
+
+  it("the worked garment examples survive the proposal schema — a sheet cannot teach an invalid shape", () => {
+    const system = buildChatExtractorSystem("continuity", ctx({ garmentHandles: HANDLES }));
+    const withOps = examplesIn(system).filter(
+      (ex) => Array.isArray(ex.garmentOperations) && ex.garmentOperations.length > 0,
+    );
+    expect(withOps.length).toBeGreaterThan(0);
+    for (const example of withOps) {
+      const proposals = example.garmentOperations as unknown[];
+      expect(garmentOperationProposalListSchema.parse(proposals)).toHaveLength(proposals.length);
+    }
   });
 
   it("numbering is contiguous whatever is armed", () => {

@@ -45,6 +45,7 @@ export {
   NARRATION_SHAPE_IDS,
   NARRATION_SHAPE_PROFILES,
   type NarrationShapeId,
+  chatGarmentCuesEnabled,
   narrationShapeId,
   readDevNarrationShape,
   setDevNarrationShape,

@@ -41,17 +41,17 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
-- **Clothing state graph — remainder: slices 5–8 (extraction, narrator/image consumers,
-  successor adapter, affordance integration)** —
-  [clothing-state-graph.plan.md](clothing-state-graph.plan.md) (active; **slices 0–4 — the
-  deterministic substrate — shipped 2026-07-27**, see
-  [roadmap.shipped.md](roadmap.shipped.md)). What remains is the wiring that makes the
-  substrate visible in play: slice 5 replaces free-text wardrobe mutation with grounded
-  typed operations over opaque handles; slice 6 builds the authoritative narrator digest +
-  ranked garment cues and wires effective coverage into exposure and scene images (carries
-  the tuning gate before default-on); slice 7 maps the contracts onto successor items via
-  `item-condition-v1`; slice 8 integrates with body affordances once that parked set
-  promotes. All open questions are resolved (plan §Open questions + audit).
+- **Clothing state graph — remainder: the `CHAT_GARMENT_CUES` tuning run, then slices
+  7–8 (successor adapter, affordance integration)** —
+  [clothing-state-graph.plan.md](clothing-state-graph.plan.md) (active; **slices 0–6
+  shipped 2026-07-27**, see [roadmap.shipped.md](roadmap.shipped.md)). What remains:
+  the owner-gated live-model comparison run that decides whether `CHAT_GARMENT_CUES`
+  (narrator digest + garment cues, env flag, default OFF) flips on — tune
+  contradiction/repetition/concrete-detail/extraction accuracy against the garment-name
+  baseline first; the small pipeline change widening the extraction lane to ensemble
+  members (they still mutate via the legacy bridge); slice 7 mapping the contracts onto
+  successor items via `item-condition-v1`; and slice 8 integrating with body affordances
+  once that parked set promotes.
 
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
   [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly

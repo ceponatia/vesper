@@ -25,6 +25,7 @@ import {
   type GarmentInstanceState,
   type GarmentLocus,
   type GarmentOperation,
+  emptyGarmentCueState,
 } from "./garment-instance";
 import { applyGarmentOperations } from "./garment-presentation";
 import { garmentTemplateForCategory } from "./garment-templates";
@@ -70,7 +71,7 @@ function storeOf(blueprint: GarmentBlueprint, locus: GarmentLocus = WORN): ChatG
     condition: pristineGarmentConditionState(),
     lastChange: { kind: "mint", atMinutes: 0 },
   };
-  return { seeded: true, blueprints: { [hash]: blueprint }, instances: [instance] };
+  return { seeded: true, blueprints: { [hash]: blueprint }, instances: [instance], cues: emptyGarmentCueState() };
 }
 
 function run(store: ChatGarmentStore, operations: readonly GarmentOperation[], atMinutes = 0) {

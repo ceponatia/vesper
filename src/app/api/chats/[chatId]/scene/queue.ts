@@ -12,6 +12,9 @@ import { parseOr } from "@/lib/parse";
 import { startJob } from "@/server/api";
 import { characterChatMessages, db, jobs } from "@/server/db";
 import {
+  buildChatGarmentNarration,
+  chatGarmentCuesEnabled,
+  chatGarmentLookKey,
   enqueueChatPlaceImage,
   loadChatScenario,
   loadChatState,
@@ -134,6 +137,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     // key the render resolves against the cached `chat_look`, and the LAZY place
     // mint — a sketched current place without an image gets one queued on the
     // first render there (fire-and-forget; this render still ships without it).
+    const characterActor = garmentActorForCharacter(args.character.id);
     const lookKey =
       wardrobe && stored
         ? chatLookKey({
@@ -141,7 +145,34 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
             overlay: wardrobe.overlay,
             exposure: wardrobe.exposure,
             attributeOverlays: stored.attributeOverlays,
+            // OQ8's structural fingerprint: without it a rolled sleeve or an open
+            // placket never invalidates the anchor, because the definition-id list
+            // did not move.
+            ...(scenario
+              ? { garmentKey: chatGarmentLookKey(scenario.garments, [characterActor], scenario.clockMinutes) }
+              : {}),
           })
+        : undefined;
+
+    // The per-scene garment facts (slice 6, flag-gated): the same semantic reads the
+    // narrator digest and cue block are built from, in compact form. Not repeat-gated
+    // — an image has no repetition problem, it needs the whole current frame — and
+    // deliberately including the transient bands OQ8 keeps OUT of the identity key.
+    const garmentNotes =
+      scenario && chatGarmentCuesEnabled()
+        ? buildChatGarmentNarration({
+            store: scenario.garments,
+            atMinutes: scenario.clockMinutes,
+            ...(place ? { placeName: place.name } : {}),
+            actors: [
+              {
+                actorId: characterActor,
+                label: args.character.name,
+                possessive: `${args.character.name}'s`,
+                ...(wardrobe ? { visibility: wardrobe.partVisibility } : {}),
+              },
+            ],
+          }).sceneNotes
         : undefined;
     if (place?.sketch && !place.imageId) {
       void enqueueChatPlaceImage({ chatId: args.chatId, characterId: args.character.id, placeName: place.name });
@@ -166,6 +197,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           outfit: wardrobe?.garments ?? "",
           outfitExposed: wardrobe?.exposed ?? false,
           exposure: wardrobe?.exposure,
+          garmentNotes,
           playerExposure: playerWardrobe?.exposure,
           playerAttributes: playerResolved,
           playerProfile,

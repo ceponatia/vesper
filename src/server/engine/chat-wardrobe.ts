@@ -8,6 +8,7 @@ import {
   intimateRegionsBare,
   outfitItems,
   resolveOutfitPreset,
+  resolveWardrobeVisibility,
   wornGarmentInstances,
   type ChatGarmentStore,
   type ChatPlayerState,
@@ -18,6 +19,7 @@ import {
   type GarmentInstanceState,
   type PersonaProfile,
   type RegionExposure,
+  type WornVisibility,
 } from "@/contracts";
 import {
   defaultOutfitPhrase,
@@ -156,6 +158,23 @@ export interface ResolvedChatWardrobe {
   wornItemIds: string[];
   /** The free-text overlay/fallback carried alongside (look-key input). */
   overlay: string;
+  /**
+   * The occlusion verdict per coverage row: `garmentId:partId`, plus a bare
+   * `garmentId` for a garment whose parts cover nothing (slice 6).
+   *
+   * It falls out of the SAME `toWornInputs` pass that computes exposure — no
+   * second resolve, no second truth — and it is what lets the cue ranker honor
+   * "hidden parts cannot produce visual cues" without re-deriving occlusion.
+   * Empty on the free-text path, where there are no parts to hide.
+   */
+  partVisibility: Record<string, WornVisibility>;
+}
+
+/** Per-row occlusion from the shared worn inputs (one pass, reused by exposure). */
+function partVisibilityOf(items: readonly AvatarWardrobeItem[]): Record<string, WornVisibility> {
+  return Object.fromEntries(
+    resolveWardrobeVisibility(toWornInputs(items)).map((view) => [view.instanceId, view.visibility]),
+  );
 }
 
 /**
@@ -222,6 +241,7 @@ export async function resolveChatWardrobe(
       // Only the ids that actually resolved key the look (a deleted item drops out).
       wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
       overlay,
+      partVisibility: partVisibilityOf(items),
     };
   }
   // Free-text / legacy path: heal any id-marker, then decide exposure.
@@ -238,6 +258,7 @@ export async function resolveChatWardrobe(
     exposed,
     wornItemIds: [],
     overlay: healed,
+    partVisibility: {},
   };
 }
 
@@ -267,6 +288,8 @@ export interface ResolvedPlayerWardrobe {
   /** The ids that actually resolved — a deleted item drops out. */
   wornItemIds: string[];
   overlay: string;
+  /** Per-row occlusion, same shape and same source as the character's (slice 6). */
+  partVisibility: Record<string, WornVisibility>;
 }
 
 /**
@@ -315,6 +338,7 @@ export async function resolvePlayerWardrobe(
       exposure: strippedAfterSeeding ? exposedRegions([]) : FULLY_COVERED,
       wornItemIds: [],
       overlay,
+      partVisibility: {},
     };
   }
   return {
@@ -322,5 +346,6 @@ export async function resolvePlayerWardrobe(
     exposure: exposedRegions(toWornInputs(items)),
     wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
     overlay,
+    partVisibility: partVisibilityOf(items),
   };
 }

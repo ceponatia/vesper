@@ -1,14 +1,27 @@
 # Clothing state graph and condition gradients
 
-Status: active — **slices 0–4 shipped 2026-07-27** (the deterministic
-substrate: audit + rulings, contracts, chat instances + migration 0090,
-presentation graph, condition gradients — one commit, built by four Opus
-subagents audit-first; every open question now resolved, see §Open questions).
-**Slices 5–8 remain**: grounded continuity extraction (5), narrator digest +
-cue block + image consumers (6, carries the live-model tuning gate), the
-successor adapter (7), and body-affordance integration (8 — waits on the
-parked companion set per ruling R1). Graduated 2026-07-27 from the deferred
-parking lot, same day as parking; the slice-0 seam map and rulings live in
+Status: active — **slices 0–6 shipped 2026-07-27** (six Opus subagent builds,
+audit-first; every open question resolved, see §Open questions). Slices 0–4
+are the deterministic substrate (contracts, chat instances + migration 0090,
+presentation graph, condition gradients). Slice 5 is the grounded extraction
+lane: the archivist proposes typed operations over enumerated opaque handles
+(~200-token handle table for a 2-actor scene), introduce-mints ride R2's
+guarded template path, and the free-text name matcher survives only as an
+observable degraded bridge (`chat_garments.legacy_outfit_bridge`). Slice 6 is
+the narrator digest + ≤2-cue block **behind `CHAT_GARMENT_CUES` (env,
+default OFF)** — the tuning gate stands: contradiction/repetition/extraction
+accuracy get a live-model comparison run (owner-gated spend) before the flag
+defaults on. The OQ8 `chat_look` pre/post key-comparison trigger shipped
+unconditionally (correctness fix). **Slices 7–8 remain**: the successor
+adapter (7) and body-affordance integration (8 — waits on the parked
+companion set per ruling R1). **Recorded leftovers** from 5/6: ensemble
+members beyond the primary still mutate via the legacy bridge
+(`finalizeChatState` receives roster names, not ids — widening is a small
+pipeline change); the digest/cue scope is primary + player pending the tuning
+run; `repair` is state-tools-only (mark ids are never enumerated to the
+model); preset-by-name matching lives only on the bridge. Graduated
+2026-07-27 from the deferred parking lot, same day as parking; the slice-0
+seam map and rulings live in
 [clothing-state-graph.audit.md](clothing-state-graph.audit.md). This plan is
 the upstream wardrobe-truth prerequisite for the still-parked
 body-attribute-affordances companion set — promoted alone, per ruling R1.

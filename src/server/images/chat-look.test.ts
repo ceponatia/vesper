@@ -38,6 +38,20 @@ describe("chatLookKey (chat-wardrobe-parity — structured key)", () => {
     ).not.toBe(key);
   });
 
+  it("folds in the garment fingerprint (OQ8) without invalidating an unmodelled chat's key", () => {
+    const key = chatLookKey(base);
+    // An unmodelled chat contributes "" — the hash is byte-identical to before
+    // slice 6, so no cached `chat_look` invalidates just because the field exists.
+    expect(chatLookKey({ ...base, garmentKey: "" })).toBe(key);
+    expect(chatLookKey({ ...base, garmentKey: "   " })).toBe(key);
+    // A structural arrangement change moves the key even though the id list did not:
+    // this is the whole reason the fingerprint had to enter here (audit finding 4).
+    expect(chatLookKey({ ...base, garmentKey: "g1|sleeve_left=rolled||" })).not.toBe(key);
+    expect(chatLookKey({ ...base, garmentKey: "g1|sleeve_left=rolled||" })).not.toBe(
+      chatLookKey({ ...base, garmentKey: "g1|sleeve_left=down||" }),
+    );
+  });
+
   it("a legacy free-text chat (empty worn list) keys on the overlay alone — stable across the change", () => {
     const legacy = { wornItemIds: [], overlay: "a linen sundress", exposure: FULLY_COVERED, attributeOverlays: [] };
     expect(chatLookKey(legacy)).toBe(chatLookKey({ ...legacy, overlay: "  A Linen Sundress " }));

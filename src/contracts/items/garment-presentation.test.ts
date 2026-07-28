@@ -11,6 +11,7 @@ import {
   type GarmentLocus,
   type GarmentOperation,
   type GarmentPresentationState,
+  emptyGarmentCueState,
 } from "./garment-instance";
 import {
   applyGarmentOperations,
@@ -55,7 +56,12 @@ function instance(id: string, blueprint: GarmentBlueprint, locus: GarmentLocus):
 function storeOf(...entries: readonly (readonly [string, GarmentBlueprint, GarmentLocus])[]): ChatGarmentStore {
   const blueprints: Record<string, GarmentBlueprint> = {};
   for (const [, blueprint] of entries) blueprints[garmentBlueprintHash(blueprint)] = blueprint;
-  return { seeded: true, blueprints, instances: entries.map(([id, blueprint, locus]) => instance(id, blueprint, locus)) };
+  return {
+    seeded: true,
+    blueprints,
+    instances: entries.map(([id, blueprint, locus]) => instance(id, blueprint, locus)),
+    cues: emptyGarmentCueState(),
+  };
 }
 
 const WORN: GarmentLocus = { kind: "worn", actorId: "c:alice" };

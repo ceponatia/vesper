@@ -106,6 +106,26 @@ export function chatPromptLayout(): ChatPromptLayout {
   return process.env.CHAT_PROMPT_LAYOUT === "turn_context" ? "turn_context" : "system_tail";
 }
 
+/**
+ * The GARMENT NARRATION switch (clothing-state-graph.plan.md slice 6) —
+ * experimental, default-off, exactly like `CHAT_PROMPT_LAYOUT` above and for the
+ * same reason: the slice carries a live-model tuning gate ("tune contradiction,
+ * repetition, concrete-detail, and extraction accuracy before enabling by
+ * default") and that eval spend is owner-gated.
+ *
+ * OFF (the default, and anything other than `on`) is today's behavior to the
+ * byte: no authoritative wardrobe digest, no garment cue block, no garment notes
+ * on the scene-image prompt. ON adds all three. Env-only, no dev route.
+ *
+ * Note what is NOT behind it: OQ8's pre/post look-key comparison ships either
+ * way. That is a correctness fix — the enqueue was proposal-triggered, so a
+ * structural wardrobe change could leave the `chat_look` anchor silently stale
+ * (audit wrong-assumption 4) — not a prompt experiment.
+ */
+export function chatGarmentCuesEnabled(): boolean {
+  return process.env.CHAT_GARMENT_CUES === "on";
+}
+
 /** Max characters of player input echoed inside agent prompts. */
 export const AGENT_INPUT_CAP = 2000;
 /** Max characters of narration echoed inside agent prompts. */

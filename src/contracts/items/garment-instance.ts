@@ -323,6 +323,54 @@ export const garmentInstanceStateSchema = z.object({
 });
 export type GarmentInstanceState = z.infer<typeof garmentInstanceStateSchema>;
 
+// --- Cue memory (slice 6) -----------------------------------------------------
+
+/** Max entries any one cue-memory record retains (oldest keys drop on overflow). */
+export const GARMENT_CUE_MEMORY_MAX = 48;
+
+const cueKeySchema = z.string().trim().min(1).max(160);
+const cueBandSchema = z.string().trim().min(1).max(40);
+
+/** Bound one cue-memory record — the same slice-the-entries shape the blueprint map uses. */
+function capCueRecord<T>(record: Record<string, T>): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).slice(0, GARMENT_CUE_MEMORY_MAX));
+}
+
+/**
+ * What the narrator has already SAID about the wardrobe, and the bands it said it
+ * in (clothing-state-graph.plan.md §"Narration and image policy"; audit §1.6).
+ *
+ * It lives inside the store rather than beside it for exactly one reason: fixture
+ * F13 requires a retake to restore "instances, blueprint map, presentation,
+ * condition, `integratedAt`, **and the observation repeat-key map**" identically.
+ * Riding the same JSONB value as the state it describes makes that structural —
+ * mention history can never be restored one exchange out of step with the
+ * garments it mentions, and no second rollback anchor exists to drift.
+ *
+ * Three records, all flat `key → band` maps so a change is a string compare:
+ *
+ * - `cues` — `garment:part:kind` → the band last surfaced (the plan's `repeatKey`
+ *   minus its band suffix, exactly the `surfacedCues` shape);
+ * - `bands` — `garmentId` → the condition bands last REPORTED, which is the
+ *   durable home slice 4's `hystereticGarmentConditionBand` asks for, so a value
+ *   parked on a boundary cannot alternate damp/wet between exchanges;
+ * - `changedAt` — `garment:part:kind` → the chat-clock minute that band last moved.
+ */
+export const garmentCueStateSchema = z.object({
+  cues: z.record(cueKeySchema, cueBandSchema).catch({}).default({}).transform(capCueRecord),
+  // Keyed by `GarmentConditionKey`, but typed as a plain string record on purpose:
+  // an enum-keyed `z.record` is TOTAL in zod, and a garment that reported only
+  // `wetness` must not round-trip as claiming all four channels.
+  bands: z.record(cueKeySchema, z.record(cueKeySchema, cueBandSchema).catch({})).catch({}).default({}).transform(capCueRecord),
+  changedAt: z.record(cueKeySchema, storyMinutesSchema).catch({}).default({}).transform(capCueRecord),
+});
+export type GarmentCueState = z.infer<typeof garmentCueStateSchema>;
+
+/** No mention history yet — the degraded default and the pre-seed value. */
+export function emptyGarmentCueState(): GarmentCueState {
+  return { cues: {}, bands: {}, changedAt: {} };
+}
+
 // --- Chat-wide store ----------------------------------------------------------
 
 /**
@@ -347,12 +395,14 @@ export const chatGarmentStoreSchema = z.object({
     .catch([])
     .default([])
     .transform((instances) => capGarmentInstances(instances)),
+  /** Narrator mention history + reported bands (slice 6) — see `garmentCueStateSchema`. */
+  cues: garmentCueStateSchema.catch(emptyGarmentCueState()).default(emptyGarmentCueState()),
 });
 export type ChatGarmentStore = z.infer<typeof chatGarmentStoreSchema>;
 
 /** The empty store — the degraded default and the pre-seed value. */
 export function emptyChatGarmentStore(): ChatGarmentStore {
-  return { seeded: false, blueprints: {}, instances: [] };
+  return { seeded: false, blueprints: {}, instances: [], cues: emptyGarmentCueState() };
 }
 
 /**

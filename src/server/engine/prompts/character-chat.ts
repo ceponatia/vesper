@@ -151,6 +151,23 @@ export interface CharacterChatPromptInput {
     /** Whether the outfit reads more exposed than usual (tone hint only). */
     outfitExposed?: boolean;
     /**
+     * The AUTHORITATIVE wardrobe digest (clothing-state-graph slice 6, behind
+     * `CHAT_GARMENT_CUES`): who is wearing what, how each piece currently sits, and
+     * what is lying around the room — pre-rendered by the pipeline via
+     * `renderGarmentDigest`, the same way `rhythm` and `storyMoment` are. It
+     * COMPLEMENTS the `outfit` phrase rather than replacing it: the phrase is what
+     * she looks like, this is what the narrator may not contradict. Absent/"" ⇒ no
+     * block (the flag-off default, byte-identical to today).
+     */
+    garmentDigest?: string;
+    /**
+     * The bounded garment CUE block (slice 6): ≤2 ranked, perception-safe, already
+     * repeat-gated observations for this exchange. Distinct from the digest as
+     * attention is from authority — a fresh cue means something actually changed.
+     * Absent/empty ⇒ no block.
+     */
+    garmentCues?: string[];
+    /**
      * The character's unfinished business (character-chat-standalone.spec.md §6.2) —
      * rendered as a standing "Unfinished business" state line (never-recite discipline),
      * so long conversations get narrative pull, not just recall. Absent/empty ⇒ no line.
@@ -753,6 +770,21 @@ function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>
   if (foreground) {
     blocks.push(
       `Right now this is shifting: ${foreground.hint} Mark it once, in action, as it changes — then let it ride; don't restate it on later turns.`,
+    );
+  }
+  // The wardrobe digest + cue block (clothing-state-graph slice 6, `CHAT_GARMENT_CUES`).
+  // AUTHORITY then ATTENTION, in that order and deliberately separate: the digest is a
+  // state guard the narrator may never contradict, the cues are the one or two details
+  // that earned a mention this turn. Both absent when the flag is off, which is what
+  // keeps this section byte-identical to today.
+  const digest = state.garmentDigest?.trim();
+  if (digest) blocks.push(digest);
+  const garmentCues = (state.garmentCues ?? []).map((cue) => cue.trim()).filter(Boolean);
+  if (garmentCues.length) {
+    blocks.push(
+      `Worth noticing about the clothes this turn (weave at most one into the beat, in action — never a head-to-toe inventory, never restated once said):\n${garmentCues
+        .map((cue) => `- ${cue}`)
+        .join("\n")}`,
     );
   }
   return blocks.join("\n\n");

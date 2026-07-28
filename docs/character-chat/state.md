@@ -165,8 +165,21 @@ autonomously, drying at a material-scaled rate via the shared `lib/fixed-point.t
   restore blueprints, loci, presentation, and gradients byte-identically (int-tested).
 - **`outfit_exposed` demoted.** Authoritative only for unmodelled actors (no instances);
   a modelled actor's exposure always derives from coverage.
-- **Still to come** (plan slices 5–8): grounded continuity extraction over opaque
-  handles, the narrator digest + ranked garment cues, the successor adapter, and the
+- **The extraction lane** (slice 5): the archivist proposes typed garment operations
+  over opaque handles the prompt enumerates (`mara.shirt.sleeve_left` — ~200 tokens
+  for a 2-actor scene), resolved and applied through the dispatcher in fiction order;
+  unresolved handles drop with diagnostics, ad-hoc garments mint from category
+  templates (ruling R2), and the old free-text fold runs only as a degraded bridge
+  (`chat_garments.legacy_outfit_bridge`) — currently still the path for ensemble
+  members beyond the primary. Per-exchange traces surface in the admin inspector.
+- **Narration** (slice 6, behind `CHAT_GARMENT_CUES`, default OFF until the tuning
+  run): an authoritative per-actor digest (placement + structural presentation, bands
+  only) plus at most two ranked, perception-gated garment cues with repeat-key
+  gating; the cue/band memory lives at `ChatGarmentStore.cues` so it rides the same
+  rollback anchor as the store. The `chat_look` refresh now triggers on a pre/post
+  garment fingerprint comparison (worn set, structural bands, wet-and-above,
+  deposit/damage presence) regardless of the flag.
+- **Still to come** (plan slices 7–8): the successor adapter and the
   body-affordance integration.
 
 ### The player's wardrobe
