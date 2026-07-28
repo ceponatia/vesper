@@ -327,7 +327,20 @@ runtime frame.
   release; adhesion stays fixture-only — Slice 0 ruling 2026-07-28).
 - Whether wet darkening needs per-color lightness metadata or only a relative
   semantic tag (default: relative tag until proven insufficient).
-- Calibration tables and thresholds after fixture testing.
+
+## Resolved (Slices 2–3, 2026-07-28)
+
+- **Initial calibration tables and thresholds** ship in code, fixture-proven
+  against the four worked cases and full-lattice monotonicity sweeps:
+  per-axis contributions in
+  `src/contracts/affordances/domains/hair/attribute-maps/`, the
+  arrangement → bound/pinned table and derived-mechanics constants in
+  `domains/hair/mechanics.ts`, and the per-phenomenon bands/gates in
+  `domains/hair/phenomena/`. Two calibration laws worth knowing: hair at
+  ≥ ~75% wetness never moves as a whole (a strong gust may still stir
+  exposed ends), and `pinned` is checked before `bound` so a bun reports
+  `pinned` while braid/ponytail report `bound`. The slice-5 narrator trial
+  may retune numbers; the laws and the worked-case behavior are fixed.
 
 ## Resolved (Slice 0, 2026-07-28)
 
