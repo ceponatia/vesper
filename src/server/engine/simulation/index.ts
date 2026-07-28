@@ -64,6 +64,11 @@ export {
   type SimCommandDenialReason,
 } from "./command-authz";
 export {
+  LEGACY_ENGINE_TEST_PLAYER_ENV,
+  LEGACY_ENGINE_TEST_PLAYER_ID,
+  legacyUnanchoredEngineTestMode,
+} from "./legacy-test-mode";
+export {
   readDurableCommitments,
   submitDurableCreateCommitment,
   submitDurableRaisePressure,

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import type { PrincipalKind } from "@/contracts/simulation/envelopes";
 import { characterChats, type Db, users } from "@/server/db";
 import { log } from "@/server/log";
-import { legacyUnanchoredEngineTestMode } from "@/server/test-support";
+import { legacyUnanchoredEngineTestMode } from "./legacy-test-mode";
 
 /**
  * The durable command layer's own ownership gate (security-authz.plan.md
