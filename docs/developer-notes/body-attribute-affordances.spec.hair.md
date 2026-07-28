@@ -323,10 +323,34 @@ runtime frame.
 
 ## Open questions
 
-- Final `hair.quality` split and stored-value sweep.
-- Which authoring/presentation system owns `HairPresentationState`.
-- First authoritative coarse hair/body contact producer.
+- First authoritative coarse hair/body contact producer (unowned this
+  release; adhesion stays fixture-only — Slice 0 ruling 2026-07-28).
 - Whether wet darkening needs per-color lightness metadata or only a relative
-  semantic tag.
-- Exact chat/successor frame-adapter and cut-capture seams.
+  semantic tag (default: relative tag until proven insufficient).
 - Calibration tables and thresholds after fixture testing.
+
+## Resolved (Slice 0, 2026-07-28)
+
+- **`hair.quality` split**: removed outright (it had zero code consumers) and
+  replaced by executable axes `hair.density` (sparse/medium/dense, inherent,
+  render-visual), `hair.strand_thickness` (fine/medium/thick, inherent), and
+  `hair.condition` (silky/smooth/healthy/dry/frizzy/brittle/straw_like,
+  mutable). Stored values sweep away via the idempotent
+  `scripts/sweep-renamed-attribute-values.ts` removal lane; existing
+  characters keep blank new axes (owner ruling) and author them through the
+  registry-driven character form.
+- **`HairPresentationState` ownership**: `arrangement` is the new
+  `hair.arrangement` enum attribute (presentation kind, mutable, default
+  `loose`), updated live by the archivist `attributeChanges` lane;
+  `boundFraction`/`pinnedFraction` derive from arrangement via a calibration
+  table inside the hair domain; `coveredFraction` derives from headwear
+  garment coverage of the `hair` body location. Free-text `hair.style`
+  remains display-only.
+- **Chat frame-adapter and capture seams**: the frame assembles from
+  committed pre-narration state in the chat pipeline (the
+  `buildChatGarmentNarration` slot); wetness lives on `ChatState`, the
+  environment read on `ChatScenario`, and the affordance cue/repeat memory
+  rides the rolled-back state exactly as garment `cueState` does, so retakes
+  recompute the identical read from the restored anchors. The successor
+  adapter + narrative-cut capture is a named follow-up (see the audit's
+  source map).

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { attributeRegistry } from "../src/contracts/attributes";
 import {
+  ID_REMOVALS,
   ID_RENAMES,
   VALUE_RENAMES,
+  isRemovedId,
   remapIdValue,
   sweepAttributeValueList,
   sweepConditionList,
@@ -42,6 +44,31 @@ describe("sweep rename tables target valid registry values", () => {
     // on a value that's still legal in the split attribute's vocabulary.
     for (const value of ["tucked", "even", "asymmetric"]) {
       expect(attributeRegistry.parseValue("vulva.labia_minora", value).ok, value).toBe(true);
+    }
+  });
+});
+
+describe("ID_REMOVALS", () => {
+  it("lists only ids that are genuinely gone from the registry", () => {
+    // The dangerous mistake is listing a LIVE id — the sweep would delete good
+    // data. A removal is only legal once the definition is actually deleted.
+    for (const id of ID_REMOVALS) {
+      expect(attributeRegistry.byId(id), id).toBeUndefined();
+    }
+  });
+
+  it("covers the retired hair.quality axis but not its successors", () => {
+    expect(isRemovedId("hair.quality")).toBe(true);
+    for (const id of ["hair.density", "hair.strand_thickness", "hair.condition", "hair.arrangement"]) {
+      expect(attributeRegistry.byId(id), id).toBeDefined();
+      expect(isRemovedId(id), id).toBe(false);
+    }
+  });
+
+  it("never overlaps the rename tables — an id is renamed or removed, not both", () => {
+    for (const id of ID_REMOVALS) {
+      expect(ID_RENAMES[id], id).toBeUndefined();
+      expect(VALUE_RENAMES[id], id).toBeUndefined();
     }
   });
 });
@@ -126,6 +153,26 @@ describe("sweepAttributeValueList", () => {
     const second = sweepAttributeValueList(first.next);
     expect(second.changes).toBe(0);
   });
+
+  it("drops entries under a removed id and keeps the rest in order", () => {
+    const { next, changes } = sweepAttributeValueList([
+      { id: "hair.color", value: "auburn", source: "base" },
+      { id: "hair.quality", value: "silky", source: "manual", note: "gone with the axis" },
+      { id: "hair.texture", value: "wavy", source: "creation" },
+    ]);
+    expect(changes).toBe(1);
+    expect(next).toEqual([
+      { id: "hair.color", value: "auburn", source: "base" },
+      { id: "hair.texture", value: "wavy", source: "creation" },
+    ]);
+  });
+
+  it("a removal sweep is idempotent — nothing left to drop on a second pass", () => {
+    const first = sweepAttributeValueList([{ id: "hair.quality", value: "coarse", source: "creation" }]);
+    expect(first.changes).toBe(1);
+    expect(first.next).toEqual([]);
+    expect(sweepAttributeValueList(first.next).changes).toBe(0);
+  });
 });
 
 describe("sweepConditionList", () => {
@@ -142,6 +189,27 @@ describe("sweepConditionList", () => {
     expect(next).toEqual([
       { id: "sweaty_feet", label: "Sweaty feet", attributeEffects: [{ attributeId: "feet.smell", value: "sour_sweat" }] },
       { id: "blindfolded", label: "Blindfolded", attributeEffects: [] },
+    ]);
+  });
+
+  it("drops an effect on a removed id but keeps the condition itself", () => {
+    const { next, changes } = sweepConditionList([
+      {
+        id: "rain_soaked",
+        label: "Rain-soaked",
+        attributeEffects: [
+          { attributeId: "hair.quality", value: "straw_like" },
+          { attributeId: "skin.texture", value: "smooth" },
+        ],
+      },
+    ]);
+    expect(changes).toBe(1);
+    expect(next).toEqual([
+      {
+        id: "rain_soaked",
+        label: "Rain-soaked",
+        attributeEffects: [{ attributeId: "skin.texture", value: "smooth" }],
+      },
     ]);
   });
 });
@@ -168,6 +236,26 @@ describe("sweepProfile / sweepParticipantState", () => {
       meters: {},
     });
     expect(changes).toBe(2);
+  });
+
+  it("sweeps a persona-shaped profile through the same core (personas.profile site)", () => {
+    // PersonaProfile is a narrow pick of CharacterProfile with the identical
+    // top-level `attributes` array — one function serves both tables.
+    const { next, changes } = sweepProfile({
+      bio: "your own body",
+      speciesId: "human",
+      intimateRegions: [],
+      outfits: [],
+      attributes: [
+        { id: "hair.quality", value: "glossy", source: "manual" },
+        { id: "build.frame", value: "willowy", source: "manual" },
+      ],
+    });
+    expect(changes).toBe(2);
+    expect(next).toMatchObject({
+      bio: "your own body",
+      attributes: [{ id: "build.frame", value: "slight", source: "manual" }],
+    });
   });
 
   it("leaves a clean profile untouched by reference", () => {

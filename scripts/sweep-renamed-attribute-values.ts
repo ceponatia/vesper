@@ -1,11 +1,13 @@
 import "dotenv/config";
 import { fileURLToPath } from "node:url";
 import { and, eq } from "drizzle-orm";
-import { characterChatState, characters, db } from "../src/server/db";
+import { characterChatState, characters, db, personas } from "../src/server/db";
 
 /**
- * One-off, idempotent stored-value sweep for the attribute-narrator-guidance
- * vocabulary audit (attribute-narrator-guidance.plan.md, slice 3).
+ * One-off, idempotent stored-value sweep for registry vocabulary changes —
+ * originally the attribute-narrator-guidance vocabulary audit
+ * (attribute-narrator-guidance.plan.md, slice 3), extended since for each
+ * subsequent rename/removal.
  *
  * The entangled-vocabulary renames were made as REGISTRY data edits in prior
  * sessions (never a schema migration — registries are the extension point), but
@@ -31,10 +33,20 @@ import { characterChatState, characters, db } from "../src/server/db";
  *     vulva.labia_minora, mapping prominent → protruding (tucked / even /
  *     asymmetric already survive unchanged under the new id).
  *
+ * REMOVALS (`ID_REMOVALS`) are the other half: an attribute deleted from the
+ * registry with no successor value. There is nothing to map to, so the stored
+ * pair is DROPPED rather than rewritten:
+ *
+ *   hair.quality (2026-07-28 hair-axis split, body-attribute-affordances.spec.hair.md):
+ *     the entangled feel/condition axis was replaced by hair.density,
+ *     hair.strand_thickness, and hair.condition. Owner ruling: no value
+ *     backfill — the new axes start blank and are authored by hand.
+ *
  * Storage sites swept (every place an AttributeValue / condition effect persists):
  *   1. characters.profile.attributes                       — library base values
- *   2. character_chat_state.attributeOverlays              — chat runtime overlays
- *   3. character_chat_state.conditions[].attributeEffects  — chat condition effects
+ *   2. personas.profile.attributes                         — persona (player body) base values
+ *   3. character_chat_state.attributeOverlays              — chat runtime overlays
+ *   4. character_chat_state.conditions[].attributeEffects  — chat condition effects
  *
  *   pnpm tsx scripts/sweep-renamed-attribute-values.ts [--dry-run]
  *
@@ -89,6 +101,19 @@ export const ID_RENAMES: Readonly<Record<string, { readonly newId: string; reado
   },
 };
 
+/**
+ * Attribute ids deleted from the registry with NO successor. Unlike a rename
+ * there is nothing to map to, so every swept site drops the stored pair whole.
+ * Only list an id the owner has ruled needs no value backfill — a dropped value
+ * is unrecoverable.
+ */
+export const ID_REMOVALS: readonly string[] = ["hair.quality"];
+
+/** Whether a stored attribute id has been removed from the registry outright. */
+export function isRemovedId(id: string): boolean {
+  return ID_REMOVALS.includes(id);
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -120,6 +145,8 @@ function mapValue(value: unknown, valueMap: Readonly<Record<string, string>> | u
  * Pure core: remap one `(attribute id, value)` pair to its canonical form.
  * Returns the possibly-new id + value and whether anything changed. Handles both
  * id renames (id changes, value optionally remapped) and same-id value renames.
+ * Removals are NOT expressible here (there is no pair to return) — each sweep
+ * site checks `isRemovedId` first and drops the entry.
  */
 export function remapIdValue(id: string, value: unknown): { id: string; value: unknown; changed: boolean } {
   const idRename = ID_RENAMES[id];
@@ -134,25 +161,37 @@ export function remapIdValue(id: string, value: unknown): { id: string; value: u
 /**
  * Sweep an `AttributeValue[]`-shaped JSONB array (elements carry `id` + `value`,
  * plus provenance fields we preserve verbatim). Non-conforming elements pass
- * through untouched.
+ * through untouched; entries under an `ID_REMOVALS` id are dropped.
  */
 export function sweepAttributeValueList(raw: unknown): { next: unknown; changes: number } {
   if (!Array.isArray(raw)) return { next: raw, changes: 0 };
   let changes = 0;
-  const next = raw.map((el: unknown) => {
-    if (!isRecord(el) || typeof el.id !== "string") return el;
+  const next: unknown[] = [];
+  for (const el of raw as readonly unknown[]) {
+    if (!isRecord(el) || typeof el.id !== "string") {
+      next.push(el);
+      continue;
+    }
+    if (isRemovedId(el.id)) {
+      changes += 1;
+      continue;
+    }
     const { id, value, changed } = remapIdValue(el.id, el.value);
-    if (!changed) return el;
+    if (!changed) {
+      next.push(el);
+      continue;
+    }
     changes += 1;
-    return { ...el, id, value };
-  });
+    next.push({ ...el, id, value });
+  }
   return changes > 0 ? { next, changes } : { next: raw, changes: 0 };
 }
 
 /**
  * Sweep an `ActiveCondition[]`-shaped JSONB array — the renames can live inside
  * each condition's `attributeEffects` (`{ attributeId, value }`), e.g. a sweaty-
- * feet condition overlaying `feet.smell`.
+ * feet condition overlaying `feet.smell`. Effects on a removed id are dropped;
+ * the condition itself always survives (an effect list may legitimately be empty).
  */
 export function sweepConditionList(raw: unknown): { next: unknown; changes: number } {
   if (!Array.isArray(raw)) return { next: raw, changes: 0 };
@@ -160,13 +199,24 @@ export function sweepConditionList(raw: unknown): { next: unknown; changes: numb
   const next = raw.map((cond: unknown) => {
     if (!isRecord(cond) || !Array.isArray(cond.attributeEffects)) return cond;
     let effectChanges = 0;
-    const effects = cond.attributeEffects.map((eff: unknown) => {
-      if (!isRecord(eff) || typeof eff.attributeId !== "string") return eff;
+    const effects: unknown[] = [];
+    for (const eff of cond.attributeEffects as readonly unknown[]) {
+      if (!isRecord(eff) || typeof eff.attributeId !== "string") {
+        effects.push(eff);
+        continue;
+      }
+      if (isRemovedId(eff.attributeId)) {
+        effectChanges += 1;
+        continue;
+      }
       const { id, value, changed } = remapIdValue(eff.attributeId, eff.value);
-      if (!changed) return eff;
+      if (!changed) {
+        effects.push(eff);
+        continue;
+      }
       effectChanges += 1;
-      return { ...eff, attributeId: id, value };
-    });
+      effects.push({ ...eff, attributeId: id, value });
+    }
     if (effectChanges === 0) return cond;
     changes += effectChanges;
     return { ...cond, attributeEffects: effects };
@@ -174,7 +224,12 @@ export function sweepConditionList(raw: unknown): { next: unknown; changes: numb
   return changes > 0 ? { next, changes } : { next: raw, changes: 0 };
 }
 
-/** Sweep a `CharacterProfile`-shaped JSONB blob's `attributes` base array. */
+/**
+ * Sweep a profile-shaped JSONB blob's `attributes` base array. Serves both
+ * `characters.profile` (CharacterProfile) and `personas.profile`
+ * (PersonaProfile) — the persona schema is a narrow pick of the character one
+ * and carries the identical top-level `attributes: AttributeValue[]`.
+ */
 export function sweepProfile(raw: unknown): { next: unknown; changes: number } {
   if (!isRecord(raw)) return { next: raw, changes: 0 };
   const { next: attributes, changes } = sweepAttributeValueList(raw.attributes);
@@ -200,15 +255,37 @@ async function main(): Promise<void> {
     t.changes += changes;
   };
 
-  // 1: characters.profile — library base values.
-  for (const row of await db().select({ id: characters.id, blob: characters.profile }).from(characters)) {
-    const { next, changes } = sweepProfile(row.blob);
-    if (changes === 0) continue;
-    bump("characters.profile", changes);
-    if (!dryRun) await db().update(characters).set({ profile: next }).where(eq(characters.id, row.id));
-  }
+  // 1 + 2: characters.profile and personas.profile — the two library base-value
+  // blobs. Same `attributes` array shape, so one loop drives both tables.
+  const sweepProfileRows = async (
+    site: string,
+    rows: readonly { id: string; blob: unknown }[],
+    write: (id: string, next: unknown) => Promise<void>,
+  ): Promise<void> => {
+    for (const row of rows) {
+      const { next, changes } = sweepProfile(row.blob);
+      if (changes === 0) continue;
+      bump(site, changes);
+      if (!dryRun) await write(row.id, next);
+    }
+  };
 
-  // 2 + 3: character_chat_state (attribute overlays column + conditions column).
+  await sweepProfileRows(
+    "characters.profile",
+    await db().select({ id: characters.id, blob: characters.profile }).from(characters),
+    async (id, next) => {
+      await db().update(characters).set({ profile: next }).where(eq(characters.id, id));
+    },
+  );
+  await sweepProfileRows(
+    "personas.profile",
+    await db().select({ id: personas.id, blob: personas.profile }).from(personas),
+    async (id, next) => {
+      await db().update(personas).set({ profile: next }).where(eq(personas.id, id));
+    },
+  );
+
+  // 3 + 4: character_chat_state (attribute overlays column + conditions column).
   const chatStates = await db()
     .select({
       chatId: characterChatState.chatId,
