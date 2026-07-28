@@ -1,20 +1,11 @@
 import { eq, sql } from "drizzle-orm";
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { characterProfileSchema } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { replyTakesSchema } from "@/server/engine";
-import {
-  characterChats,
-  characterChatMessages,
-  characters,
-  db,
-  simBranches,
-  simEvents,
-  simWorlds,
-  users,
-} from "@/server/db";
+import { characterChatMessages, db, simBranches, simEvents } from "@/server/db";
 
 /**
  * Routing parity (presentation-charter.plan.md §4; engine.spec.operations.md §39
@@ -23,88 +14,68 @@ import {
  * calls (the deterministic render). Self-skips without a database.
  */
 
-process.env.AI_FAKE = "1";
-
 const authState = vi.hoisted(() => ({
-  user: { id: "", email: "", name: "Routing Parity", role: "user" as "admin" | "user" },
+  user: { id: "", email: "", name: "Routing Parity", role: "user" as const },
 }));
 
-vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
-  getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
+import {
+  apiRequest,
+  drainStream,
+  dropRoutedSimChat,
+  emptyRoutedSimChat,
+  expectApiError,
+  expectJson,
+  probeIntegrationDb,
+  routeCtx,
+  seedRoutedSimChat,
+} from "@/server/test-support";
 import { GET as chatGet, POST as chatSend } from "./route";
 import { POST as successorCreate } from "../../successor-chats/route";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from character_chats limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(
-      `[sim-routing.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("sim-routing.int.test", "character_chats");
 
-const ready = await probe();
-const ctx = (chatId: string) => ({ params: Promise.resolve({ chatId }) });
-function jsonReq(path: string, body: unknown): NextRequest {
-  return new NextRequest(`http://t${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
+const ctx = (chatId: string) => routeCtx({ chatId });
+const jsonReq = (path: string, body: unknown): NextRequest => apiRequest(path, { body });
 
 const cutIdMetaSchema = z.object({ cutId: z.string().catch("") }).catch({ cutId: "" });
-const ids = { user: "", characterId: "" };
+let fixture = emptyRoutedSimChat();
+/** Worlds the successor-chat provisioning minted below — each one is this suite's own. */
 const worldIds: string[] = [];
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `routing-parity-${stamp}@test.local`, name: "Routing Parity" })
-    .returning();
-  if (!user) throw new Error("failed to create test user");
-  authState.user = { ...authState.user, id: user.id, email: user.email };
-  ids.user = user.id;
-  const profile = characterProfileSchema.parse({ playerRelationship: { familiarity: "close", regard: "warm" } });
-  const [character] = await db().insert(characters).values({ ownerId: user.id, name: "Abigail", profile }).returning();
-  if (!character) throw new Error("failed to seed character");
-  ids.characterId = character.id;
+  // Every conversation here is born through `POST /api/successor-chats`, which
+  // provisions its OWN world — so this suite neither seeds nor clears the shared
+  // fixed rollout world.
+  fixture = await seedRoutedSimChat({
+    slug: "routing-parity",
+    authState,
+    characterName: "Abigail",
+    profile: characterProfileSchema.parse({ playerRelationship: { familiarity: "close", regard: "warm" } }),
+    chats: 0,
+    clearWorld: false,
+    seedWorld: false,
+  });
 });
 
 afterAll(async () => {
-  if (!ready || !ids.user) return;
-  for (const worldId of worldIds) await db().delete(simWorlds).where(eq(simWorlds.id, worldId));
-  await db().delete(characterChats).where(eq(characterChats.ownerId, ids.user));
-  await db().delete(characters).where(eq(characters.ownerId, ids.user));
-  await db().delete(users).where(eq(users.id, ids.user));
+  if (!ready || !fixture.userId) return;
+  await dropRoutedSimChat(fixture, { worldIds, rolloutWorld: false });
 });
 
 async function provision(title: string): Promise<{ chatId: string; branchId: string }> {
   const created = await successorCreate(
     // slice 3: `requestId` is the required per-intent idempotency key.
-    jsonReq("/api/successor-chats", { characterId: ids.characterId, title, requestId: `routing-${title.toLowerCase().replace(/\s+/gu, "-")}-${Date.now()}` }),
-    { params: Promise.resolve({}) },
+    jsonReq("/api/successor-chats", {
+      characterId: fixture.characterId,
+      title,
+      requestId: `routing-${title.toLowerCase().replace(/\s+/gu, "-")}-${Date.now()}`,
+    }),
+    routeCtx(),
   );
-  expect(created.status).toBe(201);
-  const body = (await created.json()) as { id: string; worldId: string; branchId: string };
+  const body = await expectJson<{ id: string; worldId: string; branchId: string }>(created, 201);
   worldIds.push(body.worldId);
   return { chatId: body.id, branchId: body.branchId };
 }
@@ -112,7 +83,7 @@ async function provision(title: string): Promise<{ chatId: string; branchId: str
 /** Post one exchange and drain the stream so the reply settles server-side. */
 async function post(chatId: string, body: unknown): Promise<Response> {
   const res = await chatSend(jsonReq(`/api/chats/${chatId}`, body), ctx(chatId));
-  if (res.body) await res.text();
+  if (res.body) await drainStream(res);
   return res;
 }
 
@@ -210,9 +181,9 @@ describe.runIf(ready)("sim routing parity", () => {
   it("refuses attachments and legacy action chips with 409 and no writes", async () => {
     const { chatId } = await provision("Refuse Test");
     // The GET envelope's client-facing routing flag (the UI hides the affordances off it).
-    const envelope = (await (await chatGet(new NextRequest(`http://t/api/chats/${chatId}`), ctx(chatId))).json()) as {
-      chat: { simRouted: boolean };
-    };
+    const envelope = await expectJson<{ chat: { simRouted: boolean } }>(
+      await chatGet(apiRequest(`/api/chats/${chatId}`), ctx(chatId)),
+    );
     expect(envelope.chat.simRouted).toBe(true);
 
     expect((await post(chatId, { kind: "send", content: "Hi." })).status).toBe(200);
@@ -222,13 +193,11 @@ describe.runIf(ready)("sim routing parity", () => {
       jsonReq(`/api/chats/${chatId}`, { kind: "send", content: "look at this", attachmentIds: ["not-a-real-upload"] }),
       ctx(chatId),
     );
-    expect(att.status).toBe(409);
-    expect(((await att.json()) as { error: { code: string } }).error.code).toBe("sim_unsupported_operation");
+    await expectApiError(att, 409, "sim_unsupported_operation");
     expect((await messageRoles(chatId)).length).toBe(before); // nothing written
 
     const act = await chatSend(jsonReq(`/api/chats/${chatId}`, { kind: "action_beat", action: "rest" }), ctx(chatId));
-    expect(act.status).toBe(409);
-    expect(((await act.json()) as { error: { code: string } }).error.code).toBe("sim_unsupported_operation");
+    await expectApiError(act, 409, "sim_unsupported_operation");
     expect((await messageRoles(chatId)).length).toBe(before); // nothing written
   });
 });

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   consumeItemCommandSchema,
   destroyItemCommandSchema,
-  itemLocusSchema,
   itemTransferredEventSchema,
   materialsProjectionSchema,
   setItemOwnershipCommandSchema,
@@ -17,19 +16,24 @@ import {
   type SimulationMaterialItemInput,
   type TransferItemCommandInput,
 } from "@/contracts/simulation/materials";
-import {
-  bodyInitializedEventSchema,
-  bodyMeterDefinitionSchema,
-  bodyMeterStateSchema,
-  type BodyMeterDefinition,
-} from "@/contracts/simulation/bodies";
+import { bodyInitializedEventSchema, type BodyMeterDefinition } from "@/contracts/simulation/bodies";
 import { itemInstantiatedFromPromotionEventSchema } from "@/contracts/simulation/households";
 import {
   itemConditionMeterStateSchema,
   itemConditionRegistryV1,
   itemConditionRegistryVersion,
 } from "@/contracts/simulation/material-condition";
-import { simulationHash, sortedUnique } from "./hash";
+import { bindSimEnvelopes, testPrincipal, type CommandEnvelopeSpec } from "@/test/sim-envelopes";
+import {
+  atZone,
+  heldBy,
+  inContainer,
+  meterDefinition,
+  meterState,
+  singleMeterBodyView,
+  wornBy,
+} from "@/test/sim-material-fixtures";
+import { simulationHash } from "./hash";
 import { applyBodyEvent, emptyBodiesSeed } from "./bodies";
 import type { ItemConditionView } from "./material-condition";
 import {
@@ -44,7 +48,6 @@ import {
   resolveSetItemOwnershipFromView,
   resolveTransferItemFromView,
   sortMaterialsProjection,
-  type ConsumptionBodyView,
   type MaterialResolutionView,
 } from "./materials";
 
@@ -57,12 +60,12 @@ const ZONE_B = "zone-b";
 const LOC_A = "loc-a";
 const LOC_B = "loc-b";
 
-const heldBy = (actorId: string): ItemLocus => itemLocusSchema.parse({ kind: "held", actorId });
-const wornBy = (actorId: string, slotKey: string): ItemLocus =>
-  itemLocusSchema.parse({ kind: "worn", actorId, slotKey });
-const inContainer = (containerItemId: string): ItemLocus =>
-  itemLocusSchema.parse({ kind: "container", containerItemId });
-const atZone = (zoneId: string): ItemLocus => itemLocusSchema.parse({ kind: "zone", zoneId });
+/**
+ * This suite carries its own world/branch/ruleset trio, so the shared envelope
+ * builders are bound to it once: a view's `branchId` must match the command's or
+ * every resolver short-circuits to `branch_mismatch`.
+ */
+const sim = bindSimEnvelopes({ worldId: WORLD, branchId: BRANCH, rulesetVersion: RULESET });
 
 interface TestActor {
   id: string;
@@ -91,12 +94,8 @@ function makeView(input: {
   const itemsById = new Map<string, SimulationMaterialItem>(items.map((item) => [item.id, item]));
   const reservedBy = input.reservedBy ?? {};
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: RULESET,
+    ...sim.meta({ headSequence: input.headSequence ?? 0, storySecond: input.storySecond ?? 10_000 }),
     version: 0,
-    headSequence: input.headSequence ?? 0,
-    storySecond: input.storySecond ?? 10_000,
     actorById: (id) => {
       const actor = actorsById.get(id);
       return actor ? { id: actor.id, name: actor.name } : undefined;
@@ -111,83 +110,45 @@ function makeView(input: {
   };
 }
 
-function principal(kind: TransferItemCommandInput["principal"]["kind"], controlled: string[] = []) {
-  return { kind, principalId: "principal-1", controlledActorIds: sortedUnique(controlled) };
-}
+/** Envelope-shaped tweaks a call site may layer on top of a command builder. */
+type CmdSpec = Omit<CommandEnvelopeSpec, "type" | "payload">;
 
-function transferCmd(
-  payload: TransferItemCommandInput["payload"],
-  overrides: Partial<Omit<TransferItemCommandInput, "payload">> = {},
-) {
-  return transferItemCommandSchema.parse({
-    id: "cmd-transfer",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-transfer",
-    principal: principal("player", ["mara"]),
-    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
+/** The acting player for every actor-driven command here; `mara` is the controlled actor. */
+const maraPlayer = testPrincipal("player", ["mara"]);
+
+function transferCmd(payload: TransferItemCommandInput["payload"], spec: CmdSpec = {}) {
+  return sim.command(transferItemCommandSchema, {
     type: "transfer_item",
     schemaVersion: 2,
-    correlationId: "corr-1",
+    principal: maraPlayer,
     payload,
-    ...overrides,
+    ...spec,
   });
 }
 
-function destroyCmd(
-  payload: DestroyItemCommandInput["payload"],
-  overrides: Partial<Omit<DestroyItemCommandInput, "payload">> = {},
-) {
-  return destroyItemCommandSchema.parse({
-    id: "cmd-destroy",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-destroy",
-    principal: principal("player", ["mara"]),
-    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
+function destroyCmd(payload: DestroyItemCommandInput["payload"], spec: CmdSpec = {}) {
+  return sim.command(destroyItemCommandSchema, {
     type: "destroy_item",
-    schemaVersion: 1,
-    correlationId: "corr-1",
+    principal: maraPlayer,
     payload,
-    ...overrides,
+    ...spec,
   });
 }
 
-function consumeCmd(
-  payload: ConsumeItemCommandInput["payload"],
-  overrides: Partial<Omit<ConsumeItemCommandInput, "payload">> = {},
-) {
-  return consumeItemCommandSchema.parse({
-    id: "cmd-consume",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-consume",
-    principal: principal("player", ["mara"]),
-    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
+function consumeCmd(payload: ConsumeItemCommandInput["payload"], spec: CmdSpec = {}) {
+  return sim.command(consumeItemCommandSchema, {
     type: "consume_item",
-    schemaVersion: 1,
-    correlationId: "corr-1",
+    principal: maraPlayer,
     payload,
-    ...overrides,
+    ...spec,
   });
 }
 
-function ownershipCmd(
-  payload: SetItemOwnershipCommandInput["payload"],
-  overrides: Partial<Omit<SetItemOwnershipCommandInput, "payload">> = {},
-) {
-  return setItemOwnershipCommandSchema.parse({
-    id: "cmd-ownership",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-ownership",
-    principal: principal("storyteller"),
-    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
+function ownershipCmd(payload: SetItemOwnershipCommandInput["payload"], spec: CmdSpec = {}) {
+  return sim.command(setItemOwnershipCommandSchema, {
     type: "set_item_ownership",
-    schemaVersion: 1,
-    correlationId: "corr-1",
     payload,
-    ...overrides,
+    ...spec,
   });
 }
 
@@ -272,7 +233,7 @@ describe("E5.3 transfer law — the fail-closed rejection order", () => {
       heldItemView(),
       transferCmd(
         { actorId: "mara", itemId: "item-x", fromLocus: heldBy("mara"), toLocus: atZone(ZONE_A) },
-        { principal: principal("player", ["iris"]) },
+        { principal: testPrincipal("player", ["iris"]) },
       ),
     );
     expect(uncontrolled).toMatchObject({ ok: false, code: "unauthorized_actor" });
@@ -670,13 +631,13 @@ describe("E5.3 set ownership", () => {
   it("lets the current owner's controller reassign, but no one else", () => {
     const byOwner = resolveSetItemOwnershipFromView(
       makeView({ items: [{ id: "item-x", name: "x", ownerActorId: "mara", locus: heldBy("mara") }] }),
-      ownershipCmd({ itemId: "item-x", newOwnerActorId: "iris" }, { principal: principal("player", ["mara"]) }),
+      ownershipCmd({ itemId: "item-x", newOwnerActorId: "iris" }, { principal: maraPlayer }),
     );
     expect(byOwner).toMatchObject({ ok: true });
 
     const byStranger = resolveSetItemOwnershipFromView(
       makeView({ items: [{ id: "item-x", name: "x", ownerActorId: "iris", locus: heldBy("mara") }] }),
-      ownershipCmd({ itemId: "item-x", newOwnerActorId: "mara" }, { principal: principal("player", ["mara"]) }),
+      ownershipCmd({ itemId: "item-x", newOwnerActorId: "mara" }, { principal: maraPlayer }),
     );
     expect(byStranger).toMatchObject({ ok: false, code: "unauthorized_principal" });
   });
@@ -736,7 +697,7 @@ describe("E5.3 projector, replay, seed, and invariants", () => {
 
     const reassign = resolveSetItemOwnershipFromView(
       viewFor(afterGive),
-      ownershipCmd({ itemId: "coin", newOwnerActorId: "iris" }, { id: "cmd-ownership-2", idempotencyKey: "idem-2" }),
+      ownershipCmd({ itemId: "coin", newOwnerActorId: "iris" }, { idSlug: "ownership-2" }),
     );
     if (!reassign.ok) throw new Error("expected ownership acceptance");
     const afterReassign = applyMaterialEvent(afterGive, reassign.event);
@@ -767,19 +728,13 @@ describe("E5.3 projector, replay, seed, and invariants", () => {
 
   it("passes a non-material event through as a bare boundary advance", () => {
     const seed = materialsSeedProjection(seedInput());
-    const bodyEvent = bodyInitializedEventSchema.parse({
-      id: "event-body",
-      worldId: WORLD,
-      branchId: BRANCH,
+    const bodyEvent = sim.event(bodyInitializedEventSchema, {
+      type: "body_initialized",
+      idSlug: "body",
       sequence: seed.headSequence + 1,
       storySecond: 10_500,
-      type: "body_initialized",
-      schemaVersion: 1,
-      rulesetVersion: RULESET,
-      correlationId: "corr-1",
       actorIds: ["mara"],
       entityIds: ["mara"],
-      recordedAtWallClock: "2026-07-19T10:00:00.000Z",
       payload: {
         actorId: "mara",
         registryVersion: "body-v1",
@@ -854,17 +809,12 @@ describe("E5.3 projector, replay, seed, and invariants", () => {
 // E5.3 slice 2 — resource reservations and consumption (§26.5–26.6)
 // ---------------------------------------------------------------------------
 
-function hungerDefinition(overrides: Partial<BodyMeterDefinition> = {}): BodyMeterDefinition {
-  return bodyMeterDefinitionSchema.parse({
-    key: "hunger",
-    class: "rate",
-    driftLaw: {
-      kind: "linear",
-      ratePerHourFixedPoint: 150,
-      target: { kind: "fixed", valueFixedPoint: 0 },
-    },
-    initialFixedPoint: 9_000,
-    baselineFixedPoint: 0,
+/**
+ * The shared hunger meter plus the falling `starving` threshold this suite's
+ * re-arm math turns on (the shared fixture carries no thresholds).
+ */
+function hungerDefinition(): BodyMeterDefinition {
+  return meterDefinition({
     thresholds: [
       {
         key: "starving",
@@ -874,23 +824,7 @@ function hungerDefinition(overrides: Partial<BodyMeterDefinition> = {}): BodyMet
         noticeable: false,
       },
     ],
-    ...overrides,
   });
-}
-
-function hungerBodyView(definition: BodyMeterDefinition = hungerDefinition(), storySecond = 10_000): ConsumptionBodyView {
-  const state = bodyMeterStateSchema.parse({
-    actorId: "mara",
-    meterKey: definition.key,
-    valueFixedPoint: definition.initialFixedPoint,
-    baselineFixedPoint: definition.baselineFixedPoint,
-    lastIntegratedAtStorySecond: storySecond,
-    registryVersion: "body-v1",
-  });
-  return {
-    bodyInitialized: true,
-    meterView: (meterKey) => (meterKey === definition.key ? { definition, state, modifiers: [] } : undefined),
-  };
 }
 
 function foodItem(overrides: Partial<SimulationMaterialItemInput> = {}): SimulationMaterialItemInput {
@@ -951,7 +885,7 @@ describe("E5.3 slice 2 — consume_item (§26.6)", () => {
 
   it("consumes: locus goes gone/consumed, one trailing body effect and its re-armed threshold, one causation chain", () => {
     const view = makeView({ items: [foodItem()] });
-    const bodyView = hungerBodyView();
+    const bodyView = singleMeterBodyView(hungerDefinition());
     const result = resolveConsumeItemFromView(view, consumeCmd({ actorId: "mara", itemId: "bread" }), bodyView);
     if (!result.ok) throw new Error(`expected acceptance, got ${result.code}`);
 
@@ -1011,7 +945,7 @@ describe("E5.3 slice 2 — consume_item (§26.6)", () => {
     const result = resolveConsumeItemFromView(
       makeView({ items: [foodItem()] }),
       consumeCmd({ actorId: "mara", itemId: "bread" }),
-      hungerBodyView(),
+      singleMeterBodyView(hungerDefinition()),
     );
     if (!result.ok) throw new Error("expected acceptance");
 
@@ -1040,7 +974,7 @@ describe("E5.3 slice 2 — consume_item (§26.6)", () => {
     const result = resolveConsumeItemFromView(
       makeView({ items: [foodItem()] }),
       consumeCmd({ actorId: "mara", itemId: "bread" }),
-      hungerBodyView(definition),
+      singleMeterBodyView(definition),
     );
     if (!result.ok) throw new Error("expected acceptance");
 
@@ -1063,14 +997,7 @@ describe("E5.3 slice 2 — consume_item (§26.6)", () => {
     // Fold the trailing body events onto a seed that already carries the
     // hunger meter (mirroring an already-initialized body) — a partitioned,
     // event-by-event fold lands on the exact math the resolver produced.
-    const initialMeterState = bodyMeterStateSchema.parse({
-      actorId: "mara",
-      meterKey: definition.key,
-      valueFixedPoint: definition.initialFixedPoint,
-      baselineFixedPoint: definition.baselineFixedPoint,
-      lastIntegratedAtStorySecond: 10_000,
-      registryVersion: "body-v1",
-    });
+    const initialMeterState = meterState(definition, { lastIntegratedAtStorySecond: 10_000 });
     let bodyAfter = { ...emptyBodiesSeed(BRANCH, 10_000), meters: [initialMeterState] };
     for (const event of result.bodyEvents) bodyAfter = applyBodyEvent(bodyAfter, event);
     expect(bodyAfter.meters.find((meter) => meter.meterKey === "hunger")?.valueFixedPoint).toBe(9_500);
@@ -1133,21 +1060,15 @@ describe("E5.4 slice 2 applyMaterialEvent on item_instantiated_from_promotion", 
     overrides: Partial<{ itemId: string; sequence: number; locus: ItemLocus }> = {},
   ) {
     const itemId = overrides.itemId ?? "promoted-item";
-    return itemInstantiatedFromPromotionEventSchema.parse({
-      id: `event-promoted-${overrides.sequence ?? 1}`,
-      worldId: WORLD,
-      branchId: BRANCH,
+    return sim.event(itemInstantiatedFromPromotionEventSchema, {
+      type: "item_instantiated_from_promotion",
+      idSlug: "promoted",
       sequence: overrides.sequence ?? 1,
       storySecond: 10_500,
-      type: "item_instantiated_from_promotion",
-      schemaVersion: 1,
-      rulesetVersion: RULESET,
       commandId: "cmd-promote",
-      causationId: "event-lot-debit",
-      correlationId: "corr-1",
       actorIds: ["mara"],
-      entityIds: sortedUnique(["mara", itemId]),
-      recordedAtWallClock: "2026-07-19T10:00:00.000Z",
+      entityIds: ["mara", itemId],
+      overrides: { causationId: "event-lot-debit" },
       payload: {
         item: {
           id: itemId,

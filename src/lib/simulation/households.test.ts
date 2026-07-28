@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bodyInitializedEventSchema } from "@/contracts/simulation/bodies";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
-import type { PrincipalKind } from "@/contracts/simulation/envelopes";
 import { composeSimulationId } from "@/contracts/simulation/identity";
 import {
   RESERVED_CURRENCY_MATERIAL_KIND,
@@ -46,7 +45,14 @@ import {
   type TransferLotQuantityCommandInput,
 } from "@/contracts/simulation/households";
 import { deterministicDrawUnit } from "@/contracts/simulation/scheduler";
-import { simulationHash, sortedUnique } from "./hash";
+import {
+  TEST_CORRELATION_ID,
+  TEST_WALL_CLOCK,
+  bindSimEnvelopes,
+  testPrincipal,
+  type CommandEnvelopeSpec,
+} from "@/test/sim-envelopes";
+import { simulationHash } from "./hash";
 import {
   applyHouseholdEvent,
   applyLotDelta,
@@ -88,9 +94,15 @@ const ZONE_A = "zone-a";
 const ZONE_B = "zone-b";
 const HOUSEHOLD = "household-vance";
 
-function principal(kind: PrincipalKind, controlled: string[] = []) {
-  return { kind, principalId: "principal-1", controlledActorIds: sortedUnique(controlled) };
-}
+/**
+ * This suite carries its own world/branch/ruleset, so bind them once: a view's
+ * `branchId` is compared against the command's, and a mismatch flips every
+ * resolver to `branch_mismatch`.
+ */
+const env = bindSimEnvelopes({ worldId: WORLD, branchId: BRANCH, rulesetVersion: RULESET });
+
+/** Everything a call site may override; `type`/`payload` are pinned per builder. */
+type CmdSpec = Omit<CommandEnvelopeSpec, "type" | "payload">;
 
 function lotOf(locus: LotLocus, materialKindKey: string, quantityRaw = 0): MaterialLotState {
   return materialLotStateSchema.parse({
@@ -117,157 +129,45 @@ const householdSubject = (householdId: string): MeansSubject =>
 // Command builders
 // ---------------------------------------------------------------------------
 
-function createHouseholdCmd(
-  payload: CreateHouseholdCommandInput["payload"],
-  overrides: Partial<Omit<CreateHouseholdCommandInput, "payload">> = {},
-) {
-  return createHouseholdCommandSchema.parse({
-    id: "cmd-create-household",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-create-household",
-    principal: principal("storyteller"),
-    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
-    type: "create_household",
-    schemaVersion: 1,
-    correlationId: "corr-1",
-    payload,
-    ...overrides,
-  });
-}
+const createHouseholdCmd = (payload: CreateHouseholdCommandInput["payload"], spec: CmdSpec = {}) =>
+  env.command(createHouseholdCommandSchema, { type: "create_household", payload, ...spec });
 
-function setHouseholdMembershipCmd(
-  payload: SetHouseholdMembershipCommandInput["payload"],
-  overrides: Partial<Omit<SetHouseholdMembershipCommandInput, "payload">> = {},
-) {
-  return setHouseholdMembershipCommandSchema.parse({
-    id: "cmd-membership",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-membership",
-    principal: principal("storyteller"),
-    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
-    type: "set_household_membership",
-    schemaVersion: 1,
-    correlationId: "corr-1",
-    payload,
-    ...overrides,
-  });
-}
+const setHouseholdMembershipCmd = (payload: SetHouseholdMembershipCommandInput["payload"], spec: CmdSpec = {}) =>
+  env.command(setHouseholdMembershipCommandSchema, { type: "set_household_membership", payload, ...spec });
 
-function adjustMaterialLotCmd(
-  payload: AdjustMaterialLotCommandInput["payload"],
-  overrides: Partial<Omit<AdjustMaterialLotCommandInput, "payload">> = {},
-) {
-  return adjustMaterialLotCommandSchema.parse({
-    id: "cmd-adjust",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-adjust",
-    principal: principal("storyteller"),
-    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
-    type: "adjust_material_lot",
-    schemaVersion: 1,
-    correlationId: "corr-1",
-    payload,
-    ...overrides,
-  });
-}
+const adjustMaterialLotCmd = (payload: AdjustMaterialLotCommandInput["payload"], spec: CmdSpec = {}) =>
+  env.command(adjustMaterialLotCommandSchema, { type: "adjust_material_lot", payload, ...spec });
 
-function transferLotQuantityCmd(
-  payload: TransferLotQuantityCommandInput["payload"],
-  overrides: Partial<Omit<TransferLotQuantityCommandInput, "payload">> = {},
-) {
-  return transferLotQuantityCommandSchema.parse({
-    id: "cmd-transfer-lot",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-transfer-lot",
-    principal: principal("player", [payload.actorId]),
-    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
+const transferLotQuantityCmd = (payload: TransferLotQuantityCommandInput["payload"], spec: CmdSpec = {}) =>
+  env.command(transferLotQuantityCommandSchema, {
     type: "transfer_lot_quantity",
-    schemaVersion: 1,
-    correlationId: "corr-1",
+    principal: testPrincipal("player", [payload.actorId]),
     payload,
-    ...overrides,
+    ...spec,
   });
-}
 
-function setMeansBandCmd(
-  payload: SetMeansBandCommandInput["payload"],
-  overrides: Partial<Omit<SetMeansBandCommandInput, "payload">> = {},
-) {
-  return setMeansBandCommandSchema.parse({
-    id: "cmd-band",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-band",
-    principal: principal("storyteller"),
-    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
-    type: "set_means_band",
-    schemaVersion: 1,
-    correlationId: "corr-1",
-    payload,
-    ...overrides,
-  });
-}
+const setMeansBandCmd = (payload: SetMeansBandCommandInput["payload"], spec: CmdSpec = {}) =>
+  env.command(setMeansBandCommandSchema, { type: "set_means_band", payload, ...spec });
 
-function configureRestockRoutineCmd(
-  payload: ConfigureRestockRoutineCommandInput["payload"],
-  overrides: Partial<Omit<ConfigureRestockRoutineCommandInput, "payload">> = {},
-) {
-  return configureRestockRoutineCommandSchema.parse({
-    id: "cmd-configure-restock",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-configure-restock",
-    principal: principal("storyteller"),
-    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
-    type: "configure_restock_routine",
-    schemaVersion: 1,
-    correlationId: "corr-1",
-    payload,
-    ...overrides,
-  });
-}
+const configureRestockRoutineCmd = (payload: ConfigureRestockRoutineCommandInput["payload"], spec: CmdSpec = {}) =>
+  env.command(configureRestockRoutineCommandSchema, { type: "configure_restock_routine", payload, ...spec });
 
-function promoteItemFromStockCmd(
-  payload: PromoteItemFromStockCommandInput["payload"],
-  overrides: Partial<Omit<PromoteItemFromStockCommandInput, "payload">> = {},
-) {
-  return promoteItemFromStockCommandSchema.parse({
-    id: "cmd-promote",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-promote",
-    principal: principal("player", [payload.actorId]),
-    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
+const promoteItemFromStockCmd = (payload: PromoteItemFromStockCommandInput["payload"], spec: CmdSpec = {}) =>
+  env.command(promoteItemFromStockCommandSchema, {
     type: "promote_item_from_stock",
-    schemaVersion: 1,
-    correlationId: "corr-1",
+    principal: testPrincipal("player", [payload.actorId]),
     payload,
-    ...overrides,
+    ...spec,
   });
-}
 
-function runHouseholdRestockCmd(
-  payload: RunHouseholdRestockCommandInput["payload"],
-  overrides: Partial<Omit<RunHouseholdRestockCommandInput, "payload">> = {},
-) {
-  return runHouseholdRestockCommandSchema.parse({
-    id: "cmd-run-restock",
-    branchId: BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "idem-run-restock",
-    principal: { kind: "system" as const, principalId: "sim-scheduler", controlledActorIds: [] },
-    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
+/** The scheduler fires restocks — a principal id neither test shape covers. */
+const runHouseholdRestockCmd = (payload: RunHouseholdRestockCommandInput["payload"], spec: CmdSpec = {}) =>
+  env.command(runHouseholdRestockCommandSchema, {
     type: "run_household_restock",
-    schemaVersion: 1,
-    correlationId: "corr-1",
+    principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] },
     payload,
-    ...overrides,
+    ...spec,
   });
-}
 
 const stockFunding = (sourceLocus: LotLocus, quantityRaw: number) =>
   promotionFundingSchema.parse({ kind: "stock", sourceLocus, quantityRaw });
@@ -291,11 +191,7 @@ function createHouseholdView(
 ) {
   const zoneIds = new Set(overrides.zoneIds ?? [ZONE_A, ZONE_B]);
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: RULESET,
-    headSequence: overrides.headSequence ?? 0,
-    storySecond: overrides.storySecond ?? 10_000,
+    ...env.meta({ headSequence: overrides.headSequence ?? 0, storySecond: overrides.storySecond ?? 10_000 }),
     householdExists: overrides.householdExists ?? false,
     zoneExists: (zoneId: string) => zoneIds.has(zoneId),
   };
@@ -311,11 +207,7 @@ function membershipView(
   }> = {},
 ) {
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: RULESET,
-    headSequence: overrides.headSequence ?? 0,
-    storySecond: overrides.storySecond ?? 10_000,
+    ...env.meta({ headSequence: overrides.headSequence ?? 0, storySecond: overrides.storySecond ?? 10_000 }),
     householdExists: overrides.householdExists ?? true,
     actorExists: overrides.actorExists ?? true,
     currentMembership: overrides.currentMembership,
@@ -326,11 +218,7 @@ function adjustView(
   overrides: Partial<{ localeExists: boolean; lot: MaterialLotState; headSequence: number; storySecond: number }> = {},
 ) {
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: RULESET,
-    headSequence: overrides.headSequence ?? 0,
-    storySecond: overrides.storySecond ?? 10_000,
+    ...env.meta({ headSequence: overrides.headSequence ?? 0, storySecond: overrides.storySecond ?? 10_000 }),
     localeExists: overrides.localeExists ?? true,
     lot: overrides.lot ?? lotOf(householdLotLocus(HOUSEHOLD), "food", 10),
   };
@@ -367,11 +255,7 @@ function transferView(input: {
   const actors = input.actors ?? {};
   return {
     ...resolutionView(input.fixture),
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: RULESET,
-    headSequence: input.headSequence ?? 0,
-    storySecond: input.storySecond ?? 10_000,
+    ...env.meta({ headSequence: input.headSequence ?? 0, storySecond: input.storySecond ?? 10_000 }),
     actorById: (actorId: string) => actors[actorId],
     fromLot: input.fromLot,
     toLot: input.toLot,
@@ -382,11 +266,7 @@ function meansBandView(
   overrides: Partial<{ subjectExists: boolean; currentBand: MeansBandState; headSequence: number; storySecond: number }> = {},
 ) {
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: RULESET,
-    headSequence: overrides.headSequence ?? 0,
-    storySecond: overrides.storySecond ?? 10_000,
+    ...env.meta({ headSequence: overrides.headSequence ?? 0, storySecond: overrides.storySecond ?? 10_000 }),
     subjectExists: overrides.subjectExists ?? true,
     currentBand: overrides.currentBand,
   };
@@ -396,11 +276,7 @@ function configureRestockView(
   overrides: Partial<{ householdExists: boolean; headSequence: number; storySecond: number }> = {},
 ): ConfigureRestockRoutineResolutionView {
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: RULESET,
-    headSequence: overrides.headSequence ?? 0,
-    storySecond: overrides.storySecond ?? 10_000,
+    ...env.meta({ headSequence: overrides.headSequence ?? 0, storySecond: overrides.storySecond ?? 10_000 }),
     householdExists: overrides.householdExists ?? true,
   };
 }
@@ -418,11 +294,7 @@ function promotionView(input: {
   const pool = input.namePool ?? [];
   return {
     ...resolutionView(input.fixture),
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: RULESET,
-    headSequence: input.headSequence ?? 0,
-    storySecond: input.storySecond ?? 10_000,
+    ...env.meta({ headSequence: input.headSequence ?? 0, storySecond: input.storySecond ?? 10_000 }),
     actorById: (actorId: string) => actors[actorId],
     fundingLot: input.fundingLot,
     namePool: () => pool,
@@ -442,11 +314,7 @@ function runRestockView(
   }> = {},
 ): RunHouseholdRestockResolutionView {
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: RULESET,
-    headSequence: overrides.headSequence ?? 0,
-    storySecond: overrides.storySecond ?? 10_000,
+    ...env.meta({ headSequence: overrides.headSequence ?? 0, storySecond: overrides.storySecond ?? 10_000 }),
     routine: overrides.routine,
     armingIsLive: overrides.armingIsLive ?? true,
     stockLot: overrides.stockLot,
@@ -704,7 +572,7 @@ describe("E5.4 slice 1 resolveCreateHouseholdFromView", () => {
 
     const unauthorized = resolveCreateHouseholdFromView(
       createHouseholdView(),
-      createHouseholdCmd(command.payload, { principal: principal("player", []) }),
+      createHouseholdCmd(command.payload, { principal: testPrincipal("player") }),
     );
     expect(unauthorized).toMatchObject({ ok: false, code: "unauthorized_principal" });
   });
@@ -740,7 +608,7 @@ describe("E5.4 slice 1 resolveSetHouseholdMembershipFromView", () => {
     const current = householdMembershipSchema.parse(payload);
     const noOp = resolveSetHouseholdMembershipFromView(
       membershipView({ currentMembership: current }),
-      setHouseholdMembershipCmd(payload, { id: "cmd-m-2", idempotencyKey: "idem-m-2" }),
+      setHouseholdMembershipCmd(payload, { idSlug: "m-2" }),
     );
     expect(noOp).toMatchObject({ ok: false, code: "no_op" });
   });
@@ -754,7 +622,7 @@ describe("E5.4 slice 1 resolveSetHouseholdMembershipFromView", () => {
     });
     const command = setHouseholdMembershipCmd(
       { householdId: HOUSEHOLD, actorId: "mara", role: "resident", status: "ended", endedAtStorySecond: 12_000 },
-      { id: "cmd-m-end", idempotencyKey: "idem-m-end" },
+      { idSlug: "m-end" },
     );
     const result = resolveSetHouseholdMembershipFromView(membershipView({ currentMembership: current }), command);
     expect(result.ok).toBe(true);
@@ -763,18 +631,10 @@ describe("E5.4 slice 1 resolveSetHouseholdMembershipFromView", () => {
 
   it("rejects an inconsistent ended/basis pair at the schema layer", () => {
     expect(() =>
-      setHouseholdMembershipCommandSchema.parse({
-        id: "cmd-bad",
-        branchId: BRANCH,
-        expectedVersion: 0,
-        idempotencyKey: "idem-bad",
-        principal: principal("storyteller"),
-        submittedAtWallClock: "2026-07-19T10:00:00.000Z",
-        type: "set_household_membership",
-        schemaVersion: 1,
-        correlationId: "corr-1",
-        payload: { householdId: HOUSEHOLD, actorId: "mara", role: "resident", status: "ended" },
-      }),
+      setHouseholdMembershipCmd(
+        { householdId: HOUSEHOLD, actorId: "mara", role: "resident", status: "ended" },
+        { idSlug: "bad" },
+      ),
     ).toThrow();
   });
 });
@@ -808,7 +668,7 @@ describe("E5.4 slice 1 resolveAdjustMaterialLotFromView", () => {
 
     const unauthorized = resolveAdjustMaterialLotFromView(
       adjustView({ lot: lotOf(locus, "food", 5) }),
-      adjustMaterialLotCmd({ locus, materialKindKey: "food", deltaRaw: 5 }, { principal: principal("player", []) }),
+      adjustMaterialLotCmd({ locus, materialKindKey: "food", deltaRaw: 5 }, { principal: testPrincipal("player") }),
     );
     expect(unauthorized).toMatchObject({ ok: false, code: "unauthorized_principal" });
 
@@ -909,7 +769,7 @@ describe("E5.4 slice 1 resolveTransferLotQuantityFromView", () => {
     });
     const command = transferLotQuantityCmd(
       { actorId: "iris", fromLocus, toLocus, materialKindKey: "food", quantityRaw: 2 },
-      { principal: principal("player", ["iris"]) },
+      { principal: testPrincipal("player", ["iris"]) },
     );
     const result = resolveTransferLotQuantityFromView(view, command);
     expect(result).toMatchObject({ ok: false, code: "household_access_denied" });
@@ -958,7 +818,7 @@ describe("E5.4 slice 1 resolveSetMeansBandFromView", () => {
     });
     const noOp = resolveSetMeansBandFromView(
       meansBandView({ subjectExists: true, currentBand }),
-      setMeansBandCmd({ subject, bandKey: "modest" }, { id: "cmd-band-2", idempotencyKey: "idem-band-2" }),
+      setMeansBandCmd({ subject, bandKey: "modest" }, { idSlug: "band-2" }),
     );
     expect(noOp).toMatchObject({ ok: false, code: "no_op" });
   });
@@ -974,11 +834,7 @@ describe("E5.4 slice 1 projector, replay, and seed", () => {
 
     const create = resolveCreateHouseholdFromView(
       {
-        worldId: WORLD,
-        branchId: BRANCH,
-        rulesetVersion: RULESET,
-        headSequence: seed.headSequence,
-        storySecond: seed.storySecond,
+        ...env.meta({ headSequence: seed.headSequence, storySecond: seed.storySecond }),
         householdExists: false,
         zoneExists: (zoneId) => zoneId === ZONE_A,
       },
@@ -994,11 +850,7 @@ describe("E5.4 slice 1 projector, replay, and seed", () => {
 
     const membership = resolveSetHouseholdMembershipFromView(
       {
-        worldId: WORLD,
-        branchId: BRANCH,
-        rulesetVersion: RULESET,
-        headSequence: afterCreate.headSequence,
-        storySecond: afterCreate.storySecond,
+        ...env.meta({ headSequence: afterCreate.headSequence, storySecond: afterCreate.storySecond }),
         householdExists: true,
         actorExists: true,
         currentMembership: undefined,
@@ -1009,15 +861,16 @@ describe("E5.4 slice 1 projector, replay, and seed", () => {
     const afterMembership = applyHouseholdEvent(afterCreate, membership.event);
 
     const lotLocus = householdLotLocus(HOUSEHOLD);
+    // The lazy init event is stamped with the ADJUSTMENT's command id on purpose:
+    // one command, two events, so replay counts a single version bump for both.
+    const adjustCommand = adjustMaterialLotCmd({ locus: lotLocus, materialKindKey: "food", deltaRaw: 20 });
     const initEvent = buildMaterialLotInitializedEvent({
-      view: {
-        worldId: WORLD,
-        branchId: BRANCH,
-        rulesetVersion: RULESET,
-        headSequence: afterMembership.headSequence,
-        storySecond: afterMembership.storySecond,
+      view: env.meta({ headSequence: afterMembership.headSequence, storySecond: afterMembership.storySecond }),
+      command: {
+        id: adjustCommand.id,
+        correlationId: adjustCommand.correlationId,
+        submittedAtWallClock: adjustCommand.submittedAtWallClock,
       },
-      command: { id: "cmd-adjust", correlationId: "corr-1", submittedAtWallClock: "2026-07-19T10:00:00.000Z" },
       locus: lotLocus,
       materialKindKey: "food",
       quantityKind: "count",
@@ -1027,15 +880,11 @@ describe("E5.4 slice 1 projector, replay, and seed", () => {
 
     const adjust = resolveAdjustMaterialLotFromView(
       {
-        worldId: WORLD,
-        branchId: BRANCH,
-        rulesetVersion: RULESET,
-        headSequence: afterInit.headSequence,
-        storySecond: afterInit.storySecond,
+        ...env.meta({ headSequence: afterInit.headSequence, storySecond: afterInit.storySecond }),
         localeExists: true,
         lot: lotOf(lotLocus, "food", 0),
       },
-      adjustMaterialLotCmd({ locus: lotLocus, materialKindKey: "food", deltaRaw: 20 }),
+      adjustCommand,
     );
     if (!adjust.ok) throw new Error("expected adjust acceptance");
 
@@ -1054,8 +903,8 @@ describe("E5.4 slice 1 projector, replay, and seed", () => {
 
     const replayed = replayHouseholdsHistory({ seed, events });
     expect(replayed.headSequence).toBe(4);
-    // Three distinct command ids: cmd-create-household, cmd-membership, cmd-adjust
-    // (the lazy init event shares cmd-adjust's commandId with the adjustment event).
+    // Three distinct command ids — create, membership, adjust — because the lazy
+    // init event shares the adjustment command's id rather than carrying its own.
     expect(replayed.version).toBe(3);
 
     const normalizedLive = { ...live, version: seed.version + 3 };
@@ -1071,19 +920,12 @@ describe("E5.4 slice 1 projector, replay, and seed", () => {
 
   it("passes a non-household event through as a bare boundary advance", () => {
     const seed = emptyHouseholdsSeed(BRANCH, 10_000);
-    const bodyEvent = bodyInitializedEventSchema.parse({
-      id: "event-body",
-      worldId: WORLD,
-      branchId: BRANCH,
+    const bodyEvent = env.event(bodyInitializedEventSchema, {
+      type: "body_initialized",
       sequence: seed.headSequence + 1,
       storySecond: 10_500,
-      type: "body_initialized",
-      schemaVersion: 1,
-      rulesetVersion: RULESET,
-      correlationId: "corr-1",
       actorIds: ["mara"],
       entityIds: ["mara"],
-      recordedAtWallClock: "2026-07-19T10:00:00.000Z",
       payload: {
         actorId: "mara",
         registryVersion: "body-v1",
@@ -1155,10 +997,7 @@ describe("E5.4 slice 2 promotion determinism (§26.10/§27.2)", () => {
     });
     expect(first.itemEvent.payload.item.name).toBe(expected.name);
 
-    const differentCommand = promoteItemFromStockCmd(command.payload, {
-      id: "cmd-promote-2",
-      idempotencyKey: "idem-promote-2",
-    });
+    const differentCommand = promoteItemFromStockCmd(command.payload, { idSlug: "promote-2" });
     const third = resolvePromoteItemFromStockFromView(view(), differentCommand);
     expect(third.ok).toBe(true);
     if (!third.ok) return;
@@ -1166,7 +1005,7 @@ describe("E5.4 slice 2 promotion determinism (§26.10/§27.2)", () => {
 
     const explicitNameCommand = promoteItemFromStockCmd(
       { actorId: "mara", funding: stockFunding(fundingLocus, 1), item: promotedItem({ materialKindKey: "food", name: "Old Boot" }) },
-      { id: "cmd-promote-3", idempotencyKey: "idem-promote-3" },
+      { idSlug: "promote-3" },
     );
     const fourth = resolvePromoteItemFromStockFromView(view(), explicitNameCommand);
     expect(fourth.ok).toBe(true);
@@ -1233,7 +1072,7 @@ describe("E5.4 slice 2 promotion funding (§26.10)", () => {
     // (no symmetric "is this actually currency" check exists).
     const nonCurrencyLotResult = resolvePromoteItemFromStockFromView(
       view(lotOf(fundingLocus, "unspecified", 5_000)),
-      promoteItemFromStockCmd(command.payload, { id: "cmd-promote-nc", idempotencyKey: "idem-promote-nc" }),
+      promoteItemFromStockCmd(command.payload, { idSlug: "promote-nc" }),
     );
     expect(nonCurrencyLotResult.ok).toBe(true);
   });
@@ -1498,13 +1337,7 @@ describe("E5.4 slice 2 replay + partition invariance across the full slice-1+2 c
       events.push(event);
       projection = applyHouseholdEvent(projection, event);
     };
-    const meta = () => ({
-      worldId: WORLD,
-      branchId: BRANCH,
-      rulesetVersion: RULESET,
-      headSequence: projection.headSequence,
-      storySecond: projection.storySecond,
-    });
+    const meta = () => env.meta({ headSequence: projection.headSequence, storySecond: projection.storySecond });
 
     const create = resolveCreateHouseholdFromView(
       { ...meta(), householdExists: false, zoneExists: (zoneId) => zoneId === ZONE_A },
@@ -1529,7 +1362,7 @@ describe("E5.4 slice 2 replay + partition invariance across the full slice-1+2 c
 
     const foodInit = buildMaterialLotInitializedEvent({
       view: meta(),
-      command: { id: "cmd-food-init", correlationId: "corr-1", submittedAtWallClock: "2026-07-19T10:00:00.000Z" },
+      command: { id: "cmd-food-init", correlationId: TEST_CORRELATION_ID, submittedAtWallClock: TEST_WALL_CLOCK },
       locus: householdLocus,
       materialKindKey: "food",
       quantityKind: "count",
@@ -1538,14 +1371,14 @@ describe("E5.4 slice 2 replay + partition invariance across the full slice-1+2 c
     push(foodInit);
     const foodStock = resolveAdjustMaterialLotFromView(
       { ...meta(), localeExists: true, lot: lotOf(householdLocus, "food", 0) },
-      adjustMaterialLotCmd({ locus: householdLocus, materialKindKey: "food", deltaRaw: 40 }, { id: "cmd-food-stock", idempotencyKey: "idem-food-stock" }),
+      adjustMaterialLotCmd({ locus: householdLocus, materialKindKey: "food", deltaRaw: 40 }, { idSlug: "food-stock" }),
     );
     if (!foodStock.ok) throw new Error("expected food stock");
     push(foodStock.event);
 
     const currencyInit = buildMaterialLotInitializedEvent({
       view: meta(),
-      command: { id: "cmd-currency-init", correlationId: "corr-1", submittedAtWallClock: "2026-07-19T10:00:00.000Z" },
+      command: { id: "cmd-currency-init", correlationId: TEST_CORRELATION_ID, submittedAtWallClock: TEST_WALL_CLOCK },
       locus: householdLocus,
       materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
       quantityKind: "fixed_point",
@@ -1556,7 +1389,7 @@ describe("E5.4 slice 2 replay + partition invariance across the full slice-1+2 c
       { ...meta(), localeExists: true, lot: lotOf(householdLocus, RESERVED_CURRENCY_MATERIAL_KIND, 0) },
       adjustMaterialLotCmd(
         { locus: householdLocus, materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND, deltaRaw: 100_000 },
-        { id: "cmd-currency-stock", idempotencyKey: "idem-currency-stock" },
+        { idSlug: "currency-stock" },
       ),
     );
     if (!currencyStock.ok) throw new Error("expected currency stock");
@@ -1580,7 +1413,7 @@ describe("E5.4 slice 2 replay + partition invariance across the full slice-1+2 c
     });
     const configure = resolveConfigureRestockRoutineFromView(
       { ...meta(), householdExists: true },
-      configureRestockRoutineCmd(routine, { id: "cmd-configure", idempotencyKey: "idem-configure" }),
+      configureRestockRoutineCmd(routine, { idSlug: "configure" }),
     );
     if (!configure.ok) throw new Error("expected configure");
     for (const event of configure.events) push(event);
@@ -1612,7 +1445,7 @@ describe("E5.4 slice 2 replay + partition invariance across the full slice-1+2 c
       },
       promoteItemFromStockCmd(
         { actorId: "mara", funding: stockFunding(householdLocus, 1), item: promotedItem({ materialKindKey: "food", name: "Camp Knife" }) },
-        { id: "cmd-promote-full", idempotencyKey: "idem-promote-full" },
+        { idSlug: "promote-full" },
       ),
     );
     if (!promote.ok) throw new Error("expected promote");
@@ -1629,7 +1462,7 @@ describe("E5.4 slice 2 replay + partition invariance across the full slice-1+2 c
       },
       runHouseholdRestockCmd(
         { householdId: HOUSEHOLD_2, materialKindKey: "food", armedAtSequence: armedAtSequence1 },
-        { id: "cmd-run-1", idempotencyKey: "idem-run-1" },
+        { idSlug: "run-1" },
       ),
     );
     if (!run1.ok) throw new Error("expected run1");
@@ -1648,7 +1481,7 @@ describe("E5.4 slice 2 replay + partition invariance across the full slice-1+2 c
       },
       runHouseholdRestockCmd(
         { householdId: HOUSEHOLD_2, materialKindKey: "food", armedAtSequence: armedAtSequence2 },
-        { id: "cmd-run-2", idempotencyKey: "idem-run-2" },
+        { idSlug: "run-2" },
       ),
     );
     if (!run2.ok) throw new Error("expected run2 (already_stocked)");

@@ -23,13 +23,7 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Test consolidation — shared fixtures, strict-gate integrity, de-brittling** —
-  [test-consolidation.plan.md](test-consolidation.plan.md) (active). Convert the
-  51 inline DB probes to `probeIntegrationDb` (restores `test:int:strict`),
-  fix the drifted auth mocks, extract shared test utilities
-  (`src/server/test-support/` + new pure `src/test/`), and derive
-  hand-enumerated assertions from the registries so vocabulary changes stop
-  forcing multi-file test edits.
+_(Nothing active — pick up the top of Next.)_
 
 ## Next (queued)
 

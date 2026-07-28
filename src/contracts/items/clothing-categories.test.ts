@@ -1,25 +1,31 @@
 import { describe, expect, it } from "vitest";
+import { expectCaseInsensitiveLookup, expectRefsResolve, expectUniqueIds } from "@/test/registry-invariants";
 import { bodyLocationRegistry } from "../body/locations";
 import { clothingCategories, clothingCategoryById } from "./clothing-categories";
 
 describe("clothing categories registry", () => {
   it("has unique ids", () => {
-    const ids = clothingCategories.map((c) => c.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    expectUniqueIds(clothingCategories, "clothingCategories");
   });
 
   it("every coverage template id is a registered body location", () => {
-    for (const category of clothingCategories) {
-      for (const id of category.coverage) {
-        expect(bodyLocationRegistry.byId(id), `${category.id} → ${id}`).toBeDefined();
-      }
-    }
+    expectRefsResolve(
+      clothingCategories,
+      (category) => category.coverage,
+      (id) => bodyLocationRegistry.byId(id),
+      (category, id) => `${category.id} → ${id}`,
+    );
   });
 
   it("looks up case-insensitively and misses cleanly", () => {
-    expect(clothingCategoryById("Top")?.id).toBe("top");
-    expect(clothingCategoryById(" eyewear ")?.id).toBe("eyewear");
-    expect(clothingCategoryById("tuxedo")).toBeUndefined();
+    expectCaseInsensitiveLookup(
+      clothingCategoryById,
+      [
+        { raw: "Top", id: "top" },
+        { raw: " eyewear ", id: "eyewear" },
+      ],
+      "tuxedo",
+    );
   });
 
   it("templates avoid over-covering parents (no feet from pants, no face from headwear)", () => {

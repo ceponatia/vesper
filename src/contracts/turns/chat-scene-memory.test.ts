@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseOr } from "@/lib/parse";
+import { expectCleanSink, expectDiagnostic } from "@/test/diagnostics";
 import { DiagnosticCollector } from "../diagnostics";
 import {
   chatSceneMemorySchema,
@@ -108,13 +109,14 @@ describe("chatSceneMemorySchema parse boundary", () => {
     // Field-level .catch salvages the row rather than nuking it — places falls back to [].
     expect(out.places).toEqual([]);
     expect(isEmptyChatSceneMemory(out)).toBe(true);
+    expectCleanSink(sink); // the schema absorbed it — this never reached the boundary
   });
 
   it("degrades a wholly-unparseable blob to empty memory AND records a diagnostic (parseOr boundary)", () => {
     const sink = new DiagnosticCollector();
     const out = parseOr(chatSceneMemorySchema, 42, emptyChatSceneMemory(), sink, "character_chat_state.scene_memory");
     expect(out).toEqual(emptyChatSceneMemory()); // degraded default
-    expect(sink.items.some((d) => d.code === "parse.boundary_failed")).toBe(true); // + diagnostic
+    expectDiagnostic(sink, "parse.boundary_failed"); // + diagnostic
   });
 
   it("round-trips a valid memory and re-applies the per-place caps", () => {

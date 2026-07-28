@@ -1,6 +1,22 @@
 # Test consolidation — shared fixtures, gate integrity, de-brittling
 
-Status: active
+Status: shipped — 2026-07-28
+
+Completion note: all six slices landed in one push (foundations →
+simulation-lane adoption → API/contracts → chat-lane/lib →
+memory/images/guardrail → docs + jscpd gate). ~5.9k net test lines removed;
+strict mode now gates every integration suite; jscpd covers tests at
+threshold 3. Bugs found and fixed en route: `route-safe.int.test.ts`'s four
+cross-owner denial tests had never run (collection-time `runIf` on a flag set
+in `beforeAll`); three admin suites leaked swapped roles on assertion failure;
+17 auth mocks stubbed dead exports and omitted `Unauthenticated`;
+`canonicalImageRow` silently discarded caller paths (now throws);
+`household-store`'s test re-implemented production row mappers. Leftovers:
+none — helper-gap wishlist items surfaced during adoption (fork-result
+pass-through, `expectRejected` narrowing, `seedSimpleBranch` worldSeed) were
+folded in; the remaining nice-to-haves (e.g. `bindSimMaterialFixtures`,
+`expectDiagnostic` path/severity options, `testPrincipalAs`) are small enough
+to add when a consumer appears.
 
 ## Why
 

@@ -1,16 +1,7 @@
-import { APICallError, RetryError } from "ai";
+import { RetryError } from "ai";
 import { describe, expect, it } from "vitest";
+import { apiError } from "@/server/test-support";
 import { classifyProviderError, describeProviderError } from "./errors";
-
-function apiError(responseBody: string, message = "Invalid JSON response", statusCode = 200): APICallError {
-  return new APICallError({
-    message,
-    url: "https://openrouter.ai/api/v1/chat/completions",
-    requestBodyValues: {},
-    statusCode,
-    responseBody,
-  });
-}
 
 describe("describeProviderError", () => {
   it("surfaces an upstream moderation reason hidden behind 'Invalid JSON response'", () => {

@@ -196,3 +196,49 @@ export function toPublicEntityImage(row: typeof images.$inferSelect) {
     createdAt: row.createdAt,
   };
 }
+
+/**
+ * **The public surface, written out — a deliberate-edit tripwire.**
+ *
+ * Every projection above is an allow-list, but an allow-list nobody counts can
+ * still gain a key by accident: someone adds `ownerId` to `toPublicItem` "just
+ * for the card", the projections keep compiling, and the widening ships. The
+ * integration suites (`public-dto.int.test.ts`, `authz-matrix.int.test.ts`)
+ * assert `Object.keys(projection).sort()` equals the list for its kind, so a
+ * projection change that is not ALSO an edit here fails the security gates.
+ *
+ * That is exactly why the keys are **spelled out rather than derived** from the
+ * projection functions. A derived list (`Object.keys(toPublicItem(row))`) would
+ * agree with the projection by construction and assert nothing — the value here
+ * is that the two are written independently and must be reconciled by hand.
+ *
+ * The per-kind types come from the projections' return types, so the two halves
+ * meet in the middle: TypeScript rejects a key listed here that the projection
+ * does not produce, and the suites reject a key the projection produces that is
+ * not listed here. Lists are sorted, matching the assertions' `.sort()`.
+ */
+export const PUBLIC_DTO_KEYS: {
+  character: readonly (keyof ReturnType<typeof toPublicCharacter>)[];
+  location: readonly (keyof ReturnType<typeof toPublicLocation>)[];
+  item: readonly (keyof ReturnType<typeof toPublicItem>)[];
+  social_card: readonly (keyof ReturnType<typeof toPublicSocialCard>)[];
+  entity_image: readonly (keyof ReturnType<typeof toPublicEntityImage>)[];
+} = {
+  character: ["avatarImageId", "createdAt", "id", "name", "profile", "tags", "visibility"],
+  location: [
+    "affordances",
+    "ambient",
+    "area",
+    "createdAt",
+    "description",
+    "id",
+    "imageId",
+    "name",
+    "scale",
+    "tags",
+    "visibility",
+  ],
+  item: ["createdAt", "definition", "description", "id", "imageId", "kind", "name", "tags", "visibility"],
+  social_card: ["createdAt", "definition", "description", "id", "name", "tags", "visibility"],
+  entity_image: ["createdAt", "entityId", "entityKind", "id", "kind"],
+};

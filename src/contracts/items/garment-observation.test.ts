@@ -1,16 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { garmentReadout, type GarmentReadout } from "./garment-effective-coverage";
 import { GARMENT_DEGREE_BAND_VALUES, GARMENT_UNIT_ONE } from "./garment-material";
-import { garmentTemplateForCategory } from "./garment-templates";
-import type { GarmentBlueprint } from "./garment-blueprint";
-import {
-  emptyGarmentCueState,
-  emptyGarmentPresentationState,
-  pristineGarmentConditionState,
-  type GarmentConditionState,
-  type GarmentInstanceState,
-  type GarmentPresentationState,
-} from "./garment-instance";
+import { templateFor, wornGarment } from "./garment-test-fixtures";
+import { emptyGarmentCueState } from "./garment-instance";
 import {
   garmentObservations,
   garmentPreviousBands,
@@ -28,33 +20,10 @@ import {
  * clothing produces no fresh cue; a meaningful change may produce one."*
  */
 
-const templateFor = (categoryId: string): GarmentBlueprint => {
-  const blueprint = garmentTemplateForCategory(categoryId, "woven_cotton_linen");
-  if (!blueprint) throw new Error(`no template for ${categoryId}`);
-  return blueprint;
-};
-
 const TOP = templateFor("top");
 const OUTERWEAR = templateFor("outerwear");
 const BRA = templateFor("bra");
 const SKIRT = templateFor("skirt");
-
-function worn(input: {
-  id?: string;
-  name?: string;
-  presentation?: Partial<GarmentPresentationState>;
-  condition?: Partial<GarmentConditionState>;
-}): GarmentInstanceState {
-  return {
-    id: input.id ?? "g_shirt",
-    blueprintHash: "h1",
-    name: input.name ?? "linen shirt",
-    locus: { kind: "worn", actorId: "c:wren" },
-    presentation: { ...emptyGarmentPresentationState(), ...input.presentation },
-    condition: { ...pristineGarmentConditionState(), ...input.condition },
-    lastChange: { kind: "mint", atMinutes: 0 },
-  };
-}
 
 /** One actor wearing the given readouts, referred to as "Wren's". */
 const wren = (readouts: readonly GarmentReadout[], visibility?: Record<string, "visible" | "hinted" | "hidden">): GarmentObservationActor => ({
@@ -64,14 +33,14 @@ const wren = (readouts: readonly GarmentReadout[], visibility?: Record<string, "
 });
 
 const rolledShirt = () =>
-  garmentReadout(worn({ presentation: { roll: { sleeve_left: GARMENT_DEGREE_BAND_VALUES.substantial } } }), TOP);
+  garmentReadout(wornGarment({ presentation: { roll: { sleeve_left: GARMENT_DEGREE_BAND_VALUES.substantial } } }), TOP);
 
 describe("the six families", () => {
   it("closure_open — partly, then fully", () => {
     const partly = garmentObservations([
       wren([
         garmentReadout(
-          worn({ presentation: { closure: { front_panel: { kind: "fastener_series", openFastenerIndexes: [0, 1] } } } }),
+          wornGarment({ presentation: { closure: { front_panel: { kind: "fastener_series", openFastenerIndexes: [0, 1] } } } }),
           TOP,
         ),
       ]),
@@ -83,7 +52,7 @@ describe("the six families", () => {
     const open = garmentObservations([
       wren([
         garmentReadout(
-          worn({ presentation: { closure: { front_panel: { kind: "fastener_series", openFastenerIndexes: [0, 1, 2, 3] } } } }),
+          wornGarment({ presentation: { closure: { front_panel: { kind: "fastener_series", openFastenerIndexes: [0, 1, 2, 3] } } } }),
           TOP,
         ),
       ]),
@@ -105,7 +74,7 @@ describe("the six families", () => {
     const strap = garmentObservations([
       wren([
         garmentReadout(
-          worn({
+          wornGarment({
             id: "g_bra",
             name: "bra",
             presentation: {
@@ -122,7 +91,7 @@ describe("the six families", () => {
     const hem = garmentObservations([
       wren([
         garmentReadout(
-          worn({
+          wornGarment({
             id: "g_skirt",
             name: "wool skirt",
             presentation: {
@@ -139,7 +108,7 @@ describe("the six families", () => {
 
   it("surface_damp_or_wet — a soaked hem speaks for itself, not for the whole shirt", () => {
     const readout = garmentReadout(
-      worn({
+      wornGarment({
         condition: {
           base: { wetness: 2_000, cleanliness: GARMENT_UNIT_ONE, crease_load: 0, wear: 0 },
           regionOverrides: { hem: { wetness: GARMENT_UNIT_ONE } },
@@ -158,7 +127,7 @@ describe("the six families", () => {
 
   it("surface_damp_or_wet — a garment wet all over keeps its one whole-garment cue", () => {
     const readout = garmentReadout(
-      worn({ condition: { base: { wetness: 6_000, cleanliness: GARMENT_UNIT_ONE, crease_load: 0, wear: 0 } } }),
+      wornGarment({ condition: { base: { wetness: 6_000, cleanliness: GARMENT_UNIT_ONE, crease_load: 0, wear: 0 } } }),
       TOP,
     );
     const wet = garmentObservations([wren([readout])]);
@@ -169,7 +138,7 @@ describe("the six families", () => {
 
   it("deposit_visible and damage_visible — located, and phrased by freshness", () => {
     const readout = garmentReadout(
-      worn({
+      wornGarment({
         condition: {
           deposits: [
             { id: "d1", kind: "mud", partIds: ["hem"], intensity: 7_500, extent: 5_000, freshness: 0, atMinutes: 0 },
@@ -190,14 +159,14 @@ describe("the six families", () => {
   });
 
   it("emits nothing for a garment that is simply worn as made", () => {
-    expect(garmentObservations([wren([garmentReadout(worn({}), TOP)])])).toEqual([]);
+    expect(garmentObservations([wren([garmentReadout(wornGarment({}), TOP)])])).toEqual([]);
   });
 });
 
 describe("perception — hidden parts cannot produce visual cues (F12)", () => {
   it("drops a buried part's read, and keeps a visible one on the same garment", () => {
     const readout = garmentReadout(
-      worn({
+      wornGarment({
         condition: {
           deposits: [
             { id: "d1", kind: "blood", partIds: ["front_panel"], intensity: 7_500, extent: 4_000, freshness: GARMENT_UNIT_ONE, atMinutes: 0 },
@@ -248,7 +217,7 @@ describe("the repeat gate — changes surface, standing state does not", () => {
     const openedToo = garmentObservations([
       wren([
         garmentReadout(
-          worn({
+          wornGarment({
             presentation: {
               roll: { sleeve_left: GARMENT_DEGREE_BAND_VALUES.substantial },
               closure: { front_panel: { kind: "fastener_series", openFastenerIndexes: [0, 1] } },
@@ -264,7 +233,7 @@ describe("the repeat gate — changes surface, standing state does not", () => {
 
   it("caps the block at two cues, most salient first, and carries the rest as standing", () => {
     const loud = garmentReadout(
-      worn({
+      wornGarment({
         presentation: {
           roll: { sleeve_left: GARMENT_DEGREE_BAND_VALUES.substantial },
           closure: { front_panel: { kind: "fastener_series", openFastenerIndexes: [0, 1, 2, 3] } },
@@ -285,7 +254,7 @@ describe("the repeat gate — changes surface, standing state does not", () => {
 
   it("records the reported condition bands so hysteresis has a durable home", () => {
     const damp = garmentReadout(
-      worn({ condition: { base: { wetness: 4_600, cleanliness: GARMENT_UNIT_ONE, crease_load: 0, wear: 0 } } }),
+      wornGarment({ condition: { base: { wetness: 4_600, cleanliness: GARMENT_UNIT_ONE, crease_load: 0, wear: 0 } } }),
       TOP,
     );
     const split = splitGarmentCues({ observations: garmentObservations([wren([damp])]), readouts: [damp] });
@@ -296,7 +265,7 @@ describe("the repeat gate — changes surface, standing state does not", () => {
     // A read just under the boundary keeps saying "wet" (slice 4's hysteresis),
     // which is only possible because the previous band was persisted here.
     const settling = garmentReadout(
-      worn({ condition: { base: { wetness: 4_200, cleanliness: GARMENT_UNIT_ONE, crease_load: 0, wear: 0 } } }),
+      wornGarment({ condition: { base: { wetness: 4_200, cleanliness: GARMENT_UNIT_ONE, crease_load: 0, wear: 0 } } }),
       TOP,
       { previousBands: garmentPreviousBands(split.next, "g_shirt") },
     );
@@ -307,7 +276,7 @@ describe("the repeat gate — changes surface, standing state does not", () => {
 describe("the per-scene image notes", () => {
   it("hand the whole current frame over, un-gated by repetition", () => {
     const readout = garmentReadout(
-      worn({
+      wornGarment({
         presentation: { roll: { sleeve_left: GARMENT_DEGREE_BAND_VALUES.substantial } },
         condition: { base: { wetness: GARMENT_UNIT_ONE, cleanliness: GARMENT_UNIT_ONE, crease_load: 0, wear: 0 } },
       }),

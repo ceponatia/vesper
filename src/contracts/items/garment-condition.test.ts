@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectCleanSink, expectDiagnostics } from "@/test/diagnostics";
 import { DiagnosticCollector } from "../diagnostics";
 import { garmentBlueprintHash, type GarmentBlueprint } from "./garment-blueprint";
 import {
@@ -28,7 +29,7 @@ import {
   emptyGarmentCueState,
 } from "./garment-instance";
 import { applyGarmentOperations } from "./garment-presentation";
-import { garmentTemplateForCategory } from "./garment-templates";
+import { templateFor } from "./garment-test-fixtures";
 
 /**
  * The condition reducer, its gradients and its bands
@@ -46,12 +47,6 @@ import { garmentTemplateForCategory } from "./garment-templates";
  *   destroyed garment all DROP with a stable code and leave the store
  *   byte-identical (docs/resilience.md §2).
  */
-
-const templateFor = (categoryId: string, material: "woven_cotton_linen" | "leather" | "wool"): GarmentBlueprint => {
-  const blueprint = garmentTemplateForCategory(categoryId, material);
-  if (!blueprint) throw new Error(`no template for ${categoryId}`);
-  return blueprint;
-};
 
 /** A cotton shirt (absorbent, wrinkles readily) and a leather jacket (barely absorbs). */
 const COTTON_TOP = templateFor("top", "woven_cotton_linen");
@@ -79,7 +74,7 @@ function run(store: ChatGarmentStore, operations: readonly GarmentOperation[], a
   const result = applyGarmentOperations(store, operations, { atMinutes, sink });
   const instance = result.store.instances[0];
   if (!instance) throw new Error("store lost its instance");
-  return { ...result, instance, condition: instance.condition, codes: sink.items.map((d) => d.code) };
+  return { ...result, instance, condition: instance.condition, sink };
 }
 
 const rain = (degree: "slight" | "moderate" | "substantial" | "extreme" = "substantial"): GarmentOperation => ({
@@ -463,7 +458,7 @@ describe("apply_condition", () => {
       { kind: "apply_condition", garmentId: "g", partIds: ["sleeve_middle"], channel: "wetness", change: { direction: "increase", degree: "moderate" } },
     ]);
     expect(result.applied).toBe(0);
-    expect(result.codes).toEqual(["garment_op.part_unresolved"]);
+    expectDiagnostics(result.sink, ["garment_op.part_unresolved"]);
     expect(JSON.stringify(result.store)).toBe(before);
   });
 
@@ -471,7 +466,7 @@ describe("apply_condition", () => {
     const result = run(storeOf(COTTON_TOP), [
       { kind: "apply_condition", garmentId: "nope", partIds: [], channel: "wetness", change: { direction: "increase", degree: "moderate" } },
     ]);
-    expect(result.codes).toEqual(["garment_op.garment_unresolved"]);
+    expectDiagnostics(result.sink, ["garment_op.garment_unresolved"]);
   });
 
   it("drops every condition operation on a `gone` garment", () => {
@@ -485,7 +480,7 @@ describe("apply_condition", () => {
     ];
     const result = run(store, operations);
     expect(result.applied).toBe(0);
-    expect(result.codes).toEqual(new Array(operations.length).fill("garment_op.condition_on_gone"));
+    expectDiagnostics(result.sink, new Array<string>(operations.length).fill("garment_op.condition_on_gone"));
   });
 
   it("clamps at the ends of the scale and reports no change as no application", () => {
@@ -530,7 +525,7 @@ describe("deposit", () => {
   it("drops an unresolvable part", () => {
     const result = run(storeOf(COTTON_TOP), [{ ...mudOnHem, partIds: ["knee"] }]);
     expect(result.applied).toBe(0);
-    expect(result.codes).toEqual(["garment_op.part_unresolved"]);
+    expectDiagnostics(result.sink, ["garment_op.part_unresolved"]);
   });
 });
 
@@ -564,7 +559,7 @@ describe("damage and repair", () => {
   it("drops damage on an unresolvable part", () => {
     const result = run(storeOf(COTTON_TOP), [{ ...tear, partId: "elbow_patch" }]);
     expect(result.applied).toBe(0);
-    expect(result.codes).toEqual(["garment_op.part_unresolved"]);
+    expectDiagnostics(result.sink, ["garment_op.part_unresolved"]);
   });
 
   it("repairs by mark id and stamps a repair", () => {
@@ -579,19 +574,19 @@ describe("damage and repair", () => {
     const torn = run(storeOf(COTTON_TOP), [tear], 5);
     const markId = torn.condition.damageMarks[0]?.id ?? "";
     const partial = run(torn.store, [{ kind: "repair", garmentId: "g", markIds: [markId, "mark:ghost"] }], 90);
-    expect(partial.codes).toEqual(["garment_op.mark_unresolved"]);
+    expectDiagnostics(partial.sink, ["garment_op.mark_unresolved"]);
     expect(partial.condition.damageMarks).toEqual([]);
     // Nothing known at all ⇒ nothing changes.
     const nothing = run(partial.store, [{ kind: "repair", garmentId: "g", markIds: ["mark:ghost"] }], 95);
     expect(nothing.applied).toBe(0);
-    expect(nothing.codes).toEqual(["garment_op.mark_unresolved"]);
+    expectDiagnostics(nothing.sink, ["garment_op.mark_unresolved"]);
   });
 
   it("repair is NOT root-scoped: an empty mark list is a proposal that named nothing", () => {
     const torn = run(storeOf(COTTON_TOP), [tear], 5);
     const result = run(torn.store, [{ kind: "repair", garmentId: "g", markIds: [] }], 90);
     expect(result.applied).toBe(0);
-    expect(result.codes).toEqual(["garment_op.repair_no_marks"]);
+    expectDiagnostics(result.sink, ["garment_op.repair_no_marks"]);
     expect(result.condition.damageMarks).toHaveLength(1);
   });
 });
@@ -612,15 +607,15 @@ describe("OQ7 — an empty partIds list means the whole garment for exactly thre
       { kind: "clean", garmentId: "g", partIds: [], target: "clean" },
     ]);
     expect(result.applied).toBe(3);
-    expect(result.codes).toEqual([]);
+    expectCleanSink(result.sink);
     expect(result.condition.base.wetness).toBeGreaterThan(0);
   });
 
   it("the operations OUTSIDE the set refuse an empty list", () => {
     const restore = run(storeOf(COTTON_TOP), [{ kind: "restore_presentation", garmentId: "g", partIds: [] }]);
-    expect(restore.codes).toEqual(["garment_op.restore_no_parts"]);
+    expectDiagnostics(restore.sink, ["garment_op.restore_no_parts"]);
     const repair = run(storeOf(COTTON_TOP), [{ kind: "repair", garmentId: "g", markIds: [] }]);
-    expect(repair.codes).toEqual(["garment_op.repair_no_marks"]);
+    expectDiagnostics(repair.sink, ["garment_op.repair_no_marks"]);
   });
 });
 

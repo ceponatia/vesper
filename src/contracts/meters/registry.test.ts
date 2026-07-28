@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectUniqueIds } from "@/test/registry-invariants";
 import {
   applyMeterDrift,
   crossedThresholdHints,
@@ -14,8 +15,7 @@ import {
 
 describe("meter registry", () => {
   it("ids are unique and initial values are in range", () => {
-    const ids = meterDefinitions.map((m) => m.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    expectUniqueIds(meterDefinitions, "meterDefinitions");
     for (const def of meterDefinitions) {
       expect(def.initial).toBeGreaterThanOrEqual(0);
       expect(def.initial).toBeLessThanOrEqual(1);

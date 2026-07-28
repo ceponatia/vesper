@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import { engagementStateTransitions, pressureAcknowledgedEventSchema } from "@/contracts/simulation/engagements";
+import { eventEnvelope, simMeta, testPrincipal } from "@/test/sim-envelopes";
 import { simulationHash } from "./hash";
 import {
   applyEngagementEvent,
@@ -29,11 +30,7 @@ function participant(actorId: string, overrides: Record<string, unknown> = {}) {
 
 function openView(overrides: Record<string, unknown> = {}) {
   return {
-    worldId: "world-1",
-    branchId: "branch-1",
-    rulesetVersion: "gate3-test-v1",
-    headSequence: 0,
-    storySecond: NOW,
+    ...simMeta({ storySecond: NOW }),
     participants: [participant("actor-1"), participant("actor-2")],
     ...overrides,
   };
@@ -45,7 +42,7 @@ function openCommand(overrides: Record<string, unknown> = {}, payloadOverrides: 
     branchId: "branch-1",
     expectedVersion: 0,
     idempotencyKey: "open-key-1",
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-1"] },
+    principal: testPrincipal("player", ["actor-1"]),
     submittedAtWallClock: "2026-07-17T12:00:00.000Z",
     correlationId: "corr-1",
     type: "open_engagement",
@@ -166,7 +163,7 @@ describe("E3.4 resolveEndEngagement and interrupts", () => {
       branchId: "branch-1",
       expectedVersion: 1,
       idempotencyKey: "end-key-1",
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-1"] },
+      principal: testPrincipal("player", ["actor-1"]),
       submittedAtWallClock: "2026-07-17T12:10:00.000Z",
       correlationId: "corr-1",
       type: "end_engagement",
@@ -174,11 +171,7 @@ describe("E3.4 resolveEndEngagement and interrupts", () => {
       payload: { engagementId: open.engagement.id, reason: "participant_choice" },
     };
     const view = {
-      worldId: "world-1",
-      branchId: "branch-1",
-      rulesetVersion: "gate3-test-v1",
-      headSequence: 1,
-      storySecond: NOW + 300,
+      ...simMeta({ headSequence: 1, storySecond: NOW + 300 }),
       engagement: open.engagement,
     };
     const ended = resolveEndEngagement(view as never, endCommand as never);
@@ -204,13 +197,7 @@ describe("E3.4 resolveEndEngagement and interrupts", () => {
   it("builds a departure interrupt that replays to an interrupted scene", () => {
     const open = acceptedOpen();
     const interrupt = buildDepartureInterruptEvent({
-      meta: {
-        worldId: "world-1",
-        branchId: "branch-1",
-        rulesetVersion: "gate3-test-v1",
-        headSequence: 1,
-        storySecond: NOW + 100,
-      },
+      meta: simMeta({ headSequence: 1, storySecond: NOW + 100 }),
       command: { id: "cmd-move-1", correlationId: "corr-1", submittedAtWallClock: "2026-07-17T12:02:00.000Z" },
       engagement: open.engagement,
       sequence: 2,
@@ -230,20 +217,13 @@ describe("E3.4 engagements replay", () => {
   it("folds open + end and matches the stepwise fold", () => {
     const open = acceptedOpen();
     const end = resolveEndEngagement(
-      {
-        worldId: "world-1",
-        branchId: "branch-1",
-        rulesetVersion: "gate3-test-v1",
-        headSequence: 1,
-        storySecond: NOW + 300,
-        engagement: open.engagement,
-      } as never,
+      { ...simMeta({ headSequence: 1, storySecond: NOW + 300 }), engagement: open.engagement } as never,
       {
         id: "cmd-end-1",
         branchId: "branch-1",
         expectedVersion: 1,
         idempotencyKey: "end-key-1",
-        principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-1"] },
+        principal: testPrincipal("player", ["actor-1"]),
         submittedAtWallClock: "2026-07-17T12:10:00.000Z",
         correlationId: "corr-1",
         type: "end_engagement",
@@ -269,20 +249,13 @@ describe("E3.4 engagements replay", () => {
 
 describe("E5.5 slice 3 — pressure_acknowledged real fold case", () => {
   function ackEvent(engagementId: string, pressureId: string, sequence: number) {
-    return pressureAcknowledgedEventSchema.parse({
-      id: `event-ack-${pressureId}-${sequence}`,
-      worldId: "world-1",
-      branchId: "branch-1",
+    return eventEnvelope(pressureAcknowledgedEventSchema, {
+      type: "pressure_acknowledged",
+      idSlug: `ack-${pressureId}`,
       sequence,
       storySecond: NOW + 100,
-      rulesetVersion: "gate3-test-v1",
-      correlationId: "corr-1",
       actorIds: ["actor-1"],
-      entityIds: [],
-      recordedAtWallClock: "2026-07-17T12:05:00.000Z",
       commandId: "cmd-ack",
-      type: "pressure_acknowledged",
-      schemaVersion: 1,
       payload: {
         engagementId,
         pressureId,

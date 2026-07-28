@@ -7,6 +7,7 @@ import { CUT_COMPILER_VERSION } from "@/contracts/simulation/narrative";
 import { softCanonEntrySchema } from "@/contracts/simulation/soft-canon";
 import { spaceProjectionSchema, type SpaceProjection } from "@/contracts/simulation/space";
 import { temporalPressureSchema } from "@/contracts/simulation/commitments";
+import { eventEnvelope, simMeta } from "@/test/sim-envelopes";
 import { compileNarrativeCut, decideDepartures, departureCandidates } from "./narrative";
 import { deriveCommandObservations } from "./perception";
 
@@ -70,12 +71,8 @@ describe("E3.4 decideDepartures", () => {
 
 function fixtureSpace(): SpaceProjection {
   return spaceProjectionSchema.parse({
-    worldId: "world-1",
-    branchId: "branch-1",
-    rulesetVersion: "gate3-test-v1",
+    ...simMeta({ headSequence: 6, storySecond: NOW + 400 }),
     version: 4,
-    headSequence: 6,
-    storySecond: NOW + 400,
     locations: [{ id: "loc-cafe", worldId: "world-1", kind: "cafe", defaultAccessPolicy: "public" }],
     zones: [
       { id: "zone-cafe", locationId: "loc-cafe", kind: "hall", privacyPolicy: "public" },
@@ -122,40 +119,28 @@ function fixtureEngagement(): Engagement {
 }
 
 function departureEvent(sequence: number): SimulationBranchEvent {
-  return simulationBranchEventSchema.parse({
-    id: `event-departed-${sequence}`,
-    worldId: "world-1",
-    branchId: "branch-1",
+  return eventEnvelope(simulationBranchEventSchema, {
+    type: "actor_departed",
+    idSlug: "departed",
     sequence,
     storySecond: NOW + 300,
-    type: "actor_departed",
-    schemaVersion: 1,
-    rulesetVersion: "gate3-test-v1",
     commandId: "cmd-move",
-    correlationId: "corr-1",
     actorIds: ["mara"],
     entityIds: ["journey-1"],
-    locationId: "loc-cafe",
-    recordedAtWallClock: "2026-07-17T12:00:00.000Z",
+    overrides: { locationId: "loc-cafe" },
     payload: { journeyId: "journey-1", fromZoneId: "zone-cafe", linkId: "link-cs", departedAt: NOW + 300 },
   });
 }
 
 function commitmentEvent(sequence: number): SimulationBranchEvent {
-  return simulationBranchEventSchema.parse({
-    id: `event-missed-${sequence}`,
-    worldId: "world-1",
-    branchId: "branch-1",
+  return eventEnvelope(simulationBranchEventSchema, {
+    type: "commitment_missed",
+    idSlug: "missed",
     sequence,
     storySecond: NOW + 350,
-    type: "commitment_missed",
-    schemaVersion: 1,
-    rulesetVersion: "gate3-test-v1",
     commandId: "cmd-deadline",
-    correlationId: "corr-1",
     actorIds: ["mara"],
     entityIds: ["commit-mara"],
-    recordedAtWallClock: "2026-07-17T12:00:00.000Z",
     payload: {
       commitmentId: "commit-mara",
       actorId: "mara",
@@ -166,21 +151,15 @@ function commitmentEvent(sequence: number): SimulationBranchEvent {
 }
 
 function windingDownEvent(sequence: number): SimulationBranchEvent {
-  return simulationBranchEventSchema.parse({
-    id: `event-winding-${sequence}`,
-    worldId: "world-1",
-    branchId: "branch-1",
+  return eventEnvelope(simulationBranchEventSchema, {
+    type: "engagement_winding_down",
+    idSlug: "winding",
     sequence,
     storySecond: NOW + 360,
-    type: "engagement_winding_down",
-    schemaVersion: 1,
-    rulesetVersion: "gate3-test-v1",
     commandId: "cmd-wind",
-    correlationId: "corr-1",
     actorIds: ["mara", "player"],
     entityIds: ["engagement-1"],
-    locationId: "loc-cafe",
-    recordedAtWallClock: "2026-07-17T12:00:00.000Z",
+    overrides: { locationId: "loc-cafe" },
     payload: { engagementId: "engagement-1", at: NOW + 360 },
   });
 }

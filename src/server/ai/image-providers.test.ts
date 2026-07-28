@@ -1,6 +1,6 @@
-import { APICallError } from "ai";
 import { describe, expect, it } from "vitest";
 import type { SceneVisualReference } from "@/contracts";
+import { apiError } from "@/server/test-support";
 import { classifyImageFailure, IMAGE_PROVIDERS, routeSceneProviders } from "./image-providers";
 
 const charRef = (overrides: Partial<SceneVisualReference> = {}): SceneVisualReference => ({
@@ -8,16 +8,6 @@ const charRef = (overrides: Partial<SceneVisualReference> = {}): SceneVisualRefe
   allowForIntimate: true,
   ...overrides,
 });
-
-function apiError(responseBody: string): APICallError {
-  return new APICallError({
-    message: "Invalid JSON response",
-    url: "https://openrouter.ai/api/v1/chat/completions",
-    requestBodyValues: {},
-    statusCode: 200,
-    responseBody,
-  });
-}
 
 describe("routeSceneProviders", () => {
   it("demo mode routes to the monogram only", () => {

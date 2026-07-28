@@ -1,24 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import { canCreateSymlinks } from "@/server/test-support";
+import { canCreateSymlinks, testPngBuffer, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
 import { absoluteImagePath, dataRoot, imageRelativePath, writeWebpAtomic } from "./assets";
 import { monogramSvg } from "./monogram";
 
 const symlinksAvailable = canCreateSymlinks();
 
+let sandbox: TempDataRoot;
 let tmp: string;
 
 beforeEach(async () => {
-  tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vesper-images-"));
-  process.env.DATA_ROOT = tmp;
+  sandbox = await withTempDataRoot("vesper-images");
+  tmp = sandbox.root;
 });
 
 afterEach(async () => {
-  delete process.env.DATA_ROOT;
-  await fs.rm(tmp, { recursive: true, force: true });
+  await sandbox.cleanup();
 });
 
 describe("dataRoot / paths", () => {
@@ -36,18 +35,10 @@ describe("dataRoot / paths", () => {
 });
 
 describe("writeWebpAtomic", () => {
-  async function png(): Promise<Buffer> {
-    return sharp({
-      create: { width: 8, height: 12, channels: 3, background: { r: 200, g: 80, b: 80 } },
-    })
-      .png()
-      .toBuffer();
-  }
-
   it("converts to webp, creates directories, and leaves no pending temp behind", async () => {
     const target = path.join(tmp, "images", "owner1", "img1.webp");
 
-    const info = await writeWebpAtomic(target, await png());
+    const info = await writeWebpAtomic(target, await testPngBuffer());
     expect(info).toMatchObject({ width: 8, height: 12 });
     expect(info.bytes).toBeGreaterThan(0);
 
@@ -72,7 +63,7 @@ describe("writeWebpAtomic", () => {
 
   it("rejects writes outside DATA_ROOT", async () => {
     const outside = path.join(path.dirname(tmp), `${path.basename(tmp)}-outside`, "escape.webp");
-    await expect(writeWebpAtomic(outside, await png())).rejects.toThrow("escapes DATA_ROOT");
+    await expect(writeWebpAtomic(outside, await testPngBuffer())).rejects.toThrow("escapes DATA_ROOT");
     await expect(fs.access(outside)).rejects.toThrow();
   });
 
@@ -85,7 +76,7 @@ describe("writeWebpAtomic", () => {
     await fs.writeFile(outside, "untouched");
     await fs.symlink(outside, pending, "file");
 
-    await expect(writeWebpAtomic(target, await png())).rejects.toThrow("symbolic link");
+    await expect(writeWebpAtomic(target, await testPngBuffer())).rejects.toThrow("symbolic link");
     expect(await fs.readFile(outside, "utf8")).toBe("untouched");
   });
 });

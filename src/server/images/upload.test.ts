@@ -1,18 +1,11 @@
 import { describe, expect, it } from "vitest";
-import sharp from "sharp";
+import { testPngDataUrl } from "@/server/test-support";
 import { decodeDataUrl } from "./upload";
 
 const MAX_DECODED_BYTES = 4 * 1024 * 1024;
 
-/** A real 1×1 PNG rendered by sharp, encoded as a base64 data URL. */
-async function tinyPngDataUrl(): Promise<string> {
-  const png = await sharp({
-    create: { width: 1, height: 1, channels: 3, background: { r: 10, g: 20, b: 30 } },
-  })
-    .png()
-    .toBuffer();
-  return `data:image/png;base64,${png.toString("base64")}`;
-}
+/** A real 1×1 PNG rendered by sharp — the smallest genuine raster the decoder can accept. */
+const tinyPng = () => testPngDataUrl(1, 1);
 
 describe("decodeDataUrl", () => {
   it("rejects an SVG data URL (no librsvg path) — returns null", () => {
@@ -36,7 +29,7 @@ describe("decodeDataUrl", () => {
   });
 
   it("accepts a valid tiny PNG data URL", async () => {
-    const decoded = decodeDataUrl(await tinyPngDataUrl());
+    const decoded = decodeDataUrl(await tinyPng());
     expect(decoded).not.toBeNull();
     expect(decoded?.mime).toBe("image/png");
     expect(decoded?.buffer.byteLength).toBeGreaterThan(0);
@@ -44,7 +37,7 @@ describe("decodeDataUrl", () => {
   });
 
   it("normalizes the mime to lower case and accepts mixed-case mimes", async () => {
-    const png = await tinyPngDataUrl();
+    const png = await tinyPng();
     const mixed = png.replace("data:image/png", "data:image/PNG");
     expect(decodeDataUrl(mixed)?.mime).toBe("image/png");
   });

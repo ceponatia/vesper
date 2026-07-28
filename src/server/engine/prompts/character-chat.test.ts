@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
-import type { AttributeValue } from "@/contracts/attributes/value";
+import type { ChatDrive } from "@/contracts/personality/drives";
 import type { RelationshipRecord } from "@/contracts/relationships/record";
+import { attr, drive, expectNumberedRule, expectOrder, maraProfile, promptSection } from "@/server/test-support";
 import {
   buildCharacterChatPromptParts,
   buildCharacterChatSystemPrompt,
@@ -13,32 +14,53 @@ import {
   ENSEMBLE_QUIET_EXCHANGES,
   ensembleQuietThreshold,
   wrapNarratorInput,
+  type CharacterChatPromptInput,
   type EnsembleMemberInput,
 } from "./character-chat";
 
-const attr = (id: AttributeValue["id"], value: AttributeValue["value"]): AttributeValue => ({ id, value, source: "creation" });
+// ---------------------------------------------------------------------------
+// The file's default subject: Mara, her seeded sheet, and a blank live state.
+// Every wrapper takes the same `over` shape as the builder it fronts, so a case
+// that needs one field different states only that field.
+// ---------------------------------------------------------------------------
 
-function profile(overrides: Partial<CharacterProfile> = {}): CharacterProfile {
-  return {
-    ...emptyCharacterProfile(),
-    bio: "A harbor-town glassblower with salt in her hair.",
-    personality: "Wry, guarded, fiercely loyal once you earn it.",
-    voice: "Low and dry, with a coastal lilt.",
-    age: "29",
-    attributes: [
-      attr("identity.apparent_age", "late twenties"),
-      attr("identity.gender", "female"),
-      attr("hair.color", "auburn"),
-      attr("voice.pitch", "low"),
-      attr("voice.cadence", "measured"),
-    ],
-    ...overrides,
-  };
-}
+/** The live-state block: three fields repeated verbatim in ~34 cases. */
+type ChatPromptState = NonNullable<CharacterChatPromptInput["state"]>;
+const chatState = (over: Partial<ChatPromptState> = {}): ChatPromptState => ({
+  meters: {},
+  regard: 0,
+  conditions: [],
+  ...over,
+});
+
+/** `buildCharacterChatSystemPrompt` over Mara's seeded sheet. */
+const systemPrompt = (over: Partial<CharacterChatPromptInput> = {}): string =>
+  buildCharacterChatSystemPrompt({ name: "Mara", profile: maraProfile(), ...over });
+
+/** The same defaults through the split prefix/tail builder. */
+const promptParts = (over: Partial<CharacterChatPromptInput> = {}): ReturnType<typeof buildCharacterChatPromptParts> =>
+  buildCharacterChatPromptParts({ name: "Mara", profile: maraProfile(), ...over });
+
+/** One ensemble roster member — Mara's sheet unless the case supplies another. */
+const member = (name: string, over: Partial<EnsembleMemberInput> = {}): EnsembleMemberInput => ({
+  name,
+  profile: maraProfile(),
+  presence: "present",
+  quietExchanges: 0,
+  ...over,
+});
+
+/** The single-character input the roster dispatch is compared against. */
+const input = (over: Partial<CharacterChatPromptInput> = {}): CharacterChatPromptInput => ({
+  name: "Mara",
+  profile: maraProfile(),
+  player: { name: "Brian" },
+  ...over,
+});
 
 describe("buildCharacterChatSystemPrompt", () => {
   it("embodies the named character and surfaces identity, personality, and voice", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const prompt = systemPrompt();
     expect(prompt).toContain("You are Mara");
     // Identity block carries the real age (profile field), not the apparent-age attribute.
     expect(prompt).toContain("You are 29 years old.");
@@ -49,21 +71,20 @@ describe("buildCharacterChatSystemPrompt", () => {
   });
 
   it("renders resolved attribute values, never raw ids", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const prompt = systemPrompt();
     expect(prompt).toContain("auburn");
     expect(prompt).not.toContain("hair.color");
     expect(prompt).not.toContain("voice.pitch");
   });
 
   it("includes registry promptHints as deduped phrasing guidance", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const prompt = systemPrompt();
     expect(prompt).toContain("Phrasing guidance:");
   });
 
   it("surfaces the authored personality sliders as a binding Disposition block", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile({
+    const prompt = systemPrompt({
+      profile: maraProfile({
         traits: [
           { id: "temperament.warmth", value: -70, source: "creation" },
           { id: "social.guardedness", value: 80, source: "creation" },
@@ -84,19 +105,19 @@ describe("buildCharacterChatSystemPrompt", () => {
   });
 
   it("omits the Disposition block when no sliders are authored", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile({ traits: [] }) });
+    const prompt = systemPrompt({ profile: maraProfile({ traits: [] }) });
     expect(prompt).not.toContain("Disposition (your standing temperament");
   });
 
   it("carries the in-character + dialogue-tag rules", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const prompt = systemPrompt();
     expect(prompt).toContain("Stay fully in character as Mara");
     expect(prompt).toContain('[Mara]');
     expect(prompt).toMatch(/never mention being an AI/i);
   });
 
   it("states the mechanical attribution contract: whole-line quotes auto-attribute, mixed lines tag or split", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const prompt = systemPrompt();
     // Dialogue still goes in quotes, and the auto-attribution path is stated as mechanical…
     expect(prompt).toMatch(/spoken dialogue always goes in quotes/i);
     expect(prompt).toMatch(/attributes Mara's dialogue automatically ONLY when a line is nothing but the quote/i);
@@ -108,7 +129,7 @@ describe("buildCharacterChatSystemPrompt", () => {
   });
 
   it("licenses other people to speak in narration prose, reserving bracketed tags for the character", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const prompt = systemPrompt();
     expect(prompt).toMatch(/Other people in the scene/i);
     // 2026-07-11 tightening (the Amanda report): their lines need in-prose attribution,
     // never a bare quoted paragraph, and a tagged reply must tag every character line.
@@ -118,7 +139,7 @@ describe("buildCharacterChatSystemPrompt", () => {
   });
 
   it("forbids advancing the player's story and follows the character when they're apart (owner ruling 2026-07-10)", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    const prompt = systemPrompt({ player: { name: "Theo" } });
     // Rule 4's hard arm: the player's story moves only through their own messages.
     expect(prompt).toContain("Theo's story advances ONLY through their own messages");
     expect(prompt).toMatch(/NEVER narrate Theo doing things on your turn/);
@@ -132,7 +153,7 @@ describe("buildCharacterChatSystemPrompt", () => {
   });
 
   it("fixes a third-person viewpoint: character in third person, player as 'you', first person only in quotes", () => {
-    const withPlayer = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    const withPlayer = systemPrompt({ player: { name: "Theo" } });
     // Narration is third person for the character…
     expect(withPlayer).toMatch(/narrate in the third person/i);
     expect(withPlayer).not.toContain("Speak in the first person");
@@ -144,7 +165,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(withPlayer).toContain("Mara leans against the doorframe");
 
     // The faceless (no-player) variant keeps the same viewpoint discipline.
-    const faceless = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const faceless = systemPrompt();
     expect(faceless).toMatch(/narrate in the third person/i);
     expect(faceless).toMatch(/never as "I"\/"me"/);
   });
@@ -153,34 +174,34 @@ describe("buildCharacterChatSystemPrompt", () => {
     // The session engine licenses explicit content via world directives + exposure
     // rules; the chat carries neither, so the prompt must state the frame itself or
     // safety-aligned narrators refuse and break character. See character-chat.ts.
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const prompt = systemPrompt();
     expect(prompt).toMatch(/adult interactive fiction/i);
     expect(prompt).toMatch(/sexually explicit content (are|is) fully in scope/i);
   });
 
   it("forbids breaking character to refuse, and routes a 'no' through the character", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const prompt = systemPrompt();
     expect(prompt).toMatch(/never break character to refuse/i);
     expect(prompt).toMatch(/play it as Mara's own in-world choice/i);
   });
 
   it("adopts the shape profiles, replacing the fixed paragraph target", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const prompt = systemPrompt();
     expect(prompt).not.toContain("one or two short paragraphs");
     // The default (concise_immersive) profile drives chat length too.
     expect(prompt).toContain("Write one focused beat per turn");
   });
 
   it("makes the aggressive_concise shape selectable in chat and distinct", () => {
-    const aggressive = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), narrationShape: "aggressive_concise" });
-    const concise = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), narrationShape: "concise_immersive" });
+    const aggressive = systemPrompt({ narrationShape: "aggressive_concise" });
+    const concise = systemPrompt({ narrationShape: "concise_immersive" });
     expect(aggressive).toContain("Be brief and tightly scoped");
     expect(aggressive).not.toContain("Write one focused beat per turn");
     expect(aggressive).not.toBe(concise);
   });
 
   it("carries the proportionate-reaction + stay-in-voice chat rules", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const prompt = systemPrompt();
     expect(prompt).toContain("React in proportion");
     expect(prompt).toContain("affection is earned, not automatic");
     expect(prompt).toContain("Stay in your own voice and the current topic");
@@ -188,14 +209,13 @@ describe("buildCharacterChatSystemPrompt", () => {
 
   it("introduces no hard length cap in the chat lane for either shape profile", () => {
     const cap = /\d+\s+(characters|tokens|words|lines|sentences|paragraphs)/;
-    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), narrationShape: "concise_immersive" })).not.toMatch(cap);
-    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), narrationShape: "aggressive_concise" })).not.toMatch(cap);
+    expect(systemPrompt({ narrationShape: "concise_immersive" })).not.toMatch(cap);
+    expect(systemPrompt({ narrationShape: "aggressive_concise" })).not.toMatch(cap);
   });
 
   it("skips unknown attribute vocabulary instead of leaking it", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile({ attributes: [attr("identity.gender", "female"), attr("face.nonexistent_trait", "whatever")] }),
+    const prompt = systemPrompt({
+      profile: maraProfile({ attributes: [attr("identity.gender", "female"), attr("face.nonexistent_trait", "whatever")] }),
     });
     expect(prompt).not.toContain("nonexistent");
     expect(prompt).not.toContain("face.nonexistent_trait");
@@ -209,27 +229,25 @@ describe("buildCharacterChatSystemPrompt", () => {
 
   it("surfaces a prior summary as a continuity-context block, in the volatile tail", () => {
     const recap = "You met at the night market and traded names. Established:\n- The user is Theo.";
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), priorSummary: recap });
+    const prompt = systemPrompt({ priorSummary: recap });
     expect(prompt).toContain("Earlier in this conversation");
     expect(prompt).toContain("The user is Theo.");
     // The recap changes as the summary folds, so it rides the volatile tail BELOW the
     // stable rules (spec §9 prompt-cache layout).
-    expect(prompt.indexOf("Earlier in this conversation")).toBeGreaterThan(prompt.indexOf("How to respond:"));
+    expectOrder(prompt, ["How to respond:", "Earlier in this conversation"]);
   });
 
   it("omits the recap block entirely when there is no prior summary (prompt unchanged)", () => {
-    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() })).not.toContain(
+    expect(systemPrompt()).not.toContain(
       "Earlier in this conversation",
     );
-    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), priorSummary: "   " })).not.toContain(
+    expect(systemPrompt({ priorSummary: "   " })).not.toContain(
       "Earlier in this conversation",
     );
   });
 
   it("surfaces retrieved RAG memory (facts + episodes) as a recall block (spec §2)", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
+    const prompt = systemPrompt({
       memory: {
         facts: ["The player's sister is getting married in Prague."],
         episodes: ["They argued about the harbor job, then made up."],
@@ -239,22 +257,20 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toContain("The player's sister is getting married in Prague.");
     expect(prompt).toContain("They argued about the harbor job, then made up.");
     // Recall is per-turn volatile, so it rides the tail below the stable rules (spec §9).
-    expect(prompt.indexOf("Your memory")).toBeGreaterThan(prompt.indexOf("How to respond:"));
+    expectOrder(prompt, ["How to respond:", "Your memory"]);
   });
 
   it("omits the memory block when nothing was retrieved (prompt unchanged)", () => {
-    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() })).not.toContain("Your memory");
+    expect(systemPrompt()).not.toContain("Your memory");
     expect(
-      buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), memory: { facts: [], episodes: [] } }),
+      systemPrompt({ memory: { facts: [], episodes: [] } }),
     ).not.toContain("Your memory");
   });
 
   it("resolves a persisted narrative attribute overlay on top of the authored base (spec §3)", () => {
     // The authored base is `creation`-sourced (hair.color: auburn); a `narrative` overlay
     // outranks it (SOURCE_PRECEDENCE narrative > creation), exactly as the session lane.
-    const overlaid = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
+    const overlaid = systemPrompt({
       state: {
         meters: {},
         regard: 0,
@@ -267,9 +283,7 @@ describe("buildCharacterChatSystemPrompt", () => {
   });
 
   it("addresses the player by name and surfaces their persona when a player is given", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
+    const prompt = systemPrompt({
       player: { name: "Theo", persona: "A traveling cartographer, easy to talk to." },
     });
     expect(prompt).toContain("speaking with Theo");
@@ -280,24 +294,22 @@ describe("buildCharacterChatSystemPrompt", () => {
   });
 
   it("uses the player name without a persona block when no bio is given", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    const prompt = systemPrompt({ player: { name: "Theo" } });
     expect(prompt).toContain("speaking with Theo");
     expect(prompt).not.toContain("the person you're speaking with");
   });
 
   it("keeps the faceless 'the user' phrasing when no player is given (prompt unchanged)", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const prompt = systemPrompt();
     expect(prompt).toContain("speaking with the user");
     expect(prompt).toContain('Address the user directly as "you"');
   });
 
   it("is byte-identical when the state block is absent (existing behavior)", () => {
-    const withoutState = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const withoutState = systemPrompt();
     // An empty state (rested, neutral, no premise) adds nothing notable.
-    const withEmptyState = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [] },
+    const withEmptyState = systemPrompt({
+      state: chatState(),
     });
     expect(withEmptyState).toBe(withoutState);
     expect(withoutState).not.toContain("Your current state");
@@ -305,9 +317,7 @@ describe("buildCharacterChatSystemPrompt", () => {
   });
 
   it("renders mood + mindNote in the Current state block; the regard steer is the composed Relationship block (§7.1)", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
+    const prompt = systemPrompt({
       state: {
         meters: { mood: 0.8, energy: 0.8, hygiene: 0.9, stress: 0.1 },
         regard: 57, // warm
@@ -326,41 +336,35 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toContain("- Familiarity (acquainted): ");
     expect(prompt).toContain("the first move is often yours");
     // State is per-turn volatile, so it rides the tail below the stable rules (spec §9).
-    expect(prompt.indexOf("Your current state")).toBeGreaterThan(prompt.indexOf("How to respond:"));
+    expectOrder(prompt, ["How to respond:", "Your current state"]);
   });
 
   it("surfaces a crossed meter threshold (drift made visible)", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
+    const prompt = systemPrompt({
       state: { meters: { ...{ hygiene: 0.2 }, mood: 0.5, energy: 0.9 }, regard: 0, conditions: [] },
     });
     expect(prompt).toMatch(/unwashed/i);
   });
 
   it("renders the premise as a prominent scenario block, above the response rules; empty ⇒ no block", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [], premise: "It's the night before she moves away forever." },
+    const prompt = systemPrompt({
+      state: chatState({ premise: "It's the night before she moves away forever." }),
     });
     expect(prompt).toContain("Scenario for this chat");
     expect(prompt).toContain("the night before she moves away");
-    expect(prompt.indexOf("Scenario for this chat")).toBeLessThan(prompt.indexOf("How to respond:"));
+    expectOrder(prompt, ["Scenario for this chat", "How to respond:"]);
 
-    const noPremise = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [], premise: "   " },
+    const noPremise = systemPrompt({
+      state: chatState({ premise: "   " }),
     });
     expect(noPremise).not.toContain("Scenario for this chat");
   });
 
   it("adds an opening-beat instruction only when opening is set", () => {
-    const opening = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), opening: true });
+    const opening = systemPrompt({ opening: true });
     expect(opening).toMatch(/Opening beat/);
     expect(opening).toMatch(/Begin the conversation yourself/);
-    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() })).not.toContain("Opening beat");
+    expect(systemPrompt()).not.toContain("Opening beat");
   });
 
   // --- Opportunistic sensory cues (character-chat-sensory.plan.md) ---
@@ -368,7 +372,7 @@ describe("buildCharacterChatSystemPrompt", () => {
   it("surfaces presentation.scent_baseline as a closeness-gated Sensory cues block, not a flat attribute line", () => {
     const prompt = buildCharacterChatSystemPrompt({
       name: "Sabrina",
-      profile: profile({
+      profile: maraProfile({
         attributes: [
           attr("identity.gender", "female"),
           attr("hair.color", "auburn"),
@@ -380,7 +384,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toContain("soft floral perfume");
     // The scent value lives only in the cue block — not also as a flat Attributes line.
     expect(prompt.split("soft floral perfume")).toHaveLength(2);
-    expect(prompt.indexOf("Sensory cues")).toBeLessThan(prompt.indexOf("soft floral perfume"));
+    expectOrder(prompt, ["Sensory cues", "soft floral perfume"]);
     // Ordinary physical attributes still render in Attributes as before.
     expect(prompt).toContain("auburn");
     // The exposure-mask phrasing hint (meaningless without a chat exposure mask) is dropped.
@@ -390,7 +394,7 @@ describe("buildCharacterChatSystemPrompt", () => {
   it("states the restraint discipline: cues are reference data, spent only through the per-turn allowance", () => {
     const prompt = buildCharacterChatSystemPrompt({
       name: "Sabrina",
-      profile: profile({ attributes: [attr("presentation.scent_baseline", "soft floral perfume")] }),
+      profile: maraProfile({ attributes: [attr("presentation.scent_baseline", "soft floral perfume")] }),
     });
     expect(prompt).toMatch(/use only when the beat earns them/i);
     // The when-it's-earned teaching now defers to the deterministic Sensory-allowance line
@@ -403,9 +407,8 @@ describe("buildCharacterChatSystemPrompt", () => {
   });
 
   it("keeps voice (audible at distance) and physical attributes in Attributes, never the sensory cues", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile({
+    const prompt = systemPrompt({
+      profile: maraProfile({
         attributes: [
           attr("hair.color", "auburn"),
           attr("voice.pitch", "low"),
@@ -415,9 +418,8 @@ describe("buildCharacterChatSystemPrompt", () => {
     });
     // Voice is sensory but perceptible at any distance — it stays a normal attribute line.
     expect(prompt).toContain("pitch: low");
-    const sectionStart = prompt.indexOf("Sensory cues");
-    const sectionEnd = prompt.indexOf("\n\n", sectionStart);
-    const cueBlock = prompt.slice(sectionStart, sectionEnd);
+    // Scoped to the cue block itself — "pitch is not here" is only meaningful inside it.
+    const cueBlock = promptSection(prompt, "Sensory cues", "\n\n");
     expect(cueBlock).toContain("soft floral perfume");
     expect(cueBlock).not.toContain("pitch");
   });
@@ -425,7 +427,7 @@ describe("buildCharacterChatSystemPrompt", () => {
   it("does not promote intimate scent/taste into ordinary chat sensory cues", () => {
     const prompt = buildCharacterChatSystemPrompt({
       name: "Sabrina",
-      profile: profile({
+      profile: maraProfile({
         intimateRegions: ["vulva"],
         attributes: [
           attr("presentation.scent_baseline", "soft floral perfume"),
@@ -442,30 +444,27 @@ describe("buildCharacterChatSystemPrompt", () => {
   });
 
   it("omits the Sensory cues block entirely when no proximity sense is authored (prompt unchanged)", () => {
-    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() })).not.toContain("Sensory cues");
+    expect(systemPrompt()).not.toContain("Sensory cues");
   });
 });
 
 describe('buildCharacterChatSystemPrompt — prompt-side "none" elision', () => {
   it('drops a "none" attribute line — "nose piercings: none" invites the narrator to riff on the piercing', () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile({ attributes: [attr("nose.piercings", "none"), attr("hair.color", "red")] }),
+    const prompt = systemPrompt({
+      profile: maraProfile({ attributes: [attr("nose.piercings", "none"), attr("hair.color", "red")] }),
     });
     expect(prompt).toContain("hair color: red");
     expect(prompt).not.toMatch(/nose piercings/i);
     // Control: a real value still renders.
-    const pierced = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile({ attributes: [attr("nose.piercings", "septum")] }),
+    const pierced = systemPrompt({
+      profile: maraProfile({ attributes: [attr("nose.piercings", "septum")] }),
     });
     expect(pierced).toContain("nose piercings: septum");
   });
 
   it("keeps a flagged none with its gloss — there the absence is the fact (renderNoneInPrompts)", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile({
+    const prompt = systemPrompt({
+      profile: maraProfile({
         intimateRegions: ["vulva"],
         attributes: [attr("vulva.pubic_hair_density", "none")],
       }),
@@ -475,7 +474,7 @@ describe('buildCharacterChatSystemPrompt — prompt-side "none" elision', () => 
 });
 
 describe("buildCharacterChatSystemPrompt — player-input perception (player-input-perception.plan.md slice 1)", () => {
-  const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+  const prompt = systemPrompt({ player: { name: "Theo" } });
 
   it("teaches the perception partition: quoted = heard, narration = seen, interiority = invisible", () => {
     expect(prompt).toContain("Reading the player's message (what Mara can actually perceive):");
@@ -511,14 +510,14 @@ describe("buildCharacterChatSystemPrompt — player-input perception (player-inp
   });
 
   it("keeps the partition in the faceless (no-player) variant too", () => {
-    const faceless = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const faceless = systemPrompt();
     expect(faceless).toContain("Reading the player's message (what Mara can actually perceive):");
     expect(faceless).toMatch(/self-talk the user writes into that narration reach no one/);
   });
 });
 
 describe("buildCharacterChatSystemPrompt — message-notation legend (player-input-perception.plan.md slice 4)", () => {
-  const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+  const prompt = systemPrompt({ player: { name: "Theo" } });
 
   it("teaches the sigil grammar: quotes, asterisks (thought default), underscores, double parens", () => {
     expect(prompt).toMatch(/Message notation Theo may use/);
@@ -546,15 +545,11 @@ describe("buildCharacterChatSystemPrompt — message-notation legend (player-inp
   });
 
   it("lives in the stable prefix and stays byte-identical across turns (cache-safe)", () => {
-    const t1 = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const t1 = promptParts({
       player: { name: "Theo" },
       state: { meters: { mood: 0.9 }, regard: 20, conditions: [] },
     });
-    const t2 = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const t2 = promptParts({
       player: { name: "Theo" },
       state: { meters: { mood: 0.1 }, regard: 22, conditions: [], mindNote: "different" },
     });
@@ -563,7 +558,7 @@ describe("buildCharacterChatSystemPrompt — message-notation legend (player-inp
   });
 
   it("falls back to a 'Name' placeholder in the faceless (no-player) variant", () => {
-    const faceless = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    const faceless = systemPrompt();
     expect(faceless).toMatch(/Message notation the user may use/);
     expect(faceless).toMatch(/\*Name: like this\*/);
   });
@@ -598,13 +593,11 @@ describe("chatNotationNote — derived-fact tail note (player-input-perception.p
 
   it("rides the volatile tail, never the cached prefix", () => {
     const note = chatNotationNote("*Brian: hey*", { name: "Mara", player: "Theo", knownNames: ["Mara"] });
-    const withNote = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const withNote = promptParts({
       player: { name: "Theo" },
       notationNote: note,
     });
-    const without = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    const without = promptParts({ player: { name: "Theo" } });
     expect(withNote.prefix).toBe(without.prefix); // derived note never busts the prefix cache
     expect(withNote.tail).toContain("is texting you");
     expect(without.tail).not.toContain("is texting you");
@@ -612,8 +605,8 @@ describe("chatNotationNote — derived-fact tail note (player-input-perception.p
 });
 
 describe("buildCharacterChatSystemPrompt — player-POV narration (chat-narrator-pov.plan.md)", () => {
-  const withPlayer = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
-  const faceless = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+  const withPlayer = systemPrompt({ player: { name: "Theo" } });
+  const faceless = systemPrompt();
 
   it("names the narrator role: the story's camera sits behind the player's eyes", () => {
     expect(withPlayer).toContain("the story's camera sits behind Theo's eyes");
@@ -647,10 +640,8 @@ describe("buildCharacterChatSystemPrompt — player-POV narration (chat-narrator
   });
 
   it("invites showing the outfit when movement or attention makes it noticeable", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [], outfit: "a slate-blue dress with a slit up one side" },
+    const prompt = systemPrompt({
+      state: chatState({ outfit: "a slate-blue dress with a slit up one side" }),
     });
     expect(prompt).toContain("You're wearing a slate-blue dress with a slit up one side.");
     expect(prompt).toMatch(/Let it show: when movement or the player's attention makes it noticeable/);
@@ -671,15 +662,13 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
   const drunkMeters = { meters: { intoxication: 0.8 }, regard: 0, conditions: [] };
 
   it("foregrounds a newly-crossed meter band as a one-time 'just shifting' beat", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), state: drunkMeters });
+    const prompt = systemPrompt({ state: drunkMeters });
     expect(prompt).toContain("Right now this is shifting");
     expect(prompt).toContain("Drunk:"); // the intoxication >0.7 threshold hint
   });
 
   it("does not re-foreground a band already surfaced last turn — it rides as standing coloring", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
+    const prompt = systemPrompt({
       state: { ...drunkMeters, surfacedCues: { intoxication: "intoxication:0.7" } },
     });
     expect(prompt).not.toContain("Right now this is shifting");
@@ -688,9 +677,7 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
   });
 
   it("overlays an active condition's attributeEffects onto the attributes (grooming → unkempt)", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
+    const prompt = systemPrompt({
       state: {
         meters: {},
         regard: 0,
@@ -708,9 +695,8 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
   });
 
   it("never lets a condition rewrite an inherent attribute (eye colour) in the prompt", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile({ attributes: [attr("eyes.color", "grey")] }),
+    const prompt = systemPrompt({
+      profile: maraProfile({ attributes: [attr("eyes.color", "grey")] }),
       state: {
         meters: {},
         regard: 0,
@@ -724,9 +710,7 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
   });
 
   it("surfaces social cards as soft framing without the mechanical severity number", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
+    const prompt = systemPrompt({
       state: {
         meters: {},
         regard: 0,
@@ -751,14 +735,12 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
 
   it("relaxes the disposition when intoxicated (render-time disinhibition only)", () => {
     const traits = [{ id: "social.guardedness", value: 90, source: "creation" as const }];
-    const sober = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile({ traits }),
+    const sober = systemPrompt({
+      profile: maraProfile({ traits }),
       state: { meters: { intoxication: 0 }, regard: 0, conditions: [] },
     });
-    const drunk = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile({ traits }),
+    const drunk = systemPrompt({
+      profile: maraProfile({ traits }),
       state: { meters: { intoxication: 0.9 }, regard: 0, conditions: [] },
     });
     expect(sober).toContain("Disposition");
@@ -769,9 +751,7 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
 
 describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () => {
   it("keeps the prefix byte-identical across consecutive turns with unchanged authored inputs", () => {
-    const turn1 = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const turn1 = promptParts({
       priorSummary: "You met at the night market.",
       memory: { facts: ["The player fears heights."], episodes: [] },
       state: {
@@ -783,9 +763,7 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
       },
       cueInvite: "He is close enough to touch — a sensory cue may land this turn.",
     });
-    const turn2 = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const turn2 = promptParts({
       priorSummary: "You met at the night market. Then you argued about the harbor job.",
       memory: { facts: [], episodes: ["They argued about the harbor job."] },
       state: {
@@ -802,9 +780,7 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
 
   it("re-renders the prefix only on a band crossing — either axis (the composed block is band-keyed — §7.1/§9)", () => {
     const at = (regard: number, familiarity = 0) =>
-      buildCharacterChatPromptParts({
-        name: "Mara",
-        profile: profile(),
+      promptParts({
         state: { meters: {}, regard, familiarity, conditions: [] },
       });
     expect(at(50).prefix).toBe(at(64).prefix); // both "warm" — cache holds
@@ -817,9 +793,7 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
   });
 
   it("renders the authored texture: history line, mask, and the corner note (relationship-model v2)", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const parts = promptParts({
       player: { name: "Daniel" },
       state: {
         meters: {},
@@ -842,31 +816,28 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
   });
 
   it("emits the disposition-contrast line only when regard's sign disagrees with the authored warmth lean", () => {
-    const curt = profile({ traits: [{ id: "temperament.warmth", value: -60, source: "base" as const }] });
-    const at = (p: ReturnType<typeof profile>, regard: number) =>
-      buildCharacterChatPromptParts({
-        name: "Mara",
+    const curt = maraProfile({ traits: [{ id: "temperament.warmth", value: -60, source: "base" as const }] });
+    const at = (p: CharacterProfile, regard: number) =>
+      promptParts({
         profile: p,
         state: { meters: {}, regard, conditions: [] },
       }).prefix;
     expect(at(curt, 57)).toContain("one of the few exceptions"); // curt generally, warm to YOU
     expect(at(curt, -25)).not.toContain("one of the few exceptions"); // signs agree — no line
-    expect(at(profile(), 57)).not.toContain("one of the few exceptions"); // no authored lean — no line
+    expect(at(maraProfile(), 57)).not.toContain("one of the few exceptions"); // no authored lean — no line
   });
 
   it("adds the idiom line at warm+ regard so a cold character keeps their manner (slice 3)", () => {
-    const cold = profile({ traits: [{ id: "temperament.warmth", value: -60, source: "base" as const }] });
+    const cold = maraProfile({ traits: [{ id: "temperament.warmth", value: -60, source: "base" as const }] });
     const at = (regard: number) =>
-      buildCharacterChatPromptParts({ name: "Mara", profile: cold, state: { meters: {}, regard, conditions: [] } }).prefix;
+      promptParts({ profile: cold, state: { meters: {}, regard, conditions: [] } }).prefix;
     expect(at(60)).toContain("you express it in your OWN manner");
     expect(at(20)).not.toContain("you express it in your OWN manner"); // below warm regard — no idiom
   });
 
   it("states the D11 gate invariants in the law block: premise wins, disinhibition never moves the line, values outrank", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [] },
+    const parts = promptParts({
+      state: chatState(),
     });
     expect(parts.prefix).toMatch(/the scenario wins/i);
     expect(parts.prefix).toMatch(/never moves this line/i);
@@ -875,15 +846,11 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
   });
 
   it("renders the pending skip note as a volatile one-turn tail line (spec §8.1)", () => {
-    const withSkip = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [], skipNote: "The night has passed — it's the next morning. Acknowledge the gap naturally, once." },
+    const withSkip = promptParts({
+      state: chatState({ skipNote: "The night has passed — it's the next morning. Acknowledge the gap naturally, once." }),
     });
-    const without = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [] },
+    const without = promptParts({
+      state: chatState(),
     });
     expect(withSkip.prefix).toBe(without.prefix); // volatile — never busts the cached prefix
     expect(withSkip.tail).toContain("Time has passed in the story");
@@ -892,16 +859,15 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
   });
 
   it("joins prefix + tail into the full system prompt", () => {
-    const input = { name: "Mara", profile: profile(), priorSummary: "You met at the night market." };
-    const parts = buildCharacterChatPromptParts(input);
+    // The SAME argument object through both builders — the identity is the claim.
+    const args = { name: "Mara", profile: maraProfile(), priorSummary: "You met at the night market." };
+    const parts = buildCharacterChatPromptParts(args);
     expect(parts.tail).not.toBe("");
-    expect(buildCharacterChatSystemPrompt(input)).toBe(`${parts.prefix}\n\n${parts.tail}`);
+    expect(buildCharacterChatSystemPrompt(args)).toBe(`${parts.prefix}\n\n${parts.tail}`);
   });
 
   it("ends the stable prefix with the rules and keeps every volatile in the tail", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const parts = promptParts({
       priorSummary: "You met at the night market.",
       memory: { facts: ["The player fears heights."], episodes: [] },
       state: { meters: { mood: 0.9 }, regard: 0, conditions: [] },
@@ -923,14 +889,12 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     // 60 drops to ~19.5 fully drunk — across the guarded→private band boundary (33),
     // so the shift is visible; a shift that stays inside its band renders nothing.
     const traits = [{ id: "social.guardedness", value: 60, source: "creation" as const }];
-    const sober = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile({ traits }),
+    const sober = promptParts({
+      profile: maraProfile({ traits }),
       state: { meters: { intoxication: 0 }, regard: 0, conditions: [] },
     });
-    const drunk = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile({ traits }),
+    const drunk = promptParts({
+      profile: maraProfile({ traits }),
       state: { meters: { intoxication: 0.9 }, regard: 0, conditions: [] },
     });
     // The authored band stays in the (unchanged) prefix; the shift rides the tail.
@@ -948,15 +912,11 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
       startedAtMinutes: 0,
       attributeEffects: [{ attributeId: "presentation.grooming" as const, value: "unkempt" }],
     };
-    const withCondition = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const withCondition = promptParts({
       state: { meters: {}, regard: 0, conditions: [condition] },
     });
-    const without = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [] },
+    const without = promptParts({
+      state: chatState(),
     });
     expect(withCondition.prefix).toBe(without.prefix);
     expect(withCondition.prefix).not.toContain("unkempt");
@@ -965,24 +925,20 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
   });
 
   it("renders open loops as an Unfinished-business state line in the tail (spec §6.2)", () => {
-    const withLoops = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [], openLoops: ["tell them about her sister", "the unopened letter"] },
+    const withLoops = promptParts({
+      state: chatState({ openLoops: ["tell them about her sister", "the unopened letter"] }),
     });
     expect(withLoops.tail).toContain("Unfinished business between you: tell them about her sister; the unopened letter");
     expect(withLoops.tail).toContain("never recite the list");
-    const without = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [], openLoops: [] },
+    const without = promptParts({
+      state: chatState({ openLoops: [] }),
     });
     expect(without.prefix).toBe(withLoops.prefix); // loops are volatile — never in the prefix
     expect(without.tail).not.toContain("Unfinished business");
   });
 
   it("carries the dialogue-craft rule and the intimate-craft block in the stable rules (C3/C4)", () => {
-    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile() });
+    const parts = promptParts();
     expect(parts.prefix).toContain("Dialogue is speech, not prose");
     expect(parts.prefix).toContain("the truest answer is no words at all");
     expect(parts.prefix).toContain("When a scene turns intimate:");
@@ -993,7 +949,7 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
 });
 
 describe("buildCharacterChatSystemPrompt — turn grammar (deliverable A)", () => {
-  const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+  const parts = promptParts({ player: { name: "Theo" } });
 
   it("carries the 'Resolve, then one move' rule in the stable prefix, forbidding stacked moves", () => {
     expect(parts.prefix).toContain("Shaping each reply");
@@ -1035,9 +991,7 @@ describe("buildCharacterChatSystemPrompt — turn grammar (deliverable A)", () =
 
 describe("buildCharacterChatSystemPrompt — response-shape + mood line (deliverable C)", () => {
   it("renders a per-turn response-shape line pinned to the derived mood, in the tail", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const parts = promptParts({
       player: { name: "Theo" },
       state: { meters: { mood: 0.8, energy: 0.8 }, regard: 0, conditions: [] },
     });
@@ -1050,13 +1004,13 @@ describe("buildCharacterChatSystemPrompt — response-shape + mood line (deliver
   });
 
   it("omits the mood clause when there is no notable mood", () => {
-    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile() });
+    const parts = promptParts();
     expect(parts.tail).toContain("Response shape: respond to what the user just said and did");
     expect(parts.tail).not.toContain("Mood:");
   });
 
   it("is suppressed on an opening beat (no player input to respond to)", () => {
-    const opening = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), opening: true });
+    const opening = promptParts({ opening: true });
     expect(opening.tail).not.toContain("Response shape:");
     expect(opening.tail).toContain("Opening beat");
   });
@@ -1074,16 +1028,14 @@ describe("buildCharacterChatSystemPrompt — scene memory block (deliverable B)"
   };
 
   it("renders the current place, details, and connections", () => {
-    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
+    const parts = promptParts({ state: sceneState });
     expect(parts.tail).toContain("Scene (the setting established so far");
     expect(parts.tail).toContain("- Here: the living room — blue sofa; tall windows");
     expect(parts.tail).toContain("- Nearby: kitchen through the doorway");
   });
 
   it("renders the meanwhile note, return license, and rhythm line (chat-offscreen-life)", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const parts = promptParts({
       state: {
         ...sceneState,
         meanwhileNote: "she heard back about the commission",
@@ -1097,21 +1049,19 @@ describe("buildCharacterChatSystemPrompt — scene memory block (deliverable B)"
     expect(parts.tail).toContain("Your daily rhythm");
     expect(parts.tail).toContain("mornings: waiting tables at the Dockside Café");
     // None set ⇒ none of the lines render (degraded default).
-    const bare = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
+    const bare = promptParts({ state: sceneState });
     expect(bare.tail).not.toContain("While you were apart");
     expect(bare.tail).not.toContain("You just got back");
     expect(bare.tail).not.toContain("Your daily rhythm");
   });
 
   it("renders the clock-derived story moment as a binding tail line (chat-clock-calendar)", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const parts = promptParts({
       state: { ...sceneState, storyMoment: "Friday, January 5 — 2:10pm (afternoon)" },
     });
     expect(parts.tail).toContain("Story time: it is Friday, January 5 — 2:10pm (afternoon).");
     // No storyMoment ⇒ no line (degraded default).
-    const bare = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
+    const bare = promptParts({ state: sceneState });
     expect(bare.tail).not.toContain("Story time:");
   });
 
@@ -1132,30 +1082,28 @@ describe("buildCharacterChatSystemPrompt — scene memory block (deliverable B)"
         ],
       },
     };
-    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sketched });
+    const parts = promptParts({ state: sketched });
     expect(parts.tail).toContain("- Setting (fixed reference): A narrow living room under tall windows");
     // No sketch ⇒ no line (sceneState above has none).
-    const plain = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
+    const plain = promptParts({ state: sceneState });
     expect(plain.tail).not.toContain("Setting (fixed reference)");
   });
 
   it("directs restraint on an unchanged scene, and re-establishment when it just changed", () => {
-    const unchanged = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
+    const unchanged = promptParts({ state: sceneState });
     expect(unchanged.tail).toContain("Do not re-establish the setting; at most one fresh accent");
-    const changed = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState, sceneChanged: true });
+    const changed = promptParts({ state: sceneState, sceneChanged: true });
     expect(changed.tail).toContain("This scene just changed — establish the new setting");
   });
 
   it("rides the volatile tail (never busts the cached prefix) and renders nothing when empty & unchanged", () => {
-    const withScene = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
-    const without = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: { meters: {}, regard: 0, conditions: [] } });
+    const withScene = promptParts({ state: sceneState });
+    const without = promptParts({ state: chatState() });
     expect(withScene.prefix).toBe(without.prefix); // scene memory is volatile — prefix unchanged
     expect(without.tail).not.toContain("Scene (the setting established");
     // Empty memory but the scene just changed (a bare move) still steers re-establishment.
-    const changedEmpty = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [], sceneMemory: { current: "the porch", places: [{ name: "the porch", details: [], connections: [] }] } },
+    const changedEmpty = promptParts({
+      state: chatState({ sceneMemory: { current: "the porch", places: [{ name: "the porch", details: [], connections: [] }] } }),
       sceneChanged: true,
     });
     expect(changedEmpty.tail).toContain("- Here: the porch");
@@ -1165,9 +1113,7 @@ describe("buildCharacterChatSystemPrompt — scene memory block (deliverable B)"
 
 describe("buildCharacterChatSystemPrompt — first-exchange scene directive (Fly screenshot, 2026-07-10)", () => {
   it("directs one-time, narration-forward scene establishment on the conversation's first exchange", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const parts = promptParts({
       player: { name: "Theo" },
       firstExchange: true,
     });
@@ -1179,12 +1125,10 @@ describe("buildCharacterChatSystemPrompt — first-exchange scene directive (Fly
   });
 
   it("is absent on ordinary turns and defers to the sceneChanged directive when a first-message move fired", () => {
-    const ordinary = buildCharacterChatPromptParts({ name: "Mara", profile: profile() });
+    const ordinary = promptParts();
     expect(ordinary.tail).not.toContain("First exchange of this conversation");
     // A movement in the first message minted a place ⇒ sceneChanged's own directive wins.
-    const moved = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const moved = promptParts({
       state: {
         meters: {},
         regard: 0,
@@ -1199,19 +1143,18 @@ describe("buildCharacterChatSystemPrompt — first-exchange scene directive (Fly
   });
 
   it("falls back to 'the player' in the faceless variant", () => {
-    const faceless = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), firstExchange: true });
+    const faceless = promptParts({ firstExchange: true });
     expect(faceless.tail).toContain("what the player's message sets up");
   });
 });
 
 describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)", () => {
-  const scented = profile({
+  const scented = maraProfile({
     attributes: [attr("identity.gender", "female"), attr("presentation.scent_baseline", "cedar and warm skin")],
   });
 
   it("assembles authored scent + hygiene band for a smell/taste beat, in the tail", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
+    const parts = promptParts({
       profile: scented,
       player: { name: "Theo" },
       state: { meters: { hygiene: 0.2 }, regard: 0, conditions: [] },
@@ -1225,11 +1168,10 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
   });
 
   it("opens the reply with the sensation itself (sensory-grounding directive)", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
+    const parts = promptParts({
       profile: scented,
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [] },
+      state: chatState(),
       sensoryFocus: { sense: "taste", target: "foot", intimate: false, region: "foot" },
     });
     expect(parts.tail).toContain("OPEN your reply with the experience itself");
@@ -1241,7 +1183,7 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
   });
 
   it("surfaces the TARGET REGION's own authored values — a foot beat carries feet.smell, sense-ranked first", () => {
-    const footed = profile({
+    const footed = maraProfile({
       attributes: [
         attr("identity.gender", "female"),
         attr("presentation.scent_baseline", "cedar and warm skin"),
@@ -1249,35 +1191,33 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
         attr("feet.arch", "high"),
       ],
     });
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
+    const parts = promptParts({
       profile: footed,
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [] },
+      state: chatState(),
       sensoryFocus: { sense: "taste", target: "foot", intimate: false, region: "foot" },
     });
     expect(parts.tail).toContain("Mara's foot scent: thick musk");
     expect(parts.tail).toContain("Mara's foot arch: high");
     // The region's own scent leads the generic perfume line.
-    expect(parts.tail.indexOf("foot scent")).toBeLessThan(parts.tail.indexOf("cedar and warm skin"));
+    expectOrder(parts.tail, ["foot scent", "cedar and warm skin"]);
   });
 
   it("renders the authored narrator gloss beside the value (attribute-narrator-guidance)", () => {
-    const footed = profile({
+    const footed = maraProfile({
       attributes: [attr("identity.gender", "female"), attr("feet.smell", "cheesy")],
     });
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
+    const parts = promptParts({
       profile: footed,
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [] },
+      state: chatState(),
       sensoryFocus: { sense: "smell", target: "feet", intimate: false, region: "feet" },
     });
     expect(parts.tail).toContain("Mara's foot scent: cheesy (dense fermented funk, like aged cheese");
   });
 
   it("an authored region scent is the current truth — no contradictory 'clean' default beneath it", () => {
-    const footed = profile({
+    const footed = maraProfile({
       attributes: [
         attr("identity.gender", "female"),
         attr("presentation.scent_baseline", "cedar and warm skin"),
@@ -1285,8 +1225,7 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
       ],
     });
     // Unremarkable hygiene (no threshold crossed): the block must NOT assert clean skin.
-    const fresh = buildCharacterChatPromptParts({
-      name: "Mara",
+    const fresh = promptParts({
       profile: footed,
       player: { name: "Theo" },
       state: { meters: { hygiene: 0.9 }, regard: 0, conditions: [] },
@@ -1295,8 +1234,7 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
     expect(fresh.tail).not.toContain("clean skin, nothing strong");
     expect(fresh.tail).toContain("an overlay riding above the scent named above");
     // Low hygiene deepens the authored scent rather than replacing it.
-    const grimy = buildCharacterChatPromptParts({
-      name: "Mara",
+    const grimy = promptParts({
       profile: footed,
       player: { name: "Theo" },
       state: { meters: { hygiene: 0.2 }, regard: 0, conditions: [] },
@@ -1304,25 +1242,23 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
     });
     expect(grimy.tail).toContain("DEEPENS the authored scent above");
     // Without any authored region scent the grounded default remains (no invention vacuum).
-    const bare = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile({ attributes: [attr("identity.gender", "female")] }),
+    const bare = promptParts({
+      profile: maraProfile({ attributes: [attr("identity.gender", "female")] }),
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [] },
+      state: chatState(),
       sensoryFocus: { sense: "smell", target: "hair", intimate: false, region: "hair" },
     });
     expect(bare.tail).toContain("clean skin, nothing strong");
   });
 
   it("drops off-sense region values (a study beat never surfaces scent)", () => {
-    const footed = profile({
+    const footed = maraProfile({
       attributes: [attr("identity.gender", "female"), attr("feet.smell", "thick_musk"), attr("feet.arch", "high")],
     });
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
+    const parts = promptParts({
       profile: footed,
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [], outfit: "a linen sundress" },
+      state: chatState({ outfit: "a linen sundress" }),
       sensoryFocus: { sense: "study", target: "foot", intimate: false, region: "foot" },
     });
     expect(parts.tail).toContain("Mara's foot arch: high");
@@ -1330,40 +1266,37 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
   });
 
   it("surfaces an intimate attribute only when the beat targets intimate anatomy the character has", () => {
-    const intimateProfile = profile({
+    const intimateProfile = maraProfile({
       intimateRegions: ["breasts"],
       attributes: [attr("identity.gender", "female"), attr("breasts.size", "full")],
     });
-    const earned = buildCharacterChatPromptParts({
-      name: "Mara",
+    const earned = promptParts({
       profile: intimateProfile,
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [] },
+      state: chatState(),
       sensoryFocus: { sense: "touch", target: "breasts", intimate: true, region: "breasts" },
     });
     expect(earned.tail).toContain("Sensory focus — Theo is touching Mara's breasts.");
     expect(earned.tail).toMatch(/breast size: full/i);
     // A non-intimate focus never surfaces the intimate attribute.
-    const notEarned = buildCharacterChatPromptParts({
-      name: "Mara",
+    const notEarned = promptParts({
       profile: intimateProfile,
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [] },
+      state: chatState(),
       sensoryFocus: { sense: "study", target: "dress", intimate: false },
     });
     expect(notEarned.tail).not.toMatch(/breast size: full/i);
   });
 
   it("keeps the intimate join target-matched — a breasts beat never surfaces another region's values", () => {
-    const intimateProfile = profile({
+    const intimateProfile = maraProfile({
       intimateRegions: ["breasts", "vulva"],
       attributes: [attr("identity.gender", "female"), attr("breasts.size", "full"), attr("vulva.scent", "musky")],
     });
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
+    const parts = promptParts({
       profile: intimateProfile,
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [] },
+      state: chatState(),
       sensoryFocus: { sense: "touch", target: "breasts", intimate: true, region: "breasts" },
     });
     expect(parts.tail).toMatch(/breast size: full/i);
@@ -1371,11 +1304,10 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
   });
 
   it("a garment target (no region) still grounds on outfit + generic lines", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
+    const parts = promptParts({
       profile: scented,
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [], outfit: "a linen sundress" },
+      state: chatState({ outfit: "a linen sundress" }),
       sensoryFocus: { sense: "study", target: "dress", intimate: false },
     });
     expect(parts.tail).toContain("Sensory focus — Theo is taking in Mara's dress.");
@@ -1386,16 +1318,16 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
 describe("buildCharacterChatSystemPrompt — reply-discipline gate notes (deliverable D)", () => {
   it("passes the pre-computed gate notes through to the volatile tail", () => {
     const note = "Your recent replies ended in questions — end this one differently unless the moment truly demands one.";
-    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), gateNotes: note });
+    const parts = promptParts({ gateNotes: note });
     expect(parts.tail).toContain(note);
-    const without = buildCharacterChatPromptParts({ name: "Mara", profile: profile() });
+    const without = promptParts();
     expect(without.prefix).toBe(parts.prefix); // gate notes are volatile
     expect(without.tail).not.toContain("ended in questions");
   });
 });
 
 describe("buildCharacterChatSystemPrompt — per-turn sensory allowance (narrator-prompt-consolidation slice 4)", () => {
-  const base = { name: "Mara", profile: profile(), player: { name: "Theo" } };
+  const base = { name: "Mara", profile: maraProfile(), player: { name: "Theo" } };
 
   it("renders the binding line per allowance, in the volatile tail", () => {
     const none = buildCharacterChatPromptParts({ ...base, sensoryAllowance: "none" });
@@ -1417,7 +1349,7 @@ describe("buildCharacterChatSystemPrompt — per-turn sensory allowance (narrato
       ...base,
       sensoryAllowance: "focused_description",
       sensoryFocus: { sense: "smell", target: "hair", intimate: false, region: "hair" },
-      state: { meters: {}, regard: 0, conditions: [] },
+      state: chatState(),
     });
     expect(focused.tail).not.toContain("Sensory allowance this turn");
     expect(focused.tail).toContain("Sensory focus — Theo is breathing in Mara's hair.");
@@ -1433,7 +1365,7 @@ describe("buildCharacterChatSystemPrompt — per-turn sensory allowance (narrato
       ...base,
       sensoryAllowance: "focused_description",
       sensoryFocus: { sense: "touch", target: "wrist", intimate: false, region: "wrist" },
-      state: { meters: {}, regard: 0, conditions: [] },
+      state: chatState(),
     });
     expect(parts.tail).not.toContain("Sensory focus —");
     expect(parts.tail).toContain("Sensory allowance this turn: one close-range hook");
@@ -1448,9 +1380,7 @@ describe("buildCharacterChatSystemPrompt — per-turn sensory allowance (narrato
 
 describe("buildCharacterChatSystemPrompt — per-shape length story (narrator-prompt-consolidation slice 2)", () => {
   it("aggressive_concise carries a beat-scaled length rule with no paragraph floor", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
+    const prompt = systemPrompt({
       narrationShape: "aggressive_concise",
     });
     expect(prompt).toContain("Length follows the beat");
@@ -1459,9 +1389,7 @@ describe("buildCharacterChatSystemPrompt — per-shape length story (narrator-pr
   });
 
   it("concise_immersive keeps the three-paragraph baseline", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
+    const prompt = systemPrompt({
       narrationShape: "concise_immersive",
     });
     expect(prompt).toContain("Baseline shape: about three paragraphs");
@@ -1471,7 +1399,7 @@ describe("buildCharacterChatSystemPrompt — per-shape length story (narrator-pr
 
 describe("buildCharacterChatSystemPrompt — incidental people stay scene-consistent (slice 1)", () => {
   it("licenses flavor NPCs only inside the established scene, unnamed and passing", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    const prompt = systemPrompt({ player: { name: "Theo" } });
     expect(prompt).toContain("An INCIDENTAL person must fit the scene already established");
     expect(prompt).toContain("never invent one just to enliven a reply");
     // The supporting-cast carve-out (chat-supporting-cast.plan.md): recurring named
@@ -1492,11 +1420,9 @@ describe("buildCharacterChatSystemPrompt — supporting cast (chat-supporting-ca
   ];
 
   it("renders the cast block in the volatile tail with the play license", () => {
-    const { prefix, tail } = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const { prefix, tail } = promptParts({
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [], supportingCast: cast },
+      state: chatState({ supportingCast: cast }),
     });
     expect(tail).toContain("Supporting cast (recurring side characters in this story");
     expect(tail).toContain("- Abby — Theo's coworker and close friend · covered a shift last week · voice: dry one-liners · usually: the clinic front desk");
@@ -1508,23 +1434,19 @@ describe("buildCharacterChatSystemPrompt — supporting cast (chat-supporting-ca
   });
 
   it("renders no block when the cast is empty (byte-identical tail)", () => {
-    const withEmpty = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const withEmpty = promptParts({
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [], supportingCast: [] },
+      state: chatState({ supportingCast: [] }),
     });
-    const without = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const without = promptParts({
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [] },
+      state: chatState(),
     });
     expect(withEmpty.tail).toBe(without.tail);
   });
 
   it("rule 16 lets cast populate the character's side of a scene cut", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    const prompt = systemPrompt({ player: { name: "Theo" } });
     expect(prompt).toContain("Supporting-cast members who would plausibly be with Mara may appear there");
     // The original guard holds: the player's side stays theirs.
     expect(prompt).toContain("Never narrate Theo's side of the separation");
@@ -1533,7 +1455,7 @@ describe("buildCharacterChatSystemPrompt — supporting cast (chat-supporting-ca
 
 describe("narrator-mode input (chat-supporting-cast.plan.md §Narrator input)", () => {
   it("teaches the story-narration marker in the static notation legend", () => {
-    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    const prompt = systemPrompt({ player: { name: "Theo" } });
     expect(prompt).toContain('A message opening with a bracketed "[Story narration from Theo …]" line');
     expect(prompt).toContain("never answer it as though Theo said or did it");
   });
@@ -1548,9 +1470,9 @@ describe("narrator-mode input (chat-supporting-cast.plan.md §Narrator input)", 
   it("renders the one-turn tail note only when this turn's input is narrator-mode", () => {
     const base = {
       name: "Mara",
-      profile: profile(),
+      profile: maraProfile(),
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [] },
+      state: chatState(),
     };
     const off = buildCharacterChatPromptParts(base);
     const on = buildCharacterChatPromptParts({ ...base, narratorInput: true });
@@ -1564,9 +1486,7 @@ describe("narrator-mode input (chat-supporting-cast.plan.md §Narrator input)", 
 
 describe("buildChatTurnMessage — experimental turn-context layout (slice 5)", () => {
   it("composes turn context + fenced player input as the final user message", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const parts = promptParts({
       player: { name: "Theo" },
       state: { meters: {}, regard: 10, conditions: [], mindNote: "the unpaid invoice" },
     });
@@ -1586,9 +1506,7 @@ describe("memory callback line (memory-callbacks.plan.md)", () => {
   const state = { meters: {}, regard: 60, conditions: [] };
 
   it("renders the offered memory in the tail, toned warm at high regard", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const parts = promptParts({
       player: { name: "Theo" },
       state,
       callback: { summary: "They watched the storm roll in from the pier." },
@@ -1609,7 +1527,7 @@ describe("memory callback line (memory-callbacks.plan.md)", () => {
   });
 
   it("renders no callback block when absent", () => {
-    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), player: { name: "Theo" }, state });
+    const parts = promptParts({ player: { name: "Theo" }, state });
     expect(parts.tail).not.toContain("A shared memory");
     expect(parts.tail).not.toContain("You might find yourself remembering");
   });
@@ -1620,9 +1538,7 @@ describe("emotional weather in the tail (emotional-weather.plan.md)", () => {
   const feeling = { current: { label: "sad" as const, intensity: 0.8, cause: "the broken promise" }, bruise: null };
 
   it("composes the persistent feeling with the meter descriptor (ruled: compose, never replace)", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const parts = promptParts({
       player: { name: "Theo" },
       state: { meters, regard: 10, conditions: [], feeling },
     });
@@ -1633,15 +1549,11 @@ describe("emotional weather in the tail (emotional-weather.plan.md)", () => {
 
   it("a fading feeling reads as fading; no feeling leaves the line unchanged", () => {
     const faint = { current: { label: "sad" as const, intensity: 0.25, cause: "the broken promise" }, bruise: null };
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const parts = promptParts({
       state: { meters, regard: 10, conditions: [], feeling: faint },
     });
     expect(parts.tail).toContain("faintly — it's fading — sad");
-    const plain = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const plain = promptParts({
       state: { meters, regard: 10, conditions: [] },
     });
     expect(plain.tail).toContain("You are feeling subdued and withdrawn right now.");
@@ -1649,9 +1561,7 @@ describe("emotional weather in the tail (emotional-weather.plan.md)", () => {
   });
 
   it("a feeling with an even-keel meter read still surfaces on its own", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const parts = promptParts({
       state: { meters: {}, regard: 10, conditions: [], feeling },
     });
     expect(parts.tail).toContain("Underneath everything, deeply sad about the broken promise.");
@@ -1661,9 +1571,7 @@ describe("emotional weather in the tail (emotional-weather.plan.md)", () => {
 describe("the one-turn note digest (chat-agent-improvements.plan.md slice 4)", () => {
   // A deliberately crowded turn: a binding truth (photos), a gate (the allowance ceiling),
   // a license (the selfie), and the flavor note (a callback) all armed at once.
-  const crowded = buildCharacterChatPromptParts({
-    name: "Mara",
-    profile: profile(),
+  const crowded = promptParts({
     player: { name: "Theo" },
     state: { meters: {}, regard: 60, conditions: [] },
     attachments: { descriptions: ["A harbor at dusk."] },
@@ -1679,26 +1587,17 @@ describe("the one-turn note digest (chat-agent-improvements.plan.md slice 4)", (
   });
 
   it("orders them binding → gate → license → flavor", () => {
-    const at = (needle: string): number => {
-      const index = crowded.tail.indexOf(needle);
-      expect(index, `missing tail note: ${needle}`).toBeGreaterThan(-1);
-      return index;
-    };
-    const binding = at("Attached photos");
-    const gate = at("Sensory allowance");
-    const license = at("photo");
-    const flavor = at("watched the storm roll in");
-    expect(binding).toBeLessThan(gate);
-    expect(gate).toBeLessThan(flavor);
-    expect(license).toBeLessThan(flavor); // the grace note lands last, after every directive
+    // binding → gate → flavor. `expectOrder` names the offending pair on failure and
+    // reports an absent needle as "never appears" rather than a bare index comparison.
+    expectOrder(crowded.tail, ["Attached photos", "Sensory allowance", "watched the storm roll in"]);
+    // …and the grace note lands last, after every directive.
+    expectOrder(crowded.tail, ["photo", "watched the storm roll in"]);
   });
 
   it("renders no heading at all on a turn with no one-turn notes", () => {
-    const quiet = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const quiet = promptParts({
       player: { name: "Theo" },
-      state: { meters: {}, regard: 0, conditions: [] },
+      state: chatState(),
     });
     expect(quiet.tail).not.toContain("Right now (directives");
   });
@@ -1711,9 +1610,7 @@ describe("the one-turn note digest (chat-agent-improvements.plan.md slice 4)", (
 
 describe("attached photos (chat-image-input.plan.md)", () => {
   it("renders the fenced attachments block and the static rule 16", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const parts = promptParts({
       player: { name: "Theo" },
       attachments: { descriptions: ["A golden retriever asleep on a porch swing.", "A harbor at dusk."] },
     });
@@ -1722,16 +1619,18 @@ describe("attached photos (chat-image-input.plan.md)", () => {
     expect(parts.tail).toContain("2. A harbor at dusk.");
     // The block is fenced — the descriptions derive from a player-supplied image.
     expect(parts.tail).toMatch(/vsp-untrusted-[0-9a-f]+:attached photos/);
-    // The handling rule is static prefix law (owner ruling). Renumbered 17 → 16 when the
-    // duplicate rule 8 folded into the Shaping block (chat-agent-improvements slice 5).
-    expect(parts.prefix).toContain("16. When Theo's message carries attached photos");
+    // The handling rule is static prefix law (owner ruling). Its ORDINAL is deliberately
+    // not pinned: this assertion once broke outright when the duplicate rule 8 folded into
+    // the Shaping block and every later rule renumbered (17 → 16). What matters is that a
+    // numbered rule with this body exists, at whatever number it currently holds.
+    expectNumberedRule(parts.prefix, "When Theo's message carries attached photos");
     expect(parts.prefix).toContain("never speak of an \"image\" or \"attachment\"");
   });
 
   it("no attachments (or blank reads) ⇒ no block", () => {
-    expect(buildCharacterChatPromptParts({ name: "Mara", profile: profile() }).tail).not.toContain("Attached photos");
+    expect(promptParts().tail).not.toContain("Attached photos");
     expect(
-      buildCharacterChatPromptParts({ name: "Mara", profile: profile(), attachments: { descriptions: ["  "] } }).tail,
+      promptParts({ attachments: { descriptions: ["  "] } }).tail,
     ).not.toContain("Attached photos");
   });
 });
@@ -1755,86 +1654,68 @@ describe("selfie license line (chat-selfies.plan.md)", () => {
   });
 
   it("rides the tail only when armed", () => {
-    const armed = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const armed = promptParts({
       player: { name: "Theo" },
       selfie: "request",
     });
     expect(armed.tail).toContain("asked Mara for a photo");
-    const plain = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    const plain = promptParts({ player: { name: "Theo" } });
     expect(plain.tail).not.toContain("for a photo");
   });
 });
 
 describe("drives block (character-drives.plan.md)", () => {
-  const drive = (over: Record<string, unknown> = {}) => ({
-    want: "to reopen the gallery under her own name",
-    why: "it was her mother's",
-    secrecy: "secret" as const,
-    progress: "",
-    revealed: false,
-    resolved: false,
-    ...over,
-  });
-  const stateWith = (drives: unknown[], familiarity = 0) => ({
-    meters: {},
-    regard: 0,
-    familiarity,
-    conditions: [],
-    drives: drives as never,
-  });
+  /**
+   * A SECRET want by default — this block is about the reveal gate, so the
+   * withheld case is the one worth defaulting to. Typed as `Partial<ChatDrive>`
+   * (the shared fixture's own shape), so an override naming a field the contract
+   * does not have is a compile error rather than a silently ignored key.
+   */
+  const secret = (over: Partial<ChatDrive> = {}): ChatDrive =>
+    drive({
+      want: "to reopen the gallery under her own name",
+      why: "it was her mother's",
+      secrecy: "secret",
+      ...over,
+    });
+  const stateWith = (drives: readonly ChatDrive[], familiarity = 0): ChatPromptState =>
+    chatState({ familiarity, drives: [...drives] });
 
   it("a withheld secret carries the scoped lie license; a cleared gate invites the reveal", () => {
-    const withheld = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const withheld = promptParts({
       player: { name: "Theo" },
-      state: stateWith([drive()], 10),
+      state: stateWith([secret()], 10),
     });
     expect(withheld.tail).toContain("A SECRET: you want to reopen the gallery");
     expect(withheld.tail).toContain("you may lie outright");
     expect(withheld.tail).toContain("The lying is for THIS secret only");
-    const cleared = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const cleared = promptParts({
       player: { name: "Theo" },
-      state: stateWith([drive()], 80),
+      state: stateWith([secret()], 80),
     });
     expect(cleared.tail).toContain("A secret you could finally share");
     expect(cleared.tail).not.toContain("lie outright");
   });
 
   it("open steers, guarded withholds-until-asked, resolved drops, empty renders nothing", () => {
-    const parts = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const parts = promptParts({
       player: { name: "Theo" },
       state: stateWith([
-        drive({ secrecy: "open", want: "to learn the violin" }),
-        drive({ secrecy: "guarded", want: "to be taken seriously" }),
-        drive({ secrecy: "open", want: "gone", resolved: true }),
+        secret({ secrecy: "open", want: "to learn the violin" }),
+        secret({ secrecy: "guarded", want: "to be taken seriously" }),
+        secret({ secrecy: "open", want: "gone", resolved: true }),
       ]),
     });
     expect(parts.tail).toContain("What you want");
     expect(parts.tail).toContain("You want to learn the violin");
     expect(parts.tail).toContain("You don't volunteer this");
     expect(parts.tail).not.toContain("gone");
-    const none = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: { meters: {}, regard: 0, conditions: [] } });
+    const none = promptParts({ state: chatState() });
     expect(none.tail).not.toContain("What you want");
   });
 });
 
 describe("ensemble frame (multi-character-chat.plan.md slice 2)", () => {
-  const member = (
-    name: string,
-    over: Partial<EnsembleMemberInput> = {},
-  ): EnsembleMemberInput => ({ name, profile: profile(), presence: "present", quietExchanges: 0, ...over });
-  const input = (): Parameters<typeof buildCharacterChatPromptParts>[0] => ({
-    name: "Mara",
-    profile: profile(),
-    player: { name: "Brian" },
-  });
 
   it("a roster of one dispatches to the single-character path byte-identically", () => {
     const single = buildCharacterChatPromptParts(input());
@@ -1907,15 +1788,6 @@ describe("ensemble frame (multi-character-chat.plan.md slice 2)", () => {
 });
 
 describe("ensemble group perks (followups ruling 12)", () => {
-  const member = (
-    name: string,
-    over: Partial<EnsembleMemberInput> = {},
-  ): EnsembleMemberInput => ({ name, profile: profile(), presence: "present", quietExchanges: 0, ...over });
-  const input = (): Parameters<typeof buildCharacterChatPromptParts>[0] => ({
-    name: "Mara",
-    profile: profile(),
-    player: { name: "Brian" },
-  });
 
   it("renders the selfie request license naming the addressed member", () => {
     const parts = buildChatPromptPartsForRoster(input(), [member("Mara"), member("Vera")], {
@@ -1945,7 +1817,7 @@ describe("ensemble group perks (followups ruling 12)", () => {
       [
         member("Mara"),
         member("Vera", {
-          state: { meters: {}, regard: 0, conditions: [], outfit: "a paint-streaked tank top" },
+          state: chatState({ outfit: "a paint-streaked tank top" }),
         }),
       ],
       { sensoryFocus: { hint: { sense: "study", target: "hands", intimate: false }, memberName: "Vera" } },
@@ -1966,7 +1838,7 @@ describe("ensemble group perks (followups ruling 12)", () => {
     const parts = buildChatPromptPartsForRoster(input(), [
       member("Mara"),
       member("Vera", {
-        profile: profile({ traits }),
+        profile: maraProfile({ traits }),
         state: { meters: { intoxication: 0.9 }, regard: 0, conditions: [] },
       }),
     ]);
@@ -1993,15 +1865,6 @@ describe("ensemble group perks (followups ruling 12)", () => {
 });
 
 describe("ensemble relationship matrix injection (relationship-model.plan.md slice 6)", () => {
-  const member = (
-    name: string,
-    over: Partial<EnsembleMemberInput> = {},
-  ): EnsembleMemberInput => ({ name, profile: profile(), presence: "present", quietExchanges: 0, ...over });
-  const input = (): Parameters<typeof buildCharacterChatPromptParts>[0] => ({
-    name: "Mara",
-    profile: profile(),
-    player: { name: "Brian" },
-  });
   const record = (over: Partial<RelationshipRecord> = {}): RelationshipRecord => ({
     familiarity: 80,
     regard: -25,
@@ -2059,32 +1922,32 @@ describe("ensemble relationship matrix injection (relationship-model.plan.md sli
 
 describe("life stage & the minor fence (character-fidelity.plan.md slices 1–2)", () => {
   it("appends the life-stage hint to the identity age line for marked bands", () => {
-    const teen = buildCharacterChatSystemPrompt({ name: "Pip", profile: profile({ age: "16" }) });
+    const teen = buildCharacterChatSystemPrompt({ name: "Pip", profile: maraProfile({ age: "16" }) });
     expect(teen).toContain("You are 16 years old — a teenager");
-    const elder = buildCharacterChatSystemPrompt({ name: "Edda", profile: profile({ age: "72" }) });
+    const elder = buildCharacterChatSystemPrompt({ name: "Edda", profile: maraProfile({ age: "72" }) });
     expect(elder).toContain("You are 72 years old — an elder");
     // The unmarked adult default and fantasy ages render exactly as before.
-    const adult = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile({ age: "29" }) });
+    const adult = systemPrompt({ profile: maraProfile({ age: "29" }) });
     expect(adult).toContain("You are 29 years old.");
-    const fantasy = buildCharacterChatSystemPrompt({ name: "Vael", profile: profile({ age: "ancient" }) });
+    const fantasy = buildCharacterChatSystemPrompt({ name: "Vael", profile: maraProfile({ age: "ancient" }) });
     expect(fantasy).toContain("You are ancient.");
     expect(fantasy).not.toContain("Life stage (you are"); // no register block (rule 7's generic mention remains)
   });
 
   it("renders the binding register block only for bands that carry rules", () => {
-    const teen = buildCharacterChatSystemPrompt({ name: "Pip", profile: profile({ age: "16" }) });
+    const teen = buildCharacterChatSystemPrompt({ name: "Pip", profile: maraProfile({ age: "16" }) });
     expect(teen).toContain("Life stage (you are a teenager");
     expect(teen).toContain("Never wise beyond your years");
     // Rule 7 binds to it by heading name.
     expect(teen).toContain('When a "Life stage" block is present above, its rules are binding');
-    const adult = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile({ age: "29" }) });
+    const adult = systemPrompt({ profile: maraProfile({ age: "29" }) });
     expect(adult).not.toContain("Life stage (you are");
   });
 
   it("fences every intimate surface for a minor primary", () => {
     const minorInput = {
       name: "Pip",
-      profile: profile({
+      profile: maraProfile({
         age: "15",
         traits: [
           { id: "temperament.warmth", value: 50, source: "creation" as const },
@@ -2113,7 +1976,7 @@ describe("life stage & the minor fence (character-fidelity.plan.md slices 1–2)
     expect(prompt).toContain("Warmth: warm");
 
     // The same sheet at an adult age keeps all of it (the fence is age-keyed).
-    const adult = buildCharacterChatSystemPrompt({ ...minorInput, profile: profile({ ...minorInput.profile, age: "25" }) });
+    const adult = buildCharacterChatSystemPrompt({ ...minorInput, profile: maraProfile({ ...minorInput.profile, age: "25" }) });
     expect(adult).toContain("When a scene turns intimate");
     expect(adult).toContain("- Escalation:");
     expect(adult).toContain("Everyone taking part in romantic or intimate content is an adult");
@@ -2123,42 +1986,34 @@ describe("life stage & the minor fence (character-fidelity.plan.md slices 1–2)
     const at = (regard: number) =>
       buildCharacterChatPromptParts({
         name: "Pip",
-        profile: profile({ age: "15" }),
+        profile: maraProfile({ age: "15" }),
         state: { meters: {}, regard, conditions: [] },
       });
     expect(at(50).prefix).toBe(at(64).prefix); // same band — byte-identical
   });
 
   it("ensemble: minor members get the cast fence line, the sheet register line, and no selfie license", () => {
-    const member = (name: string, over: Partial<EnsembleMemberInput> = {}): EnsembleMemberInput => ({
-      name,
-      profile: profile(),
-      presence: "present",
-      quietExchanges: 0,
-      ...over,
-    });
-    const input = { name: "Mara", profile: profile(), player: { name: "Brian" } };
-    const withMinor = buildChatPromptPartsForRoster(input, [
+    const withMinor = buildChatPromptPartsForRoster(input(), [
       member("Mara"),
-      member("Pip", { profile: profile({ age: "12" }) }),
+      member("Pip", { profile: maraProfile({ age: "12" }) }),
     ]);
     expect(withMinor.prefix).toContain("Some characters in this cast are minors");
     expect(withMinor.prefix).toContain("Pip, 12 years old — a child");
     expect(withMinor.prefix).toContain("Life stage (binding): Pip speaks and thinks like a real child");
     // An all-adult cast renders no fence line.
-    const adults = buildChatPromptPartsForRoster(input, [member("Mara"), member("Rhett")]);
+    const adults = buildChatPromptPartsForRoster(input(), [member("Mara"), member("Rhett")]);
     expect(adults.prefix).not.toContain("Some characters in this cast are minors");
     // The selfie license never fires when the addressed member is the minor…
     const selfieMinor = buildChatPromptPartsForRoster(
-      input,
-      [member("Mara"), member("Pip", { profile: profile({ age: "12" }) })],
+      input(),
+      [member("Mara"), member("Pip", { profile: maraProfile({ age: "12" }) })],
       { selfie: { kind: "request", memberName: "Pip" } },
     );
     expect(selfieMinor.tail).not.toContain("asked Pip for a photo");
     // …but an adult member's license is untouched by a minor elsewhere in the cast.
     const selfieAdult = buildChatPromptPartsForRoster(
-      input,
-      [member("Mara"), member("Pip", { profile: profile({ age: "12" }) })],
+      input(),
+      [member("Mara"), member("Pip", { profile: maraProfile({ age: "12" }) })],
       { selfie: { kind: "request", memberName: "Mara" } },
     );
     expect(selfieAdult.tail).toContain("Brian asked Mara for a photo this turn");
@@ -2167,9 +2022,8 @@ describe("life stage & the minor fence (character-fidelity.plan.md slices 1–2)
 
 describe("character-fidelity slices 4–6 (preferences, sliders, micro-exemplars)", () => {
   it("renders the preferences block in the stable prefix; empty ⇒ no block (slice 4)", () => {
-    const withPrefs = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile({
+    const withPrefs = promptParts({
+      profile: maraProfile({
         preferences: [
           { target: "compliment", valence: "dislike", intensity: 6, hint: "flattery makes her wary" },
           { target: "confide", valence: "like", intensity: 5 },
@@ -2181,7 +2035,7 @@ describe("character-fidelity slices 4–6 (preferences, sliders, micro-exemplars
     expect(withPrefs.prefix).toContain("Lands well: confiding");
     // Stable-prefix, not the volatile tail.
     expect(withPrefs.tail).not.toContain("What lands well and badly with you");
-    expect(buildCharacterChatPromptParts({ name: "Mara", profile: profile() }).prefix).not.toContain(
+    expect(promptParts().prefix).not.toContain(
       "What lands well and badly",
     );
   });
@@ -2189,32 +2043,30 @@ describe("character-fidelity slices 4–6 (preferences, sliders, micro-exemplars
   it("fences intimate-concept preferences out for a minor (slice 4 × the minor fence)", () => {
     const prefs = [{ target: "proposition", valence: "like" as const, intensity: 6 }];
     expect(
-      buildCharacterChatPromptParts({ name: "Mara", profile: profile({ preferences: prefs }) }).prefix,
+      promptParts({ profile: maraProfile({ preferences: prefs }) }).prefix,
     ).toContain("proposition");
     expect(
-      buildCharacterChatPromptParts({ name: "Pip", profile: profile({ age: "12", preferences: prefs }) }).prefix,
+      buildCharacterChatPromptParts({ name: "Pip", profile: maraProfile({ age: "12", preferences: prefs }) }).prefix,
     ).not.toContain("What lands well and badly");
   });
 
   it("renders the micro-exemplar few-shots in the prefix; empty ⇒ no block (slice 6)", () => {
-    const withExemplars = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile({
+    const withExemplars = promptParts({
+      profile: maraProfile({
         microExemplars: [{ situation: "pushed to talk about her past", line: '"That\'s a long story, and you haven\'t earned it."' }],
       }),
     });
     expect(withExemplars.prefix).toContain("How you actually answer a charged moment");
     expect(withExemplars.prefix).toContain("pushed to talk about her past → ");
-    expect(buildCharacterChatPromptParts({ name: "Mara", profile: profile() }).prefix).not.toContain(
+    expect(promptParts().prefix).not.toContain(
       "How you actually answer a charged moment",
     );
   });
 
   it("dominance owns the forward move; mid dominance adds nothing (slice 5)", () => {
     const rules = (value: number) =>
-      buildCharacterChatPromptParts({
-        name: "Mara",
-        profile: profile({ traits: [{ id: "social.dominance", value, source: "creation" as const }] }),
+      promptParts({
+        profile: maraProfile({ traits: [{ id: "social.dominance", value, source: "creation" as const }] }),
       }).prefix;
     expect(rules(70)).toContain("You lead by temperament");
     expect(rules(-70)).toContain("You defer by temperament");
@@ -2224,10 +2076,9 @@ describe("character-fidelity slices 4–6 (preferences, sliders, micro-exemplars
   it("confidence colors the drive-reveal posture; mid adds nothing (slice 5)", () => {
     const drives = [{ want: "to reopen the gallery", why: "", secrecy: "open" as const, progress: "", revealed: false, resolved: false }];
     const tail = (value: number) =>
-      buildCharacterChatPromptParts({
-        name: "Mara",
-        profile: profile({ traits: [{ id: "temperament.confidence", value, source: "creation" as const }] }),
-        state: { meters: {}, regard: 0, conditions: [], drives },
+      promptParts({
+        profile: maraProfile({ traits: [{ id: "temperament.confidence", value, source: "creation" as const }] }),
+        state: chatState({ drives }),
       }).tail;
     expect(tail(70)).toContain("You state what you want plainly");
     expect(tail(-70)).toContain("Wanting makes you hesitant");
@@ -2245,18 +2096,18 @@ describe("character-fidelity slices 4–6 (preferences, sliders, micro-exemplars
     const roster: EnsembleMemberInput[] = [
       {
         name: "Ivy",
-        profile: profile({ traits: [{ id: "social.extraversion", value: 70, source: "creation" }] }),
+        profile: maraProfile({ traits: [{ id: "social.extraversion", value: 70, source: "creation" }] }),
         presence: "present",
         quietExchanges: ENSEMBLE_QUIET_EXCHANGES + 1, // 4: past the mid threshold, under the extravert's
       },
       {
         name: "Quinn",
-        profile: profile({ traits: [{ id: "social.extraversion", value: 0, source: "creation" }] }),
+        profile: maraProfile({ traits: [{ id: "social.extraversion", value: 0, source: "creation" }] }),
         presence: "present",
         quietExchanges: ENSEMBLE_QUIET_EXCHANGES + 1,
       },
     ];
-    const prefix = buildChatPromptPartsForRoster({ name: "Ivy", profile: profile() }, roster).prefix;
+    const prefix = buildChatPromptPartsForRoster({ name: "Ivy", profile: maraProfile() }, roster).prefix;
     expect(prefix).not.toContain("## Ivy (quiet just now)"); // extravert stays full
     expect(prefix).toContain("## Quinn (quiet just now)"); // mid member compresses
   });
@@ -2266,7 +2117,7 @@ describe("character-fidelity voice + evolution blocks (slices 7-10)", () => {
   const anchors = { petPhrases: ["no promises", "be serious"], cadence: "clipped and dry; trails off when she deflects", neverSays: ["babe"] };
 
   it("renders voice anchors in the stable prefix AND a one-line re-anchor near generation (slice 7)", () => {
-    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile({ voiceAnchors: anchors }) });
+    const parts = promptParts({ profile: maraProfile({ voiceAnchors: anchors }) });
     // Prefix carries the concrete anchors…
     expect(parts.prefix).toContain("Your voice, concretely");
     expect(parts.prefix).toContain("no promises; be serious");
@@ -2278,15 +2129,13 @@ describe("character-fidelity voice + evolution blocks (slices 7-10)", () => {
   });
 
   it("omits both voice-anchor blocks when nothing is authored (prompt unchanged)", () => {
-    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile() });
+    const parts = promptParts();
     expect(parts.prefix).not.toContain("Your voice, concretely");
     expect(parts.tail).not.toContain("Voice check:");
   });
 
   it("renders the 'How you sound' voice-exemplar ring from state, past the summary horizon (slice 8)", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
+    const prompt = systemPrompt({
       state: {
         meters: {},
         regard: 0,
@@ -2303,27 +2152,21 @@ describe("character-fidelity voice + evolution blocks (slices 7-10)", () => {
   });
 
   it("omits the voice ring when it is empty (prompt unchanged)", () => {
-    const prompt = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [], voiceExemplars: [] },
+    const prompt = systemPrompt({
+      state: chatState({ voiceExemplars: [] }),
     });
     expect(prompt).not.toContain("How you sound");
   });
 
   it("renders a one-turn character-consistency corrective from a slip note, and degrades to no line when absent (slice 9)", () => {
-    const corrected = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [], slipNote: "spoke like a therapist, not a teen — loosen the diction" },
+    const corrected = systemPrompt({
+      state: chatState({ slipNote: "spoke like a therapist, not a teen — loosen the diction" }),
     });
     expect(corrected).toContain("Voice correction");
     expect(corrected).toContain("loosen the diction");
     // Absent / empty slip ⇒ no corrective line (the degraded default).
-    const held = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile(),
-      state: { meters: {}, regard: 0, conditions: [], slipNote: "" },
+    const held = systemPrompt({
+      state: chatState({ slipNote: "" }),
     });
     expect(held).not.toContain("Voice correction");
   });
@@ -2331,9 +2174,8 @@ describe("character-fidelity voice + evolution blocks (slices 7-10)", () => {
   it("folds a persisted narrative trait overlay into the Disposition bands (slice 10)", () => {
     // Authored warmth is cold (creation-sourced); a narrative overlay (precedence > creation)
     // bends the evolved resting disposition so the Disposition block reads the arc, not the base.
-    const evolved = buildCharacterChatSystemPrompt({
-      name: "Mara",
-      profile: profile({ traits: [{ id: "temperament.warmth", value: -70, source: "creation" }] }),
+    const evolved = systemPrompt({
+      profile: maraProfile({ traits: [{ id: "temperament.warmth", value: -70, source: "creation" }] }),
       state: {
         meters: {},
         regard: 0,
@@ -2353,13 +2195,12 @@ describe("character-fidelity voice + evolution blocks (slices 7-10)", () => {
  * and editable but never reached this lane at all.
  */
 describe("the intimate disposition gate", () => {
-  const lover = profile({ intimacy: "Slow to start, and merciless once she is." });
+  const lover = maraProfile({ intimacy: "Slow to start, and merciless once she is." });
   const closed = { meters: { arousal: 0.1 }, regard: 20, conditions: [], outfitExposed: false };
   const open = { meters: { arousal: 0.8 }, regard: 20, conditions: [], outfitExposed: false };
 
   it("emits nothing below the gate — zero tokens, not text the model is told to ignore", () => {
-    const { prefix, tail } = buildCharacterChatPromptParts({
-      name: "Mara",
+    const { prefix, tail } = promptParts({
       profile: lover,
       player: { name: "Theo", intimacy: "Wants to be taken care of." },
       state: closed,
@@ -2370,8 +2211,7 @@ describe("the intimate disposition gate", () => {
   });
 
   it("surfaces both notes once the scene earns it", () => {
-    const { tail } = buildCharacterChatPromptParts({
-      name: "Mara",
+    const { tail } = promptParts({
       profile: lover,
       player: { name: "Theo", intimacy: "Wants to be taken care of." },
       state: open,
@@ -2384,16 +2224,14 @@ describe("the intimate disposition gate", () => {
   });
 
   it("opens on either party's coverage, not only arousal", () => {
-    const byHer = buildCharacterChatPromptParts({
-      name: "Mara",
+    const byHer = promptParts({
       profile: lover,
       player: { name: "Theo" },
       state: { ...closed, outfitExposed: true },
     });
     expect(byHer.tail).toContain("Slow to start");
 
-    const byHim = buildCharacterChatPromptParts({
-      name: "Mara",
+    const byHim = promptParts({
       profile: lover,
       player: { name: "Theo", exposed: true },
       state: closed,
@@ -2405,9 +2243,8 @@ describe("the intimate disposition gate", () => {
   // whatever the gate says — and that fence covers the player's note too, since the
   // block is about the two of them together.
   it("stays shut for an authored minor even with the gate wide open", () => {
-    const { tail } = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile({ age: "15", intimacy: "should never render" }),
+    const { tail } = promptParts({
+      profile: maraProfile({ age: "15", intimacy: "should never render" }),
       player: { name: "Theo", intimacy: "also should never render", exposed: true },
       state: { ...open, outfitExposed: true },
     });
@@ -2418,7 +2255,7 @@ describe("the intimate disposition gate", () => {
   it("renders the species archetype merged with the character's own note", () => {
     const { tail } = buildCharacterChatPromptParts({
       name: "Lys",
-      profile: profile({ speciesId: "succubus", intimacy: "Her own authored line." }),
+      profile: maraProfile({ speciesId: "succubus", intimacy: "Her own authored line." }),
       player: { name: "Theo" },
       state: open,
     });
@@ -2426,13 +2263,13 @@ describe("the intimate disposition gate", () => {
     // 2026-07-13), archetype first. This is the whole trio finally reaching the chat lane.
     expect(tail).toContain("Feeds on intimacy itself");
     expect(tail).toContain("Her own authored line.");
-    expect(tail.indexOf("Feeds on intimacy itself")).toBeLessThan(tail.indexOf("Her own authored line."));
+    expectOrder(tail, ["Feeds on intimacy itself", "Her own authored line."]);
   });
 
   it("renders a bare species archetype for a character with no note of their own", () => {
     const { tail } = buildCharacterChatPromptParts({
       name: "Lys",
-      profile: profile({ speciesId: "succubus" }),
+      profile: maraProfile({ speciesId: "succubus" }),
       player: { name: "Theo" },
       state: open,
     });
@@ -2440,9 +2277,8 @@ describe("the intimate disposition gate", () => {
   });
 
   it("a human with no authored note contributes nothing, however open the gate", () => {
-    const { tail } = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile({ speciesId: "human" }),
+    const { tail } = promptParts({
+      profile: maraProfile({ speciesId: "human" }),
       player: { name: "Theo", intimacy: "Wants to be taken care of." },
       state: open,
     });
@@ -2452,9 +2288,7 @@ describe("the intimate disposition gate", () => {
   });
 
   it("emits nothing when the gate is open but nobody authored a note", () => {
-    const { tail } = buildCharacterChatPromptParts({
-      name: "Mara",
-      profile: profile(),
+    const { tail } = promptParts({
       player: { name: "Theo" },
       state: open,
     });
@@ -2464,14 +2298,12 @@ describe("the intimate disposition gate", () => {
   // The §9 cache layout: the gate flips with state, so its block MUST be volatile. If it
   // rode the prefix, every arousal tick past the threshold would bust the cached prompt.
   it("keeps the prefix byte-identical across a gate flip (cache-safe)", () => {
-    const shut = buildCharacterChatPromptParts({
-      name: "Mara",
+    const shut = promptParts({
       profile: lover,
       player: { name: "Theo", intimacy: "Wants to be taken care of.", wearing: "a coat" },
       state: closed,
     });
-    const opened = buildCharacterChatPromptParts({
-      name: "Mara",
+    const opened = promptParts({
       profile: lover,
       player: { name: "Theo", intimacy: "Wants to be taken care of.", wearing: "nothing at all", exposed: true },
       state: open,
@@ -2482,18 +2314,9 @@ describe("the intimate disposition gate", () => {
 });
 
 describe("the intimate disposition gate (ensemble)", () => {
-  const member = (name: string, over: Partial<EnsembleMemberInput> = {}): EnsembleMemberInput => ({
-    name,
-    profile: profile(),
-    presence: "present",
-    quietExchanges: 0,
-    ...over,
-  });
-  const input = (): Parameters<typeof buildCharacterChatPromptParts>[0] => ({
-    name: "Mara",
-    profile: profile(),
-    player: { name: "Brian", intimacy: "Wants to be taken care of." },
-  });
+  /** This block's player states an intimacy preference — the gate is what reads it. */
+  const wanting = (): CharacterChatPromptInput =>
+    input({ player: { name: "Brian", intimacy: "Wants to be taken care of." } });
 
   const closed = { meters: { arousal: 0.1 }, regard: 0, conditions: [], outfitExposed: false };
   const open = { meters: { arousal: 0.9 }, regard: 0, conditions: [], outfitExposed: false };
@@ -2501,9 +2324,9 @@ describe("the intimate disposition gate (ensemble)", () => {
   // The reason the gate is per-member and not per-scene: one couple in the room must not
   // hand every present character an intimate disposition.
   it("opens only for the member the scene actually turned intimate with", () => {
-    const { tail } = buildChatPromptPartsForRoster(input(), [
-      member("Mara", { profile: profile({ intimacy: "Mara's note." }), state: open }),
-      member("Sayed", { profile: profile({ intimacy: "Sayed's note." }), state: closed }),
+    const { tail } = buildChatPromptPartsForRoster(wanting(), [
+      member("Mara", { profile: maraProfile({ intimacy: "Mara's note." }), state: open }),
+      member("Sayed", { profile: maraProfile({ intimacy: "Sayed's note." }), state: closed }),
     ]);
     expect(tail).toContain("How Mara is as a lover");
     expect(tail).toContain("Mara's note.");
@@ -2511,9 +2334,9 @@ describe("the intimate disposition gate (ensemble)", () => {
   });
 
   it("renders the player's note ONCE however many members qualified", () => {
-    const { tail } = buildChatPromptPartsForRoster(input(), [
-      member("Mara", { profile: profile({ intimacy: "Mara's note." }), state: open }),
-      member("Sayed", { profile: profile({ intimacy: "Sayed's note." }), state: open }),
+    const { tail } = buildChatPromptPartsForRoster(wanting(), [
+      member("Mara", { profile: maraProfile({ intimacy: "Mara's note." }), state: open }),
+      member("Sayed", { profile: maraProfile({ intimacy: "Sayed's note." }), state: open }),
     ]);
     expect(tail).toContain("Mara's note.");
     expect(tail).toContain("Sayed's note.");
@@ -2521,26 +2344,26 @@ describe("the intimate disposition gate (ensemble)", () => {
   });
 
   it("stays shut for everyone when no member's scene is intimate", () => {
-    const { tail } = buildChatPromptPartsForRoster(input(), [
-      member("Mara", { profile: profile({ intimacy: "Mara's note." }), state: closed }),
-      member("Sayed", { profile: profile({ intimacy: "Sayed's note." }), state: closed }),
+    const { tail } = buildChatPromptPartsForRoster(wanting(), [
+      member("Mara", { profile: maraProfile({ intimacy: "Mara's note." }), state: closed }),
+      member("Sayed", { profile: maraProfile({ intimacy: "Sayed's note." }), state: closed }),
     ]);
     expect(tail).not.toContain("Intimate disposition");
     expect(tail).not.toContain("taken care of");
   });
 
   it("an away member never contributes, even with their own gate open", () => {
-    const { tail } = buildChatPromptPartsForRoster(input(), [
-      member("Mara", { profile: profile({ intimacy: "Mara's note." }), state: closed }),
-      member("Sayed", { presence: "away", profile: profile({ intimacy: "Sayed's note." }), state: open }),
+    const { tail } = buildChatPromptPartsForRoster(wanting(), [
+      member("Mara", { profile: maraProfile({ intimacy: "Mara's note." }), state: closed }),
+      member("Sayed", { presence: "away", profile: maraProfile({ intimacy: "Sayed's note." }), state: open }),
     ]);
     expect(tail).not.toContain("Sayed's note.");
   });
 
   it("minor-fences per member — the adult's note still stands", () => {
-    const { tail } = buildChatPromptPartsForRoster(input(), [
-      member("Mara", { profile: profile({ intimacy: "Mara's note." }), state: open }),
-      member("Kit", { profile: profile({ age: "15", intimacy: "never renders" }), state: open }),
+    const { tail } = buildChatPromptPartsForRoster(wanting(), [
+      member("Mara", { profile: maraProfile({ intimacy: "Mara's note." }), state: open }),
+      member("Kit", { profile: maraProfile({ age: "15", intimacy: "never renders" }), state: open }),
     ]);
     expect(tail).toContain("Mara's note.");
     expect(tail).not.toContain("never renders");

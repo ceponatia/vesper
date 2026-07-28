@@ -19,6 +19,8 @@ import {
   type SimulationMaterialItem,
   type SimulationMaterialItemInput,
 } from "@/contracts/simulation/materials";
+import type { PrincipalKind } from "@/contracts/simulation/envelopes";
+import { bindSimEnvelopes } from "@/test/sim-envelopes";
 import { storySecondAt } from "./body-reads";
 import type { MeterIntegrationView } from "./bodies";
 import type { MaterialResolutionView } from "./material-locus";
@@ -38,6 +40,14 @@ const WORLD = "world-1";
 const BRANCH = "branch-1";
 const MARA = "mara";
 const RIVAL = "rival";
+const RULESET = "ruleset-v1";
+
+/**
+ * This suite carries its own ruleset, so bind the trio once: every view's
+ * `branchId` must stay equal to the command's, or the resolver answers
+ * `branch_mismatch` instead of the routine law under test.
+ */
+const env = bindSimEnvelopes({ worldId: WORLD, branchId: BRANCH, rulesetVersion: RULESET });
 
 /** 23:00 → 07:00, the default geometry, authored explicitly. */
 const sleepRhythm: BodyRhythmRow = bodyRhythmRowSchema.parse({
@@ -92,12 +102,8 @@ function mealItem(overrides: Partial<SimulationMaterialItemInput> = {}): Simulat
 function materialView(items: readonly SimulationMaterialItem[]): MaterialResolutionView {
   const byId = new Map<string, SimulationMaterialItem>(items.map((item) => [item.id, item]));
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: "ruleset-v1",
+    ...env.meta({ headSequence: 40, storySecond: storySecondAt(1, 720) }),
     version: 7,
-    headSequence: 40,
-    storySecond: storySecondAt(1, 720),
     actorById: (actorId) => (actorId === MARA || actorId === RIVAL ? { id: actorId, name: actorId } : undefined),
     actorZoneId: (actorId) => (actorId === MARA ? "zone-home" : null),
     actorLocationId: (actorId) => (actorId === MARA ? "loc-home" : null),
@@ -123,11 +129,7 @@ const LUNCH_SECOND = storySecondAt(1, 720);
 
 function view(overrides: Partial<RunRoutinePolicyResolutionView> = {}): RunRoutinePolicyResolutionView {
   return {
-    worldId: WORLD,
-    branchId: BRANCH,
-    rulesetVersion: "ruleset-v1",
-    headSequence: 40,
-    storySecond: FIRE_SECOND,
+    ...env.meta({ headSequence: 40, storySecond: FIRE_SECOND }),
     actorExists: true,
     lod: actorLodReadSchema.parse({
       simulationLod: "event",
@@ -161,21 +163,16 @@ function lunchView(
   });
 }
 
-function command(overrides: Partial<{ principalKind: string; branchId: string }> = {}): RunRoutinePolicyCommand {
-  return runRoutinePolicyCommandSchema.parse({
-    id: "cmd-routine-1",
-    branchId: overrides.branchId ?? BRANCH,
-    expectedVersion: 0,
-    idempotencyKey: "routine-key-1",
+function command(overrides: Partial<{ principalKind: PrincipalKind }> = {}): RunRoutinePolicyCommand {
+  return env.command(runRoutinePolicyCommandSchema, {
+    type: "run_routine_policy",
+    idSlug: "routine-1",
+    // The scheduler fires routines — a principal id no shared shape covers.
     principal: {
       kind: overrides.principalKind ?? "system",
       principalId: "sim-scheduler",
       controlledActorIds: [],
     },
-    submittedAtWallClock: "2026-07-20T12:00:00.000Z",
-    correlationId: "corr-1",
-    type: "run_routine_policy",
-    schemaVersion: 1,
     payload: { actorId: MARA, armedAtSequence: 12 },
   });
 }

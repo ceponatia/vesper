@@ -1,5 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
-import { NextRequest } from "next/server";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { characterProfileSchema } from "@/contracts";
 import {
@@ -13,7 +12,6 @@ import {
   simMemoryDocuments,
   simRelationshipLedger,
   simWorlds,
-  users,
 } from "@/server/db";
 
 // The successor front door (engine.rollout.plan.md, owner ask 2026-07-22):
@@ -21,19 +19,24 @@ import {
 // to the successor lane — then an ordinary send plays a full sim turn in it
 // (AI_FAKE; zero live calls). Self-skips without a database.
 
-process.env.AI_FAKE = "1";
-
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Front Door", role: "user" as "admin" | "user" },
 }));
 
-vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
-  getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
+import {
+  apiRequest,
+  bindAuthUser,
+  drainStream,
+  endTestPool,
+  expectApiError,
+  expectJson,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  routeCtx,
+  seedTestUser,
+} from "@/server/test-support";
 import {
   STARTER_CALENDAR_START,
   STARTER_ORIGIN_STORY_SECOND,
@@ -46,47 +49,22 @@ import { PATCH as calendarPatch } from "./[chatId]/route";
 import { GET as chatGet, POST as chatSend } from "../chats/[chatId]/route";
 import { GET as stateGet } from "../chats/[chatId]/state/route";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from character_chats limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(
-      `[successor-chats.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("successor-chats.int.test", "character_chats");
+const collectionCtx = routeCtx();
+const ctx = (chatId: string) => routeCtx({ chatId });
 
-const ready = await probe();
-const ctx = (chatId: string) => ({ params: Promise.resolve({ chatId }) });
-function jsonReq(path: string, body: unknown, method = "POST"): NextRequest {
-  return new NextRequest(`http://t${path}`, {
-    method,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+interface CreatedWorld {
+  id: string;
+  worldId: string;
+  branchId: string;
 }
 
 const ids = { user: "", characterId: "", worldId: "", extraWorldId: "" };
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `front-door-${stamp}@test.local`, name: "Front Door" })
-    .returning();
-  if (!user) throw new Error("failed to create test user");
-  authState.user = { ...authState.user, id: user.id, email: user.email };
+  const user = await seedTestUser("front-door");
+  bindAuthUser(authState, user);
   ids.user = user.id;
   // R5 slice 5: an authored default outfit — provisioning ports it into the
   // mirror world as WORN items, so the outfit chip reads world truth.
@@ -115,24 +93,29 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (!ready || !ids.user) return;
-  if (ids.worldId) await db().delete(simWorlds).where(eq(simWorlds.id, ids.worldId));
-  if (ids.extraWorldId) await db().delete(simWorlds).where(eq(simWorlds.id, ids.extraWorldId));
-  await db().delete(characterChats).where(eq(characterChats.ownerId, ids.user));
-  await db().delete(characters).where(eq(characters.ownerId, ids.user));
-  await db().delete(items).where(eq(items.ownerId, ids.user));
-  await db().delete(users).where(eq(users.id, ids.user));
+  if (ready && ids.user) {
+    // `sim_worlds` carries no owner column — the chat is its only anchor — so the
+    // worlds go first, by hand; the cascade nulls each chat's `sim_branch_id`
+    // before the owner sweep removes the chats themselves.
+    const worlds = [ids.worldId, ids.extraWorldId].filter(Boolean);
+    if (worlds.length > 0) await db().delete(simWorlds).where(inArray(simWorlds.id, worlds));
+    await purgeOwnerRows([ids.user]);
+  }
+  await endTestPool();
 });
 
 describe.runIf(ready)("successor-chats front door", () => {
   it("provisions a fresh world, routes the chat, and plays a full sim turn", async () => {
-    const created = await successorCreate(
-      // slice 3: `requestId` is the required per-intent idempotency key.
-      jsonReq("/api/successor-chats", { characterId: ids.characterId, title: "Front Door Test", requestId: "front-door-1" }),
-      { params: Promise.resolve({}) },
+    const body = await expectJson<CreatedWorld>(
+      await successorCreate(
+        // slice 3: `requestId` is the required per-intent idempotency key.
+        apiRequest("/api/successor-chats", {
+          body: { characterId: ids.characterId, title: "Front Door Test", requestId: "front-door-1" },
+        }),
+        collectionCtx,
+      ),
+      201,
     );
-    expect(created.status).toBe(201);
-    const body = (await created.json()) as { id: string; worldId: string; branchId: string };
     ids.worldId = body.worldId;
 
     // The chat is routed with both actors mapped, and the fresh branch sits
@@ -157,11 +140,11 @@ describe.runIf(ready)("successor-chats front door", () => {
 
     // An ordinary send plays a successor turn in the fresh world.
     const send = await chatSend(
-      jsonReq(`/api/chats/${body.id}`, { kind: "send", content: "I look around our new home." }),
+      apiRequest(`/api/chats/${body.id}`, { body: { kind: "send", content: "I look around our new home." } }),
       ctx(body.id),
     );
     expect(send.status).toBe(200);
-    expect((await send.text()).replace(/\u200B/g, "").length).toBeGreaterThan(0);
+    expect((await drainStream(send)).replace(/\u200B/g, "").length).toBeGreaterThan(0);
     const lines = await db()
       .select({ role: characterChatMessages.role })
       .from(characterChatMessages)
@@ -169,11 +152,9 @@ describe.runIf(ready)("successor-chats front door", () => {
     expect(lines.map((line) => line.role).sort()).toEqual(["assistant", "user"]);
 
     // The list shows it with the character's name and the world clock.
-    const listRes = await successorList(new NextRequest("http://t/api/successor-chats"), { params: Promise.resolve({}) });
-    expect(listRes.status).toBe(200);
-    const { chats } = (await listRes.json()) as {
+    const { chats } = await expectJson<{
       chats: { id: string; characterName: string; storySecond: number | null }[];
-    };
+    }>(await successorList(apiRequest("/api/successor-chats"), collectionCtx), 200);
     const listed = chats.find((chat) => chat.id === body.id);
     if (!listed) throw new Error("successor chat missing from the list");
     expect(listed.characterName).toBe("Abigail");
@@ -187,13 +168,15 @@ describe.runIf(ready)("successor-chats front door", () => {
       .from(simWorlds)
       .where(eq(simWorlds.id, body.worldId));
     expect(world?.calendarStart).toEqual(STARTER_CALENDAR_START);
-    const stateRes = await stateGet(new NextRequest(`http://t/api/chats/${body.id}/state`), ctx(body.id));
-    const stateBody = (await stateRes.json()) as {
+    const stateBody = await expectJson<{
       simClock: { storySecond: number; calendarStart: { year: number } | null } | null;
-    };
+    }>(await stateGet(apiRequest(`/api/chats/${body.id}/state`), ctx(body.id)));
     expect(stateBody.simClock?.calendarStart).toEqual(STARTER_CALENDAR_START);
     const patched = await calendarPatch(
-      jsonReq(`/api/successor-chats/${body.id}`, { calendarStart: { year: 2027, month: 1, day: 15 } }, "PATCH"),
+      apiRequest(`/api/successor-chats/${body.id}`, {
+        method: "PATCH",
+        body: { calendarStart: { year: 2027, month: 1, day: 15 } },
+      }),
       ctx(body.id),
     );
     expect(patched.status).toBe(200);
@@ -205,20 +188,27 @@ describe.runIf(ready)("successor-chats front door", () => {
   });
 
   it("rejects a character outside the caller's library", async () => {
-    const res = await successorCreate(
-      jsonReq("/api/successor-chats", { characterId: "not-a-real-id", requestId: "foreign-character-1" }),
-      { params: Promise.resolve({}) },
+    await expectApiError(
+      await successorCreate(
+        apiRequest("/api/successor-chats", {
+          body: { characterId: "not-a-real-id", requestId: "foreign-character-1" },
+        }),
+        collectionCtx,
+      ),
+      404,
     );
-    expect(res.status).toBe(404);
   });
 
   it("input admission: 'I hand her the keepsake' executes a real transfer (R5 slice 2)", async () => {
-    const created = await successorCreate(
-      jsonReq("/api/successor-chats", { characterId: ids.characterId, title: "Admission Test", requestId: "admission-1" }),
-      { params: Promise.resolve({}) },
+    const body = await expectJson<CreatedWorld>(
+      await successorCreate(
+        apiRequest("/api/successor-chats", {
+          body: { characterId: ids.characterId, title: "Admission Test", requestId: "admission-1" },
+        }),
+        collectionCtx,
+      ),
+      201,
     );
-    expect(created.status).toBe(201);
-    const body = (await created.json()) as { id: string; worldId: string; branchId: string };
     ids.extraWorldId = body.worldId;
     const [chatRow] = await db()
       .select({ playerActorId: characterChats.simPlayerActorId, primaryActorId: characterChats.simPrimaryActorId })
@@ -227,11 +217,11 @@ describe.runIf(ready)("successor-chats front door", () => {
     if (!chatRow?.playerActorId || !chatRow.primaryActorId) throw new Error("actor mapping missing");
 
     const send = await chatSend(
-      jsonReq(`/api/chats/${body.id}`, { kind: "send", content: "I smile and hand her the keepsake." }),
+      apiRequest(`/api/chats/${body.id}`, { body: { kind: "send", content: "I smile and hand her the keepsake." } }),
       ctx(body.id),
     );
     expect(send.status).toBe(200);
-    expect((await send.text()).replace(/\u200B/g, "").length).toBeGreaterThan(0);
+    expect((await drainStream(send)).replace(/\u200B/g, "").length).toBeGreaterThan(0);
     // World truth moved: the starter keepsake is now HELD by the primary actor.
     const [holding] = await db()
       .select({ actorId: simItemHoldings.actorId, locusKind: simItemHoldings.locusKind })
@@ -242,16 +232,16 @@ describe.runIf(ready)("successor-chats front door", () => {
     // A refused admission (resting mid-scene fights the engagement's claim)
     // still renders a turn — the §14.4 face rides the cut, never a dead send.
     const refused = await chatSend(
-      jsonReq(`/api/chats/${body.id}`, { kind: "send", content: "I lie down to rest right here." }),
+      apiRequest(`/api/chats/${body.id}`, { body: { kind: "send", content: "I lie down to rest right here." } }),
       ctx(body.id),
     );
     expect(refused.status).toBe(200);
-    expect((await refused.text()).replace(/\u200B/g, "").length).toBeGreaterThan(0);
+    expect((await drainStream(refused)).replace(/\u200B/g, "").length).toBeGreaterThan(0);
 
     // R5 slice 3 \u2014 presence reads the mirror's physical truth: co-located now\u2026
-    const before = (await (await chatGet(new NextRequest(`http://t/api/chats/${body.id}`), ctx(body.id))).json()) as {
-      roster: { sort: number; presence: string }[];
-    };
+    const before = await expectJson<{ roster: { sort: number; presence: string }[] }>(
+      await chatGet(apiRequest(`/api/chats/${body.id}`), ctx(body.id)),
+    );
     expect(before.roster.find((m) => m.sort === 0)?.presence).toBe("present");
     // \u2026then the storyteller relocates the primary to the square \u2192 "away".
     const relocated = await submitDurableStorytellerRelocation(
@@ -274,9 +264,9 @@ describe.runIf(ready)("successor-chats front door", () => {
       { admitAtLockedVersion: true },
     );
     expect(relocated.status).toBe("accepted");
-    const after = (await (await chatGet(new NextRequest(`http://t/api/chats/${body.id}`), ctx(body.id))).json()) as {
-      roster: { sort: number; presence: string }[];
-    };
+    const after = await expectJson<{ roster: { sort: number; presence: string }[] }>(
+      await chatGet(apiRequest(`/api/chats/${body.id}`), ctx(body.id)),
+    );
     expect(after.roster.find((m) => m.sort === 0)?.presence).toBe("away");
 
     // R5 slice 4 \u2014 the strip's meters read the ruling-15 substrate: drop the
@@ -303,9 +293,9 @@ describe.runIf(ready)("successor-chats front door", () => {
       { admitAtLockedVersion: true },
     );
     expect(washed.status).toBe("accepted");
-    const stateAfter = (await (
-      await stateGet(new NextRequest(`http://t/api/chats/${body.id}/state`), ctx(body.id))
-    ).json()) as { meters: Record<string, number> };
+    const stateAfter = await expectJson<{ meters: Record<string, number> }>(
+      await stateGet(apiRequest(`/api/chats/${body.id}/state`), ctx(body.id)),
+    );
     expect(stateAfter.meters.hygiene).toBeCloseTo(0.2, 5);
     expect(stateAfter.meters.mood).toBeCloseTo(0.5, 5);
 
@@ -322,15 +312,15 @@ describe.runIf(ready)("successor-chats front door", () => {
         ),
       );
     expect(worn).toHaveLength(2);
-    const outfitEnvelope = (await (
-      await chatGet(new NextRequest(`http://t/api/chats/${body.id}`), ctx(body.id))
-    ).json()) as { roster: { sort: number; outfit: string }[] };
+    const outfitEnvelope = await expectJson<{ roster: { sort: number; outfit: string }[] }>(
+      await chatGet(apiRequest(`/api/chats/${body.id}`), ctx(body.id)),
+    );
     const primaryOutfit = outfitEnvelope.roster.find((m) => m.sort === 0)?.outfit ?? "";
     expect(primaryOutfit).toContain("denim jacket");
     expect(primaryOutfit).toContain("white cotton tee");
-    const stateOutfit = (await (
-      await stateGet(new NextRequest(`http://t/api/chats/${body.id}/state`), ctx(body.id))
-    ).json()) as { outfitLabel: string };
+    const stateOutfit = await expectJson<{ outfitLabel: string }>(
+      await stateGet(apiRequest(`/api/chats/${body.id}/state`), ctx(body.id)),
+    );
     expect(stateOutfit.outfitLabel).toContain("denim jacket");
 
     // R5 knowledge/memory: successor chats are rag-eligible from birth, and
@@ -355,9 +345,9 @@ describe.runIf(ready)("successor-chats front door", () => {
       .from(simRelationshipLedger)
       .where(eq(simRelationshipLedger.branchId, body.branchId));
     expect(ledger.filter((row) => row.kind === "authored_prior")).toHaveLength(2);
-    const relStateBefore = (await (
-      await stateGet(new NextRequest(`http://t/api/chats/${body.id}/state`), ctx(body.id))
-    ).json()) as { regard: number; familiarity: number; regardBand: { label: string } };
+    const relStateBefore = await expectJson<{ regard: number; familiarity: number; regardBand: { label: string } }>(
+      await stateGet(apiRequest(`/api/chats/${body.id}/state`), ctx(body.id)),
+    );
     // The §21 read time-decays evidence, so the authored 57 reads a hair
     // lower as story time passes — the BAND is the stable assertion.
     expect(relStateBefore.regard).toBeGreaterThanOrEqual(53);
@@ -385,9 +375,9 @@ describe.runIf(ready)("successor-chats front door", () => {
       { admitAtLockedVersion: true },
     );
     expect(affection.status).toBe("accepted");
-    const relStateAfter = (await (
-      await stateGet(new NextRequest(`http://t/api/chats/${body.id}/state`), ctx(body.id))
-    ).json()) as { regard: number; familiarity: number };
+    const relStateAfter = await expectJson<{ regard: number; familiarity: number }>(
+      await stateGet(apiRequest(`/api/chats/${body.id}/state`), ctx(body.id)),
+    );
     expect(relStateAfter.regard).toBeGreaterThan(relStateBefore.regard);
     expect(relStateAfter.familiarity).toBe(46);
   });

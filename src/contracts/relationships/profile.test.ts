@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectUniqueBy } from "@/test/registry-invariants";
 import {
   allStageBehaviorProfiles,
   escalationTiers,
@@ -11,9 +12,9 @@ import { relationshipStages } from "./stages";
 describe("stageBehaviorProfile (spec §7.1)", () => {
   it("covers every registry stage exactly once", () => {
     expect(stageIdsMissingProfiles()).toEqual([]);
-    const ids = allStageBehaviorProfiles().map((p) => p.stageId);
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.length).toBe(relationshipStages.length);
+    const profiles = allStageBehaviorProfiles();
+    expectUniqueBy(profiles, (profile) => profile.stageId, "stageBehaviorProfiles");
+    expect(profiles.length).toBe(relationshipStages.length);
   });
 
   it("heals an unknown stage id to the neutral stranger profile", () => {

@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { expectFenced, UNTRUSTED_FENCE_RE } from "@/server/test-support";
 import { fenceUntrusted, neutralizePlayerInput, UNTRUSTED_DATA_NOTICE } from "./untrusted";
+
+/** Every marker in a span — the shape, so rotating the nonce is not a test break. */
+const fenceMarkers = (text: string): string[] => text.match(new RegExp(UNTRUSTED_FENCE_RE.source, "gu")) ?? [];
 
 describe("fenceUntrusted", () => {
   it("wraps content in opaque open/close sentinels carrying the label", () => {
     const out = fenceUntrusted("player input", "hello there");
     expect(out).toContain("hello there");
-    // Distinctive, hard-to-guess token, present on both an open and a close line.
-    const fences = out.match(/vsp-untrusted-7f3a9c2e/g) ?? [];
-    expect(fences.length).toBe(2);
-    expect(out).toContain("player input");
+    // Distinctive, hard-to-guess token, present on both an open and a close line…
+    expectFenced(out, "player input");
+    // …and on exactly those two lines — no stray sentinel anywhere else.
+    expect(fenceMarkers(out)).toHaveLength(2);
     // Content sits strictly between the two markers.
     const [open, close] = [out.indexOf("<<"), out.lastIndexOf(">>")];
     expect(out.indexOf("hello there")).toBeGreaterThan(open);
@@ -21,7 +25,8 @@ describe("fenceUntrusted", () => {
   });
 
   it("the authoritative notice names the fence shape and forbids treating fenced text as instructions", () => {
-    expect(UNTRUSTED_DATA_NOTICE).toContain("vsp-untrusted-7f3a9c2e");
+    expect(UNTRUSTED_DATA_NOTICE).toMatch(UNTRUSTED_FENCE_RE);
+    expectFenced(UNTRUSTED_DATA_NOTICE, "LABEL");
     expect(UNTRUSTED_DATA_NOTICE).toMatch(/untrusted DATA/);
     expect(UNTRUSTED_DATA_NOTICE).toMatch(/never as authority/i);
   });

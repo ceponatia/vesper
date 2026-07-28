@@ -24,3 +24,6 @@ export * from "./chat-fixtures";
 export * from "./chat-archivist-mock";
 export * from "./profile-fixtures";
 export * from "./prompt-assertions";
+export * from "./sim-chat-fixtures";
+export * from "./authoring-fixtures";
+export * from "./ai-fixtures";

@@ -11,22 +11,23 @@ import {
 } from "@/contracts/simulation/activities";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import {
-  itemLocusSchema,
   simulationMaterialItemSchema,
-  type ItemLocus,
   type SimulationMaterialItem,
   type SimulationMaterialItemInput,
 } from "@/contracts/simulation/materials";
-import {
-  bodyMeterDefinitionSchema,
-  bodyMeterStateSchema,
-  type BodyMeterDefinition,
-} from "@/contracts/simulation/bodies";
 import {
   itemConditionMeterStateSchema,
   itemConditionRegistryV1,
   itemConditionRegistryVersion,
 } from "@/contracts/simulation/material-condition";
+import { simMeta, testPrincipal } from "@/test/sim-envelopes";
+import {
+  atZone,
+  heldBy,
+  meterDefinition,
+  meterState,
+  singleMeterBodyView,
+} from "@/test/sim-material-fixtures";
 import { simulationHash } from "./hash";
 import { applyBodyEvent, emptyBodiesSeed } from "./bodies";
 import type { ItemConditionView } from "./material-condition";
@@ -34,7 +35,6 @@ import {
   applyMaterialEvent,
   materialsSeedProjection,
   resolveTransferItemFromView,
-  type ConsumptionBodyView,
   type MaterialResolutionView,
 } from "./materials";
 import {
@@ -69,11 +69,7 @@ function definition(overrides: Partial<SimulationActionDefinition> = {}): Simula
 
 function startView(overrides: Record<string, unknown> = {}) {
   return {
-    worldId: "world-1",
-    branchId: "branch-1",
-    rulesetVersion: "gate3-test-v1",
-    headSequence: 0,
-    storySecond: SEED_SECOND,
+    ...simMeta({ storySecond: SEED_SECOND }),
     actorExists: true,
     locus: { kind: "at", actorId: "actor-1", locationId: "loc-home", zoneId: "zone-a", since: SEED_SECOND },
     actorZone: { id: "zone-a", kind: "room", locationId: "loc-home" },
@@ -90,7 +86,7 @@ function startCommand(overrides: Record<string, unknown> = {}) {
     branchId: "branch-1",
     expectedVersion: 0,
     idempotencyKey: "start-key-1",
-    principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-1"] },
+    principal: testPrincipal("player", ["actor-1"]),
     submittedAtWallClock: "2026-07-17T12:00:00.000Z",
     correlationId: "corr-1",
     type: "start_activity",
@@ -103,9 +99,6 @@ function startCommand(overrides: Record<string, unknown> = {}) {
 // ---------------------------------------------------------------------------
 // E5.3 slice 2 fixtures — material items and bodies (§26.5–26.6)
 // ---------------------------------------------------------------------------
-
-const heldBy = (actorId: string): ItemLocus => itemLocusSchema.parse({ kind: "held", actorId });
-const atZone = (zoneId: string): ItemLocus => itemLocusSchema.parse({ kind: "zone", zoneId });
 
 function materialItem(input: Partial<SimulationMaterialItemInput> & { id: string }): SimulationMaterialItem {
   return simulationMaterialItemSchema.parse({
@@ -135,41 +128,6 @@ function materialLookup(
 
 function cost(overrides: Partial<ActionResourceCost> = {}): ActionResourceCost {
   return { materialKindKey: "herb", quantity: 1, disposition: "consume", useConditionDeltas: [], ...overrides };
-}
-
-function hungerDefinition(overrides: Partial<BodyMeterDefinition> = {}): BodyMeterDefinition {
-  return bodyMeterDefinitionSchema.parse({
-    key: "hunger",
-    class: "rate",
-    driftLaw: {
-      kind: "linear",
-      ratePerHourFixedPoint: 150,
-      target: { kind: "fixed", valueFixedPoint: 0 },
-    },
-    initialFixedPoint: 9_000,
-    baselineFixedPoint: 0,
-    thresholds: [],
-    ...overrides,
-  });
-}
-
-function hungerBodyView(
-  definition: BodyMeterDefinition,
-  actorId: string,
-  storySecond: number,
-): ConsumptionBodyView {
-  const state = bodyMeterStateSchema.parse({
-    actorId,
-    meterKey: definition.key,
-    valueFixedPoint: definition.initialFixedPoint,
-    baselineFixedPoint: definition.baselineFixedPoint,
-    lastIntegratedAtStorySecond: storySecond,
-    registryVersion: "body-v1",
-  });
-  return {
-    bodyInitialized: true,
-    meterView: (meterKey) => (meterKey === definition.key ? { definition, state, modifiers: [] } : undefined),
-  };
 }
 
 describe("E3.2 claim arithmetic", () => {
@@ -391,11 +349,7 @@ function completeCommand(overrides: Record<string, unknown> = {}) {
 
 function completeView(overrides: Record<string, unknown> = {}) {
   return {
-    worldId: "world-1",
-    branchId: "branch-1",
-    rulesetVersion: "gate3-test-v1",
-    headSequence: 2,
-    storySecond: SEED_SECOND + 1_800,
+    ...simMeta({ headSequence: 2, storySecond: SEED_SECOND + 1_800 }),
     activity: acceptedStart().activity,
     zoneLocationId: "loc-home",
     noticeability: "obvious",
@@ -450,7 +404,7 @@ describe("E3.2 resolveCancelActivity", () => {
       branchId: "branch-1",
       expectedVersion: 1,
       idempotencyKey: "cancel-key-1",
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-1"] },
+      principal: testPrincipal("player", ["actor-1"]),
       submittedAtWallClock: "2026-07-17T12:10:00.000Z",
       correlationId: "corr-1",
       type: "cancel_activity",
@@ -510,7 +464,7 @@ describe("E5.2 resolveResumeActivity — the attempt-versioned re-arm", () => {
       branchId: "branch-1",
       expectedVersion: 3,
       idempotencyKey: "resume-key-1",
-      principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-1"] },
+      principal: testPrincipal("player", ["actor-1"]),
       submittedAtWallClock: "2026-07-19T12:00:00.000Z",
       correlationId: "corr-1",
       type: "resume_activity",
@@ -745,7 +699,7 @@ describe("E5.3 slice 2 — resolveCompleteActivity consumption (§26.6)", () => 
   });
 
   it("consumes: consumedItemIds captured, item_consumed chained to activity_completed, body effects chained to their own item_consumed", () => {
-    const bodyDefinition = hungerDefinition();
+    const bodyDefinition = meterDefinition();
     const consumable = materialItem({
       id: "herb-a",
       locus: heldBy("actor-1"),
@@ -761,7 +715,7 @@ describe("E5.3 slice 2 — resolveCompleteActivity consumption (§26.6)", () => 
         activity: started.activity,
         resourceCosts: [cost({ quantity: 1 })],
         materialItemById: () => consumable,
-        bodyView: hungerBodyView(bodyDefinition, "actor-1", completedAt),
+        bodyView: singleMeterBodyView(bodyDefinition, { actorId: "actor-1", storySecond: completedAt }),
       }) as never,
       completeCommand() as never,
     );
@@ -832,7 +786,7 @@ describe("E5.3 slice 2 — resolveCompleteActivity consumption (§26.6)", () => 
   });
 
   it("replay parity: the full start→complete→consume arc folds through each family's projector to matching state", () => {
-    const bodyDefinition = hungerDefinition();
+    const bodyDefinition = meterDefinition();
     const consumable = materialItem({
       id: "herb-a",
       locus: heldBy("actor-1"),
@@ -847,7 +801,7 @@ describe("E5.3 slice 2 — resolveCompleteActivity consumption (§26.6)", () => 
         activity: started.activity,
         resourceCosts: [cost({ quantity: 1 })],
         materialItemById: () => consumable,
-        bodyView: hungerBodyView(bodyDefinition, "actor-1", completedAt),
+        bodyView: singleMeterBodyView(bodyDefinition, { actorId: "actor-1", storySecond: completedAt }),
       }) as never,
       completeCommand() as never,
     );
@@ -880,13 +834,9 @@ describe("E5.3 slice 2 — resolveCompleteActivity consumption (§26.6)", () => 
       basis: "consumed",
     });
 
-    const initialMeterState = bodyMeterStateSchema.parse({
+    const initialMeterState = meterState(bodyDefinition, {
       actorId: "actor-1",
-      meterKey: "hunger",
-      valueFixedPoint: bodyDefinition.initialFixedPoint,
-      baselineFixedPoint: bodyDefinition.baselineFixedPoint,
       lastIntegratedAtStorySecond: completedAt,
-      registryVersion: "body-v1",
     });
     let bodies = { ...emptyBodiesSeed("branch-1", SEED_SECOND), meters: [initialMeterState] };
     for (const event of fullStream) bodies = applyBodyEvent(bodies, event);
@@ -935,7 +885,7 @@ describe("E5.3 slice 3 — resolveCompleteActivity use-condition deltas (§26.7)
       useConditionDeltas: [{ meterKey: "wear", deltaFixedPoint: 500 }],
     });
     const started = acceptedStartWithCost([consumeCost, useCost], [consumable, tool]);
-    const bodyDefinition = hungerDefinition();
+    const bodyDefinition = meterDefinition();
     const completedAt = SEED_SECOND + 1_800;
 
     const resolution = resolveCompleteActivity(
@@ -944,7 +894,7 @@ describe("E5.3 slice 3 — resolveCompleteActivity use-condition deltas (§26.7)
         resourceCosts: [consumeCost, useCost],
         materialItemById: (itemId: string) =>
           itemId === "herb-a" ? consumable : itemId === "tool-a" ? tool : undefined,
-        bodyView: hungerBodyView(bodyDefinition, "actor-1", completedAt),
+        bodyView: singleMeterBodyView(bodyDefinition, { actorId: "actor-1", storySecond: completedAt }),
         itemConditionViewByItemId: (itemId: string) => (itemId === "tool-a" ? conditionView("tool-a") : undefined),
       }) as never,
       completeCommand() as never,
@@ -1052,12 +1002,8 @@ describe("E5.3 slice 2 — reservation lives across claim-holding phases, releas
     reservingActivityId: (itemId: string) => string | null,
   ): MaterialResolutionView {
     return {
-      worldId: "world-1",
-      branchId: "branch-1",
-      rulesetVersion: "gate3-test-v1",
+      ...simMeta({ storySecond: SEED_SECOND }),
       version: 0,
-      headSequence: 0,
-      storySecond: SEED_SECOND,
       actorById: (id) => (id === "actor-1" || id === "actor-2" ? { id, name: id } : undefined),
       actorZoneId: () => "zone-a",
       actorLocationId: () => "loc-home",
@@ -1116,7 +1062,7 @@ describe("E5.3 slice 2 — reservation lives across claim-holding phases, releas
         branchId: "branch-1",
         expectedVersion: 1,
         idempotencyKey: "cancel-key-1",
-        principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-1"] },
+        principal: testPrincipal("player", ["actor-1"]),
         submittedAtWallClock: "2026-07-19T12:10:00.000Z",
         correlationId: "corr-1",
         type: "cancel_activity",

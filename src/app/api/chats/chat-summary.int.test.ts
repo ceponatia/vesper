@@ -1,7 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
-import { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { characterChatMessages, characterChats, characterChatSummaries, characters, db, jobs, users } from "@/server/db";
+import { characterChatMessages, characterChatSummaries, characters, db, jobs } from "@/server/db";
 
 // Rolling chat-summary integration suite (docs/developer-notes/character-chat-summary.plan.md,
 // re-keyed on the conversation — character-chat-standalone.spec.md §1.2). The DB-bound
@@ -10,16 +9,9 @@ import { characterChatMessages, characterChats, characterChatSummaries, characte
 // deterministic recap without a provider (AI_FAKE keeps the reply stream in demo
 // mode). Self-skips when the database is unreachable.
 
-process.env.AI_FAKE = "1";
-
 const authState = vi.hoisted(() => ({ user: { id: "", email: "", name: "Sum Int", role: "admin" as const } }));
 
-vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
-  getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
 // Preserve the real ai barrel (streamCharacterChat still needs openrouter/isDemoMode),
 // override only the structured-generation call the fold uses.
@@ -36,28 +28,21 @@ import {
   planChatFold,
   processChatSummary,
 } from "@/server/engine";
+import {
+  apiRequest,
+  bindAuthUser,
+  endTestPool,
+  expectJson,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  routeCtx,
+  seedTestUser,
+} from "@/server/test-support";
 import { POST as chatsCreate } from "./route";
 import { DELETE as chatDelete } from "./[chatId]/route";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from character_chat_summaries limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(`[chat-summary.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`);
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("chat-summary.int.test", "character_chat_summaries");
 
-const ready = await probe();
 const ids = { chat: "" };
 
 /** Seed n alternating messages with explicit, strictly-increasing createdAt (a bulk insert shares one now()). */
@@ -80,27 +65,17 @@ async function chatSummaryJobs(chatId: string) {
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `sum-int-${stamp}@test.local`, name: "Sum Int", role: "admin" })
-    .returning();
-  if (!user) throw new Error("failed to create test user");
-  authState.user = { ...authState.user, id: user.id, email: user.email };
+  const user = await seedTestUser("sum-int", { name: "Sum Int", role: "admin" });
+  bindAuthUser(authState, user);
   const [character] = await db().insert(characters).values({ ownerId: user.id, name: "Mara", profile: {} }).returning();
   if (!character) throw new Error("failed to seed character");
   // The fold resolves the (v1 single) participant for its prompt, so the chat is
   // created through the real POST /api/chats handler (chat + participant rows).
   const res = await chatsCreate(
-    new NextRequest("http://t/api/chats", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ characterIds: [character.id], memory: "fresh" }),
-    }),
-    { params: Promise.resolve({}) },
+    apiRequest("/api/chats", { body: { characterIds: [character.id], memory: "fresh" } }),
+    routeCtx(),
   );
-  if (res.status !== 201) throw new Error(`chat create failed: ${res.status}`);
-  ids.chat = ((await res.json()) as { id: string }).id;
+  ids.chat = (await expectJson<{ id: string }>(res, 201)).id;
 });
 
 beforeEach(async () => {
@@ -114,15 +89,12 @@ beforeEach(async () => {
 afterAll(async () => {
   if (!ready) return;
   await db().delete(jobs).where(sql`${jobs.payload} ->> 'chatId' = ${ids.chat}`);
-  await db().delete(characterChats).where(eq(characterChats.ownerId, authState.user.id));
-  await db().delete(characters).where(eq(characters.ownerId, authState.user.id));
-  await db().delete(users).where(eq(users.id, authState.user.id));
-  await globalThis.__vesperPool?.end();
+  await purgeOwnerRows([authState.user.id]);
+  await endTestPool();
 });
 
-describe("processChatSummary — the fold", () => {
-  it("folds the oldest exchanges, advances the watermark, and trims the verbatim window", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("processChatSummary — the fold", () => {
+  it("folds the oldest exchanges, advances the watermark, and trims the verbatim window", async () => {
     vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "ROLLED-UP RECAP" }, degraded: false });
     await seed(ids.chat, 80); // 40 exchanges, all unsummarized
 
@@ -144,8 +116,7 @@ describe("processChatSummary — the fold", () => {
     expect(window.at(-1)?.content).toBe("msg-79");
   });
 
-  it("degrades to a no-op (no row, watermark unmoved) when the fold fails", async (t) => {
-    if (!ready) return t.skip();
+  it("degrades to a no-op (no row, watermark unmoved) when the fold fails", async () => {
     vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "" }, degraded: true });
     await seed(ids.chat, 80);
 
@@ -157,8 +128,7 @@ describe("processChatSummary — the fold", () => {
     expect(window).toHaveLength(80);
   });
 
-  it("no-ops below the trigger without calling the model", async (t) => {
-    if (!ready) return t.skip();
+  it("no-ops below the trigger without calling the model", async () => {
     vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "unused" }, degraded: false });
     await seed(ids.chat, 60); // < 70 (the trigger)
 
@@ -169,9 +139,8 @@ describe("processChatSummary — the fold", () => {
   });
 });
 
-describe("enqueueChatSummary — the guard", () => {
-  it("does not enqueue a second fold while one is already queued for the chat", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("enqueueChatSummary — the guard", () => {
+  it("does not enqueue a second fold while one is already queued for the chat", async () => {
     // A queued job inserted directly (no runner kick), so the guard has something to see.
     await db()
       .insert(jobs)
@@ -183,9 +152,8 @@ describe("enqueueChatSummary — the guard", () => {
   });
 });
 
-describe("DELETE /api/chats/:chatId — cascades the running summary", () => {
-  it("drops the summary row alongside the conversation", async (t) => {
-    if (!ready) return t.skip();
+describe.runIf(ready)("DELETE /api/chats/:chatId — cascades the running summary", () => {
+  it("drops the summary row alongside the conversation", async () => {
     await seed(ids.chat, 4);
     await db().insert(characterChatSummaries).values({
       chatId: ids.chat,
@@ -195,9 +163,10 @@ describe("DELETE /api/chats/:chatId — cascades the running summary", () => {
       coveredExchanges: 2,
     });
 
-    const res = await chatDelete(new NextRequest(`http://t/api/chats/${ids.chat}`, { method: "DELETE" }), {
-      params: Promise.resolve({ chatId: ids.chat }),
-    });
+    const res = await chatDelete(
+      apiRequest(`/api/chats/${ids.chat}`, { method: "DELETE" }),
+      routeCtx({ chatId: ids.chat }),
+    );
     expect(res.status).toBe(200);
     expect(await loadChatSummary(ids.chat)).toBeNull();
   });

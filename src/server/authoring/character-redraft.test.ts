@@ -1,23 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { DiagnosticCollector, type AttributeValue } from "@/contracts";
+import { DiagnosticCollector } from "@/contracts";
+import { draftWith, manualAttr, noCandidates, noLibrary } from "@/server/test-support";
 import { redraftCharacterScope } from "./character-redraft";
-import { emptyCharacterDraft, type CharacterDraft } from "./drafts";
-import type { ClothingCandidateLookup, LibraryLookup } from "./library";
-
-const noLibrary: LibraryLookup = async () => [];
-const noCandidates: ClothingCandidateLookup = async () => [];
-
-const manualAttr = (id: string, value: AttributeValue["value"]): AttributeValue => ({
-  id: id as AttributeValue["id"],
-  value,
-  source: "manual",
-});
-
-function draftWith(mutate: (draft: CharacterDraft) => void): CharacterDraft {
-  const draft = emptyCharacterDraft();
-  mutate(draft);
-  return draft;
-}
+import type { CharacterDraft } from "./drafts";
 
 const input = (draft: CharacterDraft, scope: Parameters<typeof redraftCharacterScope>[0]["scope"], sink?: DiagnosticCollector) => ({
   draft,

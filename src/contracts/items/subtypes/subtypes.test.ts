@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectRefsResolve, expectUniqueIds } from "@/test/registry-invariants";
 import { bodyLocationRegistry } from "../../body/locations";
 import {
   clothingSubtypeById,
@@ -7,20 +8,23 @@ import {
   clothingSubtypesForCategory,
 } from "./index";
 
+/** Every subtype in every category vocabulary, tagged with the category it came from. */
+const allSubtypes = [...clothingSubtypesByCategory].flatMap(([category, list]) =>
+  list.map((subtype) => ({ ...subtype, category })),
+);
+
 describe("clothing subtypes registry", () => {
   it("ids are globally unique across every category vocabulary", () => {
-    const ids = [...clothingSubtypesByCategory.values()].flatMap((list) => list.map((s) => s.id));
-    expect(new Set(ids).size).toBe(ids.length);
+    expectUniqueIds(allSubtypes, "clothingSubtypesByCategory");
   });
 
   it("every coverage template id is a registered body location", () => {
-    for (const [category, list] of clothingSubtypesByCategory) {
-      for (const subtype of list) {
-        for (const id of subtype.coverage ?? []) {
-          expect(bodyLocationRegistry.byId(id), `${category}/${subtype.id} → ${id}`).toBeDefined();
-        }
-      }
-    }
+    expectRefsResolve(
+      allSubtypes,
+      (subtype) => subtype.coverage ?? [],
+      (id) => bodyLocationRegistry.byId(id),
+      (subtype, id) => `${subtype.category}/${subtype.id} → ${id}`,
+    );
   });
 
   it("face piercings anchor to the lips/nose locations", () => {

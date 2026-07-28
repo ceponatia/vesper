@@ -1,9 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq, sql } from "drizzle-orm";
-import { db, images, users } from "../db";
+import { db, images } from "../db";
+import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
 import { imageRelativePath } from "./paths";
 
-let available = false;
+// Connectivity and seeding are deliberately SEPARATE steps: fusing them (as this
+// suite once did) reported a failed user insert as "database unreachable" and
+// skipped the whole containment matrix.
+const ready = await probeIntegrationDb("image-path-containment.int.test", "images");
+
 let ownerId = "";
 
 function hasPgCode(error: unknown, code: string): boolean {
@@ -16,32 +20,21 @@ function hasPgCode(error: unknown, code: string): boolean {
 }
 
 beforeAll(async () => {
-  try {
-    await db().execute(sql`select 1 from images limit 0`);
-    const [user] = await db()
-      .insert(users)
-      .values({ email: `image-path-constraint-${Date.now()}@test.local`, name: "Image Path Constraint" })
-      .returning({ id: users.id });
-    if (!user) throw new Error("failed to seed image path constraint user");
-    ownerId = user.id;
-    available = true;
-  } catch (error) {
-    process.stderr.write(
-      `[image-path-containment.int.test] skipping: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
-  }
+  if (!ready) return;
+  ownerId = (await seedTestUser("image-path-constraint")).id;
 });
 
 afterAll(async () => {
-  if (!available) return;
-  await db().delete(images).where(eq(images.ownerId, ownerId));
-  await db().delete(users).where(eq(users.id, ownerId));
-  await globalThis.__vesperPool?.end();
+  await purgeOwnerRows([ownerId]);
+  await endTestPool();
 });
 
-describe("images.path database containment", () => {
-  it("accepts the exact canonical owner/id path", async (ctx) => {
-    if (!available) return ctx.skip();
+// The rows below are built BY HAND rather than through `canonicalImageRow`: the
+// non-canonical paths are the subject of the test (they must trip the
+// `images_path_canonical` CHECK), and the fixture exists precisely to make those
+// paths unconstructible.
+describe.skipIf(!ready)("images.path database containment", () => {
+  it("accepts the exact canonical owner/id path", async () => {
     const id = `path-valid-${Date.now()}`;
     const [row] = await db()
       .insert(images)
@@ -59,7 +52,6 @@ describe("images.path database containment", () => {
   it.each(["../outside.webp", "/tmp/outside.webp", "images/someone-else/wrong.webp"])(
     "rejects noncanonical path %s",
     async (storedPath) => {
-      if (!available) return;
       const id = `path-invalid-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       let caught: unknown;
       try {

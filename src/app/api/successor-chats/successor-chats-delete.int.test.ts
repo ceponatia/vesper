@@ -1,5 +1,4 @@
 import { eq, sql } from "drizzle-orm";
-import { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   characterChats,
@@ -9,7 +8,6 @@ import {
   simItemHoldings,
   simPhysicalLoci,
   simWorlds,
-  users,
 } from "@/server/db";
 
 // Successor deletion (successor-world-lifecycle.plan.md slice 1, owner ruling
@@ -19,23 +17,25 @@ import {
 // in-service, and a chat whose branch has vanished must still delete (degraded
 // default + diagnostic, docs/resilience.md). Self-skips without a database.
 
-process.env.AI_FAKE = "1";
-
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "World Deleter", role: "user" as "admin" | "user" },
 }));
 
-vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
-  getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
 import { resetRateLimits } from "@/server/api";
 import { deleteChat } from "@/server/engine";
 import { log } from "@/server/log";
-import { probeIntegrationDb } from "@/server/test-support";
+import {
+  apiRequest,
+  bindAuthUser,
+  endTestPool,
+  expectJson,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  routeCtx,
+  seedTestUser,
+} from "@/server/test-support";
 import { POST as successorCreate } from "./route";
 import { POST as legacyCreate } from "../chats/route";
 import { DELETE as chatDelete } from "../chats/[chatId]/route";
@@ -53,16 +53,8 @@ const ADD_CHAT_BRANCH_FK =
   `alter table character_chats add constraint ${CHAT_BRANCH_FK} ` +
   `foreign key (sim_branch_id) references sim_branches(id) on delete set null on update no action`;
 
-const collectionCtx = { params: Promise.resolve({}) };
-const ctx = (chatId: string) => ({ params: Promise.resolve({ chatId }) });
-
-function jsonReq(path: string, body: unknown, method = "POST"): NextRequest {
-  return new NextRequest(`http://t${path}`, {
-    method,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
+const collectionCtx = routeCtx();
+const ctx = (chatId: string) => routeCtx({ chatId });
 
 const ids = { user: "", otherUser: "", characterId: "" };
 /** Every world this suite provisioned — the afterAll safety net for a mid-test failure. */
@@ -76,25 +68,34 @@ interface CreatedWorld {
 
 /** Provision a successor chat through the real front-door route. */
 async function createSuccessorChat(title: string): Promise<CreatedWorld> {
-  const res = await successorCreate(
-    // slice 3: `requestId` is the required per-intent idempotency key.
-    jsonReq("/api/successor-chats", { characterId: ids.characterId, title, requestId: `delete-${title.toLowerCase().replace(/\s+/gu, "-")}-${Date.now()}` }),
-    collectionCtx,
+  const body = await expectJson<CreatedWorld>(
+    await successorCreate(
+      apiRequest("/api/successor-chats", {
+        // slice 3: `requestId` is the required per-intent idempotency key.
+        body: {
+          characterId: ids.characterId,
+          title,
+          requestId: `delete-${title.toLowerCase().replace(/\s+/gu, "-")}-${Date.now()}`,
+        },
+      }),
+      collectionCtx,
+    ),
+    201,
   );
-  if (res.status !== 201) throw new Error(`successor create failed: ${res.status}`);
-  const body = (await res.json()) as CreatedWorld;
   seededWorlds.push(body.worldId);
   return body;
 }
 
 /** Create an ordinary legacy conversation through the real route. */
 async function createLegacyChat(): Promise<string> {
-  const res = await legacyCreate(
-    jsonReq("/api/chats", { characterIds: [ids.characterId], memory: "fresh" }),
-    collectionCtx,
+  const body = await expectJson<{ id: string }>(
+    await legacyCreate(
+      apiRequest("/api/chats", { body: { characterIds: [ids.characterId], memory: "fresh" } }),
+      collectionCtx,
+    ),
+    201,
   );
-  if (res.status !== 201) throw new Error(`legacy chat create failed: ${res.status}`);
-  return ((await res.json()) as { id: string }).id;
+  return body.id;
 }
 
 const chatCount = async (chatId: string) =>
@@ -115,17 +116,9 @@ beforeEach(() => resetRateLimits());
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `world-delete-${stamp}@test.local`, name: "World Deleter" })
-    .returning();
-  const [other] = await db()
-    .insert(users)
-    .values({ email: `world-delete-other-${stamp}@test.local`, name: "Not Yours" })
-    .returning();
-  if (!user || !other) throw new Error("failed to create test users");
-  authState.user = { ...authState.user, id: user.id, email: user.email };
+  const user = await seedTestUser("world-delete");
+  const other = await seedTestUser("world-delete-other");
+  bindAuthUser(authState, user);
   ids.user = user.id;
   ids.otherUser = other.id;
 
@@ -138,12 +131,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (!ready || !ids.user) return;
-  for (const worldId of seededWorlds) await db().delete(simWorlds).where(eq(simWorlds.id, worldId));
-  await db().delete(characterChats).where(eq(characterChats.ownerId, ids.user));
-  await db().delete(characters).where(eq(characters.ownerId, ids.user));
-  await db().delete(users).where(eq(users.id, ids.user));
-  await db().delete(users).where(eq(users.id, ids.otherUser));
+  if (ready && ids.user) {
+    // `sim_worlds` has no owner column, so the safety net stays explicit and runs
+    // before the owner sweep — its cascade clears each chat's branch link first.
+    for (const worldId of seededWorlds) await db().delete(simWorlds).where(eq(simWorlds.id, worldId));
+    await purgeOwnerRows([ids.user, ids.otherUser]);
+  }
+  await endTestPool();
 });
 
 describe.runIf(ready)("deleting a successor chat deletes its world (E20-1)", () => {
@@ -155,10 +149,7 @@ describe.runIf(ready)("deleting a successor chat deletes its world (E20-1)", () 
     expect(await holdingCount(created.branchId)).toBeGreaterThan(0);
     expect(await locusCount(created.branchId)).toBeGreaterThan(0);
 
-    const res = await chatDelete(
-      new NextRequest(`http://t/api/chats/${created.id}`, { method: "DELETE" }),
-      ctx(created.id),
-    );
+    const res = await chatDelete(apiRequest(`/api/chats/${created.id}`, { method: "DELETE" }), ctx(created.id));
     expect(res.status).toBe(200);
 
     // Pre-fix this left a permanently unreachable world on Neon: no chat points
@@ -174,10 +165,7 @@ describe.runIf(ready)("deleting a successor chat deletes its world (E20-1)", () 
     const bystander = await createSuccessorChat("Bystander World");
     const legacyChatId = await createLegacyChat();
 
-    const res = await chatDelete(
-      new NextRequest(`http://t/api/chats/${legacyChatId}`, { method: "DELETE" }),
-      ctx(legacyChatId),
-    );
+    const res = await chatDelete(apiRequest(`/api/chats/${legacyChatId}`, { method: "DELETE" }), ctx(legacyChatId));
     expect(res.status).toBe(200);
     expect(await chatCount(legacyChatId)).toBe(0);
 

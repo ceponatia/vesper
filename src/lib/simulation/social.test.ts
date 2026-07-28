@@ -32,6 +32,7 @@ import {
   type RelationshipLedgerKind,
   type RelationshipLedgerWeight,
 } from "@/contracts/simulation/social";
+import { bindSimEnvelopes } from "@/test/sim-envelopes";
 import { sortedUnique } from "./hash";
 import {
   ATTRACTION_BAND_THRESHOLDS,
@@ -67,7 +68,13 @@ const ACTOR_A = "actor-aiko";
 const ACTOR_B = "actor-bram";
 const ACTOR_C = "actor-cora";
 const ACTOR_D = "actor-dov";
-const WALL_CLOCK = "2026-07-19T10:00:00.000Z";
+
+/**
+ * This suite carries its own world/branch/ruleset trio, so the shared envelope
+ * builders are bound to it once: the fold reads `branchId` off each event and a
+ * ledger entry inherits it, so the events and `ledgerEntry` below must agree.
+ */
+const sim = bindSimEnvelopes({ worldId: WORLD, branchId: BRANCH, rulesetVersion: RULESET });
 
 const NO_COMMITMENTS: DeriveLedgerEntriesInput["commitmentById"] = () => undefined;
 
@@ -76,7 +83,8 @@ function fold(events: readonly SimulationBranchEvent[]): RelationshipLedgerEntry
 }
 
 // ---------------------------------------------------------------------------
-// Event builders — mirrors households.test.ts's command-builder shape
+// Event builders — the shared `sim.event` envelope carries every non-payload
+// field; each builder names only its own `type`, id slug and payload.
 // ---------------------------------------------------------------------------
 
 function speechActEvent(
@@ -87,25 +95,17 @@ function speechActEvent(
     consentScopeKey?: ConsentScopeKey;
     sequence?: number;
     storySecond?: number;
-    id?: string;
   } = {},
 ) {
   const actorId = overrides.actorId ?? ACTOR_A;
   const targetActorIds = sortedUnique(overrides.targetActorIds ?? [ACTOR_B]);
-  return speechActDeliveredEventSchema.parse({
-    id: overrides.id ?? `event-speech-${effectType}-${overrides.sequence ?? 1}`,
-    worldId: WORLD,
-    branchId: BRANCH,
-    sequence: overrides.sequence ?? 1,
-    storySecond: overrides.storySecond ?? 1_000,
-    rulesetVersion: RULESET,
-    correlationId: "corr-1",
-    actorIds: sortedUnique([actorId, ...targetActorIds]),
-    entityIds: [],
-    recordedAtWallClock: WALL_CLOCK,
-    commandId: "cmd-speech",
+  return sim.event(speechActDeliveredEventSchema, {
     type: "speech_act_delivered",
-    schemaVersion: 1,
+    idSlug: `speech-${effectType}`,
+    sequence: overrides.sequence,
+    storySecond: overrides.storySecond,
+    actorIds: [actorId, ...targetActorIds],
+    commandId: "cmd-speech",
     payload: {
       cutId: "cut-1",
       engagementId: "engagement-1",
@@ -124,21 +124,14 @@ function disclosureEvent(
 ) {
   const speakerActorId = overrides.speakerActorId ?? ACTOR_A;
   const targetActorIds = sortedUnique(overrides.targetActorIds ?? [ACTOR_B]);
-  return disclosureMadeEventSchema.parse({
-    id: `event-disclosure-${overrides.sequence ?? 1}`,
-    worldId: WORLD,
-    branchId: BRANCH,
-    sequence: overrides.sequence ?? 1,
-    storySecond: overrides.storySecond ?? 1_000,
-    rulesetVersion: RULESET,
-    correlationId: "corr-1",
-    actorIds: sortedUnique([speakerActorId, ...targetActorIds]),
-    entityIds: [],
-    recordedAtWallClock: WALL_CLOCK,
-    commandId: "cmd-disclosure",
-    derivationVersion: KNOWLEDGE_DERIVATION_VERSION,
+  return sim.event(disclosureMadeEventSchema, {
     type: "disclosure_made",
-    schemaVersion: 1,
+    idSlug: "disclosure",
+    sequence: overrides.sequence,
+    storySecond: overrides.storySecond,
+    actorIds: [speakerActorId, ...targetActorIds],
+    commandId: "cmd-disclosure",
+    overrides: { derivationVersion: KNOWLEDGE_DERIVATION_VERSION },
     payload: {
       speakerActorId,
       targetActorIds,
@@ -157,19 +150,14 @@ function engagementEndedEvent(
   overrides: { sequence?: number; storySecond?: number } = {},
 ) {
   const storySecond = overrides.storySecond ?? 1_000;
-  return engagementEndedEventSchema.parse({
-    id: `event-engagement-ended-${overrides.sequence ?? 1}`,
-    worldId: WORLD,
-    branchId: BRANCH,
-    sequence: overrides.sequence ?? 1,
-    storySecond,
-    rulesetVersion: RULESET,
-    correlationId: "corr-1",
-    actorIds: sortedUnique([...participants]),
-    entityIds: [],
-    recordedAtWallClock: WALL_CLOCK,
+  // No `commandId`: an engagement can end without a command, and the shared
+  // builder omits the key entirely rather than writing `undefined`.
+  return sim.event(engagementEndedEventSchema, {
     type: "engagement_ended",
-    schemaVersion: 1,
+    idSlug: "engagement-ended",
+    sequence: overrides.sequence,
+    storySecond,
+    actorIds: participants,
     payload: { engagementId: "engagement-1", endedAt: storySecond, reason: "participant_choice" },
   });
 }
@@ -189,20 +177,14 @@ function relationshipEntryAuthoredEvent(
   const fromActorId = overrides.fromActorId ?? ACTOR_A;
   const toActorId = overrides.toActorId ?? ACTOR_B;
   const eventStorySecond = overrides.eventStorySecond ?? 1_000;
-  return relationshipEntryAuthoredEventSchema.parse({
-    id: `event-authored-${kind}-${overrides.sequence ?? 1}`,
-    worldId: WORLD,
-    branchId: BRANCH,
-    sequence: overrides.sequence ?? 1,
-    storySecond: eventStorySecond,
-    rulesetVersion: RULESET,
-    correlationId: "corr-1",
-    actorIds: sortedUnique([fromActorId, toActorId]),
-    entityIds: sortedUnique([fromActorId, toActorId]),
-    recordedAtWallClock: WALL_CLOCK,
-    commandId: "cmd-authored",
+  return sim.event(relationshipEntryAuthoredEventSchema, {
     type: "relationship_entry_authored",
-    schemaVersion: 1,
+    idSlug: `authored-${kind}`,
+    sequence: overrides.sequence,
+    storySecond: eventStorySecond,
+    actorIds: [fromActorId, toActorId],
+    entityIds: [fromActorId, toActorId],
+    commandId: "cmd-authored",
     payload: {
       fromActorId,
       toActorId,
@@ -220,20 +202,14 @@ function relationshipChangeRecordedEvent(
 ) {
   const fromActorId = overrides.fromActorId ?? ACTOR_A;
   const toActorId = overrides.toActorId ?? ACTOR_B;
-  return relationshipChangeRecordedEventSchema.parse({
-    id: `event-change-${overrides.sequence ?? 1}`,
-    worldId: WORLD,
-    branchId: BRANCH,
-    sequence: overrides.sequence ?? 1,
-    storySecond: overrides.storySecond ?? 1_000,
-    rulesetVersion: RULESET,
-    correlationId: "corr-1",
-    actorIds: sortedUnique([fromActorId, toActorId]),
-    entityIds: sortedUnique([fromActorId, toActorId]),
-    recordedAtWallClock: WALL_CLOCK,
-    commandId: "cmd-change",
+  return sim.event(relationshipChangeRecordedEventSchema, {
     type: "relationship_change_recorded",
-    schemaVersion: 1,
+    idSlug: "change",
+    sequence: overrides.sequence,
+    storySecond: overrides.storySecond,
+    actorIds: [fromActorId, toActorId],
+    entityIds: [fromActorId, toActorId],
+    commandId: "cmd-change",
     payload: { fromActorId, toActorId, changeKey: overrides.changeKey ?? "began_dating", detail: "change detail" },
   });
 }
@@ -252,21 +228,14 @@ function commitmentCreatedEvent(overrides: {
 } = {}) {
   const storySecond = overrides.storySecond ?? 1_000;
   const actorId = overrides.actorId ?? ACTOR_A;
-  return commitmentCreatedEventSchema.parse({
-    id: `event-commitment-created-${overrides.sequence ?? 1}`,
-    worldId: WORLD,
-    branchId: BRANCH,
-    sequence: overrides.sequence ?? 1,
-    storySecond,
-    rulesetVersion: RULESET,
-    derivationVersion: "gate3-route-v1",
-    correlationId: "corr-1",
-    actorIds: [actorId],
-    entityIds: [],
-    recordedAtWallClock: WALL_CLOCK,
-    commandId: "cmd-commitment",
+  return sim.event(commitmentCreatedEventSchema, {
     type: "commitment_created",
-    schemaVersion: 1,
+    idSlug: "commitment-created",
+    sequence: overrides.sequence,
+    storySecond,
+    actorIds: [actorId],
+    commandId: "cmd-commitment",
+    overrides: { derivationVersion: "gate3-route-v1" },
     payload: {
       commitmentId: overrides.commitmentId ?? "commitment-1",
       actorId,
@@ -285,26 +254,23 @@ function commitmentCreatedEvent(overrides: {
   });
 }
 
+/** Either outcome envelope — `sim.event` needs one output type for the pair. */
+type CommitmentOutcomeEvent =
+  | z.output<typeof commitmentKeptEventSchema>
+  | z.output<typeof commitmentMissedEventSchema>;
+
 function commitmentOutcomeEvent(
   schema: typeof commitmentKeptEventSchema | typeof commitmentMissedEventSchema,
   type: "commitment_kept" | "commitment_missed",
   overrides: { commitmentId?: string; actorId?: string; sequence?: number; storySecond?: number } = {},
-) {
+): CommitmentOutcomeEvent {
   const actorId = overrides.actorId ?? ACTOR_A;
-  return schema.parse({
-    id: `event-${type}-${overrides.sequence ?? 1}`,
-    worldId: WORLD,
-    branchId: BRANCH,
-    sequence: overrides.sequence ?? 1,
-    storySecond: overrides.storySecond ?? 1_000,
-    rulesetVersion: RULESET,
-    correlationId: "corr-1",
-    actorIds: [actorId],
-    entityIds: [],
-    recordedAtWallClock: WALL_CLOCK,
-    commandId: "cmd-commitment-outcome",
+  return sim.event<CommitmentOutcomeEvent>(schema, {
     type,
-    schemaVersion: 1,
+    sequence: overrides.sequence,
+    storySecond: overrides.storySecond,
+    actorIds: [actorId],
+    commandId: "cmd-commitment-outcome",
     payload: {
       commitmentId: overrides.commitmentId ?? "commitment-1",
       actorId,
@@ -329,20 +295,13 @@ function activityStartedEvent(
 ) {
   const actorId = overrides.actorId ?? ACTOR_A;
   const storySecond = overrides.storySecond ?? 1_000;
-  return activityStartedEventSchema.parse({
-    id: `event-activity-started-${overrides.sequence ?? 1}`,
-    worldId: WORLD,
-    branchId: BRANCH,
-    sequence: overrides.sequence ?? 1,
-    storySecond,
-    rulesetVersion: RULESET,
-    correlationId: "corr-1",
-    actorIds: [actorId],
-    entityIds: [],
-    recordedAtWallClock: WALL_CLOCK,
-    commandId: "cmd-activity",
+  return sim.event(activityStartedEventSchema, {
     type: "activity_started",
-    schemaVersion: 1,
+    idSlug: "activity-started",
+    sequence: overrides.sequence,
+    storySecond,
+    actorIds: [actorId],
+    commandId: "cmd-activity",
     payload: {
       activityInstanceId: "activity-1",
       actionDefinitionId: "action-1",
@@ -375,20 +334,14 @@ function consentEscalationResolvedEvent(
   const actorId = overrides.actorId ?? ACTOR_A;
   const targetActorId = overrides.targetActorId ?? ACTOR_B;
   const granted = overrides.granted ?? false;
-  return consentEscalationResolvedEventSchema.parse({
-    id: `event-escalation-${overrides.sequence ?? 1}`,
-    worldId: WORLD,
-    branchId: BRANCH,
-    sequence: overrides.sequence ?? 1,
-    storySecond: overrides.storySecond ?? 1_000,
-    rulesetVersion: RULESET,
-    correlationId: "corr-1",
-    actorIds: sortedUnique([actorId, targetActorId]),
-    entityIds: sortedUnique([actorId, targetActorId]),
-    recordedAtWallClock: WALL_CLOCK,
-    commandId: "cmd-escalation",
+  return sim.event(consentEscalationResolvedEventSchema, {
     type: "consent_escalation_resolved",
-    schemaVersion: 1,
+    idSlug: "escalation",
+    sequence: overrides.sequence,
+    storySecond: overrides.storySecond,
+    actorIds: [actorId, targetActorId],
+    entityIds: [actorId, targetActorId],
+    commandId: "cmd-escalation",
     payload: {
       actorId,
       targetActorId,
@@ -405,20 +358,12 @@ function consentEscalationResolvedEvent(
 }
 
 function unrelatedEvent(sequence = 1) {
-  return zoneEnteredEventSchema.parse({
-    id: `event-zone-entered-${sequence}`,
-    worldId: WORLD,
-    branchId: BRANCH,
-    sequence,
-    storySecond: 1_000,
-    rulesetVersion: RULESET,
-    correlationId: "corr-1",
-    actorIds: [ACTOR_A],
-    entityIds: [],
-    recordedAtWallClock: WALL_CLOCK,
-    commandId: "cmd-zone",
+  return sim.event(zoneEnteredEventSchema, {
     type: "zone_entered",
-    schemaVersion: 1,
+    idSlug: "zone-entered",
+    sequence,
+    actorIds: [ACTOR_A],
+    commandId: "cmd-zone",
     payload: {
       actorId: ACTOR_A,
       linkId: "link-1",

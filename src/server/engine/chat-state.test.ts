@@ -6,7 +6,8 @@ import { familiarityBandMidpoint, regardBandForValue, regardBandMidpoint } from 
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import type { ChatPulse } from "@/contracts/turns/chat-pulse";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
-import { characterProfileSchema, emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
+import { characterProfileSchema } from "@/contracts/world/profile";
+import { makeProfile } from "@/server/test-support";
 import { SKIP_HISTORY_CAP } from "@/contracts/turns/chat-skip";
 import { CHAT_AROUSAL_INTIMATE, CHAT_SKIP_MINUTES, CHAT_TICK_MINUTES } from "./constants";
 import {
@@ -35,13 +36,9 @@ import { seededOutfitMarker } from "./chat-wardrobe";
 // These run with AI_FAKE=1 (src/test/setup.ts): demo mode short-circuits the
 // pulse LLM, so runChatPulse exercises the drift-only degrade path.
 
-function profile(overrides: Partial<CharacterProfile> = {}): CharacterProfile {
-  return { ...emptyCharacterProfile(), ...overrides };
-}
-
 describe("seedChatState", () => {
   it("seeds rested meters, neutral affinity, and a blank mind for a default profile", () => {
-    const state = seedChatState(profile());
+    const state = seedChatState(makeProfile());
     expect(state.meters).toEqual(initialMeters());
     expect(state.regard).toBe(0);
     expect(state.mindNote).toBe(""); // never seeded — purely dynamic
@@ -55,8 +52,8 @@ describe("seedChatState", () => {
     // straight into the structured `wornItemIds` (no marker hack) + the active preset id; the
     // free-text overlay starts empty.
     const dressedProfile = () =>
-      profile({ outfits: [{ id: "everyday", name: "Everyday", items: ["itemid1abc", "itemid2def"] }] });
-    const empty = seedChatState(profile());
+      makeProfile({ outfits: [{ id: "everyday", name: "Everyday", items: ["itemid1abc", "itemid2def"] }] });
+    const empty = seedChatState(makeProfile());
     expect(empty.wornItemIds).toEqual([]);
     expect(empty.outfitPresetId).toBe("");
     expect(empty.outfit).toBe("");
@@ -68,7 +65,7 @@ describe("seedChatState", () => {
   });
 
   it("seededOutfitMarker resolves a NAMED preset; unknown ids degrade to the default", () => {
-    const wardrobe = profile({
+    const wardrobe = makeProfile({
       outfits: [
         { id: "everyday", name: "Everyday", items: ["itemid1abc"] },
         { id: "work", name: "Work", items: ["itemid9xyz"] },
@@ -80,17 +77,17 @@ describe("seedChatState", () => {
   });
 
   it("resolveSeededOutfit is a no-op for author-edited outfit text and for empty outfits", async () => {
-    const dressed = profile({ outfits: [{ id: "everyday", name: "Everyday", items: ["itemid1abc"] }] });
+    const dressed = makeProfile({ outfits: [{ id: "everyday", name: "Everyday", items: ["itemid1abc"] }] });
     const edited = { ...seedChatState(dressed), outfit: "a linen sundress, nothing else" };
     // Author text ≠ the marker → untouched, and no item lookup happens (db is unmocked here;
     // a lookup would throw, so resolution being reached at all would fail this test).
     expect(await resolveSeededOutfit(edited, "u-1", dressed)).toBe(edited);
-    const bare = seedChatState(profile());
-    expect(await resolveSeededOutfit(bare, "u-1", profile())).toBe(bare);
+    const bare = seedChatState(makeProfile());
+    expect(await resolveSeededOutfit(bare, "u-1", makeProfile())).toBe(bare);
   });
 
   it("matchOutfitPresetInText: exact name or name + outfit word; prose garments never hijack (slice 8.3)", () => {
-    const wardrobe = profile({
+    const wardrobe = makeProfile({
       outfits: [
         { id: "everyday", name: "Everyday", items: ["itemid1abc"] },
         { id: "work", name: "Work", items: ["itemid9xyz"] },
@@ -108,7 +105,7 @@ describe("seedChatState", () => {
   });
 
   it("rhythmOutfitPatch dresses by the schedule row's preset at the skipped-to clock (slice 8.4)", () => {
-    const rhythm = profile({
+    const rhythm = makeProfile({
       outfits: [
         { id: "everyday", name: "Everyday", items: ["itemid1abc"] },
         { id: "sleep", name: "Sleep", items: ["itemid9xyz"] },
@@ -143,7 +140,7 @@ describe("seedChatState", () => {
     // morning — inside the café row (no preset) — so no patch.
     expect(rhythmOutfitPatch(rhythm, 1410)).toEqual({});
     // Unknown preset id on a row degrades to the DEFAULT preset (id + items).
-    const dangling = profile({
+    const dangling = makeProfile({
       outfits: [{ id: "everyday", name: "Everyday", items: ["itemid1abc"] }],
       schedule: [{ startMinute: 0, endMinute: 1439, locationName: "x", activity: "y", outfitPresetId: "gone" }],
     });
@@ -156,7 +153,7 @@ describe("seedChatState", () => {
   });
 
   it("applyTimeSkip re-dresses only when given a profile with a rhythm row", () => {
-    const rhythm = profile({
+    const rhythm = makeProfile({
       outfits: [{ id: "sleep", name: "Sleep", items: ["itemid9xyz"] }],
       schedule: [{ startMinute: 0, endMinute: 1439, locationName: "home", activity: "resting", outfitPresetId: "sleep" }],
     });
@@ -172,7 +169,7 @@ describe("seedChatState", () => {
 
   it("seeds both axes from the authored playerRelationship record at band midpoints", () => {
     const authored = seedChatState(
-      profile({
+      makeProfile({
         playerRelationship: {
           familiarity: "deeply_known",
           regard: "cool",
@@ -207,7 +204,7 @@ describe("seedChatState", () => {
 
 describe("seedChatScenario (the chat-wide half — followups rulings 8-9)", () => {
   it("seeds an empty premise, a zeroed clock, and empty skip/scene fields for a default profile", () => {
-    const scenario = seedChatScenario(profile());
+    const scenario = seedChatScenario(makeProfile());
     expect(scenario.premise).toBe("");
     expect(scenario.pendingSkipNote).toBe("");
     expect(scenario.skipHistory).toEqual([]);
@@ -216,7 +213,7 @@ describe("seedChatScenario (the chat-wide half — followups rulings 8-9)", () =
     expect(scenario.sceneModel).toBe("reference");
     // Chat scene memory starts empty and rides the snapshot (and the FK-cascade reset).
     expect(scenario.sceneMemory).toEqual({ places: [] });
-    expect(chatStateSnapshot(seedChatState(profile()), scenario).sceneMemory).toEqual({ places: [] });
+    expect(chatStateSnapshot(seedChatState(makeProfile()), scenario).sceneMemory).toEqual({ places: [] });
   });
 
   it("pre-fills the premise from playerRelationship.note, and an explicit premise overrides it", () => {
@@ -235,8 +232,8 @@ describe("seedChatScenario (the chat-wide half — followups rulings 8-9)", () =
       severity: 60,
       reactionOverrides: [],
     };
-    expect(seedChatScenario(profile()).activeSocialCards).toEqual([]);
-    expect(seedChatScenario(profile({ socialCards: [card] })).activeSocialCards).toEqual([card]);
+    expect(seedChatScenario(makeProfile()).activeSocialCards).toEqual([]);
+    expect(seedChatScenario(makeProfile({ socialCards: [card] })).activeSocialCards).toEqual([card]);
   });
 });
 
@@ -246,8 +243,8 @@ describe("rollbackScenario ('another take' — the supporting cast never rolls b
   it("restores the anchor's fields but keeps the LIVE cast — a member added between takes survives the redo", () => {
     // Owner report 2026-07-13: Abby, added via the panel after a reply, vanished
     // when that reply was rerun — the whole-scenario rollback restored a pre-Abby anchor.
-    const anchor: ChatScenario = { ...seedChatScenario(profile()), clockMinutes: 96, pendingSkipNote: "dawn" };
-    const live: ChatScenario = { ...seedChatScenario(profile()), clockMinutes: 108, supportingCast: [abby] };
+    const anchor: ChatScenario = { ...seedChatScenario(makeProfile()), clockMinutes: 96, pendingSkipNote: "dawn" };
+    const live: ChatScenario = { ...seedChatScenario(makeProfile()), clockMinutes: 108, supportingCast: [abby] };
     const rolled = rollbackScenario(anchor, live);
     expect(rolled.clockMinutes).toBe(96);
     expect(rolled.pendingSkipNote).toBe("dawn");
@@ -255,22 +252,22 @@ describe("rollbackScenario ('another take' — the supporting cast never rolls b
   });
 
   it("live wins even when smaller — an author Remove between takes doesn't resurrect the anchor's entry", () => {
-    const anchor: ChatScenario = { ...seedChatScenario(profile()), supportingCast: [abby] };
-    const live: ChatScenario = { ...seedChatScenario(profile()), supportingCast: [] };
+    const anchor: ChatScenario = { ...seedChatScenario(makeProfile()), supportingCast: [abby] };
+    const live: ChatScenario = { ...seedChatScenario(makeProfile()), supportingCast: [] };
     expect(rollbackScenario(anchor, live).supportingCast).toEqual([]);
   });
 
   it("a missing live scenario degrades to the anchor's own cast", () => {
-    const anchor: ChatScenario = { ...seedChatScenario(profile()), supportingCast: [abby] };
+    const anchor: ChatScenario = { ...seedChatScenario(makeProfile()), supportingCast: [abby] };
     expect(rollbackScenario(anchor, null).supportingCast).toEqual([abby]);
   });
 });
 
 describe("driftChatState (D8 — in-game time only, clock on the shared scenario)", () => {
-  const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(profile()), ...overrides });
+  const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(makeProfile()), ...overrides });
 
   it("within-visit tick decays meters toward their baseline (the clock lives on the scenario)", () => {
-    const drifted = driftChatState(base(), profile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES });
+    const drifted = driftChatState(base(), makeProfile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES });
     expect(drifted.meters.hygiene).toBeLessThan(0.9); // drifts toward the grime pole
     expect(drifted.meters.energy).toBeLessThan(0.9);
   });
@@ -278,32 +275,32 @@ describe("driftChatState (D8 — in-game time only, clock on the shared scenario
   it("a read without advance is a pure pass-through — no wall-clock recovery exists (D8)", () => {
     const tired = base({ meters: { ...initialMeters(), hygiene: 0.2, energy: 0.2 } });
     // However long the player was away, nothing moves: no second clock.
-    expect(driftChatState(tired, profile(), { advance: false, clockMinutes: 0 })).toBe(tired);
-    expect(driftChatState(tired, profile(), { clockMinutes: 0 })).toBe(tired);
+    expect(driftChatState(tired, makeProfile(), { advance: false, clockMinutes: 0 })).toBe(tired);
+    expect(driftChatState(tired, makeProfile(), { clockMinutes: 0 })).toBe(tired);
   });
 
   it("never decays affinity (no between-visit decay — spec §10)", () => {
     const warm = base({ regard: 57 });
-    expect(driftChatState(warm, profile(), { advance: false, clockMinutes: 0 }).regard).toBe(57);
-    expect(driftChatState(warm, profile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES }).regard).toBe(57);
+    expect(driftChatState(warm, makeProfile(), { advance: false, clockMinutes: 0 }).regard).toBe(57);
+    expect(driftChatState(warm, makeProfile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES }).regard).toBe(57);
   });
 
   it("expires conditions past the SHARED clock — even for a frozen (no-advance) member", () => {
     const condition: ActiveCondition = { id: "tipsy", label: "Tipsy", startedAtMinutes: 0, durationMinutes: 2, attributeEffects: [] };
     const withCondition = base({ conditions: [condition] });
     // A clock past started + duration (2) ⇒ expired.
-    expect(driftChatState(withCondition, profile(), { advance: true, clockMinutes: 3 }).conditions).toHaveLength(0);
+    expect(driftChatState(withCondition, makeProfile(), { advance: true, clockMinutes: 3 }).conditions).toHaveLength(0);
     // Away members share the ONE story timeline (ruling 8): only meter decay is
     // skipped — their conditions still expire against the shared clock.
-    expect(driftChatState(withCondition, profile(), { advance: false, clockMinutes: 3 }).conditions).toHaveLength(0);
+    expect(driftChatState(withCondition, makeProfile(), { advance: false, clockMinutes: 3 }).conditions).toHaveLength(0);
     // A read with the clock still at 0 keeps the condition running.
-    expect(driftChatState(withCondition, profile(), { advance: false, clockMinutes: 0 }).conditions).toHaveLength(1);
+    expect(driftChatState(withCondition, makeProfile(), { advance: false, clockMinutes: 0 }).conditions).toHaveLength(1);
   });
 });
 
 describe("time skips (spec §8.1 — flavor-only v1, D14; split across scenario + member halves)", () => {
-  const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(profile()), ...overrides });
-  const scen = (overrides: Partial<ChatScenario> = {}): ChatScenario => ({ ...seedChatScenario(profile()), ...overrides });
+  const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(makeProfile()), ...overrides });
+  const scen = (overrides: Partial<ChatScenario> = {}): ChatScenario => ({ ...seedChatScenario(makeProfile()), ...overrides });
   const now = new Date("2026-07-02T12:00:00Z");
   const neutralBand = regardBandForValue(0).id;
 
@@ -352,9 +349,9 @@ describe("time skips (spec §8.1 — flavor-only v1, D14; split across scenario 
 });
 
 describe("applyChatPulse (the deterministic §6 curve)", () => {
-  const likeProfile = profile({ preferences: [{ target: "compliment", valence: "like", intensity: 5 }] });
-  const dislikeProfile = profile({ preferences: [{ target: "insult", valence: "dislike", intensity: 5 }] });
-  const state = (): ChatState => seedChatState(profile());
+  const likeProfile = makeProfile({ preferences: [{ target: "compliment", valence: "like", intensity: 5 }] });
+  const dislikeProfile = makeProfile({ preferences: [{ target: "insult", valence: "dislike", intensity: 5 }] });
+  const state = (): ChatState => seedChatState(makeProfile());
   const pulse = (concept: string | null, mindNote = "thinking"): ChatPulse => ({
     playerAct: concept ? { concept } : null,
     mindNote,
@@ -382,13 +379,13 @@ describe("applyChatPulse (the deterministic §6 curve)", () => {
   });
 
   it("clamps the affinity move to ±AFFINITY_DELTA_CLAMP", () => {
-    const intense = profile({ preferences: [{ target: "insult", valence: "dislike", intensity: 10 }] });
+    const intense = makeProfile({ preferences: [{ target: "insult", valence: "dislike", intensity: 10 }] });
     const { trace } = applyChatPulse(state(), pulse("insult"), intense, "Mara", []);
     expect(trace.regardDelta).toBeGreaterThanOrEqual(-5);
   });
 
   it("an unrecognised act moves nothing but still refreshes the mindNote", () => {
-    const { state: next, trace } = applyChatPulse(state(), pulse("compliment", "warmer now"), profile(), "Mara", []);
+    const { state: next, trace } = applyChatPulse(state(), pulse("compliment", "warmer now"), makeProfile(), "Mara", []);
     expect(trace.valence).toBeNull();
     expect(trace.regardDelta).toBe(0);
     expect(next.regard).toBe(0);
@@ -405,7 +402,7 @@ describe("applyChatPulse (the deterministic §6 curve)", () => {
 
   it("an empty mindNote keeps the prior note", () => {
     const prior: ChatState = { ...state(), mindNote: "kept" };
-    expect(applyChatPulse(prior, pulse(null, ""), profile(), "Mara", []).state.mindNote).toBe("kept");
+    expect(applyChatPulse(prior, pulse(null, ""), makeProfile(), "Mara", []).state.mindNote).toBe("kept");
   });
 
   it("applyOpenerPulse folds only the reads: sentPhoto + mindNote, never the curve (chat-initiative slice 5)", () => {
@@ -441,19 +438,19 @@ describe("applyChatPulse (the deterministic §6 curve)", () => {
   });
 
   it("raises arousal on an intimate act (proposition), full amount", () => {
-    const { state: next, trace } = applyChatPulse(state(), pulse("proposition"), profile(), "Mara", []);
+    const { state: next, trace } = applyChatPulse(state(), pulse("proposition"), makeProfile(), "Mara", []);
     expect(trace.arousalDelta).toBeCloseTo(CHAT_AROUSAL_INTIMATE, 5);
     expect(next.meters.arousal).toBeCloseTo(CHAT_AROUSAL_INTIMATE, 5);
     expect(trace.changed).toContain("arousal");
   });
 
   it("raises arousal half as much for a courtship act (flirt)", () => {
-    const { trace } = applyChatPulse(state(), pulse("flirt"), profile(), "Mara", []);
+    const { trace } = applyChatPulse(state(), pulse("flirt"), makeProfile(), "Mara", []);
     expect(trace.arousalDelta).toBeCloseTo(CHAT_AROUSAL_INTIMATE / 2, 5);
   });
 
   it("does not raise arousal when the intimate act is disliked", () => {
-    const prude = profile({ preferences: [{ target: "proposition", valence: "dislike", intensity: 6 }] });
+    const prude = makeProfile({ preferences: [{ target: "proposition", valence: "dislike", intensity: 6 }] });
     const { state: next, trace } = applyChatPulse(state(), pulse("proposition"), prude, "Mara", []);
     expect(trace.arousalDelta).toBe(0);
     expect(next.meters.arousal).toBe(0);
@@ -469,21 +466,21 @@ describe("applyChatPulse (the deterministic §6 curve)", () => {
       severity: 60,
       reactionOverrides: [],
     };
-    const { trace } = applyChatPulse(state(), pulse("criticize"), profile(), "Mara", [taboo]);
+    const { trace } = applyChatPulse(state(), pulse("criticize"), makeProfile(), "Mara", [taboo]);
     expect(trace.concept).toBe("criticize");
     expect(trace.valence).toBe("dislike");
     expect(trace.regardDelta).toBeLessThan(0);
   });
 
   it("no active card on the concept ⇒ no card reaction (the active set is authoritative)", () => {
-    const { trace } = applyChatPulse(state(), pulse("criticize"), profile(), "Mara", []);
+    const { trace } = applyChatPulse(state(), pulse("criticize"), makeProfile(), "Mara", []);
     expect(trace.valence).toBeNull();
     expect(trace.regardDelta).toBe(0);
   });
 });
 
 describe("applyChatAction (test-bed chips)", () => {
-  const state = (): ChatState => seedChatState(profile());
+  const state = (): ChatState => seedChatState(makeProfile());
 
   it("offer a drink raises intoxication", () => {
     expect(applyChatAction(state(), "drink", 0).meters.intoxication).toBeCloseTo(0.3, 5);
@@ -519,7 +516,7 @@ describe("applyChatAction (test-bed chips)", () => {
 
 describe("settleEnsembleMember (followups rulings 10-11)", () => {
   const now = new Date("2026-07-12T12:00:00Z");
-  const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(profile()), ...overrides });
+  const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(makeProfile()), ...overrides });
   const settle = (args: Partial<Parameters<typeof settleEnsembleMember>[0]> & { state: ChatState }) =>
     settleEnsembleMember({
       preRegard: args.state.regard,
@@ -544,7 +541,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
       state: base({
         regard: 5,
         relationshipHistory: [{ at: "x", clockMinutes: 0, regard: 0, band: "neutral", familiarity: 0 }],
-        lastPulseTrace: { ...seedChatState(profile()).lastPulseTrace, regardDelta: 5, concept: "compliment" },
+        lastPulseTrace: { ...seedChatState(makeProfile()).lastPulseTrace, regardDelta: 5, concept: "compliment" },
       }),
       preRegard: 0,
       pulsed: true,
@@ -584,7 +581,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
 
   it("burns the addressed member's selfie ring when their pulse read a send (ruling 12)", () => {
     const sent = base({
-      lastPulseTrace: { ...seedChatState(profile()).lastPulseTrace, sentPhoto: true },
+      lastPulseTrace: { ...seedChatState(makeProfile()).lastPulseTrace, sentPhoto: true },
     });
     const next = settle({ state: sent, pulsed: true, selfieRequestTarget: true });
     expect(next.selfieHistory).toEqual([{ kind: "request", atClockMinutes: 30 }]);
@@ -613,10 +610,10 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
 describe("runChatPulse (demo ⇒ drift-only degrade)", () => {
   it("degrades to drift-only state AND emits the chat_state.pulse.degraded diagnostic", async () => {
     const sink = new DiagnosticCollector();
-    const input: ChatState = { ...seedChatState(profile()), regard: 12, mindNote: "before" };
+    const input: ChatState = { ...seedChatState(makeProfile()), regard: 12, mindNote: "before" };
     const { state, degraded } = await runChatPulse({
       state: input,
-      profile: profile(),
+      profile: makeProfile(),
       characterName: "Mara",
       playerName: "Theo",
       exchange: { player: "hi", assistant: "[Mara] \"hi\"" },
@@ -639,14 +636,14 @@ describe("regard band chip mapping (the strip's band label)", () => {
 });
 
 describe("chatStateSnapshot — mood chip (mood.spec §4)", () => {
-  const scenario = (): ChatScenario => seedChatScenario(profile());
+  const scenario = (): ChatScenario => seedChatScenario(makeProfile());
   const withMeters = (over: Record<string, number>): ChatState => ({
-    ...seedChatState(profile()),
+    ...seedChatState(makeProfile()),
     meters: { ...initialMeters(), ...over },
   });
 
   it("carries a derived emotion label + bounded intensity", () => {
-    const snap = chatStateSnapshot(seedChatState(profile()), scenario());
+    const snap = chatStateSnapshot(seedChatState(makeProfile()), scenario());
     expect(snap.emotion.label).toBeTruthy();
     expect(snap.emotion.intensity).toBeGreaterThanOrEqual(0);
     expect(snap.emotion.intensity).toBeLessThanOrEqual(1);
@@ -665,13 +662,13 @@ describe("chatStateSnapshot — mood chip (mood.spec §4)", () => {
   });
 
   it("persisted defaults true and is honored when set false (fresh-chat seed preview)", () => {
-    expect(chatStateSnapshot(seedChatState(profile()), scenario()).persisted).toBe(true);
-    expect(chatStateSnapshot(seedChatState(profile()), scenario(), { persisted: false }).persisted).toBe(false);
+    expect(chatStateSnapshot(seedChatState(makeProfile()), scenario()).persisted).toBe(true);
+    expect(chatStateSnapshot(seedChatState(makeProfile()), scenario(), { persisted: false }).persisted).toBe(false);
   });
 
   it("merges the scenario's chat-wide fields into the back-compat snapshot shape", () => {
     const snap = chatStateSnapshot(
-      seedChatState(profile()),
+      seedChatState(makeProfile()),
       { ...scenario(), premise: "the night before she moves away", clockMinutes: 45, sceneAuto: "milestones" },
     );
     expect(snap.premise).toBe("the night before she moves away");
@@ -767,7 +764,7 @@ describe("applyChatTraitOverlays (bounded personality evolution — character-fi
 });
 
 describe("emotional weather wiring (emotional-weather.plan.md)", () => {
-  const likeProfile = profile({ preferences: [{ target: "compliment", valence: "like", intensity: 5 }] });
+  const likeProfile = makeProfile({ preferences: [{ target: "compliment", valence: "like", intensity: 5 }] });
   const pulseWith = (overrides: Partial<ChatPulse>): ChatPulse => ({
     playerAct: null,
     mindNote: "",
@@ -778,9 +775,9 @@ describe("emotional weather wiring (emotional-weather.plan.md)", () => {
 
   it("applies a pulse feeling proposal with curve-derived intensity and records the trace", () => {
     const { state: next, trace } = applyChatPulse(
-      seedChatState(profile()),
+      seedChatState(makeProfile()),
       pulseWith({ feeling: { label: "sad", cause: "the broken promise" } }),
-      profile(),
+      makeProfile(),
       "Mara",
       [],
     );
@@ -792,21 +789,21 @@ describe("emotional weather wiring (emotional-weather.plan.md)", () => {
   });
 
   it("a 'neutral' proposal clears the standing feeling", () => {
-    const standing = { ...seedChatState(profile()), feeling: { current: { label: "sad" as const, intensity: 0.8, cause: "x" }, bruise: null } };
-    const { state: next } = applyChatPulse(standing, pulseWith({ feeling: { label: "neutral", cause: "" } }), profile(), "Mara", []);
+    const standing = { ...seedChatState(makeProfile()), feeling: { current: { label: "sad" as const, intensity: 0.8, cause: "x" }, bruise: null } };
+    const { state: next } = applyChatPulse(standing, pulseWith({ feeling: { label: "neutral", cause: "" } }), makeProfile(), "Mara", []);
     expect(next.feeling.current).toBeNull();
   });
 
   it("an accepted apologize halves a live bruise", () => {
-    const bruised = { ...seedChatState(profile()), feeling: { current: null, bruise: { remaining: 10 } } };
-    const { state: next, trace } = applyChatPulse(bruised, pulseWith({ playerAct: { concept: "apologize" } }), profile(), "Mara", []);
+    const bruised = { ...seedChatState(makeProfile()), feeling: { current: null, bruise: { remaining: 10 } } };
+    const { state: next, trace } = applyChatPulse(bruised, pulseWith({ playerAct: { concept: "apologize" } }), makeProfile(), "Mara", []);
     expect(next.feeling.bruise?.remaining).toBe(5);
     expect(trace.changed).toContain("bruise");
   });
 
   it("a bruise halves positive gains and the trace records the scale", () => {
-    const bruised = { ...seedChatState(profile()), feeling: { current: null, bruise: { remaining: 10 } } };
-    const clean = applyChatPulse(seedChatState(profile()), pulseWith({ playerAct: { concept: "compliment" } }), likeProfile, "Mara", []);
+    const bruised = { ...seedChatState(makeProfile()), feeling: { current: null, bruise: { remaining: 10 } } };
+    const clean = applyChatPulse(seedChatState(makeProfile()), pulseWith({ playerAct: { concept: "compliment" } }), likeProfile, "Mara", []);
     const damped = applyChatPulse(bruised, pulseWith({ playerAct: { concept: "compliment" } }), likeProfile, "Mara", []);
     expect(clean.trace.regardDelta).toBeGreaterThan(0);
     expect(damped.trace.regardDelta).toBeLessThanOrEqual(Math.ceil(clean.trace.regardDelta / 2));
@@ -815,10 +812,10 @@ describe("emotional weather wiring (emotional-weather.plan.md)", () => {
 
   it("drift decays the feeling per exchange; a days skip clears it", () => {
     const felt = {
-      ...seedChatState(profile()),
+      ...seedChatState(makeProfile()),
       feeling: { current: { label: "angry" as const, intensity: 0.9, cause: "the lie" }, bruise: { remaining: 4 } },
     };
-    const drifted = driftChatState(felt, profile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES });
+    const drifted = driftChatState(felt, makeProfile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES });
     expect(drifted.feeling.current?.intensity).toBeCloseTo(0.75);
     expect(drifted.feeling.bruise?.remaining).toBe(3);
     const skipped = applyTimeSkip(felt, "days", CHAT_SKIP_MINUTES.days);
@@ -830,8 +827,8 @@ describe("emotional weather wiring (emotional-weather.plan.md)", () => {
   });
 
   it("seeds empty weather and rides the snapshot", () => {
-    const state = seedChatState(profile());
+    const state = seedChatState(makeProfile());
     expect(state.feeling).toEqual({ current: null, bruise: null });
-    expect(chatStateSnapshot(state, seedChatScenario(profile())).feeling).toEqual({ current: null, bruise: null });
+    expect(chatStateSnapshot(state, seedChatScenario(makeProfile())).feeling).toEqual({ current: null, bruise: null });
   });
 });

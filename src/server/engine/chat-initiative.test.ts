@@ -1,16 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ChatDrive } from "@/contracts/personality/drives";
+import { drive } from "@/server/test-support";
 import { buildInitiativeCue } from "./chat-initiative";
-
-const drive = (over: Partial<ChatDrive> = {}): ChatDrive => ({
-  want: "to reopen the gallery",
-  why: "",
-  secrecy: "open",
-  progress: "",
-  revealed: false,
-  resolved: false,
-  ...over,
-});
 
 describe("buildInitiativeCue (chat-initiative.plan.md)", () => {
   const base = { characterName: "Mara", playerName: "Theo", openLoops: [], drives: [], skipPending: false };

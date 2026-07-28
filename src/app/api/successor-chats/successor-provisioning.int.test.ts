@@ -1,5 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { NextRequest } from "next/server";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { characterProfileSchema } from "@/contracts";
 import { newId } from "@/lib/ids";
@@ -15,7 +14,6 @@ import {
   simProvisioningRequests,
   simRelationshipLedger,
   simWorlds,
-  users,
 } from "@/server/db";
 
 // successor-world-lifecycle.plan.md slices 3–4 — resumable provisioning and the
@@ -27,53 +25,29 @@ import {
 // so a retry resumes, a replay returns the recorded 201, and a failure leaves
 // nothing behind. Self-skips without a database (AI_FAKE keeps it zero model calls).
 
-process.env.AI_FAKE = "1";
-
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Provisioning Int", role: "user" as "admin" | "user" },
 }));
 
-vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
-  getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
+import {
+  apiRequest,
+  bindAuthUser,
+  endTestPool,
+  expectApiError,
+  expectJson,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  routeCtx,
+  seedTestUser,
+} from "@/server/test-support";
 import { provisionStarterWorld } from "@/server/engine";
 import { POST as successorCreate } from "./route";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from character_chats limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(
-      `[successor-provisioning.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const ready = await probe();
-const collectionCtx = { params: Promise.resolve({}) };
+const ready = await probeIntegrationDb("successor-provisioning.int.test", "character_chats");
+const collectionCtx = routeCtx();
 const CHARACTER_NAME = "Abigail";
-
-function jsonReq(body: unknown): NextRequest {
-  return new NextRequest("http://t/api/successor-chats", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
 
 const ids = { user: "", characterId: "", otherCharacterId: "" };
 /** Worlds to tear down after each test — the graph cascades from `sim_worlds`. */
@@ -88,10 +62,12 @@ interface CreatedWorld {
 /** POST the front door with an explicit idempotency key. */
 async function create(requestId: string, overrides: { characterId?: string; title?: string } = {}) {
   return successorCreate(
-    jsonReq({
-      characterId: overrides.characterId ?? ids.characterId,
-      requestId,
-      ...(overrides.title === undefined ? {} : { title: overrides.title }),
+    apiRequest("/api/successor-chats", {
+      body: {
+        characterId: overrides.characterId ?? ids.characterId,
+        requestId,
+        ...(overrides.title === undefined ? {} : { title: overrides.title }),
+      },
     }),
     collectionCtx,
   );
@@ -99,8 +75,10 @@ async function create(requestId: string, overrides: { characterId?: string; titl
 
 async function createOk(requestId: string, overrides: { characterId?: string; title?: string } = {}) {
   const res = await create(requestId, overrides);
+  // The body carries WHY a provision refused; a bare status assertion would hide
+  // it and every case downstream would then fail opaquely.
   if (res.status !== 201) throw new Error(`successor create failed: ${res.status} ${await res.text()}`);
-  const body = (await res.json()) as CreatedWorld;
+  const body = await expectJson<CreatedWorld>(res);
   seededWorlds.add(body.worldId);
   return body;
 }
@@ -181,13 +159,8 @@ async function seedChats(count: number, authority: "successor_narrative_view" | 
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `provisioning-${stamp}@test.local`, name: "Provisioning Int" })
-    .returning();
-  if (!user) throw new Error("failed to create test user");
-  authState.user = { ...authState.user, id: user.id, email: user.email };
+  const user = await seedTestUser("provisioning");
+  bindAuthUser(authState, user);
   ids.user = user.id;
   // An authored starting relationship, so the relationship-seeding STEP actually
   // runs (a resume must not write the authored_prior pair twice).
@@ -224,9 +197,10 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  if (!ready || !ids.user) return;
-  await db().delete(characters).where(eq(characters.ownerId, ids.user));
-  await db().delete(users).where(eq(users.id, ids.user));
+  // The per-test `afterEach` already dropped every world, chat and provisioning
+  // record, so this is only the owner and their cast.
+  if (ready && ids.user) await purgeOwnerRows([ids.user]);
+  await endTestPool();
 });
 
 describe.runIf(ready)("successor provisioning: resume, replay, cleanup", () => {
@@ -237,9 +211,7 @@ describe.runIf(ready)("successor provisioning: resume, replay, cleanup", () => {
     // retry build a second world.
     expect(first.worldId).toBe(derivedWorldId(key));
 
-    const replay = await create(key);
-    expect(replay.status).toBe(201);
-    expect(await replay.json()).toEqual(first);
+    expect(await expectJson<CreatedWorld>(await create(key), 201)).toEqual(first);
 
     // ONE world, ONE branch, ONE chat, and one cast — nothing was built twice.
     expect(await ownerChatCount()).toBe(1);
@@ -262,13 +234,12 @@ describe.runIf(ready)("successor provisioning: resume, replay, cleanup", () => {
     const key = "mismatch-1";
     await createOk(key, { title: "First Ask" });
 
-    const differentCharacter = await create(key, { characterId: ids.otherCharacterId, title: "First Ask" });
-    expect(differentCharacter.status).toBe(409);
-    expect(((await differentCharacter.json()) as { error: { code: string } }).error.code).toBe("idempotency_mismatch");
-
-    const differentTitle = await create(key, { title: "Second Ask" });
-    expect(differentTitle.status).toBe(409);
-    expect(((await differentTitle.json()) as { error: { code: string } }).error.code).toBe("idempotency_mismatch");
+    await expectApiError(
+      await create(key, { characterId: ids.otherCharacterId, title: "First Ask" }),
+      409,
+      "idempotency_mismatch",
+    );
+    await expectApiError(await create(key, { title: "Second Ask" }), 409, "idempotency_mismatch");
 
     // The mismatched resubmits never executed: still exactly one chat.
     expect(await ownerChatCount()).toBe(1);
@@ -281,9 +252,7 @@ describe.runIf(ready)("successor provisioning: resume, replay, cleanup", () => {
     const key = "crash-requested";
     await plantRecord(key, "requested");
 
-    const res = await create(key);
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as CreatedWorld;
+    const body = await expectJson<CreatedWorld>(await create(key), 201);
     seededWorlds.add(body.worldId);
     expect(body.worldId).toBe(derivedWorldId(key));
     expect(await ownerChatCount()).toBe(1);
@@ -295,9 +264,7 @@ describe.runIf(ready)("successor provisioning: resume, replay, cleanup", () => {
     const world = await preProvision(key);
     await plantRecord(key, "world_created", { worldId: world.worldId, branchId: world.branchId });
 
-    const res = await create(key);
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as CreatedWorld;
+    const body = await expectJson<CreatedWorld>(await create(key), 201);
     // The SAME world finished, not a new one.
     expect(body.worldId).toBe(world.worldId);
     expect(body.branchId).toBe(world.branchId);
@@ -329,9 +296,7 @@ describe.runIf(ready)("successor provisioning: resume, replay, cleanup", () => {
       chatId: chatRow.id,
     });
 
-    const res = await create(key);
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as CreatedWorld;
+    const body = await expectJson<CreatedWorld>(await create(key), 201);
     // The half-built chat was ADOPTED, not abandoned for a fresh one.
     expect(body.id).toBe(chatRow.id);
     expect(await ownerChatCount()).toBe(1);
@@ -360,9 +325,7 @@ describe.runIf(ready)("successor provisioning: resume, replay, cleanup", () => {
       chatId: chatRow.id,
     });
 
-    const res = await create(key);
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as CreatedWorld;
+    const body = await expectJson<CreatedWorld>(await create(key), 201);
     expect(body.id).toBe(chatRow.id);
     const [chat] = await db()
       .select({ authority: characterChats.engineAuthority, simPlayerActorId: characterChats.simPlayerActorId })
@@ -411,11 +374,9 @@ describe.runIf(ready)("successor provisioning: resume, replay, cleanup", () => {
       chatId: "chat-that-was-never-there",
     });
 
-    const failed = await create(key);
-    expect(failed.status).toBe(500);
     // Fallback + diagnostic code (docs/resilience.md §8): one honest code, and
     // the compensating cleanup actually removed the graph.
-    expect(((await failed.json()) as { error: { code: string } }).error.code).toBe("provision_failed");
+    await expectApiError(await create(key), 500, "provision_failed");
     expect(await worldExists(world.worldId)).toBe(false);
     expect(await ownerChatCount()).toBe(0);
     const record = await recordOf(key);
@@ -440,7 +401,7 @@ describe.runIf(ready)("successor provisioning: resume, replay, cleanup", () => {
     expect([a, b].filter((res) => res.status === 201)).toHaveLength(1);
     const bounced = [a, b].find((res) => res.status === 409);
     if (!bounced) throw new Error("expected exactly one bounce");
-    expect(((await bounced.json()) as { error: { code: string } }).error.code).toBe("provision_busy");
+    await expectApiError(bounced, 409, "provision_busy");
     expect(await ownerChatCount()).toBe(1);
   });
 });
@@ -460,12 +421,16 @@ describe.runIf(ready)("successor provisioning: the honest quota", () => {
     await seedChats(CAP - 1, "successor_narrative_view");
     await createOk("quota-fits");
 
-    const overflow = await create("quota-overflows");
-    expect(overflow.status).toBe(409);
-    const body = (await overflow.json()) as { error: { code: string; limit: number; used: number } };
-    expect(body.error.code).toBe("too_many_worlds");
-    expect(body.error.limit).toBe(CAP);
-    expect(body.error.used).toBe(CAP);
+    // Read as the whole envelope, not via expectApiError: the refusal's `limit`
+    // and `used` are the honest-quota assertion, and the helper returns only the
+    // shared `{ code, message }` pair.
+    const overflow = await expectJson<{ error: { code: string; limit: number; used: number } }>(
+      await create("quota-overflows"),
+      409,
+    );
+    expect(overflow.error.code).toBe("too_many_worlds");
+    expect(overflow.error.limit).toBe(CAP);
+    expect(overflow.error.used).toBe(CAP);
     // The refusal built nothing and recorded nothing.
     expect(await recordOf("quota-overflows")).toBeUndefined();
     expect(await worldExists(derivedWorldId("quota-overflows"))).toBe(false);
@@ -475,9 +440,8 @@ describe.runIf(ready)("successor provisioning: the honest quota", () => {
     await seedChats(CAP - 1, "successor_narrative_view");
     await plantRecord("quota-inflight", "world_created", { worldId: derivedWorldId("quota-inflight") });
 
-    const blocked = await create("quota-after-inflight");
-    expect(blocked.status).toBe(409);
-    expect(((await blocked.json()) as { error: { used: number } }).error.used).toBe(CAP);
+    const blocked = await expectJson<{ error: { used: number } }>(await create("quota-after-inflight"), 409);
+    expect(blocked.error.used).toBe(CAP);
 
     // A failed record's cleanup already released its world, so it holds nothing.
     await db()
@@ -501,20 +465,15 @@ describe.runIf(ready)("successor provisioning: the honest quota", () => {
     await seedChats(CAP - 1, "successor_narrative_view");
 
     // …but its own finished request still replays verbatim…
-    const replay = await create(replayKey);
-    expect(replay.status).toBe(201);
-    expect(await replay.json()).toEqual(created);
+    expect(await expectJson<CreatedWorld>(await create(replayKey), 201)).toEqual(created);
 
     // …and the stranded provision still finishes: the cap gates NEW worlds, and
     // locking a half-built one out would strand it forever.
-    const resumed = await create(resumeKey);
-    expect(resumed.status).toBe(201);
-    expect(((await resumed.json()) as CreatedWorld).worldId).toBe(stranded.worldId);
+    const resumed = await expectJson<CreatedWorld>(await create(resumeKey), 201);
+    expect(resumed.worldId).toBe(stranded.worldId);
     expect((await recordOf(resumeKey))?.state).toBe("ready");
 
     // A genuinely new world is still refused.
-    const refused = await create("quota-new-at-cap");
-    expect(refused.status).toBe(409);
-    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe("too_many_worlds");
+    await expectApiError(await create("quota-new-at-cap"), 409, "too_many_worlds");
   });
 });

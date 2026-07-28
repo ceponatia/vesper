@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectAllValidate, expectUniqueIds } from "@/test/registry-invariants";
 import {
   conceptIdsInFamily,
   interactionConceptById,
@@ -9,11 +10,8 @@ import {
 
 describe("interaction concepts", () => {
   it("ids are unique and every concept validates", () => {
-    const ids = interactionConcepts.map((c) => c.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    for (const def of interactionConcepts) {
-      expect(() => interactionConceptSchema.parse(def)).not.toThrow();
-    }
+    expectUniqueIds(interactionConcepts, "interactionConcepts");
+    expectAllValidate(interactionConcepts, interactionConceptSchema);
   });
 
   it("interactionConceptById finds and misses", () => {

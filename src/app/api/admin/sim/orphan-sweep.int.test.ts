@@ -1,14 +1,7 @@
 import { eq } from "drizzle-orm";
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  characterChats,
-  db,
-  simBranches,
-  simProvisioningRequests,
-  simWorlds,
-  users,
-} from "@/server/db";
+import { characterChats, db, simBranches, simProvisioningRequests, simWorlds } from "@/server/db";
 
 // The orphan sweeper (successor-world-lifecycle.plan.md slice 2, owner ruling
 // E20-2): a world no chat can ever reach again is hard-deleted, and a world that
@@ -21,22 +14,25 @@ import {
 // during this run is minutes old and therefore protected; only genuinely stale
 // leftovers are collected, which is exactly what the sweeper is for.
 
-process.env.AI_FAKE = "1";
-
 const authState = vi.hoisted(() => ({
-  user: { id: "", email: "", name: "Sweep Admin", role: "admin" as "admin" | "user" },
+  user: { id: "", email: "", name: "Sweep Admin", role: "admin" as const },
 }));
 
-vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
-  getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
 import { resetRateLimits } from "@/server/api";
 import { DEFAULT_ORPHAN_GRACE_MS, sweepOrphanSimWorlds } from "@/server/engine";
-import { probeIntegrationDb } from "@/server/test-support";
+import {
+  apiRequest,
+  bindAuthUser,
+  endTestPool,
+  expectJson,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  routeCtx,
+  seedTestUser,
+  withAuthUser,
+} from "@/server/test-support";
 import { POST as sweepPost } from "./sweep-orphan-worlds/route";
 
 const ready = await probeIntegrationDb("orphan-sweep.int.test", "sim_worlds");
@@ -44,16 +40,9 @@ const ready = await probeIntegrationDb("orphan-sweep.int.test", "sim_worlds");
 /** Comfortably past the default grace, so app/database clock skew is irrelevant. */
 const WELL_PAST_GRACE_MS = 2 * DEFAULT_ORPHAN_GRACE_MS;
 
-const collectionCtx = { params: Promise.resolve({}) };
 const SWEEP_PATH = "/api/admin/self/sim/sweep-orphan-worlds";
 
-function sweepReq(body: unknown, path = SWEEP_PATH): NextRequest {
-  return new NextRequest(`http://t${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
+const sweepReq = (body: unknown, path = SWEEP_PATH): NextRequest => apiRequest(path, { body });
 
 const ids = { owner: "" };
 /** Every world this suite seeded — the afterAll safety net for a mid-test failure. */
@@ -93,21 +82,16 @@ beforeEach(() => resetRateLimits());
 
 beforeAll(async () => {
   if (!ready) return;
-  const [owner] = await db()
-    .insert(users)
-    .values({ email: `orphan-sweep-${Date.now()}@test.local`, name: "Sweep Admin", role: "admin" })
-    .returning();
-  if (!owner) throw new Error("failed to create test user");
-  authState.user = { ...authState.user, id: owner.id, email: owner.email };
+  const owner = await seedTestUser("orphan-sweep", { name: "Sweep Admin", role: "admin" });
+  bindAuthUser(authState, owner);
   ids.owner = owner.id;
 });
 
 afterAll(async () => {
   if (!ready || !ids.owner) return;
-  await db().delete(characterChats).where(eq(characterChats.ownerId, ids.owner));
-  await db().delete(simProvisioningRequests).where(eq(simProvisioningRequests.ownerId, ids.owner));
   for (const worldId of seededWorlds) await db().delete(simWorlds).where(eq(simWorlds.id, worldId));
-  await db().delete(users).where(eq(users.id, ids.owner));
+  await purgeOwnerRows([ids.owner]);
+  await endTestPool();
 });
 
 describe.runIf(ready)("orphan sim-world sweep (E20-2)", () => {
@@ -188,35 +172,32 @@ describe.runIf(ready)("POST /api/admin/self/sim/sweep-orphan-worlds", () => {
   it("runs the sweep for an admin and answers the structured result", async () => {
     const orphan = await seedWorld("route", { ageMs: WELL_PAST_GRACE_MS });
 
-    const dry = await sweepPost(sweepReq({ dryRun: true }), collectionCtx);
-    expect(dry.status).toBe(200);
-    const preview = (await dry.json()) as { candidateWorldIds: string[]; deletedWorldIds: string[]; dryRun: boolean };
+    const dry = await sweepPost(sweepReq({ dryRun: true }), routeCtx());
+    const preview = await expectJson<{ candidateWorldIds: string[]; deletedWorldIds: string[]; dryRun: boolean }>(dry, 200);
     expect(preview.dryRun).toBe(true);
     expect(preview.candidateWorldIds).toContain(orphan.worldId);
     expect(preview.deletedWorldIds).toEqual([]);
     expect(await worldCount(orphan.worldId)).toBe(1);
 
-    const live = await sweepPost(sweepReq({}), collectionCtx);
-    expect(live.status).toBe(200);
-    expect(((await live.json()) as { deletedWorldIds: string[] }).deletedWorldIds).toContain(orphan.worldId);
+    const live = await sweepPost(sweepReq({}), routeCtx());
+    expect((await expectJson<{ deletedWorldIds: string[] }>(live, 200)).deletedWorldIds).toContain(orphan.worldId);
     expect(await worldCount(orphan.worldId)).toBe(0);
   });
 
   it("rejects an unknown field in the body", async () => {
-    const res = await sweepPost(sweepReq({ dryRun: true, graceMs: 0 }), collectionCtx);
+    const res = await sweepPost(sweepReq({ dryRun: true, graceMs: 0 }), routeCtx());
     expect(res.status).toBe(400);
   });
 
   it("hides the sweep from non-admins and from the old ambiguous namespace", async () => {
     const survivor = await seedWorld("gated", { ageMs: WELL_PAST_GRACE_MS });
-    const admin = { ...authState.user };
 
-    authState.user = { ...admin, role: "user" };
-    const denied = await sweepPost(sweepReq({}), collectionCtx);
-    expect(denied.status).toBe(404);
+    await withAuthUser(authState, { role: "user" }, async () => {
+      const denied = await sweepPost(sweepReq({}), routeCtx());
+      expect(denied.status).toBe(404);
+    });
 
-    authState.user = admin;
-    const oldNamespace = await sweepPost(sweepReq({}, "/api/admin/sim/sweep-orphan-worlds"), collectionCtx);
+    const oldNamespace = await sweepPost(sweepReq({}, "/api/admin/sim/sweep-orphan-worlds"), routeCtx());
     expect(oldNamespace.status).toBe(404);
 
     // Neither refusal ran the sweep.

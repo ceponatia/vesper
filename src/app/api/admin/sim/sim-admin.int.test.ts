@@ -1,59 +1,37 @@
-import { eq, sql } from "drizzle-orm";
-import { NextRequest } from "next/server";
+import { eq } from "drizzle-orm";
+import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { characterChats, db, simWorlds, users } from "@/server/db";
-
-process.env.AI_FAKE = "1";
+import { characterChats, db, simWorlds } from "@/server/db";
 
 const authState = vi.hoisted(() => ({
-  user: { id: "", email: "", name: "Sim Admin Int", role: "admin" as "admin" | "user" },
+  user: { id: "", email: "", name: "Sim Admin Int", role: "admin" as const },
 }));
 
-vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
-  getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
-}));
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
+import {
+  apiRequest,
+  bindAuthUser,
+  endTestPool,
+  expectJson,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  routeCtx,
+  seedTestUser,
+  withAuthUser,
+} from "@/server/test-support";
 import { GET as statusGet } from "./[branchId]/route";
 import { POST as toolPost } from "./[branchId]/command/route";
 import { POST as worldsPost } from "./worlds/route";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from sim_worlds limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4_000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(
-      `[sim-admin.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("sim-admin.int.test", "sim_worlds");
 
-const ready = await probe();
 const WORLD = "sim-admin-test-world";
 const BRANCH = "sim-admin-test-branch";
 const ORIGIN = 2 * 86_400 + 600 * 60;
-const ctx = (branchId: string) => ({ params: Promise.resolve({ branchId }) });
 const statusPath = (branchId: string) => `/api/admin/self/sim/${branchId}`;
 const commandPath = (branchId: string) => `${statusPath(branchId)}/command`;
-function jsonReq(path: string, body: unknown): NextRequest {
-  return new NextRequest(`http://t${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
+const jsonReq = (path: string, body: unknown): NextRequest => apiRequest(path, { body });
 
 const ids = { owner: "", foreignAdmin: "", chat: "" };
 
@@ -61,27 +39,18 @@ beforeAll(async () => {
   if (!ready) return;
   await db().delete(characterChats).where(eq(characterChats.simBranchId, BRANCH));
   await db().delete(simWorlds).where(eq(simWorlds.id, WORLD));
-  const stamp = Date.now();
-  const [owner] = await db()
-    .insert(users)
-    .values({ email: `sim-admin-${stamp}@test.local`, name: "Sim Admin", role: "admin" })
-    .returning();
-  const [foreignAdmin] = await db()
-    .insert(users)
-    .values({ email: `sim-admin-foreign-${stamp}@test.local`, name: "Foreign Admin", role: "admin" })
-    .returning();
-  if (!owner || !foreignAdmin) throw new Error("failed to create test users");
-  authState.user = { ...authState.user, id: owner.id, email: owner.email };
+  const owner = await seedTestUser("sim-admin", { name: "Sim Admin", role: "admin" });
+  const foreignAdmin = await seedTestUser("sim-admin-foreign", { name: "Foreign Admin", role: "admin" });
+  bindAuthUser(authState, owner);
   ids.owner = owner.id;
   ids.foreignAdmin = foreignAdmin.id;
 });
 
 afterAll(async () => {
   if (!ready) return;
-  await db().delete(characterChats).where(eq(characterChats.simBranchId, BRANCH));
   await db().delete(simWorlds).where(eq(simWorlds.id, WORLD));
-  if (ids.owner) await db().delete(users).where(eq(users.id, ids.owner));
-  if (ids.foreignAdmin) await db().delete(users).where(eq(users.id, ids.foreignAdmin));
+  await purgeOwnerRows([ids.owner, ids.foreignAdmin]);
+  await endTestPool();
 });
 
 describe.runIf(ready)("R3 self-scoped sim admin routes", () => {
@@ -134,7 +103,7 @@ describe.runIf(ready)("R3 self-scoped sim admin routes", () => {
           },
         ],
       }),
-      { params: Promise.resolve({}) },
+      routeCtx(),
     );
     expect(provisioned.status).toBe(201);
 
@@ -147,7 +116,7 @@ describe.runIf(ready)("R3 self-scoped sim admin routes", () => {
 
     const duplicate = await worldsPost(
       jsonReq("/api/admin/self/sim/worlds", { world: { worldId: WORLD, branchId: BRANCH }, topology: {} }),
-      { params: Promise.resolve({}) },
+      routeCtx(),
     );
     expect(duplicate.status).toBe(409);
 
@@ -159,7 +128,7 @@ describe.runIf(ready)("R3 self-scoped sim admin routes", () => {
         name: "Odell",
         landing: { simulationLod: "event", inferenceLod: "no_model" },
       }),
-      ctx(BRANCH),
+      routeCtx({ branchId: BRANCH }),
     );
     expect(promote.status).toBe(200);
 
@@ -172,7 +141,7 @@ describe.runIf(ready)("R3 self-scoped sim admin routes", () => {
             destinationZoneId: "sat-zone-inn",
             reason: "authoring: staging the scene",
           }),
-          ctx(BRANCH),
+          routeCtx({ branchId: BRANCH }),
         )
       ).status,
     ).toBe(200);
@@ -186,7 +155,7 @@ describe.runIf(ready)("R3 self-scoped sim admin routes", () => {
             simulationLod: "exact",
             inferenceLod: "deliberator",
           }),
-          ctx(BRANCH),
+          routeCtx({ branchId: BRANCH }),
         )
       ).status,
     ).toBe(200);
@@ -200,7 +169,7 @@ describe.runIf(ready)("R3 self-scoped sim admin routes", () => {
             deltaCount: -5,
             reason: "attrition",
           }),
-          ctx(BRANCH),
+          routeCtx({ branchId: BRANCH }),
         )
       ).status,
     ).toBe(200);
@@ -212,22 +181,19 @@ describe.runIf(ready)("R3 self-scoped sim admin routes", () => {
         deltaCount: -500,
         reason: "attrition",
       }),
-      ctx(BRANCH),
+      routeCtx({ branchId: BRANCH }),
     );
-    expect(overdraw.status).toBe(409);
-    expect(await overdraw.json()).toMatchObject({ status: "rejected", code: "insufficient_population" });
+    expect(await expectJson(overdraw, 409)).toMatchObject({ status: "rejected", code: "insufficient_population" });
 
-    const advanced = await toolPost(jsonReq(commandPath(BRANCH), { kind: "advance", days: 1 }), ctx(BRANCH));
-    expect(advanced.status).toBe(200);
-    expect(await advanced.json()).toMatchObject({ status: "advanced", toStorySecond: ORIGIN + 86_400 });
+    const advanced = await toolPost(jsonReq(commandPath(BRANCH), { kind: "advance", days: 1 }), routeCtx({ branchId: BRANCH }));
+    expect(await expectJson(advanced, 200)).toMatchObject({ status: "advanced", toStorySecond: ORIGIN + 86_400 });
 
-    const status = await statusGet(new NextRequest(`http://t${statusPath(BRANCH)}`), ctx(BRANCH));
-    expect(status.status).toBe(200);
-    const snapshot = (await status.json()) as {
+    const status = await statusGet(apiRequest(statusPath(BRANCH)), routeCtx({ branchId: BRANCH }));
+    const snapshot = await expectJson<{
       storySecond: number;
       actors: { id: string; name: string; locus: { zoneId: string | null } | null; lod: { simulationLod: string } | null }[];
       cohorts: { cohortId: string; population: number }[];
-    };
+    }>(status, 200);
     expect(snapshot.storySecond).toBe(ORIGIN + 86_400);
     expect(snapshot.cohorts).toEqual([{ cohortId: "sat-cohort-crowd", name: "market crowd", population: 34 }]);
     expect(snapshot.actors.find((actor) => actor.id === "sat-actor-iris")?.locus?.zoneId).toBe("sat-zone-inn");
@@ -236,22 +202,21 @@ describe.runIf(ready)("R3 self-scoped sim admin routes", () => {
   });
 
   it("hides owned branches from other admins, non-admins, and the old namespace", async () => {
-    const owner = { ...authState.user };
-    authState.user = {
-      id: ids.foreignAdmin,
-      email: "foreign-admin@test.local",
-      name: "Foreign Admin",
-      role: "admin",
-    };
-    const foreign = await statusGet(new NextRequest(`http://t${statusPath(BRANCH)}`), ctx(BRANCH));
-    expect(foreign.status).toBe(404);
+    await withAuthUser(
+      authState,
+      { id: ids.foreignAdmin, email: "foreign-admin@test.local", name: "Foreign Admin", role: "admin" },
+      async () => {
+        const foreign = await statusGet(apiRequest(statusPath(BRANCH)), routeCtx({ branchId: BRANCH }));
+        expect(foreign.status).toBe(404);
+      },
+    );
 
-    authState.user = { ...owner, role: "user" };
-    const denied = await statusGet(new NextRequest(`http://t${statusPath(BRANCH)}`), ctx(BRANCH));
-    expect(denied.status).toBe(404);
+    await withAuthUser(authState, { role: "user" }, async () => {
+      const denied = await statusGet(apiRequest(statusPath(BRANCH)), routeCtx({ branchId: BRANCH }));
+      expect(denied.status).toBe(404);
+    });
 
-    authState.user = owner;
-    const oldNamespace = await statusGet(new NextRequest(`http://t/api/admin/sim/${BRANCH}`), ctx(BRANCH));
+    const oldNamespace = await statusGet(apiRequest(`/api/admin/sim/${BRANCH}`), routeCtx({ branchId: BRANCH }));
     expect(oldNamespace.status).toBe(404);
   });
 });

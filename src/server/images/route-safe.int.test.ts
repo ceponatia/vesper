@@ -1,62 +1,54 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { characterChats, db, images, users } from "@/server/db";
+import { characterChats, db, images } from "@/server/db";
+import {
+  endTestPool,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  seedTestUser,
+  withTempDataRoot,
+  type TempDataRoot,
+} from "@/server/test-support";
 import { createImageAsset } from "./assets";
 import { internalDeleteChatAssets, internalSaveImageBuffer } from "./internal";
 import { deleteOwnedChatAssets, deleteOwnedChatUploads, saveOwnedImageBuffer } from "./route-safe";
 import { monogramSvg } from "./monogram";
 
-let available = false;
+// The gate is resolved at COLLECTION time, before the describe registers: the
+// old `describe.runIf(available)` read a flag that `beforeAll` had not set yet,
+// so this owner-scoping suite silently skipped every run.
+const ready = await probeIntegrationDb("images route-safe.int.test", "images");
+
+let temp: TempDataRoot | undefined;
 let tmp = "";
 let ownerA = "";
 let ownerB = "";
 let chatB = "";
 
 beforeAll(async () => {
-  try {
-    await db().execute(sql`select 1 from images limit 0`);
-  } catch (error) {
-    process.stderr.write(
-      `[images route-safe.int.test] skipping: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
-    return;
-  }
-
-  tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vesper-image-route-safe-"));
-  process.env.DATA_ROOT = tmp;
-  const stamp = Date.now();
-  const made = await db()
-    .insert(users)
-    .values([
-      { email: `image-route-owner-a-${stamp}@test.local`, name: "Image Route Owner A" },
-      { email: `image-route-owner-b-${stamp}@test.local`, name: "Image Route Owner B" },
-    ])
-    .returning({ id: users.id });
-  const first = made[0];
-  const second = made[1];
-  if (!first || !second) throw new Error("failed to seed image route-safe users");
-  ownerA = first.id;
-  ownerB = second.id;
+  if (!ready) return;
+  temp = await withTempDataRoot("vesper-image-route-safe");
+  tmp = temp.root;
+  ownerA = (await seedTestUser("image-route-owner-a")).id;
+  ownerB = (await seedTestUser("image-route-owner-b")).id;
   const [chat] = await db().insert(characterChats).values({ ownerId: ownerB }).returning({ id: characterChats.id });
   if (!chat) throw new Error("failed to seed foreign chat");
   chatB = chat.id;
-  available = true;
 });
 
 afterAll(async () => {
-  delete process.env.DATA_ROOT;
-  if (!available) return;
-  await db().delete(images).where(inArray(images.ownerId, [ownerA, ownerB]));
-  await db().delete(characterChats).where(eq(characterChats.id, chatB));
-  await db().delete(users).where(inArray(users.id, [ownerA, ownerB]));
-  await fs.rm(tmp, { recursive: true, force: true });
-  await globalThis.__vesperPool?.end();
+  // Files first, then rows (the old order deleted rows first); no assertion
+  // reads either after teardown starts, so only the DATA_ROOT restore is
+  // load-bearing — and `cleanup` restores the previous value instead of
+  // blind-deleting it. `purgeOwnerRows` covers the chat via its owner.
+  await temp?.cleanup();
+  await purgeOwnerRows([ownerA, ownerB]);
+  await endTestPool();
 });
 
-describe.runIf(available)("owner-scoped image mutation helpers", () => {
+describe.skipIf(!ready)("owner-scoped image mutation helpers", () => {
   it("does not save a foreign owner's image row", async () => {
     const asset = await createImageAsset({ ownerId: ownerB, kind: "entity", entityKind: "world" });
     const denied = await saveOwnedImageBuffer(asset.id, ownerA, monogramSvg("Denied"));

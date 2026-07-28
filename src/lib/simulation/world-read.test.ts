@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
-import {
-  journeySchema,
-  linkSchema,
-  physicalLocusSchema,
-  type Journey,
-  type PhysicalLocus,
-  type SimulationLink,
-} from "@/contracts/simulation/space";
+import { linkSchema, type SimulationLink } from "@/contracts/simulation/space";
 import { chatWorldSchema, simTravelResultSchema } from "@/lib/client/api";
+import {
+  atLocus,
+  journeyTo,
+  transitLocus,
+  SPACE_HOME_ZONE,
+  SPACE_NOW,
+  SPACE_PLAYER,
+  SPACE_SQUARE_ZONE,
+} from "@/test/sim-space-fixtures";
 import {
   actionChipLabel,
   actorWhereabouts,
@@ -24,52 +26,22 @@ import {
 
 /**
  * Pure world-read shaping tests (world-ui.plan.md slice 1). No IO — every
- * projection piece is a fixture, so the place/transit envelope, the undirected
- * destination derivation, the shared whereabouts decision, the card phrasing,
- * and the travel-response parsing are asserted directly.
+ * projection piece is a fixture (@/test/sim-space-fixtures), so the place/transit
+ * envelope, the undirected destination derivation, the shared whereabouts
+ * decision, the card phrasing, and the travel-response parsing are asserted
+ * directly.
  */
 
-const PLAYER = "actor-player";
-const HOME = "zone-home";
-const SQUARE = "zone-square";
-const NOW = 8 * 3_600;
+const PLAYER = SPACE_PLAYER;
+const HOME = SPACE_HOME_ZONE;
+const SQUARE = SPACE_SQUARE_ZONE;
+const NOW = SPACE_NOW;
 
 const LABELS: Record<string, string> = { [HOME]: "home", [SQUARE]: "town square" };
 const PHRASES: Record<string, string> = { [HOME]: "at home", [SQUARE]: "at the town square" };
 const zoneLabelOf = (zoneId: string): string => LABELS[zoneId] ?? zoneId;
 const zonePrivacyOf = (): string => "public";
 const zonePhraseOf = (zoneId: string): string => PHRASES[zoneId] ?? "elsewhere";
-
-function atLocus(actorId: string, zoneId: string): PhysicalLocus {
-  return physicalLocusSchema.parse({ kind: "at", actorId, locationId: "loc-town", zoneId, since: NOW });
-}
-
-function transitLocus(actorId: string, journeyId: string, earliestExitAt: number): PhysicalLocus {
-  return physicalLocusSchema.parse({
-    kind: "in_transit",
-    actorId,
-    journeyId,
-    linkId: "link-home-square",
-    enteredAt: NOW,
-    earliestExitAt,
-  });
-}
-
-function journeyTo(id: string, destinationZoneId: string, earliestArrivalAt: number): Journey {
-  return journeySchema.parse({
-    id,
-    actorIds: [PLAYER],
-    originZoneId: HOME,
-    destinationZoneId,
-    routeLinkIds: ["link-home-square"],
-    travelMode: "walk",
-    earliestArrivalAt,
-    expectedArrivalAt: earliestArrivalAt,
-    status: "active",
-    currentLinkIndex: 0,
-    routeDerivationVersion: "gate3-route-v1",
-  });
-}
 
 function walkLink(from: string, to: string, seconds = 300): SimulationLink {
   return linkSchema.parse({
@@ -97,9 +69,9 @@ describe("buildWorldPlaceOrTransit", () => {
   });
 
   it("reports transit with destination label + floored ETA from the journey", () => {
-    const journey = journeyTo("j1", SQUARE, NOW + 300);
+    const journey = journeyTo("j1", { destinationZoneId: SQUARE, earliestArrivalAt: NOW + 300 });
     const { place, transit } = buildWorldPlaceOrTransit({
-      playerLocus: transitLocus(PLAYER, "j1", NOW + 300),
+      playerLocus: transitLocus(PLAYER, "j1", { earliestExitAt: NOW + 300 }),
       journeys: [journey],
       zoneLabelOf,
       zonePrivacyOf,
@@ -111,7 +83,7 @@ describe("buildWorldPlaceOrTransit", () => {
 
   it("floors a past ETA at 0 and falls back to the locus exit when the journey is missing", () => {
     const { transit } = buildWorldPlaceOrTransit({
-      playerLocus: transitLocus(PLAYER, "gone", NOW + 100),
+      playerLocus: transitLocus(PLAYER, "gone", { earliestExitAt: NOW + 100 }),
       journeys: [],
       zoneLabelOf,
       zonePrivacyOf,
@@ -144,7 +116,9 @@ describe("buildWorldDestinations", () => {
   });
 
   it("is empty while the player is in transit", () => {
-    expect(buildWorldDestinations({ playerLocus: transitLocus(PLAYER, "j1", NOW + 300), links, zoneLabelOf })).toEqual([]);
+    expect(
+      buildWorldDestinations({ playerLocus: transitLocus(PLAYER, "j1", { earliestExitAt: NOW + 300 }), links, zoneLabelOf }),
+    ).toEqual([]);
   });
 
   it("excludes closed links and non-walkable links", () => {

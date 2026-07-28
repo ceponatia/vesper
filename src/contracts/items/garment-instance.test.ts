@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseOr } from "@/lib/parse";
+import { expectDiagnostic } from "@/test/diagnostics";
 import { DiagnosticCollector } from "../diagnostics";
 import { GARMENT_UNIT_ONE } from "./garment-material";
 import {
@@ -140,7 +141,7 @@ describe("chat garment store", () => {
     const sink = new DiagnosticCollector();
     const store = parseOr(chatGarmentStoreSchema, "{ broken", emptyChatGarmentStore(), sink, "chat.garments");
     expect(store).toEqual(emptyChatGarmentStore());
-    expect(sink.items.map((d) => d.code)).toContain("parse.boundary_failed");
+    expectDiagnostic(sink, "parse.boundary_failed");
   });
 
   it("keeps `seeded` so an empty store distinguishes not-migrated from wearing-nothing", () => {

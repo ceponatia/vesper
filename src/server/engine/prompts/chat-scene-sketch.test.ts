@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { expectFenced } from "@/server/test-support";
 import { buildChatSceneSketchPrompt, CHAT_SCENE_SKETCH_SYSTEM } from "./chat-scene-sketch";
 
 describe("CHAT_SCENE_SKETCH_SYSTEM", () => {
@@ -27,8 +28,9 @@ describe("buildChatSceneSketchPrompt", () => {
     expect(prompt).toContain("- blue-tiled counter");
     expect(prompt).toContain("- living room through the doorway");
     // Authored premise and prior narration are untrusted — both ride inside fences.
-    expect(prompt).toContain("vsp-untrusted-7f3a9c2e:scenario");
-    expect(prompt).toContain("vsp-untrusted-7f3a9c2e:recent narration");
+    // Matched by SHAPE, so rotating the fence nonce (a security action) is not a test break.
+    expectFenced(prompt, "scenario");
+    expectFenced(prompt, "recent narration");
     expect(prompt).toContain("flicking on the small lamp");
   });
 

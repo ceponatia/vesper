@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { parseOr, parseOrNull } from "./parse";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { expectCleanSink, expectDiagnostics } from "@/test/diagnostics";
 
 const shape = z.object({ name: z.string(), count: z.number().default(0) });
 const fallback = { name: "fallback", count: -1 };
@@ -30,13 +31,13 @@ describe("parseOr", () => {
   it("returns the fallback on schema mismatch, with a diagnostic", () => {
     const sink = new DiagnosticCollector();
     expect(parseOr(shape, { name: 42 }, fallback, sink)).toEqual(fallback);
-    expect(sink.items.map((d) => d.code)).toEqual(["parse.boundary_failed"]);
+    expectDiagnostics(sink, ["parse.boundary_failed"]);
   });
 
   it("does not record diagnostics on success", () => {
     const sink = new DiagnosticCollector();
     parseOr(shape, '{"name":"ok"}', fallback, sink);
-    expect(sink.items).toEqual([]);
+    expectCleanSink(sink);
   });
 
   it("lets a brace-shaped string through to a string schema when JSON.parse fails", () => {
@@ -48,7 +49,9 @@ describe("parseOr", () => {
     expect(parseOr(shape, undefined, fallback, sink)).toEqual(fallback);
     expect(parseOr(shape, null, fallback, sink)).toEqual(fallback);
     expect(parseOr(shape, Symbol("boom"), fallback, sink)).toEqual(fallback);
-    expect(sink.items.every((d) => d.code === "parse.boundary_failed")).toBe(true);
+    // One record per hostile input — exact, where `.every` also passed on an
+    // empty sink.
+    expectDiagnostics(sink, ["parse.boundary_failed", "parse.boundary_failed", "parse.boundary_failed"]);
   });
 });
 

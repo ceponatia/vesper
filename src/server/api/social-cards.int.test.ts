@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { cloneToLibrary, findViewable, searchLibraryIds } from "@/server/api";
-import { db, socialCards, users } from "@/server/db";
-import { probeIntegrationDb } from "@/server/test-support";
+import { db, socialCards } from "@/server/db";
+import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
 
 // Integration suite for the social-card library reuse slice
 // (social-reaction-cards.plan.md step 6): the discovery `scope` query
@@ -13,34 +13,22 @@ import { probeIntegrationDb } from "@/server/test-support";
 
 const ready = await probeIntegrationDb("social-cards.int.test", "social_cards");
 
-let ownerA: string;
-let ownerB: string;
+let ownerA = "";
+let ownerB = "";
 let privateId: string;
 let publicId: string;
 
 const definition = { kind: "taboo" as const, triggers: ["proposition"], severity: 80, reactionOverrides: [] };
 
 afterAll(async () => {
-  if (ready) {
-    for (const owner of [ownerA, ownerB]) {
-      if (owner) {
-        await db().delete(socialCards).where(eq(socialCards.ownerId, owner));
-        await db().delete(users).where(eq(users.id, owner));
-      }
-    }
-  }
-  await globalThis.__vesperPool?.end();
-  globalThis.__vesperPool = undefined;
+  if (ready) await purgeOwnerRows([ownerA, ownerB]);
+  await endTestPool();
 });
 
 describe.skipIf(!ready)("social-card library reuse", () => {
   beforeAll(async () => {
-    const stamp = Date.now();
-    const [a] = await db().insert(users).values({ email: `sc-a-${stamp}@test.local`, name: "SC A" }).returning({ id: users.id });
-    const [b] = await db().insert(users).values({ email: `sc-b-${stamp}@test.local`, name: "SC B" }).returning({ id: users.id });
-    if (!a || !b) throw new Error("user insert failed");
-    ownerA = a.id;
-    ownerB = b.id;
+    ownerA = (await seedTestUser("sc-a")).id;
+    ownerB = (await seedTestUser("sc-b")).id;
 
     const [priv] = await db()
       .insert(socialCards)

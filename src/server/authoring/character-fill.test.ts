@@ -1,23 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { AttributeValue } from "@/contracts";
+import { draftWith, manualAttr, noCandidates, noLibrary } from "@/server/test-support";
 import { adoptInferredSpecies, fillSectionsToRun, forgeCharacterFill, renderSheetConcept } from "./character-fill";
 import { emptyCharacterDraft, characterDraftSchema, type CharacterDraft } from "./drafts";
-import type { ClothingCandidateLookup, LibraryLookup } from "./library";
-
-const noLibrary: LibraryLookup = async () => [];
-const noCandidates: ClothingCandidateLookup = async () => [];
-
-const manualAttr = (id: string, value: AttributeValue["value"]): AttributeValue => ({
-  id: id as AttributeValue["id"],
-  value,
-  source: "manual",
-});
-
-function draftWith(mutate: (draft: CharacterDraft) => void): CharacterDraft {
-  const draft = emptyCharacterDraft();
-  mutate(draft);
-  return draft;
-}
 
 describe("renderSheetConcept", () => {
   it("degrades an empty sheet to an invent-freely concept without the fixed directive", () => {

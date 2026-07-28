@@ -1,9 +1,8 @@
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { degradedChatArchivist, type ChatArchivist } from "@/contracts/turns/chat-archivist";
+import type { ChatArchivist } from "@/contracts/turns/chat-archivist";
 import { switchScenePlace } from "@/contracts/turns/chat-scene-memory";
-import { characterProfileSchema, type CharacterProfile } from "@/contracts/world/profile";
 import {
   applyGarmentTransfers,
   garmentActorForCharacter,
@@ -23,9 +22,8 @@ import {
   type GarmentOperation,
 } from "@/contracts/items/garment-instance";
 import { exposedRegions } from "@/contracts/items/visibility";
-import { newId } from "@/lib/ids";
 import { toWornInputs } from "@/server/images";
-import { characterChatMessages, characterChats, characters, chatParticipants, db, items, users } from "@/server/db";
+import { characterChats, db } from "@/server/db";
 
 /**
  * The chat garment store's persistence (clothing-state-graph.plan.md slice 2;
@@ -38,133 +36,95 @@ import { characterChatMessages, characterChats, characters, chatParticipants, db
  * the empty store without costing the turn.
  */
 
-process.env.AI_FAKE = "1";
-
 const mock = vi.hoisted(() => ({ archivist: { value: null as ChatArchivist | null, degraded: false } }));
 
-vi.mock("./chat-memory", () => ({
-  runChatExtraction: () =>
-    Promise.resolve({ ...mock.archivist, legs: { memory: false, continuity: false, character: false } }),
-  writeChatMemory: () => Promise.resolve(),
-}));
+vi.mock("./chat-memory", async () => {
+  const { chatMemoryMockModule } = await import("../test-support/chat-archivist-mock");
+  return chatMemoryMockModule(mock);
+});
 
 import {
   editChatState,
-  finalizeChatState,
   loadChatScenario,
   loadChatState,
   loadPreExchangeScenario,
   rollbackScenario,
   saveChatScenario,
   seedChatScenario,
-  seedChatState,
   type ChatScenario,
 } from "./chat-state";
 import { garmentReadoutsFor } from "./chat-garments";
 import { loadGarmentWardrobeItems, resolveChatWardrobe } from "./chat-wardrobe";
+import {
+  dropChatFixture,
+  emptyChatFixture,
+  GARMENT_SEEDS,
+  itemId,
+  newChat,
+  probeIntegrationDb,
+  seedChatFixture,
+  settleChatExchange,
+  withOutfit,
+  type ChatFixture,
+} from "@/server/test-support";
 
-async function probe(): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      db().execute(sql`select 1 from character_chats limit 1`),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("connect timeout")), 4000);
-      }),
-    ]);
-    return true;
-  } catch (err) {
-    process.stderr.write(
-      `[chat-garments.int.test] skipping: database unreachable: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const ready = await probeIntegrationDb("chat-garments.int.test", "character_chats");
 
-const ready = await probe();
-const fixture = { userId: "", characterId: "", jacketId: "", teeId: "", cardiganId: "" };
-let profile: CharacterProfile = characterProfileSchema.parse({});
+let fixture: ChatFixture = emptyChatFixture();
+
+/** The library definition ids the store's instances point back at. */
+const jacketDef = () => itemId(fixture, "denimJacket");
+const teeDef = () => itemId(fixture, "whiteCottonTee");
+const cardiganDef = () => itemId(fixture, "greyWoolCardigan");
 
 beforeAll(async () => {
   if (!ready) return;
-  const stamp = Date.now();
-  const [user] = await db()
-    .insert(users)
-    .values({ email: `chat-garments-int-${stamp}@test.local`, name: "Garments Int", role: "admin" })
-    .returning();
-  if (!user) throw new Error("failed to create test user");
-  fixture.userId = user.id;
-
-  const insertItem = async (name: string, definition: Record<string, unknown>) => {
-    const [row] = await db()
-      .insert(items)
-      .values({ ownerId: user.id, kind: "clothing", name, description: name, definition })
-      .returning({ id: items.id });
-    if (!row) throw new Error("failed to create item");
-    return row.id;
-  };
-  fixture.jacketId = await insertItem("denim jacket", {
-    category: "outerwear",
-    coverage: ["shoulders", "chest", "back", "waist", "upper_arms", "forearms", "wrists"],
-    layer: 3,
-  });
-  fixture.teeId = await insertItem("white cotton tee", {
-    category: "top",
-    coverage: ["shoulders", "chest", "back", "waist", "upper_arms"],
-    layer: 1,
-  });
-  fixture.cardiganId = await insertItem("grey wool cardigan", {
-    category: "outerwear",
-    coverage: ["shoulders", "chest", "back", "waist", "upper_arms"],
-    layer: 2,
-  });
-
-  profile = characterProfileSchema.parse({
+  fixture = await seedChatFixture({
+    slug: "chat-garments-int",
+    userName: "Garments Int",
+    garments: [GARMENT_SEEDS.denimJacket, GARMENT_SEEDS.whiteCottonTee, GARMENT_SEEDS.greyWoolCardigan],
     outfits: [
-      { id: "everyday", name: "Everyday", items: [fixture.jacketId, fixture.teeId] },
-      { id: "cozy", name: "Cozy", items: [fixture.cardiganId] },
+      { id: "everyday", name: "Everyday", items: ["denimJacket", "whiteCottonTee"] },
+      { id: "cozy", name: "Cozy", items: ["greyWoolCardigan"] },
     ],
   });
-  const [character] = await db().insert(characters).values({ ownerId: user.id, name: "Wren", profile }).returning();
-  if (!character) throw new Error("failed to create test character");
-  fixture.characterId = character.id;
 });
 
 afterAll(async () => {
-  if (!ready) return;
-  await db().delete(characterChats).where(eq(characterChats.ownerId, fixture.userId));
-  await db().delete(characters).where(eq(characters.ownerId, fixture.userId));
-  await db().delete(items).where(eq(items.ownerId, fixture.userId));
-  await db().delete(users).where(eq(users.id, fixture.userId));
-  await globalThis.__vesperPool?.end();
+  await dropChatFixture(fixture);
 });
-
-/** A fresh conversation with one participant and one prompting message. */
-async function newChat(): Promise<{ chatId: string; memoryGroupId: string; messageId: string }> {
-  const [chat] = await db().insert(characterChats).values({ ownerId: fixture.userId }).returning({ id: characterChats.id });
-  if (!chat) throw new Error("failed to create test chat");
-  const memoryGroupId = newId();
-  await db().insert(chatParticipants).values({ chatId: chat.id, characterId: fixture.characterId, memoryGroupId });
-  const [message] = await db()
-    .insert(characterChatMessages)
-    .values({ chatId: chat.id, role: "user", content: "Hi" })
-    .returning();
-  if (!message) throw new Error("failed to create test message");
-  return { chatId: chat.id, memoryGroupId, messageId: message.id };
-}
 
 const ACTOR = () => garmentActorForCharacter(fixture.characterId);
 
 async function edit(chatId: string, patch: Parameters<typeof editChatState>[0]["patch"]) {
-  return editChatState({ chatId, characterId: fixture.characterId, ownerId: fixture.userId, profile, patch });
+  return editChatState({
+    chatId,
+    characterId: fixture.characterId,
+    ownerId: fixture.userId,
+    profile: fixture.profile,
+    patch,
+  });
 }
 
-describe("materialization on the write path (audit ruling P.2)", () => {
-  it("grows instances from the existing worn ids and projects the same ids back", async (t) => {
-    if (!ready) return t.skip();
-    const { chatId } = await newChat();
+/** Materialize the default outfit and hand back the jacket instance id. */
+async function dressed(): Promise<{ chatId: string; jacket: string }> {
+  const { chatId } = await newChat(fixture);
+  await edit(chatId, { mindNote: "start" });
+  const scenario = await loadChatScenario(chatId);
+  if (!scenario) throw new Error("no scenario");
+  const jacket = scenario.garments.instances.find((i) => i.definitionId === jacketDef())?.id ?? "";
+  return { chatId, jacket };
+}
+
+/** One exchange whose continuity leg re-dresses her, over the given anchor scenario. */
+async function redress(chat: Awaited<ReturnType<typeof newChat>>, scenario: ChatScenario) {
+  mock.archivist = { value: withOutfit({ added: ["a wool cardigan"] }), degraded: false };
+  return settleChatExchange(fixture, { chat, scenario, wornItemIds: [teeDef()] });
+}
+
+describe.runIf(ready)("materialization on the write path (audit ruling P.2)", () => {
+  it("grows instances from the existing worn ids and projects the same ids back", async () => {
+    const { chatId } = await newChat(fixture);
     // Before any write the store is untouched — a READ never materializes.
     const seeded = await loadChatScenario(chatId);
     expect(seeded?.garments.seeded).toBe(false);
@@ -176,11 +136,8 @@ describe("materialization on the write path (audit ruling P.2)", () => {
     expect(scenario?.garments.seeded).toBe(true);
     expect(scenario?.garments.instances).toHaveLength(2);
     // Behaviour is identical before and after: the projection IS the old list.
-    expect(state.wornItemIds).toEqual([fixture.jacketId, fixture.teeId]);
-    expect(scenario && wornGarmentDefinitionIds(scenario.garments, ACTOR())).toEqual([
-      fixture.jacketId,
-      fixture.teeId,
-    ]);
+    expect(state.wornItemIds).toEqual([jacketDef(), teeDef()]);
+    expect(scenario && wornGarmentDefinitionIds(scenario.garments, ACTOR())).toEqual([jacketDef(), teeDef()]);
     // Two different constructions ⇒ two snapshots; both real, neither a pointer.
     expect(Object.keys(scenario?.garments.blueprints ?? {})).toHaveLength(2);
     for (const instance of scenario?.garments.instances ?? []) {
@@ -188,43 +145,41 @@ describe("materialization on the write path (audit ruling P.2)", () => {
     }
   });
 
-  it("an equip removal is a locus change, not destruction — and re-equipping reuses the instance", async (t) => {
-    if (!ready) return t.skip();
-    const { chatId } = await newChat();
+  it("an equip removal is a locus change, not destruction — and re-equipping reuses the instance", async () => {
+    const { chatId } = await newChat(fixture);
     await edit(chatId, { mindNote: "start" });
     const before = await loadChatScenario(chatId);
-    const jacketInstanceId = before?.garments.instances.find((i) => i.definitionId === fixture.jacketId)?.id;
+    const jacketInstanceId = before?.garments.instances.find((i) => i.definitionId === jacketDef())?.id;
     expect(jacketInstanceId).toBeDefined();
 
     // The equip editor takes the jacket off.
-    const { state: doffed } = await edit(chatId, { wornItemIds: [fixture.teeId] });
-    expect(doffed.wornItemIds).toEqual([fixture.teeId]);
+    const { state: doffed } = await edit(chatId, { wornItemIds: [teeDef()] });
+    expect(doffed.wornItemIds).toEqual([teeDef()]);
     const after = await loadChatScenario(chatId);
     const jacket = after?.garments.instances.find((i) => i.id === jacketInstanceId);
     expect(jacket?.locus).toEqual({ kind: "wardrobe", ownerId: ACTOR() });
 
     // Putting it back on is a transfer of the SAME instance, not a fresh mint.
-    const { state: redressed } = await edit(chatId, { wornItemIds: [fixture.teeId, fixture.jacketId] });
-    expect(redressed.wornItemIds).toEqual([fixture.teeId, fixture.jacketId]);
+    const { state: redressed } = await edit(chatId, { wornItemIds: [teeDef(), jacketDef()] });
+    expect(redressed.wornItemIds).toEqual([teeDef(), jacketDef()]);
     const back = await loadChatScenario(chatId);
     expect(back?.garments.instances).toHaveLength(2);
-    expect(back?.garments.instances.find((i) => i.definitionId === fixture.jacketId)?.id).toBe(jacketInstanceId);
+    expect(back?.garments.instances.find((i) => i.definitionId === jacketDef())?.id).toBe(jacketInstanceId);
   });
 
-  it("an outfit preset compiles to transfers: kept, minted, wardrobed", async (t) => {
-    if (!ready) return t.skip();
-    const { chatId } = await newChat();
+  it("an outfit preset compiles to transfers: kept, minted, wardrobed", async () => {
+    const { chatId } = await newChat(fixture);
     await edit(chatId, { mindNote: "start" });
     const before = await loadChatScenario(chatId);
-    const teeInstanceId = before?.garments.instances.find((i) => i.definitionId === fixture.teeId)?.id;
+    const teeInstanceId = before?.garments.instances.find((i) => i.definitionId === teeDef())?.id;
 
     // Switch to a preset that keeps the tee, drops the jacket, adds the cardigan.
-    await edit(chatId, { wornItemIds: [fixture.teeId, fixture.cardiganId], outfitPresetId: "cozy" });
+    await edit(chatId, { wornItemIds: [teeDef(), cardiganDef()], outfitPresetId: "cozy" });
     const after = await loadChatScenario(chatId);
-    expect(after && wornGarmentDefinitionIds(after.garments, ACTOR())).toEqual([fixture.teeId, fixture.cardiganId]);
+    expect(after && wornGarmentDefinitionIds(after.garments, ACTOR())).toEqual([teeDef(), cardiganDef()]);
     // The tee is the same instance — a preset change is not a free-text replacement.
-    expect(after?.garments.instances.find((i) => i.definitionId === fixture.teeId)?.id).toBe(teeInstanceId);
-    expect(after?.garments.instances.find((i) => i.definitionId === fixture.jacketId)?.locus).toEqual({
+    expect(after?.garments.instances.find((i) => i.definitionId === teeDef())?.id).toBe(teeInstanceId);
+    expect(after?.garments.instances.find((i) => i.definitionId === jacketDef())?.locus).toEqual({
       kind: "wardrobe",
       ownerId: ACTOR(),
     });
@@ -232,16 +187,15 @@ describe("materialization on the write path (audit ruling P.2)", () => {
   });
 });
 
-describe("F13 — a retake restores the store exactly", () => {
-  it("rolls the whole store back: instances, loci, blueprint map", async (t) => {
-    if (!ready) return t.skip();
-    const chat = await newChat();
+describe.runIf(ready)("F13 — a retake restores the store exactly", () => {
+  it("rolls the whole store back: instances, loci, blueprint map", async () => {
+    const chat = await newChat(fixture);
     // Materialize, then move a garment somewhere only the store can express.
     await edit(chat.chatId, { mindNote: "start" });
     const materialized = await loadChatScenario(chat.chatId);
     expect(materialized).not.toBeNull();
     if (!materialized) return;
-    const jacketId = materialized.garments.instances.find((i) => i.definitionId === fixture.jacketId)?.id ?? "";
+    const jacketId = materialized.garments.instances.find((i) => i.definitionId === jacketDef())?.id ?? "";
     const anchorScenario: ChatScenario = {
       ...materialized,
       garments: applyGarmentTransfers(
@@ -254,40 +208,17 @@ describe("F13 — a retake restores the store exactly", () => {
     const anchorJson = JSON.stringify(anchorScenario.garments);
 
     // One exchange whose continuity leg re-dresses her.
-    mock.archivist = {
-      value: { ...degradedChatArchivist(), outfit: { description: "", exposed: false, removed: [], added: ["a wool cardigan"] } },
-      degraded: false,
-    };
-    const preState = { ...seedChatState(profile), wornItemIds: [fixture.teeId] };
-    await finalizeChatState({
-      assistantMessageId: newId(),
-      preExchangeState: preState,
-      chatId: chat.chatId,
-      characterId: fixture.characterId,
-      ownerId: fixture.userId,
-      memoryGroupId: chat.memoryGroupId,
-      promptMessageId: chat.messageId,
-      profile,
-      characterName: "Wren",
-      playerName: "You",
-      driftedState: preState,
-      now: new Date(),
-      exchange: { player: "Hi", assistant: "Hello." },
-      scenario: anchorScenario,
-      preExchangeScenario: anchorScenario,
-      sink: new DiagnosticCollector(),
-    });
+    const { scenario: live } = await redress(chat, anchorScenario);
 
     // The live store moved…
-    const live = await loadChatScenario(chat.chatId);
     expect(JSON.stringify(live?.garments)).not.toBe(anchorJson);
-    expect(live && wornGarmentDefinitionIds(live.garments, ACTOR())).toEqual([fixture.teeId, fixture.cardiganId]);
+    expect(live && wornGarmentDefinitionIds(live.garments, ACTOR())).toEqual([teeDef(), cardiganDef()]);
 
     // …and "another take" restores it byte-for-byte, with no new machinery: the
     // store rides `pre_exchange_scenario` like every other scenario field.
     const anchor = await loadPreExchangeScenario(chat.chatId);
     expect(anchor).not.toBeNull();
-    if (!anchor) return;
+    if (!anchor || !live) return;
     const rolledBack = rollbackScenario(anchor, live);
     expect(JSON.stringify(rolledBack.garments)).toBe(anchorJson);
     // Including the jacket still lying over the desk chair.
@@ -295,15 +226,14 @@ describe("F13 — a retake restores the store exactly", () => {
   });
 });
 
-describe("R3 — a garment left at a place stays there across scene moves", () => {
-  it("is still on the chair when the party comes back", async (t) => {
-    if (!ready) return t.skip();
-    const { chatId } = await newChat();
+describe.runIf(ready)("R3 — a garment left at a place stays there across scene moves", () => {
+  it("is still on the chair when the party comes back", async () => {
+    const { chatId } = await newChat(fixture);
     await edit(chatId, { mindNote: "start" });
     const start = await loadChatScenario(chatId);
     expect(start).not.toBeNull();
     if (!start) return;
-    const jacketId = start.garments.instances.find((i) => i.definitionId === fixture.jacketId)?.id ?? "";
+    const jacketId = start.garments.instances.find((i) => i.definitionId === jacketDef())?.id ?? "";
 
     // In the study, she takes the jacket off and drops it over the chair.
     const inStudy: ChatScenario = {
@@ -318,7 +248,7 @@ describe("R3 — a garment left at a place stays there across scene moves", () =
     await saveChatScenario(chatId, inStudy);
     // It leaves the worn projection immediately — no coverage, still located.
     const afterDrop = await loadChatScenario(chatId);
-    expect(afterDrop && wornGarmentDefinitionIds(afterDrop.garments, ACTOR())).toEqual([fixture.teeId]);
+    expect(afterDrop && wornGarmentDefinitionIds(afterDrop.garments, ACTOR())).toEqual([teeDef()]);
 
     // The scene moves on — twice — and the garment does not follow.
     let moved = afterDrop;
@@ -340,14 +270,13 @@ describe("R3 — a garment left at a place stays there across scene moves", () =
     expect(found.map((i) => i.id)).toEqual([jacketId]);
     expect(found[0]?.locus).toEqual({ kind: "scene", placeName: "the study", anchor: "over the desk chair" });
     // …and it is still absent from the worn projection, so it contributes nothing.
-    expect(returned && wornGarmentDefinitionIds(returned.garments, ACTOR())).toEqual([fixture.teeId]);
+    expect(returned && wornGarmentDefinitionIds(returned.garments, ACTOR())).toEqual([teeDef()]);
   });
 });
 
-describe("F17 — a corrupt store jsonb degrades without costing the turn", () => {
-  it("parses to the empty store with a diagnostic, and the next write re-materializes", async (t) => {
-    if (!ready) return t.skip();
-    const { chatId } = await newChat();
+describe.runIf(ready)("F17 — a corrupt store jsonb degrades without costing the turn", () => {
+  it("parses to the empty store with a diagnostic, and the next write re-materializes", async () => {
+    const { chatId } = await newChat(fixture);
     await edit(chatId, { mindNote: "start" });
     await db().execute(sql`update ${characterChats} set garments = '"not a store"'::jsonb where id = ${chatId}`);
 
@@ -361,22 +290,18 @@ describe("F17 — a corrupt store jsonb degrades without costing the turn", () =
     // The read seam still has the projection column to fall back on, so the
     // wardrobe is unchanged and the next write rebuilds the store.
     const stored = await loadChatState(chatId, fixture.characterId);
-    expect(stored?.wornItemIds).toEqual([fixture.jacketId, fixture.teeId]);
+    expect(stored?.wornItemIds).toEqual([jacketDef(), teeDef()]);
     const { state } = await edit(chatId, { mindNote: "recovered" });
-    expect(state.wornItemIds).toEqual([fixture.jacketId, fixture.teeId]);
+    expect(state.wornItemIds).toEqual([jacketDef(), teeDef()]);
     const healed = await loadChatScenario(chatId);
     expect(healed?.garments.seeded).toBe(true);
-    expect(healed && wornGarmentDefinitionIds(healed.garments, ACTOR())).toEqual([
-      fixture.jacketId,
-      fixture.teeId,
-    ]);
+    expect(healed && wornGarmentDefinitionIds(healed.garments, ACTOR())).toEqual([jacketDef(), teeDef()]);
   });
 });
 
-describe("the scenario seed", () => {
-  it("starts a brand-new conversation with an empty, unseeded store", (t) => {
-    if (!ready) return t.skip();
-    const scenario = seedChatScenario(profile);
+describe.runIf(ready)("the scenario seed", () => {
+  it("starts a brand-new conversation with an empty, unseeded store", () => {
+    const scenario = seedChatScenario(fixture.profile);
     expect(scenario.garments).toEqual(emptyChatGarmentStore());
     expect(scenario.garments.seeded).toBe(false);
     expect(scenario.garments.instances).toEqual([]);
@@ -394,17 +319,7 @@ describe("the scenario seed", () => {
  * exactly, and that the narrator phrase and the exposure gate come out of one
  * shared read of that same state.
  */
-describe("slice 3 — presentation operations through the state route's write path", () => {
-  /** Materialize the default outfit and hand back the jacket instance id. */
-  async function dressed(): Promise<{ chatId: string; jacket: string }> {
-    const { chatId } = await newChat();
-    await edit(chatId, { mindNote: "start" });
-    const scenario = await loadChatScenario(chatId);
-    if (!scenario) throw new Error("no scenario");
-    const jacket = scenario.garments.instances.find((i) => i.definitionId === fixture.jacketId)?.id ?? "";
-    return { chatId, jacket };
-  }
-
+describe.runIf(ready)("slice 3 — presentation operations through the state route's write path", () => {
   /** Four of the outerwear template's five fasteners — 0.8, past both closure thresholds. */
   const openPlacket = (jacket: string): GarmentOperation => ({
     kind: "set_closure",
@@ -419,16 +334,15 @@ describe("slice 3 — presentation operations through the state route's write pa
     return resolveChatWardrobe(
       { ...state, garments: scenario.garments, garmentActorId: ACTOR() },
       fixture.userId,
-      profile,
+      fixture.profile,
     );
   }
 
-  it("applies + persists a closure, leaves the worn projection alone, and reads back as controls", async (t) => {
-    if (!ready) return t.skip();
+  it("applies + persists a closure, leaves the worn projection alone, and reads back as controls", async () => {
     const { chatId, jacket } = await dressed();
     const { state } = await edit(chatId, { garmentOperations: [openPlacket(jacket)] });
     // An arrangement change is not a wardrobe change — the projection is unmoved.
-    expect(state.wornItemIds).toEqual([fixture.jacketId, fixture.teeId]);
+    expect(state.wornItemIds).toEqual([jacketDef(), teeDef()]);
 
     const stored = await loadChatScenario(chatId);
     const instance = stored?.garments.instances.find((i) => i.id === jacket);
@@ -446,15 +360,14 @@ describe("slice 3 — presentation operations through the state route's write pa
     expect(placket?.dropped).toEqual(expect.arrayContaining(["chest", "waist"]));
   });
 
-  it("drops an illegal operation with its stable code and persists nothing", async (t) => {
-    if (!ready) return t.skip();
+  it("drops an illegal operation with its stable code and persists nothing", async () => {
     const { chatId, jacket } = await dressed();
     const sink = new DiagnosticCollector();
     await editChatState({
       chatId,
       characterId: fixture.characterId,
       ownerId: fixture.userId,
-      profile,
+      profile: fixture.profile,
       // A front panel is a closure, not a sleeve — a hallucinated handle, dropped.
       patch: { garmentOperations: [{ kind: "set_roll", garmentId: jacket, partId: "front_panel", degree: "substantial" }] },
       sink,
@@ -469,8 +382,7 @@ describe("slice 3 — presentation operations through the state route's write pa
     });
   });
 
-  it("the narrator phrase and the exposure gate agree — one shared read", async (t) => {
-    if (!ready) return t.skip();
+  it("the narrator phrase and the exposure gate agree — one shared read", async () => {
     const { chatId, jacket } = await dressed();
     const closed = await loadChatScenario(chatId);
     if (!closed) throw new Error("no scenario");
@@ -493,18 +405,17 @@ describe("slice 3 — presentation operations through the state route's write pa
     expect(openedWardrobe.exposure.pelvis).toBe(closedWardrobe.exposure.pelvis);
 
     // The image path consumes the SAME rows: identical coverage, identical exposure.
-    const items = await loadGarmentWardrobeItems(opened.garments, ACTOR(), fixture.userId);
-    expect(exposedRegions(toWornInputs(items))).toEqual(openedWardrobe.exposure);
-    expect(items.find((item) => item.garmentId === jacket)?.coverage).not.toContain("chest");
+    const worn = await loadGarmentWardrobeItems(opened.garments, ACTOR(), fixture.userId);
+    expect(exposedRegions(toWornInputs(worn))).toEqual(openedWardrobe.exposure);
+    expect(worn.find((item) => item.garmentId === jacket)?.coverage).not.toContain("chest");
   });
 
-  it("a retake restores the arrangement exactly", async (t) => {
-    if (!ready) return t.skip();
-    const chat = await newChat();
+  it("a retake restores the arrangement exactly", async () => {
+    const chat = await newChat(fixture);
     await edit(chat.chatId, { mindNote: "start" });
     const materialized = await loadChatScenario(chat.chatId);
     if (!materialized) throw new Error("no scenario");
-    const jacket = materialized.garments.instances.find((i) => i.definitionId === fixture.jacketId)?.id ?? "";
+    const jacket = materialized.garments.instances.find((i) => i.definitionId === jacketDef())?.id ?? "";
     const anchorScenario: ChatScenario = {
       ...materialized,
       garments: applyGarmentOperations(
@@ -526,31 +437,7 @@ describe("slice 3 — presentation operations through the state route's write pa
     expect(anchorPresentation?.roll.sleeve_left).toBeGreaterThan(0);
 
     // One exchange whose continuity leg re-dresses her.
-    mock.archivist = {
-      value: { ...degradedChatArchivist(), outfit: { description: "", exposed: false, removed: [], added: ["a wool cardigan"] } },
-      degraded: false,
-    };
-    const preState = { ...seedChatState(profile), wornItemIds: [fixture.teeId] };
-    await finalizeChatState({
-      assistantMessageId: newId(),
-      preExchangeState: preState,
-      chatId: chat.chatId,
-      characterId: fixture.characterId,
-      ownerId: fixture.userId,
-      memoryGroupId: chat.memoryGroupId,
-      promptMessageId: chat.messageId,
-      profile,
-      characterName: "Wren",
-      playerName: "You",
-      driftedState: preState,
-      now: new Date(),
-      exchange: { player: "Hi", assistant: "Hello." },
-      scenario: anchorScenario,
-      preExchangeScenario: anchorScenario,
-      sink: new DiagnosticCollector(),
-    });
-
-    const live = await loadChatScenario(chat.chatId);
+    const { scenario: live } = await redress(chat, anchorScenario);
     const anchor = await loadPreExchangeScenario(chat.chatId);
     expect(live).not.toBeNull();
     expect(anchor).not.toBeNull();
@@ -579,16 +466,7 @@ describe("slice 3 — presentation operations through the state route's write pa
  * it byte-identically out of the same `pre_exchange_scenario` blob the rest of
  * the store already rides (fixture F13, extended).
  */
-describe("slice 4 — condition operations through the state route's write path", () => {
-  async function dressed(): Promise<{ chatId: string; jacket: string }> {
-    const { chatId } = await newChat();
-    await edit(chatId, { mindNote: "start" });
-    const scenario = await loadChatScenario(chatId);
-    if (!scenario) throw new Error("no scenario");
-    const jacket = scenario.garments.instances.find((i) => i.definitionId === fixture.jacketId)?.id ?? "";
-    return { chatId, jacket };
-  }
-
+describe.runIf(ready)("slice 4 — condition operations through the state route's write path", () => {
   /** Caught in the rain, then mud at the hem — the acceptance pair's setup. */
   const soaking = (jacket: string): GarmentOperation[] => [
     {
@@ -601,12 +479,11 @@ describe("slice 4 — condition operations through the state route's write path"
     { kind: "deposit", garmentId: jacket, partIds: ["hem"], depositKind: "mud", degree: "substantial" },
   ];
 
-  it("persists the whole gradient state and reads it back as bands", async (t) => {
-    if (!ready) return t.skip();
+  it("persists the whole gradient state and reads it back as bands", async () => {
     const { chatId, jacket } = await dressed();
     const { state } = await edit(chatId, { garmentOperations: soaking(jacket) });
     // Getting wet is not a wardrobe change — the projection is unmoved.
-    expect(state.wornItemIds).toEqual([fixture.jacketId, fixture.teeId]);
+    expect(state.wornItemIds).toEqual([jacketDef(), teeDef()]);
 
     const stored = await loadChatScenario(chatId);
     const instance = stored?.garments.instances.find((i) => i.id === jacket);
@@ -626,8 +503,7 @@ describe("slice 4 — condition operations through the state route's write path"
     expect(JSON.stringify(readout)).not.toContain("2500");
   });
 
-  it("a muddy hem survives whole-garment drying and is removed by regional cleaning", async (t) => {
-    if (!ready) return t.skip();
+  it("a muddy hem survives whole-garment drying and is removed by regional cleaning", async () => {
     const { chatId, jacket } = await dressed();
     await edit(chatId, { garmentOperations: soaking(jacket) });
     const wet = await loadChatScenario(chatId);
@@ -660,15 +536,14 @@ describe("slice 4 — condition operations through the state route's write path"
     expect(readout?.deposits).toEqual([]);
   });
 
-  it("drops an illegal condition operation with its stable code and persists nothing", async (t) => {
-    if (!ready) return t.skip();
+  it("drops an illegal condition operation with its stable code and persists nothing", async () => {
     const { chatId, jacket } = await dressed();
     const sink = new DiagnosticCollector();
     await editChatState({
       chatId,
       characterId: fixture.characterId,
       ownerId: fixture.userId,
-      profile,
+      profile: fixture.profile,
       patch: {
         garmentOperations: [
           // A jacket has no "knee", and no mark with that id exists.
@@ -687,13 +562,12 @@ describe("slice 4 — condition operations through the state route's write path"
     );
   });
 
-  it("a retake restores the gradients byte-identically", async (t) => {
-    if (!ready) return t.skip();
-    const chat = await newChat();
+  it("a retake restores the gradients byte-identically", async () => {
+    const chat = await newChat(fixture);
     await edit(chat.chatId, { mindNote: "start" });
     const materialized = await loadChatScenario(chat.chatId);
     if (!materialized) throw new Error("no scenario");
-    const jacket = materialized.garments.instances.find((i) => i.definitionId === fixture.jacketId)?.id ?? "";
+    const jacket = materialized.garments.instances.find((i) => i.definitionId === jacketDef())?.id ?? "";
     const anchorScenario: ChatScenario = {
       ...materialized,
       garments: applyGarmentOperations(
@@ -710,31 +584,7 @@ describe("slice 4 — condition operations through the state route's write path"
     expect(anchorJson).toContain("mud");
     expect(anchorJson).toContain("tear");
 
-    mock.archivist = {
-      value: { ...degradedChatArchivist(), outfit: { description: "", exposed: false, removed: [], added: ["a wool cardigan"] } },
-      degraded: false,
-    };
-    const preState = { ...seedChatState(profile), wornItemIds: [fixture.teeId] };
-    await finalizeChatState({
-      assistantMessageId: newId(),
-      preExchangeState: preState,
-      chatId: chat.chatId,
-      characterId: fixture.characterId,
-      ownerId: fixture.userId,
-      memoryGroupId: chat.memoryGroupId,
-      promptMessageId: chat.messageId,
-      profile,
-      characterName: "Wren",
-      playerName: "You",
-      driftedState: preState,
-      now: new Date(),
-      exchange: { player: "Hi", assistant: "Hello." },
-      scenario: anchorScenario,
-      preExchangeScenario: anchorScenario,
-      sink: new DiagnosticCollector(),
-    });
-
-    const live = await loadChatScenario(chat.chatId);
+    const { scenario: live } = await redress(chat, anchorScenario);
     const anchor = await loadPreExchangeScenario(chat.chatId);
     if (!live || !anchor) throw new Error("no rollback anchor");
     const rolledBack = rollbackScenario(anchor, live);

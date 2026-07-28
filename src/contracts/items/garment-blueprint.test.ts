@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseOr } from "@/lib/parse";
+import { expectCleanSink, expectDiagnostic } from "@/test/diagnostics";
 import { DiagnosticCollector } from "../diagnostics";
 import {
   degradedGarmentBlueprint,
@@ -66,7 +67,7 @@ describe("garment blueprint schema", () => {
     expect(parsed.nodes[0]?.id).toBe(GARMENT_ROOT_PART_ID);
     expect(parsed.nodes[0]?.baselineCoverage).toEqual([]);
     expect(parsed.behaviors).toEqual([]);
-    expect(sink.items.map((d) => d.code)).toContain("parse.boundary_failed");
+    expectDiagnostic(sink, "parse.boundary_failed");
   });
 
   it("parseGarmentBlueprint degrades a structurally-broken graph and names the rule", () => {
@@ -76,14 +77,14 @@ describe("garment blueprint schema", () => {
       sink,
     );
     expect(parsed).toEqual(degradedGarmentBlueprint());
-    expect(sink.items.map((d) => d.code)).toContain("garment_blueprint.root_missing");
+    expectDiagnostic(sink, "garment_blueprint.root_missing");
   });
 
   it("parseGarmentBlueprint passes a valid graph through untouched", () => {
     const sink = new DiagnosticCollector();
     const parsed = parseGarmentBlueprint(JSON.stringify(shirt()), sink);
     expect(garmentBlueprintHash(parsed)).toBe(garmentBlueprintHash(shirt()));
-    expect(sink.items).toHaveLength(0);
+    expectCleanSink(sink);
   });
 });
 
