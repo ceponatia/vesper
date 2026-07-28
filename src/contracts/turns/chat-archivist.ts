@@ -24,6 +24,7 @@ import {
   garmentOperationProposalListSchema,
   garmentOperationTraceSchema,
 } from "./chat-garment-ops";
+import { chatEnvironmentProposalSchema, surfaceWetnessProposalListSchema } from "./chat-surface-ops";
 
 /**
  * The character-chat extraction contract. Historically ONE "archivist-lite" agent call
@@ -110,6 +111,30 @@ export const chatArchivistSchema = z.object({
    * merges as a no-op via `mergeSceneMemory`), so it never fails the turn.
    */
   scene: chatSceneProposalSchema,
+  /**
+   * The scene's WEATHER and enclosure (body-attribute-affordances slice 4) — the
+   * chat lane's authoritative wind/precipitation owner, which the audit found
+   * missing entirely ("may appear in narration … but has no normalized current-cut
+   * force read"). A PARTIAL patch: absent keys mean "unchanged", so an ordinary
+   * indoor exchange returns `{}` and the standing environment stands. Folded by
+   * `applyEnvironmentProposal` onto `ChatScenario.environment` — chat-wide, like
+   * `scene`, and rolled back with it.
+   *
+   * Deliberately separate from `scene`: that field records DURABLE places and
+   * their fixtures, and weather is neither (its own instruction says so).
+   */
+  environment: chatEnvironmentProposalSchema,
+  /**
+   * Body-surface wetness changes (body-attribute-affordances slice 4): how much
+   * wetter or drier a tracked body surface got THIS exchange, and why. The other
+   * half of the input the hair domain had no owner for.
+   *
+   * Semantic, never numeric — a direction plus a coarse degree, mapped onto fixed
+   * point by `SURFACE_WETNESS_DEGREE_DELTA`. Item-lenient, capped, and an unowned
+   * location drops with `chat_surface.location_unknown` rather than minting state
+   * nothing reads. `[]` is the overwhelming common case.
+   */
+  surfaceWetness: surfaceWetnessProposalListSchema,
   /**
    * **Grounded wardrobe operations** (clothing-state-graph.plan.md slice 5) — the
    * field that demotes `outfit` / `playerOutfit` below to a degraded legacy bridge.
@@ -302,6 +327,8 @@ export function degradedChatArchivist(): ChatArchivist {
     attributeChanges: [],
     openLoops: [],
     scene: { places: [] },
+    environment: {},
+    surfaceWetness: [],
     garmentOperations: [],
     outfit: { description: "", exposed: false, removed: [], added: [] },
     playerOutfit: { description: "", removed: [], added: [] },
@@ -338,6 +365,12 @@ export type ChatMemoryScribe = z.infer<typeof chatMemoryScribeSchema>;
 
 export const chatContinuitySchema = chatArchivistSchema.pick({
   scene: true,
+  // Weather and body surfaces are scene-level state (one sky, one soaking), so
+  // they ride the SHARED continuity leg for the same reason `scene` does — never
+  // the per-member personal pass, where several members would each propose a
+  // different sky.
+  environment: true,
+  surfaceWetness: true,
   // The grounded wardrobe lane (clothing-state-graph slice 5) rides the SHARED
   // continuity leg for the same reason `playerOutfit` does: the garment store is
   // chat-wide, and several members proposing operations over one store would

@@ -342,6 +342,8 @@ function describeContinuity(v: ChatContinuity): AgentRunDescription {
   return {
     summary: joinParts([
       v.scene.current ? `scene: ${v.scene.current}` : "",
+      Object.keys(v.environment).length ? "environment" : "",
+      v.surfaceWetness.length ? plural(v.surfaceWetness.length, "surface change") : "",
       v.garmentOperations.length ? plural(v.garmentOperations.length, "garment op") : "",
       outfitChanged(v.outfit) ? "outfit change" : "",
       v.attributeChanges.length ? `${v.attributeChanges.length} appearance` : "",
@@ -350,6 +352,15 @@ function describeContinuity(v: ChatContinuity): AgentRunDescription {
     ]),
     details: compact([
       v.scene.current ? { label: "Scene", items: [v.scene.current] } : null,
+      Object.keys(v.environment).length
+        ? { label: "Environment", items: Object.entries(v.environment).map(([key, value]) => `${key}: ${String(value)}`) }
+        : null,
+      v.surfaceWetness.length
+        ? {
+            label: `Surface (${v.surfaceWetness.length})`,
+            items: v.surfaceWetness.map((w) => `${w.location} ${w.direction} ${w.degree}${w.cause ? ` (${w.cause})` : ""}`),
+          }
+        : null,
       v.garmentOperations.length
         ? {
             label: `Garment operations (${v.garmentOperations.length})`,
@@ -436,6 +447,8 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       schema: chatContinuitySchema,
       fallback: () => ({
         scene: empty.scene,
+        environment: empty.environment,
+        surfaceWetness: empty.surfaceWetness,
         garmentOperations: empty.garmentOperations,
         outfit: empty.outfit,
         playerOutfit: empty.playerOutfit,

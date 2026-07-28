@@ -37,6 +37,7 @@ character-consistency corrective, slice 9);
 axis moved; `milestones` — ≤100 of
 `first_exchange` / `stage_up` / `stage_down` / `familiarity_up` / `strong_reaction` / `player_marked`),
 `callback_history` (the memory-callback anti-repeat ring ≤20 — see [initiative.md](initiative.md) §Memory callbacks),
+`body_surface` (per-body-location surface wetness — see §Scene environment & body surface),
 `feeling` (the persistent feeling + bruise — see §Emotional weather), `selfie_history`
 (the selfie-send ring ≤20 behind the offer cooldown — see [images.md](images.md) §Selfies), `drives` (the
 runtime desires & secrets — see §Drives), and `presence`/`quiet_exchanges`
@@ -50,7 +51,9 @@ house rules from their own cards — then preset-overlaid and author-owned): the
 per-character divergence rides character **tags** flipping the reaction, never
 per-character rule lists), `scene_auto` (`"off" | "milestones"` — text with headroom,
 never a boolean), `scene_model`, `scene_memory` (the accumulating narrator-imagined
-setting — see §Scene memory), `supporting_cast` (recurring named side characters — see
+setting — see §Scene memory), `environment` + `affordance_cues` (the scene's weather and
+what the affordance read has already said about it — see §Scene environment & body
+surface), `supporting_cast` (recurring named side characters — see
 [supporting-cast.md](supporting-cast.md) §Supporting cast), `plans` (tracked commitments
 that come due on the story clock — see §Plans & promises), the time model (`clock_minutes` — **one** story timeline
 for the whole roster, D3/D8; away members skip meter decay, never fork the clock;
@@ -258,6 +261,54 @@ then reconciled by the archivist:
 the transcript/summary/memory; **archive** leaves it intact by design; and "another take"
 (regenerate) rolls it back with the rest of the state via the `pre_exchange_state` snapshot
 (`scene_memory` is in `storedChatStateSchema`), so a regenerated exchange never double-accretes.
+
+
+## Scene environment & body surface
+
+Two authoritative owners the lane simply did not have
+([developer-notes/body-attribute-affordances.plan.md](../developer-notes/body-attribute-affordances.plan.md)
+· [.audit.md](../developer-notes/body-attribute-affordances.audit.md), slice 4, migration
+0091). Both exist so the visual-affordance layer reads *state*, never prose: the law is
+that **narrator prose is never parsed at read time** — the continuity extraction leg
+proposes typed ops and the fold commits them through `parseOr`, exactly as the garment
+lane does.
+
+- **`character_chats.environment`** (`contracts/state/chat-environment.ts`
+  `ChatEnvironment`): the scene's `wind` (`none`/`breeze`/`windy`/`gusting`),
+  `precipitation` (`none`/`drizzle`/`rain`/`downpour`), `indoors`, and the story minute
+  it last CHANGED. Chat-wide like `scene_memory` — one sky for the roster — so it rides
+  `pre_exchange_scenario` and rolls back with everything else. **Indoors/still/dry is the
+  degraded default**, and `indoors` is a hard zero on both `windForceOf` and
+  `precipitationActive`: a downpour seen through a window wets nobody. Weather is
+  deliberately NOT a scene-memory detail (that field records durable places).
+- **`character_chat_state.body_surface`** (`contracts/state/body-surface.ts`
+  `BodySurfaceState`): per-body-location wetness — a fixed-point level, the minute it
+  last changed, and what wet it (`rain`/`immersion`/`splash`/`other`). Per character, so
+  it rides `storedChatStateSchema` and the `pre_exchange_state` anchor. It **dries lazily
+  on the story clock** at a flat rate (saturated → dry in ~3⅓ story hours), the
+  garment-condition precedent: reading integrates forward and never mutates, writes touch
+  only the locations a proposal named, and `updatedAtMinutes` therefore stays a truthful
+  freshness stamp for the cause. An absent entry is dry. **Primary character only** this
+  release — `hair` is the one owned location.
+- **The extraction** (`chatArchivistSchema.environment` / `.surfaceWetness`, both on the
+  shared continuity leg): a partial weather patch (absent key = unchanged) and a list of
+  `{ location, direction, degree 1-3, cause? }`. Semantic, never numeric — the reducer
+  owns the delta table and clamps regardless; an unowned location drops with
+  `chat_surface.location_unknown`.
+- **`character_chats.affordance_cues`** (`AffordanceCueState`): what the affordance read
+  has already offered the narrator, and in which band — the garment `cues` precedent. It
+  sits on the SCENARIO because the read is a pure function of committed state plus this
+  memory (`engine/chat-affordances.ts` `buildChatAffordanceRead`), so restoring both from
+  one anchor is what makes a retake reproduce the identical read rather than resolving
+  against later weather. Written when the read reaches the prompt; until then it rides
+  through untouched.
+
+The adapter itself reports what this lane can honestly answer and refuses the rest:
+arrangement/wetness/coverage/wind are owned, while **contact, body motion and
+contamination are `unavailable`** — so hair-to-skin adhesion is suppressed by the shared
+core before its resolver can read an empty contact list as "nothing is touching", and no
+impulse event is ever synthesized. Unknown coverage (no wardrobe read at all) fails
+closed: the whole hair read goes silent rather than assuming an uncovered head.
 
 
 ## Emotional weather

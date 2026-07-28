@@ -19,6 +19,18 @@ import {
   buildGarmentHandleTable,
   garmentMutationLane,
   type GarmentOperationTraceEntry,
+  affordanceCueStateSchema,
+  emptyAffordanceCueState,
+  applyEnvironmentProposal,
+  applySurfaceWetnessProposals,
+  bodySurfaceStateSchema,
+  chatEnvironmentSchema,
+  emptyBodySurfaceState,
+  emptyChatEnvironment,
+  type AffordanceCueState,
+  type BodySurfaceState,
+  type ChatEnvironment,
+  type ChatSurfaceTraceEntry,
   chatGarmentStoreSchema,
   chatPlayerStateSchema,
   chatPulseTraceSchema,
@@ -208,6 +220,25 @@ export interface ChatScenario {
    * bridge — the equip editor, look key, snapshot and scene queue keep reading ids).
    */
   garments: ChatGarmentStore;
+  /**
+   * The scene's wind / precipitation / enclosure (body-attribute-affordances
+   * slice 4). Chat-wide for the same reason `sceneMemory` is — one imagined
+   * setting for the whole roster — and on the scenario, so it rides
+   * `pre_exchange_scenario`: a retake that discards the beat which opened the
+   * storm discards the storm.
+   */
+  environment: ChatEnvironment;
+  /**
+   * What the affordance read has already offered the narrator, and in which band
+   * (body-attribute-affordances slice 4; the garment `cues` precedent).
+   *
+   * It is on the SCENARIO rather than the state row because that is what makes
+   * "another take" reproduce the identical read: the read is a pure function of
+   * committed state plus this memory, so both must roll back on one anchor.
+   * Slice 5 writes it when the read reaches the prompt; until then it rides
+   * through untouched.
+   */
+  affordanceCues: AffordanceCueState;
   /** Recurring named side characters (chat-supporting-cast.plan.md) — one cast for the roster. */
   supportingCast: SupportingCast;
   /** Tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */
@@ -326,6 +357,14 @@ export interface ChatState {
    * progress/revealed/resolved — the drive prompt law and archivist updates.
    */
   drives: ChatDrive[];
+  /**
+   * Per-body-location surface wetness (body-attribute-affordances slice 4) — the
+   * authoritative input the hair affordance domain had no owner for. Fixed point,
+   * extraction-proposed, drying lazily on the story clock. PER CHARACTER: one head
+   * of hair belongs to one person, so this is a state-row field rather than a
+   * scenario one. Rides `storedChatStateSchema`, so a retake restores it.
+   */
+  bodySurface: BodySurfaceState;
   /**
    * Narrative presence (multi-character-chat.plan.md): "present" shares the
    * player's scene; "away" is offstage — meters freeze, no memory legs, only
@@ -531,6 +570,7 @@ export function seedChatState(profile: CharacterProfile): ChatState {
     feeling: emptyChatFeelingState(),
     selfieHistory: [],
     drives: seedChatDrives(profile.drives ?? []),
+    bodySurface: emptyBodySurfaceState(),
     presence: "present",
     quietExchanges: 0,
   };
@@ -554,6 +594,10 @@ export function seedChatScenario(profile: CharacterProfile, premise?: string): C
     // Unseeded: the store materializes from the worn lists on the first state
     // WRITE, never on a read (audit ruling P.2).
     garments: emptyChatGarmentStore(),
+    // Indoors, still, dry — the conservative default (contracts/state/chat-environment.ts):
+    // a conversation that has never mentioned weather has none.
+    environment: emptyChatEnvironment(),
+    affordanceCues: emptyAffordanceCueState(),
     supportingCast: emptySupportingCast(),
     plans: emptyChatPlans(),
     clockMinutes: 0,
@@ -574,6 +618,8 @@ const chatScenarioSchema = z.object({
   sceneMemory: chatSceneMemorySchema.catch(emptyChatSceneMemory()).default(emptyChatSceneMemory()),
   playerState: chatPlayerStateSchema.catch(emptyChatPlayerState()).default(emptyChatPlayerState()),
   garments: chatGarmentStoreSchema.catch(emptyChatGarmentStore()).default(emptyChatGarmentStore()),
+  environment: chatEnvironmentSchema.catch(emptyChatEnvironment()).default(emptyChatEnvironment()),
+  affordanceCues: affordanceCueStateSchema.catch(emptyAffordanceCueState()).default(emptyAffordanceCueState()),
   supportingCast: supportingCastSchema.catch([]).default([]),
   plans: chatPlansSchema.catch([]).default([]),
   clockMinutes: z.number().catch(0).default(0),
@@ -595,6 +641,8 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
       sceneMemory: characterChats.sceneMemory,
       playerState: characterChats.playerState,
       garments: characterChats.garments,
+      environment: characterChats.environment,
+      affordanceCues: characterChats.affordanceCues,
       supportingCast: characterChats.supportingCast,
       plans: characterChats.plans,
       clockMinutes: characterChats.clockMinutes,
@@ -619,6 +667,18 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
     // seam then falls back to the `wornItemIds` projection column and the turn
     // completes — the store is re-materialized on the next write.
     garments: parseOr(chatGarmentStoreSchema, row.garments, emptyChatGarmentStore(), sink, "character_chats.garments"),
+    // `?? {}` because these two columns are NULLABLE (added by migration 0091): a
+    // pre-feature row is `null`, which is "nothing recorded yet", not a corrupt
+    // value — parsing it would file a `parse.boundary_failed` on every legacy
+    // conversation's every load and drown the signal the sink exists for.
+    environment: parseOr(chatEnvironmentSchema, row.environment ?? {}, emptyChatEnvironment(), sink, "character_chats.environment"),
+    affordanceCues: parseOr(
+      affordanceCueStateSchema,
+      row.affordanceCues ?? {},
+      emptyAffordanceCueState(),
+      sink,
+      "character_chats.affordance_cues",
+    ),
     supportingCast: parseOr(supportingCastSchema, row.supportingCast, [], sink, "character_chats.supporting_cast"),
     plans: parseOr(chatPlansSchema, row.plans, [], sink, "character_chats.plans"),
     clockMinutes: row.clockMinutes,
@@ -648,6 +708,8 @@ export async function saveChatScenario(chatId: string, scenario: ChatScenario, g
       scene_memory = ${JSON.stringify(scenario.sceneMemory)}::jsonb,
       player_state = ${JSON.stringify(scenario.playerState)}::jsonb,
       garments = ${JSON.stringify(scenario.garments)}::jsonb,
+      environment = ${JSON.stringify(scenario.environment)}::jsonb,
+      affordance_cues = ${JSON.stringify(scenario.affordanceCues)}::jsonb,
       supporting_cast = ${JSON.stringify(scenario.supportingCast)}::jsonb,
       plans = ${JSON.stringify(scenario.plans)}::jsonb,
       clock_minutes = ${scenario.clockMinutes},
@@ -695,6 +757,12 @@ export async function savePreExchangeScenario(chatId: string, scenario: ChatScen
  * contrast, DO roll back (they ride `...anchor` — ruling B): a regenerated reply
  * that struck a plan must not double-mint it, and plans are fiction state, not
  * author curation.
+ *
+ * `environment` and `affordanceCues` ride `...anchor` too, and that is the whole
+ * capture mechanism for the affordance read (architecture spec §"Recompute and
+ * capture"): the read is a pure function of committed state plus its cue memory,
+ * so restoring both here is what makes a retake reproduce the identical read
+ * rather than resolving against later weather.
  */
 export function rollbackScenario(anchor: ChatScenario, live: ChatScenario | null): ChatScenario {
   return { ...anchor, supportingCast: live?.supportingCast ?? anchor.supportingCast };
@@ -744,6 +812,7 @@ export async function loadChatState(
       feeling: characterChatState.feeling,
       selfieHistory: characterChatState.selfieHistory,
       drives: characterChatState.drives,
+      bodySurface: characterChatState.bodySurface,
       presence: characterChatState.presence,
       whereabouts: characterChatState.whereabouts,
       quietExchanges: characterChatState.quietExchanges,
@@ -796,6 +865,15 @@ export async function loadChatState(
     feeling: parseOr(chatFeelingStateSchema, row.feeling, emptyChatFeelingState(), sink, "character_chat_state.feeling"),
     selfieHistory: parseOr(selfieHistorySchema, row.selfieHistory, [], sink, "character_chat_state.selfie_history"),
     drives: parseOr(chatDrivesSchema, row.drives, [], sink, "character_chat_state.drives"),
+    // Nullable (migration 0091) — `?? {}` keeps a pre-feature row silent; a
+    // genuinely corrupt value still degrades to dry WITH the diagnostic.
+    bodySurface: parseOr(
+      bodySurfaceStateSchema,
+      row.bodySurface ?? {},
+      emptyBodySurfaceState(),
+      sink,
+      "character_chat_state.body_surface",
+    ),
     presence: row.presence,
     whereabouts: row.whereabouts,
     quietExchanges: Math.max(0, row.quietExchanges),
@@ -833,6 +911,7 @@ const storedChatStateSchema = z.object({
   feeling: chatFeelingStateSchema.catch(emptyChatFeelingState()).default(emptyChatFeelingState()),
   selfieHistory: selfieHistorySchema.catch([]).default([]),
   drives: chatDrivesSchema.catch([]).default([]),
+  bodySurface: bodySurfaceStateSchema.catch(emptyBodySurfaceState()).default(emptyBodySurfaceState()),
   presence: z.enum(["present", "away"]).catch("present").default("present"),
   whereabouts: z.string().catch("").default(""),
   quietExchanges: z.number().catch(0).default(0),
@@ -1965,6 +2044,43 @@ export async function finalizeChatState(input: {
       : garmentSync.playerState;
   const garmentTrace: GarmentOperationTraceEntry[] = garmentFold.trace;
 
+  // --- Scene environment + body surface (body-attribute-affordances slice 4) ---
+  // The same shape as the garment fold above: a pure apply over typed proposals,
+  // a trace, and diagnostics — never a re-read of the narrator's prose.
+  //
+  // The ENVIRONMENT is chat-wide and lands on the scenario (one sky for the
+  // roster, and it rolls back with `pre_exchange_scenario`); the SURFACE is
+  // per-character and lands on the state row. Both folds run on a degraded
+  // archivist too, as no-ops: an absent proposal leaves the standing weather
+  // standing, and the surface fold still prunes anything that has dried to
+  // nothing — which cannot change what any read returns.
+  //
+  // PRIMARY CHARACTER ONLY this release (owner ruling). The player's surface
+  // would ride `ChatScenario` (one player, many characters, like `playerState`);
+  // an ensemble member's would ride their own row through the per-member personal
+  // pass — neither is wired, and the extraction field says so in as many words.
+  const environmentFold = applyEnvironmentProposal({
+    environment: input.scenario.environment,
+    ...(archivist.value ? { proposal: archivist.value.environment } : {}),
+    atMinutes: input.scenario.clockMinutes,
+  });
+  const surfaceFold = applySurfaceWetnessProposals({
+    surface: input.driftedState.bodySurface,
+    proposals: archivist.value?.surfaceWetness ?? [],
+    atMinutes: input.scenario.clockMinutes,
+    sink: input.sink,
+  });
+  const surfaceTrace: ChatSurfaceTraceEntry[] = [...environmentFold.trace, ...surfaceFold.trace];
+  if (surfaceTrace.length > 0) {
+    input.sink?.push(
+      diag(
+        "info",
+        "chat_surface.applied",
+        surfaceTrace.map((entry) => `${entry.kind}:${entry.target} ${entry.outcome}`).join(", "),
+      ),
+    );
+  }
+
   // The familiarity ratchet (owner ruling: moments + time). One trickle tick per
   // exchange (bounded by the acquainted ceiling), plus a moment tick when the
   // archivist recorded durable facts — a real disclosure or shared experience.
@@ -2127,6 +2243,7 @@ export async function finalizeChatState(input: {
       milestones,
       selfieHistory,
       drives: driveResult.drives,
+      bodySurface: surfaceFold.surface,
       ...outfitPatch,
       // The worn list is a PROJECTION of the garment store (slice 2), re-derived
       // after the reconcile AND the typed operations above so the column can never
@@ -2148,6 +2265,7 @@ export async function finalizeChatState(input: {
       plans,
       playerState,
       garments: garmentStore,
+      environment: environmentFold.environment,
       pendingSkipNote: "",
       pendingMeanwhileNote: "",
     },
@@ -2344,15 +2462,16 @@ async function upsertChatState(
   const feeling = JSON.stringify(state.feeling);
   const selfieHistory = JSON.stringify(state.selfieHistory);
   const drives = JSON.stringify(state.drives);
+  const bodySurface = JSON.stringify(state.bodySurface);
   const wornItemIds = JSON.stringify(state.wornItemIds);
   const guard = guardMessageId
     ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, trait_overlays, voice_exemplars, last_memory_trace, worn_item_ids, outfit_preset_id, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, presence, whereabouts, quiet_exchanges, updated_at)
+      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, trait_overlays, voice_exemplars, last_memory_trace, worn_item_ids, outfit_preset_id, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, body_surface, presence, whereabouts, quiet_exchanges, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${traitOverlays}::jsonb, ${voiceExemplars}::jsonb, ${memoryTrace}::jsonb, ${wornItemIds}::jsonb, ${state.outfitPresetId}, ${state.outfit}, ${state.outfitExposed}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${state.presence}, ${state.whereabouts}, ${state.quietExchanges}, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${traitOverlays}::jsonb, ${voiceExemplars}::jsonb, ${memoryTrace}::jsonb, ${wornItemIds}::jsonb, ${state.outfitPresetId}, ${state.outfit}, ${state.outfitExposed}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${bodySurface}::jsonb, ${state.presence}, ${state.whereabouts}, ${state.quietExchanges}, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -2380,6 +2499,7 @@ async function upsertChatState(
       feeling = excluded.feeling,
       selfie_history = excluded.selfie_history,
       drives = excluded.drives,
+      body_surface = excluded.body_surface,
       presence = excluded.presence,
       whereabouts = excluded.whereabouts,
       quiet_exchanges = excluded.quiet_exchanges,

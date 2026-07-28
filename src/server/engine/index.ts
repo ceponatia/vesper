@@ -23,6 +23,7 @@ export * from "./chat-relationships";
 export * from "./chat-selfie";
 export * from "./chat-vision";
 export * from "./chat-summary";
+export * from "./chat-affordances";
 export * from "./chat-wardrobe";
 export * from "./chat-garments";
 export * from "./chat-state";
