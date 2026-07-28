@@ -5,6 +5,21 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Clothing state graph — slices 0–4: the deterministic wardrobe substrate**
+  — [clothing-state-graph.plan.md](clothing-state-graph.plan.md) ·
+  [audit](clothing-state-graph.audit.md) — 2026-07-27 — promoted and built the
+  same day, audit-first. Garment blueprint graphs + the 8-profile material
+  registry + templates for all 14 categories (slice 1); chat-wide instance
+  store riding the scenario rollback blob with lazy materialization and the
+  worn-list projection, migration 0090 (slice 2); presentation reducer +
+  per-part effective coverage through the rewritten visibility resolver +
+  state-tools controls (slice 3); fixed-point condition gradients (shared
+  kernel extracted to `lib/fixed-point.ts`), regional overrides, deposits,
+  damage, hysteretic bands (slice 4). Muddy-hem and cotton/leather acceptance
+  fixtures pass; retakes restore the store byte-identically. **Slices 5–8
+  remain in Next** (extraction, narrator/image consumers, successor adapter,
+  affordance integration).
+
 - **Successor world lifecycle — provision once, delete honestly, count what's
   real (COMPLETE)** —
   [successor-world-lifecycle.plan.md](successor-world-lifecycle.plan.md) ·

@@ -41,19 +41,17 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
-- **Clothing state graph & condition gradients — the wardrobe becomes state** —
-  [clothing-state-graph.plan.md](clothing-state-graph.plan.md) (next; graduated 2026-07-27
-  same day as parking, queued at the top on the owner's call). Garments stop being
-  worn-name strings: authored blueprint graphs (sparse parts/materials/closures)
-  instantiate into located chat instances whose presentation (buttons, rolls, tucks,
-  displacement) and condition (fixed-point wetness/cleanliness/crease/wear with regional
-  overrides, deposits, and damage marks) mutate through typed operations the continuity
-  leg proposes semantically — never raw state — and one derived coverage/visibility read
-  serves narration, exposure gates, and images. Chat proves it first (slices 0–6); the
-  successor adapter (slice 7) extends `item-condition-v1` rather than forking a store.
-  Upstream prerequisite for the parked body-attribute-affordances companion set.
-  Promotion rulings R1–R4 recorded in the plan (promoted alone; ad-hoc garments mint
-  from category templates; left garments stay at their place; wetness + crease first).
+- **Clothing state graph — remainder: slices 5–8 (extraction, narrator/image consumers,
+  successor adapter, affordance integration)** —
+  [clothing-state-graph.plan.md](clothing-state-graph.plan.md) (active; **slices 0–4 — the
+  deterministic substrate — shipped 2026-07-27**, see
+  [roadmap.shipped.md](roadmap.shipped.md)). What remains is the wiring that makes the
+  substrate visible in play: slice 5 replaces free-text wardrobe mutation with grounded
+  typed operations over opaque handles; slice 6 builds the authoritative narrator digest +
+  ranked garment cues and wires effective coverage into exposure and scene images (carries
+  the tuning gate before default-on); slice 7 maps the contracts onto successor items via
+  `item-condition-v1`; slice 8 integrates with body affordances once that parked set
+  promotes. All open questions are resolved (plan §Open questions + audit).
 
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
   [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly

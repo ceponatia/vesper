@@ -12,6 +12,9 @@ data/
 # Caches, VCS, local tooling
 .git
 .github
+# Agent-session state; worktrees under here carry full checkouts + pnpm
+# junctions that break the remote builder's tar (deploy failure 2026-07-27)
+.claude/
 .turbo/
 .vitest-cache/
 coverage/
