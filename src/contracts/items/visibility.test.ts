@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { exposedRegions, resolveWardrobeVisibility, type WornItemInput } from "./visibility";
+import {
+  exposedRegions,
+  resolveGarmentVisibility,
+  resolveWardrobeVisibility,
+  rollUpGarmentVisibility,
+  type WornItemInput,
+} from "./visibility";
 
 function worn(partial: Partial<WornItemInput> & Pick<WornItemInput, "instanceId" | "coverage" | "layer">): WornItemInput {
-  return { name: partial.instanceId, opacity: "opaque", ...partial };
+  // Whole-garment rows: the garment id IS the row id (per-part rows differ — see
+  // garment-effective-coverage.test.ts).
+  return { name: partial.instanceId, garmentId: partial.instanceId, opacity: "opaque", ...partial };
 }
 
 function viewOf(views: ReturnType<typeof resolveWardrobeVisibility>, instanceId: string) {
@@ -90,6 +98,59 @@ describe("resolveWardrobeVisibility", () => {
 
   it("returns an empty list for an empty wardrobe", () => {
     expect(resolveWardrobeVisibility([])).toEqual([]);
+  });
+});
+
+/**
+ * Per-part rows and the garment rollup (clothing-state-graph slice 3; slice-0
+ * audit finding 3). Presentation makes ONE garment several rows, so the resolver
+ * carries a `garmentId` beside the row's own id and every renderer reduces
+ * through `rollUpGarmentVisibility` rather than looking a view up by position.
+ */
+describe("rollUpGarmentVisibility", () => {
+  const part = (garmentId: string, partId: string, coverage: string[], layer: 0 | 1 | 2 | 3, opacity: "opaque" | "sheer" = "opaque"): WornItemInput => ({
+    instanceId: `${garmentId}:${partId}`,
+    garmentId,
+    name: garmentId,
+    coverage,
+    layer,
+    opacity,
+  });
+
+  it("a garment showing at ONE part is visible, though its other parts are buried", () => {
+    const views = resolveWardrobeVisibility([
+      part("shirt", "front", ["chest"], 1),
+      part("shirt", "sleeve_left", ["upper_arms"], 1),
+      part("coat", "front", ["chest"], 3),
+    ]);
+    expect(views.find((v) => v.instanceId === "shirt:front")?.visibility).toBe("hidden");
+    expect(views.find((v) => v.instanceId === "shirt:sleeve_left")?.visibility).toBe("visible");
+    expect(rollUpGarmentVisibility(views).get("shirt")).toBe("visible");
+  });
+
+  it("a garment every part of which is buried is hidden", () => {
+    const rolled = resolveGarmentVisibility([
+      part("tee", "front", ["chest"], 1),
+      part("tee", "back", ["back"], 1),
+      part("coat", "body", ["torso"], 3),
+    ]);
+    expect(rolled.get("tee")).toBe("hidden");
+    expect(rolled.get("coat")).toBe("visible");
+  });
+
+  it("hinted beats hidden across a garment's parts", () => {
+    const rolled = resolveGarmentVisibility([
+      part("slip", "top", ["chest"], 0),
+      part("slip", "skirt", ["hips"], 0),
+      part("blouse", "front", ["chest"], 1, "sheer"),
+      part("skirt", "panel", ["hips"], 2),
+    ]);
+    expect(rolled.get("slip")).toBe("hinted");
+  });
+
+  it("keys on the garment id, not the row id", () => {
+    const rolled = resolveGarmentVisibility([part("g_instance_42", "front", ["chest"], 1)]);
+    expect([...rolled.keys()]).toEqual(["g_instance_42"]);
   });
 });
 

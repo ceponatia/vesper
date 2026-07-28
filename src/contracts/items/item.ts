@@ -80,18 +80,12 @@ export function emptyItemDefinition(): ItemDefinition {
   return itemDefinitionSchema.parse({ kind: "object", name: "unknown item" });
 }
 
-export const itemInstanceStateSchema = z.object({
-  condition: z.number().min(0).max(1).default(1),
-  cleanliness: z.number().min(0).max(1).default(1),
-  wetness: z.number().min(0).max(1).default(0),
-  open: z.boolean().optional(),
-  /** Doors/containers: closed+locked seals a bound link (link access check). Absent ⇒ unlocked. */
-  locked: z.boolean().optional(),
-  notes: z.array(z.string()).default([]),
-});
-
-export type ItemInstanceState = z.infer<typeof itemInstanceStateSchema>;
-
-export function emptyItemInstanceState(): ItemInstanceState {
-  return itemInstanceStateSchema.parse({});
-}
+/*
+ * `itemInstanceStateSchema` lived here with coarse float condition/cleanliness/
+ * wetness fields and ZERO importers in the tree (clothing-state-graph.audit.md
+ * finding 1 — dead, not dormant). Slice 4 deleted it rather than bridging onto
+ * it: the live chat-side instance state is `GarmentConditionState`
+ * (garment-instance.ts) with a fixed-point gradient vector, regional overrides,
+ * located deposits and damage marks, and the only real bridge target on the
+ * successor side is `item-condition-v1`.
+ */

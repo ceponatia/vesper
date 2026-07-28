@@ -9,6 +9,7 @@ import {
   effectiveTraitValue,
   emptyCharacterProfile,
   exposureIsIntimate,
+  garmentActorForCharacter,
   formatScheduleRhythm,
   formatStoryMoment,
   hasSalientPlan,
@@ -86,6 +87,7 @@ import {
   type ResolvedChatWardrobe,
   type ResolvedPlayerWardrobe,
 } from "./chat-wardrobe";
+import { reconcileActorWardrobes, type ChatGarmentWardrobeChange } from "./chat-garments";
 import { enqueueChatSummary, loadChatSummary, loadVerbatimWindow } from "./chat-summary";
 import {
   CHARACTER_CHAT_SUMMARIZE_AT,
@@ -986,10 +988,23 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // Structured wardrobe (chat-wardrobe-parity): resolve the drifted worn state into its
     // rendered garment phrase + coverage-computed exposure — the ONE seam the prompt, scene
     // image, and look key share (reusing the session renderers, never re-forking them).
-    const wardrobe = await resolveChatWardrobe(driftedState, owner, profile, sink);
+    // The garment store is the worn truth once this actor is modelled (slice 2);
+    // an unmodelled actor falls back to the projection column, unchanged.
+    const wardrobe = await resolveChatWardrobe(
+      { ...driftedState, garments: scenario.garments, garmentActorId: garmentActorForCharacter(characterId) },
+      owner,
+      profile,
+      sink,
+    );
     // The player's own wardrobe (persona-library.plan.md slice 8) — same seam, so the
     // narrator knows what it can take off them. Empty without a persona.
-    const playerWardrobe = await resolvePlayerWardrobe(scenario.playerState, owner, player.profile, sink);
+    const playerWardrobe = await resolvePlayerWardrobe(
+      scenario.playerState,
+      owner,
+      player.profile,
+      sink,
+      scenario.garments,
+    );
 
     const promptInput: CharacterChatPromptInput = {
       name: characterName,
@@ -1132,7 +1147,17 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             others.map(async (o) => ({
               name: o.name,
               profile: o.profile,
-              state: promptStateSlice(o.state, scenario, await resolveChatWardrobe(o.state, owner, o.profile, sink), o.profile),
+              state: promptStateSlice(
+                o.state,
+                scenario,
+                await resolveChatWardrobe(
+                  { ...o.state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(o.characterId) },
+                  owner,
+                  o.profile,
+                  sink,
+                ),
+                o.profile,
+              ),
               memory: otherMemories.get(o.characterId),
               presence: o.state.presence,
               quietExchanges: o.state.quietExchanges,
@@ -1329,6 +1354,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // and a fast-typing player ate a 409 `chat_busy` for the difference. Errors stay
         // per-member (each iteration keeps its own try/catch), so one member's failure
         // still can't cost another's state.
+        // Ensemble members whose look actually changed this exchange — reconciled
+        // into the chat-wide garment store AFTER the concurrent settle, in one
+        // sequential pass (the store is one jsonb field; concurrent
+        // read-modify-writes of it would lose updates).
+        const memberWornChanges: ChatGarmentWardrobeChange[] = [];
         await Promise.all(
           others.map(async (member) => {
           try {
@@ -1384,6 +1414,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               mentionsCharacter(agentPlayerContent, member.name, member.profile.aliases) ||
               spokeInReply(full, member.name);
             const quietExchanges = active ? 0 : memberState.quietExchanges + 1;
+            if (memberState.wornItemIds.join(",") !== member.state.wornItemIds.join(",")) {
+              memberWornChanges.push({
+                actorId: garmentActorForCharacter(member.characterId),
+                preWornItemIds: member.state.wornItemIds,
+                wornItemIds: memberState.wornItemIds,
+              });
+            }
             const guardMessageId = promptMessageId ?? assistantMessageId;
             await saveChatState({
               chatId,
@@ -1421,6 +1458,29 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           }
           }),
         );
+        // Fold the members' new looks into the chat-wide garment store
+        // (clothing-state-graph slice 2). Sequential and after the settle, on the
+        // scenario the finalizer just wrote — the members' own `worn_item_ids`
+        // columns are already the projection (identical to what went in), so only
+        // the store needs the write. Fenced: a failed reconcile costs the store's
+        // freshness for these members, never the exchange.
+        if (memberWornChanges.length > 0) {
+          try {
+            const settled = await loadChatScenario(chatId, sink);
+            if (settled) {
+              const garments = await reconcileActorWardrobes({
+                store: settled.garments,
+                ownerId: owner,
+                atMinutes: settled.clockMinutes,
+                changes: memberWornChanges,
+                sink,
+              });
+              await saveChatScenario(chatId, { ...settled, garments });
+            }
+          } catch (error) {
+            log.error("engine.chat", "ensemble garment reconcile failed", { error: describeError(error) });
+          }
+        }
         // Selfie first (more specific than a big-moment scene — the shared
         // one-live-render-per-chat dedupe keeps only whichever queues first).
         if (finalized.selfieSend) {
@@ -1932,8 +1992,19 @@ export async function previewChatPrompt(input: {
   );
   const summaryState = await loadChatSummary(input.chatId);
   const player = await resolveChatPersona({ ownerId: owner, chatId: input.chatId });
-  const wardrobe = await resolveChatWardrobe(state, owner, profile, sink);
-  const playerWardrobe = await resolvePlayerWardrobe(scenario.playerState, owner, player.profile, sink);
+  const wardrobe = await resolveChatWardrobe(
+    { ...state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(input.character.id) },
+    owner,
+    profile,
+    sink,
+  );
+  const playerWardrobe = await resolvePlayerWardrobe(
+    scenario.playerState,
+    owner,
+    player.profile,
+    sink,
+    scenario.garments,
+  );
   const memory = await retrieveChatMemory({
     groupId: input.memoryGroupId,
     queries: state.memoryQueries,

@@ -279,6 +279,25 @@ export const characterChats = pgTable(
      * leave the player undressed by a beat that no longer exists.
      */
     playerState: jsonb("player_state").notNull().default({}),
+    /**
+     * `ChatGarmentStore` (contracts/items/garment-instance.ts) — the conversation's
+     * GARMENT INSTANCES and their content-hash-deduplicated blueprint snapshots
+     * (clothing-state-graph.plan.md slice 2; slice-0 audit ruling P).
+     *
+     * Chat-WIDE, and one field rather than a table, for one reason: rollback. The
+     * whole "another take" guarantee is "one jsonb blob per anchor, restored
+     * wholesale", so a scenario field inherits `pre_exchange_scenario` +
+     * `rollbackScenario` with zero new snapshot machinery — while a table would
+     * need per-exchange row copies of its own. Chat-wide because a garment sits at
+     * loci no character owns (`scene`, `wardrobe`, `gone`) and moves between body,
+     * hands and room, and because the two live writes are not one transaction:
+     * a cross-blob transfer could duplicate or lose a garment on a partial degrade.
+     *
+     * `{}` (the default and every pre-feature row) parses to the empty, UNSEEDED
+     * store, which materializes from `worn_item_ids` + `player_state` on the next
+     * state write. Parsed with `parseOr` at the read boundary.
+     */
+    garments: jsonb("garments").notNull().default({}),
     /** SupportingCastMember[] — recurring named side characters (chat-supporting-cast.plan.md). */
     supportingCast: jsonb("supporting_cast").notNull().default([]),
     /** ChatPlan[] — tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */

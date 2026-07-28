@@ -14,9 +14,17 @@ import {
   CHAT_ARCHIVIST_MAX_OPEN_LOOPS,
   CHAT_MIND_NOTE_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
+  applyGarmentOperations,
+  chatGarmentStoreSchema,
   chatPlayerStateSchema,
   chatPulseTraceSchema,
   chatSceneMemorySchema,
+  emptyChatGarmentStore,
+  garmentActorForCharacter,
+  GARMENT_PLAYER_ACTOR,
+  retireActorGarments,
+  type ChatGarmentStore,
+  type GarmentOperation,
   currentScenePlace,
   clampFamiliarity,
   clampRegard,
@@ -114,6 +122,7 @@ import type { AgentRunDescription, AgentRunDetailSection } from "@/contracts/tur
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import { characterChatMessages, characterChats, characterChatState, db } from "../db";
 import { healOutfitMarker, loadChatWardrobe, playerWornIds, wardrobeDescriptors } from "./chat-wardrobe";
+import { garmentProjectionOr, syncGarmentsForExchange } from "./chat-garments";
 import { callbackHistorySchema, type CallbackEntry } from "./chat-callback";
 import {
   applyFeelingProposal,
@@ -181,6 +190,19 @@ export interface ChatScenario {
    * player undressed by a beat that no longer exists.
    */
   playerState: ChatPlayerState;
+  /**
+   * The conversation's GARMENT INSTANCES + their deduplicated blueprint snapshots
+   * (clothing-state-graph.plan.md slice 2; audit ruling P). Chat-wide for the same
+   * reason `playerState` is — a garment sits at loci no character owns (`scene`,
+   * `wardrobe`, `gone`) and moves between body, hands and room — and on the
+   * SCENARIO so it rides `pre_exchange_scenario` and rolls back with everything
+   * else, instances and blueprint map together, with no new snapshot machinery.
+   *
+   * The per-character `wornItemIds` / `playerState.wornItemIds` are now a DERIVED
+   * projection of this store's worn-locus instances (the one-release compatibility
+   * bridge — the equip editor, look key, snapshot and scene queue keep reading ids).
+   */
+  garments: ChatGarmentStore;
   /** Recurring named side characters (chat-supporting-cast.plan.md) — one cast for the roster. */
   supportingCast: SupportingCast;
   /** Tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */
@@ -524,6 +546,9 @@ export function seedChatScenario(profile: CharacterProfile, premise?: string): C
     sceneModel: "reference",
     sceneMemory: emptyChatSceneMemory(),
     playerState: emptyChatPlayerState(),
+    // Unseeded: the store materializes from the worn lists on the first state
+    // WRITE, never on a read (audit ruling P.2).
+    garments: emptyChatGarmentStore(),
     supportingCast: emptySupportingCast(),
     plans: emptyChatPlans(),
     clockMinutes: 0,
@@ -543,6 +568,7 @@ const chatScenarioSchema = z.object({
   sceneModel: z.string().catch("reference").default("reference"),
   sceneMemory: chatSceneMemorySchema.catch(emptyChatSceneMemory()).default(emptyChatSceneMemory()),
   playerState: chatPlayerStateSchema.catch(emptyChatPlayerState()).default(emptyChatPlayerState()),
+  garments: chatGarmentStoreSchema.catch(emptyChatGarmentStore()).default(emptyChatGarmentStore()),
   supportingCast: supportingCastSchema.catch([]).default([]),
   plans: chatPlansSchema.catch([]).default([]),
   clockMinutes: z.number().catch(0).default(0),
@@ -563,6 +589,7 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
       sceneModel: characterChats.sceneModel,
       sceneMemory: characterChats.sceneMemory,
       playerState: characterChats.playerState,
+      garments: characterChats.garments,
       supportingCast: characterChats.supportingCast,
       plans: characterChats.plans,
       clockMinutes: characterChats.clockMinutes,
@@ -583,6 +610,10 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
     sceneModel: row.sceneModel,
     sceneMemory: parseOr(chatSceneMemorySchema, row.sceneMemory, emptyChatSceneMemory(), sink, "character_chats.scene_memory"),
     playerState: parseOr(chatPlayerStateSchema, row.playerState, emptyChatPlayerState(), sink, "character_chats.player_state"),
+    // A corrupt store degrades to the EMPTY, unseeded one (fixture F17): the read
+    // seam then falls back to the `wornItemIds` projection column and the turn
+    // completes — the store is re-materialized on the next write.
+    garments: parseOr(chatGarmentStoreSchema, row.garments, emptyChatGarmentStore(), sink, "character_chats.garments"),
     supportingCast: parseOr(supportingCastSchema, row.supportingCast, [], sink, "character_chats.supporting_cast"),
     plans: parseOr(chatPlansSchema, row.plans, [], sink, "character_chats.plans"),
     clockMinutes: row.clockMinutes,
@@ -611,6 +642,7 @@ export async function saveChatScenario(chatId: string, scenario: ChatScenario, g
       scene_model = ${scenario.sceneModel},
       scene_memory = ${JSON.stringify(scenario.sceneMemory)}::jsonb,
       player_state = ${JSON.stringify(scenario.playerState)}::jsonb,
+      garments = ${JSON.stringify(scenario.garments)}::jsonb,
       supporting_cast = ${JSON.stringify(scenario.supportingCast)}::jsonb,
       plans = ${JSON.stringify(scenario.plans)}::jsonb,
       clock_minutes = ${scenario.clockMinutes},
@@ -1820,6 +1852,27 @@ export async function finalizeChatState(input: {
     sink: input.sink,
   });
 
+  // --- The garment store (clothing-state-graph.plan.md slice 2) ---------------
+  // The chat-wide store is the wardrobe TRUTH; the worn-id lists become its
+  // projection. Both folds above still produce id lists — they are compiled here
+  // into instance transfers (kept / re-donned with their condition / minted /
+  // doffed to the wardrobe), never a free-text replacement of the wardrobe.
+  //
+  // Migration is lazy and happens on THIS write, never on a read (audit P.2): an
+  // unseeded store first materializes from the PRE-fold worn sets, so a garment
+  // this exchange took off exists at a locus rather than never having existed.
+  const playerStateAfterFold: ChatPlayerState = { ...input.scenario.playerState, ...playerOutfitPatch };
+  const garmentSync = await syncGarmentsForExchange({
+    scenario: input.scenario,
+    ownerId: input.ownerId,
+    characterId: input.characterId,
+    persona: input.playerPersona,
+    preWornItemIds: input.driftedState.wornItemIds,
+    postWornItemIds: outfitPatch.wornItemIds ?? input.driftedState.wornItemIds,
+    playerStateAfterFold,
+    sink: input.sink,
+  });
+
   // The familiarity ratchet (owner ruling: moments + time). One trickle tick per
   // exchange (bounded by the acquainted ceiling), plus a moment tick when the
   // archivist recorded durable facts — a real disclosure or shared experience.
@@ -1977,6 +2030,9 @@ export async function finalizeChatState(input: {
       selfieHistory,
       drives: driveResult.drives,
       ...outfitPatch,
+      // The worn list is a PROJECTION of the garment store (slice 2), re-derived
+      // after the reconcile above so the column can never become a second truth.
+      wornItemIds: garmentSync.wornItemIds,
     },
   });
   // The scenario save (followups ruling 8): the merged scene memory, the ticked
@@ -1991,7 +2047,8 @@ export async function finalizeChatState(input: {
       sceneMemory,
       supportingCast,
       plans,
-      playerState: { ...input.scenario.playerState, ...playerOutfitPatch },
+      playerState: garmentSync.playerState,
+      garments: garmentSync.store,
       pendingSkipNote: "",
       pendingMeanwhileNote: "",
     },
@@ -2261,6 +2318,12 @@ export interface ChatStateEdit {
   /** Free-text outfit overlay/fallback (ad-hoc + legacy looks). */
   outfit?: string;
   outfitExposed?: boolean;
+  /**
+   * Typed garment operations (clothing-state-graph slice 3) — the sheet's
+   * presentation controls, applied in fiction order AFTER the worn-set reconcile
+   * so a doff and a roll in one save land in the order they were authored.
+   */
+  garmentOperations?: GarmentOperation[];
   activeSocialCards?: SocialReactionCard[];
   openLoops?: string[];
   memoryQueries?: string[];
@@ -2312,6 +2375,8 @@ export async function editChatState(args: {
   ownerId: string;
   profile: CharacterProfile;
   patch: ChatStateEdit;
+  /** Collects the edit's degradation diagnostics — notably rejected garment operations. */
+  sink?: DiagnosticSink;
 }): Promise<{ state: ChatState; scenario: ChatScenario }> {
   const { chatId, characterId, ownerId, profile, patch } = args;
   const base = await resolveSeededOutfit(
@@ -2356,7 +2421,21 @@ export async function editChatState(args: {
   if (patch.sceneMemory !== undefined) nextScenario.sceneMemory = patch.sceneMemory;
   // Whole-object replacement through the boundary schema (healing + caps), like the
   // supportingCast/plans edits below.
-  if (patch.playerState !== undefined) nextScenario.playerState = chatPlayerStateSchema.parse(patch.playerState);
+  if (patch.playerState !== undefined) {
+    nextScenario.playerState = chatPlayerStateSchema.parse(patch.playerState);
+    // A persona switch resets the player to `{seeded:false, wornItemIds:[]}` (the
+    // scenario modal): the body wearing those garments is gone, so retire that
+    // persona's instances instead of leaving them on the new one. `gone` belongs
+    // to nobody, so the player reads as unmodelled and falls back to the new
+    // persona's default outfit — exactly what `seeded:false` means.
+    if (!nextScenario.playerState.seeded && nextScenario.playerState.wornItemIds.length === 0) {
+      nextScenario.garments = retireActorGarments(
+        nextScenario.garments,
+        GARMENT_PLAYER_ACTOR,
+        nextScenario.clockMinutes,
+      );
+    }
+  }
   if (patch.supportingCast !== undefined) {
     // Whole-list replacement through the boundary schema (caps + dedupe + healing).
     nextScenario.supportingCast = supportingCastSchema.parse(patch.supportingCast);
@@ -2371,6 +2450,46 @@ export async function editChatState(args: {
     // anchor-relative minutes, so every displayed weekday/date re-derives.
     // An impossible day (Feb 31) rolls forward via the Date math rather than failing.
     nextScenario.calendarStart = calendarStartSchema.parse(patch.calendarStart);
+  }
+
+  // The garment store is the wardrobe truth (clothing-state-graph slice 2): this
+  // edit's worn sets — the equip editor's add/remove, a preset switch, the player
+  // wardrobe — compile to instance transfers, then the id columns are re-derived
+  // from the store. An unseeded chat materializes here, on the write.
+  const garmentSync = await syncGarmentsForExchange({
+    scenario: nextScenario,
+    ownerId,
+    characterId,
+    // No persona is loaded on the edit path; an unseeded player therefore stays
+    // unmodelled (their default preset still resolves at read time) until an
+    // exchange finalizes, which is the same "materialize on write" rule.
+    persona: undefined,
+    preWornItemIds: base.wornItemIds,
+    postWornItemIds: next.wornItemIds,
+    playerStateAfterFold: nextScenario.playerState,
+  });
+  next.wornItemIds = garmentSync.wornItemIds;
+  nextScenario.playerState = garmentSync.playerState;
+  nextScenario.garments = garmentSync.store;
+
+  // Typed garment operations (clothing-state-graph slice 3) ride the SAME write:
+  // the equip editor's worn-set reconcile lands first (so a garment this save
+  // added exists to be addressed), then the presentation controls apply in the
+  // order the sheet sent them, and the id projections are re-derived once —
+  // one store, persisted once, whatever the edit touched.
+  if (patch.garmentOperations !== undefined && patch.garmentOperations.length > 0) {
+    const result = applyGarmentOperations(nextScenario.garments, patch.garmentOperations, {
+      atMinutes: nextScenario.clockMinutes,
+      sink: args.sink,
+    });
+    if (result.applied > 0) {
+      nextScenario.garments = result.store;
+      next.wornItemIds = garmentProjectionOr(result.store, garmentActorForCharacter(characterId), next.wornItemIds);
+      nextScenario.playerState = {
+        ...nextScenario.playerState,
+        wornItemIds: garmentProjectionOr(result.store, GARMENT_PLAYER_ACTOR, nextScenario.playerState.wornItemIds),
+      };
+    }
   }
 
   await persistChatState(chatId, characterId, next);

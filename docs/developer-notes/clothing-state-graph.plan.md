@@ -513,16 +513,19 @@ memory work. It supplies garment observations to those consumers.
 
 ## Open questions
 
-_OQ3, OQ4, OQ5, and OQ9 were resolved at promotion — see §Promotion rulings.
-The rest resolve in slice 0, before schema work._
-
-- **OQ1 — v1 authoring depth.** Confirm sparse category topology plus an
-  advanced editor, and the smallest useful material registry.
-- **OQ2 — chat instance identity.** Snapshot the normalized blueprint or store
-  definition id + immutable revision/hash? How are duplicate copies authored?
-- **OQ6 — coverage behaviors.** Exact rules for plackets, zippers, sleeves,
-  straps, skirts/hems, and asymmetric layering.
-- **OQ7 — extraction confidence.** Always drop ambiguous part operations, or
-  fall back to the garment root when conservative?
-- **OQ8 — image invalidation.** Which presentation bands refresh `chat_look`
-  versus only the next scene image?
+_All resolved. OQ3, OQ4, OQ5, and OQ9 at promotion — see §Promotion rulings.
+OQ1, OQ2, OQ6, OQ7, and OQ8 in slice 0 (2026-07-27) — rulings and their full
+rationale live in [clothing-state-graph.audit.md](clothing-state-graph.audit.md)
+§Part 2, alongside the seam map's six corrections to this plan's assumptions
+(dead-not-dormant `itemInstanceStateSchema`; the name-keyed `scene` locus; the
+visibility-resolver rewrite slice 3 actually requires; the proposal-triggered
+`chat_look` refresh OQ8 must widen; the no-duplicate-worn-copies defect; the
+`outfit_exposed` bypass slice 2 must demote). One-line versions: templates bind
+to the existing 15 `clothingCategories` ids (9 sparse, 6 root-only) with the
+7+unknown material registry; instances snapshot a content-hash-deduplicated
+blueprint into the chat-wide store (never a library pointer); behaviors only
+subtract from their own node's baseline coverage with per-behavior thresholds;
+ambiguous part handles are dropped with a diagnostic (root is an explicit
+handle; empty partIds legal only for condition-class ops); `chat_look`
+refreshes on worn-set/structural-presentation/wet-band/deposit-damage-presence
+changes via a pre/post key comparison.

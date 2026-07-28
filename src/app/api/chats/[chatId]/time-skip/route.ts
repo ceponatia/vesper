@@ -4,9 +4,11 @@ import {
   CHAT_SKIP_MINUTES,
   characterProfileSchema,
   chatSkipAmountSchema,
+  diag,
   DiagnosticCollector,
   effectiveTraitValue,
   emptyCharacterProfile,
+  garmentActorForCharacter,
   regardBandForValue,
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
@@ -17,15 +19,18 @@ import {
   armMeanwhilePass,
   chatStateSnapshot,
   enqueueChatMeanwhile,
+  garmentReadoutsFor,
   loadChatScenario,
   loadChatState,
   mirrorShadowTimeSkip,
   persistChatState,
   readSimChatClock,
+  reconcileActorWardrobes,
   resolveSeededOutfit,
   saveChatScenario,
   seedChatScenario,
   seedChatState,
+  type ChatGarmentWardrobeChange,
 } from "@/server/engine";
 import { chatBusyResponse, loadOwnedChat } from "../../owned";
 
@@ -113,6 +118,11 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   // its already-resolved state; away members stay frozen — their conditions
   // expire against the shared clock on their next drift anyway).
   let primaryNext = primaryBase;
+  // Rhythm auto-dress is a PRESET application, so it compiles to garment
+  // transfers like every other worn-list write (clothing-state-graph slice 2).
+  // Collected here and reconciled in one pass after the loop — the store is one
+  // jsonb field, so it takes one write, not one per member.
+  const wardrobeChanges: ChatGarmentWardrobeChange[] = [];
   for (const member of owned.roster) {
     const isPrimary = member.characterId === owned.participant.characterId;
     const profile = isPrimary
@@ -136,13 +146,54 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
       sink,
     );
     await persistChatState(chatId, member.characterId, next);
+    if (next.wornItemIds.join(",") !== base.wornItemIds.join(",")) {
+      wardrobeChanges.push({
+        actorId: garmentActorForCharacter(member.characterId),
+        preWornItemIds: base.wornItemIds,
+        wornItemIds: next.wornItemIds,
+      });
+    }
     if (isPrimary) primaryNext = next;
   }
 
-  return jsonOk(
-    chatStateSnapshot(primaryNext, nextScenario, {
+  // Fenced: a failed reconcile costs the store's freshness for these members,
+  // never the skip itself (which has already landed above).
+  let garmentStore = nextScenario.garments;
+  if (wardrobeChanges.length > 0) {
+    try {
+      const garments = await reconcileActorWardrobes({
+        store: nextScenario.garments,
+        ownerId: user.id,
+        atMinutes: nextScenario.clockMinutes,
+        changes: wardrobeChanges,
+        sink,
+      });
+      garmentStore = garments;
+      await saveChatScenario(chatId, { ...nextScenario, garments });
+    } catch (error) {
+      sink.push(
+        diag(
+          "warn",
+          "chat_garments.skip_reconcile_failed",
+          `rhythm re-dress did not reach the garment store: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    }
+  }
+
+  return jsonOk({
+    ...chatStateSnapshot(primaryNext, nextScenario, {
       dominance: effectiveTraitValue(primaryProfile.traits, "social.dominance"),
       intimateContext: true,
     }),
-  );
+    // The snapshot this response replaces on the client also feeds the Character
+    // sheet's presentation controls (clothing-state-graph slice 3), so it carries
+    // the primary's garment readout — a rhythm re-dress may have changed it.
+    garments: garmentReadoutsFor(
+      garmentStore,
+      garmentActorForCharacter(owned.participant.characterId),
+      nextScenario.clockMinutes,
+    ),
+    garmentDiagnostics: [],
+  });
 });

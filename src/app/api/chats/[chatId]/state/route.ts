@@ -12,6 +12,8 @@ import {
   DiagnosticCollector,
   effectiveTraitValue,
   emptyCharacterProfile,
+  garmentActorForCharacter,
+  garmentOperationListSchema,
   relationshipTextureSchema,
   socialReactionCardSchema,
   chatPlayerStateSchema,
@@ -24,6 +26,7 @@ import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import {
   chatFeelingStateSchema,
   chatStateSnapshot,
+  garmentReadoutsFor,
   selfieHistorySchema,
   driftChatState,
   editChatState,
@@ -73,6 +76,13 @@ const editBodySchema = z.object({
   outfitPresetId: z.string().max(120).optional(),
   outfit: z.string().optional(),
   outfitExposed: z.boolean().optional(),
+  /**
+   * Typed garment operations (clothing-state-graph slice 3) — the sheet's
+   * presentation controls. `garmentOperationListSchema` is the trust boundary:
+   * it drops each malformed operation individually and caps the list, so one bad
+   * entry never voids the save (docs/resilience.md §1).
+   */
+  garmentOperations: garmentOperationListSchema.optional(),
   activeSocialCards: z.array(socialReactionCardSchema).optional(),
   // Inspector-grade fields (character-chat-standalone.spec.md §6.1): the dev/state-tools
   // surface can rewrite everything stored — including the D11 gate bypass via `regard`.
@@ -156,12 +166,25 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
   };
   // Rendered garment phrase for the read-only strip chip (chat-wardrobe-parity): the structured
   // worn items resolved through the shared seam, else the free-text overlay.
-  const wardrobe = await resolveChatWardrobe(state, user.id, profile, sink);
+  const wardrobe = await resolveChatWardrobe(
+    { ...state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(target.characterId) },
+    user.id,
+    profile,
+    sink,
+  );
   // R5 slice 5: a routed chat's outfit chip reads the mirror's WORN items.
   const simOutfit = target.characterId === owned.participant.characterId ? await readSimChatOutfit(chatId) : null;
   return jsonOk({
     ...chatStateSnapshot(state, scenario, { ...snapshotOpts(profile), persisted: stored !== null }),
     outfitLabel: simOutfit ?? wardrobe.garments,
+    // The presentation graph for this member's worn garments (slice 3): the
+    // controls the sheet offers plus the coverage they currently produce.
+    garments: garmentReadoutsFor(
+      scenario.garments,
+      garmentActorForCharacter(target.characterId),
+      scenario.clockMinutes,
+    ),
+    garmentDiagnostics: [],
     // Sim-routed chats show the WORLD clock, not the legacy scenario clock
     // (R3 slice 4 + R5 calendar, ruling 17) — null for legacy chats.
     simClock: await readSimChatClock(chatId),
@@ -181,17 +204,34 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   if (!body.ok) return body.response;
 
   const profile = parseOr(characterProfileSchema, target.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+  // Garment operations degrade rather than fail (docs/resilience.md): a rejected
+  // one is a stable-code diagnostic, collected here and handed back so the sheet
+  // can say WHY it did not take instead of silently discarding it.
+  const editSink = new DiagnosticCollector();
   const { state, scenario } = await editChatState({
     chatId,
     characterId: target.characterId,
     ownerId: user.id,
     profile,
     patch: body.value,
+    sink: editSink,
   });
-  const wardrobe = await resolveChatWardrobe(state, user.id, profile);
+  const wardrobe = await resolveChatWardrobe(
+    { ...state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(target.characterId) },
+    user.id,
+    profile,
+  );
   return jsonOk({
     ...chatStateSnapshot(state, scenario, snapshotOpts(profile)),
     outfitLabel: wardrobe.garments,
+    garments: garmentReadoutsFor(
+      scenario.garments,
+      garmentActorForCharacter(target.characterId),
+      scenario.clockMinutes,
+    ),
+    garmentDiagnostics: editSink.items
+      .filter((d) => d.code.startsWith("garment_op."))
+      .map((d) => ({ code: d.code, message: d.message })),
     simClock: await readSimChatClock(chatId),
   });
 });

@@ -7,13 +7,14 @@ import { parseOr } from "@/lib/parse";
 import { DEFAULT_AVATAR_IMAGE_MODEL, outfitItems, type AvatarImageModel } from "@/contracts";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { resolveWardrobeVisibility } from "@/contracts/items/visibility";
+import { resolveGarmentVisibility } from "@/contracts/items/visibility";
 import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { createImageAsset, failImage, saveImageBuffer } from "./assets";
 import { monogramSvg } from "./monogram";
 import {
   buildAvatarPrompt,
   toWornInputs,
+  wardrobeGarmentKey,
   wardrobeOutfitSummary,
   type AvatarWardrobeItem,
   type AvatarStyle,
@@ -108,6 +109,10 @@ const outfitExtrasSchema = z.object({
   opacity: z.enum(["opaque", "sheer"]).catch("opaque"),
   sensory: z.object({ appearance: z.string().optional() }).optional().catch(undefined),
   subtype: z.string().optional().catch(undefined),
+  /** Never prompt-bearing — carried for the garment store's part template (slice 2). */
+  category: z.string().optional().catch(undefined),
+  /** Never prompt-bearing — a material-inference input for the garment store. */
+  tags: z.array(z.string()).catch([]),
 });
 
 /**
@@ -150,6 +155,8 @@ export async function loadDefaultWardrobe(
           ...(description ? { description } : {}),
           ...(extras.sensory?.appearance ? { appearance: extras.sensory.appearance } : {}),
           ...(extras.subtype ? { subtype: extras.subtype } : {}),
+          ...(extras.category ? { category: extras.category } : {}),
+          ...(extras.tags.length > 0 ? { tags: extras.tags } : {}),
         },
       ];
     });
@@ -174,16 +181,18 @@ export async function loadDefaultWardrobe(
  */
 export function wardrobeOutfitText(wardrobe: ReadonlyArray<AvatarWardrobeItem>): string {
   if (wardrobe.length === 0) return "";
-  const views = resolveWardrobeVisibility(toWornInputs(wardrobe));
-  const viewById = new Map(views.map((v) => [v.instanceId, v]));
+  // Per-GARMENT visibility (slice 3): a presentation-aware wardrobe hands the
+  // resolver one row per covering part, so the phrase rolls the part views back
+  // up by garment id rather than looking one up by position.
+  const byGarment = resolveGarmentVisibility(toWornInputs(wardrobe));
   const worn = wardrobe.flatMap((item, index): SceneWornItem[] => {
-    const view = viewById.get(String(index));
-    if (!view || view.visibility === "hidden") return [];
+    const visibility = byGarment.get(wardrobeGarmentKey(item, index));
+    if (visibility === undefined || visibility === "hidden") return [];
     const subtypeLabel = clothingSubtypeLabel(item.subtype);
     return [
       {
         name: item.name,
-        visibility: view.visibility === "hinted" ? "hinted" : "visible",
+        visibility: visibility === "hinted" ? "hinted" : "visible",
         ...(item.description ? { description: item.description } : {}),
         ...(item.appearance ? { appearance: item.appearance } : {}),
         ...(subtypeLabel ? { subtypeLabel } : {}),
