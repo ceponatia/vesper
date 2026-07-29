@@ -24,6 +24,30 @@ If a complete reanalysis and rewrite of the planned work is needed due to other 
   a matching spec as part of the next substantive edit instead of continuing to
   grow the technical plan.
 
+## Ship close-out: move shipped docs to finished/
+
+Archiving is part of shipping, not an optional afterthought — un-archived
+shipped plans are how this folder rots. When a plan's `Status:` flips to
+**shipped** (or **superseded**), the same change that does the roadmap
+close-out also:
+
+- `git mv`s the `<topic>.plan.md` **and every `<topic>.*` companion** (spec,
+  followups, detail docs) into `finished/` together, so their mutual relative
+  links keep resolving.
+- Repoints that plan's links in `roadmap.md` **and its entry in
+  `roadmap.shipped.md`** to the `finished/…` path. Every other inbound link
+  stays on the old path per the root `CLAUDE.md` archiving rule (and don't fix
+  the moved doc's own outbound links either).
+- Trims the idea's `deferred.plan.md` entry if it graduated from the parking
+  lot (a one-line tombstone at most), and updates its line in
+  `deferred/CLAUDE.md`'s stub index if it started as a stub there.
+
+Two kinds of docs stay in this folder despite shipped work: plans still
+carrying queued remainder on the roadmap (an `active`/`next` plan whose early
+slices shipped), and living reference sets cited from code and live docs (the
+engine hub/spec/gate family). When in doubt: if `roadmap.md` still queues work
+under the doc, it stays; if only `roadmap.shipped.md` mentions it, it moves.
+
 ## Engine gate docs (split 2026-07-21)
 
 The successor-engine plan and spec are split so no single file has to be read or
