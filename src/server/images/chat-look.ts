@@ -75,8 +75,8 @@ export function chatLookKey(input: {
   return fnv1a(`${worn}|${input.overlay.trim().toLowerCase()}|${exposure}|${overlays}${garments}`);
 }
 
-/** The identity-locked look-edit instruction: same person, new outfit, neutral framing. */
-export function buildChatLookPrompt(input: { outfit: string; outfitExposed: boolean }): string {
+/** The identity-locked look-edit instruction: same person, new outfit, neutral framing — age-anchored (2026-07-29 ruling). */
+export function buildChatLookPrompt(input: { outfit: string; outfitExposed: boolean; ageAnchor?: string }): string {
   const outfit = input.outfit.trim();
   const wearing = outfit
     ? `Change the outfit: now wearing ${outfit}. Depict only this clothing — remove anything the reference wears that is not listed.`
@@ -85,9 +85,12 @@ export function buildChatLookPrompt(input: { outfit: string; outfitExposed: bool
       : "Keep a simple, casual outfit.";
   return [
     PORTRAIT_IDENTITY_LOCK,
+    input.ageAnchor ?? "",
     wearing,
     "Standing, relaxed neutral pose, facing the viewer; plain softly lit neutral backdrop; waist-up to three-quarter frame.",
-  ].join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /** True when this conversation has ever rendered an image (the ruled mint gate). */
@@ -130,6 +133,8 @@ export interface RenderChatLookInput {
   lookKey: string;
   outfit: string;
   outfitExposed: boolean;
+  /** The sheet's apparent-age anchor (apparentAgeAnchor) — text-authoritative over the reference. */
+  ageAnchor?: string;
   sink?: DiagnosticSink;
 }
 
@@ -142,7 +147,7 @@ export interface RenderChatLookInput {
  */
 export async function renderChatLookImage(input: RenderChatLookInput): Promise<string | null> {
   if (isDemoMode() || !hasVenice()) return null;
-  const prompt = buildChatLookPrompt({ outfit: input.outfit, outfitExposed: input.outfitExposed });
+  const prompt = buildChatLookPrompt({ outfit: input.outfit, outfitExposed: input.outfitExposed, ageAnchor: input.ageAnchor });
   const asset = await createImageAsset({
     ownerId: input.userId,
     kind: "chat_look",

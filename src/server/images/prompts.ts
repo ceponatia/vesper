@@ -306,7 +306,9 @@ export function buildAvatarPrompt(
       continue;
     }
     if (value.id === "identity.apparent_age") {
-      apparentAge = formatAttributeValue(def, value.value) || undefined;
+      // Image age floor (owner ruling 2026-07-29): minor bands emit NO age word;
+      // "eighteen" states the number. Never the raw registry label here.
+      apparentAge = imageAgeWord(value.value);
       continue;
     }
     if (value.id === "identity.heritage") {
@@ -481,10 +483,15 @@ const VARIANT_FRAMING: Record<VariantKind, string> = {
   setting: "Change the background and setting",
 };
 
-export function buildVariantInstruction(kind: VariantKind, instruction: string): string {
+/**
+ * `ageAnchor` (apparentAgeAnchor, owner ruling 2026-07-29): without it a variant
+ * edit "preserves" the model's own over-read of the reference's age, so every
+ * pose-editor generation bakes another step of drift into the portrait line.
+ */
+export function buildVariantInstruction(kind: VariantKind, instruction: string, ageAnchor?: string): string {
   const change = `${VARIANT_FRAMING[kind]}: ${instruction.trim().replace(/\.+$/, "")}.`;
   const keepOutfit = kind === "outfit" ? "" : "Keep the same outfit as the reference image.";
-  return [PORTRAIT_IDENTITY_LOCK, change, keepOutfit, "Soft flattering lighting, high quality, no text, no watermark."]
+  return [PORTRAIT_IDENTITY_LOCK, ageAnchor ?? "", change, keepOutfit, "Soft flattering lighting, high quality, no text, no watermark."]
     .filter(Boolean)
     .join(" ");
 }
@@ -574,6 +581,13 @@ export interface ScenePresentCharacter {
    * reference image — the render prompt words the reference as authoritative over them.
    */
   identityAnchors?: string;
+  /**
+   * The apparent-age anchor sentence (apparentAgeAnchor, owner ruling 2026-07-29) —
+   * TEXT-authoritative, unlike identityAnchors: Qwen edits over-read an
+   * age-ambiguous reference and compound a step older per generation, so the
+   * sheet's age must overrule the reference. "" / absent ⇒ no age text.
+   */
+  ageAnchor?: string;
   /**
    * SFW lower-body shape line (sceneRevealAppearance, `{intimate:false}`): the
    * figure below a waist-up reference portrait — waist/hips/legs/feet, with
@@ -847,6 +861,81 @@ export function identityAnchorSummary(
   return excerpt(parts.join("; "), IDENTITY_ANCHOR_CHARS);
 }
 
+/**
+ * The image lane's apparent-age vocabulary (owner ruling 2026-07-29) — the ONLY
+ * age words an image prompt may carry. Two rules, both safety-shaped:
+ *
+ * 1. **The floor is an explicit adult.** The registry's minor bands (infant…teen)
+ *    are narrator/world vocabulary and are deliberately ABSENT here — "teen" could
+ *    read 15–17, and no such word may ever reach an image model. A minor-band or
+ *    unknown value produces NO age text at all (the pre-ruling behavior), never a
+ *    younger word. `eighteen` states the number outright.
+ * 2. **The ceiling problem is drift, not text** (the Kristin aging report): Qwen
+ *    edits re-synthesize skin with a texture-amplifying prior and "preserve
+ *    apparent age" preserves the model's own over-estimate of an age-ambiguous
+ *    reference, compounding a step older per edit generation. The anchor sentence
+ *    is what pulls it back — A/B'd at ~15–20 apparent years on the reporting
+ *    chat's avatar (phantom-limb-ab.ts, age variant).
+ */
+const IMAGE_AGE_PHRASES: Record<string, string> = {
+  eighteen: "exactly eighteen years old, an adult",
+  young_adult: "a young adult in {pos} early twenties",
+  mid_twenties: "in {pos} mid-twenties",
+  late_twenties: "in {pos} late twenties",
+  early_thirties: "in {pos} early thirties",
+  late_thirties: "in {pos} late thirties",
+  forties: "in {pos} forties",
+  fifties: "in {pos} fifties",
+  sixties_plus: "in {pos} sixties or beyond",
+};
+
+/** Bands whose anchor also claims youthful skin — only when the sheet authors `skin.texture: smooth`. */
+const YOUTHFUL_SKIN_BANDS = new Set(["eighteen", "young_adult", "mid_twenties", "late_twenties", "early_thirties"]);
+
+/** Subject/possessive pronouns from the identity.gender value; they/their for anything unstated. */
+function agePronouns(gender: string | undefined): { subject: string; possessive: string } {
+  if (gender === "female" || gender?.endsWith("_born_female")) return { subject: "she", possessive: "her" };
+  if (gender === "male" || gender?.endsWith("_born_male")) return { subject: "he", possessive: "his" };
+  return { subject: "they", possessive: "their" };
+}
+
+/**
+ * The avatar subject-descriptor's age word, floored to the image vocabulary:
+ * "eighteen-year-old" for the explicit floor, the registry label for older adult
+ * bands, and **undefined for minor/unknown bands** — `buildAvatarPrompt` then
+ * simply omits age from the subject line rather than ever emitting a sub-adult word.
+ */
+export function imageAgeWord(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (value === "eighteen") return "eighteen-year-old";
+  if (!(value in IMAGE_AGE_PHRASES)) return undefined;
+  const def = attributeRegistry.byId("identity.apparent_age");
+  return (def && formatAttributeValue(def, value)) || undefined;
+}
+
+/**
+ * The identity-locked routes' age anchor (owner ruling 2026-07-29, reversing
+ * "scenes omit apparent age"): one name-bound sentence stating the sheet's
+ * apparent age — "Kristin is in her late twenties; her skin, hands and legs read
+ * smooth and youthful." Worded TEXT-authoritative (unlike the identity anchors,
+ * where the reference wins): the reference's apparent age is exactly the thing
+ * the edit model mis-reads, so here the text must overrule it. "" for minor-band
+ * or unstated ages (see IMAGE_AGE_PHRASES — no age text beats a wrong word).
+ * The youthful-skin clause rides only young bands whose sheet says smooth skin.
+ */
+export function apparentAgeAnchor(name: string, attributes: ReadonlyArray<AttributeValue>): string {
+  const byId = new Map(attributes.map((v) => [v.id, v.value]));
+  const band = byId.get("identity.apparent_age");
+  if (typeof band !== "string") return "";
+  const phrase = IMAGE_AGE_PHRASES[band];
+  if (!phrase) return "";
+  const { possessive } = agePronouns(typeof byId.get("identity.gender") === "string" ? (byId.get("identity.gender") as string) : undefined);
+  const subject = name.trim() || "The subject";
+  const youthful = YOUTHFUL_SKIN_BANDS.has(band) && byId.get("skin.texture") === "smooth";
+  const tail = youthful ? `; ${possessive} skin, hands and legs read smooth and youthful` : "";
+  return `${subject} is ${phrase.replaceAll("{pos}", possessive)}${tail}.`;
+}
+
 /** Budget for the viewer's body line — it competes with everything else for Venice's 1500. */
 const VIEWER_BODY_CHARS = 200;
 
@@ -1044,6 +1133,8 @@ export interface SceneCharacterSpec {
   appearance: string;
   /** Identity-anchor phrase for the identity-locked subject — reinforces the reference image. */
   identityAnchors?: string;
+  /** Apparent-age anchor sentence — TEXT-authoritative over the reference (owner ruling 2026-07-29). */
+  ageAnchor?: string;
   /** SFW lower-body shape line for the identity-locked subject (the waist-up portrait's blind spot). */
   lowerBody?: string;
   /** Explicit bare-region phrase ("topless, bare chest; barefoot"), forced from coverage state; "" when fully covered or untracked. */
@@ -1382,6 +1473,7 @@ function characterSpec(entry: ScenePresentCharacter, action: string, embodied = 
     outfitSummary: entry.outfitDescription ?? wardrobeOutfitSummary(entry.wornVisible),
     appearance: entry.appearance ?? "",
     ...(entry.identityAnchors ? { identityAnchors: entry.identityAnchors } : {}),
+    ...(entry.ageAnchor ? { ageAnchor: entry.ageAnchor } : {}),
     ...(entry.lowerBody ? { lowerBody: entry.lowerBody } : {}),
     exposure: formatExposure(entry.exposure, entry.wardrobeTracked),
     intimateAppearance: entry.intimateAppearance ?? "",
@@ -1603,7 +1695,16 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
   const assemble = (outfitCap: number, settingCap: number): string => {
     const fit = makeFit(outfitCap);
     const pieces: string[] = [];
-    if (reference) pieces.push(PORTRAIT_IDENTITY_LOCK);
+    if (reference) {
+      pieces.push(PORTRAIT_IDENTITY_LOCK);
+      // The age anchor is the one place the TEXT overrules the reference (owner
+      // ruling 2026-07-29): the edit model over-reads an ambiguous reference's age
+      // and drifts older every generation without this. Placed IMMEDIATELY after
+      // the lock — adjacent to its "preserve apparent age" clause it reads as
+      // qualifying that instruction, which is where the A/B probe measured the
+      // ~15–20-year pull; parked later in the prompt it visibly diluted.
+      if (reference.ageAnchor) pieces.push(reference.ageAnchor);
+    }
     pieces.push(framingFor(plan, opts, featured.map((c) => c.name)));
     if (reference) {
       // Identity anchors reinforce the lock; the reference image stays authoritative
@@ -1628,6 +1729,9 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
       const detail = [species, c.appearance, clothing, c.exposure, intimate, c.action].filter(Boolean).join("; ");
       const label = !reference && c === plan.focal ? "Subject" : "Also in frame";
       pieces.push(`${label}: ${c.name} — ${detail}.`);
+      // The anchor-less (text-to-image) focal has no reference to mis-read, but the
+      // same age drift applies to a purely textual render — state the sheet's age.
+      if (!reference && c === plan.focal && c.ageAnchor) pieces.push(c.ageAnchor);
     }
     appendSceneTail(pieces, plan, featured, fit, settingCap);
     return pieces.join(" ");
@@ -1703,10 +1807,12 @@ function assembleMulti(
   const multi = opts.multiReferences ?? [];
   const refCharNames = new Set(multi.filter((m) => m.kind === "character").map((m) => normalizeName(m.name)));
 
-  const pieces: string[] = [
-    PORTRAIT_IDENTITY_LOCK,
-    framingFor(plan, opts, featured.map((c) => c.name)),
-  ];
+  const pieces: string[] = [PORTRAIT_IDENTITY_LOCK];
+  // Age anchors sit adjacent to the lock's "preserve apparent age" clause (the
+  // placement the A/B probe validated); name-bound sentences keep several people
+  // unambiguous in one block.
+  for (const c of featured) if (c.ageAnchor) pieces.push(c.ageAnchor);
+  pieces.push(framingFor(plan, opts, featured.map((c) => c.name)));
   pieces.push(`${multi.length} reference images provided — ${describeMultiReferences(multi)}`);
   pieces.push("Compose all referenced people together into one shared scene, each keeping the exact face, hair and build of their reference image.");
 
