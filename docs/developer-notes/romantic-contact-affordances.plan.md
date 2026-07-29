@@ -4,7 +4,9 @@ Status: next (promoted 2026-07-28; slices 0–4 prove foot contact in legacy
 romantic chat through lane-neutral contracts; intimate work waits for the foot
 proof and authoritative adult-eligibility, consent, exposure, and physiology;
 the plan follows [body-attribute affordances](body-attribute-affordances.plan.md)
-and its active doc family stays together until ship)
+and the shared projection contract in
+[constraint-first narrator physical guidance](narrator-physical-guidance.plan.md);
+its active doc family stays together until ship)
 
 ## In one sentence
 
@@ -35,8 +37,11 @@ moment. For example:
   the system may combine the current contact with body shape, live physiology,
   and surface condition.
 
-These are observations, not prose. The narrator still decides how—or
-whether—to weave them into a reply.
+These are structured observations and resolved contact facts, not prose.
+Consistency constraints and action outcomes reach the narrator through the
+[constraint-first guidance plan](narrator-physical-guidance.plan.md); positive
+details are separately change-gated and never forced into every applicable
+reply.
 
 ## Why start with foot play
 
@@ -260,11 +265,17 @@ Add contact warmth only if Slice 0 identifies an authoritative temperature
 source; otherwise record it as deferred rather than guessing. Use authored
 fixtures rather than open-ended narrator interpretation.
 
-### Slice 3 — romantic-chat evaluation
+### Slice 3 — constraint-first romantic-chat evaluation
 
-Offer at most one or two grounded cues to the romantic-chat narrator behind a
-feature flag. Compare continuity errors, clothing errors, repetition, sensory
-specificity, and prose quality with the existing path.
+Feed attempted contact through the resolver before narration, then project the
+committed, rejected, unresolved, or explicit-transition-required result through
+the shared action-outcome seam in
+[narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md).
+Evaluate constraints and action outcomes behind `CHAT_PHYSICAL_CONSTRAINTS`
+without requiring the narrator to mention an otherwise irrelevant body detail.
+Run any positive contact-transition detail as a second, independent campaign on
+top of the winning constraint configuration; do not combine both changes into
+one A/B.
 
 ### Slice 4 — changes caused by contact
 
@@ -315,8 +326,11 @@ Review:
 - conservation and idempotency of marks and transferred material;
 - whether the narrator sounds natural rather than like a physics report.
 
-The trial succeeds when it reduces contradictions and adds concrete variation
-without making replies longer, more clinical, or repetitive.
+The constraint trial succeeds when it reduces exchange-level contradictions
+and false-premise adoption without worsening claim-normalized accuracy,
+required action-result accuracy, repetition, or prose quality. A separate
+transition trial must add correct, relevant changed-state detail without
+regressing those measures.
 
 ## Not in scope
 
