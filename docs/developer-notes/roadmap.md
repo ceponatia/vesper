@@ -70,6 +70,18 @@ umbrella further down.)
   romantic-contact plan — it needs its own plan when scheduled. Wardrobe
   gap flagged by slice 6: nothing records garment fit (loose/fitted), which
   is the one change that lights up wet cling in production.
+- **Constraint-first narrator physical guidance — constraints, premise correction,
+  and resolved action outcomes** —
+  [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md)
+  (next; planned 2026-07-29 from the closed positive-cue trial and sequenced
+  directly before romantic contact). Keeps the affordance calculations but
+  replaces always-on descriptive suggestions with scoped consistency
+  constraints, high-confidence false-premise fences, and mandatory resolved
+  action outcomes. Positive state-change details get a separate flag and trial;
+  generic ambient opportunities stay parked. No extra model leg. The hair
+  proving slice leads, then the foot-contact resolver consumes the shared
+  action-outcome seam. `CHAT_AFFORDANCE_CUES` remains off.
+
 - **Romantic contact affordances — foot-first grounded contact** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) (next; promoted from deferred
