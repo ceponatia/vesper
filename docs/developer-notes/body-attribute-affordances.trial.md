@@ -15,18 +15,20 @@ pre-committed stopping rule on 2026-07-29: two consecutive rounds with a
 VALID induction gate (the matrix demonstrably tempted the control arm into
 contradictions at 0.50 and 0.44 per exchange) in which the cue arm failed the
 frozen decision rule — it never reduced contradictions (R2 −6%, R3 +29%
-relative to control). The consistent mechanism across every round: cues make
-the narrator describe the body more concretely, and more checkable claims
-means more convictable claims. The cue path reliably bought specificity,
-zero repetition (R3), and the elimination of false-premise adoption (R2) —
-real qualities, but not the pre-registered trade ("reduces contradictions").
+relative to control). The cue arm consistently increased specificity and therefore exposed more
+claims to checking. That is the leading explanation for why the intended net
+gain did not appear, but the category variance is too large to treat it as a
+proven causal law. Repetition reached zero in R3 and false-premise adoption was
+eliminated in R2; each was a promising round-local result, not a replicated
+effect. Neither changed the pre-registered trade ("reduces contradictions").
 
 The first live round (below, §Live results) failed for the opposite reason —
 a matrix with no contradiction headroom — and is kept as the record of why
 the rematch campaign existed. Full round-by-round history in §Rematch log.
-A differently-shaped narrator aid (constraint-only cues, change-gated cues)
-would be new design work under a new plan; this flag and this trial are
-closed.
+The replacement is new design work in
+[constraint-first narrator physical guidance](narrator-physical-guidance.plan.md),
+where constraints/action outcomes and change-gated details receive separate
+release decisions. This flag and this trial are closed.
 
 ## Owner rulings (2026-07-28, same day)
 
@@ -364,20 +366,21 @@ protocol — one entry per live round, campaign cap $10.
   exactly why the stopping rule was pre-committed.
 - **Final verdict per the frozen protocol (second consecutive valid fail)**:
   **`CHAT_AFFORDANCE_CUES` parks OFF.** Across both valid rounds the cue arm
-  never reduced contradictions (R2 −6%, R3 +29%). The consistent mechanism:
-  cues make the narrator talk about the body more concretely (specificity up
-  in every round), and more checkable claims means more convictable claims —
-  the cue path's strength IS its liability under a contradiction audit. What
-  the cues demonstrably bought: zero repetitions (R3), the R2 elimination of
-  false-premise adoption, and higher specificity every round — real
-  qualities, but not the trade the plan pre-registered.
+  never reduced contradictions (R2 −6%, R3 +29%). The cue arm made the narrator talk about the body more concretely
+  (specificity rose in every round), exposing more claims to the audit. That is
+  the leading mechanism hypothesis, not a proven law: untouched dimensions
+  varied sharply between rounds. Repetition reached zero in R3 and
+  false-premise adoption was eliminated in R2, but neither result replicated;
+  they remain useful signals rather than established benefits. The
+  pre-registered trade still failed.
 - **What survives the campaign**: the cause-true provenance + degree wording
   (a measured quality fix, kept in production); the bait+anchor matrix,
   audit judge, and induction gate (a reusable instrument for any future
   narrator A/B); and the finding that a cue system shaped like this one
-  trades contradiction-safety for specificity. A differently-shaped feature
-  (constraint-only cues, or cues gated to state-change turns) would be NEW
-  design work under a new plan — this campaign and this flag are closed.
+  trades contradiction-safety for specificity. A differently-shaped feature is NEW design work in
+  [constraint-first narrator physical guidance](narrator-physical-guidance.plan.md),
+  where constraints/action outcomes and change-gated details receive separate
+  release decisions. This campaign and this flag are closed.
 
 ## Caveats on the method
 
