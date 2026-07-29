@@ -1,37 +1,32 @@
 # Slice 5 narrator trial — cue path vs. appearance path
 
-Status: **deterministic half complete 2026-07-28; live comparison deferred by
-owner ruling the same day** (the repository's `OPENROUTER_API_KEY` is dead — the
-run is one command once a working key lands; see §Owner rulings). Companion
-to [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-§"Slice 5 — narrator trial". Harness: `scripts/eval/affordance-cues/`.
+Status: **closed — final verdict 2026-07-29 after a four-round campaign**
+(first live round $0.72, then the three-round rematch campaign, $6.29 — see
+§Rematch log). Companion to
+[body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
+§"Slice 5 — narrator trial"; rematch protocol:
+[rematch spec](body-attribute-affordances.trial.rematch.md). Harness:
+`scripts/eval/affordance-cues/`.
 
-## Recommendation
+## Recommendation — FINAL
 
-**Keep `CHAT_AFFORDANCE_CUES` OFF, and re-run the live half of this trial once a
-working OpenRouter key is in place** — one command, no further build work.
+**`CHAT_AFFORDANCE_CUES` parks OFF.** The rematch campaign reached its
+pre-committed stopping rule on 2026-07-29: two consecutive rounds with a
+VALID induction gate (the matrix demonstrably tempted the control arm into
+contradictions at 0.50 and 0.44 per exchange) in which the cue arm failed the
+frozen decision rule — it never reduced contradictions (R2 −6%, R3 +29%
+relative to control). The consistent mechanism across every round: cues make
+the narrator describe the body more concretely, and more checkable claims
+means more convictable claims. The cue path reliably bought specificity,
+zero repetition (R3), and the elimination of false-premise adoption (R2) —
+real qualities, but not the pre-registered trade ("reduces contradictions").
 
-The trial was designed and built as specified: ten paired scenarios, thirty paired
-exchanges, both arms driven through the production read, projection and prompt
-builder, with a blinded LLM judge scoring contradictions, repetition, specificity
-and naturalness against the committed physical state. The deterministic half ran
-clean and every structural guarantee the plan asks for holds. The **live half did
-not run**: the `OPENROUTER_API_KEY` in the repo `.env` (last written 2026-06-23) is
-rejected by OpenRouter with `401 {"error":{"message":"User not found."}}` on
-`GET /api/v1/key`, on a direct `POST /chat/completions`, and through the app's own
-provider path. No generation and no judging happened, so there are **no
-contradiction, repetition, specificity or naturalness numbers** and none should be
-quoted from this document. The runner now preflights the key and aborts before the
-first billable call, precisely so this failure can never be mistaken for a result.
-
-Flipping the flag on the strength of the structural evidence alone would be
-overreaching. The mechanical guarantees say the feature *cannot misbehave in the
-ways the plan feared* — it never exceeds two cues, never duplicates the Attributes
-section, never speaks when the cause is missing. They say nothing about whether a
-narrator handed those cues writes better prose, which is the entire question slice
-5 exists to answer and the only thing a live model can settle. One design finding
-below (the sensory-allowance collision) is also likely to shape that answer and is
-worth resolving before the live run rather than after.
+The first live round (below, §Live results) failed for the opposite reason —
+a matrix with no contradiction headroom — and is kept as the record of why
+the rematch campaign existed. Full round-by-round history in §Rematch log.
+A differently-shaped narrator aid (constraint-only cues, change-gated cues)
+would be new design work under a new plan; this flag and this trial are
+closed.
 
 ## Owner rulings (2026-07-28, same day)
 
@@ -156,6 +151,43 @@ Provenance discipline holds too: the `still wet from the rain` clause appears on
 in the rain-caused scenarios, and never in the bath (`immersion`) or the burst tap
 and the spray (`splash`) — a bath does not read as weather.
 
+## Live results (2026-07-29)
+
+The full paired trial ran on the replaced key: 60 narrator generations (10
+scenarios × 3 exchanges × 2 arms) plus 10 blinded judge calls, ~$0.72 total
+(key usage 31.53 → 32.25). All 14 self-checks passed before the first billable
+call. Audit JSON at `data/eval/affordance-cues/trial.json` (gitignored;
+numbers transcribed here). Cue scenarios only — the 6 silence-control
+exchanges carry no feature signal by construction:
+
+| measure (per exchange unless noted) | cues | control |
+| --- | --- | --- |
+| contradictions | **0.13** | **0.13** |
+| repetitions | 0.08 | 0.00 |
+| static restatements | 0.13 | 0.08 |
+| specificity (1–5) | **4.38** | 4.00 |
+| naturalness (1–5) | 4.63 | 4.63 |
+| hair mentions | 1.00 | 0.71 |
+| judge preference — cue scenarios only | 4 | 4 (0 ties) |
+| judge preference — incl. the 2 silence controls | 4 | **6** |
+
+The silence controls — where both arms received byte-identical prompts, so any
+preference is pure label/sampling noise — went 2–0 to "control", which is the
+noise floor — and both of the "6"'s extra control picks came from exactly
+those two scenarios, so among scenarios where the arms actually differed the
+preference was a dead 4–4 tie. (The round-1 runner pooled the buckets; the
+rematch runner reports them separately. Flagged by an automated PR review,
+corrected here — the pooled figure overstated the control lean.)
+
+Against the decision rule (§Re-running it): contradictions were **not** lower
+and repetition **was** higher — the rule fails on both clauses. The specificity
+gain is real and the cue-arm prose stayed exactly as natural, so the mechanism
+works as designed; it just fixed a problem this matrix shows the narrator not
+having. Per §Caveats, 24 paired exchanges is a directional sample and the
+per-exchange-rate gaps here (0.08, 0.05) are within the "few hundredths is
+noise" band — but a tie on the headline measure is not a pass, and "no
+measurable benefit" is itself the finding.
+
 ## Design finding: the sensory allowance collides with the cue block
 
 The one thing the deterministic half surfaced that is not a clean pass.
@@ -204,7 +236,10 @@ and the live numbers would otherwise be measuring the collision rather than the
 cues. The cheapest defensible fix is to have the allowance line acknowledge an
 offered physical cue as an exception when one is present.
 
-## What did not run, and why
+## What did not run on 2026-07-28, and why (historical)
+
+Kept as the record of the first attempt; the live half ran the next day on a
+replaced key — see §Live results.
 
 | step | status |
 | --- | --- |
@@ -245,6 +280,104 @@ the decision rule in `scripts/eval/affordance-cues/README.md` before interpretin
 the output; the headline test is **contradictions per exchange, lower in the cue
 arm, with repetition not higher**. Fill in the numbers here and the recommendation
 above becomes a real ruling.
+
+## Rematch log
+
+Per the [rematch spec](body-attribute-affordances.trial.rematch.md) §Iteration
+protocol — one entry per live round, campaign cap $10.
+
+### Round R1 — 2026-07-29 — $1.93 — verdict: invalid_induction
+
+- **Changed since round 1**: everything the rematch spec ordered — the 12-
+  scenario bait+anchor matrix (5 families, 22 armed baits, all anchored), the
+  per-arm arm-blind audit judge with quote-or-discard verification, the
+  induction gate, the frozen decision rule.
+- **Induction**: control 0.16 contradictions/exchange (needs ≥0.40); 2/5
+  families tripped the control (coverage 0.57, binding 0.14; provenance,
+  degree, assertion 0.00). No feature verdict.
+- **Why**: structural — provenance/degree/assertion tempt claims about state
+  only the cue arm knows (wetness reaches the prompt only through the cue
+  block), so the control cannot misattribute wetness it never mentions. The
+  two families that bit tempt pure invention, which needs no state knowledge.
+- **Observations parked for a valid round** (cue path frozen until then): the
+  cue arm was convicted for weaving the cue's own wording ("damp strands"
+  against a soaked committed band — the cue adjective may understate its
+  band), and both arms rationalized baits by inventing state changes ("the
+  ponytail had worked loose from its tie"). Cue arm ran 0.45 c/e overall —
+  worth an autopsy against these judge behaviors once induction is valid.
+- **Action**: matrix v2 — establish the true state to BOTH arms in-fiction
+  (player-line establishment + shared scene facts) so the control makes
+  convictable claims; use mid-scenario state flips as the production-faithful
+  stale-knowledge differential; flat declarative baits. Runner, judge, gate,
+  rule untouched.
+
+### Round R2 — 2026-07-29 — $1.90 (campaign $3.83) — verdict: valid FAIL
+
+- **Changed since R1**: matrix v2 only (truth established to both arms
+  before the first armed bait; stale-flip differential; flat declarative
+  baits). Runner, judge, gate, rule, cue path untouched.
+- **Induction**: PASSED for the first time — control 0.50
+  contradictions/exchange, 5/5 families with a control violation. The
+  instrument can now measure.
+- **Decision rule**: FAIL on the contradiction clause — cues 0.469 vs the
+  0.300 ceiling (60% of control's 0.500); a ~6% relative reduction where 40%
+  is required. Repetition (0.063 vs 0.031, within +0.05) and naturalness
+  (4.78 vs 4.56 — the cue arm reads MORE natural) both cleared. Specificity
+  again favored cues (4.44 vs 4.11).
+- **Per-family, the diagnostic split**: where the cue speaks to the baited
+  dimension, anchoring wins — assertion 0.00 vs 0.50 (the cue arm never
+  adopted a false premise), binding 0.33 vs 0.50. Where the cue is silent on
+  the baited dimension, it hurts — provenance 0.50 vs 0.25: bath-caused
+  wetness renders as bare "damp, clinging strands" (only rain gets a cause
+  clause), so the cue arm talks about wet hair more and misattributes it to
+  the baited storm. Degree tied (0.14) with the cue arm again convicted for
+  weaving the cue's own "damp" against a soaked committed band.
+- **Recorded cue-side change (the one the protocol allows on this
+  evidence)**: the wetness cue lines gain band-accurate degree wording
+  (subtle/clear/strong → damp/wet/soaked-scale adjectives) and a committed
+  provenance clause for EVERY cause the observation carries (bath/immersion,
+  splash — mirroring the existing rain mechanism at the tag source), with
+  unknown causes staying clause-free. Implemented in
+  `src/server/engine/chat-affordance-cues.ts` + the hair phenomena tags;
+  trial guards extended symmetrically.
+- **Next**: round R3 on the same matrix, judge, gate, and rule. A pass flips
+  the flag default ON; a second consecutive valid fail is final — the flag
+  parks OFF.
+
+### Round R3 — 2026-07-29 — $2.46 (campaign $6.29) — verdict: valid FAIL. **FINAL.**
+
+- **Changed since R2**: the one recorded cue-side change only (cause-true
+  provenance clauses + degree-accurate wetness adjectives). Matrix, judge,
+  gate, rule all frozen.
+- **Induction**: valid again — control 0.44 contradictions/exchange, 5/5
+  families.
+- **Decision rule**: FAIL on the contradiction clause — cues 0.563 vs the
+  0.263 ceiling; the cue arm contradicted MORE than control this round.
+  Repetition passed at its best-ever (cues 0.000 vs 0.031); naturalness
+  passed (4.67 vs 4.89, within the floor); preference tied 4–4–1.
+- **The change worked on its target and it wasn't enough**: provenance went
+  from the worst cue-arm family (0.50 vs 0.25) to dead even (0.13 vs 0.13).
+  But binding flipped against the cues (0.83 vs 0.50, from 0.33 vs 0.50 in
+  R2), assertion regressed to a tie (from the 0.00 vs 0.50 R2 win), and
+  coverage/degree stayed adverse. Dimensions no change touched swung by
+  0.5 c/e between rounds — real sampling variance at this n, which is
+  exactly why the stopping rule was pre-committed.
+- **Final verdict per the frozen protocol (second consecutive valid fail)**:
+  **`CHAT_AFFORDANCE_CUES` parks OFF.** Across both valid rounds the cue arm
+  never reduced contradictions (R2 −6%, R3 +29%). The consistent mechanism:
+  cues make the narrator talk about the body more concretely (specificity up
+  in every round), and more checkable claims means more convictable claims —
+  the cue path's strength IS its liability under a contradiction audit. What
+  the cues demonstrably bought: zero repetitions (R3), the R2 elimination of
+  false-premise adoption, and higher specificity every round — real
+  qualities, but not the trade the plan pre-registered.
+- **What survives the campaign**: the cause-true provenance + degree wording
+  (a measured quality fix, kept in production); the bait+anchor matrix,
+  audit judge, and induction gate (a reusable instrument for any future
+  narrator A/B); and the finding that a cue system shaped like this one
+  trades contradiction-safety for specificity. A differently-shaped feature
+  (constraint-only cues, or cues gated to state-change turns) would be NEW
+  design work under a new plan — this campaign and this flag are closed.
 
 ## Caveats on the method
 

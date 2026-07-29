@@ -65,8 +65,18 @@ import {
 } from "@/server/test-support";
 
 const CUE_HEADING = "Physical detail worth noticing this turn";
-const CLEAR_CLUMPING = "has separated into damp, clinging strands";
-const SUBTLE_CLUMPING = "has begun to gather into damp strands";
+
+/**
+ * The two clumping SENTENCES, matched without their degree adjective.
+ *
+ * Since the round-R2 change the adjective states how wet the hair actually is
+ * ("damp"/"wet"/"soaked"), which moves with the committed level and therefore
+ * with the story clock these exchanges run on. What each assertion here is about
+ * is which BAND's sentence reached the narrator, so the adjective is the one part
+ * deliberately left open — the projection's unit tests pin the exact wording.
+ */
+const CLEAR_CLUMPING = /has separated into \w+, clinging strands/u;
+const SUBTLE_CLUMPING = /has begun to gather into \w+ strands/u;
 
 /** Headwear is the perception gate's instrument: the one library row that covers `hair`. */
 const WOOL_HAT = { slug: "woolHat", name: "wool hat", category: "headwear", coverage: ["hair"], layer: 2 } as const;
@@ -224,7 +234,7 @@ describe.runIf(ready)("the flag — off is today, to the character", () => {
     const on = await narratorPrompt(chat);
 
     expect(on).toContain(CUE_HEADING);
-    expect(on).toContain(`Wren's auburn hair ${CLEAR_CLUMPING}, still wet from the rain`);
+    expect(on).toMatch(/Wren's auburn hair has separated into \w+, clinging strands, still wet from the rain/u);
     // Everything the OFF prompt said, the ON prompt still says.
     for (const line of off.split("\n")) expect(on).toContain(line);
     // And byte for byte: the ON prompt is the OFF prompt with ONE block spliced
@@ -265,7 +275,7 @@ describe.runIf(ready)("the repeat gate, through jsonb", () => {
     // The prompt is built BEFORE the fan-out (as it is live), so exchange 1's cue
     // memory recorded the DRY cut — the narrator hears about the rain on THIS prompt.
     const first = await narratorPrompt(chat);
-    expect(first).toContain(CLEAR_CLUMPING);
+    expect(first).toMatch(CLEAR_CLUMPING);
     expect(cueLines(first)).toHaveLength(1);
 
     // Exchange 2 changes nothing about the hair — and records that the clumping
@@ -287,7 +297,7 @@ describe.runIf(ready)("the repeat gate, through jsonb", () => {
     );
     const third = await narratorPrompt(chat);
     expect(third).toContain(CUE_HEADING);
-    expect(third).toContain(`Wren's auburn hair ${SUBTLE_CLUMPING}`);
+    expect(third).toMatch(/Wren's auburn hair has begun to gather into \w+ strands/u);
     expect(third).not.toContain("still wet from the rain");
   });
 });
@@ -311,7 +321,7 @@ describe.runIf(ready)("the perception gate", () => {
     const read = await readFor(cut.scenario, cut.state);
     expect(read.read.observations.map((entry) => entry.id)).toContain("hair.wet_clumping");
     expect(prompt).toContain(CUE_HEADING);
-    expect(prompt).toContain(CLEAR_CLUMPING);
+    expect(prompt).toMatch(CLEAR_CLUMPING);
 
     // What the hat DOES silence, it silences for a physical reason the mechanics
     // name — not because an observer was told nothing about the location.
@@ -329,7 +339,7 @@ describe.runIf(ready)("a retake restores mention history WITH the weather it rea
     expect(anchorScenario.affordanceCues).toEqual(emptyAffordanceCueState());
     await savePreExchangeScenario(chat.chatId, anchorScenario);
     const expected = await narratorPrompt(chat);
-    expect(expected).toContain(CLEAR_CLUMPING);
+    expect(expected).toMatch(CLEAR_CLUMPING);
 
     // A take that says the damp hair out loud. Nothing about the BODY moves, so
     // the only thing this exchange can change about the next prompt is the memory.
@@ -369,7 +379,7 @@ describe.runIf(ready)("corrupt jsonb degrades without costing the turn", () => {
 
     // A corrupt memory is "nothing said yet" — chatty for one exchange, never a
     // lost turn — and the next exchange re-materializes the column.
-    expect(await narratorPrompt(chat)).toContain(CLEAR_CLUMPING);
+    expect(await narratorPrompt(chat)).toMatch(CLEAR_CLUMPING);
     const healed = await settle(chat, {}, true);
     expect(healed.affordanceCues.bands["hair:clumping"]).toBe("clear");
   });

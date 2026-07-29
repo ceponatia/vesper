@@ -178,12 +178,18 @@ emit:
 - `distinct_strands`;
 - `heavy_clumps`;
 - `wet_darkened_relative_to_base`;
-- `retains_droplets`.
+- `retains_droplets`;
+- a `wetness_damp` / `wetness_wet` / `wetness_soaked` degree descriptor from
+  the committed wetness unit (cuts at 4 000 / 8 000).
 
-A rain cause is attached only when a recent authoritative `rain_exposure`
-event supports it. Immersion and splash are legitimate wetting events that
-license **no** cause tag — a bath is not weather, and an unattributed wet
-read is the correct output (review ruling 2026-07-28).
+A cause tag is attached only when a recent authoritative wetting event
+supports it — and **every** wetting kind now names itself (`recent_rain`,
+`recent_immersion`, `recent_splash` per `hairWettingEventKinds`), superseding
+the 2026-07-28 no-tag-for-immersion ruling: trial round R2 (2026-07-29)
+measured that an unattributed wet read invites the narrator to invent the
+ambient cause (bath wetness baited into "rain" at 2× control), so cause-true
+provenance beats cause-free silence. `other` and stale causes still carry no
+tag, and rain remains the only kind that may read as weather.
 
 ### `hair.wind_or_motion_response`
 
@@ -335,10 +341,18 @@ runtime frame.
   still unreachable in the chat lane (the domain fixture proves it at
   `6_000`). Either lower the adapter's opaque constant, add an ends-exposure
   carve-out, or accept that the case stays fixture-only — needs a ruling.
-- Whether immersion-caused wetness deserves its own provenance tag + cue
-  clause ("still dripping from the bath") — currently it correctly carries
-  no cause tag at all (a bath must not read as rain), which loses provenance
-  a narrator might use.
+- ~~Whether immersion-caused wetness deserves its own provenance tag + cue
+  clause~~ — **resolved 2026-07-29** by the rematch campaign's recorded
+  cue-side change (trial R2 measured the gap: the cue arm misattributed
+  bath wetness to baited rain at 2× control). Every wetting cause now tags
+  itself (`recent_rain` / `recent_immersion` / `recent_splash` via
+  `hairWettingEventKinds`) and the renderer appends a cause-true clause —
+  immersion deliberately reads "still wet from the water it was in", never
+  "the bath", because immersion covers pools, rivers, and dunkings. The
+  wetness cue adjective now also follows the committed `wetness_*` degree
+  descriptor (damp/wet/soaked) rather than the clump band, which understates
+  on dense hair. `other` and stale causes stay clause-free. Detail:
+  [rematch log](body-attribute-affordances.trial.md#rematch-log).
 
 ## Resolved (owner rulings, 2026-07-28)
 

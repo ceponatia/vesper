@@ -74,15 +74,23 @@ export type HairEventKind = (typeof hairEventKinds)[number];
 export const hairImpulseEventKinds = ["shake", "sudden_turn", "run", "impact", "gust"] as const;
 
 /**
- * Kinds that authorise a RAIN cause on a wet read. Nothing else may imply rain.
+ * Kinds that WET the hair — the ones a wet read may name as its cause.
  *
- * Exactly one kind qualifies, and the exclusion is the point: `immersion` (a
- * bath, a pool, a dunking) and `splash` are legitimate wetting events, but
- * narrating either as weather is a direct contradiction of the scene. Wet hair
- * from any other cause reads as wet and stays SILENT about why — an unattributed
- * wet read is correct; an invented one is a lie the narrator will repeat.
+ * Each kind names ITSELF and nothing else, which is the whole point: `immersion`
+ * (a bath, a pool, a dunking) and `splash` are legitimate wetting events, and
+ * narrating either as weather is a direct contradiction of the scene. Only
+ * `rain_exposure` may ever say rain.
+ *
+ * Naming the non-rain causes at all is the round-R2 finding
+ * (`docs/developer-notes/body-attribute-affordances.trial.md` §Rematch log): a
+ * wet read that stayed silent about a committed bath let the narrator reach for
+ * the storm it could hear at the window — the cue arm misattributed wetness at
+ * twice the control's rate. Silence about a KNOWN cause is not conservative;
+ * only silence about an unknown one is, so an impulse kind (a shake, a gust)
+ * maps to nothing and unknown provenance still says nothing at all.
  */
-export const hairRainEventKinds = ["rain_exposure"] as const;
+export const hairWettingEventKinds = ["rain_exposure", "immersion", "splash"] as const;
+export type HairWettingEventKind = (typeof hairWettingEventKinds)[number];
 
 export const hairCausalEventSchema = z.object({
   kind: z.enum(hairEventKinds),
@@ -94,9 +102,6 @@ export function isHairImpulseEvent(event: HairCausalEvent): boolean {
   return (hairImpulseEventKinds as readonly HairEventKind[]).includes(event.kind);
 }
 
-export function isHairRainEvent(event: HairCausalEvent): boolean {
-  return (hairRainEventKinds as readonly HairEventKind[]).includes(event.kind);
-}
 
 // ---------------------------------------------------------------------------
 // State, context, frame
