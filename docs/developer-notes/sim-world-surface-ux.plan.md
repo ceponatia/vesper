@@ -1,8 +1,7 @@
 # World surface UX — degraded reads, unavailable actions, partial-op progress, mobile
 
-Status: draft (stub — successor-engine backlog item F22, parked 2026-07-24 from
-the successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
-before building)
+Status: shipped — 2026-07-28 (promoted the same day from successor-engine
+backlog item F22; all four slices complete)
 
 ## What
 
@@ -73,9 +72,39 @@ the sim feel less trustworthy than the legacy lane it's meant to replace.
 
 ## Open questions
 
-- Does the world strip replace the ambient time chip or absorb it?
-- Tablet (`md`–`lg`) layout: strip+sheet like mobile, or a collapsible aside?
+- **Ruled for v1:** the compact world entry point absorbs location, clock, and
+  catch-up state instead of adding another adjacent status chip.
+- **Ruled for v1:** phone and tablet widths below `lg` use the same compact
+  strip and dedicated World sheet. Desktop retains the persistent aside.
 
 ## Slices
 
-_(Defined at promotion.)_
+1. **Truthful action surface.** Keep authored unavailable actions visible,
+   explain their reason, humanize command alternatives, and consume
+   partial-operation signals.
+2. **Read-state honesty.** Distinguish not-applicable, loading, available,
+   catching-up, and degraded world states; degraded copy guarantees transcript
+   safety and offers retry.
+3. **First-class responsive access.** Add a compact world strip below the chat
+   header for widths below `lg`, opening a dedicated World sheet; keep Roster
+   scoped to people.
+4. **Projection identity follow-up.** Add stable actor identifiers to cast
+   rows at the world-read boundary and use them for keys and command targets.
+
+## Acceptance
+
+- World projection failure is visibly different from a chat with no world.
+- Unavailable actions remain discoverable and show their authored reason.
+- Partial travel/activity does not appear completed while catch-up is pending.
+- Location, time, inventory, activities, and world actions are reachable on
+  a 390×844 viewport without going through a Roster-labelled control.
+
+## Shipped
+
+The world surface now retains unavailable actions with their authored reasons,
+humanizes command alternatives, keys cast rows by stable actor identity, and
+consumes `arrived`/`drainShort` so partial travel and activities read as work in
+progress. Loading, catch-up, and degraded projection states remain visible with
+safe-copy and retry. Below `lg`, a compact location/time/status strip opens a
+dedicated World sheet containing the world clock and full controls; Roster is
+people-only again. Completion-beat wording remains correctly owned by F23.

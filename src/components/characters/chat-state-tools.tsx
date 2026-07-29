@@ -60,25 +60,25 @@ export function ChatStateToolsModal({
   snapshot: ChatStateSnapshot;
   onSaved: (next: ChatStateSnapshot) => void;
 }) {
+  if (!open) return null;
+
   return (
-    <Dialog open={open} onClose={onClose} title={`Character sheet — ${who}`} size="xl">
-      {open ? (
-        <StateToolsForm
-          chatId={chatId}
-          characterId={characterId}
-          presence={presence}
-          onPresenceChanged={onPresenceChanged}
-          snapshot={snapshot}
-          onSaved={onSaved}
-          onClose={onClose}
-        />
-      ) : null}
-    </Dialog>
+    <StateToolsDialog
+      chatId={chatId}
+      who={who}
+      characterId={characterId}
+      presence={presence}
+      onPresenceChanged={onPresenceChanged}
+      snapshot={snapshot}
+      onSaved={onSaved}
+      onClose={onClose}
+    />
   );
 }
 
-function StateToolsForm({
+function StateToolsDialog({
   chatId,
+  who,
   characterId,
   presence,
   onPresenceChanged,
@@ -87,6 +87,7 @@ function StateToolsForm({
   onClose,
 }: {
   chatId: string;
+  who: string;
   characterId?: string;
   presence?: "present" | "away";
   onPresenceChanged?: () => void;
@@ -215,8 +216,8 @@ function StateToolsForm({
     }
   };
 
-  return (
-    <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto">
+  const content = (
+    <div className="flex flex-col gap-4">
       {livePresence ? (
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Presence</span>
@@ -549,15 +550,28 @@ function StateToolsForm({
         </>
       ) : null}
 
-      <div className="flex justify-end gap-2 border-t border-ink-600 pt-3">
-        <Button onClick={onClose} disabled={saving}>
-          Cancel
-        </Button>
-        <Button variant="primary" busy={saving} onClick={save}>
-          Save
-        </Button>
-      </div>
     </div>
+  );
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Character sheet — ${who}`}
+      size="xl"
+      footer={
+        <>
+          <Button onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button variant="primary" busy={saving} onClick={save}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      {content}
+    </Dialog>
   );
 }
 
@@ -567,4 +581,3 @@ function signed(n: number): string {
   const body = Number.isInteger(n) ? String(Math.abs(n)) : Math.abs(n).toFixed(2);
   return `${n > 0 ? "+" : "−"}${body}`;
 }
-

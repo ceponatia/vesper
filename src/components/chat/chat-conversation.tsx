@@ -14,6 +14,7 @@ import {
 import {
   CHAT_DEFAULT_CALENDAR_START,
   CHAT_SKIP_MINUTES,
+  chatCapabilitiesForLane,
   formatChatMoment,
   parseChatSceneModel,
   type ChatActionId,
@@ -32,6 +33,7 @@ import {
 } from "@/lib/client/api";
 import { replyRevealHoldMs } from "@/lib/chat-pacing";
 import { NARRATIVE_MODELS, resolveChatModelId } from "@/lib/narrative-models";
+import { formatStoryClockShort, storyClockAt } from "@/lib/simulation";
 import { isPinnedToBottom, prependRestoreTop, type PrependAnchor } from "@/lib/scroll-pin";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -188,6 +190,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scenarioOpen, setScenarioOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  // Dedicated responsive world sheet. Below `lg` this is the first-class path
+  // to location, clock, inventory, travel, and activities; Roster stays people.
+  const [worldOpen, setWorldOpen] = useState(false);
   // Roster sheet (multi-character-chat.plan.md slice 1) — the phone-width path to
   // the roster panel; desktop also gets it inline in the aside.
   const [rosterOpen, setRosterOpen] = useState(false);
@@ -1026,12 +1031,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     />
   );
   const roster = bootstrap.data?.roster ?? [];
-  // Routing parity (presentation-charter.plan.md §4): a sim-routed chat's turns
-  // run on the successor engine, which has no successor semantics for photos or
-  // legacy action chips yet — hide those affordances (a hidden control beats a
-  // dead one that 409s). Continue / Regenerate / Go on STAY: they now work via
-  // the new same-cut / utterance-free semantics.
+  // `simRouted` remains presentation metadata (including delete-chat copy).
+  // Actionable controls consume the server-owned capability manifest instead.
   const simRouted = bootstrap.data?.chat.simRouted ?? false;
+  const capabilities = bootstrap.data?.chat.capabilities ?? chatCapabilitiesForLane(simRouted);
   // The dialogue-tag vocabulary for rendering replies: every roster member's name (primary
   // first), so a group reply's non-primary `[Name]` tags attribute instead of leaking as
   // literal text. Falls back to the primary name on legacy/empty-roster payloads.
@@ -1045,6 +1048,59 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const lastLine = lines[lines.length - 1];
   const canGoOn =
     !sending && ready && !archived && lastLine?.role === "assistant" && !lastLine.id.startsWith("tmp-");
+  const worldClockLabel = chatState?.simClock
+    ? formatStoryClockShort(storyClockAt(chatState.simClock.storySecond))
+    : chatState
+      ? formatChatMoment(chatState.clockMinutes, chatState.calendarStart)
+      : "";
+  const worldLocationLabel = world.loading && world.data === null
+    ? "Loading world…"
+    : world.error
+      ? "World temporarily unavailable"
+      : world.data?.catchingUp
+        ? "World catching up…"
+        : world.data?.transit
+          ? `Walking to ${world.data.transit.toLabel}`
+          : world.data?.place?.label || "Whereabouts unknown";
+  const renderWorldSurface = () => (
+    <div className="flex flex-col gap-3">
+      {world.loading && world.data === null ? (
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-md border border-ink-600 bg-ink-850 px-3 py-2 text-sm text-paper-400"
+        >
+          <span className="size-2 animate-pulse rounded-full bg-accent-400" aria-hidden />
+          Loading world…
+        </div>
+      ) : null}
+      {world.error ? (
+        <div
+          role="alert"
+          className="rounded-md border border-danger-500/35 bg-danger-500/10 px-3 py-2 text-sm text-paper-300"
+        >
+          <p className="font-medium text-paper-100">World temporarily unavailable</p>
+          <p className="mt-0.5 text-xs text-paper-400">
+            Your transcript is safe. Try the world projection again without leaving the conversation.
+          </p>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <span className="truncate font-mono text-[10px] text-paper-600">{world.error.code}</span>
+            <Button size="sm" variant="quiet" onClick={() => world.reload()}>
+              Retry
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {world.data ? (
+        <ChatWorldCard
+          chatId={chatId}
+          world={world.data}
+          archived={archived}
+          busy={skipBusy || sending}
+          onWorldChanged={refreshWorldAndState}
+        />
+      ) : null}
+    </div>
+  );
 
   return (
     // Below md the global app header is suppressed on this route (app-shell.tsx),
@@ -1112,25 +1168,65 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         </div>
       </header>
 
+      {capabilities.canUseWorldActions ? (
+        <button
+          type="button"
+          onClick={() => setWorldOpen(true)}
+          aria-label={`Open world — ${worldLocationLabel}${worldClockLabel ? `, ${worldClockLabel}` : ""}`}
+          className="flex shrink-0 items-center gap-2 border-b border-ink-600 bg-ink-850/95 px-4 py-2 text-left transition-colors hover:bg-ink-800 lg:hidden"
+        >
+          <span
+            className={cx(
+              "size-2 shrink-0 rounded-full",
+              world.error
+                ? "bg-danger-400"
+                : world.loading || world.data?.catchingUp
+                  ? "animate-pulse bg-accent-400"
+                  : "bg-accent-400",
+            )}
+            aria-hidden
+          />
+          <span className="min-w-0 flex-1 truncate text-xs text-paper-200">{worldLocationLabel}</span>
+          {worldClockLabel ? <span className="shrink-0 text-[11px] text-paper-500">{worldClockLabel}</span> : null}
+          <span className="shrink-0 text-xs text-accent-300">World ›</span>
+        </button>
+      ) : null}
+
       {isMobile ? (
         <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} side="bottom" title="Conversation">
           {menuBody}
         </Sheet>
       ) : null}
 
+      {/* First-class phone/tablet world surface. The compact strip above opens
+          this directly; Roster remains scoped to people and relationships. */}
+      <Sheet
+        open={worldOpen && capabilities.canUseWorldActions}
+        onClose={() => setWorldOpen(false)}
+        side="bottom"
+        title="World"
+        className="lg:hidden"
+      >
+        <div className="flex flex-col gap-4 p-3">
+          <ChatClockCard
+            chatId={chatId}
+            clockMinutes={chatState?.clockMinutes ?? 0}
+            calendarStart={chatState?.calendarStart ?? CHAT_DEFAULT_CALENDAR_START}
+            simClock={chatState?.simClock ?? null}
+            archived={archived}
+            skipBusy={skipBusy || sending}
+            onSkip={(amount) => void skipTime(amount)}
+            onSaved={(snapshot) => setChatState(snapshot)}
+            onSimCalendarSaved={() => void refreshState()}
+          />
+          {renderWorldSurface()}
+        </div>
+      </Sheet>
+
       {/* Roster sheet (multi-character-chat.plan.md): the menu path to the roster
           panel + the relationship matrix (roster > 1). */}
       <Sheet open={rosterOpen} onClose={() => setRosterOpen(false)} side="bottom" title="Roster">
         <div className="flex flex-col gap-4 p-3">
-          {/* The world card is the phone's only path to travel (the desktop aside is
-              hidden below lg) — folded into the Roster sheet; hides for legacy chats. */}
-          <ChatWorldCard
-            chatId={chatId}
-            world={world.data}
-            archived={archived}
-            busy={skipBusy || sending}
-            onWorldChanged={refreshWorldAndState}
-          />
           {roster.length > 0 ? (
             <ChatRosterPanel
               chatId={chatId}
@@ -1328,6 +1424,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                       avatarImageId={character?.avatarImageId ?? null}
                       streaming={sending}
                       takeTarget={!archived && line.id === lastAssistantId}
+                      canEditHistory={capabilities.canEditHistory}
+                      canDeleteHistory={capabilities.canDeleteHistory}
+                      canRerunFromMessage={capabilities.canRerunFromMessage}
+                      canRetakeLatest={capabilities.canRetakeLatest}
                       onEdit={editLine}
                       onDelete={deleteLine}
                       onRerun={(id) => void rerun(id)}
@@ -1374,15 +1474,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               onSaved={(snapshot) => setChatState(snapshot)}
               onSimCalendarSaved={() => void refreshState()}
             />
-            {/* The world card (world-ui.plan.md slice 1) sits below the clock — it
-                renders nothing for a legacy chat (world.data === null). */}
-            <ChatWorldCard
-              chatId={chatId}
-              world={world.data}
-              archived={archived}
-              busy={skipBusy || sending}
-              onWorldChanged={refreshWorldAndState}
-            />
+            {/* Successor world status + controls. Projection failure stays visible
+                and retryable instead of collapsing to an empty gutter. */}
+            {capabilities.canUseWorldActions ? renderWorldSurface() : null}
           </aside>
         ) : null}
       </div>
@@ -1465,7 +1559,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               )}
             </div>
           ) : null}
-          {chatState && !archived && !simRouted ? (
+          {chatState && !archived && capabilities.canUseLegacyActionBeats ? (
             <ActionChips busy={actionBusy} disabled={sending} onAction={(a) => void runAction(a)} />
           ) : null}
           {/* OOC affordance (slice 5): a clear amber signal the caret is inside a
@@ -1566,8 +1660,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 narratorMode && !oocActive && "border-ink-500 ring-1 ring-ink-500/60",
               )}
             />
-            {/* Attachments have no successor semantics yet (§4) — hidden for sim chats. */}
-            {!archived && !simRouted ? (
+            {/* Attachment availability comes from the transcript policy manifest. */}
+            {!archived && capabilities.canAttachPhotos ? (
               <>
                 <input
                   ref={attachInputRef}
@@ -1608,9 +1702,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 </svg>
               </button>
             ) : null}
-            {sending ? (
-              // Stop swaps in for Send while a reply streams (spec §4.2): the server
-              // truncates honestly; what's on screen stays as the settled reply.
+            {sending && capabilities.canStop ? (
+              // Stop swaps in only when the lane has a real server-side abort.
               <Button
                 variant="ghost"
                 busy={stopping}
@@ -1619,6 +1712,15 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 className="order-5 ml-auto sm:ml-0"
               >
                 Stop
+              </Button>
+            ) : sending ? (
+              <Button
+                variant="ghost"
+                busy
+                title="The successor engine is finishing this turn"
+                className="order-5 ml-auto sm:ml-0"
+              >
+                Replying…
               </Button>
             ) : (
               <Button

@@ -248,7 +248,7 @@ describe("client response parsing", () => {
     const parsed = chatWorldSchema.parse({
       place: { label: "home", privacy: "public" },
       transit: null,
-      cast: [{ name: "Nora", whereabouts: "", present: true, isPrimary: true }, "garbage"],
+      cast: [{ actorId: "actor-nora", name: "Nora", whereabouts: "", present: true, isPrimary: true }, "garbage"],
       destinations: [{ zoneId: SQUARE, label: "town square", mode: "walk", travelSeconds: 300 }, { label: "no id" }],
       held: [{ itemId: "item-1", name: "a keepsake" }],
       actions: [{ id: "action-rest", label: "Rest", durationSeconds: 600, available: true }, { label: "no id" }],
@@ -256,6 +256,7 @@ describe("client response parsing", () => {
     });
     expect(parsed.place).toEqual({ label: "home", privacy: "public" });
     expect(parsed.cast).toHaveLength(1);
+    expect(parsed.cast[0]?.actorId).toBe("actor-nora");
     expect(parsed.cast[0]?.isPrimary).toBe(true);
     expect(parsed.destinations).toHaveLength(1);
     expect(parsed.held[0]).toEqual({ itemId: "item-1", name: "a keepsake" });
@@ -265,10 +266,13 @@ describe("client response parsing", () => {
   });
 
   it("parses a travel landing and a §14.4 refusal", () => {
-    expect(simTravelResultSchema.parse({ status: "traveled", toStorySecond: 30_000, arrived: true })).toMatchObject({
+    expect(
+      simTravelResultSchema.parse({ status: "traveled", toStorySecond: 30_000, arrived: false, drainShort: true }),
+    ).toMatchObject({
       status: "traveled",
       toStorySecond: 30_000,
-      arrived: true,
+      arrived: false,
+      drainShort: true,
     });
     const refusal = simTravelResultSchema.parse({
       status: "rejected",

@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
+import { CHAT_CAPABILITY_UNAVAILABLE_CODE } from "@/contracts";
 import { jsonError, jsonOk, readBody, uploadRejection, withUser } from "@/server/api";
+import { isSimRoutedAuthority, readChatEngineAuthority } from "@/server/engine";
 import { uploadChatAttachment } from "@/server/images";
 import { loadOwnedChat } from "../../owned";
 
@@ -34,6 +36,13 @@ export const POST = withUser<Params>(
     const owned = await loadOwnedChat(chatId, user.id);
     if (!owned) return jsonError("not_found", "chat not found", 404);
     if (owned.chat.archivedAt) return jsonError("chat_archived", "this conversation is archived; restore it to continue", 409);
+    if (isSimRoutedAuthority(await readChatEngineAuthority(chatId))) {
+      return jsonError(
+        CHAT_CAPABILITY_UNAVAILABLE_CODE,
+        "Photo attachments aren't available in world-engine chats yet.",
+        409,
+      );
+    }
 
     const blocked = await uploadRejection(user, req, body.value.image);
     if (blocked) return blocked;

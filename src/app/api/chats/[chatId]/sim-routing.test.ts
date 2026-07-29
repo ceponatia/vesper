@@ -19,9 +19,13 @@ describe("decideSimOperation", () => {
     expect(decideSimOperation({ kind: "open", ...plain })).toEqual({ action: "run", mode: "open" });
   });
 
-  it("maps regenerate and rerun to a same-cut retake (ruling 18)", () => {
-    expect(decideSimOperation({ kind: "regenerate", ...plain })).toEqual({ action: "run", mode: "retake" });
-    expect(decideSimOperation({ kind: "rerun", ...plain })).toEqual({ action: "run", mode: "retake" });
+  it("refuses retakes and message-targeted reruns until the route can prove a committed cut", () => {
+    for (const kind of ["regenerate", "rerun"] as ChatPostKind[]) {
+      expect(decideSimOperation({ kind, ...plain })).toMatchObject({
+        action: "refuse",
+        code: SIM_UNSUPPORTED_CODE,
+      });
+    }
   });
 
   it("refuses attachments on ANY kind (never the legacy narrator)", () => {

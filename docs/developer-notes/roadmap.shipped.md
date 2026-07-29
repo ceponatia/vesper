@@ -5,6 +5,13 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Successor chat + world UI honesty — capability-driven controls and a
+  first-class responsive world surface** —
+  [capabilities](sim-chat-capabilities.plan.md) ·
+  [world surface](sim-world-surface-ux.plan.md) — 2026-07-28 — unsupported
+  legacy mutations are hidden and server-refused; degraded/partial world state
+  stays visible; phone/tablet users get a dedicated World sheet.
+
 - **Body-attribute visual affordances — slices 0–4 + slice 5 wiring: hair
   vocabulary split, shared affordance core, hair domain, chat-lane owners,
   flagged narrator cue path (slice 5's comparison trial still pending)** —

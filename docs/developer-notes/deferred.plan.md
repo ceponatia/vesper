@@ -47,9 +47,9 @@ duplicated batch 1 were folded there instead (idempotency/serialization →
 A1+A2+A4; solo retake → an A3 addendum; partial-travel server honesty had
 already shipped with drain-hardening)._
 
-- **D. Honest controls** — the capability manifest + immediate gating of the
-  dead/wrong sim-chat controls (Stop, rerun-from-here, edit/delete,
-  solo-another-take) (D17); real Stop via an AbortSignal through the
+- **D. Honest controls** — _D17 (capability manifest + immediate gating of the
+  dead/wrong sim-chat controls) graduated and shipped 2026-07-28 →
+  [sim-chat-capabilities.plan.md](sim-chat-capabilities.plan.md)._ Real Stop via an AbortSignal through the
   successor turn (D18); branch/fork/replay UX — the complete fix for honest
   rerun and history editing, surfacing `forkBranch`/ancestry/
   `explainItemPlacement`, none of which has a production caller (D19).
@@ -61,10 +61,10 @@ already shipped with drain-hardening)._
   this group._
 - **F. Honest progress & status** — typed reply stream replacing the ZWSP
   heartbeat, preserving successor failure codes the reply-failure contract
-  currently flattens to `unknown` (F21); world-surface UX — degraded reads
-  shown instead of a vanished card, unavailable actions with their authored
-  reasons, partial travel/activity progress, a real mobile World surface
-  (F22); turn-time honesty — solo turns through the bounded drain seam,
+  currently flattens to `unknown` (F21); _F22 (degraded reads, unavailable
+  action reasons, partial progress, and a real responsive World surface)
+  graduated and shipped 2026-07-28 →
+  [sim-world-surface-ux.plan.md](sim-world-surface-ux.plan.md)._ Turn-time honesty — solo turns through the bounded drain seam,
   completion beats written at completion (F23).
 - **G. Product & maintainability** — Worlds page → operational dashboard
   (G24); ChatConversation decomposition + explicit exchange state machine

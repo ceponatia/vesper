@@ -1,8 +1,7 @@
 # Sim-chat capability manifest — honest controls first
 
-Status: draft (stub — successor-engine backlog item D17, parked 2026-07-24 from
-the successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
-before building)
+Status: shipped — 2026-07-28 (promoted the same day from successor-engine
+backlog item D17; all three slices complete)
 
 ## What
 
@@ -62,11 +61,38 @@ branch-aware rerun/edit).
 
 ## Open questions
 
-- Are assistant-prose edits allowed as labeled display overrides in v1, or
-  simply refused until D19's fork-based editing lands?
-- Does the manifest ride the transcript GET only, or also the world envelope
-  (so the world card and composer share one source)?
+- **Ruled for v1:** successor history edits and deletes are refused rather
+  than presented as display-only overrides. D19 can introduce fork-aware
+  semantics later without preserving a misleading intermediate contract.
+- **Ruled for v1:** the transcript GET owns the capability manifest. The
+  composer, message controls, and world entry point consume that shared
+  payload; the world envelope remains projection data rather than policy.
 
 ## Slices
 
-_(Defined at promotion.)_
+1. **Contract and enforcement.** Add a versioned transcript capability
+   manifest with safe defaults, expose the existing retake linkage needed for
+   per-message decisions, and reject unsupported successor mutations at the
+   server boundary.
+2. **Capability-driven controls.** Render Stop, attachments, edit/delete,
+   targeted rerun, latest retake, fork, and world actions from the manifest
+   instead of inferring them from the engine lane.
+3. **Focused regressions.** Cover legacy compatibility, successor refusal
+   codes, and the absence of dead or misleading controls.
+
+## Acceptance
+
+- A successor chat exposes no legacy-only control that will predictably fail,
+  target the wrong turn, or desynchronize projected world history.
+- Direct API calls receive a structured refusal for unsupported mutations.
+- Legacy chats preserve their current controls and mutation behavior.
+
+## Shipped
+
+The transcript now carries a versioned capability manifest. Message actions,
+attachments, legacy action beats, Stop, retake, and responsive World access
+render from that policy; the old `simRouted` flag remains presentation metadata
+only. Successor stop, attachment upload/send, edit, delete, regenerate, and
+targeted rerun paths all return the shared structured refusal, while legacy
+behavior is unchanged. Retake remains disabled until D19/A3 can prove a
+committed cut per reply rather than exposing a control that 409s on solo turns.
