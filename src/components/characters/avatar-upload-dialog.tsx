@@ -6,10 +6,11 @@ import {
   AVATAR_HEIGHT,
   AVATAR_WIDTH,
   MAX_ZOOM,
+  MIN_ZOOM,
+  canvasRect,
   centeredOffset,
   clampOffset,
   displaySize,
-  sourceRect,
   type Offset,
 } from "@/lib/images/crop";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,11 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
   const [image, setImage] = useState<LoadedImage | null>(null);
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState<Offset>({ x: 0, y: 0 });
+  // Backdrop fill for the letterboxed area when zoomed out past cover (owner
+  // request 2026-07-29) — previewed live as the frame's background and painted
+  // under the image on save. Neutral studio grey, matching the generated-
+  // portrait "plain background" convention.
+  const [bgColor, setBgColor] = useState("#b8b4ae");
   const [error, setError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -79,6 +85,7 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
       setError(null);
       setZoom(1);
       setOffset({ x: 0, y: 0 });
+      setBgColor("#b8b4ae");
     }
     setImage((prev) => {
       revoke(prev);
@@ -89,14 +96,20 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
   // Release the object URL if the component unmounts mid-flow.
   useEffect(() => () => revoke(latest.current.image), [revoke]);
 
-  const renderToDataUrl = useCallback((img: LoadedImage, z: number, off: Offset): string => {
-    const rect = sourceRect(FRAME, img, z, off);
+  const renderToDataUrl = useCallback((img: LoadedImage, z: number, off: Offset, fill: string): string => {
+    const disp = displaySize(FRAME, img, z);
+    const rect = canvasRect(FRAME, disp.width, disp.height, off, AVATAR_WIDTH, AVATAR_HEIGHT);
     const canvas = document.createElement("canvas");
     canvas.width = AVATAR_WIDTH;
     canvas.height = AVATAR_HEIGHT;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("canvas 2d context unavailable");
-    ctx.drawImage(img.el, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, AVATAR_WIDTH, AVATAR_HEIGHT);
+    // The flat backdrop first (visible only where a zoomed-out image leaves the
+    // canvas uncovered — JPEG has no alpha, so unpainted pixels would go black),
+    // then the whole image at its display transform; the canvas clips overflow.
+    ctx.fillStyle = fill;
+    ctx.fillRect(0, 0, AVATAR_WIDTH, AVATAR_HEIGHT);
+    ctx.drawImage(img.el, rect.dx, rect.dy, rect.dw, rect.dh);
     return canvas.toDataURL("image/jpeg", 0.92);
   }, []);
 
@@ -159,7 +172,7 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
   const zoomTo = useCallback((nextZoom: number) => {
     const { zoom: z0, offset: o0, image: img } = latest.current;
     if (!img) return;
-    const z = clamp(nextZoom, 1, MAX_ZOOM);
+    const z = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
     const oldDisp = displaySize(FRAME, img, z0);
     const newDisp = displaySize(FRAME, img, z);
     const fx = (FRAME.fw / 2 - o0.x) / oldDisp.width;
@@ -215,7 +228,7 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
         <Button variant="ghost" onClick={() => setStage("pick")}>
           Choose another
         </Button>
-        <Button variant="primary" onClick={() => image && void upload(renderToDataUrl(image, zoom, offset))}>
+        <Button variant="primary" onClick={() => image && void upload(renderToDataUrl(image, zoom, offset, bgColor))}>
           Use image
         </Button>
       </>
@@ -272,8 +285,8 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
             aria-label="Drag to reposition the crop"
-            className="relative cursor-move touch-none overflow-hidden rounded-card border border-ink-600 bg-ink-950 select-none"
-            style={{ width: FRAME.fw, height: FRAME.fh }}
+            className="relative cursor-move touch-none overflow-hidden rounded-card border border-ink-600 select-none"
+            style={{ width: FRAME.fw, height: FRAME.fh, backgroundColor: bgColor }}
           >
             {image ? (
               // eslint-disable-next-line @next/next/no-img-element -- local object URL; next/image cannot size a draggable canvas-bound preview
@@ -296,7 +309,7 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
             <span className="shrink-0">Zoom</span>
             <Slider
               value={zoom}
-              min={1}
+              min={MIN_ZOOM}
               max={MAX_ZOOM}
               step={0.01}
               onChange={zoomTo}
@@ -304,7 +317,19 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
               className="flex-1"
             />
           </label>
-          <p className="text-xs text-paper-500">Drag to reposition · scroll or use the slider to zoom.</p>
+          <label className="flex w-full items-center gap-3 text-xs text-paper-400">
+            <span className="shrink-0">Backdrop</span>
+            <input
+              type="color"
+              value={bgColor}
+              onChange={(e) => setBgColor(e.target.value)}
+              disabled={stage === "uploading"}
+              aria-label="Backdrop color for the area the image doesn't cover"
+              className="h-7 w-12 cursor-pointer rounded border border-ink-600 bg-transparent p-0.5"
+            />
+            <span className="text-paper-600">fills the space around the image when zoomed out</span>
+          </label>
+          <p className="text-xs text-paper-500">Drag to reposition · scroll or use the slider to zoom — out past the edges to fit more in.</p>
           {error ? <p className="text-xs text-danger-400">{error}</p> : null}
         </div>
       )}

@@ -12,6 +12,15 @@ export const AVATAR_ASPECT_RATIO = AVATAR_WIDTH / AVATAR_HEIGHT; // 0.75
 
 /** How far past cover-fit the user may zoom in. */
 export const MAX_ZOOM = 4;
+/**
+ * How far below cover-fit the user may zoom OUT (owner request 2026-07-29):
+ * shrinking past cover letterboxes the image inside the frame so parts a 3:4
+ * cover-crop would cut (a wide shot's sides, a tall shot's feet) stay in the
+ * portrait; the uncovered canvas is filled with the picked flat backdrop color
+ * at render time. 0.25 is generous — a quarter-size stamp — without letting the
+ * slider degenerate to a dot.
+ */
+export const MIN_ZOOM = 0.25;
 
 /** The crop window, in display pixels (a 3:4 box rendered in the dialog). */
 export interface CropFrame {
@@ -36,22 +45,28 @@ export function coverScale(frame: CropFrame, image: CropImage): number {
   return Math.max(frame.fw / image.nw, frame.fh / image.nh);
 }
 
-/** Displayed image size (px) at a zoom ≥ 1; at zoom 1 it just covers the frame. */
+/** Displayed image size (px) at a zoom; zoom 1 just covers the frame, below 1 letterboxes. */
 export function displaySize(frame: CropFrame, image: CropImage, zoom: number): { width: number; height: number } {
-  const scale = coverScale(frame, image) * Math.max(1, zoom);
+  const scale = coverScale(frame, image) * zoom;
   return { width: image.nw * scale, height: image.nh * scale };
 }
 
 /**
- * Clamp the image's top-left offset so the frame is never uncovered: the image
- * may slide until one of its edges meets the frame, no further.
+ * Clamp the image's top-left offset, per axis: while the image overflows the
+ * frame it may slide until an edge meets the frame (no uncovered gap on that
+ * axis); once it is SMALLER than the frame (zoomed out) the range flips — it
+ * may slide within the frame but never off it, so a letterboxed image can be
+ * positioned yet stays fully visible.
  */
 export function clampOffset(frame: CropFrame, dispW: number, dispH: number, offset: Offset): Offset {
-  const minX = frame.fw - dispW; // ≤ 0 once the image covers the frame
-  const minY = frame.fh - dispH;
+  const clampAxis = (frameLen: number, dispLen: number, value: number): number => {
+    const lo = Math.min(0, frameLen - dispLen);
+    const hi = Math.max(0, frameLen - dispLen);
+    return Math.min(hi, Math.max(lo, value));
+  };
   return {
-    x: Math.min(0, Math.max(minX, offset.x)),
-    y: Math.min(0, Math.max(minY, offset.y)),
+    x: clampAxis(frame.fw, dispW, offset.x),
+    y: clampAxis(frame.fh, dispH, offset.y),
   };
 }
 
@@ -60,25 +75,23 @@ export function centeredOffset(frame: CropFrame, dispW: number, dispH: number): 
   return { x: (frame.fw - dispW) / 2, y: (frame.fh - dispH) / 2 };
 }
 
-export interface SourceRect {
-  sx: number;
-  sy: number;
-  sw: number;
-  sh: number;
+export interface CanvasRect {
+  dx: number;
+  dy: number;
+  dw: number;
+  dh: number;
 }
 
 /**
- * The source-pixel rectangle currently framed, for `ctx.drawImage(img, sx, sy,
- * sw, sh, 0, 0, AVATAR_WIDTH, AVATAR_HEIGHT)`. Inverts the display transform:
- * `scale` is display px per source px, so dividing display offsets by it lands
- * back in the original image.
+ * The DESTINATION rectangle for drawing the whole source image onto the output
+ * canvas: the display transform scaled from frame px to canvas px, for
+ * `ctx.drawImage(img, dx, dy, dw, dh)` after a flat backdrop fill. One formula
+ * covers both regimes — zoomed in, the rect overflows the canvas and the canvas
+ * clips it (the old source-rect crop); zoomed out, it sits inside the canvas
+ * and the fill shows around it (the letterbox).
  */
-export function sourceRect(frame: CropFrame, image: CropImage, zoom: number, offset: Offset): SourceRect {
-  const scale = coverScale(frame, image) * Math.max(1, zoom);
-  return {
-    sx: -offset.x / scale,
-    sy: -offset.y / scale,
-    sw: frame.fw / scale,
-    sh: frame.fh / scale,
-  };
+export function canvasRect(frame: CropFrame, dispW: number, dispH: number, offset: Offset, outW: number, outH: number): CanvasRect {
+  const kx = outW / frame.fw;
+  const ky = outH / frame.fh;
+  return { dx: offset.x * kx, dy: offset.y * ky, dw: dispW * kx, dh: dispH * ky };
 }
