@@ -1,37 +1,34 @@
 # Slice 5 narrator trial — cue path vs. appearance path
 
-Status: **deterministic half complete 2026-07-28; live comparison deferred by
-owner ruling the same day** (the repository's `OPENROUTER_API_KEY` is dead — the
-run is one command once a working key lands; see §Owner rulings). Companion
-to [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
+Status: **complete — deterministic half 2026-07-28, live comparison
+2026-07-29** (run on the replaced `OPENROUTER_API_KEY`; ~$0.72 of spend).
+Companion to [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
 §"Slice 5 — narrator trial". Harness: `scripts/eval/affordance-cues/`.
 
 ## Recommendation
 
-**Keep `CHAT_AFFORDANCE_CUES` OFF, and re-run the live half of this trial once a
-working OpenRouter key is in place** — one command, no further build work.
+**Keep `CHAT_AFFORDANCE_CUES` OFF.** The live comparison ran on 2026-07-29 and
+the pre-registered decision rule — *contradictions per exchange lower in the cue
+arm, with repetition not higher* — was **not met**: contradictions tied exactly
+(0.13 / exchange in both arms) and repetition rose slightly in the cue arm
+(0.08 vs 0.00). The numbers are in §Live results.
 
-The trial was designed and built as specified: ten paired scenarios, thirty paired
-exchanges, both arms driven through the production read, projection and prompt
-builder, with a blinded LLM judge scoring contradictions, repetition, specificity
-and naturalness against the committed physical state. The deterministic half ran
-clean and every structural guarantee the plan asks for holds. The **live half did
-not run**: the `OPENROUTER_API_KEY` in the repo `.env` (last written 2026-06-23) is
-rejected by OpenRouter with `401 {"error":{"message":"User not found."}}` on
-`GET /api/v1/key`, on a direct `POST /chat/completions`, and through the app's own
-provider path. No generation and no judging happened, so there are **no
-contradiction, repetition, specificity or naturalness numbers** and none should be
-quoted from this document. The runner now preflights the key and aborts before the
-first billable call, precisely so this failure can never be mistaken for a result.
+What the cues bought was specificity (4.38 vs 4.00) — the cue arm talks about
+hair more (1.00 vs 0.71 mentions / exchange) and in more concrete terms — at
+identical naturalness (4.63 both). The blinded judge preferred the control
+transcript 6–4, though the silence controls (byte-identical prompts) also leant
+2–0 toward "control", which puts a visible label-noise floor under that margin.
 
-Flipping the flag on the strength of the structural evidence alone would be
-overreaching. The mechanical guarantees say the feature *cannot misbehave in the
-ways the plan feared* — it never exceeds two cues, never duplicates the Attributes
-section, never speaks when the cause is missing. They say nothing about whether a
-narrator handed those cues writes better prose, which is the entire question slice
-5 exists to answer and the only thing a live model can settle. One design finding
-below (the sensory-allowance collision) is also likely to shape that answer and is
-worth resolving before the live run rather than after.
+The honest reading: in this matrix the narrator already avoids the
+contradictions the cue path was built to prevent (a 0.13 / exchange base rate
+leaves almost no headroom), so the cues added detail without fixing anything
+measurable. That is not the trade the plan asked for ("reduces contradictions
+and adds concrete variation without … repetitive"). If the feature earns a
+rematch, the matrix — not the physics — is what should change: scenarios
+engineered to induce contradiction (rapid coverage changes, provenance
+switches, multi-garment layering) would give the cue arm headroom to show a
+difference; a same-model self-consistency judge panel would tighten the 6–4
+read. Until someone chooses to fund that, OFF is the supported state.
 
 ## Owner rulings (2026-07-28, same day)
 
@@ -156,6 +153,38 @@ Provenance discipline holds too: the `still wet from the rain` clause appears on
 in the rain-caused scenarios, and never in the bath (`immersion`) or the burst tap
 and the spray (`splash`) — a bath does not read as weather.
 
+## Live results (2026-07-29)
+
+The full paired trial ran on the replaced key: 60 narrator generations (10
+scenarios × 3 exchanges × 2 arms) plus 10 blinded judge calls, ~$0.72 total
+(key usage 31.53 → 32.25). All 14 self-checks passed before the first billable
+call. Audit JSON at `data/eval/affordance-cues/trial.json` (gitignored;
+numbers transcribed here). Cue scenarios only — the 6 silence-control
+exchanges carry no feature signal by construction:
+
+| measure (per exchange unless noted) | cues | control |
+| --- | --- | --- |
+| contradictions | **0.13** | **0.13** |
+| repetitions | 0.08 | 0.00 |
+| static restatements | 0.13 | 0.08 |
+| specificity (1–5) | **4.38** | 4.00 |
+| naturalness (1–5) | 4.63 | 4.63 |
+| hair mentions | 1.00 | 0.71 |
+| judge preference (scenarios) | 4 | **6** (0 ties) |
+
+The silence controls — where both arms received byte-identical prompts, so any
+preference is pure label/sampling noise — went 2–0 to "control", which is the
+noise floor to hold under the 6–4 headline.
+
+Against the decision rule (§Re-running it): contradictions were **not** lower
+and repetition **was** higher — the rule fails on both clauses. The specificity
+gain is real and the cue-arm prose stayed exactly as natural, so the mechanism
+works as designed; it just fixed a problem this matrix shows the narrator not
+having. Per §Caveats, 24 paired exchanges is a directional sample and the
+per-exchange-rate gaps here (0.08, 0.05) are within the "few hundredths is
+noise" band — but a tie on the headline measure is not a pass, and "no
+measurable benefit" is itself the finding.
+
 ## Design finding: the sensory allowance collides with the cue block
 
 The one thing the deterministic half surfaced that is not a clean pass.
@@ -204,7 +233,10 @@ and the live numbers would otherwise be measuring the collision rather than the
 cues. The cheapest defensible fix is to have the allowance line acknowledge an
 offered physical cue as an exception when one is present.
 
-## What did not run, and why
+## What did not run on 2026-07-28, and why (historical)
+
+Kept as the record of the first attempt; the live half ran the next day on a
+replaced key — see §Live results.
 
 | step | status |
 | --- | --- |

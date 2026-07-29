@@ -40,19 +40,19 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
-- **Body-attribute visual affordances — remainder: slice 5 live run,
-  image decision, companion rulings** —
+- **Body-attribute visual affordances — remainder: image decision,
+  successor adapter, companion rulings** —
   [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
   (**slices 0–4, slice 5 wiring, and slice 6 garment second domain +
   developer preview shipped 2026-07-28; slice 7 recognizable features +
-  observer visual memory shipped 2026-07-29** — see
+  observer visual memory shipped 2026-07-29; slice 5 completed 2026-07-29** —
+  the live comparison ran on the replaced key and its decision rule was
+  **not met** (contradictions tied, repetition up slightly, specificity
+  genuinely better), so `CHAT_AFFORDANCE_CUES` **stays OFF** — numbers and
+  rematch conditions in the
+  [trial report](body-attribute-affordances.trial.md) §Live results; see
   [roadmap.shipped.md](roadmap.shipped.md); plan stays open until the release
-  contract closes). What remains: the slice 5 **live** comparison that
-  completes that slice — the harness and its all-green deterministic half
-  shipped ([trial report](body-attribute-affordances.trial.md)); the live
-  half is one command (`pnpm eval:affordance-cues`) once a working
-  `OPENROUTER_API_KEY` replaces the dead one in `.env`, and it still gates
-  `CHAT_AFFORDANCE_CUES` default-on — plus slice 8's recorded image-consumer
+  contract closes). What remains: slice 8's recorded image-consumer
   decision, the successor-lane adapter follow-up named in the
   [audit source map](body-attribute-affordances.audit.md), and an explicit
   implemented/follow-up/parked ruling per companion spec before the plan
