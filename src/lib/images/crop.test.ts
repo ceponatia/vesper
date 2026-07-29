@@ -1,28 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-  AVATAR_ASPECT_RATIO,
-  aspectMatches,
-  centeredOffset,
-  clampOffset,
-  coverScale,
-  displaySize,
-  sourceRect,
-} from "./crop";
+import { AVATAR_ASPECT_RATIO, centeredOffset, clampOffset, coverScale, displaySize, sourceRect } from "./crop";
 
 const FRAME = { fw: 300, fh: 400 }; // 3:4
-
-describe("aspectMatches", () => {
-  it("accepts a 3:4 image and rejects others", () => {
-    expect(aspectMatches({ nw: 1500, nh: 2000 })).toBe(true);
-    expect(aspectMatches({ nw: 768, nh: 1024 })).toBe(true);
-    expect(aspectMatches({ nw: 1000, nh: 1000 })).toBe(false); // square
-    expect(aspectMatches({ nw: 1920, nh: 1080 })).toBe(false); // landscape
-  });
-
-  it("guards against degenerate sizes", () => {
-    expect(aspectMatches({ nw: 0, nh: 0 })).toBe(false);
-  });
-});
 
 describe("coverScale / displaySize", () => {
   it("a wide image scales by height so it covers the frame", () => {

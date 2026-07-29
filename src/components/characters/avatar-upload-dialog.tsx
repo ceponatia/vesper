@@ -6,7 +6,6 @@ import {
   AVATAR_HEIGHT,
   AVATAR_WIDTH,
   MAX_ZOOM,
-  aspectMatches,
   centeredOffset,
   clampOffset,
   displaySize,
@@ -42,9 +41,14 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 
 /**
  * Upload a profile image (docs/images.md, followups.phase3.md): pick a file,
- * then — only when it isn't already 3:4 — pan/zoom it inside a crop window
- * before it is scaled to the canonical 768×1024 portrait and promoted to the
- * character's avatar. No model runs, so this works in demo mode and offline.
+ * then pan/zoom it inside a crop window before it is scaled to the canonical
+ * 768×1024 portrait and promoted to the character's avatar. The crop stage runs
+ * for EVERY image — an already-3:4 file used to skip straight to upload (the
+ * dialog silently vanishing read as a bug), and reframing is wanted even at the
+ * right ratio (owner request 2026-07-29: zoom a knees-up render to waist-up).
+ * At zoom 1 an already-3:4 image exactly fills the frame, so "Use image" with
+ * no adjustment reproduces the old fast path. No model runs, so this works in
+ * demo mode and offline.
  */
 export function AvatarUploadDialog({ open, onClose, characterId, name, onUploaded }: AvatarUploadDialogProps) {
   const [stage, setStage] = useState<Stage>("pick");
@@ -140,11 +144,7 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
         setImage(img);
         setZoom(1);
         setOffset(off);
-        if (aspectMatches(img)) {
-          void upload(renderToDataUrl(img, 1, off)); // already 3:4 — scale, no crop step
-        } else {
-          setStage("crop");
-        }
+        setStage("crop");
       };
       el.onerror = () => {
         setError("Could not load that image — try a different file.");
@@ -152,7 +152,7 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
       };
       el.src = url;
     },
-    [renderToDataUrl, revoke, upload],
+    [revoke],
   );
 
   // Zoom around the frame's center so the focal point stays put, then re-clamp.
@@ -245,8 +245,8 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
             <span className="font-medium text-paper-200">
               {AVATAR_WIDTH} × {AVATAR_HEIGHT} px
             </span>{" "}
-            — a 3:4 portrait. Upload any photo or artwork and we&apos;ll scale it to fit; if it isn&apos;t already 3:4
-            you can reposition and zoom it in a crop window.
+            — a 3:4 portrait. Upload any photo or artwork, then reposition and zoom it in the crop window to frame the
+            shot you want; we&apos;ll scale it to fit.
           </p>
           <button
             type="button"
