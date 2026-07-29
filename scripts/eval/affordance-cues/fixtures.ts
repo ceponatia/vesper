@@ -273,6 +273,30 @@ export interface EvalScenario {
   readonly premise: string;
   readonly place: string;
   readonly placeDetail: string;
+  /**
+   * Standing facts about the scene, handed to BOTH arms as extra place details
+   * (`sceneMemory` in harness.ts). The rematch-v2 both-arms channel: the prompt
+   * carries no environment line and no wetness line, so without this the control
+   * arm learns the physical situation only from the premise, the outfit phrase
+   * and the player's lines — which is why round R1's control arm had nothing to
+   * get wrong. Ambience that fuels a bait (rain hammering the sash during a bath
+   * scene) and opening-state facts too clumsy for a player's mouth live here.
+   *
+   * They may be LEADING — "the squall went through an hour ago and left the yard
+   * swimming" is exactly the salience a provenance bait needs — but never false:
+   * a fact here is committed truth, the same as the state.
+   */
+  readonly sceneFacts?: readonly string[];
+  /**
+   * 1-based exchange by which the true state the baits contradict is in front of
+   * BOTH arms — through this scenario's `sceneFacts` and outfit phrase (which are
+   * standing, so they count as exchange 1) or through a player line that states
+   * it in fiction. Must come strictly BEFORE the first armed bait: a bait the
+   * control arm could not possibly have answered measures ignorance, not
+   * contradiction. Asserted structurally in `harness.test.ts`; absent on the v1
+   * scenarios, which arm no baits at all.
+   */
+  readonly establishes?: number;
   readonly regard: number;
   readonly familiarity: number;
   /** Standing wardrobe; per-turn `worn` overrides it. */
@@ -875,166 +899,233 @@ export const EVAL_SCENARIOS: readonly EvalScenario[] = [
 // ---------------------------------------------------------------------------
 
 /**
- * Round 2's matrix (`body-attribute-affordances.trial.rematch.md`).
+ * Round 2's matrix, **v2** (`body-attribute-affordances.trial.rematch.md`, and
+ * the §Rematch log entry for round R1).
  *
- * Round 1 measured nothing because its control arm barely contradicted: the
- * scripts set a state, the player lines were ordinary, and a narrator that stays
- * vague is automatically consistent. Headroom exists only where BOTH hold —
- * a true current effect is in the prompt (a cue FIRES) and the scene tempts a
- * specific, checkable, wrong embellishment. Every scenario below is built to that
- * rule:
+ * v1 of this matrix armed 22 baits and still measured nothing: the control arm
+ * contradicted at 0.16/exchange and only coverage and binding ever tripped it.
+ * The post-mortem is structural, and it is the thing every scenario below is
+ * built around.
  *
- * - the **bait is in the player lines and the framing, never in the state**. The
- *   committed state stays as honest as round 1's; what changed is that the
- *   player is leading, presumptuous and wrong, the way real players are;
- * - **every armed bait sits on an exchange where the hair domain genuinely
- *   speaks**, traced through the real machinery and asserted in
- *   `harness.test.ts`. A bait with no anchor measures the narrator's imagination,
- *   not the feature;
- * - **state flips mid-scenario** (pins out, hood back, a wave over the bow, a
- *   towel, a braid undone, the wind dropping) because the repeat gate only
- *   re-offers a cue when a band MOVES — which is also where a narrator is most
- *   likely to carry a stale claim forward.
+ * **The narrator prompt has no environment line and no wetness line.** Outside
+ * the cue block, the only channels that tell either arm what is physically true
+ * are the premise, the outfit phrase, the scene block and the player's lines.
+ * So in v1 the control arm was never in a position to misattribute a wetness it
+ * had never been told about: it stayed vague, and vague is automatically
+ * consistent. The two families that DID bite — coverage and binding — tempt pure
+ * INVENTION (what is under a hood, how hair moves), which needs no state
+ * knowledge at all.
  *
- * Provenance discipline is structural, not editorial: a bath, a burst standpipe
- * and a wave over the bow are committed as `immersion` / `splash`, so the cue
- * NEVER says "rain" in those scenes. The rain lives in the player's mouth and in
- * the place detail, where it belongs — which is exactly the claim the audit is
- * checking for.
+ * v2's rule is therefore: **make the truth reach both arms, then bait against
+ * it.**
+ *
+ * 1. **Player-line establishment.** Exchange 1's player line always states
+ *    something TRUE about the hair in fiction ("you've brought half the bath out
+ *    with you", "you've got it pinned up out of the way"), so both arms commit
+ *    the state in their own prose before anything contests it. `establishes`
+ *    records which exchange did it, and every armed bait sits strictly after —
+ *    a bait the control arm could not have answered measures ignorance, not
+ *    contradiction.
+ * 2. **Scene facts.** `sceneFacts` carries the standing situation to both arms
+ *    identically (the storm at the window, the squall an hour gone, the hood
+ *    knotted since they cast off). Leading, never false.
+ * 3. **Stale-flip differentials.** Both arms learn the OPENING state; only the
+ *    cue arm gets the post-flip read. So the flips (towel through it, pins out,
+ *    hood off, tie out, the wind dropping, the rain stopping) are where the
+ *    baits are armed, and the tempting claim is the STALE fact — the soaked
+ *    cascade after the towel, the streaming mane after the wind falls away.
+ *    The repeat gate re-offers a cue exactly when a band MOVES, so a flip is
+ *    also where the cue arm has something to weave: bait ∧ anchor.
+ * 4. **Flat leading assertions.** v1's baits were questions and insinuations,
+ *    which a narrator can sidestep without ever committing. v2's are
+ *    declaratives that force adopt-or-contradict ("Absolutely wringing." /
+ *    "I can see every inch of it." / "Dry as a bone already."), in the same
+ *    flirtatious register.
+ *
+ * Provenance discipline stays structural, not editorial: a bath, a hose, a
+ * sleeve wrung out and a wave over the bow are committed as `immersion` /
+ * `splash` with no rain falling, so the cue NEVER says "rain" in those scenes.
+ * The rain lives in the player's mouth and in the scene facts, where it belongs
+ * — which is exactly the claim the audit is checking for.
+ *
+ * Family spread: 5 bait families over 9 scenarios plus the three structural
+ * controls is 12, the spec's ceiling — so four families get two scenarios and
+ * one gets one. `assertion_bait` is the one that yields, because its dimension
+ * (`adopted_false_premise`) is audited on EVERY exchange of every scenario and
+ * v2's baits are flat player declaratives throughout: it is the best-covered
+ * dimension in the matrix even with a single dedicated scenario. `coverage_bait`
+ * keeps two because its dimension is the only one that needs a specific fixture
+ * (headwear) to arise at all.
  */
 export const REMATCH_SCENARIOS: readonly EvalScenario[] = [
-  // -- provenance 1: bath water, storm at the window --------------------------
+  // -- provenance 1: bath water, with a storm at the window -------------------
   {
-    id: "bath-storm-at-the-window",
+    id: "bath-and-the-storm-outside",
     title: "Provenance bait — bath water, with a storm at the window",
     kind: "cue",
     family: "provenance_bait",
     characterId: WREN.id,
     premise:
-      "Wren has just got out of the bath in the flat above the shop. A storm has been going for an hour and has not touched her.",
+      "Wren has just got out of the bath in the flat above the shop. The storm outside has been going since six.",
     place: "the flat above the shop",
-    placeDetail: "rain rattling the sash, steam still on the mirror, a towel warming over the radiator",
+    placeDetail: "steam still on the mirror, a towel warming over the radiator, the sash rattling in its frame",
+    sceneFacts: [
+      "the storm has been hammering the window and overflowing the gutter since six",
+      "the bath still standing full behind the screen, the water still warm",
+    ],
+    // Exchange 1's player line says, in fiction, that the water in her hair came
+    // out of the bath. Both arms hear it; the storm is the loudest thing in the
+    // room; exchanges 2 and 4 flatly reassign the cause to the weather.
+    establishes: 1,
     regard: 55,
     familiarity: 65,
     worn: [SHIRT],
     outfit: "an oversized linen shirt, the cuffs turned back",
     baits: [
-      bait(1, "attributes her bath water to the storm outside — says the rain soaked her hair"),
       null,
-      bait(3, "calls the half-dried bath water rainwater, or makes the weather the reason her hair is wet"),
+      bait(2, "says the storm or the rain outside is what wet her hair, when the water in it is bath water"),
+      null,
+      bait(4, "calls the water in her hair rainwater, or narrates rain still falling after the storm has stopped"),
     ],
     turns: [
       {
         player:
-          "I come in with the mug and stop in the doorway. \"You're drowned,\" I say. \"Did that downpour get you on the stairs?\"",
+          "\"Out of it at last,\" I say, and set the mug down where you can reach it. \"You've brought half the bath out with you — it's still running off your hair onto the mat.\"",
         clockMinutes: 1_290,
         environment: shelteredStorm("gusting", "downpour", 1_260),
         wetness: { level: 9_500, updatedAtMinutes: 1_288, cause: "immersion" },
         facts: [
-          "Her hair is soaked — from the bath she has just got out of. No weather is involved.",
+          "Her hair is soaked through — from the bath she has just got out of. No weather is involved.",
           "They are indoors. The storm is outside the window; no rain has landed on her and no wind reaches her.",
           "The air in the flat is still: nothing is moving her hair.",
           "Her hair is loose and uncovered.",
         ],
       },
       {
-        player: "I put my shoulder to the doorframe and listen to it come down out there with you.",
+        player:
+          "I take the towel off the radiator and work the worst of it out for you. \"That storm's put half the river in your hair,\" I say. \"You can smell the rain on it.\"",
         clockMinutes: 1_299,
         environment: shelteredStorm("gusting", "downpour", 1_260),
-        wetness: { level: 9_500, updatedAtMinutes: 1_288, cause: "immersion" },
+        wetness: { level: 3_600, updatedAtMinutes: 1_297, cause: "immersion" },
         facts: [
-          "Nothing about her hair has changed: still soaked from the bath, still loose, still uncovered.",
+          "Her hair is damp now — the towel took the worst of it. It is not soaked and not dripping.",
+          "The water in it is bath water. No rain has landed on her at any point in this scene.",
+          "They are indoors; the storm is still outside the glass and no wind reaches her.",
+          "Her hair is loose and uncovered.",
+        ],
+      },
+      {
+        player: "\"Rainwater always keeps its cold,\" I say, and stand there with you listening to it come down.",
+        clockMinutes: 1_308,
+        environment: shelteredStorm("gusting", "downpour", 1_260),
+        wetness: { level: 3_600, updatedAtMinutes: 1_297, cause: "immersion" },
+        facts: [
+          "Nothing about her hair has changed: still damp, still bath water, still loose and uncovered.",
           "Still indoors; the storm is still outside and still has not touched her.",
         ],
       },
       {
         player:
-          "I take the towel off the radiator and work it down the length of it. \"Rainwater keeps its cold, doesn't it.\"",
-        clockMinutes: 1_340,
-        environment: shelteredStorm("gusting", "downpour", 1_260),
-        wetness: { level: 5_000, updatedAtMinutes: 1_338, cause: "immersion" },
+          "\"It's stopped,\" I say, and push the door onto the iron stairs. \"Come out — the wind'll have the rain out of it in a minute.\"",
+        clockMinutes: 1_316,
+        environment: outdoors("windy", "none", 1_314),
+        wetness: { level: 2_800, updatedAtMinutes: 1_314, cause: "immersion" },
         facts: [
-          "Her hair has dried down to damp — no longer soaked, not yet dry.",
-          "The water in it is bath water. It is still not rain, and no rain has fallen on her in this scene.",
-          "Still indoors, still no wind on her, still loose and uncovered.",
+          "Her hair is damp, and the water in it is bath water. It has never been rained on in this scene.",
+          "The storm has STOPPED. No rain is falling on them now.",
+          "They are outdoors in a strong wind, and damp, unbound hair really does move in it.",
+          "Her hair is loose and uncovered.",
         ],
       },
     ],
   },
 
-  // -- provenance 2: the standpipe, an hour after the squall ------------------
+  // -- provenance 2: the bow wave, an hour behind the squall ------------------
   {
-    id: "standpipe-after-the-squall",
-    title: "Provenance bait — a standpipe over the head, an hour after the squall",
+    id: "bow-wave-behind-the-squall",
+    title: "Provenance bait — a wave over the bow, an hour behind the squall",
     kind: "cue",
     family: "provenance_bait",
-    characterId: WREN.id,
-    premise:
-      "The yard standpipe let go over Wren's head while she was filling the kettle. The squall that went through an hour ago has left the yard swimming.",
-    place: "the shop's back yard",
-    placeDetail: "a brick yard still swimming, the gutters running off the squall, the standpipe shuddering",
-    regard: 35,
-    familiarity: 45,
-    worn: [SHIRT],
-    outfit: "a linen shirt plastered to her shoulders and jeans",
+    characterId: ILSE.id,
+    premise: "Ilse has the ferry out on the ebb an hour behind the squall.",
+    place: "the ferry's open wheel deck",
+    placeDetail: "the deck still awash from the squall, the far bank steaming, the wind hard astern",
+    sceneFacts: [
+      "the squall went through an hour ago and left every surface running with water",
+      "the wheelhouse door hooked open on the weather side",
+    ],
+    // The wetting is a discrete event in exchange 2's player line — the bow going
+    // under — with the squall's water standing everywhere as the competing cause.
+    establishes: 2,
+    regard: 25,
+    familiarity: 35,
+    worn: [COVERALL],
+    outfit: "canvas coveralls with the sleeves pushed up",
     baits: [
-      bait(1, "attributes the standpipe soaking to the squall's rain"),
       null,
-      bait(3, "calls the water in her hair rainwater, or says the weather is what wet her"),
-      bait(4, "says the rain is what soaked her while the wind dries it"),
+      null,
+      bait(3, "says the squall's rain is what wet her, when the water in her hair came over the bow"),
+      bait(4, "calls the river water in her hair rain, or narrates the squall as still on them"),
     ],
     turns: [
       {
-        player: "I get the valve shut and turn round to you. \"The rain's had you as well, then. Look at you.\"",
-        clockMinutes: 900,
-        environment: outdoors("breeze", "none", 890),
-        wetness: { level: 9_500, updatedAtMinutes: 898, cause: "splash" },
+        player:
+          "\"You sat the whole squall out in the wheelhouse,\" I say, coming up the ladder. \"Dry as a book, and me out in it.\"",
+        clockMinutes: 600,
+        environment: outdoors("windy", "none", 596),
         facts: [
-          "Her hair is soaked — from the standpipe that just went off over her. It is not rain.",
-          "It is not raining and has not rained since the squall an hour ago; nothing has fallen on her out here.",
-          "They are outdoors in a light breeze; soaked hair carries its own water weight and cannot stream, lift or whip in a breeze this light.",
+          "Her hair is dry; it has not been wet at any point in this scene.",
+          "Her hair is loose, uncovered and waist-length.",
+          "The squall passed an hour ago. It is not raining and nothing is falling on them.",
+          "They are outdoors in a strong wind, and dry, loose hair moves freely in it.",
+        ],
+      },
+      {
+        player:
+          "The bow goes under and comes up throwing it. The whole of it takes you across the back of the head, and I grab the rail and laugh at you.",
+        clockMinutes: 608,
+        environment: outdoors("windy", "none", 596),
+        wetness: { level: 6_800, updatedAtMinutes: 606, cause: "splash" },
+        facts: [
+          "Her hair is wet through — from the river water that came over the bow a moment ago.",
+          "It is not raining and has not rained since the squall an hour ago.",
+          "They are outdoors in a strong wind.",
           "Her hair is loose and uncovered.",
         ],
       },
       {
-        player: "I wring my own sleeve out and look at you a beat longer than I need to.",
-        clockMinutes: 907,
-        environment: outdoors("breeze", "none", 890),
-        wetness: { level: 9_500, updatedAtMinutes: 898, cause: "splash" },
+        player:
+          "The wind falls away to almost nothing. \"That squall soaked you to the bone,\" I say. \"You'll want the dry locker.\"",
+        clockMinutes: 616,
+        environment: outdoors("breeze", "none", 614),
+        wetness: { level: 6_800, updatedAtMinutes: 606, cause: "splash" },
         facts: [
-          "Nothing about her hair has changed: still soaked from the standpipe, still loose, still uncovered.",
-          "Still outdoors in the same light breeze; still no rain falling.",
+          "Her hair is wet, from the river water over the bow. The squall did not touch her — she was under cover for it.",
+          "It is not raining.",
+          "The wind has dropped from strong to a light breeze; her hair moves less than it did.",
+          "Her hair is loose and uncovered.",
         ],
       },
       {
-        player: "\"Still full of rainwater,\" I say, and push the wet of it back off your temple.",
-        clockMinutes: 965,
-        environment: outdoors("breeze", "none", 890),
-        wetness: { level: 6_000, updatedAtMinutes: 963, cause: "splash" },
+        player:
+          "\"Wind's back,\" I say, an hour on, and take the wheel off you. \"That'll take the last of the rain out of it.\"",
+        clockMinutes: 700,
+        environment: outdoors("windy", "none", 696),
+        wetness: { level: 2_600, updatedAtMinutes: 698, cause: "splash" },
         facts: [
-          "Her hair has dried back from soaked to wet. The water in it is standpipe water, not rain.",
-          "Still outdoors in the same light breeze; still no rain falling.",
-          "Her hair is loose and uncovered, and no longer heavy enough with water to be held still — hair this wet does lift and shift in a breeze.",
-        ],
-      },
-      {
-        player: "\"Wind's getting up,\" I say. \"It'll take the rain out of it before we're back inside.\"",
-        clockMinutes: 972,
-        environment: outdoors("windy", "none", 968),
-        wetness: { level: 6_000, updatedAtMinutes: 963, cause: "splash" },
-        facts: [
-          "Her hair is wet — from the standpipe. It has never been rained on in this scene.",
-          "The wind has risen to a strong wind and they are still outdoors.",
-          "Her hair is loose and uncovered, and wet enough to move but no longer heavy with water.",
+          "Her hair is damp now. The water in it is river water, and it has never been rained on in this scene.",
+          "It is still not raining; the squall is two hours gone.",
+          "The wind has risen again to a strong wind and they are still outdoors.",
+          "Her hair is loose and uncovered, and damp enough to move freely.",
         ],
       },
     ],
   },
 
-  // -- binding 1: pinned coil in a blow, then the pins come out ---------------
+  // -- binding 1: a pinned coil, the pins out, then the wind drops ------------
   {
     id: "pins-out-above-the-slip",
-    title: "Binding bait — a pinned coil in a blow, then the pins out",
+    title: "Binding bait — a pinned coil, the pins out, then the wind drops",
     kind: "cue",
     family: "binding_bait",
     characterId: WREN.id,
@@ -1042,54 +1133,67 @@ export const REMATCH_SCENARIOS: readonly EvalScenario[] = [
       "Wren is helping get a tarpaulin over the stacked stock on the wall above the ferry slip, with the wind up and the river throwing spray over the coping.",
     place: "the wall above the ferry slip",
     placeDetail: "spray coming over the coping, the tarp snapping, the wind hard off the water",
+    sceneFacts: [
+      "the wind hard off the water since noon",
+      "spray coming over the coping every third wave",
+    ],
+    // Exchange 1's player line names the pinned bun and the spray; the Attributes
+    // block carries the arrangement in both arms from the first exchange.
+    establishes: 1,
     regard: 30,
     familiarity: 40,
     worn: [COVERALL],
     outfit: "borrowed canvas coveralls with the cuffs turned back",
     hair: { arrangement: "bun" },
     baits: [
-      bait(1, "describes the pinned bun as streaming, whipping or blowing loose in the wind"),
       null,
-      bait(3, "says the just-unpinned, spray-soaked hair streams, fans out or flies in the wind"),
+      bait(2, "says the just-unpinned, spray-soaked hair streams, fans out or flies in the wind, when only its free ends move"),
+      bait(3, "keeps the whole length streaming, whipping or flying after the wind has dropped to a light breeze"),
     ],
     turns: [
       {
-        player: "\"Let it down,\" I shout over the noise. \"Let the wind have it — I want to see it streaming.\"",
+        player:
+          "\"You've got it pinned up out of the way, at least,\" I shout, taking the corner off you. \"The spray's had the rest of you.\"",
         clockMinutes: 640,
         environment: outdoors("gusting", "none", 630),
-        wetness: { level: 9_500, updatedAtMinutes: 637, cause: "splash" },
+        wetness: { level: 9_400, updatedAtMinutes: 637, cause: "splash" },
         facts: [
           "Her hair is pinned up in a bun. It is not hanging loose.",
-          "Her hair is soaked, from the spray coming over the wall. It is not raining.",
+          "Her hair is soaked, from the spray coming over the coping. It is not raining.",
           "The wind is gusting hard, but a pinned, soaked bun cannot stream, whip, fan out, blow across her face or come loose on its own.",
         ],
       },
       {
-        player: "I take the other corner of the tarp and watch you fight your end of it.",
-        clockMinutes: 648,
-        environment: outdoors("gusting", "none", 630),
-        wetness: { level: 9_500, updatedAtMinutes: 637, cause: "splash" },
-        facts: [
-          "Nothing about her hair has changed: still pinned up, still soaked with spray.",
-          "The wind is still gusting; the bun still cannot stream, whip or blow loose.",
-        ],
-      },
-      {
-        player: "You pull the pins out and hand them to me. \"There,\" I say. \"Now let it fly.\"",
+        player:
+          "You pull the pins out and hand them to me. \"There it goes,\" I say. \"The whole length of it streaming out over the water.\"",
         clockMinutes: 700,
         environment: outdoors("gusting", "none", 697),
-        wetness: { level: 9_500, updatedAtMinutes: 697, cause: "splash" },
+        wetness: { level: 9_400, updatedAtMinutes: 697, cause: "splash" },
         hair: { arrangement: "loose" },
         facts: [
           "Her hair is loose now — the pins are out.",
           "Her hair is still soaked with spray, and it is still not raining.",
-          "The wind is still gusting, but soaked hair carries its own water weight: the mass of it cannot stream, fan out or fly. Only what hangs free at the ends moves at all.",
+          "The wind is gusting, but soaked hair carries its own water weight: the mass of it cannot stream, fan out or fly. Only what hangs free at the ends moves at all.",
+        ],
+      },
+      {
+        player:
+          "The wind drops right out of it. \"Look at that,\" I say. \"Still flying, and there's nothing left to fly in.\"",
+        clockMinutes: 712,
+        environment: outdoors("breeze", "none", 710),
+        wetness: { level: 3_200, updatedAtMinutes: 710, cause: "splash" },
+        hair: { arrangement: "loose" },
+        facts: [
+          "Her hair has dried back to damp, and it is loose and uncovered.",
+          "The wind has DROPPED from gusting to a light breeze.",
+          "Damp, loose hair lifts and shifts in a breeze this light; it does not stream, whip or fly.",
+          "The water in it is spray off the river. It is not raining and has not rained in this scene.",
         ],
       },
     ],
   },
 
-  // -- binding 2: a ponytail called a mane, then genuinely loose --------------
+  // -- binding 2: a tied ponytail called a streaming mane ---------------------
   {
     id: "figurehead-on-the-ebb",
     title: "Binding bait — a tied ponytail called a streaming mane",
@@ -1099,20 +1203,25 @@ export const REMATCH_SCENARIOS: readonly EvalScenario[] = [
     premise: "Ilse is taking the ferry down on the ebb with the wind behind them and nothing much to do but steer.",
     place: "the ferry's open wheel deck",
     placeDetail: "brown water going past fast, the wind astern, the wheelhouse door hooked open",
+    sceneFacts: [
+      "the wind hard astern the whole run down",
+      "the ebb taking them down at four knots with nothing in the channel",
+    ],
+    establishes: 1,
     regard: 25,
     familiarity: 35,
     worn: [COVERALL],
     outfit: "canvas coveralls with the sleeves pushed up",
     hair: { arrangement: "ponytail" },
     baits: [
-      bait(1, "describes the tied-back ponytail as the whole length streaming loose behind her"),
       null,
-      bait(3, "says the soaked, tied-back hair is whipping loose around her face"),
-      null,
+      bait(2, "says the soaked, tied-back hair whips, streams or blows loose around her face"),
+      bait(3, "says the unbound damp hair streams, flies or whips in air that has fallen to a light breeze"),
     ],
     turns: [
       {
-        player: "\"You've got the whole lot of it streaming out behind you,\" I say. \"Like a figurehead.\"",
+        player:
+          "\"You've got it tied back out of the way,\" I say, bracing a boot on the coaming. \"Sensible. Mine's been in my eyes since the slip.\"",
         clockMinutes: 610,
         environment: outdoors("windy", "none", 600),
         facts: [
@@ -1122,19 +1231,11 @@ export const REMATCH_SCENARIOS: readonly EvalScenario[] = [
         ],
       },
       {
-        player: "I brace a boot on the coaming and let you get on with the steering.",
+        player:
+          "A wave comes over the bow and takes us both. \"Now it's soaked it'll whip about your face,\" I say. \"Look at it go.\"",
         clockMinutes: 618,
         environment: outdoors("gusting", "none", 616),
-        facts: [
-          "Her hair is still dry and still tied back in a ponytail.",
-          "The wind has risen from strong to gusting; the tie still holds the bulk of it.",
-        ],
-      },
-      {
-        player: "A wave comes over the bow and takes us both. \"Now it's soaked it'll whip about your face,\" I say.",
-        clockMinutes: 626,
-        environment: outdoors("gusting", "none", 624),
-        wetness: { level: 10_000, updatedAtMinutes: 624, cause: "splash" },
+        wetness: { level: 9_600, updatedAtMinutes: 616, cause: "splash" },
         facts: [
           "Her hair is soaked, from the river water that came over the bow. It is not raining.",
           "Her hair is still tied back in a ponytail — the wave did not loosen it.",
@@ -1142,21 +1243,22 @@ export const REMATCH_SCENARIOS: readonly EvalScenario[] = [
         ],
       },
       {
-        player: "An hour on, I hand the tie back to you. \"It's dry enough to fly now. Go on.\"",
-        clockMinutes: 736,
-        environment: outdoors("gusting", "none", 624),
-        wetness: { level: 10_000, updatedAtMinutes: 624, cause: "splash" },
+        player:
+          "An hour on you take the tie out, and the wind falls away with it. \"Go on,\" I say. \"Let it fly — it's streaming right off the stern.\"",
+        clockMinutes: 700,
+        environment: outdoors("breeze", "none", 698),
+        wetness: { level: 4_200, updatedAtMinutes: 698, cause: "splash" },
         hair: { arrangement: "loose" },
         facts: [
           "Her hair is loose now — the tie is out.",
-          "It has dried back from soaked to damp in the hour since the wave.",
-          "They are still outdoors in a gusting wind, and damp, unbound hair really does move in it now.",
+          "It has dried back from soaked to wet in the hour since the wave, and the water in it is river water.",
+          "The wind has DROPPED from gusting to a light breeze. Her hair lifts and shifts in it; it does not stream, fly or whip.",
         ],
       },
     ],
   },
 
-  // -- coverage 1: an oilskin hood, then no hood ------------------------------
+  // -- coverage 1: an oilskin hood on the river stairs ------------------------
   {
     id: "hood-and-the-downpour",
     title: "Coverage bait — an oilskin hood called no cover at all",
@@ -1166,61 +1268,76 @@ export const REMATCH_SCENARIOS: readonly EvalScenario[] = [
     premise: "Wren and the player got caught on the river stairs in a downpour and have the hoods up.",
     place: "the river stairs",
     placeDetail: "water sheeting off every step, the far bank gone, the rail cold and running",
+    sceneFacts: [
+      "the downpour has been going since ten and the stairs are running like a weir",
+      "both oilskin hoods up and knotted since they left the shop",
+    ],
+    // The hood is in the outfit phrase and the scene facts from exchange 1, and
+    // exchange 1's player line names it — so both arms know what is covered
+    // before anyone claims to see through it.
+    establishes: 1,
     regard: 30,
     familiarity: 40,
     worn: [SHIRT, HOOD],
     outfit: "a linen shirt under a heavy oilskin, the hood up",
     baits: [
-      bait(1, "describes the hair under the hood as a plainly visible cascade streaming down her back"),
       null,
-      bait(3, "claims a clear view of the length and state of the hair the hood is still covering"),
+      bait(2, "claims a clear view of the length and state of the hair the hood is still covering"),
+      bait(3, "narrates rain still falling on them after it has stopped, or keeps the hood over hair that is now uncovered"),
       null,
     ],
     turns: [
       {
-        player: "\"I can see it,\" I shout, half a step below you. \"All of it, streaming right down your back.\"",
+        player:
+          "\"Keep that hood on,\" I shout, half a step below you. \"The rain had your hair before you got it up — no sense letting it at the rest of you.\"",
         clockMinutes: 1_100,
         environment: outdoors("gusting", "downpour", 1_090),
         wetness: { level: 9_500, updatedAtMinutes: 1_097, cause: "rain" },
         facts: [
           "Her hair is soaked, from the rain.",
-          "Her hair is under an oilskin hood, which is up. He cannot see the length of it, and what he can see is only what the hood leaves out.",
+          "Her hair is under an opaque oilskin hood, which is up. He cannot see its length, and only what the hood's edge leaves out is visible at all.",
           "The wind is gusting hard, but hooded, soaked hair cannot stream, blow loose or fan out.",
         ],
       },
       {
-        player: "I get a hand under your elbow on the wet step and don't let go straight away.",
-        clockMinutes: 1_108,
-        environment: outdoors("gusting", "downpour", 1_090),
-        wetness: { level: 9_500, updatedAtMinutes: 1_097, cause: "rain" },
-        facts: [
-          "Nothing about her hair has changed: still soaked, still under the hood, still held still by both.",
-          "It is still coming down and the wind is still gusting.",
-        ],
-      },
-      {
-        player: "Under the eaves I say, \"It's hanging in ropes past your shoulders, you know. I can see every inch of it.\"",
+        player:
+          "Under the eaves I say, \"It's hanging in ropes past your shoulders. I can see every inch of it from here.\"",
         clockMinutes: 1_160,
         environment: shelteredStorm("gusting", "downpour", 1_155),
-        wetness: { level: 6_500, updatedAtMinutes: 1_158, cause: "rain" },
+        wetness: { level: 6_400, updatedAtMinutes: 1_158, cause: "rain" },
         facts: [
           "They are under cover now. No rain is landing on them and no wind reaches her.",
-          "Her hood is still up. He still cannot see the length or the state of her hair.",
+          "Her hood is STILL UP. He cannot see the length or the state of her hair.",
           "Her hair has dried back from soaked to wet — it was the rain that wet it.",
         ],
       },
       {
-        player: "You push the hood off at last. I hold the door for you and we go back out into it.",
+        player: "You push the hood off at last. \"There,\" I say, holding the door. \"Now the rain can get at it properly.\"",
         clockMinutes: 1_168,
         environment: outdoors("windy", "none", 1_166),
         worn: [SHIRT],
         outfit: "a linen shirt, the oilskin over one arm",
+        wetness: { level: 6_000, updatedAtMinutes: 1_158, cause: "rain" },
         facts: [
-          "The hood is off. Her hair is uncovered for the first time in this scene.",
+          "The hood is OFF. Her hair is uncovered for the first time in this scene.",
+          "The rain has STOPPED. Nothing is falling on them.",
           "Her hair is still wet from the rain, though no longer soaked.",
-          "The rain has stopped and they are outdoors in a strong wind, but her hair is still wet enough to be held by its own weight: only the free ends of it move.",
+          "They are outdoors in a strong wind, and her hair is uncovered and unbound now, so it does move in it.",
         ],
-        wetness: { level: 6_500, updatedAtMinutes: 1_158, cause: "rain" },
+      },
+      {
+        player: "Inside with the door shut I say, \"You're still dripping wet through, and there's still a gale in your hair.\"",
+        clockMinutes: 1_200,
+        environment: indoorsStill(1_196),
+        worn: [SHIRT],
+        outfit: "a linen shirt, the oilskin over the back of a chair",
+        wetness: { level: 3_000, updatedAtMinutes: 1_198, cause: "rain" },
+        facts: [
+          "They are indoors. No rain and no wind reach either of them.",
+          "Her hair is damp — not dripping and not wringing wet.",
+          "Nothing is moving her hair: the air in here is still.",
+          "Her hair is loose and uncovered.",
+        ],
       },
     ],
   },
@@ -1235,78 +1352,92 @@ export const REMATCH_SCENARIOS: readonly EvalScenario[] = [
     premise: "Ilse is working the foredeck through the crossing with the rain coming down in rods.",
     place: "the ferry's foredeck",
     placeDetail: "rain coming down in rods, the far bank gone, the deck awash to the scuppers",
+    sceneFacts: [
+      "rain coming down in rods since the far slip",
+      "her oilskin hood up and lashed since they cast off",
+    ],
+    establishes: 1,
     regard: 20,
     familiarity: 30,
     worn: [COVERALL, HOOD],
     outfit: "canvas coveralls under an oilskin, the hood up",
     baits: [
-      bait(1, "claims a clear view of the hooded hair hanging loose and soaked down past her belt"),
       null,
-      bait(3, "says the gauze scarf leaves the whole length visible and free to spill loose"),
+      bait(2, "says the gauze scarf leaves the whole length visible and free to spill loose down her back"),
+      bait(3, "adopts the player's claim that her hair is dry and was hidden, when it is wet and now uncovered"),
     ],
     turns: [
       {
-        player: "\"Soaked black all the way past your belt,\" I say. \"I can see every bit of it from here.\"",
+        player: "\"Keep that hood down over your face,\" I shout, taking the warp off you. \"It's coming in sideways.\"",
         clockMinutes: 1_020,
         environment: outdoors("gusting", "downpour", 1_012),
-        wetness: { level: 10_000, updatedAtMinutes: 1_016, cause: "rain" },
+        wetness: { level: 9_800, updatedAtMinutes: 1_016, cause: "rain" },
         facts: [
           "Her hair is soaked, from the rain.",
-          "Her hair is under an oilskin hood, which is up: he cannot see its length, and only what the hood leaves out is visible at all.",
+          "Her hair is under an opaque oilskin hood, which is up: he cannot see its length, and only what the hood leaves out is visible at all.",
           "The wind is gusting, but hooded, soaked hair cannot stream, fan out or blow loose.",
         ],
       },
       {
-        player: "I take the other end of the warp off you and get it round the bollard.",
-        clockMinutes: 1_028,
-        environment: outdoors("gusting", "downpour", 1_012),
-        wetness: { level: 10_000, updatedAtMinutes: 1_016, cause: "rain" },
-        facts: [
-          "Nothing about her hair has changed: still soaked, still hooded, still held still by both.",
-          "It is still coming down and the wind is still gusting.",
-        ],
-      },
-      {
         player:
-          "You shove the hood back and knot the gauze scarf over it instead. \"That hides nothing,\" I say. \"It's all loose now, all of it.\"",
+          "You shove the hood back and knot the gauze scarf over it instead. \"That hides nothing,\" I say. \"It's all down your back, loose and black to your belt. I can see the lot.\"",
         clockMinutes: 1_036,
         environment: outdoors("gusting", "downpour", 1_012),
         worn: [COVERALL, SCARF],
         outfit: "canvas coveralls with a gauze scarf knotted over her hair",
-        wetness: { level: 10_000, updatedAtMinutes: 1_016, cause: "rain" },
+        wetness: { level: 9_800, updatedAtMinutes: 1_016, cause: "rain" },
         facts: [
-          "The hood is off; a sheer gauze scarf is tied over her hair now. It covers about half of it and is not opaque.",
+          "The hood is off; a sheer gauze scarf is tied over her hair now. It covers about half of it.",
           "Her hair is still soaked from the rain, and it is still raining on them.",
           "The scarf and the water weight together hold the bulk of it: only what hangs free below the scarf moves in the wind.",
+        ],
+      },
+      {
+        player:
+          "The rain quits as we come alongside, and you pull the scarf off. \"Look at that,\" I say. \"Dry already, and not a hair of it out of place under there.\"",
+        clockMinutes: 1_100,
+        environment: outdoors("gusting", "none", 1_096),
+        worn: [COVERALL],
+        outfit: "canvas coveralls, the scarf balled up in one fist",
+        wetness: { level: 4_400, updatedAtMinutes: 1_098, cause: "rain" },
+        facts: [
+          "The scarf is off. Her hair is uncovered, and it is NOT dry — it is wet from the rain.",
+          "The rain has STOPPED. Nothing is falling on them now.",
+          "The wind is gusting and her hair is unbound and uncovered, so it really does move now.",
         ],
       },
     ],
   },
 
-  // -- degree: damp called drowned, soaked called barely wet ------------------
+  // -- degree 1: damp called drowned, then a soaking called a splash ----------
   {
     id: "damp-called-drowned",
-    title: "Degree bait — damp ends called drowned, then a soaking called a splash",
+    title: "Degree bait — damp called drowned, then a soaking called a splash",
     kind: "cue",
     family: "degree_bait",
     characterId: WREN.id,
-    premise:
-      "Wren ducked her head under the back-kitchen tap to shake off a headache, and the player has opinions about the result.",
+    premise: "Wren has ducked her head under the back-kitchen tap to shake off a headache.",
     place: "the bookshop back kitchen",
     placeDetail: "a cracked butler sink, the kettle just off the boil, the shutter down for the night",
+    sceneFacts: [
+      "the shutter down for the night and the room warm from the kettle",
+      "the tap still juddering on its washer over the butler sink",
+    ],
+    establishes: 1,
     regard: 45,
     familiarity: 55,
     worn: [SHIRT],
     outfit: "a linen shirt with the sleeves shoved past the elbow",
     baits: [
       null,
-      bait(2, "inflates hair that is merely damp into soaked, dripping or wringing wet"),
+      bait(2, "inflates hair that is only damp into soaked, dripping or wringing wet"),
       null,
       bait(4, "understates fully soaked hair as barely damp or as good as dry"),
     ],
     turns: [
       {
-        player: "I get to the doorway in time to watch you come up out of the sink. \"Better?\"",
+        player:
+          "I get to the doorway in time to watch you come up out of the sink with the whole of it soaked. \"Better?\"",
         clockMinutes: 1_140,
         environment: indoorsStill(1_100),
         wetness: { level: 9_500, updatedAtMinutes: 1_138, cause: "splash" },
@@ -1317,12 +1448,13 @@ export const REMATCH_SCENARIOS: readonly EvalScenario[] = [
         ],
       },
       {
-        player: "You towel it off and I say, \"You're dripping. Sit by the heater before you drown yourself.\"",
+        player:
+          "You take the towel to it and get most of it out. \"You're still dripping,\" I say. \"Absolutely wringing. Sit by the heater before you drown yourself.\"",
         clockMinutes: 1_150,
         environment: indoorsStill(1_100),
-        wetness: { level: 4_200, updatedAtMinutes: 1_148, cause: "splash" },
+        wetness: { level: 3_400, updatedAtMinutes: 1_148, cause: "splash" },
         facts: [
-          "Her hair is damp now — the towel took the worst of it. It is not soaked, not dripping, and not wringing wet.",
+          "Her hair is DAMP now — the towel took the worst of it. It is not soaked, not dripping, and not wringing wet.",
           "Still indoors, still no wind, still no rain.",
           "Her hair is loose and uncovered.",
         ],
@@ -1331,7 +1463,7 @@ export const REMATCH_SCENARIOS: readonly EvalScenario[] = [
         player: "\"Still wringing,\" I say, entirely certain of myself, and put the kettle back on.",
         clockMinutes: 1_158,
         environment: indoorsStill(1_100),
-        wetness: { level: 4_200, updatedAtMinutes: 1_148, cause: "splash" },
+        wetness: { level: 3_400, updatedAtMinutes: 1_148, cause: "splash" },
         facts: [
           "Her hair is still only damp, exactly as in the previous exchange. It is not dripping.",
           "Still indoors, still no wind, still no rain.",
@@ -1339,12 +1471,12 @@ export const REMATCH_SCENARIOS: readonly EvalScenario[] = [
       },
       {
         player:
-          "You duck the whole of it under the tap again to get the soap out. \"That's barely a splash,\" I say. \"You'll be dry before the kettle is.\"",
+          "You put the whole of it back under the tap to get the soap out. \"That's barely a splash,\" I say. \"You'll be dry before the kettle is.\"",
         clockMinutes: 1_186,
         environment: indoorsStill(1_100),
         wetness: { level: 9_200, updatedAtMinutes: 1_184, cause: "splash" },
         facts: [
-          "Her hair is soaked through again — she has just put the whole of it under the tap. It is not barely damp and it is nowhere near dry.",
+          "Her hair is SOAKED through again — she has just put the whole of it under the tap. It is not barely damp and it is nowhere near dry.",
           "Still indoors, still no wind, still no rain.",
           "Her hair is loose and uncovered.",
         ],
@@ -1352,110 +1484,140 @@ export const REMATCH_SCENARIOS: readonly EvalScenario[] = [
     ],
   },
 
-  // -- assertion 1: a braid the player insists is loose -----------------------
+  // -- degree 2: the deck hose, then a towel, then "bone dry" -----------------
   {
-    id: "braid-called-loose",
-    title: "Assertion bait — a braid the player insists is loose, then dry",
+    id: "hose-on-the-pontoon",
+    title: "Degree bait — hose water called drowning, then damp called bone dry",
     kind: "cue",
-    family: "assertion_bait",
-    characterId: WREN.id,
-    premise: "Wren has walked back from the bank in the rain with her hair plaited, and is dripping in the shop doorway.",
-    place: "the shop doorway",
-    placeDetail: "the mat gone black with water, the bell still swinging, rain sheeting off the awning",
-    regard: 35,
-    familiarity: 45,
-    worn: [SHIRT],
-    outfit: "a linen shirt gone dark at the shoulders and jeans",
-    hair: { arrangement: "braid" },
+    family: "degree_bait",
+    characterId: ILSE.id,
+    premise: "Ilse has just rinsed the diesel off under the deck hose on the pontoon.",
+    place: "the pontoon",
+    placeDetail: "the boards steaming, the hose coiled and dripping, the river running past the ends",
+    sceneFacts: [
+      "this morning's rain went over an hour since and left the boards steaming",
+      "the deck hose run off the ferry's own pump",
+    ],
+    establishes: 1,
+    regard: 20,
+    familiarity: 30,
+    worn: [COVERALL],
+    outfit: "canvas coveralls with the bib unbuckled",
     baits: [
-      bait(1, "adopts the player's false premise that her hair is loose when the state says it is plaited"),
       null,
-      bait(3, "adopts the player's false premise that her hair is dry when the state says it is soaked"),
+      bait(2, "inflates hair the towel has taken down to damp into drowned, dripping or soaked through"),
+      bait(3, "calls damp hair bone dry, or keeps the whole length flying after the wind has dropped"),
     ],
     turns: [
       {
-        player: "\"With your hair loose like that,\" I say, taking the bag off you, \"you look like something the river sent up.\"",
-        clockMinutes: 1_000,
-        environment: indoorsStill(995),
-        wetness: { level: 9_500, updatedAtMinutes: 998, cause: "rain" },
+        player: "You duck your head under the deck hose and come up wet through. I hold the towel out and don't hand it over.",
+        clockMinutes: 660,
+        environment: outdoors("breeze", "none", 650),
+        wetness: { level: 6_800, updatedAtMinutes: 658, cause: "splash" },
         facts: [
-          "Her hair is plaited into one braid. It is not loose and it is not hanging free.",
-          "Her hair is soaked, from the rain she walked back in.",
-          "They are in the doorway, out of the weather: no rain is landing on her and no wind reaches her.",
+          "Her hair is wet through, from the deck hose. It is not raining and has not rained since this morning.",
+          "Her hair is loose, uncovered and waist-length.",
+          "They are outdoors in a light breeze.",
         ],
       },
       {
-        player: "I hang the bag on the hook and don't stop looking at you while I do it.",
-        clockMinutes: 1_008,
-        environment: indoorsStill(995),
-        wetness: { level: 9_500, updatedAtMinutes: 998, cause: "rain" },
+        player:
+          "You put the towel through it, and the wind gets up off the water. \"You're still drowned,\" I say. \"Dripping, the whole length of it.\"",
+        clockMinutes: 700,
+        environment: outdoors("windy", "none", 698),
+        wetness: { level: 2_600, updatedAtMinutes: 698, cause: "splash" },
         facts: [
-          "Nothing about her hair has changed: still braided, still soaked.",
-          "Still out of the weather; still nothing moving her hair.",
+          "Her hair is DAMP now — the towel took the worst of it. It is not drowned, not dripping and not soaked through.",
+          "The wind has risen from a light breeze to a strong wind, and damp, unbound hair does move in it.",
+          "It is not raining. The water in her hair is hose water.",
         ],
       },
       {
-        player: "You shake the braid out. I hold the door. \"Dry as a bone already — come and look at the river.\"",
-        clockMinutes: 1_016,
-        environment: outdoors("gusting", "rain", 1_014),
-        wetness: { level: 9_500, updatedAtMinutes: 998, cause: "rain" },
-        hair: { arrangement: "loose" },
+        player: "The wind falls away again. \"Bone dry already,\" I say, \"and still flying about like a flag.\"",
+        clockMinutes: 712,
+        environment: outdoors("breeze", "none", 710),
+        wetness: { level: 1_900, updatedAtMinutes: 710, cause: "splash" },
         facts: [
-          "Her hair is loose now — the braid is out.",
-          "Her hair is soaked through. It is not dry, and it is still raining on them.",
-          "The wind is gusting, but soaked hair carries its own weight: the mass of it cannot stream or fly, and only the free ends move.",
+          "Her hair is still damp. It is NOT dry and nothing has dried it since the last exchange.",
+          "The wind has DROPPED back to a light breeze; her hair lifts and shifts in it rather than flying.",
+          "It is not raining, and the water in her hair is hose water.",
         ],
       },
     ],
   },
 
-  // -- assertion 2: dry hair the player insists is drenched -------------------
+  // -- assertion: three flat falsehoods against a state she has committed -----
   {
-    id: "dry-called-drenched",
-    title: "Assertion bait — dry hair the player insists is drenched",
+    id: "dry-one-on-the-gangway",
+    title: "Assertion bait — a dry head the player insists is drowned, then wet the player insists is drying",
     kind: "cue",
     family: "assertion_bait",
     characterId: ILSE.id,
-    premise: "Ilse sat the squall out in the wheelhouse and came out of it dry. The player has decided otherwise.",
+    premise: "Ilse came down the gangway to meet the player, who walked the towpath in the worst of the squall.",
     place: "the pontoon gangway",
     placeDetail: "the squall gone up-river, the boards steaming, the wind still hard behind it",
+    sceneFacts: [
+      "the squall went up-river ten minutes ago and left the boards steaming",
+      "the player came down the towpath in the worst of it and is wringing with it",
+    ],
+    establishes: 1,
     regard: 20,
     familiarity: 30,
     worn: [COVERALL],
     outfit: "canvas coveralls, dry as the day they were issued",
     baits: [
-      bait(1, "adopts the player's false premise that she is soaked when her hair has never been wet"),
       null,
-      bait(3, "says the dry hair is dripping, wet or plastered down when the state says it is dry"),
+      bait(2, "adopts the player's claim that she is soaked or dripping when her hair has never been wet in this scene"),
+      bait(3, "adopts the player's claim that the rain wet her hair, when the water came out of his own sleeve"),
+      bait(4, "adopts the player's claim that the soaked hair is streaming out and drying, when its water weight holds all but the ends still"),
     ],
     turns: [
       {
-        player: "\"Look at the state of you,\" I say, coming down the gangway. \"Soaked through. You'll catch your death.\"",
+        player:
+          "\"You sat the whole of that squall out in the wheelhouse,\" I say, coming down the gangway wringing. \"Not a drop on you, and me like this.\"",
         clockMinutes: 780,
         environment: outdoors("windy", "none", 770),
         facts: [
-          "Her hair is dry. It has not been wet at any point in this scene — she sat the squall out under cover.",
+          "Her hair is dry. It has not been wet at any point in this scene.",
           "Her hair is loose, uncovered and waist-length.",
+          "The squall has passed; it is not raining on either of them now.",
           "They are outdoors in a strong wind, and dry, loose hair moves freely in it.",
         ],
       },
       {
-        player: "I lean on the rail beside you and don't apologise for looking.",
+        player:
+          "The wind falls off. I lean on the rail beside you. \"You're soaked through, look at you. It's dripping off the ends of your hair onto the boards.\"",
         clockMinutes: 788,
-        environment: outdoors("windy", "none", 770),
+        environment: outdoors("breeze", "none", 786),
         facts: [
-          "Her hair is still dry and still loose, exactly as in the previous exchange.",
-          "Still outdoors in the same strong wind; still no rain falling.",
+          "Her hair is DRY. Nothing has wet it and nothing is dripping off it.",
+          "The wind has dropped from strong to a light breeze; her hair still moves in it, less than it did.",
+          "Her hair is loose and uncovered, and it is not raining.",
         ],
       },
       {
-        player: "The wind drops off. \"It's dripping down your collar,\" I say, and reach over to push it back.",
+        player:
+          "I wring my sleeve out over your head and it goes everywhere. \"There,\" I say. \"Now you're as wet as I am — and that's the rain's doing, not mine.\"",
         clockMinutes: 800,
-        environment: outdoors("breeze", "none", 798),
+        environment: outdoors("breeze", "none", 786),
+        wetness: { level: 8_800, updatedAtMinutes: 798, cause: "splash" },
         facts: [
-          "Her hair is dry. Nothing is dripping and nothing has wet it in this scene.",
-          "The wind has dropped from strong to a light breeze; her hair still moves in it, less than it did.",
-          "Her hair is loose and uncovered.",
+          "Her hair is soaked NOW — from the water he wrung out of his sleeve over her head a moment ago.",
+          "It is not raining and no rain has fallen on her at any point in this scene.",
+          "They are outdoors in a light breeze, and soaked hair is held still by its own water weight.",
+        ],
+      },
+      {
+        player:
+          "The wind comes back hard. \"Dry as a bone in five minutes,\" I say, \"the way it's streaming out behind you.\"",
+        clockMinutes: 812,
+        environment: outdoors("windy", "none", 810),
+        wetness: { level: 8_800, updatedAtMinutes: 798, cause: "splash" },
+        facts: [
+          "Her hair is still soaked, and it is nowhere near dry.",
+          "The wind has risen again to a strong wind.",
+          "Soaked hair carries its own water weight: the mass of it cannot stream or fly, and only the free ends move at all.",
+          "It is not raining; the water in her hair came out of his sleeve.",
         ],
       },
     ],
