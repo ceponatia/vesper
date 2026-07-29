@@ -1,12 +1,15 @@
 # Body-attribute visual affordances
 
-Status: active — **slices 0–5 shipped 2026-07-28** (hair vocabulary split,
-shared core, hair domain, chat-lane wetness/environment owners + adapter +
-retake capture, `CHAT_AFFORDANCE_CUES` narrator trial flag, default OFF).
-Remaining before the release contract closes: the owner-gated cue comparison
-trial, slice 6 (garment second domain — ruled 2026-07-28), slice 7
-(recognition memory), slice 8 (image decision), the successor-lane adapter
-follow-up, and per-companion rulings. The shared foundation the
+Status: active — **slices 0–4 and the slice 5 wiring shipped 2026-07-28**
+(hair vocabulary split, shared core, hair domain, chat-lane
+wetness/environment owners + adapter + retake capture, and the
+`CHAT_AFFORDANCE_CUES` narrator cue path, default OFF). **Slice 5 itself is
+not complete until its comparison trial runs** — the owner-gated live-model
+comparison of contradiction rate, repetition, specificity, and naturalness
+against the current appearance path is pending. Also remaining before the
+release contract closes: slice 6 (garment second domain — ruled 2026-07-28),
+slice 7 (recognition memory), slice 8 (image decision), the successor-lane
+adapter follow-up, and per-companion rulings. The shared foundation the
 [romantic-contact plan](romantic-contact-affordances.plan.md) consumes is
 live.
 
@@ -279,6 +282,13 @@ image-only body model.
   (Current force and the retake capture seam were resolved in Slice 0 — see the
   [hair spec resolutions](body-attribute-affordances.spec.hair.md#resolved-slice-0-2026-07-28);
   contact/pose remains unowned and adhesion stays fixture-only.)
+- Should hooded hair be able to show its loose ends stirring? Today a hood
+  lets damp clumping through but the ends-only motion case cannot fire in
+  play — an opaque-coverage calibration ruling is needed.
+  ([hair spec](body-attribute-affordances.spec.hair.md#open-questions))
+- Should a bath/pool soaking carry its own "still dripping" provenance in
+  narration, now that it correctly no longer reads as rain?
+  ([hair spec](body-attribute-affordances.spec.hair.md#open-questions))
 - What is the shared physiology-sign shape, how are diverse skin responses
   calibrated, and who owns products and persistent marks?
   ([skin spec](body-attribute-affordances.spec.skin-surface.md#open-questions))

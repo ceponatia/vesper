@@ -288,13 +288,35 @@ lane does.
   on the story clock** at a flat rate (saturated → dry in ~3⅓ story hours), the
   garment-condition precedent: reading integrates forward and never mutates, writes touch
   only the locations a proposal named, and `updatedAtMinutes` therefore stays a truthful
-  freshness stamp for the cause. An absent entry is dry. **Primary character only** this
-  release — `hair` is the one owned location.
+  freshness stamp for the cause. **Primary character only** this release — `hair` is the
+  one owned location. Two laws about not letting a gap become a physical claim:
+  - **Absent, dry, and invalid are three answers.** An absent entry is honestly dry
+    (nothing ever recorded wetting it). A stored entry whose `level`/`updatedAtMinutes`
+    fails parsing is **quarantined** as `{ status: "invalid" }` — persisted verbatim,
+    never pruned, and healed only by the next authoritative write — and
+    `bodySurfaceWetnessAt` returns an explicit `invalid` read the caller must handle.
+    Repairing it to `0` would be worse than useless: dry hair is *more* mobile than wet
+    hair, so a corrupt row would have bought a wind-motion cue. The adapter maps `invalid`
+    onto the affordance result law's `invalid`, files `affordance.input.invalid`, and the
+    hair domain (for which wetness is structural) falls silent.
+  - **Standing outdoor precipitation HOLDS wetness** (`surfaceDryingSuspended` —
+    `precipitationActive`, i.e. raining *and* not indoors). Without it a soaked character
+    standing in a continuing downpour read bone dry after a few story hours, because
+    "unchanged weather" proposes no ops. Holding never *raises* the level; raising still
+    requires a committed proposal. The finalize fold applies the environment patch first
+    and integrates against the result, so an exchange is attributed to the sky it ends
+    under (a documented one-window approximation).
 - **The extraction** (`chatArchivistSchema.environment` / `.surfaceWetness`, both on the
   shared continuity leg): a partial weather patch (absent key = unchanged) and a list of
   `{ location, direction, degree 1-3, cause? }`. Semantic, never numeric — the reducer
   owns the delta table and clamps regardless; an unowned location drops with
-  `chat_surface.location_unknown`.
+  `chat_surface.location_unknown`. `surfaceWetness` is carried **raw** on the aggregate
+  and parsed per item by `parseSurfaceWetnessProposals`, which drops malformed items and
+  reports the count as `chat_surface.proposal_invalid`. `direction` and `degree` are
+  strict — the standing law is that **`.catch` is for narration-affecting leaves, never
+  for state-mutating magnitudes**, so a hallucinated `degree: 999` fails its item instead
+  of being repaired into a real 50% wetness change. `cause` stays lenient (provenance
+  only).
 - **`character_chats.affordance_cues`** (`AffordanceCueState`): what the affordance read
   has already offered the narrator, and in which band — the garment `cues` precedent. It
   sits on the SCENARIO because the read is a pure function of committed state plus this
@@ -322,6 +344,17 @@ contamination are `unavailable`** — so hair-to-skin adhesion is suppressed by 
 core before its resolver can read an empty contact list as "nothing is touching", and no
 impulse event is ever synthesized. Unknown coverage (no wardrobe read at all) fails
 closed: the whole hair read goes silent rather than assuming an uncovered head.
+
+**Coverage constrains what moves; perception only says what an eye reaches.** Worn
+headwear maps the `hair` location to exposure `hinted` — opaque *or* sheer — because the
+wardrobe's per-location coverage is already partial (`coveredFraction` 0.9 for an opaque
+cover, precisely because ends and fringe hang out) and an ordinary hat, cap or hood
+genuinely leaves some of the location readable. Mapping opaque to `hidden` had the two
+layers contradicting each other and suppressed *every* hair observation under a hat,
+including ones coverage does not damp. Genuinely total concealment (a wrapped headscarf, a
+veil) should read `hidden`, but that needs a finer coverage signal than the per-location
+boolean, so no chat garment produces `hidden` today — the gate itself is unchanged and
+still fails closed for an unlisted location (`unknown`).
 
 
 ## Emotional weather

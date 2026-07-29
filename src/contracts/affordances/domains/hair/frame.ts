@@ -73,8 +73,16 @@ export type HairEventKind = (typeof hairEventKinds)[number];
 /** Kinds that count as a committed IMPULSE — droplet shedding requires one of these. */
 export const hairImpulseEventKinds = ["shake", "sudden_turn", "run", "impact", "gust"] as const;
 
-/** Kinds that authorise a rain/exposure cause on a wet read. Nothing else may imply rain. */
-export const hairRainEventKinds = ["rain_exposure", "immersion"] as const;
+/**
+ * Kinds that authorise a RAIN cause on a wet read. Nothing else may imply rain.
+ *
+ * Exactly one kind qualifies, and the exclusion is the point: `immersion` (a
+ * bath, a pool, a dunking) and `splash` are legitimate wetting events, but
+ * narrating either as weather is a direct contradiction of the scene. Wet hair
+ * from any other cause reads as wet and stays SILENT about why — an unattributed
+ * wet read is correct; an invented one is a lie the narrator will repeat.
+ */
+export const hairRainEventKinds = ["rain_exposure"] as const;
 
 export const hairCausalEventSchema = z.object({
   kind: z.enum(hairEventKinds),

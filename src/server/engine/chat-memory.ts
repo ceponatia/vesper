@@ -7,6 +7,7 @@ import {
   degradedChatPersonalNotes,
   diag,
   mergeChatExtractions,
+  parseSurfaceWetnessProposals,
   type ChatArchivist,
   type ChatCharacterNotes,
   type ChatContinuity,
@@ -339,11 +340,14 @@ function describeScribe(v: ChatMemoryScribe): AgentRunDescription {
   };
 }
 function describeContinuity(v: ChatContinuity): AgentRunDescription {
+  // The raw list is parsed here the same way the fold parses it (no sink: this is
+  // the inspector's read-only view, and the fold already reported the drops).
+  const surfaceWetness = parseSurfaceWetnessProposals(v.surfaceWetness);
   return {
     summary: joinParts([
       v.scene.current ? `scene: ${v.scene.current}` : "",
       Object.keys(v.environment).length ? "environment" : "",
-      v.surfaceWetness.length ? plural(v.surfaceWetness.length, "surface change") : "",
+      surfaceWetness.length ? plural(surfaceWetness.length, "surface change") : "",
       v.garmentOperations.length ? plural(v.garmentOperations.length, "garment op") : "",
       outfitChanged(v.outfit) ? "outfit change" : "",
       v.attributeChanges.length ? `${v.attributeChanges.length} appearance` : "",
@@ -355,10 +359,10 @@ function describeContinuity(v: ChatContinuity): AgentRunDescription {
       Object.keys(v.environment).length
         ? { label: "Environment", items: Object.entries(v.environment).map(([key, value]) => `${key}: ${String(value)}`) }
         : null,
-      v.surfaceWetness.length
+      surfaceWetness.length
         ? {
-            label: `Surface (${v.surfaceWetness.length})`,
-            items: v.surfaceWetness.map((w) => `${w.location} ${w.direction} ${w.degree}${w.cause ? ` (${w.cause})` : ""}`),
+            label: `Surface (${surfaceWetness.length})`,
+            items: surfaceWetness.map((w) => `${w.location} ${w.direction} ${w.degree}${w.cause ? ` (${w.cause})` : ""}`),
           }
         : null,
       v.garmentOperations.length

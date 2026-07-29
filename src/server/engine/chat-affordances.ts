@@ -1,19 +1,23 @@
 import {
   affordancePerceptionView,
   affordanceSubjectId,
+  AFFORDANCE_INPUT_INVALID,
   attributeRegistry,
   bodySurfaceWetnessAt,
   bodySurfaceWetnessEntry,
   conditionAttributeOverlays,
   deriveAffordanceRead,
+  diag,
   emptyAffordanceCueState,
   hairAffordanceDomain,
   HAIR_DOMAIN_ID,
   HAIR_LOCATION_ID,
+  isInvalidSurfaceEntry,
   precipitationActive,
   resolveAttributes,
   resolvedAttributeSnapshot,
   resolveWardrobeVisibility,
+  surfaceDryingSuspended,
   windForceOf,
   type ActiveCondition,
   type AffordanceCueState,
@@ -44,13 +48,19 @@ import {
  * | input | chat-lane owner | status |
  * | --- | --- | --- |
  * | `hair.arrangement` | canonical attributes + narrative/condition overlays | supported |
- * | `wetness` | `ChatState.bodySurface` (extraction-owned, lazily dried) | supported |
+ * | `wetness` | `ChatState.bodySurface` (extraction-owned, lazily dried, held under standing rain) | supported, or **invalid** on a quarantined entry |
  * | `coveredFraction` | worn coverage of the `hair` body location | supported, or **unavailable** with no wardrobe read |
  * | `wind` | `ChatScenario.environment` (extraction-owned) | supported — including "still air", which is a real answer |
  * | `events` | the wetness entry's own cause + active precipitation | supported, rain/immersion/splash ONLY |
  * | `motion` | — | **unavailable** (no body-motion owner) |
  * | `contacts` | — | **unavailable** (no typed contact owner) |
  * | `contamination` | — | **unavailable** (no owner) |
+ *
+ * `wetness` is the one input with a live **invalid** path: a corrupt
+ * `body_surface` entry is quarantined by the state owner rather than healed to
+ * "dry", so this adapter reports it invalid, files `affordance.input.invalid`,
+ * and the domain — for which wetness is structural — falls entirely silent.
+ * Conservative silence, never a convenient default.
  *
  * The two `unavailable`s are the audit's rulings, not oversights, and they are
  * load-bearing: `contacts` is a REQUIRED dependency of
@@ -201,13 +211,44 @@ interface HairCoverageRead {
 }
 
 /**
+ * The payload this adapter builds. `HairLanePayload` documents the SUPPORTED
+ * shape; this widens `wetness` to `number | null` because the adapter must also
+ * be able to say "present, and not readable" — the payload is the only channel it
+ * has for the adapter result law's `invalid`.
+ */
+type HairPayloadDraft = Partial<Omit<HairLanePayload, "wetness">> & { readonly wetness: number | null };
+
+/**
  * Coverage of, and visibility at, the `hair` location.
  *
  * Both fall out of ONE pass of the shared wardrobe resolver — no second occlusion
  * model, no re-expansion of coverage ids. `visibleAt` names the locations a row
  * is the OUTERMOST cover of, so the row that lists `hair` there is the thing an
- * observer's eye actually reaches, and its opacity decides between `hidden` and
- * `hinted` in the wardrobe's own vocabulary.
+ * observer's eye actually reaches, and its opacity decides how much of the
+ * location an observer can still read.
+ *
+ * **Opaque headwear is `hinted`, not `hidden`** (owner ruling, review finding 5).
+ * The two layers were contradicting each other: mechanics already models a hood
+ * as PARTIAL coverage (`HAIR_COVERED_OPAQUE` is 0.9 precisely because ends and
+ * fringe hang out), and then perception threw away everything that partial
+ * coverage let through — every hair observation, not just the ones coverage
+ * damps. So the division of labour is now clean: coverage constrains WHAT can
+ * move, and perception states only what an eye can reach. An ordinary hat, cap,
+ * or hood leaves part of the location visible, and `hinted` says exactly that —
+ * which is why a soaking under a hood can now be described.
+ *
+ * Note what this does NOT unlock on its own: at `HAIR_COVERED_OPAQUE` the
+ * mechanics still gate the ends-only wind response shut (`covered`), because
+ * 0.9 leaves too little free area to clear its floor — the hair domain's own
+ * worked case sits at 0.6. That is a CALIBRATION question about this constant,
+ * not a perception one, and it is deliberately left alone here.
+ *
+ * Genuinely TOTAL concealment — a wrapped headscarf, a veil, hair tucked
+ * entirely inside a hood — is a real state and it should read `hidden`. It needs
+ * a finer coverage signal than the wardrobe's per-location boolean can give
+ * (fullness, or a garment flag), so no headwear returns `hidden` until that
+ * signal exists; guessing which hats are total from opacity alone is what
+ * produced this bug.
  */
 function readHairCoverage(wardrobe: ChatAffordanceWardrobe): HairCoverageRead {
   const worn = [...wardrobe.worn];
@@ -217,7 +258,7 @@ function readHairCoverage(wardrobe: ChatAffordanceWardrobe): HairCoverageRead {
   if (row === undefined) return { coveredFraction: 0, exposure: "visible" };
   return row.opacity === "sheer"
     ? { coveredFraction: HAIR_COVERED_SHEER, exposure: "hinted" }
-    : { coveredFraction: HAIR_COVERED_OPAQUE, exposure: "hidden" };
+    : { coveredFraction: HAIR_COVERED_OPAQUE, exposure: "hinted" };
 }
 
 /**
@@ -234,7 +275,10 @@ function readHairCoverage(wardrobe: ChatAffordanceWardrobe): HairCoverageRead {
  */
 function hairEvents(input: ChatAffordanceReadInput): HairCausalEvent[] {
   const events: HairCausalEvent[] = [];
-  const entry = bodySurfaceWetnessEntry(input.bodySurface, HAIR_LOCATION_ID);
+  const stored = bodySurfaceWetnessEntry(input.bodySurface, HAIR_LOCATION_ID);
+  // A quarantined entry has no readable cause OR stamp — its provenance died with
+  // its level, and inventing either would be the invention this whole layer refuses.
+  const entry = stored !== undefined && !isInvalidSurfaceEntry(stored) ? stored : undefined;
   if (entry?.cause !== undefined && input.clockMinutes - entry.updatedAtMinutes <= CHAT_AFFORDANCE_EVENT_FRESHNESS_MINUTES) {
     const kind = HAIR_EVENT_FOR_CAUSE[entry.cause];
     if (kind !== undefined) events.push({ kind, atStoryTime: Math.max(0, entry.updatedAtMinutes) });
@@ -263,12 +307,34 @@ export function buildChatAffordanceRead(input: ChatAffordanceReadInput): ChatAff
   const storyTime = Math.max(0, Math.trunc(input.clockMinutes));
   const coverage = input.wardrobe ? readHairCoverage(input.wardrobe) : undefined;
 
+  // Standing outdoor rain HOLDS the committed soaking rather than drying it
+  // forward (`surfaceDryingSuspended` is the one shared definition, so this read
+  // and the finalize fold's integration can never disagree).
+  const wetness = bodySurfaceWetnessAt(input.bodySurface, HAIR_LOCATION_ID, storyTime, {
+    suspendDrying: surfaceDryingSuspended(input.environment),
+  });
+  if (wetness.status === "invalid") {
+    input.sink?.push(
+      diag("warn", AFFORDANCE_INPUT_INVALID, `Stored wetness for "${HAIR_LOCATION_ID}" is quarantined — hair domain suppressed`, {
+        path: "character_chat_state.body_surface",
+        context: { locationId: HAIR_LOCATION_ID, subjectId: input.subjectId },
+      }),
+    );
+  }
+
   // `Partial` because `coveredFraction` is genuinely omissible here: absent ⇒ the
   // domain reads it `unavailable` ⇒ the whole hair read is unavailable. That IS
   // the audit's "unknown coverage fails closed" — guessing "uncovered" would let
   // hidden hair stream in the wind.
-  const payload: Partial<HairLanePayload> = {
-    wetness: bodySurfaceWetnessAt(input.bodySurface, HAIR_LOCATION_ID, storyTime),
+  //
+  // `wetness: null` is the other half of that law and the reason this draft type
+  // widens the field: a quarantined surface entry is PRESENT-and-unreadable, which
+  // the domain's `readInput` classifies `invalid` (an omitted key would say
+  // `unavailable`, a weaker and less true claim). Wetness is structural to the
+  // hair domain, so either way the whole domain falls conservatively silent — but
+  // only `invalid` says the state row is broken.
+  const payload: HairPayloadDraft = {
+    wetness: wetness.status === "known" ? wetness.level : null,
     ...(coverage === undefined ? {} : { coveredFraction: coverage.coveredFraction }),
     // Still air is an ANSWER, not an absence: the environment owner can say "no
     // wind", which is a different claim from "this lane has no weather".

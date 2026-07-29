@@ -180,8 +180,10 @@ emit:
 - `wet_darkened_relative_to_base`;
 - `retains_droplets`.
 
-A rain cause is attached only when a recent authoritative exposure event
-supports it.
+A rain cause is attached only when a recent authoritative `rain_exposure`
+event supports it. Immersion and splash are legitimate wetting events that
+license **no** cause tag — a bath is not weather, and an unattributed wet
+read is the correct output (review ruling 2026-07-28).
 
 ### `hair.wind_or_motion_response`
 
@@ -327,6 +329,18 @@ runtime frame.
   release; adhesion stays fixture-only — Slice 0 ruling 2026-07-28).
 - Whether wet darkening needs per-color lightness metadata or only a relative
   semantic tag (default: relative tag until proven insufficient).
+- **Owner calibration call — `HAIR_COVERED_OPAQUE` vs the ends-only motion
+  threshold.** The review round mapped opaque headwear to perception
+  `hinted`, which lets wet clumping under a hood reach the narrator, but at
+  `coveredFraction 9_000` the free area cannot clear `ENDS_RESPONSE_MIN` at
+  any hair length, so the fourth worked case's ends-only wind response is
+  still unreachable in the chat lane (the domain fixture proves it at
+  `6_000`). Either lower the adapter's opaque constant, add an ends-exposure
+  carve-out, or accept that the case stays fixture-only — needs a ruling.
+- Whether immersion-caused wetness deserves its own provenance tag + cue
+  clause ("still dripping from the bath") — currently it correctly carries
+  no cause tag at all (a bath must not read as rain), which loses provenance
+  a narrator might use.
 
 ## Resolved (Slices 2–3, 2026-07-28)
 

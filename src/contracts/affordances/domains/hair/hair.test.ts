@@ -264,6 +264,36 @@ describe("no raw hair vocabulary reaches a phenomenon", () => {
   });
 });
 
+describe("the frame a resolver receives is genuinely frozen", () => {
+  it("hands out a nominalReach that cannot be written to — ReadonlySet enforced, not just declared", () => {
+    const capture: { reach?: ReadonlySet<string> } = {};
+    const probe = defineAffordancePhenomenon<HairAffordanceFrame, HairAffordanceFrame>({
+      id: "hair.freeze_probe",
+      dependencies: [],
+      selectInput: (frame) => frame,
+      resolve: (frame) => {
+        capture.reach = frame.profile.nominalReach;
+        return { kind: "suppressed", phenomenonId: "hair.freeze_probe", code: "probe" };
+      },
+    });
+    const withProbe = registerAffordanceDomain({ ...hairDomainDefinition, phenomena: [...hairPhenomena, probe] });
+    readWithDomains(saturatedDenseNeckContact(), [withProbe]);
+
+    const reach = capture.reach;
+    expect(reach).toBeDefined();
+    // Reads are untouched — reach is still the thing adhesion consults.
+    expect(reach?.has("neck")).toBe(true);
+    // Writes are not. The reach table is a module-level singleton shared by every
+    // read, so `Object.freeze` alone would let one resolver reshape every later
+    // subject's anatomy.
+    expect(() => (reach as Set<string>).add("thighs")).toThrow(TypeError);
+    expect(() => (reach as Set<string>).delete("neck")).toThrow(TypeError);
+    expect(() => (reach as Set<string>).clear()).toThrow(TypeError);
+    expect(reach?.has("thighs")).toBe(false);
+    expect(reach?.has("neck")).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Degradation
 // ---------------------------------------------------------------------------

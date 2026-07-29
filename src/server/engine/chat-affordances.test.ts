@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  affordancePerceptionView,
+  affordanceSubjectId,
+  AFFORDANCE_INPUT_INVALID,
   AFFORDANCE_INPUT_UNAVAILABLE,
   AFFORDANCE_PERCEPTION_HIDDEN,
+  bodySurfaceStateSchema,
+  deriveAffordanceRead,
   emptyBodySurfaceState,
   emptyChatEnvironment,
+  hairAffordanceDomain,
   hairAttributeFixture,
+  HAIR_DOMAIN_ID,
+  resolvedAttributeSnapshot,
   setBodySurfaceWetness,
   BODY_SURFACE_UNIT_ONE,
   type AttributeValue,
@@ -133,6 +141,56 @@ describe("what the lane can answer", () => {
   });
 });
 
+describe("standing rain holds the soaking rather than drying it", () => {
+  const DOWNPOUR: ChatEnvironment = { wind: "none", precipitation: "downpour", indoors: false, updatedAtMinutes: 0 };
+
+  it("hair does not dry out while the rain is still landing on it", () => {
+    // Four story hours: enough to dry a saturated head out completely.
+    const dry = read({ bodySurface: soaked(0), environment: emptyChatEnvironment(), clockMinutes: 4 * 60 });
+    expect(ids(dry.read.observations)).not.toContain("hair.wet_clumping");
+    expect(suppression(dry, "hair.wet_clumping")?.code).toBe("insufficient_wetness");
+
+    const rained = read({ bodySurface: soaked(0), environment: DOWNPOUR, clockMinutes: 4 * 60 });
+    expect(ids(rained.read.observations)).toContain("hair.wet_clumping");
+  });
+
+  it("under cover the same weather dries exactly as before", () => {
+    const inside = read({
+      bodySurface: soaked(0),
+      environment: { ...DOWNPOUR, indoors: true },
+      clockMinutes: 4 * 60,
+    });
+    expect(ids(inside.read.observations)).not.toContain("hair.wet_clumping");
+  });
+});
+
+describe("a quarantined surface entry is invalid, never 'dry'", () => {
+  const corrupt = bodySurfaceStateSchema.parse({ wetness: { [HAIR]: { level: "soaked", updatedAtMinutes: 3 } } });
+
+  it("suppresses the whole hair domain and files affordance.input.invalid", () => {
+    const sink = new DiagnosticCollector();
+    const result = read({ bodySurface: corrupt, environment: OUTDOORS_GALE, sink });
+
+    // The failure mode this replaced: a corrupt level read as 0, and DRY hair is
+    // MORE mobile than wet hair — so the corruption bought a wind-motion cue.
+    expect(result.read.observations).toEqual([]);
+    expect(suppression(result, "hair.wind_or_motion_response")?.code).toBe(AFFORDANCE_INPUT_INVALID);
+    const filed = sink.items.find(
+      (d) => d.code === AFFORDANCE_INPUT_INVALID && d.path === "character_chat_state.body_surface",
+    );
+    expect(filed?.severity).toBe("warn");
+    expect(filed?.context).toMatchObject({ locationId: HAIR });
+  });
+
+  it("a valid sibling location is untouched by its neighbour's corruption", () => {
+    const mixed = bodySurfaceStateSchema.parse({
+      wetness: { chest: 41, [HAIR]: { level: BODY_SURFACE_UNIT_ONE, updatedAtMinutes: 0, cause: "rain" } },
+    });
+    const result = read({ bodySurface: mixed });
+    expect(ids(result.read.observations)).toContain("hair.wet_clumping");
+  });
+});
+
 describe("what the lane refuses to answer", () => {
   it("contacts are unavailable, so adhesion is suppressed by the CORE before its resolver runs", () => {
     const result = read({ bodySurface: soaked() });
@@ -168,10 +226,28 @@ describe("what the lane refuses to answer", () => {
 });
 
 describe("perception uses the wardrobe's own vocabulary", () => {
-  it("opaque headwear hides the hair — the read resolves, the observer is not told", () => {
+  it("opaque headwear only HINTS — a hood leaves ends and fringe readable", () => {
+    // Review finding 5: mechanics already model a hood as PARTIAL coverage
+    // (`coveredFraction` 0.9), and perception used to throw away everything that
+    // partial coverage let through — which made the hair spec's fourth worked
+    // case unreachable in production. `hinted` states the truth instead.
     const result = read({ bodySurface: soaked(), wardrobe: { worn: hat("opaque") } });
-    expect(ids(result.read.observations)).not.toContain("hair.wet_clumping");
-    expect(suppression(result, "hair.wet_clumping")?.code).toBe(AFFORDANCE_PERCEPTION_HIDDEN);
+    expect(ids(result.read.observations)).toContain("hair.wet_clumping");
+  });
+
+  it("coverage, not perception, is what constrains motion under that hood", () => {
+    const bare = read({ environment: OUTDOORS_GALE });
+    expect(
+      bare.read.observations.find((o) => o.id === "hair.wind_or_motion_response")?.semanticTags,
+    ).toContain("whole_hair");
+
+    // The hood silences the MOVEMENT for a physical reason the domain names —
+    // `covered`, from `coveredFraction` — and no longer for the perception reason
+    // that used to hide everything about the location at once. Which layer says
+    // no is the whole point: the mechanics are entitled to, perception was not.
+    const hooded = read({ environment: OUTDOORS_GALE, wardrobe: { worn: hat("opaque") } });
+    expect(suppression(hooded, "hair.wind_or_motion_response")?.code).toBe("covered");
+    expect(suppression(hooded, "hair.wind_or_motion_response")?.code).not.toBe(AFFORDANCE_PERCEPTION_HIDDEN);
   });
 
   it("a sheer covering only HINTS, so the read still surfaces", () => {
@@ -182,6 +258,26 @@ describe("perception uses the wardrobe's own vocabulary", () => {
   it("a bare head is visible", () => {
     const result = read({ bodySurface: soaked() });
     expect(ids(result.read.observations)).toContain("hair.wet_clumping");
+  });
+
+  it("a HIDDEN exposure still suppresses — the gate is intact, no chat garment sets it", () => {
+    // Nothing this lane can wear produces `hidden` today (genuinely total
+    // concealment needs a finer coverage signal than the wardrobe's per-location
+    // boolean), so the gate is proved by constructing the view directly.
+    const hidden = deriveAffordanceRead({
+      subjectId: affordanceSubjectId("chr_wren"),
+      storyTime: 0,
+      attributes: resolvedAttributeSnapshot(ATTRIBUTES),
+      perception: affordancePerceptionView({ exposure: { [HAIR]: "hidden" }, channels: { sight: "available" } }),
+      domains: [hairAffordanceDomain],
+      payloads: {
+        [HAIR_DOMAIN_ID]: { wetness: BODY_SURFACE_UNIT_ONE, coveredFraction: 9_000, wind: { force: 0 }, events: [] },
+      },
+    });
+    expect(hidden.observations).toEqual([]);
+    expect(hidden.suppressed.find((entry) => entry.phenomenonId === "hair.wet_clumping")?.code).toBe(
+      AFFORDANCE_PERCEPTION_HIDDEN,
+    );
   });
 });
 

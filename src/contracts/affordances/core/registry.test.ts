@@ -12,6 +12,7 @@ import {
 } from "./registry";
 import {
   adapterSupported,
+  deepFreeze,
   resolvedAttributeSnapshot,
   type AffordanceDomainDefinition,
   type AffordanceResolutionContext,
@@ -216,6 +217,78 @@ function probeDomain(
     ...overrides,
   };
 }
+
+/**
+ * `Object.freeze` seals own properties only, so a `Set`/`Map` reached through a
+ * frame would stay writable through its internal slots — a `ReadonlySet` field
+ * that is read-only to the compiler and wide open at runtime. These cases pin
+ * the collection handling, and the totality the frozen-input law depends on.
+ */
+describe("deepFreeze", () => {
+  it("blocks every Set mutator while leaving reads intact", () => {
+    const set = deepFreeze(new Set(["neck", "shoulders"]));
+    expect(() => set.add("thighs")).toThrow(TypeError);
+    expect(() => set.add("thighs")).toThrow(/deepFreeze/);
+    expect(() => set.delete("neck")).toThrow(TypeError);
+    expect(() => set.clear()).toThrow(TypeError);
+
+    expect(set.has("neck")).toBe(true);
+    expect(set.has("thighs")).toBe(false);
+    expect(set.size).toBe(2);
+    expect([...set]).toEqual(["neck", "shoulders"]);
+    expect(Object.isFrozen(set)).toBe(true);
+  });
+
+  it("blocks every Map mutator while leaving reads intact", () => {
+    const map = deepFreeze(new Map([["neck", 1]]));
+    expect(() => map.set("neck", 2)).toThrow(TypeError);
+    expect(() => map.set("hips", 3)).toThrow(/deepFreeze/);
+    expect(() => map.delete("neck")).toThrow(TypeError);
+    expect(() => map.clear()).toThrow(TypeError);
+
+    expect(map.get("neck")).toBe(1);
+    expect(map.has("hips")).toBe(false);
+    expect(map.size).toBe(1);
+    expect([...map.entries()]).toEqual([["neck", 1]]);
+  });
+
+  it("descends into collection elements, keys, and values", () => {
+    const element = { depth: 1 };
+    const key = { id: "k" };
+    const nested = { set: new Set([element]), map: new Map([[key, { depth: 2 }]]) };
+    deepFreeze(nested);
+
+    expect(Object.isFrozen(nested.set)).toBe(true);
+    expect(Object.isFrozen(element)).toBe(true);
+    expect(Object.isFrozen(key)).toBe(true);
+    expect(Object.isFrozen(nested.map.get(key))).toBe(true);
+    expect(() => nested.set.add({ depth: 3 })).toThrow(TypeError);
+  });
+
+  it("terminates on cyclic structures, collections included", () => {
+    const cyclicObject: Record<string, unknown> = {};
+    cyclicObject.self = cyclicObject;
+    expect(deepFreeze(cyclicObject)).toBe(cyclicObject);
+
+    const cyclicSet = new Set<unknown>();
+    cyclicSet.add(cyclicSet);
+    expect(deepFreeze(cyclicSet)).toBe(cyclicSet);
+    expect(() => cyclicSet.add("more")).toThrow(TypeError);
+
+    const cyclicMap = new Map<unknown, unknown>();
+    cyclicMap.set(cyclicMap, cyclicMap);
+    expect(deepFreeze(cyclicMap)).toBe(cyclicMap);
+  });
+
+  it("is total — non-objects and already-frozen values pass through untouched", () => {
+    expect(deepFreeze(null)).toBeNull();
+    expect(deepFreeze(undefined)).toBeUndefined();
+    expect(deepFreeze(7)).toBe(7);
+    expect(deepFreeze("wet")).toBe("wet");
+    const once = deepFreeze(new Set(["neck"]));
+    expect(deepFreeze(once)).toBe(once);
+  });
+});
 
 describe("defineAffordancePhenomenon", () => {
   it("freezes the selected input — a resolver that writes fails loudly", () => {

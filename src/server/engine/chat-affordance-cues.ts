@@ -104,7 +104,8 @@ const CLUMPING_BOUND: Readonly<Record<AffordanceIntensityBand, string>> = {
 /**
  * At most ONE enriching detail, first match wins. Provenance leads: "still wet
  * from the rain" is the detail that keeps the scene consistent, and it is only
- * ever tagged when a committed rain/immersion event is in the frame.
+ * ever tagged when a committed rain_exposure event is in the frame — immersion
+ * and splash wet the hair but license no rain clause (a bath is not weather).
  */
 const CLUMPING_DETAILS: readonly { readonly tag: string; readonly clause: string }[] = [
   { tag: "recent_rain", clause: "still wet from the rain" },

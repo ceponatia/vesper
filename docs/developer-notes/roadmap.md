@@ -44,11 +44,12 @@ umbrella further down.)
 - **Body-attribute visual affordances — remainder: second domain (garment
   wet-state/cling), recognition memory, image decision, companion rulings** —
   [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-  (**slices 0–5 shipped 2026-07-28** — see
+  (**slices 0–4 + slice 5 wiring shipped 2026-07-28** — see
   [roadmap.shipped.md](roadmap.shipped.md); plan stays open until the release
-  contract closes). What remains: the owner-gated `CHAT_AFFORDANCE_CUES`
-  comparison trial (contradiction/repetition/specificity vs the current
-  appearance path — gates default-on), slice 6 garment second-domain proof
+  contract closes). What remains: the slice 5 comparison trial that completes
+  that slice (owner-gated `CHAT_AFFORDANCE_CUES` live-model run —
+  contradiction/repetition/specificity vs the current appearance path — gates
+  default-on), slice 6 garment second-domain proof
   (ruled 2026-07-28; dovetails with clothing slice 8), slice 7
   observer-specific recognizable features + visual memory, slice 8's recorded
   image-consumer decision, the successor-lane adapter follow-up named in the
