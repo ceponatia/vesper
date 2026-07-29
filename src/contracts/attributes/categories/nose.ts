@@ -12,8 +12,12 @@ export const noseGroup = defineAttributeGroup("nose", [
     renderVisual: true,
     allowedValues: [
       "button", "straight", "upturned", "snub", "aquiline",
-      "roman", "hooked", "broad", "narrow", "pointed",
+      "roman", "hooked", "broad", "narrow", "pointed", "crooked",
     ],
+    // A crooked nose is the recognizable-features spec's canonical attribute
+    // example (appearance-features/attribute-recognition.ts) — authorable, but
+    // never an automatic fill: an unspecified character's nose is not broken.
+    autoDefaultExcludes: ["crooked"],
     bodyLocationId: "nose",
     aliases: ["nose", "nose shape"],
   },

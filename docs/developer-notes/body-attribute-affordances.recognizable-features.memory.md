@@ -256,3 +256,88 @@ relationship plus current attention apply at projection time — see
 
 The thresholds and bucket boundaries above are fixture-tested calibration
 defaults, not permanent product law.
+
+## Shipped (Slice 7 implementation, 2026-07-29)
+
+Salience, memory, and mention policy shipped as
+`src/contracts/affordances/recognition/{salience,visual-memory,mention-policy}.ts`;
+the chat persistence half is `src/server/engine/visual-memory-store.ts` over
+the new `chat_visual_memory` table (migration `drizzle/0092_careful_spectrum.sql`).
+
+### The commit seam is data, not a callback
+
+`selectRecognitionCue` returns a SERIALIZABLE
+`{ cue, notices, changes, memoryAfterNotices, mentionCommit }`, and
+`commitRecognitionMention` folds the selected mention into that
+already-computed memory. Nothing in the contract writes; the lane decides when.
+
+That shape is what makes the ruled "mention is captured with the cut" true in a
+lane with no event ledger. The read runs while the prompt is built, and the
+commit runs only once the exchange has actually settled — a failed or empty
+reply leaves memory exactly as the next take needs to find it, and a retake
+cannot advance the same notice twice through a closure that already fired.
+
+### Two generations, keyed to the memory group
+
+One row per `(memory_group_id, viewpoint_id, subject_id)`. Scoping to the chat
+**memory group** rather than the chat is the owner ruling made concrete:
+"continue our history" retains recognition, a fresh conversation meets a
+stranger.
+
+The row stores `features` (current), `features_before` (the generation before
+the exchange that last wrote it), and `applied_message_id` (the same rollback
+guard the state and scenario anchors take). A retake arrives with the same
+guard id, so the store hands the adapter `features_before` and the exchange
+recomputes from the identical pre-exchange memory. A *new* exchange rotates
+current into before. Two generations are enough because a retake only ever
+replaces the most recent exchange; anything deeper would need the event ledger
+this lane does not have.
+
+`deleteChat` clears the group's rows when its last chat goes.
+
+### Calibration as shipped
+
+| Constant | Value |
+| --- | --- |
+| Salience mix | `0.55 × uniqueness + 0.45 × importance` (of visibility) |
+| Notice threshold | 3_500; 2_500 under deliberate inspection |
+| Freshness buckets | `recent` < 1_440 min · `familiar` ≤ 43_200 min · `long_absence` beyond |
+| Recognition floor | 2_500, after ≥ 3 notices, for `inherent`/`persistent` features |
+| Mention floor | 2_000 |
+| Novelty ladder | unseen 10_000 · changed 9_000 · long absence 7_000 · familiar 2_000 · recent 500 |
+| Mention cooldown | recovers linearly over 1_440 × `mentionCount` minutes |
+| Feature cap | 96 per (scope, observer, subject) |
+
+The 0.35–0.40 ruling reads as 3_500 on the shared fixed-point scale, and the
+0.25 inspection relaxation as 2_500. Memory state parses through healing
+schemas: an unreadable entry is dropped rather than failing the exchange, and
+the cap sheds the **least recently noticed** features first (a recognition
+memory that dropped its newest rows would be worse than useless).
+
+### Notices persist without a mention
+
+Looking is what strengthens recognition, so notices commit even when no cue
+fired — `mentionCommit` being null is a no-op inside `commitRecognitionMention`.
+Only a cue that actually reached the transcript moves `lastMentionedAt` and
+starts a cooldown. That is the ruled split between the two timestamps,
+observable in production: with `CHAT_RECOGNITION_CUES` off nothing is computed
+at all, but with it on and every cue below the mention floor, memory still
+accumulates.
+
+### Honest silences
+
+- **A change loses to a recent mention.** A fingerprint change within roughly a
+  story day of the same feature's last mention is adopted into memory (via the
+  separate `applyRecognitionFingerprintChanges` path, so it is never lost) but
+  scores below the mention floor and is not narrated. Defensible — the
+  narrator did just talk about it — but it is a calibration ruling if change
+  should be privileged over cooldown.
+- **`emotional_callback` is unreachable** with the shipped priors: its
+  importance requirement (7_000) is a tie rather than a clearance, and novelty
+  outranks it in every case that would otherwise select it. The reason exists
+  and is tested; nothing in production can currently choose it.
+- **Semantic-memory document emission is not built** — the boundary is ruled,
+  the emitter is deferred.
+- **Successor-lane projection into the same contract** (rollout step 8) is
+  deferred; the store, the scope union, and the observer union already carry
+  the branch-scoped case.
