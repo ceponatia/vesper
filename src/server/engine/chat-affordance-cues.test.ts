@@ -61,8 +61,29 @@ describe("the register", () => {
     expect(render([clumping({ intensityBand: "subtle" })])[0]).toBe(
       "Wren's hair has begun to gather into damp strands",
     );
-    expect(render([clumping()])[0]).toBe("Wren's hair has separated into damp, clinging strands");
-    expect(render([clumping({ intensityBand: "strong" })])[0]).toBe("Wren's hair hangs in heavy damp clumps");
+    expect(render([clumping()])[0]).toBe("Wren's hair has separated into wet, clinging strands");
+    expect(render([clumping({ intensityBand: "strong" })])[0]).toBe("Wren's hair hangs in heavy soaked clumps");
+  });
+
+  it("takes the degree adjective from the wetness descriptor, not from the clumping band", () => {
+    // The round-R2 fix (trial log): the band measures how far the hair has
+    // GATHERED — fine silky hair reads `subtle` while soaked — so a cue that
+    // spent the band as a wetness word called a soaking "damp", and the judges
+    // convicted it. The domain's own wetness descriptor wins wherever it exists.
+    const soaked = ["slightly_gathered", "wet_darkened_relative_to_base", "wetness_soaked", "loose_strands"];
+    expect(render([clumping({ intensityBand: "subtle", semanticTags: soaked })])[0]).toBe(
+      "Wren's hair has begun to gather into soaked strands",
+    );
+    const damp = ["distinct_strands", "wet_darkened_relative_to_base", "wetness_damp", "loose_strands"];
+    expect(render([clumping({ semanticTags: damp })])[0]).toBe("Wren's hair has separated into damp, clinging strands");
+    expect(render([clumping({ intensityBand: "strong", semanticTags: ["heavy_clumps", "wetness_wet"] })])[0]).toBe(
+      "Wren's hair hangs in heavy wet clumps",
+    );
+    // With no descriptor the band is the fallback, and it can only understate:
+    // clump strength is wetness damped by affinity and friction, never above it.
+    expect(render([clumping({ intensityBand: "strong", semanticTags: ["heavy_clumps"] })])[0]).toBe(
+      "Wren's hair hangs in heavy soaked clumps",
+    );
   });
 
   it("varies wind response by band, and the ends-only read gets its own sentence", () => {
@@ -84,24 +105,40 @@ describe("the register", () => {
     const bound = render([
       clumping({ intensityBand: "strong", semanticTags: ["heavy_clumps", "bound_mass"] }),
     ]);
-    expect(bound[0]).toBe("Wren's hair hangs heavy with water where it is bound up");
+    expect(bound[0]).toBe("Wren's hair hangs soaked and heavy where it is bound up");
     expect(bound[0]).not.toContain("clumps");
   });
 
   it("attaches at most one enriching detail, provenance first", () => {
     const rained = render([clumping({ semanticTags: ["distinct_strands", "retains_droplets", "recent_rain"] })]);
-    expect(rained[0]).toBe("Wren's hair has separated into damp, clinging strands, still wet from the rain");
+    expect(rained[0]).toBe("Wren's hair has separated into wet, clinging strands, still wet from the rain");
     const droplets = render([clumping({ semanticTags: ["distinct_strands", "retains_droplets"] })]);
-    expect(droplets[0]).toBe("Wren's hair has separated into damp, clinging strands, droplets caught along it");
+    expect(droplets[0]).toBe("Wren's hair has separated into wet, clinging strands, droplets caught along it");
     const curls = render([clumping({ semanticTags: ["distinct_strands", "defined_curls"] })]);
     expect(curls[0]).toContain("the curl drawn tight");
+  });
+
+  it("names EVERY committed cause, and invents none", () => {
+    // Round R2 measured the cost of the rain-only clause: bath water rendered as
+    // a bare "damp, clinging strands" while the scene's storm did the explaining
+    // for it, and the cue arm misattributed the cause twice as often as control.
+    const clause = (tag: string): string | undefined =>
+      render([clumping({ semanticTags: ["distinct_strands", "retains_droplets", tag] })])[0];
+    expect(clause("recent_rain")).toContain(", still wet from the rain");
+    expect(clause("recent_immersion")).toContain(", still wet from the water it was in");
+    expect(clause("recent_splash")).toContain(", still wet from the splash");
+    // Unknown provenance stays unknown: the line says what is true of the hair
+    // and nothing about why, exactly as it did before there were any causes.
+    const causeless = render([clumping({ semanticTags: ["distinct_strands", "retains_droplets"] })])[0] ?? "";
+    expect(causeless).not.toContain("still wet from");
+    expect(causeless).toContain("droplets caught along it");
   });
 });
 
 describe("colour is projection-only", () => {
   it("uses the resolved hair colour as an adjective", () => {
     expect(render([clumping()], hairColor("auburn"))[0]).toBe(
-      "Wren's auburn hair has separated into damp, clinging strands",
+      "Wren's auburn hair has separated into wet, clinging strands",
     );
     expect(render([motion()], hairColor("dark_brown"))[0]).toBe(
       "Wren's dark brown hair lifts and shifts in the moving air",
@@ -118,7 +155,7 @@ describe("colour is projection-only", () => {
     expect(chatAffordanceHairColor(attributes(hairColor("chartreuse")))).toBe("");
     expect(chatAffordanceHairColor(attributes([{ id: "hair.color", value: 7, source: "creation" }]))).toBe("");
     expect(render([clumping()], hairColor("chartreuse"))[0]).toBe(
-      "Wren's hair has separated into damp, clinging strands",
+      "Wren's hair has separated into wet, clinging strands",
     );
   });
 
@@ -147,7 +184,7 @@ describe("safety", () => {
     const three = render([clumping(), motion(), clumping({ repeatKey: "other" })]);
     expect(three).toHaveLength(2);
     const same = render([clumping(), clumping({ repeatKey: "other" })]);
-    expect(same).toEqual(["Wren's hair has separated into damp, clinging strands"]);
+    expect(same).toEqual(["Wren's hair has separated into wet, clinging strands"]);
   });
 
   it("says nothing without a subject to name", () => {
