@@ -10,73 +10,39 @@ editor.
 ## Successor-engine improvement backlog (2026-07-23 + 2026-07-24 reviews)
 
 _Detail: one draft-plan stub per item in the [deferred/](deferred/CLAUDE.md)
-folder (index in its CLAUDE.md). Batch 1: 16 code-verified items from the
-2026-07-23 correctness / simulation-fidelity / resilience-perf review run the
-day the world-UI slices shipped. Batch 2: 11 stubs from the 2026-07-24
-product review (below). **Owner process: we flesh these out one by one as we
-discuss — each stub graduates per deferred/CLAUDE.md to its own
-`<topic>.plan.md` (+ spec where warranted) and a roadmap line, leaving a
-tombstone here.** None are committed work until then._
+folder (index in its CLAUDE.md, which also keeps the stub-by-stub record of
+what has already graduated). Batch 1 came from the 2026-07-23 correctness /
+simulation-fidelity / resilience-perf review; batch 2 from the 2026-07-24
+product review of the successor front door, chat routes, exchange layer, and
+world surfaces — every claim code-verified before parking. **Owner process: we
+flesh these out one by one as we discuss — each stub graduates per
+deferred/CLAUDE.md to its own `<topic>.plan.md` (+ spec where warranted) and a
+roadmap line.** None are committed work until then. Group A is down to one
+item, and groups C (hardening & perf) and E (lifecycle integrity) graduated in
+full — command-integrity, drain-hardening, sim-read-seam-guards, and
+successor-world-lifecycle all shipped 2026-07-23..27. Still parked:_
 
-- **A. Bugs first.** _A1+A2+A4 (composed-command idempotency + per-chat lock;
-  turn-vs-drain dead-turn race; `travel_together` crash window) graduated
-  2026-07-24 → [command-integrity.plan.md](command-integrity.plan.md) (serialize,
-  survive, atomize; all three stubs removed). A5+A6+A7 (drain
-  honesty/backoff/arrival) graduated 2026-07-23 →
-  [drain-hardening.plan.md](drain-hardening.plan.md)._ Still parked: **A3**
-  solo-reply regenerate 409
+- **A. Bugs first** — **A3** solo-reply regenerate 409
   ([deferred/solo-retake.plan.md](deferred/solo-retake.plan.md)).
 - **B. Living world** — seed the built-but-unseeded life (commitments, third
   zone, meal item, lore memories — the standout cheap win); the primary's LOD
   ruling (at `exact` she is mechanically inert forever); remote text/voice when
   apart; successor NPC initiative; named daylight-band skips (the R5 leftover);
   autonomous NPC travel toward commitments.
-- **C. Hardening & perf.** _C14 (four throwing read-seams + the meters-staleness
-  defect) and C16 (redundant projection reads per turn + composed-path
-  integration coverage) graduated 2026-07-24 → [sim-read-seam-guards.plan.md](sim-read-seam-guards.plan.md)
-  — C16 folded into the C14 plan per owner ruling. C15 (half-failure
-  diagnostics) graduated 2026-07-23 → [drain-hardening.plan.md](drain-hardening.plan.md)._
-  Nothing left in this group.
-
-### Batch 2 (2026-07-24 product review — successor engine & chat UI)
-
-_Same process, second batch: 11 stubs (D17–G27) parked from the 20-item
-product review of the successor front door, chat routes, exchange layer, and
-world surfaces — every claim code-verified before parking. Review items that
-duplicated batch 1 were folded there instead (idempotency/serialization →
-A1+A2+A4; solo retake → an A3 addendum; partial-travel server honesty had
-already shipped with drain-hardening)._
-
-- **D. Honest controls** — _D17 (capability manifest + immediate gating of the
-  dead/wrong sim-chat controls) graduated and shipped 2026-07-28 →
-  [sim-chat-capabilities.plan.md](sim-chat-capabilities.plan.md)._ Real Stop via an AbortSignal through the
-  successor turn (D18); branch/fork/replay UX — the complete fix for honest
-  rerun and history editing, surfacing `forkBranch`/ancestry/
-  `explainItemPlacement`, none of which has a production caller (D19).
-- **E. Lifecycle integrity** — _E20 (provisioning atomicity/idempotency +
-  world-leaking deletion + racy quota) graduated 2026-07-27 →
-  [successor-world-lifecycle.plan.md](successor-world-lifecycle.plan.md)
-  (provision once, delete honestly, count what's real; rulings E20-1..3
-  recorded there; queued at the top of the roadmap's Next). Nothing left in
-  this group._
+- **D. Honest controls** — real Stop via an AbortSignal through the successor
+  turn (D18); branch/fork/replay UX — the complete fix for honest rerun and
+  history editing, surfacing `forkBranch`/ancestry/`explainItemPlacement`,
+  none of which has a production caller (D19). (D17's capability manifest
+  graduated and shipped 2026-07-28.)
 - **F. Honest progress & status** — typed reply stream replacing the ZWSP
   heartbeat, preserving successor failure codes the reply-failure contract
-  currently flattens to `unknown` (F21); _F22 (degraded reads, unavailable
-  action reasons, partial progress, and a real responsive World surface)
-  graduated and shipped 2026-07-28 →
-  [sim-world-surface-ux.plan.md](sim-world-surface-ux.plan.md)._ Turn-time honesty — solo turns through the bounded drain seam,
-  completion beats written at completion (F23).
+  currently flattens to `unknown` (F21); turn-time honesty — solo turns
+  through the bounded drain seam, completion beats written at completion
+  (F23). (F22's world surface graduated and shipped 2026-07-28.)
 - **G. Product & maintainability** — Worlds page → operational dashboard
   (G24); ChatConversation decomposition + explicit exchange state machine
   (G25); composer IME guard + per-chat drafts (G26); memory-index drain off
   the reply-critical path (G27).
-
-## Security review follow-ups (2026-07-25) — ownership & auth hardening
-
-_Graduated 2026-07-25 (same day as parking, on the owner's call) →
-[security-authz.plan.md](security-authz.plan.md), queued at the top of
-[roadmap.md](roadmap.md) §Next. All seven findings (S1–S7) from the external
-static security review, fleshed into slices there._
 
 ## World authoring — locations, travel distances & durations
 
@@ -95,7 +61,7 @@ one plan at promotion:_
   [deferred/travel-duration-authoring.plan.md](deferred/travel-duration-authoring.plan.md):
   the duration-authoring facet (feeds `minimum`/`expected`/`uncertainty`);
   carries the drain-hardening tripwire (nonzero uncertainty MUST NOT ship
-  before [drain-hardening.plan.md](drain-hardening.plan.md) has — promoted
+  before [drain-hardening.plan.md](finished/drain-hardening.plan.md) has — promoted
   2026-07-23).
 
 ## Physiology simulation — triggered body responses
@@ -117,37 +83,6 @@ behavior channels. Hard-depends on
 [chat-body-needs.plan.md](chat-body-needs.plan.md) (drivers, couplings, the
 needs channel). Open questions (stored vs derived, expression mechanism,
 which intermediates earn their keep, anti-tedium cap) live in the stub.
-
-## Body-attribute physics and visual affordances
-
-_Graduated 2026-07-28 →
-[body-attribute-affordances.plan.md](body-attribute-affordances.plan.md), queued
-at the top of [roadmap.md](roadmap.md) §Next with its full companion-spec set.
-Owner ruling at promotion: the shared affordance core (structural profiles,
-phenomenon registry, evidence, perception + cue ranking) builds under this plan
-first; the romantic-contact plan queues directly behind and consumes it._
-
-## Romantic contact affordances
-
-_Graduated 2026-07-28 →
-[romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md),
-queued in [roadmap.md](roadmap.md) §Next directly behind the body-attribute
-plan. Foot-first: the committed scope is slices 0–4 (the shared contact
-foundation plus the foot domain working in legacy romantic chat, with
-contact lifecycle, actor-control/permission gates, and atomic committed
-effects); intimate regions stay behind the foot proof and their explicit
-adult-eligibility, consent, exposure, and physiology prerequisites. Active
-plan/spec files stay together until the plan ships._
-
-## Clothing state graph and condition gradients
-
-_Graduated 2026-07-27 (same day as parking) →
-[clothing-state-graph.plan.md](clothing-state-graph.plan.md), queued at the top
-of [roadmap.md](roadmap.md) §Next. Promotion rulings R1–R4 recorded in the
-plan: promoted alone as the wardrobe-truth prerequisite (body-affordances
-stays parked and consumes it later), continuity may mint ad-hoc garment
-instances from category templates, left garments stay at their scene place,
-wetness + crease_load ship first._
 
 ## Owner-gated live eval runs — run on request, not roadmap items
 
@@ -172,10 +107,10 @@ validated; run when the owner asks, then record results in the owning plan._
   (narrator-prompt-consolidation slice 3 — below the bar ⇒ restore the
   commented pre-softening wording), and carries the multi-character fixtures
   (multi-character-chat followups ruling 7) + the `chat-secret-hold`/`-reveal`
-  fixtures ([character-drives.plan.md](character-drives.plan.md) slice 4,
+  fixtures ([character-drives.plan.md](finished/character-drives.plan.md) slice 4,
   `secretCue` metric). This is also the **measurement for character-fidelity
   slice 9** (the chat-lane consistency check —
-  [character-fidelity.plan.md](character-fidelity.plan.md) slice 9): the
+  [character-fidelity.plan.md](finished/character-fidelity.plan.md) slice 9): the
   blind-identification/contrast bar quantifies whether the one-turn corrective
   tail note actually holds voice/disposition/age register over a long chat.
 - **`mt-chat-*` longitudinal baseline** and the **`CHAT_PROMPT_LAYOUT` A/B**
@@ -185,17 +120,6 @@ validated; run when the owner asks, then record results in the owning plan._
 - Older single-run leftovers recorded in their plans: `mt-chat-feeling-hurt`
   (emotional weather), the memory-callbacks judged run, the `chat-pov-*`
   scored run.
-
-## Example-dialogue voice anchors
-
-_Graduated 2026-07-14 → [character-fidelity.plan.md](character-fidelity.plan.md)
-slices 6 (`profile.microExemplars` few-shots) + 7 (structured
-`profile.voiceAnchors`: pet phrases / cadence / never-says)._ The authored
-example-dialogue + voice-anchor levers this idea asked for shipped as those two
-slices — few-shots in the chat prefix (and a one-line tail re-anchor near
-generation). The enactment measurement run (§"Owner-gated live eval runs" above)
-remains the before/after; ensemble cast-block parity is the recorded leftover
-(character-fidelity §Follow-ups).
 
 ## Narration eval: self-consistency judge vote
 
@@ -236,129 +160,15 @@ vs categorical. Open questions (scope form, counts, lexicon size, conflict
 resolution) live in the detail doc. Can graduate separately (A is render-only and
 smaller; B is an authoring feature) but they share the prerequisite.
 
-## Plan docs: drop hard phase numbers
+## Wardrobe accommodation for body features
 
-_Raised 2026-06-16._ The `phase-N` scheme bakes **both** a doc's identity and its
-priority order into the filename, so every time early work jumps the queue we
-renumber/re-suffix files and chase every `.phaseN.md` cross-reference (docs +
-`src/` comments) — the exact churn the "Phase-4/5 resequencing" item below is
-about. Fix: **decouple identity from order.**
-
-- **Plans are topic-named, never numbered:** `<topic>.plan.md`
-  (`scene-images.plan.md`, `world-map.plan.md`, `non-human-species.plan.md`). The
-  filename says _what_, never _when_, so it never has to change.
-- **Status, not a number, encodes lifecycle.** Each plan opens with `Status:` ∈
-  `draft` · `next` · `active` · `shipped — <date>` · `parked`.
-- **Order lives in ONE place** — a `roadmap.md` index listing plans in current
-  priority order (+ a "someday" bucket). Reprioritizing = reorder one list, zero
-  renames.
-- **Supporting docs carry the topic slug:** `<topic>.spec.md` (design truth),
-  `<topic>.followups.md` (post-ship fixes), `<topic>.<sub>.md` (detail). They nest
-  by name prefix, and `grep <topic>` finds every pointer — a stable target that
-  doesn't rot on resequencing.
-- **deferred.plan.md stays the parking lot** for ideas not yet promoted; on
-  graduation an idea becomes a `<topic>.plan.md`, gets a roadmap line, and leaves
-  here.
-- **Completed `phase-N` docs stay as historical record** — no mass rename (that's
-  the churn we're killing). Only new plans use the topic scheme; the
-  not-yet-started world-moves work (`*.phase5.md`) can optionally be renamed now
-  since nothing depends on it as shipped.
-
-**Adopted 2026-06-16.** Folded into `CLAUDE.md` (replacing the phase-N working-doc
-convention); [roadmap.md](roadmap.md) now holds the priority order. First
-instances: [scene-images.plan.md](finished/scene-images.plan.md) +
-[scene-images.spec.md](finished/scene-images.spec.md) and
-[non-human-species.plan.md](finished/non-human-species.plan.md) +
-[non-human-species.spec.md](finished/non-human-species.spec.md); the world-moves specs were
-renamed off `*.phase5.md` to `movement-authority.spec.md` /
-`scheduled-arrivals.spec.md` / `pre-narrator-agents.spec.md`. Legacy `phase-N`
-docs stay as historical record.
-
-## Phase-4/5 resequencing — deeper prose sweep
-
-_Update 2026-06-16 — largely superseded._ The project dropped hard phase numbers
-(see §"Plan docs: drop hard phase numbers" above), so there is no future phase
-"roll" to re-suffix for. The world-moves specs are now topic-named
-(`movement-authority.spec.md` etc.). The open questions below are settled by the
-standing ruling: **leave historical `phase-N` prose and `src/` comments as-is**
-(they're the record of what happened); fix only live links when a target is
-renamed. Kept for history; no action pending.
-
-_Raised 2026-06-14, from the phase-4/5 renumber._ When the body-model work became
-phase 4 and the "world moves" cluster became phase 5, the **structural** rename
-was completed: the three world-moves specs (+ their gpt-review mirrors) were
-renamed `*.phase5.md`, every `.phase4.md` filename link (docs + 4 `src/` comment
-refs) was updated, the three living specs were swept to read as "phase 5"
-internally, and resequencing banners were added to them and to
-[phase-3-to-4.md](finished/phase-3-to-4.md). **Link integrity verified; no broken links.**
-
-Deliberately **not** swept (left as historical, banner-only): the plain-prose
-"phase 4" mentions — now meaning phase 5 — in dated/stable docs (the
-`phase-3-to-4.md` body, completed [phase-3-plan.md](finished/phase-3-plan.md), the phase-3
-design specs, gpt-review review snapshots) and ~11 `src/` code comments
-(forward-references like "phase-4 NPC traversal reuses this"). Reasons: some are
-semantically ambiguous, and churning shipped code / dated artifacts is low-value
-and hard to review.
-
-Open questions before doing the deeper sweep:
-
-- **Scope.** Sweep _everything_, or only actively-maintained docs and leave
-  dated/historical artifacts + shipped code comments as-is?
-- **`phase-3-to-4.md` specifically.** Its body _is_ the original phase-4
-  definition, which now **splits** between the new phase 4 (body model) and phase
-  5 (world-moves) — e.g. the romance "consequence loop" bucket is arguably the new
-  phase 4, not phase 5. So a blind "phase 4"→"phase 5" is wrong here. Leave
-  banner-only (current), rewrite wholesale, or **split** it into real phase-4 vs
-  phase-5 content (needs a human read of the buckets)?
-- **`src/` code comments (~11 files).** Update the forward-reference "phase 4"
-  comments in shipped phase-3 code to "phase 5" (comment-only churn of stable
-  code), or leave them?
-- **gpt-review snapshots.** These are dated reviews _of_ the renamed specs —
-  rewrite their "phase 4" to match the new filename, or preserve them as the
-  historical record they are?
-
-My lean: leave the historical prose as-is (it's not misleading once the phase map
-is known), and only act if a future reader trips on it. Revisit when phase 4
-ships and the standard re-suffix pass runs anyway (see the naming note in
-[phase-4-plan.md](finished/phase-4-plan.md)).
-
-## Non-human races & additive body features — _graduated 2026-06-16, shipped 2026-06-18_
-
-Promoted out of the parking lot to its own plan, now **shipped**:
-[non-human-species.plan.md](finished/non-human-species.plan.md) (task list +
-shipped/leftover summary) + [non-human-species.spec.md](finished/non-human-species.spec.md)
-(design — the former `non-human-races-and-features.deferred.md`). The full feature
-landed (8-species catalog with `appearance`/`lore` + heritages, wings/horns/tail
-morphology, species-driven realization + forge species/heritage inference, editor
-controls, and image-gen feature surfacing on every route). One strand parks back
-here for its own later pass:
-
-- **Wardrobe accommodation for features** — garments that fit winged/tailed bodies
-  (back slits, tail openings, horn-cutout hoods) so outfits don't clip or
-  contradict features. The seam is the `expand`/coverage question on the
-  `coverageRelevant: false` `tail` location; solving it means excluding
-  `featureGroup` locations from coverage `expand`, or per-garment "accommodates
-  feature X" flags. (Incremental per-species attribute-rule data — e.g. `succubus`
-  rules, finer coloration nudges — is plain data work tracked in the plan, not a
-  parked idea.)
-
-## Scene image: multi-reference & provider strategy — _graduated 2026-06-16, shipped 2026-06-19_
-
-Promoted out of the parking lot to its own plan, now **shipped** and moved to
-`finished/`: [scene-images.plan.md](finished/scene-images.plan.md) (task list +
-completion note) + [scene-images.spec.md](finished/scene-images.spec.md) (design
-truth) + [scene-images.notes.md](finished/scene-images.notes.md). The full arc
-landed — provider-capability layer + `image_references` join table, then the
-2026-06-19 pivot: Flux/OpenRouter dropped, Venice/Qwen everywhere, Venice
-`/image/multi-edit` onboarded behind a per-session single↔multi reference toggle,
-and the lustify/chroma/etc. t2i model set. Two never-built long-term items park
-back here:
-
-- **Uploaded-avatar intimate guard and self-hosted structural-control worker
-  graduated 2026-07-20 →
-  [spatial-scene-images.plan.md](spatial-scene-images.plan.md).** The new plan
-  owns synthetic-provenance gating, procedural OpenPose/depth, consistent
-  character identity, and the ComfyUI/provider evaluation.
+_The one strand parked back when
+[non-human-species.plan.md](finished/non-human-species.plan.md) shipped
+(2026-06-18)._ Garments that fit winged/tailed bodies (back slits, tail
+openings, horn-cutout hoods) so outfits don't clip or contradict features. The
+seam is the `expand`/coverage question on the `coverageRelevant: false` `tail`
+location; solving it means excluding `featureGroup` locations from coverage
+`expand`, or per-garment "accommodates feature X" flags.
 
 ## Comms expansions
 
@@ -379,7 +189,7 @@ See
 ## Chat story map — scene-memory places graph
 
 _Raised 2026-07-14, from the world-sim carry-forward review (the chat-lane
-descendant of the demoted [world-map.plan.md](world-map.plan.md))._ Chat's
+descendant of the demoted [world-map.plan.md](finished/world-map.plan.md))._ Chat's
 `scene_memory` already stores places + connections — the same nodes-and-edges
 shape the world map renders — and the graph component was written generically
 (`lib/world-graph-layout.ts` + `components/worlds/world-map-graph.tsx`,
@@ -442,14 +252,6 @@ in `lib/log.ts`.
 The full analysis doc (`monorepo-evaluation.md`, with the package outline and
 boundary-enforcement design) was retired 2026-07-13 — permanently deferred; the
 verdict and trigger recorded here are what survives.
-
-## Visual world map — _graduated 2026-06-16_
-
-Promoted out of the parking lot (flagged a potential priority):
-[world-map.plan.md](world-map.plan.md). Render locations as graph nodes + their
-undirected links as edges, replacing the flat card column on `/worlds/:id` and the
-editor map tab. The data already exists; first slice is a read-only force-directed
-graph.
 
 ## Observer / god-mode session POV
 
@@ -612,20 +414,11 @@ The audit **deliberately skipped** perf benchmarking because the dev Turbopack b
 pass** focused on the dashboard and the play screen (the heaviest route) for real numbers.
 Not blocking — do it when perf becomes a question. From [ux-audit.plan.md](finished/ux-audit.plan.md).
 
-## State-aware chat scene image — _graduated 2026-06-30 → [character-chat-state-narration.plan.md](finished/character-chat-state-narration.plan.md) (slice 7 / spec §8, D4)_
-
-_Raised 2026-06-24, the one piece of [character-chat-state.plan.md](finished/character-chat-state.plan.md)
-slice 4 not built. Graduated 2026-06-30 into the state-as-narration plan, which bundles the
-visual axis with the prose enactment so they reuse the same state derivations — fold the chat's
-light state (mood/meters: flushed, tipsy, tired; active conditions; the `mindNote`) into the
-**chat scene-image prompt** (`renderCharacterSceneImage`) so a generated scene reflects how the
-character actually is right now. Detail now lives in that plan/spec._
-
 ## Old World-Model Plans from the Roadmap
 
 These items were in the roadmap and are holdovers from the world-model system which is being deprecated in favor of expanding and perfecting the character-chat system _first_ and then deciding if we want to incorporate that into a bigger world system. My current lean is we will eventually incorporate all desired features into character chat and character chat will become less 1-on-1 focused. We may want to branch to a different app route for that or it may make sense to keep everything in one chat system.
 
-- **Visual world map** — [world-map.plan.md](world-map.plan.md). Slice 1 (read-only
+- **Visual world map** — [world-map.plan.md](finished/world-map.plan.md). Slice 1 (read-only
   force-directed graph) shipped 2026-06-18; slices 2–3 (editable layout, play-screen
   minimap) remain — optional polish on a feature already delivering its core value.
   _Demoted to the bottom 2026-07-14 (owner): character chat is now the app's main
@@ -638,7 +431,7 @@ These items were in the roadmap and are holdovers from the world-model system wh
   2026-07-13 — see `CLAUDE.md`), so the movement-authority and
   scheduled-arrivals specs were retired (deleted) 2026-07-13 rather than built
   against the possibly-deprecated session model.
-  [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md) remains as
+  [pre-narrator-agents.spec.md](finished/pre-narrator-agents.spec.md) remains as
   findings (its intake half shipped). A future `world-simulation.plan.md` — or
   the chat-successor equivalent — re-derives what it needs when this becomes
   active. **Re-derived 2026-07-16 as that chat-successor equivalent:
@@ -648,8 +441,8 @@ These items were in the roadmap and are holdovers from the world-model system wh
   authority, world-scale simulation) stays parked rather than becoming its
   prerequisite. _Demoted to the bottom 2026-07-14 (owner) with the map, same rationale._
   _Carry-forward 2026-07-14: the chat-applicable ideas graduated to
-  [chat-plans-promises.plan.md](chat-plans-promises.plan.md) (scheduled arrivals
-  reborn) and [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md) (the
+  [chat-plans-promises.plan.md](finished/chat-plans-promises.plan.md) (scheduled arrivals
+  reborn) and [chat-offscreen-life.plan.md](finished/chat-offscreen-life.plan.md) (the
   world moves, scoped to the cast's lives) — see the top of this list. What
   stays here is only the session-side remainder (movement authority, world-scale
   simulation), pending the direction._
