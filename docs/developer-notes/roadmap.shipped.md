@@ -28,8 +28,9 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   paired generations + 10 blinded judgments): the decision rule was **not
   met** — contradictions tied at 0.13/exchange (the control narrator barely
   contradicts in this matrix), repetition rose slightly, specificity improved
-  4.38 vs 4.00 at identical naturalness, judge preferred control 6–4 over a
-  2–0 label-noise floor — so **`CHAT_AFFORDANCE_CUES` stays OFF**; a rematch,
+  4.38 vs 4.00 at identical naturalness, judge preference tied 4–4 among cue
+  scenarios (the pooled 6–4 figure's extra control picks were the two
+  byte-identical silence controls) — so **`CHAT_AFFORDANCE_CUES` stays OFF**; a rematch,
   if ever, means a contradiction-inducing matrix, not different physics.
 
 - **Body-attribute visual affordances — slice 7 (recognizable features +
