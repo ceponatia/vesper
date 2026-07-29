@@ -55,7 +55,12 @@ umbrella further down.)
   image-consumer decision, the successor-lane adapter follow-up named in the
   [audit source map](body-attribute-affordances.audit.md), and an explicit
   implemented/follow-up/parked ruling per companion spec before the plan
-  closes.
+  closes. The 2026-07-28 owner review settled nearly every open question
+  (plan §"Rulings snapshot"), headlined by a ruled **shared
+  scene/body-relations owner** (pose · support · surface level · contacts ·
+  impulses; chat ships it first) that unblocks hair adhesion, garment
+  cling/drape, appendages, soft tissue, relative geometry, and the
+  romantic-contact plan — it needs its own plan when scheduled.
 - **Romantic contact affordances — foot-first grounded contact** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) (next; promoted from deferred

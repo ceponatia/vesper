@@ -232,6 +232,14 @@ without adding hair knowledge to the shared core. Synthetic fixtures may
 prove calculations, but do not count as production source parity. Outside the
 committed first run (slices 0–5).
 
+Scope ruling (2026-07-28): adopt the clothing system's existing material
+vocabulary; ship material-dependent wet surface behavior, wet cling where
+contact is actual, and effective opacity + final coverage captured with the
+presentation cut; defer wind response and pose-dependent drape until the
+shared scene/body-relations owner exists. After this proof lands, build the
+read-only developer preview
+([architecture spec](body-attribute-affordances.spec.architecture.md)).
+
 ### Slice 7 — recognizable features and visual memory
 
 - Derive stable identity candidates from existing body truth.
@@ -264,6 +272,14 @@ image-only body model.
 
 ## Dependencies and related plans
 
+- **Scene/body-relations owner (ruled 2026-07-28, not yet planned)** — the
+  shared owner for pose, support, surface level, actual contacts, and
+  impulses that most remaining domains wait on. Character chat ships it
+  first; its contact lifecycle reuses the romantic-contact plan's contact
+  core. It gets its own plan (or lands inside the romantic-contact build)
+  when scheduled — see the
+  [architecture spec](body-attribute-affordances.spec.architecture.md)
+  §"Scene/body-relations owner".
 - [Clothing state graph](clothing-state-graph.plan.md) owns garment truth and
   must finish the relevant adapter/integration work before garment affordances
   claim lane parity.
@@ -273,15 +289,61 @@ image-only body model.
   evidence, perception, ranking, and capture foundation but owns contact
   commitment and contact-caused effects.
 
+## Rulings snapshot (owner, 2026-07-28)
+
+The 2026-07-28 review settled most of what was open. Each detail doc's
+"Resolved" section carries the full ruling; in short, the owner approved:
+
+- the shipped adapter and registry architecture, with a read-only developer
+  preview to follow once the garment domain proves the foundation twice
+  ([architecture spec](body-attribute-affordances.spec.architecture.md));
+- **one shared scene/body-relations owner** — coarse posture, support,
+  surface level, actual contacts, and impulses — built first in character
+  chat, restoring with the scenario on retakes. This single owner unblocks
+  hair adhesion, garment cling and drape, appendage constraints,
+  soft-tissue effects, relative geometry, and the romantic-contact plan.
+  Unknown contact still means silence, and a continuity extractor may
+  record established passive facts but never authorize new interpersonal
+  contact;
+- reusing the clothing system's existing material vocabulary, with the
+  first garment release scoped to wet surface behavior, wet cling where
+  contact is actual, and effective opacity + final coverage captured with
+  the presentation cut (wind and pose-dependent drape wait for the shared
+  owner) ([garment spec](body-attribute-affordances.spec.garment-interaction.md));
+- the physiology-sign shape (what the body does, never why the character
+  feels), three-mode skin response calibrated by tone/undertone (never
+  race-as-input, never "low redness visibility = no response"), split
+  product ownership, and body-surface mark state
+  ([skin spec](body-attribute-affordances.spec.skin-surface.md));
+- generic soft-tissue regions (breasts first, buttocks second), wardrobe-
+  owned support (unknown = unavailable), the four-way vocabulary split, and
+  a strict intimate narrative-focus rule — at most one intimate cue per
+  exchange, requiring a current action/transition, with exposure and
+  consent as hard gates
+  ([soft-tissue spec](body-attribute-affordances.spec.soft-tissue.md));
+- tail constraints as the first appendage fixture (after the shared owner),
+  wing wet-loading second, with new tail flexibility/prehensility/surface
+  axes before those properties drive mechanics
+  ([appendage spec](body-attribute-affordances.spec.appendages.md));
+- simple height anchors + footwear/posture/surface arithmetic for relative
+  geometry, deferring leg/neck length, with images receiving only semantic
+  relations after narration proves them
+  ([relative-geometry spec](body-attribute-affordances.spec.relative-geometry.md));
+- typed located facts plus evented anatomy for recognizable features (a
+  finite hand schema first), definition-based uniqueness in v1,
+  projection-time observer weighting, freshness-bucket decay with a
+  recognition floor, and cut-captured mention history
+  ([feature spec](body-attribute-affordances.spec.recognizable-features.md);
+  [memory detail](body-attribute-affordances.recognizable-features.memory.md));
+- human acceptance as the only gate that makes a reference-image proposal
+  canonical ([architecture spec](body-attribute-affordances.spec.architecture.md)).
+
+**Calibration stance**: numeric coefficients for skin response, soft-tissue
+motion, appendage flexibility, and visual-memory thresholds are
+fixture-tested calibration defaults, never permanent product law.
+
 ## Open questions
 
-- Where do lane-specific adapters live, how is the mixed domain registry typed,
-  and is a developer preview useful?
-  ([architecture spec](body-attribute-affordances.spec.architecture.md#open-questions))
-- Which authoritative source first supplies coarse pose and hair/body contact?
-  (Current force and the retake capture seam were resolved in Slice 0 — see the
-  [hair spec resolutions](body-attribute-affordances.spec.hair.md#resolved-slice-0-2026-07-28);
-  contact/pose remains unowned and adhesion stays fixture-only.)
 - Should hooded hair be able to show its loose ends stirring? Today a hood
   lets damp clumping through but the ends-only motion case cannot fire in
   play — an opaque-coverage calibration ruling is needed.
@@ -289,29 +351,9 @@ image-only body model.
 - Should a bath/pool soaking carry its own "still dripping" provenance in
   narration, now that it correctly no longer reads as rain?
   ([hair spec](body-attribute-affordances.spec.hair.md#open-questions))
-- What is the shared physiology-sign shape, how are diverse skin responses
-  calibrated, and who owns products and persistent marks?
-  ([skin spec](body-attribute-affordances.spec.skin-surface.md#open-questions))
-- What garment material vocabulary and contact read are required, which garment
-  observations ship first, and what coverage result is captured?
-  ([garment spec](body-attribute-affordances.spec.garment-interaction.md#open-questions))
-- Which appendage materials and flexibility facts are trustworthy, who owns
-  clearance/concealment, and which fixture comes first?
-  ([appendage spec](body-attribute-affordances.spec.appendages.md#open-questions))
-- Which soft-tissue vocabulary and first regions are safe to calculate, who
-  supplies support, and what narrative-focus rule prevents voyeuristic
-  repetition?
-  ([soft-tissue spec](body-attribute-affordances.spec.soft-tissue.md#open-questions))
-- How should height bands, posture, surfaces, and footwear produce relative
-  geometry, and when should images consume it?
-  ([relative-geometry spec](body-attribute-affordances.spec.relative-geometry.md#open-questions))
-- Where do located features and anatomy changes live, how are uniqueness and
-  importance set, and how do intimate gates, motion identity, notice decay,
-  mention history, and semantic memory interact?
-  ([feature spec](body-attribute-affordances.spec.recognizable-features.md#open-questions);
-  [memory detail](body-attribute-affordances.recognizable-features.memory.md#open-questions))
-- What confidence is required before a reference-image proposal becomes a
-  canonical value that may drive calculation?
+- Does wet darkening need per-color lightness metadata, or only a relative
+  semantic tag?
+  ([hair spec](body-attribute-affordances.spec.hair.md#open-questions))
 
 ## Technical companions
 

@@ -205,10 +205,67 @@ response. With temples and collarbone exposed in useful light:
 - baseline dry skin produces no automatic cue;
 - identical inputs produce deterministic outputs.
 
-## Open questions
+## Resolved (owner rulings, 2026-07-28)
 
-- Exact physiology-sign contract and region mapping.
-- Ownership and authoring review of surface-color response calibration.
-- Whether grooming products belong in skin presentation state or garment/item
-  effects.
-- Which body-state contract owns persistent pressure marks.
+### `PhysiologySignRead` contract
+
+A physiology sign says what the body is **doing**, without guessing why the
+character feels that way. It contains:
+
+- sign type — sweat, vascular response, pallor, piloerection, surface warmth;
+- affected body locations (this is the region mapping — no second table);
+- intensity;
+- when it began and when it last changed;
+- optional expiry;
+- the event or body-state source that established it;
+- confidence/evidence.
+
+It MUST NOT contain an emotional conclusion ("embarrassed blush") unless a
+separate authoritative source established that cause.
+`skin.color_response_surface_state` therefore reads sign type plus intensity,
+never a motive.
+
+### Surface-color response calibration
+
+Avoid a one-dimensional "how red does this skin get?" scale.
+`surfaceColorResponse` stays three-moded: redness visibility, tone deepening,
+luminosity/warmth change.
+
+- Defaults are registry-calibrated from `skin.tone` and `skin.undertone`.
+- An optional character-specific response-pattern override layers on top.
+- Race is never the input.
+- Low redness visibility never means "no physiological response" — the other
+  modes carry it.
+- Calibration is reviewed against a diverse fixture set under several lighting
+  conditions.
+
+### Grooming products — two owners
+
+- The item/product definition owns **what the product does** (glossy, matte,
+  water-resistant, oily, powdered …).
+- Body-surface presentation state owns **where it is currently applied, how
+  strongly, and for how long**.
+
+This domain reads both and owns neither.
+
+### Pressure-mark ownership
+
+Temporary pressure marks (sock lines, pillow creases, strap impressions) belong
+to **body-surface mark state**: location, intensity, creation time, expiry, and
+source. `BodySurfaceMarkRead` is that owner's read.
+
+If a mark permanently becomes a scar, an explicit event ends the temporary mark
+and creates a persistent located appearance fact. There is no implicit
+promotion, and no hidden latch here.
+
+### Shared live inputs
+
+Asserted contact — which licenses the tactile channel — comes from the shared
+scene/body-relations owner (architecture spec §Scene/body-relations owner).
+Unknown contact still means silence.
+
+### Calibration stance
+
+Every numeric coefficient in this domain (reflectivity, beading affinity,
+color-response visibility) is a fixture-tested calibration default, not
+permanent product law.

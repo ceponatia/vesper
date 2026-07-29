@@ -373,11 +373,63 @@ narrator prompt.
   frame;
 - cut capture and retake replay are byte-stable.
 
-## Open questions
+## Resolved (owner rulings, 2026-07-28)
 
-- Whether the heterogeneous domain registry needs a type-erased internal
-  adapter or can remain an explicit tuple.
-- Exact boundary between `src/contracts/affordances` and any lane-specific
-  input adapters under `src/server`.
-- Whether mechanics snapshots deserve a developer-only authoring preview after
-  the hair fixture proves useful.
+- **Registry**: the shipped design is approved — each domain stays strongly
+  typed internally and is wrapped behind the small common
+  `registerAffordanceDomain` interface so differently shaped domains share
+  one list (`src/contracts/affordances/core/types.ts` /
+  `core/registry.ts`). A bare explicit tuple of concrete definition types
+  would become cumbersome as domains accumulate.
+- **Adapter boundary**: all shared calculations stay in
+  `src/contracts/affordances`. Each lane's adapter lives beside that lane's
+  server code — the chat adapter under `src/server/engine` (shipped:
+  `chat-affordances.ts`), the successor adapter under its simulation-engine
+  area when built. Lanes adapt truth into the same contracts; calculations
+  never care where truth came from.
+- **Developer preview**: build a read-only preview, but not before the
+  garment domain proves the architecture works twice. It shows the staged
+  calculation — source inputs → structural profile → mechanics →
+  observations or suppression reason → perception filtering → selected
+  cue — computes on demand, and stores nothing.
+
+## Scene/body-relations owner (ruled 2026-07-28)
+
+The biggest cross-domain gap has one answer: a single small shared owner for
+scene/body relations, supplying
+
+- each participant's coarse posture (standing, seated, kneeling, reclining,
+  lying);
+- facing/orientation and support surface;
+- relative surface height (floor, chair, bed, raised platform);
+- active contact links between body regions, garments, furniture, and other
+  bodies;
+- recent committed motion or impulse events;
+- start/update/end times and provenance.
+
+Character chat implements the first version (it remains the proving lane).
+The state is scene-scoped, not one character's private attributes, because
+contacts involve multiple participants; retakes restore it with the
+scenario. Contact reuses the lifecycle designed in the romantic-contact
+plan's contact core (explicit start/change/end); hair adhesion consumes a
+simpler subset of the same normalized read. Boundary: a continuity
+extractor may record already-established passive facts (hair lying across a
+shoulder) but must not authorize a new voluntary or interpersonal contact —
+those require the action/contact resolver. Unknown contact continues to
+mean silence.
+
+This one owner unblocks hair adhesion, garment cling/drape, appendage
+constraints, soft-tissue effects, relative geometry, and romantic contact.
+
+## Reference-image acceptance (ruled 2026-07-28)
+
+Confidence alone never makes a vision-model proposal canonical — human
+acceptance is the final gate. Policy: below 0.70 discard or hide;
+0.70–0.89 show as an unselected suggestion; 0.90+ may prefill the review
+form. A value becomes canonical — and eligible to drive calculation — only
+when the user accepts and saves it. Never overwrite an existing manual
+value; never infer anatomy presence, absence, injury, or topology from an
+image; retain provenance (model, image, confidence, acceptance).
+Conflicting views lower confidence; corroborating views may raise it. This
+matches the authoring philosophy: AI fills a draft, Save is the review
+boundary.

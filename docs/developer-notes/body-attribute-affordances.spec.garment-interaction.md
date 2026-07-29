@@ -227,11 +227,59 @@ This layer must preserve:
 - persistent displacement requires authoritative wardrobe state;
 - hidden/intimate detail never bypasses exposure and narrative-focus policy.
 
-## Open questions
+## Resolved (owner rulings, 2026-07-28)
 
-- Exact garment material/profile vocabulary and existing wardrobe seams.
-- Whether v1 proves only wet surface/cling before wind and drape.
-- Ownership of garment-region contact reads.
-- Shared narrative-focus policy for intimate body and garment observations.
-- Whether effective coverage is captured in the presentation cut directly or
-  reconstructed from captured garment reads.
+### Material vocabulary — adopt, never re-create
+
+`GarmentMaterialClass` resolves to the clothing system's existing registry in
+`src/contracts/items/garment-material.ts`: its seven material families
+(`woven_cotton_linen`, `knit`, `silk_satin`, `denim`, `wool`, `leather`,
+`synthetic_shell`) plus `unknown`. Its existing coefficients — absorbency,
+drying, opacity response, stiffness, cling affinity — are what
+`GarmentRegionStructuralProfile`'s material-derived fields normalize. This spec
+MUST NOT create another material vocabulary or a parallel coefficient set.
+
+### `GarmentBodyContactRead`
+
+A garment/body contact read identifies:
+
+- garment and garment region;
+- body location;
+- contact mode — resting, fitted, or pressed;
+- contact/pressure strength;
+- whether the contact came from fit, pose, or an explicit event.
+
+Establishment law: a **fitted or tight** worn garment can establish ordinary
+contact from wardrobe truth alone. A **loose** garment requires pose, pressure,
+or another asserted relation before cling is claimed. Pose- and event-sourced
+contact links come from the shared scene/body-relations owner (architecture
+spec §Scene/body-relations owner); unknown contact still means silence.
+
+### First release scope
+
+Ships: material-dependent `garment.wet_surface_state`; `garment.wet_cling`
+restricted to regions with actual contact; `garment.effective_opacity` with the
+final coverage read. Effective opacity ships **alongside** cling because it
+decides what underlying details remain perceptible.
+
+Deferred until the shared scene/body-relations owner exists:
+`garment.wind_or_motion_response` and `garment.pose_drape`.
+
+### Effective coverage is captured, not reconstructed
+
+Capture the final `EffectiveCoverageRead` directly with the presentation cut:
+opaque, hinted, or exposed by body location, with contributing garment
+evidence. It remains a **derived result, not wardrobe truth** — capturing it
+ensures narration, body affordances, retakes, and images all use the same
+answer rather than each recomputing one.
+
+### Shared narrative-focus policy
+
+The intimate-cue policy is shared with soft tissue and stated in full in
+[spec.soft-tissue.md](body-attribute-affordances.spec.soft-tissue.md#resolved-owner-rulings-2026-07-28).
+Binding here: an intimate garment cue requires a current relevant action,
+contact, motion, pose transition, or support transition; ordinary unchanged
+visibility is insufficient; exposure and consent remain hard gates; **at most
+one** intimate body-or-garment cue per exchange, under an aggressive cooldown
+across the shared intimate cue family; and the cue must not displace dialogue
+or the exchange's primary action.

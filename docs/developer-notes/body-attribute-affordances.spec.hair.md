@@ -325,8 +325,6 @@ runtime frame.
 
 ## Open questions
 
-- First authoritative coarse hair/body contact producer (unowned this
-  release; adhesion stays fixture-only — Slice 0 ruling 2026-07-28).
 - Whether wet darkening needs per-color lightness metadata or only a relative
   semantic tag (default: relative tag until proven insufficient).
 - **Owner calibration call — `HAIR_COVERED_OPAQUE` vs the ends-only motion
@@ -341,6 +339,14 @@ runtime frame.
   clause ("still dripping from the bath") — currently it correctly carries
   no cause tag at all (a bath must not read as rain), which loses provenance
   a narrator might use.
+
+## Resolved (owner rulings, 2026-07-28)
+
+- **Contact producer**: the ruled shared scene/body-relations owner
+  (architecture spec §"Scene/body-relations owner") supplies pose, support,
+  and actual contact; character chat ships it first. Hair adhesion consumes
+  a simple normalized subset of its contact read. Until that owner ships,
+  adhesion stays fixture-only and unknown contact means silence.
 
 ## Resolved (Slices 2–3, 2026-07-28)
 

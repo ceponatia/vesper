@@ -366,17 +366,33 @@ projections, and lane adapters bridge authoritative state and observer memory.
 - observer memories never leak across viewpoints;
 - malformed kinds/loci degrade to diagnostics and silence.
 
-## Open questions
+## Resolved (owner rulings, 2026-07-28)
 
-- Whether located facts extend the existing provenance spine or use a dedicated
-  evented store in each lane.
-- Which fine-detail schemas ship first beyond the coarse body tree.
-- Whether uniqueness is definition-only in v1 or also cast-relative.
-- Who may raise importance: owner, source event, observer attention,
-  self-concept, or a bounded combination.
-- How intimate-region features inherit exposure, consent, and focus gates.
-- Whether recognizable motion belongs here or in a later multisensory identity
-  memory.
-- Visual-memory notice threshold, decay, mention-history, and semantic-memory
-  boundaries
-  ([detail](body-attribute-affordances.recognizable-features.memory.md#open-questions)).
+- **Storage.** Ordinary single-valued features remain attributes; open-ended
+  marks use typed located appearance facts; missing/extra/altered/prosthetic
+  parts use evented anatomy state; bruises, wounds, dirt, and temporary marks
+  use body condition/state; removable signature items remain
+  wardrobe/presentation. **Prose RAG facts are never authoritative body truth**
+  — located facts use a dedicated **lane-neutral typed contract**, persisted
+  through each lane's normal continuity mechanism, with semantic-memory
+  documents generated downstream.
+- **Fine detail.** Ship a finite **humanoid-hand schema** first (left/right,
+  named digits — this supports the missing-ring-finger goal). Face landmarks can
+  follow. Shoulder freckles and ordinary scars need no fine paths.
+- **Uniqueness.** v1 uses definition priors (`recognition.baseUniqueness`) plus
+  instance modifiers for unusual placement or pattern. Cast-relative uniqueness
+  is deferred: adding a cast member must not unexpectedly change everyone's
+  salience.
+- **Importance.** Store a stable base importance from authoring, feature kind,
+  self-concept, and source event. Observer relationship and current attention
+  apply **at projection time**, never by permanently rewriting the feature.
+- **Intimate features.** Notice or mention requires exposure, an appropriate
+  perception channel, consent, and current narrative focus. Rarity never
+  overrides those gates.
+- **Recognizable motion** (gait, habitual head tilt) is deferred to a later
+  behavioral/multisensory identity layer — it requires temporal pattern
+  evidence, unlike a static scar. The catalog's recognizable-movement family is
+  therefore out of scope for this spec's first release.
+- **Visual-memory notice threshold, decay, mention history, and
+  semantic-memory boundaries** are resolved in the
+  [visual-memory detail](body-attribute-affordances.recognizable-features.memory.md#resolved-owner-rulings-2026-07-28).
