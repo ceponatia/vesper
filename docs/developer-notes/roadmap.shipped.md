@@ -5,6 +5,20 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Image apparent-age anchor + eighteen floor** — no plan (owner report +
+  ruling 2026-07-29; behavior in [docs/images.md](../images.md) §Avatar
+  generation ¶Apparent age, vocabulary note in
+  [docs/contracts/attributes.md](../contracts/attributes.md)) — 2026-07-29 —
+  Qwen edits over-read an age-ambiguous reference and drift older each
+  generation ("preserve apparent age" preserves the model's own estimate);
+  `apparentAgeAnchor` now states the sheet's age immediately after the
+  identity lock on every edit route (scene single/multi, pose editor,
+  chat-look) and the t2i paths — A/B'd at ~15–20 apparent years, placement
+  validated (lock-adjacent wins). The registry gained an `eighteen` band: the
+  youngest age an image prompt may state ("exactly eighteen years old, an
+  adult"); minor bands emit no age text in any image lane ("teen" could read
+  15–17 — never words an image model sees).
+
 - **Scene-image phantom-limb fix** — no plan (owner report + ruling 2026-07-29;
   behavior in [docs/images.md](../images.md) §Scene images ¶Player POV /
   ¶Embodied POV) — 2026-07-29 — the character's hands/feet in pose text were

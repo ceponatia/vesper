@@ -77,7 +77,12 @@ export const identityGroup = defineAttributeGroup("identity", [
     // characters — families, kids in a crowd — can populate a world, but they
     // are listed in `autoDefaultExcludes` so an unspecified character never
     // silently defaults to one (the cast skews adult; minors are an explicit
-    // authorial/model choice, never a fallback).
+    // authorial/model choice, never a fallback). `eighteen` (owner ruling
+    // 2026-07-29) is the youngest band IMAGE prompts can state: "teen" is
+    // ambiguous (could read 15–17), so the image lane's age floor
+    // (`imageAgeWord`/`apparentAgeAnchor`, server/images/prompts.ts) emits
+    // explicit adult wording for `eighteen`+ and NO age word at all for the
+    // minor bands — those stay narrator-only vocabulary.
     allowedValues: [
       "infant",
       "toddler",
@@ -85,6 +90,7 @@ export const identityGroup = defineAttributeGroup("identity", [
       "child",
       "tween",
       "teen",
+      "eighteen",
       "young_adult",
       "mid_twenties",
       "late_twenties",

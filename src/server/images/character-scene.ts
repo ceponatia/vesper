@@ -15,6 +15,7 @@ import { logEvent } from "../events";
 import { absoluteImagePath, deleteOwnedImage } from "./assets";
 import { latestChatLook } from "./chat-look";
 import {
+  apparentAgeAnchor,
   characterAppearanceSummary,
   identityAnchorSummary,
   sceneRevealAppearance,
@@ -188,6 +189,10 @@ export function buildCharacterSceneContext(input: {
     // Identity-critical features (lips, skin tone, eyes, hair) reinforcing the avatar
     // reference — the render prompt keeps the reference authoritative over them.
     identityAnchors: identityAnchorSummary(resolved, input.profile),
+    // The sheet's apparent age, TEXT-authoritative over the reference (owner ruling
+    // 2026-07-29): the edit model over-reads an ambiguous reference's age and drifts
+    // older each generation; minor bands emit no age text at all (the image floor).
+    ageAnchor: apparentAgeAnchor(input.name, resolved),
     // The chat subject is the identity-locked reference (a waist-up portrait), so supplement it
     // with the figure it can't show: the SFW lower-body shape line (always) and exposure-gated
     // intimate anatomy (uncensored route, only when the outfit is flagged exposed).
