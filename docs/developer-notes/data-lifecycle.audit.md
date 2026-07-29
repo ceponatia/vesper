@@ -112,6 +112,26 @@ parked as an open question in the plan.
   (or public-entity with owner match) — none of the orphans were
   cross-user-readable. **No cross-user exposure anywhere in the audit.**
 
+## Rulings (2026-07-29, owner)
+
+The headline ruling (chat-flow data carries a `chat_id` and dies with its
+chat; images are the deliberate Gallery-keeping exception) is quoted in the
+plan. The four open questions it left were ruled the same day:
+
+1. **Gallery-hidden chat image kinds** (`chat_upload`/`chat_look`/
+   `chat_place`): **keep today's hard-delete on chat delete.** The images
+   exception covers Gallery-visible kinds only.
+2. **Retention windows:** telemetry `events` 30 days, finished `jobs`
+   7 days (constants — retunable anytime).
+3. **Telemetry content in prod: ids + counts only.** Conditional ruling —
+   "if these are only used for debugging and aren't fixtures we can
+   eventually use in prod to improve the narration then I agree with not
+   keeping them." Verified: raw retrieval query text has no production
+   reader and feeds no narration path; dev builds keep full payloads, so a
+   future tuning corpus can be captured there if ever wanted.
+4. **Account deletion: parked** →
+   [deferred.plan.md](deferred.plan.md) §"Account deletion".
+
 ## Systemic causes (what the plan fixes)
 
 1. **Loose text ids where a FK belongs** — chat references buried in jsonb

@@ -44,22 +44,27 @@ participant-less memory-group purge, linked `sim_worlds` hard-delete.
 entity images (avatars, portraits, entity renders) survive with a dangling
 `entity_id` as provenance. Scene images already survive chat delete
 (`chat_id` SET NULL) — unchanged. The Gallery-hidden chat-scoped kinds
-(`chat_upload` / `chat_look` / `chat_place`) are OQ1 below.
+(`chat_upload` / `chat_look` / `chat_place`) **keep today's hard-delete on
+chat delete** (ruling 1): they can never appear in the Gallery, and uploads
+may be photos of real people — the exception covers Gallery-visible kinds
+only.
 
 **Retention.** One in-process daily sweep (on boot + `setInterval` in the
 single Fly machine's job-runner process — we have no cron infrastructure and
 don't need it for this):
 
-- `events` older than the retention window (OQ2; default 30 days),
-- `done`/`failed` `jobs` older than 7 days (OQ2),
+- `events` older than 30 days (ruling 2; a constant, retunable anytime),
+- `done`/`failed` `jobs` older than 7 days (ruling 2),
 - expired `auth_sessions` and `verifications`,
 - `sweepOrphans()` — finally wired for real (see slice 4); today six code
   comments promise an `image_sweep` reconciler that never runs.
 
 **Telemetry content minimization.** `retrieval` events currently store the
 memory-search queries verbatim (real user roleplay content) and `agent_run`
-details embed voice lines. Retention shrinks the window; OQ3 decides whether
-prod should store that content at all.
+details embed voice lines. Retention shrinks the window; ruling 3 goes
+further: **production stores ids + counts only** (raw query text has no prod
+reader and feeds no narration path), while dev builds keep full payloads for
+debugging and any future tuning corpus.
 
 ## Slices
 
@@ -83,12 +88,12 @@ prod should store that content at all.
    chat-scoped `image.*`). Provisioning stamps `chat_id` at the
    `chat_created` step it already records.
 3. **Deletion-path changes**: drop `deleteEntityImages` from character
-   delete (the ruling); resolve OQ1 for the chat-scoped image kinds; delete
-   provisioning records on chat delete arrives free via the slice-1 FK.
-   Document in `docs/images.md` + `docs/memory.md` that dangling
-   `entity_id` / `subject_id` references are by-design provenance (a fact
-   naming a deleted character belongs to the *observing* group's memory and
-   is not scrubbed).
+   delete (the headline ruling); chat-scoped hidden image kinds keep their
+   hard-delete (ruling 1); deleting provisioning records on chat delete
+   arrives free via the slice-1 FK. Document in `docs/images.md` +
+   `docs/memory.md` that dangling `entity_id` / `subject_id` references are
+   by-design provenance (a fact naming a deleted character belongs to the
+   *observing* group's memory and is not scrubbed).
 4. **Retention sweep**: small `retention` module in `src/server` (boot +
    daily interval, advisory-locked so overlapping machines/deploys don't
    double-run), covering the four bullets above; register a real
@@ -97,10 +102,10 @@ prod should store that content at all.
    choice; kill the six stale "image_sweep reconciles" comments either way).
    Degradation tests per `docs/resilience.md`: sweep failure logs a
    diagnostic and never takes a turn down.
-5. **Telemetry minimization** (after OQ3): trim `retrieval`/`agent_run`
-   payloads in prod to ids + counts (or gate full content behind
-   `NODE_ENV !== "production"` / a debug flag), preserving what the admin
-   chat-inspector actually reads.
+5. **Telemetry minimization** (ruling 3): trim `retrieval`/`agent_run`
+   payloads in prod to ids + counts (full content only when
+   `NODE_ENV !== "production"` / behind a debug flag), preserving what the
+   admin chat-inspector actually reads.
 
 Each slice updates the relevant system doc (`docs/images.md`,
 `docs/memory.md`, jobs/events docs) in the same change, and the roadmap on
@@ -108,26 +113,11 @@ completion.
 
 ## Open questions
 
-- **OQ1 — chat-scoped hidden image kinds on chat delete.** `chat_upload` /
-  `chat_look` / `chat_place` are Gallery-*hidden* by design, so "keep them
-  for the Gallery" cannot apply; uploads are player-attached photos
-  (possibly of real people), where privacy argues for deletion.
-  **Recommend: keep today's hard-delete for these three kinds**; the images
-  exception covers Gallery-visible kinds (scenes, avatars, portraits,
-  entities) only.
-- **OQ2 — retention windows.** Recommend `events` 30 days, finished `jobs`
-  7 days. Purely operational; owner can retune anytime (constants, not
-  schema).
-- **OQ3 — telemetry content in prod.** `retrieval` query text appears to
-  have **no production reader** (the inspector reads `agent_run` summaries
-  and failure tallies). Recommend: stop storing raw query text in prod
-  (ids + hit counts only), keep full payloads in dev.
-- **OQ4 — account deletion.** No user-deletion path exists at all (no
-  route, Better Auth `deleteUser` off, RESTRICT FKs from ten content
-  tables). Out of scope here; recommend parking in
-  [deferred.plan.md](deferred.plan.md) until the product needs it (it will
-  eventually — data-protection hygiene), at which point the cascade/ownership
-  map in the audit doc is the starting inventory.
+None — the four raised at planning (hidden chat-image kinds, retention
+windows, prod telemetry content, account deletion) were all ruled
+2026-07-29; see [data-lifecycle.audit.md](data-lifecycle.audit.md)
+§"Rulings". Account deletion is parked in
+[deferred.plan.md](deferred.plan.md) §"Account deletion".
 
 ## Non-goals
 
