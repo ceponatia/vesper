@@ -515,6 +515,19 @@ export const sceneSpecSchema = z.object({
    * composer degrades to today's disembodied shot rather than failing the render.
    */
   viewerBody: z.array(z.string()).catch([]).default([]),
+  /**
+   * Verbatim narration evidence for each `viewerBody` part (anti-eagerness gate,
+   * 2026-07-29): the composer must quote the exact words that put the player's part in
+   * frame, and `resolveScenePlan` drops any part whose quote doesn't actually appear in
+   * the recent narration — the composer proposes, the transcript disposes. An LLM given
+   * an optional field uses it far more often than the fiction warrants; a quote it must
+   * copy is checkable in code, where an extra "should we?" model call would just be a
+   * second coin flip. Lenient like `viewerBody`.
+   */
+  viewerBodyEvidence: z
+    .array(z.object({ part: z.string().default(""), quote: z.string().default("") }))
+    .catch([])
+    .default([]),
 });
 
 export type SceneSpec = z.infer<typeof sceneSpecSchema>;
@@ -616,7 +629,7 @@ export interface SceneComposerContext {
 /** The player-absence rules (session lane, and the chat lane before slice 3). */
 const COMPOSER_DISEMBODIED_RULES = [
   "The image is rendered from the player's first-person POV — shot through the player's own eyes. The player must NEVER appear in the image — no body, no face, no hands, and never a camera or held object in frame. Never describe the player or their clothing in any field.",
-  '- Every pose/activity/action phrase must describe that character ALONE, paintable with no player in frame. Never mention the player or their body — "walking beside the player" or "a hand resting on his arm" cannot be painted. Translate player-directed beats into their solo visual equivalent: eyes or head turned toward the player become "toward the viewer"; touching, leading, or leaning on the player becomes the character\'s own posture and motion (a hand extended slightly, glancing back mid-step); keep the expression and energy, lose the contact. Example: narration "she leads you back toward the gallery, hand on your arm, laughing" → pose "glancing back toward the viewer, mid-laugh", activity "stepping toward the main gallery, heels clicking on the stone floor".',
+  '- Every pose/activity/action phrase must describe that character ALONE, paintable with no player in frame. Never mention the player or their body — "walking beside the player" or "a hand resting on his arm" cannot be painted. Translate player-directed beats into their solo visual equivalent: eyes or head turned toward the player become "toward the viewer"; touching, leading, or leaning on the player becomes the character\'s own posture and motion (her hand extended slightly, glancing back mid-step); keep the expression and energy, lose the contact. Example: narration "she leads you back toward the gallery, hand on your arm, laughing" → pose "glancing back toward the viewer, mid-laugh", activity "stepping toward the main gallery, heels clicking on the stone floor".',
 ] as const;
 
 /**
@@ -634,8 +647,8 @@ const COMPOSER_DISEMBODIED_RULES = [
  */
 const COMPOSER_EMBODIED_RULES = [
   "The image is rendered from the player's first-person POV — shot through their own eyes, so their face and head are NEVER in frame. Their own hands, arms, lap or legs MAY enter the foreground when the scene actually puts them there — that is what `viewerBody` is for. Never describe the player's clothing, and never place the player as a person standing in the scene.",
-  '- viewerBody: which of the player\'s OWN body parts are in the shot, as a list of ids from exactly: "hands", "forearms", "lap_thighs", "legs_feet", "torso". Empty is the default and the common case — list a part ONLY when the recent narration puts it in the frame (her cheek against their palm → ["hands"]; her head resting in their lap → ["lap_thighs"]). Never list a part merely because the player has one, and never more than the beat needs.',
-  '- pose/activity may now name contact with the player, but ALWAYS from the character\'s side and only for a part you listed in viewerBody: "her hand closing over the viewer\'s forearm" is paintable when forearms is listed. Call them "the viewer", never "the player" and never "him"/"her". With viewerBody empty, translate contact away as before: eyes or head turned toward the player become "toward the viewer"; touching or leading becomes the character\'s own posture and motion (a hand extended, glancing back mid-step) — keep the expression and energy, lose the contact.',
+  '- viewerBody: which of the player\'s OWN body parts are in the shot, as a list of ids from exactly: "hands", "forearms", "lap_thighs", "legs_feet", "torso". Empty is the default and the common case — list a part ONLY when the recent narration puts it in the frame (her cheek against their palm → ["hands"]; her head resting in their lap → ["lap_thighs"]). Never list a part merely because the player has one, and never more than the beat needs. For EVERY id listed, add one viewerBodyEvidence entry: { "part": the id, "quote": a short phrase copied EXACTLY, word for word, from the recent narration that physically puts that part of the player in the shot }. A part whose quote is missing, paraphrased, or invented is dropped in code — if you cannot copy a real phrase, leave both lists empty.',
+  '- pose/activity may now name contact with the player, but ALWAYS from the character\'s side and only for a part you listed in viewerBody: "her hand closing over the viewer\'s forearm" is paintable when forearms is listed. Call them "the viewer", never "the player" and never "him"/"her". With viewerBody empty, translate contact away as before: eyes or head turned toward the player become "toward the viewer"; touching or leading becomes the character\'s own posture and motion (her hand extended, glancing back mid-step) — keep the expression and energy, lose the contact.',
 ] as const;
 
 const composerRules = (embodied: boolean): readonly string[] => {
@@ -647,6 +660,7 @@ const composerRules = (embodied: boolean): readonly string[] => {
     '- focalCharacter: exactly ONE name from the "Present characters" list — whoever the recent narration centers on. If the list is empty, leave it empty: a location-only shot is a valid image.',
     '- others: any remaining names from the "Present characters" list that belong in frame, each with a short phrase for what they are doing. Never include the player or anyone not on the list — characters who are not in the room must not appear.',
     "- pose and activity: what the focal character is doing right now, from the recent narration and their recorded activity. Pose is the body — stance, orientation, expression — in one compact phrase; activity is what they are doing in the scene. The two must not repeat each other's beats: state a facial expression ONCE, in pose (never a smile in pose and a laugh in activity — pick the single strongest beat).",
+    '- Body parts in any phrase must be possessively bound to their owner: "her hand raising the cup", "Mira\'s fingers on the railing" — never a bare "a hand", "one hand" or "one finger". In a first-person POV image an unowned limb reads as the player\'s.',
     contact,
     '- Wardrobe: each character\'s "visible wardrobe" line is the authoritative outfit state; never infer clothing from the narration — prose lies.',
     "- setting: the current location's appearance and atmosphere as seen from where the player stands.",
@@ -1135,6 +1149,30 @@ export function scrubBlush(text: string): string {
     .join(", ");
 }
 
+// The trailing lookahead skips possessive idioms ("an arm's length") and compounds ("a hand-carved rail").
+const BARE_LIMB = /\b(?:a|an|one)\s+(hand|arm|leg|foot|finger|thumb|palm|wrist|knee|elbow)\b(?!['’-])/gi;
+const BOTH_LIMBS = /\bboth\s+(hands|arms|legs|feet|knees|elbows)\b/gi;
+
+/**
+ * Possessively bind bare limb references to their owner: "one hand holding a cup" →
+ * "Kristin's hand holding a cup" (phantom-limb fix, 2026-07-29). In a first-person
+ * POV prompt an unowned limb noun is an invitation to paint it as the VIEWER's
+ * foreground hand — the composer is ruled to write "her hand", and this is the
+ * deterministic backstop for what slips through (same belt-and-braces as
+ * {@link scrubBlush}). Deliberately conservative: only bare-article ("a/an/one")
+ * and "both" limb phrases rewrite; already-possessive phrases ("her hand",
+ * "the viewer's forearm") and possessive limb idioms ("an arm's length") pass
+ * untouched.
+ */
+export function bindLimbsToOwner(text: string, owner: string): string {
+  const name = owner.trim();
+  if (!name) return text;
+  const possessive = /s$/i.test(name) ? `${name}'` : `${name}'s`;
+  return text
+    .replace(BARE_LIMB, (_m, limb: string) => `${possessive} ${limb.toLowerCase()}`)
+    .replace(BOTH_LIMBS, (_m, limbs: string) => `both of ${possessive} ${limbs.toLowerCase()}`);
+}
+
 /**
  * Deterministic focal pick (demo mode / clamp fallback): the present NPC
  * mentioned latest in the newest narration, else the first roster entry,
@@ -1182,7 +1220,7 @@ export function resolveScenePlan(
     focalEntry = byName.get(normalizeName(fallbackName)) ?? roster[0] ?? null;
   }
 
-  const viewerBody = resolveViewerBody(spec.viewerBody, context, sink);
+  const viewerBody = resolveViewerBody(spec, context, sink);
   // Trailing periods stripped before the join — "…teasing smile.; Leading…" read as two
   // stitched sentences in the render prompt instead of one pose phrase.
   const focalAction = [spec.pose, spec.activity]
@@ -1234,19 +1272,26 @@ export function resolveScenePlan(
 
 /**
  * Clamp the composer's `viewerBody` proposal to the registry — the same
- * the-composer-cannot-invent-things rule as `focal_clamped` / `absent_character_dropped`.
+ * the-composer-cannot-invent-things rule as `focal_clamped` / `absent_character_dropped`
+ * — then require **narration evidence** for every survivor (2026-07-29): a part stays
+ * only when its `viewerBodyEvidence` quote actually appears, verbatim, in the recent
+ * narration. This is the anti-eagerness gate — the deterministic alternative to a
+ * second "should the player's body appear?" model call, which would carry the same
+ * option-bias as the first.
  *
- * Two ways to end up with nothing: the lane never asked for embodiment (the session lane —
- * it gets the disembodied rules, so a proposal here means the model ignored them), or the
- * id isn't in the registry. Both log, because both mean the composer went off-script.
+ * Ways to end up with nothing: the lane never asked for embodiment (the session lane —
+ * it gets the disembodied rules, so a proposal here means the model ignored them), the
+ * id isn't in the registry (both WARN — off-script), or the quote doesn't match the
+ * transcript (INFO — the gate doing its designed job on composer eagerness).
  * Coverage and route gating do NOT happen here — they run per-prompt, where `allowIntimate`
  * is known.
  */
 function resolveViewerBody(
-  proposed: readonly string[],
+  spec: Pick<SceneSpec, "viewerBody" | "viewerBodyEvidence">,
   context: SceneComposerContext,
   sink?: DiagnosticSink,
 ): ViewerBodyPartId[] {
+  const proposed = spec.viewerBody;
   if (proposed.length === 0) return [];
   if (!context.embodiedViewer) {
     sink?.push(
@@ -1272,7 +1317,49 @@ function resolveViewerBody(
       }),
     );
   }
-  return kept;
+  return groundViewerBody(kept, spec.viewerBodyEvidence, context.recentNarration ?? [], sink);
+}
+
+/** A quote shorter than this (normalized) proves nothing — "his hand" matches half of any transcript. */
+const VIEWER_EVIDENCE_MIN_CHARS = 12;
+
+/** Keep only the parts whose evidence quote is a verbatim (normalized) substring of the recent narration. */
+function groundViewerBody(
+  parts: readonly ViewerBodyPartId[],
+  evidence: ReadonlyArray<{ part: string; quote: string }>,
+  recentNarration: readonly string[],
+  sink?: DiagnosticSink,
+): ViewerBodyPartId[] {
+  if (parts.length === 0) return [];
+  const transcript = normalizeEvidence(recentNarration.join("\n"));
+  const quoteByPart = new Map<string, string>();
+  for (const entry of evidence) quoteByPart.set(entry.part.trim().toLowerCase(), entry.quote);
+  const grounded: ViewerBodyPartId[] = [];
+  const ungrounded: string[] = [];
+  for (const id of parts) {
+    const quote = normalizeEvidence(quoteByPart.get(id) ?? "");
+    if (quote.length >= VIEWER_EVIDENCE_MIN_CHARS && transcript.includes(quote)) grounded.push(id);
+    else ungrounded.push(id);
+  }
+  if (ungrounded.length > 0) {
+    sink?.push(
+      diag("info", "images.scene_composer.viewer_body_ungrounded", "viewer body parts without a verbatim narration quote — dropped (anti-eagerness gate)", {
+        context: { ungrounded, grounded },
+      }),
+    );
+  }
+  return grounded;
+}
+
+/** Normalization for the evidence substring check: case, whitespace, curly quotes, ellipses. */
+function normalizeEvidence(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[“”«»]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/…/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function characterSpec(entry: ScenePresentCharacter, action: string, embodied = false): SceneCharacterSpec {
@@ -1281,9 +1368,14 @@ function characterSpec(entry: ScenePresentCharacter, action: string, embodied = 
     ...(entry.species ? { species: entry.species } : {}),
     // The player scrub covers the composer's text AND the posture/activity fallback
     // (session state can carry player-referencing activity phrases too); the blush
-    // scrub then strips skin-colour words out of whatever survived.
-    action: scrubBlush(
-      scrubPlayerFromAction(action.trim() || [entry.posture, entry.activity].filter(Boolean).join("; "), { embodied }),
+    // scrub strips skin-colour words out of whatever survived, and the limb binder
+    // then possessively binds any bare "a hand"/"one foot" to this character so the
+    // image model can't compose it as the viewer's foreground limb.
+    action: bindLimbsToOwner(
+      scrubBlush(
+        scrubPlayerFromAction(action.trim() || [entry.posture, entry.activity].filter(Boolean).join("; "), { embodied }),
+      ),
+      entry.name,
     ),
     // Forced from occlusion-filtered state regardless of anything the model said; a free-text
     // override (character chat — no equippable wardrobe) wins when present.
@@ -1300,24 +1392,33 @@ function characterSpec(entry: ScenePresentCharacter, action: string, embodied = 
 // Scene render prompt (final image instruction)
 // ---------------------------------------------------------------------------
 
-/** The hard POV rule, restated verbatim in every scene render prompt. */
-// Worded to avoid the literal "camera" framing: phrasing the player AS the
-// camera made image models paint hands gripping a camera into the foreground.
-// "no hands or held objects" closes that off without naming a camera (a negative
-// the image model would only anchor on).
+/** The hard POV opening of every scene render prompt (limb-noun-free form, 2026-07-29). */
+// The framing must name NO limb, in any polarity. "The player is the camera"
+// made image models paint hands gripping a camera; its replacement "no hands or
+// held objects in frame" summoned disembodied foreground hands; and the first
+// fix attempt — an enumerated possession line, "every hand, arm, leg and foot
+// belongs to Mira" — STILL painted a phantom viewer hand (phantom-limb A/B,
+// scripts/eval/scene-images/phantom-limb-ab.ts): even a possessively-bound
+// enumeration summons what it names. What held up (3/3 clean) is this opening +
+// the person-count assertion + an abstract possession clause ("every visible
+// body part belongs to Mira") appended by sceneFramingRule — plus the pose
+// text's own limbs bound to the character by bindLimbsToOwner.
 export const SCENE_POV_RULE =
-  "First-person POV through the player's own eyes. The player must NEVER be visible — no body, no face, no hands or held objects in frame.";
+  "First-person POV through the player's own eyes; the player is never visible in the image.";
 
 /**
- * The shot's framing rule (scene-pov-embodiment.plan.md slice 1) — {@link SCENE_POV_RULE}
- * when the viewer has no body in frame, the **embodied** variant when they do.
+ * The shot's framing rule (scene-pov-embodiment.plan.md slice 1) — the disembodied
+ * form when the viewer has no body in frame, the **embodied** variant when they do.
  *
- * With no parts this returns the old constant **byte-identical**, which is the point: the
- * default path can't regress, and callers opt in one at a time. A test pins it.
+ * BOTH forms are built from positives (the "no camera" scar: a negative anchors the
+ * model on exactly what it forbids). The disembodied form (2026-07-29, phantom-limb
+ * fix) is {@link SCENE_POV_RULE} + the person-count assertion + a total-possession
+ * binding — the pose text constantly names the character's hands and feet ("one hand
+ * holding a cup", "barefoot"), and without an owner the model composes them as the
+ * VIEWER's foreground limbs.
  *
  * The embodied variant's job is to put a limb in frame without the model promoting it into
- * a whole second person. Three things do that work, and none of them is a negative (the
- * "no camera" scar: a negative anchors the model on exactly what it forbids):
+ * a whole second person. Three things do that work, and none of them is a negative:
  *
  * 1. **Possessive binding** — "the viewer's own", never "a man's". No subject noun for the
  *    player, ever; the registry's phrases carry this.
@@ -1332,7 +1433,7 @@ export const SCENE_POV_RULE =
  * than a recomposition.
  */
 export function sceneFramingRule(args: {
-  /** The viewer's parts in frame, already gated (`resolveViewerParts`). Empty ⇒ today's rule. */
+  /** The viewer's parts in frame, already gated (`resolveViewerParts`). Empty ⇒ the disembodied rule. */
   parts?: readonly ViewerBodyPart[];
   /** Everyone fully in frame — the count assertion's subjects. */
   subjects?: readonly string[];
@@ -1342,8 +1443,10 @@ export function sceneFramingRule(args: {
   intimate?: string;
 }): string {
   const parts = args.parts ?? [];
-  if (parts.length === 0) return SCENE_POV_RULE;
   const names = (args.subjects ?? []).map((n) => n.trim()).filter(Boolean);
+  if (parts.length === 0) {
+    return [SCENE_POV_RULE, countAssertion(names), limbPossession(names)].filter(Boolean).join(" ");
+  }
   const body = args.body?.trim();
   const intimate = args.intimate?.trim();
   return [
@@ -1365,6 +1468,19 @@ function countAssertion(names: readonly string[]): string {
   if (names.length === 0) return "No other person is in frame.";
   const count = names.length === 1 ? "Exactly one person is" : `Exactly ${numberWord(names.length)} people are`;
   return `${count} fully in frame: ${joinPhrases(names)}. Nobody else appears.`;
+}
+
+/**
+ * "Every visible body part belongs to Mira." — the total-possession binding for the
+ * disembodied shot (2026-07-29). Deliberately ABSTRACT: the first draft enumerated the
+ * limbs ("every hand, arm, leg and foot…") and the A/B run painted a phantom viewer
+ * hand anyway — a limb noun summons a limb even when possessively bound. Binding
+ * specific limbs is the POSE text's job (`bindLimbsToOwner`), where the limb is
+ * already in the shot on purpose. "" with no subjects (location-only shot).
+ */
+function limbPossession(names: readonly string[]): string {
+  const owner = names.length === 1 ? names[0] : names.length > 1 ? "one of them" : "";
+  return owner ? `Every visible body part belongs to ${owner}.` : "";
 }
 
 /** Small-number words; past the cap the digit reads fine and never occurs in practice. */
