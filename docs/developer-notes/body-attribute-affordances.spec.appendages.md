@@ -215,10 +215,50 @@ After she stands:
 - possible-action queries never appear in ambient visual cue output;
 - concealment blocks observer output without deleting physical state.
 
-## Open questions
+## Resolved (owner rulings, 2026-07-28)
 
-- Authoritative producer of coarse room, passage, and furniture clearance.
-- Whether morphology type values need orthogonal material/flexibility attributes.
-- Ownership of glamour/concealment state.
-- Which appendage domain should be the first fixture: tail constraints or wing
-  wet loading.
+### Trust of current type values
+
+The pre-implementation audit is answered per appendage: **not all current type
+values are trustworthy mechanical facts.**
+
+- **Wings.** `wings.type` is adequate for a *provisional* wet-response family —
+  feathered, membrane, scaled membrane, insectile, skeletal, ethereal. Skeletal
+  and ethereal wings simply report wet loading **unsupported**.
+- **Horns.** `horns.shape` and `horns.length` suffice for coarse clearance.
+  Detailed horn material is not needed initially.
+- **Tails.** `tail.type` currently mixes appearance, covering, flexibility, and
+  prehensility. Add separate **tail flexibility** and **prehensility** axes
+  before those properties drive mechanics, plus a **surface family** (furred,
+  scaled, bare skin, chitinous, ethereal) rather than inferring covering from
+  names like "fox" or "spaded". Until those axes land,
+  `TailPhysicalProfile.flexibility` and `.prehensility` remain provisional.
+
+### Clearance ownership
+
+Clearance belongs to **scene geometry** — room, doorway, furniture, current
+posture, and asserted extent; `SpaceConstraintRead` is that owner's read. The
+appendage domain only compares its physical extent with supplied clearance.
+Posture and contact inputs come from the shared scene/body-relations owner
+(architecture spec §Scene/body-relations owner); unknown space still fails
+closed.
+
+### Concealment — two owners
+
+- **Clothing-based** concealment comes from wardrobe / effective coverage.
+- **Magical glamour or illusion** comes from an explicit condition/effect owner.
+
+Neither is invented here, and neither deletes physical state.
+
+### Fixture order
+
+1. **Tail constraints**, after the pose/contact owner exists — "tail pinned
+   beneath her on the chair" is a simple test of posture, contact, constraints,
+   and narration suppression.
+2. **Wing wet loading** second; it carries more material calibration and
+   capability questions.
+
+### Calibration stance
+
+Appendage flexibility — and every other numeric coefficient here — is a
+fixture-tested calibration default, not permanent product law.

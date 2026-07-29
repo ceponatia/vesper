@@ -27,8 +27,9 @@ consumers and should not be mixed into the ambient visual observation contract.
 - `build.height` — current legal values are `very_short`, `short`,
   `below_average`, `average`, `above_average`, `tall`, `very_tall`, and
   `towering`;
-- `legs.length`, `neck.length`, and relevant posture attributes where they
-  materially affect eye line;
+- relevant posture attributes where they materially affect eye line
+  (`legs.length` and `neck.length` are deferred past v1 — see
+  [§Resolved](#resolved-owner-rulings-2026-07-28));
 - coarse frame/shoulder dimensions only for embrace alignment, not for invented
   exact measurements.
 
@@ -160,10 +161,51 @@ this visual-narration plan does not own.
 - the same pair and current state produce deterministic blocking;
 - reach/strength/carry results never appear in the narrator cue list.
 
-## Open questions
+## Resolved (owner rulings, 2026-07-28)
 
-- Calibrated semantic anchors for the eight current height values.
-- Whether leg/neck length contributes enough to justify v1 complexity.
-- Exact posture/surface facts available before a richer pose model.
-- Whether scene-image composition consumes this pair read in the first rollout
-  or only after chat narration proves it.
+### Deterministic stature equation
+
+```text
+effectiveStature =
+  stableHeightAnchor + footwearModifier + postureOffset + surfaceLevel
+```
+
+The two participants' **eye lines** and **shoulder lines** are then compared.
+`RelativeBodyGeometryRead` is the result of that comparison and nothing else.
+
+### Height anchors
+
+The eight legal `build.height` values map to ordered semantic anchors in
+**roughly even steps**, with `towering` placed deliberately farther beyond
+`very_tall` than an even step would put it.
+
+### v1 omits leg and neck length
+
+`legs.length` and `neck.length` are deferred in v1 — the likely benefit does not
+justify the calibration. Only the stature anchor, footwear, posture, and surface
+level move the eye line.
+
+### Live-input owners
+
+- Posture, surface, facing, and proximity come from the shared
+  scene/body-relations owner (architecture spec §Scene/body-relations owner).
+- Footwear elevation comes from wardrobe/presentation in coarse bands: `flat`,
+  `low`, `raised`, `high`.
+
+### Emission
+
+Emit kiss/embrace blocking **only when that interaction is actually relevant**.
+The pair read is otherwise computed and captured without entering the ambient
+cue queue.
+
+### Scene images consume it second
+
+Capture the semantic result now so it is reusable, but **narration proves it
+before images consume it**. When images are enabled, give them only semantic
+relations — "noticeably taller", "eye line near shoulder", "one seated and one
+standing" — never internal numbers.
+
+### Calibration stance
+
+The anchors, offsets, and footwear bands are fixture-tested calibration
+defaults, not permanent product law.

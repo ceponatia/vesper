@@ -214,12 +214,45 @@ safely.
 - replay rebuilds identical memory from identical observations;
 - retake does not double-increment notice or mention counts.
 
-## Open questions
+## Resolved (owner rulings, 2026-07-28)
 
-- Exact notice threshold and recognition-strength decay law.
-- Whether importance is partly observer-relative at storage time or calculated
-  entirely during projection.
-- Whether mention history belongs in the captured cut, the visual-memory
-  projection, or both.
-- Which visual-memory summaries, if any, should become semantic memory
-  documents.
+### Notice threshold
+
+Notice requires total salience of roughly **0.35–0.40** *plus* the required
+detail tier. Deliberate inspection may lower the threshold to about **0.25**,
+but never bypasses visibility — zero visibility remains a hard gate.
+
+### Decay — freshness buckets before a continuous law
+
+Ship simple freshness buckets before any continuous decay curve:
+
+- `recent` — under one story day;
+- `familiar` — one to thirty days;
+- `long_absence` — over thirty days.
+
+A repeatedly noticed **stable** feature retains a **recognition floor** instead
+of being forgotten completely; only freshness moves between buckets.
+
+### Mention history — both surfaces, distinct roles
+
+The **selected mention is captured with the cut**, which is what makes retakes
+stable. The **committed `lastMentionedAt` and `mentionCount` belong in observer
+visual memory**. The cut is the retake-safe record; the projection is the
+cooldown record.
+
+### Semantic-memory boundary
+
+Emit a summary only for **stable, important identity facts** or **meaningful
+acquired changes the observer actually noticed**. Never generate a RAG document
+per visual-memory refresh.
+
+### Importance storage
+
+Resolved in the features spec: a stable base importance is stored, and observer
+relationship plus current attention apply at projection time — see
+[recognizable features §Resolved](body-attribute-affordances.spec.recognizable-features.md#resolved-owner-rulings-2026-07-28).
+
+### Calibration stance
+
+The thresholds and bucket boundaries above are fixture-tested calibration
+defaults, not permanent product law.

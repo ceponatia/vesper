@@ -85,6 +85,12 @@ that adapter forks nothing.
 | Hair coverage (headwear) | `garmentEffectiveCoverage` + wardrobe `partVisibility` when the garment lane is armed. Review ruling (2026-07-28): opaque headwear maps to perception `hinted` (ordinary hoods/hats leave ends visible; mechanics still constrain via `coveredFraction`); `hidden` returns for headwear only once a finer coverage read can distinguish full concealment (wrapped headscarf, veil) | Coarser worn projection only | Supported (legacy); unknown coverage fails closed |
 | Hair ↔ skin contact | None | None | **Fixture-only** — no typed contact owner exists; reach never invents contact |
 | Body impulse events (shake/run/impact) | None | None | **Fixture-only** — no committed impulse owner |
+
+> **Ruled 2026-07-28 (owner):** the missing pose/support/contact/impulse rows
+> above get ONE future owner — the shared scene/body-relations state
+> (architecture spec §"Scene/body-relations owner"), shipped first in
+> character chat and restored with the scenario on retakes. Until it ships,
+> every ruling in this table stands unchanged.
 | Perception | Wardrobe visibility (`visible`/`hinted`/`hidden`) + turn-level sensory allowance | Witness/channel observations (unused this release) | Normalized perception marks unsupported channels `unavailable`, never permissive |
 | Retake boundary | `pre_exchange_state` / `pre_exchange_scenario` anchors; the read is a pure function of rolled-back committed state and its cue/repeat memory rides that state (garment `cueState` precedent), so a retake reproduces the identical read | Immutable narrative cut (deferred with the adapter) | Supported (legacy); successor deferred |
 | Recognition memory | — | — | Slice 7; outside this release (slices 0–5) |

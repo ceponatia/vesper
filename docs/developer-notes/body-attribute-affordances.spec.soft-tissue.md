@@ -240,11 +240,62 @@ At minimum:
   precise material facts;
 - repeated unchanged rest-state reads do not repeatedly enter narrator cues.
 
-## Open questions
+## Resolved (owner rulings, 2026-07-28)
 
-- Final orthogonal vocabulary for firmness, compliance, rest geometry, and live
-  fullness.
-- Whether the first implementation should cover breasts only or use one generic
-  region contract with buttocks as a second fixture.
-- Exact owner of support-strength reads in wardrobe state.
-- The shared narrative-focus policy for intimate body and garment observations.
+### Orthogonal vocabulary — four separate concepts
+
+The existing breast vocabulary mixes permanent structure with temporary body
+state (`breasts.fullness` combines firmness words with states like `swollen` /
+`engorged`). It splits into four:
+
+1. **rest size or mass band** — `restMassBand`;
+2. **compliance** — firm through soft;
+3. **rest geometry and placement** — `restGeometry`;
+4. **live volume/fullness modifier** — supplied by physiology as a live input,
+   never written back into structure.
+
+`damping` is **not** a fifth authored axis: it is initially derived
+conservatively from compliance and mass at profile-compile time and is not
+exposed as an author-facing field. `breasts.augmentation` does not
+automatically determine firmness.
+
+### One generic regional contract from the start
+
+Do not ship a breast-only implementation. The regional contract is generic on
+day one: **breasts are the first fixture, buttocks the immediate second**, and
+the abstraction is not declared proven until buttocks pass the same pipeline.
+Later regions (thighs, abdomen) reuse it.
+
+### Support ownership
+
+Support belongs to **wardrobe**: a bra, compression garment, or structured
+bodice supplies support strength **by covered region**, adjusted by fastening
+and displacement. That is `SupportRead`.
+
+Unknown support must be **unavailable**, not treated as unsupported — a missing
+read never resolves as a free-moving region.
+
+### Shared live inputs
+
+`pose`, `actualContacts`, and committed `motion`/impulse events come from the
+shared scene/body-relations owner (architecture spec §Scene/body-relations
+owner). Unknown contact still means silence.
+
+### Shared narrative-focus policy (also binding on garment observations)
+
+An intimate-region cue requires a **current relevant action, contact, motion,
+pose transition, or support transition**. Ordinary unchanged visibility is
+insufficient.
+
+- Exposure and consent remain hard gates.
+- **At most one** intimate body-or-garment cue per exchange.
+- Aggressive cooldown across the shared intimate cue family.
+- The cue must not displace dialogue or the exchange's primary action.
+
+The mechanics may remain true while the narrator remains silent; that
+suppression is never a physical-resolver failure.
+
+### Calibration stance
+
+Soft-tissue motion coefficients — and every other number in this domain — are
+fixture-tested calibration defaults, not permanent product law.
