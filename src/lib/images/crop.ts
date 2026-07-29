@@ -30,12 +30,6 @@ export interface Offset {
   y: number;
 }
 
-/** Two aspect ratios are "the same" within half a percent — skip-crop tolerance. */
-export function aspectMatches(image: CropImage, ratio = AVATAR_ASPECT_RATIO): boolean {
-  if (image.nw <= 0 || image.nh <= 0) return false;
-  return Math.abs(image.nw / image.nh - ratio) <= ratio * 0.005;
-}
-
 /** Smallest scale at which the image fully covers the frame — the zoom=1 baseline. */
 export function coverScale(frame: CropFrame, image: CropImage): number {
   if (image.nw <= 0 || image.nh <= 0) return 1;
