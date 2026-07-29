@@ -67,8 +67,9 @@ rulings 2026-07-11):
   to — a "neutral" proposal must not clear a standing bruise). An opener send
   records an `offer` ring entry (same cooldown).
 - **Render** (`flavor: "selfie"` through `queueChatScene` →
-  `renderCharacterSceneImage`): ALWAYS the identity-locked reference route (ruled —
-  the scene strip's t2i pick is ignored), with `SELFIE_FRAMING` replacing the
+  `renderCharacterSceneImage`): ALWAYS the identity-locked reference route (ruled;
+  since 2026-07-29 every chat scene is — the strip's t2i style-swap picks left the
+  `chatSceneModels` vocabulary), with `SELFIE_FRAMING` replacing the
   player-POV rule (the exact inverse: her own phone camera, arm's-length or mirror,
   subject aware of the lens). Same one-live-render-per-chat dedupe as scenes;
   `meta.flavor: "selfie"` rides the asset so lifecycle is unchanged.

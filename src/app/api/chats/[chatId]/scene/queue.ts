@@ -203,7 +203,6 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           playerProfile,
           meters: stored?.meters,
           conditions: stored?.conditions,
-          sceneModel: scenario?.sceneModel,
           chatId: args.chatId,
           anchorMessageId,
           flavor: args.flavor,

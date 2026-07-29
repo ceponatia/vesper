@@ -1,7 +1,6 @@
 import type { SceneReferenceMode, SceneVisualReference } from "@/contracts";
 import { describeProviderError } from "./errors";
-import { veniceEditImage, veniceGenerateImage, veniceMultiEditImage, veniceSceneImageModelId, veniceT2IModelId } from "./venice";
-import type { AvatarImageModel } from "@/contracts/images/image-models";
+import { veniceEditImage, veniceGenerateImage, veniceMultiEditImage, veniceSceneImageModelId } from "./venice";
 
 /**
  * Provider-capability seam for scene rendering (scene-images.spec.md §4). The
@@ -11,13 +10,16 @@ import type { AvatarImageModel } from "@/contracts/images/image-models";
  *
  * After the 2026-06-19 Flux removal the stack is **Venice/Qwen end-to-end**
  * (OpenRouter left the image stack). The ladder is, by reference mode:
- * - `single` (default): single-reference edit (`venice_edit`) → text-to-image
- *   (`venice_generate`, Qwen) → (demo monogram, handled in the images layer).
+ * - `single` (default): single-reference edit (`venice_edit`) only.
  * - `multi`: multi-reference edit (`venice_multi_edit`, Venice `/image/multi-edit`,
- *   ≤3 uncensored refs) → `venice_edit` → `venice_generate` → demo.
- * Adding a provider (e.g. self-hosted ComfyUI for >3 refs, spec §7) is a new
- * `IMAGE_PROVIDERS` entry + one router clause + a render branch, never a
- * `scene.ts` rewrite.
+ *   ≤3 uncensored refs) → `venice_edit`.
+ * Text-to-image (`venice_generate`) runs ONLY when no reference image exists at
+ * all (owner ruling 2026-07-29): it cannot honor a reference, so a failed edit
+ * must fail visibly rather than silently painting a different-looking person —
+ * what used to be the opt-in `requireReferenceIdentity` flag is now the only
+ * behavior. Reference-capable providers are the intended additions here (e.g.
+ * self-hosted ComfyUI for >3 refs, spec §7): a new `IMAGE_PROVIDERS` entry + one
+ * router clause + a render branch, never a `scene.ts` rewrite.
  */
 export const imageProviderIds = ["demo", "venice_edit", "venice_multi_edit", "venice_generate"] as const;
 export type ImageProviderId = (typeof imageProviderIds)[number];
@@ -98,45 +100,32 @@ export interface SceneRenderRequest {
   /**
    * Reference mode (the session toggle, scene-images.plan.md): `multi` puts the
    * Venice `/image/multi-edit` rung ahead of single-edit; `single`/unset keeps
-   * the single-anchor ladder. Both degrade through `venice_generate` → demo.
+   * the single-anchor chain.
    */
   mode?: SceneReferenceMode;
-  /**
-   * Fail-visible for identity-locked renders (character chat, user policy): when
-   * an avatar anchors the shot, drop the text-to-image rung so a failed reference
-   * edit fails the image instead of silently rendering a *different-looking*
-   * person. No-op without an anchor image (text-to-image is then the only path).
-   */
-  requireReferenceIdentity?: boolean;
 }
 
 /**
  * The ordered provider fallback chain for a scene (spec §8.3). Pure — selected
- * from the request against the capability registry. Reference-edit providers
- * need enough reference images to be worthwhile; text-to-image always attempts
- * (it ignores references), so it is the guaranteed last rung.
+ * from the request against the capability registry.
+ *
+ * With ≥1 reference image the chain is **edit rungs only** (owner ruling
+ * 2026-07-29, formerly the opt-in `requireReferenceIdentity` flag): text-to-image
+ * cannot honor a reference, so a failed edit fails the image visibly (a "failed"
+ * tile + retry) instead of silently painting a *different-looking* person.
+ * Text-to-image is the sole rung only when NO reference image exists.
  *
  * `mode: "multi"` prepends `venice_multi_edit` — but only when ≥2 reference
  * images exist (with one image it would just be a single edit). With fewer, the
- * chain degrades to the single ladder, so the toggle never blocks a render.
+ * chain degrades to the single-edit rung, so the toggle never blocks a render.
  */
 export function routeSceneProviders(request: SceneRenderRequest): ImageProviderId[] {
   if (request.demo) return ["demo"];
   const referenceImages = request.references.filter((r) => Boolean(r.imageId)).length;
-  const ordered: ImageProviderId[] =
-    request.mode === "multi"
-      ? ["venice_multi_edit", "venice_edit", "venice_generate"]
-      : ["venice_edit", "venice_generate"];
+  const ordered: ImageProviderId[] = request.mode === "multi" ? ["venice_multi_edit", "venice_edit"] : ["venice_edit"];
   const chain = ordered.filter((id) => providerCanAttempt(id, referenceImages));
-  // Fail-visible (character chat): with an anchor image present, drop the
-  // text-to-image rung — a failed edit must not silently become a different-looking
-  // person. Only applied when ≥1 anchor exists, so an avatar-less render still has
-  // text-to-image as its sole rung; never empties the chain.
-  if (request.requireReferenceIdentity && referenceImages >= 1) {
-    const editOnly = chain.filter((id) => id !== "venice_generate");
-    if (editOnly.length > 0) return editOnly;
-  }
-  // venice_generate (text-to-image) always qualifies, so the chain is never empty.
+  // No usable reference anchor ⇒ text-to-image is the only path (and the chain
+  // is never empty).
   return chain.length > 0 ? chain : ["venice_generate"];
 }
 
@@ -184,8 +173,6 @@ export interface ImageRenderInput {
   reference?: Buffer;
   /** Multi-reference edit (`venice_multi_edit`): 1–3 ordered references (first = base). */
   references?: Buffer[];
-  /** Text-to-image model override (`venice_generate`); absent ⇒ the shared scene default. */
-  t2iModel?: AvatarImageModel;
 }
 
 /**
@@ -223,10 +210,9 @@ async function renderVeniceMultiEdit(input: ImageRenderInput): Promise<ProviderR
 
 async function renderVeniceGenerate(input: ImageRenderInput): Promise<ProviderRenderResult> {
   // The scene t2i default (Chroma) — resolved through the shared key registry so this
-  // call and scene.ts's meta.model label can never disagree. The chat scene strip's
-  // model pick rides in as t2iModel (scene.ts threads it and labels meta.model the same way).
-  const model = input.t2iModel ? veniceT2IModelId(input.t2iModel) : veniceSceneImageModelId();
-  const generated = await veniceGenerateImage({ prompt: input.prompt, aspectRatio: "3:4", model });
+  // call and scene.ts's meta.model label can never disagree. This rung only runs
+  // when no reference image exists (the chat strip's t2i style-swap pick is gone).
+  const generated = await veniceGenerateImage({ prompt: input.prompt, aspectRatio: "3:4", model: veniceSceneImageModelId() });
   return fromVenice(generated, "venice generate returned no image");
 }
 
