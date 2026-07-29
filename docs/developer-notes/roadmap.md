@@ -40,8 +40,10 @@ _(Nothing active — pick up the top of Next.)_
   changes (drop `deleteEntityImages` on character delete), an in-process daily
   retention sweep (events/jobs/expired sessions + finally wiring the phantom
   `image_sweep`), and prod telemetry content minimization (retrieval queries
-  are stored verbatim today). Four open rulings in the plan (hidden chat-image
-  kinds, windows, telemetry content, account deletion).
+  are stored verbatim today). All four open questions ruled 2026-07-29
+  (audit doc §Rulings): hidden chat-image kinds keep their hard-delete,
+  events 30d / jobs 7d, prod telemetry ids+counts only, account deletion
+  parked → deferred.plan.md.
 
 **Successor world engine (`engine.plan.md`) — foundation AND rollout COMPLETE.**
 All committed gates (0–6) closed 2026-07-16 → 2026-07-21, and the migration &
