@@ -22,16 +22,7 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Affordance-cue trial rematch — bait+anchor matrix, audit judging,
-  iterate to a verdict** —
-  [body-attribute-affordances.trial.rematch.md](body-attribute-affordances.trial.rematch.md)
-  (active; authored 2026-07-29 after round 1's decision rule failed for lack
-  of contradiction headroom). Owner rulings 2026-07-29: full iteration levers
-  (matrix + judge + cue-side, every change recorded), $10 campaign cap, and a
-  valid pass flips `CHAT_AFFORDANCE_CUES` **default ON**. Five bait families
-  engineer the headroom; an induction gate keeps iteration honest (tune the
-  instrument, then let it decide); two consecutive valid fails park the flag
-  OFF for good.
+_(Nothing active — pick up the top of Next.)_
 
 ## Next (queued)
 
@@ -54,12 +45,12 @@ umbrella further down.)
   [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
   (**slices 0–4, slice 5 wiring, and slice 6 garment second domain +
   developer preview shipped 2026-07-28; slice 7 recognizable features +
-  observer visual memory shipped 2026-07-29; slice 5 completed 2026-07-29** —
-  the live comparison ran on the replaced key and its decision rule was
-  **not met** (contradictions tied, repetition up slightly, specificity
-  genuinely better), so `CHAT_AFFORDANCE_CUES` **stays OFF** — numbers and
-  rematch conditions in the
-  [trial report](body-attribute-affordances.trial.md) §Live results; see
+  observer visual memory shipped 2026-07-29; slice 5 closed 2026-07-29** —
+  the live comparison plus a three-round rematch campaign reached the frozen
+  protocol's terminal state (two consecutive valid fails: cues never reduced
+  contradictions because concrete cues make more checkable claims), so
+  `CHAT_AFFORDANCE_CUES` **parks OFF, finally** — history in the
+  [trial report](body-attribute-affordances.trial.md) §Rematch log; see
   [roadmap.shipped.md](roadmap.shipped.md); plan stays open until the release
   contract closes). What remains: slice 8's recorded image-consumer
   decision, the successor-lane adapter follow-up named in the

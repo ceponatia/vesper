@@ -1,9 +1,13 @@
 # Slice 5 narrator trial — rematch spec
 
-Status: active (authored 2026-07-29 after the first live round; owner rulings
-same day: full levers — matrix + judge + cue-side, every change recorded; spend
-cap **$10 total** for the campaign; **a valid pass flips
-`CHAT_AFFORDANCE_CUES` default ON**). Companion to
+Status: **concluded — 2026-07-29, final verdict: valid FAIL ×2, the flag
+parks OFF** (campaign spend $6.29 of the $10 cap; round-by-round record in
+the [trial doc's §Rematch log](body-attribute-affordances.trial.md#rematch-log)).
+Authored the same day after the first live round; owner rulings: full levers —
+matrix + judge + cue-side, every change recorded; spend cap **$10 total**;
+a valid pass would have flipped `CHAT_AFFORDANCE_CUES` default ON.
+The protocol below ran exactly as written: R1 invalid_induction → matrix v2
+→ R2 valid fail → one recorded cue-side change → R3 valid fail → final. Companion to
 [body-attribute-affordances.trial.md](body-attribute-affordances.trial.md)
 (round 1 record) and
 [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)

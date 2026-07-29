@@ -1,34 +1,32 @@
 # Slice 5 narrator trial — cue path vs. appearance path
 
-Status: **complete — deterministic half 2026-07-28, live comparison
-2026-07-29** (run on the replaced `OPENROUTER_API_KEY`; ~$0.72 of spend).
-Companion to [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-§"Slice 5 — narrator trial". Harness: `scripts/eval/affordance-cues/`.
+Status: **closed — final verdict 2026-07-29 after a four-round campaign**
+(first live round $0.72, then the three-round rematch campaign, $6.29 — see
+§Rematch log). Companion to
+[body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
+§"Slice 5 — narrator trial"; rematch protocol:
+[rematch spec](body-attribute-affordances.trial.rematch.md). Harness:
+`scripts/eval/affordance-cues/`.
 
-## Recommendation
+## Recommendation — FINAL
 
-**Keep `CHAT_AFFORDANCE_CUES` OFF.** The live comparison ran on 2026-07-29 and
-the pre-registered decision rule — *contradictions per exchange lower in the cue
-arm, with repetition not higher* — was **not met**: contradictions tied exactly
-(0.13 / exchange in both arms) and repetition rose slightly in the cue arm
-(0.08 vs 0.00). The numbers are in §Live results.
+**`CHAT_AFFORDANCE_CUES` parks OFF.** The rematch campaign reached its
+pre-committed stopping rule on 2026-07-29: two consecutive rounds with a
+VALID induction gate (the matrix demonstrably tempted the control arm into
+contradictions at 0.50 and 0.44 per exchange) in which the cue arm failed the
+frozen decision rule — it never reduced contradictions (R2 −6%, R3 +29%
+relative to control). The consistent mechanism across every round: cues make
+the narrator describe the body more concretely, and more checkable claims
+means more convictable claims. The cue path reliably bought specificity,
+zero repetition (R3), and the elimination of false-premise adoption (R2) —
+real qualities, but not the pre-registered trade ("reduces contradictions").
 
-What the cues bought was specificity (4.38 vs 4.00) — the cue arm talks about
-hair more (1.00 vs 0.71 mentions / exchange) and in more concrete terms — at
-identical naturalness (4.63 both). The blinded judge preferred the control
-transcript 6–4, though the silence controls (byte-identical prompts) also leant
-2–0 toward "control", which puts a visible label-noise floor under that margin.
-
-The honest reading: in this matrix the narrator already avoids the
-contradictions the cue path was built to prevent (a 0.13 / exchange base rate
-leaves almost no headroom), so the cues added detail without fixing anything
-measurable. That is not the trade the plan asked for ("reduces contradictions
-and adds concrete variation without … repetitive"). If the feature earns a
-rematch, the matrix — not the physics — is what should change: scenarios
-engineered to induce contradiction (rapid coverage changes, provenance
-switches, multi-garment layering) would give the cue arm headroom to show a
-difference; a same-model self-consistency judge panel would tighten the 6–4
-read. Until someone chooses to fund that, OFF is the supported state.
+The first live round (below, §Live results) failed for the opposite reason —
+a matrix with no contradiction headroom — and is kept as the record of why
+the rematch campaign existed. Full round-by-round history in §Rematch log.
+A differently-shaped narrator aid (constraint-only cues, change-gated cues)
+would be new design work under a new plan; this flag and this trial are
+closed.
 
 ## Owner rulings (2026-07-28, same day)
 
@@ -340,6 +338,41 @@ protocol — one entry per live round, campaign cap $10.
 - **Next**: round R3 on the same matrix, judge, gate, and rule. A pass flips
   the flag default ON; a second consecutive valid fail is final — the flag
   parks OFF.
+
+### Round R3 — 2026-07-29 — $2.46 (campaign $6.29) — verdict: valid FAIL. **FINAL.**
+
+- **Changed since R2**: the one recorded cue-side change only (cause-true
+  provenance clauses + degree-accurate wetness adjectives). Matrix, judge,
+  gate, rule all frozen.
+- **Induction**: valid again — control 0.44 contradictions/exchange, 5/5
+  families.
+- **Decision rule**: FAIL on the contradiction clause — cues 0.563 vs the
+  0.263 ceiling; the cue arm contradicted MORE than control this round.
+  Repetition passed at its best-ever (cues 0.000 vs 0.031); naturalness
+  passed (4.67 vs 4.89, within the floor); preference tied 4–4–1.
+- **The change worked on its target and it wasn't enough**: provenance went
+  from the worst cue-arm family (0.50 vs 0.25) to dead even (0.13 vs 0.13).
+  But binding flipped against the cues (0.83 vs 0.50, from 0.33 vs 0.50 in
+  R2), assertion regressed to a tie (from the 0.00 vs 0.50 R2 win), and
+  coverage/degree stayed adverse. Dimensions no change touched swung by
+  0.5 c/e between rounds — real sampling variance at this n, which is
+  exactly why the stopping rule was pre-committed.
+- **Final verdict per the frozen protocol (second consecutive valid fail)**:
+  **`CHAT_AFFORDANCE_CUES` parks OFF.** Across both valid rounds the cue arm
+  never reduced contradictions (R2 −6%, R3 +29%). The consistent mechanism:
+  cues make the narrator talk about the body more concretely (specificity up
+  in every round), and more checkable claims means more convictable claims —
+  the cue path's strength IS its liability under a contradiction audit. What
+  the cues demonstrably bought: zero repetitions (R3), the R2 elimination of
+  false-premise adoption, and higher specificity every round — real
+  qualities, but not the trade the plan pre-registered.
+- **What survives the campaign**: the cause-true provenance + degree wording
+  (a measured quality fix, kept in production); the bait+anchor matrix,
+  audit judge, and induction gate (a reusable instrument for any future
+  narrator A/B); and the finding that a cue system shaped like this one
+  trades contradiction-safety for specificity. A differently-shaped feature
+  (constraint-only cues, or cues gated to state-change turns) would be NEW
+  design work under a new plan — this campaign and this flag are closed.
 
 ## Caveats on the method
 
