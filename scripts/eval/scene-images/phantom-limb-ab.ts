@@ -45,6 +45,9 @@ const PRESENT_MIRA = {
   wornVisible: [],
   outfitDescription: "a red bikini top and denim shorts",
   appearance: "Hair color: auburn; Hair length: long; Eye color: green",
+  // Shipped since the 2026-07-29 age ruling (buildCharacterSceneContext sets this
+  // from the sheet in prod) — the probe that measured ~15–20 apparent years.
+  ageAnchor: "Mira is in her late twenties; her skin, hands and legs read smooth and youthful.",
 };
 
 /** Beat 1 (disembodied): the reported Kristin failure — her limbs on a glass, nobody else's. */
@@ -70,14 +73,16 @@ function drinkVariants(): Record<string, string> {
   const shippedFraming = sceneFramingRule({ subjects: ["Mira"] });
   if (!newPrompt.includes(shippedFraming)) throw new Error("expected framing block not found — A/B would not be clean");
 
+  // Historical variants predate the age ruling too — strip the shipped anchor from them.
+  const preAge = newPrompt.replace(` ${PRESENT_MIRA.ageAnchor}`, "");
   return {
     // The OLD variant: the pre-fix negative rule, and the limbs unbound again.
-    old: newPrompt
+    old: preAge
       .replace(shippedFraming, OLD_RULE)
       .replaceAll("Mira's hand ", "one hand ")
       .replaceAll("Mira's finger", "one finger"),
     // The rejected round-1 candidate, kept for the record: enumerated possession.
-    enum: newPrompt.replace(
+    enum: preAge.replace(
       shippedFraming,
       "First-person POV through the player's own eyes; the player's face and body are never in frame. Exactly one person is fully in frame: Mira. Nobody else appears. Every hand, arm, leg and foot in the image belongs to Mira.",
     ),
@@ -119,10 +124,13 @@ function footrubVariants(): Record<string, string> {
   if (!newPrompt.includes("the viewer's own hands")) throw new Error("embodied framing missing from the prompt");
 
   return {
-    // OLD here = the same embodied framing (unchanged by this fix) with the pose limbs
-    // unbound again — isolates what bindLimbsToOwner buys on a contact beat.
-    old: newPrompt.replaceAll("Mira's leg ", "one leg "),
+    // OLD here = pre-fix on both counts: pose limbs unbound and no age anchor.
+    old: newPrompt.replace(` ${PRESENT_MIRA.ageAnchor}`, "").replaceAll("Mira's leg ", "one leg "),
     new: newPrompt,
+    // The pre-age-ruling prompt (owner report: renders read far older than the
+    // sheet's late_twenties) — the shipped anchor stripped back out, for
+    // measuring what it buys.
+    noage: newPrompt.replace(` ${PRESENT_MIRA.ageAnchor}`, ""),
   };
 }
 
