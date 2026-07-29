@@ -27,6 +27,22 @@ _(Nothing active — pick up the top of Next.)_
 
 ## Next (queued)
 
+- **Data lifecycle — chat-scoped deletion, retention sweeps, intentional
+  image orphans** — [data-lifecycle.plan.md](data-lifecycle.plan.md) ·
+  [audit](data-lifecycle.audit.md) (next; planned 2026-07-29 from the live
+  Neon + Fly orphaned-data audit, placed at the top as the security/privacy
+  follow-through the owner asked to start with). Owner ruling: chat-flow data
+  carries a real `chat_id` FK and dies with its chat; **images are the one
+  deliberate exception** (rows/files survive chat *and* character deletion so
+  the Gallery keeps them). Slices: one-time purge of the audited orphans
+  (792 stale jobs, scope-less R6 memory rows, stale provisioning records…),
+  `chat_id` FK columns on `jobs`/`events`/provisioning + backfill, deletion-path
+  changes (drop `deleteEntityImages` on character delete), an in-process daily
+  retention sweep (events/jobs/expired sessions + finally wiring the phantom
+  `image_sweep`), and prod telemetry content minimization (retrieval queries
+  are stored verbatim today). Four open rulings in the plan (hidden chat-image
+  kinds, windows, telemetry content, account deletion).
+
 **Successor world engine (`engine.plan.md`) — foundation AND rollout COMPLETE.**
 All committed gates (0–6) closed 2026-07-16 → 2026-07-21, and the migration &
 rollout plan (R0–R6) shipped 2026-07-21/22 — the engine is the live world
