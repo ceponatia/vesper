@@ -5,9 +5,9 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
-- **Body-attribute visual affordances — slices 0–5: hair vocabulary split,
-  shared affordance core, hair domain, chat-lane owners, flagged narrator
-  cues** —
+- **Body-attribute visual affordances — slices 0–4 + slice 5 wiring: hair
+  vocabulary split, shared affordance core, hair domain, chat-lane owners,
+  flagged narrator cue path (slice 5's comparison trial still pending)** —
   [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) ·
   [architecture spec](body-attribute-affordances.spec.architecture.md) —
   2026-07-28 — `hair.quality` replaced by executable axes (density,

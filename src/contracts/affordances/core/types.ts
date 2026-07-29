@@ -401,6 +401,50 @@ export interface RegisteredAffordanceDomain {
 // Frozen inputs
 // ---------------------------------------------------------------------------
 
+/** The methods that make a `Set` mutable, and the `Map` equivalents. */
+const SET_MUTATOR_NAMES = ["add", "delete", "clear"] as const;
+const MAP_MUTATOR_NAMES = ["set", "delete", "clear"] as const;
+
+/** Narrow to the READ-ONLY view: nothing downstream should hold a writable handle. */
+function isReadonlySet(target: object): target is ReadonlySet<unknown> {
+  return target instanceof Set;
+}
+
+function isReadonlyMap(target: object): target is ReadonlyMap<unknown, unknown> {
+  return target instanceof Map;
+}
+
+/**
+ * Shadow a collection's mutators with own properties that throw.
+ *
+ * `Object.freeze` seals only a value's own PROPERTIES. A `Set`'s and a `Map`'s
+ * contents live in internal slots, so a frozen collection still honours `add`,
+ * `set`, `delete`, and `clear` — the frame's `nominalReach` would advertise a
+ * `ReadonlySet` guardrail it does not have. Own-property shadows are the only
+ * lever the language offers, and they must be installed BEFORE the freeze
+ * because a frozen object is no longer extensible.
+ *
+ * Reads are untouched: `has`, `get`, `size`, and iteration still come from the
+ * prototype.
+ */
+function blockCollectionMutators(target: object, names: readonly string[], label: string): void {
+  for (const name of names) {
+    try {
+      Object.defineProperty(target, name, {
+        value: () => {
+          throw new TypeError(`deepFreeze: cannot ${name}() a frozen ${label}`);
+        },
+        writable: false,
+        enumerable: false,
+        configurable: false,
+      });
+    } catch {
+      // Total by contract: a sealed or exotic collection is left as it is rather
+      // than turning a debug-time guardrail into a thrown read.
+    }
+  }
+}
+
 /**
  * Recursively freeze a value. Freezes the parent BEFORE descending, so a cyclic
  * structure terminates on the `isFrozen` check.
@@ -409,12 +453,33 @@ export interface RegisteredAffordanceDomain {
  * perform no writes": in a module (always strict mode) an assignment to a
  * frozen property throws, so a resolver that tries to cache into its frame
  * fails loudly in test rather than corrupting a later domain's read.
+ *
+ * `Set` and `Map` values are neutralized as well as frozen (see
+ * `blockCollectionMutators`), then recursed into, so a collection reached
+ * through a frame is immutable in the same way every other node is.
  */
 export function deepFreeze<T>(value: T): T {
   if (value === null || typeof value !== "object") return value;
   if (Object.isFrozen(value)) return value;
-  Object.freeze(value);
+  const target = value as unknown as object;
+
+  // Neutralize BEFORE the freeze — `defineProperty` needs an extensible object.
+  if (isReadonlySet(target)) blockCollectionMutators(target, SET_MUTATOR_NAMES, "Set");
+  else if (isReadonlyMap(target)) blockCollectionMutators(target, MAP_MUTATOR_NAMES, "Map");
+
+  Object.freeze(target);
   const record = value as unknown as Record<string, unknown>;
   for (const key of Object.getOwnPropertyNames(record)) deepFreeze(record[key]);
+
+  // Contents last: the parent is already frozen, so a self-referencing collection
+  // terminates on the `isFrozen` check just as a self-referencing object does.
+  if (isReadonlySet(target)) {
+    for (const element of target) deepFreeze(element);
+  } else if (isReadonlyMap(target)) {
+    for (const [entryKey, entryValue] of target) {
+      deepFreeze(entryKey);
+      deepFreeze(entryValue);
+    }
+  }
   return value;
 }

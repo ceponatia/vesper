@@ -23,6 +23,7 @@ import {
   emptyAffordanceCueState,
   applyEnvironmentProposal,
   applySurfaceWetnessProposals,
+  parseSurfaceWetnessProposals,
   bodySurfaceStateSchema,
   chatEnvironmentSchema,
   emptyBodySurfaceState,
@@ -2074,10 +2075,18 @@ export async function finalizeChatState(input: {
     ...(archivist.value ? { proposal: archivist.value.environment } : {}),
     atMinutes: input.scenario.clockMinutes,
   });
+  // The environment patch lands FIRST and the surface fold integrates against
+  // the result, so an exchange that opens a downpour holds this exchange's
+  // wetness rather than drying it under the sky it was standing in a moment ago.
   const surfaceFold = applySurfaceWetnessProposals({
     surface: input.driftedState.bodySurface,
-    proposals: archivist.value?.surfaceWetness ?? [],
+    proposals: parseSurfaceWetnessProposals(
+      archivist.value?.surfaceWetness ?? [],
+      input.sink,
+      "chat_archivist.surfaceWetness",
+    ),
     atMinutes: input.scenario.clockMinutes,
+    environment: environmentFold.environment,
     sink: input.sink,
   });
   const surfaceTrace: ChatSurfaceTraceEntry[] = [...environmentFold.trace, ...surfaceFold.trace];

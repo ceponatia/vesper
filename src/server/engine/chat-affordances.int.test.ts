@@ -2,8 +2,15 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { chatContinuitySchema, type ChatArchivist } from "@/contracts/turns/chat-archivist";
-import { CHAT_SURFACE_LOCATION_UNKNOWN } from "@/contracts/turns/chat-surface-ops";
-import { bodySurfaceWetnessAt, emptyBodySurfaceState } from "@/contracts/state/body-surface";
+import { CHAT_SURFACE_LOCATION_UNKNOWN, CHAT_SURFACE_PROPOSAL_INVALID } from "@/contracts/turns/chat-surface-ops";
+import { AFFORDANCE_INPUT_INVALID } from "@/contracts/affordances/core";
+import {
+  bodySurfaceWetnessAt,
+  bodySurfaceWetnessEntry,
+  BODY_SURFACE_INVALID_ENTRY,
+  emptyBodySurfaceState,
+  type BodySurfaceState,
+} from "@/contracts/state/body-surface";
 import { hairAttributeFixture } from "@/contracts/affordances/domains/hair/fixtures";
 import { characterChatState, characterChats, db } from "@/server/db";
 
@@ -75,6 +82,12 @@ function continuity(raw: unknown): ChatArchivist {
   return chatArchivist(chatContinuitySchema.parse(raw));
 }
 
+/** The wetness read, collapsed for assertions: a level, or the literal "invalid". */
+function level(surface: BodySurfaceState, locationId: string, atMinutes: number) {
+  const read = bodySurfaceWetnessAt(surface, locationId, atMinutes);
+  return read.status === "known" ? read.level : "invalid";
+}
+
 /** Hair with something to say once it is wet — the domain's own attribute fixture. */
 const HAIR_ATTRIBUTES = hairAttributeFixture({
   length: "shoulder_length",
@@ -114,8 +127,8 @@ describe.runIf(ready)("the extraction commits weather and wetness", () => {
     const { scenario, state } = await settleChatExchange(fixture, { chat });
 
     expect(scenario?.environment).toMatchObject({ wind: "gusting", precipitation: "downpour", indoors: false });
-    expect(state && bodySurfaceWetnessAt(state.bodySurface, "hair", scenario?.clockMinutes ?? 0)).toBe(10_000);
-    expect(state?.bodySurface.wetness.hair?.cause).toBe("rain");
+    expect(state && level(state.bodySurface, "hair", scenario?.clockMinutes ?? 0)).toBe(10_000);
+    expect(state && bodySurfaceWetnessEntry(state.bodySurface, "hair")).toMatchObject({ cause: "rain" });
   });
 
   it("a patch changes only the keys it names, and a quiet exchange changes nothing", async () => {
@@ -150,6 +163,9 @@ describe.runIf(ready)("the extraction commits weather and wetness", () => {
         surfaceWetness: [
           { location: "left_elbow", direction: "increase", degree: 2 },
           "soaked",
+          // A hallucinated magnitude fails the ITEM — it must not become a real
+          // 50% wetness change, which is what `.catch(2)` used to make it.
+          { location: "hair", direction: "increase", degree: 999, cause: "rain" },
           { location: "hair", direction: "increase", degree: 2, cause: "splash" },
         ],
       }),
@@ -160,8 +176,59 @@ describe.runIf(ready)("the extraction commits weather and wetness", () => {
     expect(outcome.presenceChanges).toEqual([]);
     expect(scenario?.environment).toMatchObject({ wind: "none", indoors: false });
     expect(state?.bodySurface.wetness.left_elbow).toBeUndefined();
-    expect(state && bodySurfaceWetnessAt(state.bodySurface, "hair", scenario?.clockMinutes ?? 0)).toBe(5_000);
-    expect(sink.items.map((d) => d.code)).toContain(CHAT_SURFACE_LOCATION_UNKNOWN);
+    // Only the ONE good hair item landed: 5_000, not 5_000 + a repaired 5_000.
+    expect(state && level(state.bodySurface, "hair", scenario?.clockMinutes ?? 0)).toBe(5_000);
+    expect(state && bodySurfaceWetnessEntry(state.bodySurface, "hair")).toMatchObject({ cause: "splash" });
+    const codes = sink.items.map((d) => d.code);
+    expect(codes).toContain(CHAT_SURFACE_LOCATION_UNKNOWN);
+    expect(codes).toContain(CHAT_SURFACE_PROPOSAL_INVALID);
+  });
+
+  it("standing outdoor rain HOLDS the soaking across quiet exchanges", async () => {
+    const chat = await newChat(fixture);
+    mock.archivist = {
+      value: continuity({
+        environment: { precipitation: "downpour", indoors: false },
+        surfaceWetness: [{ location: "hair", direction: "increase", degree: 3, cause: "rain" }],
+      }),
+      degraded: false,
+    };
+    const first = await settleChatExchange(fixture, { chat });
+    expect(first.state && level(first.state.bodySurface, "hair", first.scenario?.clockMinutes ?? 0)).toBe(10_000);
+    if (!first.scenario || !first.state) return;
+
+    // Four story hours later — enough to dry a saturated head right out — with the
+    // rain still falling and no proposal at all. She is still soaked.
+    const laterClock = first.scenario.clockMinutes + 4 * 60;
+    mock.archivist = { value: continuity({}), degraded: false };
+    const held = await settleChatExchange(fixture, {
+      chat,
+      scenario: { ...first.scenario, clockMinutes: laterClock },
+      driftedState: first.state,
+    });
+    expect(held.scenario?.environment).toMatchObject({ precipitation: "downpour", indoors: false });
+    // The committed entry is untouched — not dried down, not pruned away — and the
+    // adapter's read (which applies the same suspension) still sees a soaked head.
+    expect(held.state && bodySurfaceWetnessEntry(held.state.bodySurface, "hair")).toEqual({
+      level: 10_000,
+      updatedAtMinutes: first.scenario.clockMinutes,
+      cause: "rain",
+    });
+    expect(held.scenario && held.state && readFor(held.scenario, held.state).read.observations.map((o) => o.id)).toContain(
+      "hair.wet_clumping",
+    );
+
+    // She steps inside on the SAME exchange the clock advances: the environment
+    // patch lands first, so the integration uses the sky she ends under and dries.
+    if (!held.scenario || !held.state) return;
+    const dryClock = laterClock + 4 * 60;
+    mock.archivist = { value: continuity({ environment: { precipitation: "none", indoors: true } }), degraded: false };
+    const dried = await settleChatExchange(fixture, {
+      chat,
+      scenario: { ...held.scenario, clockMinutes: dryClock },
+      driftedState: held.state,
+    });
+    expect(dried.state?.bodySurface.wetness.hair).toBeUndefined();
   });
 });
 
@@ -264,7 +331,67 @@ describe.runIf(ready)("corrupt jsonb degrades without costing the turn", () => {
       degraded: false,
     };
     const healed = await settleChatExchange(fixture, { chat, ...(corrupt ? { driftedState: corrupt } : {}) });
-    expect(healed.state?.bodySurface.wetness.hair?.cause).toBe("splash");
+    expect(healed.state && bodySurfaceWetnessEntry(healed.state.bodySurface, "hair")).toMatchObject({ cause: "splash" });
+  });
+
+  it("a corrupt ENTRY is quarantined, not healed to dry — the domain falls silent", async () => {
+    const chat = await newChat(fixture);
+    mock.archivist = {
+      value: continuity({
+        environment: { wind: "gusting", indoors: false },
+        surfaceWetness: [{ location: "hair", direction: "increase", degree: 3, cause: "rain" }],
+      }),
+      degraded: false,
+    };
+    await settleChatExchange(fixture, { chat });
+    // One location's level goes bad; a sibling location stays perfectly good.
+    await db().execute(
+      sql`update ${characterChatState} set body_surface = '{"wetness":{"hair":{"level":"soaked","updatedAtMinutes":3},"chest":{"level":4000,"updatedAtMinutes":1}}}'::jsonb where chat_id = ${chat.chatId}`,
+    );
+
+    const loadSink = new DiagnosticCollector();
+    const scenario = await loadChatScenario(chat.chatId, loadSink);
+    const corrupt = await loadChatState(chat.chatId, fixture.characterId, loadSink);
+    expect(scenario).not.toBeNull();
+    expect(corrupt).not.toBeNull();
+    if (!scenario || !corrupt) return;
+    // The COLUMN parsed fine — this is per-entry damage, so there is no boundary
+    // failure to report. The read is where it has to become visible.
+    expect(loadSink.items.filter((d) => d.code === "parse.boundary_failed")).toEqual([]);
+    expect(corrupt.bodySurface.wetness.hair).toEqual(BODY_SURFACE_INVALID_ENTRY);
+    expect(level(corrupt.bodySurface, "hair", scenario.clockMinutes)).toBe("invalid");
+    // The good sibling survived its neighbour's corruption.
+    expect(level(corrupt.bodySurface, "chest", 1)).toBe(4_000);
+    // …and an unrecorded location is still honestly DRY, which is the distinction.
+    expect(level(corrupt.bodySurface, "left_hand", 1)).toBe(0);
+
+    const readSink = new DiagnosticCollector();
+    const read = buildChatAffordanceRead({
+      subjectId: fixture.characterId,
+      attributes: HAIR_ATTRIBUTES,
+      wardrobe: { worn: [] },
+      bodySurface: corrupt.bodySurface,
+      environment: { ...scenario.environment, wind: "gusting", indoors: false },
+      clockMinutes: scenario.clockMinutes,
+      sink: readSink,
+    });
+    // Silence, not a wind cue off a level that "healed" to dry.
+    expect(read.read.observations).toEqual([]);
+    expect(read.read.suppressed.every((entry) => entry.code === AFFORDANCE_INPUT_INVALID)).toBe(true);
+    expect(
+      readSink.items.find(
+        (d) => d.code === AFFORDANCE_INPUT_INVALID && d.path === "character_chat_state.body_surface",
+      )?.severity,
+    ).toBe("warn");
+
+    // The next authoritative write HEALS it, and the exchange settles as normal.
+    mock.archivist = {
+      value: continuity({ surfaceWetness: [{ location: "hair", direction: "increase", degree: 2, cause: "splash" }] }),
+      degraded: false,
+    };
+    const healed = await settleChatExchange(fixture, { chat, scenario, driftedState: corrupt });
+    expect(healed.state && bodySurfaceWetnessEntry(healed.state.bodySurface, "hair")).toMatchObject({ cause: "splash" });
+    expect(healed.state && level(healed.state.bodySurface, "hair", scenario.clockMinutes)).toBe(5_000);
   });
 
   it("a bad environment blob reads indoors/still/dry with the diagnostic", async () => {

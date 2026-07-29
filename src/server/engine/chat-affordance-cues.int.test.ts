@@ -1,11 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import {
-  emptyAffordanceCueState,
-  AFFORDANCE_CUES_PER_EXCHANGE,
-  AFFORDANCE_PERCEPTION_HIDDEN,
-  type AffordanceCueState,
-} from "@/contracts/affordances/core";
+import { emptyAffordanceCueState, AFFORDANCE_CUES_PER_EXCHANGE, type AffordanceCueState } from "@/contracts/affordances/core";
 import { hairAttributeFixture } from "@/contracts/affordances/domains/hair/fixtures";
 import { garmentActorForCharacter } from "@/contracts/items/garment-store";
 import { bodySurfaceWetnessAt } from "@/contracts/state/body-surface";
@@ -215,7 +210,7 @@ describe.runIf(ready)("the flag — off is today, to the character", () => {
     expect(prompt).not.toContain(CUE_HEADING);
     // The soaking really is on the row — the flag is hiding the read, not the state.
     const { state } = await storedCut(chat);
-    expect(bodySurfaceWetnessAt(state.bodySurface, "hair", 0)).toBeGreaterThan(0);
+    expect(bodySurfaceWetnessAt(state.bodySurface, "hair", 0)).toEqual({ status: "known", level: 10_000 });
     // …and the wardrobe phrase is untouched, so nothing about today moved.
     expect(prompt).toContain("You're wearing");
   });
@@ -298,21 +293,31 @@ describe.runIf(ready)("the repeat gate, through jsonb", () => {
 });
 
 describe.runIf(ready)("the perception gate", () => {
-  it("hair under an opaque hat resolves and is never offered", async () => {
+  it("an opaque hat only HINTS — the wet hair under it still reaches the narrator", async () => {
     process.env.CHAT_AFFORDANCE_CUES = "on";
     const chat = await rainedOnChat([shirtId(), hatId()]);
     const prompt = await narratorPrompt(chat);
     // The hat is genuinely on her, and the hair is genuinely wet.
     expect(prompt).toContain("wool hat");
     const cut = await storedCut(chat);
-    expect(bodySurfaceWetnessAt(cut.state.bodySurface, "hair", 0)).toBeGreaterThan(0);
-    // The physical read still resolves — perception is what drops it, which is
-    // the slice-4 law showing up at the prompt.
+    const wetness = bodySurfaceWetnessAt(cut.state.bodySurface, "hair", 0);
+    expect(wetness).toEqual({ status: "known", level: expect.any(Number) });
+    expect(wetness.status === "known" && wetness.level).toBeGreaterThan(0);
+
+    // Review finding 5: an ordinary hat leaves ends and fringe visible, and the
+    // mechanics already model that (`coveredFraction` 0.9, not 1.0). Perception no
+    // longer contradicts them by hiding the whole location, so the clumping cue —
+    // which coverage does NOT damp — is offered.
     const read = await readFor(cut.scenario, cut.state);
-    expect(read.read.suppressed.find((entry) => entry.phenomenonId === "hair.wet_clumping")?.code).toBe(
-      AFFORDANCE_PERCEPTION_HIDDEN,
+    expect(read.read.observations.map((entry) => entry.id)).toContain("hair.wet_clumping");
+    expect(prompt).toContain(CUE_HEADING);
+    expect(prompt).toContain(CLEAR_CLUMPING);
+
+    // What the hat DOES silence, it silences for a physical reason the mechanics
+    // name — not because an observer was told nothing about the location.
+    expect(read.read.suppressed.find((entry) => entry.phenomenonId === "hair.wind_or_motion_response")?.code).toBe(
+      "no_current_force",
     );
-    expect(prompt).not.toContain(CUE_HEADING);
   });
 });
 

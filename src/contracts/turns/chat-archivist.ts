@@ -130,9 +130,12 @@ export const chatArchivistSchema = z.object({
    * half of the input the hair domain had no owner for.
    *
    * Semantic, never numeric — a direction plus a coarse degree, mapped onto fixed
-   * point by `SURFACE_WETNESS_DEGREE_DELTA`. Item-lenient, capped, and an unowned
-   * location drops with `chat_surface.location_unknown` rather than minting state
-   * nothing reads. `[]` is the overwhelming common case.
+   * point by `SURFACE_WETNESS_DEGREE_DELTA`. Carried **raw** here on purpose: the
+   * per-item parse is `parseSurfaceWetnessProposals`, which needs a sink to report
+   * the items it drops (`chat_surface.proposal_invalid`) — a schema-level
+   * transform would have discarded them with nobody to tell. An unowned location
+   * then drops at the fold with `chat_surface.location_unknown` rather than
+   * minting state nothing reads. `[]` is the overwhelming common case.
    */
   surfaceWetness: surfaceWetnessProposalListSchema,
   /**

@@ -13,9 +13,10 @@ import {
  * (hair spec §"Phenomena").
  *
  * The rain cause is the delicate part: damp hair is damp whatever wet it, so a
- * rain tag is attached ONLY when a committed rain/immersion event is in the
- * frame. Otherwise the read says the hair is wet and stays silent about why —
- * inventing the cause is how a bathhouse scene acquires weather.
+ * rain tag is attached ONLY when a committed `rain_exposure` event is in the
+ * frame. An immersion or a splash wets the hair just as thoroughly and licenses
+ * NO cause tag — otherwise the read says the hair is wet and stays silent about
+ * why. Inventing the cause is how a bathhouse scene acquires weather.
  */
 
 export const HAIR_WET_CLUMPING_ID = "hair.wet_clumping";
@@ -77,7 +78,7 @@ export const hairWetClumping = defineAffordancePhenomenon<HairAffordanceFrame, W
     if (input.contamination !== undefined && input.contamination.level >= CONTAMINATED_MIN) {
       semanticTags.push("contaminated");
     }
-    // Provenance, not inference: only a committed exposure event may say "rain".
+    // Provenance, not inference: only a committed rain event may say "rain".
     if (input.recentEvents.some(isHairRainEvent)) semanticTags.push("recent_rain");
 
     return {

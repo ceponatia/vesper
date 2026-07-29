@@ -22,6 +22,7 @@ import {
 } from "./attribute-maps";
 import type { HairArrangement } from "./mechanics";
 import type { HairLanePayload } from "./domain";
+import { hairRainEventKinds, isHairRainEvent } from "./frame";
 import {
   hairAttributeFixture,
   readHairAffordances,
@@ -132,17 +133,35 @@ describe("hair.wet_clumping", () => {
     ]);
   });
 
-  it("attaches a rain cause ONLY when a committed exposure event supports it", () => {
+  it("attaches a rain cause ONLY when a committed rain event supports it", () => {
     const withRain = observed(read({ payload: payloadFor({ events: [{ kind: "rain_exposure", atStoryTime: 3 }] }) }), HAIR_WET_CLUMPING_ID);
     expect(withRain?.semanticTags).toContain("recent_rain");
-
-    const withImmersion = observed(read({ payload: payloadFor({ events: [{ kind: "immersion", atStoryTime: 3 }] }) }), HAIR_WET_CLUMPING_ID);
-    expect(withImmersion?.semanticTags).toContain("recent_rain");
 
     // Equally wet, but nothing in the frame says weather.
     const withSplash = observed(read({ payload: payloadFor({ events: [{ kind: "splash", atStoryTime: 3 }] }) }), HAIR_WET_CLUMPING_ID);
     expect(withSplash?.semanticTags).not.toContain("recent_rain");
     expect(observed(read(), HAIR_WET_CLUMPING_ID)?.semanticTags).not.toContain("recent_rain");
+  });
+
+  it("wets the hair on immersion WITHOUT calling it rain — a bath is not weather", () => {
+    const bathed = observed(
+      read({ payload: payloadFor({ events: [{ kind: "immersion", atStoryTime: 3 }] }) }),
+      HAIR_WET_CLUMPING_ID,
+    );
+    // The wet read itself is unaffected: immersion is a real wetting event.
+    expect(bathed?.intensityBand).toBe("clear");
+    expect(bathed?.semanticTags).toContain("wet_darkened_relative_to_base");
+    // ...but it licenses no cause, so the narrator cannot say "wet from the rain".
+    expect(bathed?.semanticTags).not.toContain("recent_rain");
+    // The ONLY difference from the causeless case is that there is no difference.
+    expect(bathed?.semanticTags).toEqual(observed(read(), HAIR_WET_CLUMPING_ID)?.semanticTags);
+  });
+
+  it("names rain_exposure as the only rain-licensing event kind", () => {
+    expect(hairRainEventKinds).toEqual(["rain_exposure"]);
+    expect(isHairRainEvent({ kind: "immersion", atStoryTime: 3 })).toBe(false);
+    expect(isHairRainEvent({ kind: "splash", atStoryTime: 3 })).toBe(false);
+    expect(isHairRainEvent({ kind: "rain_exposure", atStoryTime: 3 })).toBe(true);
   });
 
   it("reads a braid as one bound mass and loose hair as strands", () => {

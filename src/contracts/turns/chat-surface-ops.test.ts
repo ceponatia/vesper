@@ -1,21 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "../diagnostics";
 import {
+  bodySurfaceStateSchema,
   bodySurfaceWetnessAt,
   bodySurfaceWetnessEntry,
+  BODY_SURFACE_INVALID_ENTRY,
   BODY_SURFACE_UNIT_ONE,
   emptyBodySurfaceState,
   setBodySurfaceWetness,
+  type BodySurfaceState,
 } from "../state/body-surface";
-import { emptyChatEnvironment } from "../state/chat-environment";
+import { emptyChatEnvironment, type ChatEnvironment } from "../state/chat-environment";
 import {
   applyEnvironmentProposal,
   applySurfaceWetnessProposals,
   chatEnvironmentProposalSchema,
   CHAT_SURFACE_LOCATION_UNKNOWN,
+  CHAT_SURFACE_PROPOSAL_INVALID,
   CHAT_SURFACE_WETNESS_MAX,
+  parseSurfaceWetnessProposals,
   SURFACE_WETNESS_DEGREE_DELTA,
-  surfaceWetnessProposalListSchema,
+  surfaceDryingSuspended,
   type SurfaceWetnessProposal,
 } from "./chat-surface-ops";
 
@@ -34,6 +39,14 @@ const wet = (over: Partial<SurfaceWetnessProposal> = {}): SurfaceWetnessProposal
   ...over,
 });
 
+const DOWNPOUR: ChatEnvironment = { wind: "none", precipitation: "downpour", indoors: false, updatedAtMinutes: 0 };
+
+/** The read, collapsed for assertions: a level, or the literal "invalid". */
+function level(state: BodySurfaceState, locationId: string, atMinutes: number) {
+  const read = bodySurfaceWetnessAt(state, locationId, atMinutes);
+  return read.status === "known" ? read.level : "invalid";
+}
+
 describe("the proposal schemas are lenient per field and per item", () => {
   it("drops an out-of-vocabulary environment field, keeping the good ones", () => {
     expect(chatEnvironmentProposalSchema.parse({ wind: "typhoon", precipitation: "rain" })).toEqual({
@@ -43,24 +56,62 @@ describe("the proposal schemas are lenient per field and per item", () => {
     expect(chatEnvironmentProposalSchema.parse(undefined)).toEqual({});
   });
 
-  it("drops only the malformed wetness items", () => {
-    const parsed = surfaceWetnessProposalListSchema.parse([
-      { location: "hair", direction: "increase", degree: 3, cause: "rain" },
-      { location: "hair", direction: "sideways", degree: 1 },
-      "soaked",
-      { location: "hair", direction: "decrease", degree: 9 },
+  it("drops the malformed wetness items and REPORTS the drop", () => {
+    const sink = new DiagnosticCollector();
+    const parsed = parseSurfaceWetnessProposals(
+      [
+        { location: "hair", direction: "increase", degree: 3, cause: "rain" },
+        { location: "hair", direction: "sideways", degree: 1 },
+        "soaked",
+        // A hallucinated magnitude is NOT repaired to the middle band — repairing
+        // it would commit a 50% change nobody proposed.
+        { location: "hair", direction: "decrease", degree: 999 },
+      ],
+      sink,
+      "chat_archivist.surfaceWetness",
+    );
+    expect(parsed).toEqual([{ location: "hair", direction: "increase", degree: 3, cause: "rain" }]);
+    const dropped = sink.items.find((d) => d.code === CHAT_SURFACE_PROPOSAL_INVALID);
+    expect(dropped?.severity).toBe("warn");
+    expect(dropped?.path).toBe("chat_archivist.surfaceWetness");
+    expect(dropped?.context).toMatchObject({ dropped: 3, kept: 1 });
+  });
+
+  it("keeps a bad CAUSE, which is provenance only, and stays silent about it", () => {
+    const sink = new DiagnosticCollector();
+    expect(parseSurfaceWetnessProposals([{ location: "hair", direction: "increase", degree: 1, cause: "typhoon" }], sink)).toEqual([
+      { location: "hair", direction: "increase", degree: 1 },
     ]);
-    expect(parsed).toEqual([
-      { location: "hair", direction: "increase", degree: 3, cause: "rain" },
-      // An out-of-range degree catches to the middle band; the proposal survives.
-      { location: "hair", direction: "decrease", degree: 2 },
-    ]);
+    expect(sink.items).toEqual([]);
   });
 
   it("caps the list and heals a non-array", () => {
     const many = Array.from({ length: CHAT_SURFACE_WETNESS_MAX + 3 }, () => wet());
-    expect(surfaceWetnessProposalListSchema.parse(many)).toHaveLength(CHAT_SURFACE_WETNESS_MAX);
-    expect(surfaceWetnessProposalListSchema.parse("nope")).toEqual([]);
+    expect(parseSurfaceWetnessProposals(many)).toHaveLength(CHAT_SURFACE_WETNESS_MAX);
+    expect(parseSurfaceWetnessProposals("nope")).toEqual([]);
+    expect(parseSurfaceWetnessProposals(undefined)).toEqual([]);
+  });
+});
+
+describe("a malformed degree never becomes state", () => {
+  it("degree 999 changes nothing and files the diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const proposals = parseSurfaceWetnessProposals(
+      [
+        { location: "hair", direction: "increase", degree: 999, cause: "rain" },
+        { location: "hair", direction: "increase", degree: 1, cause: "splash" },
+      ],
+      sink,
+    );
+    const { surface } = applySurfaceWetnessProposals({
+      surface: emptyBodySurfaceState(),
+      proposals,
+      atMinutes: 4,
+      sink,
+    });
+    // The good sibling in the SAME list still applies — item-lenient, not list-lenient.
+    expect(level(surface, "hair", 4)).toBe(SURFACE_WETNESS_DEGREE_DELTA[1]);
+    expect(sink.items.map((d) => d.code)).toContain(CHAT_SURFACE_PROPOSAL_INVALID);
   });
 });
 
@@ -93,8 +144,8 @@ describe("applySurfaceWetnessProposals", () => {
       proposals: [wet({ degree: 1, cause: "splash" })],
       atMinutes: 10,
     });
-    expect(bodySurfaceWetnessAt(surface, "hair", 10)).toBe(SURFACE_WETNESS_DEGREE_DELTA[1]);
-    expect(bodySurfaceWetnessEntry(surface, "hair")?.cause).toBe("splash");
+    expect(level(surface, "hair", 10)).toBe(SURFACE_WETNESS_DEGREE_DELTA[1]);
+    expect(bodySurfaceWetnessEntry(surface, "hair")).toMatchObject({ cause: "splash" });
     expect(trace[0]?.outcome).toBe("applied");
 
     const saturated = applySurfaceWetnessProposals({
@@ -102,7 +153,7 @@ describe("applySurfaceWetnessProposals", () => {
       proposals: [wet({ degree: 3, cause: "immersion" })],
       atMinutes: 10,
     });
-    expect(bodySurfaceWetnessAt(saturated.surface, "hair", 10)).toBe(BODY_SURFACE_UNIT_ONE);
+    expect(level(saturated.surface, "hair", 10)).toBe(BODY_SURFACE_UNIT_ONE);
   });
 
   it("a decrease clamps at dry and drops the stale cause with the entry", () => {
@@ -117,7 +168,7 @@ describe("applySurfaceWetnessProposals", () => {
       proposals: [wet({ direction: "decrease", degree: 3 })],
       atMinutes: 5,
     });
-    expect(bodySurfaceWetnessAt(surface, "hair", 5)).toBe(0);
+    expect(level(surface, "hair", 5)).toBe(0);
     expect(bodySurfaceWetnessEntry(surface, "hair")).toBeUndefined();
   });
 
@@ -135,7 +186,7 @@ describe("applySurfaceWetnessProposals", () => {
       proposals: [wet({ direction: "decrease", degree: 1 })],
       atMinutes: HOUR,
     });
-    expect(bodySurfaceWetnessAt(surface, "hair", HOUR)).toBe(7_000 - SURFACE_WETNESS_DEGREE_DELTA[1]);
+    expect(level(surface, "hair", HOUR)).toBe(7_000 - SURFACE_WETNESS_DEGREE_DELTA[1]);
   });
 
   it("rejects an unowned location with the stable code, and keeps going", () => {
@@ -148,7 +199,7 @@ describe("applySurfaceWetnessProposals", () => {
     });
     expect(trace[0]).toMatchObject({ target: "left_elbow", outcome: "rejected", code: CHAT_SURFACE_LOCATION_UNKNOWN });
     expect(surface.wetness.left_elbow).toBeUndefined();
-    expect(bodySurfaceWetnessAt(surface, "hair", 3)).toBe(SURFACE_WETNESS_DEGREE_DELTA[2]);
+    expect(level(surface, "hair", 3)).toBe(SURFACE_WETNESS_DEGREE_DELTA[2]);
     expect(sink.items.map((d) => d.code)).toContain(CHAT_SURFACE_LOCATION_UNKNOWN);
   });
 
@@ -167,6 +218,93 @@ describe("applySurfaceWetnessProposals", () => {
     const { surface: pruned } = applySurfaceWetnessProposals({ surface, proposals: [], atMinutes: HOUR });
     expect(pruned.wetness.hair).toBeUndefined();
     // …which changes no read: absent and zero are the same answer.
-    expect(bodySurfaceWetnessAt(pruned, "hair", HOUR)).toBe(bodySurfaceWetnessAt(surface, "hair", HOUR));
+    expect(level(pruned, "hair", HOUR)).toBe(level(surface, "hair", HOUR));
+  });
+});
+
+describe("standing outdoor rain holds wetness instead of drying it", () => {
+  const soaked = setBodySurfaceWetness(emptyBodySurfaceState(), {
+    locationId: "hair",
+    level: BODY_SURFACE_UNIT_ONE,
+    atMinutes: 0,
+    cause: "rain",
+  });
+
+  it("suspends drying only outdoors, and only while something is falling", () => {
+    expect(surfaceDryingSuspended(DOWNPOUR)).toBe(true);
+    expect(surfaceDryingSuspended({ ...DOWNPOUR, indoors: true })).toBe(false);
+    expect(surfaceDryingSuspended({ ...DOWNPOUR, precipitation: "none" })).toBe(false);
+    expect(surfaceDryingSuspended(emptyChatEnvironment())).toBe(false);
+  });
+
+  it("a quiet exchange in a downpour holds the soaking; the same exchange indoors dries it", () => {
+    // Three story hours of rain and no proposal at all: she is still soaked, and
+    // the entry is not pruned out from under the next read either.
+    const held = applySurfaceWetnessProposals({
+      surface: soaked,
+      proposals: [],
+      atMinutes: 3 * HOUR,
+      environment: DOWNPOUR,
+    });
+    expect(held.surface).toBe(soaked);
+    expect(bodySurfaceWetnessAt(held.surface, "hair", 3 * HOUR, { suspendDrying: true })).toEqual({
+      status: "known",
+      level: BODY_SURFACE_UNIT_ONE,
+    });
+
+    // Under cover, the identical fold dries exactly as it always did.
+    const dried = applySurfaceWetnessProposals({
+      surface: soaked,
+      proposals: [],
+      atMinutes: 3 * HOUR,
+      environment: { ...DOWNPOUR, indoors: true },
+    });
+    expect(level(dried.surface, "hair", 3 * HOUR)).toBe(BODY_SURFACE_UNIT_ONE - 3 * 3_000);
+    // …and an absent environment is the pre-review behaviour: no suspension.
+    const noEnvironment = applySurfaceWetnessProposals({ surface: soaked, proposals: [], atMinutes: 3 * HOUR });
+    expect(noEnvironment.surface).toEqual(dried.surface);
+  });
+
+  it("holding never RAISES the level — only a proposal can", () => {
+    const damp = setBodySurfaceWetness(emptyBodySurfaceState(), { locationId: "hair", level: 3_000, atMinutes: 0 });
+    const { surface } = applySurfaceWetnessProposals({
+      surface: damp,
+      proposals: [],
+      atMinutes: 5 * HOUR,
+      environment: DOWNPOUR,
+    });
+    expect(bodySurfaceWetnessAt(surface, "hair", 5 * HOUR, { suspendDrying: true })).toEqual({ status: "known", level: 3_000 });
+  });
+
+  it("a decrease in the rain still lands on the HELD level, not a dried one", () => {
+    const { surface } = applySurfaceWetnessProposals({
+      surface: soaked,
+      proposals: [wet({ direction: "decrease", degree: 1 })],
+      atMinutes: 3 * HOUR,
+      environment: DOWNPOUR,
+    });
+    // 10_000 held (not dried to 1_000) minus the "slight" band.
+    expect(level(surface, "hair", 3 * HOUR)).toBe(BODY_SURFACE_UNIT_ONE - SURFACE_WETNESS_DEGREE_DELTA[1]);
+  });
+});
+
+describe("a quarantined location", () => {
+  const quarantined = bodySurfaceStateSchema.parse({ wetness: { hair: 42 } });
+
+  it("survives a quiet exchange — the fold never launders it into dry", () => {
+    const { surface } = applySurfaceWetnessProposals({ surface: quarantined, proposals: [], atMinutes: 500 });
+    expect(surface.wetness.hair).toEqual(BODY_SURFACE_INVALID_ENTRY);
+    expect(level(surface, "hair", 500)).toBe("invalid");
+  });
+
+  it("is HEALED by a proposal — a fresh authoritative write replaces the marker", () => {
+    const { surface, trace } = applySurfaceWetnessProposals({
+      surface: quarantined,
+      proposals: [wet({ degree: 2, cause: "rain" })],
+      atMinutes: 12,
+    });
+    expect(level(surface, "hair", 12)).toBe(SURFACE_WETNESS_DEGREE_DELTA[2]);
+    expect(bodySurfaceWetnessEntry(surface, "hair")).toEqual({ level: 5_000, updatedAtMinutes: 12, cause: "rain" });
+    expect(trace[0]).toMatchObject({ target: "hair", outcome: "applied", detail: "invalid → 5000 (rain)" });
   });
 });
