@@ -22,7 +22,16 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-_(Nothing active — pick up the top of Next.)_
+- **Affordance-cue trial rematch — bait+anchor matrix, audit judging,
+  iterate to a verdict** —
+  [body-attribute-affordances.trial.rematch.md](body-attribute-affordances.trial.rematch.md)
+  (active; authored 2026-07-29 after round 1's decision rule failed for lack
+  of contradiction headroom). Owner rulings 2026-07-29: full iteration levers
+  (matrix + judge + cue-side, every change recorded), $10 campaign cap, and a
+  valid pass flips `CHAT_AFFORDANCE_CUES` **default ON**. Five bait families
+  engineer the headroom; an induction gate keeps iteration honest (tune the
+  instrument, then let it decide); two consecutive valid fails park the flag
+  OFF for good.
 
 ## Next (queued)
 
