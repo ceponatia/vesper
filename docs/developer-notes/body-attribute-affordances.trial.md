@@ -168,11 +168,16 @@ exchanges carry no feature signal by construction:
 | specificity (1–5) | **4.38** | 4.00 |
 | naturalness (1–5) | 4.63 | 4.63 |
 | hair mentions | 1.00 | 0.71 |
-| judge preference (scenarios) | 4 | **6** (0 ties) |
+| judge preference — cue scenarios only | 4 | 4 (0 ties) |
+| judge preference — incl. the 2 silence controls | 4 | **6** |
 
 The silence controls — where both arms received byte-identical prompts, so any
 preference is pure label/sampling noise — went 2–0 to "control", which is the
-noise floor to hold under the 6–4 headline.
+noise floor — and both of the "6"'s extra control picks came from exactly
+those two scenarios, so among scenarios where the arms actually differed the
+preference was a dead 4–4 tie. (The round-1 runner pooled the buckets; the
+rematch runner reports them separately. Flagged by an automated PR review,
+corrected here — the pooled figure overstated the control lean.)
 
 Against the decision rule (§Re-running it): contradictions were **not** lower
 and repetition **was** higher — the rule fails on both clauses. The specificity
