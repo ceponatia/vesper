@@ -5,6 +5,25 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Body-attribute visual affordances — slice 6 (garment second domain) +
+  developer preview + slice 5 trial harness/deterministic run** —
+  [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) ·
+  [garment spec](body-attribute-affordances.spec.garment-interaction.md) ·
+  [trial report](body-attribute-affordances.trial.md) — 2026-07-28 — the
+  garment wet-state/cling domain proves the foundation is not hair-specific:
+  clothing-registry material coefficients adopted verbatim (no parallel
+  vocabulary), per-region effective mechanics once per cut, three phenomena
+  (material-dependent wet surface, contact-gated wet cling, effective
+  opacity → captured `EffectiveCoverageRead` riding `scenario.garments`, no
+  migration); wind/pose-drape stay unregistered pending the
+  scene/body-relations owner; cue projection dedupes against
+  `CHAT_GARMENT_CUES` wetness lines; read-only affordance preview at the
+  bottom of the chat inspector; "cues win" ruling reconciles the
+  sensory-allowance line with the cue block. Slice 5's rerunnable
+  live-comparison harness (`pnpm eval:affordance-cues`) shipped with its
+  deterministic half all-green; the live half is deferred (dead
+  `OPENROUTER_API_KEY`, owner ruling) and still gates default-on.
+
 - **Successor chat + world UI honesty — capability-driven controls and a
   first-class responsive world surface** —
   [capabilities](sim-chat-capabilities.plan.md) ·

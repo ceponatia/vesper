@@ -41,26 +41,31 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
-- **Body-attribute visual affordances — remainder: second domain (garment
-  wet-state/cling), recognition memory, image decision, companion rulings** —
+- **Body-attribute visual affordances — remainder: slice 5 live run,
+  recognition memory, image decision, companion rulings** —
   [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-  (**slices 0–4 + slice 5 wiring shipped 2026-07-28** — see
+  (**slices 0–4, slice 5 wiring, and slice 6 garment second domain +
+  developer preview shipped 2026-07-28** — see
   [roadmap.shipped.md](roadmap.shipped.md); plan stays open until the release
-  contract closes). What remains: the slice 5 comparison trial that completes
-  that slice (owner-gated `CHAT_AFFORDANCE_CUES` live-model run —
-  contradiction/repetition/specificity vs the current appearance path — gates
-  default-on), slice 6 garment second-domain proof
-  (ruled 2026-07-28; dovetails with clothing slice 8), slice 7
-  observer-specific recognizable features + visual memory, slice 8's recorded
-  image-consumer decision, the successor-lane adapter follow-up named in the
+  contract closes). What remains: the slice 5 **live** comparison that
+  completes that slice — the harness and its all-green deterministic half
+  shipped ([trial report](body-attribute-affordances.trial.md)); the live
+  half is one command (`pnpm eval:affordance-cues`) once a working
+  `OPENROUTER_API_KEY` replaces the dead one in `.env`, and it still gates
+  `CHAT_AFFORDANCE_CUES` default-on — plus slice 7 observer-specific
+  recognizable features + visual memory, slice 8's recorded image-consumer
+  decision, the successor-lane adapter follow-up named in the
   [audit source map](body-attribute-affordances.audit.md), and an explicit
   implemented/follow-up/parked ruling per companion spec before the plan
   closes. The 2026-07-28 owner review settled nearly every open question
-  (plan §"Rulings snapshot"), headlined by a ruled **shared
+  (plan §"Rulings snapshot" — including the same-day "cues win"
+  sensory-allowance ruling), headlined by a ruled **shared
   scene/body-relations owner** (pose · support · surface level · contacts ·
   impulses; chat ships it first) that unblocks hair adhesion, garment
   cling/drape, appendages, soft tissue, relative geometry, and the
-  romantic-contact plan — it needs its own plan when scheduled.
+  romantic-contact plan — it needs its own plan when scheduled. Wardrobe
+  gap flagged by slice 6: nothing records garment fit (loose/fitted), which
+  is the one change that lights up wet cling in production.
 - **Romantic contact affordances — foot-first grounded contact** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) (next; promoted from deferred
