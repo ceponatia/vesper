@@ -5,6 +5,22 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Body-attribute visual affordances — slice 7 (recognizable features +
+  observer visual memory)** —
+  [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) ·
+  [feature spec](body-attribute-affordances.spec.recognizable-features.md) ·
+  [visual-memory detail](body-attribute-affordances.recognizable-features.memory.md)
+  — 2026-07-29 — recognizability stayed a *view* of body truth, never a
+  `recognizable_features[]` list: a new appearance-features package (fine
+  locus + finite hand schema, feature-kind registry, located facts with
+  supersedence, evented anatomy, the attribute catalog) projects lane-neutral
+  truth, and a new recognition package turns it into gated candidates,
+  fixed-point salience, per-observer memory and at most one narrator cue
+  behind `CHAT_RECOGNITION_CUES` (default OFF), over a memory-group-scoped
+  two-generation `chat_visual_memory` table so retakes cannot double-advance
+  what was noticed. 23 acceptance scenarios, zero defects — and honestly
+  production-inert until something asserts exposure for uncovered skin.
+
 - **Image apparent-age anchor + eighteen floor** — no plan (owner report +
   ruling 2026-07-29; behavior in [docs/images.md](../images.md) §Avatar
   generation ¶Apparent age, vocabulary note in

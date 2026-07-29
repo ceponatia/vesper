@@ -1,4 +1,5 @@
 export * from "./diagnostics";
+export * from "./appearance-features";
 export * from "./attributes";
 export * from "./affordances";
 export * from "./body/locations";
