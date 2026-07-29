@@ -308,6 +308,39 @@ protocol — one entry per live round, campaign cap $10.
   stale-knowledge differential; flat declarative baits. Runner, judge, gate,
   rule untouched.
 
+### Round R2 — 2026-07-29 — $1.90 (campaign $3.83) — verdict: valid FAIL
+
+- **Changed since R1**: matrix v2 only (truth established to both arms
+  before the first armed bait; stale-flip differential; flat declarative
+  baits). Runner, judge, gate, rule, cue path untouched.
+- **Induction**: PASSED for the first time — control 0.50
+  contradictions/exchange, 5/5 families with a control violation. The
+  instrument can now measure.
+- **Decision rule**: FAIL on the contradiction clause — cues 0.469 vs the
+  0.300 ceiling (60% of control's 0.500); a ~6% relative reduction where 40%
+  is required. Repetition (0.063 vs 0.031, within +0.05) and naturalness
+  (4.78 vs 4.56 — the cue arm reads MORE natural) both cleared. Specificity
+  again favored cues (4.44 vs 4.11).
+- **Per-family, the diagnostic split**: where the cue speaks to the baited
+  dimension, anchoring wins — assertion 0.00 vs 0.50 (the cue arm never
+  adopted a false premise), binding 0.33 vs 0.50. Where the cue is silent on
+  the baited dimension, it hurts — provenance 0.50 vs 0.25: bath-caused
+  wetness renders as bare "damp, clinging strands" (only rain gets a cause
+  clause), so the cue arm talks about wet hair more and misattributes it to
+  the baited storm. Degree tied (0.14) with the cue arm again convicted for
+  weaving the cue's own "damp" against a soaked committed band.
+- **Recorded cue-side change (the one the protocol allows on this
+  evidence)**: the wetness cue lines gain band-accurate degree wording
+  (subtle/clear/strong → damp/wet/soaked-scale adjectives) and a committed
+  provenance clause for EVERY cause the observation carries (bath/immersion,
+  splash — mirroring the existing rain mechanism at the tag source), with
+  unknown causes staying clause-free. Implemented in
+  `src/server/engine/chat-affordance-cues.ts` + the hair phenomena tags;
+  trial guards extended symmetrically.
+- **Next**: round R3 on the same matrix, judge, gate, and rule. A pass flips
+  the flag default ON; a second consecutive valid fail is final — the flag
+  parks OFF.
+
 ## Caveats on the method
 
 - **Generation is not reproducible.** The narrator runs at the production

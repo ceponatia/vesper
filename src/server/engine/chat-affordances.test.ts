@@ -101,6 +101,23 @@ describe("what the lane can answer", () => {
     expect(clumping?.semanticTags).toContain("recent_rain");
   });
 
+  it("cites the recorded cause BY NAME — and `other` stays silent about why", () => {
+    // Round-R2 change (trial log): every cause the state recorded reaches the
+    // read as its own tag, because a wet read that named nothing let the
+    // narrator supply the loudest cause in the scene (the storm at the window).
+    const causeTags = (cause: "rain" | "immersion" | "splash" | "other"): string[] =>
+      (
+        read({ bodySurface: soaked(0, cause) }).read.observations.find((o) => o.id === "hair.wet_clumping")
+          ?.semanticTags ?? []
+      ).filter((tag) => tag.startsWith("recent_"));
+    expect(causeTags("rain")).toEqual(["recent_rain"]);
+    expect(causeTags("immersion")).toEqual(["recent_immersion"]);
+    expect(causeTags("splash")).toEqual(["recent_splash"]);
+    // `other` means "the fiction wet her and did not say how" — an unmapped
+    // cause commits no event, so the read carries no provenance at all.
+    expect(causeTags("other")).toEqual([]);
+  });
+
   it("a cause older than the freshness window stops being cited", () => {
     const stale = read({
       bodySurface: soaked(0),
