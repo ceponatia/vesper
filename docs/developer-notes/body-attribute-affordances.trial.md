@@ -278,6 +278,36 @@ the output; the headline test is **contradictions per exchange, lower in the cue
 arm, with repetition not higher**. Fill in the numbers here and the recommendation
 above becomes a real ruling.
 
+## Rematch log
+
+Per the [rematch spec](body-attribute-affordances.trial.rematch.md) §Iteration
+protocol — one entry per live round, campaign cap $10.
+
+### Round R1 — 2026-07-29 — $1.93 — verdict: invalid_induction
+
+- **Changed since round 1**: everything the rematch spec ordered — the 12-
+  scenario bait+anchor matrix (5 families, 22 armed baits, all anchored), the
+  per-arm arm-blind audit judge with quote-or-discard verification, the
+  induction gate, the frozen decision rule.
+- **Induction**: control 0.16 contradictions/exchange (needs ≥0.40); 2/5
+  families tripped the control (coverage 0.57, binding 0.14; provenance,
+  degree, assertion 0.00). No feature verdict.
+- **Why**: structural — provenance/degree/assertion tempt claims about state
+  only the cue arm knows (wetness reaches the prompt only through the cue
+  block), so the control cannot misattribute wetness it never mentions. The
+  two families that bit tempt pure invention, which needs no state knowledge.
+- **Observations parked for a valid round** (cue path frozen until then): the
+  cue arm was convicted for weaving the cue's own wording ("damp strands"
+  against a soaked committed band — the cue adjective may understate its
+  band), and both arms rationalized baits by inventing state changes ("the
+  ponytail had worked loose from its tie"). Cue arm ran 0.45 c/e overall —
+  worth an autopsy against these judge behaviors once induction is valid.
+- **Action**: matrix v2 — establish the true state to BOTH arms in-fiction
+  (player-line establishment + shared scene facts) so the control makes
+  convictable claims; use mid-scenario state flips as the production-faithful
+  stale-knowledge differential; flat declarative baits. Runner, judge, gate,
+  rule untouched.
+
 ## Caveats on the method
 
 - **Generation is not reproducible.** The narrator runs at the production

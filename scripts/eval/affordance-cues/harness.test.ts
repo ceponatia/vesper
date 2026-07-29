@@ -5,6 +5,7 @@ import {
   EVAL_SCENARIOS,
   REMATCH_SCENARIOS,
   scenarioMatrix,
+  type EvalBait,
   type EvalScenario,
   type EvalScenarioFamily,
 } from "./fixtures";
@@ -78,6 +79,50 @@ const idsOf = (scenarios: readonly EvalScenario[]): string[] => scenarios.map((s
 const rematchFamily = (family: EvalScenarioFamily): EvalScenario[] =>
   REMATCH_SCENARIOS.filter((scenario) => scenario.family === family);
 
+const BAIT_FAMILIES = new Set<EvalScenarioFamily>(EVAL_BAIT_FAMILIES);
+
+/** The five bait families only — the structural controls play by different rules. */
+const rematchBaitScenarios = (): EvalScenario[] =>
+  REMATCH_SCENARIOS.filter((scenario) => BAIT_FAMILIES.has(scenario.family));
+
+/** The earliest armed bait, or null. `baits` is positional, so the first non-null wins. */
+const firstArmedBait = (scenario: EvalScenario): EvalBait | null =>
+  scenario.baits.find((armed): armed is EvalBait => armed !== null) ?? null;
+
+const rematchById = (scenarioId: string): EvalScenario => {
+  const scenario = REMATCH_SCENARIOS.find((entry) => entry.id === scenarioId);
+  if (!scenario) throw new Error(`unknown scenario ${scenarioId}`);
+  return scenario;
+};
+
+/** Both arms' prompts for one exchange, built the way `run.ts` builds them. */
+function armPrompts(scenario: EvalScenario, turnIndex: number): { cues: string; control: string } {
+  const character = scenarioCharacter(scenario);
+  let cueMemory = emptyAffordanceCueState();
+  let prompts = { cues: "", control: "" };
+  scenario.turns.forEach((turn, index) => {
+    const read = readTurn({ character, scenario, turn, previousCues: cueMemory });
+    cueMemory = read.nextCues;
+    if (index !== turnIndex) return;
+    prompts = {
+      cues: buildArmPrompt({ character, scenario, turn, turnIndex: index, cueLines: read.cueLines }),
+      control: buildArmPrompt({ character, scenario, turn, turnIndex: index, cueLines: [] }),
+    };
+  });
+  return prompts;
+}
+
+/** Every cue line the read offers for a scenario, exchange by exchange. */
+function cueLinesPerExchange(scenario: EvalScenario): string[][] {
+  const character = scenarioCharacter(scenario);
+  let cueMemory = emptyAffordanceCueState();
+  return scenario.turns.map((turn) => {
+    const read = readTurn({ character, scenario, turn, previousCues: cueMemory });
+    cueMemory = read.nextCues;
+    return [...read.cueLines];
+  });
+}
+
 describe("affordance-cues trial matrix", () => {
   it("covers both arms of the wet/dry × bound/loose × wind/still lattice", () => {
     expect(EVAL_SCENARIOS.length).toBeGreaterThanOrEqual(8);
@@ -149,9 +194,57 @@ describe("the rematch matrix — bait + anchor", () => {
     // State has to be tested across change, not only at rest.
     expect(REMATCH_SCENARIOS.filter((scenario) => scenario.turns.length === 4).length).toBeGreaterThanOrEqual(2);
     for (const family of EVAL_BAIT_FAMILIES) expect(rematchFamily(family).length).toBeGreaterThanOrEqual(1);
+    // Two scenarios per bait family and three structural controls is 13 — one over
+    // the spec's ceiling of 12 — so exactly one family runs on a single scenario.
+    // Four of the five must still be doubled, or a family's row is one sample wide.
+    expect(
+      EVAL_BAIT_FAMILIES.filter((family) => rematchFamily(family).length >= 2).length,
+    ).toBeGreaterThanOrEqual(4);
     expect(rematchFamily("silence").length).toBeGreaterThanOrEqual(2);
     expect(rematchFamily("invention_control")).toHaveLength(1);
   });
+
+  it.each(idsOf(rematchBaitScenarios()))(
+    "%s establishes the true state to both arms before its first armed bait",
+    (scenarioId) => {
+      // v2's central fix (round-R1 follow-up). The narrator prompt carries no
+      // environment line and no wetness line, so a bait fired before the control
+      // arm has been told anything measures IGNORANCE, not contradiction — which
+      // is precisely why round R1's provenance, degree and assertion families
+      // never convicted the control. `establishes` names the exchange by which
+      // the true state is in front of both arms (scene facts and the outfit
+      // phrase are standing, so they count as exchange 1), and it has to land
+      // strictly before the first armed bait.
+      const scenario = rematchById(scenarioId);
+      const establishes = scenario.establishes;
+      expect(establishes).toBeDefined();
+      if (establishes === undefined) return;
+      expect(establishes).toBeGreaterThanOrEqual(1);
+      expect(establishes).toBeLessThanOrEqual(scenario.turns.length);
+      const armed = firstArmedBait(scenario);
+      expect(armed).not.toBeNull();
+      if (armed === null) return;
+      expect(establishes).toBeLessThan(armed.exchange);
+    },
+  );
+
+  it.each(idsOf(rematchBaitScenarios()))(
+    "%s hands its standing scene facts to BOTH arms, byte for byte",
+    (scenarioId) => {
+      // The other half of the same fix: `sceneFacts` is the both-arms channel for
+      // ambience and opening state (the storm at the window, the squall an hour
+      // gone). If a fact reached only the cue arm it would be a second arm-delta
+      // hiding inside the trial, so assert it lands in both prompts.
+      const scenario = rematchById(scenarioId);
+      const facts = scenario.sceneFacts ?? [];
+      expect(facts.length).toBeGreaterThan(0);
+      const prompts = armPrompts(scenario, 0);
+      for (const fact of facts) {
+        expect(prompts.control).toContain(fact);
+        expect(prompts.cues).toContain(fact);
+      }
+    },
+  );
 
   it.each([
     ["v1", EVAL_SCENARIOS] as const,
@@ -238,20 +331,50 @@ describe("the rematch matrix — bait + anchor", () => {
     expect(control.baits.filter((armed) => armed !== null).length).toBeGreaterThan(0);
   });
 
-  it("never lets a bath, a standpipe or a wave read as weather", () => {
-    // Provenance discipline, mechanically: the rain clause may appear only where
-    // a rain cause (or standing precipitation) is genuinely committed.
+  it("never lets a bath, a hose or a wave read as weather IN A CUE LINE", () => {
+    // Provenance discipline, mechanically — and scoped deliberately to the CUE
+    // LINES. The player's lines and the scene facts are allowed, and meant, to
+    // put rain over a bath, a hose or a bow wave: that IS the bait. The cue block
+    // is the one channel that may never do it, because it speaks for the
+    // committed state. So: the rain clause may appear only where a rain cause (or
+    // standing precipitation landing on her) is genuinely committed.
     for (const scenario of REMATCH_SCENARIOS) {
-      const character = scenarioCharacter(scenario);
-      let cueMemory = emptyAffordanceCueState();
-      scenario.turns.forEach((turn) => {
-        const read = readTurn({ character, scenario, turn, previousCues: cueMemory });
-        cueMemory = read.nextCues;
-        const rainy = read.cueLines.some((line) => line.includes("wet from the rain"));
+      cueLinesPerExchange(scenario).forEach((cueLines, index) => {
+        const turn = scenario.turns[index];
+        if (!turn) return;
+        const rainy = cueLines.some((line) => line.includes("wet from the rain"));
         if (!rainy) return;
         const rainCause = turn.wetness?.cause === "rain";
         const rainFalling = !turn.environment.indoors && turn.environment.precipitation !== "none";
         expect(rainCause || rainFalling).toBe(true);
+      });
+    }
+  });
+
+  it("actually arms the provenance bait: the player blames weather the state does not commit", () => {
+    // The positive counterpart of the guard above, and the check that would have
+    // caught round R1's real problem earlier: it is not enough for the cue to keep
+    // quiet about rain — some armed exchange has to TEMPT the wrong cause, out
+    // loud, while the committed state says otherwise. Without this the family is
+    // a provenance family in name only.
+    const tempting = /rain|storm|squall|downpour|weather/iu;
+    for (const scenario of rematchFamily("provenance_bait")) {
+      const cueLines = cueLinesPerExchange(scenario);
+      const armed = scenario.turns.filter((turn, index) => {
+        if (scenario.baits[index] === null || scenario.baits[index] === undefined) return false;
+        const weatherCommitted =
+          turn.wetness?.cause === "rain" ||
+          (!turn.environment.indoors && turn.environment.precipitation !== "none");
+        // The player blames the weather; the state says the water came from
+        // somewhere else and nothing is falling on her.
+        return tempting.test(turn.player) && !weatherCommitted;
+      });
+      expect(armed.length).toBeGreaterThan(0);
+      // …and on those exchanges the cue must not hand the narrator the false
+      // cause it is being baited into.
+      scenario.turns.forEach((turn, index) => {
+        if (!armed.includes(turn)) return;
+        for (const line of cueLines[index] ?? []) expect(line).not.toContain("rain");
       });
     }
   });
