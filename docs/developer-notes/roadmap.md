@@ -41,22 +41,27 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 umbrella further down.)
 
 - **Body-attribute visual affordances — remainder: slice 5 live run,
-  recognition memory, image decision, companion rulings** —
+  image decision, companion rulings** —
   [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
   (**slices 0–4, slice 5 wiring, and slice 6 garment second domain +
-  developer preview shipped 2026-07-28** — see
+  developer preview shipped 2026-07-28; slice 7 recognizable features +
+  observer visual memory shipped 2026-07-29** — see
   [roadmap.shipped.md](roadmap.shipped.md); plan stays open until the release
   contract closes). What remains: the slice 5 **live** comparison that
   completes that slice — the harness and its all-green deterministic half
   shipped ([trial report](body-attribute-affordances.trial.md)); the live
   half is one command (`pnpm eval:affordance-cues`) once a working
   `OPENROUTER_API_KEY` replaces the dead one in `.env`, and it still gates
-  `CHAT_AFFORDANCE_CUES` default-on — plus slice 7 observer-specific
-  recognizable features + visual memory, slice 8's recorded image-consumer
+  `CHAT_AFFORDANCE_CUES` default-on — plus slice 8's recorded image-consumer
   decision, the successor-lane adapter follow-up named in the
   [audit source map](body-attribute-affordances.audit.md), and an explicit
   implemented/follow-up/parked ruling per companion spec before the plan
-  closes. The 2026-07-28 owner review settled nearly every open question
+  closes. **Slice 7 ships production-inert**: chat asserts exposure only for
+  garment-covered locations and hair, so bare skin reads unknown and
+  recognition fails closed — a body-exposure owner (or an adapter overlay) is
+  the prerequisite for the trial, and the attribute priors need a calibration
+  pass behind it (plan §Open questions). The 2026-07-28 owner review settled
+  nearly every open question
   (plan §"Rulings snapshot" — including the same-day "cues win"
   sensory-allowance ruling), headlined by a ruled **shared
   scene/body-relations owner** (pose · support · surface level · contacts ·
