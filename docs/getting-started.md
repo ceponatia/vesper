@@ -53,7 +53,7 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 | `VENICE_API_KEY` | — | Reference image editing |
 | `VENICE_IMAGE_MODEL` | `qwen-image-2` | Venice uncensored text-to-image (avatars, entity images, scene t2i fallback) |
 | `VENICE_IMAGE_EDIT_MODEL` | `qwen-image-2-edit` | Single-reference editing (portrait variants + scene images) |
-| `VENICE_MULTI_EDIT_MODEL` | `qwen-edit-uncensored` | Multi-reference editing (`/image/multi-edit`, ≤3 refs) |
+| `VENICE_MULTI_EDIT_MODEL` | `qwen-image-2-edit` | Multi-reference editing (`/image/multi-edit`, ≤3 refs; shares the single-edit model since 2026-07-29 — `qwen-edit-uncensored` drifted identity) |
 | `VENICE_SAFE_MODE` | `false` | Venice content filter toggle |
 | `BETTER_AUTH_SECRET` | — | **Required.** Signs sessions/cookies ([auth.md](auth.md)); `openssl rand -base64 32` |
 | `BETTER_AUTH_URL` | `http://localhost:3200` | App origin (OAuth callbacks + CSRF origin check) |

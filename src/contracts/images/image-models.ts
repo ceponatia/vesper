@@ -32,23 +32,25 @@ export const avatarImageModelLabels: Record<AvatarImageModel, string> = {
 };
 
 /**
- * The chat scene strip's hot-swappable model picker (owner request 2026-07-11),
- * persisted per conversation (`character_chat_state.scene_model`, saved on
- * select). `"reference"` is the default identity-locked route — the avatar
- * anchors a Qwen-edit render (the only Venice edit family; Chroma & co. have no
- * edit variants). Picking a t2i model renders THAT scene text-to-image with it:
- * a real style swap, at the cost of the avatar reference (identity rides the
- * prompt text instead).
+ * The chat scene strip's model picker (owner request 2026-07-11), persisted per
+ * conversation (`character_chat_state.scene_model`, saved on select).
+ * `"reference"` is the identity-locked route — the avatar anchors a Qwen-edit
+ * render. The t2i style-swap picks were REMOVED from this vocabulary (owner
+ * ruling 2026-07-29): a scene that drops the avatar reference paints a
+ * different-looking person, which defeats the point of a scene image. The
+ * picker seam stays so reference-capable models can be added when found; the
+ * portrait studio keeps the full t2i set (`avatarImageModels`) — those generate
+ * NEW images, where a reference isn't wanted. A stored t2i pick from before the
+ * ruling parses back to "reference".
  */
-export const chatSceneModels = ["reference", ...avatarImageModels] as const;
+export const chatSceneModels = ["reference"] as const;
 export type ChatSceneModel = (typeof chatSceneModels)[number];
 
 export const DEFAULT_CHAT_SCENE_MODEL: ChatSceneModel = "reference";
 
-/** Picker labels: the reference route leads, then the t2i set. */
+/** Picker labels — reference-capable routes only. */
 export const chatSceneModelLabels: Record<ChatSceneModel, string> = {
   reference: "Avatar reference (Qwen edit)",
-  ...avatarImageModelLabels,
 };
 
 /** Coerce a stored/string value to a known scene-model key (default "reference"). */

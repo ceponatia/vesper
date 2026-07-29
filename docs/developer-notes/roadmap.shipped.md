@@ -5,6 +5,18 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Scene-image reference hardening + strip delete** — no plan (fix bundle off
+  the 2026-07-29 Kristin troubleshoot; behavior recorded in
+  [docs/images.md](../images.md) §Scene images / [docs/ui.md](../ui.md) §The
+  conversation page) — 2026-07-29 — the multi-edit rung now shares the
+  single-edit model (`qwen-image-2-edit`; `qwen-edit-uncensored` drifted
+  identity badly) at pinned 2K/3:4; text-to-image runs only when NO reference
+  image exists (the old opt-in `requireReferenceIdentity` became the router's
+  only behavior) and the chat scene-model picker is reference-only (t2i style
+  swaps removed from `chatSceneModels`; the portrait studio keeps its full t2i
+  set); scene-strip tiles gained a hover ✕ → confirm → gallery-delete that
+  clears the strip, the inline transcript moment, and the Gallery at once.
+
 - **Body-attribute visual affordances — slice 6 (garment second domain) +
   developer preview + slice 5 trial harness/deterministic run** —
   [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) ·

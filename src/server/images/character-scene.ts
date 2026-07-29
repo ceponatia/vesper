@@ -7,7 +7,6 @@ import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/
 import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { SceneReferenceSource } from "@/contracts/images/scene-reference";
-import { parseChatSceneModel } from "@/contracts/images/image-models";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { diag } from "@/contracts/diagnostics";
 import { classifyImageFailure, hasVenice, isDemoMode } from "../ai";
@@ -86,17 +85,10 @@ export interface RenderCharacterSceneInput {
   /** The assistant message the scene illustrates — the inline-transcript anchor. */
   anchorMessageId?: string;
   /**
-   * The chat's scene-model pick (contracts chatSceneModels, unvalidated string from
-   * state): "reference"/absent ⇒ the default identity-locked avatar edit; a t2i model
-   * key ⇒ render text-to-image with THAT model (a style hot-swap — the avatar
-   * reference is deliberately dropped, since Venice's edit family is Qwen-only).
-   */
-  sceneModel?: string;
-  /**
-   * "selfie" (chat-selfies.plan.md): the subject's-own-camera framing, ALWAYS the
-   * identity-locked reference route (the scene-model pick is ignored — owner
-   * ruling), `meta.flavor: "selfie"`, and the retry-once failure policy (a content
-   * rejection retries sanitized; a second failure stays a debuggable failed row).
+   * "selfie" (chat-selfies.plan.md): the subject's-own-camera framing on the
+   * identity-locked reference route, `meta.flavor: "selfie"`, and the retry-once
+   * failure policy (a content rejection retries sanitized; a second failure
+   * stays a debuggable failed row).
    */
   flavor?: "selfie";
   /**
@@ -297,17 +289,12 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
 
   // Character-chat is a single subject (one library character, no location image),
   // so it renders single-reference by default: the avatar anchors the uncensored
-  // edit. With an avatar present the render is fail-visible
-  // (requireReferenceIdentity) — a failed edit never degrades to a
-  // different-looking text-to-image person; only when there's NO usable avatar
-  // does text-to-image stand in. The scene strip's model pick overrides the route:
-  // a t2i key deliberately drops the avatar anchor and renders text-to-image with
-  // that model (identity rides the prompt's appearance/anchor lines instead).
-  const pickedModel = parseChatSceneModel(input.sceneModel);
-  // Selfies are ALWAYS the identity-locked reference route (owner ruling) — the
-  // scene strip's t2i style swap never applies; identity is the point of a selfie.
-  const t2iModel = selfie || pickedModel === "reference" ? undefined : pickedModel;
-  const referenceRoute = !t2iModel && !isDemoMode() && hasVenice();
+  // edit. The render is fail-visible by construction (routeSceneProviders) — a
+  // failed edit never degrades to a different-looking text-to-image person; only
+  // when there's NO usable avatar does text-to-image stand in. The scene strip's
+  // t2i style-swap pick was removed with the vocabulary (owner ruling 2026-07-29
+  // — chatSceneModels is reference-only until more reference-capable models land).
+  const referenceRoute = !isDemoMode() && hasVenice();
   // Anchor preference (chat-scene-references.plan.md): the cached outfit-true look
   // when its key matches the chat's current outfit/appearance, else the avatar.
   const look = referenceRoute && input.chatId && input.lookKey ? await latestChatLook(input.chatId, input.lookKey) : null;
@@ -353,13 +340,8 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
       ],
       referenceBuffers,
       mode: placeRef ? "multi" : "single",
-      t2iModel,
       framing: selfie ? "selfie" : undefined,
       flavor: input.flavor,
-      // Fail-visible: with an avatar anchoring the shot, never silently degrade to a
-      // text-to-image render of a *different-looking* person — fail and let the tab
-      // retry. A deliberate t2i pick has no anchor, so the flag is a no-op there.
-      requireReferenceIdentity: true,
       linkage: {
         ownerId: input.userId,
         entityKind: "character",

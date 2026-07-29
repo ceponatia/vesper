@@ -10,7 +10,6 @@ import {
   veniceEditModelId,
   veniceMultiEditModelId,
   veniceSceneImageModelId,
-  veniceT2IModelId,
   type ImageProviderFailure,
   type ImageProviderId,
   type ProviderRenderResult,
@@ -18,7 +17,6 @@ import {
 } from "../ai";
 import { log } from "@/server/log";
 import { diag, DiagnosticCollector, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
-import type { AvatarImageModel } from "@/contracts/images/image-models";
 import type { SceneVisualReference } from "@/contracts/images/scene-reference";
 import type { SceneGenState, SceneReferenceMode } from "@/contracts/state/scene-gen";
 import { createImageAsset, failImage, saveImageBuffer, type ImageEntityKind } from "./assets";
@@ -110,18 +108,6 @@ export interface RenderResolvedSceneInput {
   /** Reference mode (the session toggle); `multi` prepends the Venice multi-edit rung. */
   mode?: SceneReferenceMode;
   /**
-   * Fail-visible for identity-locked renders (character chat): when an avatar
-   * anchors the shot, drop the text-to-image rung so a failed reference edit
-   * fails the image instead of silently painting a *different-looking* person.
-   * Off (default) keeps the full degrade ladder for session scenes.
-   */
-  requireReferenceIdentity?: boolean;
-  /**
-   * Text-to-image model override for the `venice_generate` rung (the chat scene
-   * strip's model pick). Absent ⇒ the shared default (`veniceSceneImageModelId`).
-   */
-  t2iModel?: AvatarImageModel;
-  /**
    * Shot framing (chat-selfies.plan.md): "selfie" swaps the player-POV rule for
    * the subject's-own-camera framing block on every route. Absent ⇒ player POV.
    */
@@ -141,10 +127,11 @@ export interface RenderResolvedSceneInput {
  *
  * The provider router picks an ordered fallback chain run with the reason-keyed
  * retry policy (spec §8.3): transient → retry once, content rejection → next rung
- * — Venice multi-edit (mode `multi`) → single-reference edit → Qwen
- * text-to-image → (demo monogram). Every reference is persisted to
- * `image_references`. Failures mark the row failed and return its id — callers
- * are never blocked by image work.
+ * — Venice multi-edit (mode `multi`) → single-reference edit; text-to-image runs
+ * ONLY when no reference image exists (owner ruling 2026-07-29 — a failed edit
+ * fails visibly, never a different-looking t2i person). Every reference is
+ * persisted to `image_references`. Failures mark the row failed and return its
+ * id — callers are never blocked by image work.
  */
 export async function renderResolvedScene(input: RenderResolvedSceneInput): Promise<string> {
   const demo = isDemoMode();
@@ -157,11 +144,11 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   // Tee every diagnostic into a collector and drain it to the server log below.
   const collected = new DiagnosticCollector();
   const sink: DiagnosticSink = input.sink ? teeSink(input.sink, collected) : collected;
-  // Fail-visible (character chat) rides in the request: routeSceneProviders drops
-  // the text-to-image rung when an avatar anchors the shot, so a failed edit fails
-  // the image (a "failed" tile + the ever-present Generate button = retry) rather
-  // than silently painting a different-looking person.
-  const request: SceneRenderRequest = { references, demo, mode, requireReferenceIdentity: input.requireReferenceIdentity };
+  // Fail-visible by construction: with any reference image present the router
+  // returns edit rungs only, so a failed edit fails the image (a "failed" tile +
+  // the ever-present Generate button = retry) rather than silently painting a
+  // different-looking text-to-image person.
+  const request: SceneRenderRequest = { references, demo, mode };
   const chain = routeSceneProviders(request);
 
   // The image-bearing references, in send order (focal char, other chars,
@@ -207,7 +194,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         ? `venice/${veniceMultiEditModelId()}`
         : id === "venice_edit"
           ? `venice/${veniceEditModelId()}`
-          : `venice/${input.t2iModel ? veniceT2IModelId(input.t2iModel) : veniceSceneImageModelId()}`;
+          : `venice/${veniceSceneImageModelId()}`;
 
   const primary = chain[0] ?? "venice_generate";
   const asset = await createImageAsset({
@@ -234,7 +221,6 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     primaryBuffer,
     multiBuffers,
     focalName: plan.focal?.name ?? "Scene",
-    t2iModel: input.t2iModel,
   };
   const started = Date.now();
   try {
@@ -269,8 +255,6 @@ interface SceneAttemptContext {
   /** Ordered ≤3 reference buffers for the multi-edit rung. */
   multiBuffers: Buffer[];
   focalName: string;
-  /** Text-to-image model override (the chat scene strip's pick). */
-  t2iModel?: AvatarImageModel;
 }
 
 export interface SceneRenderOutcome {
@@ -351,7 +335,6 @@ async function runSceneProvider(id: ImageProviderId, ctx: SceneAttemptContext): 
     prompt: ctx.promptFor(id),
     reference: id === "venice_edit" ? (ctx.primaryBuffer ?? undefined) : undefined,
     references: id === "venice_multi_edit" ? ctx.multiBuffers : undefined,
-    t2iModel: ctx.t2iModel,
   });
 }
 

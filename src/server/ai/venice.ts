@@ -7,14 +7,17 @@ const VENICE_BASE = "https://api.venice.ai/api/v1";
  * 2026-06-19 Flux removal Venice/Qwen is the default for every image lane
  * (scene-images.plan.md). Qwen-Image-2 is the uncensored text-to-image model
  * (portrait + entity generate); its edit sibling (`qwen-image-2-edit`) backs
- * portrait variants AND single-reference scene images;
- * `qwen-edit-uncensored` backs the multi-reference `/image/multi-edit` path.
- * Centralized here so the API call and the `images.meta.model` label can never
- * drift — the label sites import these helpers rather than re-deriving the default.
+ * portrait variants AND single-reference scene images — and the multi-reference
+ * `/image/multi-edit` path too (Kristin troubleshoot, 2026-07-29): the endpoint's
+ * former pick `qwen-edit-uncensored` held identity visibly worse than the single
+ * rung, and `/image/multi-edit` accepts `qwen-image-2-edit`, so both rungs now
+ * share one edit model. Centralized here so the API call and the
+ * `images.meta.model` label can never drift — the label sites import these
+ * helpers rather than re-deriving the default.
  */
 export const VENICE_DEFAULT_IMAGE_MODEL = "qwen-image-2";
 export const VENICE_DEFAULT_EDIT_MODEL = "qwen-image-2-edit";
-export const VENICE_DEFAULT_MULTI_EDIT_MODEL = "qwen-edit-uncensored";
+export const VENICE_DEFAULT_MULTI_EDIT_MODEL = "qwen-image-2-edit";
 
 /** Resolved text-to-image model id (`VENICE_IMAGE_MODEL` env → default). */
 export function veniceImageModelId(): string {
@@ -182,12 +185,12 @@ export interface VeniceMultiEditRequest {
 
 /**
  * Multi-reference image edit (Venice `POST /image/multi-edit`, spec §5): the
- * only hosted, uncensored, multi-reference path — `qwen-edit-uncensored` +
- * `safe_mode:false`, 1–3 reference images in one call. Identity-preservation
- * quality across multiple NSFW refs is unproven (validate before depending on
- * it). The `images` array caps at 3; extra refs are dropped by the caller. The
- * model param is **`modelId`** here (the `/image/multi-edit` schema; `model` is
- * the single-edit endpoint's field). Never throws — failures degrade to an error
+ * only hosted, uncensored, multi-reference path — `qwen-image-2-edit` (shared
+ * with the single-edit rung since 2026-07-29; `qwen-edit-uncensored` drifted
+ * identity badly) + `safe_mode:false`, 1–3 reference images in one call. The
+ * `images` array caps at 3; extra refs are dropped by the caller. The model
+ * param is **`modelId`** here (the `/image/multi-edit` schema; `model` is the
+ * single-edit endpoint's field). Never throws — failures degrade to an error
  * string like `veniceEditImage`.
  */
 export async function veniceMultiEditImage(request: VeniceMultiEditRequest): Promise<VeniceEditResult> {
@@ -206,6 +209,11 @@ export async function veniceMultiEditImage(request: VeniceMultiEditRequest): Pro
         prompt: request.prompt,
         images: references.map((ref) => ref.toString("base64")),
         output_format: "webp",
+        // The endpoint defaults to 1K (half the single-edit route's output) —
+        // faces lose the detail the identity lock depends on. Pin 2K + the 3:4
+        // every scene lane renders at (auto would follow the base image).
+        resolution: "2K",
+        aspect_ratio: "3:4",
         safe_mode: process.env.VENICE_SAFE_MODE === "true",
       }),
       signal: AbortSignal.timeout(120_000),

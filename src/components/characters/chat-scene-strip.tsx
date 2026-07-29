@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { chatSceneModelLabels, chatSceneModels, parseChatSceneModel, type ChatSceneModel } from "@/contracts";
-import { chatsApi, type ImageRecord } from "@/lib/client/api";
+import { chatsApi, galleryApi, type ImageRecord } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Select } from "@/components/ui/select";
@@ -51,6 +52,8 @@ export function SceneStrip({
   const toast = useToast();
   const [generating, setGenerating] = useState(false);
   const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const baselineRef = useRef(0);
 
   const hasPendingRow = sceneList.some((s) => s.status === "pending");
@@ -81,17 +84,37 @@ export function SceneStrip({
     onRefresh();
   };
 
+  // Scene rows are gallery-kind assets, so the gallery delete route does the full
+  // job (row + file + pointer cleanup). The strip and the inline transcript moment
+  // both derive from the page-owned scene list, so one silent refetch clears the
+  // image everywhere at once.
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    const result = await galleryApi.remove(pendingDelete);
+    setDeleting(false);
+    if (!result.ok) {
+      toast.push({ title: "Delete failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    if (enlarged?.id === pendingDelete) setEnlarged(null);
+    setPendingDelete(null);
+    toast.push({ title: "Scene deleted", tone: "success" });
+    onRefresh();
+  };
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-end gap-2">
         {/* Hot-swap model pick (owner request 2026-07-11): saves on select via the
-            state PATCH — no save button. "Avatar reference" is the identity-locked
-            Qwen edit; a t2i model renders without the avatar (a style swap). */}
+            state PATCH — no save button. Reference-capable models only (owner
+            ruling 2026-07-29) — the t2i style swaps painted a different-looking
+            person; the picker seam stays for reference models to come. */}
         <Select
           aria-label="Scene image model"
           value={sceneModel}
           onChange={(e) => onSceneModelChange(parseChatSceneModel(e.target.value))}
-          title="Which image model paints the next scene. Avatar reference keeps her exact look; the others are style swaps rendered without the avatar."
+          title="Which image model paints the next scene. Every option keeps her exact look from the avatar reference."
           className="h-8 w-52 text-xs"
         >
           {chatSceneModels.map((model) => (
@@ -124,7 +147,7 @@ export function SceneStrip({
           {sceneList.map((img) => {
             const error = sceneError(img);
             return (
-              <div key={img.id} className="w-28 shrink-0">
+              <div key={img.id} className="group relative w-28 shrink-0">
                 {img.status === "pending" ? (
                   <PendingSceneTile />
                 ) : img.status === "failed" ? (
@@ -146,6 +169,19 @@ export function SceneStrip({
                     <EntityImage imageId={img.id} name={name} className="aspect-[3/4] w-full" />
                   </button>
                 )}
+                {img.status !== "pending" ? (
+                  // Same `.hover-reveal` idiom as the gallery tiles: hover-gated on
+                  // pointer devices, always shown on touch. Deleting also removes the
+                  // inline transcript moment — both render from this one list.
+                  <button
+                    type="button"
+                    onClick={() => setPendingDelete(img.id)}
+                    aria-label="Delete scene image"
+                    className="hover-reveal touch-target absolute top-1 right-1 flex size-6 cursor-pointer items-center justify-center rounded-md border border-ink-600 bg-ink-900/80 text-xs text-paper-300 backdrop-blur-sm transition-opacity hover:border-danger-500 hover:text-danger-300"
+                  >
+                    ✕
+                  </button>
+                ) : null}
               </div>
             );
           })}
@@ -158,6 +194,26 @@ export function SceneStrip({
         prompt={enlarged?.prompt ?? null}
         onClose={() => setEnlarged(null)}
       />
+
+      <Dialog
+        open={pendingDelete !== null}
+        onClose={() => {
+          if (!deleting) setPendingDelete(null);
+        }}
+        title="Delete this scene image?"
+        footer={
+          <>
+            <Button onClick={() => setPendingDelete(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="danger" busy={deleting} onClick={() => void confirmDelete()}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        This permanently removes the image — from this strip, the conversation, and the Gallery. It can&rsquo;t be undone.
+      </Dialog>
     </div>
   );
 }

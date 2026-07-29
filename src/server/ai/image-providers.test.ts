@@ -14,9 +14,9 @@ describe("routeSceneProviders", () => {
     expect(routeSceneProviders({ references: [], demo: true })).toEqual(["demo"]);
   });
 
-  it("single mode: a reference image anchors the uncensored edit, then falls to Qwen text-to-image", () => {
+  it("single mode: a reference image anchors the uncensored edit ONLY — no text-to-image fallback (fail-visible)", () => {
     const refs = [charRef({ entityId: "c1", name: "Mira", imageId: "img1", source: "generated" })];
-    expect(routeSceneProviders({ references: refs, demo: false })).toEqual(["venice_edit", "venice_generate"]);
+    expect(routeSceneProviders({ references: refs, demo: false })).toEqual(["venice_edit"]);
   });
 
   it("featured-but-textual characters (no image) skip the edit provider — text-to-image only", () => {
@@ -28,21 +28,17 @@ describe("routeSceneProviders", () => {
     expect(routeSceneProviders({ references: [], demo: false })).toEqual(["venice_generate"]);
   });
 
-  it("multi mode with ≥2 reference images prepends the Venice multi-edit rung", () => {
+  it("multi mode with ≥2 reference images prepends the Venice multi-edit rung — still no text-to-image", () => {
     const refs = [
       charRef({ entityId: "c1", name: "Mira", imageId: "img1", source: "generated" }),
       charRef({ entityId: "c2", name: "Sayed", imageId: "img2", source: "generated" }),
     ];
-    expect(routeSceneProviders({ references: refs, demo: false, mode: "multi" })).toEqual([
-      "venice_multi_edit",
-      "venice_edit",
-      "venice_generate",
-    ]);
+    expect(routeSceneProviders({ references: refs, demo: false, mode: "multi" })).toEqual(["venice_multi_edit", "venice_edit"]);
   });
 
-  it("multi mode with only ONE reference image degrades to the single-edit ladder (multi needs ≥2)", () => {
+  it("multi mode with only ONE reference image degrades to the single-edit rung (multi needs ≥2)", () => {
     const refs = [charRef({ entityId: "c1", name: "Mira", imageId: "img1", source: "generated" })];
-    expect(routeSceneProviders({ references: refs, demo: false, mode: "multi" })).toEqual(["venice_edit", "venice_generate"]);
+    expect(routeSceneProviders({ references: refs, demo: false, mode: "multi" })).toEqual(["venice_edit"]);
   });
 
   it("multi mode with no reference images falls to text-to-image only", () => {
@@ -52,16 +48,6 @@ describe("routeSceneProviders", () => {
 
   it("demo mode ignores the reference mode — only the monogram runs", () => {
     expect(routeSceneProviders({ references: [], demo: true, mode: "multi" })).toEqual(["demo"]);
-  });
-
-  it("requireReferenceIdentity drops the text-to-image rung when an avatar anchors the shot (fail-visible)", () => {
-    const refs = [charRef({ entityId: "c1", name: "Harper", imageId: "img1", source: "generated" })];
-    expect(routeSceneProviders({ references: refs, demo: false, requireReferenceIdentity: true })).toEqual(["venice_edit"]);
-  });
-
-  it("requireReferenceIdentity with NO anchor image keeps text-to-image — there is no identity to protect", () => {
-    const refs = [charRef({ entityId: "c1", name: "Harper" })];
-    expect(routeSceneProviders({ references: refs, demo: false, requireReferenceIdentity: true })).toEqual(["venice_generate"]);
   });
 
   it("the registry never allows uploaded real people on an NSFW path", () => {
