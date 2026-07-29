@@ -72,12 +72,12 @@ server half shipped with drain-hardening). Groups: D honest controls ·
 E lifecycle integrity · F honest progress & status · G product &
 maintainability.
 
-- D17 [sim-chat-capabilities.plan.md](sim-chat-capabilities.plan.md)
+- D17 — graduated + shipped 2026-07-28 → [../sim-chat-capabilities.plan.md](../sim-chat-capabilities.plan.md)
 - D18 [sim-stop-cancellation.plan.md](sim-stop-cancellation.plan.md)
 - D19 [sim-branch-ux.plan.md](sim-branch-ux.plan.md)
 - E20 — graduated 2026-07-27 → [../successor-world-lifecycle.plan.md](../successor-world-lifecycle.plan.md)
 - F21 [sim-typed-stream.plan.md](sim-typed-stream.plan.md)
-- F22 [sim-world-surface-ux.plan.md](sim-world-surface-ux.plan.md)
+- F22 — graduated + shipped 2026-07-28 → [../sim-world-surface-ux.plan.md](../sim-world-surface-ux.plan.md)
 - F23 [sim-turn-time-honesty.plan.md](sim-turn-time-honesty.plan.md)
 - G24 [worlds-dashboard.plan.md](worlds-dashboard.plan.md)
 - G25 [chat-conversation-refactor.plan.md](chat-conversation-refactor.plan.md)

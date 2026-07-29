@@ -12,6 +12,7 @@ import {
   attributeValueSchema,
   type AttributeValue,
   type ChatActionId,
+  chatCapabilityManifestSchema,
   chatMemoryTraceSchema,
   emptyChatMemoryTrace,
   chatPulseTraceSchema,
@@ -939,6 +940,11 @@ export const chatTranscriptSchema = z.object({
      * they have no successor semantics yet and the POST refuses them.
      */
     simRouted: z.boolean().catch(false),
+    /**
+     * Authoritative UI/server operation policy. Null only when reading an
+     * older cached payload; the conversation derives the lane-safe fallback.
+     */
+    capabilities: chatCapabilityManifestSchema.nullish().catch(null),
   }),
   character: z.object({
     id: idSchema,
@@ -1047,6 +1053,7 @@ export const chatWorldSchema = z.object({
     .catch(null),
   cast: arrayOf(
     z.object({
+      actorId: z.string().catch(""),
       name: z.string().catch(""),
       whereabouts: z.string().catch(""),
       present: z.boolean().catch(false),
@@ -1097,6 +1104,8 @@ export const simTravelResultSchema = z.object({
   status: z.enum(["traveled", "rejected"]).catch("rejected"),
   toStorySecond: z.number().nullable().catch(null),
   arrived: z.boolean().catch(false),
+  /** True when the move committed but durable world catch-up must finish it. */
+  drainShort: z.boolean().catch(false),
   code: z.string().catch(""),
   publicReason: z.string().catch(""),
   legalAlternatives: z.array(z.string()).catch([]),
@@ -1114,6 +1123,7 @@ export const simMoveTogetherResultSchema = z.object({
   status: z.enum(["accompanied", "rejected"]).catch("rejected"),
   toStorySecond: z.number().nullable().catch(null),
   arrived: z.boolean().catch(false),
+  drainShort: z.boolean().catch(false),
   code: z.string().catch(""),
   publicReason: z.string().catch(""),
   legalAlternatives: z.array(z.string()).catch([]),
@@ -1141,6 +1151,7 @@ export type SimGiveItemResult = z.infer<typeof simGiveItemResultSchema>;
 export const simDoActivityResultSchema = z.object({
   status: z.enum(["performed", "rejected"]).catch("rejected"),
   toStorySecond: z.number().nullable().catch(null),
+  drainShort: z.boolean().catch(false),
   code: z.string().catch(""),
   publicReason: z.string().catch(""),
   legalAlternatives: z.array(z.string()).catch([]),

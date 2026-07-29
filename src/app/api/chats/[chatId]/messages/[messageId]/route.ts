@@ -1,9 +1,15 @@
 import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { CHAT_CAPABILITY_UNAVAILABLE_CODE } from "@/contracts";
 import { jsonError, jsonOk, MESSAGE_CONTENT_MAX, readBody, withUser } from "@/server/api";
 import { characterChatMessages, db } from "@/server/db";
-import { reconcileMessageMemory, reextractEditedReply } from "@/server/engine";
+import {
+  isSimRoutedAuthority,
+  readChatEngineAuthority,
+  reconcileMessageMemory,
+  reextractEditedReply,
+} from "@/server/engine";
 import { deleteOwnedChatUploads } from "@/server/images";
 import { resolveChatPersona } from "@/server/players";
 import { loadOwnedChat } from "../../../owned";
@@ -36,6 +42,13 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   if (!body.ok) return body.response;
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
+  if (isSimRoutedAuthority(await readChatEngineAuthority(chatId))) {
+    return jsonError(
+      CHAT_CAPABILITY_UNAVAILABLE_CODE,
+      "World-engine chat history can't be edited because its transcript reflects committed world events.",
+      409,
+    );
+  }
 
   const [updated] = await db()
     .update(characterChatMessages)
@@ -64,6 +77,13 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
 export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   const { chatId, messageId } = await ctx.params;
   if (!(await loadOwnedChat(chatId, user.id))) return jsonError("not_found", "chat not found", 404);
+  if (isSimRoutedAuthority(await readChatEngineAuthority(chatId))) {
+    return jsonError(
+      CHAT_CAPABILITY_UNAVAILABLE_CODE,
+      "World-engine chat history can't be deleted because its transcript reflects committed world events.",
+      409,
+    );
+  }
 
   const [deleted] = await db()
     .delete(characterChatMessages)

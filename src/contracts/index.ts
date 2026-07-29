@@ -66,3 +66,4 @@ export * from "./turns/chat-meanwhile";
 export * from "./turns/chat-plans";
 export * from "./turns/chat-skip";
 export * from "./turns/chat-reply-failure";
+export * from "./turns/chat-capabilities";

@@ -8,6 +8,7 @@ import {
   readSimChatMeters,
   readSimChatOutfit,
   readSimChatPresence,
+  readSimChatWorld,
   seedRolloutTestWorld,
 } from "@/server/engine";
 import { simulationSuiteHarness } from "@/server/test-support";
@@ -128,5 +129,9 @@ describe.runIf(ready)("readSimChatMeters integrates to the branch clock (slice 2
     expect(await readSimChatMeters(ids.chat)).not.toBeNull();
     // Outfit is "" when nothing is worn — a string, never null, for a routed chat.
     expect(await readSimChatOutfit(ids.chat)).toBe("");
+    // Cast rows carry stable actor identity for keyed UI rows and future
+    // actor-targeted commands; the id is transport data, never display copy.
+    const world = await readSimChatWorld(ids.chat);
+    expect(world?.cast.find((member) => member.isPrimary)?.actorId).toBe(ROLLOUT_ACTORS.ana);
   });
 });

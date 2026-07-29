@@ -4,7 +4,7 @@ import type { Journey, PhysicalLocus, SimulationLink } from "@/contracts/simulat
  * World-read shaping (world-ui.plan.md slice 1) — PURE. The player-facing world
  * surface (`readSimChatWorld` in `server/engine/sim-surfaces.ts`) loads the raw
  * simulation projections and resolves display labels; this module turns those
- * typed pieces into the id-free envelope the `ChatWorldCard` renders, plus the
+ * typed pieces into a display-safe envelope the `ChatWorldCard` renders, plus the
  * small phrase helpers the card composes with (charter law — display labels,
  * never raw identifiers).
  *
@@ -32,6 +32,8 @@ export interface SimWorldTransit {
 }
 
 export interface SimWorldCastMember {
+  /** Stable actor identity for keyed rendering and actor-targeted commands; never shown as copy. */
+  actorId: string;
   name: string;
   /** "" when present with the player; else a short phrase ("at the town square", "on the move"). */
   whereabouts: string;

@@ -229,7 +229,13 @@ export async function readSimChatWorld(chatId: string): Promise<SimChatWorld | n
           ? { kind: locus.kind, zoneId: locus.kind === "at" ? locus.zoneId : null }
           : undefined;
         const { present, whereabouts } = actorWhereabouts({ actorLocus, playerLocus: playerWhereabouts, zonePhraseOf });
-        return { name: row.name, whereabouts, present, isPrimary: row.characterId === primaryActorId };
+        return {
+          actorId: row.characterId,
+          name: row.name,
+          whereabouts,
+          present,
+          isPrimary: row.characterId === primaryActorId,
+        };
       });
 
     // Player-startable actions (slice 3): availability is the `at_zone_kind`

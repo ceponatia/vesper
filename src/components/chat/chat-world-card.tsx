@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { placeAtPhrase } from "@/lib/simulation/solo-cut";
 import {
   approxActivityMinutes,
@@ -12,6 +12,11 @@ import {
 import { chatsApi, type ChatWorld } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import {
+  displayWorldActionLabel,
+  displayWorldAlternative,
+  worldCastKey,
+} from "./chat-world-card-format";
 
 type Destination = ChatWorld["destinations"][number];
 type HeldItem = ChatWorld["held"][number];
@@ -20,7 +25,7 @@ type WorldAction = ChatWorld["actions"][number];
 /**
  * The world card (world-ui.plan.md slices 1 + 3): the player-facing surface of
  * the successor world, beside the clock card in the right "story time" aside
- * (and in the phone Roster sheet). It draws where the player is (or is walking
+ * (and in the responsive World sheet). It draws where the player is (or is walking
  * to), who else is around, the open destinations as skip-style travel chips
  * (ruling 20), the player's pocket with a "Hand to {primary}" handoff
  * (`give_item`), and the zone-gated actions as skip-style chips (`do_activity`).
@@ -28,7 +33,8 @@ type WorldAction = ChatWorld["actions"][number];
  * + legalAlternatives). A landing / handoff / performed action refreshes the
  * transcript (the server-written world beat), the world envelope, and chat
  * state via `onWorldChanged`. Renders nothing for a degraded / legacy / shadow
- * chat (world === null) — ruling-18-style affordance hiding.
+ * chat (world === null). The host owns loading/degraded status so this component
+ * can stay focused on an available projection.
  */
 
 /** A human "time remaining" for the catch-up banner (A5 slice 5); "" below an hour (not worth a number). */
@@ -62,6 +68,7 @@ export function ChatWorldCard({
   const [givingItem, setGivingItem] = useState<string | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<{ publicReason: string; legalAlternatives: string[] } | null>(null);
+  const actionReasonId = useId();
 
   if (!world) return null;
 
@@ -79,10 +86,12 @@ export function ChatWorldCard({
     actingId !== null;
 
   // The give-item target is always the primary; the card knows them (and their
-  // presence) from the cast. Available actions are the zone-gated ones only —
-  // the card shows what you CAN do (ruling-18 affordance hiding).
+  // presence) from the cast. Actions stay visible when unavailable so the
+  // authored reason can explain the world rule instead of making the action
+  // appear to vanish.
   const primary = world.cast.find((member) => member.isPrimary) ?? null;
-  const availableActions = world.actions.filter((action) => action.available);
+  const refusalAlternatives =
+    refusal?.legalAlternatives.map(displayWorldAlternative).filter((alternative) => alternative.length > 0) ?? [];
 
   const travel = async (dest: Destination) => {
     if (anyBusy) return;
@@ -104,6 +113,12 @@ export function ChatWorldCard({
         legalAlternatives: result.data.legalAlternatives,
       });
       return;
+    }
+    if (!result.data.arrived || result.data.drainShort) {
+      toast.push({
+        title: "Journey started",
+        description: "The world is still catching up; your destination will appear when you arrive.",
+      });
     }
     onWorldChanged();
   };
@@ -128,6 +143,12 @@ export function ChatWorldCard({
         legalAlternatives: result.data.legalAlternatives,
       });
       return;
+    }
+    if (!result.data.arrived || result.data.drainShort) {
+      toast.push({
+        title: "Walking together",
+        description: "The journey is in progress; the world panel will update on arrival.",
+      });
     }
     onWorldChanged();
   };
@@ -177,6 +198,12 @@ export function ChatWorldCard({
       });
       return;
     }
+    if (result.data.drainShort) {
+      toast.push({
+        title: "Activity started",
+        description: "The world is still catching up; progress will settle here shortly.",
+      });
+    }
     onWorldChanged();
   };
 
@@ -209,8 +236,8 @@ export function ChatWorldCard({
 
         {world.cast.length > 0 ? (
           <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-paper-400">
-            {world.cast.map((member) => (
-              <span key={member.name}>
+            {world.cast.map((member, index) => (
+              <span key={worldCastKey(world.cast, index)}>
                 {member.present ? `${member.name} — here with you` : `${member.name} — ${member.whereabouts}`}
               </span>
             ))}
@@ -283,23 +310,39 @@ export function ChatWorldCard({
           </div>
         ) : null}
 
-        {availableActions.length > 0 ? (
+        {world.actions.length > 0 ? (
           <div className="mt-2 border-t border-ink-700 pt-2">
             <span className="block text-[10px] font-medium tracking-wide text-paper-500 uppercase">Things to do</span>
-            <div className="mt-1 flex flex-wrap gap-1" role="group" aria-label="Actions">
-              {availableActions.map((action) => (
-                <Button
-                  key={action.id}
-                  size="sm"
-                  variant="quiet"
-                  busy={actingId === action.id}
-                  disabled={anyBusy}
-                  title={`~${approxActivityMinutes(action.durationSeconds)} min`}
-                  onClick={() => void doActivity(action)}
-                >
-                  {action.label} · ~{approxActivityMinutes(action.durationSeconds)} min
-                </Button>
-              ))}
+            <div className="mt-1 flex flex-col gap-1.5" role="group" aria-label="Actions">
+              {world.actions.map((action, index) => {
+                const label = displayWorldActionLabel(action.label, action.id);
+                const reasonId = `${actionReasonId}-${index}`;
+                const unavailableReason = action.unavailableReason || "This isn't available right now.";
+                return (
+                  <div key={action.id} className="flex flex-col items-start gap-0.5">
+                    <Button
+                      size="sm"
+                      variant="quiet"
+                      busy={actingId === action.id}
+                      disabled={anyBusy || !action.available}
+                      title={
+                        action.available
+                          ? `~${approxActivityMinutes(action.durationSeconds)} min`
+                          : unavailableReason
+                      }
+                      aria-describedby={action.available ? undefined : reasonId}
+                      onClick={() => void doActivity(action)}
+                    >
+                      {label} · ~{approxActivityMinutes(action.durationSeconds)} min
+                    </Button>
+                    {!action.available ? (
+                      <span id={reasonId} className="pl-2.5 text-[10px] text-paper-600">
+                        {unavailableReason}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ) : null}
@@ -307,9 +350,9 @@ export function ChatWorldCard({
         {refusal ? (
           <div className="mt-2 border-t border-ink-700 pt-2 text-xs text-paper-300">
             <span className="block">{refusal.publicReason}</span>
-            {refusal.legalAlternatives.length > 0 ? (
+            {refusalAlternatives.length > 0 ? (
               <span className="mt-0.5 block text-[10px] text-paper-600">
-                You could instead: {refusal.legalAlternatives.join(", ")}
+                You could instead: {refusalAlternatives.join(", ")}
               </span>
             ) : null}
           </div>

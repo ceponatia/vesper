@@ -1,5 +1,6 @@
+import { CHAT_CAPABILITY_UNAVAILABLE_CODE } from "@/contracts";
 import { jsonError, jsonOk, withUser } from "@/server/api";
-import { stopChatReply } from "@/server/engine";
+import { isSimRoutedAuthority, readChatEngineAuthority, stopChatReply } from "@/server/engine";
 import { loadOwnedChat } from "../../owned";
 
 type Params = { chatId: string };
@@ -14,6 +15,13 @@ type Params = { chatId: string };
 export const POST = withUser<Params>(async (user, _req, ctx) => {
   const { chatId } = await ctx.params;
   if (!(await loadOwnedChat(chatId, user.id))) return jsonError("not_found", "chat not found", 404);
+  if (isSimRoutedAuthority(await readChatEngineAuthority(chatId))) {
+    return jsonError(
+      CHAT_CAPABILITY_UNAVAILABLE_CODE,
+      "World-engine replies can't be stopped mid-turn yet.",
+      409,
+    );
+  }
   if (!stopChatReply(chatId)) return jsonError("not_found", "no reply is streaming for this chat", 404);
   return jsonOk({ stopped: true });
 });

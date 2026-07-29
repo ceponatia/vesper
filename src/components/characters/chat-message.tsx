@@ -97,6 +97,10 @@ export function MessageBubble({
   avatarImageId,
   streaming,
   takeTarget,
+  canEditHistory,
+  canDeleteHistory,
+  canRerunFromMessage,
+  canRetakeLatest,
   onEdit,
   onDelete,
   onRerun,
@@ -118,6 +122,11 @@ export function MessageBubble({
   streaming: boolean;
   /** True on the last assistant reply when regeneration is available (parent gates archived). */
   takeTarget: boolean;
+  /** Transcript-policy capabilities. The server enforces the same boundary. */
+  canEditHistory: boolean;
+  canDeleteHistory: boolean;
+  canRerunFromMessage: boolean;
+  canRetakeLatest: boolean;
   onEdit: (id: string, content: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<void>;
   onRerun: (id: string) => void;
@@ -136,10 +145,16 @@ export function MessageBubble({
   const isUser = line.role === "user";
   const pending = !isUser && line.content === "" && streaming;
   const persisted = !pending && !line.id.startsWith("tmp-");
-  // Edit/Delete only on a settled line; Rerun also mid-stream so it can interrupt.
-  const canModify = persisted && !streaming;
-  const canRerun = isUser && persisted;
-  const canTake = takeTarget && persisted && !streaming;
+  // History mutation is both message-state and transcript-policy dependent. The
+  // latter keeps successor chats from exposing legacy operations whose semantics
+  // would desynchronize the projected world.
+  const canUseSettledLine = persisted && !streaming;
+  const canEdit = canUseSettledLine && canEditHistory;
+  const canDelete = canUseSettledLine && canDeleteHistory;
+  const canRerun = canRerunFromMessage && isUser && persisted;
+  const canTake = canRetakeLatest && takeTarget && persisted && !streaming;
+  const canRemember = Boolean(onRemember) && canUseSettledLine;
+  const canMarkMoment = Boolean(onMarkMoment) && canUseSettledLine;
   // The pager shows on any settled reply carrying multiple takes (not just the last).
   const pagerTakes = !isUser && persisted && line.takes && line.takes.takes.length > 1 ? line.takes : undefined;
   const [editing, setEditing] = useState(false);
@@ -292,7 +307,7 @@ export function MessageBubble({
                 </span>
               ) : null}
             </div>
-            {pagerTakes !== undefined || canModify || canRerun ? (
+            {pagerTakes !== undefined || canEdit || canDelete || canRerun || canTake || canRemember || canMarkMoment ? (
               <div className="-mx-1 flex items-center gap-1">
                 {pagerTakes ? (
                   <TakesPager
@@ -301,7 +316,7 @@ export function MessageBubble({
                     onSwitch={(takeId) => void switchTo(takeId)}
                   />
                 ) : null}
-                {canModify || canRerun ? (
+                {canEdit || canDelete || canRerun || canTake || canRemember || canMarkMoment ? (
                   // `.hover-reveal` (globals.css): hover-gated on pointer devices,
                   // always shown on touch — the only way these reach a phone.
                   // `.touch-target` gives each button a ≥44px coarse-pointer tap
@@ -309,23 +324,23 @@ export function MessageBubble({
                   // slightly-off tap on these primary recovery levers still lands
                   // (mobile-ux W3 task 2).
                   <div className="hover-reveal flex items-center gap-1 pointer-coarse:gap-2">
-                    {canModify ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={startEdit}
-                          className="touch-target inline-flex items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-paper-200"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void onDelete(line.id)}
-                          className="touch-target inline-flex items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-danger-400"
-                        >
-                          Delete
-                        </button>
-                      </>
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        onClick={startEdit}
+                        className="touch-target inline-flex items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-paper-200"
+                      >
+                        Edit
+                      </button>
+                    ) : null}
+                    {canDelete ? (
+                      <button
+                        type="button"
+                        onClick={() => void onDelete(line.id)}
+                        className="touch-target inline-flex items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-danger-400"
+                      >
+                        Delete
+                      </button>
                     ) : null}
                     {canTake ? (
                       <button
@@ -337,20 +352,20 @@ export function MessageBubble({
                         Another take
                       </button>
                     ) : null}
-                    {onRemember && canModify ? (
+                    {canRemember ? (
                       <button
                         type="button"
-                        onClick={() => onRemember(line.content)}
+                        onClick={() => onRemember?.(line.content)}
                         title={`Pin this as something ${name || "the character"} always remembers`}
                         className="touch-target inline-flex items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-accent-300"
                       >
                         Remember
                       </button>
                     ) : null}
-                    {onMarkMoment && canModify ? (
+                    {canMarkMoment ? (
                       <button
                         type="button"
-                        onClick={() => onMarkMoment(line.id)}
+                        onClick={() => onMarkMoment?.(line.id)}
                         title="Mark this as a milestone in the relationship"
                         className="touch-target inline-flex items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-accent-300"
                       >

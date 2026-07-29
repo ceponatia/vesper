@@ -1,7 +1,13 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq, lt, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { chatActionIdSchema, chatReplyFailureSchema, characterProfileSchema, emptyCharacterProfile } from "@/contracts";
+import {
+  chatActionIdSchema,
+  chatCapabilitiesForLane,
+  chatReplyFailureSchema,
+  characterProfileSchema,
+  emptyCharacterProfile,
+} from "@/contracts";
 import { resolveChatModelId } from "@/lib/narrative-models";
 import { parseOr } from "@/lib/parse";
 import {
@@ -213,6 +219,9 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
       archivedAt: owned.chat.archivedAt,
       // True when the successor engine owns this chat's turns.
       simRouted,
+      // Versioned operation contract: clients must not infer supported controls
+      // from `simRouted` because each operation can graduate independently.
+      capabilities: chatCapabilitiesForLane(simRouted),
       // Why the last exchange produced no reply (null when it replied) — the client's
       // post-exchange refetch turns this into the cause-specific failure popup.
       lastReplyFailure: parseOr(
@@ -282,9 +291,9 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   // §39 rulings 18-19): authority is resolved ONCE, before kind dispatch. On a
   // sim-routed chat EVERY operation has successor semantics or is refused — the
   // legacy pipeline below is unreachable for it. `send` drives a turn;
-  // continue/open run an utterance-free turn (time advances); regenerate/rerun
-  // re-render the same committed cut; attachments and action chips are refused
-  // (the UI hides those affordances for sim chats).
+  // continue/open run an utterance-free turn (time advances). Retakes/reruns,
+  // attachments, and legacy action chips are refused until the capability
+  // manifest can advertise honest successor semantics for them.
   const simRouted = isSimRoutedAuthority(await readChatEngineAuthority(chatId));
   if (simRouted) {
     const decision = decideSimOperation({

@@ -1,3 +1,5 @@
+import { CHAT_CAPABILITY_UNAVAILABLE_CODE } from "@/contracts";
+
 /**
  * Routing parity for sim-routed chats (presentation-charter.plan.md §4;
  * engine.spec.operations.md §39 ruling 18): decide what one chat POST kind means
@@ -18,13 +20,11 @@ export type ChatPostKind = "send" | "open" | "continue" | "action_beat" | "regen
  * - `continue` / `open` — a real turn with NO player utterance (ruling 19); the
  *   span advances, the world may act, the render omits the player-turn block.
  *   `open` additionally records `simOpening` on the reply's meta.
- * - `retake` — re-render the SAME committed cut (regenerate/rerun, ruling 18):
- *   same events, fresh prose, the assistant row replaced in place.
  */
-export type SimExchangeMode = "send" | "continue" | "open" | "retake";
+export type SimExchangeMode = "send" | "continue" | "open";
 
 /** The unsupported-operation refusal code the client/UI keys on. */
-export const SIM_UNSUPPORTED_CODE = "sim_unsupported_operation";
+export const SIM_UNSUPPORTED_CODE = CHAT_CAPABILITY_UNAVAILABLE_CODE;
 
 export type SimOperationDecision =
   | { action: "run"; mode: SimExchangeMode }
@@ -33,8 +33,9 @@ export type SimOperationDecision =
 /**
  * Map one POST kind (+ whether it carries attachments or an action chip) onto a
  * successor decision. Attachments and legacy action chips have no designed
- * successor semantics yet, so they are REFUSED (the UI hides the affordance);
- * every other kind runs. This is the single gate that makes the legacy pipeline
+ * successor semantics yet, so they are REFUSED. Retakes and message reruns are
+ * also refused until the route can prove the latest reply belongs to a
+ * committed cut. This is the single gate that makes the legacy pipeline
  * unreachable for a sim-routed chat.
  */
 export function decideSimOperation(input: {
@@ -67,9 +68,16 @@ export function decideSimOperation(input: {
       return { action: "run", mode: "continue" };
     case "open":
       return { action: "run", mode: "open" };
-    // Regenerate and rerun both re-render the same committed cut (ruling 18).
+    // The successor retake engine requires a committed `meta.cutId`. The chat
+    // envelope cannot yet prove that prerequisite per reply, so advertising or
+    // accepting either generic regenerate or message-targeted rerun would leave
+    // a visible operation that 409s for legitimate solo replies.
     case "regenerate":
     case "rerun":
-      return { action: "run", mode: "retake" };
+      return {
+        action: "refuse",
+        code: SIM_UNSUPPORTED_CODE,
+        message: "Retakes and message reruns aren't available in world-engine chats yet.",
+      };
   }
 }

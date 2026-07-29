@@ -1,10 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { z } from "zod";
 import { characterProfileSchema } from "@/contracts";
-import { parseOr } from "@/lib/parse";
-import { replyTakesSchema } from "@/server/engine";
 import { characterChatMessages, db, simBranches, simEvents } from "@/server/db";
 
 /**
@@ -32,6 +29,9 @@ import {
   seedRoutedSimChat,
 } from "@/server/test-support";
 import { GET as chatGet, POST as chatSend } from "./route";
+import { POST as attachmentUpload } from "./attachments/route";
+import { DELETE as messageDelete, PATCH as messagePatch } from "./messages/[messageId]/route";
+import { POST as stopReply } from "./stop/route";
 import { POST as successorCreate } from "../../successor-chats/route";
 
 const ready = await probeIntegrationDb("sim-routing.int.test", "character_chats");
@@ -39,7 +39,6 @@ const ready = await probeIntegrationDb("sim-routing.int.test", "character_chats"
 const ctx = (chatId: string) => routeCtx({ chatId });
 const jsonReq = (path: string, body: unknown): NextRequest => apiRequest(path, { body });
 
-const cutIdMetaSchema = z.object({ cutId: z.string().catch("") }).catch({ cutId: "" });
 let fixture = emptyRoutedSimChat();
 /** Worlds the successor-chat provisioning minted below — each one is this suite's own. */
 const worldIds: string[] = [];
@@ -95,22 +94,17 @@ async function messageRoles(chatId: string): Promise<string[]> {
   return rows.map((r) => r.role);
 }
 
-async function lastAssistant(
-  chatId: string,
-): Promise<{ id: string; content: string; takes: unknown; meta: unknown } | undefined> {
+async function messages(chatId: string): Promise<Array<{ id: string; role: string; content: string }>> {
   const rows = await db()
     .select({
       id: characterChatMessages.id,
       role: characterChatMessages.role,
       content: characterChatMessages.content,
-      takes: characterChatMessages.takes,
-      meta: characterChatMessages.meta,
     })
     .from(characterChatMessages)
     .where(eq(characterChatMessages.chatId, chatId))
     .orderBy(sql`${characterChatMessages.createdAt} desc, ${characterChatMessages.id} desc`);
-  const a = rows.find((r) => r.role === "assistant");
-  return a ? { id: a.id, content: a.content, takes: a.takes, meta: a.meta } : undefined;
+  return rows;
 }
 
 async function eventCount(branchId: string): Promise<number> {
@@ -126,38 +120,81 @@ async function branchSecond(branchId: string): Promise<number> {
   return row?.storySecond ?? 0;
 }
 
-function metaCutId(meta: unknown): string {
-  return parseOr(cutIdMetaSchema, meta, { cutId: "" }, undefined, "meta").cutId;
-}
-
 describe.runIf(ready)("sim routing parity", () => {
-  it("regenerate re-renders the SAME cut in place: no new rows, no truth growth, a take recorded", async () => {
+  it("advertises the successor capability manifest and refuses unproven retakes/reruns without writes", async () => {
     const { chatId, branchId } = await provision("Regen Test");
     expect((await post(chatId, { kind: "send", content: "I look around our new home." })).status).toBe(200);
 
     expect((await messageRoles(chatId)).sort()).toEqual(["assistant", "user"]);
     const eventsAfterSend = await eventCount(branchId);
-    const replyBefore = await lastAssistant(chatId);
-    if (!replyBefore) throw new Error("no reply after send");
-    const cutIdSend = metaCutId(replyBefore.meta);
-    expect(cutIdSend).not.toBe("");
+    const before = await messages(chatId);
+    const playerMessage = before.find((message) => message.role === "user");
+    if (!playerMessage) throw new Error("no player message after send");
 
-    const regen = await post(chatId, { kind: "regenerate" });
-    expect(regen.status).toBe(200);
+    const envelope = await expectJson<{
+      chat: {
+        capabilities: {
+          version: number;
+          canStop: boolean;
+          canAttachPhotos: boolean;
+          canEditHistory: boolean;
+          canDeleteHistory: boolean;
+          canRerunFromMessage: boolean;
+          canRetakeLatest: boolean;
+          canForkFromMessage: boolean;
+          canUseLegacyActionBeats: boolean;
+          canUseWorldActions: boolean;
+        };
+      };
+    }>(await chatGet(apiRequest(`/api/chats/${chatId}`), ctx(chatId)));
+    expect(envelope.chat.capabilities).toEqual({
+      version: 1,
+      canStop: false,
+      canAttachPhotos: false,
+      canEditHistory: false,
+      canDeleteHistory: false,
+      canRerunFromMessage: false,
+      canRetakeLatest: false,
+      canForkFromMessage: false,
+      canUseLegacyActionBeats: false,
+      canUseWorldActions: true,
+    });
 
-    // No new transcript rows (the assistant row is replaced in place).
-    expect((await messageRoles(chatId)).sort()).toEqual(["assistant", "user"]);
-    // No event/truth growth — a retake creates nothing (ruling 18 / §22.3).
+    const regen = await chatSend(jsonReq(`/api/chats/${chatId}`, { kind: "regenerate" }), ctx(chatId));
+    await expectApiError(regen, 409, "sim_unsupported_operation");
+    const rerun = await chatSend(
+      jsonReq(`/api/chats/${chatId}`, { kind: "rerun", messageId: playerMessage.id }),
+      ctx(chatId),
+    );
+    await expectApiError(rerun, 409, "sim_unsupported_operation");
+
+    expect(await messages(chatId)).toEqual(before);
     expect(await eventCount(branchId)).toBe(eventsAfterSend);
+  });
 
-    const replyAfter = await lastAssistant(chatId);
-    if (!replyAfter) throw new Error("no reply after regenerate");
-    expect(replyAfter.id).toBe(replyBefore.id); // same row, updated in place
-    expect(metaCutId(replyAfter.meta)).toBe(cutIdSend); // the SAME committed cut
-    // A fresh take was recorded (the prior take stays browsable).
-    const takes = parseOr(replyTakesSchema, replyAfter.takes, { takes: [], activeId: "" }, undefined, "takes");
-    expect(takes.takes.length).toBeGreaterThanOrEqual(2);
-    expect(takes.activeId).not.toBe("");
+  it("refuses direct history edits and deletes before touching a committed successor transcript", async () => {
+    const { chatId } = await provision("History Guard Test");
+    expect((await post(chatId, { kind: "send", content: "Remember this exactly." })).status).toBe(200);
+    const before = await messages(chatId);
+    const reply = before.find((message) => message.role === "assistant");
+    if (!reply) throw new Error("no assistant reply after send");
+
+    const edited = await messagePatch(
+      apiRequest(`/api/chats/${chatId}/messages/${reply.id}`, {
+        method: "PATCH",
+        body: { content: "rewritten history" },
+      }),
+      routeCtx({ chatId, messageId: reply.id }),
+    );
+    await expectApiError(edited, 409, "sim_unsupported_operation");
+
+    const deleted = await messageDelete(
+      apiRequest(`/api/chats/${chatId}/messages/${reply.id}`, { method: "DELETE" }),
+      routeCtx({ chatId, messageId: reply.id }),
+    );
+    await expectApiError(deleted, 409, "sim_unsupported_operation");
+
+    expect(await messages(chatId)).toEqual(before);
   });
 
   it("continue advances time with NO player utterance (ruling 19)", async () => {
@@ -178,7 +215,7 @@ describe.runIf(ready)("sim routing parity", () => {
     expect(await branchSecond(branchId)).toBeGreaterThan(secondBefore); // the span advanced (time moved)
   });
 
-  it("refuses attachments and legacy action chips with 409 and no writes", async () => {
+  it("refuses attachment upload, stop, attached sends, and legacy action chips with 409 and no writes", async () => {
     const { chatId } = await provision("Refuse Test");
     // The GET envelope's client-facing routing flag (the UI hides the affordances off it).
     const envelope = await expectJson<{ chat: { simRouted: boolean } }>(
@@ -188,6 +225,15 @@ describe.runIf(ready)("sim routing parity", () => {
 
     expect((await post(chatId, { kind: "send", content: "Hi." })).status).toBe(200);
     const before = (await messageRoles(chatId)).length;
+
+    const upload = await attachmentUpload(
+      jsonReq(`/api/chats/${chatId}/attachments`, { image: "data:image/png;base64,AA==" }),
+      ctx(chatId),
+    );
+    await expectApiError(upload, 409, "sim_unsupported_operation");
+
+    const stopped = await stopReply(apiRequest(`/api/chats/${chatId}/stop`, { method: "POST" }), ctx(chatId));
+    await expectApiError(stopped, 409, "sim_unsupported_operation");
 
     const att = await chatSend(
       jsonReq(`/api/chats/${chatId}`, { kind: "send", content: "look at this", attachmentIds: ["not-a-real-upload"] }),
