@@ -8,5 +8,6 @@
  */
 export * from "./core";
 export * from "./domains/hair";
+export * from "./domains/garment";
 export * from "./domains";
 export * from "./derive-affordance-read";

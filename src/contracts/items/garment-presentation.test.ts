@@ -56,6 +56,7 @@ function storeOf(...entries: readonly (readonly [string, GarmentBlueprint, Garme
     blueprints,
     instances: entries.map(([id, blueprint, locus]) => instance(id, blueprint, locus)),
     cues: emptyGarmentCueState(),
+    coverage: {},
   };
 }
 

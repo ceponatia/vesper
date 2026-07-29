@@ -9,6 +9,8 @@ import {
   deriveAffordanceRead,
   diag,
   emptyAffordanceCueState,
+  garmentAffordanceDomain,
+  GARMENT_DOMAIN_ID,
   hairAffordanceDomain,
   HAIR_DOMAIN_ID,
   HAIR_LOCATION_ID,
@@ -22,26 +24,40 @@ import {
   type ActiveCondition,
   type AffordanceCueState,
   type AffordanceExposure,
+  type AffordancePerceptionView,
   type AffordanceRead,
+  type AffordanceStoryTime,
+  type AffordanceSubjectId,
   type AttributeValue,
   type BodySurfaceState,
   type BodySurfaceWetnessCause,
   type ChatEnvironment,
+  type ChatGarmentStore,
   type DiagnosticSink,
+  type EffectiveCoverageRead,
   type HairCausalEvent,
   type HairEventKind,
   type HairLanePayload,
+  type RegisteredAffordanceDomain,
   type ResolvedAttributeSnapshot,
   type WornItemInput,
+  type WornVisibility,
 } from "@/contracts";
+import { buildChatGarmentAffordance } from "./chat-garment-affordances";
 
 /**
- * The CHAT LANE's affordance adapter (body-attribute-affordances slice 4).
+ * The CHAT LANE's affordance adapter (body-attribute-affordances slices 4 and 6).
  *
  * The one place chat-lane state becomes the lane-neutral affordance payload. It
  * exists so the shared calculation forks nowhere: a successor adapter will
  * normalize its own reads into the same `HairLanePayload` and perception view,
  * and every number in `contracts/affordances` stays lane-agnostic.
+ *
+ * Two domains ride it now — hair (slice 4) and garment (slice 6). The garment
+ * half's wardrobe normalization lives in the sibling
+ * `chat-garment-affordances.ts`; this file owns the read, the perception view,
+ * and the capture, so the two domains cannot end up with two different ideas of
+ * which cut they are reading.
  *
  * ## The adapter result law, as this lane can actually answer it
  *
@@ -55,6 +71,12 @@ import {
  * | `motion` | — | **unavailable** (no body-motion owner) |
  * | `contacts` | — | **unavailable** (no typed contact owner) |
  * | `contamination` | — | **unavailable** (no owner) |
+ *
+ * The GARMENT domain's own table lives in `chat-garment-affordances.ts`. Its one
+ * production silence is the same shape as hair adhesion's: no lane owns garment
+ * fit or pose, so no garment/body contact can be established, `contacts` is
+ * reported unavailable, and `garment.wet_cling` is suppressed by the core before
+ * its resolver runs.
  *
  * `wetness` is the one input with a live **invalid** path: a corrupt
  * `body_surface` entry is quarantined by the state owner rather than healed to
@@ -74,9 +96,10 @@ import {
  * It takes committed state and a clock and returns a read — no IO, no `Date`, no
  * registry lookup that could change under it. That is what makes the retake
  * guarantee work (architecture spec §"Recompute and capture"): `affordanceCues`
- * rides `pre_exchange_scenario` and `bodySurface` rides `pre_exchange_state`, so
- * a rolled-back exchange rebuilds a byte-identical read and byte-identical next
- * cues. There is no hysteresis and no hidden latch anywhere in the path.
+ * and the garment store both ride `pre_exchange_scenario` and `bodySurface`
+ * rides `pre_exchange_state`, so a rolled-back exchange rebuilds a byte-identical
+ * read, byte-identical next cues, and a byte-identical captured coverage read.
+ * There is no hysteresis and no hidden latch anywhere in the path.
  *
  * Wired into the narrator prompt by slice 5, behind `CHAT_AFFORDANCE_CUES`
  * (default OFF): the pipeline takes this read from the committed pre-fan-out cut,
@@ -142,6 +165,12 @@ const HAIR_EVENT_FOR_CAUSE: Readonly<Record<BodySurfaceWetnessCause, HairEventKi
  */
 export interface ChatAffordanceWardrobe {
   readonly worn: readonly WornItemInput[];
+  /**
+   * The resolved wardrobe's `partVisibility` — the SAME occlusion pass the
+   * coverage rows came from, so the garment domain never re-derives who is
+   * buried under whom.
+   */
+  readonly partVisibility?: Readonly<Record<string, WornVisibility>>;
 }
 
 export interface ChatAffordanceReadInput {
@@ -154,6 +183,14 @@ export interface ChatAffordanceReadInput {
   /** Active conditions; their `attributeEffects` overlay on top, exactly as the prompt builder does. */
   readonly conditions?: readonly ActiveCondition[];
   readonly wardrobe?: ChatAffordanceWardrobe;
+  /**
+   * The conversation's garment store + this subject's actor handle. Present ⇒
+   * the garment domain runs off real wardrobe truth; absent (or an actor with no
+   * instances) ⇒ it is not run at all, because an unmodelled wardrobe is
+   * UNKNOWN, never empty.
+   */
+  readonly garments?: ChatGarmentStore;
+  readonly garmentActorId?: string;
   readonly bodySurface: BodySurfaceState;
   readonly environment: ChatEnvironment;
   /** The story clock this read is taken at (`ChatScenario.clockMinutes`). */
@@ -174,6 +211,38 @@ export interface ChatAffordanceReadResult {
    * a second time and risking a cue that disagrees with the read it decorates.
    */
   readonly attributes: ResolvedAttributeSnapshot;
+  /**
+   * The staged effective-coverage read for this cut, or `null` when this actor's
+   * wardrobe is unmodelled.
+   *
+   * The owner ruling is that this is CAPTURED with the presentation cut rather
+   * than reconstructed later, so the caller persists it onto the garment store
+   * (`ChatGarmentStore.coverage`) — the same JSONB value, the same rollback
+   * anchor, as the garments it describes.
+   */
+  readonly coverage: EffectiveCoverageRead | null;
+  /**
+   * The garment names this read spoke about, keyed by instance id — cue
+   * projection needs them to say "her jacket" rather than "the fabric over her
+   * shoulders", and the observation itself carries only a body location and tags.
+   */
+  readonly garmentNames: Readonly<Record<string, string>>;
+  /**
+   * Exactly what was handed to the staged runner.
+   *
+   * The read-only developer preview (architecture spec §Resolved) re-traces the
+   * SAME request through each domain's `trace(...)` to show the staged
+   * calculation. Handing the request back rather than rebuilding it there is
+   * what stops the preview explaining a read that differs from the real one.
+   */
+  readonly request: {
+    readonly subjectId: AffordanceSubjectId;
+    readonly storyTime: AffordanceStoryTime;
+    readonly attributes: ResolvedAttributeSnapshot;
+    readonly payloads: Readonly<Record<string, unknown>>;
+    readonly perception: AffordancePerceptionView;
+    readonly domains: readonly RegisteredAffordanceDomain[];
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -297,15 +366,30 @@ function hairEvents(input: ChatAffordanceReadInput): HairCausalEvent[] {
 /**
  * Build one subject's affordance read for the current committed cut.
  *
- * Only the domains this lane can actually feed are run (`hair` today). Handing
- * the default registry every domain would emit an `affordance.input.unavailable`
- * warning per unfed domain per exchange — degradation telemetry for a decision
- * nobody made. Adding a domain here is meant to be a deliberate act: you add it
- * when you have built its payload.
+ * Only the domains this lane can actually feed are run. Handing the default
+ * registry every domain would emit an `affordance.input.unavailable` warning per
+ * unfed domain per exchange — degradation telemetry for a decision nobody made.
+ * Adding a domain here is meant to be a deliberate act: you add it when you have
+ * built its payload. Hair always runs; garment runs when this actor's wardrobe
+ * is actually modelled as instances.
  */
 export function buildChatAffordanceRead(input: ChatAffordanceReadInput): ChatAffordanceReadResult {
   const storyTime = Math.max(0, Math.trunc(input.clockMinutes));
   const coverage = input.wardrobe ? readHairCoverage(input.wardrobe) : undefined;
+
+  // The garment half (slice 6). `null` ⇒ unmodelled wardrobe ⇒ the domain is not
+  // run and nothing is captured — an unknown wardrobe, never an empty one.
+  const garment =
+    input.wardrobe && input.garments && input.garmentActorId
+      ? buildChatGarmentAffordance({
+          store: input.garments,
+          actorId: input.garmentActorId,
+          worn: input.wardrobe.worn,
+          ...(input.wardrobe.partVisibility === undefined ? {} : { visibility: input.wardrobe.partVisibility }),
+          environment: input.environment,
+          clockMinutes: storyTime,
+        })
+      : null;
 
   // Standing outdoor rain HOLDS the committed soaking rather than drying it
   // forward (`surfaceDryingSuspended` is the one shared definition, so this read
@@ -344,23 +428,56 @@ export function buildChatAffordanceRead(input: ChatAffordanceReadInput): ChatAff
   };
 
   const attributes = resolvedAttributeSnapshot(resolveSubjectAttributes(input));
-  const read = deriveAffordanceRead({
+  const request = {
     subjectId: affordanceSubjectId(input.subjectId),
     storyTime,
     attributes,
     perception: affordancePerceptionView({
-      // Unlisted locations read `unknown` and fail closed, so naming only `hair`
-      // is not a gap: it is the only location this lane can speak for.
-      exposure: { [HAIR_LOCATION_ID]: coverage?.exposure ?? "unknown" },
+      exposure: {
+        // The garment domain speaks about the surface of what is worn, so the
+        // wardrobe answers for every location it reaches.
+        ...(garment?.exposure ?? {}),
+        // Hair LAST, deliberately: a hat both covers `hair` and is a garment, and
+        // the hair adapter's own verdict is the careful one (partial coverage
+        // reads `hinted`, never `visible`). Unlisted locations still read
+        // `unknown` and fail closed.
+        [HAIR_LOCATION_ID]: coverage?.exposure ?? "unknown",
+      },
       // The chat lane's observer is the player, present in the scene; sight is the
       // one channel it can positively assert.
       channels: { sight: "available" },
     }),
-    domains: [hairAffordanceDomain],
-    payloads: { [HAIR_DOMAIN_ID]: payload },
+    domains: garment ? [hairAffordanceDomain, garmentAffordanceDomain] : [hairAffordanceDomain],
+    payloads: {
+      [HAIR_DOMAIN_ID]: payload as unknown,
+      ...(garment === null ? {} : { [GARMENT_DOMAIN_ID]: garment.payload as unknown }),
+    },
+  };
+  const read = deriveAffordanceRead({
+    ...request,
     previousCues: input.previousCues ?? emptyAffordanceCueState(),
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });
 
-  return { read, nextCues: read.nextCues, attributes };
+  return {
+    read,
+    nextCues: read.nextCues,
+    attributes,
+    coverage: garment?.coverage ?? null,
+    garmentNames: garmentNamesOf(input),
+    request,
+  };
+}
+
+/**
+ * Instance id → display name for the garments this read could speak about.
+ *
+ * Taken from the coverage ROWS rather than the store, so a name only ever
+ * appears for a garment the read actually saw — and it is the same name the
+ * wardrobe digest uses, because both come from the resolved wardrobe items.
+ */
+function garmentNamesOf(input: ChatAffordanceReadInput): Record<string, string> {
+  const names: Record<string, string> = {};
+  for (const row of input.wardrobe?.worn ?? []) names[row.garmentId] = row.name;
+  return names;
 }

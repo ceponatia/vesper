@@ -12,6 +12,7 @@ import {
   type AffordanceDomainDefinition,
   type AffordanceDomainRequest,
   type AffordanceDomainRun,
+  type AffordanceDomainTrace,
   type AffordancePhenomenonDefinition,
   type AffordanceResolution,
   type AffordanceResolutionContext,
@@ -277,77 +278,94 @@ export function registerAffordanceDomain<
       ...(detail === undefined ? {} : { detail }),
     }));
 
+  /**
+   * The staged run, with the intermediates kept. `resolve` throws them away and
+   * `trace` renders them — running ONE implementation is what stops the debug
+   * view from drifting away from the read it claims to explain.
+   */
+  const run = (request: AffordanceDomainRequest): AffordanceDomainTrace => {
+    const diagnostics: Diagnostic[] = [];
+    const evidence: (readonly AffordanceEvidence[])[] = [];
+    const stage = (
+      overrides: Partial<AffordanceDomainTrace> & { resolutions: readonly AffordanceResolution[] },
+    ): AffordanceDomainTrace => ({
+      domainId: definition.id,
+      profile: null,
+      inputs: null,
+      mechanics: null,
+      frame: null,
+      evidence: mergeAffordanceEvidence(...evidence),
+      diagnostics,
+      ...overrides,
+    });
+
+    const profileResult = definition.compileProfile(request);
+    evidence.push(profileResult.evidence);
+    diagnostics.push(...profileResult.diagnostics);
+    const profile = profileResult.profile;
+    if (profile === undefined) {
+      diagnostics.push(
+        diag("warn", AFFORDANCE_INPUT_UNAVAILABLE, `No structural profile for domain ${definition.id}`, {
+          path: definition.id,
+        }),
+      );
+      return stage({ resolutions: suppressAll(AFFORDANCE_SUPPRESSED_NO_PROFILE) });
+    }
+
+    const read = definition.readInputs(request);
+    if (read.status !== "supported") {
+      const code = read.status === "invalid" ? AFFORDANCE_INPUT_INVALID : AFFORDANCE_INPUT_UNAVAILABLE;
+      diagnostics.push(diag("warn", code, `Domain ${definition.id} inputs ${read.status}`, { path: definition.id }));
+      return stage({ profile, resolutions: suppressAll(code, definition.id) });
+    }
+    evidence.push(read.evidence, read.value.state.evidence);
+
+    const mechanicsResult = definition.deriveMechanics(profile, read.value.state);
+    evidence.push(mechanicsResult.evidence);
+    diagnostics.push(...mechanicsResult.diagnostics);
+
+    const frame = deepFreeze(definition.buildFrame(profile, mechanicsResult.mechanics, read.value.context));
+    evidence.push(frame.evidence);
+
+    const resolutions: AffordanceResolution[] = [];
+    for (const phenomenon of definition.phenomena) {
+      const unmet = unmetDependencies(phenomenon.dependencies, read.value.state.inputs);
+      if (unmet) {
+        diagnostics.push(
+          diag("warn", unmet.code, `${phenomenon.id} suppressed: ${unmet.keys.join(", ")}`, {
+            path: phenomenon.id,
+            context: { keys: [...unmet.keys] },
+          }),
+        );
+        resolutions.push({
+          kind: "suppressed",
+          phenomenonId: phenomenon.id,
+          code: unmet.code,
+          detail: unmet.keys.join(","),
+        });
+        continue;
+      }
+      resolutions.push(phenomenon.resolveFrame(frame));
+    }
+
+    return stage({ profile, inputs: read.value.state.inputs, mechanics: mechanicsResult.mechanics, frame, resolutions });
+  };
+
   return {
     id: definition.id,
     requiredAttributeIds: definition.requiredAttributeIds,
     phenomenonIds: definition.phenomena.map((phenomenon) => phenomenon.id),
 
     resolve(request: AffordanceDomainRequest): AffordanceDomainRun {
-      const diagnostics: Diagnostic[] = [];
-      const evidence: (readonly AffordanceEvidence[])[] = [];
-
-      const profileResult = definition.compileProfile(request.attributes);
-      evidence.push(profileResult.evidence);
-      diagnostics.push(...profileResult.diagnostics);
-      const profile = profileResult.profile;
-      if (profile === undefined) {
-        diagnostics.push(
-          diag("warn", AFFORDANCE_INPUT_UNAVAILABLE, `No structural profile for domain ${definition.id}`, {
-            path: definition.id,
-          }),
-        );
-        return {
-          domainId: definition.id,
-          resolutions: suppressAll(AFFORDANCE_SUPPRESSED_NO_PROFILE),
-          evidence: mergeAffordanceEvidence(...evidence),
-          diagnostics,
-        };
-      }
-
-      const read = definition.readInputs(request);
-      if (read.status !== "supported") {
-        const code = read.status === "invalid" ? AFFORDANCE_INPUT_INVALID : AFFORDANCE_INPUT_UNAVAILABLE;
-        diagnostics.push(
-          diag("warn", code, `Domain ${definition.id} inputs ${read.status}`, { path: definition.id }),
-        );
-        return {
-          domainId: definition.id,
-          resolutions: suppressAll(code, definition.id),
-          evidence: mergeAffordanceEvidence(...evidence),
-          diagnostics,
-        };
-      }
-      evidence.push(read.evidence, read.value.state.evidence);
-
-      const mechanicsResult = definition.deriveMechanics(profile, read.value.state);
-      evidence.push(mechanicsResult.evidence);
-      diagnostics.push(...mechanicsResult.diagnostics);
-
-      const frame = deepFreeze(definition.buildFrame(profile, mechanicsResult.mechanics, read.value.context));
-      evidence.push(frame.evidence);
-
-      const resolutions: AffordanceResolution[] = [];
-      for (const phenomenon of definition.phenomena) {
-        const unmet = unmetDependencies(phenomenon.dependencies, read.value.state.inputs);
-        if (unmet) {
-          diagnostics.push(
-            diag("warn", unmet.code, `${phenomenon.id} suppressed: ${unmet.keys.join(", ")}`, {
-              path: phenomenon.id,
-              context: { keys: [...unmet.keys] },
-            }),
-          );
-          resolutions.push({
-            kind: "suppressed",
-            phenomenonId: phenomenon.id,
-            code: unmet.code,
-            detail: unmet.keys.join(","),
-          });
-          continue;
-        }
-        resolutions.push(phenomenon.resolveFrame(frame));
-      }
-
-      return { domainId: definition.id, resolutions, evidence: mergeAffordanceEvidence(...evidence), diagnostics };
+      const traced = run(request);
+      return {
+        domainId: traced.domainId,
+        resolutions: traced.resolutions,
+        evidence: traced.evidence,
+        diagnostics: traced.diagnostics,
+      };
     },
+
+    trace: run,
   };
 }

@@ -571,6 +571,7 @@ describe("R2 minted ad-hoc garments (F21)", () => {
         },
       ],
       cues: emptyGarmentCueState(),
+      coverage: {},
     };
     // It is real state — but has no library id, so it never enters the
     // definition-id projection the legacy readers consume.

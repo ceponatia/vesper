@@ -202,8 +202,8 @@ function probeDefinition(
     id: "probe",
     requiredAttributeIds: ["eyes.color"],
 
-    compileProfile: (attributes) => {
-      const tone = axisContributionFor(toneAxis, attributes);
+    compileProfile: (request) => {
+      const tone = axisContributionFor(toneAxis, request.attributes);
       if (!tone) return { profile: undefined, evidence: [], diagnostics: [] };
       return {
         profile: { tone: tone.contribution.scale },
@@ -309,8 +309,8 @@ const idsOf = (read: AffordanceRead): string[] => read.observations.map((entry) 
 // ---------------------------------------------------------------------------
 
 describe("the shipped registry", () => {
-  it("holds the domains a production read walks — hair joined in slice 2", () => {
-    expect(affordanceDomains.map((domain) => domain.id)).toEqual(["hair"]);
+  it("holds the domains a production read walks — hair in slice 2, garment in slice 6", () => {
+    expect(affordanceDomains.map((domain) => domain.id)).toEqual(["hair", "garment"]);
   });
 
   it("a subject with no hair structure and no payload resolves to silence, not invention", () => {
@@ -367,9 +367,13 @@ describe("profile compilation", () => {
   it("is deterministic and independent of the order attributes arrive in", () => {
     const shuffled: readonly AttributeValue[] = [...GREEN_EYES].reverse();
     const definition = probeDefinition();
-    expect(definition.compileProfile(attributesOf(shuffled))).toEqual(
-      definition.compileProfile(attributesOf(GREEN_EYES)),
-    );
+    const requestFor = (values: readonly AttributeValue[]) => ({
+      subjectId: affordanceSubjectId("probe_subject"),
+      storyTime: 0,
+      attributes: attributesOf(values),
+      payload: undefined,
+    });
+    expect(definition.compileProfile(requestFor(shuffled))).toEqual(definition.compileProfile(requestFor(GREEN_EYES)));
     expect(JSON.stringify(read({ attributes: shuffled }))).toBe(JSON.stringify(read({ attributes: GREEN_EYES })));
   });
 

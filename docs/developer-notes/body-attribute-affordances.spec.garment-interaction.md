@@ -283,3 +283,117 @@ visibility is insufficient; exposure and consent remain hard gates; **at most
 one** intimate body-or-garment cue per exchange, under an aggressive cooldown
 across the shared intimate cue family; and the cue must not displace dialogue
 or the exchange's primary action.
+
+## Resolved (Slice 6 implementation, 2026-07-28)
+
+Shipped as `src/contracts/affordances/domains/garment/` (pure) plus the chat
+adapter `src/server/engine/chat-garment-affordances.ts`. The registry is
+`affordanceDomains = [hair, garment]`.
+
+### What the code does that this spec's sketch did not say
+
+- **The structural profile is SUBJECT-scoped, not garment-scoped.** The sketch
+  shows `GarmentStructuralProfile { garmentId, regions }` — one garment. One
+  affordance read is about one subject, and a subject wears several garments
+  that layer over each other, so the shipped profile is a flat, `regionId`-sorted
+  collection across everything worn, each region carrying its own
+  `garmentId`/`partId`. That is the architecture spec's own "regional
+  collections" pattern rather than a new one.
+- **`GarmentFitClass` gained an `unknown` member**, mirroring
+  `GARMENT_MATERIAL_UNKNOWN` exactly. Nothing in the clothing system records fit
+  today (not the item definition, not the blueprint node, not the instance), and
+  a conservative registry member is how this codebase already says "the wardrobe
+  cannot answer". `unknown` establishes no contact, so wet cling cannot fire from
+  it; its conformance coefficient sits mid-scale. **This is the single open gap
+  in the ruled scope** — see "The fit gap" below.
+- **`dryMass` is derived, not authored.** The wardrobe registry has no weight
+  coefficient; `drapeStiffness` is the closest honest proxy (denim and leather
+  are its heavy families, silk and knit its light ones), damped toward the middle
+  so a derived term does not pretend to the precision of an authored one.
+- **The intimate-focus gate is applied per phenomenon, by what the read is
+  about.** The policy does not say which garment reads count as intimate, and
+  the two obvious readings both fail: keyed on "any covered location", every
+  ordinary top is intimate (the registry hangs breasts under `chest`) and the
+  domain is permanently silent; keyed on nothing, a soaked-transparent top sails
+  through the gate the policy exists for. Shipped split:
+  `garment.wet_surface_state` is about the FABRIC and is checked against its
+  anchor location only (so a bra at `chest` is gated and a shirt at `shoulders`
+  is not); `garment.effective_opacity` and `garment.wet_cling` are about the BODY
+  through or under the fabric and are checked against every location involved.
+- **Occlusion is handled in the domain, not in perception.** A buried region
+  produces no visual read for any observer, so the wardrobe's own
+  `resolveWardrobeVisibility` verdict rides the frame's regional state and the
+  phenomena drop `hidden` regions — the same call the garment cue block already
+  makes. Observer-specific filtering still runs afterwards, in the core.
+- **Garment identity rides a `garment:<id>` semantic tag.** The core
+  observation carries a body location, a band, and tags; cue projection needs the
+  garment's NAME. A prefixed tag is the declared channel for structured cue
+  metadata, and it kept a domain noun out of the shared type.
+
+### One domain-neutral core change
+
+`AffordanceDomainDefinition.compileProfile` now takes the whole
+`AffordanceDomainRequest` rather than the attribute snapshot. A body domain reads
+`request.attributes`; a domain about something the character WEARS reads
+`request.payload`, because garment structure belongs to the wardrobe. The core
+still names no domain — `src/contracts/affordances/core/domain-neutrality.test.ts`
+asserts that mechanically over the core's source.
+
+`RegisteredAffordanceDomain` also gained `trace(request)`, which runs the same
+stages `resolve` does and keeps the intermediates. It exists for the developer
+preview and is debug-only.
+
+### The fit gap
+
+`garmentContactsFromFit` implements the ruled establishment law in full
+(`fitted`/`tight` establish ordinary contact; everything else needs pose,
+pressure, or an asserted relation). The chat adapter's `recordedFit()` seam
+returns `undefined` for every garment because no wardrobe field exists, so:
+
+- no contact is established;
+- the adapter OMITS the `contacts` payload key entirely;
+- the core suppresses `garment.wet_cling` with `affordance.input.unavailable`,
+  exactly as it suppresses `hair.strands_adhere_to_skin`.
+
+Cling is therefore fixture-proven and production-silent. The moment the wardrobe
+records fit, that one function grows the lookup and cling starts firing with no
+other change here or in the domain.
+
+### Effective coverage: where the capture rides
+
+`EffectiveCoverageRead` (bands + contributing garment evidence per body location)
+lives in `src/contracts/items/effective-coverage-read.ts` — the wardrobe owns the
+vocabulary and the persisted shape; the affordance domain owns the derivation
+(`domains/garment/effective-coverage.ts`), which reads the same
+`effectiveOpacity` the opacity phenomenon bands. Layers ADD cover: a location's
+band comes from the most-concealing region reaching it, so a soaked-transparent
+shirt over a dry camisole leaves the chest opaque.
+
+The capture is persisted at `ChatGarmentStore.coverage[actorId]` — inside the
+garment store, so it rides `pre_exchange_scenario` with the garments it describes
+and a retake restores both or neither. No migration: the store is one JSONB
+column.
+
+### Narrator boundary with `CHAT_GARMENT_CUES`
+
+`CHAT_GARMENT_CUES` owns garment STATE and its changes (closure, roll,
+displacement, the condition band, deposits, damage). `CHAT_AFFORDANCE_CUES` owns
+the current derived VISUAL EFFECT of that state (surface behavior, opacity,
+cling). They overlap at exactly one place — garment wetness — so with both flags
+on the pipeline passes the garment ids the wardrobe block already spoke about and
+the affordance projection drops its surface line for them. Opacity and cling have
+no counterpart there and always survive.
+
+### Deferred, and the diagnostics that hold the silence
+
+| Deferred | Why | Where the silence shows |
+| --- | --- | --- |
+| `garment.wind_or_motion_response` | no wind/motion owner (shared scene/body-relations owner) | not registered at all — no permanently-suppressed row per read |
+| `garment.pose_drape` | no pose owner | not registered |
+| `garment.wet_cling` **in production** | no fit and no pose ⇒ no contact | `affordance.input.unavailable` on the `contacts` dependency |
+| intimate garment cues | chat lane has no narrative-focus/consent owner | `intimate_gated` (consent) / `not_narrative_focus` (relevance) |
+
+`effectiveFlutterLoad` and `effectiveDrapeStiffness` are derived and
+fixture-tested anyway: the spec names them as shared mechanics, stiffness feeds
+`contourConformance` today, and the "saturation cannot increase flutter" law is
+about the mechanics, not its consumer.

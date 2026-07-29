@@ -80,6 +80,66 @@ export const inspectorPromptSchema = z.object({
 });
 export type InspectorPrompt = z.infer<typeof inspectorPromptSchema>;
 
+/**
+ * The read-only affordance preview (body-attribute-affordances slice 6): the
+ * staged calculation for every domain this lane can feed. Every field heals —
+ * this is a debug surface, and a shape drift should show a gap, not an error page.
+ */
+const previewValueSchema = z.object({ path: textOr(""), value: textOr("") });
+
+export const affordancePreviewResolutionSchema = z.object({
+  phenomenonId: textOr(""),
+  kind: z.enum(["observation", "constraint", "suppressed"]).catch("suppressed"),
+  code: textOr(""),
+  detail: textOr(""),
+  band: textOr(""),
+  locationId: textOr(""),
+  tags: z.array(z.string()).catch([]),
+});
+export type AffordancePreviewResolution = z.infer<typeof affordancePreviewResolutionSchema>;
+
+export const affordancePreviewDomainSchema = z.object({
+  domainId: textOr(""),
+  inputs: arrayOf(z.object({ key: textOr(""), status: textOr("") })),
+  profile: arrayOf(previewValueSchema).nullable().catch(null),
+  mechanics: arrayOf(previewValueSchema),
+  resolutions: arrayOf(affordancePreviewResolutionSchema),
+  evidence: z.array(z.string()).catch([]),
+  diagnostics: arrayOf(z.object({ level: textOr("info"), code: textOr(""), message: textOr("") })),
+});
+export type AffordancePreviewDomain = z.infer<typeof affordancePreviewDomainSchema>;
+
+export const affordancePreviewSchema = z.object({
+  storyTime: z.number().catch(0),
+  cueFlagEnabled: z.boolean().catch(false),
+  domains: arrayOf(affordancePreviewDomainSchema),
+  perception: z
+    .object({
+      exposure: arrayOf(z.object({ locationId: textOr(""), exposure: textOr("unknown") })),
+      channels: arrayOf(z.object({ channel: textOr(""), available: z.boolean().catch(false) })),
+    })
+    .catch({ exposure: [], channels: [] }),
+  observations: arrayOf(affordancePreviewResolutionSchema),
+  suppressed: arrayOf(affordancePreviewResolutionSchema),
+  cues: arrayOf(z.object({ phenomenonId: textOr(""), band: textOr(""), line: textOr("") })),
+  coverage: z
+    .object({
+      atMinutes: z.number().catch(0),
+      entries: arrayOf(
+        z.object({
+          locationId: textOr(""),
+          band: textOr("opaque"),
+          evidence: arrayOf(
+            z.object({ garmentId: textOr(""), regionId: textOr(""), effectiveOpacity: z.number().catch(0) }),
+          ),
+        }),
+      ),
+    })
+    .nullable()
+    .catch(null),
+});
+export type AffordancePreview = z.infer<typeof affordancePreviewSchema>;
+
 export const episodeScoresSchema = z.object({
   scores: arrayOf(z.object({ id: z.string().min(1), score: z.number().catch(0) })),
   degraded: z.boolean().catch(false),
@@ -210,6 +270,7 @@ export type CompositionHealth = z.infer<typeof compositionHealthSchema>;
 export const chatInspectorApi = {
   overview: (chatId: string) => apiGet(inspectorOverviewSchema, base(chatId)),
   prompt: (chatId: string) => apiGet(inspectorPromptSchema, `${base(chatId)}/prompt`),
+  affordances: (chatId: string) => apiGet(affordancePreviewSchema, `${base(chatId)}/affordances`),
   agentFailures: (chatId: string, days?: number) =>
     apiGet(agentHealthSchema, withQuery(`${base(chatId)}/agent-failures`, days ? { days: String(days) } : {})),
   compositionFallbacks: (chatId: string, days?: number) =>

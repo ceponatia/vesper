@@ -500,7 +500,22 @@ memory work. It supplies garment observations to those consumers.
 
 ### Slice 8 — affordance and visual-memory integration
 
-- Feed wardrobe-owned structure/current state to garment affordances.
+- ~~Feed wardrobe-owned structure/current state to garment affordances.~~
+  **Done 2026-07-28**, from the affordance side, as slice 6 of
+  [body-attribute-affordances](body-attribute-affordances.plan.md). The garment
+  affordance domain reads this plan's material registry, blueprint snapshots,
+  presentation-aware coverage, and condition gradients — it creates no second
+  catalog and mutates nothing. Two things came back the other way:
+  - **the wardrobe now owns the final effective-coverage vocabulary** (opaque /
+    hinted / exposed by body location, with contributing garment evidence), in
+    `src/contracts/items/effective-coverage-read.ts`, and the derived read is
+    captured on the store at `ChatGarmentStore.coverage` so narration, body
+    affordances, retakes, and images share one answer;
+  - **the one wardrobe gap that blocks a ruled feature is garment FIT.** No item
+    definition, blueprint node, or instance records how closely a garment sits
+    against the body, so the affordance layer's wet-cling read can never
+    establish contact and stays production-silent. Adding a fit field is the
+    single change that would light it up.
 - Admit observations to shared visual attention/memory only after perception
   and cut capture.
 - Evaluate scene-image reuse; do not build an image-only state model.

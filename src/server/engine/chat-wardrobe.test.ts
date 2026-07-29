@@ -251,6 +251,7 @@ describe("the presentation-aware wardrobe read", () => {
       },
       instances: [instance("g_shirt", SHIRT_BLUEPRINT, "def_shirt"), instance("g_tee", TEE_BLUEPRINT, "def_tee")],
       cues: emptyGarmentCueState(),
+      coverage: {},
     };
   }
 

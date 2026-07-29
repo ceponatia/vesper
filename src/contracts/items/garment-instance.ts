@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { garmentDegreeBandSchema, garmentUnitSchema, GARMENT_UNIT_ONE, type GarmentUnit } from "./garment-material";
 import { garmentBlueprintSchema, garmentPartIdSchema, GARMENT_ROOT_PART_ID } from "./garment-blueprint";
+import {
+  effectiveCoverageReadSchema,
+  emptyEffectiveCoverageRead,
+  type EffectiveCoverageRead,
+} from "./effective-coverage-read";
 
 /**
  * Garment INSTANCE state (clothing-state-graph.plan.md §"Garment instance and
@@ -33,6 +38,8 @@ export const GARMENT_MAX_REGION_OVERRIDES = 16;
 export const GARMENT_MAX_OPERATIONS = 12;
 /** Length cap on a scene anchor phrase ("over the desk chair"). */
 export const GARMENT_ANCHOR_MAX_CHARS = 80;
+/** Max actors whose captured effective-coverage read one store retains (character + player + slack). */
+export const CHAT_GARMENT_COVERAGE_MAX_ACTORS = 8;
 
 const garmentInstanceIdSchema = z.string().trim().min(1).max(64);
 const actorHandleSchema = z.string().trim().min(1).max(64);
@@ -397,12 +404,37 @@ export const chatGarmentStoreSchema = z.object({
     .transform((instances) => capGarmentInstances(instances)),
   /** Narrator mention history + reported bands (slice 6) — see `garmentCueStateSchema`. */
   cues: garmentCueStateSchema.catch(emptyGarmentCueState()).default(emptyGarmentCueState()),
+  /**
+   * The CAPTURED effective-coverage read per garment actor handle
+   * (body-attribute-affordances slice 6; the owner ruling "effective coverage is
+   * captured, not reconstructed").
+   *
+   * It rides inside the store for the same structural reason `cues` does: the
+   * store is the presentation cut, and a derived read that lived anywhere else
+   * could be restored one exchange out of step with the garments it describes.
+   * One JSONB field, one rollback anchor (`pre_exchange_scenario`), byte-stable
+   * on a retake.
+   *
+   * DERIVED, never truth: nothing reads it to decide what a garment IS. It
+   * exists so narration, body affordances, retakes, and images share one answer
+   * about what is still concealed rather than each recomputing one.
+   */
+  coverage: z
+    .record(actorHandleSchema, effectiveCoverageReadSchema)
+    .catch({})
+    .default({})
+    .transform((captures) => Object.fromEntries(Object.entries(captures).slice(0, CHAT_GARMENT_COVERAGE_MAX_ACTORS))),
 });
 export type ChatGarmentStore = z.infer<typeof chatGarmentStoreSchema>;
 
 /** The empty store — the degraded default and the pre-seed value. */
 export function emptyChatGarmentStore(): ChatGarmentStore {
-  return { seeded: false, blueprints: {}, instances: [], cues: emptyGarmentCueState() };
+  return { seeded: false, blueprints: {}, instances: [], cues: emptyGarmentCueState(), coverage: {} };
+}
+
+/** This actor's captured coverage read, or the empty one when nothing was captured. */
+export function capturedGarmentCoverage(store: ChatGarmentStore, actorId: string): EffectiveCoverageRead {
+  return store.coverage[actorId] ?? emptyEffectiveCoverageRead();
 }
 
 /**
