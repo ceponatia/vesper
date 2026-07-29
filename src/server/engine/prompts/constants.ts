@@ -149,6 +149,31 @@ export function chatAffordanceCuesEnabled(): boolean {
   return process.env.CHAT_AFFORDANCE_CUES === "on";
 }
 
+/**
+ * The RECOGNIZABLE-FEATURES switch (body-attribute-affordances.plan.md slice 7) —
+ * experimental, default-off, the third of the same shape as `CHAT_GARMENT_CUES`
+ * and `CHAT_AFFORDANCE_CUES` above, and for the same reason: slice 7 is a trial,
+ * and the live-model comparison it exists to run is owner-gated.
+ *
+ * OFF (the default, and anything other than `on`) is today's behavior to the
+ * byte: no recognition read is taken — no truth projection, no observer
+ * candidates, no mention policy — no memory is loaded, and `chat_visual_memory`
+ * is never written, so a conversation that has run with the flag on keeps
+ * whatever it noticed rather than having it cleared. ON adds exactly two things:
+ * at most ONE recognition cue line appended to the affordance cue block, and the
+ * observer memory commit that makes its cooldown work (notice history advances
+ * even on the turns nothing is said — noticing and mentioning are separate
+ * events by ruling). Env-only, no dev route.
+ *
+ * Note the one seam it shares with `CHAT_AFFORDANCE_CUES`: recognition needs a
+ * perception view, which only the affordance adapter builds. With the cue flag
+ * off, the pipeline still builds that read as a PERCEPTION SOURCE and discards
+ * its cue memory and coverage capture — one flag never writes the other's state.
+ */
+export function chatRecognitionCuesEnabled(): boolean {
+  return process.env.CHAT_RECOGNITION_CUES === "on";
+}
+
 /** Max characters of player input echoed inside agent prompts. */
 export const AGENT_INPUT_CAP = 2000;
 /** Max characters of narration echoed inside agent prompts. */

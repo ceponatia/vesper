@@ -1,19 +1,23 @@
 # Body-attribute visual affordances
 
 Status: active — **slices 0–4, the slice 5 wiring, and slice 6 shipped
-2026-07-28** (hair vocabulary split, shared core, hair domain, chat-lane
-wetness/environment owners + adapter + retake capture, the
-`CHAT_AFFORDANCE_CUES` narrator cue path (default OFF), the garment second
-domain with chat wiring + captured effective coverage, and the read-only
-developer preview). **Slice 5 itself is not complete until its live
-comparison runs** — the harness and its deterministic half are done (all
-structural guarantees pass; see the
+2026-07-28; slice 7 shipped 2026-07-29** (hair vocabulary split, shared core,
+hair domain, chat-lane wetness/environment owners + adapter + retake capture,
+the `CHAT_AFFORDANCE_CUES` narrator cue path (default OFF), the garment second
+domain with chat wiring + captured effective coverage, the read-only developer
+preview, and the recognizable-feature projection + observer visual memory
+behind `CHAT_RECOGNITION_CUES`, also default OFF). **Slice 5 itself is not
+complete until its live comparison runs** — the harness and its deterministic
+half are done (all structural guarantees pass; see the
 [trial report](body-attribute-affordances.trial.md)), but the live-model
 comparison was deferred by owner ruling 2026-07-28 because the repository's
-OpenRouter key is dead; it is one command once a key lands. Also remaining
-before the release contract closes: slice 7 (recognition memory), slice 8
-(image decision), the successor-lane adapter follow-up, and per-companion
-rulings. The shared foundation the
+OpenRouter key is dead; it is one command once a key lands. **Slice 7 is
+built but production-inert** for a comparable missing-owner reason: the chat
+lane only knows that a location is exposed when a garment covers it, so bare
+skin reads unknown and recognition correctly stays silent until a
+body-exposure owner exists. Also remaining before the release contract closes:
+slice 8 (image decision), the successor-lane adapter follow-up, and
+per-companion rulings. The shared foundation the
 [romantic-contact plan](romantic-contact-affordances.plan.md) consumes is
 live.
 
@@ -69,7 +73,7 @@ must preserve this distinction:
 | Physiology and body surfaces | The general physiology system is still deferred. There is no complete shared source yet for regional sweat, piloerection, vascular changes, body-surface residue, or persistent pressure marks. |
 | Perception | Successor observations provide a stronger witness/channel model. Legacy chat has coverage and a turn-level sensory allowance, but no full per-sense exposure or proximity model. |
 | Retakes | Both lanes support retakes, but through different state/cut mechanisms. The new read must be captured through each lane's real rollback boundary. |
-| Recognition memory | General memory exists, but precise observer-specific visual notice and mention history do not yet. |
+| Recognition memory | Shipped for legacy chat (slice 7): observer-specific notice and mention history, scoped to the memory group and retake-safe. It stays silent in production until something asserts exposure for uncovered skin. |
 
 A missing owner is real work or a reason to defer that phenomenon. It is never
 permission to infer state from genre, narrator prose, or what would make the
@@ -266,6 +270,52 @@ turn, and retakes rebuild the identical read. Details in the
 - Prove first notice, change detection, hidden-feature safety, long-absence
   recognition, and repetition control before adding acquired fine anatomy.
 
+**Shipped 2026-07-29.** Recognizability stayed a view of existing truth, as
+ruled. One new area records how identity details are *owned* — a fine body
+locus with a finite left/right hand schema, a registry of feature kinds
+(freckle cluster, birthmark, mole, scar), located appearance facts with
+validity windows and supersedence, evented anatomy state, and a short list of
+which canonical attributes are recognition-worthy at all. A second new area
+owns the observer-relative half: what this observer can currently make out,
+what they have noticed before, and whether saying it earns the beat. The chat
+lane wires both behind `CHAT_RECOGNITION_CUES` (default OFF), appending at
+most one extra line to the existing cue block. Observer memory follows the
+**chat memory group**, so "continue our history" retains recognition while a
+fresh conversation starts as strangers, and each row keeps the generation
+before the current exchange so a retake re-runs from the identical memory
+rather than counting the same look twice. Looking is recorded even when
+nothing is said; only a cue that actually reached the transcript starts a
+cooldown. Twenty-three acceptance scenarios prove both specs' lists end to end.
+
+Honest silences that remain by design:
+
+- **Nothing can fire in production yet.** The chat lane asserts exposure only
+  for garment-covered locations and hair, so a nose, a face, or a forearm
+  reads *unknown* — and recognition fails closed on unknown. A body-exposure
+  owner (or an adapter overlay declaring uncovered, coverage-relevant
+  locations visible) is the single change that lights the trial up. This is
+  the same shape of gap as slice 6's missing garment fit, and is deliberately
+  not papered over.
+- Even with exposure solved, **no shipped attribute clears the notice bar** at
+  ordinary conversational distance: a crooked nose scores just under it, and
+  teeth need deliberate inspection, which this lane cannot detect. Scars,
+  birthmarks and missing digits clear it comfortably — but nothing authors
+  located facts or anatomy state in chat yet, so the pipeline passes none.
+- **A change does not outrank a recent mention.** If a known feature changes
+  within about a story day of the narrator last mentioning it, the change is
+  adopted into memory silently instead of being narrated. Defensible, but a
+  calibration ruling if the owner wants change privileged.
+- The developer preview does not yet show the recognition line (minor
+  follow-up).
+
+Detail lives in the
+[feature spec](body-attribute-affordances.spec.recognizable-features.md#resolved-slice-7-implementation-2026-07-29)
+and the
+[visual-memory detail](body-attribute-affordances.recognizable-features.memory.md#shipped-slice-7-implementation-2026-07-29).
+Successor-lane projection, conditions and presentation as feature owners,
+cast-relative uniqueness, semantic-memory document emission, and recognizable
+motion all stay deferred per the 2026-07-28 rulings.
+
 ### Slice 8 — image-consumer decision
 
 Evaluate whether the captured observations improve scene-image composition.
@@ -386,6 +436,24 @@ fixture-tested calibration defaults, never permanent product law.
 - Does wet darkening need per-color lightness metadata, or only a relative
   semantic tag?
   ([hair spec](body-attribute-affordances.spec.hair.md#open-questions))
+- Who owns exposure for **uncovered** skin? Recognition is production-inert
+  until something says a nose or a forearm is visible; the options are a real
+  body-exposure owner or a chat-adapter overlay that declares
+  coverage-relevant uncovered locations visible.
+  ([feature spec](body-attribute-affordances.spec.recognizable-features.md#resolved-slice-7-implementation-2026-07-29))
+- Should the shipped attribute priors be recalibrated so an ordinary
+  distinctive face can be noticed across a table? Today a crooked nose lands
+  just under the notice bar and teeth sit at an inspection-only detail tier,
+  so no attribute-sourced feature can fire even with exposure solved.
+  ([feature spec](body-attribute-affordances.spec.recognizable-features.md#resolved-slice-7-implementation-2026-07-29))
+- Should a **changed** feature outrank the mention cooldown? A change within
+  roughly a story day of the same feature's last mention is remembered but
+  never narrated.
+  ([visual-memory detail](body-attribute-affordances.recognizable-features.memory.md#shipped-slice-7-implementation-2026-07-29))
+- Is the **emotional-callback** cue worth keeping at its shipped weights? With
+  the current priors it can never win — importance ties its threshold and
+  novelty always outranks it — so the reason exists but is unreachable.
+  ([visual-memory detail](body-attribute-affordances.recognizable-features.memory.md#shipped-slice-7-implementation-2026-07-29))
 
 ## Technical companions
 

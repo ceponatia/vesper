@@ -85,7 +85,7 @@ Composite foreign keys prevent cross-world events and dangling item/container ho
 
 ### Character chat & memory
 
-The character-chat lane's own tables (`character_chats` — one conversation, with its rolling summary, clock, plans, and roster; `chat_participants` — the character(s) in a conversation + the `memory_group_id` scope key; `chat_messages` — the transcript; `character_chat_state` — the per-participant tracked state, meters, conditions, wardrobe, scene memory; `chat_presets` — reusable scenario presets) are covered by [character-chat/](character-chat/README.md). The memory tables below are keyed to a chat memory group.
+The character-chat lane's own tables (`character_chats` — one conversation, with its rolling summary, clock, plans, and roster; `chat_participants` — the character(s) in a conversation + the `memory_group_id` scope key; `chat_messages` — the transcript; `character_chat_state` — the per-participant tracked state, meters, conditions, wardrobe, scene memory; `chat_presets` — reusable scenario presets; `chat_visual_memory` — per-observer recognizable-feature notice/mention history, PK `(memory_group_id, viewpoint_id, subject_id)`, two-generation rows so a retake recomputes from the identical pre-exchange memory) are covered by [character-chat/](character-chat/README.md). The memory tables below are keyed to a chat memory group.
 
 | Table | Key columns |
 | --- | --- |
