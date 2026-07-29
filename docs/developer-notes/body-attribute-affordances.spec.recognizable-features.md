@@ -396,3 +396,108 @@ projections, and lane adapters bridge authoritative state and observer memory.
 - **Visual-memory notice threshold, decay, mention history, and
   semantic-memory boundaries** are resolved in the
   [visual-memory detail](body-attribute-affordances.recognizable-features.memory.md#resolved-owner-rulings-2026-07-28).
+
+## Resolved (Slice 7 implementation, 2026-07-29)
+
+Body truth shipped as `src/contracts/appearance-features/` — `locus.ts`
+(`BodyLocusRef` + the finite `humanoid_hand_v1` detail schema),
+`definitions.ts`/`kinds.ts`/`registry.ts` (the feature-kind registry, seeded
+with `pigmentation.freckle_cluster`, `pigmentation.birthmark`,
+`pigmentation.mole`, `mark.scar`), `facts.ts` (located facts with validity
+windows and supersedence), `anatomy-state.ts` (`AnatomyPartState`),
+`attribute-recognition.ts` (which attributes are recognition-worthy), and
+`projection.ts` (`projectAppearanceTruth` → `ProjectedFeatureTruth`). The
+observer-relative half is `src/contracts/affordances/recognition/`
+(`candidates.ts`, `salience.ts`, `visual-memory.ts`, `mention-policy.ts`), and
+the chat lane bridges them in `src/server/engine/chat-recognition-adapter.ts`
+over `visual-memory-store.ts`. Nothing in appearance-features imports the
+affordance layer; nothing in recognition imports a lane.
+
+### What the code does that this spec's sketch did not say
+
+- **`RecognizableFeatureCandidate` carries a `detailTier`.** The sketch lists
+  visibility, uniqueness, and importance only, and files detail tier under
+  visibility inputs. But `strongestDetailTier` is a *stored* memory field, so
+  the tier an observer actually reached has to survive candidate building. It
+  is observer-relative exactly like visibility (base tier 2 at conversational
+  distance, 3 under deliberate inspection), so it rides the same record rather
+  than being recomputed from the priors at commit time.
+- **Attribute recognition metadata is a colocated catalog, not fields on
+  `AttributeDefinition`.** The spec says "optional recognition metadata lives
+  beside the definition"; the shipped catalog is keyed by `attributeId` in
+  `attribute-recognition.ts`. Same effect, far smaller blast radius — the
+  attribute registry is read by the forge, the editor, every prompt builder,
+  and the image pipeline, and none of them should learn a recognition
+  vocabulary to add an eye color. Moving it onto the definition is mechanical
+  when a second consumer needs it. Each entry also carries a `bodyAreaPath`,
+  which is what assembles the derived body-area view (`nose.geometry.shape`)
+  without a second mapping table, and an `eligibleValues` list: only the
+  distinctive members of a vocabulary project, so an ordinary straight nose is
+  never a recognition candidate.
+- **`nose.shape` gained a `crooked` value**, with `autoDefaultExcludes` so an
+  unspecified character never silently acquires it. The spec's canonical
+  example asked for `nose.alignment = "crooked"` *or* an expanded `nose.shape`;
+  expanding the existing vocabulary avoided a second facial-geometry axis that
+  every authoring surface would have to learn.
+- **`visualRealizerId` is optional** on a feature-kind definition. The sketch
+  requires it, but no image consumer exists yet (that is slice 8) and a
+  required field would have been filled with placeholders — the honest shape
+  is "absent until something realizes it".
+- **The priors vocabulary lives in a `priors.ts` leaf**, re-exported verbatim
+  by `projection.ts` so the frozen seam's names and import paths are unchanged.
+  Purely a cycle fix (`pnpm lint:cycles`): the kind registry and the attribute
+  catalog both need detail tiers and priors, while `projection.ts` consumes
+  both registries. Priors also stay UNBRANDED integers here — appearance
+  features sit upstream of the affordance core, and the recognition layer is
+  the single door that converts them to `UnitInterval`.
+- **Locus validation is split by what the read can afford to be wrong about.**
+  Topology fails closed on an unsupported detail path, as ruled; an
+  appearance-only read may coarsen to the parent location with a diagnostic
+  when the value stays semantically true there — the spec's healing fallback,
+  implemented as two call sites rather than one flag.
+- **Fingerprint adoption is its own explicit path.** `applyRecognitionNotices`
+  can never overwrite a remembered `truthFingerprint`; adopting a changed one
+  is `applyRecognitionFingerprintChanges`. Two functions, because "the observer
+  looked again" and "the observer now knows the feature changed" are different
+  events and collapsing them is how a change would silently disappear before
+  it could be narrated.
+- **Candidate building is hard-gated before scoring**, not scored and then
+  filtered: unknown exposure, hidden exposure, a missing sight channel, an
+  insufficient detail tier, and an intimate location without explicit
+  permission each drop the candidate outright with a diagnostic. Rarity cannot
+  reach the arithmetic, let alone survive it.
+
+### Honest silences
+
+- **Recognition is production-inert today.** The chat perception view asserts
+  exposure only for garment-covered locations plus hair; bare skin — nose,
+  face, arms, fingers — reads `unknown`, and unknown is a hard gate. The
+  prerequisite is a body-exposure owner, or an adapter overlay that asserts
+  *visible* for uncovered, coverage-relevant locations. Deliberately an owner
+  call rather than a papered-over default, the same call slice 6's garment fit
+  gap raised.
+- **No shipped attribute entry can fire even with exposure solved.**
+  `nose.shape` priors (uniqueness 3_500, importance 3_000) mix to salience
+  3_275 at full visibility — just under the 3_500 notice bar at tier 2;
+  `face.freckles` (2_275) is further under; both teeth entries require tier 3,
+  which this lane never reaches. `mark.scar` (4_725), birthmark
+  (4_375), and anatomy (7_550) clear comfortably — but no chat surface authors
+  located facts or anatomy state yet, so the pipeline passes none. The adapter
+  accepts both as optional inputs precisely so the lane that gains an author
+  threads them without reshaping the seam.
+- **Conditions and presentation are not feature owners yet.** Both source
+  kinds exist in `AppearanceSourceRef`; nothing projects them.
+- **Successor-lane projection (rollout step 8), cast-relative uniqueness,
+  semantic-memory document emission, and recognizable motion** stay deferred
+  per the 2026-07-28 rulings.
+
+### Tests
+
+`recognition.test.ts` (52 cases across the package) plus
+`recognition-acceptance.test.ts` and `recognition-acceptance-safety.test.ts` —
+23 scenarios over the shared `src/test/recognition-acceptance.ts` harness,
+proving this spec's acceptance list and the
+[visual-memory detail](body-attribute-affordances.recognizable-features.memory.md)'s
+end to end, with zero defects found. The chat adapter adds 16, and
+`chat-visual-memory.int.test.ts` adds 7 integration cases that self-skip
+without Postgres.

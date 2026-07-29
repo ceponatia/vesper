@@ -79,7 +79,7 @@ src/contracts/affordances/
 The exact filenames may change during implementation. The ownership and
 dependency direction may not.
 
-## Shipped file map (slices 2–6)
+## Shipped file map (slices 2–7)
 
 ### Pure contracts
 
@@ -89,6 +89,27 @@ dependency direction may not.
 | `src/contracts/affordances/domains/hair/*` | The first proving domain (slices 2–3). Structure from canonical attributes. |
 | `src/contracts/affordances/domains/garment/*` | The second proving domain (slice 6). Structure from wardrobe truth. |
 | `src/contracts/items/effective-coverage-read.ts` | The final `EffectiveCoverageRead` vocabulary + persisted shape. **Owned by items**, derived by the garment domain — items never import affordances. |
+
+### Recognition (slice 7)
+
+Body truth first, observer-relative second — the §Recognition ownership tree
+below, as built.
+
+| Path | What it owns |
+| --- | --- |
+| `src/contracts/appearance-features/locus.ts` | `BodyLocusRef` + the finite detail-schema registry (`humanoid_hand_v1`, left/right named digits); fail-closed topology validation, coarsen-with-diagnostic for appearance-only reads. |
+| `src/contracts/appearance-features/priors.ts` | Detail tiers + authored recognition priors, as a **leaf**: the kind registry and the attribute catalog both need it while `projection.ts` consumes both. Re-exported verbatim by `projection.ts`, so the frozen seam's names are unchanged (`pnpm lint:cycles`). |
+| `src/contracts/appearance-features/definitions.ts` · `kinds.ts` · `registry.ts` | The feature-kind contract and its seeded registry (freckle cluster, birthmark, mole, scar). |
+| `src/contracts/appearance-features/facts.ts` · `anatomy-state.ts` | Located appearance facts (validity windows + supersedence) and evented `AnatomyPartState`. |
+| `src/contracts/appearance-features/attribute-recognition.ts` | Which canonical attributes are recognition-worthy, their eligible values, priors, and body-area path. Colocated catalog, not fields on `AttributeDefinition`. |
+| `src/contracts/appearance-features/projection.ts` | `projectAppearanceTruth` → lane-neutral `ProjectedFeatureTruth` with canonical fingerprints. Never salience, never observer state. |
+| `src/contracts/affordances/recognition/candidates.ts` | `buildRecognitionCandidates` — the hard exposure/channel/tier/intimacy gates, then observer-relative visibility, uniqueness, importance, and `detailTier`. |
+| `src/contracts/affordances/recognition/salience.ts` | Fixed-point salience, freshness buckets, novelty ladder, cooldown, recognition strength/confidence. |
+| `src/contracts/affordances/recognition/visual-memory.ts` | `VisualMemoryState` + the three transitions (notices, fingerprint adoption, mention), healing schemas, the 96-feature cap. |
+| `src/contracts/affordances/recognition/mention-policy.ts` | `selectRecognitionCue` (serializable selection + `mentionCommit`) and `commitRecognitionMention`. |
+
+`appearance-features` never imports the affordance layer; `recognition` never
+imports a lane. Both barrels state the direction in their header.
 
 The garment domain differs from hair in two ways the core absorbed without
 learning a domain noun: its structure comes from the request's PAYLOAD rather
@@ -105,6 +126,16 @@ regional rather than singular (the architecture spec's "regional collections").
 | `chat-affordance-preview.ts` | The read-only developer preview's staged view. Pure over an already-computed read. |
 | `chat-pipeline.ts` | Wiring: the pre-fan-out read, the cue block, `previewChatAffordances`. |
 | `chat-state.ts` | Persists the cue memory (`ChatScenario.affordanceCues`) and the coverage capture (`ChatGarmentStore.coverage`). |
+| `chat-recognition-adapter.ts` | Slice 7's adapter: project → candidates → select → `renderChatRecognitionCue` (reason-shaped grounded lines, no second person, no invented emotion). Pure. |
+| `visual-memory-store.ts` | The only IO half of recognition: load/save over `chat_visual_memory`, two-generation rows keyed by the exchange's rollback guard. |
+
+### Persistence and tests (slice 7)
+
+| Path | What it owns |
+| --- | --- |
+| `src/server/db/schema.ts` → `chat_visual_memory` (migration `drizzle/0092_careful_spectrum.sql`) | PK `(memory_group_id, viewpoint_id, subject_id)`; `features` / `features_before` / `applied_message_id`. Memory-group scoped per the owner ruling; cleaned up by `deleteChat`. |
+| `src/test/recognition-acceptance.ts` | The shared acceptance harness (fixtures + a one-call scenario runner) both acceptance suites drive. |
+| `src/contracts/affordances/recognition/recognition-acceptance.test.ts` · `recognition-acceptance-safety.test.ts` | The 23 scenarios proving the feature spec's and the visual-memory detail's acceptance lists end to end. |
 
 ### Developer preview surface
 
@@ -176,3 +207,8 @@ src/server/.../
 
 Recognition consumes normalized, lane-neutral projections. Server adapters
 read authoritative state and keep each observer's memory separate.
+
+Slice 7 built this tree as proposed, minus `sim-recognition-projector.ts`
+(successor projection is deferred) and plus three leaves the shipping work
+needed: `priors.ts`, `kinds.ts`, and `attribute-recognition.ts`. Exact rows in
+§"Shipped file map" above.
