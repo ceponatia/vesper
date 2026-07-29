@@ -757,6 +757,46 @@ export const characterChatState = pgTable(
   (t) => [primaryKey({ columns: [t.chatId, t.characterId] })],
 );
 
+/**
+ * Observer-scoped visual memory (body-attribute-affordances slice 7;
+ * body-attribute-affordances.recognizable-features.memory.md §Structured visual
+ * memory): what ONE observer has noticed about ONE subject's recognizable
+ * features, and when the narrator last said it out loud.
+ *
+ * Scoped to the chat MEMORY GROUP rather than the chat, by the owner ruling that
+ * governs every other chat memory: "continue our shared history" reuses the
+ * group and therefore retains recognition, while a fresh/AU conversation mints a
+ * new group and starts as strangers. `viewpoint_id` is the observer — the chat
+ * owner's user id in this lane, the successor's actor id later — and it is on the
+ * primary key precisely so observer A's memory can never appear in observer B's
+ * read.
+ *
+ * TWO GENERATIONS, one row. `features` is the memory as of the last applied
+ * exchange and `applied_message_id` names that exchange's prompting message;
+ * `features_before` is the state it advanced FROM. A retake re-runs the same
+ * prompting message id, so the store hands back `features_before` and recomputes
+ * from the identical pre-exchange memory — which is what makes "retake does not
+ * double-increment notice or mention counts" true without an event ledger.
+ *
+ * The two jsonb columns hold `VisualMemoryState`
+ * (contracts/affordances/recognition/visual-memory.ts) and cross the trust
+ * boundary through `parseOr` in `visual-memory-store.ts`; a corrupt blob heals to
+ * "this observer has noticed nothing" rather than costing a turn.
+ */
+export const chatVisualMemory = pgTable(
+  "chat_visual_memory",
+  {
+    memoryGroupId: text("memory_group_id").notNull(),
+    viewpointId: text("viewpoint_id").notNull(),
+    subjectId: text("subject_id").notNull(),
+    features: jsonb("features").notNull().default({}),
+    featuresBefore: jsonb("features_before"),
+    appliedMessageId: text("applied_message_id"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.memoryGroupId, t.viewpointId, t.subjectId] })],
+);
+
 export const locations = pgTable(
   "locations",
   {

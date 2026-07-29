@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   characterProfileSchema,
   chatActionIdSchema,
+  commitRecognitionMention,
   currentScenePlace,
   derivePlanSalience,
   DiagnosticCollector,
@@ -26,7 +27,16 @@ import {
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { classifyProviderError } from "../ai";
-import { characterChats, characterChatMessages, chatParticipants, db, images, simBranches, simWorlds } from "../db";
+import {
+  characterChats,
+  characterChatMessages,
+  chatParticipants,
+  chatVisualMemory,
+  db,
+  images,
+  simBranches,
+  simWorlds,
+} from "../db";
 import { chatAttachmentPaths, claimChatAttachments, deleteChatAssets, deleteChatUploads } from "../images";
 import { log } from "../log";
 import { QueryEmbeddings } from "../memory";
@@ -36,6 +46,8 @@ import { buildActionBeatCue } from "./chat-action-beat";
 import { renderChatAffordanceCues } from "./chat-affordance-cues";
 import { buildChatAffordanceRead } from "./chat-affordances";
 import { buildChatAffordancePreview, type AffordancePreview } from "./chat-affordance-preview";
+import { buildChatRecognitionRead, type ChatRecognitionRead } from "./chat-recognition-adapter";
+import { loadChatVisualMemory, saveChatVisualMemory } from "./visual-memory-store";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
 import { buildInitiativeCue } from "./chat-initiative";
 import { loadChatRelationships } from "./chat-relationships";
@@ -125,6 +137,7 @@ import {
   chatAffordanceCuesEnabled,
   chatGarmentCuesEnabled,
   chatPromptLayout,
+  chatRecognitionCuesEnabled,
   narrationShapeId,
 } from "./prompts/constants";
 
@@ -1046,28 +1059,31 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // two rollback anchors restore, so "another take" rebuilds an identical read.
     // Flag off ⇒ this whole seam is unreached: no adapter call, no projection, and
     // the finalizer leaves `scenario.affordanceCues` alone.
-    const affordanceRead = chatAffordanceCuesEnabled()
-      ? buildChatAffordanceRead({
-          subjectId: characterId,
-          attributes: profile.attributes,
-          attributeOverlays: driftedState.attributeOverlays,
-          conditions: driftedState.conditions,
-          // Absent on the free-text wardrobe path — unknown coverage fails closed.
-          ...(wardrobe.worn === undefined
-            ? {}
-            : { wardrobe: { worn: wardrobe.worn, partVisibility: wardrobe.partVisibility } }),
-          // The garment domain (slice 6) reads the SAME store the wardrobe rows
-          // and the garment cue block were resolved from — one cut, three
-          // consumers — and is simply not run when this actor is unmodelled.
-          garments: scenario.garments,
-          garmentActorId: garmentActorForCharacter(characterId),
-          bodySurface: driftedState.bodySurface,
-          environment: scenario.environment,
-          clockMinutes: scenario.clockMinutes,
-          previousCues: scenario.affordanceCues,
-          sink,
-        })
-      : null;
+    //
+    // Hoisted rather than inlined because slice 7 has a SECOND caller: recognition
+    // needs this read's perception view even when the cue flag is off, and two
+    // copies of a thirteen-field request would be two places to forget a field.
+    const affordanceReadInput = {
+      subjectId: characterId,
+      attributes: profile.attributes,
+      attributeOverlays: driftedState.attributeOverlays,
+      conditions: driftedState.conditions,
+      // Absent on the free-text wardrobe path — unknown coverage fails closed.
+      ...(wardrobe.worn === undefined
+        ? {}
+        : { wardrobe: { worn: wardrobe.worn, partVisibility: wardrobe.partVisibility } }),
+      // The garment domain (slice 6) reads the SAME store the wardrobe rows
+      // and the garment cue block were resolved from — one cut, three
+      // consumers — and is simply not run when this actor is unmodelled.
+      garments: scenario.garments,
+      garmentActorId: garmentActorForCharacter(characterId),
+      bodySurface: driftedState.bodySurface,
+      environment: scenario.environment,
+      clockMinutes: scenario.clockMinutes,
+      previousCues: scenario.affordanceCues,
+      sink,
+    };
+    const affordanceRead = chatAffordanceCuesEnabled() ? buildChatAffordanceRead(affordanceReadInput) : null;
     // PRIMARY ONLY, and that is a prompt invariant rather than a scoping choice:
     // these cues lean on the character's own Attributes block for the appearance
     // they decorate, and this prompt carries exactly one. (The ensemble builder
@@ -1087,13 +1103,94 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         })
       : [];
 
+    // --- Recognizable features (slice 7, `CHAT_RECOGNITION_CUES`, default OFF) --
+    // At most ONE additional cue line — a detail about this body that is currently
+    // perceptible, salient, and either new, changed, long unseen, in play, or
+    // weighted by something the observer witnessed — plus the observer-memory
+    // commit that makes its cooldown work.
+    //
+    // The exchange's rollback guard is the SAME id the state and scenario anchors
+    // take (`finalizeChatState`'s `promptMessageId`), which is what lets the store
+    // recognize a retake and recompute from the identical pre-exchange memory
+    // instead of advancing the notice counts a second time.
+    const exchangeGuardMessageId = promptMessageId ?? assistantMessageId;
+    // PERCEPTION SOURCE ONLY when the cue flag is off. The recognition read needs
+    // an exposure/channel view and only the affordance adapter builds one, so it
+    // is built here — but its `nextCues` and `coverage` are DELIBERATELY dropped:
+    // those persist under `CHAT_AFFORDANCE_CUES` alone, and letting one flag write
+    // the other's state would make the two experiments uninterpretable.
+    const recognitionPerception = chatRecognitionCuesEnabled()
+      ? (affordanceRead ?? buildChatAffordanceRead(affordanceReadInput))
+      : null;
+    // Fenced whole: an optional read may never cost an exchange (docs/resilience.md).
+    // Any failure — a missing row, a bad projection, an unreachable database —
+    // degrades to no cue and untouched memory, exactly like the flag being off.
+    let recognition: ChatRecognitionRead | null = null;
+    if (recognitionPerception) {
+      try {
+        recognition = buildChatRecognitionRead({
+          subjectId: characterId,
+          characterName,
+          possessive: `${characterName}'s`,
+          // The resolved values the affordance read was taken over — overlays
+          // already applied, so the cue can never disagree with the read it rides.
+          attributes: recognitionPerception.attributes.values,
+          perception: recognitionPerception.request.perception,
+          memory: await loadChatVisualMemory({
+            memoryGroupId,
+            // The player is the observer in this lane, and the chat owner IS the
+            // player. Their memory follows the MEMORY GROUP, not the chat.
+            viewpointId: owner,
+            subjectId: characterId,
+            promptingMessageId: exchangeGuardMessageId,
+            sink,
+          }),
+          clockMinutes: scenario.clockMinutes,
+          sink,
+        });
+      } catch (error) {
+        log.error("engine.chat", "chat recognition read failed", { error: describeError(error) });
+      }
+    }
+    // Appended after the physical cues, same block: the affordance lines are what
+    // is happening to this body right now, and a recognizable feature is standing
+    // truth — it reads as the added detail rather than competing for the beat.
+    const bodyCues = recognition?.cueLine ? [...affordanceCues, recognition.cueLine] : affordanceCues;
+    /**
+     * Commit the exchange's observer memory. Called ONLY once the exchange has
+     * actually settled — a failed or empty reply leaves the memory exactly as the
+     * next take will need to find it.
+     *
+     * Notices are persisted even when nothing was said (`mentionCommit` null is a
+     * no-op inside `commitRecognitionMention`): looking is what strengthens
+     * recognition, and only the cue that entered the cut moves `lastMentionedAt`.
+     * Fenced for the same reason the read is.
+     */
+    const commitRecognitionMemory = async (): Promise<void> => {
+      if (!recognition) return;
+      try {
+        await saveChatVisualMemory({
+          memoryGroupId,
+          viewpointId: owner,
+          subjectId: characterId,
+          promptingMessageId: exchangeGuardMessageId,
+          next: commitRecognitionMention(
+            recognition.selection.memoryAfterNotices,
+            recognition.selection.mentionCommit,
+          ),
+        });
+      } catch (error) {
+        log.error("engine.chat", "chat visual memory persist failed", { error: describeError(error) });
+      }
+    };
+
     const promptInput: CharacterChatPromptInput = {
       name: characterName,
       profile,
       priorSummary: summaryState?.summary,
       memory,
       player: playerPromptSlice(player, playerWardrobe),
-      state: promptStateSlice(driftedState, scenario, wardrobe, profile, garmentNarration, affordanceCues),
+      state: promptStateSlice(driftedState, scenario, wardrobe, profile, garmentNarration, bodyCues),
       opening,
       narrationShape: narrationShapeId("chat"),
       // Chat scene memory: whether the setting changed this exchange (movement / time skip),
@@ -1340,6 +1437,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         } catch (error) {
           log.error("engine.chat", "chat-state opening persist failed", { error: describeError(error) });
         }
+        // An opening beat is a committed exchange with a real prompt, so what the
+        // observer noticed on it counts — without this, the first real turn would
+        // re-offer the same first-notice cue.
+        await commitRecognitionMemory();
         return;
       }
 
@@ -1438,6 +1539,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             : undefined,
           sink,
         });
+        // The exchange has committed (`finalizeChatState` writes the rollback
+        // anchors last, under the same prompting-message guard this uses), so the
+        // observer's memory may advance — and only now. PRIMARY only, for the same
+        // reason the cue block is: this is the subject the prompt described.
+        await commitRecognitionMemory();
         // Ensemble members settle their own turn: the presence-gated tick from
         // prompt time, a referenced-only pulse (regard/mood/mindNote/weather), a
         // personal note-taker pass for every PRESENT member (followups ruling 10 —
@@ -2353,7 +2459,15 @@ export async function deleteChat(chatId: string, ownerId: string): Promise<void>
         .from(chatParticipants)
         .where(and(eq(chatParticipants.memoryGroupId, p.memoryGroupId), ne(chatParticipants.chatId, chat.id)))
         .limit(1);
-      if (!survivor) await deleteChatMemory(p.memoryGroupId, tx);
+      if (!survivor) {
+        await deleteChatMemory(p.memoryGroupId, tx);
+        // Observer visual memory is memory-group-scoped too (slice 7), so it goes
+        // on exactly the same condition: the group's last conversation is gone.
+        // `chat_visual_memory` carries no FK — memory groups are not a table — so
+        // nothing would cascade it, and orphaned rows would silently resurrect
+        // recognition if the group id were ever minted again.
+        await tx.delete(chatVisualMemory).where(eq(chatVisualMemory.memoryGroupId, p.memoryGroupId));
+      }
     }
   });
 }

@@ -392,7 +392,39 @@ reason → perception filtering → selected cue, per domain — computed on dem
 stored cut and storing nothing (`engine/chat-affordance-preview.ts`; it never persists
 `nextCues`, so looking cannot spend the repeat gate). It deliberately ignores the feature
 flag and reports its state instead: the question it exists to answer is "why did this cut
-say nothing?", which matters most while the flag is off.
+say nothing?", which matters most while the flag is off. It does not yet show the
+recognition line below — a named follow-up.
+
+### Recognizable features and visual memory
+
+**`chat_visual_memory`** (slice 7, behind `CHAT_RECOGNITION_CUES`, default OFF): what the
+player viewpoint has *noticed* about a character's body, and what the narrator has recently
+*said* about it. The pipeline projects canonical body truth into per-feature candidates,
+scores each against the same perception view the affordance read uses, and appends **at most
+one** extra line to that same cue block ("a crooked nose", "the scar across her right
+forearm") — standing truth after the physical cues, never competing with them. Contracts in
+`contracts/appearance-features/` (what a feature IS) and `contracts/affordances/recognition/`
+(what THIS observer can make of it); the lane bridges them in
+`engine/chat-recognition-adapter.ts` (pure) over `engine/visual-memory-store.ts`.
+
+- **Scoped to the memory group, not the chat** — PK `(memory_group_id, viewpoint_id,
+  subject_id)`, viewpoint = the chat owner. "Continue our history" retains recognition; a
+  fresh conversation meets a stranger. `deleteChat` clears the group's rows with its last chat.
+- **Two generations per row** (`features` / `features_before` / `applied_message_id`, the same
+  rollback guard the state and scenario anchors take): a retake re-runs from the identical
+  pre-exchange memory instead of counting the same look twice. There is no event ledger here,
+  so one generation of history is what makes the retake law true.
+- **Notices persist even when no cue fires.** Looking strengthens recognition; only a cue that
+  reached the transcript moves `lastMentionedAt` and starts a cooldown. The commit is a
+  serializable value returned by the contract and written only once the exchange settles.
+- With `CHAT_AFFORDANCE_CUES` off but this flag on, the affordance read is still built as a
+  **perception source only** — its `nextCues` and `coverage` are deliberately dropped, so one
+  experiment's flag can never write the other's state.
+- **Production-silent today**: the perception view asserts exposure only for garment-covered
+  locations and hair, so bare skin (nose, face, forearms) reads `unknown` and recognition fails
+  closed — the same shape of missing-owner gap as garment fit above. See
+  [developer-notes/body-attribute-affordances.plan.md](../developer-notes/body-attribute-affordances.plan.md)
+  §Slice 7.
 
 
 ## Emotional weather
