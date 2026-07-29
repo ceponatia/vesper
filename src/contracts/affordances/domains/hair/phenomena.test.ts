@@ -22,7 +22,7 @@ import {
 } from "./attribute-maps";
 import type { HairArrangement } from "./mechanics";
 import type { HairLanePayload } from "./domain";
-import { hairRainEventKinds, isHairRainEvent } from "./frame";
+import { hairImpulseEventKinds, hairWettingEventKinds, type HairEventKind } from "./frame";
 import {
   hairAttributeFixture,
   readHairAffordances,
@@ -128,9 +128,33 @@ describe("hair.wet_clumping", () => {
     expect(observation?.semanticTags).toEqual([
       "distinct_strands",
       "wet_darkened_relative_to_base",
+      "wetness_soaked",
       "retains_droplets",
       "loose_strands",
     ]);
+  });
+
+  it("says how wet the hair IS, not how far it has clumped", () => {
+    // The round-R2 defect at its source (trial log): the band reads
+    // `clumpStrength`, which is wetness DAMPED by affinity and friction, so a
+    // projection with only the band to go on called soaked hair damp. The
+    // wetness descriptor answers the other question, and it tracks the committed
+    // level alone — this hair reads `clear`/`subtle` throughout.
+    const degreeAt = (wetness: number): string | undefined =>
+      observed(read({ payload: payloadFor({ wetness }) }), HAIR_WET_CLUMPING_ID)?.semanticTags.find((tag) =>
+        tag.startsWith("wetness_"),
+      );
+    expect(degreeAt(9_500)).toBe("wetness_soaked");
+    expect(degreeAt(6_000)).toBe("wetness_wet");
+    expect(degreeAt(3_500)).toBe("wetness_damp");
+    // …and a soaking that only reaches the `subtle` clumping band still reads soaked.
+    const silky = read({
+      structure: { density: "sparse", strandThickness: "fine", texture: "straight", condition: "silky" },
+      payload: payloadFor({ wetness: 9_500 }),
+    });
+    const observation = observed(silky, HAIR_WET_CLUMPING_ID);
+    expect(observation?.intensityBand).toBe("subtle");
+    expect(observation?.semanticTags).toContain("wetness_soaked");
   });
 
   it("attaches a rain cause ONLY when a committed rain event supports it", () => {
@@ -143,7 +167,7 @@ describe("hair.wet_clumping", () => {
     expect(observed(read(), HAIR_WET_CLUMPING_ID)?.semanticTags).not.toContain("recent_rain");
   });
 
-  it("wets the hair on immersion WITHOUT calling it rain — a bath is not weather", () => {
+  it("wets the hair on immersion and names THAT cause — a bath is not weather", () => {
     const bathed = observed(
       read({ payload: payloadFor({ events: [{ kind: "immersion", atStoryTime: 3 }] }) }),
       HAIR_WET_CLUMPING_ID,
@@ -151,17 +175,46 @@ describe("hair.wet_clumping", () => {
     // The wet read itself is unaffected: immersion is a real wetting event.
     expect(bathed?.intensityBand).toBe("clear");
     expect(bathed?.semanticTags).toContain("wet_darkened_relative_to_base");
-    // ...but it licenses no cause, so the narrator cannot say "wet from the rain".
+    // It licenses its OWN cause and only its own (round-R2 change, trial log):
+    // saying nothing here is what let the narrator reach for the storm outside.
+    expect(bathed?.semanticTags).toContain("recent_immersion");
     expect(bathed?.semanticTags).not.toContain("recent_rain");
-    // The ONLY difference from the causeless case is that there is no difference.
-    expect(bathed?.semanticTags).toEqual(observed(read(), HAIR_WET_CLUMPING_ID)?.semanticTags);
+    // With no committed event at all there is still nothing to say about why.
+    const causeless = observed(read(), HAIR_WET_CLUMPING_ID)?.semanticTags ?? [];
+    expect(causeless.filter((tag) => tag.startsWith("recent_"))).toEqual([]);
+    expect(bathed?.semanticTags).toEqual([...causeless, "recent_immersion"]);
   });
 
-  it("names rain_exposure as the only rain-licensing event kind", () => {
-    expect(hairRainEventKinds).toEqual(["rain_exposure"]);
-    expect(isHairRainEvent({ kind: "immersion", atStoryTime: 3 })).toBe(false);
-    expect(isHairRainEvent({ kind: "splash", atStoryTime: 3 })).toBe(false);
-    expect(isHairRainEvent({ kind: "rain_exposure", atStoryTime: 3 })).toBe(true);
+  it("lets every wetting kind name itself, and only rain_exposure name rain", () => {
+    expect(hairWettingEventKinds).toEqual(["rain_exposure", "immersion", "splash"]);
+    // An impulse moves water about; it never adds any, so the two vocabularies
+    // are disjoint and no shake or gust can ever be cited as a reason she is wet.
+    const wetting: readonly string[] = hairWettingEventKinds;
+    expect(hairImpulseEventKinds.filter((kind) => wetting.includes(kind))).toEqual([]);
+
+    const causeTags = (kind: HairEventKind): string[] =>
+      (observed(read({ payload: payloadFor({ events: [{ kind, atStoryTime: 3 }] }) }), HAIR_WET_CLUMPING_ID)
+        ?.semanticTags ?? []).filter((tag) => tag.startsWith("recent_"));
+    expect(causeTags("rain_exposure")).toEqual(["recent_rain"]);
+    expect(causeTags("immersion")).toEqual(["recent_immersion"]);
+    expect(causeTags("splash")).toEqual(["recent_splash"]);
+    // An impulse wets nothing, so it names nothing.
+    expect(causeTags("shake")).toEqual([]);
+
+    // Two committed causes are two true facts; the order is the vocabulary's, not
+    // the lane's, so the tags survive a retake byte-identically.
+    const both = observed(
+      read({
+        payload: payloadFor({
+          events: [
+            { kind: "splash", atStoryTime: 3 },
+            { kind: "rain_exposure", atStoryTime: 4 },
+          ],
+        }),
+      }),
+      HAIR_WET_CLUMPING_ID,
+    );
+    expect(both?.semanticTags.filter((tag) => tag.startsWith("recent_"))).toEqual(["recent_rain", "recent_splash"]);
   });
 
   it("reads a braid as one bound mass and loose hair as strands", () => {

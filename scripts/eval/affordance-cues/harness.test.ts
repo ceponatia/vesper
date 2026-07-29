@@ -338,15 +338,30 @@ describe("the rematch matrix — bait + anchor", () => {
     // is the one channel that may never do it, because it speaks for the
     // committed state. So: the rain clause may appear only where a rain cause (or
     // standing precipitation landing on her) is genuinely committed.
+    //
+    // Symmetric across the whole cause vocabulary since the round-R2 change: each
+    // clause names its own cause and may appear ONLY where the state commits that
+    // cause. The old rain-only version of this guard could not have caught a
+    // bath clause on splash water.
     for (const scenario of REMATCH_SCENARIOS) {
       cueLinesPerExchange(scenario).forEach((cueLines, index) => {
         const turn = scenario.turns[index];
         if (!turn) return;
-        const rainy = cueLines.some((line) => line.includes("wet from the rain"));
-        if (!rainy) return;
-        const rainCause = turn.wetness?.cause === "rain";
         const rainFalling = !turn.environment.indoors && turn.environment.precipitation !== "none";
-        expect(rainCause || rainFalling).toBe(true);
+        const committed: Readonly<Record<string, boolean>> = {
+          "still wet from the rain": turn.wetness?.cause === "rain" || rainFalling,
+          "still wet from the water it was in": turn.wetness?.cause === "immersion",
+          "still wet from the splash": turn.wetness?.cause === "splash",
+        };
+        for (const [clause, isCommitted] of Object.entries(committed)) {
+          if (!cueLines.some((line) => line.includes(clause))) continue;
+          expect(isCommitted).toBe(true);
+        }
+        // …and exactly one cause is ever named at a time, so a line can never
+        // offer the narrator two stories about the same water.
+        for (const line of cueLines) {
+          expect(Object.keys(committed).filter((clause) => line.includes(clause)).length).toBeLessThanOrEqual(1);
+        }
       });
     }
   });
