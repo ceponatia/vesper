@@ -5,6 +5,34 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Affordance-cue trial rematch campaign — final verdict: flag parks OFF** —
+  [rematch spec](body-attribute-affordances.trial.rematch.md) ·
+  [trial doc §Rematch log](body-attribute-affordances.trial.md) — 2026-07-29 —
+  three live rounds ($6.29 of the $10 cap) under a frozen protocol:
+  bait+anchor matrix v2 made the instrument valid (control 0.44–0.50
+  contradictions/exchange, 5/5 families tripped), and the cue arm failed the
+  frozen decision rule twice consecutively — it never reduced contradictions
+  (−6%, then +29%) because concrete cues make more checkable claims. The one
+  recorded cue-side change (cause-true provenance + degree-accurate wetness
+  wording) fixed its target family dead-even and stays in production as a
+  measured quality win; the reusable audit harness (arm-blind
+  quote-or-discard judging, induction gate) stays for future narrator A/Bs.
+  `CHAT_AFFORDANCE_CUES` is closed OFF; a differently-shaped narrator aid
+  would be a new plan.
+
+- **Body-attribute visual affordances — slice 5 narrator trial, live half
+  (completes the slice)** —
+  [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) ·
+  [trial report](body-attribute-affordances.trial.md) — 2026-07-29 — the
+  owner-gated live comparison ran on the replaced OpenRouter key (~$0.72; 60
+  paired generations + 10 blinded judgments): the decision rule was **not
+  met** — contradictions tied at 0.13/exchange (the control narrator barely
+  contradicts in this matrix), repetition rose slightly, specificity improved
+  4.38 vs 4.00 at identical naturalness, judge preference tied 4–4 among cue
+  scenarios (the pooled 6–4 figure's extra control picks were the two
+  byte-identical silence controls) — so **`CHAT_AFFORDANCE_CUES` stays OFF**; a rematch,
+  if ever, means a contradiction-inducing matrix, not different physics.
+
 - **Body-attribute visual affordances — slice 7 (recognizable features +
   observer visual memory)** —
   [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) ·

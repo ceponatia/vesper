@@ -1,7 +1,15 @@
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
-import { EVAL_SCENARIOS } from "./fixtures";
-import { judgePrompt, judgeVerdictSchema } from "./judge";
+import {
+  EVAL_BAIT_FAMILIES,
+  EVAL_SCENARIOS,
+  REMATCH_SCENARIOS,
+  scenarioMatrix,
+  type EvalBait,
+  type EvalScenario,
+  type EvalScenarioFamily,
+} from "./fixtures";
+import { armAuditSchema, AUDIT_DIMENSIONS, judgePrompt, judgeVerdictSchema } from "./judge";
 import {
   AFFORDANCE_CUES_PER_EXCHANGE,
   buildArmPrompt,
@@ -34,9 +42,7 @@ interface Planned {
   duplicates: string[];
 }
 
-function plan(scenarioId: string): Planned {
-  const scenario = EVAL_SCENARIOS.find((entry) => entry.id === scenarioId);
-  if (!scenario) throw new Error(`unknown scenario ${scenarioId}`);
+function plan(scenario: EvalScenario): Planned {
   const character = scenarioCharacter(scenario);
   let cueMemory = emptyAffordanceCueState();
   const cueLinesPerTurn: number[] = [];
@@ -61,6 +67,62 @@ function plan(scenarioId: string): Planned {
   return { cueLinesPerTurn, identicalPrompts, splicedPrompts, duplicates };
 }
 
+/** Plan a scenario by id within one matrix — the shape `it.each` test names want. */
+function planById(scenarios: readonly EvalScenario[], scenarioId: string): Planned {
+  const scenario = scenarios.find((entry) => entry.id === scenarioId);
+  if (!scenario) throw new Error(`unknown scenario ${scenarioId}`);
+  return plan(scenario);
+}
+
+const idsOf = (scenarios: readonly EvalScenario[]): string[] => scenarios.map((scenario) => scenario.id);
+
+const rematchFamily = (family: EvalScenarioFamily): EvalScenario[] =>
+  REMATCH_SCENARIOS.filter((scenario) => scenario.family === family);
+
+const BAIT_FAMILIES = new Set<EvalScenarioFamily>(EVAL_BAIT_FAMILIES);
+
+/** The five bait families only — the structural controls play by different rules. */
+const rematchBaitScenarios = (): EvalScenario[] =>
+  REMATCH_SCENARIOS.filter((scenario) => BAIT_FAMILIES.has(scenario.family));
+
+/** The earliest armed bait, or null. `baits` is positional, so the first non-null wins. */
+const firstArmedBait = (scenario: EvalScenario): EvalBait | null =>
+  scenario.baits.find((armed): armed is EvalBait => armed !== null) ?? null;
+
+const rematchById = (scenarioId: string): EvalScenario => {
+  const scenario = REMATCH_SCENARIOS.find((entry) => entry.id === scenarioId);
+  if (!scenario) throw new Error(`unknown scenario ${scenarioId}`);
+  return scenario;
+};
+
+/** Both arms' prompts for one exchange, built the way `run.ts` builds them. */
+function armPrompts(scenario: EvalScenario, turnIndex: number): { cues: string; control: string } {
+  const character = scenarioCharacter(scenario);
+  let cueMemory = emptyAffordanceCueState();
+  let prompts = { cues: "", control: "" };
+  scenario.turns.forEach((turn, index) => {
+    const read = readTurn({ character, scenario, turn, previousCues: cueMemory });
+    cueMemory = read.nextCues;
+    if (index !== turnIndex) return;
+    prompts = {
+      cues: buildArmPrompt({ character, scenario, turn, turnIndex: index, cueLines: read.cueLines }),
+      control: buildArmPrompt({ character, scenario, turn, turnIndex: index, cueLines: [] }),
+    };
+  });
+  return prompts;
+}
+
+/** Every cue line the read offers for a scenario, exchange by exchange. */
+function cueLinesPerExchange(scenario: EvalScenario): string[][] {
+  const character = scenarioCharacter(scenario);
+  let cueMemory = emptyAffordanceCueState();
+  return scenario.turns.map((turn) => {
+    const read = readTurn({ character, scenario, turn, previousCues: cueMemory });
+    cueMemory = read.nextCues;
+    return [...read.cueLines];
+  });
+}
+
 describe("affordance-cues trial matrix", () => {
   it("covers both arms of the wet/dry × bound/loose × wind/still lattice", () => {
     expect(EVAL_SCENARIOS.length).toBeGreaterThanOrEqual(8);
@@ -69,10 +131,10 @@ describe("affordance-cues trial matrix", () => {
     for (const scenario of EVAL_SCENARIOS) expect(scenario.turns.length).toBeGreaterThanOrEqual(3);
   });
 
-  it.each(EVAL_SCENARIOS.filter((scenario) => scenario.kind === "cue").map((scenario) => scenario.id))(
+  it.each(idsOf(EVAL_SCENARIOS.filter((scenario) => scenario.kind === "cue")))(
     "%s offers at least one cue, capped, spliced as one block",
     (scenarioId) => {
-      const planned = plan(scenarioId);
+      const planned = planById(EVAL_SCENARIOS, scenarioId);
       expect(planned.cueLinesPerTurn.reduce((sum, count) => sum + count, 0)).toBeGreaterThan(0);
       for (const count of planned.cueLinesPerTurn) expect(count).toBeLessThanOrEqual(AFFORDANCE_CUES_PER_EXCHANGE);
       expect(planned.splicedPrompts).toBe(true);
@@ -80,10 +142,10 @@ describe("affordance-cues trial matrix", () => {
     },
   );
 
-  it.each(EVAL_SCENARIOS.filter((scenario) => scenario.kind === "silence").map((scenario) => scenario.id))(
+  it.each(idsOf(EVAL_SCENARIOS.filter((scenario) => scenario.kind === "silence")))(
     "%s stays silent, and its two arms get byte-identical prompts",
     (scenarioId) => {
-      const planned = plan(scenarioId);
+      const planned = planById(EVAL_SCENARIOS, scenarioId);
       expect(planned.cueLinesPerTurn).toEqual(planned.cueLinesPerTurn.map(() => 0));
       expect(planned.identicalPrompts).toBe(true);
     },
@@ -93,7 +155,7 @@ describe("affordance-cues trial matrix", () => {
     // Every cue scenario's second exchange leaves the physical state alone, so the
     // gate — not the physics — is what has to produce the silence.
     const repeated = EVAL_SCENARIOS.filter((scenario) => scenario.kind === "cue").filter(
-      (scenario) => plan(scenario.id).cueLinesPerTurn[1] === 0,
+      (scenario) => plan(scenario).cueLinesPerTurn[1] === 0,
     );
     expect(repeated.length).toBeGreaterThanOrEqual(6);
   });
@@ -113,19 +175,256 @@ describe("affordance-cues trial matrix", () => {
   });
 });
 
-describe("the judge contract", () => {
-  it("serializes to a JSON Schema the prompt can carry", () => {
-    // `generateChecked` renders the schema into the system prompt via
-    // `z.toJSONSchema`, and swallows a failure as "" — which would silently ship a
-    // judge with no output contract at all. Assert it survives the round trip.
-    const schema = z.toJSONSchema(judgeVerdictSchema, { io: "input" });
-    expect(JSON.stringify(schema)).toContain("contradictions");
-    expect(JSON.stringify(schema)).toContain("naturalness");
+describe("the rematch matrix — bait + anchor", () => {
+  /**
+   * The rematch's own self-checks
+   * (`docs/developer-notes/body-attribute-affordances.trial.rematch.md`
+   * §"Scenario contract"). They are written self-contained here rather than
+   * borrowed from `run.ts`, so the fixture half stays provable in `pnpm test`
+   * whatever the runner is doing.
+   */
+
+  it("is 10–12 scenarios of 3–4 exchanges, with the spec's family spread", () => {
+    expect(REMATCH_SCENARIOS.length).toBeGreaterThanOrEqual(10);
+    expect(REMATCH_SCENARIOS.length).toBeLessThanOrEqual(12);
+    for (const scenario of REMATCH_SCENARIOS) {
+      expect(scenario.turns.length).toBeGreaterThanOrEqual(3);
+      expect(scenario.turns.length).toBeLessThanOrEqual(4);
+    }
+    // State has to be tested across change, not only at rest.
+    expect(REMATCH_SCENARIOS.filter((scenario) => scenario.turns.length === 4).length).toBeGreaterThanOrEqual(2);
+    for (const family of EVAL_BAIT_FAMILIES) expect(rematchFamily(family).length).toBeGreaterThanOrEqual(1);
+    // Two scenarios per bait family and three structural controls is 13 — one over
+    // the spec's ceiling of 12 — so exactly one family runs on a single scenario.
+    // Four of the five must still be doubled, or a family's row is one sample wide.
+    expect(
+      EVAL_BAIT_FAMILIES.filter((family) => rematchFamily(family).length >= 2).length,
+    ).toBeGreaterThanOrEqual(4);
+    expect(rematchFamily("silence").length).toBeGreaterThanOrEqual(2);
+    expect(rematchFamily("invention_control")).toHaveLength(1);
   });
 
-  it("accepts a well-formed verdict and rejects an out-of-range score", () => {
+  it.each(idsOf(rematchBaitScenarios()))(
+    "%s establishes the true state to both arms before its first armed bait",
+    (scenarioId) => {
+      // v2's central fix (round-R1 follow-up). The narrator prompt carries no
+      // environment line and no wetness line, so a bait fired before the control
+      // arm has been told anything measures IGNORANCE, not contradiction — which
+      // is precisely why round R1's provenance, degree and assertion families
+      // never convicted the control. `establishes` names the exchange by which
+      // the true state is in front of both arms (scene facts and the outfit
+      // phrase are standing, so they count as exchange 1), and it has to land
+      // strictly before the first armed bait.
+      const scenario = rematchById(scenarioId);
+      const establishes = scenario.establishes;
+      expect(establishes).toBeDefined();
+      if (establishes === undefined) return;
+      expect(establishes).toBeGreaterThanOrEqual(1);
+      expect(establishes).toBeLessThanOrEqual(scenario.turns.length);
+      const armed = firstArmedBait(scenario);
+      expect(armed).not.toBeNull();
+      if (armed === null) return;
+      expect(establishes).toBeLessThan(armed.exchange);
+    },
+  );
+
+  it.each(idsOf(rematchBaitScenarios()))(
+    "%s hands its standing scene facts to BOTH arms, byte for byte",
+    (scenarioId) => {
+      // The other half of the same fix: `sceneFacts` is the both-arms channel for
+      // ambience and opening state (the storm at the window, the squall an hour
+      // gone). If a fact reached only the cue arm it would be a second arm-delta
+      // hiding inside the trial, so assert it lands in both prompts.
+      const scenario = rematchById(scenarioId);
+      const facts = scenario.sceneFacts ?? [];
+      expect(facts.length).toBeGreaterThan(0);
+      const prompts = armPrompts(scenario, 0);
+      for (const fact of facts) {
+        expect(prompts.control).toContain(fact);
+        expect(prompts.cues).toContain(fact);
+      }
+    },
+  );
+
+  it.each([
+    ["v1", EVAL_SCENARIOS] as const,
+    ["rematch", REMATCH_SCENARIOS] as const,
+  ])("%s: ids are unique and every exchange has a bait slot", (_name, scenarios) => {
+    expect(new Set(idsOf(scenarios)).size).toBe(scenarios.length);
+    for (const scenario of scenarios) {
+      // One slot per exchange, positional — the runner and the judge both index
+      // baits by exchange, so a short array would silently disarm the tail.
+      expect(scenario.baits).toHaveLength(scenario.turns.length);
+      scenario.baits.forEach((armed, index) => {
+        if (armed === null) return;
+        expect(armed.exchange).toBe(index + 1);
+        expect(armed.tempts.trim().length).toBeGreaterThan(0);
+      });
+    }
+  });
+
+  it("selects the round-1 set for --matrix v1 and the rematch set for --matrix rematch", () => {
+    expect(scenarioMatrix("v1")).toBe(EVAL_SCENARIOS);
+    expect(scenarioMatrix("rematch")).toBe(REMATCH_SCENARIOS);
+    // The silence controls are shared BY IDENTITY, which is what makes their
+    // "byte-identical prompts" property survive a matrix change.
+    for (const scenario of EVAL_SCENARIOS.filter((entry) => entry.family === "silence")) {
+      expect(REMATCH_SCENARIOS).toContain(scenario);
+    }
+  });
+
+  it("fires at least one cue in every bait family, and clears the round's cue-bearing target", () => {
+    let cueBearing = 0;
+    for (const family of EVAL_BAIT_FAMILIES) {
+      const fired = rematchFamily(family).flatMap((scenario) => plan(scenario).cueLinesPerTurn);
+      expect(fired.reduce((sum, count) => sum + count, 0)).toBeGreaterThan(0);
+    }
+    for (const scenario of REMATCH_SCENARIOS) {
+      cueBearing += plan(scenario).cueLinesPerTurn.filter((count) => count > 0).length;
+    }
+    // The rematch spec's target: ≥16 cue-bearing exchanges per round, or the
+    // paired comparison has nothing to compare.
+    expect(cueBearing).toBeGreaterThanOrEqual(16);
+  });
+
+  it.each(idsOf(REMATCH_SCENARIOS.filter((scenario) => scenario.family !== "invention_control")))(
+    "%s arms every bait on an exchange that genuinely fires a cue",
+    (scenarioId) => {
+      // THE core design rule. A bait with no anchor measures the narrator's
+      // imagination; only bait ∧ anchor can show the cue arm doing anything.
+      const scenario = REMATCH_SCENARIOS.find((entry) => entry.id === scenarioId);
+      if (!scenario) throw new Error(`unknown scenario ${scenarioId}`);
+      const planned = plan(scenario);
+      scenario.baits.forEach((armed, index) => {
+        if (armed === null) return;
+        expect(planned.cueLinesPerTurn[index]).toBeGreaterThan(0);
+      });
+    },
+  );
+
+  it.each(idsOf(REMATCH_SCENARIOS.filter((scenario) => scenario.kind === "cue")))(
+    "%s keeps the cap and never restates the prompt's own appearance text",
+    (scenarioId) => {
+      const planned = planById(REMATCH_SCENARIOS, scenarioId);
+      expect(planned.cueLinesPerTurn.reduce((sum, count) => sum + count, 0)).toBeGreaterThan(0);
+      for (const count of planned.cueLinesPerTurn) expect(count).toBeLessThanOrEqual(AFFORDANCE_CUES_PER_EXCHANGE);
+      expect(planned.splicedPrompts).toBe(true);
+      expect(planned.duplicates).toEqual([]);
+    },
+  );
+
+  it.each(idsOf(rematchFamily("silence")))("%s emits nothing and both arms read identically", (scenarioId) => {
+    const planned = planById(REMATCH_SCENARIOS, scenarioId);
+    expect(planned.cueLinesPerTurn).toEqual(planned.cueLinesPerTurn.map(() => 0));
+    expect(planned.identicalPrompts).toBe(true);
+  });
+
+  it("keeps the invention control cue-free, armed on every exchange, and identical in both arms", () => {
+    const control = rematchFamily("invention_control")[0];
+    if (!control) throw new Error("no invention control");
+    const planned = plan(control);
+    // Dry under shelter: nothing true to say, so the arms cannot differ. Its
+    // baits are armed anyway — unanchored ON PURPOSE, because what it measures
+    // is whether the bait tempts the narrator at all.
+    expect(planned.cueLinesPerTurn).toEqual(planned.cueLinesPerTurn.map(() => 0));
+    expect(planned.identicalPrompts).toBe(true);
+    expect(control.baits.filter((armed) => armed !== null).length).toBeGreaterThan(0);
+  });
+
+  it("never lets a bath, a hose or a wave read as weather IN A CUE LINE", () => {
+    // Provenance discipline, mechanically — and scoped deliberately to the CUE
+    // LINES. The player's lines and the scene facts are allowed, and meant, to
+    // put rain over a bath, a hose or a bow wave: that IS the bait. The cue block
+    // is the one channel that may never do it, because it speaks for the
+    // committed state. So: the rain clause may appear only where a rain cause (or
+    // standing precipitation landing on her) is genuinely committed.
+    //
+    // Symmetric across the whole cause vocabulary since the round-R2 change: each
+    // clause names its own cause and may appear ONLY where the state commits that
+    // cause. The old rain-only version of this guard could not have caught a
+    // bath clause on splash water.
+    for (const scenario of REMATCH_SCENARIOS) {
+      cueLinesPerExchange(scenario).forEach((cueLines, index) => {
+        const turn = scenario.turns[index];
+        if (!turn) return;
+        const rainFalling = !turn.environment.indoors && turn.environment.precipitation !== "none";
+        const committed: Readonly<Record<string, boolean>> = {
+          "still wet from the rain": turn.wetness?.cause === "rain" || rainFalling,
+          "still wet from the water it was in": turn.wetness?.cause === "immersion",
+          "still wet from the splash": turn.wetness?.cause === "splash",
+        };
+        for (const [clause, isCommitted] of Object.entries(committed)) {
+          if (!cueLines.some((line) => line.includes(clause))) continue;
+          expect(isCommitted).toBe(true);
+        }
+        // …and exactly one cause is ever named at a time, so a line can never
+        // offer the narrator two stories about the same water.
+        for (const line of cueLines) {
+          expect(Object.keys(committed).filter((clause) => line.includes(clause)).length).toBeLessThanOrEqual(1);
+        }
+      });
+    }
+  });
+
+  it("actually arms the provenance bait: the player blames weather the state does not commit", () => {
+    // The positive counterpart of the guard above, and the check that would have
+    // caught round R1's real problem earlier: it is not enough for the cue to keep
+    // quiet about rain — some armed exchange has to TEMPT the wrong cause, out
+    // loud, while the committed state says otherwise. Without this the family is
+    // a provenance family in name only.
+    const tempting = /rain|storm|squall|downpour|weather/iu;
+    for (const scenario of rematchFamily("provenance_bait")) {
+      const cueLines = cueLinesPerExchange(scenario);
+      const armed = scenario.turns.filter((turn, index) => {
+        if (scenario.baits[index] === null || scenario.baits[index] === undefined) return false;
+        const weatherCommitted =
+          turn.wetness?.cause === "rain" ||
+          (!turn.environment.indoors && turn.environment.precipitation !== "none");
+        // The player blames the weather; the state says the water came from
+        // somewhere else and nothing is falling on her.
+        return tempting.test(turn.player) && !weatherCommitted;
+      });
+      expect(armed.length).toBeGreaterThan(0);
+      // …and on those exchanges the cue must not hand the narrator the false
+      // cause it is being baited into.
+      scenario.turns.forEach((turn, index) => {
+        if (!armed.includes(turn)) return;
+        for (const line of cueLines[index] ?? []) expect(line).not.toContain("rain");
+      });
+    }
+  });
+});
+
+describe("the judge contract", () => {
+  it("serializes both schemas the prompts have to carry", () => {
+    // `generateChecked` renders the schema into the system prompt via
+    // `z.toJSONSchema`, and swallows a failure as "" — which would silently ship a
+    // judge with no output contract at all. Assert both survive the round trip:
+    // the per-arm audit (the measurement) and the pairwise preference (advisory).
+    const audit = JSON.stringify(z.toJSONSchema(armAuditSchema, { io: "input" }));
+    for (const dimension of AUDIT_DIMENSIONS) expect(audit).toContain(dimension);
+    expect(audit).toContain("naturalness");
+    expect(JSON.stringify(z.toJSONSchema(judgeVerdictSchema, { io: "input" }))).toContain("preferred");
+  });
+
+  it("accepts a well-formed audit and rejects an out-of-range score", () => {
+    const exchange = {
+      exchange: 1,
+      wetness_degree: "violated",
+      provenance: "clean",
+      motion_vs_binding: "not_applicable",
+      coverage: "not_applicable",
+      adopted_false_premise: "clean",
+      quotes: {
+        wetness_degree: "her dry hair",
+        provenance: "",
+        motion_vs_binding: "",
+        coverage: "",
+        adopted_false_premise: "",
+      },
+    };
     const arm = {
-      contradictions: [{ turn: 1, quote: "her dry hair", why: "the state says soaked" }],
+      exchanges: [exchange],
       repetitions: [],
       staticRestatements: [],
       specificity: 4,
@@ -133,9 +432,15 @@ describe("the judge contract", () => {
       physicsReport: false,
       physicsReportWhy: "",
     };
-    const parsed = judgeVerdictSchema.parse({ A: arm, B: arm, preferred: "A", preferredWhy: "grounded" });
-    expect(parsed.A.contradictions).toHaveLength(1);
-    expect(judgeVerdictSchema.safeParse({ A: { ...arm, specificity: 9 }, B: arm, preferred: "tie" }).success).toBe(false);
+    const parsed = armAuditSchema.parse(arm);
+    expect(parsed.exchanges[0]?.wetness_degree).toBe("violated");
+    expect(armAuditSchema.safeParse({ ...arm, specificity: 9 }).success).toBe(false);
+    // A verdict outside the closed vocabulary is not silently coerced to clean.
+    expect(
+      armAuditSchema.safeParse({ ...arm, exchanges: [{ ...exchange, coverage: "probably_fine" }] }).success,
+    ).toBe(false);
+    expect(judgeVerdictSchema.safeParse({ preferred: "A", preferredWhy: "grounded" }).success).toBe(true);
+    expect(judgeVerdictSchema.safeParse({ preferred: "neither" }).success).toBe(false);
   });
 
   it("renders both arms and the ground truth, and never leaks the cue lines", () => {

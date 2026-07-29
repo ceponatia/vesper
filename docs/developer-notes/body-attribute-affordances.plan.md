@@ -6,12 +6,18 @@ hair domain, chat-lane wetness/environment owners + adapter + retake capture,
 the `CHAT_AFFORDANCE_CUES` narrator cue path (default OFF), the garment second
 domain with chat wiring + captured effective coverage, the read-only developer
 preview, and the recognizable-feature projection + observer visual memory
-behind `CHAT_RECOGNITION_CUES`, also default OFF). **Slice 5 itself is not
-complete until its live comparison runs** — the harness and its deterministic
-half are done (all structural guarantees pass; see the
-[trial report](body-attribute-affordances.trial.md)), but the live-model
-comparison was deferred by owner ruling 2026-07-28 because the repository's
-OpenRouter key is dead; it is one command once a key lands. **Slice 7 is
+behind `CHAT_RECOGNITION_CUES`, also default OFF). **Slice 5 is closed —
+final verdict 2026-07-29**: after the first live comparison failed for lack
+of contradiction headroom, a three-round rematch campaign under a frozen
+protocol ([rematch spec](body-attribute-affordances.trial.rematch.md), $6.29)
+made the measurement valid and the cue arm failed the decision rule twice
+consecutively — cues never reduced contradictions, because concrete cues
+make more checkable claims. **`CHAT_AFFORDANCE_CUES` parks OFF, finally**;
+what survives is the measured cue-wording fix (cause-true provenance,
+degree-accurate adjectives), the reusable audit harness, and the findings
+(cues eliminated repetition and false-premise adoption, raised specificity
+every round) — full history in the
+[trial report](body-attribute-affordances.trial.md) §Rematch log. **Slice 7 is
 built but production-inert** for a comparable missing-owner reason: the chat
 lane only knows that a location is exposed when a garment covers it, so bare
 skin reads unknown and recognition correctly stays silent until a
@@ -230,6 +236,18 @@ the plan ships.
 - Compare contradiction rate, repetition, specificity, and prose naturalness
   with the current appearance path.
 - Keep stable appearance and affordance cues from duplicating one another.
+
+**Complete 2026-07-29.** The deterministic half ran clean 2026-07-28 (every
+structural guarantee holds); the live paired comparison ran 2026-07-29 on the
+replaced key and **did not meet the decision rule** — contradictions tied
+exactly (the narrator already avoids them in this matrix), repetition rose
+slightly, specificity genuinely improved at identical naturalness, and the
+blinded judge leant to the control. The mechanism works as designed; the
+measured problem it prevents was not occurring. `CHAT_AFFORDANCE_CUES` stays
+OFF; any rematch should redesign the scenario matrix to induce contradiction
+headroom rather than change the physics — numbers, judge caveats, and rematch
+conditions in the [trial report](body-attribute-affordances.trial.md)
+§Live results.
 
 ### Slice 6 — second-domain proof
 
@@ -454,6 +472,12 @@ fixture-tested calibration defaults, never permanent product law.
   the current priors it can never win — importance ties its threshold and
   novelty always outranks it — so the reason exists but is unreachable.
   ([visual-memory detail](body-attribute-affordances.recognizable-features.memory.md#shipped-slice-7-implementation-2026-07-29))
+- ~~Does the affordance cue path earn a rematch with a redesigned matrix?~~ —
+  **resolved 2026-07-29**: it got one, run to the frozen protocol's terminal
+  state the same day. Final verdict: two consecutive valid fails,
+  `CHAT_AFFORDANCE_CUES` parks OFF; a differently-shaped narrator aid
+  (constraint-only or change-gated cues) would be a new plan.
+  ([trial report](body-attribute-affordances.trial.md#rematch-log))
 
 ## Technical companions
 

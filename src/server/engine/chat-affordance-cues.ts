@@ -136,14 +136,80 @@ function subjectPhrase(
 }
 
 // ---------------------------------------------------------------------------
+// Wetness: degree and provenance
+// ---------------------------------------------------------------------------
+
+/**
+ * How wet the subject is, as one adjective — taken from the observation's OWN
+ * wetness descriptor, never from its intensity band.
+ *
+ * The two are different questions, and conflating them is the round-R2 defect
+ * (`docs/developer-notes/body-attribute-affordances.trial.md` §Rematch log): the
+ * hair band measures CLUMPING (`clumpStrength` = wetness × clump affinity ×
+ * surface friction), so fine silky hair reads `subtle` while soaked through, and
+ * a cue that took its adjective from the band handed the narrator "damp strands"
+ * against a committed soaking — which the judges convicted, in both live rounds.
+ *
+ * The band is still the FALLBACK, for an observation whose domain does not emit
+ * a wetness descriptor. It can only ever understate (`clumpStrength ≤ wetness`),
+ * which is the safe direction: a cue may be quieter than the state, never wetter.
+ */
+const WETNESS_DEGREE_TAGS: readonly { readonly tag: string; readonly degree: string }[] = [
+  { tag: "wetness_soaked", degree: "soaked" },
+  { tag: "wetness_wet", degree: "wet" },
+  { tag: "wetness_damp", degree: "damp" },
+];
+
+const DEGREE_FOR_BAND: Readonly<Record<AffordanceIntensityBand, string>> = {
+  subtle: "damp",
+  clear: "wet",
+  strong: "soaked",
+};
+
+function wetnessDegree(observation: AffordanceObservation): string {
+  const tagged = WETNESS_DEGREE_TAGS.find((row) => observation.semanticTags.includes(row.tag));
+  return tagged?.degree ?? DEGREE_FOR_BAND[observation.intensityBand];
+}
+
+/**
+ * Why the subject is wet, when the read committed a cause — one clause, first
+ * match wins.
+ *
+ * EVERY committed cause gets one, not just rain. Round R2 measured the cost of
+ * the old rain-only rule: bath-caused wetness rendered as a bare "damp, clinging
+ * strands", the scene's storm was the loudest thing in the prompt, and the cue
+ * arm misattributed the water to the weather at twice the control's rate
+ * (provenance 0.50 vs 0.25 contradictions/exchange) — while the family where the
+ * cue DID name rain was one the cue arm won. Naming the cause is what anchors it.
+ *
+ * Unknown provenance stays unknown: no tag, no clause, and the line simply
+ * states what is true of the hair (docs/resilience.md — degraded means quieter,
+ * never invented). The domains tag a cause only from a committed event, so this
+ * table can never say more than the state does.
+ */
+const PROVENANCE_CLAUSES: readonly { readonly tag: string; readonly clause: string }[] = [
+  { tag: "recent_rain", clause: "still wet from the rain" },
+  { tag: "recent_immersion", clause: "still wet from the water it was in" },
+  { tag: "recent_splash", clause: "still wet from the splash" },
+];
+
+function provenanceClause(observation: AffordanceObservation): string | undefined {
+  return PROVENANCE_CLAUSES.find((row) => observation.semanticTags.includes(row.tag))?.clause;
+}
+
+// ---------------------------------------------------------------------------
 // hair.wet_clumping
 // ---------------------------------------------------------------------------
 
-/** Loose hair: the bands describe how far the strands have gathered. */
-const CLUMPING_LOOSE: Readonly<Record<AffordanceIntensityBand, string>> = {
-  subtle: "has begun to gather into damp strands",
-  clear: "has separated into damp, clinging strands",
-  strong: "hangs in heavy damp clumps",
+/**
+ * Loose hair: the bands describe how far the strands have GATHERED, and the
+ * degree adjective says how much water is in them. Both axes in one sentence,
+ * each from its own source.
+ */
+const CLUMPING_LOOSE: Readonly<Record<AffordanceIntensityBand, (degree: string) => string>> = {
+  subtle: (degree) => `has begun to gather into ${degree} strands`,
+  clear: (degree) => `has separated into ${degree}, clinging strands`,
+  strong: (degree) => `hangs in heavy ${degree} clumps`,
 };
 
 /**
@@ -152,29 +218,29 @@ const CLUMPING_LOOSE: Readonly<Record<AffordanceIntensityBand, string>> = {
  * observation, honest phrasing — the alternative is a cue that contradicts the
  * arrangement the Attributes section already stated.
  */
-const CLUMPING_BOUND: Readonly<Record<AffordanceIntensityBand, string>> = {
-  subtle: "is damp where it is bound up",
-  clear: "sits dark and damp where it is bound up",
-  strong: "hangs heavy with water where it is bound up",
+const CLUMPING_BOUND: Readonly<Record<AffordanceIntensityBand, (degree: string) => string>> = {
+  subtle: (degree) => `is ${degree} where it is bound up`,
+  clear: (degree) => `sits dark and ${degree} where it is bound up`,
+  strong: (degree) => `hangs ${degree} and heavy where it is bound up`,
 };
 
 /**
- * At most ONE enriching detail, first match wins. Provenance leads: "still wet
- * from the rain" is the detail that keeps the scene consistent, and it is only
- * ever tagged when a committed rain_exposure event is in the frame — immersion
- * and splash wet the hair but license no rain clause (a bath is not weather).
+ * At most ONE enriching detail, first match wins, and PROVENANCE leads it: the
+ * cause is the detail that keeps the scene consistent, so it outranks the
+ * texture ones whenever the read committed a cause.
  */
 const CLUMPING_DETAILS: readonly { readonly tag: string; readonly clause: string }[] = [
-  { tag: "recent_rain", clause: "still wet from the rain" },
   { tag: "retains_droplets", clause: "droplets caught along it" },
   { tag: "defined_curls", clause: "the curl drawn tight" },
 ];
 
 function wetClumpingCue(observation: AffordanceObservation, subject: string): string {
   const bound = observation.semanticTags.includes("bound_mass");
-  const verb = (bound ? CLUMPING_BOUND : CLUMPING_LOOSE)[observation.intensityBand];
-  const detail = CLUMPING_DETAILS.find((entry) => observation.semanticTags.includes(entry.tag));
-  return `${subject} ${verb}${detail ? `, ${detail.clause}` : ""}`;
+  const verb = (bound ? CLUMPING_BOUND : CLUMPING_LOOSE)[observation.intensityBand](wetnessDegree(observation));
+  const detail =
+    provenanceClause(observation) ??
+    CLUMPING_DETAILS.find((entry) => observation.semanticTags.includes(entry.tag))?.clause;
+  return `${subject} ${verb}${detail === undefined ? "" : `, ${detail}`}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,9 +300,15 @@ function wetSurfaceCue(observation: AffordanceObservation, subject: string): str
   const table = observation.semanticTags.includes("beading") ? WET_SURFACE_SHEDDING : WET_SURFACE_ABSORBING;
   const entry = table.find((row) => observation.semanticTags.includes(row.tag));
   if (!entry) return "";
-  // Provenance only on a committed rain event — the domain tags it, never guesses it.
-  const rain = observation.semanticTags.includes("recent_rain") ? ", still wet from the rain" : "";
-  return `${subject} ${entry.clause}${rain}`;
+  // Same provenance rule as the hair lines: a cause only ever comes from a
+  // committed event the domain tagged. The garment domain tags rain today; the
+  // clause table is shared, so a lane that ever commits a garment soaking or
+  // splashing renders it in the same register instead of falling silent.
+  const provenance = provenanceClause(observation);
+  // The degree adjective is already IN each clause here, because the garment
+  // domain's own descriptors carry it ("darkening" → "saturated"): its bands
+  // read saturation, not clumping, so they say how wet the fabric is directly.
+  return `${subject} ${entry.clause}${provenance === undefined ? "" : `, ${provenance}`}`;
 }
 
 // ---------------------------------------------------------------------------
