@@ -5,6 +5,20 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Scene-image phantom-limb fix** — no plan (owner report + ruling 2026-07-29;
+  behavior in [docs/images.md](../images.md) §Scene images ¶Player POV /
+  ¶Embodied POV) — 2026-07-29 — the character's hands/feet in pose text were
+  rendering as the VIEWER's foreground limbs: the POV rule's own "no hands in
+  frame" negative and unowned limb nouns were the cause (viewerBody was empty
+  in every observed failure). Three deterministic layers, no new agent:
+  limb-noun-free POV rule + person-count + abstract possession clause
+  (`sceneFramingRule` — the enumerated-limb draft was rejected by a live A/B,
+  `scripts/eval/scene-images/phantom-limb-ab.ts`, after it painted a phantom
+  hand; the shipped wording ran 3/3 clean), possessive limb binding by
+  composer rule + `bindLimbsToOwner` backstop, and a `viewerBodyEvidence`
+  verbatim-quote gate so embodied parts need transcript proof (anti-eagerness;
+  `viewer_body_ungrounded` diagnostic).
+
 - **Scene-image reference hardening + strip delete** — no plan (fix bundle off
   the 2026-07-29 Kristin troubleshoot; behavior recorded in
   [docs/images.md](../images.md) §Scene images / [docs/ui.md](../ui.md) §The

@@ -12,6 +12,7 @@ import type { CharacterProfile } from "@/contracts/world/profile";
 import { viewerBodyPartById } from "@/contracts/images/viewer-body";
 import { attr, makeProfile } from "@/server/test-support";
 import {
+  bindLimbsToOwner,
   buildAvatarPrompt,
   buildItemImagePrompt,
   buildLocationImagePrompt,
@@ -1076,7 +1077,18 @@ describe("buildSceneRenderPrompt", () => {
   it("always states the player POV rule, with or without a reference", () => {
     expect(buildSceneRenderPrompt(plan, { referenceName: "Mira" })).toContain(SCENE_POV_RULE);
     expect(buildSceneRenderPrompt(plan)).toContain(SCENE_POV_RULE);
-    expect(SCENE_POV_RULE).toContain("NEVER be visible");
+    expect(SCENE_POV_RULE).toContain("never visible");
+  });
+
+  // The phantom-limb fix (2026-07-29): the count + possession assertions ride every
+  // disembodied prompt, so "one hand holding a cup" can't become the viewer's hand.
+  it("asserts person count and total limb possession on the disembodied prompt", () => {
+    const prompt = buildSceneRenderPrompt(plan, { referenceName: "Mira" });
+    expect(prompt).toContain("Exactly two people are fully in frame: Mira and Sayed. Nobody else appears.");
+    expect(prompt).toContain("Every visible body part belongs to one of them.");
+    const solo = buildSceneRenderPrompt({ ...plan, others: [] }, { referenceName: "Mira" });
+    expect(solo).toContain("Exactly one person is fully in frame: Mira.");
+    expect(solo).toContain("Every visible body part belongs to Mira.");
   });
 
   it("identity-locks the focal reference and describes the others textually", () => {
@@ -1213,12 +1225,24 @@ describe("formatExposure", () => {
 describe("sceneFramingRule (scene-pov-embodiment slices 1+2)", () => {
   const part = (id: string) => viewerBodyPartById(id)!;
 
-  // THE property that makes this slice safe to land: every caller passes no parts today,
-  // so not one rendered image changes. If this breaks, the default path regressed.
-  it("is byte-identical to the old constant with no viewer parts", () => {
-    expect(sceneFramingRule({})).toBe(SCENE_POV_RULE);
-    expect(sceneFramingRule({ parts: [] })).toBe(SCENE_POV_RULE);
-    expect(sceneFramingRule({ parts: [], subjects: ["Mira"] })).toBe(SCENE_POV_RULE);
+  // The disembodied rule is positive-only since the phantom-limb fix (2026-07-29): the
+  // old "no hands or held objects" negative summoned disembodied foreground hands
+  // whenever the pose text mentioned the character's hands or feet — the "no camera"
+  // scar, again. Absence is asserted as a person count + total limb possession instead.
+  it("builds the disembodied rule from the POV opening + count + possession", () => {
+    expect(sceneFramingRule({})).toBe(`${SCENE_POV_RULE} No other person is in frame.`);
+    expect(sceneFramingRule({ parts: [] })).toBe(`${SCENE_POV_RULE} No other person is in frame.`);
+    expect(sceneFramingRule({ parts: [], subjects: ["Mira"] })).toBe(
+      `${SCENE_POV_RULE} Exactly one person is fully in frame: Mira. Nobody else appears. Every visible body part belongs to Mira.`,
+    );
+    expect(SCENE_POV_RULE).not.toMatch(/no hands|no body/i);
+  });
+
+  it("binds limbs to 'one of them' with several subjects, and skips possession for location-only", () => {
+    expect(sceneFramingRule({ parts: [], subjects: ["Mira", "Sayed"] })).toContain(
+      "Every visible body part belongs to one of them.",
+    );
+    expect(sceneFramingRule({ parts: [], subjects: [] })).not.toContain("belongs to");
   });
 
   it("binds every part to the viewer and to the frame, never as a subject", () => {
@@ -1312,8 +1336,28 @@ describe("buildSceneRenderPrompt with viewer parts", () => {
 
 describe("the composer's viewer-body proposal (slice 3)", () => {
   const present: ScenePresentCharacter = { name: "Mira", wornVisible: [] };
-  const ctx = (over: Partial<SceneComposerContext> = {}): SceneComposerContext => ({ present: [present], ...over });
-  const spec = (viewerBody: string[]) => ({ ...emptySceneSpec(), focalCharacter: "Mira", viewerBody });
+  const narration = [
+    "Mira leans in; her cheek comes to rest against your palm, your hands cradling her face while your forearms brace on the table, her torso pressing close against your chest.",
+  ];
+  const ctx = (over: Partial<SceneComposerContext> = {}): SceneComposerContext => ({
+    present: [present],
+    recentNarration: narration,
+    ...over,
+  });
+  // Default evidence: a verbatim quote per part (the grounding gate, 2026-07-29). Tests
+  // for the earlier clamps pass grounded evidence so they still exercise THEIR gate.
+  const QUOTES: Record<string, string> = {
+    hands: "her cheek comes to rest against your palm",
+    forearms: "your forearms brace on the table",
+    torso: "her torso pressing close against your chest",
+  };
+  const evidence = (parts: string[]) => parts.map((part) => ({ part, quote: QUOTES[part] ?? QUOTES.forearms ?? "" }));
+  const spec = (viewerBody: string[], viewerBodyEvidence = evidence(viewerBody)) => ({
+    ...emptySceneSpec(),
+    focalCharacter: "Mira",
+    viewerBody,
+    viewerBodyEvidence,
+  });
 
   it("keeps registry parts when the lane asked for embodiment", () => {
     const plan = resolveScenePlan(spec(["hands", "forearms"]), ctx({ embodiedViewer: true }));
@@ -1357,6 +1401,79 @@ describe("the composer's viewer-body proposal (slice 3)", () => {
   it("is empty by default — an unembodied plan is exactly today's shot", () => {
     expect(resolveScenePlan(emptySceneSpec(), ctx()).viewerBody).toEqual([]);
     expect(emptySceneRenderPlan().viewerBody).toEqual([]);
+  });
+
+  // The anti-eagerness gate (2026-07-29): an LLM given an optional field uses it far
+  // more often than the fiction warrants — so every part must carry a verbatim quote
+  // from the recent narration, checked in code. The composer proposes, the transcript
+  // disposes; no second model call.
+  it("drops a part with no evidence quote, with the ungrounded diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const plan = resolveScenePlan(spec(["hands"], []), ctx({ embodiedViewer: true }), sink);
+    expect(plan.viewerBody).toEqual([]);
+    expect(sink.items.map((d) => d.code)).toContain("images.scene_composer.viewer_body_ungrounded");
+  });
+
+  it("drops a paraphrased quote and keeps the verbatim one", () => {
+    const plan = resolveScenePlan(
+      spec(
+        ["hands", "forearms"],
+        [
+          { part: "hands", quote: "her cheek comes to rest against your palm" },
+          { part: "forearms", quote: "the player's forearms rest upon the table" }, // paraphrase — not in the narration
+        ],
+      ),
+      ctx({ embodiedViewer: true }),
+    );
+    expect(plan.viewerBody).toEqual(["hands"]);
+  });
+
+  it("matches evidence case/whitespace-insensitively, but a trivial quote proves nothing", () => {
+    const sloppy = resolveScenePlan(
+      spec(["hands"], [{ part: "hands", quote: "  Her CHEEK comes to  rest against your palm " }]),
+      ctx({ embodiedViewer: true }),
+    );
+    expect(sloppy.viewerBody).toEqual(["hands"]);
+    const trivial = resolveScenePlan(spec(["hands"], [{ part: "hands", quote: "your palm" }]), ctx({ embodiedViewer: true }));
+    expect(trivial.viewerBody).toEqual([]);
+  });
+
+  it("drops everything when there is no narration to ground against", () => {
+    const plan = resolveScenePlan(spec(["hands"]), ctx({ embodiedViewer: true, recentNarration: [] }));
+    expect(plan.viewerBody).toEqual([]);
+  });
+});
+
+describe("bindLimbsToOwner (phantom-limb fix, 2026-07-29)", () => {
+  const present: ScenePresentCharacter = { name: "Mira", wornVisible: [] };
+  const ctx = (over: Partial<SceneComposerContext> = {}): SceneComposerContext => ({ present: [present], ...over });
+
+  it("binds bare-article limbs to the owner", () => {
+    expect(bindLimbsToOwner("one hand holding a cup, a finger tracing the rim", "Kristin")).toBe(
+      "Kristin's hand holding a cup, Kristin's finger tracing the rim",
+    );
+  });
+
+  it("binds 'both hands' as a plural possessive", () => {
+    expect(bindLimbsToOwner("both hands wrapped around the mug", "Mira")).toBe("both of Mira's hands wrapped around the mug");
+  });
+
+  it("leaves already-possessive limbs, idioms and compounds untouched", () => {
+    const text = "her hand on the viewer's forearm, keeping him at an arm's length by a hand-carved rail";
+    expect(bindLimbsToOwner(text, "Mira")).toBe(text);
+  });
+
+  it("no-ops on a blank owner and non-limb nouns", () => {
+    expect(bindLimbsToOwner("one hand raised", "  ")).toBe("one hand raised");
+    expect(bindLimbsToOwner("a lamp in one corner", "Mira")).toBe("a lamp in one corner");
+  });
+
+  it("runs on composer pose text through resolveScenePlan", () => {
+    const composed = resolveScenePlan(
+      { ...emptySceneSpec(), focalCharacter: "Mira", pose: "sitting sideways, one hand holding a cup" },
+      ctx(),
+    );
+    expect(composed.focal?.action).toBe("sitting sideways, Mira's hand holding a cup");
   });
 });
 
