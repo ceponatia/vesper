@@ -41,8 +41,26 @@ src/contracts/affordances/
       fixtures.ts
       hair.test.ts
 
-    skin-surface/
     garment/
+      profile.ts
+      mechanics.ts
+      frame.ts
+      effective-coverage.ts
+      phenomena/
+        bands.ts
+        shared.ts
+        tags.ts
+        wet-surface-state.ts
+        wet-cling.ts
+        effective-opacity.ts
+        index.ts
+      domain.ts
+      fixtures.ts
+      index.ts
+      mechanics.test.ts
+      garment.test.ts
+
+    skin-surface/
     appendages/
     soft-tissue/
     relative-geometry/
@@ -60,6 +78,41 @@ src/contracts/affordances/
 
 The exact filenames may change during implementation. The ownership and
 dependency direction may not.
+
+## Shipped file map (slices 2–6)
+
+### Pure contracts
+
+| Path | What it owns |
+| --- | --- |
+| `src/contracts/affordances/core/*` | The staged types, unit algebra, evidence, perception, ranking, registry. Names no domain — `core/domain-neutrality.test.ts` asserts it over the source. |
+| `src/contracts/affordances/domains/hair/*` | The first proving domain (slices 2–3). Structure from canonical attributes. |
+| `src/contracts/affordances/domains/garment/*` | The second proving domain (slice 6). Structure from wardrobe truth. |
+| `src/contracts/items/effective-coverage-read.ts` | The final `EffectiveCoverageRead` vocabulary + persisted shape. **Owned by items**, derived by the garment domain — items never import affordances. |
+
+The garment domain differs from hair in two ways the core absorbed without
+learning a domain noun: its structure comes from the request's PAYLOAD rather
+than its attributes (hence `compileProfile(request)`), and it is plural and
+regional rather than singular (the architecture spec's "regional collections").
+
+### Chat-lane adapters and consumers (`src/server/engine/`)
+
+| Path | What it owns |
+| --- | --- |
+| `chat-affordances.ts` | THE adapter: builds the hair payload, the perception view, the read, and returns the coverage capture. Pure. |
+| `chat-garment-affordances.ts` | The garment half's wardrobe normalization — store + blueprint + condition + occlusion → `GarmentLanePayload`, plus the derived coverage read. Pure. |
+| `chat-affordance-cues.ts` | Cue projection for both domains, and the `CHAT_GARMENT_CUES` dedupe boundary. Pure. |
+| `chat-affordance-preview.ts` | The read-only developer preview's staged view. Pure over an already-computed read. |
+| `chat-pipeline.ts` | Wiring: the pre-fan-out read, the cue block, `previewChatAffordances`. |
+| `chat-state.ts` | Persists the cue memory (`ChatScenario.affordanceCues`) and the coverage capture (`ChatGarmentStore.coverage`). |
+
+### Developer preview surface
+
+| Path | What it owns |
+| --- | --- |
+| `src/app/api/admin/chat-inspector/[chatId]/affordances/route.ts` | The self-scoped admin route (`/api/admin/self/chat-inspector/:id/affordances` re-exports it). |
+| `src/components/chat/chat-inspector-affordances.tsx` | The staged read-only panel on the memory inspector page. |
+| `src/lib/api-inspector.ts` | The healing client schema for the preview payload. |
 
 ## Rulings
 

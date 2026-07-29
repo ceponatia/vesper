@@ -742,6 +742,27 @@ function feelingPhrase(feeling: ChatFeelingState | undefined): string {
 }
 
 /**
+ * The affordance cue block's heading. Declared once because TWO places name it:
+ * the block itself, and the sensory-allowance line's carve-out (owner ruling
+ * 2026-07-28) — a heading that drifted between them would leave the allowance
+ * line exempting a block the prompt no longer calls that. Exported (with the
+ * carve-out below) for the slice 5 trial harness, whose splice checks must
+ * subtract exactly what the cue arm adds.
+ */
+export const AFFORDANCE_CUE_BLOCK_HEADING = "Physical detail worth noticing this turn";
+
+/**
+ * The sensory-allowance carve-out sentence (owner ruling 2026-07-28: "cues
+ * win"). Appended to the `none` allowance line only when the prompt actually
+ * carries cue lines, so the two instructions never contradict. A pure function
+ * of the character name; exported so the trial harness can reproduce the
+ * cue-arm/control-arm delta without hardcoding this wording.
+ */
+export function chatAffordanceCueCarveOut(name: string): string {
+  return ` The "${AFFORDANCE_CUE_BLOCK_HEADING}" block above is exempt: those are effects happening now, not a description of how ${name} looks — its own one-detail limit still applies.`;
+}
+
+/**
  * The "Current state" block (character-chat-state-narration.spec.md §5): **standing
  * coloring** (mood phrase, unchanged meter bands, stage warmth, condition hints, mindNote,
  * outfit) the narrator should let bias its tone, plus at most ONE **foregrounded** "just
@@ -809,8 +830,11 @@ function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>
   // when the flag is off, which is what keeps this section byte-identical to today.
   const affordanceCues = (state.affordanceCues ?? []).map((cue) => cue.trim()).filter(Boolean);
   if (affordanceCues.length) {
+    // The heading is shared with `chatSensoryAllowanceLine`'s carve-out, which
+    // names this block when the turn's allowance is `none` (owner ruling
+    // 2026-07-28) — one constant, so the two can never drift apart.
     blocks.push(
-      `Physical detail worth noticing this turn (weave at most one into the beat, in action — never a physics report, never restated once said):\n${affordanceCues
+      `${AFFORDANCE_CUE_BLOCK_HEADING} (weave at most one into the beat, in action — never a physics report, never restated once said):\n${affordanceCues
         .map((cue) => `- ${cue}`)
         .join("\n")}`,
     );
@@ -1220,11 +1244,37 @@ function buildResponseShapeLine(input: CharacterChatPromptInput): string {
  * the single authority rules 10–11 defer to. Worded as a ceiling, not an instruction: a grant is
  * permission for at most one cue, never a demand that one appears. `focused_description` returns
  * "" because the Sensory-focus block below carries that turn's (richer) grant.
+ *
+ * ## The cue carve-out (owner ruling 2026-07-28: current-effect cues are exempt
+ * from the sensory-allowance appearance restriction — a current effect is new
+ * information, not static appearance)
+ *
+ * The `none` grant and the affordance cue block were contradicting each other:
+ * the trial dress-rehearsal measured ~79% of cue-bearing exchanges carrying
+ * "Sensory allowance this turn: none" alongside a cue line inviting the narrator
+ * to weave the detail in. The no-appearance instruction exists to stop an
+ * UNCHANGED look being re-described; every affordance cue is a current effect
+ * with a live cause by construction, so it was never the thing that instruction
+ * meant to suppress.
+ *
+ * This is PROMPT-PROJECTION policy, not ranking policy. The allowance is not an
+ * input to selection anywhere in `contracts/affordances` — cues are chosen
+ * exactly as before, and only the framing around them changes. And the carve-out
+ * renders ONLY when a cue line is actually present, so with the flag off (or on
+ * a quiet exchange) the line is byte-identical to today's.
  */
-function chatSensoryAllowanceLine(allowance: ChatSensoryAllowance, name: string, player: string): string {
+function chatSensoryAllowanceLine(
+  allowance: ChatSensoryAllowance,
+  name: string,
+  player: string,
+  /** True when this turn's prompt actually carries affordance cue lines. */
+  hasCurrentEffectCues = false,
+): string {
   switch (allowance) {
     case "none":
-      return `Sensory allowance this turn: none — no scent, warmth, texture, or taste detail of ${name}, and no appearance description beyond what ${name}'s own movement this turn makes newly visible.`;
+      return `Sensory allowance this turn: none — no scent, warmth, texture, or taste detail of ${name}, and no appearance description beyond what ${name}'s own movement this turn makes newly visible.${
+        hasCurrentEffectCues ? chatAffordanceCueCarveOut(name) : ""
+      }`;
     case "visual_accent":
       return `Sensory allowance this turn: one visual accent — ${player}'s eye is on ${name}. You may give one concrete visual detail drawn from ${name}'s Attributes and outfit, woven into the beat and seen from ${player}'s eye. Sight only — no scent, touch, or taste detail.`;
     case "close_range_hook":
@@ -1744,6 +1794,10 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
                 : input.sensoryAllowance,
               displayName,
               playerName ?? "the player",
+              // Owner ruling 2026-07-28: a current-effect cue is new information,
+              // not static appearance, so the `none` grant must not read as
+              // forbidding the block the same prompt just offered.
+              (input.state?.affordanceCues ?? []).some((cue) => cue.trim().length > 0),
             )
           : "",
     },

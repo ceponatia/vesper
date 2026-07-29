@@ -186,6 +186,17 @@ export interface ChatGarmentNarration {
   sceneNotes: string[];
   /** The cue memory to persist onto the store (mention history + reported bands). */
   nextCues: GarmentCueState;
+  /**
+   * Garment instance ids whose WETNESS this block actually surfaced this
+   * exchange (body-attribute-affordances slice 6).
+   *
+   * The one place the two narrator cue blocks overlap: this block owns the
+   * garment's condition BAND ("her shirt is damp"), and the affordance block
+   * owns what being wet has done to it. With both flags on, the affordance
+   * projection reads this set and drops its surface-wetness line for these
+   * garments — one detail, said once, by its authority.
+   */
+  wetnessGarmentIds: string[];
 }
 
 /**
@@ -242,6 +253,13 @@ export function buildChatGarmentNarration(input: {
     cues: split.selected.map((entry) => entry.phrase),
     sceneNotes: garmentSceneNotes(observationActors),
     nextCues: split.next,
+    wetnessGarmentIds: [
+      ...new Set(
+        split.selected
+          .filter((entry) => entry.family === "surface_damp_or_wet")
+          .map((entry) => entry.garmentId),
+      ),
+    ],
   };
 }
 

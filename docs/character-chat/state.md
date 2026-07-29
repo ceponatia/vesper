@@ -356,6 +356,44 @@ veil) should read `hidden`, but that needs a finer coverage signal than the per-
 boolean, so no chat garment produces `hidden` today — the gate itself is unchanged and
 still fails closed for an unlisted location (`unknown`).
 
+**The garment domain** (slice 6) rides the same adapter and the same flag. Its wardrobe
+normalization lives in `engine/chat-garment-affordances.ts`: worn garment instances, their
+blueprint snapshots' materials, presentation-aware per-part coverage, and the condition
+gradient's wetness — integrated forward to the story clock *lazily and without writing
+back*, so building a prompt can never dry a garment. It answers three reads —
+material-dependent wet surface behavior, effective opacity, and wet cling — and refuses the
+rest honestly:
+
+- **`contacts` is omitted entirely**, because no lane records garment *fit* and the ruled
+  establishment law only lets a `fitted`/`tight` garment claim body contact from wardrobe
+  truth. Wet cling is therefore suppressed by the core with `affordance.input.unavailable`,
+  exactly as hair adhesion is.
+- **`focus` is omitted**, so the domain's closed default blocks every intimate cue
+  (`intimate_gated`); the chat lane has no narrative-focus or consent owner yet.
+- An **unmodelled** wardrobe means the domain is not run at all — unknown coverage, never a
+  bare body.
+
+The read also produces the final **effective-coverage read** (opaque/hinted/exposed per body
+location, with contributing garment evidence), and that answer is **captured** onto
+`ChatGarmentStore.coverage` rather than recomputed by each consumer — so it rides
+`pre_exchange_scenario` with the garments it describes and a retake restores both or
+neither. See [../contracts/items.md](../contracts/items.md) §Effective coverage.
+
+**Two narrator cue blocks, one boundary.** `CHAT_GARMENT_CUES` owns garment *state and its
+changes* (a placket that came open, a rolled sleeve, the condition band, mud, a tear);
+`CHAT_AFFORDANCE_CUES` owns the current derived *visual effect* of that state (water beading
+or darkening, opacity, cling). They overlap only at garment wetness, so with both flags on
+the pipeline passes the garment ids the wardrobe block already spoke about and the affordance
+projection drops its surface line for them.
+
+**The developer preview** (`/chat/:id/inspector`, admin-only) shows the whole staircase
+read-only — source inputs → structural profile → mechanics → observations or suppression
+reason → perception filtering → selected cue, per domain — computed on demand from the
+stored cut and storing nothing (`engine/chat-affordance-preview.ts`; it never persists
+`nextCues`, so looking cannot spend the repeat gate). It deliberately ignores the feature
+flag and reports its state instead: the question it exists to answer is "why did this cut
+say nothing?", which matters most while the flag is off.
+
 
 ## Emotional weather
 

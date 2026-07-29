@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { ChatInspectorAffordances } from "@/components/chat/chat-inspector-affordances";
 import { ChatInspectorAgentHealth } from "@/components/chat/chat-inspector-agent-health";
 import { ChatInspectorCompositionHealth } from "@/components/chat/chat-inspector-composition-health";
 import { ChatInspectorEpisodes } from "@/components/chat/chat-inspector-episodes";
@@ -79,6 +80,10 @@ function InspectorBody({ chatId }: { chatId: string }) {
           <ChatInspectorEpisodes chatId={chatId} episodes={data.episodes} onChanged={reloadSilent} />
           <SummarySection chatId={chatId} summary={data.summary} onSaved={reloadSilent} />
           <PromptSection chatId={chatId} />
+          {/* The staged affordance read, LAST and read-only: it explains a detail of
+              the prompt above rather than standing on its own, and it is the section
+              you open when a physical cue you expected never appeared. */}
+          <ChatInspectorAffordances chatId={chatId} />
         </div>
       ) : null}
     </PageContainer>

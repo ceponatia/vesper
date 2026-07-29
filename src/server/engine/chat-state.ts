@@ -41,6 +41,7 @@ import {
   GARMENT_PLAYER_ACTOR,
   retireActorGarments,
   type ChatGarmentStore,
+  type EffectiveCoverageRead,
   type GarmentCueState,
   type GarmentOperation,
   currentScenePlace,
@@ -1732,6 +1733,16 @@ export async function finalizeChatState(input: {
    * ⇒ the stored memory rides through untouched, never cleared.
    */
   affordanceCueState?: AffordanceCueState;
+  /**
+   * The CAPTURED effective-coverage read this exchange derived, keyed by garment
+   * actor handle (body-attribute-affordances slice 6; the owner ruling
+   * "effective coverage is captured, not reconstructed").
+   *
+   * Merged onto the garment store rather than stored beside it, so one JSONB
+   * value — one rollback anchor — carries the garments AND the derived answer
+   * about what they still conceal. Absent ⇒ the prior capture rides through.
+   */
+  affordanceCoverage?: Readonly<Record<string, EffectiveCoverageRead>>;
   sink?: DiagnosticSink;
 }): Promise<{
   /** True when this exchange landed a stage crossing or strong reaction (slice 9 "auto at big moments"). */
@@ -2035,9 +2046,22 @@ export async function finalizeChatState(input: {
   // Mention history rides the store (slice 6): the cue memory the PROMPT produced,
   // written onto the POST-fold store so one JSONB value carries the wardrobe and
   // what has already been said about it. Flag off ⇒ the prior memory passes through.
-  const garmentStore = input.garmentCueState
-    ? { ...garmentFold.store, cues: input.garmentCueState }
-    : garmentFold.store;
+  // The CAPTURED effective-coverage read (body-attribute-affordances slice 6)
+  // rides the same value for the same reason: it is derived from these garments,
+  // at this cut, and restoring it one exchange out of step with them would give
+  // narration, images, and a retake three different answers about what is still
+  // concealed. Absent (the `CHAT_AFFORDANCE_CUES` default, or an unmodelled
+  // wardrobe) ⇒ the prior capture passes through, never cleared.
+  const garmentStore =
+    input.garmentCueState || input.affordanceCoverage
+      ? {
+          ...garmentFold.store,
+          ...(input.garmentCueState ? { cues: input.garmentCueState } : {}),
+          ...(input.affordanceCoverage
+            ? { coverage: { ...garmentFold.store.coverage, ...input.affordanceCoverage } }
+            : {}),
+        }
+      : garmentFold.store;
   const wornItemIds =
     garmentFold.applied > 0
       ? garmentProjectionOr(garmentStore, garmentActorForCharacter(input.characterId), garmentSync.wornItemIds)

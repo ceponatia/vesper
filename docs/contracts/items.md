@@ -60,6 +60,31 @@ chat's worn item ids run through `exposedRegions` for coverage-computed exposure
 §Wardrobe). The pure garment-phrase matcher + worn-list reducer the chat archivist's add/remove
 proposals fold through live in `items/chat-wardrobe.ts` (`matchGarment` / `applyWornGarmentChanges`).
 
+### Effective coverage — the final read
+
+The visibility rule above answers "which garment does the eye reach here". A
+second, finer question — "does that garment still **conceal** what is under it?"
+— is the **effective-coverage read** (`items/effective-coverage-read.ts`):
+`opaque` · `hinted` · `exposed` per body location, with the contributing garment
+regions as evidence.
+
+The vocabulary and persisted shape live here because the wardrobe owns coverage;
+the **derivation** is the affordance layer's, because it needs current
+saturation-dependent opacity (`contracts/affordances/domains/garment` —
+[body-attribute-affordances.spec.garment-interaction.md](../developer-notes/body-attribute-affordances.spec.garment-interaction.md)).
+One direction only: items never import affordances.
+
+Two rules worth knowing:
+
+- **Layers add cover; they never subtract it.** A location's band comes from the
+  most-concealing region reaching it, so a soaked-transparent shirt over a dry
+  camisole leaves the chest `opaque`.
+- **It is captured, not recomputed.** The chat lane stores the read on the
+  garment store (`ChatGarmentStore.coverage`, keyed by garment actor handle), so
+  narration, body affordances, retakes, and images share one answer rather than
+  each deriving their own from slightly different moments. A location no garment
+  reaches has no entry — bare skin is `exposedRegions`' answer, not this read's.
+
 ## Clothing categories
 
 `items/clothing-categories.ts` holds authoring-time **coverage templates**:

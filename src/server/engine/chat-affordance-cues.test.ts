@@ -159,3 +159,118 @@ describe("safety", () => {
     expect(render(cues, hairColor("red"))).toEqual(render(cues, hairColor("red")));
   });
 });
+
+// ---------------------------------------------------------------------------
+// The garment domain (slice 6)
+// ---------------------------------------------------------------------------
+
+function garmentObservation(over: Partial<AffordanceObservation> = {}): AffordanceObservation {
+  return {
+    kind: "observation",
+    id: "garment.wet_surface_state",
+    sourceLocationId: "shoulders",
+    intensityBand: "clear",
+    semanticTags: ["garment:g1", "darkened", "damp_through"],
+    repeatKey: "garment:wet_surface:g1:root",
+    ...over,
+  };
+}
+
+const NAMES = { g1: "her linen shirt", g2: "the leather jacket" };
+
+const renderGarment = (
+  cues: readonly AffordanceObservation[],
+  spokenGarmentIds?: ReadonlySet<string>,
+): string[] =>
+  renderChatAffordanceCues({
+    cues,
+    attributes: attributes(),
+    possessive: "Wren's",
+    garmentNames: NAMES,
+    ...(spokenGarmentIds === undefined ? {} : { spokenGarmentIds }),
+  });
+
+describe("garment cues", () => {
+  it("names the garment, not the body location under it — and reads after a possessive", () => {
+    expect(renderGarment([garmentObservation()])[0]).toBe("Wren's linen shirt has gone dark and damp through");
+  });
+
+  it("falls back to the body location when no name was handed over", () => {
+    expect(
+      renderChatAffordanceCues({ cues: [garmentObservation()], attributes: attributes(), possessive: "Wren's" })[0],
+    ).toBe("Wren's shoulders has gone dark and damp through");
+  });
+
+  /** The headline acceptance test, at the sentence level. */
+  it("renders a shedding material and an absorbing one as different sentences", () => {
+    const leather = renderGarment([
+      garmentObservation({ semanticTags: ["garment:g2", "beading", "runoff"], repeatKey: "garment:wet_surface:g2:root" }),
+    ])[0];
+    const cotton = renderGarment([garmentObservation()])[0];
+    expect(leather).toContain("beaded with water that runs off it");
+    expect(cotton).toContain("dark and damp through");
+    expect(leather).not.toContain("dark");
+  });
+
+  it("adds the rain provenance only when the observation carries it", () => {
+    expect(renderGarment([garmentObservation()])[0]).not.toContain("rain");
+    expect(
+      renderGarment([garmentObservation({ semanticTags: ["garment:g1", "darkened", "recent_rain"] })])[0],
+    ).toContain("still wet from the rain");
+  });
+
+  it("renders opacity as translucency and never volunteers what is underneath", () => {
+    const line = renderGarment([
+      garmentObservation({
+        id: "garment.effective_opacity",
+        semanticTags: ["garment:g1", "see_through", "coverage_hinted"],
+        repeatKey: "garment:opacity:g1:root",
+      }),
+    ])[0];
+    expect(line).toBe("Wren's linen shirt has gone near-transparent where the water has soaked it");
+    expect(line).not.toMatch(/skin|breast|nipple|bare/iu);
+  });
+
+  it("renders cling against the body location the contact named", () => {
+    const line = renderGarment([
+      garmentObservation({
+        id: "garment.wet_cling",
+        sourceLocationId: "back",
+        semanticTags: ["garment:g1", "region:root", "clinging", "contour_followed", "contact_fitted"],
+        repeatKey: "garment:cling:g1:root:back",
+      }),
+    ])[0];
+    expect(line).toBe("Wren's linen shirt clings wet against the back");
+  });
+
+  it("keeps the identity tags out of the fallback's prose", () => {
+    const line = renderGarment([
+      garmentObservation({ id: "garment.future_thing", semanticTags: ["garment:g1", "region:hem", "billowing"] }),
+    ])[0];
+    expect(line).toBe("Wren's linen shirt — billowing");
+  });
+});
+
+describe("the CHAT_GARMENT_CUES boundary", () => {
+  it("drops the surface line for a garment the wardrobe block already spoke about", () => {
+    expect(renderGarment([garmentObservation()], new Set(["g1"]))).toEqual([]);
+    expect(renderGarment([garmentObservation()], new Set(["g2"]))).toHaveLength(1);
+  });
+
+  it("never drops opacity or cling — the wardrobe block has no counterpart for them", () => {
+    const opacity = garmentObservation({
+      id: "garment.effective_opacity",
+      semanticTags: ["garment:g1", "translucent"],
+    });
+    const cling = garmentObservation({
+      id: "garment.wet_cling",
+      sourceLocationId: "back",
+      semanticTags: ["garment:g1", "clinging", "contour_followed"],
+    });
+    expect(renderGarment([opacity, cling], new Set(["g1"]))).toHaveLength(2);
+  });
+
+  it("changes nothing when the wardrobe block is off (no spoken set at all)", () => {
+    expect(renderGarment([garmentObservation()])).toEqual(renderGarment([garmentObservation()], new Set()));
+  });
+});

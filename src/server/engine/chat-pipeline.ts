@@ -35,6 +35,7 @@ import { streamCharacterChat } from "./character-chat";
 import { buildActionBeatCue } from "./chat-action-beat";
 import { renderChatAffordanceCues } from "./chat-affordance-cues";
 import { buildChatAffordanceRead } from "./chat-affordances";
+import { buildChatAffordancePreview, type AffordancePreview } from "./chat-affordance-preview";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
 import { buildInitiativeCue } from "./chat-initiative";
 import { loadChatRelationships } from "./chat-relationships";
@@ -1052,7 +1053,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           attributeOverlays: driftedState.attributeOverlays,
           conditions: driftedState.conditions,
           // Absent on the free-text wardrobe path — unknown coverage fails closed.
-          ...(wardrobe.worn === undefined ? {} : { wardrobe: { worn: wardrobe.worn } }),
+          ...(wardrobe.worn === undefined
+            ? {}
+            : { wardrobe: { worn: wardrobe.worn, partVisibility: wardrobe.partVisibility } }),
+          // The garment domain (slice 6) reads the SAME store the wardrobe rows
+          // and the garment cue block were resolved from — one cut, three
+          // consumers — and is simply not run when this actor is unmodelled.
+          garments: scenario.garments,
+          garmentActorId: garmentActorForCharacter(characterId),
           bodySurface: driftedState.bodySurface,
           environment: scenario.environment,
           clockMinutes: scenario.clockMinutes,
@@ -1070,6 +1078,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           cues: affordanceRead.read.cues,
           attributes: affordanceRead.attributes,
           possessive: `${characterName}'s`,
+          garmentNames: affordanceRead.garmentNames,
+          // The `CHAT_GARMENT_CUES` boundary (see chat-affordance-cues.ts): with
+          // both flags on, the wardrobe block owns the garment's wetness BAND and
+          // this block yields its surface line for the same garment rather than
+          // saying one detail twice.
+          spokenGarmentIds: new Set(garmentNarration?.wetnessGarmentIds ?? []),
         })
       : [];
 
@@ -1400,6 +1414,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           // the narrator actually saw. Absent when the flag is off, and the finalizer
           // then leaves the scenario's stored memory untouched.
           ...(affordanceRead ? { affordanceCueState: affordanceRead.nextCues } : {}),
+          // The captured effective-coverage read (slice 6): CAPTURED with the
+          // presentation cut, not reconstructed later, so narration, body
+          // affordances, retakes, and images all share one answer about what is
+          // still concealed. Keyed by garment actor handle; absent when this
+          // actor's wardrobe is unmodelled.
+          ...(affordanceRead?.coverage
+            ? { affordanceCoverage: { [garmentActorForCharacter(characterId)]: affordanceRead.coverage } }
+            : {}),
           // The ensemble context (multi-character-chat.plan.md): the roster line
           // arms the archivist's presence field; every present witness's group
           // gets the same extraction filed as their own memory.
@@ -2058,12 +2080,21 @@ export interface ChatPromptPreview {
  * state (i.e. the NEXT turn's prompt), which is what comparing live play against the
  * eval fixtures wants.
  */
-export async function previewChatPrompt(input: {
+/**
+ * The stored cut both dev previews read from — state, scenario, persona, and
+ * both wardrobes, assembled exactly as a live exchange assembles them and
+ * WITHOUT touching state, history, or the exchange lock.
+ *
+ * Factored out because two previews need it (the prompt preview and the
+ * affordance preview) and a second copy would be a second chance to drift from
+ * what a real turn does — which is the one thing a debug view must never do.
+ */
+async function loadChatPreviewCut(input: {
   chatId: string;
-  memoryGroupId: string;
-  character: { id: string; name: string; profile: unknown };
-}): Promise<ChatPromptPreview> {
-  const sink = new DiagnosticCollector();
+  character: { id: string; profile: unknown };
+  sink: DiagnosticCollector;
+}) {
+  const { sink } = input;
   const profile = parseOr(
     characterProfileSchema,
     input.character.profile ?? {},
@@ -2079,7 +2110,6 @@ export async function previewChatPrompt(input: {
     profile,
     { clockMinutes: scenario.clockMinutes },
   );
-  const summaryState = await loadChatSummary(input.chatId);
   const player = await resolveChatPersona({ ownerId: owner, chatId: input.chatId });
   const wardrobe = await resolveChatWardrobe(
     { ...state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(input.character.id) },
@@ -2094,6 +2124,70 @@ export async function previewChatPrompt(input: {
     sink,
     scenario.garments,
   );
+  return { profile, owner, scenario, state, player, wardrobe, playerWardrobe };
+}
+
+/**
+ * The affordance read one preview takes, from the stored cut. Identical inputs
+ * to the live path (`chat-pipeline`'s pre-fan-out call), and deliberately NOT
+ * flag-gated: a developer asking why a read said nothing needs the answer with
+ * the flag off too.
+ */
+function previewAffordanceRead(input: {
+  characterId: string;
+  cut: Awaited<ReturnType<typeof loadChatPreviewCut>>;
+  sink: DiagnosticCollector;
+}) {
+  const { cut } = input;
+  return buildChatAffordanceRead({
+    subjectId: input.characterId,
+    attributes: cut.profile.attributes,
+    attributeOverlays: cut.state.attributeOverlays,
+    conditions: cut.state.conditions,
+    ...(cut.wardrobe.worn === undefined
+      ? {}
+      : { wardrobe: { worn: cut.wardrobe.worn, partVisibility: cut.wardrobe.partVisibility } }),
+    garments: cut.scenario.garments,
+    garmentActorId: garmentActorForCharacter(input.characterId),
+    bodySurface: cut.state.bodySurface,
+    environment: cut.scenario.environment,
+    clockMinutes: cut.scenario.clockMinutes,
+    previousCues: cut.scenario.affordanceCues,
+    sink: input.sink,
+  });
+}
+
+/**
+ * The read-only developer preview of the staged affordance calculation
+ * (body-attribute-affordances.spec.architecture.md §Resolved). Computes on
+ * demand from the stored cut and stores NOTHING — in particular it never
+ * persists `nextCues`, so looking at a read cannot spend the repeat gate.
+ */
+export async function previewChatAffordances(input: {
+  chatId: string;
+  character: { id: string; name: string; profile: unknown };
+}): Promise<AffordancePreview> {
+  const sink = new DiagnosticCollector();
+  const cut = await loadChatPreviewCut({ chatId: input.chatId, character: input.character, sink });
+  return buildChatAffordancePreview({
+    result: previewAffordanceRead({ characterId: input.character.id, cut, sink }),
+    possessive: `${input.character.name}'s`,
+    cueFlagEnabled: chatAffordanceCuesEnabled(),
+  });
+}
+
+export async function previewChatPrompt(input: {
+  chatId: string;
+  memoryGroupId: string;
+  character: { id: string; name: string; profile: unknown };
+}): Promise<ChatPromptPreview> {
+  const sink = new DiagnosticCollector();
+  const { profile, scenario, state, player, wardrobe, playerWardrobe } = await loadChatPreviewCut({
+    chatId: input.chatId,
+    character: input.character,
+    sink,
+  });
+  const summaryState = await loadChatSummary(input.chatId);
   const memory = await retrieveChatMemory({
     groupId: input.memoryGroupId,
     queries: state.memoryQueries,
@@ -2107,17 +2201,24 @@ export async function previewChatPrompt(input: {
   // cut. The preview never persists `nextCues`, so looking at a prompt can't spend
   // the repeat gate — the read is pure, so rebuilding it costs nothing but CPU.
   const previewAffordance = chatAffordanceCuesEnabled()
-    ? buildChatAffordanceRead({
-        subjectId: input.character.id,
-        attributes: profile.attributes,
-        attributeOverlays: state.attributeOverlays,
-        conditions: state.conditions,
-        ...(wardrobe.worn === undefined ? {} : { wardrobe: { worn: wardrobe.worn } }),
-        bodySurface: state.bodySurface,
-        environment: scenario.environment,
-        clockMinutes: scenario.clockMinutes,
-        previousCues: scenario.affordanceCues,
+    ? previewAffordanceRead({
+        characterId: input.character.id,
+        cut: { profile, owner: "", scenario, state, player, wardrobe, playerWardrobe },
         sink,
+      })
+    : null;
+  const previewGarmentNarration = chatGarmentCuesEnabled()
+    ? buildChatGarmentNarration({
+        store: scenario.garments,
+        atMinutes: scenario.clockMinutes,
+        ...(previewPlaceName === undefined ? {} : { placeName: previewPlaceName }),
+        actors: chatGarmentNarrationActors({
+          characterId: input.character.id,
+          characterName: input.character.name,
+          playerName: player.name,
+          characterVisibility: wardrobe.partVisibility,
+          playerVisibility: playerWardrobe.partVisibility,
+        }),
       })
     : null;
   const parts = buildCharacterChatPromptParts({
@@ -2131,25 +2232,14 @@ export async function previewChatPrompt(input: {
       scenario,
       wardrobe,
       profile,
-      chatGarmentCuesEnabled()
-        ? buildChatGarmentNarration({
-            store: scenario.garments,
-            atMinutes: scenario.clockMinutes,
-            ...(previewPlaceName === undefined ? {} : { placeName: previewPlaceName }),
-            actors: chatGarmentNarrationActors({
-              characterId: input.character.id,
-              characterName: input.character.name,
-              playerName: player.name,
-              characterVisibility: wardrobe.partVisibility,
-              playerVisibility: playerWardrobe.partVisibility,
-            }),
-          })
-        : null,
+      previewGarmentNarration,
       previewAffordance
         ? renderChatAffordanceCues({
             cues: previewAffordance.read.cues,
             attributes: previewAffordance.attributes,
             possessive: `${input.character.name}'s`,
+            garmentNames: previewAffordance.garmentNames,
+            spokenGarmentIds: new Set(previewGarmentNarration?.wetnessGarmentIds ?? []),
           })
         : [],
     ),

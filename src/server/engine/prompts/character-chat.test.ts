@@ -1376,6 +1376,67 @@ describe("buildCharacterChatSystemPrompt — per-turn sensory allowance (narrato
     expect(prompt).toMatch(/when a "Sensory allowance" line is present below, it states exactly what may land/i);
     expect(prompt).toContain("When no allowance line is present, default to none.");
   });
+
+  /**
+   * Owner ruling 2026-07-28: a current-effect affordance cue is NEW INFORMATION,
+   * not static appearance, so the `none` grant's no-appearance instruction must
+   * not read as forbidding the cue block the same prompt is offering. The trial
+   * dress-rehearsal measured ~79% of cue-bearing exchanges carrying both.
+   */
+  describe("the current-effect cue carve-out", () => {
+    const CARVE_OUT = 'The "Physical detail worth noticing this turn" block above is exempt';
+    const withCues = (cues: readonly string[]) =>
+      buildCharacterChatPromptParts({
+        ...base,
+        sensoryAllowance: "none" as const,
+        state: chatState({ affordanceCues: [...cues] }),
+      });
+
+    it("exempts the cue block when the allowance is none AND cues are present", () => {
+      const parts = withCues(["Mara's damp hair has separated into clinging strands"]);
+      expect(parts.tail).toContain("Sensory allowance this turn: none");
+      expect(parts.tail).toContain(CARVE_OUT);
+      // The exemption is bounded — the block's own one-detail limit still binds.
+      expect(parts.tail).toContain("its own one-detail limit still applies");
+      // And it names the block by the heading the block actually renders.
+      expect(parts.tail).toContain("Physical detail worth noticing this turn (weave at most one");
+    });
+
+    it("is byte-identical to today when the allowance is none and NO cue was selected", () => {
+      const noCues = buildCharacterChatPromptParts({ ...base, sensoryAllowance: "none", state: chatState() });
+      const emptyCues = withCues([]);
+      const blankCues = withCues(["   "]);
+      expect(noCues.tail).not.toContain(CARVE_OUT);
+      expect(emptyCues.tail).toBe(noCues.tail);
+      expect(blankCues.tail).toBe(noCues.tail);
+      expect(emptyCues.prefix).toBe(noCues.prefix);
+    });
+
+    it("is byte-identical to today with the flag OFF — no cue block, no carve-out", () => {
+      // Flag off means the pipeline passes no `affordanceCues` at all.
+      const flagOff = buildCharacterChatPromptParts({ ...base, sensoryAllowance: "none", state: chatState() });
+      const before = buildCharacterChatPromptParts({ ...base, sensoryAllowance: "none" });
+      expect(flagOff.tail).not.toContain(CARVE_OUT);
+      expect(flagOff.tail).not.toContain("Physical detail worth noticing this turn");
+      expect(before.tail).not.toContain(CARVE_OUT);
+    });
+
+    it("touches no other allowance — a grant already permits the detail", () => {
+      for (const allowance of ["visual_accent", "close_range_hook"] as const) {
+        const granted = buildCharacterChatPromptParts({
+          ...base,
+          sensoryAllowance: allowance,
+          state: chatState({ affordanceCues: ["Mara's shirt has gone dark with water"] }),
+        });
+        expect(granted.tail).not.toContain(CARVE_OUT);
+      }
+    });
+
+    it("stays out of the cache-stable prefix — the reconciliation is per-turn framing", () => {
+      const parts = withCues(["Mara's shirt has gone dark with water"]);
+      expect(parts.prefix).not.toContain(CARVE_OUT);
+    });
+  });
 });
 
 describe("buildCharacterChatSystemPrompt — per-shape length story (narrator-prompt-consolidation slice 2)", () => {

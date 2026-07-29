@@ -206,7 +206,13 @@ describe("restore, determinism, and the readout", () => {
   });
 
   it("a restore returns the garment to its baseline coverage", () => {
-    const store = { seeded: true, blueprints: { h1: TOP }, instances: [dressed], cues: emptyGarmentCueState() };
+    const store = {
+      seeded: true,
+      blueprints: { h1: TOP },
+      instances: [dressed],
+      cues: emptyGarmentCueState(),
+      coverage: {},
+    };
     const restored = applyGarmentOperations(
       store,
       [{ kind: "restore_presentation", garmentId: "g1", partIds: ["front_panel", "sleeve_left", "hem"] }],

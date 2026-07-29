@@ -128,7 +128,10 @@ export const hairDomainDefinition: AffordanceDomainDefinition<
   id: HAIR_DOMAIN_ID,
   requiredAttributeIds: hairRequiredAttributeIds,
 
-  compileProfile: compileHairProfile,
+  // Hair's structure IS the character, so this domain reads only the attribute
+  // half of the request — the garment domain is the one that compiles from
+  // wardrobe truth instead (core `compileProfile`).
+  compileProfile: (request) => compileHairProfile(request.attributes),
 
   readInputs: (request): AdapterRead<DomainInputs<HairAffordanceState, HairResolutionContext>> => {
     if (request.payload === undefined) return adapterUnavailable;

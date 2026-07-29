@@ -66,7 +66,13 @@ function storeOf(blueprint: GarmentBlueprint, locus: GarmentLocus = WORN): ChatG
     condition: pristineGarmentConditionState(),
     lastChange: { kind: "mint", atMinutes: 0 },
   };
-  return { seeded: true, blueprints: { [hash]: blueprint }, instances: [instance], cues: emptyGarmentCueState() };
+  return {
+    seeded: true,
+    blueprints: { [hash]: blueprint },
+    instances: [instance],
+    cues: emptyGarmentCueState(),
+    coverage: {},
+  };
 }
 
 function run(store: ChatGarmentStore, operations: readonly GarmentOperation[], atMinutes = 0) {

@@ -221,6 +221,11 @@ export type AffordanceResolution = AffordanceObservation | AffordanceConstraint 
  * independent of registration order" hold structurally rather than by
  * convention. This value reaches `compileProfile` and stops there — no
  * phenomenon ever sees it.
+ *
+ * It is not the ONLY structural source: a domain about something the character
+ * WEARS or CARRIES compiles its structure from the lane's normalized object
+ * truth instead (see `AffordanceDomainDefinition.compileProfile`). Either way
+ * the raw vocabulary stops at the profile.
  */
 export interface ResolvedAttributeSnapshot {
   readonly values: readonly AttributeValue[];
@@ -370,7 +375,24 @@ export interface AffordanceDomainDefinition<
   readonly requiredAttributeIds: readonly string[];
   /** Narrow the lane payload. The only place a domain touches untyped input. */
   readInputs(request: AffordanceDomainRequest): AdapterRead<DomainInputs<TState, TContext>>;
-  compileProfile(attributes: ResolvedAttributeSnapshot): DomainProfileResult<TProfile>;
+  /**
+   * Compile the stable structure this domain reasons over, from the WHOLE read
+   * request rather than the attribute snapshot alone.
+   *
+   * A body domain (hair, skin, soft tissue) reads `request.attributes`: its
+   * structure IS the character. A domain about something the character wears or
+   * carries reads `request.payload`: a garment's material, construction, and
+   * coverage belong to the wardrobe, not to the body, and the affordance layer
+   * is explicitly forbidden from keeping a second catalog of them
+   * (spec.garment-interaction.md §"Structural profile"). Both are the same
+   * stage — raw vocabulary in, orthogonal named terms out — so the core stays
+   * domain-neutral by handing over the request and caring about neither.
+   *
+   * Runs BEFORE `readInputs`, so a domain that compiles from the payload
+   * narrows it here too. Both narrowings are pure, so doing it twice costs
+   * nothing and keeps each stage independently testable.
+   */
+  compileProfile(request: AffordanceDomainRequest): DomainProfileResult<TProfile>;
   deriveMechanics(profile: TProfile, state: TState): DomainMechanicsResult<TMechanics>;
   buildFrame(profile: TProfile, mechanics: TMechanics, context: TContext): TFrame;
   readonly phenomena: readonly RegisteredAffordancePhenomenon<TFrame>[];
@@ -379,6 +401,30 @@ export interface AffordanceDomainDefinition<
 /** What one domain contributed to a read. */
 export interface AffordanceDomainRun {
   readonly domainId: AffordanceDomainId;
+  readonly resolutions: readonly AffordanceResolution[];
+  readonly evidence: readonly AffordanceEvidence[];
+  readonly diagnostics: readonly Diagnostic[];
+}
+
+/**
+ * One domain's STAGED calculation, for the read-only developer preview
+ * (architecture spec §Resolved, "Developer preview"): source inputs →
+ * structural profile → mechanics → observations or suppression reason.
+ *
+ * `profile`, `mechanics`, and `frame` are `unknown` because the registry erases
+ * each domain's generics — a debug surface is exactly the place where that is
+ * the honest type, and a preview renderer normalizes them for display rather
+ * than pretending to know the shape. Nothing here is computed for production:
+ * the trace re-runs the same pure stages on demand and stores nothing.
+ */
+export interface AffordanceDomainTrace {
+  readonly domainId: AffordanceDomainId;
+  /** `null` when no structural profile could be compiled (the domain is suppressed). */
+  readonly profile: unknown;
+  /** Per-input adapter verdicts; `null` when the whole payload was unavailable/invalid. */
+  readonly inputs: AffordanceInputStatusMap | null;
+  readonly mechanics: unknown;
+  readonly frame: unknown;
   readonly resolutions: readonly AffordanceResolution[];
   readonly evidence: readonly AffordanceEvidence[];
   readonly diagnostics: readonly Diagnostic[];
@@ -395,6 +441,8 @@ export interface RegisteredAffordanceDomain {
   readonly requiredAttributeIds: readonly string[];
   readonly phenomenonIds: readonly AffordancePhenomenonId[];
   resolve(request: AffordanceDomainRequest): AffordanceDomainRun;
+  /** The same stages `resolve` runs, with the intermediates kept. Debug only. */
+  trace(request: AffordanceDomainRequest): AffordanceDomainTrace;
 }
 
 // ---------------------------------------------------------------------------
