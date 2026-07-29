@@ -1,15 +1,19 @@
 # Body-attribute visual affordances
 
-Status: active — **slices 0–4 and the slice 5 wiring shipped 2026-07-28**
-(hair vocabulary split, shared core, hair domain, chat-lane
-wetness/environment owners + adapter + retake capture, and the
-`CHAT_AFFORDANCE_CUES` narrator cue path, default OFF). **Slice 5 itself is
-not complete until its comparison trial runs** — the owner-gated live-model
-comparison of contradiction rate, repetition, specificity, and naturalness
-against the current appearance path is pending. Also remaining before the
-release contract closes: slice 6 (garment second domain — ruled 2026-07-28),
-slice 7 (recognition memory), slice 8 (image decision), the successor-lane
-adapter follow-up, and per-companion rulings. The shared foundation the
+Status: active — **slices 0–4, the slice 5 wiring, and slice 6 shipped
+2026-07-28** (hair vocabulary split, shared core, hair domain, chat-lane
+wetness/environment owners + adapter + retake capture, the
+`CHAT_AFFORDANCE_CUES` narrator cue path (default OFF), the garment second
+domain with chat wiring + captured effective coverage, and the read-only
+developer preview). **Slice 5 itself is not complete until its live
+comparison runs** — the harness and its deterministic half are done (all
+structural guarantees pass; see the
+[trial report](body-attribute-affordances.trial.md)), but the live-model
+comparison was deferred by owner ruling 2026-07-28 because the repository's
+OpenRouter key is dead; it is one command once a key lands. Also remaining
+before the release contract closes: slice 7 (recognition memory), slice 8
+(image decision), the successor-lane adapter follow-up, and per-companion
+rulings. The shared foundation the
 [romantic-contact plan](romantic-contact-affordances.plan.md) consumes is
 live.
 
@@ -240,6 +244,19 @@ shared scene/body-relations owner exists. After this proof lands, build the
 read-only developer preview
 ([architecture spec](body-attribute-affordances.spec.architecture.md)).
 
+**Shipped 2026-07-28**, including the developer preview (bottom of the chat
+inspector). Honest silences that remain by design: wet cling is
+production-silent because no wardrobe field records whether a garment is
+loose or fitted (recording fit is the single change that lights it up —
+flagged back at the [clothing plan](clothing-state-graph.plan.md) slice 8),
+and see-through observations stay silent for tops because the chest is an
+intimate region and the chat lane has no consent/narrative-focus owner yet.
+Wet cotton and wet leather now genuinely behave differently, layered
+garments combine into one captured "what is actually visible" answer per
+turn, and retakes rebuild the identical read. Details in the
+[garment spec](body-attribute-affordances.spec.garment-interaction.md)
+§"Resolved (Slice 6 implementation)".
+
 ### Slice 7 — recognizable features and visual memory
 
 - Derive stable identity candidates from existing body truth.
@@ -337,6 +354,21 @@ The 2026-07-28 review settled most of what was open. Each detail doc's
   [memory detail](body-attribute-affordances.recognizable-features.memory.md));
 - human acceptance as the only gate that makes a reference-image proposal
   canonical ([architecture spec](body-attribute-affordances.spec.architecture.md)).
+
+Two further rulings landed later the same day, after the slice 5 trial's
+deterministic run:
+
+- **current-effect cues override the "no appearance description" turn rule**
+  ("cues win") — that rule exists to stop re-describing unchanged looks, and
+  a live physical change (damp strands clinging after rain) is new
+  information, not static appearance. The prompt now carves the cue block
+  out of the restriction instead of contradicting it; nothing changes when
+  the flag is off or no cue fired
+  ([trial report](body-attribute-affordances.trial.md) §Owner rulings);
+- **the slice 5 live comparison is deferred, not skipped** — the stored
+  model key turned out to be dead ($0 spent), so the flag stays OFF and the
+  live half waits for a working key; the deterministic half's structural
+  guarantees all passed.
 
 **Calibration stance**: numeric coefficients for skin response, soft-tissue
 motion, appendage flexibility, and visual-memory thresholds are
