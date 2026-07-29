@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
+import { characterProfileSchema, emptyCharacterProfile, resolveAttributes } from "@/contracts";
+import { parseOr } from "@/lib/parse";
 import { characters, db, images } from "../db";
 import { isDemoMode, veniceEditImage, veniceEditModelId } from "../ai";
 import { logEvent } from "../events";
@@ -7,7 +9,7 @@ import { log } from "@/server/log";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer, type ImageRow } from "./assets";
 import { monogramSvg } from "./monogram";
-import { buildVariantInstruction, type VariantKind } from "./prompts";
+import { apparentAgeAnchor, buildVariantInstruction, type VariantKind } from "./prompts";
 
 export interface GenerateVariantInput {
   characterId: string;
@@ -19,14 +21,23 @@ export interface GenerateVariantInput {
 
 /**
  * Portrait-variant pipeline (docs/images.md): single-reference Venice edit of
- * the canonical avatar, identity-locked. Always re-rolls from the canonical
- * portrait — never chains edits (drift compounds). Failures mark the row
- * failed and return its id.
+ * the canonical avatar, identity-locked + age-anchored (owner ruling 2026-07-29 —
+ * "preserve apparent age" alone preserves the model's over-read and each
+ * generation drifts older). Always re-rolls from the canonical portrait — never
+ * chains edits (drift compounds). Failures mark the row failed and return its id.
  */
 export async function generateVariant(input: GenerateVariantInput): Promise<string> {
   const demo = isDemoMode();
-  const prompt = buildVariantInstruction(input.kind, input.instruction);
   const [character] = await db().select().from(characters).where(eq(characters.id, input.characterId)).limit(1);
+  const profile = parseOr(
+    characterProfileSchema,
+    character?.profile ?? {},
+    emptyCharacterProfile(),
+    undefined,
+    "characters.profile",
+  );
+  const ageAnchor = apparentAgeAnchor(character?.name ?? "", resolveAttributes(profile.attributes, []));
+  const prompt = buildVariantInstruction(input.kind, input.instruction, ageAnchor);
   const reference = character ? await loadReference(character.avatarImageId) : null;
 
   const asset = await createImageAsset({

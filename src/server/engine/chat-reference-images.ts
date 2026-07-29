@@ -7,13 +7,14 @@ import {
   emptyCharacterProfile,
   emptyChatSceneMemory,
   garmentActorForCharacter,
+  resolveAttributes,
   samePlaceName,
   withPlaceImage,
 } from "@/contracts";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { isDemoMode } from "../ai";
 import { characterChats, characters, db, images } from "../db";
-import { absoluteImagePath, chatHasRenders, chatLookKey, latestChatLook, renderChatLookImage, renderChatPlaceImage } from "../images";
+import { absoluteImagePath, apparentAgeAnchor, chatHasRenders, chatLookKey, latestChatLook, renderChatLookImage, renderChatPlaceImage } from "../images";
 import { chatGarmentLookKey } from "./chat-garments";
 import { loadChatScenario, loadChatState } from "./chat-state";
 import { resolveChatWardrobe } from "./chat-wardrobe";
@@ -43,13 +44,13 @@ async function loadRenderContext(chatId: string, characterId: string) {
     .where(eq(characterChats.id, chatId))
     .limit(1);
   const [character] = await db()
-    .select({ profile: characters.profile, avatarImageId: characters.avatarImageId })
+    .select({ name: characters.name, profile: characters.profile, avatarImageId: characters.avatarImageId })
     .from(characters)
     .where(eq(characters.id, characterId))
     .limit(1);
   if (!chat || !character) return null;
   const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
-  return { ownerId: chat.ownerId, profile, avatarImageId: character.avatarImageId };
+  return { ownerId: chat.ownerId, name: character.name, profile, avatarImageId: character.avatarImageId };
 }
 
 /** Run one look mint. Exported for tests. */
@@ -104,6 +105,9 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>)
     lookKey,
     outfit: wardrobe.garments,
     outfitExposed: wardrobe.exposed,
+    // The sheet's age overrules the reference's apparent age (owner ruling
+    // 2026-07-29) — without it every look mint drifts a step older.
+    ageAnchor: apparentAgeAnchor(ctx.name, resolveAttributes(ctx.profile.attributes, [])),
   });
 }
 

@@ -69,6 +69,12 @@ describe("look/place prompts", () => {
     expect(buildChatLookPrompt({ outfit: "", outfitExposed: false })).toContain("simple, casual outfit");
   });
 
+  it("carries the sheet's age anchor after the identity lock (2026-07-29 ruling)", () => {
+    const anchor = "Kristin is in her late twenties; her skin, hands and legs read smooth and youthful.";
+    const prompt = buildChatLookPrompt({ outfit: "a linen sundress", outfitExposed: false, ageAnchor: anchor });
+    expect(prompt).toContain(`apparent age. ${anchor} Change the outfit`);
+  });
+
   it("the place shot is the sketch, empty of people", () => {
     const prompt = buildChatPlacePrompt({ placeName: "the kitchen", sketch: "Warm terracotta tiles; copper pans." });
     expect(prompt).toContain("establishing shot of the kitchen");
