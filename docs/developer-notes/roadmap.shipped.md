@@ -5,6 +5,18 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Body-attribute visual affordances — slice 5 narrator trial, live half
+  (completes the slice)** —
+  [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) ·
+  [trial report](body-attribute-affordances.trial.md) — 2026-07-29 — the
+  owner-gated live comparison ran on the replaced OpenRouter key (~$0.72; 60
+  paired generations + 10 blinded judgments): the decision rule was **not
+  met** — contradictions tied at 0.13/exchange (the control narrator barely
+  contradicts in this matrix), repetition rose slightly, specificity improved
+  4.38 vs 4.00 at identical naturalness, judge preferred control 6–4 over a
+  2–0 label-noise floor — so **`CHAT_AFFORDANCE_CUES` stays OFF**; a rematch,
+  if ever, means a contradiction-inducing matrix, not different physics.
+
 - **Body-attribute visual affordances — slice 7 (recognizable features +
   observer visual memory)** —
   [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) ·
