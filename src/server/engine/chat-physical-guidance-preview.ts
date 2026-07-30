@@ -7,6 +7,7 @@ import {
 } from "@/contracts";
 import { parseMessageSpans } from "@/lib/message-spans";
 import type { ChatCommittedHairState } from "./chat-affordances";
+import type { ChatGuidanceRelevance } from "./chat-physical-guidance";
 
 /**
  * The READ-ONLY developer preview of the narrator physical-guidance staircase
@@ -14,10 +15,11 @@ import type { ChatCommittedHairState } from "./chat-affordances";
  * source resolution → candidate → disclosure → selection → rendered instruction").
  *
  * It answers the question a fence makes people ask, which is not "what did it say"
- * but "why did it say nothing". Silence here has five different causes and they look
+ * but "why did it say nothing". Silence here has six different causes and they look
  * identical from the prompt: the flag is off, the message was never eligible, the
- * committed owner could not answer, the claim was ambiguous, or the candidate lost a
- * budget. So each stage is shown separately, with what entered it.
+ * committed owner could not answer, the claim was ambiguous, the fence was true but
+ * not relevant to this turn, or the candidate lost a budget. So each stage is shown
+ * separately, with what entered it.
  *
  * Three deliberate properties, matching the affordance preview beside it:
  *
@@ -72,19 +74,32 @@ export interface PhysicalGuidancePreview {
     readonly coveredFraction: string;
     readonly available: readonly { readonly owner: string; readonly available: boolean }[];
   };
-  /** Stage 3 — what the compiler was offered, before disclosure and budget. */
+  /**
+   * Stage 3 — whether a standing fence was about anything happening this turn.
+   *
+   * A braid is true all day; the constraint tier is compiled only when at least one
+   * signal says the turn is about it, so "no signals" is the single most common reason
+   * an inspector sees an empty block over a cut that plainly has a fence to offer.
+   */
+  readonly relevance: {
+    readonly relevant: boolean;
+    readonly signals: readonly string[];
+    /** One row per constraint the cut resolved: which signal admitted it, or why it was withheld. */
+    readonly constraints: readonly { readonly code: string; readonly admitted: boolean; readonly reason: string }[];
+  };
+  /** Stage 4 — what the compiler was offered, before disclosure and budget. */
   readonly candidates: {
     readonly constraints: readonly PhysicalGuidancePreviewCandidate[];
     readonly corrections: readonly PhysicalGuidancePreviewCandidate[];
     readonly diagnostics: readonly { readonly level: string; readonly code: string; readonly message: string }[];
   };
-  /** Stage 4 — what survived, and what a budget or the disclosure gate dropped. */
+  /** Stage 5 — what survived, and what a budget or the disclosure gate dropped. */
   readonly selection: {
     readonly constraints: readonly string[];
     readonly corrections: readonly string[];
     readonly dropped: readonly string[];
   };
-  /** Stage 5 — the exact lines the narrator prompt would carry. */
+  /** Stage 6 — the exact lines the narrator prompt would carry. */
   readonly rendered: readonly string[];
 }
 
@@ -184,6 +199,10 @@ export function buildChatPhysicalGuidancePreview(input: {
   readonly committed: ChatCommittedHairState;
   readonly candidateConstraints: readonly PhysicalNarrationConstraint[];
   readonly candidateCorrections: readonly PhysicalPremiseCorrection[];
+  /** The relevance decision the compile made, verbatim — never recomputed here. */
+  readonly relevance: ChatGuidanceRelevance;
+  /** The constraint codes the CUT resolved, so a withheld fence is still visible. */
+  readonly constraintCodes: readonly string[];
   readonly guidance: NarratorPhysicalGuidance;
   readonly rendered: readonly string[];
   /** Everything the compile filed, including what the constraint mapping skipped. */
@@ -220,6 +239,15 @@ export function buildChatPhysicalGuidancePreview(input: {
         { owner: "arrangement", available: input.committed.available.arrangement },
         { owner: "coverage", available: input.committed.available.coverage },
       ],
+    },
+    relevance: {
+      relevant: input.relevance.relevant,
+      signals: [...input.relevance.signals],
+      constraints: input.constraintCodes.map((code) => ({
+        code,
+        admitted: input.relevance.relevant,
+        reason: input.relevance.relevant ? input.relevance.signals.join(", ") : "not relevant",
+      })),
     },
     candidates: {
       constraints: input.candidateConstraints.map(constraintRow),

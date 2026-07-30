@@ -25,12 +25,14 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 - **Constraint-first narrator physical guidance — constraints, premise correction,
   and resolved action outcomes** —
   [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md)
-  (active; **slices 0–2 shipped 2026-07-30** — the closed cue path is frozen, the
-  shared guidance contracts + compiler are in `contracts/affordances/guidance/`,
-  and the hair constraint/correction path ships behind
-  `CHAT_PHYSICAL_CONSTRAINTS`, default off. Remaining: slice 3 romantic-contact
-  action results, slice 4 change-gated positive detail, slice 5 the trials,
-  slice 6 the successor adapter). Keeps the affordance calculations but
+  (active; **slices 0–2 shipped 2026-07-30, owner-review corrective pass applied
+  same day** — the closed cue path is frozen, the shared guidance contracts +
+  compiler are in `contracts/affordances/guidance/`, and the hair
+  constraint/correction path ships behind `CHAT_PHYSICAL_CONSTRAINTS`, default
+  off; review verdict: slices 0–1 accepted, slice 2 safe behind the flag but
+  not paid-trial-ready until slice 5 generalizes the trial-record format.
+  Remaining: slice 3 romantic-contact action results, slice 4 change-gated
+  positive detail, slice 5 the trials, slice 6 the successor adapter). Keeps the affordance calculations but
   replaces always-on descriptive suggestions with scoped consistency
   constraints, high-confidence false-premise fences, and mandatory resolved
   action outcomes. Positive state-change details get a separate flag and trial;

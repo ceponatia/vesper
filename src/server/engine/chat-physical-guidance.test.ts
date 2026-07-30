@@ -15,8 +15,14 @@ import {
   HAIR_CLAIM_WETNESS_SOAKED,
   type AffordanceRead,
 } from "@/contracts";
-import { buildChatPhysicalGuidance, detectHairPremises } from "./chat-physical-guidance";
+import {
+  buildChatPhysicalGuidance,
+  chatGuidanceRelevance,
+  detectHairPremises,
+  GUIDANCE_CONSTRAINT_IRRELEVANT,
+} from "./chat-physical-guidance";
 import type { ChatCommittedHairState } from "./chat-affordances";
+import type { SensoryFocusHint } from "./chat-intent";
 
 /**
  * The chat lane's premise detector and compile adapter
@@ -32,13 +38,14 @@ import type { ChatCommittedHairState } from "./chat-affordances";
 const CHARACTER = "Wren";
 const PLAYER = "Brian";
 
-/** Soaked from a bath, braided, uncovered — the plan's worked example, as state. */
+/** Soaked from a bath, braided, uncovered, still air — the plan's worked example, as state. */
 function committed(overrides: Partial<ChatCommittedHairState> = {}): ChatCommittedHairState {
   return {
     wetnessBand: "soaked",
     wetnessCause: "immersion",
     arrangement: "braid",
     coveredFraction: 0,
+    activeForce: false,
     available: { wetness: true, arrangement: true, coverage: true },
     ...overrides,
   };
@@ -148,6 +155,78 @@ describe("sentence guards", () => {
     // Domain reference without a safely parsed claim may raise a constraint's priority
     // (plan §Architecture 4); it may never invent a correction.
     expect(detect("You tuck your hair behind one ear.")).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Clause-local binding
+// ---------------------------------------------------------------------------
+
+describe("clause-local binding", () => {
+  it("attaches a claim only to the clause that names the hair", () => {
+    // The whole defect in one line: the curtains own that verb. A hair reference in the
+    // first clause licenses NOTHING in the second.
+    expect(detect("Your braided hair looks beautiful while the curtains go streaming in the wind.")).toEqual([]);
+    expect(detect("Your hair is braided and the river runs fast.")).toEqual([]);
+    expect(detect("Your loose hair is lovely, but the storm ruined the garden.")).toEqual([
+      expect.objectContaining({ claimCode: HAIR_CLAIM_ARRANGEMENT_LOOSE }),
+    ]);
+  });
+
+  it("still reads a claim in the same clause as the reference", () => {
+    expect(claims("The storm drenched your loose hair.")).toEqual([
+      HAIR_CLAIM_CAUSE_RAIN,
+      HAIR_CLAIM_ARRANGEMENT_LOOSE,
+    ]);
+  });
+
+  it("inherits WHOSE hair across a clause, never WHETHER the clause is about hair", () => {
+    // One continuous statement about one head: the second clause names hair with no
+    // owner in reach, and the first already established the subject's.
+    expect(claims("Her braid has come completely loose, hair streaming behind her.")).toEqual([
+      HAIR_CLAIM_MOTION_FREE_FLOW,
+    ]);
+    // …and a clause with no hair noun in it inherits nothing, however bound the sentence is.
+    expect(detect("Your hair is braided, and everything else is streaming past.")).toEqual([]);
+  });
+
+  it("licenses nothing from a clause about somebody else's hair", () => {
+    expect(detect("Mira's hair streams behind her as she runs past you.")).toEqual([]);
+    expect(detect("Your friend Mira's hair is loose.")).toEqual([]);
+    expect(detect("My hair is soaked and yours is dry.")).toEqual([]);
+  });
+});
+
+describe("provenance needs a wetness anchor", () => {
+  it("treats a cause word with no wetting as scenery", () => {
+    // Every one of these names a cause word the lexicon knows, and asserts nothing about
+    // anyone being wet.
+    for (const message of [
+      "Your hair gleams in a pool of light.",
+      "A storm is approaching.",
+      "The pool reflects your braided hair.",
+      "You dip your feet in the pool.",
+      "Her eyes are like a storm.",
+    ]) {
+      expect(detect(message), message).toEqual([]);
+    }
+  });
+
+  it("fires when the same clause says someone got wet", () => {
+    expect(claims("The storm drenched your loose hair.")).toContain(HAIR_CLAIM_CAUSE_RAIN);
+    expect(claims("Your hair is soaked from the rain.")).toEqual([HAIR_CLAIM_CAUSE_RAIN]);
+    expect(claims("Your hair is still wet from the bath.", committed({ wetnessCause: "splash" }))).toContain(
+      HAIR_CLAIM_CAUSE_IMMERSION,
+    );
+  });
+
+  it("never carries a cause across a clause boundary", () => {
+    // The wetting is in the OTHER clause and belongs to the floor, not to her hair. The
+    // degree claim in the hair's own clause is a separate matter and still stands.
+    expect(claims("Water pools at your feet while your hair stays dry")).toEqual([HAIR_CLAIM_WETNESS_DRY]);
+    expect(detect("Water pools at your feet while your hair stays dry", committed({ wetnessBand: "damp" }))).toEqual(
+      [],
+    );
   });
 });
 
@@ -335,6 +414,7 @@ function compile(input: {
   read?: AffordanceRead | null;
   visible?: boolean;
   state?: ChatCommittedHairState;
+  sensoryFocus?: SensoryFocusHint | null;
   sink?: DiagnosticCollector;
 }) {
   const read = input.read === undefined ? braidedRead() : input.read;
@@ -347,9 +427,80 @@ function compile(input: {
     message: input.message,
     narratorInput: false,
     committed: input.state ?? committed(),
+    sensoryFocus: input.sensoryFocus ?? null,
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Relevance
+// ---------------------------------------------------------------------------
+
+describe("relevance — a fence has to be about something happening now", () => {
+  const relevance = (message: string, state = committed(), focus: SensoryFocusHint | null = null) =>
+    chatGuidanceRelevance({
+      detection: {
+        message,
+        playerName: PLAYER,
+        characterName: CHARACTER,
+        narratorInput: false,
+        committed: state,
+      },
+      corrections: detect(message, state),
+      sensoryFocus: focus,
+    });
+
+  it("finds no signal in a turn about something else", () => {
+    expect(relevance("Tell me about your day.")).toEqual({ relevant: false, signals: [] });
+    expect(relevance("")).toEqual({ relevant: false, signals: [] });
+  });
+
+  it("admits a message that names the hair, bound or not", () => {
+    expect(relevance("You tuck your hair behind one ear.").signals).toEqual(["domain_reference"]);
+    // A claim phrase with no owner is still the turn reaching for this vocabulary — it
+    // raises a known fence and invents no correction (plan §Architecture 4).
+    expect(relevance("It is absolutely soaking wet out there.").signals).toEqual(["domain_reference"]);
+    // …including a span this layer would never premise-check.
+    expect(relevance("((her hair should be loose here))").signals).toContain("domain_reference");
+  });
+
+  it("admits the turn a correction was made on", () => {
+    expect(relevance("The storm drenched your loose hair.").signals).toEqual([
+      "domain_reference",
+      "premise_correction",
+    ]);
+  });
+
+  it("admits a live force with no message at all", () => {
+    // A gust makes "her hair streams behind her" plausible unprompted, which is exactly
+    // when the motion fence earns its bytes.
+    expect(relevance("Tell me about your day.", committed({ activeForce: true })).signals).toEqual(["active_force"]);
+  });
+
+  it("admits a beat aimed at this locus", () => {
+    const focus: SensoryFocusHint = { sense: "smell", target: "hair", intimate: false, region: "hair" };
+    expect(relevance("Mira watches while I breathe her in.", committed(), focus).signals).toEqual(["sensory_focus"]);
+    const elsewhere: SensoryFocusHint = { sense: "touch", target: "collarbone", intimate: false, region: "shoulders" };
+    expect(relevance("I trace your collarbone.", committed(), elsewhere).signals).toEqual([]);
+  });
+
+  it("compiles the constraint tier on any signal, and nothing without one", () => {
+    expect(compile({ message: "Tell me about your day." }).constraints).toEqual([]);
+    expect(compile({ message: "Tell me about your day.", state: committed({ activeForce: true }) }).constraints).toHaveLength(1);
+    expect(
+      compile({
+        message: "Tell me about your day.",
+        sensoryFocus: { sense: "smell", target: "hair", intimate: false, region: "hair" },
+      }).constraints,
+    ).toHaveLength(1);
+  });
+
+  it("never gates a correction — a correction is about this turn by construction", () => {
+    // No read at all: the constraint tier cannot run, and the premise check still does.
+    const guidance = compile({ message: "Your loose hair spills forward.", read: null });
+    expect(guidance.corrections.map((correction) => correction.claimCode)).toEqual([HAIR_CLAIM_ARRANGEMENT_LOOSE]);
+  });
+});
 
 describe("compile", () => {
   it("compiles the plan's worked example: one fence and two premise checks", () => {
@@ -366,16 +517,19 @@ describe("compile", () => {
   });
 
   it("licenses the committed truth only when the locus is visible", () => {
-    expect(compile({ message: "hello" }).constraints[0]?.allowedClaimCodes).toEqual([HAIR_CLAIM_ARRANGEMENT_BRAID]);
+    const message = "You tuck your hair behind one ear.";
+    expect(compile({ message }).constraints[0]?.allowedClaimCodes).toEqual([HAIR_CLAIM_ARRANGEMENT_BRAID]);
     // Hidden hair keeps the prohibition and drops the cause — a fence that does not
     // explain itself (plan §Architecture 5).
-    const hidden = compile({ message: "hello", visible: false });
+    const hidden = compile({ message, visible: false });
     expect(hidden.constraints[0]?.prohibitedClaimCodes.length).toBeGreaterThan(0);
     expect(hidden.constraints[0]?.allowedClaimCodes).toEqual([]);
   });
 
-  it("keeps the fences standing on a turn that asserts nothing", () => {
-    const guidance = compile({ message: "You look well today." });
+  it("keeps the fences standing on a turn that asserts nothing but is still about the hair", () => {
+    // A reference without a parsed claim raises an already-known constraint and invents
+    // no correction (plan §Architecture 4).
+    const guidance = compile({ message: "You tuck your hair behind one ear." });
     expect(guidance.corrections).toEqual([]);
     expect(guidance.constraints).toHaveLength(1);
   });
@@ -384,6 +538,17 @@ describe("compile", () => {
     const guidance = compile({ message: "Your loose hair spills forward.", read: null });
     expect(guidance.constraints).toEqual([]);
     expect(guidance.corrections.map((correction) => correction.claimCode)).toEqual([HAIR_CLAIM_ARRANGEMENT_LOOSE]);
+  });
+
+  it("says nothing at all when the turn is about something else", () => {
+    // The defect this replaces: a braid is true all day, and repeating its fence on every
+    // exchange is the negative priming the closed cue experiment already paid for.
+    const sink = new DiagnosticCollector();
+    const guidance = compile({ message: "Tell me about your day.", sink });
+    expect(guidance.constraints).toEqual([]);
+    expect(guidance.corrections).toEqual([]);
+    // …and the silence is explained, because a true fence really was withheld.
+    expect(sink.items.filter((item) => item.code === GUIDANCE_CONSTRAINT_IRRELEVANT)).toHaveLength(1);
   });
 
   it("is the empty value, with no diagnostics, when nothing is at stake", () => {
@@ -420,10 +585,15 @@ describe("compile", () => {
   });
 
   it("cannot exceed the shared correction budget", () => {
+    // Four eligible areas, each in a clause that names the hair — the budget is the only
+    // thing that can cut them down.
     const guidance = compile({
-      message: "Your loose hair is streaming, bare-headed and dry in the storm.",
+      message: "Your loose hair is streaming. Your hair is dry. Your hair is bare-headed.",
       state: committed({ coveredFraction: 9_000, wetnessBand: "soaked" }),
     });
+    expect(
+      detect("Your loose hair is streaming. Your hair is dry. Your hair is bare-headed.", committed({ coveredFraction: 9_000 })).length,
+    ).toBeGreaterThan(GUIDANCE_MAX_CORRECTIONS);
     expect(guidance.corrections.length).toBeLessThanOrEqual(GUIDANCE_MAX_CORRECTIONS);
   });
 });

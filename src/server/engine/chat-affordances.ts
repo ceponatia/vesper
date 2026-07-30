@@ -14,7 +14,6 @@ import {
   hairAffordanceDomain,
   hairArrangementOf,
   hairWetnessBand,
-  hairWettingEventKinds,
   HAIR_DOMAIN_ID,
   HAIR_LOCATION_ID,
   isInvalidSurfaceEntry,
@@ -32,6 +31,7 @@ import {
   type AffordanceStoryTime,
   type AffordanceSubjectId,
   type AttributeValue,
+  type BodySurfaceEntry,
   type BodySurfaceState,
   type BodySurfaceWetnessCause,
   type ChatEnvironment,
@@ -144,6 +144,14 @@ const HAIR_COVERED_SHEER = 5_000;
  * the reason her hair is doing that, short enough that a morning soaking cannot
  * still be raining by evening. Beyond it the hair is simply wet and says nothing
  * about why — which is the hair domain's own rule for the rain tag.
+ *
+ * **This is a CUE window, not a truth window.** It governs when the domain may
+ * VOLUNTEER a cause ("still damp from the rain"); it does not govern whether the
+ * cause is still true. Provenance for the premise fence is derived separately, from
+ * the surface entry itself (`committedWettingCause`), because "why is her hair wet"
+ * has an authoritative answer for as long as the wetness lasts — three story hours
+ * after a bath the hair is still wet BECAUSE of the bath, and a player who blames the
+ * rain is still wrong.
  */
 export const CHAT_AFFORDANCE_EVENT_FRESHNESS_MINUTES = 60;
 
@@ -156,7 +164,7 @@ export const CHAT_AFFORDANCE_EVENT_FRESHNESS_MINUTES = 60;
  * `hairImpulseEventKinds` is unreachable from this lane, which is why droplet
  * shedding stays silent in production.
  */
-const HAIR_EVENT_FOR_CAUSE: Readonly<Record<BodySurfaceWetnessCause, HairEventKind | undefined>> = {
+const HAIR_WETTING_FOR_CAUSE: Readonly<Record<BodySurfaceWetnessCause, HairWettingEventKind | undefined>> = {
   rain: "rain_exposure",
   immersion: "immersion",
   splash: "splash",
@@ -233,13 +241,29 @@ export interface ChatAffordanceReadInput {
 export interface ChatCommittedHairState {
   readonly wetnessBand: HairWetnessBand | null;
   /**
-   * The single committed wetting kind, or `null` when there is none — or more than
-   * one. Two live causes (a bath, then rain on the walk home) are ambiguous, and an
-   * ambiguous provenance must produce silence rather than a coin toss.
+   * The single committed wetting kind behind the CURRENT wetness, or `null` when there
+   * is none — or more than one. Two live causes (a bath, then rain on the walk home)
+   * are ambiguous, and an ambiguous provenance must produce silence rather than a coin
+   * toss.
+   *
+   * Taken from the surface entry's own recorded cause for as long as meaningful wetness
+   * remains, NOT from the 60-minute cue window: how long a cause is worth mentioning
+   * and how long it is true are different questions (`committedWettingCause`).
    */
   readonly wetnessCause: HairWettingEventKind | null;
   readonly arrangement: HairArrangement | null;
   readonly coveredFraction: number | null;
+  /**
+   * Whether something is acting on this hair RIGHT NOW — wind above still air, or
+   * precipitation landing on it.
+   *
+   * Not a fact about the hair, and not evidence for any verdict: it is the narrator
+   * guidance adapter's relevance signal (narrator-physical-guidance slice 2, plan §6).
+   * A live gust makes "her hair streams behind her" a plausible thing for the narrator
+   * to write unprompted, which is exactly when the motion fence earns its prompt bytes;
+   * on a still evening the same true fence is inventory, and inventory stays silent.
+   */
+  readonly activeForce: boolean;
   readonly available: {
     readonly wetness: boolean;
     readonly arrangement: boolean;
@@ -398,7 +422,7 @@ function hairEvents(input: ChatAffordanceReadInput): HairCausalEvent[] {
   // its level, and inventing either would be the invention this whole layer refuses.
   const entry = stored !== undefined && !isInvalidSurfaceEntry(stored) ? stored : undefined;
   if (entry?.cause !== undefined && input.clockMinutes - entry.updatedAtMinutes <= CHAT_AFFORDANCE_EVENT_FRESHNESS_MINUTES) {
-    const kind = HAIR_EVENT_FOR_CAUSE[entry.cause];
+    const kind = HAIR_WETTING_FOR_CAUSE[entry.cause];
     if (kind !== undefined) events.push({ kind, atStoryTime: Math.max(0, entry.updatedAtMinutes) });
   }
   if (precipitationActive(input.environment)) {
@@ -409,18 +433,40 @@ function hairEvents(input: ChatAffordanceReadInput): HairCausalEvent[] {
 }
 
 /**
- * The one committed wetting kind among this cut's events, or `null`.
+ * The one committed wetting kind behind the hair's CURRENT wetness, or `null`.
  *
- * Read off the events the adapter already built rather than off the stored entry,
- * so the provenance a premise fence compares against is exactly the provenance the
- * domain may cite — including standing rain, which is a real wetting event nobody
- * recorded on the surface row. More than one kind is ambiguous and returns `null`:
- * with a bath AND rain both live, "the storm soaked your hair" is not a claim this
- * lane can call wrong.
+ * Derived from the surface entry's own `cause` rather than from `hairEvents`, because
+ * the two answer different questions. `hairEvents` decides what the domain may
+ * VOLUNTEER, and a cause stops being worth mentioning after
+ * `CHAT_AFFORDANCE_EVENT_FRESHNESS_MINUTES`. Provenance TRUTH does not expire on that
+ * clock: while the entry lives it keeps the cause that created it (`body-surface.ts`
+ * — `updatedAtMinutes` is the change anchor, and drying never restamps it), so ninety
+ * story minutes after a bath the hair is still wet because of the bath. Deriving the
+ * fence from the cue window is what let a player blame the storm at minute 61 and be
+ * silently believed.
+ *
+ * Three ways to `null`, all of them silence rather than a guess:
+ *
+ * - the hair is DRY (nothing to explain — an entry may still exist above zero and
+ *   below the domain's own damp floor, and nobody calls that wet);
+ * - the recorded cause is `other` or absent ("the fiction wet her and did not say
+ *   how"), which the map declines to translate;
+ * - two live causes — standing rain landing on hair a bath already soaked. With both
+ *   true, "the storm soaked your hair" is not a claim this lane can call wrong.
+ *
+ * Standing precipitation is itself a live wetting event, so it answers when the entry
+ * cannot: rain is currently landing on her, whatever the row remembers.
  */
-function committedWettingCause(events: readonly HairCausalEvent[]): HairWettingEventKind | null {
-  const wetting = hairWettingEventKinds.filter((kind) => events.some((event) => event.kind === kind));
-  return wetting.length === 1 ? (wetting[0] ?? null) : null;
+function committedWettingCause(input: {
+  readonly entry: BodySurfaceEntry | undefined;
+  readonly band: HairWetnessBand | null;
+  readonly raining: boolean;
+}): HairWettingEventKind | null {
+  const entry = input.entry !== undefined && !isInvalidSurfaceEntry(input.entry) ? input.entry : undefined;
+  const wet = input.band !== null && input.band !== "dry";
+  const stored = wet && entry?.cause !== undefined ? HAIR_WETTING_FOR_CAUSE[entry.cause] : undefined;
+  if (!input.raining) return stored ?? null;
+  return stored === undefined || stored === "rain_exposure" ? "rain_exposure" : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -494,13 +540,21 @@ export function buildChatAffordanceRead(input: ChatAffordanceReadInput): ChatAff
 
   const attributes = resolvedAttributeSnapshot(resolveSubjectAttributes(input));
   const arrangement = hairArrangementOf(attributes);
+  const band = wetness.status === "known" ? hairWetnessBand(wetness.level) : null;
   // Derived from the SAME values the payload above carries — one reading of the cut,
   // two consumers (the staged domain run, and the narrator-guidance detector).
   const committed: ChatCommittedHairState = {
-    wetnessBand: wetness.status === "known" ? hairWetnessBand(wetness.level) : null,
-    wetnessCause: committedWettingCause(events),
+    wetnessBand: band,
+    wetnessCause: committedWettingCause({
+      entry: bodySurfaceWetnessEntry(input.bodySurface, HAIR_LOCATION_ID),
+      band,
+      raining: precipitationActive(input.environment),
+    }),
     arrangement,
     coveredFraction: coverage?.coveredFraction ?? null,
+    // Wind and weather, not the hair itself: still air and fair weather are answers, and
+    // both mean nothing is currently acting on this head.
+    activeForce: windForceOf(input.environment) > 0 || precipitationActive(input.environment),
     available: {
       wetness: wetness.status === "known",
       arrangement: arrangement !== null,

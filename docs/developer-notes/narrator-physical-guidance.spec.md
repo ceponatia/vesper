@@ -46,7 +46,9 @@ module.
    gates them; it never parses, matches, negates, or interprets one.
 2. **Disclosure is data, never inferred.** The producer that knows whether a fact
    is perceptible states it per candidate. The gate only enforces it, so salience
-   cannot unlock hidden state — the gate never sees a rank.
+   cannot unlock hidden state — the gate never sees a rank. Being data, it is
+   also *untrusted* data: the gate is an allowlist checked at runtime, not a
+   denylist leaning on the union (see §Disclosure law).
 3. **Every candidate carries a fingerprint.** Ordering, over-budget reporting,
    and retake reproduction are defined in terms of it, so no tier falls back on
    input order (an adapter may reorder two reads of the same committed cut).
@@ -142,11 +144,29 @@ The gate runs **before** ranking (`compile.ts` order is filter → select). If
 salience could rank a `resolver_only` candidate first, a sufficiently important
 secret would leak — and importance is the property secrets have.
 
+The gate is an **allowlist, compared at runtime** — `narratorPromptDisclosures`,
+a module-private `ReadonlySet<string>` holding exactly `consistency_only` and
+`positive_detail_allowed`. `GuidanceDisclosure` is a closed union, but a closed
+union binds only the producers the compiler can see, and this layer explicitly
+expects candidates a lane adapter parsed out of a persisted or remote shape
+(slice 6 successor adapters). A gate that dropped exactly `resolver_only` would
+pass an unrecognised value straight into a prompt. **Unknown disclosure ⇒ no
+disclosure**: anything off the allowlist is dropped. The set is typed
+`ReadonlySet<string>` rather than `ReadonlySet<GuidanceDisclosure>` on purpose —
+a set keyed to the union would only accept union members as lookup keys, which is
+the compile-time assumption being distrusted. The types stay closed; only the
+membership test is widened.
+
 | Disclosure | `narrator_prompt` consumer | `resolver` consumer | Notes |
 | --- | --- | --- | --- |
+| `consistency_only` | **allowlisted** — passed; renders as prohibition or resolved limitation only | passed | The prompt must not state the hidden positive alternative. |
+| `positive_detail_allowed` | **allowlisted** — passed; may render positively if selected | passed | Only transitions (slice 4) and explicitly-cleared outcomes reach this. |
 | `resolver_only` | dropped, one `info` `guidance.disclosure.resolver_only` per drop | passed | Hidden state constraining silently is correct behaviour, so never `warn`/`error`. |
-| `consistency_only` | passed; renders as prohibition or resolved limitation only | passed | The prompt must not state the hidden positive alternative. |
-| `positive_detail_allowed` | passed; may render positively if selected | passed | Only transitions (slice 4) and explicitly-cleared outcomes reach this. |
+| anything else (out-of-union) | dropped, one **`error`** `guidance.disclosure.invalid` per drop, naming the fingerprint and the bad value | passed | Nobody meant it — it can only come from an adapter, a store, or an older release, so it is a bug, not a policy. |
+
+The `resolver` consumer is untouched by all of this: it passes everything,
+silently, including out-of-union values. Resolver-side code owns its own
+validation, and this gate is the narrator's, not everyone's.
 
 Perception half of the same law, in `buildConstraintCandidates`:
 
@@ -159,10 +179,19 @@ Perception half of the same law, in `buildConstraintCandidates`:
 `positive_detail_allowed` is never produced by the constraint path. A constraint
 is a fence; positive detail is slice 4's transition path with its own gates.
 
-The render seam's last-line check is `assertNoResolverOnlyLeak(guidance)`: one
-**`error`** `guidance.disclosure.leak` diagnostic per offending candidate,
-returned rather than thrown (resilience: diagnostics over exceptions). The
-caller's contract is to drop the offending guidance, never to fail the turn.
+The render seam's last-line check is `assertNoResolverOnlyLeak(guidance)`, which
+enforces **the same allowlist**: one `error` per candidate in narrator-bound
+guidance whose disclosure is not `consistency_only` or `positive_detail_allowed`
+— `guidance.disclosure.leak` for `resolver_only` (the leak worth naming, which is
+why the export keeps that name) and `guidance.disclosure.invalid` for any other
+value. Both are returned rather than thrown (resilience: diagnostics over
+exceptions), and the caller's contract is to drop the offending guidance, never
+to fail the turn.
+
+Because `renderChatPhysicalGuidance` already drops the whole block on **any**
+error from that call, the broadened law needed no renderer change — a fact
+pinned by a test rather than left to reading (`chat-physical-guidance-render.test.ts`,
+"renders NOTHING for a disclosure outside the vocabulary either").
 
 ## Selection order and budgets
 
@@ -215,23 +244,25 @@ array order in `NarratorPhysicalGuidance` **is** the prompt order.
 | `fingerprint.ts` | `guidanceFingerprint`, the ordered/unordered part helpers, `compareGuidanceFingerprints`. |
 | `constraint-candidates.ts` | `ConstraintClaimMapping` + `buildConstraintCandidates` — the domain-result → candidate seam and the perception rule. |
 | `action-outcome.ts` | `buildActionOutcome`, `guidanceActionMustResolve` — the resolver seam and the mandate floor. |
-| `disclosure.ts` | `filterGuidanceForConsumer`, `assertNoResolverOnlyLeak` — the hard gate, both ends. |
+| `disclosure.ts` | `filterGuidanceForConsumer`, `assertNoResolverOnlyLeak` — the hard gate, both ends, over one runtime allowlist (`classifyDisclosure`) so the two ends cannot drift on what "prompt-safe" means. |
 | `selection.ts` | `selectNarratorGuidance`, budget constants, over-budget reporting. |
 | `compile.ts` | `compileNarratorPhysicalGuidance` — gate, then select, then assemble. One fan-out sink. |
 | `index.ts` | Barrel + the import-direction header. Re-exported from `affordances/index.ts`. |
 | `test-support.ts` | `probe*` candidate builders for this layer's tests. Deliberately **not** in the barrel. |
-| `*.test.ts` | 7 files / 55 cases: neutrality, fingerprint, constraint candidates, action outcome, disclosure, selection, compile. |
+| `*.test.ts` | 7 files / 59 cases: neutrality, fingerprint, constraint candidates, action outcome, disclosure (incl. out-of-union values, cast through `unknown` in the test only), selection, compile. |
 
 ## Diagnostics
 
-All `info` except the leak check. Codes are dotted and namespaced under
-`guidance.`, mirroring `affordance.input.unavailable`.
+All `info` except the two disclosure failures (`.leak`, `.invalid`) — the cases
+where a value nobody meant reached, or nearly reached, a prompt. Codes are dotted
+and namespaced under `guidance.`, mirroring `affordance.input.unavailable`.
 
 | Code | Severity | Emitted by | Context |
 | --- | --- | --- | --- |
 | `guidance.constraint.unmapped` | info | `buildConstraintCandidates` | `{ domainId, constraintId, code, reason }` where `reason` is `unmapped` (no mapping matched) or `no_claim_codes` (a mapping with nothing to say). |
 | `guidance.disclosure.resolver_only` | info | `filterGuidanceForConsumer` | `{ kind, fingerprint }` per withheld candidate. |
 | `guidance.selection.over_budget` | info | `selectNarratorGuidance` | `{ kind, max, dropped }` per over-budget tier. |
+| `guidance.disclosure.invalid` | **error** | `filterGuidanceForConsumer`, `assertNoResolverOnlyLeak` | `{ kind, fingerprint, disclosure }` per candidate whose disclosure is off the narrator allowlist. `disclosure` is `String()`-formatted, so a non-string value from a bad parse reports instead of throwing. |
 | `guidance.disclosure.leak` | **error** | `assertNoResolverOnlyLeak` | `{ kind, fingerprint }` per leaked candidate. |
 
 `compileNarratorPhysicalGuidance` records each diagnostic exactly once on both
@@ -314,7 +345,7 @@ and no transitions** — the compiler's later tiers exist and stay empty.
 | `phenomena/restraint.ts` | **New.** `hairBulkRestraint` — the "what is holding the bulk still" gate, extracted from `wind-motion.ts` verbatim (`HAIR_PINNED_GATE`/`HAIR_BOUND_GATE` 6_000, `HAIR_COVERED_GATE` 5_000, `HAIR_WATER_LOADED_GATE` 3_000, same most-specific-first precedence). Plus `hairPresentationRestraint` (the presentation-only half) and `hairCommittedRestraint` (a committed style + coverage, no mechanics — see below). |
 | `phenomena/bulk-restraint.ts` | **New phenomenon** `hair.bulk_restraint`, registered third (right after the wind/motion read it shares a gate with). Emits `kind: "constraint"` with the domain's bare code (`pinned`/`bound`/`covered`/`water_loaded`) at `HAIR_LOCATION_ID`, or the suppression `no_restraint`. `dependencies: []` — arrangement, coverage and wetness are structural to the domain, so it resolves on every cut the domain can read, **with no current force**. That gap is the reason it exists: the wind read already computed the restraint but only used it as a reason for its own silence, so on a still evening the domain knew the hair was braided and nobody was told. |
 | `phenomena/bands.ts` | The ordered wetness DEGREE scale moved here from `wet-clumping.ts`: `hairWetnessBands` (`dry < damp < wet < soaked`), `hairWetnessBand(level)`, `hairWetnessBandRank`, and the three thresholds (`HAIR_WETNESS_DAMP_MIN` 2_000 — the old `MIN_WETNESS` — `_WET_MIN` 4_000, `_SOAKED_MIN` 8_000). Two consumers now share one cut, so a cue and a fence cannot disagree about what "soaked" means. |
-| `claims.ts` | **New.** The claim lexicon (below). |
+| `claims.ts` | **New.** The claim lexicon (below), plus the two binding vocabularies the detector matches against: `hairReferenceNouns` / `isHairReferenceNoun` (what a claim must be attached to — `hair` and the style nouns, single tokens, no adjectives) and `hairWetnessAnchorPhrases` / `hairAssertsWetness` (what a provenance claim needs before a cause word counts). Both are domain data for the same reason the phrases are: they are statements about this body part, not about English. |
 | `domain.ts` | `hairArrangementOf(attributes)` exported — the plain committed answer a lane needs, with `readArrangement` still wrapping it for the adapter result law. |
 
 **`wind-motion.ts` and `wet-clumping.ts` behaviour is unchanged**, by construction: the
@@ -380,15 +411,51 @@ not eligible.
 | --- | --- |
 | question | the sentence contains `?` |
 | hypothetical / simile | any of `if would could should might maybe perhaps imagine suppose pretend wish "as though" "like a" "like the"`, anywhere in it |
-| negation | any of `not n't "no longer" never hardly barely stopped "instead of" "rather than"` at an index **before** the matched phrase — position is the whole rule, so "your hair is loose, not that you mind" still asserts |
-| subject reference | walked backwards from the word `hair` over ≤4 preceding words for a possessive. `your` / `<name>'s` accept; `her` / `his` / `their` accept only when `namesAnotherPerson` is false; `my` / `the` / `a` / … reject; no determiner in the window rejects |
+| negation | any of `not n't "no longer" never hardly barely stopped "instead of" "rather than"` at an index **before** the matched phrase — position is the whole rule (and it is the WHOLE sentence's index, not the clause's, so narrowing the scan can only ever silence more), so "your hair is loose, not that you mind" still asserts |
 
-The window exists because "your **loose** hair" is the plan's own example phrasing and an
-adjacency test would miss it. `namesAnotherPerson` is a capitalisation test with a small
-`SENTENCE_OPENERS` allow-list for position 0 — deliberately incomplete, because a word
-missing from it reads as a name, which makes the sentence ambiguous, which produces
+**Clause-local binding — the law a claim has to satisfy before it means anything.** The
+sentence is split into clauses at `, ; — –` and at `while as and but when because
+though`, and `hairClaimMatches` runs **per clause**, not per sentence. A claim counts
+only in a clause that names the hair, so a reference in one clause licenses nothing in
+the next.
+
+This is the correction of the original as-built behaviour, which established only that a
+sentence mentioned the subject's hair and then attributed every recognised phrase
+anywhere in it. That produced real false corrections — *"Your braided hair looks
+beautiful while the curtains go streaming in the wind"* fenced motion, and the curtains
+own that verb. Ambiguity must produce silence, and a bag of words is ambiguity.
+
+**Subject binding**, per clause:
+
+| Reference | Rule |
+| --- | --- |
+| `subject` | a reference noun with an accepted possessive within ≤4 preceding words: `your` / `<name>'s`. `her` / `his` / `their` accept only when `namesAnotherPerson` is false |
+| `foreign` | a reference noun owned by somebody else — `my` / `the` / `a` / …, an ambiguous pronoun in a sentence that names another person, or **any other possessive** (`Mira's`, `friend's`). Licenses nothing and blocks the inheritance below |
+| `unowned` | a reference noun with no determiner in reach ("…, hair streaming behind her") |
+| `none` | no reference noun at all — the ordinary case, and the one that ends the "streaming curtains" bug |
+
+The ≤4 window exists because "your **loose** hair" is the plan's own example phrasing and
+an adjacency test would miss it. `namesAnotherPerson` is a capitalisation test with a
+small `SENTENCE_OPENERS` allow-list for position 0 — deliberately incomplete, because a
+word missing from it reads as a name, which makes the sentence ambiguous, which produces
 silence. Every gap costs a correction that would have been made, never one that should
 not have been.
+
+**Ownership — and only ownership — is inherited across clauses.** An `unowned` clause is
+bound when another clause of the same sentence is `subject` AND the sentence names
+nobody else: *"Her braid has come completely loose, hair streaming behind her"* is one
+continuous statement about one head. The inheritance answers **whose** hair, never
+**whether** a clause is about hair — a clause with no reference noun inherits nothing,
+which is precisely what stops a claim from attaching across a boundary.
+
+**Provenance needs a wetness anchor.** A cause word only produces a `wetness_cause`
+claim when the same clause also asserts a wetting (`hairAssertsWetness`: the wet half of
+the degree scale plus the verbs that put water on a surface; `dry` is excluded, since
+dryness is the absence the anchor exists to distinguish). Cause vocabulary is ordinary
+scenery — *"a pool of light"*, *"a storm is approaching"*, *"the river runs fast"* — and
+without this rule every one of them was provenance. `doused` deliberately sits in both
+lists: it is a verb that asserts the wetting on its own, so it anchors itself. The cause
+NOUNS never do, and a wetting in the OTHER clause never travels.
 
 **Verdict laws**, one per area:
 
@@ -427,24 +494,75 @@ fingerprints are `guidanceFingerprint(["correction", id, code, verdict, source,
 from a counter or a clock, which is the whole retake story. Disclosure is always
 `consistency_only`.
 
-### Compilation and the adapter seam
+### Committed provenance is truth; cue freshness is salience
 
 `buildChatAffordanceRead` gained one field, `committed: ChatCommittedHairState`
-(`wetnessBand`, `wetnessCause` — the single committed wetting kind, `null` when there is
-none *or more than one*, since two live causes are ambiguous — `arrangement`,
-`coveredFraction`, and per-owner `available`). Handed back rather than re-derived for the
-same reason `attributes` is: a fence built from a second reading of the same state could
-disagree with the read it accompanies.
+(`wetnessBand`, `wetnessCause`, `arrangement`, `coveredFraction`, `activeForce`, and
+per-owner `available`). Handed back rather than re-derived for the same reason
+`attributes` is: a fence built from a second reading of the same state could disagree
+with the read it accompanies.
 
-`buildChatPhysicalGuidanceStages` maps `read.constraints` through
-`buildConstraintCandidates` with `hairClaimMappings(...)`, runs the detector, and calls
-`compileNarratorPhysicalGuidance` — keeping the candidates, which is what the inspector
-needs (the interesting failure sits *between* candidates and result).
-`buildChatPhysicalGuidance` is the production entry point that discards them. The two
-halves degrade independently: no read (or no perception view) still premise-checks, and a
-message that asserts nothing still leaves the fences standing. Neither half ⇒
-`emptyNarratorPhysicalGuidance()` with **no diagnostics**, so a nothing-to-say turn is
-indistinguishable from a feature-off one.
+**Two windows, and they are not the same window.**
+
+| | Governs | Source | Expiry |
+| --- | --- | --- | --- |
+| `CHAT_AFFORDANCE_EVENT_FRESHNESS_MINUTES` (60) | whether the domain may **volunteer** a cause ("still damp from the rain") — the cue/event path in `hairEvents` | the surface entry's `cause` + `updatedAtMinutes`, and active precipitation | 60 story minutes after the wetness last changed |
+| `committedWettingCause` | whether a provenance claim is **wrong** — the premise fence | the surface entry's `cause` directly, while meaningful wetness remains | when the hair is dry |
+
+Deriving the fence from the cue window was a defect: at story-minute 61 the hair is
+still visibly soaked from the bath, `wetnessCause` went `null`, and a player blaming the
+storm was silently believed. How long a cause is worth *mentioning* and how long it is
+*true* are different questions, and only the first has an hour on it. The entry keeps
+its `cause` for as long as it lives, and drying never restamps `updatedAtMinutes`
+(`body-surface.ts` law 3), so the truth is readable the whole time.
+
+Three ways to `null`, all silence rather than a guess: the hair is **dry** (nothing to
+explain — the domain's own `dry` band, not `level === 0`); the recorded cause is `other`
+or absent, which the map declines to translate; or **two live causes** (standing rain
+landing on hair a bath already soaked), which is the original ambiguity rule preserved.
+Standing precipitation answers when the entry cannot — it is rain landing on her now.
+
+`activeForce` is not a fact about the hair and is evidence for nothing: it is the
+relevance signal below, true when wind is above still air or precipitation is falling. A
+past wetting event is deliberately NOT a force — a bath five minutes ago is not blowing
+her hair around, and counting it would have kept the standing block that the relevance
+gate exists to remove.
+
+### Relevance: a fence has to be about something happening now
+
+`buildChatPhysicalGuidanceStages` runs the detector FIRST (a correction is one of the
+signals), computes `chatGuidanceRelevance`, and only then maps `read.constraints`
+through `buildConstraintCandidates` with `hairClaimMappings(...)` — keeping the
+candidates, which is what the inspector needs (the interesting failure sits *between*
+candidates and result). `buildChatPhysicalGuidance` is the production entry point that
+discards them.
+
+A constraint candidate is admitted only when at least one signal holds:
+
+| Signal | Holds when |
+| --- | --- |
+| `domain_reference` | the message carries a subject-bound hair reference in **any** span (eligibility is about correcting, not about what the turn is about), or **any** claim phrase at all, bound or not — plan §Architecture 4's "domain reference without a safely parsed claim may raise the priority of an already-known constraint. It must not invent a correction." |
+| `premise_correction` | this turn produced a correction; the fence for its area rides along |
+| `active_force` | `committed.activeForce` — a live gust makes "her hair streams behind her" plausible unprompted, which is exactly when the motion fence earns its bytes |
+| `sensory_focus` | `detectSensoryFocus` resolved this turn's beat to the hair locus (threaded from the pipeline, which already computes it) |
+
+No signal ⇒ no candidates ⇒ empty guidance ⇒ **zero prompt bytes**. The braid is true
+all day, and the original build stated it on every exchange including "tell me about
+your day" — an always-on block risks exactly the negative priming the closed cue
+experiment already paid for once, and plan §6 compiles risk, not inventory.
+
+**Corrections are never relevance-gated** — a correction is about the current turn by
+construction — and neither is anything a later slice adds; this is the constraint tier's
+admission rule only. A withheld fence files one `guidance.constraint.irrelevant` **info**
+per resolved constraint on the sink (never on the guidance), because silence that a
+developer cannot explain is the failure this feature's inspector exists to prevent. The
+"no diagnostics when nothing is at stake" law is unchanged: it covers a cut with nothing
+to say, whereas withholding a true fence is a decision worth recording.
+
+The two halves still degrade independently: no read (or no perception view) still
+premise-checks, and a message that is *about* the hair but asserts nothing still leaves
+the fences standing. Neither half ⇒ `emptyNarratorPhysicalGuidance()` with **no
+diagnostics**, so a nothing-to-say turn is indistinguishable from a feature-off one.
 
 ### The renderer (`chat-physical-guidance-render.ts`)
 
@@ -486,18 +604,19 @@ so `[loose, free_flow]` reads "loose, cascading, streaming, or whipping" rather 
 | --- | --- |
 | `prompts/constants.ts` | `chatPhysicalConstraintsEnabled()` — `process.env.CHAT_PHYSICAL_CONSTRAINTS === "on"` |
 | `prompts/character-chat.ts` | optional **top-level** `physicalGuidance?: readonly string[]` (turn-scoped, not state), rendered as a binding turn note between the narrator-input note and the notation note |
-| `chat-pipeline.ts` | the affordance read is built when `chatAffordanceCuesEnabled() \|\| physicalConstraintsEnabled`; **cue rendering and the `affordanceCueState` write are re-gated on the cue flag alone**, so the new flag can neither revive the closed experiment nor spend its repeat gate. Guidance is compiled inside a try/catch (a failure degrades to no block) and threaded by conditional spread. `previewChatPrompt` runs the same compile over the stored cut and the newest player line |
+| `chat-pipeline.ts` | the affordance read is built when `chatAffordanceCuesEnabled() \|\| physicalConstraintsEnabled`; **cue rendering and the `affordanceCueState` write are re-gated on the cue flag alone**, so the new flag can neither revive the closed experiment nor spend its repeat gate. Guidance is compiled inside a try/catch (a failure degrades to no block) and threaded by conditional spread. The turn's already-computed `detectSensoryFocus` hint is passed in as the fourth relevance signal. `previewChatPrompt` runs the same compile over the stored cut and the newest player line, re-detecting the focus from that line so the preview cannot report a decision the turn would not have made |
 | preview | `chat-physical-guidance-preview.ts` + `previewChatPhysicalGuidance` + `GET /api/admin/chat-inspector/:chatId/physical-guidance` + `physicalGuidancePreviewSchema` + `chat-inspector-physical-guidance.tsx`, mounted after the affordances panel |
 
-Preview shape: `{ flagEnabled, inputAuthority: { narratorInput, message, spans[], eligibleSpans }, committed: { …, available[] }, candidates: { constraints[], corrections[], diagnostics[] }, selection: { constraints[], corrections[], dropped[] }, rendered[] }`. Silence here has five causes that look identical from the prompt — flag off, message ineligible, owner unavailable, claim ambiguous, candidate over budget — so every stage shows its own input. `dropped` is read off the diagnostics rather than diffed, so the reason survives with the fact.
+Preview shape: `{ flagEnabled, inputAuthority: { narratorInput, message, spans[], eligibleSpans }, committed: { …, available[] }, relevance: { relevant, signals[], constraints: [{ code, admitted, reason }] }, candidates: { constraints[], corrections[], diagnostics[] }, selection: { constraints[], corrections[], dropped[] }, rendered[] }`. Silence here has six causes that look identical from the prompt — flag off, message ineligible, owner unavailable, claim ambiguous, **fence true but not relevant**, candidate over budget — so every stage shows its own input. The relevance stage names the signals that admitted a constraint, or `not relevant` per resolved constraint code; `dropped` is read off the diagnostics rather than diffed, so the reason survives with the fact.
 
 ### Test inventory
 
 | File | Cases |
 | --- | --- |
-| `domains/hair/claims.test.ts` | lexicon invariants (every code speakable/displayable/in an area, every area covered, phrases lowercase+trimmed, **no phrase owned by two codes**, unique codes, every committed value resolves), the ordered scale, the four mappings + their prohibit/truth pairs + unknown-state emptiness, and the matcher (longest-phrase-in-area, word boundary, no stemming, bath ≠ weather, index reporting, case/punctuation) |
+| `domains/hair/claims.test.ts` | lexicon invariants (every code speakable/displayable/in an area, every area covered, phrases lowercase+trimmed, **no phrase owned by two codes**, unique codes, every committed value resolves), the ordered scale, the four mappings + their prohibit/truth pairs + unknown-state emptiness, the matcher (longest-phrase-in-area, word boundary, no stemming, bath ≠ weather, index reporting, case/punctuation), the reference nouns (styles yes, adjectives and foreign nouns no, single lowercase tokens), and the wetness anchor (wettings yes, cause words alone no, `dry` excluded, word-boundary) |
 | `domains/hair/phenomena.test.ts` | `hair.bulk_restraint`: `no_restraint` on free hair, one constraint per gate at the hair location, **needs no wind**, agrees with the wind read's suppression code across every arrangement × coverage × wetness combination, never produces an observation or a cue, and stays true behind opaque coverage |
 | `domains/hair/hair.test.ts` | five registered phenomena; each worked case's constraint (`—`, `water_loaded`, `bound`, `covered`) alongside its existing observation assertions |
-| `chat-physical-guidance.test.ts` | 35 cases: authority (narrator mode, every ineligible span kind, both sources, empty turn), sentence guards (question, hypothetical/wish/simile, negation before vs after, missing/foreign possessive, modifier window, pronoun ambiguity, hair without a claim), every verdict law incl. the degree asymmetry and the `dry` case, all three `unsupported` owners, per-area cap, determinism, disclosure, and compile shape (worked example, perception licensing, fences without a message, corrections without a read, empty-with-no-diagnostics, budget) |
+| `chat-physical-guidance.test.ts` | 50 cases: authority (narrator mode, every ineligible span kind, both sources, empty turn), sentence guards (question, hypothetical/wish/simile, negation before vs after, missing/foreign possessive, modifier window, pronoun ambiguity, hair without a claim), **clause binding** (the streaming-curtains and river fixtures, same-clause claims, ownership inheritance vs. the no-noun clause, another person's hair, `friend Mira's`), **the wetness anchor** (five scenery fixtures silent, three wettings firing, no cause across a boundary), every verdict law incl. the degree asymmetry and the `dry` case, all three `unsupported` owners, per-area cap, determinism, disclosure, **relevance** (no signal, each of the four signals, compile with and without one, corrections never gated), and compile shape (worked example, perception licensing, fences on a hair-referencing turn, silence + `guidance.constraint.irrelevant` on an unrelated one, corrections without a read, empty-with-no-diagnostics, budget) |
 | `chat-physical-guidance-render.test.ts` | 13 cases: the worked line with and without its truth clause, unwordable codes, the constraint-only no-invitation assertion, correction wording per verdict and per area, tier order, leak ⇒ empty + `error`, empty ⇒ `[]`, block heading/precedence |
-| `chat-physical-guidance.int.test.ts` | 7 cases: flag off ⇒ no block (with the soaking proven on the row), flag on ⇒ the ON prompt is the OFF prompt with one block spliced in, the braid+bath cut vs a storm claim ⇒ fence + two premise checks with the bath never reaching the prompt and **no cue block**, a message asserting nothing ⇒ fence only, a narrator-mode line ⇒ fence only, two rebuilds ⇒ identical lines and selection fingerprints, and the inspector's staircase with the flag off |
+| `chat-affordances.test.ts` | provenance vs. cue freshness: the cause survives the 60-minute window while the hair is wet, the CUE path still ages out at the same minute, `dry` ⇒ `null`, `other`/unrecorded ⇒ `null`, two live causes ⇒ `null` while standing rain answers for itself, and `activeForce` (still air no, gale yes, rain yes, a five-minute-old bath **no**) |
+| `chat-physical-guidance.int.test.ts` | 9 cases: flag off ⇒ no block (with the soaking proven on the row), flag on ⇒ the ON prompt is the OFF prompt with one block spliced in, the braid+bath cut vs a storm claim ⇒ fence + two premise checks with the bath never reaching the prompt and **no cue block**, a hair-referencing message asserting nothing ⇒ fence only, **"tell me about your day" over the same committed cut ⇒ no block at all**, **an outdoor gale ⇒ the motion fence with no player line about it**, a narrator-mode line ⇒ fence only, two rebuilds ⇒ identical lines and selection fingerprints, and the inspector's staircase with the flag off |

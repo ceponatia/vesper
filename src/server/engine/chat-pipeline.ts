@@ -1194,6 +1194,9 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             // opening/continue beat has no player line, so nothing is premise-checked.
             message: playerContent,
             narratorInput,
+            // The turn's sense-targeted beat, already detected above: one of the four
+            // relevance signals that decide whether a true fence is worth its bytes.
+            sensoryFocus: sensoryFocus ?? null,
             sink,
           }),
           characterName,
@@ -2388,6 +2391,9 @@ export async function previewChatPhysicalGuidance(input: {
     playerName: cut.player.name,
     message: message.content,
     narratorInput: message.narrator,
+    // Same pure detector the live turn runs over the same line, so the inspector cannot
+    // report a relevance decision the turn would not have made.
+    sensoryFocus: detectSensoryFocus(message.content),
     sink,
   });
   return buildChatPhysicalGuidancePreview({
@@ -2400,6 +2406,8 @@ export async function previewChatPhysicalGuidance(input: {
     candidateConstraints: stages.candidateConstraints,
     candidateCorrections: stages.candidateCorrections,
     guidance: stages.guidance,
+    relevance: stages.relevance,
+    constraintCodes: read.read.constraints.map((constraint) => constraint.code),
     rendered: renderChatPhysicalGuidance({
       guidance: stages.guidance,
       characterName: input.character.name,
@@ -2477,6 +2485,7 @@ export async function previewChatPrompt(input: {
         playerName: player.name,
         message: message.content,
         narratorInput: message.narrator,
+        sensoryFocus: detectSensoryFocus(message.content),
         sink,
       }),
       characterName: input.character.name,

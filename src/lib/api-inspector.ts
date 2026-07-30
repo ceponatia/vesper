@@ -179,6 +179,15 @@ export const physicalGuidancePreviewSchema = z.object({
       available: arrayOf(z.object({ owner: textOr(""), available: z.boolean().catch(false) })),
     })
     .catch({ wetnessBand: "—", wetnessCause: "—", arrangement: "—", coveredFraction: "—", available: [] }),
+  relevance: z
+    .object({
+      relevant: z.boolean().catch(false),
+      signals: z.array(z.string()).catch([]),
+      constraints: arrayOf(
+        z.object({ code: textOr(""), admitted: z.boolean().catch(false), reason: textOr("") }),
+      ),
+    })
+    .catch({ relevant: false, signals: [], constraints: [] }),
   candidates: z
     .object({
       constraints: arrayOf(guidanceCandidateSchema),

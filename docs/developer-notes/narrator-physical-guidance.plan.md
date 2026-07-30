@@ -4,9 +4,17 @@ Status: active — slices 0–2 shipped 2026-07-30 (proposed 2026-07-29 from the
 closed affordance-cue trial; the shared contract landed before the
 romantic-contact narrator slice, as intended). Slice 2's as-built detail is in
 [narrator-physical-guidance.spec.md](narrator-physical-guidance.spec.md) §"Slice
-2 as built". Remaining: slice 3 (romantic-contact action results), slice 4
-(change-gated positive detail), slice 5 (the two trials), slice 6 (successor
-adapter).
+2 as built". **Owner review, 2026-07-30: slices 0–1 accepted; slice 2 retained
+behind the disabled flag but not trial-ready until its corrective pass** —
+applied the same day: clause-local claim-to-locus binding with adversarial
+fixtures, constraint relevance gating (no standing prompt block on unrelated
+exchanges), provenance truth decoupled from the 60-minute cue-freshness
+window, the disclosure gate made fail-closed (allowlist, not a
+`resolver_only` denylist), and the inspector route's missing `/self/` twin
+added with a parity guard. Remaining: slice 3 (romantic-contact action
+results), slice 4 (change-gated positive detail), slice 5 (the two trials —
+after generalizing the committed summary format, see §Slice 5), slice 6
+(successor adapter).
 
 ## In one sentence
 
@@ -231,6 +239,26 @@ The detector may emit:
 Domain reference without a safely parsed claim may still raise the priority of
 an already-known consistency constraint. It must not invent a correction.
 
+**Ruling (owner, 2026-07-30): the claim lexicon is scaffolding, never state
+authority.** Words like `storm`, `pool`, and `river` exist for two purposes
+only: as test vocabulary while wetness/provenance behavior is developed, and to
+detect a conversational claim ("the storm soaked your hair") for comparison
+against committed truth. They must never mutate physical state directly. The
+eventual authority chain is: world state ("it is raining") → spatial/exposure
+resolution (outside, uncovered, exposed) → physical interaction (rain contacts
+her hair for ten minutes) → body-state update (wetness = wet, cause = rain) →
+narrator guidance. Being "in the water" is likewise not enough by itself — a
+resolver must weigh depth, which regions are submerged, whether the head
+entered the water, arrangement, coverings, exposure time, and later drying;
+waist-deep in a river does not wet hair. Tests must enforce the separation:
+keywords alone never change state, structured events produce body-state
+changes, player assertions never become world truth, keyword detection may
+only identify a possible claim (ambiguity produces silence), and narrator
+guidance derives exclusively from committed state and resolved actions.
+Even in the detector, keywords need clause-local association — `storm` must
+not fire for "a storm is approaching", nor `pool` for "your hair gleams in a
+pool of light".
+
 ### 5. Disclosure is a hard gate
 
 Guidance is filtered for its consumer before ranking:
@@ -380,6 +408,14 @@ Run two separate campaigns:
 
 Do not let a positive-detail result determine whether constraints ship. Do not
 combine both changes into one A/B.
+
+Before either campaign runs, generalize the committed `summary.json` format
+(review finding, 2026-07-30): its arms and audit dimensions are currently
+shaped for the closed cue trial, and physical-claim counts are optional
+because the claim-normalized instrument does not exist yet. It preserves
+headroom but cannot yet enforce a complete constraint/action-outcome trial
+record; treat that generalization as slice 5 setup work, not finished
+infrastructure.
 
 ### Slice 6 — successor adapter
 

@@ -7,8 +7,8 @@ type Params = { chatId: string };
 /**
  * The READ-ONLY narrator physical-guidance preview for an owner-admin's own chat
  * (narrator-physical-guidance.plan.md slice 2): the staircase — input authority →
- * committed state → candidates → disclosure and selection → rendered instruction —
- * for the stored cut and the newest player line.
+ * committed state → relevance → candidates → disclosure and selection → rendered
+ * instruction — for the stored cut and the newest player line.
  *
  * Computes on demand and stores NOTHING: guidance is recomputed every turn by design,
  * so a preview is simply a second evaluation and cannot spend anything. The
