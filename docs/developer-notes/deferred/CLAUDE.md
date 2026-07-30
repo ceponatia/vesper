@@ -119,3 +119,10 @@ Added after the review:
   (owner-requested clothing object graph + condition gradients; the upstream
   wardrobe owner for the garment-affordance companion above; queued at the top
   of the roadmap's Next)
+- [clothing-archetypes-components.plan.md](clothing-archetypes-components.plan.md) —
+  owner-requested follow-up parked 2026-07-30 after the clothing substrate
+  shipped: preserve existing broad categories and blueprint hashing while
+  adding recognizable archetypes, reusable component fragments, compatible
+  blueprint-v2 roles/capabilities, fit, pockets/hoods/decorations, and a clean
+  boundary to the future shared scene/body-relations owner; technical companion
+  [clothing-archetypes-components.spec.md](clothing-archetypes-components.spec.md).
