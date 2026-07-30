@@ -44,6 +44,18 @@ successor-world-lifecycle all shipped 2026-07-23..27. Still parked:_
   (G25); composer IME guard + per-chat drafts (G26); memory-index drain off
   the reply-critical path (G27).
 
+## Account deletion — user-data erasure path
+
+_Parked 2026-07-29 (owner ruling during data-lifecycle planning,
+[data-lifecycle.plan.md](data-lifecycle.plan.md))._ No user-deletion path
+exists today: no route or UI, Better Auth's `deleteUser` is not enabled, and
+ten content tables reference `users.id` with default RESTRICT — deleting a
+`users` row directly fails on FK violations. Build when the product needs it
+(it eventually will — data-protection hygiene): the cascade/ownership map in
+[data-lifecycle.audit.md](data-lifecycle.audit.md) §"Adjacent finding" is the
+starting inventory, and the data-lifecycle chat-sweep machinery (chat_id FKs,
+retention sweep) is the substrate a full account cascade composes from.
+
 ## World authoring — locations, travel distances & durations
 
 _Owner direction 2026-07-23: world setup for bespoke first-party worlds and
