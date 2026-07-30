@@ -30,6 +30,7 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx scripts/db-seed.ts",
     "db:backfill-image-refs": "tsx scripts/backfill-image-references.ts",
+    "db:backfill-registry-defaults": "tsx scripts/backfill-registry-defaults.ts",
     "eval:engine-gate1": "tsx scripts/eval/engine-gate1/run.ts",
     "eval:engine-gate2-soak": "tsx scripts/eval/engine-gate2-soak/run.ts",
     "sim:seed": "tsx scripts/sim/seed-rollout-world.ts",

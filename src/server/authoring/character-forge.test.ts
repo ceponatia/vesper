@@ -844,6 +844,17 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
     expect(draft.suggestedItems.every((i) => i.tags.includes("suggested"))).toBe(true);
   });
 
+  it("materializes the persisted-baseline foot facts into a forged draft (pre-slice-3)", async () => {
+    const draft = await forgeCharacter({ prompt: "a weary harbor-master", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
+    const ids = draft.profile.attributes.map((value) => value.id);
+    for (const id of ["feet.size", "feet.arch", "feet.nails", "feet.toes"]) expect(ids).toContain(id);
+    const arch = draft.profile.attributes.find((value) => value.id === "feet.arch");
+    expect(arch?.source).toBe("creation");
+    expect(arch?.sourceId).toBe("registry-default:feet:v1");
+    // The scent placeholder is never materialized — a default cannot manufacture a smell.
+    expect(ids).not.toContain("feet.smell");
+  });
+
   it("seeds a starting relationship and a personal card from the demo profile (forge-gaps)", async () => {
     const draft = await forgeCharacter({ prompt: "a weary harbor-master", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
     expect(draft.profile.playerRelationship?.familiarity).toBe("acquainted");

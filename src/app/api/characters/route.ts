@@ -3,6 +3,7 @@ import { inArray, eq, and, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   adultEligibilityConflict,
+  materializeBodyDefaults,
   seedBodyConfigFromAttributes,
   seedRegistryDefaultValues,
   withItemsInDefaultOutfit,
@@ -77,8 +78,19 @@ export const POST = withUser(async (user, req: NextRequest) => {
   // vulva/breasts). Any profile arriving WITH attributes — forge drafts,
   // clones, API callers — is authored data and passes through untouched.
   const blank = body.value.profile.attributes.length === 0;
-  const attributes = blank ? seedRegistryDefaultValues(body.value.profile.attributes) : body.value.profile.attributes;
-  const seededConfig = blank ? seedBodyConfigFromAttributes(attributes) : null;
+  const seeded = blank ? seedRegistryDefaultValues(body.value.profile.attributes) : body.value.profile.attributes;
+  const seededConfig = blank ? seedBodyConfigFromAttributes(seeded) : null;
+  // Persisted-baseline facts (materializeDefault) are grounded on EVERY create —
+  // blank, forged, imported, cloned, raw API — against the profile's own
+  // realized body (post-seed body-config, so a blank creation's gender seed
+  // counts). Fill-only: anything the author or forge supplied wins.
+  const attributes = materializeBodyDefaults(seeded, {
+    speciesId: body.value.profile.speciesId,
+    heritageId: body.value.profile.heritageId,
+    bodyPlanId: body.value.profile.bodyPlanId,
+    intimateRegions: seededConfig?.intimateRegions ?? body.value.profile.intimateRegions,
+    bodyFeatures: seededConfig?.bodyFeatures ?? body.value.profile.bodyFeatures,
+  });
   const profile = withItemsInDefaultOutfit(
     {
       ...body.value.profile,

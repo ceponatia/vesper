@@ -1,5 +1,5 @@
 import { diag, type DiagnosticSink } from "../diagnostics";
-import { isMinorAge } from "../world/life-stage";
+import { isMinorAge, numericAgeText } from "../world/life-stage";
 import { adultEligibilityDeclarationSchema, type AdultEligibilityDeclaration } from "./declaration";
 
 /**
@@ -25,8 +25,10 @@ import { adultEligibilityDeclarationSchema, type AdultEligibilityDeclaration } f
  *    ({@link adultEligibilityConflict}), so reaching it here means the row was corrupted
  *    or written around the API; the declaration never overrides the numeric fence.
  *
- * `isMinorAge` / `lifeStageForAge` are **read, never modified** — the repo-wide
- * fail-open fallback stays exactly as it is (owner ruling 2026-07-30).
+ * `isMinorAge` / `lifeStageForAge` keep their repo-wide fail-open fallback exactly as
+ * it is (owner ruling 2026-07-30). Their PARSER gained one tightly whitelisted unit
+ * spelling — "17 years" / "17 years old" — by explicit owner instruction the same day
+ * (pre-slice-3 eligibility follow-ups); word numbers and looser prose stay unparsed.
  */
 
 /** Adulthood in years, for the numeric half of the law. */
@@ -74,9 +76,11 @@ export interface AdultEligibilityInput {
  */
 export function isNumericMinorAge(age: string): boolean {
   if (isMinorAge(age)) return true;
-  const trimmed = age.trim();
-  if (!/^-?\d+(?:\.\d+)?$/u.test(trimmed)) return false;
-  const years = Number.parseFloat(trimmed);
+  // The same whitelist the band parser uses ("17.5 years old" → "17.5"), then
+  // the stricter decimal/negative net the bands decline to hold.
+  const numeral = numericAgeText(age) ?? age.trim();
+  if (!/^-?\d+(?:\.\d+)?$/u.test(numeral)) return false;
+  const years = Number.parseFloat(numeral);
   return Number.isFinite(years) && years < ADULT_ELIGIBILITY_MIN_YEARS;
 }
 
@@ -97,6 +101,22 @@ export function readAdultEligibilityDeclaration(raw: unknown): AdultEligibilityD
 export function adultEligibilityConflict(input: AdultEligibilityInput): AdultEligibilityConflict | null {
   const declaration = readAdultEligibilityDeclaration(input.adultEligibilityDeclaration);
   return declaration === "adult" && isNumericMinorAge(input.age ?? "") ? "declared_adult_numeric_minor" : null;
+}
+
+/**
+ * Whether the minor-safe prompt surfaces fence (pre-slice-3 follow-up): the
+ * numeric fence every prompt builder already applies, EXTENDED by the explicit
+ * `minor` declaration — an author who says "this participant is a minor" gets
+ * the minor-safe register whatever the age field holds (including a numeric
+ * adult age; the stricter statement always wins, mirroring
+ * {@link adultEligibilityConflict}'s one-directional rule).
+ *
+ * The declaration itself is never serialized into a prompt: builders read this
+ * boolean and emit exactly the fence output they always have. A profile with
+ * declaration `adult` or `unresolved` renders byte-identically to before.
+ */
+export function minorFenceApplies(input: AdultEligibilityInput): boolean {
+  return readAdultEligibilityDeclaration(input.adultEligibilityDeclaration) === "minor" || isMinorAge(input.age ?? "");
 }
 
 /**

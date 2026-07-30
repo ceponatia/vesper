@@ -8,9 +8,14 @@ profile inheritance, condition distribution, footwear filtering, and the
 pressure/texture/glide/articulation/nail phenomena — fixture-driven, not
 production-wired; contact warmth and scent recorded deferred); slices 3–4
 remain, in the owner's ruled order (2026-07-30): the slice-2
-[hardening pass](romantic-contact-affordances.followups.md), then the
-[adult declaration](adult-eligibility.plan.md), then slice 3 wired
-affectionate-first with the romantic proof gated on eligibility + permission;
+[hardening pass](romantic-contact-affordances.followups.md) ✅, then the
+[adult declaration](finished/adult-eligibility.plan.md) ✅, then the
+**pre-slice-3 foot-facts + registration hardening ✅ (2026-07-30** — persisted
+foot baselines with a backfill, partial foot profiles, the optional-invalid
+dependency law, and the eligibility leftovers; record in the
+[follow-ups doc](romantic-contact-affordances.followups.md)**)**, then slice 3
+wired affectionate-first with the romantic proof gated on eligibility +
+permission;
 intimate work waits for the foot proof and authoritative adult-eligibility,
 consent, exposure, and physiology; the plan follows
 [body-attribute affordances](body-attribute-affordances.plan.md)
@@ -348,7 +353,7 @@ one A/B.
 **Sequencing (owner, 2026-07-30).** This slice begins with a separately
 authored, genuinely affectionate/non-romantic integration case — never a
 romantic case relabeled to commit. The genuinely romantic foot proof runs only
-after both the [adult declaration](adult-eligibility.plan.md) resolves every
+after both the [adult declaration](finished/adult-eligibility.plan.md) resolves every
 participant and the legacy `romantic_touch` permission owner exists; slice 3
 also implements the ruled contact persistence (durable event provenance + the
 versioned active-contact projection in the retake snapshot). Positive tactile

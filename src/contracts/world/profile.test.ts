@@ -126,9 +126,10 @@ describe("profile.adultEligibilityDeclaration (adult-eligibility.plan.md slice 0
     expect(characterProfileSchema.parse(JSON.parse(JSON.stringify(saved))).adultEligibilityDeclaration).toBe("adult");
   });
 
-  it("stays out of the public preview — an authored gate input, not presentation", () => {
+  it("rides the public preview — a browsing user sees the declaration before duplicating (owner ruling 2026-07-30)", () => {
     const declared = characterProfileSchema.parse({ adultEligibilityDeclaration: "adult" });
-    expect(toPublicCharacterProfile(declared)).not.toHaveProperty("adultEligibilityDeclaration");
+    expect(toPublicCharacterProfile(declared).adultEligibilityDeclaration).toBe("adult");
+    expect(toPublicCharacterProfile(emptyCharacterProfile()).adultEligibilityDeclaration).toBe("unresolved");
   });
 });
 
@@ -165,6 +166,7 @@ describe("toPublicCharacterProfile (security-authz.plan.md OQ2)", () => {
 
   it("is exactly the allow-listed presentation keys", () => {
     expect(Object.keys(toPublicCharacterProfile(authored)).sort()).toEqual([
+      "adultEligibilityDeclaration",
       "age",
       "attributes",
       "bio",
@@ -224,6 +226,7 @@ describe("toPublicCharacterProfile (security-authz.plan.md OQ2)", () => {
       personality: "",
       age: "",
       speciesId: "human",
+      adultEligibilityDeclaration: "unresolved",
       attributes: [],
     });
   });

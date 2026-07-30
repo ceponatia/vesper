@@ -27,7 +27,8 @@ import {
 import type { RelationshipRecord, RelationshipTexture } from "@/contracts/relationships/record";
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { expandBodyTarget, realizeBody, speciesIntimacyNote, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
-import { isMinorAge, lifeStageForAge, lifeStageThirdPersonLine } from "@/contracts/world/life-stage";
+import { lifeStageForAge, lifeStageThirdPersonLine } from "@/contracts/world/life-stage";
+import { minorFenceApplies } from "@/contracts/eligibility/resolve";
 import { formatAge, hasVoiceAnchors, type CharacterProfile, type VoiceAnchors } from "@/contracts/world/profile";
 import type { VoiceExemplar } from "../chat-voice";
 import { formatCommsReply, parseMessageSpans } from "@/lib/message-spans";
@@ -1593,9 +1594,11 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   // The life-stage band a bare numeric age maps to (character-fidelity slices 1–2):
   // hint on the identity line, register rules as a binding block, and the minor
   // flag fencing every intimate surface below. Fantasy/blank ages ⇒ undefined ⇒
-  // byte-identical to the pre-slice prompt.
+  // byte-identical to the pre-slice prompt. The fence itself also honors an
+  // explicit `minor` declaration (eligibility follow-ups) — the declaration is
+  // never serialized, it only arms the same fence a numeric minor age does.
   const lifeStage = lifeStageForAge(profile.age);
-  const minor = lifeStage?.minor ?? false;
+  const minor = minorFenceApplies(profile);
   const species = speciesLorePhrase(profile.speciesId, profile.heritageId);
 
   // The chat lane's intimate gate (contracts/turns/chat-intimacy.ts) — the lane's answer
@@ -2071,7 +2074,7 @@ export function buildEnsembleChatPromptParts(
   // own note, which is chat-wide and so rendered once rather than per member.
   const ensembleIntimate = present.some(
     (m) =>
-      !(lifeStageForAge(m.profile.age)?.minor ?? false) &&
+      !minorFenceApplies(m.profile) &&
       chatSceneIsIntimate({
         characterExposed: m.state?.outfitExposed,
         playerExposed: input.player?.exposed,
@@ -2130,7 +2133,7 @@ export function buildEnsembleChatPromptParts(
   // Minor cast fence (character-fidelity slice 2): the adult framing stays (adult
   // members may still have adult scenes) and the cast line rules every authored
   // minor out of that territory.
-  const anyMinor = members.some((m) => isMinorAge(m.profile.age));
+  const anyMinor = members.some((m) => minorFenceApplies(m.profile));
   const prefixSections = [
     anyMinor ? `${CONTENT_FRAMING} ${ENSEMBLE_MINOR_CAST_LINE}` : CONTENT_FRAMING,
     UNTRUSTED_DATA_NOTICE,
@@ -2252,7 +2255,9 @@ export function buildEnsembleChatPromptParts(
       text:
         extras.selfie &&
         !members.some(
-          (m) => m.name.trim().toLowerCase() === extras.selfie?.memberName.trim().toLowerCase() && isMinorAge(m.profile.age),
+          (m) =>
+            m.name.trim().toLowerCase() === extras.selfie?.memberName.trim().toLowerCase() &&
+            minorFenceApplies(m.profile),
         )
           ? chatSelfieLine(extras.selfie.kind, extras.selfie.memberName, player)
           : "",
@@ -2289,7 +2294,7 @@ export function buildEnsembleChatPromptParts(
           playerExposed: input.player?.exposed,
           meters: m.state?.meters,
         });
-        if (!open || (lifeStageForAge(m.profile.age)?.minor ?? false)) return [];
+        if (!open || minorFenceApplies(m.profile)) return [];
         const note = characterIntimateNote(m.profile);
         return note ? [{ label: `${m.name} is`, note }] : [];
       }),
@@ -2454,7 +2459,7 @@ function ensembleMemberEnactment(member: EnsembleMemberInput): string {
   const blocks: string[] = [];
 
   // Minor fence (character-fidelity slice 2): no state-driven loosening for a minor member.
-  const overlays = isMinorAge(profile.age) ? [] : stateDispositionOverlays(baseTraits, member.state.meters ?? {});
+  const overlays = minorFenceApplies(profile) ? [] : stateDispositionOverlays(baseTraits, member.state.meters ?? {});
   if (overlays.length) {
     const shifted = resolveTraits(baseTraits, overlays);
     const baseLines = new Set([

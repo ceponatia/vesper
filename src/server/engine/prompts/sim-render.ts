@@ -4,6 +4,7 @@ import { regardBandForValue, familiarityBandForValue } from "@/contracts/relatio
 import { formatStoryClock, storyCalendarParams, storyClockAt, type SimCalendarStart } from "@/lib/simulation/clock";
 import { humanizeActivity, humanizeId } from "@/lib/simulation/humanize";
 import { lifeStageForAge } from "@/contracts/world/life-stage";
+import { minorFenceApplies } from "@/contracts/eligibility/resolve";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
 import { speciesLorePhrase } from "@/contracts/species";
 import type { NarrativeCut } from "@/contracts/simulation/narrative";
@@ -584,7 +585,9 @@ export function buildSimRenderPrompt(
     "the character";
 
   const profile = context.primary?.profile;
-  const minor = profile ? (lifeStageForAge(profile.age)?.minor ?? false) : false;
+  // Declared-minor arms the same fence a numeric minor age does (eligibility
+  // follow-ups); the declaration itself is never serialized into the prompt.
+  const minor = profile ? minorFenceApplies(profile) : false;
   const shape = context.narrationShape ?? DEFAULT_NARRATION_SHAPE;
   const dominance = profile ? effectiveTraitValue(profile.traits, "social.dominance") : 0;
 

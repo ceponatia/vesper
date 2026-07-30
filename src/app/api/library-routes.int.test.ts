@@ -199,6 +199,53 @@ describe.skipIf(!ready)("characters CRUD + search", () => {
     expect(profile.aliases).toEqual(["Captain Voss"]);
   });
 
+  it("materializes the persisted-baseline foot facts on every create, and re-materializes on PATCH", async () => {
+    type AttrProfile = { profile: { attributes: { id: string; value: unknown; sourceId?: string }[] } };
+    // A NON-blank profile (authored attributes) still grounds the baseline —
+    // the old blank-only seeding deliberately skipped this shape.
+    const created = await expectJson<{ character: { id: string } & AttrProfile }>(
+      await createCharacterRoute(
+        apiRequest("/api/characters", {
+          body: {
+            name: "Baseline Feet",
+            profile: {
+              attributes: [
+                { id: "hair.color", value: "black", source: "creation" },
+                { id: "feet.nails", value: "painted", source: "manual" },
+              ],
+            },
+          },
+        }),
+        noParams,
+      ),
+      201,
+    );
+    const attributes = created.character.profile.attributes;
+    // The authored custom value survives creation untouched.
+    expect(attributes.find((a) => a.id === "feet.nails")).toMatchObject({ value: "painted", source: "manual" });
+    for (const id of ["feet.size", "feet.arch", "feet.toes"]) {
+      expect(attributes.find((a) => a.id === id)?.sourceId).toBe("registry-default:feet:v1");
+    }
+    expect(attributes.map((a) => a.id)).not.toContain("feet.smell");
+
+    // A PATCH that drops a baseline fact gets it re-materialized: players may
+    // change the value, but the tracked fact has no blank state.
+    const withoutArch = attributes.filter((a) => a.id !== "feet.arch");
+    const patched = await expectJson<{ character: AttrProfile }>(
+      await patchCharacterRoute(
+        apiRequest(`/api/characters/${created.character.id}`, {
+          method: "PATCH",
+          body: { profile: { attributes: withoutArch } },
+        }),
+        routeCtx({ id: created.character.id }),
+      ),
+      200,
+    );
+    const healed = patched.character.profile.attributes;
+    expect(healed.find((a) => a.id === "feet.arch")?.sourceId).toBe("registry-default:feet:v1");
+    expect(healed.find((a) => a.id === "feet.nails")?.value).toBe("painted");
+  });
+
   it("404s for a character owned by someone else", async () => {
     const other = await seedTestUser("routes-int-other");
     try {
@@ -808,10 +855,41 @@ describe.skipIf(!ready)("personas CRUD", () => {
       200,
     );
     const profile = patched.persona.profile;
-    expect(profile.attributes).toHaveLength(1);
+    const attributes = profile.attributes as { id: string; value: unknown; sourceId?: string }[];
+    // The sent value survives, and the persisted-baseline foot facts are
+    // re-materialized around it (they have no blank state on a stored body).
+    expect(attributes.find((a) => a.id === "skin.tone")?.value).toBe("tan");
+    for (const id of ["feet.size", "feet.arch", "feet.nails", "feet.toes"]) {
+      expect(attributes.map((a) => a.id)).toContain(id);
+    }
+    expect(attributes.find((a) => a.id === "feet.arch")?.sourceId).toBe("registry-default:feet:v1");
     // The invariant partialWithoutDefaults exists to protect: unsent fields keep their value.
     expect(profile.outfits).toHaveLength(1);
     expect(profile.bio).toBe("A quiet man who fixes things.");
+  });
+
+  it("materializes the persisted-baseline foot facts at persona creation, keeping authored ones", async () => {
+    const created = await expectJson<{ persona: { id: string; profile: { attributes: { id: string; value: unknown; sourceId?: string }[] } } }>(
+      await createPersonaRoute(
+        apiRequest("/api/personas", {
+          body: {
+            title: "Brian, barefoot",
+            name: "Brian",
+            profile: { attributes: [{ id: "feet.arch", value: "high", source: "manual" }] },
+          },
+        }),
+        noParams,
+      ),
+      201,
+    );
+    const attributes = created.persona.profile.attributes;
+    // The authored value survives; only the gaps fill, with backfill provenance.
+    expect(attributes.find((a) => a.id === "feet.arch")?.value).toBe("high");
+    expect(attributes.find((a) => a.id === "feet.arch")?.sourceId).toBeUndefined();
+    for (const id of ["feet.size", "feet.nails", "feet.toes"]) {
+      expect(attributes.find((a) => a.id === id)?.sourceId).toBe("registry-default:feet:v1");
+    }
+    expect(attributes.map((a) => a.id)).not.toContain("feet.smell");
   });
 
   it("gets and deletes a persona; a foreign id is a 404", async () => {

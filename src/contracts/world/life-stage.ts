@@ -9,12 +9,15 @@
  * prose (child/teen/elder today). The registry is the contract — adding or
  * re-ranging a band is a data edit here, never a migration.
  *
- * Parsing is deliberately conservative, mirroring `formatAge`: only a bare
- * numeral maps ("15" — the shape the editor hint suggests for humans). Blank,
- * phrases ("ancient", "312 years"), and bare numbers past the human scale
- * (> {@link LIFE_STAGE_MAX_HUMAN_YEARS}) map to nothing — fantasy ages are
- * species-scaled, and forcing a 312-year-old elf into a human elder register
- * would be wrong. No band ⇒ every consumer renders exactly what it does today.
+ * Parsing is deliberately conservative, mirroring `formatAge`: a bare numeral
+ * ("15" — the shape the editor hint suggests for humans), or a numeral in the
+ * tightly whitelisted "years" spellings ("17 years", "17 years old" — owner
+ * instruction 2026-07-30, pre-slice-3 eligibility follow-ups). Blank, word
+ * phrases ("ancient", "seventeen"), other units, and numbers past the human
+ * scale (> {@link LIFE_STAGE_MAX_HUMAN_YEARS} — "312 years" included) map to
+ * nothing — fantasy ages are species-scaled, and forcing a 312-year-old elf
+ * into a human elder register would be wrong. No band ⇒ every consumer renders
+ * exactly what it does today.
  */
 
 export interface LifeStageBand {
@@ -133,14 +136,31 @@ export const LIFE_STAGES: readonly LifeStageBand[] = [
 ];
 
 /**
- * Resolve a free-text age to its life-stage band. Only a bare numeral within the
- * human scale maps; everything else (blank, "ancient", "312 years", "500") is
- * undefined — the degraded default is today's behavior exactly.
+ * The numeral inside a tightly whitelisted age spelling, or undefined.
+ *
+ * The whitelist is exactly: the numeral alone, or the numeral followed by
+ * "year"/"years", optionally "old" — "17", "17 years", "17 years old". Nothing
+ * looser: word numbers ("seventeen"), other units, and surrounding prose stay
+ * unrecognized, because every widening of this parser widens what the minor
+ * fence and the eligibility resolver treat as a known number.
+ */
+export function numericAgeText(age: string): string | undefined {
+  const match = /^(-?\d+(?:\.\d+)?)(?:\s+years?(?:\s+old)?)?$/iu.exec(age.trim());
+  return match?.[1];
+}
+
+/**
+ * Resolve a free-text age to its life-stage band. Only a whitelisted numeral
+ * spelling within the human scale maps ("15", "15 years", "15 years old");
+ * everything else (blank, "ancient", "312 years", "500") is undefined — the
+ * degraded default is today's behavior exactly.
  */
 export function lifeStageForAge(age: string): LifeStageBand | undefined {
-  const trimmed = age.trim();
-  if (!/^\d+$/.test(trimmed)) return undefined;
-  const years = Number.parseInt(trimmed, 10);
+  const numeral = numericAgeText(age);
+  // Bands stay integer, non-negative, human-scale — "17.5" and "-5" are the
+  // eligibility resolver's stricter business, not a register band.
+  if (numeral === undefined || !/^\d+$/.test(numeral)) return undefined;
+  const years = Number.parseInt(numeral, 10);
   if (years > LIFE_STAGE_MAX_HUMAN_YEARS) return undefined;
   return LIFE_STAGES.find((band) => years >= band.min && years <= band.max);
 }

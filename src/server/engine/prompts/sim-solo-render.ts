@@ -1,5 +1,5 @@
 import { effectiveTraitValue } from "@/contracts/personality/traits";
-import { lifeStageForAge } from "@/contracts/world/life-stage";
+import { minorFenceApplies } from "@/contracts/eligibility/resolve";
 import { buildSoloDepartureLine, type SoloDeparture } from "@/lib/simulation/departure";
 import { placeAtPhrase, type SoloCutContext } from "@/lib/simulation/solo-cut";
 import { DEFAULT_NARRATION_SHAPE } from "./constants";
@@ -172,7 +172,9 @@ export function buildSimSoloRenderPrompt(context: SimSoloRenderContext): { syste
   const playerName = context.player?.name?.trim() || context.solo.playerName || "the player";
   const primaryName = context.primary?.name?.trim() || context.solo.primaryName || "the character";
   const profile = context.primary?.profile;
-  const minor = profile ? (lifeStageForAge(profile.age)?.minor ?? false) : false;
+  // Declared-minor arms the same fence a numeric minor age does (eligibility
+  // follow-ups); the declaration itself is never serialized into the prompt.
+  const minor = profile ? minorFenceApplies(profile) : false;
   const dominance = profile ? effectiveTraitValue(profile.traits, "social.dominance") : 0;
 
   const prompt = [

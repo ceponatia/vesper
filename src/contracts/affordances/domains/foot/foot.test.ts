@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "../../../diagnostics";
+import { materializeRegistryDefaults, type AttributeValue } from "../../../attributes";
 import {
   affordanceSubjectId,
   emptyAffordancePerceptionView,
@@ -255,6 +256,72 @@ describe("determinism", () => {
   });
 });
 
+describe("partial profiles — each axis gates only its own surfaces", () => {
+  /** Arch and toes authored, toenail upkeep missing. */
+  const noNails: readonly AttributeValue[] = [
+    { id: "feet.arch", value: "average", source: "creation" },
+    { id: "feet.toes", value: "average", source: "creation" },
+  ];
+  const dryFoot = { moisture: 0, contributors: [], placedSubstances: [], placedResidues: [] };
+
+  it("missing toenails plus known contact pressure still emits pressure", () => {
+    const result = readFootAffordances({
+      attributes: noNails,
+      payload: {
+        condition: [dryFoot],
+        contact: committedFootContact({ detail: "toenails", locationId: "toenails", pressure: "moderate" }),
+        tactile: { available: true },
+      },
+      perception: footObserver(),
+    });
+    expect(ids(result)).toContain(FOOT_CONTACT_PRESSURE_ID);
+  });
+
+  it("missing toenails suppresses nail contact, not heel texture", () => {
+    const onNails = readFootAffordances({
+      attributes: noNails,
+      payload: {
+        condition: [dryFoot],
+        contact: committedFootContact({ detail: "toenails", locationId: "toenails", pressure: "moderate" }),
+        tactile: { available: true },
+      },
+      perception: footObserver(),
+    });
+    expect(onNails.suppressed.find((entry) => entry.phenomenonId === FOOT_NAIL_CONTACT_ID)?.code).toBe(
+      "surface_unprofiled",
+    );
+
+    const onHeel = readFootAffordances({
+      attributes: noNails,
+      payload: {
+        condition: [dryFoot],
+        contact: committedFootContact({ detail: "heel_pad", locationId: "heel", pressure: "light", area: "broad" }),
+        footwear: [],
+        tactile: { available: true },
+      },
+      perception: footObserver(),
+    });
+    const heelTexture = onHeel.observations.find((observation) => observation.id === FOOT_SURFACE_TEXTURE_ID);
+    expect(heelTexture?.semanticTags.some((tag) => tag.endsWith("_heel_pad"))).toBe(true);
+  });
+
+  it("materialized registry defaults produce structure only — no moisture, scent, product, residue, or contact", () => {
+    // A body born from nothing but registry defaults, in a lane that answered
+    // nothing: the structural profile exists, and not one observation does.
+    const defaulted = materializeRegistryDefaults([]);
+    expect(defaulted.map((value) => value.id).sort()).toEqual(["feet.arch", "feet.nails", "feet.size", "feet.toes"]);
+    const result = readFootAffordances({
+      attributes: defaulted,
+      payload: {},
+      perception: footObserver(),
+    });
+    expect(result.observations).toEqual([]);
+    expect(result.cues).toEqual([]);
+    const everything = JSON.stringify([result.evidence, result.observations]);
+    expect(everything).not.toMatch(/moisture|scent|smell|lotion|residue|sweat/u);
+  });
+});
+
 describe("the slice-1 gate still governs what may be observed", () => {
   it("refuses a romantically-framed foot contact in a lane with no permission owner", () => {
     // The fixture's policy grant covers `affectionate_touch` only. Romantic
@@ -289,14 +356,18 @@ describe("registration is slice 3's job", () => {
     expect(sink.hasErrors).toBe(false);
   });
 
-  it("says nothing at all for a character with no authored feet attributes", () => {
+  it("still reads pressure for a character with no authored feet attributes, and nothing axis-dependent", () => {
+    // Pressure requires no `feet.*` attribute — the committed contact carries
+    // it. The axis-calibrated surfaces (arch subtree here) stay suppressed.
     const unauthored = readFootAffordances({
       attributes: [],
       payload: footWorkedCases.lotionArchToHeelSlide().payload,
       perception: footObserver(),
     });
-    expect(unauthored.observations).toEqual([]);
-    expect(unauthored.suppressed).toHaveLength(footAffordanceDomain.phenomenonIds.length);
+    expect(ids(unauthored)).toEqual([FOOT_CONTACT_PRESSURE_ID]);
+    expect(
+      unauthored.suppressed.find((entry) => entry.phenomenonId === FOOT_SURFACE_TEXTURE_ID)?.code,
+    ).toBe("surface_unprofiled");
   });
 
   it("reports a corrupt committed contact as INVALID, never as an absent owner", () => {
@@ -367,9 +438,10 @@ describe("registration is slice 3's job", () => {
     ).toBe("invalid");
 
     // Two supports for one foot — trapped and free at once. `support` is an
-    // optional dependency everywhere, so nothing is suppressed over it; what
-    // must not happen is the contradiction being merged into a restriction
-    // nobody asserted.
+    // OPTIONAL dependency, but optional tolerates only absence, never
+    // corruption: an owner answered and the answer is unreadable, so running
+    // without it would let a possibly-trapped foot read as unrestricted.
+    // The dependent phenomenon is suppressed with the invalid code instead.
     const supported = footAffordanceDomain.trace(
       request({
         ...fixture.payload,
@@ -381,12 +453,14 @@ describe("registration is slice 3's job", () => {
       }),
     );
     expect(supported.inputs?.["support"]).toBe("invalid");
-    const articulationTags = supported.resolutions.find(
-      (resolution) => resolution.kind === "observation" && resolution.id === FOOT_ARTICULATION_ID,
+    const articulationRead = supported.resolutions.find(
+      (resolution) => resolution.kind === "suppressed" && resolution.phenomenonId === FOOT_ARTICULATION_ID,
     );
-    expect(articulationTags?.kind).toBe("observation");
-    if (articulationTags?.kind !== "observation") return;
-    expect(articulationTags.semanticTags).not.toContain("restricted_by_support");
+    expect(articulationRead?.kind).toBe("suppressed");
+    if (articulationRead?.kind !== "suppressed") return;
+    expect(articulationRead.code).toBe(AFFORDANCE_INPUT_INVALID);
+    expect(articulationRead.detail).toContain("support");
+    expect(supported.diagnostics.some((entry) => entry.code === AFFORDANCE_INPUT_INVALID)).toBe(true);
   });
 
   it("reports a repeated wardrobe layer id instead of accepting it in silence", () => {

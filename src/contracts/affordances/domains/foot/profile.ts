@@ -25,6 +25,7 @@ import {
 } from "./attribute-maps";
 import {
   footSurfaceCoverageLocationId,
+  footSurfaceSubtree,
   footSurfaceTopology,
   type FootStructureKind,
   type FootSurfaceId,
@@ -348,16 +349,27 @@ function nailProfile(input: {
 }
 
 /**
- * Compile every surface, or none at all.
+ * Compile every surface an axis can vouch for; omit the ones it cannot.
  *
- * All three axes are required structure: without `feet.arch` there is no arch
- * calibration, without `feet.nails` the toenail has no surface of its own, and
- * without `feet.toes` the interdigital spaces have no depth. A blank axis
- * therefore suppresses the whole foot domain rather than being defaulted to
- * something convenient — an unauthored character has no foot read yet, which is
- * the conservative silence this layer is built around.
+ * Each axis gates ONLY the surfaces its calibration owns:
  *
- * Every missing axis is reported, not just the first.
+ * - `feet.arch` calibrates the arch subtree (`arch`, `medial_arch`,
+ *   `lateral_arch`) — without it those three are omitted;
+ * - `feet.nails` is the toenail's whole surface — without it the keratin node is
+ *   omitted;
+ * - `feet.toes` deepens the interdigital spaces — without it that one surface is
+ *   omitted.
+ *
+ * Everything else — heel, ball, sole, edges, dorsal, toe tops and pads, ankle —
+ * is seed-and-modifier calibration that no authored axis touches, so it compiles
+ * regardless. A read at an omitted surface suppresses downstream
+ * (`surface_unprofiled`), which keeps the failure exactly as wide as the gap: a
+ * character with no toenail upkeep has no nail read, not no foot.
+ *
+ * A missing axis is still never DEFAULTED: an unset attribute omits its surfaces
+ * with `unavailable`, a value the table does not know omits the same surfaces
+ * with `invalid`, and neither substitutes a registry default or a neighbouring
+ * value. Every missing axis is reported, not just the first.
  */
 export function compileFootProfile(attributes: ResolvedAttributeSnapshot): DomainProfileResult<FootStructuralProfile> {
   const arch = readFootAxis(footArchAxis, attributes);
@@ -374,9 +386,10 @@ export function compileFootProfile(attributes: ResolvedAttributeSnapshot): Domai
   const archValue = arch.contribution;
   const nailValue = nail.contribution;
   const toeValue = toe.contribution;
-  if (archValue === undefined || nailValue === undefined || toeValue === undefined) {
-    return { evidence, diagnostics };
-  }
+
+  const omitted = new Set<FootSurfaceId>();
+  if (archValue === undefined) for (const id of footSurfaceSubtree(ARCH_AXIS_SURFACE)) omitted.add(id);
+  if (toeValue === undefined) omitted.add(TOE_AXIS_SURFACE);
 
   const termsBySurface = new Map<FootSurfaceId, FootSurfaceTerms>();
   const surfaces: FootSurfaceStructuralProfile[] = [];
@@ -385,6 +398,7 @@ export function compileFootProfile(attributes: ResolvedAttributeSnapshot): Domai
   // already resolved by the time a child asks for it.
   for (const node of footSurfaceTopology) {
     if (node.structureKind === "keratin") {
+      if (nailValue === undefined) continue;
       surfaces.push(
         nailProfile({
           surfaceId: node.id,
@@ -395,15 +409,14 @@ export function compileFootProfile(attributes: ResolvedAttributeSnapshot): Domai
       );
       continue;
     }
+    if (omitted.has(node.id)) continue;
     const inherited = node.parentId === undefined ? FOOT_SEEDS[node.id] : termsBySurface.get(node.parentId);
     if (inherited === undefined) {
       throw new Error(`Foot surface ${node.id} has neither a seed nor a resolved parent`);
     }
-    const shifted = applyToeDepth(
-      node.id,
-      applyArchGround(node.id, shiftTerms(inherited, FOOT_MODIFIERS[node.id]), archValue),
-      toeValue,
-    );
+    const base = shiftTerms(inherited, FOOT_MODIFIERS[node.id]);
+    const archApplied = archValue === undefined ? base : applyArchGround(node.id, base, archValue);
+    const shifted = toeValue === undefined ? archApplied : applyToeDepth(node.id, archApplied, toeValue);
     termsBySurface.set(node.id, shifted);
     surfaces.push(
       skinProfile({
