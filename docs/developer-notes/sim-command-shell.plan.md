@@ -1,6 +1,6 @@
 # Sim command-shell consolidation — one shell, one read, one fold
 
-Status: draft (unscheduled — derived from [codebase-efficiency.audit.md](codebase-efficiency.audit.md); no roadmap line yet)
+Status: draft (sequenced after the approved near-term latency tranche; promote by domain-sized batches, not as one epic)
 
 ## Why
 
@@ -80,6 +80,22 @@ is described.
 Implementation detail — the kit's shape, the generic fold's signature, the
 recorder filter lists, diagnostic codes — belongs in a future
 `sim-command-shell.spec.md`, written when the first slice is picked up.
+
+## Review rulings and scope adjustments — 2026-07-30
+
+- Pull **A11's one-window recorder read** into the approved cheap hot-path tranche;
+  it should not wait for the full consolidation program.
+- Split the 46-site / 16-file shell migration into small domain batches with a
+  green corpus checkpoint between them. It remains one plan, but not one enormous
+  mechanical commit.
+- The final inlined-shell migration is **not behavior-neutral by inspection**.
+  Adding recorders changes which code executes, and one observation recorder reads
+  a broader window before filtering. The engine corpus suites and projection-row
+  comparisons are the proof.
+- For **A13**, batch the safe fork-loop work only. A counter/generated-column
+  migration is deferred until measurements justify adding a schema change.
+- Keep the riskiest shell migration last, after the generic replay and helper
+  extractions have made the comparison surface smaller.
 
 ## Delivery slices
 
@@ -167,21 +183,12 @@ what the three newly-run recorders now touch.
 
 ## Open questions
 
-- **OQ1 — one refusal sentence, or per-domain phrasing?** The unavailable-branch
-  message appears 95 times identically. Slice 4 assumes one shared sentence,
-  templated on a noun, is right everywhere — confirm no domain needs its own
-  wording, and that the deliberately not-found-shaped refusal keeps that shape.
-- **OQ2 — what is the intended isolation level for durable reads?** Two of the
-  seven readers wrap in repeatable-read/read-only; five can see torn state. Slice
-  2 needs a ruling, recorded in the engine spec's operations cluster.
-- **OQ3 — does the pressure resolver need more than the origin zone id?** A14
-  loads the whole branch topology for one field. If the zone id is all it uses, an
-  indexed two-column lookup replaces the load; if not, the slice becomes a
-  narrower projection. Answer before editing.
-- **OQ4 — should crash injection be gated?** Hoisting the three copies into a
-  shell hook (A5) makes crash points reachable from all 46 sites. Unconditional,
-  or behind the existing test-mode seam?
-- **OQ5 — does A13 want a schema change?** Replacing the per-trigger max-order
-  scan with a per-branch counter or generated column would be this batch's only
-  migration, which Non-goals currently forbid. Either ship the fork-loop batching
-  alone and defer the counter, or lift that constraint deliberately.
+- **OQ1 — one refusal sentence, or per-domain phrasing?** Confirm whether any
+  command domain needs wording different from the shared not-found-shaped refusal.
+- **OQ2 — durable-read isolation.** Decide whether all seven readers require the
+  repeatable-read/read-only shape, and record the ruling in the engine operations
+  spec before slice 2.
+- **OQ3 — pressure lookup scope.** Confirm whether the resolver needs only the
+  origin zone id or a larger topology projection.
+- **OQ4 — crash injection.** Decide whether the shared shell hook is reachable
+  only through the existing test-mode seam.
