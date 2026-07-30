@@ -427,16 +427,20 @@ permission (legacy) as unowned in both lanes, so every one of them arrives as an
 | — | The pair key is **order-independent** | "The player's hand on her arch" and "her arch against his hand" are one touch. Keying by acting direction would let a role swap open a second contact on the same surfaces and both would then report pressure. Orientation is preserved on `source`/`target` and is never patched. |
 | — | `phase: "active"` vs `phase: "ended"` as separate types | "An ended contact cannot enter a current frame" becomes a compile error rather than a rule. Likewise a non-committable resolution has no `intent`, so it cannot be passed to `commitContactResolution` at all. |
 
-### Rulings implemented, still unresolved as product decisions
+### Rulings — confirmed by the owner 2026-07-30
 
 `contactActionRequiresAdultEligibility` and `contactActionRequiresPermission`
-both return true for `romantic` and `intimate` only. That is the conservative
-half of the audit's [owner decisions](romantic-contact-affordances.audit.md#owner-decisions-needed)
-1 and 3 — enough for slice 2 to run, and explicitly **not** a ruling. Scope
-membership is checked exactly: the core never widens a grant, because "the more
-intimate permission implies the less intimate one" is a product decision and not
-an obvious one. A lane that believes a broader grant subsumes a narrower one
-lists both scopes.
+both return true for `romantic` and `intimate` only. That was shipped as the
+conservative half of the audit's
+[owner decisions](romantic-contact-affordances.audit.md#owner-decisions-needed)
+1 and 3; **the owner has since confirmed it as the ruling** (recorded inline in
+the audit): positive adult eligibility for every participant on romantic and
+intimate kinds, permission-neutral incidental/affectionate touch, and
+romantic/fetish-framed foot play classified `romantic` — never relabeled to
+make a trial commit. Scope membership is checked exactly: the core never
+widens a grant, because "the more intimate permission implies the less
+intimate one" is a product decision and not an obvious one. A lane that
+believes a broader grant subsumes a narrower one lists both scopes.
 
 ### Not built, and where it went
 
@@ -445,5 +449,9 @@ commit, retake capture (`ContactPresentationCapture`), and the
 `RegionalContactFrame` are all absent — they belong to slices 2–4 and to the
 [effects companion](romantic-contact-affordances.spec.effects.md). Storage is
 absent by design: `state.ts` settles the versioned shape and the healing rule so
-they are not decided twice, but the plan's *"Where should committed contact
-live?"* is still open, and a later slice picks the home.
+they are not decided twice. The plan's *"Where should committed contact
+live?"* was **ruled by the owner 2026-07-30**: a durable event/action is the
+provenance, plus a versioned active-contact projection captured in the chat's
+retake snapshot — contact can never remain prompt-local. `state.ts`'s
+`parseContactLifecycleState` is already shaped for exactly that projection;
+the slice that wires the lane (slice 3) implements the ruling.

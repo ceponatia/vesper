@@ -70,6 +70,16 @@ type ContactEffectCommitResult =
 transaction. The next frame may observe the committed result by event id. A
 failed or rolled-back effect remains absent.
 
+**Ownership ruling (owner, 2026-07-30)** — resolving the plan's *"Who owns
+regional moisture and residue?"*: **body-surface state** owns skin moisture,
+products, and residue, keyed by subject, side, and surface; **garment state**
+owns wet footwear and other garment-carried substance, which reaches contact
+mechanics only through the material layers. This extends today's
+wetness-only, hair-only `BodySurfaceState` along the axes the foot condition
+read already assumes (subject × side × surface × substance kind); the contact
+layer proposes, these two owners commit, and neither may invent a source the
+other did not record.
+
 ## Material-transfer law
 
 - Source removal and target deposition commit in one transaction/event batch.

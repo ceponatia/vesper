@@ -25,13 +25,16 @@ citations. Where they differ, this document is newer.
 
 ## Owner decisions needed
 
-Three questions the plan assigns to slice 0 have **no ruling anywhere in the
-repo**. Searching all six `engine.spec*.md` files for `minor|adult|age.?verif|
-underage` returns zero hits; §39 (`engine.spec.operations.md:342`) holds 33
-rulings of which exactly one — ruling 16, interpersonal consent — touches this
-area, and it governs the successor ledger only. Each item below carries a
-RECOMMENDED default that the contracts implement so slice 1 can ship; none of
-them is settled, and none may be cited as settled.
+**All three RULED 2026-07-30.** Three questions the plan assigned to slice 0 had **no ruling anywhere in the
+repo** at audit time. Searching all six `engine.spec*.md` files for
+`minor|adult|age.?verif|underage` returned zero hits; §39
+(`engine.spec.operations.md:342`) held 33 rulings of which exactly one —
+ruling 16, interpersonal consent — touches this area, and it governs the
+successor ledger only. Each item below carried a RECOMMENDED default that the
+contracts implemented so slice 1 could ship. **The owner ruled on all three on
+2026-07-30, after the slice-2 QA report; each ruling is recorded inline
+below.** The evidence sections stay as written — they are why the defaults
+took the shape they did.
 
 ### 1. Does the foot trial require an adult-eligibility proof, and what is one?
 
@@ -63,6 +66,17 @@ character age reads `unresolved` for contact even though today's prompt fence
 reads it as adult. Inverting `life-stage.ts:150`'s `?? false` is a repo-wide
 behaviour change across 19 call sites and is deliberately **not** proposed here.
 
+**RULING (owner, 2026-07-30):** add an explicit
+`adult | minor | unresolved` **eligibility declaration**, independent of
+numeric/display age. Every participant — player persona included — must be
+**positively adult** for `romantic` or `intimate` contact; fantasy-scaled ages
+and the ageless player persona remain `unresolved` (and therefore fail closed)
+until they carry the declaration. The repo-wide `isMinorAge` fail-open fallback
+is **not** changed as part of this feature. The slice-1 default above is
+confirmed as the permanent gate; the declaration itself is new build work owned
+by the intimate-prerequisite track (plan slices 5–6 precondition), not by the
+foot slices.
+
 ### 2. What proves actor control in legacy chat?
 
 Legacy chat has **no typed actor-control gate**. `checkPuppetContradiction`
@@ -89,6 +103,14 @@ for an NPC actor when the movement came from the narrator model's own reply.
 **What the owner must decide:** whether `inputMode: "narrator"` — today's
 blanket authoring grant — extends to committing physical contact **on an NPC's
 body**, or whether physical contact is carved out of narrator mode.
+
+**RULING (owner, 2026-07-30):** player input may commit only
+**player-controlled** movement; NPC movement must originate from the
+NPC/narrator/simulation side. Narrator mode's general authorship grant does
+**not** bypass target agency or consent — committing contact on an NPC's body
+still requires the target-agency and permission gates, whatever the input
+mode. The slice-1/slice-3 default above is confirmed, with the narrator-mode
+carve-out resolved in the restrictive direction.
 
 ### 3. What permission rule applies to the first foot trial?
 
@@ -124,6 +146,15 @@ attention is classified `affectionate` (ships now) or `romantic` (blocked until
 a legacy permission owner exists). The plan's own rule — *"Ordinary or
 fetish-framed foot contact cannot bypass NPC agency"* — constrains actor control
 (decision 2), not the permission scope, and does not answer this.
+
+**RULING (owner, 2026-07-30):** ordinary incidental or affectionate social
+touch stays **permission-neutral**. Foot play framed as romantic or fetish
+attention is classified **`romantic`** and requires an explicit permission
+scope — it must **not** be relabeled `affectionate` solely to let the first
+live trial commit. Consequence accepted: the romantically-framed foot trial
+stays fail-closed in legacy chat until a legacy permission owner exists;
+building that owner is part of the slice-3 lane wiring, not a reason to widen
+the classification.
 
 ## Capability matrix
 

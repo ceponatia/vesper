@@ -484,7 +484,10 @@ lane yields zero observations, zero constraints, zero cues, and one `warn`.
 - **Narrator/guidance wiring, `CHAT_PHYSICAL_CONSTRAINTS`, the chat pipeline,
   and the lane adapter** — **slice 3**, together with domain registration.
 - **Storage, schema, migrations, successor adapters** — unchanged from slice 1's
-  position; the plan's *"Where should committed contact live?"* is still open.
+  position. The storage home was ruled 2026-07-30 (durable event provenance +
+  a versioned active-contact projection in the chat's retake snapshot — see the
+  [contact-core spec](romantic-contact-affordances.spec.contact-core.md#as-built--slice-1));
+  slice 3 implements it.
 - **A tactile perception channel in the shared core.** `filterAffordanceObservations`
   gates every observation on `sight`, so a tactile-only read would be dropped for
   an observer who cannot see. The foot domain gates its own tactile phenomenon on

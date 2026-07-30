@@ -272,13 +272,14 @@ milestone (no temperature read exists anywhere), and the foot topology needs
 three loci — arch, ball, and toenails — that the body registry does not have.
 
 The three product questions this slice was told to settle turned out to have no
-ruling anywhere in the repo. Each now has a RECOMMENDED default implemented in
-slice 1 and is flagged, unresolved, at the top of the audit: how adult
+ruling anywhere in the repo. Each got a RECOMMENDED default implemented in
+slice 1 and was flagged, unresolved, at the top of the audit: how adult
 eligibility is proven when the existing fence fails open and the player persona
 has no age at all; what proves actor control in a lane whose only mechanism is
 prompt text pointing the other way; and which action kinds need a permission
-owner when legacy chat has no consent grant of any kind. They are listed below
-under Open questions and need an owner ruling before the intimate slices.
+owner when legacy chat has no consent grant of any kind. **All three were ruled
+by the owner on 2026-07-30** — the rulings are recorded inline in the audit and
+summarized under Open questions below.
 
 ### Slice 1 — shared contact foundation · shipped 2026-07-30
 
@@ -409,59 +410,55 @@ regressing those measures.
 
 ## Open questions
 
-Three of these now need a **product owner's decision**, not more engineering.
-Slice 0 found no ruling for any of them anywhere in the repo, implemented a
-conservative default so the foot work can proceed, and wrote each one up with
-its evidence at the top of the
-[truth-source audit](romantic-contact-affordances.audit.md#owner-decisions-needed).
-They are marked **owner** below.
+**Five questions were ruled by the owner on 2026-07-30** (after the slice-2 QA
+report) and have left this list; each ruling is recorded in its detail doc:
 
-- **owner — How is adult eligibility proven for every participant?** The
-  existing fence is negative and fails open: an unknown, non-numeric, or
-  fantasy-scaled age reads as an adult, and the player persona carries no age at
-  all, so the prompt's own assertion that everyone involved is an adult is
-  unverified for one of the two people in every scene. Slice 1's default treats
-  all of those as unresolved and fails closed for romantic and intimate contact
-  ([audit](romantic-contact-affordances.audit.md#owner-decisions-needed);
-  [intimate spec](romantic-contact-affordances.spec.intimate.md)).
-- **owner — How do actor control and target permission apply to all
-  interpersonal contact?** Ordinary or fetish-framed foot contact cannot bypass
-  NPC agency, but legacy chat has no typed gate at all — its only mechanism is
-  prompt text, and that text protects the player from the narrator rather than
-  the character from the player. The specific decision is whether narrator mode,
-  today's blanket NPC-authoring grant, extends to committing physical contact on
-  a character's body ([audit](romantic-contact-affordances.audit.md#owner-decisions-needed)).
-- **owner — What permission rule applies to the first foot trial?** Legacy chat
-  has no consent grant of any kind. Slice 1's default lets ordinary social
-  contact proceed without a permission owner and fails romantic and intimate
-  contact closed; the decision is which side foot play framed as romantic
-  attention falls on ([audit](romantic-contact-affordances.audit.md#owner-decisions-needed)).
-- **Where should committed contact live?** It may be an event, captured scene
-  state, or both; it cannot exist only while prompting. Slice 1 settled the
-  versioned shape and its healing rule without choosing a home
-  ([shared-contact spec](romantic-contact-affordances.spec.contact-core.md)).
+- adult eligibility — an explicit `adult | minor | unresolved` declaration,
+  positive-adult required for romantic/intimate, fantasy and missing ages stay
+  unresolved, the repo-wide fail-open age fallback untouched
+  ([audit](romantic-contact-affordances.audit.md#owner-decisions-needed));
+- actor control — player input commits only player-controlled movement; NPC
+  movement originates NPC/narrator/simulation-side; narrator mode never
+  bypasses target agency or consent (same audit section);
+- foot-trial permission — incidental/affectionate touch stays
+  permission-neutral; romantic/fetish-framed foot play is `romantic` and needs
+  an explicit permission scope, never relabeled to make a trial commit (same
+  audit section);
+- contact persistence — durable event/action provenance plus a versioned
+  active-contact projection captured in the chat's retake snapshot; never
+  prompt-local
+  ([shared-contact spec](romantic-contact-affordances.spec.contact-core.md#as-built--slice-1));
+- regional condition ownership — body-surface state owns skin
+  moisture/products/residue by subject, side, and surface; garment state owns
+  wet footwear, feeding through material layers
+  ([effects companion](romantic-contact-affordances.spec.effects.md)).
+
+Still open:
+
 - **How detailed should foot regions be?** The surface map should distinguish
-  meaningful play without becoming an anatomy mesh
-  ([foot spec](romantic-contact-affordances.spec.foot.md)).
-- **Who owns regional moisture and residue?** Contact can distribute an existing
-  source or calculate transfer, but it cannot invent or privately persist one
-  ([foot spec](romantic-contact-affordances.spec.foot.md);
-  [intimate spec](romantic-contact-affordances.spec.intimate.md)).
+  meaningful play without becoming an anatomy mesh. Slice 2 shipped a
+  sixteen-surface working answer
+  ([foot spec](romantic-contact-affordances.spec.foot.md)); the question stays
+  open until the slice-3 trial shows the granularity earns its keep.
 - **Which intimate changes are ready to consume?** Erection, swelling,
   lubrication, and flushing require authoritative physiology
   ([intimate spec](romantic-contact-affordances.spec.intimate.md)).
 - **What is the minimum intimate consent scope?** The successor consent ledger
   is stronger than legacy chat's signals; the lanes are not equivalent
   ([intimate spec](romantic-contact-affordances.spec.intimate.md)).
-- **Which state owner commits body-surface marks and conserves transferred
-  material?** The operation must be atomic, repeat-safe, and branch-safe
-  ([shared-contact spec](romantic-contact-affordances.spec.contact-core.md)).
+- **Do marks ride the ruled body-surface store, and what are the transaction
+  mechanics?** Ownership of skin condition is ruled (above); whether pressure
+  marks join the same store, and the atomic/idempotent/branch-safe commit
+  design, are slice-4 work
+  ([effects companion](romantic-contact-affordances.spec.effects.md)).
 - **How should scent and taste be phrased?** The vocabulary must stay grounded
   in current truth without repetitive value judgments
   ([foot spec](romantic-contact-affordances.spec.foot.md);
   [intimate spec](romantic-contact-affordances.spec.intimate.md)).
-- **What must retakes capture?** Contact, effects, perception, selected cues,
-  and repetition history may all matter
+- **What must retakes capture beyond the contact projection?** The contact
+  projection itself is ruled into the retake snapshot (above); whether effects,
+  perception, selected cues, and repetition history need their own capture is
+  settled per slice as each ships
   ([shared-contact spec](romantic-contact-affordances.spec.contact-core.md)).
 
 ## Technical companions

@@ -14,9 +14,15 @@ actor-control, consent, exposure, and point-of-view checks.
 
 The existing `isMinorAge` fence is mandatory but not sufficient as a positive
 adult proof: it rejects known numeric minors while unknown, nonnumeric,
-fantasy-scaled, and player ages need an explicit product eligibility ruling.
-This domain remains unshippable until the selected lane can provide that ruling
-for every participant.
+fantasy-scaled, and player ages need an explicit eligibility answer. **The
+owner ruled 2026-07-30** (recorded in the
+[audit](romantic-contact-affordances.audit.md#owner-decisions-needed)): an
+explicit `adult | minor | unresolved` declaration, independent of
+numeric/display age, with every participant positively `adult`; fantasy and
+missing ages — the player persona included — stay `unresolved` and fail
+closed, and the repo-wide `isMinorAge` fallback is not changed for this
+feature. This domain remains unshippable until the selected lane carries that
+declaration for every participant.
 
 The domain calculates physical and sensory observations. It never decides or
 infers desire, consent, attraction, pleasure, orgasm, withdrawal, resistance,
