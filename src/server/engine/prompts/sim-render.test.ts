@@ -236,3 +236,26 @@ describe("handle map determinism", () => {
     expect(buildSimRenderPrompt(cut, BASE_CONTEXT).handleMap).toEqual(buildSimHandleMap(cut));
   });
 });
+
+describe("the adult-eligibility declaration never reaches the successor narrator", () => {
+  it("renders byte-identically whatever the declaration says (adult-eligibility.plan.md)", () => {
+    const withDeclaration = (declaration: string) =>
+      buildSimRenderPrompt(richCut(), {
+        ...BASE_CONTEXT,
+        primary: {
+          name: "Nora",
+          profile: characterProfileSchema.parse({
+            ...profileOfAge("29"),
+            adultEligibilityDeclaration: declaration,
+          }),
+        },
+      });
+    const undeclared = withDeclaration("unresolved");
+    for (const declaration of ["adult", "minor"]) {
+      const declared = withDeclaration(declaration);
+      expect(declared.prompt).toBe(undeclared.prompt);
+      expect(declared.system).toBe(undeclared.system);
+    }
+    expect(undeclared.prompt).not.toMatch(/eligib/iu);
+  });
+});

@@ -2,8 +2,13 @@
 
 import { useState } from "react";
 import {
+  ADULT_ELIGIBILITY_ANCHOR_ID,
+  ADULT_ELIGIBILITY_DECLARATION_LABELS,
+  ADULT_ELIGIBILITY_DECLARATION_OPTIONS,
+  adultEligibilityConflict,
   heritagesForSpecies,
   isPersonalityAttributeId,
+  readAdultEligibilityDeclaration,
   speciesById,
   speciesCatalog,
   type Diagnostic,
@@ -250,6 +255,34 @@ export function CharacterEditor({
               <Input id={id} value={draft.profile.age} onChange={(e) => patchProfile({ age: e.target.value })} />
             )}
           </Field>
+          {/* Stable anchor: romantic-contact slice 3 will deep-link a blocked action here. */}
+          <div id={ADULT_ELIGIBILITY_ANCHOR_ID} className="scroll-mt-24 sm:col-span-2">
+            <Field
+              label="Adult eligibility"
+              hint="A statement about this character as a participant in the fiction — separate from the age above, and never inferred from it. Romantic and intimate framing stays unavailable until everyone in a scene is declared an adult. Leaving it unstated changes nothing else."
+              error={
+                adultEligibilityConflict(draft.profile)
+                  ? "This character's age reads as a minor, so they can't be declared an adult."
+                  : undefined
+              }
+            >
+              {(id) => (
+                <Select
+                  id={id}
+                  value={draft.profile.adultEligibilityDeclaration}
+                  onChange={(e) =>
+                    patchProfile({ adultEligibilityDeclaration: readAdultEligibilityDeclaration(e.target.value) })
+                  }
+                >
+                  {ADULT_ELIGIBILITY_DECLARATION_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {ADULT_ELIGIBILITY_DECLARATION_LABELS[option]}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          </div>
           <Field label="Bio" className="sm:col-span-2">
             {(id) => (
               <Textarea id={id} rows={5} value={draft.profile.bio} onChange={(e) => patchProfile({ bio: e.target.value })} />

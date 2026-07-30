@@ -5,6 +5,18 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Adult eligibility — the explicit participant declaration** —
+  [finished/adult-eligibility.plan.md](finished/adult-eligibility.plan.md) ·
+  [spec](finished/adult-eligibility.spec.md) — 2026-07-30 — the
+  `adult | minor | unresolved` declaration in both profile schemas (shared
+  zod schema, `.catch`/`.default` = the whole no-migration story), explicit
+  copy through `personaToCharacterProfile`, the seven-clause resolver law
+  (age alone is never positive proof; contradictions fail closed with a
+  diagnostic; `isMinorAge` untouched), the contact-adapter seam for
+  romantic-contact slice 3, controls in both editors with a stable deep-link
+  anchor, and byte-identical-prompt proof that the declaration never reaches
+  narrator text. Cross-cutting prerequisite for the romantic foot trial.
+
 - **Romantic contact affordances, slices 0–2** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
   [audit](romantic-contact-affordances.audit.md) ·

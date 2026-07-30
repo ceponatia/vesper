@@ -155,3 +155,15 @@ describe("mergeRedraftScope — disposition and outfit", () => {
     expect(merged.profile.bio).toBe("Authored.");
   });
 });
+
+describe("mergeRedraftScope — the adult-eligibility declaration is nobody's scope", () => {
+  it("preserves the base declaration through every scope (adult-eligibility.plan.md)", () => {
+    const base = draftOf({}, { adultEligibilityDeclaration: "adult" });
+    // An incoming draft that somehow carried a value must never win: the declaration
+    // is authored policy, and a re-draft is a formatting pass over generated prose.
+    const incoming = draftOf({}, { adultEligibilityDeclaration: "unresolved" });
+    for (const scope of ["profile", "attributes", "personality", "disposition", "outfit"] as const) {
+      expect(mergeRedraftScope(base, incoming, scope).profile.adultEligibilityDeclaration).toBe("adult");
+    }
+  });
+});

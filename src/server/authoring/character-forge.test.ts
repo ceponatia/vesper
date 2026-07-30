@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { attributeRegistry, DiagnosticCollector, realizeBody, speciesById, traitRegistry, type ItemDefinition } from "@/contracts";
 import { characterDraftSchema } from "./drafts";
 import {
+  applyCharacterSectionPatch,
   buildAttributeSectionSchema,
   demoCharacterAttributeSection,
   demoCharacterOutfitSection,
@@ -23,7 +24,7 @@ import {
   type OutfitItem,
 } from "./character-forge";
 import type { LibraryLookup } from "./library";
-import { noCandidates, noLibrary } from "@/server/test-support";
+import { draftWith, noCandidates, noLibrary } from "@/server/test-support";
 
 // A species' default body features, sourced from the catalog (the single source of
 // truth) rather than re-hardcoded here — so a catalog change doesn't break these
@@ -799,7 +800,29 @@ describe("partitionOutfitReuse", () => {
   });
 });
 
+describe("adult-eligibility declaration is authored, never forged (adult-eligibility.plan.md)", () => {
+  it("survives a section patch untouched — a patch replaces only the keys it carries", () => {
+    const draft = draftWith((d) => {
+      d.profile.adultEligibilityDeclaration = "adult";
+      d.profile.bio = "Old bio.";
+    });
+    const patched = applyCharacterSectionPatch(draft, { profile: { bio: "Rewritten bio." } });
+    expect(patched.profile.bio).toBe("Rewritten bio.");
+    expect(patched.profile.adultEligibilityDeclaration).toBe("adult");
+  });
+});
+
 describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
+  it("never generates the declaration — the model has no channel for it", async () => {
+    const context = { prompt: "a weary harbor-master in her forties", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates };
+    const draft = await forgeCharacter(context);
+    expect(draft.profile.adultEligibilityDeclaration).toBe("unresolved");
+    for (const section of ["profile", "attributes", "outfit"] as const) {
+      const patch = await forgeCharacterSection(section, context);
+      expect(patch.profile ?? {}).not.toHaveProperty("adultEligibilityDeclaration");
+    }
+  });
+
   it("is deterministic: same input, identical draft", async () => {
     const input = { prompt: "a weary harbor-master in her forties", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates };
     const a = await forgeCharacter(input);
