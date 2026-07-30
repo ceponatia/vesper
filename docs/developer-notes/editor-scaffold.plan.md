@@ -1,6 +1,6 @@
 # Editor scaffold and shared UI primitives
 
-Status: draft (unscheduled — derived from [codebase-efficiency.audit.md](codebase-efficiency.audit.md); no roadmap line yet)
+Status: draft (ConfirmDialog is approved early; the full scaffold requires a second go/no-go after the defect fix)
 
 ## Why
 
@@ -89,6 +89,18 @@ decision is deliberate rather than forgotten.
   behind these editors (**D2 · D3 · D4**) are a separate batch, as is typing the
   client request path (**D11**).
 
+## Review rulings and scope adjustments — 2026-07-30
+
+- Ship **`ConfirmDialog` first** as a focused correctness fix. Its busy guard
+  closes the dismiss-mid-delete defect independently of the larger editor rewrite.
+- Re-measure the five pages after that fix before committing to the full
+  `useEntityEditor` / shell extraction. Repeated structure is real, but the
+  abstraction earns its size only if the pages remain simpler to read and change.
+- D7's generic async wrapper is optional. Drop it if render-prop indirection makes
+  page states less direct.
+- From E-U3, approve only the segmented-control keyboard behavior now. Other shared
+  primitives wait for demonstrated behavioral drift rather than visual similarity.
+
 ## Delivery slices
 
 1. **The confirm dialog (D5).** Adopt at the five editor pages first — that is where
@@ -151,14 +163,9 @@ concurrently with slice 4.
 
 ## Open questions
 
-- **Do we want the E-U3 primitives?** Owner's call. The segmented control's keyboard
-  behaviour is the one piece with an argument beyond tidiness; the rest is consistency.
-  Answering "no" costs the batch nothing.
-- **Adopt or delete `useDebouncedValue`?** Adopting is three small edits and one fewer
-  hand-rolled timer per site; deleting is one edit. Recommend adopting, since the
-  hand-rolled copies are what the hook was written for — but deletion is legitimate and
-  should be recorded as a ruling rather than left ambiguous.
-- **Should the duplication gate be tightened for this shape?** This batch is direct
-  evidence that interleaved near-copies pass the gate cleanly (**F1**). Whether to lower
-  the clone-detection floor for specific folders belongs to the tooling batch, which
-  should cite this case.
+- After `ConfirmDialog` lands, does the remaining five-page duplication still
+  justify the full scaffold, or should only smaller helpers be extracted?
+- Adopt or delete `useDebouncedValue`? Either is acceptable, but the decision
+  must also correct `docs/ui.md`.
+- What targeted clone-detector setting catches interleaved editor scaffolds
+  without turning ordinary form/test similarity into noise?

@@ -56,6 +56,21 @@ below). Full plan [engine.plan.md](engine.plan.md) · contract
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
 umbrella further down.)
 
+- **Codebase efficiency — correctness and measured-response tranche** —
+  [audit](codebase-efficiency.audit.md) ·
+  [resilience](resilience-closures.plan.md) ·
+  [command hot path](sim-command-shell.plan.md) ·
+  [contract lookups](contracts-hygiene.plan.md) ·
+  [chat latency](chat-reply-latency.plan.md)
+  (**next after the active narrator-physical-guidance files are quiet; selectively
+  queued, not an eleven-plan cleanup epic**). Ordered: (1) resilience closures,
+  including production garment-graph validation; (2) the cheap hot-path set —
+  A11's single recorder-window read and E13/E14's immutable registry indexes
+  (F2's missing `lint:authz` instruction already landed in `66ecd3b`); then
+  (3) chat pre-reply latency after a repeated timing baseline. Each slice must
+  preserve narrator output and committed state, except the explicitly approved
+  diagnostic/degraded-validation behavior.
+
 - **Body-attribute visual affordances — remainder: image decision,
   successor adapter, companion rulings** —
   [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
@@ -191,15 +206,26 @@ umbrella further down.)
   sinks so Neon holds only ciphertext (key in Fly secrets); the load-bearing
   open ruling is D1 — encrypt fact/episode embeddings and move scoped
   similarity ranking app-side, since plaintext embeddings are invertible.
-- **Codebase-review follow-on batches (2 & 4, session-side remainder)** — findings
-  [codebase-review.md](finished/codebase-review.md) §C–E; no plans yet (each needs its
-  `<topic>.plan.md` when it becomes active): **prompt intelligence** (§C — session-lane
-  cast voices, content-framing/no-refusal port, intimate + dialogue craft rules for the
-  session lane, forge upgrades), **dedup & cleanup sweep** (§E — non-chat items).
-  **Batch 3 (§D chat-lane consolidation) and the chat-side items of §C/§E are absorbed
-  into [finished/character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md)** (top of
-  this list). Sequenced after batch 1 per the 2026-07-02 agreement; where the remainder
-  slots versus the feature work above is the author's call.
+- **Codebase efficiency — later consolidation sequence** —
+  [audit disposition](codebase-efficiency.audit.md#review-disposition-and-owner-rulings--2026-07-30)
+  · [command shell](sim-command-shell.plan.md) ·
+  [fork registry](sim-fork-registry.plan.md) ·
+  [image pipeline](image-pipeline-consolidation.plan.md) ·
+  [client safety](client-type-safety.plan.md) ·
+  [library routes](library-route-registry.plan.md) ·
+  [editor scaffold](editor-scaffold.plan.md) ·
+  [contracts](contracts-hygiene.plan.md) ·
+  [dead exports](dead-export-sweep.plan.md) ·
+  [tooling](tooling-gates.plan.md)
+  (draft; dependency order only, **not all promoted to next**). After the approved
+  near-term tranche and the feature work above: command-shell consolidation →
+  fork registry → image pipeline → client D10/D11/D12 → library registry/routes →
+  `ConfirmDialog`, followed by a go/no-go on the full editor scaffold → broad
+  contracts/dead-export/eval-tooling hygiene. Settled exclusions: no expanded
+  snapshots without measurements, no suggested-item write batching, no D14 client
+  cache, and no removal of `travel_minutes`. This replaces the stale 2026-07-02
+  session-side follow-on line; surviving forge work is already owned by
+  [character-schema.plan.md](character-schema.plan.md).
 
 ## Someday / parking lot
 

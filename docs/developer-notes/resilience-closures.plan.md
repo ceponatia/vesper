@@ -1,6 +1,6 @@
 # Resilience closures — time-box every model call, one contract per boundary
 
-Status: draft (unscheduled — derived from [codebase-efficiency.audit.md](codebase-efficiency.audit.md); no roadmap line yet)
+Status: next (queued after the active narrator-physical-guidance files are quiet; review rulings recorded 2026-07-30)
 
 ## Why
 
@@ -78,6 +78,22 @@ file-and-line detail.
 - **Not** the other audit batches. Later batches assume this harness exists; none of
   their dedup work is in scope here.
 
+## Review rulings and scope adjustments — 2026-07-30
+
+- **Wire the garment-blueprint validator; do not delete it.** First census existing
+  stored blueprints. Invalid historical data must degrade with diagnostics rather
+  than crash a read, while new writes must not admit cyclic, orphaned, or otherwise
+  graph-invalid garments. This is foundational correctness for the clothing-state
+  and affordance work, not optional cleanup.
+- **Keep the shared model-leg harness narrow.** It owns the targeted non-streaming,
+  structured or background LLM legs. Streaming narration and image-provider calls
+  keep their own lifecycle and are not forced through an extractor-shaped wrapper.
+- **Give non-chat telemetry a run identity.** Forge, classification, and other
+  background work report against an app-wide run context with optional chat linkage;
+  they are not invented as conversation events merely to fit the current inspector.
+- The meta contract covers both legacy-chat metadata and the successor lane's
+  `simTurn` key. The existing `runExtractorLeg` is promoted rather than replaced.
+
 ## Delivery slices
 
 Ordered; each lands on its own.
@@ -148,19 +164,12 @@ other. Slice 5 is independent and blocked only on the ruling.
 
 ## Open questions
 
-- **OQ1 (owner ruling).** Wire the garment-blueprint validator into the ingest
-  path, or delete it and its test? Wiring is the resilience-correct answer and
-  changes what a corrupt row degrades to; deleting removes 303 lines that
-  currently protect nothing. (E3)
-- **OQ2.** Where should a non-chat leg's failure surface, given the existing panel
-  is per-conversation? Options: an app-wide section in the same panel, or accept
-  tally-only for now.
-- **OQ3.** Which model should chat summary use now that its accidental use of the
-  narrator model is being fixed — the standard cheap agent model, or its own?
-- **OQ4.** Should the harness be *enforced* (a lint rule or census test that fails
-  when a new model call bypasses it) or left as convention? C12 exists because
-  convention was not enough.
+- **OQ1.** Which model should chat summary use once its accidental use of the
+  narrator model is removed: the standard cheap agent model, or a dedicated
+  summary-model setting?
+- **OQ2.** Should the targeted harness census be enforced by a test/lint gate, or
+  remain a convention? The review recommends an automated census because the
+  original gap survived convention alone.
 
-Deep implementation detail — harness signature, per-site budgets, the metadata
-schema shape, diagnostic codes, and the census mechanism — belongs in
-`resilience-closures.spec.md`, written at build time.
+Harness signatures, budgets, diagnostic codes, and the census mechanism belong
+in `resilience-closures.spec.md`, written when the build starts.
