@@ -1,6 +1,6 @@
 # Image pipeline consolidation — one path from prompt to saved asset
 
-Status: draft (unscheduled — derived from [codebase-efficiency.audit.md](codebase-efficiency.audit.md); no roadmap line yet)
+Status: draft (sequenced after fork-registry; golden determinism baselines precede consolidation)
 
 ## Why
 
@@ -64,6 +64,19 @@ is written against the shared shell instead of copied from a neighbour.
   the eval-harness rewrite** (**C11**). The shared shell is the obvious future home for the
   first, and the scripts may adopt the shared Venice unwrap, but both stay out of this plan.
 
+## Review rulings and scope adjustments — 2026-07-30
+
+- Preserve each lane's return type and caller contract. The shared pipeline owns
+  common execution, not a lowest-common-denominator response.
+- Normalize missing failure diagnostics to the entity lane's observable behavior.
+  That is a deliberate resilience improvement, not behavior-neutral cleanup, and
+  needs explicit tests and release notes in the shipped slice.
+- Pin golden prompt/reference hashes before touching ordering, unwrapping, or
+  reference preparation. Determinism is an input contract, not a snapshot to
+  update after the refactor.
+- Share only the actual skeleton. Lane-specific event/placeholder behavior remains
+  separate until its user-visible consequences have a ruling.
+
 ## Delivery slices
 
 Invisible-risk item first, the broad one last. Each slice is independently shippable.
@@ -115,12 +128,8 @@ Invisible-risk item first, the broad one last. Each slice is independently shipp
 
 ## Open questions
 
-- **When two lanes disagree today, does the shell normalize or preserve?** Concretely: every
-  failure gets a diagnostic (entity's behaviour) versus each lane keeping what it has now.
-  Recommendation: normalize the diagnostics — a silent image failure is a debugging cost the
-  admin surfaces already pay — and preserve each lane's return shape, which callers depend on.
-- **Do the eval scripts adopt the shared Venice unwrap now, or wait for the harness work
-  (C11)?** Recommendation: adopt it where a script already imports Venice, and leave the rest.
-- **Does the event log stay per-lane or become one shared event?** This has a visible
-  consequence (admin debugging, the "Failed" placeholder in chat), so it should be decided
-  rather than inherited from whichever call site is migrated first.
+- Should eval scripts that already import Venice adopt the shared unwrap in this
+  plan, or migrate only when the eval-harness work lands?
+- Does the event log stay per-lane, or become one shared event with explicit lane
+  metadata? Decide from the inspector and failed-placeholder behavior, not from
+  whichever lane migrates first.
