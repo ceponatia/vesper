@@ -1,93 +1,285 @@
 name: CI
 
-# Runs the project's canonical gates on every PR and push to the long-lived
-# environment branches. The gates run as SEPARATE sequential steps, never the
-# chained `pnpm verify` — the chain holds every process's memory at once and
-# OOM-killed the runner from 2026-07-20 (type-aware ESLint alone peaks ~3 GB;
-# the same reason CLAUDE.md bans `pnpm verify` locally). One process per step
-# lets each fully exit and release its heap before the next starts. The job
-# name below ("verify") is the status-check context that `prod` branch
-# protection requires before a promotion PR can merge.
+# Pull requests get a required aggregate `verify` result. Documentation-only
+# changes stop after classification; code gates run in parallel; database and
+# engine-specific work only runs when affected. Push CI remains on long-lived
+# branches that may receive direct pushes. `main` is protected by PR `verify`,
+# so the identical suite is not repeated after merge.
 on:
   pull_request:
     branches: [main, prod, engine]
   push:
-    branches: [main, prod, engine]
+    branches: [prod, engine]
+  workflow_dispatch:
 
-# A newer push to the same ref cancels the in-flight run — saves CI minutes.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: verify
+  changes:
+    name: classify changes
     runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      code: ${{ steps.classify.outputs.code }}
+      integration: ${{ steps.classify.outputs.integration }}
+      engine: ${{ steps.classify.outputs.engine }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Classify changed paths
+        id: classify
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+          # Manual runs are deliberate full verification runs.
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            {
+              echo "docs_only=false"
+              echo "code=true"
+              echo "integration=true"
+              echo "engine=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          zero_sha="0000000000000000000000000000000000000000"
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" == "$zero_sha" ]]; then
+            git diff-tree --no-commit-id --name-only -r "$HEAD_SHA" > changed-files.txt
+          else
+            git diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed-files.txt
+          fi
+
+          echo "Changed files:"
+          sed 's/^/  /' changed-files.txt
+
+          docs_only=true
+          code=false
+          integration=false
+          engine=false
+
+          # A promotion to prod is intentionally a full release-candidate run.
+          if [[ "$EVENT_NAME" == "pull_request" && "$BASE_REF" == "prod" ]]; then
+            docs_only=false
+            code=true
+            integration=true
+            engine=true
+          fi
+
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+
+            case "$path" in
+              docs/*|*.md|.github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE*)
+                ;;
+              *)
+                docs_only=false
+                code=true
+                ;;
+            esac
+
+            case "$path" in
+              src/server/*|src/app/api/*|src/contracts/*|src/lib/simulation/*|drizzle/*|scripts/db-*.ts|docker/*|docker-compose*.yml|Dockerfile)
+                integration=true
+                ;;
+              .github/workflows/*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|eslint.config.*|vitest.config.*|next.config.*)
+                integration=true
+                engine=true
+                ;;
+            esac
+
+            case "$path" in
+              src/server/engine/*|src/lib/simulation/*|src/contracts/simulation/*|scripts/eval/engine-gate1/*)
+                engine=true
+                ;;
+            esac
+          done < changed-files.txt
+
+          {
+            echo "docs_only=$docs_only"
+            echo "code=$code"
+            echo "integration=$integration"
+            echo "engine=$engine"
+          } >> "$GITHUB_OUTPUT"
+
+  lint:
+    name: lint
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
         env:
-          # Skip the husky git-hook install in CI (no commits happen here).
           HUSKY: 0
-
-      - name: Lint (type-aware, max-warnings 0)
+      - name: Type-aware ESLint
         run: pnpm lint
         env:
-          # Headroom for the type-aware pass — Node's default heap cap is
-          # what actually OOMed, well under the runner's ~7 GB.
           NODE_OPTIONS: --max-old-space-size=6144
 
-      - name: Circular-import check (madge)
+  static:
+    name: static checks
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+      - name: Circular-import check
         run: pnpm lint:cycles
-
+      - name: Route-authorization guard
+        run: pnpm lint:authz
       - name: Typecheck
         run: pnpm typecheck
         env:
           NODE_OPTIONS: --max-old-space-size=6144
+      - name: Copy-paste threshold
+        run: pnpm jscpd
 
+  unit:
+    name: unit tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
       - name: Pure test suite
         run: pnpm test
 
-      - name: Copy-paste threshold (jscpd)
-        run: pnpm jscpd
-
-      - name: Gate 1 deterministic-path benchmark
-        run: pnpm eval:engine-gate1
-
-      - name: Start Postgres 17 + pgvector for successor engine
+  integration:
+    name: engine integration
+    needs: changes
+    if: needs.changes.outputs.integration == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+      - name: Start Postgres 17 and pgvector
         run: docker compose up -d --wait
-
       - name: Apply migrations from zero
         run: pnpm db:migrate
-
-      # One glob-driven step replaces the old per-E-package enumeration
-      # (simplified 2026-07-21, owner ruling): vitest discovers every suite
-      # under the engine + rollout surface, so a deleted or renamed file can
-      # never leave a step pointing at nothing (the E2.2/E2.3 ghost), each
-      # file runs exactly once (the per-package scripts re-ran shared suites
-      # many times), and one vitest cold-start replaces ~25. The per-package
-      # test:engine-e* / test:rollout-r* scripts remain in package.json as
-      # local conveniences only.
-      - name: Engine + rollout integration suite
+      - name: Engine and rollout integration suite
         run: pnpm test:engine
         env:
-          # Low-level engine suites historically seed bare branches and submit
-          # the shared synthetic player fixture. Authorization tests do not set
-          # this flag and continue proving that ordinary unanchored players fail.
           VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER: 1
-
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v
+
+  engine-benchmark:
+    name: engine benchmark
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+      - name: Gate 1 deterministic-path benchmark
+        run: pnpm eval:engine-gate1
+
+  production-build:
+    name: production build
+    needs: changes
+    if: github.event_name == 'pull_request' && github.base_ref == 'prod' && needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+      - name: Next.js production build
+        run: pnpm build
+
+  verify:
+    name: verify
+    if: always()
+    needs:
+      - changes
+      - lint
+      - static
+      - unit
+      - integration
+      - engine-benchmark
+      - production-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every applicable gate
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          STATIC_RESULT: ${{ needs.static.result }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+          ENGINE_RESULT: ${{ needs.engine-benchmark.result }}
+          BUILD_RESULT: ${{ needs.production-build.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+        run: |
+          set -euo pipefail
+          for result in \
+            "$CHANGES_RESULT" \
+            "$LINT_RESULT" \
+            "$STATIC_RESULT" \
+            "$UNIT_RESULT" \
+            "$INTEGRATION_RESULT" \
+            "$ENGINE_RESULT" \
+            "$BUILD_RESULT"; do
+            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              echo "An applicable CI job ended with: $result"
+              exit 1
+            fi
+          done
+
+          if [[ "$DOCS_ONLY" == "true" ]]; then
+            echo "Documentation-only change: code gates intentionally skipped."
+          else
+            echo "All applicable CI gates passed."
+          fi
