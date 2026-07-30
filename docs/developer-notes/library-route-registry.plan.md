@@ -1,6 +1,6 @@
 # Library-kind registry + route factories — adding a kind should be a data edit
 
-Status: draft (unscheduled — derived from [codebase-efficiency.audit.md](codebase-efficiency.audit.md); no roadmap line yet)
+Status: draft (sequenced after the measured client tranche; sequential suggestion writes are a settled invariant)
 
 ## Why
 
@@ -72,6 +72,20 @@ with headroom for a kind that gains them later, is part of the work.
 - **Adding a new library kind.** The point is to make it cheap, not to do it.
 - **Any change to request/response shapes or the 404-never-403 non-disclosure
   behavior.** No database migration is expected.
+
+## Review rulings and scope adjustments — 2026-07-30
+
+- **Preserve `materializeSuggestedItems` write order.** A later suggestion may
+  reuse a row inserted for an earlier one. Parallelize or batch the independent
+  lookup phase only; do not turn `include batching` into changed save semantics.
+- Split the registry in two: contract-owned kind/capability vocabulary, and
+  server-owned table bindings and handlers. Contracts remain free of database
+  imports.
+- A registry makes server dispatch and route coverage easier; it does **not** make
+  a complete new library kind a one-file feature. Forms, schemas, persistence,
+  authorization, and product behavior still need deliberate implementation.
+- Keep the owner-lookup tripwire and exact-key route tests as the acceptance spine,
+  not just line-count reduction.
 
 ## Delivery slices
 
@@ -149,21 +163,9 @@ registry test, not a tool reading.
 
 ## Open questions
 
-- **OQ1 — Do personas join the shareable/cloneable set?** A product call: yes
-  means the registry carries them uniformly from the start; no makes "not
-  shareable" a declared capability with a stated reason.
-- **OQ2 — Where does the registry live?** The kind vocabulary is contracts-shaped,
-  but the per-kind table handles are server-only and contracts must stay free of
-  database imports. Likely a split — needs a ruling before slice 1.
-- **OQ3 — How much per-kind prose survives the factories?** Each route file
-  documents its kind's behavior and history (including the widened-scope fix);
-  decide where that lives before collapsing the files.
-- **OQ4 — Can suggested-item materialization batch without changing meaning?** It
-  runs one suggestion at a time specifically so a later suggestion can reuse a row
-  created for an earlier one — the same question the audit flags for the archivist
-  fact path (**C14**). If unclear, narrow C17 to parallelizing the *read* half and
-  leave insert order intact.
-
-Implementation detail — registry fields, factory signatures, helper names,
-tripwire registration diffs and per-slice test lists — belongs in
-`library-route-registry.spec.md`, written when this plan is scheduled.
+- **OQ1 — do personas join the shareable/cloneable set?** If not, the capability
+  registry must state that exclusion explicitly.
+- **OQ2 — exact registry boundary.** Settle the contract capability shape and the
+  server binding shape before slice 1.
+- **OQ3 — per-kind prose.** Decide where route-specific behavior/history remains
+  documented when the route files become thin re-exports.
