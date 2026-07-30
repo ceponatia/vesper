@@ -170,6 +170,23 @@ seam is the `expand`/coverage question on the `coverageRelevant: false` `tail`
 location; solving it means excluding `featureGroup` locations from coverage
 `expand`, or per-garment "accommodates feature X" flags.
 
+## Garment archetypes and reusable components
+
+_Owner direction 2026-07-30. Draft plan:
+[deferred/clothing-archetypes-components.plan.md](deferred/clothing-archetypes-components.plan.md);
+technical companion:
+[deferred/clothing-archetypes-components.spec.md](deferred/clothing-archetypes-components.spec.md)._
+Extend the shipped clothing-state graph with a future blueprint-v2 authoring
+compiler: keep the existing broad categories and content-hash snapshot identity,
+then add recognizable archetypes (tee, polo, sweater, pullover hoodie, zip
+hoodie), reusable component fragments, explicit pockets/openings/hoods/
+drawstrings/decorations, conservative authored fit, and localized decoration
+condition. Capability remains distinct from current body-garment relations: a
+pocket says a hand *can* enter, while the future shared scene/body-relations
+owner must establish that a hand is actually inside before garment affordances
+may derive sag, tension, or a narration cue. This is a parked follow-up, not an
+expansion of the clothing plan's already-defined remaining slices.
+
 ## Comms expansions
 
 _Raised 2026-06-13, from the phase-3 presence open questions._ Phase-3 comms
