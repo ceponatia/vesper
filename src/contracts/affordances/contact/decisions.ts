@@ -1,0 +1,322 @@
+import { z } from "zod";
+import { affordanceSubjectIdSchema, type AffordanceEvidence, type AffordanceSubjectId } from "../core";
+
+/**
+ * The three permissions a contact needs before it can be committed, plus the
+ * implicit-adjustment policy (romantic-contact-affordances.spec.contact-core.md
+ * §"Action context" and §"Implicit adjustment policy").
+ *
+ * Every one of them is a RESULT the lane hands in, never something this layer
+ * calculates. The plan's rule is blunt about why: *"This system describes
+ * physical consequences. It does not decide desire, consent, attraction,
+ * pleasure, climax, withdrawal, or any other character choice."* A permission
+ * derived from arousal, affinity, relationship stage, narrative framing, or the
+ * mere feasibility of the movement is not a permission, and the shape of these
+ * types is what stops one from being manufactured here.
+ *
+ * All three carry `unresolved` as a first-class value, and all three treat it as
+ * a refusal. "We could not ask" and "yes" must never be the same answer.
+ */
+
+// ---------------------------------------------------------------------------
+// Action kind → required permission scope
+// ---------------------------------------------------------------------------
+
+/**
+ * How intimate the attempted contact is. A registry, not a schema: adding a kind
+ * is a data edit in this file plus a row in the two tables below.
+ */
+export const contactActionKinds = ["incidental", "casual", "affectionate", "romantic", "intimate"] as const;
+export const contactActionKindSchema = z.enum(contactActionKinds);
+export type ContactActionKind = z.infer<typeof contactActionKindSchema>;
+
+/** The permission scope an action kind needs a grant for. */
+export const contactPolicyScopes = [
+  "incidental_contact",
+  "casual_touch",
+  "affectionate_touch",
+  "romantic_touch",
+  "intimate_touch",
+] as const;
+export const contactPolicyScopeSchema = z.enum(contactPolicyScopes);
+export type ContactPolicyScope = z.infer<typeof contactPolicyScopeSchema>;
+
+export const CONTACT_ACTION_SCOPE: Readonly<Record<ContactActionKind, ContactPolicyScope>> = {
+  incidental: "incidental_contact",
+  casual: "casual_touch",
+  affectionate: "affectionate_touch",
+  romantic: "romantic_touch",
+  intimate: "intimate_touch",
+};
+
+/**
+ * Which kinds need an explicit adult-eligibility pass for every participant.
+ *
+ * The audit's owner decision 1 is unresolved, so this is the conservative half
+ * of it: the two kinds the plan names ("Adult intimate contact must pass the
+ * authoritative consent and policy check") are gated, and the ordinary social
+ * kinds are not — because gating them would fail every fixture without making
+ * any character safer.
+ */
+export function contactActionRequiresAdultEligibility(kind: ContactActionKind): boolean {
+  switch (kind) {
+    case "romantic":
+    case "intimate":
+      return true;
+    case "incidental":
+    case "casual":
+    case "affectionate":
+      return false;
+  }
+}
+
+/**
+ * Which kinds need an interaction-permission grant.
+ *
+ * The audit's owner decision 3, conservative half. Ordinary social contact is
+ * what the chat lane already narrates freely and has no permission owner for;
+ * demanding a grant it cannot produce would block the foot trial without
+ * changing a single narrated outcome. Romantic and intimate contact demand one
+ * and therefore fail closed in legacy chat until an owner exists.
+ */
+export function contactActionRequiresPermission(kind: ContactActionKind): boolean {
+  switch (kind) {
+    case "romantic":
+    case "intimate":
+      return true;
+    case "incidental":
+    case "casual":
+    case "affectionate":
+      return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Actor control and target agency
+// ---------------------------------------------------------------------------
+
+export const contactControlStatuses = ["allowed", "denied", "unresolved"] as const;
+export const contactControlStatusSchema = z.enum(contactControlStatuses);
+export type ContactControlStatus = z.infer<typeof contactControlStatusSchema>;
+
+/**
+ * Proof that the initiating principal may author THIS actor's voluntary
+ * movement. Player-authored narration about an NPC is not control.
+ */
+export interface ContactActorControlDecision {
+  readonly status: ContactControlStatus;
+  readonly actorId: AffordanceSubjectId;
+  readonly evidence: readonly AffordanceEvidence[];
+}
+
+export const contactAgencyStatuses = ["allowed", "denied", "unresolved", "not_required"] as const;
+export const contactAgencyStatusSchema = z.enum(contactAgencyStatuses);
+export type ContactAgencyStatus = z.infer<typeof contactAgencyStatusSchema>;
+
+/**
+ * Proof that the TARGET's own behaviour authority committed a voluntary
+ * adjustment on their side. Separate from actor control because being touched is
+ * not the same as moving: an attempt may be entirely within the actor's control
+ * and still need the target to shift a foot, and only the target's owner may
+ * decide that they do.
+ *
+ * `not_required` is the ordinary case — nothing about the target moves.
+ */
+export interface ContactTargetAgencyDecision {
+  readonly status: ContactAgencyStatus;
+  readonly targetId?: AffordanceSubjectId;
+  readonly evidence: readonly AffordanceEvidence[];
+}
+
+// ---------------------------------------------------------------------------
+// Participant eligibility
+// ---------------------------------------------------------------------------
+
+export const contactEligibilityStatuses = ["eligible", "ineligible", "unresolved", "not_required"] as const;
+export const contactEligibilityStatusSchema = z.enum(contactEligibilityStatuses);
+export type ContactEligibilityStatus = z.infer<typeof contactEligibilityStatusSchema>;
+
+/**
+ * The product life-stage/adult ruling for every participant.
+ *
+ * `participantIds` is not decoration: the resolver checks that the decision
+ * actually COVERS both ends of the contact, so a lane that answered about one
+ * character cannot have its answer spent on the other. A known minor is always
+ * `ineligible`; unknown, non-numeric, fantasy-scaled, and player ages are
+ * `unresolved` until the owner rules (audit §"Owner decisions needed" 1).
+ */
+export interface ContactParticipantEligibilityRead {
+  readonly status: ContactEligibilityStatus;
+  readonly participantIds: readonly AffordanceSubjectId[];
+  readonly evidence: readonly AffordanceEvidence[];
+}
+
+// ---------------------------------------------------------------------------
+// Interaction permission
+// ---------------------------------------------------------------------------
+
+export const contactPolicyStatuses = ["allowed", "denied", "withdrawn", "unresolved", "not_required"] as const;
+export const contactPolicyStatusSchema = z.enum(contactPolicyStatuses);
+export type ContactPolicyStatus = z.infer<typeof contactPolicyStatusSchema>;
+
+/**
+ * The lane's permission owner's answer, with the scopes it covers.
+ *
+ * Scope membership is checked EXACTLY: the core never widens a grant, because
+ * "permission for the more intimate thing implies permission for the less
+ * intimate thing" is a product ruling and not an obvious one. A lane that
+ * believes a broader grant subsumes a narrower one lists both scopes.
+ */
+export interface ContactInteractionPolicyRead {
+  readonly status: ContactPolicyStatus;
+  readonly scopes: readonly ContactPolicyScope[];
+  readonly evidence: readonly AffordanceEvidence[];
+}
+
+// ---------------------------------------------------------------------------
+// Implicit adjustment policy
+// ---------------------------------------------------------------------------
+
+/**
+ * The closed set of movements small enough to ride along with an action.
+ *
+ * Being a closed vocabulary IS the spec's "small, ordinary, and mechanically
+ * unambiguous" test — a movement that cannot be named as one of these four is,
+ * by construction, not one of them. Standing, rolling over, spreading legs,
+ * pulling a trapped limb free, crossing a room, and an expressive toe curl are
+ * all unnameable here, which is the point.
+ */
+export const contactAdjustmentKinds = ["lean", "joint_rotation", "limb_reposition", "head_angle"] as const;
+export const contactAdjustmentKindSchema = z.enum(contactAdjustmentKinds);
+export type ContactAdjustmentKind = z.infer<typeof contactAdjustmentKindSchema>;
+
+/** Why a proposed adjustment is too big to be implicit. */
+export const contactAdjustmentBlockCodes = [
+  "outside_current_proximity",
+  "moves_material_layer",
+  "new_intimate_exposure",
+  "posture_or_place_change",
+  "support_transfer",
+  "overcomes_resistance",
+  "expresses_choice",
+] as const;
+export const contactAdjustmentBlockCodeSchema = z.enum(contactAdjustmentBlockCodes);
+export type ContactAdjustmentBlockCode = z.infer<typeof contactAdjustmentBlockCodeSchema>;
+
+/**
+ * An adjustment as the lane proposes it, with the seven answers the policy needs.
+ *
+ * Every flag is stated by the owner that knows, never inferred here. A lane that
+ * cannot answer one of them says `true` for the blocking value and gets an
+ * explicit requirement — the conservative direction.
+ */
+export interface ContactAdjustmentProposal {
+  readonly id: string;
+  readonly subjectId: AffordanceSubjectId;
+  readonly kind: ContactAdjustmentKind;
+  readonly withinCurrentProximity: boolean;
+  readonly movesMaterialLayer: boolean;
+  readonly newlyExposesIntimateSurface: boolean;
+  readonly changesPostureOrPlace: boolean;
+  readonly requiresSupportTransfer: boolean;
+  readonly overcomesResistanceOrConstraint: boolean;
+  readonly expressesChoiceOrReaction: boolean;
+  readonly evidence: readonly AffordanceEvidence[];
+}
+
+/**
+ * An adjustment that PASSED the policy. Deliberately a narrower type than the
+ * proposal and constructible only by `classifyContactAdjustment`, so a committed
+ * contact cannot carry an adjustment nobody admitted.
+ */
+export interface ContactMinimalPoseAdjustment {
+  readonly id: string;
+  readonly subjectId: AffordanceSubjectId;
+  readonly kind: ContactAdjustmentKind;
+  readonly evidence: readonly AffordanceEvidence[];
+}
+
+export type ContactAdjustmentVerdict =
+  | { readonly status: "implicit"; readonly adjustment: ContactMinimalPoseAdjustment }
+  | { readonly status: "explicit_required"; readonly blocks: readonly ContactAdjustmentBlockCode[] };
+
+/**
+ * Apply the eight-condition policy. Every failing condition is reported, not just
+ * the first: one debug pass should name everything that makes a movement a scene
+ * beat rather than a detail.
+ */
+export function classifyContactAdjustment(proposal: ContactAdjustmentProposal): ContactAdjustmentVerdict {
+  const blocks: ContactAdjustmentBlockCode[] = [];
+  if (!proposal.withinCurrentProximity) blocks.push("outside_current_proximity");
+  if (proposal.movesMaterialLayer) blocks.push("moves_material_layer");
+  if (proposal.newlyExposesIntimateSurface) blocks.push("new_intimate_exposure");
+  if (proposal.changesPostureOrPlace) blocks.push("posture_or_place_change");
+  if (proposal.requiresSupportTransfer) blocks.push("support_transfer");
+  if (proposal.overcomesResistanceOrConstraint) blocks.push("overcomes_resistance");
+  if (proposal.expressesChoiceOrReaction) blocks.push("expresses_choice");
+  if (blocks.length > 0) return { status: "explicit_required", blocks };
+  return {
+    status: "implicit",
+    adjustment: {
+      id: proposal.id,
+      subjectId: proposal.subjectId,
+      kind: proposal.kind,
+      evidence: proposal.evidence,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Explicit requirements and rejections
+// ---------------------------------------------------------------------------
+
+/** What the scene has to do first, when an attempt needs a visible transition. */
+export const contactRequirementCodes = [
+  "reposition",
+  "close_distance",
+  "free_limb",
+  "change_support",
+  "remove_material_layer",
+  "open_closure",
+  "target_must_act",
+] as const;
+export const contactRequirementCodeSchema = z.enum(contactRequirementCodes);
+export type ContactRequirementCode = z.infer<typeof contactRequirementCodeSchema>;
+
+export interface ContactActionRequirement {
+  readonly code: ContactRequirementCode;
+  readonly subjectId?: AffordanceSubjectId;
+  /** Short structured elaboration (a layer id, a block code). Never prose. */
+  readonly detail?: string;
+  readonly evidence: readonly AffordanceEvidence[];
+}
+
+/** Why an attempt was refused outright. An answer, not a degradation. */
+export const contactRejectionReasons = [
+  "actor_control_denied",
+  "actor_control_unresolved",
+  "target_agency_denied",
+  "target_agency_unresolved",
+  "participant_ineligible",
+  "participant_eligibility_unresolved",
+  "permission_denied",
+  "permission_withdrawn",
+  "permission_unresolved",
+  "permission_scope_missing",
+  "out_of_reach",
+] as const;
+export const contactRejectionReasonSchema = z.enum(contactRejectionReasons);
+export type ContactRejectionReason = z.infer<typeof contactRejectionReasonSchema>;
+
+/** Why the resolver could not decide. Degradation, not an answer — narrate nothing. */
+export const contactUnresolvedReasons = [
+  "action_invalid",
+  "geometry_unavailable",
+  "support_unavailable",
+  "material_unavailable",
+] as const;
+export const contactUnresolvedReasonSchema = z.enum(contactUnresolvedReasons);
+export type ContactUnresolvedReason = z.infer<typeof contactUnresolvedReasonSchema>;
+
+/** Boundary schema for a subject id inside a parsed decision. */
+export const contactSubjectIdSchema = affordanceSubjectIdSchema;
