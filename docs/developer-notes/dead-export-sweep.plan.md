@@ -1,0 +1,148 @@
+# Dead-export sweep — delete the leavings, shrink the search space
+
+Status: draft (unscheduled — derived from [codebase-efficiency.audit.md](codebase-efficiency.audit.md); no roadmap line yet)
+
+## Why
+
+One thing here is visible to players: the site description that ships in the
+`<head>` of **every page** still sells the retired world model — "play
+turn-based sessions with a living world model" (D9, `app/layout.tsx:14`). That
+is the text a link preview or a search result shows, and it describes a system
+we deleted in R6. It should have gone with the lane.
+
+Everything else is invisible to players and valuable to everyone who reads the
+code, agents included. The repo has accumulated a thick layer of
+exported-but-unused surface: the simulation barrel publishes 204 names of which
+**136 have no consumer outside the simulation folder** (A19), the chat-engine
+barrel leaks 33 exports used only inside their own file (B16), and ~22 more
+server internals are exported wider than they are used (C21). The cost is not
+bytes — it is that "who calls this?" stops being a reliable question, so real
+dead code hides in the noise: the audit found an entire durable command handler
+with zero callers **and no test** (A17) among the built-but-unwired successor
+API it resembles. Stale one-off scripts want deleting too, one for reasons
+beyond tidiness — `scripts/tmp-scene-diag.ts` opens a raw Postgres connection
+with TLS certificate verification turned off (C22).
+
+**Four guardrails govern this batch** (detail under Risks & coordination): 1. the
+parked branch/fork/replay primitives are **intentionally** callerless and must
+survive; 2. `CHAT_AFFORDANCE_CUES` is parked by owner ruling, not dead; 3.
+test-support helpers are sometimes built a slice ahead of their suite, so check
+the git log first; 4. this sweep runs **after** the other consolidation batches
+where possible, so it collects their leavings instead of churning twice.
+
+## Scope
+
+The audit's per-finding entries are the work list — this plan sequences them and
+sets the rules.
+
+- **Chat engine (B16)** — the two truly zero-ref exports (`chatGarmentStoreOf`,
+  and `CHAT_PULSE_EVERY_N`, a knob nothing reads because the pulse runs
+  unconditionally) plus the 33 file-local exports, several carrying stale
+  "exported for tests" comments that are no longer true.
+- **Server (C20, C21)** — dead exports (`composeItemDefinition`,
+  `findCharactersByName`, the `LORE_*` constants for a lore channel that was
+  never built, `daylightBand` and its constant, four test-support helpers) and
+  ~22 over-exported internals narrowed to module scope.
+- **Scripts (C22)** — delete `tmp-scene-diag.ts`,
+  `backfill-image-references.ts` **and** its `db:backfill-image-refs` package
+  script, and `delete-avatar-expression-frames.ts`.
+- **Simulation lane (A17, A18, A19)** — rule on the callerless command handler;
+  delete `openCoPresentEngagementsForActor`, superseded by a SQL predicate;
+  split the simulation barrel to the ~68 externally-used names, with integration
+  tests importing store modules directly (most already do).
+- **Contracts remainder (E5)** — whatever dead exports
+  [contracts-hygiene.plan.md](contracts-hygiene.plan.md) leaves behind.
+- **Deleted-lane UI (D9)** — the meta description above, a dead `/sessions/`
+  branch in the app shell, stale `"session"`/`"world"` envelope probes in the
+  client API helper, a stale comment.
+- **Database relic (C19)** — `location_links.travel_minutes`, written only by
+  its own default and read nowhere; disposal is OQ1.
+- **Docs**, corrected in the same change: `docs/database.md` for C19 either way
+  it is ruled, plus the doc comments the audit flagged as untrue.
+
+## Non-goals
+
+- **No behavior change.** Aside from the site description, nothing a player or
+  an API caller can observe should differ: no route changes, no renames of live
+  modules, no signature changes — only visibility and deletion.
+- **No consolidation or refactoring** (the audit's other batches) and **not the
+  tooling batch** (F1, F2, F4) — only the doc fixes attached to the findings
+  above ride along here.
+- **The parked successor primitives and `CHAT_AFFORDANCE_CUES` stay**
+  (guardrails 1 and 2).
+
+## Delivery slices
+
+Each lands, passes the full gate, and reviews on its own.
+
+- **Slice 0 — the retain list.** Before deleting anything, write down what is
+  deliberately callerless and comment each such export with the plan that keeps
+  it. This is what stops a future sweep re-litigating the same names.
+- **Slice 1 — visible and unsafe first.** The D9 leftovers (site description
+  leads) and the C22 deletions: smallest diff, highest confidence.
+- **Slice 2 — chat-engine de-export (B16).** One mechanical barrel pass.
+- **Slice 3 — server exports (C20, C21).** Git-log check on each test-support
+  helper; check sibling tests before narrowing each internal, since a test
+  import is a legitimate reason for a wider-than-production export.
+- **Slice 4 — contracts remainder (E5),** after the contracts hygiene sweep.
+- **Slice 5 — simulation lane (A17, A18, A19).** Largest and last: the A17
+  ruling, the A18 deletion, then the barrel split, with the gate corpus
+  integration suites green before **and** after.
+- **Slice 6 — docs and the C19 ruling.**
+
+## Success criteria
+
+- Every export the audit named is gone, narrowed to its module, or still
+  exported **with a comment naming why** — no silent survivors.
+- The simulation barrel exports only names with consumers outside the simulation
+  folder, and the engine barrel no longer re-exports simulation internals.
+- The retain-list items (guardrails 1 and 2) survive, now annotated, so the next
+  reader need not re-derive their status.
+- The full gate passes at each slice boundary — lint, cycles, typecheck, unit
+  tests, jscpd, one at a time per house rule — plus the gate corpus integration
+  suites on the simulation slice.
+- No user-visible change other than the corrected site description.
+
+## Risks & coordination
+
+- **Guardrail 1 — never delete the parked branch/fork/replay primitives.**
+  [deferred/sim-branch-ux.plan.md](deferred/sim-branch-ux.plan.md) (stub D19)
+  intentionally retains fork, ancestry, replay-assembly, narrative-cut and
+  placement-explain primitives with **zero production callers by design**,
+  awaiting the UI that will use them. A17 is the exception the audit singled out
+  precisely because it is *not* on that list: no callers **and** no test.
+- **Guardrail 2 — `CHAT_AFFORDANCE_CUES` is not dead (B17).** It gates ~480 lines
+  parked OFF permanently by owner trial ruling, kept as the validated-wording
+  reference and a live arm of the evaluation harness. Leave it, flag included.
+- **Guardrail 3 — test-support helpers can precede their suite.** Check
+  `git log` first; a helper added a slice early looks identical to rot.
+- **Guardrail 4 — sequence this batch late.** The other batches will orphan code
+  of their own, so going afterwards means one pass over the same files instead
+  of two. Slice 1 is the exception and can land any time.
+- **Active-work coordination.** The narrator-physical-guidance build is live over
+  the affordance contracts and the chat affordance / physical-guidance engine
+  modules; `[WIP]`-tagged audit items sit in that churn, so coordinate first and
+  expect their line references to have moved.
+- **Reversibility.** Everything is a `git revert` away except the C19 column
+  drop, which needs a migration and a deploy — hence OQ1.
+
+## Open questions
+
+- **OQ1 — how to dispose of `travel_minutes` (C19)?** Drop the column by
+  migration (needs a deploy, effectively irreversible), or leave it with a
+  `@deprecated` comment until library travel is planned? A travel-duration idea
+  is already parked
+  ([deferred/travel-duration-authoring.plan.md](deferred/travel-duration-authoring.plan.md)),
+  which argues for annotating.
+- **OQ2 — wire or delete A17?** The callerless durable body-modifier handler
+  either gets a caller and a test, or goes; its pure resolver stays either way.
+  Deleting is cheaper; wiring is worth it only if the capability is wanted soon.
+- **OQ3 — should the engine barrel re-export the simulation surface at all after
+  A19's split?** Narrowing the simulation barrel is settled; whether the ~68
+  survivors stay reachable through the outer engine barrel is a separate call.
+- **OQ4 — delete the harmless `z.infer` aliases (E5)?** Several of the 51
+  unreferenced contracts exports are type aliases of live schemas: free to
+  delete, harmless to keep. A blanket rule stops case-by-case stalling.
+- **OQ5 — timing.** Guardrail 4 says run this last, but the batch is cheap and
+  shrinks the search space for every later reader. Do Slices 1–2 go early with
+  the rest deferred behind the consolidation batches?

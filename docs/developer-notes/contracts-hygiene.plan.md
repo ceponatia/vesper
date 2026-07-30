@@ -1,0 +1,161 @@
+# Contracts hygiene sweep — retire the R6 leftovers, speed up the hot lookups
+
+Status: draft (unscheduled — derived from [codebase-efficiency.audit.md](codebase-efficiency.audit.md); no roadmap line yet)
+
+## Why
+
+`src/contracts` is the pure heart of the domain: the registries and validation
+rules everything else checks itself against. Its promise is that **adding a
+vocabulary item is a one-file data edit**, so it has to stay legible — a reader
+should be able to tell at a glance what is live.
+
+The 2026-07-30 efficiency audit (§E, batch 9) found that promise mostly intact —
+`world/` and `turns/` are the *busiest* folders here, not R6 leftovers as assumed
+— but it also found three things worth a deliberate pass:
+
+- **Leftovers from the retired world model still ship, and are still documented
+  as if live** (E1, E2, E4, E6, E7, plus 51 exports referenced nowhere at all,
+  E5). Each one costs a reader time and invites someone to build on a dead seam.
+- **Two tiny lookups redo the same work on every turn.** The body-location
+  registry rebuilds an immutable 48-node subtree on every expansion (E13 — 12
+  call sites, one on the per-turn wardrobe-visibility path), and two registries
+  answer "what belongs to this body location / category?" by scanning all 144
+  attribute definitions each time (E14) — worst case ~1,400 comparisons per
+  attribute resolution, per prompt build. Both fixes are small, local, already
+  test-covered; E13 is the audit's best value-for-effort item in contracts.
+- **A validation idiom repeated ~60 times has a helper nobody can reach.** The
+  lenient-parsing pattern contracts uses to satisfy
+  [resilience.md](../resilience.md) already has a tidy helper — it is just
+  private to one file (E10). Promoting it gives new code an obvious landing spot
+  instead of another copy.
+
+No player-visible behavior changes. The payoff: the extension promise stays true,
+the per-turn path gets cheaper, and contracts stops describing deleted systems.
+
+## Scope
+
+Grouped by kind; ids are §E findings in the audit.
+
+- **Delete what R6 orphaned** — E1 (the puppet judge), E2 (authored cast edges,
+  including the dead type import in the database schema), E6 (a dead barrel), and
+  E4 (the bond classifier and the stage-behavior half of the relationship profile
+  — session-lane concepts with only their own tests; the escalation tiers in that
+  same file are **live** and stay).
+- **Rule on the mood sub-module** — E7: the atmosphere module and the
+  condition/atmosphere baseline-shift half of the mood events module have no
+  consumers. This interacts with prior-art **E-K1** (fold the condition
+  vocabulary into the catalog — [finished/codebase-review.md](finished/codebase-review.md)):
+  deleting may make E-K1 moot, so it gets a decision slice, not a quiet
+  deletion. **E-K2** (concept sets copied outside the concept registry) sits in
+  the same folder — decide in passing whether it rides along.
+- **Unify duplicated vocabulary and one duplicated loop** — E11 (the
+  left/right/center side list declared three times → one owner in the body
+  location package) and E12 (the multimap index-building loop copy-pasted
+  between the attribute and trait registries → one helper in the registry spine).
+- **Index the hot lookups** — E13 and E14. Prior-art **E-K5** flagged the same
+  registries for structural tidying — read together, don't rediscover.
+- **Promote the lenient-parsing helpers** — E10: a small public module, migrated
+  incrementally starting with the three densest files.
+- **One mechanical de-export pass** — E5's 51 unreferenced exports.
+- **Coordinated with the active affordance build** (separate, gated slice) — E8
+  (about 850 lines of test fixtures shipping through the public contracts barrel
+  into 73 client files) and E9 (four byte-identical helper bodies duplicated
+  across the two affordance domains, whose own comments admit the copy).
+
+Docs updated in the same change: [../contracts/relationships.md](../contracts/relationships.md),
+which today documents the bond classifier, authored edges, and puppet guardrail
+as live; plus a note into [npc-puppeting.deferred.md](npc-puppeting.deferred.md)
+recording that the v1 judge is gone and what a future version would rebuild.
+
+## Non-goals
+
+- **The garment-blueprint validation gap (E3) is not in this batch.** It is the
+  one §E finding with a real correctness dimension — part-graph invariants never
+  enforced at the trust boundary — and belongs to the resilience closures plan.
+  Wiring it in and deleting it are opposite decisions; that argument needs a home
+  of its own.
+- **The one-element body-plan registry stays as-is** — documented
+  forward-compat, not accidental generality.
+- **The proposal-trace unification in `turns/` stays deferred** until its stated
+  trigger (the surface trace being persisted) fires.
+- **No new vocabulary, no behavior change, no migrations.** Every fix here is a
+  deletion, a move, an alias, or a cache.
+
+## Delivery slices
+
+Each is independently shippable; the full gate runs between them.
+
+1. **Orphan deletion** — E1, E2, E4, E6 plus the relationships doc. Smallest
+   slice, biggest legibility gain. Two things survive and must not be caught in
+   it: the live stage→band healing helper (a different file) and the escalation
+   tiers (read by the contact law).
+2. **The mood ruling** — decide fold-vs-delete for E7/E-K1 **once**, act, then
+   record the ruling in the contracts doc that owns the vocabulary so no future
+   sweep re-derives it. Not a code-first slice.
+3. **The hot lookups** — E13, E14, E12 together (E12's helper is what E14's
+   indexes are built with). Existing registry-invariant tests are the
+   correctness check; add one assertion per fix that repeated calls agree.
+4. **One owner for the side vocabulary** — E11, respecting the **frozen seam**
+   in the appearance-features locus module: re-alias to the body-location owner,
+   never rename or reshape the frozen exports.
+5. **The lenient-zod module** — E10: create it, migrate the three densest files,
+   leave the rest to opportunistic migration.
+6. **Affordance coordination (gated)** — E8, E9, gated on the active
+   [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md)
+   build reaching a quiet point, since it is churning these exact files. E9
+   should land **before a third affordance domain arrives**; the existing
+   domain-neutrality test keeps the hoisted helpers honest.
+7. **The de-export pass** — E5, last, so a noisy mechanical diff does not bury
+   the slices above.
+
+## Success criteria
+
+- Nothing in contracts describes machinery R6 deleted; the removed names appear
+  only in historical plan docs.
+- The extension promise holds: registry-invariant tests green, adding a
+  vocabulary item still a single-file data edit, and the side vocabulary has
+  exactly one declaration — with the frozen appearance-features exports still
+  present under their original names.
+- Repeated subtree expansions and registry lookups return identical data to
+  today (the existing tests are the oracle) without re-deriving per call.
+- The lenient helpers have one public home; the three densest files use it; the
+  degradation tests still assert both the fallback and the diagnostic code.
+- The public contracts surface no longer exports test fixtures, and the shared
+  affordance helpers exist once, in the domain-neutral core.
+- Full gate green (lint → lint:cycles → typecheck → test → jscpd, one at a
+  time), duplication no worse than before.
+
+## Risks & coordination
+
+- **The affordance build owns those files right now**, so slice 6 coordinates
+  with it rather than racing it — last-in-line and skippable.
+- **"Only its own test uses it" is not always dead.** The audit's §C caveat
+  applies: some helpers are built a slice ahead of their consumer. Check the git
+  history and any queued plan first, and delete the test with the code rather
+  than leaving an orphan test asserting nothing.
+- **A cache is the one place a silent bug can hide here.** The memoized expansion
+  is safe only because the tree is immutable, frozen registry data — key it to
+  the registry itself, and never hand out a structure a caller can mutate.
+- **The mood decision must not be taken twice.** Half-deleting E7 while E-K1
+  stays open is the worst outcome: the condition vocabulary stays split *and*
+  the thing that justified folding it is gone.
+- **Every slice that removes a documented concept updates its contracts doc in
+  the same change** — and this batch needs a `## Next` roadmap line before work
+  starts.
+
+## Open questions
+
+1. **E7/E-K1: fold or delete?** The condition mood-baseline shifts have no
+   consumer today. Folding them into the catalog is E-K1's structural fix, worth
+   it only if a future feature wants condition-driven mood shifts; deleting is
+   cheaper now and reopenable later. Needs one ruling and a recorded home.
+2. **What happens to E5?** Several of the 51 are type aliases of live schemas —
+   cheap to delete, harmless to keep; do we want a standing rule instead of a
+   case-by-case call every sweep? And the pass may belong to the repo-wide
+   de-export sweep (batch 10) for one review instead of two.
+3. **Whose plan owns E8?** Renaming the fixture files and dropping them from the
+   public barrel touches files the active affordance build owns — a slice here,
+   or a close-out item on that plan?
+4. **Is E10 finished here, or is it a convention?** Migrating all ~60 sites is a
+   large diff for no behavior change. The alternative: create the module, migrate
+   the dense files, and treat "new code uses the helper" as a standing rule.
