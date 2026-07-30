@@ -331,6 +331,63 @@ Persistent aftermath—pressure marks, displaced clothing, tangled hair—must b
 authoritative body/presentation state or an event. The read layer owns no
 hysteresis or hidden latches.
 
+## Deferred scene-image consumer (Slice 8 ruling, 2026-07-29)
+
+**Decision: named follow-up; no general image consumer ships in this plan.**
+The current live substrate can supply wet-hair and garment-surface facts, but
+garment fit, contact, posture, support, impulse, and relative geometry are
+missing one or more authoritative inputs. Recognition also lacks a production
+body-exposure owner. A consumer added now would therefore establish a broad
+permanent seam around a narrow and unrepresentative corpus.
+
+The narrator trial is supporting caution, not evidence that image use must
+fail: its cue arm increased specificity consistently but did not reduce
+contradictions. Image composition needs its own paired evaluation because
+paintable specificity may help a renderer even when it does not help prose.
+That evaluation is parked as
+[Body-affordance scene-image consumer](deferred.plan.md#body-affordance-scene-image-consumer)
+until the shared scene/body-relations owner exists, unless the owner explicitly
+schedules an earlier wet-hair/wet-garment-only trial.
+
+When promoted, the consumer contract is:
+
+- consume the structured, perception-safe result captured for the committed
+  scene; never resolve against later mutable state for a delayed render or
+  retake;
+- select a small allowlist of paintable semantic realizers such as a wet-clump
+  band or a relative eye-line relation; never expose internal scores,
+  coefficients, evidence records, diagnostics, suppressed possibilities, or
+  generic narrator prose;
+- preserve the same cause, coverage, and perception gates as the shared read;
+  unavailable input remains silence and cannot become a convenient visual
+  default;
+- do not apply narrator novelty, mention cooldowns, or repeat suppression—the
+  image is a snapshot of the current scene—but retain a strict image-detail cap
+  so observations cannot crowd out protected identity, POV, pose, wardrobe,
+  or setting instructions;
+- reuse the shared body/garment model and captured effective coverage; do not
+  create image-only mechanics, state, inference, or a second coverage answer;
+- keep recognition `visualRealizerId` optional until an allowlisted consumer
+  proves that a feature needs a distinct realization beyond the existing
+  canonical appearance summary.
+
+The promotion trial uses the same committed scene, reference image, model
+settings, and base render prompt in control and candidate arms, with several
+rerolls per case. The first corpus covers only inputs that are authoritative in
+production; fixture-only contact, fit, impulse, or geometry cannot enter it.
+Review records:
+
+1. whether the intended physical detail is visibly more correct;
+2. identity, pose, wardrobe, coverage, and setting preservation;
+3. invented contact or phantom-body-part regressions;
+4. prompt-budget truncation and displaced protected content; and
+5. consistency across rerolls.
+
+Promotion requires a clear repeated visual gain and no new authoritative-state
+or hidden-detail violations. A win ships only the tested allowlist. A non-win
+records rejection for that corpus and leaves the consumer absent; it does not
+authorize an image-specific body model.
+
 ## Diagnostic shape
 
 Debug output should explain the same staged calculation a developer sees in
