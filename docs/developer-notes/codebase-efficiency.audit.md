@@ -3,7 +3,7 @@
 **Date:** 2026-07-30 · **Findings record, not a plan.** Plans and specs will be
 derived from this doc (likely several — see §Proposed batches at the end); when
 one is created it gets its own `<topic>.plan.md` + roadmap line and should cite
-finding ids from here. Nothing in this doc is scheduled yet.
+finding ids from here. Eleven draft plans now exist; the reviewed near-term tranche is queued in `roadmap.md`, while the larger consolidations remain selective drafts.
 
 **Method.** Six parallel read-only analysis agents (prior-art sweep + one per
 area: chat-lane engine, simulation engine, contracts, UI/app, server infra +
@@ -498,9 +498,9 @@ barrel-excluded.
   the token floor; `scripts/` (the eval-harness duplication, C11) is invisible.
   Fix: add `scripts` to the path; consider per-folder thresholds or a lower
   minTokens for targeted paths. S/low.
-- **F2 · CLAUDE.md's gate list omits `lint:authz`** — `package.json`'s `verify`
-  chain includes it, so agents following CLAUDE.md's sequential list never run
-  the route-authz check. Fix CLAUDE.md. S/low.
+- **F2 · `lint:authz` gate-list omission — closed 2026-07-30.** The audit found
+  the root `CLAUDE.md` omitted a gate already present in `package.json`'s
+  `verify` chain. Commit `66ecd3b` added it to the required sequential list.
 - **F3 · Roadmap hygiene:** (a) the §Next line "Codebase-review follow-on
   batches (2 & 4)" is stale in substance — most §C/§E session-side targets were
   deleted by R6; what genuinely survives is C7's forge half (queued under
@@ -532,10 +532,71 @@ noted; deferred stubs in [deferred/CLAUDE.md](deferred/CLAUDE.md):
 
 ---
 
-## Proposed batches (for plan/spec derivation)
+## Review disposition and owner rulings — 2026-07-30
 
-Ordered by (severity × value) / risk. Each becomes a `<topic>.plan.md` +
-roadmap line when taken up; none is scheduled by this doc.
+The audit is accepted as a strong findings record, but the eleven plans are not
+eleven equally valuable "efficiency" projects. Correctness, measured player
+latency, fork parity, and extension safety outrank line count and theoretical
+bundle reach.
+
+### Settled rulings
+
+- **Garment validation (E3): wire it.** Census existing rows first; new writes must
+  enforce graph invariants and invalid historical rows degrade with diagnostics.
+- **Snapshots (A16): materials-only.** Revisit only after real long-world fork
+  measurements.
+- **Suggested items (C17): preserve sequential insert visibility.** Optimize reads,
+  not write ordering.
+- **Travel duration (C19): retain `travel_minutes`.** It is reserved for the
+  authored travel-duration plan; annotate rather than drop it.
+- **Condition mood shifts (E7/E-K1): retain and consolidate the vocabulary.** Do
+  not activate new behavior in a cleanup.
+- **Client cache (D14): drop it.** No cache without a measured problem and
+  invalidation contract.
+- **Body-modifier command (A17): caller plus integration test, or delete the
+  durable handler.** The pure resolver remains either way.
+- **Non-chat telemetry:** use an app-wide run context with optional chat linkage.
+- **Editor work:** ship `ConfirmDialog` first; reassess the full scaffold after the
+  destructive-action defect is fixed.
+- **Image consolidation:** preserve lane return types; standardized diagnostics are
+  an intentional resilience improvement, not neutral cleanup.
+
+### Scope corrections
+
+| Plan | Reviewed boundary |
+| --- | --- |
+| Resilience closures | Harness only targeted non-streaming structured/background LLM legs; do not force streaming narration or image providers through it. |
+| Sim command shell | Split the wide migration by domain; take A11 early; defer A13's counter/migration; corpus proof is mandatory. |
+| Fork registry | Registering an implemented domain becomes data; implementing a domain does not. Composite last-touch keys are required. |
+| Chat latency | Repeated baseline before changes; deterministic B14 persistence/rollback tests in addition to manual Fly checks. |
+| Library registry | Registry simplifies dispatch and route coverage, not the whole product surface for a new kind. |
+| Client safety | D10/D11/D12 approved. D13 begins with the Next 16 bundle analyzer; reachable LOC is not shipped bytes. |
+| Contracts hygiene | E13/E14 move early; E10 migrates incrementally; E5 joins the dead-export pass. |
+| Tooling | F2 already shipped; tighten clone detection by targeted path rather than a global token-floor drop. |
+
+### Reviewed execution sequence
+
+1. Finish the active narrator-physical-guidance work until its shared files are quiet.
+2. Resilience closures, including garment validation.
+3. Cheap hot-path tranche: A11, E13/E14, and the already-shipped F2 instruction fix.
+4. Chat pre-reply latency, after a repeated timing baseline.
+5. Sim command-shell consolidation, then the fork registry.
+6. Image-pipeline consolidation.
+7. Client D10/D11/D12; run the D13 measurement but make bundle changes only on evidence.
+8. Library-kind registry and route factories, without write batching.
+9. `ConfirmDialog`, then a separate go/no-go on the full editor scaffold.
+10. Contracts, dead-export, eval-harness, and tooling hygiene last, except the
+    explicitly safe early deletions named in their plans.
+
+Only steps 2–4 are queued as the near-term cleanup tranche. Steps 5–10 record
+dependency order and scope, not a promise to run a cleanup epic ahead of product
+work.
+
+## Original plan batches (plan-derivation record)
+
+These are the eleven batches used to produce the draft plan files. Their original
+severity-over-risk order is retained for provenance; the reviewed execution order
+and settled scope above are authoritative.
 
 1. **Resilience closures** — C12 (+B4 harness as its vehicle), B2, B5, E3.
    The only findings with correctness/severity weight. Mostly S/M effort.
