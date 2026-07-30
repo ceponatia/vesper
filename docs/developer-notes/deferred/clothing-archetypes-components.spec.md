@@ -640,7 +640,7 @@ The relation owner validates:
 - the garment currently exists and is at a compatible locus;
 - referenced parts exist in the instance's blueprint snapshot;
 - the opening leads to the named compartment;
-- the component accepts the body part/interation class;
+- the component accepts the body part/interaction class;
 - current closure and presentation make the opening accessible;
 - the body part is available and the pose/reach is plausible;
 - no incompatible simultaneous relation already owns the body part.
