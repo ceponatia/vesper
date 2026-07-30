@@ -2,42 +2,13 @@
 
 Status: active — the slice-2 hardening list, ordered by the owner 2026-07-30
 (step 1 of the post-slice-2 sequence; see the
-[plan](romantic-contact-affordances.plan.md) for the full order). Items move to
-"Done" here as they land.
+[plan](romantic-contact-affordances.plan.md) for the full order). The five
+hardening items all landed 2026-07-30; the sequencing constraints below still
+bind slice 3. Items move to "Done" here as they land.
 
 ## Hardening pass (owner-ordered, one small PR)
 
-1. **Rigid-footwear articulation leak.** `footwearHidesDeformation`
-   (`src/contracts/affordances/domains/foot/footwear.ts:341`) has no phenomenon
-   consumer: `foot.articulation_observation` emits `toes_*`/`arch_*` tags with
-   `sourceLocationId: "feet"` regardless of footwear, and the core perception
-   filter is sight-only over the source location — a visible booted foot leaks
-   the toe position rigid footwear physically hides. Gate the observation's
-   pose-detail tags (or the observation itself) on deformation transmission;
-   keep the restriction tag, which IS externally observable.
-2. **Side-specific conditions.** The coarse condition read is subject-wide
-   while support/articulation are per-foot (recorded limitation in the
-   [foot spec](romantic-contact-affordances.spec.foot.md#as-built--slice-2)).
-   Key the condition read by side so a soaked left sole and a dry right sole
-   are representable, consistent with the per-side reads.
-3. **Lifecycle material fingerprinting.** `contentKey`
-   (`src/contracts/affordances/contact/lifecycle.ts:115-130`) fingerprints
-   `materialBetween` by `layerId` only, so a layer whose properties change
-   mid-contact under a stable id (a sock soaking through, permeability
-   changing) takes the `contact_continued` path and observations keep reading
-   the stale material snapshot. Fingerprint the material content, not just the
-   id list, so a property change produces `contact_updated`.
-4. **Duplicate-layer canonicalization.** `compileFootwearContact`
-   (`src/contracts/affordances/domains/foot/footwear.ts`) unions duplicate
-   `layerId` rows silently. Canonicalize instead: merge duplicates
-   deterministically and surface the anomaly, rather than quietly accepting a
-   malformed wardrobe read.
-5. **Stale ruling comments.** `src/contracts/affordances/contact/decisions.ts`
-   still says adult eligibility is unresolved, calls the permission rule "the
-   conservative half", and says unknown ages remain unresolved "until the owner
-   rules". Runtime behavior already matches the 2026-07-30 rulings; sweep the
-   contact and foot code for pre-ruling comment language and point it at the
-   audit's recorded rulings.
+_Complete — all five landed 2026-07-30. See "Done" below._
 
 ## Sequencing constraints (owner, 2026-07-30)
 
@@ -50,4 +21,29 @@ Status: active — the slice-2 hardening list, ordered by the owner 2026-07-30
 
 ## Done
 
-_(nothing yet)_
+- **Rigid-footwear articulation leak** — 2026-07-30. `foot.articulation_observation`
+  now gates its pose-detail tags (`toes_*`, `arch_*`) per surface on
+  `footwearHidesDeformation`, marks a dropped detail with
+  `pose_hidden_by_footwear`, and always keeps the externally observable
+  `restricted_by_*` tag. The fixture matrix's flexible-fabric row became a full
+  case (`sockTransmittedToeCurl`). Detail: [foot spec](romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
+- **Side-specific conditions** — 2026-07-30. The coarse condition read carries an
+  optional `side` and the payload is a set with at most one answer per foot;
+  effective mechanics became per-foot blocks and `footSurfaceMechanics` looks up
+  by side. A foot nobody answered for reads unknown rather than borrowing the
+  other foot's answer, and each foot's own pose now drives its own interdigital
+  closure. Detail: [foot spec](romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
+- **Lifecycle material fingerprinting** — 2026-07-30. `contentKey` fingerprints
+  each layer's content rather than its id, so a layer that changes under a stable
+  id produces `contact_updated` with the fresh material; array order and evidence
+  are deliberately not content. Detail: [contact-core spec](romantic-contact-affordances.spec.contact-core.md#deltas-from-the-draft-above--this-section-is-the-authority).
+- **Duplicate-layer canonicalization** — 2026-07-30. `compileFootwearContact`
+  merges rows sharing a `layerId` by a stated rule per field and reports the
+  repair as a `FootwearAnomalyRead`, which the domain files as a
+  `foot.footwear.anomaly` warning. Detail: [foot spec](romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
+- **Stale ruling comments** — 2026-07-30. `contact/decisions.ts`,
+  `contact/state.ts`, and the foot fixtures/tests now state the owner's
+  2026-07-30 rulings (adult eligibility, permission scope split, contact storage
+  home) as settled law and point at the
+  [audit](romantic-contact-affordances.audit.md#owner-decisions-needed).
+  Comments only — no behaviour change.

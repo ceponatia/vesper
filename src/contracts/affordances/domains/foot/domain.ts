@@ -14,7 +14,7 @@ import {
   type DomainInputs,
 } from "../../core";
 import { footRequiredAttributeIds } from "./attribute-maps";
-import { footCoarseConditionSchema } from "./condition";
+import { footConditionSetSchema } from "./condition";
 import {
   buildFootFrame,
   footContactFromCommitted,
@@ -23,7 +23,12 @@ import {
   type FootContactRead,
   type FootResolutionContext,
 } from "./frame";
-import { compileFootwearContact, footwearItemSchema, type FootwearContactRead } from "./footwear";
+import {
+  compileFootwearContact,
+  footwearAnomalyDiagnostics,
+  footwearItemSchema,
+  type FootwearContactRead,
+} from "./footwear";
 import { deriveFootMechanics, type FootEffectiveMechanics } from "./mechanics";
 import { footPhenomena } from "./phenomena";
 import { compileFootProfile, type FootStructuralProfile } from "./profile";
@@ -126,7 +131,7 @@ export const footDomainDefinition: AffordanceDomainDefinition<
     const raw = payload.data;
 
     const reads = {
-      condition: readAdapterInput(footCoarseConditionSchema, raw.condition, "state", "condition"),
+      condition: readAdapterInput(footConditionSetSchema, raw.condition, "state", "condition"),
       contact: readAdapterInput(committedContactReadSchema, raw.contact, "contact", "contact"),
       footwear: readAdapterInput(footwearPayloadSchema, raw.footwear, "coverage", "footwear"),
       support: readAdapterInput(footSupportPayloadSchema, raw.support, "state", "support"),
@@ -179,7 +184,10 @@ export const footDomainDefinition: AffordanceDomainDefinition<
         storyTime: request.storyTime,
         inputs,
         evidence,
-        ...(isAdapterSupported(reads.condition) ? { coarse: reads.condition.value } : {}),
+        // An empty list and an unavailable read both mean "nobody answered"; the
+        // status map is what tells those apart, exactly as it does for support
+        // and articulation.
+        conditions: isAdapterSupported(reads.condition) ? reads.condition.value : [],
         ...(footwear === undefined ? {} : { footwear }),
         articulations,
       },
@@ -199,12 +207,16 @@ export const footDomainDefinition: AffordanceDomainDefinition<
   deriveMechanics: (profile, state) => ({
     mechanics: deriveFootMechanics({
       profile,
-      ...(state.coarse === undefined ? {} : { coarse: state.coarse }),
+      conditions: state.conditions,
       ...(state.footwear === undefined ? {} : { footwear: state.footwear }),
       articulations: state.articulations,
     }),
     evidence: [],
-    diagnostics: [],
+    // The footwear compile is pure and sinkless (it runs inside `readInputs`,
+    // which returns a value rather than a log), so a malformed wardrobe read
+    // rides the compiled read and is filed here — the one stage after it that
+    // owns a diagnostics channel.
+    diagnostics: footwearAnomalyDiagnostics(state.footwear),
   }),
 
   buildFrame: buildFootFrame,

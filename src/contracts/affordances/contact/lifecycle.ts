@@ -3,7 +3,12 @@ import { deepFreeze, mergeAffordanceEvidence, type AffordanceStoryTime } from ".
 import { CONTACT_LIFECYCLE_INVALID } from "./diagnostics";
 import { contactPairKey } from "./surfaces";
 import { deriveContactId, type ContactEventRef, type ContactId } from "./identity";
-import { composeContactMaterial, type ContactMaterialTransmissionRead } from "./material";
+import {
+  composeContactMaterial,
+  sortContactMaterialLayers,
+  type ContactMaterialLayerRead,
+  type ContactMaterialTransmissionRead,
+} from "./material";
 import type {
   CommittableContactResolution,
   CommittedContactRead,
@@ -112,19 +117,63 @@ export interface ContactCommitOutcome {
   readonly contact: CommittedContactRead;
 }
 
-/** The physical content two assertions must agree on to be "the same contact, unchanged". */
+/**
+ * One layer's physical CONTENT, in a fixed field order.
+ *
+ * `evidence` is deliberately absent: it is provenance, not physics. Two layers
+ * carrying identical numbers are the same material however the adapter found
+ * them, and folding a ref that varies per read into the fingerprint would emit
+ * `contact_updated` every exchange for a contact nothing happened to — the
+ * mirror image of the bug this function exists to fix.
+ */
+function materialFingerprint(layer: ContactMaterialLayerRead): readonly (string | number | boolean)[] {
+  return [
+    layer.layerId,
+    layer.order,
+    layer.tactileTransmission,
+    layer.shapeTransmission,
+    layer.thermalTransmission,
+    layer.moistureTransmission,
+    layer.scentTransmission,
+    layer.visibleThrough,
+  ];
+}
+
+/**
+ * The physical content two assertions must agree on to be "the same contact,
+ * unchanged".
+ *
+ * Layers are fingerprinted by their CONTENT, never by their ids alone. A
+ * `layerId` is the wardrobe's own instance id and it survives the garment
+ * changing underneath it: a sock soaking through keeps its id while its
+ * permeability, moisture transmission, and shape transmission all move. An
+ * id-only fingerprint took the CONTINUE path for exactly that case, so the
+ * projection kept the dry snapshot and every observation downstream described a
+ * material that no longer existed.
+ *
+ * Array position is NOT content. `sortContactMaterialLayers` is a total
+ * canonical order (`order`, then `layerId`) and the `order` field itself is in
+ * the fingerprint, so a layer that genuinely moved in the stack is a change
+ * while an adapter that returned the same layers in a different array order is
+ * not — otherwise a re-read of an unchanged cut would write an update event for
+ * a presentation detail.
+ *
+ * Adjustments stay keyed by `id`: unlike a layer, an accepted adjustment is
+ * minted by `classifyContactAdjustment` from one proposal and carries no
+ * magnitude that could drift under a stable id.
+ */
 function contentKey(contact: {
   readonly pressure?: string;
   readonly contactArea?: string;
   readonly motion?: { band: string; pathDetailIds?: readonly string[] };
-  readonly materialBetween: readonly { layerId: string }[];
+  readonly materialBetween: readonly ContactMaterialLayerRead[];
   readonly implicitAdjustments: readonly { id: string }[];
 }): string {
   return JSON.stringify([
     contact.pressure ?? null,
     contact.contactArea ?? null,
     contact.motion === undefined ? null : [contact.motion.band, contact.motion.pathDetailIds ?? []],
-    contact.materialBetween.map((layer) => layer.layerId),
+    sortContactMaterialLayers(contact.materialBetween).map((layer) => materialFingerprint(layer)),
     contact.implicitAdjustments.map((adjustment) => adjustment.id),
   ]);
 }

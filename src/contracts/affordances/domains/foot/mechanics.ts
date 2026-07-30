@@ -1,7 +1,9 @@
+import { contactSurfaceSides, type ContactSurfaceSide } from "../../contact";
 import { complementUnit, multiplyUnits, toUnitInterval, type UnitInterval } from "../../core";
 import {
   distributeFootCondition,
   footConditionAt,
+  footConditionForSide,
   unknownFootCondition,
   type FootCoarseConditionRead,
   type FootSurfaceConditionRead,
@@ -9,7 +11,7 @@ import {
 } from "./condition";
 import { footEffectiveFriction } from "./friction";
 import { footwearCovers, type FootwearContactRead } from "./footwear";
-import { footInterdigitalClosure, type FootArticulationRead } from "./support";
+import { footInterdigitalClosure, footReadForSide, type FootArticulationRead } from "./support";
 import { footTextureBandOf, type FootStructuralProfile, type FootTextureBand } from "./profile";
 import type { FootSurfaceId } from "./topology";
 
@@ -40,9 +42,24 @@ export interface FootSurfaceEffectiveMechanics {
   readonly covered: boolean;
 }
 
-export interface FootEffectiveMechanics {
+/**
+ * One foot's surfaces. `side` absent ⇒ the answer for a foot the owner did not
+ * distinguish, which is also where a locus that names no side lands.
+ */
+export interface FootSideEffectiveMechanics {
+  readonly side?: ContactSurfaceSide;
   /** One entry per profile surface, in profile order. */
   readonly surfaces: readonly FootSurfaceEffectiveMechanics[];
+}
+
+export interface FootEffectiveMechanics {
+  /**
+   * One block per foot the lane distinguished — by condition, by pose, or both —
+   * plus a side-less block, always. The side-less block is what keeps a lookup
+   * from an unsided locus total, and it degrades to all-unknown rather than to a
+   * neighbouring foot's answer when the owner spoke only about the other one.
+   */
+  readonly feet: readonly FootSideEffectiveMechanics[];
 }
 
 /** Moisture at which skin reads softer under a fingertip than it does dry. */
@@ -55,16 +72,18 @@ const FOOT_WET_COMPLIANCE_SPAN = 3_500;
 const FOOT_WET_TEXTURE_SPAN = 2_500;
 
 /**
- * The pose effect on the toe spaces, when both feet agree about it.
+ * The pose effect on the toe spaces for a foot NOBODY distinguished.
  *
- * The condition read is subject-wide — one set of surfaces per character — while
- * pose is per foot, so two feet posed differently have no single honest answer.
- * Disagreement therefore falls back to the structural default rather than
- * picking a foot: a per-side condition model is a bigger change than this slice,
- * and inventing an answer here would put a curled left foot's damp toe spaces on
- * a spread right one.
+ * Every foot the lane named — in the condition set or in the pose set — now gets
+ * its own block and its own foot's closure, so this covers only the side-less
+ * block: a locus that names no side, on a character whose feet the owner did not
+ * separate. Agreement is the one honest answer there. If both posed feet have
+ * their toes pressed together then whichever foot is being touched has them
+ * pressed together; if they disagree, the structural default is the only thing
+ * left, because picking one would put a curled foot's damp toe spaces on a
+ * spread one.
  */
-function agreedInterdigitalClosure(articulations: readonly FootArticulationRead[]): -1 | 0 | 1 {
+function undistinguishedInterdigitalClosure(articulations: readonly FootArticulationRead[]): -1 | 0 | 1 {
   const closures = articulations.map((articulation) => footInterdigitalClosure(articulation));
   const first = closures[0];
   if (first === undefined) return 0;
@@ -154,43 +173,98 @@ export function deriveFootSurfaceMechanics(input: {
   };
 }
 
-/**
- * Derive every surface's mechanics once per cut.
- *
- * The regional distribution happens HERE rather than in the adapter, because it
- * needs the structural profile (retention and airflow are profile terms) and the
- * staged pipeline hands the profile to exactly one stage. An absent coarse read
- * yields the all-unknown condition, not a dry foot.
- */
-export function deriveFootMechanics(input: {
+/** One foot's surfaces, from the coarse answer that applies to it. */
+function footSurfacesFor(input: {
   profile: FootStructuralProfile;
-  coarse?: FootCoarseConditionRead;
-  footwear?: FootwearContactRead;
-  /** Every foot's committed pose. Read only for its effect on the toe spaces. */
-  articulations?: readonly FootArticulationRead[];
-}): FootEffectiveMechanics {
+  coarse: FootCoarseConditionRead | undefined;
+  closure: -1 | 0 | 1;
+  footwear: FootwearContactRead | undefined;
+}): readonly FootSurfaceEffectiveMechanics[] {
   const conditions: readonly FootSurfaceConditionRead[] =
     input.coarse === undefined
       ? unknownFootCondition(input.profile)
       : distributeFootCondition({
           profile: input.profile,
           coarse: input.coarse,
-          interdigitalClosure: agreedInterdigitalClosure(input.articulations ?? []),
+          interdigitalClosure: input.closure,
         });
-  return {
-    surfaces: input.profile.surfaces.map((profile) =>
-      deriveFootSurfaceMechanics({
-        profile,
-        condition: footConditionAt(conditions, profile.surfaceId),
-        footwear: input.footwear,
-      }),
-    ),
-  };
+  return input.profile.surfaces.map((profile) =>
+    deriveFootSurfaceMechanics({
+      profile,
+      condition: footConditionAt(conditions, profile.surfaceId),
+      footwear: input.footwear,
+    }),
+  );
 }
 
+/**
+ * Derive every surface's mechanics once per cut, per foot.
+ *
+ * The regional distribution happens HERE rather than in the adapter, because it
+ * needs the structural profile (retention and airflow are profile terms) and the
+ * staged pipeline hands the profile to exactly one stage. An absent coarse read
+ * yields the all-unknown condition, not a dry foot.
+ *
+ * A block is built for every foot the lane distinguished — one the CONDITION set
+ * named, or one the POSE set named, since a foot whose toes are curled needs its
+ * own interdigital answer even when both feet share a coarse condition. Each
+ * block uses its own foot's closure; the side-less block, which is where a locus
+ * naming no side lands, uses the undistinguished rule above. The blocks are in
+ * the contact core's side order and the side-less one is last, so the read is
+ * byte-stable across a retake.
+ */
+export function deriveFootMechanics(input: {
+  profile: FootStructuralProfile;
+  /** At most one entry per foot, plus at most one side-less entry. */
+  conditions?: readonly FootCoarseConditionRead[];
+  footwear?: FootwearContactRead;
+  /** Every foot's committed pose. Read only for its effect on the toe spaces. */
+  articulations?: readonly FootArticulationRead[];
+}): FootEffectiveMechanics {
+  const conditions = input.conditions ?? [];
+  const articulations = input.articulations ?? [];
+  const named = contactSurfaceSides.filter(
+    (side) =>
+      conditions.some((entry) => entry.side === side) || articulations.some((entry) => entry.side === side),
+  );
+
+  const feet: FootSideEffectiveMechanics[] = named.map((side) => ({
+    side,
+    surfaces: footSurfacesFor({
+      profile: input.profile,
+      coarse: footConditionForSide(conditions, side),
+      closure: footInterdigitalClosure(footReadForSide(articulations, side)),
+      footwear: input.footwear,
+    }),
+  }));
+
+  feet.push({
+    surfaces: footSurfacesFor({
+      profile: input.profile,
+      coarse: footConditionForSide(conditions, undefined),
+      closure: undistinguishedInterdigitalClosure(articulations),
+      footwear: input.footwear,
+    }),
+  });
+
+  return { feet };
+}
+
+/**
+ * One surface of one foot.
+ *
+ * A side the lane never distinguished falls back to the side-less block, which
+ * is what makes an unsided locus readable. It does NOT fall back to the other
+ * foot: a lane that answered only about the left foot leaves the right one
+ * unknown, and unknown suppresses rather than borrowing.
+ */
 export function footSurfaceMechanics(
   mechanics: FootEffectiveMechanics,
   surfaceId: FootSurfaceId,
+  side?: ContactSurfaceSide,
 ): FootSurfaceEffectiveMechanics | undefined {
-  return mechanics.surfaces.find((surface) => surface.surfaceId === surfaceId);
+  const block =
+    (side === undefined ? undefined : mechanics.feet.find((entry) => entry.side === side)) ??
+    mechanics.feet.find((entry) => entry.side === undefined);
+  return block?.surfaces.find((surface) => surface.surfaceId === surfaceId);
 }

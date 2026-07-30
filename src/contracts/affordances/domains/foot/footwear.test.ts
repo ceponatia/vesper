@@ -173,22 +173,74 @@ describe("footwear state changes only with the payload", () => {
     expect(compileFootwearContact(stack)).toEqual(compileFootwearContact([...stack].reverse()));
   });
 
-  it("never blinds a covered surface when the wardrobe repeats a layer id", () => {
+  it("canonicalizes a repeated layer id into one layer and reports the anomaly", () => {
     // Two rows sharing a lane-supplied id. Last-write-wins left the sole covered
     // in `containedSurfaces` while `surfacesByLayer` held only the second row's
     // surfaces, so `footwearLayersAt` returned nothing for a covered surface and
-    // the texture read lost its filtered register.
+    // the texture read lost its filtered register. A silent union fixed that and
+    // left the compile deciding by input order instead; now the rows are merged
+    // by rule and the repair is reported.
+    const read = compileFootwearContact([
+      footwearFixture({
+        layerId: "same",
+        parts: ["sole_section"],
+        rigidity: toUnitInterval(1_000),
+        permeability: toUnitInterval(6_000),
+        toeBoxVolume: toUnitInterval(7_000),
+      }),
+      footwearFixture({
+        layerId: "same",
+        kind: "shoe",
+        parts: ["toe_section"],
+        order: 1,
+        filterTag: "leather",
+        rigidity: toUnitInterval(8_000),
+        permeability: toUnitInterval(2_000),
+        toeBoxVolume: toUnitInterval(1_500),
+      }),
+    ]);
+
+    expect(read.coveringLayers).toHaveLength(1);
+    expect(read.anomalies).toEqual([{ code: "duplicate_layer_id", layerId: "same", rows: 2 }]);
+
+    // Parts union, so no surface loses its cover, its blocking, or its register.
+    expect(footwearCovers(read, "plantar_surface")).toBe(true);
+    expect(footwearCovers(read, "toes")).toBe(true);
+    for (const surfaceId of read.containedSurfaces) {
+      expect(footwearLayersAt(read, surfaceId).length, surfaceId).toBe(1);
+      expect(footwearTransmissionAt(read, surfaceId).directSkinContact, surfaceId).toBe(false);
+      expect(footwearFilterTagAt(read, surfaceId), surfaceId).toBeDefined();
+    }
+
+    // Restrictive terms take the worst; damping terms the least generous; and
+    // two rows that disagree about the register leave it unreadable rather than
+    // picking one.
+    expect(read.rigidity).toBe(8_000);
+    expect(read.toeBoxVolume).toBe(1_500);
+    expect(read.permeability).toBe(2_000);
+    expect(footwearFilterTagAt(read, "arch")).toBe("unknown");
+  });
+
+  it("keeps a register the duplicate rows agree about", () => {
     const read = compileFootwearContact([
       footwearFixture({ layerId: "same", parts: ["sole_section"] }),
       footwearFixture({ layerId: "same", parts: ["toe_section"], order: 1 }),
     ]);
-    expect(footwearCovers(read, "plantar_surface")).toBe(true);
-    expect(footwearCovers(read, "toes")).toBe(true);
-    for (const surfaceId of read.containedSurfaces) {
-      expect(footwearLayersAt(read, surfaceId).length, surfaceId).toBeGreaterThan(0);
-      expect(footwearTransmissionAt(read, surfaceId).directSkinContact, surfaceId).toBe(false);
-      expect(footwearFilterTagAt(read, surfaceId), surfaceId).toBeDefined();
-    }
+    expect(footwearFilterTagAt(read, "arch")).toBe("ribbed_sock");
+    expect(footwearFilterTagAt(read, "toe_pads")).toBe("ribbed_sock");
+  });
+
+  it("merges duplicates the same way whatever order the wardrobe reported them", () => {
+    const rows = [
+      footwearFixture({ layerId: "same", parts: ["sole_section"], filterTag: "wool_sock" }),
+      footwearFixture({ layerId: "same", parts: ["toe_section"], order: 1, filterTag: "stocking" }),
+    ];
+    expect(compileFootwearContact(rows)).toEqual(compileFootwearContact([...rows].reverse()));
+  });
+
+  it("leaves an ordinary stack with no anomaly at all", () => {
+    expect(compileFootwearContact([sock(), { ...looseBoot(), order: 1 }]).anomalies).toEqual([]);
+    expect(bareFootwearContact().anomalies).toEqual([]);
   });
 
   it("uncovers a surface only by the part list changing, never by a call", () => {

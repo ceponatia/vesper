@@ -33,6 +33,7 @@ import {
   FOOT_NO_NAIL_CONTACT,
   FOOT_NO_SLIDING_MOTION,
   FOOT_NO_TACTILE_CHANNEL,
+  FOOT_POSE_HIDDEN_TAG,
   FOOT_PRESSURE_UNKNOWN,
   FOOT_SURFACE_TEXTURE_ID,
   FOOT_UNKNOWN_SURFACE_STATE,
@@ -53,7 +54,10 @@ import type { FootSurfaceId } from "./topology";
 
 interface FrameInput {
   readonly attributes?: FootAttributeFixtureInput;
+  /** The undistinguished answer — one condition for both feet, the ordinary case. */
   readonly coarse?: FootCoarseConditionRead;
+  /** Per-foot answers, when a case is about the two feet differing. */
+  readonly conditions?: readonly FootCoarseConditionRead[];
   readonly contact?: FootContactFixtureInput;
   readonly footwear?: FootwearContactRead;
   readonly supports?: readonly FootSupportRead[];
@@ -83,7 +87,7 @@ function frameOf(input: FrameInput): FootAffordanceFrame {
     profile,
     deriveFootMechanics({
       profile,
-      ...(input.coarse === undefined ? {} : { coarse: input.coarse }),
+      conditions: input.conditions ?? (input.coarse === undefined ? [] : [input.coarse]),
       ...(input.footwear === undefined ? {} : { footwear: input.footwear }),
       articulations: input.articulations ?? [],
     }),
@@ -497,6 +501,78 @@ describe("foot.articulation_observation", () => {
     );
     expect(resolved.semanticTags).toContain("restricted_by_footwear");
     expect(resolved.intensityBand).toBe("clear");
+  });
+
+  it("does not leak a pose the footwear physically hides", () => {
+    // A rigid shell moves as one piece, so the toe position inside it is not an
+    // externally available fact. Before this gate the tag rode out on a
+    // `feet`-keyed observation and the sight-only perception filter passed it
+    // through, so a visible booted foot reported the curl it was hiding.
+    const boot = compileFootwearContact([
+      footwearFixture({
+        kind: "shoe",
+        parts: ["upper", "toe_box", "insole"],
+        rigidity: toUnitInterval(9_000),
+        shapeTransmission: toUnitInterval(800),
+      }),
+    ]);
+    const resolved = observation(
+      footArticulationObservation.resolveFrame(
+        frameOf({
+          coarse: DRY,
+          footwear: boot,
+          articulations: [{ side: "left", toes: "curled", arch: "extended", evidence: [] }],
+        }),
+      ),
+    );
+    expect(resolved.semanticTags).toEqual(["foot_left", FOOT_POSE_HIDDEN_TAG, "restricted_by_footwear"]);
+  });
+
+  it("hides only the details the footwear actually covers", () => {
+    // A rigid shoe with an open toe box: the arch is inside it and the toes are
+    // not, so the gate is per surface rather than per foot.
+    const openToeBoot = compileFootwearContact([
+      footwearFixture({
+        kind: "shoe",
+        parts: ["upper", "insole"],
+        rigidity: toUnitInterval(9_000),
+        shapeTransmission: toUnitInterval(800),
+      }),
+    ]);
+    const resolved = observation(
+      footArticulationObservation.resolveFrame(
+        frameOf({
+          coarse: DRY,
+          footwear: openToeBoot,
+          articulations: [{ side: "left", toes: "curled", arch: "extended", evidence: [] }],
+        }),
+      ),
+    );
+    expect(resolved.semanticTags).toEqual([
+      "foot_left",
+      "toes_curled",
+      FOOT_POSE_HIDDEN_TAG,
+      "restricted_by_footwear",
+    ]);
+  });
+
+  it("lets flexible fabric transmit the movement it filters", () => {
+    const resolved = observation(
+      footArticulationObservation.resolveFrame(
+        frameOf({
+          coarse: DRY,
+          footwear: compileFootwearContact([footwearFixture()]),
+          articulations: [{ side: "left", toes: "curled", arch: "extended", evidence: [] }],
+        }),
+      ),
+    );
+    expect(resolved.semanticTags).toEqual([
+      "foot_left",
+      "toes_curled",
+      "arch_extended",
+      "restricted_by_unrestricted",
+    ]);
+    expect(resolved.semanticTags).not.toContain(FOOT_POSE_HIDDEN_TAG);
   });
 
   it("never assigns an emotional meaning", () => {

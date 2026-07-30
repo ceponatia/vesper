@@ -14,9 +14,11 @@ import {
   footAttributeFixture,
   footObserver,
   footWorkedCases,
+  footwearFixture,
   readFootAffordances,
   type FootFixture,
 } from "./fixtures";
+import { FOOT_FOOTWEAR_ANOMALY } from "./footwear";
 import {
   FOOT_ARTICULATION_ID,
   FOOT_CONTACT_PRESSURE_ID,
@@ -109,15 +111,48 @@ describe("the slice-2 fixture matrix", () => {
     expect(tagsFor(result, FOOT_ARTICULATION_ID)).toContain("restricted_by_contact");
   });
 
-  it("reports a toe movement inside a rigid boot as restricted, and nothing else", () => {
+  it("reports a toe movement inside a rigid boot as restricted and HIDDEN", () => {
     const result = read(footWorkedCases.rigidBootHiddenToes());
     expect(ids(result)).toEqual([FOOT_ARTICULATION_ID]);
+    // The pose detail is not an externally available fact — a rigid shell moves
+    // as one piece — so it never reaches a prompt. What the boot cannot hide is
+    // that it is a boot and that it is stopping her.
     expect(tagsFor(result, FOOT_ARTICULATION_ID)).toEqual([
       "foot_left",
-      "toes_curled",
-      "arch_neutral",
+      "pose_hidden_by_footwear",
       "restricted_by_footwear",
     ]);
+  });
+
+  it("lets flexible fabric transmit the same toe curl", () => {
+    const result = read(footWorkedCases.sockTransmittedToeCurl());
+    const tags = tagsFor(result, FOOT_ARTICULATION_ID);
+    expect(tags).toEqual(["foot_left", "toes_curled", "arch_neutral", "restricted_by_contact"]);
+    expect(tags).not.toContain("pose_hidden_by_footwear");
+    // …and the touch through it is filtered rather than bare or blocked.
+    expect(tagsFor(result, FOOT_SURFACE_TEXTURE_ID)).toContain("ribbed_sock_filtered");
+  });
+
+  it("keeps a damp left sole and a dry right sole apart", () => {
+    const result = read(footWorkedCases.dampLeftFootDryRight());
+    // The contact is on the LEFT sole, which is the wet one.
+    expect(tagsFor(result, FOOT_SURFACE_TEXTURE_ID)).toContain("moisture_softened");
+
+    const dryRight = readFootAffordances({
+      attributes: footWorkedCases.dampLeftFootDryRight().attributes,
+      payload: {
+        ...footWorkedCases.dampLeftFootDryRight().payload,
+        contact: committedFootContact({
+          detail: "plantar_surface",
+          locationId: "sole",
+          side: "right",
+          pressure: "light",
+          area: "broad",
+        }),
+      },
+      perception: footObserver(),
+    });
+    expect(tagsFor(dryRight, FOOT_SURFACE_TEXTURE_ID)).not.toContain("moisture_softened");
   });
 
   it("keeps a damp sole readable while the dorsal surface has dried", () => {
@@ -178,7 +213,7 @@ describe("perception and repetition", () => {
     const posed = (side: "left" | "right"): FootFixture => ({
       attributes: footAttributeFixture({ arch: "average", nails: "neat", toes: "average" }),
       payload: {
-        condition: { moisture: 0, contributors: [], placedSubstances: [], placedResidues: [] },
+        condition: [{ moisture: 0, contributors: [], placedSubstances: [], placedResidues: [] }],
         articulation: [{ side, toes: "curled", arch: "neutral" }],
       },
       perception: footObserver(),
@@ -220,9 +255,12 @@ describe("determinism", () => {
 
 describe("the slice-1 gate still governs what may be observed", () => {
   it("refuses a romantically-framed foot contact in a lane with no permission owner", () => {
-    // The fixture's policy grant covers `affectionate_touch` only, which is the
-    // audit's RECOMMENDED default for the first foot trial. A `romantic` attempt
-    // is rejected by the gate, so no committed contact exists to observe.
+    // The fixture's policy grant covers `affectionate_touch` only. Romantic
+    // contact needs a permission owner and positive adult eligibility for every
+    // participant (owner ruling, 2026-07-30) and legacy chat can produce
+    // neither, so the attempt is rejected by the gate and no committed contact
+    // exists to observe. Relabeling it to make the trial commit is exactly what
+    // the same ruling forbids.
     expect(() => committedFootContact({ detail: "arch", locationId: "foot_arch", actionKind: "romantic" })).toThrow(
       /did not commit/u,
     );
@@ -283,6 +321,25 @@ describe("registration is slice 3's job", () => {
     expect(
       elsewhere.suppressed.find((entry) => entry.phenomenonId === FOOT_CONTACT_PRESSURE_ID)?.code,
     ).toBe(AFFORDANCE_INPUT_UNAVAILABLE);
+  });
+
+  it("reports a repeated wardrobe layer id instead of accepting it in silence", () => {
+    const sink = new DiagnosticCollector();
+    const fixture = footWorkedCases.sockFilteredTouch();
+    const doubled = readFootAffordances({
+      attributes: fixture.attributes,
+      payload: {
+        ...fixture.payload,
+        footwear: [footwearFixture(), footwearFixture({ parts: ["upper"], order: 1 })],
+      },
+      perception: fixture.perception,
+      sink,
+    });
+    expect(sink.items.map((entry) => entry.code)).toContain(FOOT_FOOTWEAR_ANOMALY);
+    expect(sink.hasErrors).toBe(false);
+    // The read still works. An unreadable wardrobe that makes a shod foot read
+    // bare is the one direction this layer must never fail in.
+    expect(tagsFor(doubled, FOOT_SURFACE_TEXTURE_ID)).toEqual(["soft_arch", "ribbed_sock_filtered"]);
   });
 
   it("keeps its fixture builders out of the public barrel", async () => {
