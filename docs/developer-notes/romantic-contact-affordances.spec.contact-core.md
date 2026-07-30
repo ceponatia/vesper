@@ -393,7 +393,7 @@ permission (legacy) as unowned in both lanes, so every one of them arrives as an
 | `state.ts` | `committedContactReadSchema`, `parseContactLifecycleState` — the versioned shape and its healing. |
 | `diagnostics.ts` | The ten codes slice 1 emits. |
 | `test-support.ts` | `probe*` fixture builders. Deliberately **not** in the barrel. |
-| `*.test.ts` | 5 files / 87 cases: resolve, lifecycle, material, state, neutrality. |
+| `*.test.ts` | 5 files / 92 cases: resolve, lifecycle, material, state, neutrality. |
 
 ### Public API
 
@@ -425,6 +425,7 @@ permission (legacy) as unowned in both lanes, so every one of them arrives as an
 | Diagnostic codes `contact_action_context_invalid`, … | Dotted `contact.*` | Matches `affordance.input.unavailable` and `guidance.disclosure.leak`. Only the ten codes slice 1 actually emits exist; a constant nobody pushes is a promise the surface cannot keep. |
 | — | `ContactId` is **derived**, not minted | `pairKey + start event ref`. No counter, no clock: a retake replaying the same attempt against the same cut must reproduce the identical id or the capture fingerprints diverge. |
 | — | The pair key is **order-independent** | "The player's hand on her arch" and "her arch against his hand" are one touch. Keying by acting direction would let a role swap open a second contact on the same surfaces and both would then report pressure. Orientation is preserved on `source`/`target` and is never patched. |
+| The lifecycle `contentKey` fingerprints `materialBetween` by `layerId` | **(errata, 2026-07-30)** It fingerprints each layer's CONTENT — `layerId`, `order`, and the six transmission/visibility fields — after a canonical `sortContactMaterialLayers` | A `layerId` is the wardrobe's own instance id and it survives the garment changing underneath it: a sock soaking through keeps its id while its permeability, moisture transmission, and shape transmission all move. The id-only key took the `contact_continued` path for exactly that case, so the projection kept the dry snapshot and every observation downstream described a material that no longer existed. Two deliberate exclusions: **array position is not content** (the canonical order is total and `order` is itself fingerprinted, so a layer that genuinely moved in the stack is a change while an adapter returning the same layers in a different array order is not — otherwise a re-read of an unchanged cut would write an update event for a presentation detail); and **`evidence` is not content** (it is provenance, and a ref that varies per read would emit `contact_updated` every exchange for a contact nothing happened to — the mirror image of the bug being fixed). `implicitAdjustments` stay keyed by `id`: an accepted adjustment is minted by `classifyContactAdjustment` from one proposal and carries no magnitude that could drift. |
 | — | `phase: "active"` vs `phase: "ended"` as separate types | "An ended contact cannot enter a current frame" becomes a compile error rather than a rule. Likewise a non-committable resolution has no `intent`, so it cannot be passed to `commitContactResolution` at all. |
 
 ### Rulings — confirmed by the owner 2026-07-30

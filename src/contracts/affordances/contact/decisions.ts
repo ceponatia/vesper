@@ -52,11 +52,13 @@ export const CONTACT_ACTION_SCOPE: Readonly<Record<ContactActionKind, ContactPol
 /**
  * Which kinds need an explicit adult-eligibility pass for every participant.
  *
- * The audit's owner decision 1 is unresolved, so this is the conservative half
- * of it: the two kinds the plan names ("Adult intimate contact must pass the
- * authoritative consent and policy check") are gated, and the ordinary social
- * kinds are not — because gating them would fail every fixture without making
- * any character safer.
+ * **Settled law** (owner, 2026-07-30 — romantic-contact-affordances.audit.md
+ * §"Owner decisions needed" 1). Every participant, the player persona included,
+ * must be POSITIVELY adult for `romantic` and `intimate` contact; an unknown,
+ * non-numeric, or fantasy-scaled age reads `unresolved` and therefore fails
+ * closed. The ordinary social kinds are not gated: gating them would fail every
+ * fixture without making any character safer. Romantically- or fetish-framed
+ * foot play is `romantic` and is never relabeled to make a trial commit.
  */
 export function contactActionRequiresAdultEligibility(kind: ContactActionKind): boolean {
   switch (kind) {
@@ -73,11 +75,14 @@ export function contactActionRequiresAdultEligibility(kind: ContactActionKind): 
 /**
  * Which kinds need an interaction-permission grant.
  *
- * The audit's owner decision 3, conservative half. Ordinary social contact is
- * what the chat lane already narrates freely and has no permission owner for;
- * demanding a grant it cannot produce would block the foot trial without
- * changing a single narrated outcome. Romantic and intimate contact demand one
- * and therefore fail closed in legacy chat until an owner exists.
+ * **Settled law** (owner, 2026-07-30 — romantic-contact-affordances.audit.md
+ * §"Owner decisions needed" 3): permission-neutral incidental, casual, and
+ * affectionate touch; a grant required for romantic and intimate. Ordinary
+ * social contact is what the chat lane already narrates freely and has no
+ * permission owner for, so demanding a grant it cannot produce would block the
+ * foot trial without changing a single narrated outcome. Romantic and intimate
+ * contact demand one and therefore fail closed in legacy chat until an owner
+ * exists.
  */
 export function contactActionRequiresPermission(kind: ContactActionKind): boolean {
   switch (kind) {
@@ -143,7 +148,12 @@ export type ContactEligibilityStatus = z.infer<typeof contactEligibilityStatusSc
  * actually COVERS both ends of the contact, so a lane that answered about one
  * character cannot have its answer spent on the other. A known minor is always
  * `ineligible`; unknown, non-numeric, fantasy-scaled, and player ages are
- * `unresolved` until the owner rules (audit §"Owner decisions needed" 1).
+ * `unresolved`, which fails the romantic/intimate gate closed — **ruled by the
+ * owner 2026-07-30** (audit §"Owner decisions needed" 1). The ruling adds an
+ * explicit `adult | minor | unresolved` declaration, independent of display age,
+ * that a lane adapter maps into this read; existing records default to
+ * `unresolved`, and the repo-wide `isMinorAge` fail-open fallback is
+ * deliberately unchanged.
  */
 export interface ContactParticipantEligibilityRead {
   readonly status: ContactEligibilityStatus;

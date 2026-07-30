@@ -143,15 +143,17 @@ export function footContactFromCommitted(input: {
 // ---------------------------------------------------------------------------
 
 /**
- * What `deriveMechanics` needs: the owner's coarse condition and what is worn.
+ * What `deriveMechanics` needs: the owner's coarse condition per foot, and what
+ * is worn.
  *
- * The COARSE read travels, not the distributed one — the distribution needs the
+ * The COARSE reads travel, not the distributed ones — the distribution needs the
  * structural profile (retention and airflow are profile terms) and the staged
- * pipeline hands the profile to `deriveMechanics`. An absent `coarse` is the
- * lane saying nothing, which becomes the all-unknown condition there.
+ * pipeline hands the profile to `deriveMechanics`. An empty list is the lane
+ * saying nothing, which becomes the all-unknown condition there.
  */
 export interface FootAffordanceState extends AffordanceStateSnapshot {
-  readonly coarse?: FootCoarseConditionRead;
+  /** At most one entry per foot, plus at most one for the feet nobody distinguished. */
+  readonly conditions: readonly FootCoarseConditionRead[];
   readonly footwear?: FootwearContactRead;
   /** Committed pose per foot — read at this stage only for its effect on the toe spaces. */
   readonly articulations: readonly FootArticulationRead[];

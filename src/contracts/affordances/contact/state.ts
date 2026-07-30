@@ -30,12 +30,13 @@ import {
 /**
  * The persisted shape of the active-contact projection, and its healing rules.
  *
- * **No storage wiring ships in slice 1.** The plan's open question — *"Where
- * should committed contact live?"* — is unresolved, and both candidate homes
- * (a lifecycle event stream, or scene state restored with the lane's existing
- * rollback anchors) are real. What this file settles is the part that must not
- * be decided twice: the versioned shape a store would hold and what a corrupt
- * blob becomes.
+ * **No storage wiring ships in slice 1**, but the home is no longer an open
+ * question. *"Where should committed contact live?"* was **ruled by the owner
+ * 2026-07-30** (romantic-contact-affordances.audit.md): a durable event/action
+ * is the provenance, plus a versioned active-contact projection captured in the
+ * chat's retake snapshot — contact can never remain prompt-local. This file is
+ * that projection's shape, settled here so it is not decided twice; slice 3
+ * wires the store to it.
  *
  * ## Why a corrupt contact is DROPPED, not quarantined
  *

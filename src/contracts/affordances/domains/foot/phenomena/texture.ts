@@ -118,7 +118,7 @@ export const footSurfaceTextureContact = defineAffordancePhenomenon<FootAffordan
     }
 
     const profile = footSurfaceProfile(input.profile, locus.surfaceId);
-    const mechanics = footSurfaceMechanics(input.mechanics, locus.surfaceId);
+    const mechanics = footSurfaceMechanics(input.mechanics, locus.surfaceId, locus.side);
     if (profile === undefined || mechanics === undefined) {
       return footSuppressed(FOOT_SURFACE_TEXTURE_ID, FOOT_SURFACE_UNPROFILED, locus.surfaceId);
     }

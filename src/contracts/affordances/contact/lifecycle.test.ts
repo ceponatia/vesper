@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "../../diagnostics";
-import { adapterSupported } from "../core";
+import { adapterSupported, toUnitInterval } from "../core";
+import type { ContactMaterialLayerRead } from "./material";
 import { CONTACT_LIFECYCLE_INVALID } from "./diagnostics";
 import { contactEventRef } from "./identity";
 import {
@@ -32,13 +33,15 @@ function committable(intent: Partial<ContactActionIntent> = {}): CommittableCont
   return resolution;
 }
 
-function committableThrough(layerIds: readonly string[]): CommittableContactResolution {
-  const attempt = probeAttempt({
-    context: { material: adapterSupported({ layers: layerIds.map((id) => probeLayer(id)), evidence: [] }) },
-  });
+function committableWith(layers: readonly ContactMaterialLayerRead[]): CommittableContactResolution {
+  const attempt = probeAttempt({ context: { material: adapterSupported({ layers, evidence: [] }) } });
   const resolution = resolveContactAttempt(attempt);
   if (resolution.status !== "committable") throw new Error(`fixture did not commit: ${resolution.status}`);
   return resolution;
+}
+
+function committableThrough(layerIds: readonly string[]): CommittableContactResolution {
+  return committableWith(layerIds.map((id) => probeLayer(id)));
 }
 
 function start(state: ContactLifecycleState = emptyContactLifecycleState()) {
@@ -144,6 +147,66 @@ describe("contact lifecycle", () => {
       });
       expect(dressed.commit.kind).toBe("contact_updated");
       expect(dressed.contact.transmission.directSkinContact).toBe(false);
+    });
+
+    it("counts a layer that changed under a stable id as a change", () => {
+      // The wardrobe's `layerId` survives the garment changing underneath it: a
+      // sock soaking through keeps its id while its permeability moves. An
+      // id-only fingerprint continued here and the projection kept the dry
+      // snapshot for every observation downstream to read.
+      const dry = commitContactResolution({
+        state: emptyContactLifecycleState(),
+        resolution: committableWith([probeLayer("sock")]),
+        eventRef: PROBE_EVENT,
+      });
+      const soaked = commitContactResolution({
+        state: dry.state,
+        resolution: committableWith([
+          { ...probeLayer("sock"), moistureTransmission: toUnitInterval(9_500) },
+        ]),
+        eventRef: contactEventRef("soaked_event"),
+      });
+      expect(soaked.commit.kind).toBe("contact_updated");
+      expect(soaked.contact.contactId).toBe(dry.contact.contactId);
+      expect(soaked.contact.materialBetween[0]?.moistureTransmission).toBe(9_500);
+      // The composed answer moves with the layers, not with the id.
+      expect(soaked.contact.transmission.moistureTransmission).toBe(9_500);
+      if (soaked.commit.kind !== "contact_updated") return;
+      expect(soaked.commit.patch.materialBetween?.[0]?.moistureTransmission).toBe(9_500);
+    });
+
+    it("still continues for layers whose content is identical", () => {
+      const first = commitContactResolution({
+        state: emptyContactLifecycleState(),
+        resolution: committableWith([probeLayer("sock"), probeLayer("boot", 1)]),
+        eventRef: PROBE_EVENT,
+      });
+      const again = commitContactResolution({
+        state: first.state,
+        resolution: committableWith([probeLayer("sock"), probeLayer("boot", 1)]),
+        eventRef: contactEventRef("later_event"),
+      });
+      expect(again.commit.kind).toBe("contact_continued");
+      expect(again.state).toBe(first.state);
+    });
+
+    it("does not count the adapter's array order as a change", () => {
+      // `sortContactMaterialLayers` is a total canonical order and `order` is
+      // itself fingerprinted, so where a layer sits in the array the adapter
+      // handed over is a presentation detail rather than a physical claim.
+      const stack = [probeLayer("sock", 0), probeLayer("boot", 1)];
+      const first = commitContactResolution({
+        state: emptyContactLifecycleState(),
+        resolution: committableWith(stack),
+        eventRef: PROBE_EVENT,
+      });
+      const reversed = commitContactResolution({
+        state: first.state,
+        resolution: committableWith([...stack].reverse()),
+        eventRef: contactEventRef("reordered_event"),
+      });
+      expect(reversed.commit.kind).toBe("contact_continued");
+      expect(reversed.state).toBe(first.state);
     });
 
     it("treats the same touch asserted from the other side as one contact", () => {

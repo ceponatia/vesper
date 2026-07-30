@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { contactSurfaceSideSchema, contactSurfaceSides, type ContactSurfaceSide } from "../../contact";
 import {
   addUnits,
   complementUnit,
@@ -32,6 +33,14 @@ import { footSurfaceIdSchema, footSurfaceSubtree, type FootSurfaceId } from "./t
  * optional: `undefined` means nobody could answer, which is a different value
  * from `0`, and every dependent phenomenon suppresses on it rather than
  * rendering dry, clean, or high-friction.
+ *
+ * ## A person has two feet
+ *
+ * The coarse read is keyed by `side`, like every support, articulation, and
+ * contact read in this domain. A lane with one answer for the character sends
+ * one side-less entry and nothing changes; a lane that can tell the two feet
+ * apart sends one entry each, and a damp left sole beside a dry right one stops
+ * being a fact the vocabulary cannot hold.
  *
  * ## Placed versus distributed
  *
@@ -111,7 +120,15 @@ export interface FootSurfaceConditionRead {
 }
 
 /**
- * What the surface-state owner could answer for the foot as a whole.
+ * What the surface-state owner could answer for ONE foot.
+ *
+ * `side` is what makes a soaked left sole and a dry right one representable.
+ * It is optional because most lanes have one answer for the character rather
+ * than two: an entry with no side is the answer for every foot the owner did
+ * not distinguish, and an entry that names a side replaces it there. Support,
+ * articulation, and every contact read were already per side; this is the read
+ * that was not, and a subject-wide condition made "she has one foot in a puddle"
+ * a fact the domain could not hold.
  *
  * The refinement is the cross-check between the two channels the read carries:
  * a stated `moisture: 0` alongside a nonzero WETTING contributor is a
@@ -122,8 +139,10 @@ export interface FootSurfaceConditionRead {
  * the right severity: nobody meant it, and repairing it would mean choosing
  * which of the two claims to believe.
  */
-export const footCoarseConditionSchema = z
+const footCoarseConditionObject = z
   .object({
+    /** Which foot this answers for. Absent ⇒ every foot not answered separately. */
+    side: contactSurfaceSideSchema.optional(),
     /** Absent ⇒ the owner cannot answer; every region reads unknown. */
     moisture: unitIntervalSchema.optional(),
     contributors: z.array(footSurfaceSubstanceSchema).max(8).readonly().default([]),
@@ -131,16 +150,49 @@ export const footCoarseConditionSchema = z
     placedSubstances: z.array(footPlacedSubstanceSchema).max(16).readonly().default([]),
     placedResidues: z.array(footPlacedResidueSchema).max(16).readonly().default([]),
   })
-  .strict()
-  .refine(
-    (value) =>
-      value.moisture !== 0 ||
-      ![...value.contributors, ...value.placedSubstances].some(
-        (entry) => entry.amount > 0 && footSubstanceIsWetting(entry.kind),
-      ),
-    { message: "a foot stated as dry cannot carry water, sweat, or a wet garment" },
+  .strict();
+
+function statesDryWhileWet(value: z.infer<typeof footCoarseConditionObject>): boolean {
+  return (
+    value.moisture === 0 &&
+    [...value.contributors, ...value.placedSubstances].some(
+      (entry) => entry.amount > 0 && footSubstanceIsWetting(entry.kind),
+    )
   );
+}
+
+export const footCoarseConditionSchema = footCoarseConditionObject.refine(
+  (value) => !statesDryWhileWet(value),
+  { message: "a foot stated as dry cannot carry water, sweat, or a wet garment" },
+);
 export type FootCoarseConditionRead = z.infer<typeof footCoarseConditionSchema>;
+
+/**
+ * The whole surface-state answer: at most one entry per foot, plus at most one
+ * side-less entry for the feet the owner did not distinguish.
+ *
+ * A repeated side FAILS rather than being merged or last-write-wins: two entries
+ * for the left foot are two owners telling different stories about one surface,
+ * the same contradiction the dry-while-wet refinement refuses, and picking one
+ * would mean choosing which to believe.
+ */
+export const footConditionSetSchema = z
+  .array(footCoarseConditionSchema)
+  .max(contactSurfaceSides.length + 1)
+  .readonly()
+  .refine((entries) => new Set(entries.map((entry) => entry.side ?? "")).size === entries.length, {
+    message: "one condition answer per foot",
+  });
+export type FootConditionSetRead = z.infer<typeof footConditionSetSchema>;
+
+/** The answer that applies to one foot: its own, or the undistinguished one. */
+export function footConditionForSide(
+  conditions: readonly FootCoarseConditionRead[],
+  side: ContactSurfaceSide | undefined,
+): FootCoarseConditionRead | undefined {
+  const own = side === undefined ? undefined : conditions.find((entry) => entry.side === side);
+  return own ?? conditions.find((entry) => entry.side === undefined);
+}
 
 // ---------------------------------------------------------------------------
 // Distribution

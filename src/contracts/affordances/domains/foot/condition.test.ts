@@ -1,17 +1,21 @@
 import { describe, expect, it } from "vitest";
+import type { ContactSurfaceSide } from "../../contact";
 import { resolvedAttributeSnapshot, toUnitInterval } from "../../core";
 import {
   distributeFootCondition,
   footCleanlinessBands,
   footCoarseConditionSchema,
   footConditionAt,
+  footConditionSetSchema,
   footRetentionWeight,
   unknownFootCondition,
   type FootCoarseConditionRead,
   type FootSurfaceConditionRead,
 } from "./condition";
 import { footAttributeFixture } from "./fixtures";
+import { deriveFootMechanics, footSurfaceMechanics } from "./mechanics";
 import { compileFootProfile, type FootStructuralProfile } from "./profile";
+import type { FootArticulationRead } from "./support";
 import { footSurfaceIds, type FootSurfaceId } from "./topology";
 
 const PROFILE: FootStructuralProfile = (() => {
@@ -232,6 +236,93 @@ describe("the two channels cannot tell different stories", () => {
 
   it("still reads a genuinely bare dry foot at zero", () => {
     expect(at(distribute({ moisture: toUnitInterval(0) }), "arch").moisture).toBe(0);
+  });
+});
+
+describe("a person has two feet", () => {
+  const SOAKED: FootCoarseConditionRead = {
+    ...EMPTY_COARSE,
+    side: "left",
+    moisture: toUnitInterval(8_000),
+    contributors: [{ kind: "water", amount: toUnitInterval(8_000) }],
+  };
+  const DRY_RIGHT: FootCoarseConditionRead = { ...EMPTY_COARSE, side: "right", moisture: toUnitInterval(0) };
+
+  function moistureAt(
+    conditions: readonly FootCoarseConditionRead[],
+    surfaceId: FootSurfaceId,
+    side?: ContactSurfaceSide,
+    articulations: readonly FootArticulationRead[] = [],
+  ): number | undefined {
+    return footSurfaceMechanics(
+      deriveFootMechanics({ profile: PROFILE, conditions, articulations }),
+      surfaceId,
+      side,
+    )?.moisture;
+  }
+
+  it("holds a soaked left sole beside a dry right one", () => {
+    const conditions = [SOAKED, DRY_RIGHT];
+    expect(moistureAt(conditions, "plantar_surface", "left") ?? 0).toBeGreaterThan(0);
+    expect(moistureAt(conditions, "plantar_surface", "right")).toBe(0);
+  });
+
+  it("refuses two answers for the same foot rather than picking one", () => {
+    expect(footConditionSetSchema.safeParse([SOAKED, { ...DRY_RIGHT, side: "left" }]).success).toBe(false);
+    expect(footConditionSetSchema.safeParse([SOAKED, DRY_RIGHT]).success).toBe(true);
+  });
+
+  it("leaves a foot the owner never mentioned UNKNOWN, never the other foot's answer", () => {
+    // Answering about the left foot says nothing about the right one, and an
+    // unsided locus has no foot to borrow from either.
+    expect(moistureAt([SOAKED], "plantar_surface", "left") ?? 0).toBeGreaterThan(0);
+    expect(moistureAt([SOAKED], "plantar_surface", "right")).toBeUndefined();
+    expect(moistureAt([SOAKED], "plantar_surface")).toBeUndefined();
+  });
+
+  it("gives an undistinguished answer to every foot", () => {
+    const shared = [{ ...EMPTY_COARSE, moisture: toUnitInterval(6_000) }];
+    expect(moistureAt(shared, "plantar_surface", "left") ?? 0).toBeGreaterThan(0);
+    expect(moistureAt(shared, "plantar_surface", "right")).toBe(moistureAt(shared, "plantar_surface", "left"));
+    expect(moistureAt(shared, "plantar_surface")).toBe(moistureAt(shared, "plantar_surface", "left"));
+  });
+
+  it("preserves zero and preserves unknown per foot", () => {
+    const conditions = [{ ...EMPTY_COARSE, side: "left" as const, moisture: toUnitInterval(0) }, { ...EMPTY_COARSE, side: "right" as const }];
+    for (const surfaceId of footSurfaceIds) {
+      expect(moistureAt(conditions, surfaceId, "left"), surfaceId).toBe(0);
+      expect(moistureAt(conditions, surfaceId, "right"), surfaceId).toBeUndefined();
+    }
+  });
+
+  it("applies each foot's own pose to its own toe spaces", () => {
+    // One condition for both feet, two different poses. The subject-wide model
+    // could only fall back to the structural default here, so a curled left foot
+    // and a spread right one read identically damp between the toes.
+    const shared = [{ ...EMPTY_COARSE, moisture: toUnitInterval(6_000) }];
+    const poses: readonly FootArticulationRead[] = [
+      { side: "left", toes: "curled", arch: "neutral", evidence: [] },
+      { side: "right", toes: "spread", arch: "neutral", evidence: [] },
+    ];
+    const left = moistureAt(shared, "interdigital_spaces", "left", poses) ?? 0;
+    const right = moistureAt(shared, "interdigital_spaces", "right", poses) ?? 0;
+    expect(left).toBeGreaterThan(right);
+  });
+
+  it("falls back to the structural default for a locus that names no side", () => {
+    const shared = [{ ...EMPTY_COARSE, moisture: toUnitInterval(6_000) }];
+    const disagreeing: readonly FootArticulationRead[] = [
+      { side: "left", toes: "curled", arch: "neutral", evidence: [] },
+      { side: "right", toes: "spread", arch: "neutral", evidence: [] },
+    ];
+    const agreeing: readonly FootArticulationRead[] = [
+      { side: "left", toes: "spread", arch: "neutral", evidence: [] },
+      { side: "right", toes: "spread", arch: "neutral", evidence: [] },
+    ];
+    const unposed = moistureAt(shared, "interdigital_spaces");
+    expect(moistureAt(shared, "interdigital_spaces", undefined, disagreeing)).toBe(unposed);
+    // Both feet agreeing IS an answer for whichever foot it turns out to be.
+    expect(moistureAt(shared, "interdigital_spaces", undefined, agreeing) ?? 0).toBeLessThan(unposed ?? 0);
   });
 });
 

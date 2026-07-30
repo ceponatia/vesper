@@ -117,11 +117,14 @@ export interface FootContactFixtureInput {
 /**
  * A palm on a foot, resolved and committed through the real contact gate.
  *
- * The action kind is `affectionate` by default, which is the audit's
- * RECOMMENDED default for the first foot trial: it needs no adult-eligibility
- * proof and no permission owner, both of which legacy chat cannot produce. A
- * fixture asking for `romantic` would be refused by the gate — correctly, and
- * that refusal is itself worth a test.
+ * The action kind is `affectionate` by default: it needs no adult-eligibility
+ * proof and no permission owner, both of which legacy chat cannot produce. That
+ * is the ruled starting point, not a stand-in — the owner ruled 2026-07-30
+ * (romantic-contact-affordances.audit.md §"Owner decisions needed" 1) that
+ * romantic contact is NEVER relabeled to make a trial commit, and that a
+ * genuinely affectionate case is the right first integration. A fixture asking
+ * for `romantic` is refused by the gate — correctly, and that refusal is itself
+ * worth a test.
  *
  * Throws on a non-committable resolution: a fixture that cannot produce the
  * contact it claims is a bug in the fixture, not degraded runtime data.
@@ -246,6 +249,17 @@ export function readFootAffordances(input: {
 // The calibration fixture
 // ---------------------------------------------------------------------------
 
+/**
+ * A foot the owner read as dry. No `side`, which is the ordinary case: one
+ * answer for a character whose two feet the lane cannot tell apart.
+ */
+const DRY_FOOT: FootCoarseConditionRead = {
+  moisture: toUnitInterval(0),
+  contributors: [],
+  placedSubstances: [],
+  placedResidues: [],
+};
+
 /** A dry foot with a worked-in film of lotion on the arch and the ball. */
 const LOTION_ON_ARCH_AND_BALL: FootCoarseConditionRead = {
   moisture: toUnitInterval(0),
@@ -272,7 +286,7 @@ export function lotionArchToHeelSlide(): FootFixture {
   return {
     attributes: footAttributeFixture({ arch: "average", nails: "neat", toes: "average" }),
     payload: {
-      condition: LOTION_ON_ARCH_AND_BALL,
+      condition: [LOTION_ON_ARCH_AND_BALL],
       contact: committedFootContact({
         detail: "arch",
         locationId: "foot_arch",
@@ -296,7 +310,7 @@ export function restingPalmOnArch(): FootFixture {
   return {
     attributes: footAttributeFixture({ arch: "average", nails: "neat", toes: "average" }),
     payload: {
-      condition: LOTION_ON_ARCH_AND_BALL,
+      condition: [LOTION_ON_ARCH_AND_BALL],
       contact: committedFootContact({
         detail: "arch",
         locationId: "foot_arch",
@@ -316,7 +330,7 @@ export function sockFilteredTouch(): FootFixture {
   return {
     attributes: footAttributeFixture({ arch: "average", nails: "neat", toes: "average" }),
     payload: {
-      condition: { moisture: toUnitInterval(0), contributors: [], placedSubstances: [], placedResidues: [] },
+      condition: [DRY_FOOT],
       contact: committedFootContact({
         detail: "arch",
         locationId: "foot_arch",
@@ -336,7 +350,7 @@ export function openToedSandal(): FootFixture {
   return {
     attributes: footAttributeFixture({ arch: "high", nails: "pedicured", toes: "long" }),
     payload: {
-      condition: { moisture: toUnitInterval(0), contributors: [], placedSubstances: [], placedResidues: [] },
+      condition: [DRY_FOOT],
       contact: committedFootContact({ detail: "toe_pads", locationId: "toes", pressure: "light", area: "narrow" }),
       footwear: [
         footwearFixture({
@@ -360,7 +374,7 @@ export function rigidBootHiddenToes(): FootFixture {
   return {
     attributes: footAttributeFixture({ arch: "average", nails: "trimmed", toes: "average" }),
     payload: {
-      condition: { moisture: toUnitInterval(0), contributors: [], placedSubstances: [], placedResidues: [] },
+      condition: [DRY_FOOT],
       footwear: [
         footwearFixture({
           layerId: "fixture_boot",
@@ -383,6 +397,65 @@ export function rigidBootHiddenToes(): FootFixture {
 }
 
 /**
+ * The other half of the rigid-boot row: the same committed toe curl inside
+ * FLEXIBLE fabric, being touched. The sock transmits deformation, so the pose
+ * detail is an externally available fact and the observation carries it.
+ */
+export function sockTransmittedToeCurl(): FootFixture {
+  return {
+    attributes: footAttributeFixture({ arch: "average", nails: "neat", toes: "average" }),
+    payload: {
+      condition: [DRY_FOOT],
+      contact: committedFootContact({
+        detail: "toe_pads",
+        locationId: "toes",
+        side: "left",
+        pressure: "light",
+        area: "narrow",
+        layers: [footFabricLayer("fixture_sock")],
+      }),
+      footwear: [footwearFixture()],
+      articulation: [{ side: "left", toes: "curled", arch: "neutral" }],
+      tactile: { available: true },
+    },
+    perception: footObserver(),
+  };
+}
+
+/**
+ * One foot in a puddle and one out of it. The condition owner answered PER FOOT,
+ * so the damp left sole and the dry right one are two different reads of the
+ * same character rather than one average nobody has.
+ */
+export function dampLeftFootDryRight(): FootFixture {
+  return {
+    attributes: footAttributeFixture({ arch: "average", nails: "neat", toes: "average" }),
+    payload: {
+      condition: [
+        {
+          side: "left",
+          moisture: toUnitInterval(8_000),
+          contributors: [{ kind: "water", amount: toUnitInterval(8_000) }],
+          placedSubstances: [],
+          placedResidues: [],
+        },
+        { side: "right", ...DRY_FOOT },
+      ],
+      contact: committedFootContact({
+        detail: "plantar_surface",
+        locationId: "sole",
+        side: "left",
+        pressure: "light",
+        area: "broad",
+      }),
+      footwear: [],
+      tactile: { available: true },
+    },
+    perception: footObserver(),
+  };
+}
+
+/**
  * A foot that has been out of the bath a while: the sole is still damp, the
  * exposed dorsal skin has dried, and the interdigital spaces are holding the
  * most of all.
@@ -391,12 +464,14 @@ export function dampSoleDryDorsal(): FootFixture {
   return {
     attributes: footAttributeFixture({ arch: "average", nails: "neat", toes: "long" }),
     payload: {
-      condition: {
-        moisture: toUnitInterval(6_000),
-        contributors: [{ kind: "water", amount: toUnitInterval(6_000) }],
-        placedSubstances: [],
-        placedResidues: [],
-      },
+      condition: [
+        {
+          moisture: toUnitInterval(6_000),
+          contributors: [{ kind: "water", amount: toUnitInterval(6_000) }],
+          placedSubstances: [],
+          placedResidues: [],
+        },
+      ],
       contact: committedFootContact({ detail: "plantar_surface", locationId: "sole", pressure: "light", area: "broad" }),
       footwear: [],
       tactile: { available: true },
@@ -416,7 +491,7 @@ export function unknownSurfaceState(): FootFixture {
   return {
     attributes: footAttributeFixture({ arch: "average", nails: "neat", toes: "average" }),
     payload: {
-      condition: { contributors: [], placedSubstances: [], placedResidues: [] },
+      condition: [{ contributors: [], placedSubstances: [], placedResidues: [] }],
       contact: committedFootContact({
         detail: "arch",
         locationId: "foot_arch",
@@ -439,7 +514,7 @@ export function noCommittedContact(): FootFixture {
   return {
     attributes: footAttributeFixture({ arch: "average", nails: "neat", toes: "average" }),
     payload: {
-      condition: { moisture: toUnitInterval(0), contributors: [], placedSubstances: [], placedResidues: [] },
+      condition: [DRY_FOOT],
       footwear: [],
     },
     perception: footObserver(),
@@ -453,6 +528,8 @@ export const footWorkedCases = {
   sockFilteredTouch,
   openToedSandal,
   rigidBootHiddenToes,
+  sockTransmittedToeCurl,
+  dampLeftFootDryRight,
   dampSoleDryDorsal,
   unknownSurfaceState,
   noCommittedContact,

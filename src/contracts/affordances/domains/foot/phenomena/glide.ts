@@ -121,7 +121,7 @@ export const footGlideResponse = defineAffordancePhenomenon<FootAffordanceFrame,
     const candidates: GlideCandidate[] = [];
     for (const locus of path) {
       const profile = footSurfaceProfile(input.profile, locus.surfaceId);
-      const mechanics = footSurfaceMechanics(input.mechanics, locus.surfaceId);
+      const mechanics = footSurfaceMechanics(input.mechanics, locus.surfaceId, locus.side);
       if (profile === undefined || mechanics === undefined) {
         return footSuppressed(FOOT_GLIDE_RESPONSE_ID, FOOT_SURFACE_UNPROFILED, locus.surfaceId);
       }
