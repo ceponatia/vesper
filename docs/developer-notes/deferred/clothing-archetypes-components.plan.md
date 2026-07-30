@@ -1,8 +1,9 @@
 # Garment archetypes and reusable components
 
 Status: draft — parked 2026-07-30 after reconciling the clothing-archetype idea
-with the clothing state graph that shipped on 2026-07-27. Do not build from this
-stub; promote it per [CLAUDE.md](CLAUDE.md) first.
+with the clothing state graph that shipped on 2026-07-27. This document replaces
+the stale pre-implementation proposal from PR 20. Do not build from this stub;
+promote it per [CLAUDE.md](CLAUDE.md) first.
 
 Companion technical design:
 [clothing-archetypes-components.spec.md](clothing-archetypes-components.spec.md).
