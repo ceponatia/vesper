@@ -1,6 +1,6 @@
 # Chat reply latency — the pause between send and the first word
 
-Status: draft (unscheduled — derived from [codebase-efficiency.audit.md](codebase-efficiency.audit.md); no roadmap line yet)
+Status: next (queued after resilience closures and the cheap hot-path tranche; repeated timing baseline required)
 
 ## Why
 
@@ -67,6 +67,19 @@ estimate** — likeliest candidate is B13's per-fold query collapse.
 - Not **C14** (batching the post-turn fact writes) — it changes which draft supersedes
   which, so it needs a ruling rather than a cheap win.
 
+## Review rulings and scope adjustments — 2026-07-30
+
+- Add a repeated timing baseline **before** changing the path. Record a median and
+  spread over the same fixture/deployment; one Fly run is too noisy to support a
+  latency claim. Keep the structural round-trip counts as a second measure.
+- B14 needs deterministic coverage for rollback anchors, mid-stream deletion,
+  retries, and the final persisted state. A manual fast-resend check remains useful,
+  but is not the correctness gate.
+- Keep the claim modest: this removes application-added waiting; provider
+  time-to-first-token still dominates.
+- Do not add an automatic client retry to this batch. Revisit it only if busy
+  responses remain measurable after the lock-hold reduction.
+
 ## Delivery slices
 
 0. **Rebase check.** Re-locate every call site against current `main` — the audit's
@@ -116,11 +129,8 @@ estimate** — likeliest candidate is B13's per-fold query collapse.
 
 ## Open questions
 
-- Do we add a pre-stream timing trace before the fixes, so the result reads as a
-  millisecond delta rather than a round-trip count? Without one the success criteria
-  stay structural — and is a single Fly before/after enough given Neon's latency
-  variance, or does it need a repeated-run median?
-- Does B13's per-fold worn/pool query collapse belong in this batch, or wait until
-  the wardrobe seam settles under the active affordance work?
-- Should the client retry a busy chat once regardless? That is the player-facing fix
-  for fast re-sends even after the lock hold shrinks — but it is its own small plan.
+- Does B13's per-fold worn/pool query collapse belong here once the wardrobe and
+  active affordance seams are quiet, or should this batch stop after parallelizing
+  the two independent wardrobe reads?
+- What repeated-run count and percentile become the standing latency-report
+  convention after slice 0?
