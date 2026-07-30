@@ -1,7 +1,7 @@
-import { z } from "zod";
+import { z, type ZodType } from "zod";
 import type { Diagnostic } from "../../diagnostics";
 import type { AttributeValue } from "../../attributes";
-import type { AffordanceEvidence } from "./evidence";
+import { affordanceEvidence, type AffordanceEvidence, type AffordanceEvidenceKind } from "./evidence";
 
 /**
  * The lane-neutral affordance type surface
@@ -119,6 +119,26 @@ export const adapterInvalid: AdapterRead<never> = { status: "invalid" };
 
 export function isAdapterSupported<T>(read: AdapterRead<T>): read is Extract<AdapterRead<T>, { status: "supported" }> {
   return read.status === "supported";
+}
+
+/**
+ * Narrow one lane input under the adapter result law: absent ⇒ `unavailable`,
+ * unparsable ⇒ `invalid`, otherwise `supported` with its provenance.
+ *
+ * Shared rather than re-declared per domain: three domains had written the same
+ * six lines, and a law that is copied is a law that eventually differs. It stays
+ * domain-neutral — a schema, an evidence kind, and an input key are the domain's,
+ * and the core only applies the rule to them.
+ */
+export function readAdapterInput<TSchema extends ZodType>(
+  schema: TSchema,
+  raw: unknown,
+  kind: AffordanceEvidenceKind,
+  key: string,
+): AdapterRead<z.output<TSchema>> {
+  if (raw === undefined) return adapterUnavailable;
+  const parsed = schema.safeParse(raw);
+  return parsed.success ? adapterSupported(parsed.data, [affordanceEvidence(kind, key)]) : adapterInvalid;
 }
 
 /** Project a bag of adapter reads into the status map a state snapshot carries. */

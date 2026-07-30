@@ -10,6 +10,7 @@ export * from "./core";
 export * from "./contact";
 export * from "./domains/hair";
 export * from "./domains/garment";
+export * from "./domains/foot";
 export * from "./domains";
 export * from "./derive-affordance-read";
 export * from "./recognition";

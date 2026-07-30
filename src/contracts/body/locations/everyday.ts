@@ -48,7 +48,22 @@ export const humanoidEverydayLocations: readonly BodyLocation[] = [
   // unchecking `toes` would collapse the whole foot (the coverage.ts carve-out
   // drops the ancestor id) — the same reason `face` is split into parts.
   { id: "toes", label: "toes", parentId: "feet", coverageRelevant: true },
+  // Contact loci, NOT garment slots (`coverageRelevant: false`, the intimate
+  // sub-tree's rule): no real footwear covers an arch without covering the sole
+  // or a toenail without covering the toe, so making them slots would only let a
+  // coverage editor carve a hole that cannot exist. They still ride
+  // `expandCoverage`, so a flip-flop's `sole` reaches the arch and the ball
+  // there (the wardrobe-visibility resolver skips non-slot ids entirely). The foot
+  // affordance domain maps its finer topology onto these three plus the four
+  // slots above (romantic-contact-affordances.spec.foot.md §"Semantic surface
+  // topology"); everything below this granularity stays domain-owned.
+  { id: "toenails", label: "toenails", parentId: "toes", coverageRelevant: false },
   { id: "top_of_foot", label: "top of foot", parentId: "feet", coverageRelevant: true },
   { id: "sole", label: "sole", parentId: "feet", coverageRelevant: true },
+  // Compound ids on purpose: bare `arch` and `ball` would enter the colloquial
+  // body-target phrase index (species/targets.ts) and match "the stone arch" or
+  // "threw the ball" in ordinary prose.
+  { id: "foot_arch", label: "foot arch", parentId: "sole", coverageRelevant: false },
+  { id: "ball_of_foot", label: "ball of foot", parentId: "sole", coverageRelevant: false },
   { id: "heel", label: "heel", parentId: "feet", coverageRelevant: true },
 ];
