@@ -52,8 +52,11 @@ umbrella further down.)
   `CHAT_AFFORDANCE_CUES` **parks OFF, finally** — history in the
   [trial report](body-attribute-affordances.trial.md) §Rematch log; see
   [roadmap.shipped.md](roadmap.shipped.md); plan stays open until the release
-  contract closes). What remains: slice 8's recorded image-consumer
-  decision, the successor-lane adapter follow-up named in the
+  contract closes). **Slice 8 closed 2026-07-29 with a follow-up decision**:
+  the general image consumer waits for the shared scene/body-relations owner;
+  its promotion gate is a small paired trial, parked in
+  [deferred.plan.md](deferred.plan.md#body-affordance-scene-image-consumer).
+  What remains here: the successor-lane adapter follow-up named in the
   [audit source map](body-attribute-affordances.audit.md), and an explicit
   implemented/follow-up/parked ruling per companion spec before the plan
   closes. **Slice 7 ships production-inert**: chat asserts exposure only for
@@ -199,6 +202,9 @@ Unpromoted ideas live in [deferred.plan.md](deferred.plan.md): the
 ([deferred/CLAUDE.md](deferred/CLAUDE.md) — the still-parked remainder of the
 2026-07-23/24 review batches, draft-plan stubs promoted one-by-one into real
 plans/specs as discussed),
+the **body-affordance scene-image consumer** (Slice 8's 2026-07-29 follow-up,
+after the shared scene/body-relations owner or an explicitly scheduled narrow
+paired trial),
 the relationship &
 meter timeline (UX-audit #4), the full **NPC-puppeting** system
 ([npc-puppeting.deferred.md](npc-puppeting.deferred.md) — only Slice 2's deflection

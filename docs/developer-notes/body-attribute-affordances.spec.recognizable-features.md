@@ -440,9 +440,11 @@ affordance layer; nothing in recognition imports a lane.
   expanding the existing vocabulary avoided a second facial-geometry axis that
   every authoring surface would have to learn.
 - **`visualRealizerId` is optional** on a feature-kind definition. The sketch
-  requires it, but no image consumer exists yet (that is slice 8) and a
-  required field would have been filled with placeholders — the honest shape
-  is "absent until something realizes it".
+  requires it, but Slice 8 deliberately deferred the image consumer
+  ([architecture ruling](body-attribute-affordances.spec.architecture.md#deferred-scene-image-consumer-slice-8-ruling-2026-07-29));
+  a required field would therefore have been filled with placeholders. The
+  honest shape remains "absent until a tested, allowlisted consumer needs a
+  distinct realization beyond the canonical appearance summary".
 - **The priors vocabulary lives in a `priors.ts` leaf**, re-exported verbatim
   by `projection.ts` so the frozen seam's names and import paths are unchanged.
   Purely a cycle fix (`pnpm lint:cycles`): the kind registry and the attribute

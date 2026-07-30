@@ -20,8 +20,13 @@ gains appeared in one valid round each but did not replicate) — full history i
 built but production-inert** for a comparable missing-owner reason: the chat
 lane only knows that a location is exposed when a garment covers it, so bare
 skin reads unknown and recognition correctly stays silent until a
-body-exposure owner exists. Also remaining before the release contract closes:
-slice 8 (image decision), the successor-lane adapter follow-up, and
+body-exposure owner exists. **Slice 8 closed 2026-07-29 with a follow-up
+decision**: the current production-capable observations are too narrow to
+justify a permanent scene-image consumer before the shared
+scene/body-relations owner exists; the named
+[deferred follow-up](deferred.plan.md#body-affordance-scene-image-consumer)
+keeps a small paired image trial as its promotion gate. Also remaining before
+the release contract closes: the successor-lane adapter follow-up and
 per-companion rulings. The shared foundation the
 [romantic-contact plan](romantic-contact-affordances.plan.md) consumes is
 live. The rejected positive projection's replacement is planned separately in
@@ -182,8 +187,17 @@ The first usable release requires:
    contradictions without causing repetition;
 5. observer-specific recognizable-feature notice and mention behavior.
 
-Scene-image reuse requires a recorded decision after narration is stable. It
-does not have to ship merely to close the first narrator release.
+Scene-image reuse required a recorded decision after narration stabilized.
+**Resolved 2026-07-29: follow up, do not ship it in this plan.** The useful
+composition inputs are still too narrow: wet hair and garment surface state
+exist, while fit, contact, posture, support, and relative geometry do not yet
+have all of their authoritative owners. The follow-up may promote after the
+shared scene/body-relations owner exists, or earlier only for an explicitly
+scheduled, tightly scoped paired trial of the already-supported hair and
+garment observations. Either route must prove a visible gain without harming
+identity, pose, wardrobe truth, or the image prompt's limited detail budget.
+This recorded follow-up satisfies the release contract; scene-image reuse does
+not have to ship to close the plan.
 
 Appendage, soft-tissue, garment, skin, and relative-geometry specs are
 design-ready companions, not silent promises that every domain ships in the
@@ -338,9 +352,31 @@ motion all stay deferred per the 2026-07-28 rulings.
 
 ### Slice 8 — image-consumer decision
 
-Evaluate whether the captured observations improve scene-image composition.
-Record a ship, follow-up, or rejection decision; do not build a separate
-image-only body model.
+**Decision complete 2026-07-29: named follow-up.** Do not add a general
+scene-image consumer in this plan. The narrator campaign proved that the shared
+reads can increase specificity, but not that more concrete claims improve
+correctness; meanwhile, the most compositionally valuable reads—pose, support,
+contact, and relative geometry—still wait on the shared scene/body-relations
+owner. A broad consumer now would mostly test wet hair and garment surface
+phrasing while spending scarce prompt space already used for identity, pose,
+wardrobe, and setting.
+
+The parked
+[body-affordance scene-image consumer](deferred.plan.md#body-affordance-scene-image-consumer)
+may promote once the relations owner exists. An owner may instead schedule an
+earlier, narrow paired trial of supported wet-hair and wet-garment
+observations. That trial compares otherwise identical reference-edit scenes
+across several rerolls and must show a clear visible improvement without new
+state, coverage, identity, pose, outfit, phantom-body-part, or prompt-truncation
+regressions. A win permits only a small allowlist of paintable semantic facts;
+a non-win leaves the consumer absent.
+
+Any future consumer reuses the captured, perception-safe read from the
+committed scene. It receives semantic relations rather than internal numbers,
+does not inherit narrator repetition/cooldown policy, and never builds a
+separate image-only body model. Technical boundaries and the future evaluation
+contract live in the
+[architecture spec](body-attribute-affordances.spec.architecture.md#deferred-scene-image-consumer-slice-8-ruling-2026-07-29).
 
 ## How we will judge it
 

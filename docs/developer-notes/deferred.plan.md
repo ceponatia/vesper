@@ -387,6 +387,23 @@ Let a player promote a favorite generated **scene image** to the session header 
 cover. A small surface on top of the existing scene-image + gallery machinery. From
 [ux-audit.plan.md](finished/ux-audit.plan.md).
 
+## Body-affordance scene-image consumer
+
+_Deferred by the
+[body-attribute affordances plan](body-attribute-affordances.plan.md#slice-8--image-consumer-decision)
+Slice 8 ruling on 2026-07-29; technical contract in the
+[architecture spec](body-attribute-affordances.spec.architecture.md#deferred-scene-image-consumer-slice-8-ruling-2026-07-29)._
+
+Let character-chat scene images consume a small allowlist of paintable semantic
+facts from the same captured, perception-safe affordance read used by the rest
+of the scene. Do not create image-only mechanics, coverage, or body state.
+Promote this after the shared scene/body-relations owner supplies posture,
+support, contact, impulse, and relative geometry. The owner may schedule an
+earlier paired trial limited to already-authoritative wet-hair and wet-garment
+facts; it must show a repeated visible gain without identity, pose, outfit,
+coverage, phantom-body-part, or prompt-budget regressions. A non-win leaves the
+consumer absent.
+
 ## First-run guided tour — _UX audit feature #10_
 
 _Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](finished/ux-audit.intake.md) §6 #10)._
