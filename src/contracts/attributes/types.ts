@@ -100,6 +100,23 @@ export const attributeDefinitionSchema = z.object({
    */
   defaultValue: z.union([z.string(), z.array(z.string()), z.number(), z.boolean()]).optional(),
   /**
+   * Persisted-baseline default (pre-slice-3 foot-facts hardening): this
+   * attribute's `defaultValue` is MATERIALIZED as a stored fact on every
+   * character and player-persona profile at grounding time
+   * (`materializeRegistryDefaults`) — not just on blank creations, and not as a
+   * read-time fallback. The row is written fill-only (a supplied or existing
+   * value always wins) at the low-precedence `creation` source with a versioned
+   * `sourceId` (`registry-default:<category>:vN`), so any later narrative,
+   * manual, or magic value overrides it and a manual edit stays authoritative.
+   * A flagged attribute has no blank state on a stored body: players may change
+   * the value, but the tracked fact remains present (PATCH re-materializes).
+   * Distinct from `coreVisual` — mark only attributes whose ABSENCE downstream
+   * consumers cannot interpret (e.g. the foot domain's structural axes), never
+   * to make a look converge. Requires `defaultValue`; enforced at group
+   * definition time.
+   */
+  materializeDefault: z.boolean().optional(),
+  /**
    * How this attribute surfaces in a **full-body** image prompt relative to
    * clothing (docs/images.md §Scene images). A waist-up avatar portrait conveys
    * the face and upper body but nothing of the figure below it, so a scene
@@ -207,6 +224,12 @@ export function defineAttributeGroup(category: AttributeCategory, definitions: r
           throw new Error(`Attribute ${def.id} defaultValue "${value}" is not in allowedValues`);
         }
       }
+    }
+    // A materialized baseline with nothing to materialize is a definition bug:
+    // the flag's whole contract is "this fact is always present on a stored
+    // body", and only `defaultValue` can make that true.
+    if (def.materializeDefault && def.defaultValue === undefined) {
+      throw new Error(`Attribute ${def.id} sets materializeDefault but has no defaultValue`);
     }
     // The flag only means anything when "none" is actually in the vocabulary —
     // set anywhere else it would silently do nothing (or mask a rename).

@@ -2,7 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { attributeRegistry, type Diagnostic } from "@/contracts";
+import {
+  attributeRegistry,
+  readAdultEligibilityDeclaration,
+  ADULT_ELIGIBILITY_DECLARATION_LABELS,
+  type Diagnostic,
+} from "@/contracts";
 import { mergeFillDraft } from "@/lib/character-fill";
 import { mergeRedraftScope, type CharacterSheetScope } from "@/lib/character-scopes";
 import {
@@ -329,6 +334,12 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
             </p>
             {detail.data.tags.length ? <p className="text-xs text-paper-500">{detail.data.tags.join(" · ")}</p> : null}
             {profile.age ? <p className="text-xs text-paper-500">Age: {profile.age}</p> : null}
+            {/* The adult-eligibility declaration is public by owner ruling (2026-07-30):
+                a browsing user sees what the author declared before duplicating or chatting. */}
+            <p className="text-xs text-paper-500">
+              Participant declaration:{" "}
+              {ADULT_ELIGIBILITY_DECLARATION_LABELS[readAdultEligibilityDeclaration(profile.adultEligibilityDeclaration)]}
+            </p>
             {profile.bio ? <p>{profile.bio}</p> : null}
             {profile.personality ? <p className="text-paper-400">{profile.personality}</p> : null}
           </div>

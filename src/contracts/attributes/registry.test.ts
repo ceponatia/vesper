@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { expectAllValidate, expectRefsResolve, expectUniqueIds } from "@/test/registry-invariants";
 import { attributeCategories } from "./category-ids";
 import { attributeGroups } from "./categories";
+import { materializeRegistryDefaults, registryDefaultSourceId } from "./index";
 import { buildRegistry } from "./registry";
 import { attributeDefinitionSchema, defineAttributeGroup } from "./types";
 import { bodyLocationRegistry } from "../body/locations";
@@ -152,6 +153,81 @@ describe("attribute registry invariants", () => {
       },
     ]);
     expect(() => buildRegistry([group])).toThrow(/fewer than 2/);
+  });
+});
+
+describe("materialized registry defaults (persisted-baseline)", () => {
+  it("the flagged set is exactly the four foot structural fields — never feet.smell", () => {
+    const flagged = registry.definitions.filter((def) => def.materializeDefault).map((def) => def.id);
+    expect(flagged.sort()).toEqual(["feet.arch", "feet.nails", "feet.size", "feet.toes"]);
+  });
+
+  it("every flagged definition carries a defaultValue, and none is coreVisual", () => {
+    for (const def of registry.definitions) {
+      if (!def.materializeDefault) continue;
+      expect(def.defaultValue, def.id).toBeDefined();
+      expect(def.coreVisual ?? false, def.id).toBe(false);
+    }
+  });
+
+  it("defineAttributeGroup rejects materializeDefault without a defaultValue", () => {
+    expect(() =>
+      defineAttributeGroup("build", [
+        {
+          id: "build.bogus",
+          label: "Bogus",
+          kind: "physical",
+          category: "build",
+          valueType: "enum",
+          description: "A baseline with nothing to materialize.",
+          mutability: "inherent",
+          allowedValues: ["a", "b"],
+          materializeDefault: true,
+        },
+      ]),
+    ).toThrow(/no defaultValue/);
+  });
+
+  it("fills every missing flagged fact with the versioned creation provenance", () => {
+    const filled = materializeRegistryDefaults([]);
+    expect(filled.map((value) => value.id).sort()).toEqual(["feet.arch", "feet.nails", "feet.size", "feet.toes"]);
+    for (const value of filled) {
+      expect(value.source).toBe("creation");
+      expect(value.sourceId).toBe(registryDefaultSourceId("feet"));
+    }
+    expect(registryDefaultSourceId("feet")).toBe("registry-default:feet:v1");
+  });
+
+  it("never overwrites a supplied value, whatever its source", () => {
+    const authored = [{ id: "feet.arch" as const, value: "high", source: "manual" as const }];
+    const filled = materializeRegistryDefaults(authored);
+    expect(filled.filter((value) => value.id === "feet.arch")).toEqual(authored);
+    expect(filled.map((value) => value.id).sort()).toEqual(["feet.arch", "feet.nails", "feet.size", "feet.toes"]);
+  });
+
+  it("is idempotent — a second pass adds nothing", () => {
+    const once = materializeRegistryDefaults([]);
+    expect(materializeRegistryDefaults(once)).toEqual(once);
+  });
+
+  it("respects the applicability gate", () => {
+    const filled = materializeRegistryDefaults([], { isApplicable: (def) => def.id !== "feet.nails" });
+    expect(filled.map((value) => value.id).sort()).toEqual(["feet.arch", "feet.size", "feet.toes"]);
+  });
+
+  it("prefers the rule default when narrowing rejects the registry default, and skips when both fail", () => {
+    const narrowed = materializeRegistryDefaults([], {
+      allowedValuesFor: (def) => (def.id === "feet.arch" ? ["flat", "low"] : def.allowedValues),
+      ruleDefaultFor: (def) => (def.id === "feet.arch" ? "low" : undefined),
+    });
+    expect(narrowed.find((value) => value.id === "feet.arch")?.value).toBe("low");
+
+    const impossible = materializeRegistryDefaults([], {
+      allowedValuesFor: (def) => (def.id === "feet.arch" ? ["flat"] : def.allowedValues),
+      ruleDefaultFor: () => undefined,
+    });
+    expect(impossible.some((value) => value.id === "feet.arch")).toBe(false);
+    expect(impossible.map((value) => value.id).sort()).toEqual(["feet.nails", "feet.size", "feet.toes"]);
   });
 });
 

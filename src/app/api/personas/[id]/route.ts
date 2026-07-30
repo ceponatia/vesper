@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
-import { emptyPersonaProfile, personaProfileSchema } from "@/contracts";
+import { emptyPersonaProfile, materializeBodyDefaults, personaProfileSchema } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { db, personas, users } from "@/server/db";
 import {
@@ -35,13 +35,17 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   // stored profile rather than replacing — an editor tab that sends only `attributes`
   // must not blank the wardrobe. The stored value parses through the contract first so
   // a corrupt row heals instead of poisoning the merge (docs/resilience.md §1).
-  const nextProfile =
+  const merged =
     profile === undefined
       ? undefined
       : personaProfileSchema.parse({
           ...parseOr(personaProfileSchema, existing.profile, emptyPersonaProfile(), undefined, "personas.profile"),
           ...profile,
         });
+  // Persisted-baseline facts have no blank state on a persona either: any
+  // profile-touching PATCH re-materializes what is missing, fill-only.
+  const nextProfile =
+    merged === undefined ? undefined : { ...merged, attributes: materializeBodyDefaults(merged.attributes, merged) };
 
   const values = { ...columns, ...(nextProfile === undefined ? {} : { profile: nextProfile }) };
   if (Object.keys(values).length === 0) return jsonOk({ persona: existing });

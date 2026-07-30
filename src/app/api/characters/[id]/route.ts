@@ -1,6 +1,11 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq } from "drizzle-orm";
-import { adultEligibilityConflict, characterProfileSchema, emptyCharacterProfile } from "@/contracts";
+import {
+  adultEligibilityConflict,
+  characterProfileSchema,
+  emptyCharacterProfile,
+  materializeBodyDefaults,
+} from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { characterChats, characters, chatParticipants, db, images } from "@/server/db";
 import { deleteChat } from "@/server/engine";
@@ -64,7 +69,10 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
     if (adultEligibilityConflict(merged)) {
       return jsonError("eligibility_conflict", "a character whose age reads as a minor cannot be declared an adult", 400);
     }
-    update.profile = merged;
+    // Persisted-baseline facts have no blank state: a PATCH that removed one
+    // (or predates one) re-materializes it, fill-only, against the merged
+    // profile's own body. Players change the value; the fact stays present.
+    update.profile = { ...merged, attributes: materializeBodyDefaults(merged.attributes, merged) };
   }
   if (Object.keys(update).length === 0) return jsonOk({ character: existing });
 

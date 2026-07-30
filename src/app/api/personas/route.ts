@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
+import { materializeBodyDefaults } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
 import { db, personas } from "@/server/db";
 import {
@@ -43,10 +44,18 @@ export const GET = withUser(async (user, req: NextRequest) => {
 export const POST = withUser(async (user, req: NextRequest) => {
   const body = await readBody(req, personaCreateSchema);
   if (!body.ok) return body.response;
+  // The persona is the player's body, so it grounds the same persisted-baseline
+  // facts a character does (materializeDefault) — fill-only, against its own
+  // realized body. Without this, a fresh persona is born with attributes: []
+  // and the facts a persona-side read needs simply never exist.
+  const profile = {
+    ...body.value.profile,
+    attributes: materializeBodyDefaults(body.value.profile.attributes, body.value.profile),
+  };
   try {
     const [row] = await db()
       .insert(personas)
-      .values({ ownerId: user.id, ...body.value })
+      .values({ ownerId: user.id, ...body.value, profile })
       .returning();
     if (!row) return jsonError("create_failed", "persona insert returned no row", 500);
     queueEmbedRefresh("persona", row.id);

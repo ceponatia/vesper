@@ -83,7 +83,7 @@ adapter maps them into the existing eligibility read; and the declaration
 ships **before the first genuinely romantic foot trial**. Slice 3 may begin
 with a separately authored, genuinely affectionate/non-romantic integration
 case — that does not violate the "never relabel romantic contact" ruling.
-Plan: [adult-eligibility.plan.md](adult-eligibility.plan.md).
+Plan: [adult-eligibility.plan.md](finished/adult-eligibility.plan.md).
 
 ### 2. What proves actor control in legacy chat?
 

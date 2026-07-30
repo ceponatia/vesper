@@ -5,6 +5,20 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Pre-slice-3 foot facts and registration hardening** —
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
+  [follow-ups record](romantic-contact-affordances.followups.md) ·
+  [foot spec deltas](romantic-contact-affordances.spec.foot.md) — 2026-07-30 —
+  persisted-baseline foot facts (`materializeDefault` registry tier, grounded on
+  every character/persona create-patch-forge path +
+  `pnpm db:backfill-registry-defaults`), partial foot-profile compilation (each
+  axis gates only its own surfaces; pressure needs no `feet.*`), the
+  optional-invalid dependency law in the affordance core, and the adult-plan
+  leftovers (declared-minor arms the prompt fence, public declaration,
+  per-participant verdicts + duplicate-to-edit blocker routing, the
+  "17 years (old)" age whitelist). Foot domain still unregistered — slice 3's
+  job.
+
 - **Adult eligibility — the explicit participant declaration** —
   [finished/adult-eligibility.plan.md](finished/adult-eligibility.plan.md) ·
   [spec](finished/adult-eligibility.spec.md) — 2026-07-30 — the

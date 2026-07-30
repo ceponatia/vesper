@@ -36,13 +36,33 @@ describe("compileFootProfile", () => {
     expect(compile(attributes)).toEqual(compile([...attributes].reverse()));
   });
 
-  it("suppresses the whole domain when any required axis is unset, and names every one", () => {
+  it("omits only each unset axis's own surfaces, and names every missing axis", () => {
     const result = compileFootProfile(
       resolvedAttributeSnapshot([{ id: "feet.arch", value: "average", source: "creation" }]),
     );
-    expect(result.profile).toBeUndefined();
     expect(result.diagnostics.map((entry) => entry.path).sort()).toEqual(["feet.nails", "feet.toes"]);
     expect(new Set(result.diagnostics.map((entry) => entry.code))).toEqual(new Set([AFFORDANCE_INPUT_UNAVAILABLE]));
+    const surfaces = result.profile?.surfaces.map((entry) => entry.surfaceId) ?? [];
+    // The missing nail axis loses the toenail, the missing toe axis loses the
+    // interdigital spaces — and nothing else.
+    expect(surfaces).not.toContain("toenails");
+    expect(surfaces).not.toContain("interdigital_spaces");
+    expect(surfaces).toEqual(footSurfaceIds.filter((id) => id !== "toenails" && id !== "interdigital_spaces"));
+  });
+
+  it("compiles the seed-calibrated surfaces even when every axis is unset", () => {
+    const result = compileFootProfile(resolvedAttributeSnapshot([]));
+    expect(result.diagnostics.map((entry) => entry.path).sort()).toEqual(["feet.arch", "feet.nails", "feet.toes"]);
+    const surfaces = result.profile?.surfaces.map((entry) => entry.surfaceId) ?? [];
+    // No axis calibrates these; they are pure seed-and-modifier structure.
+    for (const id of ["plantar_surface", "heel_pad", "ball", "dorsal_surface", "toe_pads", "ankle_boundary"] as const) {
+      expect(surfaces).toContain(id);
+    }
+    // The arch subtree, the interdigital spaces, and the toenail are exactly
+    // what an unauthored foot cannot establish — omitted, never defaulted.
+    for (const id of ["arch", "medial_arch", "lateral_arch", "interdigital_spaces", "toenails"] as const) {
+      expect(surfaces).not.toContain(id);
+    }
   });
 
   it("separates unmapped vocabulary from an unset attribute", () => {
@@ -53,8 +73,15 @@ describe("compileFootProfile", () => {
         { id: "feet.toes", value: "average", source: "creation" },
       ]),
     );
-    expect(result.profile).toBeUndefined();
     expect(result.diagnostics.map((entry) => entry.code)).toEqual([AFFORDANCE_INPUT_INVALID]);
+    // Invalid stays invalid: the arch subtree is omitted, not defaulted to a
+    // neighbouring value — while the axes that did read stay compiled.
+    const surfaces = result.profile?.surfaces.map((entry) => entry.surfaceId) ?? [];
+    expect(surfaces).not.toContain("arch");
+    expect(surfaces).not.toContain("medial_arch");
+    expect(surfaces).not.toContain("lateral_arch");
+    expect(surfaces).toContain("toenails");
+    expect(surfaces).toContain("interdigital_spaces");
   });
 
   it("records provenance for every axis it read", () => {

@@ -6,6 +6,7 @@ import {
   heritageFor,
   inferHeritageFromText,
   inferSpeciesFromText,
+  materializeRegistryDefaults,
   seedBodyConfigFromAttributes,
   isFeatureAttributeCategory,
   isIntimateAttributeCategory,
@@ -1000,7 +1001,22 @@ async function forgeAttributesSection(context: CharacterForgeContext): Promise<C
   // Species-required defaults first (e.g. elf ears.shape = "pointed") so the
   // core-visual pass treats them as already present, then the core-visual fill.
   const seeded = fillSpeciesRequiredDefaults(grounded, realizedBody, context.sink);
-  const attributes = fillVisualDefaults(seeded, context.prompt, context.sink, ranges, realizedBody);
+  const filled = fillVisualDefaults(seeded, context.prompt, context.sink, ranges, realizedBody);
+  // Persisted-baseline facts (materializeDefault) ground here too, so a forged
+  // draft shows them in the editor rather than acquiring them silently on save.
+  // Fill-only — anything the model inferred (a prompt that mentioned her feet)
+  // wins; the fixed default is the point for these, unlike the concept-varied
+  // core-visual fills above.
+  const attributes = materializeRegistryDefaults(
+    filled,
+    realizedBody === undefined
+      ? {}
+      : {
+          isApplicable: (def) => realizedBody.isAttributeApplicable(def),
+          allowedValuesFor: (def) => realizedBody.allowedValuesFor(def),
+          ruleDefaultFor: (def) => realizedBody.defaultValueFor(def),
+        },
+  );
   // Seed the body-config declaratively from the attribute values' activatesGroups
   // (e.g. identity.gender) — a SEED, overridable in the editor. gender is now
   // coreVisual, so it is always present and the seed is reliable. Intimate

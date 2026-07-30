@@ -21,7 +21,7 @@ that pass. See "Done" below._
 
 ## Sequencing constraints (owner, 2026-07-30)
 
-- The [adult declaration](adult-eligibility.plan.md) ships before the first
+- The [adult declaration](finished/adult-eligibility.plan.md) ships before the first
   genuinely romantic foot trial; slice 3 starts with a genuinely
   affectionate/non-romantic integration case.
 - Positive tactile texture/glide enable only after perceiver-specific
@@ -30,6 +30,36 @@ that pass. See "Done" below._
 
 ## Done
 
+- **Pre-slice-3 foot facts and registration hardening** — 2026-07-30. Four
+  pieces, all pinned by tests:
+  1. *Persisted-baseline foot facts.* `feet.size/arch/nails/toes` gained
+     `defaultValue` + the new `materializeDefault` registry tier: every
+     grounding (blank, forged, imported, cloned, persona create, profile
+     PATCH — which re-materializes a removed row) stores the missing facts as
+     low-precedence `creation` rows with sourceId `registry-default:feet:v1`,
+     respecting species/body-plan applicability; `feet.smell` deliberately
+     unflagged. Existing bodies:
+     `pnpm db:backfill-registry-defaults [--dry-run]` (counts by field and
+     site before applying; characters + personas only). Detail:
+     docs/contracts/attributes.md.
+  2. *Partial foot profiles.* `compileFootProfile` lost its all-or-nothing
+     gate — each axis omits only its own surfaces (arch subtree / toenail /
+     interdigital spaces), pressure needs no `feet.*` attribute, and the
+     compiler never substitutes a default. Detail:
+     [foot spec](romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
+  3. *Optional-invalid dependency law.* Core `unmetDependencies`: optional +
+     unavailable continues; optional + invalid now SUPPRESSES with the invalid
+     code and diagnostic (an unparseable "trapped" support no longer reads as
+     unrestricted). Audited across hair/garment/foot.
+  4. *Eligibility follow-ups closed* (the adult plan's leftovers): an explicit
+     `minor` declaration arms the existing minor-safe prompt fence
+     (`minorFenceApplies`; declaration text still never serialized), the
+     declaration is public on profiles/previews (owner ruling), per-participant
+     verdicts ride `contactParticipantEligibility` and
+     `adultEligibilityBlockerLinks` routes a blocked action to the persona
+     editor / character editor / "Duplicate to edit" for foreign characters,
+     and the age parser recognizes the tight "17 years" / "17 years old"
+     whitelist.
 - **Rigid-footwear articulation leak** — 2026-07-30. `foot.articulation_observation`
   now gates its pose-detail tags (`toes_*`, `arch_*`) per surface on
   `footwearHidesDeformation`, marks a dropped detail with

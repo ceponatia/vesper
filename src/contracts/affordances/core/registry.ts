@@ -219,12 +219,22 @@ export function defineAffordancePhenomenon<TFrame, TInput>(
 // Domains
 // ---------------------------------------------------------------------------
 
-/** The worst status among a phenomenon's unmet required dependencies. */
+/**
+ * The worst status among a phenomenon's unmet dependencies.
+ *
+ * A REQUIRED dependency must be `supported`. An OPTIONAL one tolerates absence
+ * (`unavailable` — no owner answered, and the resolver degrades by design) but
+ * never corruption (`invalid` — an owner DID answer and the answer was
+ * unreadable; running without it would silently drop a real answer, e.g. an
+ * unparseable "trapped" support letting articulation read as unrestricted).
+ */
 function unmetDependencies(
   dependencies: readonly AffordanceDependency[],
   inputs: AffordanceStateSnapshot["inputs"],
 ): { readonly keys: readonly string[]; readonly code: string } | null {
-  const unmet = dependencies.filter((dependency) => dependency.optional !== true && inputs[dependency.key] !== "supported");
+  const unmet = dependencies.filter((dependency) =>
+    dependency.optional === true ? inputs[dependency.key] === "invalid" : inputs[dependency.key] !== "supported",
+  );
   if (unmet.length === 0) return null;
   const invalid = unmet.some((dependency) => inputs[dependency.key] === "invalid");
   return { keys: unmet.map((dependency) => dependency.key), code: invalid ? AFFORDANCE_INPUT_INVALID : AFFORDANCE_INPUT_UNAVAILABLE };
@@ -247,8 +257,10 @@ function unmetDependencies(
  * 2. `readInputs` — not `supported` ⇒ diagnostic + every phenomenon suppressed;
  * 3. `deriveMechanics` — once per frame, never per phenomenon;
  * 4. `buildFrame` → deep-frozen;
- * 5. each phenomenon — required dependency not `supported` ⇒ suppressed, so an
- *    absent force or contact can never be read as still air or no touch.
+ * 5. each phenomenon — required dependency not `supported`, or optional
+ *    dependency `invalid` ⇒ suppressed, so an absent force or contact can never
+ *    be read as still air or no touch, and a corrupt answer is never read as no
+ *    answer.
  */
 export function registerAffordanceDomain<
   TProfile,

@@ -51,16 +51,20 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   promoted from deferred 2026-07-28 and sequenced directly behind the
   narrator-guidance plan whose action-outcome seam its slice 3 consumes).
   Remaining committed scope is slices 3–4 in the owner's ruled order
-  (2026-07-30). The two ruled prerequisites are **done**: the slice-2
+  (2026-07-30). The three ruled prerequisites are **done**: the slice-2
   [hardening pass](romantic-contact-affordances.followups.md) (items 1–6, incl.
-  the owner-found unsided-closure residual) and the
-  [adult declaration](finished/adult-eligibility.plan.md) (shipped 2026-07-30).
+  the owner-found unsided-closure residual), the
+  [adult declaration](finished/adult-eligibility.plan.md) (shipped 2026-07-30),
+  and the **pre-slice-3 foot facts + registration hardening** (2026-07-30 —
+  persisted foot baselines + backfill, partial foot profiles, the
+  optional-invalid dependency law, eligibility leftovers incl. blocker
+  routing; see [roadmap.shipped.md](roadmap.shipped.md)).
   Next up: slice 3 — legacy-romantic-chat constraint evaluation behind
   `CHAT_PHYSICAL_CONSTRAINTS`, wired affectionate-first with the romantic
   proof gated on eligibility + a legacy `romantic_touch` permission owner +
-  the ruled contact persistence, plus the blocked-action deep link to the
-  editors' eligibility anchor — then slice 4's atomic/idempotent
-  contact-caused effects. Successor parity waits for regional
+  the ruled contact persistence, plus wiring the now-built blocked-action
+  editor links (`adultEligibilityBlockerLinks`) into the UI — then slice 4's
+  atomic/idempotent contact-caused effects. Successor parity waits for regional
   pose/contact and clothing adapters. Intimate regions stay behind the foot
   proof plus explicit adult-eligibility, consent, exposure, and physiology
   prerequisites. The active doc family archives together only after the plan

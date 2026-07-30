@@ -8,6 +8,7 @@ import {
   ADULT_ELIGIBILITY_CONFLICT_CODE,
   adultEligibilityConflict,
   isNumericMinorAge,
+  minorFenceApplies,
   readAdultEligibilityDeclaration,
   resolveAdultEligibility,
 } from "./resolve";
@@ -97,22 +98,51 @@ describe("isNumericMinorAge (reconciled toward the stricter answer)", () => {
   });
 
   it("catches the numeric-minor shapes isMinorAge declines to parse", () => {
-    // `lifeStageForAge` only matches a bare in-range numeral, so these read adult there.
+    // `lifeStageForAge` only matches whitelisted in-range numerals, so these read adult there.
     expect(isMinorAge("17.5")).toBe(false);
     expect(isNumericMinorAge("17.5")).toBe(true);
     expect(isMinorAge("-5")).toBe(false);
     expect(isNumericMinorAge("-5")).toBe(true);
+    expect(isNumericMinorAge("17.5 years old")).toBe(true);
+  });
+
+  it("recognizes the tightly whitelisted 'years' spellings (owner instruction 2026-07-30)", () => {
+    expect(isNumericMinorAge("17 years")).toBe(true);
+    expect(isNumericMinorAge("17 years old")).toBe(true);
+    expect(isNumericMinorAge("17 Year Old")).toBe(true);
+    expect(isNumericMinorAge("18 years")).toBe(false);
+    expect(isNumericMinorAge("18 years old")).toBe(false);
   });
 
   it("never widens: non-numeric and fantasy-scaled ages stay un-minored", () => {
-    for (const age of ["", "ancient", "seventeen", "312 years", "312", "500", "18", "18.0"]) {
+    for (const age of ["", "ancient", "seventeen", "312 years", "312", "500", "18", "18.0", "17 winters", "nearly 17 years"]) {
       expect(isNumericMinorAge(age)).toBe(false);
     }
   });
 });
 
+describe("minorFenceApplies (declaration-armed minor-safe prompting)", () => {
+  it("arms on an explicit minor declaration, whatever the age field holds", () => {
+    expect(minorFenceApplies({ adultEligibilityDeclaration: "minor", age: "29" })).toBe(true);
+    expect(minorFenceApplies({ adultEligibilityDeclaration: "minor", age: "" })).toBe(true);
+    expect(minorFenceApplies({ adultEligibilityDeclaration: "minor" })).toBe(true);
+  });
+
+  it("keeps the existing numeric fence, whitelisted spellings included", () => {
+    expect(minorFenceApplies({ age: "15" })).toBe(true);
+    expect(minorFenceApplies({ age: "17 years old" })).toBe(true);
+    expect(minorFenceApplies({ adultEligibilityDeclaration: "adult", age: "15" })).toBe(true);
+  });
+
+  it("stays byte-identical territory for adult and unresolved declarations", () => {
+    expect(minorFenceApplies({ adultEligibilityDeclaration: "adult", age: "29" })).toBe(false);
+    expect(minorFenceApplies({ adultEligibilityDeclaration: "unresolved", age: "ancient" })).toBe(false);
+    expect(minorFenceApplies({})).toBe(false);
+  });
+});
+
 describe("the resolver is structurally starved of attribute input (clause 5)", () => {
-  const sources = ["declaration.ts", "resolve.ts", "contact-adapter.ts"].map((name) => ({
+  const sources = ["declaration.ts", "resolve.ts", "contact-adapter.ts", "blocker.ts"].map((name) => ({
     name,
     code: fs
       .readFileSync(path.join(process.cwd(), "src/contracts/eligibility", name), "utf8")

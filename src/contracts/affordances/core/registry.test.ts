@@ -12,8 +12,12 @@ import {
 } from "./registry";
 import {
   adapterSupported,
+  affordanceSubjectId,
   deepFreeze,
   resolvedAttributeSnapshot,
+  AFFORDANCE_INPUT_INVALID,
+  AFFORDANCE_INPUT_UNAVAILABLE,
+  type AffordanceDependency,
   type AffordanceDomainDefinition,
   type AffordanceResolutionContext,
   type AffordanceStateSnapshot,
@@ -349,5 +353,66 @@ describe("registerAffordanceDomain", () => {
     expect(() => registerAffordanceDomain(probeDomain({ requiredAttributeIds: ["eyes.colour"] }))).toThrow(
       /unknown attribute/,
     );
+  });
+});
+
+/**
+ * The dependency law, pinned at the core: a required dependency must be
+ * `supported`; an optional one tolerates absence (the resolver degrades by
+ * design) but never corruption (an owner answered and the answer is unreadable
+ * — running without it would silently drop a real answer).
+ */
+describe("the phenomenon dependency law", () => {
+  const observing = (dependencies: readonly AffordanceDependency[]) =>
+    defineAffordancePhenomenon<ProbeFrame, Pick<ProbeFrame, "mechanics">>({
+      id: "probe.law",
+      dependencies,
+      selectInput: (frame) => ({ mechanics: frame.mechanics }),
+      resolve: () => ({
+        kind: "observation",
+        id: "probe.law",
+        sourceLocationId: "feet",
+        intensityBand: "subtle",
+        semanticTags: ["probe"],
+        repeatKey: "probe:law",
+      }),
+    });
+
+  const resolveWith = (
+    inputs: AffordanceStateSnapshot["inputs"],
+    dependencies: readonly AffordanceDependency[],
+  ) =>
+    registerAffordanceDomain(
+      probeDomain({
+        readInputs: (request) =>
+          adapterSupported({
+            state: { subjectId: request.subjectId, storyTime: request.storyTime, inputs, evidence: [] },
+            context: { subjectId: request.subjectId, storyTime: request.storyTime },
+          }),
+        phenomena: [observing(dependencies)],
+      }),
+    ).resolve({
+      subjectId: affordanceSubjectId("probe_subject"),
+      storyTime: 0,
+      attributes: resolvedAttributeSnapshot([]),
+      payload: {},
+    });
+
+  it("lets an optional dependency be unavailable — the resolver runs", () => {
+    const run = resolveWith({ pose: "unavailable" }, [{ key: "pose", optional: true }]);
+    expect(run.resolutions[0]?.kind).toBe("observation");
+  });
+
+  it("suppresses on an optional dependency that is invalid, and diagnoses it", () => {
+    const run = resolveWith({ pose: "invalid" }, [{ key: "pose", optional: true }]);
+    expect(run.resolutions[0]).toMatchObject({ kind: "suppressed", code: AFFORDANCE_INPUT_INVALID, detail: "pose" });
+    expect(run.diagnostics.some((entry) => entry.code === AFFORDANCE_INPUT_INVALID)).toBe(true);
+  });
+
+  it("suppresses on a required dependency that is unavailable or invalid, as before", () => {
+    const unavailable = resolveWith({ pose: "unavailable" }, [{ key: "pose" }]);
+    expect(unavailable.resolutions[0]).toMatchObject({ kind: "suppressed", code: AFFORDANCE_INPUT_UNAVAILABLE });
+    const invalid = resolveWith({ pose: "invalid" }, [{ key: "pose" }]);
+    expect(invalid.resolutions[0]).toMatchObject({ kind: "suppressed", code: AFFORDANCE_INPUT_INVALID });
   });
 });

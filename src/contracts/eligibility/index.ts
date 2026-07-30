@@ -9,3 +9,4 @@
 export * from "./declaration";
 export * from "./resolve";
 export * from "./contact-adapter";
+export * from "./blocker";

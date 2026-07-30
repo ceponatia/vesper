@@ -21,6 +21,13 @@ export const feetGroup = defineAttributeGroup("feet", [
     bodyLocationId: "feet",
     aliases: ["feet", "foot size"],
     imageReveal: "shape",
+    // Persisted-baseline (pre-slice-3 foot facts): every stored body carries
+    // these four structural facts, so the foot domain's reads never hinge on an
+    // author having thought about feet. NOT coreVisual — they are contact
+    // structure, not a look. `feet.smell` is deliberately unflagged: a default
+    // must never manufacture scent, moisture, products, residue, or contact.
+    defaultValue: "average",
+    materializeDefault: true,
   },
   {
     id: "feet.arch",
@@ -35,6 +42,9 @@ export const feetGroup = defineAttributeGroup("feet", [
     aliases: ["arches", "foot arch"],
     // Skin-level — only visible with bare feet (no footwear).
     imageReveal: "skin",
+    // Structural axis of the foot affordance domain (arch subtree calibration).
+    defaultValue: "average",
+    materializeDefault: true,
   },
   {
     id: "feet.nails",
@@ -58,6 +68,9 @@ export const feetGroup = defineAttributeGroup("feet", [
     promptHints: [
       "Toenails are only worth a mention when the feet are bare and in view.",
     ],
+    // Structural axis of the foot affordance domain (the toenail surface).
+    defaultValue: "neat",
+    materializeDefault: true,
   },
   {
     // This is placeholder for testing.
@@ -141,5 +154,8 @@ export const feetGroup = defineAttributeGroup("feet", [
     promptHints: [
       "Toe length is only worth a mention when the feet are bare and in view.",
     ],
+    // Structural axis of the foot affordance domain (interdigital depth).
+    defaultValue: "average",
+    materializeDefault: true,
   },
 ]);
