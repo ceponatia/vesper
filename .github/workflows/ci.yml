@@ -92,7 +92,7 @@ jobs:
               src/server/*|src/app/api/*|src/contracts/*|src/lib/simulation/*|drizzle/*|scripts/db-*.ts|docker/*|docker-compose*.yml|Dockerfile)
                 integration=true
                 ;;
-              .github/workflows/*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|eslint.config.*|vitest.config.*|next.config.*)
+              .github/workflows/*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|*.config.*)
                 integration=true
                 engine=true
                 ;;
