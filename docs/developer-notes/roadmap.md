@@ -51,13 +51,15 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   promoted from deferred 2026-07-28 and sequenced directly behind the
   narrator-guidance plan whose action-outcome seam its slice 3 consumes).
   Remaining committed scope is slices 3–4 in the owner's ruled order
-  (2026-07-30): the slice-2
-  [hardening pass](romantic-contact-affordances.followups.md), then the
-  [adult declaration](adult-eligibility.plan.md) (queued below), then
-  slice 3 — legacy-romantic-chat constraint evaluation behind
+  (2026-07-30). The two ruled prerequisites are **done**: the slice-2
+  [hardening pass](romantic-contact-affordances.followups.md) (items 1–6, incl.
+  the owner-found unsided-closure residual) and the
+  [adult declaration](finished/adult-eligibility.plan.md) (shipped 2026-07-30).
+  Next up: slice 3 — legacy-romantic-chat constraint evaluation behind
   `CHAT_PHYSICAL_CONSTRAINTS`, wired affectionate-first with the romantic
   proof gated on eligibility + a legacy `romantic_touch` permission owner +
-  the ruled contact persistence — and slice 4's atomic/idempotent
+  the ruled contact persistence, plus the blocked-action deep link to the
+  editors' eligibility anchor — then slice 4's atomic/idempotent
   contact-caused effects. Successor parity waits for regional
   pose/contact and clothing adapters. Intimate regions stay behind the foot
   proof plus explicit adult-eligibility, consent, exposure, and physiology
@@ -83,19 +85,6 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   (audit doc §Rulings): hidden chat-image kinds keep their hard-delete,
   events 30d / jobs 7d, prod telemetry ids+counts only, account deletion
   parked → deferred.plan.md.
-
-- **Adult eligibility — the explicit participant declaration** —
-  [adult-eligibility.plan.md](adult-eligibility.plan.md) (next; planned
-  2026-07-30 from the owner's romantic-contact rulings and same-day scope
-  correction — a **cross-cutting prerequisite** that gates the active
-  romantic-contact plan's first genuinely romantic foot trial, so it builds
-  right after that plan's slice-2 hardening pass). An
-  `adult | minor | unresolved` declaration on characters and the player
-  persona, independent of written age: existing records default `unresolved`,
-  declarations are the authoritative inputs the legacy adapter maps into the
-  contact eligibility read, and `isMinorAge`'s repo-wide behavior is untouched.
-  Romantic/intimate contact requires every participant positively `adult`;
-  unresolved keeps failing closed.
 
 **Successor world engine (`engine.plan.md`) — foundation AND rollout COMPLETE.**
 All committed gates (0–6) closed 2026-07-16 → 2026-07-21, and the migration &

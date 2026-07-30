@@ -69,3 +69,15 @@ describe("redraftCharacterScope (keyless demo path)", () => {
     expect(redrafted.profile.speciesId).toBe("human");
   });
 });
+
+describe("adult-eligibility declaration through a re-draft", () => {
+  it("round-trips an authored declaration untouched (adult-eligibility.plan.md)", async () => {
+    const draft = draftWith((d) => {
+      d.profile.adultEligibilityDeclaration = "adult";
+      d.profile.bio = "Old bio, full of personality analysis.";
+    });
+    const redrafted = await redraftCharacterScope(input(draft, "profile"));
+    expect(redrafted.profile.bio).not.toBe("Old bio, full of personality analysis.");
+    expect(redrafted.profile.adultEligibilityDeclaration).toBe("adult");
+  });
+});

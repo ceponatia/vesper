@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq } from "drizzle-orm";
-import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
+import { adultEligibilityConflict, characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { characterChats, characters, chatParticipants, db, images } from "@/server/db";
 import { deleteChat } from "@/server/engine";
@@ -57,7 +57,14 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   if (body.value.chatModel !== undefined) update.chatModel = body.value.chatModel;
   if (body.value.profile !== undefined) {
     const current = parseOr(characterProfileSchema, existing.profile, emptyCharacterProfile(), undefined, "characters.profile");
-    update.profile = { ...current, ...body.value.profile };
+    const merged = { ...current, ...body.value.profile };
+    // Checked on the MERGED profile, not the patch: a PATCH that sends only the
+    // declaration, or only the age, still has to agree with the field it did not send
+    // (adult-eligibility.spec.md §Resolver law clause 6).
+    if (adultEligibilityConflict(merged)) {
+      return jsonError("eligibility_conflict", "a character whose age reads as a minor cannot be declared an adult", 400);
+    }
+    update.profile = merged;
   }
   if (Object.keys(update).length === 0) return jsonOk({ character: existing });
 

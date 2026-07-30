@@ -277,7 +277,15 @@ describe.skipIf(!ready)("entity visibility (auth.plan.md)", () => {
     const srcId = (
       await expectJson<{ character: { id: string } }>(
         await createCharacterRoute(
-          apiRequest("/api/characters", { body: { name: "Shared Muse", tags: ["origin"] } }),
+          apiRequest("/api/characters", {
+            body: {
+              name: "Shared Muse",
+              tags: ["origin"],
+              // A clone copies the whole authored profile, the adult-eligibility
+              // declaration included (adult-eligibility.spec.md §"Clones and imports").
+              profile: { adultEligibilityDeclaration: "adult", age: "34" },
+            },
+          }),
           noParams,
         ),
       )
@@ -303,13 +311,19 @@ describe.skipIf(!ready)("entity visibility (auth.plan.md)", () => {
         ).id;
 
         const copy = (
-          await expectJson<{ character: { visibility: string; tags: string[]; clonedFromId: string | null } }>(
-            await getCharacterRoute(apiRequest(`/api/characters/${cloneId}`), routeCtx({ id: cloneId })),
-          )
+          await expectJson<{
+            character: {
+              visibility: string;
+              tags: string[];
+              clonedFromId: string | null;
+              profile: { adultEligibilityDeclaration?: string };
+            };
+          }>(await getCharacterRoute(apiRequest(`/api/characters/${cloneId}`), routeCtx({ id: cloneId })))
         ).character;
         expect(copy.visibility).toBe("private");
         expect(copy.tags).toContain("origin");
         expect(copy.clonedFromId).toBe(srcId);
+        expect(copy.profile.adultEligibilityDeclaration).toBe("adult");
 
         // Owner deletes the source; the cross-owner clone must survive intact.
         await withAuthUser(authState, owner, async () => {

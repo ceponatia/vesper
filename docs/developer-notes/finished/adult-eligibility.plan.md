@@ -1,8 +1,14 @@
 # Adult eligibility — the explicit participant declaration
 
-Status: next (planned 2026-07-30 from the owner's romantic-contact rulings and
-same-day scope correction; build order ruled: after the romantic-contact
-slice-2 hardening pass, before the first genuinely romantic foot trial)
+Status: shipped — 2026-07-30 (planned, green-lit with the owner's storage
+ruling and resolver law, and built the same day; slices 0–2 all landed —
+shared schema in both profile schemas via JSONB with no migration, controls in
+both editors, and the pure resolver + contact-adapter seam, with every
+resolver-law clause tested. As-built detail:
+[adult-eligibility.spec.md](adult-eligibility.spec.md). Leftovers, neither
+owned here: the blocked-romantic-action deep link to the editor anchor is
+romantic-contact slice-3 wiring, and the declaration's exclusion from
+`PublicCharacterProfile` is flagged for an owner look in the spec)
 
 ## In one sentence
 
@@ -111,9 +117,11 @@ trial.
 
 ## Open questions
 
-- Where exactly the declaration lives per record kind (character profile field
-  vs attribute registry vs persona profile field) — a spec-time decision.
-- Whether world/scenario templates can pre-declare cast members, and whether
-  imports carry the declaration.
-- What the editor copy says, and whether the persona prompts for it once or
-  stays quiet until a romantic feature first needs it.
+None — all three were ruled by the owner in the 2026-07-30 green-light and are
+recorded in [the spec](adult-eligibility.spec.md): a top-level
+`adultEligibilityDeclaration` field in both profile schemas (never the
+attribute registry); clones/imports carry a valid declaration with missing
+values reading `unresolved`, and templates cannot override a participant's
+declaration (satisfied vacuously today — no template→profile merge exists);
+the control sits in both editors with no modal, and the blocked-action deep
+link is romantic-contact slice-3 work.

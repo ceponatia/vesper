@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { attributeValueSchema } from "../attributes/value";
 import { DEFAULT_BODY_PLAN_ID } from "../body/plans";
+import { adultEligibilityDeclarationSchema } from "../eligibility/declaration";
 import { characterProfileSchema, outfitPresetSchema, type CharacterProfile } from "../world/profile";
 
 /**
@@ -40,6 +41,15 @@ export const personaProfileSchema = z.object({
   voice: z.string().optional(),
   /** What the player responds to — intimate-tier gated. NOT the character semantics. */
   intimacy: z.string().optional(),
+  /**
+   * The explicit adult-eligibility declaration (adult-eligibility.plan.md) — the SAME
+   * schema the character profile holds. A persona is the second participant in every
+   * scene and carries no age at all, which is precisely why the system's prompt claim
+   * that "everyone taking part is an adult" was unverified for one of the two people
+   * in the room. Kept despite the narrow-pick rule because this is not narrator
+   * guidance: it is a gate input, and the gate needs an answer for the player.
+   */
+  adultEligibilityDeclaration: adultEligibilityDeclarationSchema,
   speciesId: z.string().default("human"),
   heritageId: z.string().optional(),
   bodyPlanId: z.string().default(DEFAULT_BODY_PLAN_ID),
@@ -84,10 +94,16 @@ export function emptyPersonaProfile(): PersonaProfile {
  * keeps a key that is explicitly present-but-undefined, which would make the output
  * shape differ from a normally-parsed profile. The adapter's product must be
  * indistinguishable from `characterProfileSchema.parse` of the same data.
+ *
+ * `adultEligibilityDeclaration` is copied **explicitly**, and that is load-bearing:
+ * the character schema defaults it to `unresolved`, so omitting it here would silently
+ * demote a declared-adult persona to `unresolved` every time a character-shaped
+ * consumer took it — a fail-closed bug that no type would catch.
  */
 export function personaToCharacterProfile(persona: PersonaProfile): CharacterProfile {
   return characterProfileSchema.parse({
     bio: persona.bio,
+    adultEligibilityDeclaration: persona.adultEligibilityDeclaration,
     ...(persona.voice === undefined ? {} : { voice: persona.voice }),
     ...(persona.intimacy === undefined ? {} : { intimacy: persona.intimacy }),
     speciesId: persona.speciesId,
