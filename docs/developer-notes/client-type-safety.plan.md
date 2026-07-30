@@ -1,6 +1,6 @@
 # Client type-safety and bundle weight
 
-Status: draft (unscheduled — derived from [codebase-efficiency.audit.md](codebase-efficiency.audit.md); no roadmap line yet)
+Status: draft (D10/D11/D12 sequenced after image consolidation; bundle work remains an experiment and D14 is dropped)
 
 ## Why
 
@@ -75,6 +75,22 @@ optional).
   factory work (D2/D3, the library-kind batch).
 - **No vocabulary changes while relocating vocabulary.** Same values, one home.
 
+## Review rulings and scope adjustments — 2026-07-30
+
+- D10, D11, and D12 are the approved work: one contract-owned vocabulary, typed
+  request bodies, and stable transcript props/parsing.
+- D13 is an experiment, not an established bundle defect. Reachable source lines
+  do not equal shipped bytes; `sideEffects` metadata and used-export tree shaking
+  are separate mechanisms. Capture a Next 16/Turbopack analyzer baseline before
+  changing either the package flag or barrel.
+- Drop D14. Do not add a client cache without measured repeated-refetch latency and
+  an explicit invalidation story.
+- The Drizzle location-scale list should derive directly from the contract-owned
+  readonly values. It is TypeScript schema metadata, not a separate database
+  constraint, so a test-maintained duplicate would defeat the one-source rule.
+- Narrow the contracts barrel only if the analyzer shows a material cost after the
+  cheap, verified changes.
+
 ## Delivery slices
 
 Ordered so each stands alone and can ship on its own.
@@ -145,15 +161,7 @@ Ordered so each stands alone and can ship on its own.
 
 ## Open questions
 
-- Is `"sideEffects": false` accurate for the whole package as it stands, or does
-  something in the client tree rely on import-time evaluation? Slice 3 must
-  answer this by measurement and a smoke pass, not by assumption.
-- If the declaration alone gets the payload where we want it, do we still narrow
-  the barrel for clarity — server-only vocabulary out of the shared client entry
-  point — or is that churn we skip?
-- Does D14 earn its place at all? If slices 1–4 leave page transitions feeling
-  fine, the honest answer is to delete the slice rather than add a cache with a
-  staleness question attached.
-- Should the database enum be checked against the contract vocabulary by a test,
-  or derive from it directly? The latter is tidier but puts a contracts import
-  inside the schema file — worth a deliberate call.
+- Is `"sideEffects": false` accurate for every imported client path? Answer with
+  analyzer output plus a production smoke pass, not a source census.
+- If the cheap declaration produces no meaningful change, is clarity alone worth
+  the wide barrel-import churn? The default is no.
