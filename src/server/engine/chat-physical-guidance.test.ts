@@ -195,6 +195,31 @@ describe("clause-local binding", () => {
     expect(detect("Your friend Mira's hair is loose.")).toEqual([]);
     expect(detect("My hair is soaked and yours is dry.")).toEqual([]);
   });
+
+  it("licenses nothing from a clause naming TWO people's hair", () => {
+    // One clause, two heads, one motion verb, and nothing in this layer can say which
+    // head it belongs to. Binding it to the braid because the braid was named first is
+    // the false correction the clause law exists to prevent, so the clause is silent.
+    expect(detect("Your braid looks lovely beside Mira's hair streaming in the wind.")).toEqual([]);
+    // Order does not matter: the foreign owner can come first or second.
+    expect(detect("Mira's hair is streaming beside your loose braid.")).toEqual([]);
+    // A player's own hair alongside the subject's is the same ambiguity, no name needed.
+    expect(detect("Your braid brushes my soaking wet hair.")).toEqual([]);
+  });
+
+  it("still withholds inheritance when a foreign name splits the sentence", () => {
+    // Two clauses, the second plainly Mira's; the first is the subject's and carries no
+    // claim, and the foreign name blocks the second from borrowing an owner.
+    expect(detect("Your braid rests over your shoulder while Mira's hair streams.")).toEqual([]);
+  });
+
+  it("keeps correcting a single-owner clause — the conservative fix costs only ambiguity", () => {
+    // The positive control for both rules above: one head, one clause, both corrections.
+    expect(claims("The storm drenched your loose hair.")).toEqual([
+      HAIR_CLAIM_CAUSE_RAIN,
+      HAIR_CLAIM_ARRANGEMENT_LOOSE,
+    ]);
+  });
 });
 
 describe("provenance needs a wetness anchor", () => {
@@ -455,18 +480,27 @@ describe("relevance — a fence has to be about something happening now", () => 
     expect(relevance("")).toEqual({ relevant: false, signals: [] });
   });
 
-  it("admits a message that names the hair, bound or not", () => {
-    expect(relevance("You tuck your hair behind one ear.").signals).toEqual(["domain_reference"]);
-    // A claim phrase with no owner is still the turn reaching for this vocabulary — it
-    // raises a known fence and invents no correction (plan §Architecture 4).
-    expect(relevance("It is absolutely soaking wet out there.").signals).toEqual(["domain_reference"]);
+  it("admits a message that names the subject's hair, with or without a claim", () => {
+    // A reference with no parseable claim is the plan §Architecture 4 case: it raises a
+    // known fence and invents no correction.
+    expect(relevance("You tuck your hair behind one ear.").signals).toEqual(["subject_reference"]);
     // …including a span this layer would never premise-check.
-    expect(relevance("((her hair should be loose here))").signals).toContain("domain_reference");
+    expect(relevance("((her hair should be loose here))").signals).toContain("subject_reference");
+  });
+
+  it("finds no signal in a bare claim keyword bound to nobody", () => {
+    // The lexicon is ordinary English — `soaking`, `loose`, `river`, `pool` — so a claim
+    // phrase with no subject bound to it is about the weather, the room, or somebody
+    // else. Arming a braid fence on it spends bytes to prime the very description it
+    // forbids: negative priming at a smaller scale, and the same mistake.
+    expect(relevance("It is absolutely soaking wet out there.")).toEqual({ relevant: false, signals: [] });
+    expect(relevance("The river is running loose and fast.")).toEqual({ relevant: false, signals: [] });
+    expect(relevance("Mira's hair is streaming in the wind.")).toEqual({ relevant: false, signals: [] });
   });
 
   it("admits the turn a correction was made on", () => {
     expect(relevance("The storm drenched your loose hair.").signals).toEqual([
-      "domain_reference",
+      "subject_reference",
       "premise_correction",
     ]);
   });
@@ -548,6 +582,17 @@ describe("compile", () => {
     expect(guidance.constraints).toEqual([]);
     expect(guidance.corrections).toEqual([]);
     // …and the silence is explained, because a true fence really was withheld.
+    expect(sink.items.filter((item) => item.code === GUIDANCE_CONSTRAINT_IRRELEVANT)).toHaveLength(1);
+  });
+
+  it("says nothing on a bare claim keyword nothing is bound to", () => {
+    // "soaking" is a wetness phrase and this turn is about the weather. The old build
+    // armed the braid fence on any claim word at all, which is a fence about her hair
+    // injected into a turn that never mentioned it.
+    const sink = new DiagnosticCollector();
+    const guidance = compile({ message: "It is absolutely soaking wet out there.", sink });
+    expect(guidance.constraints).toEqual([]);
+    expect(guidance.corrections).toEqual([]);
     expect(sink.items.filter((item) => item.code === GUIDANCE_CONSTRAINT_IRRELEVANT)).toHaveLength(1);
   });
 

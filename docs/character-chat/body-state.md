@@ -192,7 +192,9 @@ cut it already has —
   counts only in the clause that names the hair — a hair reference in one clause licenses
   nothing in the next, so "your braided hair looks lovely while the curtains go streaming"
   corrects nothing — and a cause word ("a storm", "a pool") is scenery until the same clause
-  also says somebody got wet.
+  also says somebody got wet. A clause that names **two** people's hair ("your braid looks
+  lovely beside Mira's hair streaming in the wind") corrects nothing either: there is no
+  way to tell which head the verb belongs to, and ambiguity is silence.
 
 Both render as ONE binding-tier prompt block with explicit precedence over the general
 sensory allowances — see [prompts.md](prompts.md) §"Physical consistency". Wording rules,
@@ -203,13 +205,19 @@ the detector's guards, and the verdict laws live in
 **A standing fence is stated only when the turn is about it.** A braid is true all day, and
 repeating its prohibition on every exchange spends prompt bytes on inventory and risks
 priming the very description it forbids. So constraints are compiled only when at least one
-relevance signal holds: the message reaches for this body part (a hair reference in any span,
-or any claim phrase at all), a premise was corrected this turn, something is actually acting
-on the hair right now (wind above still air, or falling precipitation), or the turn's
-sensory beat is aimed at the hair. No signal means no candidates, no block, and a
-byte-identical prompt — with one `guidance.constraint.irrelevant` info diagnostic per
-withheld fence so the inspector can explain the silence. Corrections are never gated this
-way: a correction is about the current turn by construction.
+relevance signal holds: the message names **this character's** hair (a subject-bound
+reference in any span — the claim wording may be absent, "you tuck your hair behind one ear"
+is enough), a premise was corrected this turn, something is actually acting on the hair
+right now (wind above still air, or falling precipitation), or the turn's sensory beat is
+aimed at the hair. No signal means no candidates, no block, and a byte-identical prompt —
+with one `guidance.constraint.irrelevant` info diagnostic per withheld fence so the
+inspector can explain the silence. Corrections are never gated this way: a correction is
+about the current turn by construction.
+
+A bare claim word bound to nobody is **not** a signal. The claim vocabulary is ordinary
+English — "river", "pool", "loose", "soaking" — so "it is absolutely soaking wet out there"
+is about the weather, and arming a braid fence on it would spend prompt bytes to prime the
+very description the fence forbids.
 
 **The two flags share the read and nothing else.** `CHAT_PHYSICAL_CONSTRAINTS` makes the
 pipeline build the affordance read when `CHAT_AFFORDANCE_CUES` is off, but cue rendering
