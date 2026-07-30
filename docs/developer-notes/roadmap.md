@@ -22,7 +22,21 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-_(Nothing active — pick up the top of Next.)_
+- **Constraint-first narrator physical guidance — constraints, premise correction,
+  and resolved action outcomes** —
+  [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md)
+  (active; **slices 0–2 shipped 2026-07-30** — the closed cue path is frozen, the
+  shared guidance contracts + compiler are in `contracts/affordances/guidance/`,
+  and the hair constraint/correction path ships behind
+  `CHAT_PHYSICAL_CONSTRAINTS`, default off. Remaining: slice 3 romantic-contact
+  action results, slice 4 change-gated positive detail, slice 5 the trials,
+  slice 6 the successor adapter). Keeps the affordance calculations but
+  replaces always-on descriptive suggestions with scoped consistency
+  constraints, high-confidence false-premise fences, and mandatory resolved
+  action outcomes. Positive state-change details get a separate flag and trial;
+  generic ambient opportunities stay parked. No extra model leg. The hair
+  proving slice leads, then the foot-contact resolver consumes the shared
+  action-outcome seam. `CHAT_AFFORDANCE_CUES` remains off.
 
 ## Next (queued)
 
@@ -48,7 +62,9 @@ umbrella further down.)
   observer visual memory shipped 2026-07-29; slice 5 closed 2026-07-29** —
   the live comparison plus a three-round rematch campaign reached the frozen
   protocol's terminal state (two consecutive valid fails: cues never reduced
-  contradictions because concrete cues make more checkable claims), so
+  contradictions — the working hypothesis, to be measured explicitly in the
+  constraint-first follow-up, is that concrete cues make more checkable
+  claims), so
   `CHAT_AFFORDANCE_CUES` **parks OFF, finally** — history in the
   [trial report](body-attribute-affordances.trial.md) §Rematch log; see
   [roadmap.shipped.md](roadmap.shipped.md); plan stays open until the release
@@ -73,18 +89,6 @@ umbrella further down.)
   romantic-contact plan — it needs its own plan when scheduled. Wardrobe
   gap flagged by slice 6: nothing records garment fit (loose/fitted), which
   is the one change that lights up wet cling in production.
-- **Constraint-first narrator physical guidance — constraints, premise correction,
-  and resolved action outcomes** —
-  [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md)
-  (next; planned 2026-07-29 from the closed positive-cue trial and sequenced
-  directly before romantic contact). Keeps the affordance calculations but
-  replaces always-on descriptive suggestions with scoped consistency
-  constraints, high-confidence false-premise fences, and mandatory resolved
-  action outcomes. Positive state-change details get a separate flag and trial;
-  generic ambient opportunities stay parked. No extra model leg. The hair
-  proving slice leads, then the foot-contact resolver consumes the shared
-  action-outcome seam. `CHAT_AFFORDANCE_CUES` remains off.
-
 - **Romantic contact affordances — foot-first grounded contact** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) (next; promoted from deferred

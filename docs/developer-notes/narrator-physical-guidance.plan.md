@@ -1,7 +1,12 @@
 # Constraint-first narrator physical guidance
 
-Status: next — proposed 2026-07-29 from the closed affordance-cue trial; build
-the shared contract before the romantic-contact narrator slice
+Status: active — slices 0–2 shipped 2026-07-30 (proposed 2026-07-29 from the
+closed affordance-cue trial; the shared contract landed before the
+romantic-contact narrator slice, as intended). Slice 2's as-built detail is in
+[narrator-physical-guidance.spec.md](narrator-physical-guidance.spec.md) §"Slice
+2 as built". Remaining: slice 3 (romantic-contact action results), slice 4
+(change-gated positive detail), slice 5 (the two trials), slice 6 (successor
+adapter).
 
 ## In one sentence
 

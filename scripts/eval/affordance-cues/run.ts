@@ -1,6 +1,7 @@
 import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { z } from "zod";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { isDemoMode } from "@/server/ai";
 import { NARRATIVE_TEMPERATURE, streamCharacterChat } from "@/server/engine";
@@ -33,6 +34,7 @@ import {
   type DimensionVerdict,
   type JudgeVerdict,
 } from "./judge";
+import { buildTrialSummary, digest, resolveFixtureCommit, trialSummarySchema } from "./summary";
 
 /**
  * Slice-5 narrator trial runner (body-attribute-affordances.plan.md, rematch
@@ -464,6 +466,29 @@ async function checkCredentials(): Promise<{ ok: boolean; detail: string }> {
     return { ok: true, detail: body.slice(0, 200) };
   } catch (error) {
     return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** OpenRouter reports the key's CUMULATIVE spend; the delta across a round is its cost. */
+const keyUsageSchema = z.object({ data: z.object({ usage: z.number() }) });
+
+/**
+ * The round's spend, read either side of the model calls off the same free
+ * endpoint the preflight uses. Best-effort on purpose: the campaign's cost was
+ * hand-transcribed from this number, and a summary that records it automatically
+ * must still never be the reason a paid round fails.
+ */
+async function keyUsage(): Promise<number | null> {
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/key", {
+      headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY ?? ""}` },
+    });
+    if (!response.ok) return null;
+    const raw: unknown = await response.json();
+    const parsed = keyUsageSchema.safeParse(raw);
+    return parsed.success ? parsed.data.data.usage : null;
+  } catch {
+    return null;
   }
 }
 
@@ -1051,6 +1076,7 @@ async function main(): Promise<number> {
     return 1;
   }
   console.log(`\nkey ok (${credentials.detail}); generating ${pairedExchanges * 2} narrator replies…`);
+  const keyUsageBefore = await keyUsage();
 
   // -- generation ----------------------------------------------------------
   const sink = new DiagnosticCollector();
@@ -1287,6 +1313,68 @@ async function main(): Promise<number> {
   const outPath = path.join(args.out, "trial.json");
   await fs.writeFile(outPath, `${JSON.stringify(audit, null, 2)}\n`);
 
+  // -- the committable half of the record (see ./summary.ts) ---------------
+  // `trial.json` lives in gitignored `data/`, so a round's numbers survive only
+  // as a hand transcription. `summary.json` is the same round with the
+  // transcripts removed: provenance, raw counts, verified quotes, spend — small
+  // and safe enough to commit into `results/` next to the fixtures.
+  const keyUsageAfter = await keyUsage();
+  const trialSummary = buildTrialSummary({
+    experiment: audit.experiment,
+    matrix: args.matrix,
+    startedAt: audit.generatedAt,
+    finishedAt: new Date().toISOString(),
+    verdict,
+    fixtureCommit: await resolveFixtureCommit(),
+    models: {
+      narrator: args.chatModel,
+      narratorTemperature: NARRATIVE_TEMPERATURE,
+      judge: args.noJudge ? null : args.judgeModel,
+      judgeTemperature: 0,
+    },
+    hashes: {
+      // Key order is fixed by the literal, so the digest is stable across runs
+      // that did not change the instrument.
+      config: digest([
+        JSON.stringify({
+          matrix: args.matrix,
+          scenarioFilter: filter ?? null,
+          scenarioIds: results.map((result) => result.scenarioId),
+          thresholds: audit.thresholds,
+          models: audit.models,
+          cuesPerExchange: AFFORDANCE_CUES_PER_EXCHANGE,
+        }),
+      ]),
+      prompts: {
+        cues: digest(plans.flatMap((plan) => plan.turns.map((turn) => turn.prompts.cues))),
+        control: digest(plans.flatMap((plan) => plan.turns.map((turn) => turn.prompts.control))),
+      },
+    },
+    spend: {
+      generationCalls,
+      auditCalls,
+      preferenceCalls,
+      approxTokens: audit.counts.approxTokens,
+      keyUsageBefore,
+      keyUsageAfter,
+      usd:
+        keyUsageBefore !== null && keyUsageAfter !== null ? round(keyUsageAfter - keyUsageBefore, 4) : null,
+    },
+    scenarios: results,
+  });
+  const summaryPath = path.join(args.out, "summary.json");
+  const validated = trialSummarySchema.safeParse(trialSummary);
+  if (!validated.success) {
+    // Degrade, never drop: a paid, unreproducible round's record is worth more
+    // than schema purity, so the invalid object is still written — loudly.
+    console.error(
+      `\nsummary.json failed its own schema — writing it anyway, but it is NOT a valid record: ${validated.error.issues
+        .map((issue) => `${issue.path.map(String).join(".")}: ${issue.message}`)
+        .join("; ")}`,
+    );
+  }
+  await fs.writeFile(summaryPath, `${JSON.stringify(validated.success ? validated.data : trialSummary, null, 2)}\n`);
+
   console.log("\n## results (bait scenarios only)");
   printRow("contradictions / exchange", summary.baitScenarios.cues.contradictionRate, summary.baitScenarios.control.contradictionRate);
   printRow("repetitions / exchange", summary.baitScenarios.cues.repetitionRate, summary.baitScenarios.control.repetitionRate);
@@ -1357,7 +1445,8 @@ async function main(): Promise<number> {
     console.log(`\nverdict: ${decision.verdict}`);
   }
 
-  console.log(`\nwrote ${outPath}`);
+  console.log(`\nwrote ${outPath}   (full transcripts — gitignored)`);
+  console.log(`wrote ${summaryPath}   (committable record — copy into scripts/eval/affordance-cues/results/)`);
   if (auditsRan && degradedAudits.length > 0) return 2;
   if (!args.noJudge && results.some((result) => result.verdict === null)) {
     console.error(

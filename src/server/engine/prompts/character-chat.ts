@@ -33,6 +33,7 @@ import type { VoiceExemplar } from "../chat-voice";
 import { formatCommsReply, parseMessageSpans } from "@/lib/message-spans";
 import type { ChatFeelingState } from "../chat-feeling";
 import type { ChatSensoryAllowance, SensoryFocusHint } from "../chat-intent";
+import { chatPhysicalGuidanceBlock } from "../chat-physical-guidance-render";
 import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeId } from "./constants";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 import {
@@ -379,6 +380,22 @@ export interface CharacterChatPromptInput {
    * marked in history by the pipeline's `wrapNarratorInput`.
    */
   narratorInput?: boolean;
+  /**
+   * The narrator PHYSICAL-GUIDANCE lines for this exchange
+   * (narrator-physical-guidance.plan.md slice 2, behind `CHAT_PHYSICAL_CONSTRAINTS`):
+   * the ≤2 premise corrections and ≤3 scoped consistency constraints the compiler
+   * selected, already worded by `chat-physical-guidance-render.ts`.
+   *
+   * TOP-LEVEL rather than under `state`, which is the substantive difference from the
+   * `affordanceCues` block beside it: these are turn-scoped. A correction is about the
+   * message the narrator is holding, and a constraint is only selected because
+   * something in this turn made it relevant — neither is standing state, and putting
+   * them in the state slice would invite someone to cache them with it.
+   *
+   * Renders as a BINDING turn note, because a fence the narrator may weigh against a
+   * sensory allowance is not a fence. Absent/empty ⇒ zero bytes.
+   */
+  physicalGuidance?: readonly string[];
 }
 
 /**
@@ -1739,6 +1756,15 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   const turnNotes = buildTurnNotes([
     // — binding: what is true this turn, and how to read the message at all.
     { tier: "binding", text: input.narratorInput ? narratorInputNote(displayName, playerName ?? "the player") : "" },
+    {
+      // Physical consistency (narrator-physical-guidance slice 2): what this body's
+      // committed state forbids, and which of the player's physical premises must not
+      // be adopted. Directly after the narrator-mode note because both are about HOW
+      // to read the message; before the notation note because a fence outranks a
+      // markup gloss. Flag-off ⇒ "" ⇒ the block is absent to the byte.
+      tier: "binding",
+      text: chatPhysicalGuidanceBlock(input.physicalGuidance),
+    },
     { tier: "binding", text: input.notationNote?.trim() ?? "" },
     { tier: "binding", text: buildAttachmentsSection(input.attachments, playerName ?? "the player") },
     {

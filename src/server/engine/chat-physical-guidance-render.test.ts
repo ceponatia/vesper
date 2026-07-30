@@ -1,0 +1,259 @@
+import { describe, expect, it } from "vitest";
+import {
+  affordanceSubjectId,
+  DiagnosticCollector,
+  emptyNarratorPhysicalGuidance,
+  guidanceFingerprint,
+  GUIDANCE_DISCLOSURE_LEAK,
+  HAIR_CLAIM_ARRANGEMENT_BRAID,
+  HAIR_CLAIM_ARRANGEMENT_LOOSE,
+  HAIR_CLAIM_CAUSE_RAIN,
+  HAIR_CLAIM_COVERAGE_UNCOVERED,
+  HAIR_CLAIM_MOTION_FREE_FLOW,
+  HAIR_CLAIM_WETNESS_SOAKED,
+  type GuidanceDisclosure,
+  type NarratorPhysicalGuidance,
+  type PhysicalNarrationConstraint,
+  type PhysicalPremiseCorrection,
+} from "@/contracts";
+import {
+  chatPhysicalGuidanceBlock,
+  renderChatPhysicalGuidance,
+  PHYSICAL_GUIDANCE_BLOCK_HEADING,
+  PHYSICAL_GUIDANCE_PRECEDENCE,
+} from "./chat-physical-guidance-render";
+
+/**
+ * The prompt projection (narrator-physical-guidance.plan.md §Architecture 7).
+ *
+ * Wording is the whole subject here, so the tests read the produced sentences rather
+ * than structure — and the two that matter most are negative: a constraint-only turn
+ * must carry no instruction to mention a body detail (the closed cue experiment's
+ * failure mode), and a correction must never voice the truth behind it (the disclosure
+ * law, and the reason the player is not argued with).
+ */
+
+const NAME = "Wren";
+const POSSESSIVE = "Wren's";
+
+function constraint(input: {
+  prohibited: readonly string[];
+  allowed?: readonly string[];
+  disclosure?: GuidanceDisclosure;
+}): PhysicalNarrationConstraint {
+  return {
+    id: "hair.bulk_restraint:bound:hair",
+    subjectIds: [affordanceSubjectId("character_wren")],
+    domainId: "hair",
+    locusIds: ["hair"],
+    prohibitedClaimCodes: [...input.prohibited],
+    allowedClaimCodes: [...(input.allowed ?? [])],
+    disclosure: input.disclosure ?? "consistency_only",
+    priority: "high",
+    evidence: [],
+    fingerprint: guidanceFingerprint(["constraint", ...input.prohibited, ...(input.allowed ?? [])]),
+  };
+}
+
+function correction(input: {
+  claimCode: string;
+  verdict?: PhysicalPremiseCorrection["verdict"];
+  truthCodes?: readonly string[];
+}): PhysicalPremiseCorrection {
+  const verdict = input.verdict ?? "contradicted";
+  return {
+    id: `hair:probe:${input.claimCode}:${verdict}`,
+    source: "ordinary_player_narration",
+    claimCode: input.claimCode,
+    verdict,
+    truthCodes: [...(input.truthCodes ?? [])],
+    disclosure: "consistency_only",
+    evidence: [],
+    fingerprint: guidanceFingerprint(["correction", input.claimCode, verdict]),
+  };
+}
+
+function guidanceOf(input: {
+  constraints?: readonly PhysicalNarrationConstraint[];
+  corrections?: readonly PhysicalPremiseCorrection[];
+}): NarratorPhysicalGuidance {
+  return {
+    ...emptyNarratorPhysicalGuidance(),
+    constraints: input.constraints ?? [],
+    corrections: input.corrections ?? [],
+  };
+}
+
+const render = (guidance: NarratorPhysicalGuidance, sink?: DiagnosticCollector) =>
+  renderChatPhysicalGuidance({
+    guidance,
+    characterName: NAME,
+    possessive: POSSESSIVE,
+    ...(sink === undefined ? {} : { sink }),
+  });
+
+describe("constraint lines", () => {
+  it("renders the plan's worked line, truth clause included, when perception licensed it", () => {
+    const lines = render(
+      guidanceOf({
+        constraints: [
+          constraint({
+            prohibited: [HAIR_CLAIM_ARRANGEMENT_LOOSE, HAIR_CLAIM_MOTION_FREE_FLOW],
+            allowed: [HAIR_CLAIM_ARRANGEMENT_BRAID],
+          }),
+        ],
+      }),
+    );
+    expect(lines).toEqual([
+      "- Binding constraint: do not describe Wren's hair as loose, cascading, streaming, or whipping; it remains secured in a braid.",
+    ]);
+  });
+
+  it("drops the truth clause when nothing licensed it — the fence does not explain itself", () => {
+    const lines = render(
+      guidanceOf({ constraints: [constraint({ prohibited: [HAIR_CLAIM_MOTION_FREE_FLOW] })] }),
+    );
+    expect(lines).toEqual([
+      "- Binding constraint: do not describe Wren's hair as cascading, streaming, or whipping.",
+    ]);
+    // Nothing about a bath, a hood, or how wet the hair is: the hidden state stays out.
+    expect(lines.join(" ")).not.toMatch(/soaked|braid|bath|hood|covered/iu);
+  });
+
+  it("names each prohibited claim it can word, and skips a code it cannot", () => {
+    const lines = render(
+      guidanceOf({ constraints: [constraint({ prohibited: [HAIR_CLAIM_COVERAGE_UNCOVERED, "some.other.domain"] })] }),
+    );
+    expect(lines).toEqual(["- Binding constraint: do not describe Wren's hair as uncovered."]);
+  });
+
+  it("renders nothing for a constraint with no wordable prohibition", () => {
+    expect(render(guidanceOf({ constraints: [constraint({ prohibited: ["some.other.domain"] })] }))).toEqual([]);
+  });
+
+  it("a constraint-only turn contains no instruction to mention a body detail", () => {
+    const lines = render(
+      guidanceOf({
+        constraints: [
+          constraint({
+            prohibited: [HAIR_CLAIM_ARRANGEMENT_LOOSE, HAIR_CLAIM_MOTION_FREE_FLOW],
+            allowed: [HAIR_CLAIM_ARRANGEMENT_BRAID],
+          }),
+        ],
+      }),
+    );
+    const text = chatPhysicalGuidanceBlock(lines);
+    // The failure this asserts against is the closed cue experiment's: a block that
+    // invites a physical detail raises the number of checkable claims.
+    for (const invitation of [
+      "you may",
+      "mention",
+      "weave",
+      "include",
+      "offer",
+      "describe it",
+      "worth noticing",
+      "if the moment",
+    ]) {
+      expect(text.toLowerCase(), invitation).not.toContain(invitation);
+    }
+    // The only imperative about describing is a prohibition.
+    expect(text).toContain("do not describe");
+  });
+});
+
+describe("correction lines", () => {
+  it("names the claim not to adopt, and never the committed truth behind it", () => {
+    const lines = render(
+      guidanceOf({
+        corrections: [correction({ claimCode: HAIR_CLAIM_CAUSE_RAIN, truthCodes: ["hair.cause.immersion"] })],
+      }),
+    );
+    expect(lines).toEqual([
+      "- Premise check: the player's wetness-cause claim conflicts with committed state. " +
+        "Do not adopt rain as the cause of the wetness in Wren's hair. " +
+        "Do not correct the player aloud unless Wren would naturally do so.",
+    ]);
+    // The truth rides the candidate for the inspector; voicing it would both leak a
+    // hidden cause and invite the narrator to argue with the player.
+    expect(lines.join(" ")).not.toMatch(/immersion|bath|actually/iu);
+  });
+
+  it("words an unsupported claim as unestablished, and supplies no alternative", () => {
+    const lines = render(
+      guidanceOf({ corrections: [correction({ claimCode: HAIR_CLAIM_WETNESS_SOAKED, verdict: "unsupported" })] }),
+    );
+    expect(lines).toEqual([
+      "- Premise check: the player's wetness claim (soaked) is not established in the story. " +
+        "Do not treat it as fact; leave it unconfirmed rather than inventing detail.",
+    ]);
+    expect(lines.join(" ")).not.toContain("conflicts with committed state");
+  });
+
+  it("words every area it can be asked about", () => {
+    for (const code of [
+      HAIR_CLAIM_WETNESS_SOAKED,
+      HAIR_CLAIM_CAUSE_RAIN,
+      HAIR_CLAIM_ARRANGEMENT_LOOSE,
+      HAIR_CLAIM_MOTION_FREE_FLOW,
+      HAIR_CLAIM_COVERAGE_UNCOVERED,
+    ]) {
+      const [line] = render(guidanceOf({ corrections: [correction({ claimCode: code })] }));
+      expect(line, code).toMatch(/^- Premise check: the player's \S+ claim conflicts with committed state\./u);
+      expect(line, code).toContain("Wren's hair");
+    }
+  });
+
+  it("renders nothing for a claim code this lane cannot word", () => {
+    expect(render(guidanceOf({ corrections: [correction({ claimCode: "some.other.domain" })] }))).toEqual([]);
+  });
+});
+
+describe("order, safety, and the block", () => {
+  it("renders corrections before constraints — the compiler's own selection order", () => {
+    const lines = render(
+      guidanceOf({
+        constraints: [constraint({ prohibited: [HAIR_CLAIM_MOTION_FREE_FLOW] })],
+        corrections: [correction({ claimCode: HAIR_CLAIM_CAUSE_RAIN })],
+      }),
+    );
+    expect(lines[0]).toContain("Premise check");
+    expect(lines[1]).toContain("Binding constraint");
+  });
+
+  it("renders NOTHING when a resolver-only candidate leaked, and files the error", () => {
+    const sink = new DiagnosticCollector();
+    const leaked = guidanceOf({
+      constraints: [
+        constraint({ prohibited: [HAIR_CLAIM_MOTION_FREE_FLOW], disclosure: "resolver_only" }),
+        constraint({ prohibited: [HAIR_CLAIM_COVERAGE_UNCOVERED] }),
+      ],
+      corrections: [correction({ claimCode: HAIR_CLAIM_CAUSE_RAIN })],
+    });
+    // The WHOLE block goes, not just the offender: degraded silence over an unsafe
+    // prompt (docs/resilience.md), and never a thrown turn.
+    expect(render(leaked, sink)).toEqual([]);
+    const leak = sink.items.find((item) => item.code === GUIDANCE_DISCLOSURE_LEAK);
+    expect(leak?.severity).toBe("error");
+  });
+
+  it("empty guidance renders no lines and no block", () => {
+    expect(render(emptyNarratorPhysicalGuidance())).toEqual([]);
+    expect(chatPhysicalGuidanceBlock([])).toBe("");
+    expect(chatPhysicalGuidanceBlock(undefined)).toBe("");
+    expect(chatPhysicalGuidanceBlock(["", "   "])).toBe("");
+  });
+
+  it("the block leads with its heading and its precedence sentence", () => {
+    const block = chatPhysicalGuidanceBlock(["- one", "- two"]);
+    expect(block.split("\n")).toEqual([
+      `${PHYSICAL_GUIDANCE_BLOCK_HEADING}:`,
+      PHYSICAL_GUIDANCE_PRECEDENCE,
+      "- one",
+      "- two",
+    ]);
+    // The precedence sentence exists because the same prompt carries a general sensory
+    // allowance that can read as forbidding what a fence requires.
+    expect(PHYSICAL_GUIDANCE_PRECEDENCE).toContain("override");
+  });
+});

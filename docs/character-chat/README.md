@@ -37,6 +37,7 @@ there is **one implementation** — the chat lane must never re-fork it.
 | [pipeline.md](pipeline.md) | The exchange lifecycle (lock → kind → window → drift → recall → prompt → stream → settle → render), the post-turn fan-out (pulse ‖ archivist), jobs, persistence guards |
 | [prompts.md](prompts.md) | The chat prompt architecture: the prompt-cache split, the intimate gate, sensory cues, player-input perception, POV narration, state-as-narration, reply discipline, RAG, the extraction field library |
 | [state.md](state.md) | Tracked state (the per-character row + the chat-wide scenario), scene memory, emotional weather, drives |
+| [body-state.md](body-state.md) | The physical scene and the bodies in it: environment (weather) + body-surface wetness, the affordance read and its narrator cues, recognizable features and visual memory, the narrator's physical-consistency guidance |
 | [supporting-cast.md](supporting-cast.md) | Recurring named side characters the narrator may play, and the player↔narrator composer register |
 | [initiative.md](initiative.md) | The character reaching out first (the reopen opener) and unprompted "remember when" callbacks |
 | [multi-character.md](multi-character.md) | The ensemble: the roster, narrative presence, the one-block prompt frame, the relationship matrix |

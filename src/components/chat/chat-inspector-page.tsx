@@ -7,6 +7,7 @@ import { ChatInspectorAgentHealth } from "@/components/chat/chat-inspector-agent
 import { ChatInspectorCompositionHealth } from "@/components/chat/chat-inspector-composition-health";
 import { ChatInspectorEpisodes } from "@/components/chat/chat-inspector-episodes";
 import { ChatInspectorFacts } from "@/components/chat/chat-inspector-facts";
+import { ChatInspectorPhysicalGuidance } from "@/components/chat/chat-inspector-physical-guidance";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { PageContainer } from "@/components/shell/app-shell";
@@ -84,6 +85,10 @@ function InspectorBody({ chatId }: { chatId: string }) {
               the prompt above rather than standing on its own, and it is the section
               you open when a physical cue you expected never appeared. */}
           <ChatInspectorAffordances chatId={chatId} />
+          {/* The guidance staircase, after the read it consumes: the affordance panel
+              explains what this body IS doing, and this one explains what the narrator
+              was told it may not claim about it. */}
+          <ChatInspectorPhysicalGuidance chatId={chatId} />
         </div>
       ) : null}
     </PageContainer>

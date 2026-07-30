@@ -3,11 +3,12 @@ import "dotenv/config";
 import { Client } from "pg";
 
 const NAME = process.argv[2] ?? "Kristin";
-const url = process.env.SCENE_DIAG_DB || process.env.DATABASE_URL;
-if (!url) throw new Error("no DATABASE_URL");
+const maybeUrl = process.env.SCENE_DIAG_DB || process.env.DATABASE_URL;
+if (!maybeUrl) throw new Error("no DATABASE_URL");
+const url: string = maybeUrl;
 
 async function main(): Promise<void> {
-  const client = new Client({ connectionString: url, ssl: url!.includes("neon.tech") ? { rejectUnauthorized: false } : undefined });
+  const client = new Client({ connectionString: url, ssl: url.includes("neon.tech") ? { rejectUnauthorized: false } : undefined });
   await client.connect();
   const chars = await client.query(
     `select id, name, owner_id, avatar_image_id from characters where name ilike $1 order by created_at desc limit 10`,

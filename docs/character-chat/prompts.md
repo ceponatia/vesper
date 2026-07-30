@@ -26,7 +26,7 @@ The prefix is **byte-identical across consecutive turns** while authored inputs 
 
 | Tier | Notes |
 | --- | --- |
-| **binding** — what is true this turn, and how to read the message at all | the **narrator-input note** (`narratorInputNote` — the message is story narration, not the player's POV), the **notation note** (`chatNotationNote` — who is texting whom, an OOC aside), the fenced **Attached photos** block (vision reads, seen-channel content under rule 16 — [images.md](images.md) §Player photos), the one-shot **skip note**, and the **first-exchange** establish directive |
+| **binding** — what is true this turn, and how to read the message at all | the **narrator-input note** (`narratorInputNote` — the message is story narration, not the player's POV), the **Physical consistency** block (§below, `CHAT_PHYSICAL_CONSTRAINTS`), the **notation note** (`chatNotationNote` — who is texting whom, an OOC aside), the fenced **Attached photos** block (vision reads, seen-channel content under rule 16 — [images.md](images.md) §Player photos), the one-shot **skip note**, and the **first-exchange** establish directive |
 | **gate** — the ceilings and corrections that bound the reply | the **Sensory focus** block, the **Sensory allowance** line, the reply-discipline **gate notes** (hook cadence / intimate check-in), and the one-turn **Voice correction** line (`lastMemoryTrace.characterSlip`) |
 | **license** — what the beat permits, never demands | the **cue invite** (a tapped open-loop continue, or the initiative opener's full cue — `buildInitiativeCue`; [initiative.md](initiative.md) §Initiative) and the **selfie license** line (`chatSelfieLine`; [images.md](images.md) §Selfies) |
 | **flavor** — the optional grace note | the **memory-callback** line (`chatCallbackLine` — an old episode offered as a "remember when" aside, worded by regard band; [initiative.md](initiative.md) §Memory callbacks) |
@@ -61,6 +61,44 @@ The chat lane carries no exposure mask; it gates the senses through a determinis
 
 - **The data** stays in the stable prefix: the builder extracts proximity-gated, non-intimate sensory attributes via `sensoryCues` (filter `kind === "sensory" && category !== "voice" && !isIntimateAttributeCategory(category)`) and renders them as the **"Sensory cues"** block whose closing bullet defers to the allowance. Exclusions: **voice** (audible at any distance — stays a normal Attributes line) and **intimate scent/taste** (no exposure signal in chat earns it). Renders nothing for an unscented character.
 - **The permission** is the volatile-tail **"Sensory allowance this turn"** line: the route derives `none | visual_accent | close_range_hook | focused_description` per real player turn via `deriveChatSensoryAllowance` (`engine/chat-intent.ts`, a pure mapping over the detectors already running: `detectSensoryFocus` ⇒ `focused_description`; intimate/touch/proximity cues ⇒ `close_range_hook`; `attention` ⇒ `visual_accent`; else `none`; arousal alone raises nothing). `chatSensoryAllowanceLine` renders it as a binding ceiling — `none` forbids person-level sensory/appearance detail beyond what the character's own movement makes newly visible; `focused_description` renders no line because the **Sensory focus** block is that turn's richer grant. CHAT_RULES 10–11 defer to it.
+
+## Physical consistency (constraints and premise checks)
+
+Behind `CHAT_PHYSICAL_CONSTRAINTS` (default OFF) the digest's **binding** tier carries one
+more block — the constraint-first replacement for the closed affordance-cue experiment
+(`chat-physical-guidance-render.ts`; [body-state.md](body-state.md) §"Narrator physical guidance"):
+
+```text
+Physical consistency for this exchange:
+These rules override any general appearance or sensory-detail allowances for this exchange.
+- Premise check: the player's wetness-cause claim conflicts with committed state. Do not adopt rain as the cause of the wetness in Wren's hair. Do not correct the player aloud unless Wren would naturally do so.
+- Binding constraint: do not describe Wren's hair as loose, cascading, streaming, or whipping; it remains secured in a braid.
+```
+
+- **Placement.** Binding tier, directly after the narrator-input note and before the notation
+  note: both of those are about *how to read the message*, and a fence outranks a markup
+  gloss. Threaded as a **top-level** `physicalGuidance` prompt input, not through
+  `promptStateSlice` — a correction is about the message in front of the narrator and a
+  constraint is only selected because this turn made it relevant, so neither is standing
+  state.
+- **Precedence, stated in the block.** The second line exists because the same prompt already
+  carries a **Sensory allowance** line worded as a ceiling on *description*, while these are
+  fences on *claims* — and a model reading both without a ranking splits the difference. This
+  is the same conflict the affordance-cue carve-out solved for `none`, in the other
+  direction.
+- **Order is the compiler's**, not the renderer's: premise corrections (≤2) then consistency
+  constraints (≤3), which is the shared selection order in
+  [developer-notes/narrator-physical-guidance.spec.md](../developer-notes/narrator-physical-guidance.spec.md)
+  §"Selection order and budgets".
+- **Two wording laws.** A constraint-only turn contains **no instruction to mention a body
+  detail** (the closed experiment's failure mode was raising the number of checkable claims);
+  and a correction **never voices the committed truth** — it names the claim not to adopt and
+  stops, because the truth may be hidden and "actually it was a bath" both leaks it and
+  invites the narrator to argue with the player. A constraint's truth clause ("it remains
+  secured in a braid") ships only when perception licensed it, which the shared candidate
+  builder decides, not the renderer.
+- **Absent/empty ⇒ zero bytes**, conditional-spread + length-guarded like the cue block, so a
+  flag-off prompt is byte-identical (int-tested by splicing the ON block back out).
 
 ## Character-chat player-input perception
 

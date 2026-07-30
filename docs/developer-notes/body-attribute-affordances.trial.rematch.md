@@ -7,7 +7,13 @@ Authored the same day after the first live round; owner rulings: full levers —
 matrix + judge + cue-side, every change recorded; spend cap **$10 total**;
 a valid pass would have flipped `CHAT_AFFORDANCE_CUES` default ON.
 The protocol below ran exactly as written: R1 invalid_induction → matrix v2
-→ R2 valid fail → one recorded cue-side change → R3 valid fail → final. Companion to
+→ R2 valid fail → one recorded cue-side change → R3 valid fail → final. The
+verdict rests on the frozen decision rule alone; the post-hoc explanation for
+*why* the cue arm never reduced contradictions (more concrete detail ⇒ more
+checkable claims) is a **working hypothesis scoped to this cue shape, the
+reachable half of the hair domain, and one narrator model at ~24 paired
+exchanges per round** — see the [trial doc's §Recommendation](body-attribute-affordances.trial.md#recommendation--final).
+Nothing here licenses that hypothesis as a cross-domain law. Companion to
 [body-attribute-affordances.trial.md](body-attribute-affordances.trial.md)
 (round 1 record) and
 [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
@@ -22,10 +28,13 @@ physical claim that is wrong**, and round 1's scenarios never tempted it. The
 scripts set a state, the player lines were ordinary, and a narrator that
 stays vague or follows its own history is automatically consistent.
 
-The cue arm's mechanism of benefit is **anchoring**: on a cue-bearing
-exchange, the true current effect is in the prompt, so the narrator weaves
-the given detail instead of inventing an attractive wrong one. It follows
-that headroom exists only on exchanges where BOTH hold:
+The cue arm's **hypothesized** mechanism of benefit — pre-registered here, and
+*not* borne out by the campaign — is **anchoring**: on a cue-bearing exchange,
+the true current effect is in the prompt, so the narrator weaves the given
+detail instead of inventing an attractive wrong one. (Anchoring did win
+per-family where the cue spoke to the baited dimension; it lost overall, which
+is the result the closed trial records.) On the anchoring hypothesis, headroom
+exists only on exchanges where BOTH hold:
 
 1. a true current effect exists (a cue fires), and
 2. the scene strongly tempts a *specific, judgeable, wrong* embellishment.

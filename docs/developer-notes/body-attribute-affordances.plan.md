@@ -11,8 +11,11 @@ final verdict 2026-07-29**: after the first live comparison failed for lack
 of contradiction headroom, a three-round rematch campaign under a frozen
 protocol ([rematch spec](body-attribute-affordances.trial.rematch.md), $6.29)
 made the measurement valid and the cue arm failed the decision rule twice
-consecutively — cues never reduced contradictions while consistently increasing specificity
-and the number of checkable claims. **`CHAT_AFFORDANCE_CUES` parks OFF, finally**;
+consecutively — cues never reduced contradictions while consistently increasing
+specificity (that this raises the number of checkable claims is a working
+hypothesis, measured explicitly by the constraint-first follow-up's
+claim-normalized instruments, not a proven law).
+**`CHAT_AFFORDANCE_CUES` parks OFF, finally**;
 what survives is the measured cue-wording fix (cause-true provenance,
 degree-accurate adjectives), the reusable audit harness, and the findings (specificity rose consistently; repetition and false-premise
 gains appeared in one valid round each but did not replicate) — full history in the

@@ -64,16 +64,24 @@ const ids = (result: AffordanceRead): string[] => result.observations.map((obser
 const codeOf = (result: AffordanceRead, phenomenonId: string): string | undefined =>
   result.suppressed.find((entry) => entry.phenomenonId === phenomenonId)?.code;
 
+/**
+ * The constraint codes this cut resolved — the narrator-guidance seam
+ * (narrator-physical-guidance slice 2). Perception never touches these: a fence is
+ * about what may not be CLAIMED, and a claim can be wrong about hidden hair too.
+ */
+const constraintCodes = (result: AffordanceRead): string[] => result.constraints.map((entry) => entry.code);
+
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 
 describe("registration", () => {
-  it("hair is in the shipped registry with its four phenomena", () => {
+  it("hair is in the shipped registry with its five phenomena", () => {
     expect(affordanceDomains.map((domain) => domain.id)).toContain(HAIR_DOMAIN_ID);
     expect(hairAffordanceDomain.phenomenonIds).toEqual([
       "hair.wet_clumping",
       "hair.wind_or_motion_response",
+      "hair.bulk_restraint",
       "hair.strands_adhere_to_skin",
       "hair.sheds_droplets",
     ]);
@@ -101,6 +109,10 @@ describe("worked case 1 — dry, fine, shoulder-length, loose; moderate breeze",
     expect(codeOf(result, "hair.wet_clumping")).toBe("insufficient_wetness");
     expect(codeOf(result, "hair.strands_adhere_to_skin")).toBe("no_asserted_contact");
     expect(codeOf(result, "hair.sheds_droplets")).toBe("no_current_impulse");
+    // Loose, uncovered, dry hair really is free to move: no fence, and the silence
+    // is explicit rather than an absent resolution.
+    expect(constraintCodes(result)).toEqual([]);
+    expect(codeOf(result, "hair.bulk_restraint")).toBe("no_restraint");
     // Nothing DEGRADED: conservative silence is data on the resolutions, not noise
     // in the diagnostic sink.
     expectCleanSink(sink);
@@ -117,6 +129,9 @@ describe("worked case 2 — saturated, dense/coarse; light breeze; exposed neck 
       "hair:clumping",
       "hair:adhesion:neck",
     ]);
+    // The same water load that suppressed the motion read is a standing fence: the
+    // narrator may not write this hair streaming, wind or no wind.
+    expect(constraintCodes(result)).toEqual(["water_loaded"]);
   });
 
   it("carries rain provenance only because the exposure event is in the frame", () => {
@@ -168,6 +183,11 @@ describe("worked case 3 — the same hair braided under a hood", () => {
     expect(codeOf(result, "hair.strands_adhere_to_skin")).toBe("bound");
     expect(result.observations).toEqual([]);
     expect(result.cues).toEqual([]);
+    // Nothing may be OFFERED about this hair — and the braid is still a fence. That
+    // asymmetry is the constraint-first policy in one assertion: a cut with no cue
+    // still has something the narrator must not claim.
+    expect(constraintCodes(result)).toEqual(["bound"]);
+    expect(result.constraints[0]?.locationId).toBe("hair");
   });
 
   it("keeps the clumping physically true while perception hides it under the hood", () => {
@@ -192,6 +212,9 @@ describe("worked case 4 — damp thick hair, strong gust, loose ends below a hoo
     expect(motion?.intensityBand).toBe("subtle");
     expect(motion?.semanticTags).toEqual(["exposed_ends", "stirs", "ends_long"]);
     expect(result.observations.map((observation) => observation.repeatKey)).not.toContain("hair:motion");
+    // The ends may stir AND the bulk stays covered: the fence and the observation
+    // describe the same cut without contradicting each other.
+    expect(constraintCodes(result)).toEqual(["covered"]);
   });
 });
 

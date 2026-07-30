@@ -17,6 +17,28 @@ import {
 } from "@/contracts";
 
 /**
+ * CLOSED EXPERIMENT — 2026-07-29. `CHAT_AFFORDANCE_CUES` parks OFF permanently.
+ *
+ * The always-on positive-cue projection this module renders failed its trial: two
+ * consecutive rounds with a valid induction gate in which the cue arm did not
+ * reduce contradictions of committed physical state (rematch campaign, frozen
+ * decision rule — `docs/developer-notes/body-attribute-affordances.trial.md`
+ * §Rematch log). Do not revive, rename, or default-enable it, and do not "fix" it
+ * by adding cues; its replacement is a different shape entirely — constraint-first
+ * narrator physical guidance, where committed truth mostly says what the narrator
+ * must NOT claim and a positive detail requires an independently earned state
+ * change (`docs/developer-notes/narrator-physical-guidance.plan.md`).
+ *
+ * The renderer stays for two reasons: it is the reference for the wording the
+ * campaign did validate (cause-true provenance + band-accurate degree, R2's one
+ * recorded cue-side change, still the record of how to phrase committed physical
+ * truth), and the eval harness in `scripts/eval/affordance-cues/` calls it to
+ * generate the cue arm — deleting it would delete the reusable instrument with it.
+ *
+ * Everything below describes that closed design as built.
+ *
+ * ---
+ *
  * CUE PROJECTION for the chat lane (body-attribute-affordances slices 5 and 6).
  *
  * One selected `AffordanceObservation` → one short factual clause, in the

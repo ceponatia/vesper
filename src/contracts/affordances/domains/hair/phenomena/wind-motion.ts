@@ -1,24 +1,19 @@
 import {
   defineAffordancePhenomenon,
-  divideUnits,
   multiplyUnits,
   type AffordanceIntensityBand,
   type AffordanceResolution,
   type UnitInterval,
 } from "../../../core";
-import { HAIR_EFFECTIVE_LOAD_FLOOR } from "../mechanics";
 import { HAIR_LOCATION_ID, type HairAffordanceFrame } from "../frame";
 import {
   hairIntensityBand,
   hairSuppressed,
   HAIR_BELOW_RESPONSE_THRESHOLD,
-  HAIR_BOUND,
-  HAIR_COVERED,
   HAIR_NO_CURRENT_FORCE,
-  HAIR_PINNED,
-  HAIR_WATER_LOADED,
   type HairBandThresholds,
 } from "./bands";
+import { hairBulkRestraint } from "./restraint";
 
 /**
  * `hair.wind_or_motion_response` — hair actually moving, now
@@ -49,24 +44,6 @@ export const HAIR_WIND_OR_MOTION_ID = "hair.wind_or_motion_response";
 /** Law: bands read the whole-hair response product. */
 const WHOLE_HAIR_BANDS: HairBandThresholds = { subtle: 200, clear: 500, strong: 1_500 };
 
-/** Fractions at which a style has captured enough hair to hold the bulk still. */
-const BOUND_GATE = 6_000;
-const PINNED_GATE = 6_000;
-const COVERED_GATE = 5_000;
-
-/**
- * Water saturation (`waterLoad / dryBulkLoad`, i.e. absorption × wetness) at
- * which the hair carries enough of its own weight in water to stop moving as a
- * whole. A RATIO rather than an absolute load, so the gate means the same thing
- * for a fine bob and for waist-length coarse hair.
- *
- * With the condition table's 4_000 absorption floor this threshold states one
- * flat law: hair that is at least three-quarters wet never moves as a whole,
- * whatever it is made of. Drier-but-damp hair still moves unless its cuticle is
- * porous enough to be carrying real weight.
- */
-const WATER_LOADED_GATE = 3_000;
-
 /** Only a genuinely strong gust reaches ends that the constrained bulk cannot follow. */
 const ENDS_FORCE_MIN = 6_000;
 
@@ -86,24 +63,6 @@ type WindMotionInput = Pick<HairAffordanceFrame, "mechanics" | "presentation" | 
 function currentForce(input: WindMotionInput): UnitInterval {
   const forces = [input.wind?.force, input.motion?.force].filter((force): force is UnitInterval => force !== undefined);
   return forces.reduce<UnitInterval>((strongest, force) => (force > strongest ? force : strongest), 0 as UnitInterval);
-}
-
-/**
- * Which current fact, if any, holds the bulk still. First match wins, and the
- * order is most-specific-first: a bun is both pinned and bound, and `pinned`
- * (held against the head) is the more informative reason, while a braid or
- * ponytail is bound without being pinned.
- */
-function bulkConstraint(input: WindMotionInput): string | null {
-  if (input.presentation.pinnedFraction >= PINNED_GATE) return HAIR_PINNED;
-  if (input.presentation.boundFraction >= BOUND_GATE) return HAIR_BOUND;
-  if (input.presentation.coveredFraction >= COVERED_GATE) return HAIR_COVERED;
-  const saturation = divideUnits({
-    numerator: input.mechanics.waterLoad,
-    denominator: input.mechanics.dryBulkLoad,
-    denominatorFloor: HAIR_EFFECTIVE_LOAD_FLOOR,
-  });
-  return saturation >= WATER_LOADED_GATE ? HAIR_WATER_LOADED : null;
 }
 
 export const hairWindOrMotionResponse = defineAffordancePhenomenon<HairAffordanceFrame, WindMotionInput>({
@@ -126,7 +85,9 @@ export const hairWindOrMotionResponse = defineAffordancePhenomenon<HairAffordanc
     if (force === 0) return hairSuppressed(HAIR_WIND_OR_MOTION_ID, HAIR_NO_CURRENT_FORCE);
 
     const response = multiplyUnits(force, input.mechanics.mobilityCapacity, input.mechanics.exposedFreeArea);
-    const constraint = bulkConstraint(input);
+    // The SAME restraint question `hair.bulk_restraint` asks, answered once
+    // (`restraint.ts`) — here it is a reason for silence, there a standing fence.
+    const constraint = hairBulkRestraint(input);
 
     if (constraint === null) {
       const band = hairIntensityBand(response, WHOLE_HAIR_BANDS);

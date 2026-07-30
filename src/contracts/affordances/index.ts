@@ -12,3 +12,4 @@ export * from "./domains/garment";
 export * from "./domains";
 export * from "./derive-affordance-read";
 export * from "./recognition";
+export * from "./guidance";

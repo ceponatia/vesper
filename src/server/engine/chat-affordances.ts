@@ -12,6 +12,9 @@ import {
   garmentAffordanceDomain,
   GARMENT_DOMAIN_ID,
   hairAffordanceDomain,
+  hairArrangementOf,
+  hairWetnessBand,
+  hairWettingEventKinds,
   HAIR_DOMAIN_ID,
   HAIR_LOCATION_ID,
   isInvalidSurfaceEntry,
@@ -35,9 +38,12 @@ import {
   type ChatGarmentStore,
   type DiagnosticSink,
   type EffectiveCoverageRead,
+  type HairArrangement,
   type HairCausalEvent,
   type HairEventKind,
   type HairLanePayload,
+  type HairWetnessBand,
+  type HairWettingEventKind,
   type RegisteredAffordanceDomain,
   type ResolvedAttributeSnapshot,
   type WornItemInput,
@@ -101,10 +107,19 @@ import { buildChatGarmentAffordance } from "./chat-garment-affordances";
  * read, byte-identical next cues, and a byte-identical captured coverage read.
  * There is no hysteresis and no hidden latch anywhere in the path.
  *
- * Wired into the narrator prompt by slice 5, behind `CHAT_AFFORDANCE_CUES`
- * (default OFF): the pipeline takes this read from the committed pre-fan-out cut,
- * projects `read.cues` into clauses (`chat-affordance-cues.ts`), and threads
- * `nextCues` into the finalizer. With the flag off nothing here is called at all.
+ * ## Who reads this, and under which flag
+ *
+ * | Consumer | Flag | What it takes |
+ * | --- | --- | --- |
+ * | Cue projection (`chat-affordance-cues.ts`, closed experiment) | `CHAT_AFFORDANCE_CUES` | `read.cues` → clauses, plus the `nextCues` write |
+ * | Narrator physical guidance (`chat-physical-guidance.ts`) | `CHAT_PHYSICAL_CONSTRAINTS` | `read.constraints` + `committed` + the perception view |
+ * | Recognizable features (`chat-recognition-adapter.ts`) | `CHAT_RECOGNITION_CUES` | the perception view only |
+ *
+ * The pipeline builds this read when ANY of the three needs it and hands the one
+ * result to each — one cut, three consumers. Only the cue path may spend or persist
+ * cue memory: `nextCues` is threaded to the finalizer under `CHAT_AFFORDANCE_CUES`
+ * alone, so one experiment can never write another's state and make both
+ * uninterpretable. With all three flags off nothing here is called at all.
  */
 
 // ---------------------------------------------------------------------------
@@ -200,6 +215,38 @@ export interface ChatAffordanceReadInput {
   readonly sink?: DiagnosticSink;
 }
 
+/**
+ * The committed physical facts this read was taken over, in the hair domain's own
+ * vocabulary (narrator-physical-guidance slice 2).
+ *
+ * Handed back rather than re-derived by the guidance adapter, for the same reason
+ * `attributes` is: a fence built from a second reading of the same state could
+ * disagree with the read it accompanies, and "the narrator was told the hair is
+ * braided while the cue said it was loose" is worse than either alone.
+ *
+ * `available` is the adapter result law, projected: `false` means this lane could
+ * not answer for that owner, which licenses an UNSUPPORTED-claim fence and never a
+ * substituted value. A `null` value with `available: true` is a different and
+ * narrower statement — the owner answered, and the answer maps to no claim code
+ * (an unidentified style, an unrecorded cause).
+ */
+export interface ChatCommittedHairState {
+  readonly wetnessBand: HairWetnessBand | null;
+  /**
+   * The single committed wetting kind, or `null` when there is none — or more than
+   * one. Two live causes (a bath, then rain on the walk home) are ambiguous, and an
+   * ambiguous provenance must produce silence rather than a coin toss.
+   */
+  readonly wetnessCause: HairWettingEventKind | null;
+  readonly arrangement: HairArrangement | null;
+  readonly coveredFraction: number | null;
+  readonly available: {
+    readonly wetness: boolean;
+    readonly arrangement: boolean;
+    readonly coverage: boolean;
+  };
+}
+
 export interface ChatAffordanceReadResult {
   readonly read: AffordanceRead;
   /** The cue memory to persist onto `ChatScenario.affordanceCues` beside this cut. */
@@ -227,6 +274,8 @@ export interface ChatAffordanceReadResult {
    * shoulders", and the observation itself carries only a body location and tags.
    */
   readonly garmentNames: Readonly<Record<string, string>>;
+  /** The committed physical facts behind this read (see `ChatCommittedHairState`). */
+  readonly committed: ChatCommittedHairState;
   /**
    * Exactly what was handed to the staged runner.
    *
@@ -359,6 +408,21 @@ function hairEvents(input: ChatAffordanceReadInput): HairCausalEvent[] {
   return events.filter((event) => (seen.has(event.kind) ? false : (seen.add(event.kind), true)));
 }
 
+/**
+ * The one committed wetting kind among this cut's events, or `null`.
+ *
+ * Read off the events the adapter already built rather than off the stored entry,
+ * so the provenance a premise fence compares against is exactly the provenance the
+ * domain may cite — including standing rain, which is a real wetting event nobody
+ * recorded on the surface row. More than one kind is ambiguous and returns `null`:
+ * with a bath AND rain both live, "the storm soaked your hair" is not a claim this
+ * lane can call wrong.
+ */
+function committedWettingCause(events: readonly HairCausalEvent[]): HairWettingEventKind | null {
+  const wetting = hairWettingEventKinds.filter((kind) => events.some((event) => event.kind === kind));
+  return wetting.length === 1 ? (wetting[0] ?? null) : null;
+}
+
 // ---------------------------------------------------------------------------
 // The adapter
 // ---------------------------------------------------------------------------
@@ -417,17 +481,32 @@ export function buildChatAffordanceRead(input: ChatAffordanceReadInput): ChatAff
   // `unavailable`, a weaker and less true claim). Wetness is structural to the
   // hair domain, so either way the whole domain falls conservatively silent — but
   // only `invalid` says the state row is broken.
+  const events = hairEvents(input);
   const payload: HairPayloadDraft = {
     wetness: wetness.status === "known" ? wetness.level : null,
     ...(coverage === undefined ? {} : { coveredFraction: coverage.coveredFraction }),
     // Still air is an ANSWER, not an absence: the environment owner can say "no
     // wind", which is a different claim from "this lane has no weather".
     wind: { force: windForceOf(input.environment) },
-    events: hairEvents(input),
+    events,
     // `motion`, `contacts` and `contamination` are deliberately absent — no owner.
   };
 
   const attributes = resolvedAttributeSnapshot(resolveSubjectAttributes(input));
+  const arrangement = hairArrangementOf(attributes);
+  // Derived from the SAME values the payload above carries — one reading of the cut,
+  // two consumers (the staged domain run, and the narrator-guidance detector).
+  const committed: ChatCommittedHairState = {
+    wetnessBand: wetness.status === "known" ? hairWetnessBand(wetness.level) : null,
+    wetnessCause: committedWettingCause(events),
+    arrangement,
+    coveredFraction: coverage?.coveredFraction ?? null,
+    available: {
+      wetness: wetness.status === "known",
+      arrangement: arrangement !== null,
+      coverage: coverage !== undefined,
+    },
+  };
   const request = {
     subjectId: affordanceSubjectId(input.subjectId),
     storyTime,
@@ -465,6 +544,7 @@ export function buildChatAffordanceRead(input: ChatAffordanceReadInput): ChatAff
     attributes,
     coverage: garment?.coverage ?? null,
     garmentNames: garmentNamesOf(input),
+    committed,
     request,
   };
 }
