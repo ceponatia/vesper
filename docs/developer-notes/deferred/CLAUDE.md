@@ -126,3 +126,5 @@ Added after the review:
   blueprint-v2 roles/capabilities, fit, pockets/hoods/decorations, and a clean
   boundary to the future shared scene/body-relations owner; technical companion
   [clothing-archetypes-components.spec.md](clothing-archetypes-components.spec.md).
+  This is a separate parked follow-up, not added to the active clothing plan's
+  already-defined remaining slices.
