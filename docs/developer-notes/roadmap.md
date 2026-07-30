@@ -226,6 +226,7 @@ umbrella further down.)
   cache, and no removal of `travel_minutes`. This replaces the stale 2026-07-02
   session-side follow-on line; surviving forge work is already owned by
   [character-schema.plan.md](character-schema.plan.md).
+
 ## Someday / parking lot
 
 Unpromoted ideas live in [deferred.plan.md](deferred.plan.md): the
