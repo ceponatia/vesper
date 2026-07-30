@@ -2,7 +2,8 @@
 
 Status: draft companion to
 [clothing-archetypes-components.plan.md](clothing-archetypes-components.plan.md).
-Promote and re-audit before implementation.
+Promote and re-audit before implementation. This document replaces the stale
+pre-implementation component proposal from PR 20.
 
 Upstream/runtime owner:
 [../clothing-state-graph.plan.md](../clothing-state-graph.plan.md).
