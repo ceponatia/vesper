@@ -309,20 +309,35 @@ describe("a person has two feet", () => {
     expect(left).toBeGreaterThan(right);
   });
 
-  it("falls back to the structural default for a locus that names no side", () => {
+  it("moves an unsided locus only when two distinct feet agree", () => {
     const shared = [{ ...EMPTY_COARSE, moisture: toUnitInterval(6_000) }];
-    const disagreeing: readonly FootArticulationRead[] = [
-      { side: "left", toes: "curled", arch: "neutral", evidence: [] },
-      { side: "right", toes: "spread", arch: "neutral", evidence: [] },
-    ];
-    const agreeing: readonly FootArticulationRead[] = [
-      { side: "left", toes: "spread", arch: "neutral", evidence: [] },
-      { side: "right", toes: "spread", arch: "neutral", evidence: [] },
-    ];
+    const left: FootArticulationRead = { side: "left", toes: "spread", arch: "neutral", evidence: [] };
+    const right: FootArticulationRead = { side: "right", toes: "spread", arch: "neutral", evidence: [] };
+    const curledRight: FootArticulationRead = { side: "right", toes: "curled", arch: "neutral", evidence: [] };
     const unposed = moistureAt(shared, "interdigital_spaces");
-    expect(moistureAt(shared, "interdigital_spaces", undefined, disagreeing)).toBe(unposed);
-    // Both feet agreeing IS an answer for whichever foot it turns out to be.
-    expect(moistureAt(shared, "interdigital_spaces", undefined, agreeing) ?? 0).toBeLessThan(unposed ?? 0);
+
+    // Two agreeing feet: whichever foot the locus turns out to be, the answer is
+    // the same, so it is a deduction. This is the behaviour that must survive.
+    expect(moistureAt(shared, "interdigital_spaces", undefined, [left, right]) ?? 0).toBeLessThan(unposed ?? 0);
+
+    // ONE supplied foot is not agreement (owner ruling, 2026-07-30): it says
+    // nothing about the other foot, and an unsided locus may well BE that foot.
+    // Spending the left foot's pose on it was picking a foot in disguise.
+    expect(moistureAt(shared, "interdigital_spaces", undefined, [left])).toBe(unposed);
+
+    // Disagreement and no pose at all are the same structural-neutral answer.
+    expect(moistureAt(shared, "interdigital_spaces", undefined, [left, curledRight])).toBe(unposed);
+    expect(moistureAt(shared, "interdigital_spaces", undefined, [])).toBe(unposed);
+  });
+
+  it("still gives the one posed foot its OWN closure at its own locus", () => {
+    // The rule narrows what an unsided locus may borrow; it takes nothing away
+    // from the foot that was actually answered for.
+    const shared = [{ ...EMPTY_COARSE, moisture: toUnitInterval(6_000) }];
+    const left: readonly FootArticulationRead[] = [{ side: "left", toes: "spread", arch: "neutral", evidence: [] }];
+    expect(moistureAt(shared, "interdigital_spaces", "left", left) ?? 0).toBeLessThan(
+      moistureAt(shared, "interdigital_spaces") ?? 0,
+    );
   });
 });
 

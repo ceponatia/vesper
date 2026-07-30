@@ -74,16 +74,30 @@ const FOOT_WET_TEXTURE_SPAN = 2_500;
 /**
  * The pose effect on the toe spaces for a foot NOBODY distinguished.
  *
- * Every foot the lane named — in the condition set or in the pose set — now gets
- * its own block and its own foot's closure, so this covers only the side-less
- * block: a locus that names no side, on a character whose feet the owner did not
- * separate. Agreement is the one honest answer there. If both posed feet have
- * their toes pressed together then whichever foot is being touched has them
- * pressed together; if they disagree, the structural default is the only thing
- * left, because picking one would put a curled foot's damp toe spaces on a
- * spread one.
+ * Every foot the lane named — in the condition set or in the pose set — gets its
+ * own block and its own foot's closure, so this covers only the side-less block:
+ * a locus that names no side, on a character whose feet the owner did not
+ * separate.
+ *
+ * The modifier applies only when TWO DISTINCT feet were supplied and they agree
+ * (owner ruling, 2026-07-30). Anything else is the structural-neutral `0`:
+ *
+ * - **zero poses** — nothing to agree about;
+ * - **one pose** — the trap this rule exists to close. One supplied left foot is
+ *   not agreement; it says nothing whatever about the right foot, and an unsided
+ *   locus may well BE the right foot. Spending the left foot's curl on it was
+ *   the same invention as picking a foot outright, wearing the word "agreement";
+ * - **disagreement** — picking one would put a curled foot's damp toe spaces on
+ *   a spread one.
+ *
+ * Two agreeing feet is the one case that survives: whichever foot the locus
+ * turns out to be, the answer is the same, so it is a deduction rather than a
+ * guess.
  */
 function undistinguishedInterdigitalClosure(articulations: readonly FootArticulationRead[]): -1 | 0 | 1 {
+  // Distinct SIDES, not entries: two reads of the same foot are one foot's pose,
+  // however many times the lane said it.
+  if (new Set(articulations.map((articulation) => articulation.side)).size < 2) return 0;
   const closures = articulations.map((articulation) => footInterdigitalClosure(articulation));
   const first = closures[0];
   if (first === undefined) return 0;

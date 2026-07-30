@@ -95,6 +95,37 @@ export interface FootArticulationRead {
 }
 
 /**
+ * One entry per foot — enforced, not merely intended.
+ *
+ * Both sets are keyed by side, so two entries for the same foot are two owners
+ * telling different stories about one thing: "the left foot is trapped" beside
+ * "the left foot is free" has no correct resolution, and neither does a left
+ * foot that is both curled and spread. Merging them or letting the last one win
+ * would manufacture an answer nobody gave; failing the schema hands the standard
+ * degradation instead (⇒ `invalid` ⇒ the read carries no value at all, so no
+ * resolver can reach for one). Same rule, same reason, as the condition set's.
+ */
+function oneReadPerSide(entries: readonly { readonly side: ContactSurfaceSide }[]): boolean {
+  return new Set(entries.map((entry) => entry.side)).size === entries.length;
+}
+
+const ONE_PER_SIDE_MESSAGE = { message: "one entry per foot" };
+
+/** The lane's whole support answer: at most one entry per foot. */
+export const footSupportSetSchema = z
+  .array(footSupportReadSchema)
+  .max(contactSurfaceSides.length)
+  .readonly()
+  .refine(oneReadPerSide, ONE_PER_SIDE_MESSAGE);
+
+/** The lane's whole pose answer: at most one entry per foot. */
+export const footArticulationSetSchema = z
+  .array(footArticulationReadSchema)
+  .max(contactSurfaceSides.length)
+  .readonly()
+  .refine(oneReadPerSide, ONE_PER_SIDE_MESSAGE);
+
+/**
  * Toe poses that CLOSE the interdigital spaces, and the one that opens them.
  *
  * The spec's condition rule — interdigital retention rises and airflow falls

@@ -3,11 +3,13 @@ import { toUnitInterval } from "../../core";
 import { compileFootwearContact } from "./footwear";
 import { footwearFixture } from "./fixtures";
 import {
+  footArticulationSetSchema,
   footInterdigitalClosure,
   footMovementRestrictionOf,
   footMovementRestrictionRank,
   footMovementRestrictions,
   footReadForSide,
+  footSupportSetSchema,
   footToePoses,
   selectFootArticulation,
   type FootArticulationRead,
@@ -34,6 +36,46 @@ const rigidBoot = () =>
   ]);
 
 const softSock = () => compileFootwearContact([footwearFixture()]);
+
+describe("one entry per foot", () => {
+  it("refuses two support reads for the same foot rather than merging them", () => {
+    // "The left foot is trapped" beside "the left foot is free" has no correct
+    // resolution. Failing hands the standard degradation; merging or
+    // last-write-wins would manufacture an answer nobody gave.
+    expect(
+      footSupportSetSchema.safeParse([
+        { side: "left", supportRole: "weight_bearing", mobility: "trapped" },
+        { side: "left", supportRole: "free", mobility: "free" },
+      ]).success,
+    ).toBe(false);
+    expect(
+      footSupportSetSchema.safeParse([
+        { side: "left", supportRole: "weight_bearing", mobility: "trapped" },
+        { side: "right", supportRole: "free", mobility: "free" },
+      ]).success,
+    ).toBe(true);
+  });
+
+  it("refuses two poses for the same foot rather than merging them", () => {
+    expect(
+      footArticulationSetSchema.safeParse([
+        { side: "left", toes: "curled", arch: "neutral" },
+        { side: "left", toes: "spread", arch: "extended" },
+      ]).success,
+    ).toBe(false);
+    expect(
+      footArticulationSetSchema.safeParse([
+        { side: "left", toes: "curled", arch: "neutral" },
+        { side: "right", toes: "spread", arch: "extended" },
+      ]).success,
+    ).toBe(true);
+  });
+
+  it("accepts an empty answer and a one-foot answer", () => {
+    expect(footSupportSetSchema.safeParse([]).success).toBe(true);
+    expect(footArticulationSetSchema.safeParse([{ side: "left", toes: "curled", arch: "neutral" }]).success).toBe(true);
+  });
+});
 
 describe("footMovementRestrictionOf — every branch", () => {
   it("reports nothing limiting a free, untouched, unshod foot", () => {
