@@ -1,8 +1,13 @@
 # Romantic contact affordances
 
-Status: active (promoted 2026-07-28; **slices 0 and 1 shipped 2026-07-30** —
-the truth-source audit is published and the lane-neutral contact lifecycle is
-built as pure contracts; slices 2–4 remain, starting with the foot domain;
+Status: active (promoted 2026-07-28; **slices 0–2 shipped 2026-07-30** —
+the truth-source audit is published, the lane-neutral contact lifecycle is
+built as pure contracts, and the foot domain proof is in
+`src/contracts/affordances/domains/foot/` (topology + three registry loci,
+profile inheritance, condition distribution, footwear filtering, and the
+pressure/texture/glide/articulation/nail phenomena — fixture-driven, not
+production-wired; contact warmth and scent recorded deferred); slices 3–4
+remain, starting with the constraint-first romantic-chat evaluation;
 intimate work waits for the foot proof and authoritative adult-eligibility,
 consent, exposure, and physiology; the plan follows
 [body-attribute affordances](body-attribute-affordances.plan.md)
@@ -303,13 +308,26 @@ Storage is deliberately deferred: the versioned shape and its healing rule are
 settled so they are not decided twice, but where committed contact lives is
 still an open question below.
 
-### Slice 2 — foot contact proof
+### Slice 2 — foot contact proof · shipped 2026-07-30
 
 Add the foot surface map and ship pressure, regional texture, and footwear
 filtering first. Add sliding only for known, substance-specific surface state.
 Add contact warmth only if Slice 0 identifies an authoritative temperature
 source; otherwise record it as deferred rather than guessing. Use authored
 fixtures rather than open-ended narrator interpretation.
+
+**As built.** `src/contracts/affordances/domains/foot/` — a sixteen-surface
+interaction map over three new non-slot registry loci, structural profiles
+compiled from the authored `feet.*` attributes, zero-preserving regional
+condition distribution, wardrobe-part footwear filtering, and five phenomena
+(pressure, texture, substance-specific glide, articulation, nail bands), all
+gated on a committed contact from the slice-1 lifecycle and proven against the
+spec's calibration fixture plus seven further worked cases (185 tests). The
+domain is deliberately **not** registered in the production domain set —
+registration is slice 3's wiring act. Contact warmth resolved **no** (no
+temperature owner in either lane) and scent is deferred with it. Full detail,
+the deviation table, and the deferred list:
+[foot spec §"As built — slice 2"](romantic-contact-affordances.spec.foot.md#as-built--slice-2).
 
 ### Slice 3 — constraint-first romantic-chat evaluation
 

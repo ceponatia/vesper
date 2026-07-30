@@ -40,6 +40,17 @@ const DOMAIN_WORDS: readonly string[] = [
   "breast",
   "wing",
   "tail",
+  // The THIRD domain's vocabulary, added when shared narrowing moved into
+  // `types.ts` — the core grew code for a domain's benefit, so the guard has to
+  // grow with it or the next such move goes unchecked.
+  "foot",
+  "toe",
+  "sole",
+  "heel",
+  "arch",
+  "nail",
+  "sock",
+  "footwear",
 ];
 
 /** Source files only — the tests beside them legitimately name the domains they exercise. */

@@ -5,6 +5,23 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Romantic contact affordances, slices 0–2** —
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
+  [audit](romantic-contact-affordances.audit.md) ·
+  [contact core](romantic-contact-affordances.spec.contact-core.md) ·
+  [foot spec](romantic-contact-affordances.spec.foot.md) — 2026-07-30 — the
+  cited truth-source audit (pose, reach, support, material-between, tactile
+  perception, legacy actor control/permission all recorded unowned; three
+  product questions flagged for the owner), the pure lane-neutral contact
+  lifecycle (four-status resolution, derived contact ids, type-enforced
+  "ended contacts can't be observed"), and the foot domain proof: sixteen
+  interaction surfaces over three new non-slot registry loci, profile
+  inheritance from `feet.*` attributes, zero-preserving condition
+  distribution, footwear filtering that outranks lane-authored direct-skin
+  claims, and substance-specific glide with per-film calibrated curves.
+  Fixture-driven and unregistered in production until slice 3 wires it;
+  warmth/scent deferred (no owners). Slices 3–4 remain queued.
+
 - **Constraint-first narrator physical guidance, slices 0–2** —
   [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md) ·
   [spec](narrator-physical-guidance.spec.md) — 2026-07-30 — the closed cue path

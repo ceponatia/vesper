@@ -1,17 +1,16 @@
-import { z, type ZodType } from "zod";
+import { z } from "zod";
 import {
   adapterInputStatuses,
   adapterInvalid,
   adapterReadEvidence,
   adapterSupported,
   adapterUnavailable,
-  affordanceEvidence,
   isAdapterSupported,
+  readAdapterInput,
   registerAffordanceDomain,
   type AdapterRead,
   type AffordanceDomainDefinition,
   type AffordanceDomainRequest,
-  type AffordanceEvidenceKind,
   type DomainInputs,
 } from "../../core";
 import { compileGarmentProfile, parseGarmentRegions, type GarmentRegionInput, type GarmentStructuralProfile } from "./profile";
@@ -92,18 +91,6 @@ const garmentPayloadSchema = z.object({
   focus: z.unknown().optional(),
 });
 
-/** One lane input under the adapter result law: absent ⇒ unavailable, unparsable ⇒ invalid. */
-function readInput<TSchema extends ZodType>(
-  schema: TSchema,
-  raw: unknown,
-  kind: AffordanceEvidenceKind,
-  key: string,
-): AdapterRead<z.output<TSchema>> {
-  if (raw === undefined) return adapterUnavailable;
-  const parsed = schema.safeParse(raw);
-  return parsed.success ? adapterSupported(parsed.data, [affordanceEvidence(kind, key)]) : adapterInvalid;
-}
-
 /** The structural rows, narrowed once for `compileProfile`. */
 function payloadRegions(request: AffordanceDomainRequest): readonly GarmentRegionInput[] | null {
   const payload = garmentPayloadSchema.safeParse(request.payload);
@@ -138,10 +125,10 @@ export const garmentDomainDefinition: AffordanceDomainDefinition<
     const raw = payload.data;
 
     const reads = {
-      regions: readInput(z.array(garmentRegionStateSchema).max(96), raw.state, "state", "garment.state"),
-      contacts: readInput(z.array(garmentBodyContactSchema).max(64), raw.contacts, "contact", "garment.contacts"),
-      events: readInput(z.array(garmentCausalEventSchema).max(32), raw.events, "event", "garment.events"),
-      focus: readInput(garmentFocusReadSchema, raw.focus, "state", "garment.focus"),
+      regions: readAdapterInput(z.array(garmentRegionStateSchema).max(96), raw.state, "state", "garment.state"),
+      contacts: readAdapterInput(z.array(garmentBodyContactSchema).max(64), raw.contacts, "contact", "garment.contacts"),
+      events: readAdapterInput(z.array(garmentCausalEventSchema).max(32), raw.events, "event", "garment.events"),
+      focus: readAdapterInput(garmentFocusReadSchema, raw.focus, "state", "garment.focus"),
     };
 
     // `regions` is STRUCTURAL: without the current wardrobe reading there is no

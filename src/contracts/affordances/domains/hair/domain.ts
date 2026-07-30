@@ -1,19 +1,18 @@
-import { z, type ZodType } from "zod";
+import { z } from "zod";
 import {
   adapterInputStatuses,
   adapterInvalid,
   adapterReadEvidence,
   adapterSupported,
   adapterUnavailable,
-  affordanceEvidence,
   attributeEnumValue,
   isAdapterSupported,
+  readAdapterInput,
   registerAffordanceDomain,
   unitIntervalSchema,
   type AdapterRead,
   type AffordanceDomainDefinition,
   type AffordanceDomainRequest,
-  type AffordanceEvidenceKind,
   type DomainInputs,
   type ResolvedAttributeSnapshot,
 } from "../../core";
@@ -95,18 +94,6 @@ const hairPayloadSchema = z.object({
   events: z.unknown().optional(),
 });
 
-/** One lane input under the adapter result law: absent ⇒ unavailable, unparsable ⇒ invalid. */
-function readInput<TSchema extends ZodType>(
-  schema: TSchema,
-  raw: unknown,
-  kind: AffordanceEvidenceKind,
-  key: string,
-): AdapterRead<z.output<TSchema>> {
-  if (raw === undefined) return adapterUnavailable;
-  const parsed = schema.safeParse(raw);
-  return parsed.success ? adapterSupported(parsed.data, [affordanceEvidence(kind, key)]) : adapterInvalid;
-}
-
 /** The attribute id arrangement is read from — one spelling, three readers. */
 export const HAIR_ARRANGEMENT_ATTRIBUTE_ID = "hair.arrangement";
 
@@ -131,7 +118,7 @@ export function hairArrangementOf(attributes: ResolvedAttributeSnapshot): HairAr
  */
 function readArrangement(request: AffordanceDomainRequest): AdapterRead<HairArrangement> {
   const raw = attributeEnumValue(request.attributes, HAIR_ARRANGEMENT_ATTRIBUTE_ID);
-  return readInput(z.enum(hairArrangements), raw, "attribute", HAIR_ARRANGEMENT_ATTRIBUTE_ID);
+  return readAdapterInput(z.enum(hairArrangements), raw, "attribute", HAIR_ARRANGEMENT_ATTRIBUTE_ID);
 }
 
 const looseEndBandSchema = z.enum(hairLengthBands);
@@ -158,14 +145,14 @@ export const hairDomainDefinition: AffordanceDomainDefinition<
     const raw = payload.data;
 
     const reads = {
-      wetness: readInput(unitIntervalSchema, raw.wetness, "state", "wetness"),
-      coveredFraction: readInput(unitIntervalSchema, raw.coveredFraction, "coverage", "coveredFraction"),
+      wetness: readAdapterInput(unitIntervalSchema, raw.wetness, "state", "wetness"),
+      coveredFraction: readAdapterInput(unitIntervalSchema, raw.coveredFraction, "coverage", "coveredFraction"),
       arrangement: readArrangement(request),
-      wind: readInput(hairWindReadSchema, raw.wind, "environment", "wind"),
-      motion: readInput(hairMotionReadSchema, raw.motion, "state", "motion"),
-      contamination: readInput(hairContaminationReadSchema, raw.contamination, "state", "contamination"),
-      contacts: readInput(z.array(hairBodyContactSchema).max(64), raw.contacts, "contact", "contacts"),
-      events: readInput(z.array(hairCausalEventSchema).max(64), raw.events, "event", "events"),
+      wind: readAdapterInput(hairWindReadSchema, raw.wind, "environment", "wind"),
+      motion: readAdapterInput(hairMotionReadSchema, raw.motion, "state", "motion"),
+      contamination: readAdapterInput(hairContaminationReadSchema, raw.contamination, "state", "contamination"),
+      contacts: readAdapterInput(z.array(hairBodyContactSchema).max(64), raw.contacts, "contact", "contacts"),
+      events: readAdapterInput(z.array(hairCausalEventSchema).max(64), raw.events, "event", "events"),
     };
 
     const structural = [reads.wetness, reads.coveredFraction, reads.arrangement];

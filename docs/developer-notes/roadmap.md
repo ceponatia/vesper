@@ -41,15 +41,17 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   consumes the shared action-outcome seam. `CHAT_AFFORDANCE_CUES` remains off.
 - **Romantic contact affordances — foot-first grounded contact** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
-  [spec index](romantic-contact-affordances.spec.md) (active; **slices 0–1
-  started 2026-07-30** — the truth-source audit/capability matrix and the
-  lane-neutral attempted-versus-active contact lifecycle contracts; promoted
-  from deferred 2026-07-28 and sequenced directly behind the narrator-guidance
-  plan whose action-outcome seam its slice 3 consumes). Committed scope is
-  slices 0–4: the truth-source audit, the shared contact lifecycle with
-  actor-control/permission gates, the foot domain (surface map, footwear
-  filtering, pressure/texture and substance-specific glide; warmth only with an
-  authoritative source), legacy-romantic-chat cue evaluation behind a flag, and
+  [spec index](romantic-contact-affordances.spec.md) (active; **slices 0–2
+  shipped 2026-07-30** — the truth-source audit/capability matrix, the
+  lane-neutral attempted-versus-active contact lifecycle contracts, and the
+  foot domain proof (surface map + three registry loci, profile inheritance,
+  zero-preserving condition distribution, footwear filtering,
+  pressure/texture/glide phenomena — fixture-driven, unregistered until
+  slice 3 wires it; warmth and scent recorded deferred, no owners exist);
+  promoted from deferred 2026-07-28 and sequenced directly behind the
+  narrator-guidance plan whose action-outcome seam its slice 3 consumes).
+  Remaining committed scope is slices 3–4: legacy-romantic-chat constraint
+  evaluation behind `CHAT_PHYSICAL_CONSTRAINTS`, and
   atomic/idempotent contact-caused effects. Successor parity waits for regional
   pose/contact and clothing adapters. Intimate regions stay behind the foot
   proof plus explicit adult-eligibility, consent, exposure, and physiology
