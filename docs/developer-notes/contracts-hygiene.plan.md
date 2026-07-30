@@ -1,6 +1,6 @@
 # Contracts hygiene sweep — retire the R6 leftovers, speed up the hot lookups
 
-Status: draft (unscheduled — derived from [codebase-efficiency.audit.md](codebase-efficiency.audit.md); no roadmap line yet)
+Status: draft (E13/E14 approved for the early hot-path tranche; the broad hygiene sweep stays late)
 
 ## Why
 
@@ -81,6 +81,20 @@ recording that the v1 judge is gone and what a future version would rebuild.
 - **No new vocabulary, no behavior change, no migrations.** Every fix here is a
   deletion, a move, an alias, or a cache.
 
+## Review rulings and scope adjustments — 2026-07-30
+
+- Pull **E13/E14** forward into the approved cheap hot-path tranche. They are small,
+  behavior-preserving index/memo changes on live per-turn paths.
+- Keep condition-driven mood shifts and fold their vocabulary into the condition
+  catalog. Do not wire new behavior in this cleanup; activation waits for a feature
+  with an authoritative consumer.
+- Build the lenient-zod module and migrate the densest files incrementally. A
+  repo-wide 60-site rewrite is not a success criterion.
+- E8 waits until the active affordance file set is quiet. E9 stays before a third
+  affordance domain, but must preserve the domain-neutrality tests.
+- Move the mechanical E5 export census into the later dead-export pass so one
+  review owns removal guardrails.
+
 ## Delivery slices
 
 Each is independently shippable; the full gate runs between them.
@@ -145,17 +159,9 @@ Each is independently shippable; the full gate runs between them.
 
 ## Open questions
 
-1. **E7/E-K1: fold or delete?** The condition mood-baseline shifts have no
-   consumer today. Folding them into the catalog is E-K1's structural fix, worth
-   it only if a future feature wants condition-driven mood shifts; deleting is
-   cheaper now and reopenable later. Needs one ruling and a recorded home.
-2. **What happens to E5?** Several of the 51 are type aliases of live schemas —
-   cheap to delete, harmless to keep; do we want a standing rule instead of a
-   case-by-case call every sweep? And the pass may belong to the repo-wide
-   de-export sweep (batch 10) for one review instead of two.
-3. **Whose plan owns E8?** Renaming the fixture files and dropping them from the
-   public barrel touches files the active affordance build owns — a slice here,
-   or a close-out item on that plan?
-4. **Is E10 finished here, or is it a convention?** Migrating all ~60 sites is a
-   large diff for no behavior change. The alternative: create the module, migrate
-   the dense files, and treat "new code uses the helper" as a standing rule.
+1. Does the E5 sweep adopt a standing rule for unused `z.infer` aliases, or
+   continue to remove only aliases that obscure the public surface?
+2. Does E8 remain a contracts-hygiene slice once the affordance work is quiet, or
+   close out with that plan's fixture ownership?
+3. Which dense files prove the lenient helper before the migration becomes a
+   standing convention rather than a finite sweep?

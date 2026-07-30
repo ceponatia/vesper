@@ -1,6 +1,6 @@
 # Tooling gates — the checks that should have found the audit
 
-Status: draft (unscheduled — derived from [codebase-efficiency.audit.md](codebase-efficiency.audit.md); no roadmap line yet)
+Status: draft (F2 shipped in 66ecd3b; eval-harness and targeted duplication work remain sequenced late)
 
 ## Why
 
@@ -57,6 +57,20 @@ close their database pool on exit, two leave a finished run hung on an open hand
   batches. This plan only makes them visible.
 - **No roadmap edit.** OQ1 is recorded, not acted on.
 
+## Review rulings and scope adjustments — 2026-07-30
+
+- F2 is already closed: commit `66ecd3b` added `pnpm lint:authz` to the
+  sequential gate list. Do not re-implement it.
+- Extract the eval harness before widening clone detection to `scripts/`. Give
+  the shared harness a name distinct from the existing affordance-cue rig.
+- Prefer targeted folder thresholds or a second narrow invocation over globally
+  lowering `minTokens`. A noisy gate that reports ordinary fixtures will be
+  ignored and is worse than today's blind spot.
+- Moving scene-image output also changes a tracked review page. Treat the output
+  and page move as one documentation change, or retain a documented exception.
+- The stale roadmap follow-on line is resolved by the reviewed sequencing update;
+  this plan no longer owns that decision.
+
 ## Delivery slices
 
 **Slice 1 — the missing gate line (F2).** One line in the root `CLAUDE.md`. Land it
@@ -108,15 +122,9 @@ OQ3; cross-reference the other two sites rather than fixing them twice.
 
 ## Open questions
 
-- **OQ1 (F3a) — a stale roadmap line, recorded here, fixed by the owner.** The `## Next`
-  entry "Codebase-review follow-on batches (2 & 4, session-side remainder)" is stale in
-  substance: most of what it points at was deleted by R6, and what survives is queued
-  elsewhere (the forge half under `character-schema.plan.md`, the rest re-verified in the
-  audit's §G). That fix is a roadmap edit belonging to whoever sequences the audit
-  batches — this plan records the fact and deliberately does not touch `roadmap.md`.
-- **OQ2 — what grain should the duplication gate use?** Needs the slice-3 measurement.
-- **OQ3 — archive or delete `unconsumed-character-prose.md`?** Archiving keeps reasoning
-  that may still apply to the chat lane; deleting keeps the folder honest. Owner call.
-- **OQ4 — where does scene-image eval output belong?** The four siblings default to
-  `data/eval/<name>`. Either the review index moves with the output, or this runner keeps
-  a documented exception.
+- What targeted duplication-gate grain remains silent on the current tree while
+  catching the known replay, editor, and script clones?
+- Archive or delete `unconsumed-character-prose.md`? Preserve it only if the
+  reasoning still applies to the live chat lane.
+- Does scene-image eval output move with its review index, or keep a documented
+  `docs/` exception?

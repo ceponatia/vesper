@@ -1,6 +1,6 @@
 # Dead-export sweep — delete the leavings, shrink the search space
 
-Status: draft (unscheduled — derived from [codebase-efficiency.audit.md](codebase-efficiency.audit.md); no roadmap line yet)
+Status: draft (unsafe temporary/stale files may go early; broad de-export work stays after consolidation)
 
 ## Why
 
@@ -71,6 +71,21 @@ sets the rules.
 - **The parked successor primitives and `CHAT_AFFORDANCE_CUES` stay**
   (guardrails 1 and 2).
 
+## Review rulings and scope adjustments — 2026-07-30
+
+- Remove the unsafe temporary database script and clearly stale site copy early;
+  they reduce risk without destabilizing imports. Keep the broad barrel/de-export
+  census after the consolidation plans settle.
+- **Retain `location_links.travel_minutes`.** It is reserved for the planned
+  authored travel-duration system; annotate that status in schema/reference docs
+  instead of paying for a drop-and-recreate migration.
+- The durable body-modifier command survives only if it receives a real caller and
+  integration test in near-term scheduled work. Otherwise delete the callerless
+  durable handler while retaining the pure resolver.
+- Keep the test-support git-history guard and the parked fork/branch primitives.
+  Zero current production callers is not enough evidence to delete intentionally
+  staged engine capability.
+
 ## Delivery slices
 
 Each lands, passes the full gate, and reviews on its own.
@@ -128,21 +143,7 @@ Each lands, passes the full gate, and reviews on its own.
 
 ## Open questions
 
-- **OQ1 — how to dispose of `travel_minutes` (C19)?** Drop the column by
-  migration (needs a deploy, effectively irreversible), or leave it with a
-  `@deprecated` comment until library travel is planned? A travel-duration idea
-  is already parked
-  ([deferred/travel-duration-authoring.plan.md](deferred/travel-duration-authoring.plan.md)),
-  which argues for annotating.
-- **OQ2 — wire or delete A17?** The callerless durable body-modifier handler
-  either gets a caller and a test, or goes; its pure resolver stays either way.
-  Deleting is cheaper; wiring is worth it only if the capability is wanted soon.
-- **OQ3 — should the engine barrel re-export the simulation surface at all after
-  A19's split?** Narrowing the simulation barrel is settled; whether the ~68
-  survivors stay reachable through the outer engine barrel is a separate call.
-- **OQ4 — delete the harmless `z.infer` aliases (E5)?** Several of the 51
-  unreferenced contracts exports are type aliases of live schemas: free to
-  delete, harmless to keep. A blanket rule stops case-by-case stalling.
-- **OQ5 — timing.** Guardrail 4 says run this last, but the batch is cheap and
-  shrinks the search space for every later reader. Do Slices 1–2 go early with
-  the rest deferred behind the consolidation batches?
+- After the simulation barrel is narrowed, should its surviving public surface
+  remain re-exported through the outer engine barrel?
+- What standing rule should govern harmless unreferenced `z.infer` aliases:
+  remove every non-public alias, or retain schema-adjacent aliases by default?
