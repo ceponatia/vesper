@@ -7,7 +7,10 @@ built as pure contracts, and the foot domain proof is in
 profile inheritance, condition distribution, footwear filtering, and the
 pressure/texture/glide/articulation/nail phenomena — fixture-driven, not
 production-wired; contact warmth and scent recorded deferred); slices 3–4
-remain, starting with the constraint-first romantic-chat evaluation;
+remain, in the owner's ruled order (2026-07-30): the slice-2
+[hardening pass](romantic-contact-affordances.followups.md), then the
+[adult declaration](adult-eligibility.plan.md), then slice 3 wired
+affectionate-first with the romantic proof gated on eligibility + permission;
 intimate work waits for the foot proof and authoritative adult-eligibility,
 consent, exposure, and physiology; the plan follows
 [body-attribute affordances](body-attribute-affordances.plan.md)
@@ -342,6 +345,16 @@ Run any positive contact-transition detail as a second, independent campaign on
 top of the winning constraint configuration; do not combine both changes into
 one A/B.
 
+**Sequencing (owner, 2026-07-30).** This slice begins with a separately
+authored, genuinely affectionate/non-romantic integration case — never a
+romantic case relabeled to commit. The genuinely romantic foot proof runs only
+after both the [adult declaration](adult-eligibility.plan.md) resolves every
+participant and the legacy `romantic_touch` permission owner exists; slice 3
+also implements the ruled contact persistence (durable event provenance + the
+versioned active-contact projection in the retake snapshot). Positive tactile
+texture/glide enable waits further still, on perceiver-specific perception
+channels and the ruled regional condition ownership.
+
 ### Slice 4 — changes caused by contact
 
 Connect marks and material transfer through explicit events owned by body,
@@ -411,7 +424,8 @@ regressing those measures.
 ## Open questions
 
 **Five questions were ruled by the owner on 2026-07-30** (after the slice-2 QA
-report) and have left this list; each ruling is recorded in its detail doc:
+report) and have left this list — **six remain open below**; each ruling is
+recorded in its detail doc:
 
 - adult eligibility — an explicit `adult | minor | unresolved` declaration,
   positive-adult required for romantic/intimate, fantasy and missing ages stay

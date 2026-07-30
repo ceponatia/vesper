@@ -66,16 +66,24 @@ character age reads `unresolved` for contact even though today's prompt fence
 reads it as adult. Inverting `life-stage.ts:150`'s `?? false` is a repo-wide
 behaviour change across 19 call sites and is deliberately **not** proposed here.
 
-**RULING (owner, 2026-07-30):** add an explicit
+**RULING (owner, 2026-07-30; scope corrected same day):** add an explicit
 `adult | minor | unresolved` **eligibility declaration**, independent of
 numeric/display age. Every participant — player persona included — must be
 **positively adult** for `romantic` or `intimate` contact; fantasy-scaled ages
 and the ageless player persona remain `unresolved` (and therefore fail closed)
 until they carry the declaration. The repo-wide `isMinorAge` fail-open fallback
 is **not** changed as part of this feature. The slice-1 default above is
-confirmed as the permanent gate; the declaration itself is new build work owned
-by the intimate-prerequisite track (plan slices 5–6 precondition), not by the
-foot slices.
+confirmed as the permanent gate. The declaration is a **cross-cutting
+prerequisite, not an intimate-track one**: the ruled foot trial is `romantic`,
+and `romantic` requires positive adult eligibility, so slice 3's
+`romantic_touch` permission owner alone still cannot permit the trial while
+the player reads `unresolved`. Build order ruled: existing records default to
+`unresolved`; player and NPC declarations are authoritative inputs; the legacy
+adapter maps them into the existing eligibility read; and the declaration
+ships **before the first genuinely romantic foot trial**. Slice 3 may begin
+with a separately authored, genuinely affectionate/non-romantic integration
+case — that does not violate the "never relabel romantic contact" ruling.
+Plan: [adult-eligibility.plan.md](adult-eligibility.plan.md).
 
 ### 2. What proves actor control in legacy chat?
 
