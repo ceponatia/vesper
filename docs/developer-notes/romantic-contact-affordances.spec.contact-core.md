@@ -362,3 +362,88 @@ current truth.
 
 Open questions are centralized in the
 [plain-English plan](romantic-contact-affordances.plan.md#open-questions).
+
+## As built — slice 1
+
+Shipped 2026-07-30 in `src/contracts/affordances/contact/` — a **sibling** of
+`affordances/core/` and `affordances/guidance/`, for the reason `guidance/` is
+one: the core stages a calculation it knows nothing about, and this layer knows
+what a contact *is*. It is still domain-neutral, and its own
+`domain-neutrality.test.ts` proves it (no foot, intimate, or garment vocabulary
+in executable code; no import of a domain, of `guidance/`, or of `src/server`;
+no `Date`, `Math.random`, or `process.env`).
+
+Pure contracts only: **no lane wiring, no storage, no schema change, no
+migration.** The [truth-source audit](romantic-contact-affordances.audit.md)
+records pose, reach, support, material-between, actor control (legacy), and
+permission (legacy) as unowned in both lanes, so every one of them arrives as an
+`AdapterRead` and an unanswerable read produces `unresolved`.
+
+### File map
+
+| File | Responsibility |
+| --- | --- |
+| `identity.ts` | `ContactId`, `ContactEventRef`, `ContactEntityId`; the order-independent pair key and `deriveContactId`. |
+| `surfaces.ts` | Body and object surface refs over `bodyLocationRegistry`; surface/pair keys; participant extraction. |
+| `material.ts` | `ContactMaterialLayerRead`, `ContactMaterialTransmissionRead`, `composeContactMaterial`. |
+| `decisions.ts` | Action kinds → policy scopes; actor control, target agency, eligibility, permission; the implicit-adjustment policy; requirement and rejection vocabularies. |
+| `types.ts` | Bands, intent, context, access result, the four-status resolution, `CommittedContactRead`, `EndedContactRecord`, the lifecycle commit union. |
+| `resolve.ts` | `resolveContactAttempt` — the whole gate. |
+| `lifecycle.ts` | `commitContactResolution`, `endContact`, `endAllContacts`, the active projection and its reads. |
+| `state.ts` | `committedContactReadSchema`, `parseContactLifecycleState` — the versioned shape and its healing. |
+| `diagnostics.ts` | The ten codes slice 1 emits. |
+| `test-support.ts` | `probe*` fixture builders. Deliberately **not** in the barrel. |
+| `*.test.ts` | 5 files / 87 cases: resolve, lifecycle, material, state, neutrality. |
+
+### Public API
+
+`resolveContactAttempt({ intent, context, sink? }) → ContactResolution` ·
+`commitContactResolution({ state, resolution, eventRef, sink? }) → { state, commit, contact }` ·
+`endContact({ state, contactId, reason, storyTime, eventRef, sink? })` ·
+`endAllContacts({ state, reason, storyTime, eventRef })` ·
+`activeContact` / `activeContactForPair` / `activeContactsOf` ·
+`emptyContactLifecycleState` / `parseContactLifecycleState` ·
+`classifyContactAdjustment` · `composeContactMaterial` / `sortContactMaterialLayers` /
+`directContactTransmission` · `contactPairKey` / `contactSurfaceKey` /
+`contactParticipantIds` / `isInterpersonalContact` / `isKnownContactBodyLocation` ·
+`contactActionRequiresAdultEligibility` / `contactActionRequiresPermission` /
+`CONTACT_ACTION_SCOPE` · `CONTACT_RESOLUTION_ACTION_STATUS`.
+
+### Deltas from the draft above — this section is the authority
+
+| Draft | As built | Why |
+| --- | --- | --- |
+| `ContactResolution` has three statuses | **Four**: `committable`, `explicit_transition_required`, `rejected`, `unresolved` | The narrator seam already exists and its `PhysicalActionStatus` carries `unresolved`. An unanswerable owner is not a rejection: a rejection is a story fact the narrator must resolve, while `unresolved` produces silence. `CONTACT_RESOLUTION_ACTION_STATUS` maps the four onto the seam's strings, and a test asserts every value is a member of `physicalActionStatuses`. `partially_committed` is deliberately **not** modelled — no producer exists until the foot slice needs per-locus commitment. |
+| `EventId`, `CharacterId`, `EntityId`, `StoryTimestamp` | `ContactEventRef`, `AffordanceSubjectId`, `ContactEntityId`, `AffordanceStoryTime` | The successor lane's branded `EventId` is a simulation id legacy chat cannot mint; binding to it would fork the core. Subject ids and story time already exist in `affordances/core` and are reused unchanged. |
+| `MaterialLayerRead`, `MaterialTransmissionRead`, `MinimalPoseAdjustment`, `ActionRequirement` | `Contact`-prefixed | These names go through `export *` in `affordances/index.ts`; unprefixed generic nouns in a shared barrel are a collision waiting to happen. |
+| `wardrobe: PairWardrobeRead` | `material: AdapterRead<ContactMaterialRead>` | The core has no idea whether a layer is a garment, a blanket, or a table, and the neutrality test forbids it learning. Same reason `remove_garment` → `remove_material_layer` and `contact_wardrobe_unavailable` → `contact.material_unavailable`. |
+| `pose`, `environment`, `bodyStateCut` on the action context | Dropped | Pose folds into `geometry` (one unowned read is honest; two are ceremony). Environment and body state are FRAME inputs for the observation stage — nothing about whether a contact *may* happen reads them. |
+| `ContactAccessMode` includes `implicit_adjustment` | Removed from the vocabulary | It is orthogonal to what lies between the surfaces. One enum carrying both would make a hand-through-fabric contact report itself as adjusted rather than filtered. Adjustments ride `implicitAdjustments`. `unresolved` was added for the unreadable case. |
+| `pressure` and `contactArea` required on `CommittedContactRead` | **Optional** | The repo's oldest degraded-read law: unknown is not a convenient default. A contact whose pressure nobody stated is not a `trace` press, and a pressure-dependent observation must fall silent rather than describe the lightest thing that could be true. |
+| `ContactLifecycleCommit` has three cases | **Four** — `contact_continued` added | The draft described the no-write case in prose. Making it a case is what lets "an unchanged sustained contact keeps its id without a duplicate start event" be asserted rather than inferred from the absence of an event. The continue path also returns the *same state reference*. |
+| Committable resolution carries `materialBetween` and `implicitAdjustments` inline | Nested in `access: ContactAccessResult` | The access result already carries both; two copies invite divergence. |
+| Diagnostic codes `contact_action_context_invalid`, … | Dotted `contact.*` | Matches `affordance.input.unavailable` and `guidance.disclosure.leak`. Only the ten codes slice 1 actually emits exist; a constant nobody pushes is a promise the surface cannot keep. |
+| — | `ContactId` is **derived**, not minted | `pairKey + start event ref`. No counter, no clock: a retake replaying the same attempt against the same cut must reproduce the identical id or the capture fingerprints diverge. |
+| — | The pair key is **order-independent** | "The player's hand on her arch" and "her arch against his hand" are one touch. Keying by acting direction would let a role swap open a second contact on the same surfaces and both would then report pressure. Orientation is preserved on `source`/`target` and is never patched. |
+| — | `phase: "active"` vs `phase: "ended"` as separate types | "An ended contact cannot enter a current frame" becomes a compile error rather than a rule. Likewise a non-committable resolution has no `intent`, so it cannot be passed to `commitContactResolution` at all. |
+
+### Rulings implemented, still unresolved as product decisions
+
+`contactActionRequiresAdultEligibility` and `contactActionRequiresPermission`
+both return true for `romantic` and `intimate` only. That is the conservative
+half of the audit's [owner decisions](romantic-contact-affordances.audit.md#owner-decisions-needed)
+1 and 3 — enough for slice 2 to run, and explicitly **not** a ruling. Scope
+membership is checked exactly: the core never widens a grant, because "the more
+intimate permission implies the less intimate one" is a product decision and not
+an obvious one. A lane that believes a broader grant subsumes a narrower one
+lists both scopes.
+
+### Not built, and where it went
+
+Observations, phenomena, cue ranking, perception filtering, effect proposal and
+commit, retake capture (`ContactPresentationCapture`), and the
+`RegionalContactFrame` are all absent — they belong to slices 2–4 and to the
+[effects companion](romantic-contact-affordances.spec.effects.md). Storage is
+absent by design: `state.ts` settles the versioned shape and the healing rule so
+they are not decided twice, but the plan's *"Where should committed contact
+live?"* is still open, and a later slice picks the home.

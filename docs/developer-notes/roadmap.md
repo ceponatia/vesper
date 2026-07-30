@@ -32,13 +32,29 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   off; review verdict: slices 0–1 accepted, slice 2 safe behind the flag but
   not paid-trial-ready until slice 5 generalizes the trial-record format.
   Remaining: slice 3 romantic-contact action results, slice 4 change-gated
-  positive detail, slice 5 the trials, slice 6 the successor adapter). Keeps the affordance calculations but
-  replaces always-on descriptive suggestions with scoped consistency
-  constraints, high-confidence false-premise fences, and mandatory resolved
-  action outcomes. Positive state-change details get a separate flag and trial;
-  generic ambient opportunities stay parked. No extra model leg. The hair
-  proving slice leads, then the foot-contact resolver consumes the shared
-  action-outcome seam. `CHAT_AFFORDANCE_CUES` remains off.
+  positive detail, slice 5 the trials, slice 6 the successor adapter). Keeps
+  the affordance calculations but replaces always-on descriptive suggestions
+  with scoped consistency constraints, high-confidence false-premise fences,
+  and mandatory resolved action outcomes. Positive state-change details get a
+  separate flag and trial; generic ambient opportunities stay parked. No extra
+  model leg. The hair proving slice leads, then the foot-contact resolver
+  consumes the shared action-outcome seam. `CHAT_AFFORDANCE_CUES` remains off.
+- **Romantic contact affordances — foot-first grounded contact** —
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
+  [spec index](romantic-contact-affordances.spec.md) (active; **slices 0–1
+  started 2026-07-30** — the truth-source audit/capability matrix and the
+  lane-neutral attempted-versus-active contact lifecycle contracts; promoted
+  from deferred 2026-07-28 and sequenced directly behind the narrator-guidance
+  plan whose action-outcome seam its slice 3 consumes). Committed scope is
+  slices 0–4: the truth-source audit, the shared contact lifecycle with
+  actor-control/permission gates, the foot domain (surface map, footwear
+  filtering, pressure/texture and substance-specific glide; warmth only with an
+  authoritative source), legacy-romantic-chat cue evaluation behind a flag, and
+  atomic/idempotent contact-caused effects. Successor parity waits for regional
+  pose/contact and clothing adapters. Intimate regions stay behind the foot
+  proof plus explicit adult-eligibility, consent, exposure, and physiology
+  prerequisites. The active doc family archives together only after the plan
+  ships.
 
 ## Next (queued)
 
@@ -106,19 +122,6 @@ umbrella further down.)
   romantic-contact plan — it needs its own plan when scheduled. Wardrobe
   gap flagged by slice 6: nothing records garment fit (loose/fitted), which
   is the one change that lights up wet cling in production.
-- **Romantic contact affordances — foot-first grounded contact** —
-  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
-  [spec index](romantic-contact-affordances.spec.md) (next; promoted from deferred
-  2026-07-28, sequenced directly behind the body-attribute plan whose core it
-  consumes). Committed scope is slices 0–4: the truth-source audit, the shared
-  attempted-versus-active contact lifecycle with actor-control/permission gates,
-  the foot domain (surface map, footwear filtering, pressure/texture and
-  substance-specific glide; warmth only with an authoritative source),
-  legacy-romantic-chat cue evaluation behind a flag, and atomic/idempotent
-  contact-caused effects. Successor parity waits for regional pose/contact and
-  clothing adapters. Intimate regions stay behind the foot proof plus explicit
-  adult-eligibility, consent, exposure, and physiology prerequisites. The active
-  doc family archives together only after the plan ships.
 - **Clothing state graph — remainder: the `CHAT_GARMENT_CUES` tuning run, then slices
   7–8 (successor adapter, affordance integration)** —
   [clothing-state-graph.plan.md](clothing-state-graph.plan.md) (active; **slices 0–6

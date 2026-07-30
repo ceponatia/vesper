@@ -7,6 +7,7 @@
  * than forking the calculation.
  */
 export * from "./core";
+export * from "./contact";
 export * from "./domains/hair";
 export * from "./domains/garment";
 export * from "./domains";
