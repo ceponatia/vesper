@@ -1,6 +1,6 @@
 # Fork registry & snapshot ruling — making "add a domain to a fork" a data edit
 
-Status: draft (unscheduled — derived from [codebase-efficiency.audit.md](codebase-efficiency.audit.md); no roadmap line yet)
+Status: draft (sequenced after sim-command-shell; snapshot expansion ruled out until measured)
 
 ## Why
 
@@ -62,6 +62,19 @@ measurements and the registry in place first.
   rows, are both unchanged.
 - Not the command-shell consolidation (that is batch 2, below).
 
+## Review rulings and scope adjustments — 2026-07-30
+
+- **Keep snapshot coverage materials-only.** Measure real long-world fork cost
+  after the registry lands; expand only if that evidence shows a meaningful
+  problem. Rebuild-from-zero remains the routine honesty check.
+- "Adding a domain is a data edit" means registering an already-implemented
+  projection domain. The registry does not implement a new domain's projector,
+  storage, replay semantics, or tests.
+- The registry must support a composite last-touch answer: temporal-pressure rows
+  can be affected by more than one event family.
+- The command-shell migration and generic replay fold remain hard prerequisites;
+  do not work around either dependency inside this plan.
+
 ## Delivery slices
 
 **Ordering, stated plainly: this plan starts after
@@ -120,14 +133,7 @@ causes would be misread as a regression from this work.
 
 ## Open questions
 
-1. **(Owner) Should checkpoint coverage extend past materials?** A16. Faster forks
-   on long-lived worlds, paid for by weakening the from-zero rebuild that
-   currently catches a bad checkpoint (`snapshot-store.ts` §10.4). Recommended
-   default: keep materials-only until measured fork cost on a real long world
-   says otherwise — the registry means saying yes later is cheap.
-2. If yes, which domains go first, and does the from-zero rebuild stay as a
-   periodic audit rather than the default path?
-3. Is a hard ceiling on fork-chain depth the right and only guard, or should a
-   fork also warn or refuse above some recorded-history size?
-4. Should registry completeness be enforced by a test, by the type system, or
-   both?
+1. Should a fork warn or refuse above a measured history-size threshold in
+   addition to the existing fork-chain-depth ceiling?
+2. Should registry completeness be enforced by a generated type relationship as
+   well as the required corpus/checksum test?
