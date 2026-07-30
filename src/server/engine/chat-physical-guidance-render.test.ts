@@ -4,6 +4,7 @@ import {
   DiagnosticCollector,
   emptyNarratorPhysicalGuidance,
   guidanceFingerprint,
+  GUIDANCE_DISCLOSURE_INVALID,
   GUIDANCE_DISCLOSURE_LEAK,
   HAIR_CLAIM_ARRANGEMENT_BRAID,
   HAIR_CLAIM_ARRANGEMENT_LOOSE,
@@ -235,6 +236,23 @@ describe("order, safety, and the block", () => {
     expect(render(leaked, sink)).toEqual([]);
     const leak = sink.items.find((item) => item.code === GUIDANCE_DISCLOSURE_LEAK);
     expect(leak?.severity).toBe("error");
+  });
+
+  it("renders NOTHING for a disclosure outside the vocabulary either — no renderer change needed", () => {
+    const sink = new DiagnosticCollector();
+    // The value a lane adapter's parse could hand over; the cast is confined to this
+    // test because the compile-time union is exactly what the runtime gate distrusts.
+    const rogue = {
+      ...constraint({ prohibited: [HAIR_CLAIM_MOTION_FREE_FLOW] }),
+      disclosure: "narrator_prompt_allowed",
+    } as unknown as PhysicalNarrationConstraint;
+
+    expect(render(guidanceOf({ constraints: [rogue] }), sink)).toEqual([]);
+    // Drop-the-block-on-any-error is what makes the broadened gate free here: the
+    // renderer never learned a second rule, it just kept obeying the first one.
+    const invalid = sink.items.find((item) => item.code === GUIDANCE_DISCLOSURE_INVALID);
+    expect(invalid?.severity).toBe("error");
+    expect(invalid?.context).toMatchObject({ kind: "constraint", disclosure: "narrator_prompt_allowed" });
   });
 
   it("empty guidance renders no lines and no block", () => {

@@ -5,6 +5,7 @@ import { buildConstraintCandidates } from "./constraint-candidates";
 import {
   assertNoResolverOnlyLeak,
   filterGuidanceForConsumer,
+  GUIDANCE_DISCLOSURE_INVALID,
   GUIDANCE_DISCLOSURE_LEAK,
   GUIDANCE_DISCLOSURE_WITHHELD,
 } from "./disclosure";
@@ -18,6 +19,7 @@ import {
   emptyNarratorPhysicalGuidance,
   type GuidanceCandidates,
   type NarratorPhysicalGuidance,
+  type PhysicalNarrationConstraint,
   type PhysicalPremiseCorrection,
   type PhysicalStateTransition,
 } from "./types";
@@ -48,6 +50,20 @@ const leaked = (): GuidanceCandidates => {
     transitions: [untyped as PhysicalStateTransition],
   };
 };
+
+/**
+ * A candidate whose disclosure is not in the vocabulary AT ALL — not a secret,
+ * just a value nothing in this repo can produce: a lane adapter's parse of a
+ * persisted or remote shape (slice 6), a store written by an older release, a
+ * typo'd literal on the far side of a boundary.
+ *
+ * The cast lives only here. The production types stay closed, and that is exactly
+ * the point: a closed union binds the producers the compiler can see, so the gate
+ * has to be a RUNTIME allowlist or an unknown value would be prompt-safe by
+ * default. `disclosure` is typed `unknown` so a non-string can be passed too.
+ */
+const outOfUnion = (disclosure: unknown, id = "rogue_disclosure"): PhysicalNarrationConstraint =>
+  ({ ...probeConstraint({ id }), disclosure }) as unknown as PhysicalNarrationConstraint;
 
 describe("filterGuidanceForConsumer", () => {
   it("drops every resolver-only candidate for the narrator, one info diagnostic each", () => {
@@ -91,6 +107,55 @@ describe("filterGuidanceForConsumer", () => {
     expect(collector.items).toEqual([]);
   });
 
+  it("fails closed on a disclosure outside the vocabulary, with an error naming the bad value", () => {
+    const collector = new DiagnosticCollector();
+    const rogue = outOfUnion("narrator_prompt_allowed");
+    const gated = filterGuidanceForConsumer(
+      { constraints: [rogue, probeConstraint({ id: "stated_fence" })] },
+      "narrator_prompt",
+      collector,
+    );
+
+    // Allowlist, not denylist: an unrecognized value is dropped exactly like a
+    // secret would be, instead of sailing through a `!== "resolver_only"` test.
+    expect(gated.constraints.map((constraint) => constraint.id)).toEqual(["stated_fence"]);
+    expect(collector.items).toHaveLength(1);
+    expect(collector.items[0]?.code).toBe(GUIDANCE_DISCLOSURE_INVALID);
+    expect(collector.items[0]?.severity).toBe("error");
+    expect(collector.items[0]?.message).toContain("narrator_prompt_allowed");
+    expect(collector.items[0]?.message).toContain(rogue.fingerprint);
+    expect(collector.items[0]?.context).toMatchObject({
+      kind: "constraint",
+      fingerprint: rogue.fingerprint,
+      disclosure: "narrator_prompt_allowed",
+    });
+    expect(collector.hasErrors).toBe(true);
+  });
+
+  it("treats a missing or non-string disclosure as invalid, and never throws formatting it", () => {
+    const collector = new DiagnosticCollector();
+    const gated = filterGuidanceForConsumer(
+      { constraints: [outOfUnion(undefined, "absent"), outOfUnion(7, "numeric")] },
+      "narrator_prompt",
+      collector,
+    );
+    expect(gated.constraints).toEqual([]);
+    expect(collector.items.map((item) => item.code)).toEqual([
+      GUIDANCE_DISCLOSURE_INVALID,
+      GUIDANCE_DISCLOSURE_INVALID,
+    ]);
+    expect(collector.items.map((item) => item.context?.disclosure)).toEqual(["undefined", "7"]);
+  });
+
+  it("still passes an out-of-union disclosure to the resolver, silently", () => {
+    const collector = new DiagnosticCollector();
+    const candidates = { constraints: [outOfUnion("whatever")] };
+    const gated = filterGuidanceForConsumer(candidates, "resolver", collector);
+    // The resolver owns its own validation; this gate is the narrator's, not everyone's.
+    expect(gated.constraints).toEqual(candidates.constraints);
+    expect(collector.items).toEqual([]);
+  });
+
   it("normalizes absent lists without reporting anything", () => {
     const collector = new DiagnosticCollector();
     expect(filterGuidanceForConsumer({}, "narrator_prompt", collector)).toEqual({
@@ -125,6 +190,21 @@ describe("assertNoResolverOnlyLeak", () => {
     expect(leaks[0]?.context).toMatchObject({
       kind: "constraint",
       fingerprint: candidates.constraints[0]?.fingerprint,
+    });
+  });
+
+  it("errors on any non-allowlisted disclosure, not just resolver_only", () => {
+    const rogue = outOfUnion("public");
+    const leaks = assertNoResolverOnlyLeak({ ...emptyNarratorPhysicalGuidance(), constraints: [rogue] });
+
+    expect(leaks).toHaveLength(1);
+    expect(leaks[0]?.severity).toBe("error");
+    expect(leaks[0]?.code).toBe(GUIDANCE_DISCLOSURE_INVALID);
+    expect(leaks[0]?.message).toContain("public");
+    expect(leaks[0]?.context).toMatchObject({
+      kind: "constraint",
+      fingerprint: rogue.fingerprint,
+      disclosure: "public",
     });
   });
 });

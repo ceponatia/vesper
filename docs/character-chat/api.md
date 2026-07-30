@@ -29,6 +29,18 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | `GET /api/chats/:chatId/export?format=md\|json&memory=1` | transcript export — title, scenario, story-so-far, transcript, opt-in memory appendix |
 | `/api/admin/chat-inspector/:chatId[/…]` | memory inspector family (spec §6.1; **admin-role-gated — 404 for non-admins**, so it works on the deployed build; owner-scoped): overview (all facts incl. superseded/retracted — each labeled with its `channel`: `perceived`/`private`/`ooc`, the RAG visibility fence, [memory.md](../memory.md) §Fact channel — plus episodes + summary) · facts create/PATCH (pin/retract/restore, re-embed-on-edit) · episodes PATCH/DELETE + `score?q=` · summary PATCH · prompt preview (`previewChatPrompt` — "what reaches the narrator") · **affordance preview** (`previewChatAffordances` — the staged read: source inputs → structural profile → mechanics → observations or suppression reason → perception filtering → selected cue, per domain; READ-ONLY, computes on demand and stores nothing, and reports the `CHAT_AFFORDANCE_CUES` flag rather than obeying it) · **physical-guidance preview** (`previewChatPhysicalGuidance` — the constraint/premise staircase: input authority → committed state and per-owner availability → candidates with their disclosure → what the gate and the budget kept → the rendered instruction; same READ-ONLY shape, reports `CHAT_PHYSICAL_CONSTRAINTS` rather than obeying it, and stores nothing because guidance is never persisted) |
 
+**The `/self/` mirror.** The handlers live at `/api/admin/chat-inspector/:chatId/…`
+but the inspector client (`src/lib/api-inspector.ts`) requests every panel through
+`/api/admin/self/chat-inspector/:chatId/…`. Each mirrored path is a one-line
+re-export twin (`export { GET } from "@/app/api/admin/chat-inspector/[chatId]/<name>/route"`)
+under `src/app/api/admin/self/chat-inspector/[chatId]/`, so authorization lives in
+exactly one place — the canonical handler's `withSelfOwnedChat`. **A new inspector
+panel needs both files**: the canonical route alone type-checks, lints, and passes
+its own tests while 404ing in the running app, which is how the physical-guidance
+panel first shipped. `src/app/api/admin/self/chat-inspector/parity.test.ts` walks
+both trees and fails on a canonical route without a twin, a twin without a
+canonical route, or a twin that re-exports fewer verbs than the handler declares.
+
 
 ## Sim-routed dispatch (`POST /api/chats/:chatId`)
 

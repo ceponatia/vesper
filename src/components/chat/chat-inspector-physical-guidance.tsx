@@ -17,15 +17,16 @@ import {
  * It shows the staircase a developer reads in code, in order —
  *
  * ```text
- * input authority → committed state → candidates
+ * input authority → committed state → relevance → candidates
  *   → disclosure + selection → rendered instruction
  * ```
  *
  * — for the stored cut and the newest player line. Like the affordance panel above it,
- * it answers ONE question well: why did this turn say nothing? Silence has five
+ * it answers ONE question well: why did this turn say nothing? Silence has six
  * different causes here and they are indistinguishable from the prompt — the flag is
  * off, the message was never eligible, the committed owner could not answer, the claim
- * was ambiguous, or a candidate lost a budget — so every stage shows its own input.
+ * was ambiguous, the fence was true but irrelevant to this turn, or a candidate lost a
+ * budget — so every stage shows its own input.
  *
  * Computes on demand and stores nothing. Admin-gated like every other section on this
  * page; the route proves ownership independently.
@@ -132,7 +133,31 @@ function PreviewBody({ data }: { data: PhysicalGuidancePreview }) {
       </Panel>
 
       <Panel
-        label={`3 · candidates — ${data.candidates.corrections.length} correction(s), ${data.candidates.constraints.length} constraint(s)`}
+        label={`3 · relevance — ${data.relevance.relevant ? data.relevance.signals.join(", ") : "nothing makes a fence relevant this turn"}`}
+      >
+        <p className="text-[11px] text-paper-500">
+          A braid is true all day. Constraints are compiled only when the turn is about them —
+          the message reaches for this body part, a premise was corrected, a live force is acting
+          on it, or the beat is aimed at it. No signal means no candidates and no prompt bytes.
+        </p>
+        {data.relevance.constraints.length > 0 ? (
+          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-[11px]">
+            {data.relevance.constraints.map((row, index) => (
+              <Row
+                key={`${row.code}-${index}`}
+                term={row.code}
+                value={row.admitted ? `admitted · ${row.reason}` : row.reason}
+                muted={!row.admitted}
+              />
+            ))}
+          </dl>
+        ) : (
+          <p className="mt-2 text-[11px] text-paper-500">This cut resolved no constraints at all.</p>
+        )}
+      </Panel>
+
+      <Panel
+        label={`4 · candidates — ${data.candidates.corrections.length} correction(s), ${data.candidates.constraints.length} constraint(s)`}
       >
         <Stage label="premise corrections">
           <CandidateList rows={data.candidates.corrections} empty="No premise claim survived the guards." />
@@ -153,7 +178,7 @@ function PreviewBody({ data }: { data: PhysicalGuidancePreview }) {
         ) : null}
       </Panel>
 
-      <Panel label="4 · disclosure + selection — what survived the gate and the budget">
+      <Panel label="5 · disclosure + selection — what survived the gate and the budget">
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-[11px]">
           <Row term="corrections kept" value={data.selection.corrections.join(", ") || "—"} />
           <Row term="constraints kept" value={data.selection.constraints.join(", ") || "—"} />

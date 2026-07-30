@@ -3,10 +3,12 @@ import {
   affordanceSubjectId,
   buildConstraintCandidates,
   compileNarratorPhysicalGuidance,
+  diag,
   emptyNarratorPhysicalGuidance,
   guidanceFingerprint,
   guidanceUnorderedPart,
   hairArrangementClaimCode,
+  hairAssertsWetness,
   hairCauseClaimCode,
   hairClaimMappings,
   hairClaimMatches,
@@ -14,6 +16,7 @@ import {
   hairWetnessBandRank,
   hairWetnessClaimCode,
   hairWetnessClaimScale,
+  isHairReferenceNoun,
   HAIR_COVERED_GATE,
   HAIR_DOMAIN_ID,
   HAIR_LOCATION_ID,
@@ -30,19 +33,23 @@ import {
 } from "@/contracts";
 import { parseMessageSpans, type MessageSpanKind } from "@/lib/message-spans";
 import type { ChatCommittedHairState } from "./chat-affordances";
+import type { SensoryFocusHint } from "./chat-intent";
 
 /**
  * The CHAT LANE's narrator-physical-guidance adapter
  * (narrator-physical-guidance.plan.md slice 2; as-built detail in
  * narrator-physical-guidance.spec.md §"Slice 2").
  *
- * Two jobs, both deterministic and both pure:
+ * Three jobs, all deterministic and all pure:
  *
  * 1. **Premise detection** — decide whether this turn's player message asserts a
  *    physical claim that committed state contradicts or cannot support. No model
  *    call and no claim-extraction leg: the input-mode parse the lane already runs,
  *    plus the hair domain's own phrase lexicon.
- * 2. **Compilation** — hand this cut's domain constraints and the turn's corrections
+ * 2. **Relevance** — decide whether a standing constraint is about anything happening
+ *    this turn. A braid is true all day; stating so on every exchange is inventory,
+ *    and plan §6 selects risk (see `chatGuidanceRelevance`).
+ * 3. **Compilation** — hand this cut's admitted constraints and the turn's corrections
  *    to the lane-neutral compiler, which gates, orders, and budgets them.
  *
  * ## Conservative by construction
@@ -56,8 +63,11 @@ import type { ChatCommittedHairState } from "./chat-affordances";
  *   state change has no pre-narrator commit seam yet, so it is excluded outright);
  * - only ordinary speech and unmarked narration are eligible spans; thought, OOC,
  *   comms, written, and styled spans are not assertions about this body;
+ * - a claim counts only in the CLAUSE that names the hair it is about, so a hair
+ *   reference in one clause licenses nothing in the next;
  * - a sentence must name whose hair it is, and a third-person pronoun counts only
  *   when nobody else in the sentence could own it;
+ * - a cause word is scenery until the same clause also says someone got wet;
  * - a question, a hypothetical, a simile, or a negation before the phrase silences
  *   that sentence;
  * - a degree claim must be at least two bands from the committed one;
@@ -196,6 +206,42 @@ function isNegatedBefore(sentence: string, index: number): boolean {
   });
 }
 
+/**
+ * Where one clause ends and the next begins.
+ *
+ * Punctuation that separates clauses, plus the coordinators and subordinators that do
+ * the same work without it. This is the binding law's whole mechanism: a claim belongs
+ * to the clause it sits in, so "your braided hair looks lovely WHILE the curtains go
+ * streaming" attaches nothing to the hair — the curtains own that verb, and the
+ * detector must not read the sentence as a bag of words the way it used to.
+ *
+ * Matched against the NORMALIZED sentence (lowercase, length-preserving), so the
+ * offsets index the original text too.
+ */
+const CLAUSE_BOUNDARY = /[,;—–]|\b(?:while|as|and|but|when|because|though)\b/gu;
+
+/** One clause of a sentence, with its offset into that sentence. */
+interface Clause {
+  readonly text: string;
+  readonly start: number;
+}
+
+/**
+ * Split a sentence into clauses, keeping each one's offset so a claim's index can still
+ * be compared against a negation earlier in the WHOLE sentence (position is that guard's
+ * entire rule, and narrowing it to the clause would silence less, never more).
+ */
+function clausesOf(sentence: string, lower: string): readonly Clause[] {
+  const clauses: Clause[] = [];
+  let from = 0;
+  for (const match of lower.matchAll(CLAUSE_BOUNDARY)) {
+    clauses.push({ text: sentence.slice(from, match.index), start: from });
+    from = match.index + match[0].length;
+  }
+  clauses.push({ text: sentence.slice(from), start: from });
+  return clauses.filter((clause) => clause.text.trim().length > 0);
+}
+
 /** Word tokens, apostrophes and hyphens kept (so `Wren's` stays one token). */
 const WORD_TOKENS = /[A-Za-z][A-Za-z'’-]*/gu;
 
@@ -205,7 +251,8 @@ const WORD_TOKENS = /[A-Za-z][A-Za-z'’-]*/gu;
  * "your loose hair" and "your soaking wet auburn hair" are both ordinary English and
  * both are the claims this layer exists to check, so the window has to admit a few
  * adjectives. Four is enough for every phrasing the lexicon can match and short enough
- * that it cannot reach across a clause boundary into someone else's possessive.
+ * that it cannot walk past a second noun's owner in a long clause. It never crosses a
+ * clause boundary at all: the walk runs inside one clause by construction.
  */
 const POSSESSIVE_WINDOW = 4;
 
@@ -216,40 +263,106 @@ const FOREIGN_POSSESSIVES: readonly string[] = ["my", "our", "its", "a", "an", "
 const AMBIGUOUS_POSSESSIVES: readonly string[] = ["her", "his", "their", "its"];
 
 /**
- * Whether this sentence is about the SUBJECT's hair.
+ * What one CLAUSE says about whose hair it is talking about.
  *
- * Walked backwards from the word `hair` over a short window of preceding words, so a
+ * - `subject` — a hair noun with an accepted owner. This clause's claims are checkable.
+ * - `foreign` — a hair noun that is plainly someone else's (`my hair`, `Mira's hair`,
+ *   an ambiguous pronoun in a sentence naming another person). Licenses nothing, and
+ *   blocks the inheritance below: a clause about another body is never about this one.
+ * - `unowned` — a hair noun with no determiner in reach ("…, hair streaming behind
+ *   her"). Not an answer on its own; see `boundClauses`.
+ * - `none` — this clause does not name hair at all, which is the ordinary case and the
+ *   reason the false "streaming curtains" correction is gone.
+ */
+type HairReference = "subject" | "foreign" | "unowned" | "none";
+
+/** A possessive that is not one of the subject's own forms — someone else owns that hair. */
+function isForeignPossessive(token: string, owners: readonly string[]): boolean {
+  if (owners.includes(token)) return false;
+  return FOREIGN_POSSESSIVES.includes(token) || token.endsWith("'s") || token.endsWith("s'");
+}
+
+/** The subject's own possessive forms, for the character name this turn carries. */
+function subjectOwners(characterName: string): readonly string[] {
+  const name = characterName.trim().toLowerCase();
+  return name.length === 0 ? ["your"] : ["your", `${name}'s`, `${name}s`];
+}
+
+/**
+ * Whether this clause is about the SUBJECT's hair.
+ *
+ * Walked backwards from each hair noun over a short window of preceding words, so a
  * modifier between the possessive and the noun ("your loose hair") does not hide the
  * reference. The FIRST determiner found decides, and finding the wrong one ends the
- * search rather than continuing to look for a better answer.
+ * search for that noun rather than continuing to look for a better answer — including a
+ * name's possessive ("your friend Mira's hair" must not reach back past `Mira's` and
+ * bind to `your`).
  *
  * Accepted: second person (`your` — in this lane "you" is the character the message is
  * addressed to) and the possessive (`Wren's`). A third-person pronoun (`her`) counts
- * only when the sentence names nobody else who could own it, because a supporting-cast
- * member in the same sentence makes the referent ambiguous and ambiguity is silence.
+ * only when the SENTENCE names nobody else who could own it, because a supporting-cast
+ * member makes the referent ambiguous and ambiguity is silence.
  *
- * NOT accepted: `my hair`, and no determiner at all. The player's own hair is a
- * different body, and every fence this layer builds is about one subject.
+ * NOT accepted: `my hair`, another person's hair, and — on its own — no determiner at
+ * all. The player's own hair is a different body, and every fence this layer builds is
+ * about one subject.
  */
-function referencesSubjectHair(sentence: string, characterName: string, playerName: string): boolean {
-  const tokens = [...normalized(sentence).matchAll(WORD_TOKENS)].map((match) => match[0]);
-  const name = characterName.trim().toLowerCase();
-  const owners = name.length === 0 ? ["your"] : ["your", `${name}'s`, `${name}s`];
+function hairReferenceIn(clause: string, sentence: string, characterName: string, playerName: string): HairReference {
+  const tokens = [...normalized(clause).matchAll(WORD_TOKENS)].map((match) => match[0]);
+  const owners = subjectOwners(characterName);
+  let weakest: HairReference = "none";
 
   for (let index = 0; index < tokens.length; index += 1) {
-    if (tokens[index] !== "hair") continue;
+    const noun = tokens[index];
+    if (noun === undefined || !isHairReferenceNoun(noun)) continue;
+    let found: HairReference = "unowned";
     for (let back = index - 1; back >= 0 && index - back <= POSSESSIVE_WINDOW; back -= 1) {
       const token = tokens[back];
       if (token === undefined) continue;
-      if (owners.includes(token)) return true;
+      if (owners.includes(token)) return "subject";
       if (AMBIGUOUS_POSSESSIVES.includes(token)) {
-        if (!namesAnotherPerson(sentence, characterName, playerName)) return true;
+        if (!namesAnotherPerson(sentence, characterName, playerName)) return "subject";
+        found = "foreign";
         break;
       }
-      if (FOREIGN_POSSESSIVES.includes(token)) break;
+      if (isForeignPossessive(token, owners)) {
+        found = "foreign";
+        break;
+      }
     }
+    // A foreign owner outranks an unowned mention: one hair noun that plainly belongs to
+    // somebody else is enough to make the clause say nothing about this body.
+    weakest = weakest === "foreign" ? weakest : found;
   }
-  return false;
+  return weakest;
+}
+
+/**
+ * Which clauses of one sentence may carry a checkable claim.
+ *
+ * A clause qualifies when it names the subject's hair itself, or when it names hair with
+ * no owner in reach AND another clause of the same sentence already established that the
+ * sentence is about the subject's hair — "Her braid has come completely loose, hair
+ * streaming behind her" is one continuous statement about one head.
+ *
+ * That inheritance answers only WHOSE hair, never WHETHER a clause is about hair: a
+ * clause with no hair noun in it inherits nothing, which is exactly what stops a claim
+ * from attaching across a boundary. It is also withheld the moment the sentence names
+ * anyone else, and a clause with a foreign owner never qualifies.
+ */
+function boundClauses(
+  clauses: readonly Clause[],
+  sentence: string,
+  characterName: string,
+  playerName: string,
+): readonly Clause[] {
+  const references = clauses.map((clause) => hairReferenceIn(clause.text, sentence, characterName, playerName));
+  const inherits =
+    references.includes("subject") && !namesAnotherPerson(sentence, characterName, playerName);
+  return clauses.filter((_, index) => {
+    const reference = references[index];
+    return reference === "subject" || (reference === "unowned" && inherits);
+  });
 }
 
 /**
@@ -469,13 +582,21 @@ export function detectHairPremises(input: ChatPremiseDetectionInput): readonly P
       if (sentence.includes("?")) continue;
       const lower = normalized(sentence);
       if (isHypothetical(lower)) continue;
-      if (!referencesSubjectHair(sentence, input.characterName, input.playerName)) continue;
 
-      for (const match of hairClaimMatches(sentence)) {
-        if (byArea.has(match.area) || isNegatedBefore(lower, match.index)) continue;
-        const verdict = verdictFor(match, input.committed, restraint);
-        if (verdict === null) continue;
-        byArea.set(match.area, correction({ match, source, ...verdict }));
+      const clauses = clausesOf(sentence, lower);
+      for (const clause of boundClauses(clauses, sentence, input.characterName, input.playerName)) {
+        // Matched per CLAUSE, not per sentence: the phrase and the hair it describes
+        // have to be in the same breath before this layer will call the player wrong.
+        for (const match of hairClaimMatches(clause.text)) {
+          const index = clause.start + match.index;
+          if (byArea.has(match.area) || isNegatedBefore(lower, index)) continue;
+          // Provenance needs a wetting, not just weather: "a pool of light" and "a storm
+          // is approaching" name a cause word and assert nothing about anyone being wet.
+          if (match.area === "wetness_cause" && !hairAssertsWetness(clause.text)) continue;
+          const verdict = verdictFor(match, input.committed, restraint);
+          if (verdict === null) continue;
+          byArea.set(match.area, correction({ match, source, ...verdict }));
+        }
       }
     }
   }
@@ -540,6 +661,93 @@ function correction(input: {
 }
 
 // ---------------------------------------------------------------------------
+// Relevance
+// ---------------------------------------------------------------------------
+
+/**
+ * A constraint existed and this turn had no reason to carry it (plan §6, "selection
+ * favors risk, not inventory"). `info`, not `warn`: an irrelevant fence is the designed
+ * outcome on most turns, and this exists so the inspector can explain the silence.
+ */
+export const GUIDANCE_CONSTRAINT_IRRELEVANT = "guidance.constraint.irrelevant";
+
+/**
+ * Why this turn is allowed to spend prompt bytes on a standing fence.
+ *
+ * A braid is true all day. Repeating "do not describe her hair as loose" on every
+ * exchange — including "tell me about your day" — is the negative-priming risk the
+ * closed cue experiment already paid for once, so a constraint has to be about
+ * SOMETHING HAPPENING NOW.
+ */
+export const chatGuidanceRelevanceSignals = [
+  /** The message names this body part, or reaches for its vocabulary. */
+  "domain_reference",
+  /** This turn produced a correction; its area's fence rides along with it. */
+  "premise_correction",
+  /** A live force on the hair — wind, or weather landing on it — makes motion claims plausible unprompted. */
+  "active_force",
+  /** The turn's sensory beat is aimed at this locus. */
+  "sensory_focus",
+] as const;
+export type ChatGuidanceRelevanceSignal = (typeof chatGuidanceRelevanceSignals)[number];
+
+export interface ChatGuidanceRelevance {
+  /** Any signal at all ⇒ constraints are compiled. None ⇒ no candidates, no block, no bytes. */
+  readonly relevant: boolean;
+  readonly signals: readonly ChatGuidanceRelevanceSignal[];
+}
+
+/**
+ * Whether this message is ABOUT the hair domain — the first and broadest signal.
+ *
+ * Two ways in, both deliberately generous, because this gate decides whether a true
+ * fence may be stated rather than whether the player is wrong:
+ *
+ * 1. a subject-bound hair reference in ANY span — a thought or an OOC aside is not an
+ *    assertion this layer would correct, but it is still the turn being about her hair;
+ * 2. any claim phrase at all, bound or not (plan §Architecture 4: "domain reference
+ *    without a safely parsed claim may still raise the priority of an already-known
+ *    consistency constraint. It must not invent a correction.").
+ */
+function messageTouchesHair(input: ChatPremiseDetectionInput): boolean {
+  const message = input.message.trim();
+  if (message.length === 0) return false;
+  if (hairClaimMatches(message).length > 0) return true;
+  for (const span of parseMessageSpans(message, { playerName: input.playerName, knownNames: [input.characterName] })) {
+    for (const sentence of span.text.split(SENTENCE_SPLIT)) {
+      const clauses = clausesOf(sentence, normalized(sentence));
+      const bound = boundClauses(clauses, sentence, input.characterName, input.playerName);
+      if (bound.length > 0) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The relevance decision for this turn, as data the inspector can render.
+ *
+ * Deterministic and computed from inputs the adapter already holds, so a retake
+ * reproduces the decision with everything else. Corrections are NOT gated by it — a
+ * correction is inherently about the current turn — and neither is anything a later
+ * slice adds; this is the constraint tier's admission rule only.
+ */
+export function chatGuidanceRelevance(input: {
+  readonly detection: ChatPremiseDetectionInput;
+  readonly corrections: readonly PhysicalPremiseCorrection[];
+  readonly sensoryFocus?: SensoryFocusHint | null;
+}): ChatGuidanceRelevance {
+  const signals: ChatGuidanceRelevanceSignal[] = [];
+  if (messageTouchesHair(input.detection)) signals.push("domain_reference");
+  if (input.corrections.length > 0) signals.push("premise_correction");
+  if (input.detection.committed.activeForce) signals.push("active_force");
+  const focus = input.sensoryFocus;
+  if (focus && (focus.region === HAIR_LOCATION_ID || focus.target === HAIR_LOCATION_ID)) {
+    signals.push("sensory_focus");
+  }
+  return { relevant: signals.length > 0, signals };
+}
+
+// ---------------------------------------------------------------------------
 // Compilation
 // ---------------------------------------------------------------------------
 
@@ -550,6 +758,12 @@ export interface ChatPhysicalGuidanceInput extends ChatPremiseDetectionInput {
   readonly perception: AffordancePerceptionView | null;
   /** The chat-lane character id whose body this guidance is about. */
   readonly subjectId: string;
+  /**
+   * This turn's sense-targeted beat (`detectSensoryFocus`), when the lane detected one —
+   * a relevance signal, never evidence: it decides whether a true fence is worth stating,
+   * and can no more create a constraint than it can create a correction.
+   */
+  readonly sensoryFocus?: SensoryFocusHint | null;
 }
 
 /**
@@ -566,6 +780,8 @@ export interface ChatPhysicalGuidanceInput extends ChatPremiseDetectionInput {
 export interface ChatPhysicalGuidanceStages {
   readonly candidateConstraints: readonly PhysicalNarrationConstraint[];
   readonly candidateCorrections: readonly PhysicalPremiseCorrection[];
+  /** Why the constraint tier was admitted or withheld this turn — the inspector's stage 3a. */
+  readonly relevance: ChatGuidanceRelevance;
   readonly guidance: NarratorPhysicalGuidance;
 }
 
@@ -575,13 +791,24 @@ export interface ChatPhysicalGuidanceStages {
  *
  * The two halves degrade independently, which is why they compile together rather
  * than in one pass: no read (or no perception view) still leaves the premise check
- * running, and a message that asserts nothing still leaves the fences standing. When
- * neither half has anything, the result is the shared empty value with NO diagnostics
- * — a nothing-to-say turn must not be distinguishable from a feature-off one.
+ * running, and a message that asserts nothing still leaves the fences standing —
+ * PROVIDED something makes them relevant. When neither half has anything, the result is
+ * the shared empty value with NO diagnostics: a nothing-to-say turn must not be
+ * distinguishable from a feature-off one.
+ *
+ * Corrections run FIRST because they are one of the relevance signals: a correction is
+ * about this turn by construction, and the fence for the area it corrects rides with it.
  */
 export function buildChatPhysicalGuidanceStages(input: ChatPhysicalGuidanceInput): ChatPhysicalGuidanceStages {
+  const candidateCorrections = detectHairPremises(input);
+  const relevance = chatGuidanceRelevance({
+    detection: input,
+    corrections: candidateCorrections,
+    sensoryFocus: input.sensoryFocus ?? null,
+  });
+
   const candidateConstraints =
-    input.read === null || input.perception === null
+    input.read === null || input.perception === null || !relevance.relevant
       ? []
       : buildConstraintCandidates({
           subjectId: affordanceSubjectId(input.subjectId),
@@ -596,14 +823,28 @@ export function buildChatPhysicalGuidanceStages(input: ChatPhysicalGuidanceInput
           ...(input.sink === undefined ? {} : { sink: input.sink }),
         });
 
-  const candidateCorrections = detectHairPremises(input);
+  // A fence that was TRUE and withheld is the one silence the inspector cannot infer
+  // from the result, so it is recorded — on the sink only, since it is a decision about
+  // this turn rather than something the compiler did.
+  if (!relevance.relevant && input.read !== null && input.perception !== null) {
+    for (const constraint of input.read.constraints) {
+      input.sink?.push(
+        diag("info", GUIDANCE_CONSTRAINT_IRRELEVANT, `Constraint "${constraint.code}" is true but not relevant this turn`, {
+          path: "guidance.constraint",
+          context: { domainId: HAIR_DOMAIN_ID, constraintId: constraint.id, code: constraint.code, reason: "not_relevant" },
+        }),
+      );
+    }
+  }
+
   if (candidateConstraints.length === 0 && candidateCorrections.length === 0) {
-    return { candidateConstraints, candidateCorrections, guidance: emptyNarratorPhysicalGuidance() };
+    return { candidateConstraints, candidateCorrections, relevance, guidance: emptyNarratorPhysicalGuidance() };
   }
 
   return {
     candidateConstraints,
     candidateCorrections,
+    relevance,
     guidance: compileNarratorPhysicalGuidance({
       constraints: candidateConstraints,
       corrections: candidateCorrections,

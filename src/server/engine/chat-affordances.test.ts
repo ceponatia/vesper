@@ -181,6 +181,71 @@ describe("standing rain holds the soaking rather than drying it", () => {
   });
 });
 
+describe("committed provenance is truth, not cue salience", () => {
+  /**
+   * The two windows are different questions and this is where they part company. The
+   * 60-minute freshness window governs whether the domain may VOLUNTEER a cause; the
+   * committed provenance the premise fence compares against lives as long as the
+   * wetness does, because ninety story minutes after a bath the hair is still wet
+   * BECAUSE of the bath and a player who blames the storm is still wrong.
+   */
+  it("survives the cue window while meaningful wetness remains", () => {
+    const fresh = read({ bodySurface: soaked(0, "immersion"), clockMinutes: 30 });
+    expect(fresh.committed.wetnessCause).toBe("immersion");
+
+    const past = read({ bodySurface: soaked(0, "immersion"), clockMinutes: 90 });
+    expect(past.committed.wetnessBand).not.toBe("dry");
+    expect(past.committed.wetnessCause).toBe("immersion");
+  });
+
+  it("leaves the cue path on its own window, unchanged", () => {
+    // Same cut, same minute: the EVENT has aged out even though the truth has not, so
+    // the observation carries no provenance tag.
+    const past = read({ bodySurface: soaked(0, "immersion"), clockMinutes: 90 });
+    const clumping = past.read.observations.find((o) => o.id === "hair.wet_clumping");
+    expect(clumping?.semanticTags ?? []).not.toContain("recent_immersion");
+  });
+
+  it("goes null once the hair is dry — there is nothing left to explain", () => {
+    // Four story hours dries a saturated head out completely.
+    const dry = read({ bodySurface: soaked(0, "immersion"), clockMinutes: 4 * 60 });
+    expect(dry.committed.wetnessBand).toBe("dry");
+    expect(dry.committed.wetnessCause).toBeNull();
+  });
+
+  it("declines to translate `other`, and an unrecorded cause, into a guess", () => {
+    expect(read({ bodySurface: soaked(0, "other"), clockMinutes: 90 }).committed.wetnessCause).toBeNull();
+    const unrecorded = setBodySurfaceWetness(emptyBodySurfaceState(), {
+      locationId: HAIR,
+      level: BODY_SURFACE_UNIT_ONE,
+      atMinutes: 0,
+    });
+    expect(read({ bodySurface: unrecorded, clockMinutes: 90 }).committed.wetnessCause).toBeNull();
+  });
+
+  it("two live causes are ambiguous, and standing rain answers for itself", () => {
+    const raining: ChatEnvironment = { wind: "none", precipitation: "rain", indoors: false, updatedAtMinutes: 0 };
+    // A bath, then rain on the walk home: "the storm soaked your hair" is not a claim
+    // this lane can call wrong.
+    expect(read({ bodySurface: soaked(0, "immersion"), environment: raining, clockMinutes: 90 }).committed.wetnessCause).toBeNull();
+    // Rain is landing on her right now, whatever the row remembers.
+    expect(read({ bodySurface: soaked(0, "rain"), environment: raining, clockMinutes: 90 }).committed.wetnessCause).toBe(
+      "rain_exposure",
+    );
+  });
+
+  it("reports a live force only when something is actually acting on the hair", () => {
+    expect(read({ environment: emptyChatEnvironment() }).committed.activeForce).toBe(false);
+    expect(read({ environment: OUTDOORS_GALE }).committed.activeForce).toBe(true);
+    expect(
+      read({ environment: { wind: "none", precipitation: "rain", indoors: false, updatedAtMinutes: 0 } }).committed
+        .activeForce,
+    ).toBe(true);
+    // A bath five minutes ago is a past event, not a force on this hair now.
+    expect(read({ bodySurface: soaked(0, "immersion"), clockMinutes: 5 }).committed.activeForce).toBe(false);
+  });
+});
+
 describe("a quarantined surface entry is invalid, never 'dry'", () => {
   const corrupt = bodySurfaceStateSchema.parse({ wetness: { [HAIR]: { level: "soaked", updatedAtMinutes: 3 } } });
 

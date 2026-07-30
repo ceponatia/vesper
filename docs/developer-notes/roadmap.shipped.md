@@ -14,7 +14,9 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   `hair.bulk_restraint` constraint, a domain-owned claim lexicon, a deterministic
   premise detector over the existing span parse, and one imperative
   precedence-safe prompt block — plus a read-only inspector. Nothing persisted;
-  retakes recompute.
+  retakes recompute. Same-day owner-review corrective pass: clause-local claim
+  binding, constraint relevance gating, provenance truth split from cue
+  freshness, fail-closed disclosure, and the inspector route's `/self/` twin.
 
 - **Affordance-cue trial rematch campaign — final verdict: flag parks OFF** —
   [rematch spec](body-attribute-affordances.trial.rematch.md) ·

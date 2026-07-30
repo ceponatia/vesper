@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   hairArrangementClaimCode,
+  hairAssertsWetness,
   hairCauseClaimCode,
   hairClaim,
   hairClaimAreas,
   hairClaimLexicon,
   hairClaimMappings,
   hairClaimMatches,
+  hairReferenceNouns,
+  hairWetnessAnchorPhrases,
   hairWetnessClaimCode,
   hairWetnessClaimScale,
+  isHairReferenceNoun,
   HAIR_CLAIM_ARRANGEMENT_BRAID,
   HAIR_CLAIM_ARRANGEMENT_LOOSE,
   HAIR_CLAIM_CAUSE_IMMERSION,
@@ -189,5 +193,66 @@ describe("phrase matching", () => {
 
   it("is case-insensitive and unaffected by surrounding punctuation", () => {
     expect(codes('"Your hair — STREAMING in the wind!"')).toEqual([HAIR_CLAIM_MOTION_FREE_FLOW]);
+  });
+});
+
+describe("reference nouns", () => {
+  it("names this domain's subject matter and nothing else", () => {
+    expect(isHairReferenceNoun("hair")).toBe(true);
+    // Every style the domain models as an arrangement is also a name for the thing.
+    for (const noun of ["braid", "braids", "plait", "ponytail", "bun", "topknot"]) {
+      expect(isHairReferenceNoun(noun), noun).toBe(true);
+    }
+    // Adjectives are claims ABOUT hair, never names for it, and nothing outside the
+    // domain qualifies.
+    for (const noun of ["loose", "unbound", "streaming", "curtains", "dress", "head"]) {
+      expect(isHairReferenceNoun(noun), noun).toBe(false);
+    }
+  });
+
+  it("is lowercase, single-token, and deduped — the caller matches word tokens", () => {
+    for (const noun of hairReferenceNouns) {
+      expect(noun).toBe(noun.toLowerCase().trim());
+      expect(noun).not.toContain(" ");
+    }
+    expect(new Set(hairReferenceNouns).size).toBe(hairReferenceNouns.length);
+  });
+});
+
+describe("the wetness anchor", () => {
+  it("recognises an assertion that something is wet or is being wetted", () => {
+    for (const text of [
+      "the storm drenched your hair",
+      "your hair is soaked",
+      "your hair is still damp",
+      "she doused him with the bucket",
+      "water dripping from the eaves",
+    ]) {
+      expect(hairAssertsWetness(text), text).toBe(true);
+    }
+  });
+
+  it("is not satisfied by a cause word alone — that is the whole point", () => {
+    for (const text of [
+      "your hair gleams in a pool of light",
+      "a storm is approaching",
+      "the river runs fast",
+      "the bath is upstairs",
+      "her eyes are like a storm",
+    ]) {
+      expect(hairAssertsWetness(text), text).toBe(false);
+    }
+  });
+
+  it("excludes dryness, and requires a word boundary like every other phrase", () => {
+    expect(hairAssertsWetness("your hair is bone dry")).toBe(false);
+    expect(hairAssertsWetness("your hair is under a wetsuit hood")).toBe(false);
+  });
+
+  it("is lowercase and trimmed, so it matches the same way the claim phrases do", () => {
+    for (const phrase of hairWetnessAnchorPhrases) {
+      expect(phrase).toBe(phrase.toLowerCase().trim());
+    }
+    expect(new Set(hairWetnessAnchorPhrases).size).toBe(hairWetnessAnchorPhrases.length);
   });
 });

@@ -30,6 +30,11 @@ import {
  *    constraint that only ships when perception licenses it. A code with no honest
  *    positive clause simply has none — the fence still ships, the cause does not.
  *
+ * Two further vocabularies live here for the same reason — they are statements about
+ * this body part, not about English: `hairReferenceNouns` (what a claim must be
+ * attached to before it means anything) and `hairWetnessAnchorPhrases` (what a
+ * provenance claim needs before a cause word counts as a wetting).
+ *
  * The five areas are the plan's slice-2 list: wetness degree, wetness provenance,
  * arrangement/binding, motion, and coverage. AREA is load-bearing rather than
  * decorative: the detector emits at most one correction per area per turn, and a
@@ -240,6 +245,107 @@ const CLAIM_BY_CODE: ReadonlyMap<string, HairClaimDefinition> = new Map(
 /** One claim definition, or `undefined` for a code this domain does not own. */
 export function hairClaim(code: string): HairClaimDefinition | undefined {
   return CLAIM_BY_CODE.get(code);
+}
+
+// ---------------------------------------------------------------------------
+// Reference and anchor vocabulary
+// ---------------------------------------------------------------------------
+
+/**
+ * Nouns that NAME this domain's subject matter — what a claim has to be attached to
+ * before it says anything about this body part.
+ *
+ * A claim phrase alone is never enough ("the curtains go streaming"), so the lane's
+ * detector binds every claim to a reference noun in the SAME clause. The list is
+ * deliberately short and concrete: `hair` plus the style nouns this domain already
+ * models as arrangements. It carries only single tokens because the binding test is a
+ * possessive walk-back over words ("her braid", "your ponytail"), and it names no
+ * adjective — "loose" and "unbound" are claims ABOUT hair, not names for it.
+ *
+ * Being on this list licenses nothing by itself: a reference still needs an accepted
+ * possessive and a claim in the same clause before any correction exists.
+ */
+export const hairReferenceNouns: readonly string[] = [
+  "hair",
+  "braid",
+  "braids",
+  "plait",
+  "plaits",
+  "ponytail",
+  "ponytails",
+  "bun",
+  "buns",
+  "topknot",
+];
+
+const HAIR_REFERENCE_NOUNS: ReadonlySet<string> = new Set(hairReferenceNouns);
+
+/** Whether one lowercase word token names this domain's subject matter. */
+export function isHairReferenceNoun(token: string): boolean {
+  return HAIR_REFERENCE_NOUNS.has(token);
+}
+
+/**
+ * Phrases that assert WETNESS itself — the anchor a provenance claim needs.
+ *
+ * Provenance is the one area whose vocabulary is ordinary scenery: a storm, a pool, a
+ * river, and a bath all appear constantly in prose that asserts nothing about anyone
+ * being wet ("your hair gleams in a pool of light", "a storm is approaching"). A cause
+ * word therefore only names the reason for a wetting when the same clause SAYS someone
+ * got wet, which is what this list is for.
+ *
+ * Two sources, one list: the wet half of the degree scale (`dry` is excluded — dryness
+ * is the absence this anchor exists to distinguish) and the verbs that put water on a
+ * surface. Inflections are enumerated for the same reason the claim phrases are — a
+ * stemmer's near-misses are the ambiguity that must produce silence.
+ *
+ * `doused` deliberately appears here AND as a `splash` cause phrase: it is a verb that
+ * asserts the wetting on its own, so it anchors itself. The cause NOUNS never do.
+ */
+export const hairWetnessAnchorPhrases: readonly string[] = [
+  // Degree, wet half only.
+  "damp",
+  "wet",
+  "soaked",
+  "soaking wet",
+  "drenched",
+  "dripping",
+  "dripping wet",
+  "sopping",
+  "sodden",
+  "saturated",
+  "waterlogged",
+  // Verbs that put water on a surface.
+  "drench",
+  "drenches",
+  "drenching",
+  "soak",
+  "soaks",
+  "soaking",
+  "douse",
+  "douses",
+  "doused",
+  "dousing",
+  "wets",
+  "wetted",
+  "wetting",
+  "dampen",
+  "dampens",
+  "dampened",
+  "drip",
+  "drips",
+  "dripped",
+];
+
+/**
+ * Whether this text asserts that something is wet or is being wetted.
+ *
+ * Matched with the same word-boundary rule as the claim phrases, so a cause claim and
+ * its anchor can never disagree about what counts as a word.
+ */
+export function hairAssertsWetness(text: string): boolean {
+  const lower = text.toLowerCase();
+  return hairWetnessAnchorPhrases.some((phrase) => findPhrase(lower, phrase) >= 0);
 }
 
 // ---------------------------------------------------------------------------

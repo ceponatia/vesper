@@ -17,6 +17,9 @@ import { characterChatMessages, db } from "@/server/db";
  *   a braid in the resolved attributes) plus a contradicting player line in
  *   `character_chat_messages` produces the binding block, with both a fence and a
  *   premise check, and NO affordance cue block (that experiment stays off);
+ * - the same committed cut says NOTHING on an exchange it is not relevant to, and says
+ *   it again the moment the weather makes it relevant — the risk-first selection law
+ *   through real stored state rather than a hand-built fixture;
  * - the same cut and the same message rebuild a byte-identical block — the retake
  *   guarantee, without a row to roll back, because nothing about this is persisted.
  */
@@ -125,12 +128,18 @@ async function storedCut(chat: ChatSeat): Promise<{ scenario: ChatScenario; stat
  * line blaming a storm. The shirt makes the wardrobe readable (unknown coverage fails
  * closed and would silence everything); the soaking and its cause are typed committed
  * state, and the wrong premise is the newest row in the transcript.
+ *
+ * `environment` is the second knob: a still indoor room is the default, and passing an
+ * outdoor gale is how the relevance gate's live-force signal gets a real cut.
  */
-async function bathedChat(playerLine = CONTRADICTING_LINE): Promise<ChatSeat> {
+async function bathedChat(
+  playerLine = CONTRADICTING_LINE,
+  environment: Record<string, unknown> = { precipitation: "none", indoors: true },
+): Promise<ChatSeat> {
   const chat = await newChat(fixture);
   mock.archivist = {
     value: continuity({
-      environment: { precipitation: "none", indoors: true },
+      environment,
       surfaceWetness: [{ location: "hair", direction: "increase", degree: 3, cause: "immersion" }],
     }),
     degraded: false,
@@ -196,11 +205,37 @@ describe.runIf(ready)("a braid and a wrong premise, through the committed cut", 
 
   it("says nothing about a premise when the player line asserts none", async () => {
     process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
-    const chat = await bathedChat("You look well today.");
+    // The message is ABOUT her hair, so the fence is relevant; it asserts nothing the
+    // committed cut contradicts, so there is no premise check.
+    const chat = await bathedChat("You tuck your hair behind one ear.");
     const lines = guidanceLines(await narratorPrompt(chat)).join("\n");
     expect(lines).not.toContain("Premise check");
-    // The fence still stands — a constraint needs no message to be true.
     expect(lines).toContain("Binding constraint");
+  });
+
+  it("spends no bytes at all on a turn that is about something else", async () => {
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    // The braid is still braided and the soaking is still on the row — and neither is
+    // what this exchange is about, so the prompt is the flag-off prompt. Repeating a
+    // standing fence every turn is the negative priming the closed cue trial paid for.
+    const chat = await bathedChat("Tell me about your day.");
+    const prompt = await narratorPrompt(chat);
+    expect(prompt).not.toContain(PHYSICAL_GUIDANCE_BLOCK_HEADING);
+
+    const { state } = await storedCut(chat);
+    expect(bodySurfaceWetnessAt(state.bodySurface, "hair", 0)).toEqual({ status: "known", level: 10_000 });
+  });
+
+  it("a live gust makes the motion fence relevant with no player line about it", async () => {
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    const chat = await bathedChat("Tell me about your day.", {
+      wind: "gusting",
+      precipitation: "none",
+      indoors: false,
+    });
+    const lines = guidanceLines(await narratorPrompt(chat)).join("\n");
+    expect(lines).toMatch(/Binding constraint: do not describe .* as loose, cascading, streaming, or whipping/u);
+    expect(lines).not.toContain("Premise check");
   });
 
   it("never corrects a storyteller line, even one that contradicts the cut", async () => {
