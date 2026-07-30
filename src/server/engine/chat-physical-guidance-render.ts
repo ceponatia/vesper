@@ -33,8 +33,15 @@ import {
  *    decision is already made — `allowedClaimCodes` is empty unless every locus was
  *    visible (`buildConstraintCandidates`) — so this file simply renders what is
  *    there. Empty means the line ends at the prohibition.
- * 4. **Silence beats an unsafe prompt.** The leak check runs first, and any error
- *    diagnostic means the whole block is dropped rather than partially rendered.
+ * 4. **Silence beats an unsafe prompt.** `assertNoResolverOnlyLeak` runs first over the
+ *    COMPILED guidance, and any error it returns drops the whole block rather than
+ *    rendering it partially. That check is the only thing this file fails closed on —
+ *    deliberately not `guidance.diagnostics`, which is a different question. The
+ *    compile-time gate is per-candidate: a `guidance.disclosure.invalid` error there
+ *    means one candidate was already suppressed, and its valid siblings — including a
+ *    slice-3 mandatory action outcome that says whether contact happened — must still
+ *    reach the prompt. An error in the guidance is a report about a candidate that is
+ *    gone; an error from the leak check is a candidate still here that should not be.
  *
  * The block also states its own precedence, because the prompt it joins already
  * carries a general sensory allowance that can read as forbidding what a fence
@@ -160,9 +167,14 @@ function joinPhrases(phrases: readonly string[]): string {
  * Render the selected guidance as prompt lines, in the compiler's order.
  *
  * Returns `[]` when there is nothing to say — and also when the leak check finds a
- * resolver-only candidate, because at that point the safe output is no block at all
- * (`docs/resilience.md`: degraded defaults over failed turns; the caller's contract
- * from `assertNoResolverOnlyLeak` is to drop the guidance, never to throw).
+ * non-allowlisted candidate in the COMPILED guidance, because at that point the safe
+ * output is no block at all (`docs/resilience.md`: degraded defaults over failed turns;
+ * the caller's contract from `assertNoResolverOnlyLeak` is to drop the guidance, never
+ * to throw).
+ *
+ * `input.guidance.diagnostics` is deliberately not consulted. A compile-time disclosure
+ * error names a candidate the gate ALREADY removed, and dropping the block over it would
+ * discard the valid siblings that survived — the exact behaviour slice 3 cannot have.
  */
 export function renderChatPhysicalGuidance(input: ChatPhysicalGuidanceRenderInput): readonly string[] {
   const leaks = assertNoResolverOnlyLeak(input.guidance);

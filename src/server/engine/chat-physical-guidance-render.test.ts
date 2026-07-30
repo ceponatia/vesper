@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   affordanceSubjectId,
+  compileNarratorPhysicalGuidance,
   DiagnosticCollector,
   emptyNarratorPhysicalGuidance,
   guidanceFingerprint,
@@ -248,11 +249,50 @@ describe("order, safety, and the block", () => {
     } as unknown as PhysicalNarrationConstraint;
 
     expect(render(guidanceOf({ constraints: [rogue] }), sink)).toEqual([]);
-    // Drop-the-block-on-any-error is what makes the broadened gate free here: the
-    // renderer never learned a second rule, it just kept obeying the first one.
+    // Drop-the-block-on-any-LEAK-CHECK-error is what makes the broadened gate free here:
+    // the renderer never learned a second rule, it just kept obeying the first one. Note
+    // what this fixture does that a compiled one cannot — it puts the bad value INTO
+    // guidance the compiler already gated, i.e. post-compile mutation.
     const invalid = sink.items.find((item) => item.code === GUIDANCE_DISCLOSURE_INVALID);
     expect(invalid?.severity).toBe("error");
     expect(invalid?.context).toMatchObject({ kind: "constraint", disclosure: "narrator_prompt_allowed" });
+  });
+
+  it("still renders the valid siblings of a candidate the COMPILER suppressed", () => {
+    // The other half of the disclosure law, and the distinction the two layers turn on:
+    // a compile-time `guidance.disclosure.invalid` error means one candidate was
+    // suppressed, NOT that the block is unsafe. The renderer keys off
+    // `assertNoResolverOnlyLeak` over the compiled guidance — never off
+    // `guidance.diagnostics` — so what survived the gate still reaches the prompt.
+    //
+    // Slice 3 is why this matters: a mandatory action outcome carries whether contact
+    // happened, and losing the block over an unrelated mangled constraint would hand
+    // that question back to the narrator to invent.
+    const sink = new DiagnosticCollector();
+    const rogue = {
+      ...constraint({ prohibited: [HAIR_CLAIM_ARRANGEMENT_LOOSE] }),
+      disclosure: "narrator_prompt_allowed",
+    } as unknown as PhysicalNarrationConstraint;
+    const guidance = compileNarratorPhysicalGuidance({
+      constraints: [rogue, constraint({ prohibited: [HAIR_CLAIM_MOTION_FREE_FLOW] })],
+      corrections: [correction({ claimCode: HAIR_CLAIM_CAUSE_RAIN })],
+      sink,
+    });
+
+    // The compile really did report the error — this is not a fixture that dodged it.
+    expect(guidance.diagnostics.filter((item) => item.severity === "error")).toHaveLength(1);
+    expect(guidance.diagnostics[0]?.code).toBe(GUIDANCE_DISCLOSURE_INVALID);
+
+    const lines = render(guidance);
+    expect(lines).toEqual([
+      "- Premise check: the player's wetness-cause claim conflicts with committed state. " +
+        "Do not adopt rain as the cause of the wetness in Wren's hair. " +
+        "Do not correct the player aloud unless Wren would naturally do so.",
+      "- Binding constraint: do not describe Wren's hair as cascading, streaming, or whipping.",
+    ]);
+    expect(chatPhysicalGuidanceBlock(lines)).toContain(PHYSICAL_GUIDANCE_BLOCK_HEADING);
+    // The suppressed candidate's own wording is the one thing that must not appear.
+    expect(lines.join(" ")).not.toContain("loose");
   });
 
   it("empty guidance renders no lines and no block", () => {

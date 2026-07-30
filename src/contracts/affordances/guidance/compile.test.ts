@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "../../diagnostics";
 import { deepFreeze } from "../core";
 import { compileNarratorPhysicalGuidance } from "./compile";
-import { assertNoResolverOnlyLeak, GUIDANCE_DISCLOSURE_WITHHELD } from "./disclosure";
+import {
+  assertNoResolverOnlyLeak,
+  GUIDANCE_DISCLOSURE_INVALID,
+  GUIDANCE_DISCLOSURE_WITHHELD,
+} from "./disclosure";
 import { GUIDANCE_MAX_CONSTRAINTS, GUIDANCE_SELECTION_OVER_BUDGET } from "./selection";
 import { probeActionOutcome, probeConstraint, probeCorrection, probeTransition } from "./test-support";
-import type { GuidanceCandidateInput } from "./types";
+import type { GuidanceCandidateInput, PhysicalNarrationConstraint } from "./types";
 
 /**
  * The whole pipeline in one call: gate, then order, then budget.
@@ -60,6 +64,44 @@ describe("compileNarratorPhysicalGuidance", () => {
       GUIDANCE_SELECTION_OVER_BUDGET,
     ]);
     expect(collector.hasErrors).toBe(false);
+  });
+
+  it("suppresses ONLY the invalid candidate and compiles its valid siblings", () => {
+    // The disclosure gate is per-candidate fail-closed, not per-block: the bad candidate
+    // is dropped with an `error`, and everything beside it compiles untouched.
+    //
+    // This is not a softening of the law — it is what makes the law safe once slice 3
+    // lands. A mandatory action outcome says whether contact HAPPENED, and dropping the
+    // whole block because some unrelated constraint carried a value an adapter mangled
+    // would leave the narrator free to invent the answer. Suppressing one candidate
+    // withholds one fact; suppressing the block withholds the authoritative one.
+    const collector = new DiagnosticCollector();
+    // The shape only an adapter's parse of a persisted or remote candidate can produce —
+    // the compile-time union is exactly what the runtime gate distrusts, so the cast is
+    // the point of the fixture rather than a shortcut around it.
+    const rogue = {
+      ...probeConstraint({ id: "rogue_fence", priority: "mandatory" }),
+      disclosure: "narrator_prompt_allowed",
+    } as unknown as PhysicalNarrationConstraint;
+    const guidance = compileNarratorPhysicalGuidance({
+      constraints: [rogue, probeConstraint({ id: "fence_one", priority: "high" })],
+      actionOutcomes: [probeActionOutcome({ actionId: "reach_one", status: "rejected" })],
+      sink: collector,
+    });
+
+    // The invalid candidate is gone even though it outranked every sibling.
+    expect(guidance.constraints.map((constraint) => constraint.id)).toEqual(["fence_one"]);
+    // …and the mandatory outcome — the one slice 3 cannot afford to lose — survived.
+    expect(guidance.actionOutcomes.map((outcome) => outcome.actionId)).toEqual(["reach_one"]);
+    expect(guidance.actionOutcomes[0]?.narratorMustResolve).toBe(true);
+
+    const invalid = guidance.diagnostics.filter((item) => item.code === GUIDANCE_DISCLOSURE_INVALID);
+    expect(invalid).toHaveLength(1);
+    expect(invalid[0]?.severity).toBe("error");
+    expect(invalid[0]?.context).toMatchObject({ kind: "constraint", disclosure: "narrator_prompt_allowed" });
+    // The render seam's second layer sees nothing wrong, because nothing wrong survived
+    // into the compiled guidance — which is precisely why the block still renders.
+    expect(assertNoResolverOnlyLeak(guidance)).toEqual([]);
   });
 
   it("reproduces the identical guidance on a second run — the retake property", () => {

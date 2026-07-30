@@ -269,12 +269,14 @@ const AMBIGUOUS_POSSESSIVES: readonly string[] = ["her", "his", "their", "its"];
  * - `foreign` — a hair noun that is plainly someone else's (`my hair`, `Mira's hair`,
  *   an ambiguous pronoun in a sentence naming another person). Licenses nothing, and
  *   blocks the inheritance below: a clause about another body is never about this one.
+ * - `mixed` — the clause names BOTH this subject's hair and somebody else's. Licenses
+ *   nothing either, for the reason in `hairReferenceIn`.
  * - `unowned` — a hair noun with no determiner in reach ("…, hair streaming behind
  *   her"). Not an answer on its own; see `boundClauses`.
  * - `none` — this clause does not name hair at all, which is the ordinary case and the
  *   reason the false "streaming curtains" correction is gone.
  */
-type HairReference = "subject" | "foreign" | "unowned" | "none";
+type HairReference = "subject" | "foreign" | "mixed" | "unowned" | "none";
 
 /** A possessive that is not one of the subject's own forms — someone else owns that hair. */
 function isForeignPossessive(token: string, owners: readonly string[]): boolean {
@@ -306,11 +308,24 @@ function subjectOwners(characterName: string): readonly string[] {
  * NOT accepted: `my hair`, another person's hair, and — on its own — no determiner at
  * all. The player's own hair is a different body, and every fence this layer builds is
  * about one subject.
+ *
+ * **A clause that names two people's hair licenses nothing.** *"Your braid looks lovely
+ * beside Mira's hair streaming in the wind"* is one clause with a subject-owned braid, a
+ * foreign-owned head, and a motion verb — and nothing in this layer can say which of the
+ * two the verb belongs to. Answering `subject` there is exactly the false correction the
+ * clause law exists to prevent, so the whole clause reads `mixed` and is silent. The
+ * possible future refinement is NEAREST-LOCUS BINDING: attach a claim to the hair
+ * reference closest to it (by token distance, or by which side of the phrase it sits on)
+ * instead of discarding the clause. That needs its own evidence about how often it is
+ * right, and until then the conservative answer is the correct one — a missed correction
+ * costs silence, a wrong one costs the feature's credibility.
  */
 function hairReferenceIn(clause: string, sentence: string, characterName: string, playerName: string): HairReference {
   const tokens = [...normalized(clause).matchAll(WORD_TOKENS)].map((match) => match[0]);
   const owners = subjectOwners(characterName);
-  let weakest: HairReference = "none";
+  let sawSubject = false;
+  let sawForeign = false;
+  let sawUnowned = false;
 
   for (let index = 0; index < tokens.length; index += 1) {
     const noun = tokens[index];
@@ -319,10 +334,12 @@ function hairReferenceIn(clause: string, sentence: string, characterName: string
     for (let back = index - 1; back >= 0 && index - back <= POSSESSIVE_WINDOW; back -= 1) {
       const token = tokens[back];
       if (token === undefined) continue;
-      if (owners.includes(token)) return "subject";
+      if (owners.includes(token)) {
+        found = "subject";
+        break;
+      }
       if (AMBIGUOUS_POSSESSIVES.includes(token)) {
-        if (!namesAnotherPerson(sentence, characterName, playerName)) return "subject";
-        found = "foreign";
+        found = namesAnotherPerson(sentence, characterName, playerName) ? "foreign" : "subject";
         break;
       }
       if (isForeignPossessive(token, owners)) {
@@ -330,11 +347,20 @@ function hairReferenceIn(clause: string, sentence: string, characterName: string
         break;
       }
     }
-    // A foreign owner outranks an unowned mention: one hair noun that plainly belongs to
-    // somebody else is enough to make the clause say nothing about this body.
-    weakest = weakest === "foreign" ? weakest : found;
+    if (found === "subject") sawSubject = true;
+    else if (found === "foreign") sawForeign = true;
+    else sawUnowned = true;
   }
-  return weakest;
+
+  // Every hair noun in the clause is scored before the clause is, because the FIRST one
+  // is not the answer: a subject-owned reference followed by a foreign one is the
+  // ambiguity above, and returning on the first hit would hide it.
+  if (sawSubject && sawForeign) return "mixed";
+  if (sawSubject) return "subject";
+  // A foreign owner outranks an unowned mention: one hair noun that plainly belongs to
+  // somebody else is enough to make the clause say nothing about this body.
+  if (sawForeign) return "foreign";
+  return sawUnowned ? "unowned" : "none";
 }
 
 /**
@@ -348,7 +374,9 @@ function hairReferenceIn(clause: string, sentence: string, characterName: string
  * That inheritance answers only WHOSE hair, never WHETHER a clause is about hair: a
  * clause with no hair noun in it inherits nothing, which is exactly what stops a claim
  * from attaching across a boundary. It is also withheld the moment the sentence names
- * anyone else, and a clause with a foreign owner never qualifies.
+ * anyone else, and a clause with a foreign or `mixed` owner never qualifies — nor does
+ * one grant the inheritance, since neither is an answer about whose hair the sentence is
+ * about.
  */
 function boundClauses(
   clauses: readonly Clause[],
@@ -680,8 +708,8 @@ export const GUIDANCE_CONSTRAINT_IRRELEVANT = "guidance.constraint.irrelevant";
  * SOMETHING HAPPENING NOW.
  */
 export const chatGuidanceRelevanceSignals = [
-  /** The message names this body part, or reaches for its vocabulary. */
-  "domain_reference",
+  /** The message names THIS SUBJECT's version of this body part, in any span. */
+  "subject_reference",
   /** This turn produced a correction; its area's fence rides along with it. */
   "premise_correction",
   /** A live force on the hair — wind, or weather landing on it — makes motion claims plausible unprompted. */
@@ -698,21 +726,28 @@ export interface ChatGuidanceRelevance {
 }
 
 /**
- * Whether this message is ABOUT the hair domain — the first and broadest signal.
+ * Whether this message names THIS SUBJECT's hair — the first signal.
  *
- * Two ways in, both deliberately generous, because this gate decides whether a true
- * fence may be stated rather than whether the player is wrong:
+ * One way in, and it is the same clause-local binding the detector uses: a hair
+ * reference bound to this subject, in ANY span. Span kind is deliberately ignored, since
+ * a thought or an OOC aside is not an assertion this layer would ever correct but it is
+ * still the turn being about her hair. Binding is not: it is the whole signal.
  *
- * 1. a subject-bound hair reference in ANY span — a thought or an OOC aside is not an
- *    assertion this layer would correct, but it is still the turn being about her hair;
- * 2. any claim phrase at all, bound or not (plan §Architecture 4: "domain reference
- *    without a safely parsed claim may still raise the priority of an already-known
- *    consistency constraint. It must not invent a correction.").
+ * The claim WORDING may be absent, and that is the plan §Architecture 4 case this exists
+ * to serve — "domain reference without a safely parsed claim may still raise the
+ * priority of an already-known consistency constraint. It must not invent a correction."
+ * So "you tuck your hair behind one ear" arms the standing fence and corrects nothing.
+ *
+ * What does NOT count is a bare claim keyword with no subject bound to it. The lexicon
+ * is made of ordinary English — `river`, `pool`, `loose`, `flowing`, `soaking` — so
+ * "it is absolutely soaking wet out there" is about the weather, and arming a braid
+ * fence on it spends prompt bytes to prime the exact description it forbids. That is
+ * negative priming at a smaller scale than the closed cue experiment's, and the same
+ * mistake.
  */
-function messageTouchesHair(input: ChatPremiseDetectionInput): boolean {
+function messageBindsSubjectHair(input: ChatPremiseDetectionInput): boolean {
   const message = input.message.trim();
   if (message.length === 0) return false;
-  if (hairClaimMatches(message).length > 0) return true;
   for (const span of parseMessageSpans(message, { playerName: input.playerName, knownNames: [input.characterName] })) {
     for (const sentence of span.text.split(SENTENCE_SPLIT)) {
       const clauses = clausesOf(sentence, normalized(sentence));
@@ -737,7 +772,7 @@ export function chatGuidanceRelevance(input: {
   readonly sensoryFocus?: SensoryFocusHint | null;
 }): ChatGuidanceRelevance {
   const signals: ChatGuidanceRelevanceSignal[] = [];
-  if (messageTouchesHair(input.detection)) signals.push("domain_reference");
+  if (messageBindsSubjectHair(input.detection)) signals.push("subject_reference");
   if (input.corrections.length > 0) signals.push("premise_correction");
   if (input.detection.committed.activeForce) signals.push("active_force");
   const focus = input.sensoryFocus;
