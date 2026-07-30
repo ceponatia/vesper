@@ -16,9 +16,9 @@ assembled from reusable components, then compiles it into the sparse garment
 blueprint graph the wardrobe already stores and executes.
 
 ```text
-existing broad category
-        ↓ author selects
-specific archetype
+authoring recipe
+        ↓ selects
+existing broad category + specific archetype
         ↓ compose defaults + options
 reusable garment components
         ↓ deterministic compilation
