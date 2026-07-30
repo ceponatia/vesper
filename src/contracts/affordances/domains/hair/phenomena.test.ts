@@ -20,7 +20,7 @@ import {
   type HairStrandThicknessValue,
   type HairTextureValue,
 } from "./attribute-maps";
-import type { HairArrangement } from "./mechanics";
+import { hairArrangements, type HairArrangement } from "./mechanics";
 import type { HairLanePayload } from "./domain";
 import { hairImpulseEventKinds, hairWettingEventKinds, type HairEventKind } from "./frame";
 import {
@@ -29,6 +29,7 @@ import {
   saturatedDenseNeckContact,
   type HairFixture,
 } from "./fixtures";
+import { HAIR_BULK_RESTRAINT_ID } from "./phenomena/bulk-restraint";
 import { HAIR_SHEDS_DROPLETS_ID } from "./phenomena/droplet-shedding";
 import { HAIR_SKIN_ADHESION_ID } from "./phenomena/skin-adhesion";
 import { HAIR_WET_CLUMPING_ID } from "./phenomena/wet-clumping";
@@ -339,6 +340,94 @@ describe("hair.wind_or_motion_response", () => {
     });
     expect(observed(result, HAIR_WIND_OR_MOTION_ID)).toBeUndefined();
     expect(suppressedCode(result, HAIR_WIND_OR_MOTION_ID)).toBe("covered");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hair.bulk_restraint
+// ---------------------------------------------------------------------------
+
+describe("hair.bulk_restraint", () => {
+  const DRY_FINE = { density: "sparse", strandThickness: "fine", texture: "straight", condition: "silky" } as const;
+
+  /** The constraint this cut resolved, or the suppression code standing in its place. */
+  const restraint = (result: AffordanceRead): string | undefined =>
+    result.constraints.find((entry) => entry.id === HAIR_BULK_RESTRAINT_ID)?.code ??
+    suppressedCode(result, HAIR_BULK_RESTRAINT_ID);
+
+  const dryStyle = (arrangement: HairArrangement, coveredFraction = 0) =>
+    restraint(
+      read({
+        structure: { ...DRY_FINE, arrangement },
+        payload: payloadFor({ wetness: 0, coveredFraction }),
+      }),
+    );
+
+  it("nothing holding loose, uncovered, dry hair is an explicit silence", () => {
+    expect(dryStyle("loose")).toBe("no_restraint");
+    expect(read({ structure: { ...DRY_FINE, arrangement: "loose" }, payload: payloadFor({ wetness: 0 }) }).constraints)
+      .toEqual([]);
+  });
+
+  it("emits one constraint per gate, at the hair location", () => {
+    expect(dryStyle("braid")).toBe("bound");
+    expect(dryStyle("ponytail")).toBe("bound");
+    // A bun is both; "pinned against the head" is the more specific reason.
+    expect(dryStyle("bun")).toBe("pinned");
+    expect(dryStyle("loose", 6_000)).toBe("covered");
+    // Saturation alone holds the mass still, with no style and no covering.
+    expect(restraint(read({ payload: payloadFor({ coveredFraction: 0 }) }))).toBe("water_loaded");
+
+    const braided = read({ structure: { ...DRY_FINE, arrangement: "braid" }, payload: payloadFor({ wetness: 0 }) });
+    expect(braided.constraints).toEqual([
+      { kind: "constraint", id: HAIR_BULK_RESTRAINT_ID, code: "bound", locationId: "hair" },
+    ]);
+  });
+
+  it("needs no wind, no motion, and no cause at all — a braid is a braid in still air", () => {
+    // The same cut that makes `hair.wind_or_motion_response` report "no force" still
+    // fences the narrator. That gap is the whole reason this phenomenon exists.
+    const still = read({ structure: { ...DRY_FINE, arrangement: "braid" }, payload: payloadFor({ wetness: 0 }) });
+    expect(suppressedCode(still, HAIR_WIND_OR_MOTION_ID)).toBe("no_current_force");
+    expect(restraint(still)).toBe("bound");
+  });
+
+  it("agrees with the wind read's suppression reason on every cut, by construction", () => {
+    for (const arrangement of hairArrangements) {
+      for (const coveredFraction of [0, 6_000]) {
+        for (const wetness of [0, 9_500]) {
+          // With a force present the motion read names the restraint that stopped it;
+          // this phenomenon names the same one, because they share one function.
+          const result = read({
+            structure: { arrangement },
+            payload: payloadFor({ wetness, coveredFraction, wind: { force: 1_500 } }),
+          });
+          const suppressed = suppressedCode(result, HAIR_WIND_OR_MOTION_ID);
+          const constraint = result.constraints.find((entry) => entry.id === HAIR_BULK_RESTRAINT_ID)?.code;
+          if (constraint !== undefined && suppressed !== undefined && suppressed !== "below_response_threshold") {
+            expect(suppressed, `${arrangement}/${coveredFraction}/${wetness}`).toBe(constraint);
+          }
+        }
+      }
+    }
+  });
+
+  it("never produces an observation, so it cannot compete for a cue slot", () => {
+    for (const arrangement of hairArrangements) {
+      const result = read({ structure: { arrangement }, payload: payloadFor({ wind: { force: 5_000 } }) });
+      expect(observed(result, HAIR_BULK_RESTRAINT_ID), arrangement).toBeUndefined();
+      expect(result.cues.map((cue) => cue.id), arrangement).not.toContain(HAIR_BULK_RESTRAINT_ID);
+    }
+  });
+
+  it("stays true behind opaque coverage — a fence is about claims, not about sight", () => {
+    const hidden = readHairAffordances({
+      attributes: attributesFor({ arrangement: "braid" }),
+      payload: payloadFor({ wetness: 0 }),
+      perception: affordancePerceptionView({ exposure: { hair: "hidden" }, channels: { sight: "available" } }),
+    });
+    expect(hidden.observations).toEqual([]);
+    expect(restraint(hidden)).toBe("bound");
   });
 });
 

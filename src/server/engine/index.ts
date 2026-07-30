@@ -26,6 +26,9 @@ export * from "./chat-summary";
 export * from "./chat-affordances";
 export * from "./chat-garment-affordances";
 export * from "./chat-affordance-preview";
+export * from "./chat-physical-guidance";
+export * from "./chat-physical-guidance-render";
+export * from "./chat-physical-guidance-preview";
 export * from "./chat-recognition-adapter";
 export * from "./visual-memory-store";
 export * from "./chat-wardrobe";
@@ -51,6 +54,7 @@ export {
   NARRATION_SHAPE_PROFILES,
   type NarrationShapeId,
   chatGarmentCuesEnabled,
+  chatPhysicalConstraintsEnabled,
   narrationShapeId,
   readDevNarrationShape,
   setDevNarrationShape,

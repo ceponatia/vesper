@@ -8,8 +8,10 @@ import {
 import {
   hairIntensityBand,
   hairSuppressed,
+  hairWetnessBand,
   HAIR_BELOW_RESPONSE_THRESHOLD,
   HAIR_INSUFFICIENT_WETNESS,
+  HAIR_WETNESS_DAMP_MIN,
   type HairBandThresholds,
 } from "./bands";
 
@@ -36,8 +38,12 @@ import {
 
 export const HAIR_WET_CLUMPING_ID = "hair.wet_clumping";
 
-/** Below this the hair merely looks damp: nothing gathers into strands. */
-const MIN_WETNESS = 2_000;
+/**
+ * Below this nothing gathers into strands — the same floor the shared degree scale
+ * calls the bottom of `damp` (`bands.ts`), so this phenomenon can never resolve on
+ * hair the lexicon would call dry.
+ */
+const MIN_WETNESS = HAIR_WETNESS_DAMP_MIN;
 
 /** Law: bands read `clumpStrength` — wetness × clump affinity × surface friction. */
 const CLUMP_BANDS: HairBandThresholds = { subtle: 800, clear: 2_000, strong: 4_000 };
@@ -62,20 +68,15 @@ const CLUMP_TAGS: Readonly<Record<AffordanceIntensityBand, string>> = {
 };
 
 /**
- * How wet the hair IS, in three descriptors — the axis the clumping band cannot
- * carry (see the header). Cut where the words stop being true of each other:
- * below `WETNESS_WET_MIN` the hair is damp to the hand, at `WETNESS_SOAKED_MIN`
- * it is carrying about as much water as it can hold. Nothing below the
- * phenomenon's own `MIN_WETNESS` floor ever gets here, so `damp` is the lowest
- * descriptor it can emit.
+ * How wet the hair IS, as a tag — the axis the clumping band cannot carry (see the
+ * header). The cut itself is the shared ordered degree scale (`bands.ts`), because
+ * the narrator-guidance lexicon compares a player's "drenched" against the same
+ * boundary this tag is named for; one definition means a cue and a fence can never
+ * disagree about what "soaked" means. Nothing below `MIN_WETNESS` reaches here, so
+ * `wetness_damp` is the lowest tag this phenomenon can emit.
  */
-const WETNESS_WET_MIN = 4_000;
-const WETNESS_SOAKED_MIN = 8_000;
-
 function wetnessTag(wetness: number): string {
-  if (wetness >= WETNESS_SOAKED_MIN) return "wetness_soaked";
-  if (wetness >= WETNESS_WET_MIN) return "wetness_wet";
-  return "wetness_damp";
+  return `wetness_${hairWetnessBand(wetness)}`;
 }
 
 /**

@@ -46,6 +46,9 @@ import { buildActionBeatCue } from "./chat-action-beat";
 import { renderChatAffordanceCues } from "./chat-affordance-cues";
 import { buildChatAffordanceRead } from "./chat-affordances";
 import { buildChatAffordancePreview, type AffordancePreview } from "./chat-affordance-preview";
+import { buildChatPhysicalGuidance, buildChatPhysicalGuidanceStages } from "./chat-physical-guidance";
+import { renderChatPhysicalGuidance } from "./chat-physical-guidance-render";
+import { buildChatPhysicalGuidancePreview, type PhysicalGuidancePreview } from "./chat-physical-guidance-preview";
 import { buildChatRecognitionRead, type ChatRecognitionRead } from "./chat-recognition-adapter";
 import { loadChatVisualMemory, saveChatVisualMemory } from "./visual-memory-store";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
@@ -136,6 +139,7 @@ import {
 import {
   chatAffordanceCuesEnabled,
   chatGarmentCuesEnabled,
+  chatPhysicalConstraintsEnabled,
   chatPromptLayout,
   chatRecognitionCuesEnabled,
   narrationShapeId,
@@ -1083,13 +1087,22 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       previousCues: scenario.affordanceCues,
       sink,
     };
-    const affordanceRead = chatAffordanceCuesEnabled() ? buildChatAffordanceRead(affordanceReadInput) : null;
+    // Constraint-first narrator guidance (narrator-physical-guidance slice 2,
+    // `CHAT_PHYSICAL_CONSTRAINTS`, default OFF) reads the SAME cut. Hoisted here
+    // because it is also the second reason to take the read at all.
+    const physicalConstraintsEnabled = chatPhysicalConstraintsEnabled();
+    const affordanceRead =
+      chatAffordanceCuesEnabled() || physicalConstraintsEnabled ? buildChatAffordanceRead(affordanceReadInput) : null;
     // PRIMARY ONLY, and that is a prompt invariant rather than a scoping choice:
     // these cues lean on the character's own Attributes block for the appearance
     // they decorate, and this prompt carries exactly one. (The ensemble builder
     // renders no state section at all, so a roster member cannot receive one by
     // accident — same as the garment cue block.)
-    const affordanceCues = affordanceRead
+    // Gated on the CUE flag alone, never on `affordanceRead` being non-null: the
+    // guidance flag can now make the read exist, and it must not thereby switch a
+    // closed experiment back on (nor may it spend the cue memory — see the
+    // `affordanceCueState` thread in the finalizer, which stays cue-flag-only).
+    const affordanceCues = chatAffordanceCuesEnabled() && affordanceRead
       ? renderChatAffordanceCues({
           cues: affordanceRead.read.cues,
           attributes: affordanceRead.attributes,
@@ -1156,6 +1169,41 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // is happening to this body right now, and a recognizable feature is standing
     // truth — it reads as the added detail rather than competing for the beat.
     const bodyCues = recognition?.cueLine ? [...affordanceCues, recognition.cueLine] : affordanceCues;
+
+    // --- Narrator physical guidance (slice 2, `CHAT_PHYSICAL_CONSTRAINTS`, OFF) ---
+    // Constraints from the committed cut above, plus the high-confidence false
+    // premises in THIS message. Fenced whole for the same reason every optional read
+    // is (docs/resilience.md): a guidance failure degrades to no block, which is the
+    // flag-off prompt, and never costs the exchange.
+    //
+    // Nothing is persisted: the selection is recomputable from the same cut and the
+    // same message, so the existing rollback anchors already make a retake reproduce
+    // it (plan §"State and retakes").
+    let physicalGuidanceLines: readonly string[] = [];
+    if (physicalConstraintsEnabled && affordanceRead) {
+      try {
+        physicalGuidanceLines = renderChatPhysicalGuidance({
+          guidance: buildChatPhysicalGuidance({
+            read: affordanceRead.read,
+            perception: affordanceRead.request.perception,
+            committed: affordanceRead.committed,
+            subjectId: characterId,
+            characterName,
+            playerName: player.name,
+            // The raw current message — the span parser reads its own markup. An
+            // opening/continue beat has no player line, so nothing is premise-checked.
+            message: playerContent,
+            narratorInput,
+            sink,
+          }),
+          characterName,
+          possessive: `${characterName}'s`,
+          sink,
+        });
+      } catch (error) {
+        log.error("engine.chat", "chat physical guidance failed", { error: describeError(error) });
+      }
+    }
     /**
      * Commit the exchange's observer memory. Called ONLY once the exchange has
      * actually settled — a failed or empty reply leaves the memory exactly as the
@@ -1260,6 +1308,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // Narrator-mode input (chat-supporting-cast.plan.md): the one-turn tail note that
       // suspends the player-input perception rules for THIS message.
       narratorInput,
+      // Physical consistency (narrator-physical-guidance slice 2). Conditional spread,
+      // the same discipline the cue block uses: absent when the flag is off, so the
+      // prompt is byte-identical to the pre-feature build.
+      ...(physicalGuidanceLines.length > 0 ? { physicalGuidance: physicalGuidanceLines } : {}),
     };
 
     // The relationship matrix (relationship-model.plan.md): tier-1 pair lines for
@@ -1514,7 +1566,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           // threaded, never recomputed, for the same reason: it must record the cut
           // the narrator actually saw. Absent when the flag is off, and the finalizer
           // then leaves the scenario's stored memory untouched.
-          ...(affordanceRead ? { affordanceCueState: affordanceRead.nextCues } : {}),
+          //
+          // Gated on the CUE flag, not on the read existing: `CHAT_PHYSICAL_CONSTRAINTS`
+          // and `CHAT_RECOGNITION_CUES` can both make this read exist, and letting one
+          // experiment advance another's repeat gate would make both uninterpretable.
+          ...(chatAffordanceCuesEnabled() && affordanceRead
+            ? { affordanceCueState: affordanceRead.nextCues }
+            : {}),
           // The captured effective-coverage read (slice 6): CAPTURED with the
           // presentation cut, not reconstructed later, so narration, body
           // affordances, retakes, and images all share one answer about what is
@@ -2282,6 +2340,76 @@ export async function previewChatAffordances(input: {
   });
 }
 
+/**
+ * The newest player line in this chat, with the register it was authored in.
+ *
+ * The guidance preview needs a message to premise-check, and "the last thing the
+ * player said" is the one that produced the reply a developer is looking at. Narrator
+ * mode rides the line's own meta, so the preview reproduces the live authority
+ * decision rather than assuming ordinary input.
+ */
+async function lastPlayerMessage(chatId: string): Promise<{ content: string; narrator: boolean }> {
+  const [row] = await db()
+    .select({ content: characterChatMessages.content, meta: characterChatMessages.meta })
+    .from(characterChatMessages)
+    .where(and(eq(characterChatMessages.chatId, chatId), eq(characterChatMessages.role, "user")))
+    .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
+    .limit(1);
+  if (!row) return { content: "", narrator: false };
+  const meta = parseOr(messageAttachmentsMetaSchema, row.meta ?? {}, {}, undefined, "character_chat_messages.meta");
+  return { content: row.content, narrator: meta.inputMode === "narrator" };
+}
+
+/**
+ * The read-only developer preview of narrator physical guidance
+ * (narrator-physical-guidance.plan.md slice 2: source resolution → candidate →
+ * disclosure → selection → rendered instruction).
+ *
+ * Computes on demand from the stored cut and the newest player line, and stores
+ * NOTHING — there is nothing to store, because the live path recomputes this every
+ * turn by design. Like the affordance preview it REPORTS `CHAT_PHYSICAL_CONSTRAINTS`
+ * rather than obeying it: a developer asking why a fence never appeared needs the
+ * answer with the flag off too.
+ */
+export async function previewChatPhysicalGuidance(input: {
+  chatId: string;
+  character: { id: string; name: string; profile: unknown };
+}): Promise<PhysicalGuidancePreview> {
+  const sink = new DiagnosticCollector();
+  const cut = await loadChatPreviewCut({ chatId: input.chatId, character: input.character, sink });
+  const read = previewAffordanceRead({ characterId: input.character.id, cut, sink });
+  const message = await lastPlayerMessage(input.chatId);
+  const stages = buildChatPhysicalGuidanceStages({
+    read: read.read,
+    perception: read.request.perception,
+    committed: read.committed,
+    subjectId: input.character.id,
+    characterName: input.character.name,
+    playerName: cut.player.name,
+    message: message.content,
+    narratorInput: message.narrator,
+    sink,
+  });
+  return buildChatPhysicalGuidancePreview({
+    flagEnabled: chatPhysicalConstraintsEnabled(),
+    narratorInput: message.narrator,
+    message: message.content,
+    playerName: cut.player.name,
+    characterName: input.character.name,
+    committed: read.committed,
+    candidateConstraints: stages.candidateConstraints,
+    candidateCorrections: stages.candidateCorrections,
+    guidance: stages.guidance,
+    rendered: renderChatPhysicalGuidance({
+      guidance: stages.guidance,
+      characterName: input.character.name,
+      possessive: `${input.character.name}'s`,
+      sink,
+    }),
+    diagnostics: [...stages.guidance.diagnostics, ...sink.items.filter((item) => item.code.startsWith("guidance."))],
+  });
+}
+
 export async function previewChatPrompt(input: {
   chatId: string;
   memoryGroupId: string;
@@ -2327,6 +2455,35 @@ export async function previewChatPrompt(input: {
         }),
       })
     : null;
+  // Same for the physical-guidance block (narrator-physical-guidance slice 2): the
+  // inspector must show what a live turn would build, so it runs the same compile
+  // over the stored cut and the newest player line — the message a live turn would
+  // have been holding. Nothing is stored either way; guidance never was.
+  let previewPhysicalGuidance: readonly string[] = [];
+  if (chatPhysicalConstraintsEnabled()) {
+    const read = previewAffordanceRead({
+      characterId: input.character.id,
+      cut: { profile, owner: "", scenario, state, player, wardrobe, playerWardrobe },
+      sink,
+    });
+    const message = await lastPlayerMessage(input.chatId);
+    previewPhysicalGuidance = renderChatPhysicalGuidance({
+      guidance: buildChatPhysicalGuidance({
+        read: read.read,
+        perception: read.request.perception,
+        committed: read.committed,
+        subjectId: input.character.id,
+        characterName: input.character.name,
+        playerName: player.name,
+        message: message.content,
+        narratorInput: message.narrator,
+        sink,
+      }),
+      characterName: input.character.name,
+      possessive: `${input.character.name}'s`,
+      sink,
+    });
+  }
   const parts = buildCharacterChatPromptParts({
     name: input.character.name,
     profile,
@@ -2350,6 +2507,9 @@ export async function previewChatPrompt(input: {
         : [],
     ),
     narrationShape: narrationShapeId("chat"),
+    // Conditional spread, exactly as the live path threads it: absent when the flag
+    // is off, so the previewed prompt is byte-identical to the pre-feature build.
+    ...(previewPhysicalGuidance.length > 0 ? { physicalGuidance: previewPhysicalGuidance } : {}),
   });
   return {
     prefix: parts.prefix,

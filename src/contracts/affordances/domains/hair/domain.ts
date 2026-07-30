@@ -15,6 +15,7 @@ import {
   type AffordanceDomainRequest,
   type AffordanceEvidenceKind,
   type DomainInputs,
+  type ResolvedAttributeSnapshot,
 } from "../../core";
 import { compileHairProfile, type HairStructuralProfile } from "./profile";
 import {
@@ -106,14 +107,31 @@ function readInput<TSchema extends ZodType>(
   return parsed.success ? adapterSupported(parsed.data, [affordanceEvidence(kind, key)]) : adapterInvalid;
 }
 
+/** The attribute id arrangement is read from — one spelling, three readers. */
+export const HAIR_ARRANGEMENT_ATTRIBUTE_ID = "hair.arrangement";
+
+/**
+ * The committed arrangement from a resolved snapshot, or `null` when it is unset or
+ * not legal vocabulary.
+ *
+ * Exported because a lane also needs the plain answer: the narrator-guidance
+ * detector compares a player's "your loose hair" against the committed style
+ * (narrator-physical-guidance slice 2), and re-deriving it from the raw attribute
+ * there would be a second place for the enum spelling to be wrong.
+ */
+export function hairArrangementOf(attributes: ResolvedAttributeSnapshot): HairArrangement | null {
+  const parsed = z.enum(hairArrangements).safeParse(attributeEnumValue(attributes, HAIR_ARRANGEMENT_ATTRIBUTE_ID));
+  return parsed.success ? parsed.data : null;
+}
+
 /**
  * Arrangement is an ATTRIBUTE, not a payload field (Slice 0 ruling): the
  * archivist's `attributeChanges` lane keeps `hair.arrangement` current, so the
  * resolved snapshot is its authoritative producer.
  */
 function readArrangement(request: AffordanceDomainRequest): AdapterRead<HairArrangement> {
-  const raw = attributeEnumValue(request.attributes, "hair.arrangement");
-  return readInput(z.enum(hairArrangements), raw, "attribute", "hair.arrangement");
+  const raw = attributeEnumValue(request.attributes, HAIR_ARRANGEMENT_ATTRIBUTE_ID);
+  return readInput(z.enum(hairArrangements), raw, "attribute", HAIR_ARRANGEMENT_ATTRIBUTE_ID);
 }
 
 const looseEndBandSchema = z.enum(hairLengthBands);

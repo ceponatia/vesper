@@ -15,10 +15,15 @@ pre-committed stopping rule on 2026-07-29: two consecutive rounds with a
 VALID induction gate (the matrix demonstrably tempted the control arm into
 contradictions at 0.50 and 0.44 per exchange) in which the cue arm failed the
 frozen decision rule — it never reduced contradictions (R2 −6%, R3 +29%
-relative to control). The cue arm consistently increased specificity and therefore exposed more
-claims to checking. That is the leading explanation for why the intended net
-gain did not appear, but the category variance is too large to treat it as a
-proven causal law. Repetition reached zero in R3 and false-premise adoption was
+relative to control). The cue arm did consistently raise specificity, and the
+**working hypothesis** for the missing net gain is that volunteering a concrete
+physical detail raises the number of checkable — therefore convictable — claims.
+That hypothesis is consistent with the specificity results; it is **not** a
+proven causal law, and this campaign could not have made it one: one narrator
+model, one domain (the reachable half of hair), ~24 paired exchanges per round,
+and dimensions that no change touched swinging by 0.5 contradictions/exchange
+between rounds. The decision below rests on the frozen decision rule, not on the
+mechanism. Repetition reached zero in R3 and false-premise adoption was
 eliminated in R2; each was a promising round-local result, not a replicated
 effect. Neither changed the pre-registered trade ("reduces contradictions").
 
@@ -161,6 +166,14 @@ scenarios × 3 exchanges × 2 arms) plus 10 blinded judge calls, ~$0.72 total
 call. Audit JSON at `data/eval/affordance-cues/trial.json` (gitignored;
 numbers transcribed here). Cue scenarios only — the 6 silence-control
 exchanges carry no feature signal by construction:
+
+> Runs from 2026-07-30 on also write `summary.json` beside `trial.json` — the
+> transcript-free half of the record (fixture commit, model ids, prompt/config
+> digests, raw dimension counts, verified violation quotes, spend) that is meant
+> to be **committed** to
+> [`scripts/eval/affordance-cues/results/`](../../scripts/eval/affordance-cues/results/README.md).
+> The rounds below predate it, which is why their numbers exist only as this
+> transcription.
 
 | measure (per exchange unless noted) | cues | control |
 | --- | --- | --- |
@@ -366,18 +379,25 @@ protocol — one entry per live round, campaign cap $10.
   exactly why the stopping rule was pre-committed.
 - **Final verdict per the frozen protocol (second consecutive valid fail)**:
   **`CHAT_AFFORDANCE_CUES` parks OFF.** Across both valid rounds the cue arm
-  never reduced contradictions (R2 −6%, R3 +29%). The cue arm made the narrator talk about the body more concretely
-  (specificity rose in every round), exposing more claims to the audit. That is
-  the leading mechanism hypothesis, not a proven law: untouched dimensions
-  varied sharply between rounds. Repetition reached zero in R3 and
+  never reduced contradictions (R2 −6%, R3 +29%) — and that, alone, is what
+  closes the flag. The cue arm made the narrator talk about the body more
+  concretely (specificity rose in every round), which plausibly exposed more
+  claims to the audit; that remains a **working hypothesis about this cue shape
+  in this domain through this narrator model**, not a demonstrated law. The
+  evidence does not support more: untouched dimensions varied by ~0.5 c/e
+  between rounds, no round measured claims per exchange, and nothing here tests
+  garment, contact, or pose guidance. Repetition reached zero in R3 and
   false-premise adoption was eliminated in R2, but neither result replicated;
   they remain useful signals rather than established benefits. The
   pre-registered trade still failed.
 - **What survives the campaign**: the cause-true provenance + degree wording
   (a measured quality fix, kept in production); the bait+anchor matrix,
   audit judge, and induction gate (a reusable instrument for any future
-  narrator A/B); and the finding that a cue system shaped like this one
-  trades contradiction-safety for specificity. A differently-shaped feature is NEW design work in
+  narrator A/B); and the measured result that on this matrix, this domain and
+  this narrator model, a cue system shaped like this one bought specificity
+  without buying contradiction-safety — a result about the tested
+  configuration, not a general property of positive physical detail. A
+  differently-shaped feature is NEW design work in
   [constraint-first narrator physical guidance](narrator-physical-guidance.plan.md),
   where constraints/action outcomes and change-gated details receive separate
   release decisions. This campaign and this flag are closed.

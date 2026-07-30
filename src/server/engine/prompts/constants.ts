@@ -128,10 +128,25 @@ export function chatGarmentCuesEnabled(): boolean {
 
 /**
  * The AFFORDANCE NARRATION switch (body-attribute-affordances.plan.md slice 5) —
- * experimental, default-off, the same shape and the same reason as
- * `CHAT_GARMENT_CUES` above: slice 5 is explicitly a *trial* ("compare
- * contradiction rate, repetition, specificity, and prose naturalness with the
- * current appearance path"), and that live-model comparison is owner-gated.
+ * **default-off permanently: the trial closed 2026-07-29 and the flag PARKED OFF.**
+ *
+ * Slice 5 was explicitly a *trial* ("compare contradiction rate, repetition,
+ * specificity, and prose naturalness with the current appearance path"). It ran:
+ * one live round with no contradiction headroom, then a three-round rematch
+ * campaign under a frozen protocol whose terminal state is two consecutive rounds
+ * with a VALID induction gate in which the cue arm fails the decision rule. Both
+ * valid rounds failed (the cue arm never reduced contradictions), so per the
+ * pre-committed rule this flag parks OFF — see
+ * `docs/developer-notes/body-attribute-affordances.trial.md` §Rematch log. This is
+ * not "off until we get around to it": turning it on is a decision the campaign
+ * already made, against.
+ *
+ * The narrator-facing policy is replaced, not retried, by
+ * `docs/developer-notes/narrator-physical-guidance.plan.md` — constraints,
+ * premise corrections and resolved action outcomes, with positive detail gated on
+ * a committed state change behind its own separately-measured flag. The cue
+ * renderer stays as a closed-experiment reference and as the eval harness's cue
+ * arm (`src/server/engine/chat-affordance-cues.ts`).
  *
  * OFF (the default, and anything other than `on`) is today's behavior to the
  * byte: no affordance read is taken at all — no adapter call, no cue rendering,
@@ -147,6 +162,35 @@ export function chatGarmentCuesEnabled(): boolean {
  */
 export function chatAffordanceCuesEnabled(): boolean {
   return process.env.CHAT_AFFORDANCE_CUES === "on";
+}
+
+/**
+ * The CONSTRAINT-FIRST NARRATOR GUIDANCE switch
+ * (narrator-physical-guidance.plan.md slice 2) — experimental, default off, and the
+ * REPLACEMENT for `CHAT_AFFORDANCE_CUES` above rather than a second version of it.
+ *
+ * Where the closed cue experiment volunteered a physical detail on every eligible
+ * turn, this projects committed truth mostly as prohibitions: what the narrator must
+ * not claim about this body (a braid is not streaming loose) plus the high-confidence
+ * false premises in the player's own framing that it must not adopt. There is no
+ * positive detail in it at all — that is slice 4's separately-flagged, change-gated
+ * experiment (`CHAT_PHYSICAL_TRANSITIONS`), and the two get independent measured
+ * ship/park decisions.
+ *
+ * OFF (the default, and anything other than `on`) is today's behavior to the byte: no
+ * premise detection, no guidance compile, no block on the narrator prompt, and — since
+ * the flag also decides whether the affordance read is taken at all — no adapter call
+ * either unless another flag wants one. ON adds exactly one binding-tier block: at
+ * most two premise corrections and three scoped consistency constraints for this
+ * exchange. Env-only, no dev route.
+ *
+ * Note what is NOT behind it, and why that matters for interpreting a trial: the cue
+ * flag still owns cue rendering AND the `character_chats.affordance_cues` write. This
+ * flag never spends or persists cue memory, so running one experiment cannot move the
+ * other's state.
+ */
+export function chatPhysicalConstraintsEnabled(): boolean {
+  return process.env.CHAT_PHYSICAL_CONSTRAINTS === "on";
 }
 
 /**

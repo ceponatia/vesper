@@ -140,6 +140,63 @@ export const affordancePreviewSchema = z.object({
 });
 export type AffordancePreview = z.infer<typeof affordancePreviewSchema>;
 
+/**
+ * The read-only narrator physical-guidance preview
+ * (narrator-physical-guidance.plan.md slice 2): input authority → committed state →
+ * candidates → selection → rendered lines. Every field heals, like the affordance
+ * preview above — a debug surface should show a gap, never an error page.
+ */
+const guidanceCandidateSchema = z.object({
+  kind: z.enum(["constraint", "correction"]).catch("constraint"),
+  fingerprint: textOr(""),
+  id: textOr(""),
+  disclosure: textOr(""),
+  grade: textOr(""),
+  locusIds: z.array(z.string()).catch([]),
+  prohibitedClaimCodes: z.array(z.string()).catch([]),
+  allowedClaimCodes: z.array(z.string()).catch([]),
+  areas: z.array(z.string()).catch([]),
+  evidence: z.array(z.string()).catch([]),
+});
+export type PhysicalGuidanceCandidate = z.infer<typeof guidanceCandidateSchema>;
+
+export const physicalGuidancePreviewSchema = z.object({
+  flagEnabled: z.boolean().catch(false),
+  inputAuthority: z
+    .object({
+      narratorInput: z.boolean().catch(false),
+      message: textOr(""),
+      spans: arrayOf(z.object({ kind: textOr(""), eligible: z.boolean().catch(false), text: textOr("") })),
+      eligibleSpans: z.number().catch(0),
+    })
+    .catch({ narratorInput: false, message: "", spans: [], eligibleSpans: 0 }),
+  committed: z
+    .object({
+      wetnessBand: textOr("—"),
+      wetnessCause: textOr("—"),
+      arrangement: textOr("—"),
+      coveredFraction: textOr("—"),
+      available: arrayOf(z.object({ owner: textOr(""), available: z.boolean().catch(false) })),
+    })
+    .catch({ wetnessBand: "—", wetnessCause: "—", arrangement: "—", coveredFraction: "—", available: [] }),
+  candidates: z
+    .object({
+      constraints: arrayOf(guidanceCandidateSchema),
+      corrections: arrayOf(guidanceCandidateSchema),
+      diagnostics: arrayOf(z.object({ level: textOr("info"), code: textOr(""), message: textOr("") })),
+    })
+    .catch({ constraints: [], corrections: [], diagnostics: [] }),
+  selection: z
+    .object({
+      constraints: z.array(z.string()).catch([]),
+      corrections: z.array(z.string()).catch([]),
+      dropped: z.array(z.string()).catch([]),
+    })
+    .catch({ constraints: [], corrections: [], dropped: [] }),
+  rendered: z.array(z.string()).catch([]),
+});
+export type PhysicalGuidancePreview = z.infer<typeof physicalGuidancePreviewSchema>;
+
 export const episodeScoresSchema = z.object({
   scores: arrayOf(z.object({ id: z.string().min(1), score: z.number().catch(0) })),
   degraded: z.boolean().catch(false),
@@ -271,6 +328,8 @@ export const chatInspectorApi = {
   overview: (chatId: string) => apiGet(inspectorOverviewSchema, base(chatId)),
   prompt: (chatId: string) => apiGet(inspectorPromptSchema, `${base(chatId)}/prompt`),
   affordances: (chatId: string) => apiGet(affordancePreviewSchema, `${base(chatId)}/affordances`),
+  physicalGuidance: (chatId: string) =>
+    apiGet(physicalGuidancePreviewSchema, `${base(chatId)}/physical-guidance`),
   agentFailures: (chatId: string, days?: number) =>
     apiGet(agentHealthSchema, withQuery(`${base(chatId)}/agent-failures`, days ? { days: String(days) } : {})),
   compositionFallbacks: (chatId: string, days?: number) =>

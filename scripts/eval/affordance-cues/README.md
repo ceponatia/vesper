@@ -33,8 +33,17 @@ Other flags: `--out <dir>` (default `data/eval/affordance-cues`, or `EVAL_OUT`),
 `--chat-model <slug>`, `--judge-model <slug>`, `--concurrency N` (default 3,
 scenario-level).
 
-`--dry-run` writes `matrix.json`; a live run writes `trial.json`. `data/` is
-gitignored, so quote numbers into the trial doc rather than linking the file.
+`--dry-run` writes `matrix.json`; a live run writes **`trial.json`** (the full
+audit: every prompt, reply and judge answer) **and `summary.json`** (the same
+round with the narration removed — provenance, raw counts, verified violation
+quotes, spend). `data/` is gitignored, so `trial.json` never leaves the machine:
+after a real round, copy `summary.json` to
+`results/<matrix>-<YYYY-MM-DD>.json` and commit it — that file is the audit
+record. See [`results/README.md`](results/README.md) for the convention and
+[`summary.ts`](summary.ts) for the schema (`trialSummarySchema`, `version: 1`,
+guarded by `summary.test.ts` in `pnpm test`). Numbers still get quoted into the
+trial doc; they are now checkable against a committed file rather than only a
+transcription.
 
 **Not wired into `pnpm verify`/CI, ever.** It spends money and it measures a
 judgment call. The fixture guard (`harness.test.ts`) *is* pure and does run in
@@ -117,6 +126,17 @@ in summary: the cues-vs-control block over **bait scenarios only**, the
 per-family table (control contradictions/exchange, cue contradictions/exchange,
 armed-bait hit rate), the discarded-quote counts, the induction gate, and a
 clearly-labelled `verdict:` line.
+
+`summary.json` carries the committable subset: `version`, matrix, verdict,
+fixture commit (+ dirty flag), model ids and temperatures, config/per-arm prompt
+digests, per-arm raw dimension counts (`violated` = the judge's raw verdicts,
+split into `verifiedViolations` + `discardedViolations`), exchanges with any
+violation, the quote-verified violations with their arm/scenario/exchange refs,
+optional `physicalClaims` (nothing computes them yet), and spend (call counts,
+approximate tokens, OpenRouter key-usage delta). It carries **no narration** —
+prompts, replies and judge rationales stay in `trial.json`. A degraded arm
+contributes nothing rather than a clean zero, matching the run's refusal to
+publish a verdict.
 
 ## Induction gate (checked before any verdict)
 
