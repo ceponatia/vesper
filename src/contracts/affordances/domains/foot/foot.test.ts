@@ -3,6 +3,7 @@ import { DiagnosticCollector } from "../../../diagnostics";
 import {
   affordanceSubjectId,
   emptyAffordancePerceptionView,
+  resolvedAttributeSnapshot,
   AFFORDANCE_INPUT_INVALID,
   AFFORDANCE_INPUT_UNAVAILABLE,
 } from "../../core";
@@ -16,6 +17,7 @@ import {
   footWorkedCases,
   footwearFixture,
   readFootAffordances,
+  FOOT_FIXTURE_SUBJECT,
   type FootFixture,
 } from "./fixtures";
 import { FOOT_FOOTWEAR_ANOMALY } from "./footwear";
@@ -321,6 +323,70 @@ describe("registration is slice 3's job", () => {
     expect(
       elsewhere.suppressed.find((entry) => entry.phenomenonId === FOOT_CONTACT_PRESSURE_ID)?.code,
     ).toBe(AFFORDANCE_INPUT_UNAVAILABLE);
+  });
+
+  it("reports contradictory per-foot reads as INVALID rather than merging them", () => {
+    const fixture = footWorkedCases.lotionArchToHeelSlide();
+    const request = (payload: unknown) => ({
+      subjectId: FOOT_FIXTURE_SUBJECT,
+      storyTime: 100,
+      attributes: resolvedAttributeSnapshot([...fixture.attributes]),
+      payload,
+    });
+
+    // Two poses for one foot: curled and spread at once has no resolution, so
+    // the read carries no value and the phenomenon that REQUIRES it is
+    // suppressed with the standard code and diagnostic.
+    const sink = new DiagnosticCollector();
+    const posed = readFootAffordances({
+      attributes: fixture.attributes,
+      payload: {
+        ...fixture.payload,
+        articulation: [
+          { side: "left", toes: "curled", arch: "neutral" },
+          { side: "left", toes: "spread", arch: "extended" },
+        ],
+      },
+      perception: fixture.perception,
+      sink,
+    });
+    expect(posed.suppressed.find((entry) => entry.phenomenonId === FOOT_ARTICULATION_ID)?.code).toBe(
+      AFFORDANCE_INPUT_INVALID,
+    );
+    expect(sink.items.some((entry) => entry.code === AFFORDANCE_INPUT_INVALID)).toBe(true);
+    expect(
+      footAffordanceDomain.trace(
+        request({
+          ...fixture.payload,
+          articulation: [
+            { side: "left", toes: "curled", arch: "neutral" },
+            { side: "left", toes: "spread", arch: "extended" },
+          ],
+        }),
+      ).inputs?.["articulation"],
+    ).toBe("invalid");
+
+    // Two supports for one foot — trapped and free at once. `support` is an
+    // optional dependency everywhere, so nothing is suppressed over it; what
+    // must not happen is the contradiction being merged into a restriction
+    // nobody asserted.
+    const supported = footAffordanceDomain.trace(
+      request({
+        ...fixture.payload,
+        support: [
+          { side: "left", supportRole: "weight_bearing", mobility: "trapped" },
+          { side: "left", supportRole: "free", mobility: "free" },
+        ],
+        articulation: [{ side: "left", toes: "relaxed", arch: "neutral" }],
+      }),
+    );
+    expect(supported.inputs?.["support"]).toBe("invalid");
+    const articulationTags = supported.resolutions.find(
+      (resolution) => resolution.kind === "observation" && resolution.id === FOOT_ARTICULATION_ID,
+    );
+    expect(articulationTags?.kind).toBe("observation");
+    if (articulationTags?.kind !== "observation") return;
+    expect(articulationTags.semanticTags).not.toContain("restricted_by_support");
   });
 
   it("reports a repeated wardrobe layer id instead of accepting it in silence", () => {

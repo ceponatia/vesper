@@ -33,8 +33,8 @@ import { deriveFootMechanics, type FootEffectiveMechanics } from "./mechanics";
 import { footPhenomena } from "./phenomena";
 import { compileFootProfile, type FootStructuralProfile } from "./profile";
 import {
-  footArticulationReadSchema,
-  footSupportReadSchema,
+  footArticulationSetSchema,
+  footSupportSetSchema,
   type FootArticulationRead,
   type FootSupportRead,
 } from "./support";
@@ -106,9 +106,13 @@ const tactileReadSchema = z.object({ available: z.boolean() }).strict();
 
 const footwearPayloadSchema = z.array(footwearItemSchema).max(8);
 
-/** One entry per foot. A lane that poses one foot sends one entry. */
-const footSupportPayloadSchema = z.array(footSupportReadSchema).max(4);
-const footArticulationPayloadSchema = z.array(footArticulationReadSchema).max(4);
+/**
+ * One entry per foot, ENFORCED by the set schemas (`support.ts`). A lane that
+ * poses one foot sends one entry; a lane that sends two for the same foot has
+ * contradicted itself, and the read fails rather than merging them.
+ */
+const footSupportPayloadSchema = footSupportSetSchema;
+const footArticulationPayloadSchema = footArticulationSetSchema;
 
 export const footDomainDefinition: AffordanceDomainDefinition<
   FootStructuralProfile,

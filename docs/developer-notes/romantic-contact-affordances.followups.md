@@ -3,12 +3,21 @@
 Status: active — the slice-2 hardening list, ordered by the owner 2026-07-30
 (step 1 of the post-slice-2 sequence; see the
 [plan](romantic-contact-affordances.plan.md) for the full order). The five
-hardening items all landed 2026-07-30; the sequencing constraints below still
-bind slice 3. Items move to "Done" here as they land.
+hardening items plus the owner's review item all landed 2026-07-30; the
+sequencing constraints below still bind slice 3. Items move to "Done" here as
+they land.
 
 ## Hardening pass (owner-ordered, one small PR)
 
-_Complete — all five landed 2026-07-30. See "Done" below._
+_Complete — all five landed 2026-07-30, plus item 6 from the owner's review of
+that pass. See "Done" below._
+
+6. **Per-side residuals (owner review of items 1–5).** Two follow-ons the owner
+   found in the item-2 work: `undistinguishedInterdigitalClosure` treated a
+   SINGLE supplied foot pose as "agreement" even though an unsided locus may
+   belong to the other, unanswered foot; and the support/articulation payload
+   arrays permitted duplicate sides despite their one-entry-per-foot comments.
+   Both must land before slice 3.
 
 ## Sequencing constraints (owner, 2026-07-30)
 
@@ -41,6 +50,14 @@ _Complete — all five landed 2026-07-30. See "Done" below._
   merges rows sharing a `layerId` by a stated rule per field and reports the
   repair as a `FootwearAnomalyRead`, which the domain files as a
   `foot.footwear.anomaly` warning. Detail: [foot spec](romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
+- **Per-side residuals (owner review)** — 2026-07-30. The unsided-locus closure
+  modifier now applies only when **two distinct feet are supplied and agree**;
+  zero poses, one pose, and disagreement are all the structural-neutral `0` — a
+  single left-foot pose says nothing about the right foot, and an unsided locus
+  may be the right foot. The support and articulation payloads gained
+  `footSupportSetSchema` / `footArticulationSetSchema`, so a repeated side fails
+  the schema (⇒ `invalid`) instead of letting whichever entry was read first win.
+  Detail: [foot spec](romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
 - **Stale ruling comments** — 2026-07-30. `contact/decisions.ts`,
   `contact/state.ts`, and the foot fixtures/tests now state the owner's
   2026-07-30 rulings (adult eligibility, permission scope split, contact storage
