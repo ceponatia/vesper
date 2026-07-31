@@ -12,6 +12,7 @@ import {
   CONTACT_SUPPORT_UNAVAILABLE,
   CONTACT_TARGET_AGENCY_UNAVAILABLE,
 } from "./diagnostics";
+import { contactRejectionReasons, contactUnresolvedReasons } from "./decisions";
 import { contactEntityId } from "./identity";
 import { resolveContactAttempt } from "./resolve";
 import type { ContactResolution } from "./types";
@@ -94,10 +95,10 @@ describe("contact attempt resolution", () => {
       expect(resolution).toMatchObject({ status: "rejected", reason: "actor_control_denied" });
     });
 
-    it("rejects — never commits — when no control owner answered, and says so", () => {
+    it("falls silent — never commits, never refuses — when no control owner answered", () => {
       const sink = new DiagnosticCollector();
       const resolution = run({ context: { actorControl: probeControl("unresolved") } }, sink);
-      expect(resolution).toMatchObject({ status: "rejected", reason: "actor_control_unresolved" });
+      expect(resolution).toMatchObject({ status: "unresolved", reason: "actor_control_unresolved" });
       expect(codes(sink)).toEqual([CONTACT_ACTOR_CONTROL_UNAVAILABLE]);
     });
 
@@ -133,7 +134,7 @@ describe("contact attempt resolution", () => {
         },
         sink,
       );
-      expect(resolution).toMatchObject({ status: "rejected", reason: "target_agency_unresolved" });
+      expect(resolution).toMatchObject({ status: "unresolved", reason: "target_agency_unresolved" });
       expect(codes(sink)).toEqual([CONTACT_TARGET_AGENCY_UNAVAILABLE]);
     });
 
@@ -145,6 +146,31 @@ describe("contact attempt resolution", () => {
         },
       });
       expect(resolution.status).toBe("committable");
+    });
+
+    it("carries the consulted agency decisions onto the committable resolution", () => {
+      // The adjustment records that a body MOVED. Without the decision beside
+      // it, nothing in the commitment can prove that body's own authority
+      // allowed the movement — the answer was checked and then discarded.
+      const resolution = run({
+        context: {
+          adjustments: [probeAdjustment({ subjectId: PROBE_TARGET })],
+          targetAgencies: [probeAgency("allowed"), probeAgency("not_required", affordanceSubjectId("bystander"))],
+        },
+      });
+      expect(resolution.status).toBe("committable");
+      if (resolution.status !== "committable") return;
+      // Only what was CONSULTED: the decision naming the body that moved.
+      expect(resolution.targetAgencies).toEqual([
+        expect.objectContaining({ targetId: PROBE_TARGET, status: "allowed" }),
+      ]);
+    });
+
+    it("carries no agency decision when nothing but the actor moves", () => {
+      const resolution = run({ context: { targetAgencies: [probeAgency("allowed")] } });
+      expect(resolution.status).toBe("committable");
+      if (resolution.status !== "committable") return;
+      expect(resolution.targetAgencies).toEqual([]);
     });
 
     it("rejects a denied target movement", () => {
@@ -168,8 +194,39 @@ describe("contact attempt resolution", () => {
         },
         sink,
       );
-      expect(resolution).toMatchObject({ status: "rejected", reason: "target_agency_unresolved" });
+      expect(resolution).toMatchObject({ status: "unresolved", reason: "target_agency_unresolved" });
       expect(codes(sink)).toEqual([CONTACT_TARGET_AGENCY_UNAVAILABLE]);
+    });
+
+    it("refuses two agency decisions about one body rather than taking the first", () => {
+      // A `find` takes the first hit, so an earlier `allowed` swallows a later
+      // `denied` — the refusal most worth honouring is the one silently lost.
+      // Two answers from one authority about one body is a context built wrong.
+      const sink = new DiagnosticCollector();
+      const resolution = run(
+        {
+          context: {
+            adjustments: [probeAdjustment({ subjectId: PROBE_TARGET })],
+            targetAgencies: [probeAgency("allowed"), probeAgency("denied")],
+          },
+        },
+        sink,
+      );
+      expect(resolution).toMatchObject({ status: "unresolved", reason: "action_invalid" });
+      expect(codes(sink)).toEqual([CONTACT_ACTION_INVALID]);
+      expect(sink.hasErrors).toBe(true);
+    });
+
+    it("refuses a self-contradicting agency list even when nothing moves", () => {
+      // The list is unconsulted here, and it is still a list that contradicts
+      // itself: nothing it says about any body can be trusted.
+      const sink = new DiagnosticCollector();
+      const resolution = run(
+        { context: { targetAgencies: [probeAgency("not_required"), probeAgency("allowed")] } },
+        sink,
+      );
+      expect(resolution).toMatchObject({ status: "unresolved", reason: "action_invalid" });
+      expect(codes(sink)).toEqual([CONTACT_ACTION_INVALID]);
     });
 
     it("refuses an adjustment that moves somebody who is not in this contact", () => {
@@ -205,11 +262,13 @@ describe("contact attempt resolution", () => {
         "target_turn",
         "target_angle",
       ]);
+      // One decision, consulted once, carried once — not once per adjustment.
+      expect(covered.targetAgencies.map((decision) => decision.targetId)).toEqual([PROBE_TARGET]);
       // An answer that only covers the actor authorizes nothing about the target.
       const uncovered = run({
         context: { ...moved, targetAgencies: [probeAgency("allowed", PROBE_ACTOR)] },
       });
-      expect(uncovered).toMatchObject({ status: "rejected", reason: "target_agency_unresolved" });
+      expect(uncovered).toMatchObject({ status: "unresolved", reason: "target_agency_unresolved" });
     });
 
     it("prefers a definite refusal over a missing answer when several bodies move", () => {
@@ -242,22 +301,22 @@ describe("contact attempt resolution", () => {
       expect(resolution).toMatchObject({ status: "rejected", reason: "participant_ineligible" });
     });
 
-    it("rejects unresolved eligibility rather than guessing", () => {
+    it("falls silent on unresolved eligibility rather than guessing or refusing", () => {
       const sink = new DiagnosticCollector();
       const resolution = run(
         { intent: { actionKind: "romantic" }, context: { participantEligibility: probeEligibility("unresolved") } },
         sink,
       );
-      expect(resolution).toMatchObject({ status: "rejected", reason: "participant_eligibility_unresolved" });
+      expect(resolution).toMatchObject({ status: "unresolved", reason: "participant_eligibility_unresolved" });
       expect(codes(sink)).toEqual([CONTACT_ELIGIBILITY_UNAVAILABLE]);
     });
 
-    it("rejects an eligibility answer that covers only one participant", () => {
+    it("falls silent on an eligibility answer that covers only one participant", () => {
       const resolution = run({
         intent: { actionKind: "romantic" },
         context: { participantEligibility: probeEligibility("eligible", [PROBE_ACTOR]) },
       });
-      expect(resolution).toMatchObject({ status: "rejected", reason: "participant_eligibility_unresolved" });
+      expect(resolution).toMatchObject({ status: "unresolved", reason: "participant_eligibility_unresolved" });
     });
 
     it("does not demand eligibility for ordinary affectionate contact", () => {
@@ -276,15 +335,18 @@ describe("contact attempt resolution", () => {
       expect(resolution).toMatchObject({ status: "rejected", reason });
     });
 
-    it("rejects when no permission owner answered", () => {
-      const sink = new DiagnosticCollector();
-      const resolution = run(
-        { intent: { actionKind: "romantic" }, context: { policy: probePolicy("unresolved") } },
-        sink,
-      );
-      expect(resolution).toMatchObject({ status: "rejected", reason: "permission_unresolved" });
-      expect(codes(sink)).toEqual([CONTACT_PERMISSION_UNAVAILABLE]);
-    });
+    it.each(["unresolved", "not_required"] as const)(
+      "falls silent rather than refusing when permission is %s",
+      (status) => {
+        const sink = new DiagnosticCollector();
+        const resolution = run(
+          { intent: { actionKind: "romantic" }, context: { policy: probePolicy(status) } },
+          sink,
+        );
+        expect(resolution).toMatchObject({ status: "unresolved", reason: "permission_unresolved" });
+        expect(codes(sink)).toEqual([CONTACT_PERMISSION_UNAVAILABLE]);
+      },
+    );
 
     it("never widens a grant to a scope it does not name", () => {
       const sink = new DiagnosticCollector();
@@ -471,4 +533,70 @@ describe("contact attempt resolution", () => {
     });
   });
 
+  describe("the rejection / unresolved line", () => {
+    it("keeps every unanswered authority out of the rejection vocabulary", () => {
+      // Guidance MANDATES that the narrator resolve a `rejected` outcome. A
+      // reason that means "nobody answered" therefore cannot live there: the
+      // narrator would write a character declining something nobody asked her,
+      // because an adapter was silent.
+      expect(contactRejectionReasons.filter((reason) => reason.endsWith("_unresolved"))).toEqual([]);
+      for (const reason of [
+        "actor_control_unresolved",
+        "target_agency_unresolved",
+        "participant_eligibility_unresolved",
+        "permission_unresolved",
+      ] as const) {
+        expect(contactUnresolvedReasons).toContain(reason);
+      }
+    });
+
+    it("keeps every answered refusal in the rejection vocabulary", () => {
+      // The mirror law: a denial, a withdrawal, a grant that does not cover
+      // this, an ineligible participant, and an unreachable surface are all
+      // ANSWERS, and silence would throw away a beat the fiction owns.
+      for (const reason of [
+        "actor_control_denied",
+        "target_agency_denied",
+        "participant_ineligible",
+        "permission_denied",
+        "permission_withdrawn",
+        "permission_scope_missing",
+        "out_of_reach",
+      ] as const) {
+        expect(contactRejectionReasons).toContain(reason);
+      }
+    });
+
+    it("emits a diagnostic for every unresolved authority and none for a refusal", () => {
+      const silent: Parameters<typeof run>[0][] = [
+        { context: { actorControl: probeControl("denied") } },
+        { intent: { actionKind: "romantic" }, context: { participantEligibility: probeEligibility("ineligible") } },
+        { intent: { actionKind: "romantic" }, context: { policy: probePolicy("denied") } },
+        { context: { geometry: adapterSupported(probeGeometry("out_of_reach")) } },
+      ];
+      for (const input of silent) {
+        const sink = new DiagnosticCollector();
+        expect(run(input, sink).status).toBe("rejected");
+        expect(sink.items).toEqual([]);
+      }
+
+      const reported: Parameters<typeof run>[0][] = [
+        { context: { actorControl: probeControl("unresolved") } },
+        { intent: { actionKind: "romantic" }, context: { participantEligibility: probeEligibility("unresolved") } },
+        { intent: { actionKind: "romantic" }, context: { policy: probePolicy("unresolved") } },
+        {
+          context: {
+            adjustments: [probeAdjustment({ subjectId: PROBE_TARGET })],
+            targetAgencies: [probeAgency("unresolved")],
+          },
+        },
+      ];
+      for (const input of reported) {
+        const sink = new DiagnosticCollector();
+        expect(run(input, sink).status).toBe("unresolved");
+        expect(sink.items).toHaveLength(1);
+        expect(sink.hasErrors).toBe(false);
+      }
+    });
+  });
 });

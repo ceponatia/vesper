@@ -16,6 +16,7 @@ import {
   endUnauthorizedContacts,
   recomposeContactTransmission,
   replayContactCommits,
+  type CommittedContactOutcome,
   type ContactCommitOutcome,
   type ContactLifecycleState,
 } from "./lifecycle";
@@ -26,6 +27,8 @@ import {
   PROBE_ACTOR,
   PROBE_EVENT,
   PROBE_TARGET,
+  probeAdjustment,
+  probeAgency,
   probeAttempt,
   probeBodySurface,
   probeEligibility,
@@ -40,6 +43,21 @@ function committable(intent: Partial<ContactActionIntent> = {}): CommittableCont
   return resolution;
 }
 
+/**
+ * Commit, narrowed to the branch that produced a contact.
+ *
+ * Almost every case here is about a contact that DID start, and the union's
+ * whole point is that reading one off a refusal is impossible — so the tests
+ * narrow once, here, and a case that unexpectedly refuses fails loudly rather
+ * than quietly reading `undefined`. The refusal branch has its own cases, which
+ * call `commitContactResolution` directly.
+ */
+function mustCommit(request: Parameters<typeof commitContactResolution>[0]): CommittedContactOutcome {
+  const outcome = commitContactResolution(request);
+  if (outcome.status !== "committed") throw new Error(`fixture was refused: ${outcome.reason}`);
+  return outcome;
+}
+
 function committableWith(layers: readonly ContactMaterialLayerRead[]): CommittableContactResolution {
   const attempt = probeAttempt({ context: { material: adapterSupported({ layers, evidence: [] }) } });
   const resolution = resolveContactAttempt(attempt);
@@ -52,7 +70,21 @@ function committableThrough(layerIds: readonly string[]): CommittableContactReso
 }
 
 function start(state: ContactLifecycleState = emptyContactLifecycleState()) {
-  return commitContactResolution({ state, resolution: committable(), eventRef: PROBE_EVENT });
+  return mustCommit({ state, resolution: committable(), eventRef: PROBE_EVENT });
+}
+
+/** A contact that folded in a movement of the TARGET's body, with the answer that allowed it. */
+function committableWithAgency(intent: Partial<ContactActionIntent> = {}): CommittableContactResolution {
+  const attempt = probeAttempt({
+    intent,
+    context: {
+      adjustments: [probeAdjustment({ subjectId: PROBE_TARGET })],
+      targetAgencies: [probeAgency("allowed")],
+    },
+  });
+  const resolution = resolveContactAttempt(attempt);
+  if (resolution.status !== "committable") throw new Error(`fixture did not commit: ${resolution.status}`);
+  return resolution;
 }
 
 /** A romantic contact — the kind whose authorization can lapse under it. */
@@ -97,6 +129,22 @@ describe("contact lifecycle", () => {
       expect(contact.actorControl.status).toBe("allowed");
       expect(contact.participantEligibility.status).toBe("eligible");
       expect(contact.policy.status).toBe("allowed");
+      expect(contact.targetAgencies).toEqual([]);
+    });
+
+    it("carries the agency proof for every body its adjustments moved", () => {
+      // `implicitAdjustments` is a durable claim that a body MOVED. Without the
+      // decision beside it, the committed record cannot prove — later and out of
+      // context — that the body's own authority allowed the movement.
+      const { contact } = mustCommit({
+        state: emptyContactLifecycleState(),
+        resolution: committableWithAgency(),
+        eventRef: PROBE_EVENT,
+      });
+      expect(contact.implicitAdjustments.map((adjustment) => adjustment.subjectId)).toEqual([PROBE_TARGET]);
+      expect(contact.targetAgencies).toEqual([
+        expect.objectContaining({ targetId: PROBE_TARGET, status: "allowed" }),
+      ]);
     });
 
     it("leaves unstated pressure and area unknown rather than guessing a floor", () => {
@@ -107,7 +155,7 @@ describe("contact lifecycle", () => {
     });
 
     it("carries stated pressure, area, and motion path in order", () => {
-      const { contact } = commitContactResolution({
+      const { contact } = mustCommit({
         state: emptyContactLifecycleState(),
         resolution: committable({
           requestedPressure: "moderate",
@@ -133,7 +181,7 @@ describe("contact lifecycle", () => {
   describe("continue and update", () => {
     it("re-asserting an unchanged contact writes nothing and keeps the id", () => {
       const first = start();
-      const again = commitContactResolution({
+      const again = mustCommit({
         state: first.state,
         resolution: committable(),
         eventRef: contactEventRef("later_event"),
@@ -146,7 +194,7 @@ describe("contact lifecycle", () => {
 
     it("updates in place when the physical content changes", () => {
       const first = start();
-      const changed = commitContactResolution({
+      const changed = mustCommit({
         state: first.state,
         resolution: committable({ requestedPressure: "firm", storyTime: 140 }),
         eventRef: contactEventRef("later_event"),
@@ -159,6 +207,24 @@ describe("contact lifecycle", () => {
       expect(changed.state.contacts).toHaveLength(1);
       if (changed.commit.kind !== "contact_updated") return;
       expect(changed.commit.snapshot.pressure).toBe("firm");
+    });
+
+    it("keeps the start agency proof when a later assertion moves nobody", () => {
+      // Start identity, exactly like the three decisions beside it: the proof
+      // belongs to the contact that began. A later assertion that folds in no
+      // movement is not evidence that the first movement was unauthorized.
+      const moved = mustCommit({
+        state: emptyContactLifecycleState(),
+        resolution: committableWithAgency(),
+        eventRef: PROBE_EVENT,
+      });
+      const changed = mustCommit({
+        state: moved.state,
+        resolution: committable({ requestedPressure: "firm", storyTime: 140 }),
+        eventRef: contactEventRef("later_event"),
+      });
+      expect(changed.commit.kind).toBe("contact_updated");
+      expect(changed.contact.targetAgencies).toEqual(moved.contact.targetAgencies);
     });
 
     it("keeps the start orientation when the other side asserts a changed contact", () => {
@@ -178,7 +244,7 @@ describe("contact lifecycle", () => {
       });
       const resolution = resolveContactAttempt(swapped);
       if (resolution.status !== "committable") throw new Error("fixture did not commit");
-      const changed = commitContactResolution({
+      const changed = mustCommit({
         state: first.state,
         resolution,
         eventRef: contactEventRef("swapped_change"),
@@ -197,7 +263,7 @@ describe("contact lifecycle", () => {
     it("ends the contact and starts a new one when the action framing changes", () => {
       const sink = new DiagnosticCollector();
       const affectionate = start();
-      const escalated = commitContactResolution({
+      const escalated = mustCommit({
         state: affectionate.state,
         resolution: romantic({ storyTime: 140 }),
         eventRef: contactEventRef("romantic_event"),
@@ -215,12 +281,12 @@ describe("contact lifecycle", () => {
 
     it("will not let an assertion older than the projection rewrite it", () => {
       const sink = new DiagnosticCollector();
-      const first = commitContactResolution({
+      const first = mustCommit({
         state: emptyContactLifecycleState(),
         resolution: committable({ requestedPressure: "firm", storyTime: 200 }),
         eventRef: PROBE_EVENT,
       });
-      const stale = commitContactResolution({
+      const stale = mustCommit({
         state: first.state,
         resolution: committable({ requestedPressure: "trace", storyTime: 150 }),
         eventRef: contactEventRef("stale_event"),
@@ -239,12 +305,12 @@ describe("contact lifecycle", () => {
       // contact at a story time before its own last update and replacing it
       // with one whose start predates what it displaced.
       const sink = new DiagnosticCollector();
-      const live = commitContactResolution({
+      const live = mustCommit({
         state: emptyContactLifecycleState(),
         resolution: committable({ requestedPressure: "firm", storyTime: 200 }),
         eventRef: PROBE_EVENT,
       });
-      const stale = commitContactResolution({
+      const stale = mustCommit({
         state: live.state,
         resolution: romantic({ storyTime: 150 }),
         eventRef: contactEventRef("stale_romantic_event"),
@@ -262,7 +328,7 @@ describe("contact lifecycle", () => {
 
     it("counts a change of what is between as a change", () => {
       const bare = start();
-      const dressed = commitContactResolution({
+      const dressed = mustCommit({
         state: bare.state,
         resolution: committableThrough(["sock"]),
         eventRef: contactEventRef("sock_event"),
@@ -276,12 +342,12 @@ describe("contact lifecycle", () => {
       // sock soaking through keeps its id while its permeability moves. An
       // id-only fingerprint continued here and the projection kept the dry
       // snapshot for every observation downstream to read.
-      const dry = commitContactResolution({
+      const dry = mustCommit({
         state: emptyContactLifecycleState(),
         resolution: committableWith([probeLayer("sock")]),
         eventRef: PROBE_EVENT,
       });
-      const soaked = commitContactResolution({
+      const soaked = mustCommit({
         state: dry.state,
         resolution: committableWith([
           { ...probeLayer("sock"), moistureTransmission: toUnitInterval(9_500) },
@@ -298,12 +364,12 @@ describe("contact lifecycle", () => {
     });
 
     it("still continues for layers whose content is identical", () => {
-      const first = commitContactResolution({
+      const first = mustCommit({
         state: emptyContactLifecycleState(),
         resolution: committableWith([probeLayer("sock"), probeLayer("boot", 1)]),
         eventRef: PROBE_EVENT,
       });
-      const again = commitContactResolution({
+      const again = mustCommit({
         state: first.state,
         resolution: committableWith([probeLayer("sock"), probeLayer("boot", 1)]),
         eventRef: contactEventRef("later_event"),
@@ -317,12 +383,12 @@ describe("contact lifecycle", () => {
       // itself fingerprinted, so where a layer sits in the array the adapter
       // handed over is a presentation detail rather than a physical claim.
       const stack = [probeLayer("sock", 0), probeLayer("boot", 1)];
-      const first = commitContactResolution({
+      const first = mustCommit({
         state: emptyContactLifecycleState(),
         resolution: committableWith(stack),
         eventRef: PROBE_EVENT,
       });
-      const reversed = commitContactResolution({
+      const reversed = mustCommit({
         state: first.state,
         resolution: committableWith([...stack].reverse()),
         eventRef: contactEventRef("reordered_event"),
@@ -344,7 +410,7 @@ describe("contact lifecycle", () => {
       const resolution = resolveContactAttempt(swapped);
       expect(resolution.status).toBe("committable");
       if (resolution.status !== "committable") return;
-      const second = commitContactResolution({
+      const second = mustCommit({
         state: first.state,
         resolution,
         eventRef: contactEventRef("swapped_event"),
@@ -359,7 +425,7 @@ describe("contact lifecycle", () => {
       const other = probeAttempt({ intent: { source: probeBodySurface(PROBE_ACTOR, "lips") } });
       const resolution = resolveContactAttempt(other);
       if (resolution.status !== "committable") throw new Error("fixture did not commit");
-      const second = commitContactResolution({
+      const second = mustCommit({
         state: first.state,
         resolution,
         eventRef: contactEventRef("second_event"),
@@ -408,7 +474,7 @@ describe("contact lifecycle", () => {
         storyTime: 200,
         eventRef: contactEventRef("end_event"),
       });
-      const restarted = commitContactResolution({
+      const restarted = mustCommit({
         state,
         resolution: committable({ storyTime: 300 }),
         eventRef: contactEventRef("restart_event"),
@@ -443,11 +509,48 @@ describe("contact lifecycle", () => {
       expect(sink.hasErrors).toBe(true);
     });
 
+    it("will not end a contact at a story time before its own last update", () => {
+      // `endedAt < lastUpdatedAt` is a durable claim that the contact stopped
+      // before the last thing known about it happened — a replay then sees a
+      // contact that ended before it was last touched.
+      const sink = new DiagnosticCollector();
+      const started = start();
+      const updated = mustCommit({
+        state: started.state,
+        resolution: committable({ requestedPressure: "firm", storyTime: 200 }),
+        eventRef: contactEventRef("update_event"),
+      });
+      const stale = endContact({
+        state: updated.state,
+        contactId: updated.contact.contactId,
+        reason: "withdrawn",
+        storyTime: 150,
+        eventRef: contactEventRef("stale_end"),
+        sink,
+      });
+      expect(stale.commit).toBeNull();
+      expect(stale.state).toBe(updated.state);
+      expect(activeContact(stale.state, updated.contact.contactId)).toBeDefined();
+      expect(sink.items.map((item) => item.code)).toEqual([CONTACT_LIFECYCLE_INVALID]);
+      expect(sink.hasErrors).toBe(false);
+
+      // The same end at a current story time still closes it.
+      const current = endContact({
+        state: updated.state,
+        contactId: updated.contact.contactId,
+        reason: "withdrawn",
+        storyTime: 200,
+        eventRef: contactEventRef("current_end"),
+      });
+      expect(current.commit?.storyTime).toBe(200);
+      expect(current.state.contacts).toEqual([]);
+    });
+
     it("ends everything deterministically on a scene change", () => {
       const first = start();
       const other = resolveContactAttempt(probeAttempt({ intent: { source: probeBodySurface(PROBE_ACTOR, "lips") } }));
       if (other.status !== "committable") throw new Error("fixture did not commit");
-      const both = commitContactResolution({
+      const both = mustCommit({
         state: first.state,
         resolution: other,
         eventRef: contactEventRef("second_event"),
@@ -462,6 +565,38 @@ describe("contact lifecycle", () => {
       expect(ended.commits).toHaveLength(2);
       expect(ended.commits.map((commit) => commit.contactId)).toEqual(both.state.contacts.map((c) => c.contactId));
     });
+
+    it("leaves a contact newer than the scene exit alive rather than back-dating its end", () => {
+      // The ruling for an exit asserted from the past: per contact, not per
+      // request. Refusing the whole exit would throw away the ends of every
+      // contact it legitimately covers; ending the newer one anyway would stamp
+      // `endedAt` before facts already committed about it.
+      const sink = new DiagnosticCollector();
+      const older = start();
+      const otherAttempt = probeAttempt({
+        intent: { source: probeBodySurface(PROBE_ACTOR, "lips"), storyTime: 300 },
+      });
+      const otherResolution = resolveContactAttempt(otherAttempt);
+      if (otherResolution.status !== "committable") throw new Error("fixture did not commit");
+      const newer = mustCommit({
+        state: older.state,
+        resolution: otherResolution,
+        eventRef: contactEventRef("newer_event"),
+      });
+
+      const ended = endAllContacts({
+        state: newer.state,
+        reason: "scene_changed",
+        storyTime: 200,
+        eventRef: contactEventRef("stale_scene_event"),
+        sink,
+      });
+      expect(ended.commits.map((commit) => commit.contactId)).toEqual([older.contact.contactId]);
+      expect(ended.state.contacts.map((contact) => contact.contactId)).toEqual([newer.contact.contactId]);
+      expect(sink.items.map((item) => item.code)).toEqual([CONTACT_LIFECYCLE_INVALID]);
+      // The stream and the projection still agree.
+      expect(replayContactCommits({ commits: [...streamOf(older, newer), ...ended.commits] })).toEqual(ended.state);
+    });
   });
 
   describe("projection invariants", () => {
@@ -472,7 +607,7 @@ describe("contact lifecycle", () => {
     });
 
     it("keeps the stored composition in step with the stored layers", () => {
-      const { contact } = commitContactResolution({
+      const { contact } = mustCommit({
         state: emptyContactLifecycleState(),
         resolution: committableThrough(["sock", "boot"]),
         eventRef: PROBE_EVENT,
@@ -485,7 +620,7 @@ describe("contact lifecycle", () => {
       // replays back into existence on the next branch restore, and nothing
       // downstream can tell the drop apart from a contact that really ended.
       const sink = new DiagnosticCollector();
-      const outcomes: ContactCommitOutcome[] = [];
+      const outcomes: CommittedContactOutcome[] = [];
       let state = emptyContactLifecycleState();
       for (let index = 0; index < 20; index += 1) {
         const attempt = probeAttempt({
@@ -493,7 +628,7 @@ describe("contact lifecycle", () => {
         });
         const resolution = resolveContactAttempt(attempt);
         if (resolution.status !== "committable") throw new Error("fixture did not commit");
-        const outcome = commitContactResolution({
+        const outcome = mustCommit({
           state,
           resolution,
           eventRef: contactEventRef(`event_${index}`),
@@ -510,17 +645,66 @@ describe("contact lifecycle", () => {
       // The stream and the projection agree — nothing left without an event.
       expect(replayContactCommits({ commits: streamOf(...outcomes) })).toEqual(state);
     });
+
+    it("refuses a new contact rather than evicting a victim it cannot end honestly", () => {
+      // Capacity's victims are unrelated pairs, so the stale-assertion guard —
+      // which is about the pair being asserted — protects none of them. An
+      // assertion perfectly current for its own contact can still be older than
+      // the contact eviction would destroy, and ending that one would stamp
+      // `endedAt` before its own last update.
+      const sink = new DiagnosticCollector();
+      let state = emptyContactLifecycleState();
+      for (let index = 0; index < 16; index += 1) {
+        const attempt = probeAttempt({
+          intent: { source: probeBodySurface(PROBE_ACTOR, "hands", `finger_${index}`), storyTime: 200 + index },
+        });
+        const resolution = resolveContactAttempt(attempt);
+        if (resolution.status !== "committable") throw new Error("fixture did not commit");
+        state = mustCommit({ state, resolution, eventRef: contactEventRef(`event_${index}`) }).state;
+      }
+      expect(state.contacts).toHaveLength(16);
+
+      const lateAttempt = probeAttempt({
+        intent: { source: probeBodySurface(PROBE_ACTOR, "lips"), storyTime: 150 },
+      });
+      const lateResolution = resolveContactAttempt(lateAttempt);
+      if (lateResolution.status !== "committable") throw new Error("fixture did not commit");
+      const refused = commitContactResolution({
+        state,
+        resolution: lateResolution,
+        eventRef: contactEventRef("late_event"),
+        sink,
+      });
+
+      expect(refused.status).toBe("refused");
+      if (refused.status !== "refused") return;
+      expect(refused.reason).toBe("capacity_blocked_by_newer_contact");
+      // Nothing written, nothing ended, nothing dropped.
+      expect(refused.state).toBe(state);
+      expect(refused.state.contacts).toHaveLength(16);
+      expect(contactCommitEvents(refused)).toEqual([]);
+      expect(refused.blockedBy).toHaveLength(1);
+      const blocked = refused.blockedBy[0];
+      expect(blocked !== undefined && activeContact(state, blocked) !== undefined).toBe(true);
+      expect(sink.items.map((item) => item.code)).toEqual([CONTACT_LIFECYCLE_INVALID]);
+      expect(sink.hasErrors).toBe(false);
+
+      // A refusal has no contact and no commit to read off it — the union is
+      // the guarantee, and this is its runtime shadow.
+      expect(refused).not.toHaveProperty("contact");
+      expect(refused).not.toHaveProperty("commit");
+    });
   });
 
   describe("replay", () => {
     it("folds a stream back into the projection it came from", () => {
       const started = start();
-      const held = commitContactResolution({
+      const held = mustCommit({
         state: started.state,
         resolution: committable(),
         eventRef: contactEventRef("held_event"),
       });
-      const changed = commitContactResolution({
+      const changed = mustCommit({
         state: held.state,
         resolution: committable({ requestedPressure: "moderate", storyTime: 140 }),
         eventRef: contactEventRef("changed_event"),
@@ -540,7 +724,7 @@ describe("contact lifecycle", () => {
       // A patch cannot express removal. An update event that simply omitted the
       // pressure it no longer has replays as the pressure the contact used to
       // carry — the projection is right and the durable record is wrong.
-      const stated = commitContactResolution({
+      const stated = mustCommit({
         state: emptyContactLifecycleState(),
         resolution: committable({
           requestedPressure: "firm",
@@ -549,7 +733,7 @@ describe("contact lifecycle", () => {
         }),
         eventRef: PROBE_EVENT,
       });
-      const cleared = commitContactResolution({
+      const cleared = mustCommit({
         state: stated.state,
         resolution: committable({ storyTime: 140 }),
         eventRef: contactEventRef("cleared_event"),
@@ -583,7 +767,7 @@ describe("contact lifecycle", () => {
     it("reports a stream that contradicts the projection instead of guessing", () => {
       const sink = new DiagnosticCollector();
       const started = start();
-      const changed = commitContactResolution({
+      const changed = mustCommit({
         state: started.state,
         resolution: committable({ requestedPressure: "firm", storyTime: 140 }),
         eventRef: contactEventRef("changed_event"),
@@ -603,7 +787,7 @@ describe("contact lifecycle", () => {
 
   describe("authorization that lapses under a live contact", () => {
     function liveRomantic() {
-      return commitContactResolution({
+      return mustCommit({
         state: emptyContactLifecycleState(),
         resolution: romantic(),
         eventRef: PROBE_EVENT,
@@ -612,9 +796,10 @@ describe("contact lifecycle", () => {
 
     /** Re-check one live contact against a fresh answer — or against silence. */
     function sweep(
-      live: ContactCommitOutcome,
+      live: CommittedContactOutcome,
       current?: { policy?: ReturnType<typeof probePolicy>; eligibility?: ReturnType<typeof probeEligibility> },
       sink?: DiagnosticCollector,
+      storyTime = 300,
     ) {
       return endUnauthorizedContacts({
         state: live.state,
@@ -628,7 +813,7 @@ describe("contact lifecycle", () => {
                   policy: current.policy ?? probePolicy("allowed", "romantic"),
                 },
               ],
-        storyTime: 300,
+        storyTime,
         eventRef: contactEventRef("sweep_event"),
         ...(sink === undefined ? {} : { sink }),
       });
@@ -674,6 +859,22 @@ describe("contact lifecycle", () => {
       const swept = sweep(liveRomantic(), {});
       expect(swept.commits).toEqual([]);
       expect(swept.state.contacts).toHaveLength(1);
+    });
+
+    it("leaves a contact newer than the sweep alive rather than back-dating its end", () => {
+      // A sweep is a read of what is true NOW, so one stamped before a
+      // contact's own last update is an out-of-order write. The contact is
+      // carried to the next sweep — a lapsed authorization does not un-lapse.
+      const sink = new DiagnosticCollector();
+      const live = liveRomantic();
+      const swept = sweep(live, { policy: probePolicy("withdrawn", "romantic") }, sink, 50);
+      expect(swept.commits).toEqual([]);
+      expect(swept.state.contacts.map((contact) => contact.contactId)).toEqual([live.contact.contactId]);
+      expect(sink.items.map((item) => item.code)).toEqual([CONTACT_LIFECYCLE_INVALID]);
+
+      // The same withdrawal at a current story time still ends it.
+      const later = sweep(live, { policy: probePolicy("withdrawn", "romantic") });
+      expect(later.commits.map((commit) => commit.reason)).toEqual(["policy_withdrawn"]);
     });
   });
 });

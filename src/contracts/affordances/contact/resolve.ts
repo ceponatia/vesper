@@ -26,6 +26,7 @@ import {
   type ContactAdjustmentProposal,
   type ContactMinimalPoseAdjustment,
   type ContactRejectionReason,
+  type ContactTargetAgencyDecision,
   type ContactUnresolvedReason,
 } from "./decisions";
 import {
@@ -76,13 +77,25 @@ import type {
  *
  * ## Rejected, unresolved, and transition-required
  *
- * A **rejection** is an answer the fiction can carry: she is out of reach, the
- * permission is not there, the player does not control that body. It gets no
- * diagnostic, and the narrator seam mandates that the narrator resolve it.
+ * A **rejection** is an answer somebody gave: she is out of reach, the
+ * permission was denied or withdrawn, the grant does not cover this, the player
+ * does not control that body, she would not move. It gets no diagnostic (except
+ * the scope case, which a permission UI wants to see), and the narrator seam
+ * mandates that the narrator resolve it in the fiction.
  *
- * **Unresolved** means the world could not be read — a missing pose owner, an
- * unparseable intent. It gets a diagnostic and produces narrator SILENCE, not an
- * explanation of the world's uncertainty.
+ * **Unresolved** means the world could not be READ — a missing pose owner, an
+ * authority that never answered, an unparseable intent. It gets a diagnostic and
+ * produces narrator SILENCE.
+ *
+ * The line between them is who spoke, not how bad the news is
+ * (**corrected 2026-07-31 by the owner**). Unresolved actor control, a missing
+ * or `unresolved` agency answer, unresolved-or-uncovered eligibility, and an
+ * unanswered permission all used to return `rejected`, so a narrator obliged to
+ * resolve a refusal invented one — a character was written declining something
+ * nobody had asked her about, because an adapter was silent. All four now return
+ * `unresolved` with the diagnostics they already emitted: the gap surfaces
+ * through the diagnostics channel and the debug UI, which is where a missing
+ * owner belongs, and never through the fiction.
  *
  * **Explicit transition required** means the attempt is legal but the scene has
  * to do something visible first. That is the plan's central anti-cheat: the
@@ -174,6 +187,33 @@ function movedNonActorSubjects(
   return subjects;
 }
 
+/**
+ * The first body two agency decisions both claim to answer for, if any.
+ *
+ * Coverage is matched by first hit, and a first hit is only trustworthy when
+ * there is exactly one: two decisions naming the same body let an earlier
+ * `allowed` swallow a later `denied`, so the movement most likely to matter is
+ * the one silently discarded. There is no principled tie-break either — the two
+ * answers claim the same authority over the same body, and picking the harsher
+ * one would still be this layer inventing which of an adapter's two statements
+ * it meant.
+ *
+ * So a duplicate is a context built wrong, not a story fact: `action_invalid`
+ * with an `error`, exactly like a decision about a different actor. Checked over
+ * the WHOLE list rather than only the consulted part — a list that contradicts
+ * itself about one body says nothing reliable about the others.
+ */
+function duplicateAgencyTarget(
+  decisions: readonly ContactTargetAgencyDecision[],
+): AffordanceSubjectId | undefined {
+  const seen = new Set<AffordanceSubjectId>();
+  for (const decision of decisions) {
+    if (seen.has(decision.targetId)) return decision.targetId;
+    seen.add(decision.targetId);
+  }
+  return undefined;
+}
+
 export function resolveContactAttempt(request: ContactResolveRequest): ContactResolution {
   const { intent, context, sink } = request;
   const evidence: EvidenceLists = [];
@@ -199,14 +239,24 @@ export function resolveContactAttempt(request: ContactResolveRequest): ContactRe
       severity: "error",
     });
   }
+  const duplicateTarget = duplicateAgencyTarget(context.targetAgencies);
+  if (duplicateTarget !== undefined) {
+    return unresolved("action_invalid", evidence, {
+      sink,
+      code: CONTACT_ACTION_INVALID,
+      message: `two target-agency decisions answer for the same body "${duplicateTarget}"`,
+      severity: "error",
+    });
+  }
   switch (context.actorControl.status) {
     case "denied":
       return reject("actor_control_denied", evidence);
     case "unresolved":
-      sink?.push(
-        diag("warn", CONTACT_ACTOR_CONTROL_UNAVAILABLE, "no actor-control owner answered for the initiating movement"),
-      );
-      return reject("actor_control_unresolved", evidence);
+      return unresolved("actor_control_unresolved", evidence, {
+        sink,
+        code: CONTACT_ACTOR_CONTROL_UNAVAILABLE,
+        message: "no actor-control owner answered for the initiating movement",
+      });
     case "allowed":
       break;
   }
@@ -229,12 +279,17 @@ export function resolveContactAttempt(request: ContactResolveRequest): ContactRe
   // authority — one per moved body, matched by identity. A decision about one
   // character can never be spent on a movement of another.
   const movedSubjects = movedNonActorSubjects(context.adjustments, intent.actorId);
+  // The decisions actually spent on this attempt, kept so the commitment can
+  // carry the proof rather than only the movement it authorized.
+  const consultedAgencies: ContactTargetAgencyDecision[] = [];
   if (movedSubjects.length > 0) {
     const decisions = movedSubjects.map((subjectId) =>
       context.targetAgencies.find((decision) => decision.targetId === subjectId),
     );
     for (const decision of decisions) {
-      if (decision !== undefined) evidence.push(decision.evidence);
+      if (decision === undefined) continue;
+      evidence.push(decision.evidence);
+      consultedAgencies.push(decision);
     }
     // A definite refusal outranks a missing answer: "she would not move" is a
     // beat the narrator can carry, and reporting it as unreadable would throw
@@ -243,14 +298,11 @@ export function resolveContactAttempt(request: ContactResolveRequest): ContactRe
       return reject("target_agency_denied", evidence);
     }
     if (decisions.some((decision) => decision?.status !== "allowed")) {
-      sink?.push(
-        diag(
-          "warn",
-          CONTACT_TARGET_AGENCY_UNAVAILABLE,
-          "a voluntary movement has no behaviour authority for every body it moves",
-        ),
-      );
-      return reject("target_agency_unresolved", evidence);
+      return unresolved("target_agency_unresolved", evidence, {
+        sink,
+        code: CONTACT_TARGET_AGENCY_UNAVAILABLE,
+        message: "a voluntary movement has no behaviour authority for every body it moves",
+      });
     }
   }
 
@@ -264,16 +316,13 @@ export function resolveContactAttempt(request: ContactResolveRequest): ContactRe
       return reject("participant_ineligible", evidence);
     }
     if (context.participantEligibility.status !== "eligible" || !covered) {
-      sink?.push(
-        diag(
-          "warn",
-          CONTACT_ELIGIBILITY_UNAVAILABLE,
-          covered
-            ? "adult eligibility is unresolved for this contact"
-            : "adult eligibility does not cover every participant",
-        ),
-      );
-      return reject("participant_eligibility_unresolved", evidence);
+      return unresolved("participant_eligibility_unresolved", evidence, {
+        sink,
+        code: CONTACT_ELIGIBILITY_UNAVAILABLE,
+        message: covered
+          ? "adult eligibility is unresolved for this contact"
+          : "adult eligibility does not cover every participant",
+      });
     }
   }
 
@@ -286,10 +335,11 @@ export function resolveContactAttempt(request: ContactResolveRequest): ContactRe
         return reject("permission_withdrawn", evidence);
       case "unresolved":
       case "not_required":
-        sink?.push(
-          diag("warn", CONTACT_PERMISSION_UNAVAILABLE, "no permission owner answered for this interpersonal contact"),
-        );
-        return reject("permission_unresolved", evidence);
+        return unresolved("permission_unresolved", evidence, {
+          sink,
+          code: CONTACT_PERMISSION_UNAVAILABLE,
+          message: "no permission owner answered for this interpersonal contact",
+        });
       case "allowed":
         break;
     }
@@ -414,6 +464,7 @@ export function resolveContactAttempt(request: ContactResolveRequest): ContactRe
       evidence: merged,
     },
     actorControl: context.actorControl,
+    targetAgencies: consultedAgencies,
     participantEligibility: context.participantEligibility,
     policy: context.policy,
     evidence: merged,

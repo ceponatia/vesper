@@ -243,6 +243,17 @@ export type ContactResolution =
       readonly intent: ContactActionIntent;
       readonly access: ContactAccessResult;
       readonly actorControl: ContactActorControlDecision;
+      /**
+       * The agency decisions the resolver actually CONSULTED — one per non-actor
+       * body an admitted adjustment moves, each naming that body.
+       *
+       * Empty is the ordinary case (nothing but the actor moved). Carried rather
+       * than discarded because `access.implicitAdjustments` records that a body
+       * was moved while nothing recorded that its own authority allowed it: the
+       * decision was checked and then thrown away, so the committed contact could
+       * not prove, later and out of context, that the movement was authorized.
+       */
+      readonly targetAgencies: readonly ContactTargetAgencyDecision[];
       readonly participantEligibility: ContactParticipantEligibilityRead;
       readonly policy: ContactInteractionPolicyRead;
       readonly evidence: readonly AffordanceEvidence[];
@@ -287,12 +298,13 @@ export function isCommittableContactResolution(
  * observation must fall silent rather than describe the lightest thing that
  * could be true.
  *
- * The three decisions are carried rather than dropped so the committed record can
- * prove, later and out of context, WHY it was allowed to exist. All three are
- * START IDENTITY like the orientation beside them: they justify the contact that
- * began, and a later assertion — possibly from the other side — cannot rewrite
- * them. Authorization that changes AFTER a contact is live is not an update; it
- * ends the contact (`endUnauthorizedContacts`) or blocks the next attempt.
+ * The four authorization records are carried rather than dropped so the
+ * committed record can prove, later and out of context, WHY it was allowed to
+ * exist. All four are START IDENTITY like the orientation beside them: they
+ * justify the contact that began, and a later assertion — possibly from the
+ * other side — cannot rewrite them. Authorization that changes AFTER a contact
+ * is live is not an update; it ends the contact (`endUnauthorizedContacts`) or
+ * blocks the next attempt.
  */
 export interface CommittedContactRead {
   readonly phase: "active";
@@ -320,6 +332,13 @@ export interface CommittedContactRead {
   readonly transmission: ContactMaterialTransmissionRead;
   readonly implicitAdjustments: readonly ContactMinimalPoseAdjustment[];
   readonly actorControl: ContactActorControlDecision;
+  /**
+   * The consulted agency decisions, one per non-actor body `implicitAdjustments`
+   * moved. Authorization evidence exactly like the three reads beside it, and
+   * checked as such on read: a stored contact whose adjustments moved somebody
+   * no `allowed` decision names is dropped (`state.ts`).
+   */
+  readonly targetAgencies: readonly ContactTargetAgencyDecision[];
   readonly participantEligibility: ContactParticipantEligibilityRead;
   readonly policy: ContactInteractionPolicyRead;
   readonly evidence: readonly AffordanceEvidence[];

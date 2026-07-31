@@ -54,7 +54,7 @@ import type {
  *
  * 1. **Start identity is immutable.** `contactId`, `pairKey`, `startedAt`,
  *    `startedByEventRef`, `actorId`, `actionKind`, `source`, `target`, and the
- *    three decisions belong to the contact that BEGAN. The pair key is
+ *    four authorization records belong to the contact that BEGAN. The pair key is
  *    order-independent, so the same touch can legitimately be re-asserted from
  *    the other side — and taking the new assertion's orientation would silently
  *    rewrite who was touching whom for every observation downstream. An
@@ -72,6 +72,20 @@ import type {
  *    assertion on an occupied pair — a stale one cannot end a contact through
  *    the framing-change path either, because "this is a different kind of touch"
  *    says nothing about which of the two writes is the later one.
+ * 4. **No contact ends before its own last update.** Law 3 protects the pair
+ *    being asserted; it protects nothing else, and every end path in this file
+ *    could reach a contact the assertion never mentioned. An end stamped earlier
+ *    than the contact's `lastUpdatedAt` writes a record whose `endedAt` precedes
+ *    facts already committed about that contact, so replay sees a contact that
+ *    ended before it was last touched. Every end therefore checks the contact it
+ *    is about to end: `endContact` no-ops, `endAllContacts` and the
+ *    authorization sweep leave the newer contact ALIVE, and capacity refuses the
+ *    new start outright rather than evicting a victim it cannot end honestly.
+ *
+ * A refusal is a first-class outcome (`ContactCommitOutcome.status`), not a
+ * silent no-op: the caller has to narrow before it can reach a `contact`, so
+ * "we could not make room" is structurally incapable of being read as a contact
+ * that started.
  *
  * Story time never advances a contact by itself. There is no timeout: a contact
  * ends because something ended it, and "the narrator stopped mentioning it" is
@@ -153,6 +167,7 @@ type ContactStartIdentity = Pick<
   | "source"
   | "target"
   | "actorControl"
+  | "targetAgencies"
   | "participantEligibility"
   | "policy"
 >;
@@ -228,6 +243,7 @@ function withSnapshot(
     transmission: snapshot.transmission,
     implicitAdjustments: snapshot.implicitAdjustments,
     actorControl: identity.actorControl,
+    targetAgencies: identity.targetAgencies,
     participantEligibility: identity.participantEligibility,
     policy: identity.policy,
     evidence: snapshot.evidence,
@@ -251,6 +267,7 @@ function startIdentity(input: {
     source: intent.source,
     target: intent.target,
     actorControl: input.resolution.actorControl,
+    targetAgencies: input.resolution.targetAgencies,
     participantEligibility: input.resolution.participantEligibility,
     policy: input.resolution.policy,
   };
@@ -267,24 +284,68 @@ export interface ContactCommitRequest {
   readonly sink?: DiagnosticSink;
 }
 
-export interface ContactCommitOutcome {
-  readonly state: ContactLifecycleState;
-  readonly commit: ContactLifecycleCommit;
-  readonly contact: CommittedContactRead;
-  /**
-   * Contacts this same lane event ENDED to make room for the one above —
-   * capacity pressure, or a framing change on the same pair.
-   *
-   * Ordinarily empty. Never a projection-only drop: these are durable commits,
-   * and `contactCommitEvents` puts them ahead of `commit` in the stream so a
-   * replay frees the pair before the new contact claims it.
-   */
-  readonly ended: readonly ContactEndedCommit[];
+/**
+ * Why a commit could not happen at all. A vocabulary rather than a single
+ * literal: the capacity case is the only producer today, but "the fold could not
+ * proceed" is the shape a future refusal would also take, and a boolean would
+ * have to be replaced rather than extended.
+ */
+export const contactCommitRefusalReasons = ["capacity_blocked_by_newer_contact"] as const;
+export type ContactCommitRefusalReason = (typeof contactCommitRefusalReasons)[number];
+
+/**
+ * What the fold did with a committable resolution.
+ *
+ * A **union**, not a record with an optional contact, and the discriminant is
+ * load-bearing: a refusal has no `commit` and no `contact` at all, so a caller
+ * cannot read a started contact off one by forgetting to check. That is the same
+ * device `ContactResolution` uses to stop an attempt masquerading as a
+ * commitment, applied one stage later — the stage where "we could not make room"
+ * would otherwise be indistinguishable from "it started".
+ */
+export type ContactCommitOutcome =
+  | {
+      readonly status: "committed";
+      readonly state: ContactLifecycleState;
+      readonly commit: ContactLifecycleCommit;
+      readonly contact: CommittedContactRead;
+      /**
+       * Contacts this same lane event ENDED to make room for the one above —
+       * capacity pressure, or a framing change on the same pair.
+       *
+       * Ordinarily empty. Never a projection-only drop: these are durable
+       * commits, and `contactCommitEvents` puts them ahead of `commit` in the
+       * stream so a replay frees the pair before the new contact claims it.
+       */
+      readonly ended: readonly ContactEndedCommit[];
+    }
+  | {
+      readonly status: "refused";
+      readonly reason: ContactCommitRefusalReason;
+      /** Returned unchanged. A refusal writes nothing and ends nothing. */
+      readonly state: ContactLifecycleState;
+      /** The active contacts whose own newer facts stood in the way. */
+      readonly blockedBy: readonly ContactId[];
+    };
+
+/** The branch that produced a contact. */
+export type CommittedContactOutcome = Extract<ContactCommitOutcome, { status: "committed" }>;
+
+export function isCommittedContactOutcome(
+  outcome: ContactCommitOutcome,
+): outcome is CommittedContactOutcome {
+  return outcome.status === "committed";
 }
 
-/** Every durable commit an outcome produced, in the order a fold must apply them. */
+/**
+ * Every durable commit an outcome produced, in the order a fold must apply them.
+ *
+ * Empty for a refusal — the whole point of refusing is that nothing was written,
+ * so a lane that persists `contactCommitEvents(outcome)` unconditionally stays
+ * correct without learning the union.
+ */
 export function contactCommitEvents(outcome: ContactCommitOutcome): readonly ContactLifecycleCommit[] {
-  return [...outcome.ended, outcome.commit];
+  return outcome.status === "committed" ? [...outcome.ended, outcome.commit] : [];
 }
 
 /**
@@ -398,11 +459,37 @@ function continued(
   storyTime: AffordanceStoryTime,
 ): ContactCommitOutcome {
   return {
+    status: "committed",
     state,
     commit: { kind: "contact_continued", contactId: contact.contactId, storyTime, contact },
     contact,
     ended: [],
   };
+}
+
+/**
+ * Would ending this contact now write a record older than the contact itself?
+ *
+ * `endedAt < lastUpdatedAt` is a durable claim that a contact stopped before the
+ * last thing known about it happened. Equality is fine — ending a contact at the
+ * exact minute of its last update is an ordinary same-turn release.
+ *
+ * Reports as it answers, because every caller does the same thing with a `true`:
+ * leave the contact alone and say why. Shared so the three end paths cannot
+ * drift into three different rules.
+ */
+function staleEnd(
+  contact: CommittedContactRead,
+  storyTime: AffordanceStoryTime,
+  sink?: DiagnosticSink,
+): boolean {
+  if (storyTime >= contact.lastUpdatedAt) return false;
+  sink?.push(
+    diag("warn", CONTACT_LIFECYCLE_INVALID, "an end older than the contact it names was not applied", {
+      context: { contactId: contact.contactId, asserted: storyTime, lastUpdatedAt: contact.lastUpdatedAt },
+    }),
+  );
+  return true;
 }
 
 /**
@@ -449,6 +536,7 @@ function updateExisting(
 
   const contact = deepFreeze(withSnapshot(existing, snapshot, stamp));
   return {
+    status: "committed",
     state: withContacts(
       request.state.contacts.map((entry) => (entry.contactId === existing.contactId ? contact : entry)),
     ),
@@ -490,7 +578,40 @@ export function commitContactResolution(request: ContactCommitRequest): ContactC
   }
 
   const ended: ContactEndedCommit[] = [];
-  let remaining = request.state.contacts;
+  let remaining =
+    existing === undefined
+      ? request.state.contacts
+      : request.state.contacts.filter((entry) => entry.contactId !== existing.contactId);
+
+  // Capacity is decided BEFORE anything is ended or reported, so a refusal never
+  // has to unwind a framing end it already announced.
+  //
+  // The victims are unrelated pairs — law 3 guarded the pair being asserted and
+  // says nothing about them — so an assertion that is perfectly current for its
+  // own contact can still be older than the contact eviction would destroy.
+  // Ending that one here would stamp `endedAt` before its `lastUpdatedAt`, and
+  // the alternative (ending it at its own later time) invents a story minute
+  // nobody asserted. Refusing the new contact is the only option that neither
+  // rewrites time nor drops a contact without an event: the projection is
+  // already full of newer facts, and a start is the thing a caller can retry.
+  const evicted = overCapacity(remaining);
+  const blockedBy = evicted.filter((contact) => contact.lastUpdatedAt > stamp.storyTime);
+  if (blockedBy.length > 0) {
+    request.sink?.push(
+      diag(
+        "warn",
+        CONTACT_LIFECYCLE_INVALID,
+        "the projection is full of contacts newer than this assertion; no contact was started",
+        { context: { asserted: stamp.storyTime, blockedBy: blockedBy.map((contact) => contact.contactId) } },
+      ),
+    );
+    return {
+      status: "refused",
+      reason: "capacity_blocked_by_newer_contact",
+      state: request.state,
+      blockedBy: blockedBy.map((contact) => contact.contactId),
+    };
+  }
 
   // A different action kind on the same surfaces is a different contact: the
   // framing is start identity, and the permission evidence that justified the
@@ -502,10 +623,8 @@ export function commitContactResolution(request: ContactCommitRequest): ContactC
       }),
     );
     ended.push(endedCommit(existing, { ...stamp, reason: "state_invalidated" }));
-    remaining = remaining.filter((entry) => entry.contactId !== existing.contactId);
   }
 
-  const evicted = overCapacity(remaining);
   if (evicted.length > 0) {
     request.sink?.push(
       diag("warn", CONTACT_LIFECYCLE_INVALID, "active contact projection is at capacity; the oldest were ended", {
@@ -524,6 +643,7 @@ export function commitContactResolution(request: ContactCommitRequest): ContactC
     ),
   );
   return {
+    status: "committed",
     state: withContacts([...remaining, contact]),
     commit: { kind: "contact_started", contact },
     contact,
@@ -546,7 +666,10 @@ export interface ContactEndRequest {
 
 export interface ContactEndOutcome {
   readonly state: ContactLifecycleState;
-  /** `null` when nothing was active under that id — the state is returned unchanged. */
+  /**
+   * `null` when nothing was active under that id, or when the end was older than
+   * the contact it named — the state is returned unchanged either way.
+   */
   readonly commit: ContactEndedCommit | null;
 }
 
@@ -556,6 +679,11 @@ export interface ContactEndOutcome {
  * Ending something that is not active is a caller bug, not a story fact: it
  * files an `error` diagnostic and changes nothing, because silently succeeding
  * would let a double-end look identical to a real one on a branch replay.
+ *
+ * Ending something at a story time before its own last update is the other
+ * caller bug — an out-of-order or replayed release — and it is absorbed rather
+ * than applied (law 4). The contact stays active and the diagnostic is a `warn`:
+ * a later end at a current story time is still perfectly able to close it.
  */
 export function endContact(request: ContactEndRequest): ContactEndOutcome {
   const contact = activeContact(request.state, request.contactId);
@@ -565,6 +693,9 @@ export function endContact(request: ContactEndRequest): ContactEndOutcome {
         context: { contactId: request.contactId },
       }),
     );
+    return { state: request.state, commit: null };
+  }
+  if (staleEnd(contact, request.storyTime, request.sink)) {
     return { state: request.state, commit: null };
   }
   return {
@@ -583,17 +714,36 @@ export function endContact(request: ContactEndRequest): ContactEndOutcome {
  *
  * Deterministic by construction: the contacts are already pair-key ordered, so
  * the emitted commits are in the same order every time.
+ *
+ * **A scene exit asserted from the past does not empty the projection.** Law 4
+ * applies per contact, so a contact whose `lastUpdatedAt` is newer than this
+ * exit survives it, with a `warn`. The alternative rulings were both worse: a
+ * whole-request refusal would throw away the ends of every contact this exit
+ * legitimately covers, and ending the newer contact anyway would write
+ * `endedAt` before facts already committed about it. What is left is honest —
+ * the exit is an older write, the projection knows more than it does, and a
+ * caller that really is leaving the scene re-issues at the current story time
+ * (or ends the survivors by id) rather than having time rewritten for it.
  */
 export function endAllContacts(request: {
   state: ContactLifecycleState;
   reason: ContactEndReason;
   storyTime: AffordanceStoryTime;
   eventRef: ContactEventRef;
+  sink?: DiagnosticSink;
 }): { state: ContactLifecycleState; commits: readonly ContactEndedCommit[] } {
-  const commits = request.state.contacts.map((contact) =>
-    endedCommit(contact, { storyTime: request.storyTime, eventRef: request.eventRef, reason: request.reason }),
-  );
-  return { state: emptyContactLifecycleState(), commits };
+  const commits: ContactEndedCommit[] = [];
+  const kept: CommittedContactRead[] = [];
+  for (const contact of request.state.contacts) {
+    if (staleEnd(contact, request.storyTime, request.sink)) {
+      kept.push(contact);
+      continue;
+    }
+    commits.push(
+      endedCommit(contact, { storyTime: request.storyTime, eventRef: request.eventRef, reason: request.reason }),
+    );
+  }
+  return { state: withContacts(kept), commits };
 }
 
 // ---------------------------------------------------------------------------
@@ -668,6 +818,13 @@ function authorizationLapse(
  * neither permission nor eligibility (incidental, casual, affectionate touch;
  * self-contact; contact with an object) are untouched, exactly as the resolver
  * never demanded a grant for them in the first place.
+ *
+ * **A sweep older than a contact leaves it alive** (law 4, same ruling as
+ * `endAllContacts`). The sweep is a read of what is true NOW, so a sweep stamped
+ * before a contact's own last update is an out-of-order write, and ending a
+ * contact at a story minute before facts already committed about it would be a
+ * worse outcome than carrying it to the next sweep — which will run at a current
+ * time and end it then, because a lapsed authorization does not un-lapse.
  */
 export function endUnauthorizedContacts(request: ContactAuthorizationSweepRequest): {
   state: ContactLifecycleState;
@@ -678,7 +835,7 @@ export function endUnauthorizedContacts(request: ContactAuthorizationSweepReques
   for (const contact of request.state.contacts) {
     const read = request.authorizations.find((entry) => entry.contactId === contact.contactId);
     const reason = authorizationLapse(contact, read);
-    if (reason === undefined) {
+    if (reason === undefined || staleEnd(contact, request.storyTime, request.sink)) {
       kept.push(contact);
       continue;
     }

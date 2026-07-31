@@ -4,7 +4,16 @@ import { CONTACT_LIFECYCLE_INVALID, CONTACT_STATE_RECOMPUTED } from "./diagnosti
 import { commitContactResolution, emptyContactLifecycleState, type ContactLifecycleState } from "./lifecycle";
 import { resolveContactAttempt } from "./resolve";
 import { parseContactLifecycleState } from "./state";
-import { PROBE_EVENT, probeAttempt, probeEligibility, probeLayer, probePolicy } from "./test-support";
+import {
+  PROBE_EVENT,
+  PROBE_TARGET,
+  probeAdjustment,
+  probeAgency,
+  probeAttempt,
+  probeEligibility,
+  probeLayer,
+  probePolicy,
+} from "./test-support";
 import { adapterSupported } from "../core";
 
 function seededState(): ContactLifecycleState {
@@ -22,6 +31,23 @@ function seededRomanticState(): ContactLifecycleState {
         policy: probePolicy("allowed", "romantic"),
         participantEligibility: probeEligibility("eligible"),
         material: adapterSupported({ layers: [probeLayer("layer_one")], evidence: [] }),
+      },
+    }),
+  );
+  if (resolution.status !== "committable") throw new Error("fixture did not commit");
+  return commitContactResolution({ state: emptyContactLifecycleState(), resolution, eventRef: PROBE_EVENT }).state;
+}
+
+/**
+ * A contact that folded in a movement of the TARGET's body, with the decision
+ * that allowed it — the row whose authorization a per-field schema cannot see.
+ */
+function seededAgencyState(): ContactLifecycleState {
+  const resolution = resolveContactAttempt(
+    probeAttempt({
+      context: {
+        adjustments: [probeAdjustment({ subjectId: PROBE_TARGET })],
+        targetAgencies: [probeAgency("allowed")],
       },
     }),
   );
@@ -192,6 +218,63 @@ describe("stored contact state", () => {
       const sink = new DiagnosticCollector();
       expect(parseContactLifecycleState(tampered(seededRomanticState(), mutate), sink).contacts).toEqual([]);
       expect(codes(sink)).toEqual([CONTACT_LIFECYCLE_INVALID]);
+    });
+
+    const agencyTamperings: readonly [string, StoredContactMutation][] = [
+      [
+        "no agency decision at all behind a movement of another body",
+        (contact) => {
+          contact.targetAgencies = [];
+        },
+      ],
+      [
+        "an agency decision that never allowed the movement",
+        (contact) => {
+          contact.targetAgencies = [{ status: "not_required", targetId: PROBE_TARGET, evidence: [] }];
+        },
+      ],
+      [
+        "an agency decision about somebody the adjustment did not move",
+        (contact) => {
+          contact.targetAgencies = [{ status: "allowed", targetId: "another_subject", evidence: [] }];
+        },
+      ],
+      [
+        "two agency decisions about one body",
+        (contact) => {
+          contact.targetAgencies = [
+            { status: "allowed", targetId: PROBE_TARGET, evidence: [] },
+            { status: "denied", targetId: PROBE_TARGET, evidence: [] },
+          ];
+        },
+      ],
+    ];
+
+    it.each(agencyTamperings)("drops a stored contact whose adjustments carry %s", (_label, mutate) => {
+      // The resolver's per-participant gate is enforced at commit time and then
+      // nothing enforced it on read: a stored contact could claim a body MOVED
+      // with no authority behind the claim at all.
+      const sink = new DiagnosticCollector();
+      expect(parseContactLifecycleState(tampered(seededAgencyState(), mutate), sink).contacts).toEqual([]);
+      expect(codes(sink)).toEqual([CONTACT_LIFECYCLE_INVALID]);
+      expect(sink.hasErrors).toBe(true);
+    });
+
+    it("keeps a stored contact whose agency proof still covers every moved body", () => {
+      const sink = new DiagnosticCollector();
+      const state = seededAgencyState();
+      const parsed = parseContactLifecycleState(JSON.parse(JSON.stringify(state)), sink);
+      expect(parsed).toEqual(state);
+      expect(parsed.contacts[0]?.targetAgencies).toHaveLength(1);
+      expect(sink.items).toEqual([]);
+    });
+
+    it("asks for no agency proof when only the actor moved", () => {
+      // The ordinary case, and the one that must not start demanding evidence
+      // for a movement nobody made.
+      const state = seededState();
+      expect(state.contacts[0]?.targetAgencies).toEqual([]);
+      expect(parseContactLifecycleState(JSON.parse(JSON.stringify(state))).contacts).toHaveLength(1);
     });
 
     it("recomputes a transmission that claims more than the stored layers allow", () => {
