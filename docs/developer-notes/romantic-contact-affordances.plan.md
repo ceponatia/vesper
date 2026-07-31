@@ -509,6 +509,15 @@ on immobilized limbs.
    transcripts; the owner's verdict on that report decides whether anything
    below un-gates. Until the trial succeeds, items 3–6 are queued-but-gated
    and the parked list at the end of this section stays parked.
+   **Run 2026-07-31 — [trial report](romantic-contact-affordances.trial.md),
+   awaiting verdict.** Headline: clear coherence wins wherever the machinery
+   had authority (held touches persist and release cleanly; scene changes end
+   contacts durably; material reaches prose; the state never lies — all
+   ledger-verified in production), no naturalness regressions anywhere, and
+   two bounded gaps recorded for ruling (unresolved-attempt prose still
+   teleports — needs a reach-fed constraint line; the coverage capture lands
+   at the previous settle, so a fast follow-up touch honestly no-ops). Flags
+   returned to off pending the verdict.
 
 3. **Actor control through the live lane** (gated on the trial) —
    enforcement, not just the contract.
