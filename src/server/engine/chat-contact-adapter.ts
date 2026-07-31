@@ -9,6 +9,7 @@ import {
   contactActionOutcomeStatus,
   contactCommitExpectation,
   contactEventRef,
+  contactParticipantIds,
   effectiveCoverageAt,
   emptyEffectiveCoverageRead,
   endAllContacts,
@@ -18,6 +19,7 @@ import {
   sceneEventRef,
   sceneFact,
   sceneParticipant,
+  sceneProximityFact,
   sceneProvenance,
   sceneProvenanceEvidence,
   sceneGeometryRead,
@@ -112,11 +114,19 @@ import { parseMessageSpans } from "@/lib/message-spans";
  *    all of them produce nothing, because a contact this layer invented — or a
  *    bare shoulder it assumed — is worse than a contact it missed.
  *
- * The one thing that fails the OTHER way is a release. `detectChatContactRelease`
- * only ever ENDS contacts, so refusing to read one leaves a durable row claiming
- * a hand that is no longer there; its gates are therefore the shared ones minus
- * the restraint veto, and its silence rule applies to WHICH contacts end rather
- * than whether the sentence counts.
+ * The things that fail the OTHER way are the ENDS: a release
+ * (`detectChatContactRelease` — the player's own hand coming back) and a
+ * departure (`detectChatDeparture` — the player's whole body going somewhere
+ * else). Both only ever END contacts, so refusing to read one leaves a durable
+ * row claiming a hand that is no longer there; their gates are therefore the
+ * shared ones minus the restraint veto (`endingSentences`), and their silence
+ * rule applies to WHICH contacts end rather than to whether the sentence counts.
+ *
+ * A departure carries one claim beyond its ends — the distance it opened — and
+ * THAT half obeys law 2 without exception: a band is written only for a pair the
+ * scene already placed (or that an active contact proves was close), and never a
+ * band nearer than the one already standing. Stepping back from somebody nobody
+ * ever placed leaves the distance unknown, exactly as it was.
  */
 
 // ---------------------------------------------------------------------------
@@ -383,6 +393,24 @@ function contactSentences(
   return sentences;
 }
 
+/**
+ * The sentences an END may be read from: every shared gate, minus restraint.
+ *
+ * The restraint veto (law 4) refuses sentences whose framing this lane cannot
+ * MODEL, and it is right to refuse to START a contact on one. An end starts
+ * nothing — it removes a row — and the word it would veto on is usually the end
+ * itself: "I pull my hand back" and "I pull away" are the plainest ways in
+ * English to say these two things, and dropping them would leave durable
+ * contacts the player explicitly ended. A stale contact that outlives the hand
+ * is worse than an end this proof read from a forceful-sounding sentence, so the
+ * veto is lifted for the ends and nowhere else. Nothing forceful can sneak a
+ * contact in through this door: the lexicons below only match the player's own
+ * hand leaving or their own body moving off, and their only power is to end.
+ */
+function endingSentences(input: ChatContactDetectionInput): readonly string[] {
+  return contactSentences(input, contactSentenceEligible);
+}
+
 // ---------------------------------------------------------------------------
 // Target resolution
 // ---------------------------------------------------------------------------
@@ -472,13 +500,16 @@ const APPROACH_RE = new RegExp(
 const APPROACH_POSSESSIVE_PRONOUNS: ReadonlySet<string> = new Set(["your", "her", "his", "their", "its"]);
 
 /**
- * Is this destination token a POSSESSOR rather than the destination?
+ * Is this destination token a POSSESSOR rather than the person?
  *
  * "I walk over to her desk" and "I walk over to Wren's desk" are approaches to
  * FURNITURE, and the movement detector's one-token capture cannot see that on
  * its own: the possessive resolves to the person who owns the thing, and the
  * turn commits `close` proximity to a body nobody walked up to. A possessive
- * followed by another ordinary word is therefore refused.
+ * followed by another ordinary word is therefore refused. The departure
+ * detector's "…from <X>" clause has the identical hazard in reverse ("I step
+ * back from her desk" would end contacts with a woman the player never left),
+ * and it asks the same question here.
  *
  * Two deliberate edges:
  *
@@ -492,10 +523,38 @@ const APPROACH_POSSESSIVE_PRONOUNS: ReadonlySet<string> = new Set(["your", "her"
  *   else. The cost is one missed approach; the alternative cost is a durable
  *   distance claim about a body the player walked past.
  */
-function approachDestinationIsPossessive(token: string, followedByWord: boolean): boolean {
+function destinationIsPossessive(token: string, followedByWord: boolean): boolean {
   if (!followedByWord) return false;
   const lowered = token.trim().toLowerCase();
   return APPROACH_POSSESSIVE_PRONOUNS.has(lowered) || /['’]s$/u.test(lowered);
+}
+
+/**
+ * The approach this ONE sentence states, or `null`.
+ *
+ * Split out because the departure detector asks it too: a sentence that names
+ * somewhere to ARRIVE is an arrival, whatever else it also says about backing
+ * off (`detectChatDeparture`).
+ */
+function approachInSentence(
+  sentence: string,
+  characters: readonly ChatContactRosterMember[],
+): ChatApproach | null {
+  // Every first-person clause in the sentence, not just the first: "I walk over to
+  // the window, then I step closer to Wren" opens on a destination that names no
+  // person, and stopping there would throw away the movement that happened.
+  // `matchAll` clones the regex, so the module-level `lastIndex` is never shared.
+  for (const match of sentence.matchAll(APPROACH_RE)) {
+    const token = match[2] ?? "";
+    // A possessed destination keeps SCANNING rather than ending the sentence:
+    // "I walk over to her desk, then I step closer to Wren" still moves.
+    if (destinationIsPossessive(token, (match[3] ?? "").length > 0)) continue;
+    const target = resolveContactTarget(token, characters);
+    if (target === null) continue;
+    const adjacency = (match[1] ?? "").toLowerCase();
+    return { targetSubject: target.subjectId, band: APPROACH_TOUCHING.has(adjacency) ? "touching" : "close" };
+  }
+  return null;
 }
 
 /**
@@ -507,20 +566,8 @@ function approachDestinationIsPossessive(token: string, followedByWord: boolean)
  */
 export function detectChatApproach(input: ChatContactDetectionInput): ChatApproach | null {
   for (const sentence of contactSentences(input)) {
-    // Every first-person clause in the sentence, not just the first: "I walk over to
-    // the window, then I step closer to Wren" opens on a destination that names no
-    // person, and stopping there would throw away the movement that happened.
-    // `matchAll` clones the regex, so the module-level `lastIndex` is never shared.
-    for (const match of sentence.matchAll(APPROACH_RE)) {
-      const token = match[2] ?? "";
-      // A possessed destination keeps SCANNING rather than ending the sentence:
-      // "I walk over to her desk, then I step closer to Wren" still moves.
-      if (approachDestinationIsPossessive(token, (match[3] ?? "").length > 0)) continue;
-      const target = resolveContactTarget(token, input.characters);
-      if (target === null) continue;
-      const adjacency = (match[1] ?? "").toLowerCase();
-      return { targetSubject: target.subjectId, band: APPROACH_TOUCHING.has(adjacency) ? "touching" : "close" };
-    }
+    const approach = approachInSentence(sentence, input.characters);
+    if (approach !== null) return approach;
   }
   return null;
 }
@@ -560,6 +607,233 @@ export function chatApproachSceneIntents(
       change: { kind: "set_facing", towardId: approach.targetSubject, facing: "toward" },
     },
   ];
+}
+
+// ---------------------------------------------------------------------------
+// Departure — the player putting distance back
+// ---------------------------------------------------------------------------
+
+/**
+ * The two bands a departure can state.
+ *
+ * `touching` and `close` are arrivals, and no sentence this detector reads can
+ * produce one: moving away from somebody never ends nearer than `near`, which is
+ * the vocabulary's "one small reposition away".
+ */
+export type ChatDepartureBand = Extract<SceneProximityBand, "near" | "distant">;
+
+/** The player moving off — from a named person, or from everyone at once. */
+export interface ChatDeparture {
+  /** Whose company the sentence said the player left. `null` ⇒ everyone in the room. */
+  readonly targetSubject: AffordanceSubjectId | null;
+  readonly band: ChatDepartureBand;
+}
+
+/**
+ * Band → how far it is, so a departure can only ever make a stated distance
+ * WORSE.
+ *
+ * Spelled out rather than derived from `sceneProximityBands`' array order, for
+ * the reason the height ladder's index table is: a reordering of the vocabulary
+ * must not silently re-rank the world.
+ */
+const DEPARTURE_BAND_DISTANCE: Readonly<Record<SceneProximityBand, number>> = {
+  touching: 0,
+  close: 1,
+  near: 2,
+  distant: 3,
+};
+
+/**
+ * "…back" — the one-step class.
+ *
+ * `take a step` is spelled out beside the bare verbs because "I take a step
+ * back" is the commonest way to write this and its verb is `take`, which means
+ * nothing at all on its own.
+ */
+const DEPARTURE_BACK_RE = new RegExp(
+  `\\bi\\s+(?:[\\p{L}']+\\s+){0,2}?(?:(?:take|takes|took|taking)\\s+(?:a|one)\\s+step` +
+    `|step|steps|stepped|stepping|lean|leans|leaned|leaning)\\s+back\\b`,
+  "iu",
+);
+
+/**
+ * "…away" — the same body, going somewhere else.
+ *
+ * The direction word sits IMMEDIATELY after the verb, and that adjacency is what
+ * implements the release/departure precedence (see `detectChatDeparture`): "I
+ * pull away" is a body and matches; "I pull my hand away" puts two words in
+ * between, matches nothing here, and is left to the release lexicon where it
+ * belongs.
+ */
+const DEPARTURE_AWAY_RE = new RegExp(
+  `\\bi\\s+(?:[\\p{L}']+\\s+){0,2}?(step|steps|stepped|stepping|back|backs|backed|backing` +
+    `|pull|pulls|pulled|pulling|move|moves|moved|moving|draw|draws|drew|drawing` +
+    `|walk|walks|walked|walking)\\s+away\\b`,
+  "iu",
+);
+
+/** Crossing the floor — the widest departure this lexicon reads. */
+const DEPARTURE_ACROSS_RE = new RegExp(
+  `\\bi\\s+(?:[\\p{L}']+\\s+){0,2}?(?:step|steps|stepped|stepping|move|moves|moved|moving` +
+    `|walk|walks|walked|walking)\\s+across\\s+the\\s+room\\b`,
+  "iu",
+);
+
+/** A departure written as its own result rather than as a movement. */
+const DEPARTURE_DISTANCE_RE =
+  /\bi\s+(?:[\p{L}']+\s+){0,2}?(?:put|puts|putting)\s+(?:some\s+|a\s+little\s+|a\s+bit\s+of\s+)?distance\s+between\s+us\b/iu;
+
+/** "…from her", "…from Wren" — who the sentence said the player moved off from. */
+const DEPARTURE_FROM_RE = /\bfrom\s+(?:the\s+)?([\p{L}][\p{L}\p{N}'’-]*)\b(?=(\s+[\p{L}])?)/iu;
+
+/**
+ * How far this sentence put them, or `null` for a sentence that is not a
+ * departure at all.
+ *
+ * The split is about what the writing says it took: a step, a lean, or a hand's
+ * width of distance is `near` — one small reposition away, and the reach rule
+ * will ask for that reposition back. WALKING is the other class, and so is
+ * crossing the room: both say the space between them is now a space that has to
+ * be crossed, which is `distant`. "I move away" stays with the step class,
+ * because a bare "move" is the smallest claim the sentence could be making and
+ * this proof takes the smaller reading everywhere else too.
+ */
+function departureBand(sentence: string): ChatDepartureBand | null {
+  if (DEPARTURE_ACROSS_RE.test(sentence)) return "distant";
+  const away = DEPARTURE_AWAY_RE.exec(sentence);
+  if (away !== null) return (away[1] ?? "").toLowerCase().startsWith("walk") ? "distant" : "near";
+  if (DEPARTURE_BACK_RE.test(sentence) || DEPARTURE_DISTANCE_RE.test(sentence)) return "near";
+  return null;
+}
+
+/**
+ * The player's departure this turn, or `null`.
+ *
+ * The approach detector's inverse, and conservative in the same three places.
+ *
+ * - **An arrival outranks a departure, within one sentence.** "I walk across the
+ *   room to her" and "I lean back toward Wren" both carry a destination that
+ *   names a person, and a sentence that says where the player ENDED UP is read
+ *   as that and nothing else — otherwise the turn would end her contacts on the
+ *   way to standing next to her. Across SENTENCES the two compose in written
+ *   order, which is what makes "I step back. I walk over to Wren." mean what it
+ *   says (see `planChatContactTurn`).
+ * - **A named target that does not resolve produces NOTHING**, exactly as a
+ *   release's does: the sentence said what it moved away from, and substituting
+ *   "everyone" would be this layer choosing whose hand came free. That covers "I
+ *   step back from the desk", an ambiguous "her" in a group, and — through the
+ *   shared possessive guard — "I step back from her desk".
+ * - **A hand is not a body** — the release/departure ruling, and the one place
+ *   these two lexicons could have overlapped. The direction word must follow the
+ *   verb IMMEDIATELY, so "I pull my hand back" / "I draw my hand away" are
+ *   RELEASES (that hand's contacts end `withdrawn`, and no distance is claimed)
+ *   and never departures. A bare "I pull away" is the opposite: a whole body
+ *   moved, so it is a DEPARTURE — every player-involved contact ends
+ *   `separated`, and the distance is stated. It is deliberately NOT also added
+ *   to the release lexicon: the departure already ends the same contacts and
+ *   more, so a second producer would compete over nothing but the recorded
+ *   reason, and `separated` is the truer one for a body that moved — nobody took
+ *   a hand back, the distance stopped allowing the touch. A message that says
+ *   both in its own sentences ("I pull my hand back. I step away.") gets both,
+ *   release first, each with its own reason.
+ *
+ * An unnamed departure ("I step back.") is a departure from everyone: the player
+ * moved, and every body in the room is further away than it was.
+ */
+export function detectChatDeparture(input: ChatContactDetectionInput): ChatDeparture | null {
+  for (const sentence of endingSentences(input)) {
+    const band = departureBand(sentence);
+    if (band === null) continue;
+    if (approachInSentence(sentence, input.characters) !== null) continue;
+    const from = DEPARTURE_FROM_RE.exec(sentence);
+    if (from === null) return { targetSubject: null, band };
+    if (destinationIsPossessive(from[1] ?? "", (from[2] ?? "").length > 0)) continue;
+    const target = resolveContactTarget(from[1] ?? "", input.characters);
+    if (target === null) continue;
+    return { targetSubject: target.subjectId, band };
+  }
+  return null;
+}
+
+/** Does an active contact already prove these two are within touching distance? */
+function contactProvesCloseness(scene: SceneState, left: AffordanceSubjectId, right: AffordanceSubjectId): boolean {
+  return scene.contacts.contacts.some((contact) => {
+    const participants = contactParticipantIds(contact.source, contact.target);
+    return participants.includes(left) && participants.includes(right);
+  });
+}
+
+/**
+ * The band this departure may state about one pair, or `null` for "say nothing".
+ *
+ * **Never invent a distance** (law 2). Two sources can license the claim and
+ * nothing else can:
+ *
+ * 1. the pair already HAS a proximity fact — then stepping back is an honest
+ *    edit of a distance somebody stated, and the new band is written only when
+ *    it is genuinely farther. A `distant` pair does not become `near` because
+ *    the player took a step backwards; a departure can only widen.
+ * 2. an active contact between them — a hand resting on a shoulder is proof
+ *    they were within reach, whether or not any movement said so, so the
+ *    distance it opens is a real claim rather than a guess.
+ *
+ * A pair with neither stays UNKNOWN. Stepping back from somebody the scene never
+ * placed tells us the player moved; it does not tell us how far apart they are
+ * now, and the scene's answer to "can this hand reach that shoulder" must stay
+ * `proximity_unknown` rather than become a number this module made up.
+ *
+ * The player's FACING is deliberately untouched. Stepping back is not turning
+ * away — an approach turns toward, because crossing a room toward somebody IS
+ * facing them, but a body that backs off is usually still looking. Only an
+ * explicit turn should write that fact, and this pass detects none.
+ */
+function departedBand(
+  scene: SceneState,
+  player: AffordanceSubjectId,
+  otherId: AffordanceSubjectId,
+  band: ChatDepartureBand,
+): SceneProximityBand | null {
+  const stated = sceneProximityFact(scene, player, otherId)?.value;
+  if (stated === undefined) return contactProvesCloseness(scene, player, otherId) ? band : null;
+  return DEPARTURE_BAND_DISTANCE[band] > DEPARTURE_BAND_DISTANCE[stated] ? band : null;
+}
+
+/**
+ * The departure as typed scene intents — one proximity claim per pair it may
+ * make one about, and never anything else.
+ *
+ * Read against the scene as it stood BEFORE the ends are folded, because an
+ * active contact is one of the two things that license the claim at all
+ * (`departedBand`) and ending it first would throw that licence away.
+ */
+export function chatDepartureSceneIntents(
+  departure: ChatDeparture,
+  context: {
+    readonly scene: SceneState;
+    /** PRESENT roster members — who "everyone" means for an unnamed departure. */
+    readonly characters: readonly AffordanceSubjectId[];
+    readonly player: AffordanceSubjectId;
+    readonly ref: SceneEventRef;
+    readonly storyTime: AffordanceStoryTime;
+  },
+): readonly SceneMovementIntent[] {
+  const targets = departure.targetSubject === null ? context.characters : [departure.targetSubject];
+  const intents: SceneMovementIntent[] = [];
+  for (const otherId of targets) {
+    const band = departedBand(context.scene, context.player, otherId, departure.band);
+    if (band === null) continue;
+    intents.push({
+      intentId: `${context.ref}:departure:${otherId}`,
+      subjectId: context.player,
+      origin: "player",
+      change: { kind: "set_proximity", otherId, band },
+      ref: context.ref,
+      storyTime: context.storyTime,
+      evidence: [affordanceEvidence("adapter", "chat.contact.departure")],
+    });
+  }
+  return intents;
 }
 
 // ---------------------------------------------------------------------------
@@ -705,24 +979,6 @@ const RELEASE_RES: readonly RegExp[] = [
 const RELEASE_OF_RE = /\b(?:of|from|off(?:\s+of)?)\s+(?:the\s+)?([\p{L}][\p{L}\p{N}'’-]*)\b/iu;
 
 /**
- * The sentences a release may be read from: every shared gate, minus restraint.
- *
- * The restraint veto (law 4) refuses sentences whose framing this lane cannot
- * MODEL, and it is right to refuse to start a contact on one. A release starts
- * nothing — it removes a row — and the word it would veto on is usually the
- * release itself: "I pull my hand back" is the plainest way in English to say
- * this, and dropping it would leave a durable contact the player explicitly
- * ended. A stale contact that outlives the hand is worse than a release this
- * proof read from a forceful-sounding sentence, so the veto is lifted HERE and
- * nowhere else. Nothing forceful can sneak a contact in through this door: the
- * lexicon only matches the player's own hand leaving, and its only power is to
- * end.
- */
-function releaseSentences(input: ChatContactDetectionInput): readonly string[] {
-  return contactSentences(input, contactSentenceEligible);
-}
-
-/**
  * The player's release this turn, or `null`.
  *
  * A NAMED target narrows the ends to that person; an unnamed one ("I pull my
@@ -733,7 +989,7 @@ function releaseSentences(input: ChatContactDetectionInput): readonly string[] {
  * entitled to substitute a different one.
  */
 export function detectChatContactRelease(input: ChatContactDetectionInput): ChatContactRelease | null {
-  for (const sentence of releaseSentences(input)) {
+  for (const sentence of endingSentences(input)) {
     if (!RELEASE_RES.some((pattern) => pattern.test(sentence))) continue;
     const owner = RELEASE_OF_RE.exec(sentence);
     if (owner === null) return { targetSubject: null };
@@ -752,21 +1008,56 @@ function playerHandContact(contact: CommittedContactRead): boolean {
   );
 }
 
+/** Is the player's own body one END of this contact — either end, either surface? */
+function playerInvolvedContact(contact: CommittedContactRead): boolean {
+  return contactParticipantIds(contact.source, contact.target).includes(CHAT_CONTACT_PLAYER_SUBJECT);
+}
+
 export interface ChatContactEnds {
   readonly scene: SceneState;
   readonly commits: readonly ContactEndedCommit[];
 }
 
 /**
- * Apply a release to the scene's contacts.
+ * End every active contact a predicate covers — the shared body of both of the
+ * player's own ends.
  *
  * Per contact through the core's `endContact`, so each end is its own durable
  * commit and law 4 is enforced per contact (an end older than the contact it
  * names is absorbed with a `warn` and that contact survives). The contacts are
- * filtered to the ones this release actually covers BEFORE any end is requested,
- * so a release with nothing under the hand produces zero commits and zero
- * diagnostics — "I let go" on an empty scene is an ordinary sentence, not a
- * caller bug.
+ * filtered to the ones the end actually covers BEFORE any end is requested, so
+ * an end with nothing under it produces zero commits and zero diagnostics — "I
+ * let go" on an empty scene, or a step back from an untouched room, is an
+ * ordinary sentence rather than a caller bug.
+ */
+function endCoveredContacts(input: {
+  readonly scene: SceneState;
+  readonly covers: (contact: CommittedContactRead) => boolean;
+  readonly reason: ContactEndReason;
+  readonly eventRef: ContactEventRef;
+  readonly storyTime: AffordanceStoryTime;
+  readonly sink?: DiagnosticSink;
+}): ChatContactEnds {
+  const covered = input.scene.contacts.contacts.filter(input.covers);
+  let state = input.scene.contacts;
+  const commits: ContactEndedCommit[] = [];
+  for (const contact of covered) {
+    const outcome = endContact({
+      state,
+      contactId: contact.contactId,
+      reason: input.reason,
+      storyTime: input.storyTime,
+      eventRef: input.eventRef,
+      ...(input.sink === undefined ? {} : { sink: input.sink }),
+    });
+    state = outcome.state;
+    if (outcome.commit !== null) commits.push(outcome.commit);
+  }
+  return { scene: state === input.scene.contacts ? input.scene : withSceneContacts(input.scene, state), commits };
+}
+
+/**
+ * Apply a release to the scene's contacts, reason `withdrawn`.
  *
  * Only the player's own `hands` are ever released: it is the only source this
  * lane produces, and a release is a claim about the player's body alone.
@@ -779,27 +1070,53 @@ export function applyChatContactRelease(input: {
   readonly sink?: DiagnosticSink;
 }): ChatContactEnds {
   const { release } = input;
-  const covered = input.scene.contacts.contacts.filter(
-    (contact) =>
+  return endCoveredContacts({
+    scene: input.scene,
+    reason: "withdrawn",
+    eventRef: input.eventRef,
+    storyTime: input.storyTime,
+    ...(input.sink === undefined ? {} : { sink: input.sink }),
+    covers: (contact) =>
       playerHandContact(contact) &&
       (release.targetSubject === null ||
         (contact.target.kind === "body" && contact.target.subjectId === release.targetSubject)),
-  );
-  let state = input.scene.contacts;
-  const commits: ContactEndedCommit[] = [];
-  for (const contact of covered) {
-    const outcome = endContact({
-      state,
-      contactId: contact.contactId,
-      reason: "withdrawn",
-      storyTime: input.storyTime,
-      eventRef: input.eventRef,
-      ...(input.sink === undefined ? {} : { sink: input.sink }),
-    });
-    state = outcome.state;
-    if (outcome.commit !== null) commits.push(outcome.commit);
-  }
-  return { scene: state === input.scene.contacts ? input.scene : withSceneContacts(input.scene, state), commits };
+  });
+}
+
+/**
+ * Apply a departure to the scene's contacts, reason `separated`.
+ *
+ * **Wider than a release, in the one way that matters.** A release is about the
+ * player's own hand, so it covers the contacts that hand is making. A departure
+ * is about the player's whole BODY leaving, so it covers every contact the
+ * player is a participant in — EITHER end of it. A hand of hers resting on the
+ * player's arm does not survive the player walking away from her any more than
+ * the player's own hand on her shoulder does, and a projection that kept it
+ * would be claiming a touch across a room nobody is standing in.
+ *
+ * `separated` rather than `withdrawn` for the same reason the story-clock skip
+ * uses it: nobody took their hand back, the distance simply stopped allowing it.
+ * An unnamed departure covers every player-involved contact there is.
+ */
+export function applyChatContactDeparture(input: {
+  readonly scene: SceneState;
+  readonly departure: ChatDeparture;
+  readonly eventRef: ContactEventRef;
+  readonly storyTime: AffordanceStoryTime;
+  readonly sink?: DiagnosticSink;
+}): ChatContactEnds {
+  const { departure } = input;
+  return endCoveredContacts({
+    scene: input.scene,
+    reason: "separated",
+    eventRef: input.eventRef,
+    storyTime: input.storyTime,
+    ...(input.sink === undefined ? {} : { sink: input.sink }),
+    covers: (contact) =>
+      playerInvolvedContact(contact) &&
+      (departure.targetSubject === null ||
+        contactParticipantIds(contact.source, contact.target).includes(departure.targetSubject)),
+  });
 }
 
 /**
@@ -1126,23 +1443,35 @@ export interface ChatContactTurn {
    */
   readonly commit: ContactCommitOutcome | null;
   /**
-   * The ends the player's own release produced, oldest pair first. Only the
-   * release's: a lane hook that swept the scene (a clock skip, a scene change)
-   * ran before this plan and owns its own commits.
+   * The ends the player's own act produced, in plan order: the release's
+   * (`withdrawn`) first, then the departure's (`separated`). Only the player's:
+   * a lane hook that swept the scene (a clock skip, a scene change) ran before
+   * this plan and owns its own commits.
    */
   readonly ended: readonly ContactEndedCommit[];
 }
 
 /**
- * The whole deterministic half of the contact leg: seed, RELEASE, move, detect,
- * resolve, fold.
+ * The whole deterministic half of the contact leg: seed, RELEASE, DEPART,
+ * approach, detect, resolve, fold.
  *
- * Release leads, and the order is load-bearing rather than tidy. "I let go of
- * her hand and rest my hand on her shoulder" is one sentence describing two
- * things in sequence, and a plan that resolved the touch against a projection
- * still holding the released contact would either evict it for capacity or
- * carry two live contacts from one hand. Ending first makes the fold say what
- * the sentence said.
+ * The order is load-bearing rather than tidy, and every step of it is a sentence
+ * somebody could plausibly write in one message.
+ *
+ * - **Release leads.** "I let go of her hand and rest my hand on her shoulder"
+ *   is one sentence describing two things in sequence, and a plan that resolved
+ *   the touch against a projection still holding the released contact would
+ *   either evict it for capacity or carry two live contacts from one hand.
+ * - **Then the departure**, so "I pull my hand back and step away" ends what the
+ *   hand was making as `withdrawn` and whatever remains as `separated`, rather
+ *   than relabeling the release. (A contact the release already ended is gone
+ *   from the projection, so nothing can be ended twice.)
+ * - **Then the approach**, so "I step back. I walk over to Wren." lands where it
+ *   says it lands: the departure widens the distance, and the approach that
+ *   follows it in the message re-establishes `close` over the top. Reversing
+ *   these two would leave the player standing a step away from somebody they
+ *   just walked up to.
+ * - **The touch last**, resolved against everything above it.
  *
  * Pure and total. Same scene + same message ⇒ same plan, which is what makes a
  * retake reproduce the identical contact id (it is derived from the pair and the
@@ -1174,8 +1503,31 @@ export function planChatContactTurn(input: ChatContactTurnInput): ChatContactTur
           storyTime: input.storyTime,
           ...(input.sink === undefined ? {} : { sink: input.sink }),
         });
-  const ended = released?.commits ?? [];
+  const ended: ContactEndedCommit[] = [...(released?.commits ?? [])];
   if (released !== null) scene = released.scene;
+
+  const departure = detectChatDeparture(detection);
+  if (departure !== null) {
+    // The intents are read from the PRE-end scene: an active contact is one of the
+    // two things that license a distance claim at all (`departedBand`), and ending
+    // it before asking would throw that licence away.
+    const intents = chatDepartureSceneIntents(departure, {
+      scene,
+      characters: input.characters.map((member) => member.subjectId),
+      player: CHAT_CONTACT_PLAYER_SUBJECT,
+      ref,
+      storyTime: input.storyTime,
+    });
+    const departed = applyChatContactDeparture({
+      scene,
+      departure,
+      eventRef: input.eventRef,
+      storyTime: input.storyTime,
+      ...(input.sink === undefined ? {} : { sink: input.sink }),
+    });
+    ended.push(...departed.commits);
+    scene = applySceneIntents(departed.scene, intents, input.sink).state;
+  }
 
   const approach = detectChatApproach(detection);
   if (approach !== null) {

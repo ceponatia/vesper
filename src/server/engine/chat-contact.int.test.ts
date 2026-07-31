@@ -48,8 +48,10 @@ import { codes } from "@/test/diagnostics";
  *   the whole transaction — no rows added, the scene column untouched — which
  *   only a database can demonstrate;
  * - the leg ENDS contacts as well as starting them: the player's own release
- *   (`withdrawn`), a pending story-clock skip (`separated`, owner ruling), and
- *   walking out of the scene (`scene_changed`);
+ *   (`withdrawn`), the player's own departure (`separated` — and the distance it
+ *   opens, which is the only physical claim an end ever makes), a pending
+ *   story-clock skip (`separated`, owner ruling), and walking out of the scene
+ *   (`scene_changed`);
  * - with `CHAT_CONTACT_ACTIONS` unset the turn is the pre-feature turn: no rows,
  *   a scene that places nobody, and a system prompt byte-identical to the one the
  *   flag-ON take of that same line builds — the leg can commit a durable contact
@@ -158,6 +160,14 @@ const move = (): string => `I walk over to ${fixture.characterName}.`;
 const touch = (): string => `I rest my hand on ${fixture.characterName}'s shoulder.`;
 /** The player taking their own hand back — the plainest release in English. */
 const RELEASE = "I pull my hand back.";
+/** The player's whole body moving off, naming nobody — a departure from everyone. */
+const STEP_BACK = "I step back.";
+/**
+ * A line every detector in the leg refuses — "her desk" is furniture, so neither
+ * the approach nor the departure reads it — and that `detectSceneMovement` reads
+ * as a place change. The reconciliation case: the player moved, so the touch ends.
+ */
+const DESK = "I walk over to her desk.";
 /** A line carrying no act at all — the control for every byte-identity comparison. */
 const NEUTRAL = "I ask her how the shop went today.";
 /** A line `detectSceneMovement` reads as leaving the room (and no detector reads as an act). */
@@ -638,15 +648,17 @@ describe.runIf(ready)("the ledger is idempotent against its own retry, and verif
 
 /**
  * A contact is a claim that two surfaces are in contact NOW, so the leg has to be
- * able to stop claiming it. Three ways, and only the first is something the player
- * wrote as an act:
+ * able to stop claiming it. Four ways, and only the first two are something the
+ * player wrote as an act:
  *
- * - the player's own RELEASE (`withdrawn`), read by the plan;
+ * - the player's own RELEASE (`withdrawn`), read by the plan — a hand coming back;
+ * - the player's own DEPARTURE (`separated`), read by the same plan — a body
+ *   moving off, which additionally states the distance it opened;
  * - a pending story-clock SKIP (`separated`, owner ruling 2026-07-31 — hours do
  *   not pass with a hand left resting somewhere), which ends EVERY contact;
  * - walking out of the scene (`scene_changed`).
  *
- * All three persist through the same transactional append, under the ENDING
+ * All four persist through the same transactional append, under the ENDING
  * exchange's own event ref — the ends are that exchange's record, not an
  * amendment to the one that started the contact.
  */
@@ -686,6 +698,99 @@ describe.runIf(ready)("the leg ends contacts as well as starting them", () => {
     // The projection empties with it — and the bodies stay where they were.
     const scene = await storedScene(chat.chatId);
     expect(activeContactsOf(scene.contacts)).toEqual([]);
+    expect(sceneProximityFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe("close");
+  });
+
+  it("a departure ends the contact and opens the distance, reason `separated`", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const { chat } = await touchedChat();
+    const started = await soleRow(chat.chatId);
+
+    expect((await say(chat, STEP_BACK)).length).toBeGreaterThan(0);
+    const departGuardId = await playerLineId(chat.chatId, STEP_BACK);
+
+    const { row, all } = await endRow(chat.chatId);
+    expect(all.map((entry) => entry.kind)).toEqual(["contact_started", "contact_ended"]);
+    expect(row.contactId).toBe(started.contactId);
+    expect(row.sequence).toBe(0);
+    expect(row.guardMessageId).toBe(departGuardId);
+    expect(row.eventRef).toBe(`contact:${departGuardId}`);
+    expect(row.payload).toMatchObject({
+      kind: "contact_ended",
+      reason: "separated",
+      contact: { endReason: "separated", endedByEventRef: `contact:${departGuardId}`, phase: "ended" },
+    });
+
+    const scene = await storedScene(chat.chatId);
+    expect(activeContactsOf(scene.contacts)).toEqual([]);
+    // The one physical claim an end ever makes, and only because the movement turn
+    // had already stated a distance for this departure to WIDEN: `close` → `near`.
+    expect(sceneProximityFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe("near");
+    // Stepping back is not turning away — only an explicit turn would be.
+    expect(sceneFacingFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe("toward");
+  });
+
+  it("and the hand cannot reach again until the player walks back over", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const { chat } = await touchedChat();
+    await say(chat, STEP_BACK);
+    const afterDeparture = await listChatContactEvents(chat.chatId);
+    expect(afterDeparture.map((row) => row.kind)).toEqual(["contact_started", "contact_ended"]);
+
+    // A step is `near` — one reposition away — so the same touch that committed two
+    // exchanges ago now records nothing at all. The distance the player opened is a
+    // real answer, and the leg gives it rather than letting the hand cross a gap.
+    expect((await say(chat, touch())).length).toBeGreaterThan(0);
+    expect(await listChatContactEvents(chat.chatId)).toEqual(afterDeparture);
+    expect(activeContactsOf((await storedScene(chat.chatId)).contacts)).toEqual([]);
+
+    // Walking back over re-establishes `close`, and the hand lands again — a NEW
+    // contact under the new exchange's ref, never a resurrection of the ended one.
+    await say(chat, move());
+    expect(sceneProximityFact(await storedScene(chat.chatId), CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe(
+      "close",
+    );
+    expect((await say(chat, touch())).length).toBeGreaterThan(0);
+
+    const rows = await listChatContactEvents(chat.chatId);
+    expect(rows.map((row) => row.kind)).toEqual(["contact_started", "contact_ended", "contact_started"]);
+    const active = activeContactsOf((await storedScene(chat.chatId)).contacts);
+    expect(active.map((contact) => contact.contactId)).toEqual([rows[2]?.contactId]);
+    expect(active[0]?.contactId).not.toBe(rows[0]?.contactId);
+  });
+
+  /**
+   * The reconciliation the possessive guard forces, and the owner's directive
+   * settles.
+   *
+   * "I walk over to her desk" states no distance (the approach guard) and no
+   * departure (the same guard, on the "…from <X>" clause) — but
+   * `detectSceneMovement` reads it as a place change and mints a micro-place, so
+   * the `scene_changed` hook ends the contact. That outcome is CORRECT: the
+   * player moved, and a held touch does not survive the mover. Pinned here so a
+   * future change to either detector has to face the question rather than
+   * silently flip the answer.
+   */
+  it("walking over to her desk ends the held touch through the place change, and starts nothing", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const { chat } = await touchedChat();
+    const started = await soleRow(chat.chatId);
+
+    expect((await say(chat, DESK)).length).toBeGreaterThan(0);
+    const deskGuardId = await playerLineId(chat.chatId, DESK);
+
+    const { row, all } = await endRow(chat.chatId);
+    expect(all.map((entry) => entry.kind)).toEqual(["contact_started", "contact_ended"]);
+    expect(row.contactId).toBe(started.contactId);
+    expect(row.guardMessageId).toBe(deskGuardId);
+    expect(row.payload).toMatchObject({ kind: "contact_ended", reason: "scene_changed" });
+
+    const scene = await storedScene(chat.chatId);
+    expect(activeContactsOf(scene.contacts)).toEqual([]);
+    // Nothing was started and no distance was invented: walking up to her furniture
+    // is neither an approach to her nor a departure from her, so the `close` the
+    // real approach stated is exactly what still stands.
+    expect(all.filter((entry) => entry.kind === "contact_started")).toHaveLength(1);
     expect(sceneProximityFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe("close");
   });
 

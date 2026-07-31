@@ -126,14 +126,19 @@ exchange:
    approach as a `player`-origin scene intent over the player's **own** body (a
    possessive destination — "her desk", "Wren's chair" — names furniture, not a person,
    and states no distance), detects a player release ("I pull my hand back") ending the
-   matching contacts (`withdrawn`), and reads the same line for a plainly affectionate
-   hand-to-shoulder/arm/back/hand/head touch. Two hooks end contacts before detection
-   runs: a pending story-clock skip ends every active contact (`separated`; owner ruling
-   2026-07-31), and a scene-place change ends them as `scene_changed`. A detected act is
+   matching contacts (`withdrawn`), detects a player **departure** ("I step back", "I
+   pull away from her", "I walk across the room") — see below — and reads the same line
+   for a plainly affectionate hand-to-shoulder/arm/back/hand/head touch. Two hooks end
+   contacts before detection runs: a pending story-clock skip ends every active contact
+   (`separated`; owner ruling 2026-07-31), and a scene-place change ends them as
+   `scene_changed` — which is also the door "I walk over to her desk" comes through,
+   since the contact detectors read that as furniture while `detectSceneMovement` reads
+   a move, and a held touch does not survive the mover either way. A detected act is
    resolved by the shared contact core against the scene's reach, support, and material
    reads — a dressed body whose wardrobe published no coverage capture resolves
    `unresolved` (silence), never bare skin. A committable one is folded, and ALL of the
-   exchange's durable commits (hook ends, release ends, then the touch's events) are
+   exchange's durable commits (hook ends, the plan's release then departure ends, then
+   the touch's events) are
    written **atomically with the scene projection before the prompt builds**
    (`appendChatContactEventsWithScene`: one transaction over the ledger rows and
    `character_chats.scene`, idempotent on `(chat, event ref, sequence)`, and VERIFIED —
@@ -143,7 +148,29 @@ exchange:
    the detectors cannot read cleanly produces silence — a hedge, a negation, a question,
    an ambiguous target, storyteller narration, speech rather than narration, and (owner
    constraint) any romantic, intimate, or restraint framing anywhere in the sentence, so
-   a romantic case can never be relabeled into a commit. A retake deletes the discarded
+   a romantic case can never be relabeled into a commit (the two ENDS lift the restraint
+   veto and nothing else does — "I pull my hand back" and "I pull away" are the plainest
+   English there is, and a missed end strands a durable row).
+   The **departure** is the approach's inverse and the fourth producer of an end: the
+   player's own body moving off (`near` for the step-back class — "I step back", "I take
+   a step back", "I step/back/pull/move/draw away", "I lean back", "I put some distance
+   between us"; `distant` for the crossing class — "I walk away", "I step/move/walk
+   across the room"), from a named person, a sole-character pronoun, or — unnamed —
+   from everyone. It ends **every**
+   active contact the player is a participant in, either direction (her hand on the
+   player goes too), reason `separated`, one durable `endContact` commit each on the
+   same combined ordered list as everything else. Its distance claim obeys the
+   never-invent law: a `player`-origin `set_proximity` is written **only** where the
+   pair already has a proximity fact (and only when the new band is genuinely farther —
+   a departure widens, never narrows) or where an active contact proves they were
+   close; a pair nobody placed stays unknown. Facing is untouched — stepping back is not
+   turning away. Plan order is release → departure → approach → touch, so "I step back.
+   I walk over to Wren." ends the touch and lands `close`, while within ONE sentence a
+   named destination outranks a departure ("I walk across the room to Wren" is an
+   arrival). Release/departure precedence: a hand-only "I pull my hand back" releases
+   (`withdrawn`) and states no distance; a whole-body "I pull away" is a departure
+   (`separated`) and is deliberately not also a release, since the departure already
+   ends the same contacts and more. A retake deletes the discarded
    take's ledger rows under the same exchange guard the scene projection rolls back on
    (`deleteChatContactEventsForGuard`, beside `rollbackScenario` — unconditionally, not
    flag-gated: pruning a discarded take's durable rows is hygiene, not behavior). The

@@ -1,9 +1,12 @@
 # Romantic contact affordances
 
 Status: active (promoted 2026-07-28; **slices 0–2 shipped 2026-07-30**,
-**slice 3A — authority and persistence hardening — landed 2026-07-31**, and
-**slice 3A.1 — boundary corrections — landed 2026-07-31** after the owner's
-review of 3A).
+**slice 3A — authority and persistence hardening — landed 2026-07-31**,
+**slice 3A.1 — boundary corrections — landed 2026-07-31**, and the
+**affectionate-contact technical MVP — flag off — shipped 2026-07-31** with
+its item-1.1 persistence repairs and ending producers. **Next: the internal
+trial** (§"Continuation order" 2), which gates the romantic track and the
+parked list — nothing else builds until it succeeds).
 
 Slices 0–2: the truth-source audit is published, the lane-neutral contact
 lifecycle is built as pure contracts, and the foot domain proof is in
@@ -440,9 +443,14 @@ mobility may stay unproduced for the affectionate proof **provided the proof
 avoids restraint/pinning**, and becomes mandatory before any feature relying
 on immobilized limbs.
 
-#### Continuation order (owner-ruled; 1 leads)
+#### Continuation order (owner-ruled 2026-07-31: the MVP + its trial lead; everything else waits)
 
-1. **Affectionate integration proof — ✅ shipped 2026-07-31** (behind
+1. **The affectionate-contact technical MVP — flag off — ✅ shipped
+   2026-07-31.** ("Technical MVP" is the owner's accurate name for what
+   exists: the machinery works end-to-end and is proven by tests, but no
+   product judgment has been made — that is the trial's job, and both flags
+   stay off until it succeeds.) Built as the affectionate integration proof
+   (behind
    `CHAT_CONTACT_ACTIONS`, default **off**). The legacy chat lane gained: the
    `chat_contact_events` durable ledger (idempotent per exchange, pruned on a
    retake) + the scene/contact projection riding the scenario's retake anchor
@@ -489,23 +497,45 @@ on immobilized limbs.
    on. The one thing the preview assumes rather than observes is that the
    durable write it did not perform would have succeeded — without that, every
    contact would preview as silence, which is the blind spot it exists to close.
-2. **Actor control through the live lane** — enforcement, not just the
-   contract.
-3. **The explicit `romantic_touch` permission owner — spec before
-   implementation.** Its design decisions need owner rulings first; they are
-   listed in Open questions below.
-4. **Eligibility + blocker-link UI wiring** — the adapter into the pipeline and
-   the blocked-action links into the chat surface.
-5. **The genuinely romantic proof** — gated on 3 and 4; the
-   [adult declaration](finished/adult-eligibility.plan.md) must resolve every
-   participant.
-6. **Channel-aware foot registration with positive texture/glide — LAST.**
-   Blocked on explicit visual/tactile perception channels, perceiver binding,
-   structured path and cross-locus information, and per-surface footwear
-   friction — including a footwear **side** (owner ruling, 2026-07-31: one
-   sock or shoe must be representable before registration; friction stops
-   being globally aggregated). None of those exist yet, so this is future
-   design.
+2. **The internal trial — the gate for everything below (owner-ruled
+   2026-07-31).** Enablement is the flag architecture as built: set
+   `CHAT_CONTACT_ACTIONS` + `CHAT_PHYSICAL_CONSTRAINTS` globally on the Fly
+   deploy (the deployment is internal, so global-on IS the internal trial;
+   contact events land in real conversations and turning the flags back off
+   is the full rollback — rows remain, harmlessly). A small scripted set of
+   affectionate-beat conversations is run flag-on vs flag-off with the
+   dedicated QA account, scored against a written rubric for whether the
+   narration is actually **more coherent and natural**, and delivered with
+   transcripts; the owner's verdict on that report decides whether anything
+   below un-gates. Until the trial succeeds, items 3–6 are queued-but-gated
+   and the parked list at the end of this section stays parked.
+
+3. **Actor control through the live lane** (gated on the trial) —
+   enforcement, not just the contract.
+4. **The explicit `romantic_touch` permission owner — spec before
+   implementation** (gated on the trial). Its design decisions need owner
+   rulings first; they are listed in Open questions below.
+5. **Eligibility + blocker-link UI wiring** (gated on the trial) — the
+   adapter into the pipeline and the blocked-action links into the chat
+   surface.
+6. **The genuinely romantic proof** (gated on the trial, then on 4 and 5) —
+   the [adult declaration](finished/adult-eligibility.plan.md) must resolve
+   every participant.
+
+**Parked until the trial succeeds (owner ruling, 2026-07-31)** — deliberate
+reprioritization, not abandonment; each keeps its recorded design and
+prerequisites and none may be built while parked:
+
+- additional foot-region granularity (the sixteen-surface open question);
+- marks and material transfer (slice 4 below — Status: **parked**);
+- intimate physiology (the intimate track's physiology prerequisites);
+- successor-lane parity;
+- channel-aware foot narration / registration with positive texture/glide
+  (the former continuation item 6 — still blocked on explicit visual/tactile
+  perception channels, perceiver binding, structured path and cross-locus
+  information, and per-surface per-side footwear friction incl. the ruled
+  footwear side);
+- further generalized contact abstractions beyond what the MVP needs.
 
 **No partial contact status.** The contact adapter emits exactly four outcomes:
 committed, explicit-transition-required, rejected, unresolved. `partially_committed`
@@ -521,7 +551,7 @@ were **both met 2026-07-30**, and the foot registry defaults are deployed
 Registration is therefore no longer gated on corrections or data migration; it
 waits only on reaching its place in the wiring order above.
 
-### Slice 4 — changes caused by contact
+### Slice 4 — changes caused by contact · **parked** (owner ruling 2026-07-31, pending the trial)
 
 Connect marks and material transfer through explicit events owned by body,
 clothing, or action state. Commit source removal and target deposition
@@ -625,7 +655,7 @@ later blocking slice is not urgent, but it is not settled either.
 
 | Question | Owner | Required decision | Blocking slice | Status |
 | --- | --- | --- | --- | --- |
-| **How detailed should foot regions be?** ([foot spec](romantic-contact-affordances.spec.foot.md)) | Product | Whether the shipped sixteen-surface map is the right granularity, or should shrink | Slice 3 (the trial answers it) | Open — working answer shipped; awaiting trial evidence |
+| **How detailed should foot regions be?** ([foot spec](romantic-contact-affordances.spec.foot.md)) | Product | Whether the shipped sixteen-surface map is the right granularity, or should shrink | Parked (owner ruling 2026-07-31) | **Parked** with the rest of the foot track until the MVP trial succeeds |
 | **Which intimate changes are ready to consume?** ([intimate spec](romantic-contact-affordances.spec.intimate.md)) | Physiology plan | Which of erection, swelling, lubrication, flushing have authoritative reads | Slice 6 | Blocked on the deferred physiology plan |
 | **What is the minimum intimate consent scope?** ([intimate spec](romantic-contact-affordances.spec.intimate.md)) | Owner | The floor for intimate contact, and whether the two lanes may claim parity | Slice 5 | Needs owner ruling |
 | **Do marks ride the ruled body-surface store, and what are the transaction mechanics?** ([effects companion](romantic-contact-affordances.spec.effects.md)) | Engineering + owner | Whether pressure marks join the ruled store; the atomic/idempotent/branch-safe commit design | Slice 4 | Open |
