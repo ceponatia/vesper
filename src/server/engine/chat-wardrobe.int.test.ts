@@ -97,6 +97,40 @@ describe.runIf(ready)("finalizeChatState — archivist-proposed garment changes 
     expect(state?.outfitPresetId).toBe("cozy");
   });
 
+  it("a description that merely RESTATES the worn look keeps the structured wardrobe", async () => {
+    // The narrator paraphrased the standing outfit; the archivist extracted the
+    // paraphrase as a whole-look description. A paraphrase is not a wardrobe
+    // action — wiping the structured list here is how a modelled dressed body
+    // silently became unmodellable one settle into a conversation.
+    const { state, sink } = await runFinalize([tee()], {
+      description: "a soft white cotton tee with the sleeves pushed up",
+    });
+    expect(state?.wornItemIds).toEqual([tee()]);
+    expect(state?.outfit).toBe("");
+    expect(sink.items.some((item) => item.code === "chat_wardrobe.outfit_restatement")).toBe(true);
+  });
+
+  it("a genuinely different whole look still replaces (the ruled free-text fallback)", async () => {
+    const { state } = await runFinalize([tee()], { description: "a red evening dress" });
+    expect(state?.wornItemIds).toEqual([]);
+    expect(state?.outfit).toBe("a red evening dress");
+  });
+
+  it("a PARTIAL restatement of a multi-garment look still replaces — the guard is strict", async () => {
+    const { state } = await runFinalize([jacket(), tee()], { description: "a white cotton tee" });
+    expect(state?.wornItemIds).toEqual([]);
+    expect(state?.outfit).toBe("a white cotton tee");
+  });
+
+  it("a restatement carrying an exposure claim still replaces — exposure is a real change", async () => {
+    const { state } = await runFinalize([tee()], {
+      description: "a soft white cotton tee with the sleeves pushed up",
+      exposed: true,
+    });
+    expect(state?.wornItemIds).toEqual([]);
+    expect(state?.outfitExposed).toBe(true);
+  });
+
   it("the pre-exchange snapshot preserves the prior worn list for rollback", async () => {
     // The post-exchange state dropped the jacket…
     const { state } = await runFinalize([jacket(), tee()], { removed: ["her denim jacket"] });
