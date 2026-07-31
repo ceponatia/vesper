@@ -31,6 +31,7 @@ import {
   type ContactLifecycleCommit,
   type ContactPersistenceAcknowledgment,
   type DiagnosticSink,
+  type EffectiveCoverageRead,
   type PhysicalActionOutcome,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
@@ -60,8 +61,10 @@ import {
   chatContactActionOutcome,
   chatContactEventRef,
   chatContactMaterialSource,
+  chatContactReachPremise,
   endAllChatContacts,
   planChatContactTurn,
+  type ChatContactReachPremise,
   type ChatContactRosterMember,
 } from "./chat-contact-adapter";
 import {
@@ -69,6 +72,13 @@ import {
   CHAT_CONTACT_LEDGER_MISMATCH,
   deleteChatContactEventsForGuard,
 } from "./chat-contact-events";
+import {
+  applyChatNpcContactEnding,
+  chatReplyContactEventRef,
+  detectChatNpcContactEnding,
+  type ChatNpcEndingCharacter,
+} from "./chat-contact-reply";
+import { chatGarmentCoverageForCut } from "./chat-garment-affordances";
 import { buildChatPhysicalGuidance, buildChatPhysicalGuidanceStages } from "./chat-physical-guidance";
 import { renderChatPhysicalGuidance } from "./chat-physical-guidance-render";
 import { buildChatPhysicalGuidancePreview, type PhysicalGuidancePreview } from "./chat-physical-guidance-preview";
@@ -793,6 +803,17 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // record, and a stale row is a diagnostic rather than a failed reply.
       try {
         await deleteChatContactEventsForGuard(chatId, exchangeGuardMessageId);
+        // The discarded take's REPLY-SIDE rows — the NPC-authored endings — hang
+        // off the assistant row rather than the exchange guard (chat-contact-reply.ts),
+        // and a regenerate reuses that row in place, so no FK cascade prunes them.
+        // The scenario rollback above restored the pre-ending projection; the rows
+        // that produced the discarded ending must go with it, or the new take's
+        // reply-side append would verify against another take's record. (A rerun
+        // needs no such delete: it DELETES its assistant successors, and the guard
+        // column's FK cascades their rows.)
+        if (assistantMessageId !== exchangeGuardMessageId) {
+          await deleteChatContactEventsForGuard(chatId, assistantMessageId);
+        }
       } catch (error) {
         log.error("engine.chat", "chat contact ledger rollback failed", { error: describeError(error) });
       }
@@ -1112,6 +1133,24 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       sink,
       scenario.garments,
     );
+    // Each ensemble member's resolved wardrobe, ONCE per exchange, lazily. Two
+    // consumers share the cache: the contact leg derives each present member's
+    // current-cut coverage from it, and the ensemble prompt build renders the
+    // same resolve — without the cache the two would resolve independently with
+    // no guarantee of agreeing about what a body has on.
+    const memberWardrobes = new Map<string, ResolvedChatWardrobe>();
+    const memberWardrobe = async (member: (typeof others)[number]): Promise<ResolvedChatWardrobe> => {
+      const cached = memberWardrobes.get(member.characterId);
+      if (cached !== undefined) return cached;
+      const resolved = await resolveChatWardrobe(
+        { ...member.state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(member.characterId) },
+        owner,
+        member.profile,
+        sink,
+      );
+      memberWardrobes.set(member.characterId, resolved);
+      return resolved;
+    };
     // The garment digest + cue block (clothing-state-graph slice 6, `CHAT_GARMENT_CUES`,
     // default OFF). Built from the store as it stands BEFORE the fan-out — the cut the
     // narrator is actually writing from — and re-derived identically by the finalizer,
@@ -1275,38 +1314,102 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // Fenced whole (docs/resilience.md): any failure degrades to no contact, no write,
     // and no outcome — which is the flag-off path — and never costs the exchange.
     let contactActionOutcomes: readonly PhysicalActionOutcome[] = [];
+    let contactReachPremise: ChatContactReachPremise | null = null;
+    // The current-cut coverage reads the contact leg derived, keyed by garment
+    // actor. Threaded into the finalizer's `affordanceCoverage` so settlement
+    // persists the EXACT objects the contact resolver consumed — never an
+    // independent recompute.
+    let contactCoverageCaptures: Readonly<Record<string, EffectiveCoverageRead>> = {};
     if (chatContactActionsEnabled()) {
       try {
         const eventRef = chatContactEventRef(exchangeGuardMessageId);
         const storyMinute = Math.max(0, Math.trunc(scenario.clockMinutes));
+        // --- The current cut's material answers (the settle-race fix) ----------
+        // Coverage is derived from THIS exchange's resolved wardrobes, never read
+        // from the previous settle's persisted capture: that capture lands in the
+        // post-stream legs, so a touch sent quickly used to find "no capture yet"
+        // for a body this very turn had already resolved — and, the mirror
+        // hazard, an old capture could describe garments the current wardrobe no
+        // longer wears. The affordance read's own capture is reused VERBATIM when
+        // one was taken this turn (either guidance flag on), so the contact
+        // resolver and the guidance consumers share one object; otherwise the
+        // same pure garment stages derive it directly (`chatGarmentCoverageForCut`
+        // — no cue selection, no prompt bytes). A derivation failure degrades to
+        // `unavailable` for that body — silence with a diagnostic, never a stale
+        // capture and never bare skin.
+        const currentCoverageOf = (
+          actorId: string,
+          resolved: ResolvedChatWardrobe,
+          fromRead: EffectiveCoverageRead | null,
+        ): EffectiveCoverageRead | null => {
+          if (fromRead !== null) return fromRead;
+          try {
+            return chatGarmentCoverageForCut({
+              store: scenario.garments,
+              actorId,
+              ...(resolved.worn === undefined ? {} : { worn: resolved.worn }),
+              visibility: resolved.partVisibility,
+              environment: scenario.environment,
+              clockMinutes: scenario.clockMinutes,
+            });
+          } catch (error) {
+            sink.push(
+              diag(
+                "warn",
+                "chat_contact.coverage.derive_failed",
+                "current-cut coverage derivation failed; this body's material reads unavailable",
+                { path: "chat_contact", context: { actorId, error: describeError(error) } },
+              ),
+            );
+            return null;
+          }
+        };
         // PRESENT members only: an away character is not a body in the room, and the
         // seeded scene must never place one. Each carries their OWN material answer —
-        // resolved from the garment store, the worn ids and the free-text look
-        // together, so "the wardrobe says nothing is worn" and "nobody staged this
-        // wardrobe" stay different answers.
-        const contactRoster: ChatContactRosterMember[] = [
+        // the current-cut coverage, the worn ids and the free-text look together, so
+        // "the wardrobe says nothing is worn" and "nobody staged this wardrobe" stay
+        // different answers. Ensemble members resolve their wardrobes HERE (cached,
+        // reused by the prompt build below) — the primary-only fix would leave the
+        // identical race standing for every named ensemble target.
+        const presentMembers = [
           ...(driftedState.presence === "present"
-            ? [{ characterId, name: characterName, aliases: profile.aliases, state: driftedState }]
+            ? [{ characterId, name: characterName, aliases: profile.aliases, state: driftedState, wardrobe }]
             : []),
-          ...others
-            .filter((member) => member.state.presence === "present")
-            .map((member) => ({
-              characterId: member.characterId,
-              name: member.name,
-              aliases: member.profile.aliases,
-              state: member.state,
-            })),
-        ].map((member) => ({
-          subjectId: affordanceSubjectId(member.characterId),
-          name: member.name,
-          aliases: member.aliases,
-          material: chatContactMaterialSource({
-            store: scenario.garments,
-            actorId: garmentActorForCharacter(member.characterId),
-            freeTextOutfit: member.state.outfit,
-            wornItemIds: member.state.wornItemIds,
-          }),
-        }));
+          ...(await Promise.all(
+            others
+              .filter((member) => member.state.presence === "present")
+              .map(async (member) => ({
+                characterId: member.characterId,
+                name: member.name,
+                aliases: member.profile.aliases,
+                state: member.state,
+                wardrobe: await memberWardrobe(member),
+              })),
+          )),
+        ];
+        const coverageCaptures: Record<string, EffectiveCoverageRead> = {};
+        const contactRoster: ChatContactRosterMember[] = presentMembers.map((member) => {
+          const actorId = garmentActorForCharacter(member.characterId);
+          const coverage = currentCoverageOf(
+            actorId,
+            member.wardrobe,
+            member.characterId === characterId && affordanceRead !== null ? affordanceRead.coverage : null,
+          );
+          if (coverage !== null) coverageCaptures[actorId] = coverage;
+          return {
+            subjectId: affordanceSubjectId(member.characterId),
+            name: member.name,
+            aliases: member.aliases,
+            material: chatContactMaterialSource({
+              coverage,
+              store: scenario.garments,
+              actorId,
+              freeTextOutfit: member.state.outfit,
+              wornItemIds: member.state.wornItemIds,
+            }),
+          };
+        });
+        contactCoverageCaptures = coverageCaptures;
 
         // --- The two ends this exchange asserts, BEFORE anything is detected ---
         // A contact is a claim that two surfaces are in contact NOW, and both of these
@@ -1359,6 +1462,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         const { act, resolution } = planned;
         const commit = planned.commit;
         const committed = commit !== null && commit.status === "committed" ? commit : null;
+        // The S3 presentation constraint: a concrete act whose reach the scene
+        // could not establish stays `unresolved` — no row, no fold, no
+        // acknowledgment — but the guidance block (when `CHAT_PHYSICAL_CONSTRAINTS`
+        // is on) gets one typed premise fencing the prose from inventing the landing.
+        contactReachPremise = chatContactReachPremise({ act, resolution, characters: contactRoster });
         // ONE combined, ordered commit list per exchange — hook ends, then the ends
         // the plan folded from the player's own act (the release's `withdrawn`, then
         // the departure's `separated`), then the touch (with whatever it had to end to
@@ -1465,6 +1573,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           }),
           characterName,
           possessive: `${characterName}'s`,
+          // The unestablished-reach premise (S3): presentation only, and owned by
+          // THIS flag — the underlying attempt stays `unresolved` either way, and
+          // with the flag off these bytes do not exist.
+          ...(contactReachPremise === null ? {} : { reachPremise: contactReachPremise }),
           sink,
         });
       } catch (error) {
@@ -1639,22 +1751,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             quietExchanges: driftedState.quietExchanges,
           },
           // Each present member resolves their OWN worn state (chat-wardrobe-parity) — same
-          // owner library, so the shared loader keys their garments too.
+          // owner library, so the shared loader keys their garments too. Through the
+          // shared cache: a member the contact leg already resolved this turn renders
+          // from that SAME resolve rather than a second one.
           ...(await Promise.all(
             others.map(async (o) => ({
               name: o.name,
               profile: o.profile,
-              state: promptStateSlice(
-                o.state,
-                scenario,
-                await resolveChatWardrobe(
-                  { ...o.state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(o.characterId) },
-                  owner,
-                  o.profile,
-                  sink,
-                ),
-                o.profile,
-              ),
+              state: promptStateSlice(o.state, scenario, await memberWardrobe(o), o.profile),
               memory: otherMemories.get(o.characterId),
               presence: o.state.presence,
               quietExchanges: o.state.quietExchanges,
@@ -1785,6 +1889,15 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           )
         : [];
 
+      // The coverage captures settlement persists: the contact leg's current-cut
+      // reads, plus the affordance read's own capture (identical for the primary
+      // whenever both exist — the leg reuses the read's object verbatim).
+      const settledCoverage: Record<string, EffectiveCoverageRead> = {
+        ...contactCoverageCaptures,
+        ...(affordanceRead?.coverage
+          ? { [garmentActorForCharacter(characterId)]: affordanceRead.coverage }
+          : {}),
+      };
       try {
         const finalized = await finalizeChatState({
           chatId,
@@ -1844,10 +1957,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           // presentation cut, not reconstructed later, so narration, body
           // affordances, retakes, and images all share one answer about what is
           // still concealed. Keyed by garment actor handle; absent when this
-          // actor's wardrobe is unmodelled.
-          ...(affordanceRead?.coverage
-            ? { affordanceCoverage: { [garmentActorForCharacter(characterId)]: affordanceRead.coverage } }
-            : {}),
+          // actor's wardrobe is unmodelled. The contact leg's current-cut
+          // captures (primary AND ensemble members) merge in under the same key
+          // space — the exact objects the contact resolver consumed, threaded
+          // rather than recomputed, so what settle persists is what the turn
+          // used. When both sources cover the primary they are the identical
+          // object by construction.
+          ...(Object.keys(settledCoverage).length > 0 ? { affordanceCoverage: settledCoverage } : {}),
           // The ensemble context (multi-character-chat.plan.md): the roster line
           // arms the archivist's presence field; every present witness's group
           // gets the same extraction filed as their own memory.
@@ -2009,6 +2125,74 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             }
           } catch (error) {
             log.error("engine.chat", "ensemble garment reconcile failed", { error: describeError(error) });
+          }
+        }
+        // --- Reply-side NPC contact ending (chat-contact-reply.ts) ------------
+        // The exchange's LAST scene write, and the ordering is the invariant:
+        // `finalizeChatState` and the garment reconcile above both re-write
+        // `character_chats.scene` from the pre-ending projection, so the
+        // NPC-authored end applies AFTER them, against the scenario this settle
+        // just persisted — nothing later in the exchange touches the column, so
+        // the ended projection cannot be overwritten by a settle step. The ends
+        // and the projection land in one verified transaction under the
+        // reply-side event ref, guarded by the assistant row itself: retaking or
+        // deleting the reply removes its ending provenance, replaying it lands
+        // nowhere, and a conflicting record fails closed with the projection
+        // unchanged. Gated on the contact flag with the rest of the leg; fenced
+        // whole (docs/resilience.md) — a failed ending costs nothing but itself.
+        if (chatContactActionsEnabled()) {
+          try {
+            const npcRoster: ChatNpcEndingCharacter[] = [
+              ...(driftedState.presence === "present"
+                ? [{ subjectId: affordanceSubjectId(characterId), name: characterName, aliases: profile.aliases }]
+                : []),
+              ...others
+                .filter((member) => member.state.presence === "present")
+                .map((member) => ({
+                  subjectId: affordanceSubjectId(member.characterId),
+                  name: member.name,
+                  aliases: member.profile.aliases,
+                })),
+            ];
+            const ending = detectChatNpcContactEnding({ reply: full, characters: npcRoster });
+            if (ending !== null) {
+              const replyRef = chatReplyContactEventRef(assistantMessageId);
+              const replyMinute = Math.max(0, Math.trunc(scenario.clockMinutes));
+              const ended = applyChatNpcContactEnding({
+                scene: scenario.scene,
+                ending,
+                eventRef: replyRef,
+                storyTime: replyMinute,
+                sink,
+              });
+              if (ended.commits.length > 0) {
+                const appended = await appendChatContactEventsWithScene({
+                  chatId,
+                  guardMessageId: assistantMessageId,
+                  eventRef: replyRef,
+                  storyMinute: replyMinute,
+                  commits: ended.commits,
+                  scene: ended.scene,
+                });
+                if (appended.status === "recorded") {
+                  scenario = { ...scenario, scene: ended.scene };
+                } else {
+                  sink.push(
+                    diag(
+                      "error",
+                      CHAT_CONTACT_LEDGER_MISMATCH,
+                      "reply-side contact ledger holds a different record under this reply's keys; ending not applied",
+                      {
+                        path: "chat_contact_events",
+                        context: { eventRef: replyRef, sequences: appended.mismatched.map((key) => key.sequence) },
+                      },
+                    ),
+                  );
+                }
+              }
+            }
+          } catch (error) {
+            log.error("engine.chat", "chat reply-side contact ending failed", { error: describeError(error) });
           }
         }
         // Selfie first (more specific than a big-moment scene — the shared
@@ -2674,13 +2858,26 @@ function previewChatContactOutcomes(input: {
   cut: Awaited<ReturnType<typeof loadChatPreviewCut>>;
   message: { id: string | null; content: string; narrator: boolean };
   sink: DiagnosticCollector;
-}): readonly PhysicalActionOutcome[] {
+}): { outcomes: readonly PhysicalActionOutcome[]; reachPremise: ChatContactReachPremise | null } {
   const { cut } = input;
   try {
     // No player line yet ⇒ no act is detectable, so the fallback ref is only ever a
     // placeholder for a plan that returns nothing.
     const eventRef = chatContactEventRef(input.message.id ?? `preview:${input.chatId}`);
     const storyMinute = Math.max(0, Math.trunc(cut.scenario.clockMinutes));
+    // The same current-cut material answer the live leg derives, from the same
+    // resolved wardrobe — a preview that read the persisted capture instead
+    // would re-open the settle race the live leg closed, and explain a silence
+    // the turn no longer produces.
+    const actorId = garmentActorForCharacter(input.character.id);
+    const coverage = chatGarmentCoverageForCut({
+      store: cut.scenario.garments,
+      actorId,
+      ...(cut.wardrobe.worn === undefined ? {} : { worn: cut.wardrobe.worn }),
+      visibility: cut.wardrobe.partVisibility,
+      environment: cut.scenario.environment,
+      clockMinutes: cut.scenario.clockMinutes,
+    });
     // PRESENT only, exactly as the live roster is built: an away character is not a
     // body in the room, and an empty roster resolves no target at all.
     const characters: ChatContactRosterMember[] =
@@ -2691,8 +2888,9 @@ function previewChatContactOutcomes(input: {
               name: input.character.name,
               aliases: cut.profile.aliases,
               material: chatContactMaterialSource({
+                coverage,
                 store: cut.scenario.garments,
-                actorId: garmentActorForCharacter(input.character.id),
+                actorId,
                 freeTextOutfit: cut.state.outfit,
                 wornItemIds: cut.state.wornItemIds,
               }),
@@ -2715,24 +2913,29 @@ function previewChatContactOutcomes(input: {
       storyTime: storyMinute,
       sink: input.sink,
     });
-    if (act === null || resolution === null) return [];
+    if (act === null || resolution === null) return { outcomes: [], reachPremise: null };
     const acknowledgment =
       commit?.status === "committed"
         ? chatContactAcknowledgment({ commit, eventRef, actionId: act.actionId })
         : undefined;
-    return [
-      chatContactActionOutcome({
-        act,
-        resolution,
-        eventRef,
-        ...(commit === null ? {} : { commit }),
-        ...(acknowledgment === undefined ? {} : { acknowledgment }),
-        sink: input.sink,
-      }),
-    ];
+    return {
+      outcomes: [
+        chatContactActionOutcome({
+          act,
+          resolution,
+          eventRef,
+          ...(commit === null ? {} : { commit }),
+          ...(acknowledgment === undefined ? {} : { acknowledgment }),
+          sink: input.sink,
+        }),
+      ],
+      // The same typed premise the live leg derives — the inspector and the
+      // prompt preview must both explain (or show) the reach fence the turn built.
+      reachPremise: chatContactReachPremise({ act, resolution, characters }),
+    };
   } catch (error) {
     log.error("engine.chat", "chat contact preview failed", { error: describeError(error) });
-    return [];
+    return { outcomes: [], reachPremise: null };
   }
 }
 
@@ -2760,13 +2963,14 @@ export async function previewChatPhysicalGuidance(input: {
   // `CHAT_CONTACT_ACTIONS` off too, which is why this runs unconditionally and the
   // flag rides the preview as a field. (`previewChatPrompt` gates on it instead: that
   // surface is showing prompt bytes, so it has to obey.)
-  const actionOutcomes = previewChatContactOutcomes({
+  const contact = previewChatContactOutcomes({
     chatId: input.chatId,
     character: input.character,
     cut,
     message,
     sink,
   });
+  const actionOutcomes = contact.outcomes;
   const stages = buildChatPhysicalGuidanceStages({
     read: read.read,
     perception: read.request.perception,
@@ -2802,6 +3006,7 @@ export async function previewChatPhysicalGuidance(input: {
       guidance: stages.guidance,
       characterName: input.character.name,
       possessive: `${input.character.name}'s`,
+      ...(contact.reachPremise === null ? {} : { reachPremise: contact.reachPremise }),
       sink,
     }),
     diagnostics: [...stages.guidance.diagnostics, ...sink.items.filter((item) => item.code.startsWith("guidance."))],
@@ -2858,9 +3063,9 @@ export async function previewChatPrompt(input: {
     // experiment, and its outcome only reaches the narrator inside the guidance block
     // it rides in. Unlike the inspector, this surface OBEYS `CHAT_CONTACT_ACTIONS` —
     // it is showing prompt bytes, so a flag-off preview has to BE the flag-off bytes.
-    const actionOutcomes = chatContactActionsEnabled()
+    const contact = chatContactActionsEnabled()
       ? previewChatContactOutcomes({ chatId: input.chatId, character: input.character, cut, message, sink })
-      : [];
+      : { outcomes: [] as readonly PhysicalActionOutcome[], reachPremise: null };
     previewPhysicalGuidance = renderChatPhysicalGuidance({
       guidance: buildChatPhysicalGuidance({
         read: read.read,
@@ -2874,11 +3079,12 @@ export async function previewChatPrompt(input: {
         sensoryFocus: detectSensoryFocus(message.content),
         // The same conditional spread the live call site uses, for the same reason: a
         // contact-flag-off preview compiles the exact bytes it compiled before the leg.
-        ...(actionOutcomes.length > 0 ? { actionOutcomes } : {}),
+        ...(contact.outcomes.length > 0 ? { actionOutcomes: contact.outcomes } : {}),
         sink,
       }),
       characterName: input.character.name,
       possessive: `${input.character.name}'s`,
+      ...(contact.reachPremise === null ? {} : { reachPremise: contact.reachPremise }),
       sink,
     });
   }

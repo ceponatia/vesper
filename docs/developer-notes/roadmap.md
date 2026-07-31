@@ -87,11 +87,20 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   persistence, possessive-destination guards, unknown-clothing-is-never-bare
   material honesty, and the ending producers (release `withdrawn`, skip
   `separated`, scene change `scene_changed`, movement away `separated`).
-  **Next: the internal trial (owner-ruled 2026-07-31), which gates
-  everything.** Both flags go on globally on the Fly deploy; a small
-  scripted set of real conversations is run flag-on vs flag-off and judged
-  against a rubric for narration coherence/naturalness; the owner's verdict
-  on that report decides what un-gates. Queued behind the trial: actor
+  **The internal trial ran 2026-07-31**
+  ([report](romantic-contact-affordances.trial.md), awaiting the owner's
+  verdict), and its three bounded findings were fixed by the **item-1.2
+  pre-enablement repairs (landed 2026-07-31)**: the coverage settle race
+  closed at its source (current-cut material derivation, primary and
+  ensemble, exact captures threaded to settle), the S3 reach-premise
+  presentation constraint (typed, `CHAT_PHYSICAL_CONSTRAINTS`-owned, state
+  stays `unresolved`), and the minimal NPC-authored contact-ending producer
+  (reply-side event identity, retake-safe, fail-closed — the first bounded
+  deliverable of the actor-control item). The affected trial cases (S2, S5,
+  S3, NPC withdrawal) were rerun on fresh disposable chats and the report
+  amended with a full evidence appendix.
+  **Next: the owner's verdict on the amended report, which gates
+  everything.** Both flags stay off until it. Queued behind the trial: actor
   control through the live lane → the `romantic_touch` permission owner
   (**spec before implementation**; eight design rulings needed) →
   eligibility + blocker-link UI wiring → the romantic proof. **Parked until

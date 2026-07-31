@@ -208,6 +208,53 @@ export function buildChatGarmentAffordance(input: ChatGarmentAffordanceInput): C
   };
 }
 
+export interface ChatGarmentCoverageCutInput {
+  readonly store: ChatGarmentStore;
+  readonly actorId: string;
+  /**
+   * The resolved wardrobe's coverage rows and occlusion verdicts —
+   * `ResolvedChatWardrobe.worn` / `.partVisibility`. `worn` absent means the
+   * wardrobe could not be read at all (the free-text / legacy path), and the
+   * answer is `null`, never an empty read.
+   */
+  readonly worn?: readonly WornItemInput[];
+  readonly visibility?: Readonly<Record<string, WornVisibility>>;
+  readonly environment: ChatEnvironment;
+  readonly clockMinutes: number;
+}
+
+/**
+ * The CURRENT exchange's effective-coverage read for one actor, or `null` when
+ * this cut cannot model their wardrobe into coverage.
+ *
+ * This is the contact leg's answer to the settle race: the persisted capture in
+ * `ChatGarmentStore.coverage` lands at the PREVIOUS exchange's settle, so a
+ * rapid follow-up turn read "no capture yet" for a body whose wardrobe this very
+ * turn had already resolved. The material question must be answered from the
+ * cut the turn is standing in, so this derives it from the same inputs —
+ * the same store, the same resolved rows, the same clock — through the same
+ * pure garment stages `buildChatGarmentAffordance` runs. Nothing else is run to
+ * get it: no cue selection, no hair domain, no perception view.
+ *
+ * `null` means "this cut could not model the wardrobe" — the free-text path,
+ * legacy worn ids with no materialized instances, or a degraded item load — and
+ * the caller's dressed-check turns that into `unavailable`, never bare skin. An
+ * empty read (`entries: []`) is the OTHER answer: derivation ran and nothing
+ * covers anything.
+ */
+export function chatGarmentCoverageForCut(input: ChatGarmentCoverageCutInput): EffectiveCoverageRead | null {
+  if (input.worn === undefined) return null;
+  const read = buildChatGarmentAffordance({
+    store: input.store,
+    actorId: input.actorId,
+    worn: input.worn,
+    ...(input.visibility === undefined ? {} : { visibility: input.visibility }),
+    environment: input.environment,
+    clockMinutes: input.clockMinutes,
+  });
+  return read?.coverage ?? null;
+}
+
 /**
  * The causal events this lane can honestly commit for a garment.
  *

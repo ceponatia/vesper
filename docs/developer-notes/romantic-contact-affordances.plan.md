@@ -484,6 +484,57 @@ on immobilized limbs.
    both-halves-mid-stream atomicity, conflicting-retry abort, the three
    ending paths, and the material honesty split.
 
+   **Item 1.2 — pre-enablement repairs (owner-scoped follow-up; landed
+   2026-07-31).** The trial's three bounded gaps, fixed at their sources
+   before any enablement:
+
+   - **The coverage settle race is closed at its source.** The contact leg now
+     derives every present roster member's effective coverage from the CURRENT
+     exchange's resolved wardrobe before contact resolution — reusing the
+     affordance read's own capture verbatim when one was taken, deriving
+     through the same pure garment stages when not — so a rapid follow-up
+     touch no longer no-ops with `contact.material_unavailable`, and a stale
+     persisted capture can never override the current cut. Settlement persists
+     the exact objects the leg consumed (threaded, never recomputed). The
+     three honest material outcomes are unchanged: a modelled capture answers
+     (empty = genuinely bare), a dressed-but-unmodellable body stays
+     `unavailable`, an authoritatively bare wardrobe answers empty coverage.
+     Ensemble members get the identical treatment (their wardrobes resolve
+     once, cached, and the prompt build reuses the same resolve).
+   - **S3's reach gap got an honest presentation constraint.** A concrete
+     affectionate act that resolves `unresolved` specifically because the
+     scene cannot establish reach (`geometry_unavailable`) now produces one
+     typed reach-premise line in the physical-guidance block — "the current
+     scene does not establish that the player's hand can reach X's Y; do not
+     depict that touch as landing, and do not invent movement to make it
+     land." Presentation only, owned by `CHAT_PHYSICAL_CONSTRAINTS` (flag off
+     ⇒ byte-identical prompts); the attempt stays `unresolved` — no row, no
+     proximity, the existing diagnostics — and every OTHER failure keeps its
+     own typed wording (out-of-reach stays a refusal, material stays
+     material).
+   - **The minimal NPC-authored contact-ending producer** — the first bounded
+     deliverable of item 3 (actor control through the live lane). After the
+     assistant reply settles, conservative whole-sentence detection over the
+     reply's narration (negation/hedge/question/dialogue/romantic vetoes;
+     pronouns resolve only for a sole NPC; ensembles need an unambiguous
+     name) may END existing contacts involving that NPC — `withdrawn` for a
+     surface withdrawal, `separated` for a stated whole-body departure — and
+     nothing else: no starts, no movement, no proximity claims. The ends are
+     durable rows under a reply-side event ref
+     (`contact-reply:<assistant message id>`, disjoint from the player leg's
+     refs) guarded by the assistant row: retakes prune them, deletes cascade
+     them, replays land nowhere, and a conflicting record fails closed with
+     the projection unchanged. The ordering invariant is documented in the
+     settle: the producer runs after `finalizeChatState` and the garment
+     reconcile, so the settled scenario can never overwrite the NPC-ended
+     scene. Detail: `src/server/engine/chat-contact-reply.ts`.
+
+   Pinned by the unit suites (`chat-contact-adapter.test.ts`,
+   `chat-contact-reply.test.ts`, the guidance render suite) and two
+   integration suites (`chat-contact.int.test.ts` — race, stale capture,
+   unmodelled honesty, retake identity, reach-premise prompt bytes;
+   `chat-contact-reply.int.test.ts` — the ten durable-ending obligations).
+
    **The developer view came with it.** A feature this quiet needs somewhere to
    answer "why did nothing happen", and silence has many causes that look
    identical from the prompt: either flag off, a hedge or a negation in the
@@ -512,15 +563,20 @@ on immobilized limbs.
    **Run 2026-07-31 — [trial report](romantic-contact-affordances.trial.md),
    awaiting verdict.** Headline: clear coherence wins wherever the machinery
    had authority (held touches persist and release cleanly; scene changes end
-   contacts durably; material reaches prose; the state never lies — all
-   ledger-verified in production), no naturalness regressions anywhere, and
-   two bounded gaps recorded for ruling (unresolved-attempt prose still
-   teleports — needs a reach-fed constraint line; the coverage capture lands
-   at the previous settle, so a fast follow-up touch honestly no-ops). Flags
-   returned to off pending the verdict.
+   contacts durably; material reaches prose — ledger-verified in production),
+   no naturalness regressions anywhere, and three bounded gaps: the
+   unresolved-attempt prose teleport (S3), the coverage settle race (which
+   invalidated S2/S5 as contact-lifecycle proofs), and NPC-prose endings the
+   projection could not see. All three are fixed by **item 1.2 above**; the
+   affected cases (S2, S5, S3, plus an NPC-withdrawal case) were rerun on
+   fresh disposable chats and the report amended with a full evidence
+   appendix. Flags returned to off pending the verdict.
 
 3. **Actor control through the live lane** (gated on the trial) —
-   enforcement, not just the contract.
+   enforcement, not just the contract. Its FIRST bounded deliverable — the
+   minimal NPC-authored contact-ending producer — landed early as part of
+   item 1.2 above; the general case (NPC movement, starts, a broader
+   scene-language read) stays gated here and is explicitly out of 1.2's scope.
 4. **The explicit `romantic_touch` permission owner — spec before
    implementation** (gated on the trial). Its design decisions need owner
    rulings first; they are listed in Open questions below.

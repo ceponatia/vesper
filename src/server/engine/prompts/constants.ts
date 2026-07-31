@@ -219,9 +219,14 @@ export function chatPhysicalConstraintsEnabled(): boolean {
  * door onto the prompt and that flag owns it.
  *
  * Neither flag ever writes the other's state: this one never touches the cue
- * memory, the coverage capture, or the premise corrections, and the constraints
- * flag never commits a contact. Running one experiment therefore cannot move the
- * other's numbers.
+ * memory or the premise corrections, and the constraints flag never commits a
+ * contact. Running one experiment therefore cannot move the other's numbers.
+ * The one SHARED value is the effective-coverage capture
+ * (`ChatGarmentStore.coverage`): the contact leg derives it from the current
+ * exchange's resolved wardrobe pre-prompt (the settle-race fix) and settlement
+ * persists the exact object the leg consumed — reusing the affordance read's
+ * own capture verbatim whenever the other flag took one, so the two can never
+ * disagree about what a body has on.
  */
 export function chatContactActionsEnabled(): boolean {
   return process.env.CHAT_CONTACT_ACTIONS === "on";

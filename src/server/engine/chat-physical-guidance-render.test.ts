@@ -115,6 +115,59 @@ const render = (guidance: NarratorPhysicalGuidance, sink?: DiagnosticCollector) 
     ...(sink === undefined ? {} : { sink }),
   });
 
+describe("the reach-premise line", () => {
+  const premiseRender = (premise: { targetName: string; locus?: string }, guidance = guidanceOf({})) =>
+    renderChatPhysicalGuidance({
+      guidance,
+      characterName: NAME,
+      possessive: POSSESSIVE,
+      reachPremise: premise,
+    });
+
+  it("states the unestablished reach with the target's name and surface, and the two forbidden inventions", () => {
+    const lines = premiseRender({ targetName: "Sabrina", locus: "shoulder" });
+    expect(lines).toEqual([
+      "- Unestablished reach: the current scene does not establish that the player's hand can reach Sabrina's shoulder. " +
+        "Do not depict that touch as landing, and do not invent movement by either participant to make it land.",
+    ]);
+  });
+
+  it("falls back to the target's name alone when the surface has no wording", () => {
+    const lines = premiseRender({ targetName: "Sabrina" });
+    expect(lines[0]).toContain("can reach Sabrina.");
+  });
+
+  it("claims only the gap — never a distance, a refusal, or a movement", () => {
+    const line = premiseRender({ targetName: "Sabrina", locus: "shoulder" })[0] ?? "";
+    for (const positiveFact of ["across the room", "far apart", "pulls away", "refused", "too far"]) {
+      expect(line.toLowerCase()).not.toContain(positiveFact);
+    }
+  });
+
+  it("rides beside the unresolved outcome's silence, after the action tier", () => {
+    const lines = renderChatPhysicalGuidance({
+      guidance: guidanceOf({
+        actionOutcomes: [
+          outcome({
+            status: "unresolved",
+            resultCodes: ["contact.locus.shoulders", "contact.unresolved.geometry_unavailable"],
+          }),
+        ],
+      }),
+      characterName: NAME,
+      possessive: POSSESSIVE,
+      reachPremise: { targetName: "Sabrina", locus: "shoulder" },
+    });
+    // The unresolved outcome still renders nothing of its own; only the premise ships.
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("Unestablished reach");
+  });
+
+  it("absent premise renders the exact lines it always rendered", () => {
+    expect(render(guidanceOf({}))).toEqual([]);
+  });
+});
+
 describe("constraint lines", () => {
   it("renders the plan's worked line, truth clause included, when perception licensed it", () => {
     const lines = render(

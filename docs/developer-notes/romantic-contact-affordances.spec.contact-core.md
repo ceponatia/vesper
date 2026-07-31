@@ -788,3 +788,76 @@ coherently, a stale sweep that spares it and a current one that ends it, a
 capacity refusal with nothing written and nothing to read off it, wrong-id,
 wrong-kind, stale-event-ref, wrong-action and ended-contact acknowledgments, an
 acknowledgment with no fold behind it, and the two reason-vocabulary laws.
+
+## As built — item 1.2: pre-enablement repairs (2026-07-31)
+
+Three bounded repairs from the trial, all in the CHAT LANE adapter/pipeline —
+the shared contracts in `contracts/affordances/contact/` are unchanged.
+
+### Current-cut material (the settle-race fix)
+
+`chatContactMaterialSource` (chat-contact-adapter.ts) now takes the CURRENT
+exchange's derived coverage — `coverage: EffectiveCoverageRead | null` — and
+**never reads `ChatGarmentStore.coverage`**: the persisted capture lands at the
+previous exchange's settle (the race), and an old capture may describe garments
+the current wardrobe no longer wears. Callers derive the argument from the
+current cut:
+
+- the live leg reuses `affordanceRead.coverage` VERBATIM when either guidance
+  flag took a read this turn, else derives through
+  `chatGarmentCoverageForCut` (chat-garment-affordances.ts) — the same pure
+  garment stages, no cue selection, from `resolveChatWardrobe`'s own
+  `worn`/`partVisibility` rows;
+- present ensemble members resolve their wardrobes once (cached in the
+  pipeline's `memberWardrobe`; the ensemble prompt build reuses the cache) and
+  derive by the identical path;
+- the previews derive the same way, so the inspector cannot explain a silence
+  the live turn no longer produces.
+
+The three honest outcomes are unchanged: derived read (empty = genuinely bare)
+⇒ `supported`; dressed but unmodellable (free text, legacy worn ids, failed
+derivation — diagnostic `chat_contact.coverage.derive_failed`) ⇒ `unavailable`,
+with NO fallback to a stored capture; authoritatively nothing worn ⇒
+`supported(empty)`. Settlement persists the exact objects the leg consumed:
+the pipeline threads `contactCoverageCaptures` (primary + members, keyed by
+garment actor) into `finalizeChatState`'s `affordanceCoverage` merge.
+
+### The reach premise (S3)
+
+`chatContactReachPremise` (chat-contact-adapter.ts) → `ChatContactReachPremise
+{ targetName, locus? }`, non-null ONLY for `unresolved / geometry_unavailable`
+on a detected act — typed end to end, never diagnostic-string control flow.
+Rendered by `renderChatPhysicalGuidance` (optional `reachPremise` input) as one
+line — "Unestablished reach: the current scene does not establish that the
+player's hand can reach X's Y. Do not depict that touch as landing, and do not
+invent movement by either participant to make it land." — after the
+action-outcome tier. Presentation only: the resolution stays `unresolved` (no
+row, no fold, no acknowledgment), other statuses/reasons keep their own typed
+wording, and the bytes exist only under `CHAT_PHYSICAL_CONSTRAINTS`.
+
+### The reply-side NPC ending (minimal actor-control deliverable)
+
+`chat-contact-reply.ts` — `detectChatNpcContactEnding` (conservative
+whole-sentence allow-list over the COMPLETED reply's narration spans; curly
+quotes normalized; shared vetoes + third-person hedges; pronouns resolve only
+for a sole NPC, ensembles need an unambiguous name/alias/unique first name),
+`applyChatNpcContactEnding` (ends every active contact involving that NPC —
+`withdrawn` surface / `separated` whole-body — via the adapter's now-exported
+`endCoveredContacts`; no starts, no movement, no proximity claims), and
+`chatReplyContactEventRef` (`contact-reply:<assistant id>` — disjoint from the
+player leg's `contact:` namespace even on beat exchanges).
+
+Persistence identity: rows guard on the ASSISTANT message id.
+`appendChatContactEventsWithScene` writes ends + projection in one verified
+transaction; a mismatch fails closed (projection unchanged,
+`chat_contact.ledger.mismatch`). Retakes prune the reply-side rows explicitly
+beside the exchange-guard prune (a rerun's deletes cascade via the guard FK);
+identical replays land nowhere. **Ordering invariant:** the producer is the
+settle's LAST scene write — after `finalizeChatState` and the ensemble garment
+reconcile, both of which re-write `character_chats.scene` with the pre-ending
+projection.
+
+Tests: `chat-contact-reply.test.ts` (36 — vetoes, allow-list, subject
+resolution, the fold, identity), `chat-contact-reply.int.test.ts` (10 — the
+durable obligations), plus the reworked material/race/reach sections in
+`chat-contact-adapter.test.ts` and `chat-contact.int.test.ts`.
