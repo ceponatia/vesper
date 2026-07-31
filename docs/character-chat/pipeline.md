@@ -112,7 +112,43 @@ exchange:
    on the **pre-reply** path the player actually waits on. A failed embed degrades each leg
    exactly as its own would (facts → pinned-only, episodes → `[]`, callback → none). A
    caller that passes no cache still embeds internally, unchanged (the eval harness).
-6. **Prompt build.** `buildCharacterChatPromptParts` (pure, snapshot-tested) — split
+6. **Physical legs** (both experimental, both default off, and neither ever writes the
+   other's state — that independence is what keeps either trial interpretable).
+
+   **Affectionate contact** (`CHAT_CONTACT_ACTIONS`, `engine/chat-contact-adapter.ts` —
+   [romantic-contact-affordances.plan.md](../developer-notes/romantic-contact-affordances.plan.md)
+   §"Continuation order" 1). Regex-only over the player's own line: no model call and no
+   extraction leg, the `chat-intent.ts` precedent. It **seeds the scenario's scene** (a
+   participant per player + PRESENT roster member, an authored controller each, and a
+   `scene_default` standing posture on a seeded floor for a new arrival — distance and
+   orientation are NEVER seeded, because only a movement the player actually wrote may
+   claim those, and a scene nobody has moved in resolves `unresolved`), folds a detected
+   approach as a `player`-origin scene intent over the player's **own** body, and reads
+   the same line for a plainly affectionate hand-to-shoulder/arm/back/hand/head touch. A
+   detected act is resolved by the shared contact core against the scene's reach and
+   support reads; a committable one is folded, its durable commits are **appended to
+   `chat_contact_events` before the prompt builds** (`appendChatContactEvents`, idempotent
+   on `(chat, event ref, sequence)`), and only then does the active-contact projection
+   advance and the write's acknowledgment license a `committed` action outcome. Anything
+   the detectors cannot read cleanly produces silence — a hedge, a negation, a question,
+   an ambiguous target, storyteller narration, speech rather than narration, and (owner
+   constraint) any romantic, intimate, or restraint framing anywhere in the sentence, so
+   a romantic case can never be relabeled into a commit. A retake deletes the discarded
+   take's ledger rows under the same exchange guard the scene projection rolls back on
+   (`deleteChatContactEventsForGuard`, beside `rollbackScenario`). The scene itself rides
+   `ChatScenario` to the settle-time save exactly as the garment store and the
+   environment do; the ledger is the record it caches.
+
+   **Constraint-first narrator guidance** (`CHAT_PHYSICAL_CONSTRAINTS`,
+   `engine/chat-physical-guidance.ts`): what this body's committed state forbids the
+   narrator to claim, plus the high-confidence false premises in the player's own
+   framing — gated, ordered and budgeted by the shared guidance layer and rendered as one
+   binding block ahead of the tail's other notes. Nothing here is persisted; the
+   selection recomputes from the same cut and the same message, so the existing rollback
+   anchors reproduce it. It also owns the **only door onto the prompt**, so the contact
+   outcome above reaches the narrator only when this flag is on as well: with it off,
+   contact still commits and still persists, and the prompt is byte-identical.
+7. **Prompt build.** `buildCharacterChatPromptParts` (pure, snapshot-tested) — split
    for provider prefix caching (spec §9) into a **stable prefix** (identity → persona →
    scenario → background → regard-colored disposition → the composed **Relationship** block → cards →
    attributes → sensory cues → rules; byte-identical across turns, re-rendering only on
@@ -142,7 +178,7 @@ exchange:
    [prompts.md](prompts.md) §§Character-chat sensory cues / player-input perception /
    player-POV narration / state as a narration system / long-term memory, plus the
    regex-only one-turn cue (`engine/chat-intent.ts`).
-7. **Stream.** `streamCharacterChat` — a `streamText` + `openrouter().chat()` shape,
+8. **Stream.** `streamCharacterChat` — a `streamText` + `openrouter().chat()` shape,
    through `stripNarratorArtifactStream` and then
    `collapseRepeatedBlocksStream` (server/ai/narrator-repeats.ts — drops Aion
    tandem-repeat blocks, a verbatim re-emit of the reply's own trailing paragraphs,
@@ -159,11 +195,11 @@ exchange:
    the lock releases) — so a wedged provider can never hold the per-chat lock indefinitely
    (the incident that motivated the fix). See §Reply failures below for how a zero-token
    settle is classified and surfaced.
-8. **Settle (post-flush).** When the stream finishes — the route's shared
+9. **Settle (post-flush).** When the stream finishes — the route's shared
    `drainingStreamResponse` keeps consuming after a client disconnect
    ([resilience.md](../resilience.md) §5) — the reply persists (§5) and the post-turn fan-out
    runs (§3). All of it is off the perceived-latency path.
-9. **Render (dialogue-attribution).** The transcript owns dialogue presentation, so chat rule 3
+10. **Render (dialogue-attribution).** The transcript owns dialogue presentation, so chat rule 3
    makes the `[Name]` tag **conditionally optional** (dialogue stays quoted; other people —
    flavor NPCs and named side characters alike — speak in narration prose with plain
    attribution, never with a bracketed tag and never as a bare quoted paragraph). The contract
@@ -318,7 +354,7 @@ then one guarded state write:
 ## The one-turn notes (and why deferral happens pre-burn)
 
 The volatile tail's per-turn directives render through one ordered digest (§Prompt build,
-step 6). Where a turn is **crowded** — several one-turn notes competing for the same beat —
+step 7). Where a turn is **crowded** — several one-turn notes competing for the same beat —
 the low-priority ones are dropped, but that decision is made **upstream in the pipeline, not
 at render time**, for a hard reason: an offered **memory callback burns its anti-repeat ring
 entry the moment it is chosen** (`appendCallbackEntry`, riding this exchange's ordinary state

@@ -194,6 +194,40 @@ export function chatPhysicalConstraintsEnabled(): boolean {
 }
 
 /**
+ * The AFFECTIONATE CONTACT switch (romantic-contact-affordances.plan.md
+ * §"Continuation order" 1) — experimental, default-off, the same shape as every
+ * flag above.
+ *
+ * OFF (the default, and anything other than `on`) is today's behavior to the
+ * byte: no scene seeding, no movement or touch detection, no contact
+ * resolution, no lifecycle commit, no ledger row, and no action outcome on the
+ * narrator prompt — `ChatScenario.scene` rides through exactly as it was
+ * loaded. ON adds the deterministic contact leg: the player's own line is read
+ * for a movement toward a present roster member and for a plainly affectionate
+ * hand-to-shoulder/arm/back/hand/head touch, the attempt is resolved against
+ * the scene owner's reach and support reads, and a committable attempt is
+ * committed, written to the durable ledger, and reported to the narrator as one
+ * action outcome. Env-only, no dev route.
+ *
+ * ## How it composes with `CHAT_PHYSICAL_CONSTRAINTS`, and why that is not one flag
+ *
+ * Detection, resolution, the lifecycle commit, the ledger write, and the scene
+ * projection are gated on THIS flag ALONE — they are authoritative state, not a
+ * prompt experiment, and they must roll back with the exchange whether or not
+ * anything reads them. The compiled outcome only reaches the PROMPT when
+ * `CHAT_PHYSICAL_CONSTRAINTS` is also on, because the guidance block is the only
+ * door onto the prompt and that flag owns it.
+ *
+ * Neither flag ever writes the other's state: this one never touches the cue
+ * memory, the coverage capture, or the premise corrections, and the constraints
+ * flag never commits a contact. Running one experiment therefore cannot move the
+ * other's numbers.
+ */
+export function chatContactActionsEnabled(): boolean {
+  return process.env.CHAT_CONTACT_ACTIONS === "on";
+}
+
+/**
  * The RECOGNIZABLE-FEATURES switch (body-attribute-affordances.plan.md slice 7) —
  * experimental, default-off, the third of the same shape as `CHAT_GARMENT_CUES`
  * and `CHAT_AFFORDANCE_CUES` above, and for the same reason: slice 7 is a trial,

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildActionOutcome,
   DiagnosticCollector,
+  emptyNarratorPhysicalGuidance,
   GUIDANCE_MAX_CORRECTIONS,
   hairAttributeFixture,
   hairObserver,
@@ -14,9 +16,13 @@ import {
   HAIR_CLAIM_WETNESS_DRY,
   HAIR_CLAIM_WETNESS_SOAKED,
   type AffordanceRead,
+  type GuidanceDisclosure,
+  type PhysicalActionOutcome,
+  type PhysicalActionStatus,
 } from "@/contracts";
 import {
   buildChatPhysicalGuidance,
+  buildChatPhysicalGuidanceStages,
   chatGuidanceRelevance,
   detectHairPremises,
   GUIDANCE_CONSTRAINT_IRRELEVANT,
@@ -640,5 +646,72 @@ describe("compile", () => {
       detect("Your loose hair is streaming. Your hair is dry. Your hair is bare-headed.", committed({ coveredFraction: 9_000 })).length,
     ).toBeGreaterThan(GUIDANCE_MAX_CORRECTIONS);
     expect(guidance.corrections.length).toBeLessThanOrEqual(GUIDANCE_MAX_CORRECTIONS);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Action outcomes — passed through, never produced
+// ---------------------------------------------------------------------------
+
+describe("action outcomes", () => {
+  const contactOutcome = (status: PhysicalActionStatus, disclosure: GuidanceDisclosure = "consistency_only") =>
+    buildActionOutcome({
+      actionId: "contact:msg_1#character_wren:shoulders",
+      status,
+      resultCodes: ["contact.locus.shoulders", "contact.gesture.rest"],
+      disclosure,
+    });
+
+  const stages = (outcomes?: readonly PhysicalActionOutcome[], sink?: DiagnosticCollector) =>
+    buildChatPhysicalGuidanceStages({
+      read: null,
+      perception: null,
+      subjectId: "character_wren",
+      characterName: CHARACTER,
+      playerName: PLAYER,
+      message: "I rest my hand on your shoulder.",
+      narratorInput: false,
+      committed: committed(),
+      ...(outcomes === undefined ? {} : { actionOutcomes: outcomes }),
+      ...(sink === undefined ? {} : { sink }),
+    });
+
+  it("carries a supplied outcome through the compiler onto the guidance", () => {
+    const outcome = contactOutcome("committed");
+    const built = stages([outcome]);
+    expect(built.candidateActionOutcomes).toEqual([outcome]);
+    expect(built.guidance.actionOutcomes).toEqual([outcome]);
+  });
+
+  it("compiles an outcome even when nothing else this turn is at stake", () => {
+    // The empty short-circuit used to key on the two lists this file PRODUCES. An
+    // outcome alone must still reach the prompt: it is the strongest claim the block
+    // makes, and it has no budget precisely because it may never be dropped.
+    const built = stages([contactOutcome("rejected")]);
+    expect(built.guidance.actionOutcomes).toHaveLength(1);
+    expect(built.guidance.actionOutcomes[0]?.narratorMustResolve).toBe(true);
+  });
+
+  it("ranks a mandatory outcome ahead of an optional one", () => {
+    const built = stages([contactOutcome("committed"), contactOutcome("rejected")]);
+    expect(built.guidance.actionOutcomes.map((entry) => entry.status)).toEqual(["rejected", "committed"]);
+  });
+
+  it("gates an outcome on disclosure exactly like every other candidate", () => {
+    const sink = new DiagnosticCollector();
+    const built = stages([contactOutcome("committed", "resolver_only")], sink);
+    expect(built.candidateActionOutcomes).toHaveLength(1);
+    expect(built.guidance.actionOutcomes).toEqual([]);
+    expect(sink.items.some((item) => item.code.startsWith("guidance.disclosure"))).toBe(true);
+  });
+
+  it("with no outcomes supplied, compiles exactly as it did before the contact leg existed", () => {
+    const sink = new DiagnosticCollector();
+    const built = stages(undefined, sink);
+    expect(built.candidateActionOutcomes).toEqual([]);
+    expect(built.guidance).toEqual(emptyNarratorPhysicalGuidance());
+    expect(sink.items.filter((item) => item.code.startsWith("guidance."))).toEqual([]);
+    // An explicitly empty list is the same answer as no list at all.
+    expect(stages([]).guidance).toEqual(emptyNarratorPhysicalGuidance());
   });
 });

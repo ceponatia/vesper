@@ -4,9 +4,11 @@ import {
   type DiagnosticSink,
   type HairClaimArea,
   type NarratorPhysicalGuidance,
+  type PhysicalActionOutcome,
   type PhysicalNarrationConstraint,
   type PhysicalPremiseCorrection,
 } from "@/contracts";
+import { chatContactPhrase, type ChatContactPhraseKind } from "./chat-contact-adapter";
 
 /**
  * PROMPT PROJECTION for narrator physical guidance
@@ -49,10 +51,19 @@ import {
  * hair as loose" are about different things, and the narrator has to be told which
  * governs.
  *
- * Slice 2 renders two tiers. Action outcomes (slice 3) and state transitions (slice
- * 4) have their contracts and their selection tiers already, but no producer in this
- * lane and therefore no wording here — the slices that add the producers add the
- * lines, in the compiler's existing order.
+ * Three tiers render today. **Action outcomes** arrived with the affectionate contact
+ * proof (romantic-contact-affordances.plan.md §"Continuation order" 1) and lead the
+ * block, which is the compiler's own order rather than this file's: whether the touch
+ * the player just wrote actually happened outranks any standing truth about the body.
+ * State transitions (slice 4) still have a contract and a selection tier with no
+ * producer in this lane, and therefore no wording here.
+ *
+ * The outcome lines obey the same four rules, and rule 1 is the one worth spelling out
+ * for them. A COMMITTED outcome is the only positive statement this block ever makes,
+ * and it is not an invitation: it states what is true, fences the denial of it, and
+ * explicitly leaves the other person's response alone. "Do not narrate it as missed"
+ * carries no instruction to describe anything, and how a character answers a hand on
+ * her shoulder is a character choice this layer has no business proposing.
  */
 
 /** The block's heading. Distinct from every other prompt heading (plan §Architecture 7). */
@@ -150,6 +161,103 @@ function correctionLine(correction: PhysicalPremiseCorrection, input: ChatPhysic
 }
 
 /**
+ * The wordable clauses of one action outcome, bucketed by what they are about.
+ *
+ * Codes stay opaque to this file exactly as claim codes do: the contact lane owns the
+ * vocabulary and `chatContactPhrase` is the only door onto it, so a code this lane
+ * cannot word costs a clause rather than corrupting a sentence. Duplicates collapse —
+ * two requirement codes can legitimately share one phrase ("the distance would have to
+ * be closed first"), and saying it twice reads as two different obstacles.
+ */
+type OutcomePhrases = Readonly<Record<ChatContactPhraseKind, readonly string[]>>;
+
+function outcomePhrases(outcome: PhysicalActionOutcome): OutcomePhrases {
+  const buckets: Record<ChatContactPhraseKind, string[]> = {
+    gesture: [],
+    locus: [],
+    material: [],
+    blocked: [],
+    requirement: [],
+  };
+  for (const code of outcome.resultCodes) {
+    const phrase = chatContactPhrase(code);
+    if (phrase === undefined) continue;
+    const bucket = buckets[phrase.kind];
+    if (!bucket.includes(phrase.phrase)) bucket.push(phrase.phrase);
+  }
+  return buckets;
+}
+
+/**
+ * A contact that happened: present-tense truth, then the denial it forecloses.
+ *
+ * The final clause is load-bearing and is the reason this line is not an invitation.
+ * The contact is settled; the other person's answer to it is a character choice, and a
+ * block that stated the contact and then went quiet would read as a prompt to write
+ * that answer a particular way.
+ *
+ * Returns "" when the gesture or the surface has no wording. A committed outcome is not
+ * mandatory (`guidanceActionMustResolve`), so an unwordable one is silence rather than
+ * a sentence with a hole in it.
+ */
+function committedOutcomeLine(phrases: OutcomePhrases, input: ChatPhysicalGuidanceRenderInput): string {
+  const gesture = phrases.gesture[0];
+  const locus = phrases.locus[0];
+  if (gesture === undefined || locus === undefined) return "";
+  const material = phrases.material[0];
+  return (
+    `- Physical fact: the player's hand ${gesture} ${input.possessive} ${locus}` +
+    `${material === undefined ? "" : `, ${material}`}. ` +
+    "That contact is true right now — do not narrate it as missed, refused, or still being attempted. " +
+    `How ${input.characterName} responds to it is not decided here.`
+  );
+}
+
+/**
+ * An attempt that did not land — the one line this block MUST ship.
+ *
+ * Unlike every other line here it never returns "": a refusal or a required transition
+ * that fell out of the prompt is exactly how prose invents contact that never happened,
+ * which is why the selection tier gives action outcomes no budget in the first place.
+ * So each clause degrades on its own, and the sentence survives with whatever it has.
+ */
+function blockedOutcomeLine(phrases: OutcomePhrases, input: ChatPhysicalGuidanceRenderInput): string {
+  const locus = phrases.locus[0];
+  const reason = [...phrases.blocked, ...phrases.requirement][0];
+  const reach =
+    locus === undefined
+      ? "the player's attempted touch does not land"
+      : `the player's hand does not reach ${input.possessive} ${locus}`;
+  return (
+    `- Blocked contact: ${reach}${reason === undefined ? "" : ` — ${reason}`}. ` +
+    "The narration must account for that; do not write the touch as landing."
+  );
+}
+
+/**
+ * One action-outcome line.
+ *
+ * `unresolved` renders NOTHING, by contract rather than by omission: the resolver could
+ * not decide, and the correct output for a world that did not answer is silence — an
+ * explanation of why it is unsure would be the layer narrating its own gaps.
+ * `partially_committed` has no producer in this lane (contact either exists on a
+ * surface pair or does not), so it has no wording either.
+ */
+function actionOutcomeLine(outcome: PhysicalActionOutcome, input: ChatPhysicalGuidanceRenderInput): string {
+  const phrases = outcomePhrases(outcome);
+  switch (outcome.status) {
+    case "committed":
+      return committedOutcomeLine(phrases, input);
+    case "rejected":
+    case "explicit_transition_required":
+      return blockedOutcomeLine(phrases, input);
+    case "unresolved":
+    case "partially_committed":
+      return "";
+  }
+}
+
+/**
  * "a, b, or c" — the prohibition register, so a list reads as one forbidden idea.
  *
  * The `or` is skipped when the final phrase already carries one: a display phrase may
@@ -183,8 +291,10 @@ export function renderChatPhysicalGuidance(input: ChatPhysicalGuidanceRenderInpu
     return [];
   }
   return [
-    // Tier order is the compiler's, not this file's: corrections are about the message
-    // in front of the narrator, constraints are standing truths about the body.
+    // Tier order is the compiler's, not this file's: what the player's own act actually
+    // did outranks everything, corrections are about the message in front of the
+    // narrator, and constraints are standing truths about the body.
+    ...input.guidance.actionOutcomes.map((outcome) => actionOutcomeLine(outcome, input)),
     ...input.guidance.corrections.map((correction) => correctionLine(correction, input)),
     ...input.guidance.constraints.map((constraint) => constraintLine(constraint, input.possessive)),
   ].filter((line) => line.length > 0);
