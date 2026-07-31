@@ -5,6 +5,7 @@ import {
   affordanceEvidence,
   affordanceSubjectId,
   applySceneIntents,
+  commitContactResolution,
   contactPairKey,
   DiagnosticCollector,
   emptyChatGarmentStore,
@@ -12,15 +13,20 @@ import {
   emptySceneState,
   garmentActorForCharacter,
   garmentInstanceStateSchema,
+  resolveContactAttempt,
   sceneEventRef,
   sceneFacingFact,
+  sceneGeometryRead,
   sceneParticipant,
   sceneProximityFact,
+  sceneSupportRead,
   sceneSupportSurface,
   withSceneContacts,
   withSceneParticipant,
   type AffordanceSubjectId,
   type ChatGarmentStore,
+  type ContactBodySurfaceRef,
+  type ContactSurfaceRef,
   type EffectiveCoverageRead,
   type GarmentInstanceState,
   type SceneMovementIntent,
@@ -28,6 +34,7 @@ import {
   type SceneState,
 } from "@/contracts";
 import {
+  applyChatContactDeparture,
   applyChatContactRelease,
   chatApproachSceneIntents,
   chatContactAcknowledgment,
@@ -37,11 +44,13 @@ import {
   chatContactMaterialLayers,
   chatContactMaterialSource,
   chatContactPhrase,
+  chatDepartureSceneIntents,
   CHAT_CONTACT_PLAYER_SUBJECT,
   CHAT_SCENE_GROUND_SUPPORT,
   detectChatAffectionateTouch,
   detectChatApproach,
   detectChatContactRelease,
+  detectChatDeparture,
   endAllChatContacts,
   planChatContactTurn,
   resolveChatContactAttempt,
@@ -49,6 +58,7 @@ import {
   type ChatContactAct,
   type ChatContactMaterialSource,
   type ChatContactRosterMember,
+  type ChatDeparture,
 } from "./chat-contact-adapter";
 import { chatContactActionsEnabled } from "./prompts/constants";
 
@@ -806,6 +816,384 @@ describe("applying a release", () => {
   });
 });
 
+/**
+ * A contact the CHARACTER is making on the PLAYER.
+ *
+ * The one direction this lane's own detectors cannot produce — every act they
+ * read is the player's own hand — and the direction the departure's ending law
+ * is specifically about. Built through the shared core with her control asserted
+ * NPC-side, which is the only honest way to say she reached out.
+ */
+function herHandOnMe(
+  scene: SceneState,
+  eventRef = chatContactEventRef("msg_her_hand"),
+): { scene: SceneState; contactId: string } {
+  // She has to be turned toward the player for the reach to read at all, and that
+  // is her fact: an `npc`-origin intent, never a player-origin one.
+  const turned = applySceneIntents(scene, [
+    {
+      intentId: "probe:facing:hers",
+      subjectId: WREN,
+      origin: "npc",
+      change: { kind: "set_facing", towardId: CHAT_CONTACT_PLAYER_SUBJECT, facing: "toward" },
+      ref: REF,
+      storyTime: AT,
+      evidence: [affordanceEvidence("adapter", "probe")],
+    },
+  ]).state;
+  const source: ContactBodySurfaceRef = { kind: "body", subjectId: WREN, locationId: "hands" };
+  const target: ContactSurfaceRef = {
+    kind: "body",
+    subjectId: CHAT_CONTACT_PLAYER_SUBJECT,
+    locationId: "shoulders",
+  };
+  const resolution = resolveContactAttempt({
+    intent: {
+      actionId: "probe:her_hand",
+      actorId: WREN,
+      source,
+      target,
+      actionKind: "affectionate",
+      access: "any_material",
+      requestedPressure: "light",
+      storyTime: AT,
+    },
+    context: {
+      actorControl: { status: "allowed", actorId: WREN, evidence: [affordanceEvidence("adapter", "probe")] },
+      targetAgencies: [],
+      participantEligibility: {
+        status: "not_required",
+        participantIds: [WREN, CHAT_CONTACT_PLAYER_SUBJECT],
+        evidence: [],
+      },
+      policy: { status: "not_required", scopes: [], evidence: [] },
+      geometry: sceneGeometryRead({ state: turned, source, target }),
+      sourceSupport: sceneSupportRead(turned, source),
+      targetSupport: sceneSupportRead(turned, {
+        kind: "body",
+        subjectId: CHAT_CONTACT_PLAYER_SUBJECT,
+        locationId: "shoulders",
+      }),
+      material: adapterSupported({ layers: [], evidence: [] }),
+      adjustments: [],
+    },
+  });
+  if (resolution.status !== "committable") throw new Error(`fixture: her hand must commit (${resolution.status})`);
+  const commit = commitContactResolution({ state: turned.contacts, resolution, eventRef });
+  if (commit.status !== "committed") throw new Error("fixture: her hand must commit");
+  return { scene: withSceneContacts(turned, commit.state), contactId: commit.contact.contactId };
+}
+
+// ---------------------------------------------------------------------------
+// Departure — the player moving away
+// ---------------------------------------------------------------------------
+
+describe("departure detection", () => {
+  const depart = (message: string, characters: readonly ChatContactRosterMember[] = SOLO) =>
+    detectChatDeparture({ message, narratorInput: false, characters });
+
+  it.each([
+    "I step back.",
+    "I take a step back.",
+    "I slowly step back.",
+    "I step away.",
+    "I back away.",
+    "I pull away.",
+    "I move away.",
+    "I draw away.",
+    "I lean back.",
+    "I put some distance between us.",
+    "I put a little distance between us.",
+  ])("%s reads as a step's worth of distance from everyone", (message) => {
+    expect(depart(message)).toEqual({ targetSubject: null, band: "near" });
+  });
+
+  it.each(["I walk away.", "I walk across the room.", "I step across the room.", "I move across the room."])(
+    "%s reads as the width of the room",
+    (message) => {
+      // WALKING is the other class: the space between them is now a space that has
+      // to be crossed, which is what `distant` means.
+      expect(depart(message)).toEqual({ targetSubject: null, band: "distant" });
+    },
+  );
+
+  it.each([
+    ["I step back from Wren.", "near"],
+    ["I step away from her.", "near"],
+    ["I pull away from Wren.", "near"],
+    ["I walk away from her.", "distant"],
+  ])("%s names who was left (%s)", (message, band) => {
+    expect(depart(message)).toEqual({ targetSubject: WREN, band });
+  });
+
+  it.each([
+    ["I don't step back.", "a denial"],
+    ["Should I step away from her?", "a question"],
+    ["Maybe I step back.", "a hedge"],
+    ["I want to walk away.", "an intention"],
+    ["I almost step back.", "a near miss"],
+    ["She steps away from me.", "somebody else's body"],
+    ["I step back and kiss her.", "romantic framing in the same sentence"],
+  ])("%s produces no departure (%s)", (message) => {
+    expect(depart(message)).toBeNull();
+  });
+
+  it("ignores narration that is not the player's own", () => {
+    expect(detectChatDeparture({ message: "I step back.", narratorInput: true, characters: SOLO })).toBeNull();
+    expect(depart('"I step back."')).toBeNull();
+    expect(depart("*I step back.*")).toBeNull();
+  });
+
+  it("reads a departure from a forceful word, because refusing would strand the contact", () => {
+    // Same argument as the release's: "pull away" is the plainest English for this,
+    // and the restraint veto exists to stop contacts being MADE, not ended.
+    expect(depart("I pull away from her.")).toEqual({ targetSubject: WREN, band: "near" });
+    // It buys nothing on the commit side — a forceful touch still commits nothing.
+    expect(touch("I grab your arm.")).toBeNull();
+  });
+
+  it("refuses a target it cannot resolve rather than departing from everyone", () => {
+    // The sentence said WHAT it moved away from. Substituting "everyone" would be
+    // this layer choosing whose contact ended.
+    expect(depart("I step back from the desk.")).toBeNull();
+    expect(depart("I step away from her.", PAIR)).toBeNull();
+    expect(depart("I step away from Vaelith.", PAIR)).toEqual({ targetSubject: VAEL, band: "near" });
+  });
+
+  it("reads a possessed target as the furniture it is", () => {
+    // "her desk" is a thing she owns, and ending her contacts because the player
+    // backed off from it would be the possessive guard's failure in reverse.
+    expect(depart("I step back from her desk.")).toBeNull();
+    expect(depart("I step back from Wren's desk.")).toBeNull();
+    // Clause-final still names the person, exactly as the approach guard has it.
+    expect(depart("I step back from her, quiet.")).toEqual({ targetSubject: WREN, band: "near" });
+  });
+
+  it("reads a sentence that names somewhere to ARRIVE as an arrival", () => {
+    // A destination outranks a departure WITHIN one sentence: otherwise the turn
+    // would end her contacts on the way to standing next to her.
+    expect(depart("I walk across the room to Wren.")).toBeNull();
+    expect(depart("I lean back toward Wren.")).toBeNull();
+    expect(approach("I walk across the room to Wren.")).toEqual({ targetSubject: WREN, band: "close" });
+  });
+});
+
+describe("release and departure — a hand is not a body", () => {
+  const depart = (message: string) => detectChatDeparture({ message, narratorInput: false, characters: SOLO });
+  const release = (message: string) => detectChatContactRelease({ message, narratorInput: false, characters: SOLO });
+
+  it.each(["I pull my hand back.", "I draw my hand away.", "I take my hand back.", "I slowly move my hand away."])(
+    "%s releases WITHOUT departing",
+    (message) => {
+      // The ruling: a hand-only withdrawal ends the contact and states no distance.
+      // Mechanically it is the adjacency — the direction word has to follow the verb.
+      expect(release(message)).not.toBeNull();
+      expect(depart(message)).toBeNull();
+    },
+  );
+
+  it("a full-body pull-away departs, and is deliberately not ALSO a release", () => {
+    // The departure already ends the same contacts and more, so adding this to the
+    // release lexicon would compete over nothing but the recorded reason — and
+    // `separated` is the truer one for a body that moved.
+    expect(depart("I pull away.")).toEqual({ targetSubject: null, band: "near" });
+    expect(release("I pull away.")).toBeNull();
+    const held = holding(placedAmong(SOLO), "I rest my hand on your shoulder.", SOLO);
+    const planned = planChatContactTurn({
+      scene: held.scene,
+      message: "I pull away.",
+      narratorInput: false,
+      characters: SOLO,
+      eventRef: chatContactEventRef("msg_exchange_2"),
+      storyTime: AT + 1,
+    });
+    expect(planned.ended.map((commit) => [commit.contactId, commit.reason])).toEqual([[held.contactId, "separated"]]);
+  });
+
+  it("a message that says both does both, release first, each with its own reason", () => {
+    // Two sentences, because the detectors want a first-person subject beside the
+    // verb: "I pull my hand back and step away" states its second clause with no
+    // subject of its own, and both lexicons refuse a clause they cannot attribute.
+    const mine = holding(placedAmong(SOLO), "I rest my hand on your shoulder.", SOLO);
+    const hers = herHandOnMe(mine.scene);
+    const planned = planChatContactTurn({
+      scene: hers.scene,
+      message: "I pull my hand back. I step away.",
+      narratorInput: false,
+      characters: SOLO,
+      eventRef: chatContactEventRef("msg_exchange_2"),
+      storyTime: AT + 1,
+    });
+    // The player's own hand comes back as `withdrawn`; what the departure still
+    // finds — her hand on the player — ends as `separated`. Plan order, in the ends.
+    expect(planned.ended.map((commit) => [commit.contactId, commit.reason])).toEqual([
+      [mine.contactId, "withdrawn"],
+      [hers.contactId, "separated"],
+    ]);
+    expect(planned.scene.contacts.contacts).toEqual([]);
+    expect(sceneProximityFact(planned.scene, CHAT_CONTACT_PLAYER_SUBJECT, WREN)?.value).toBe("near");
+  });
+});
+
+describe("applying a departure", () => {
+  const depart = (scene: SceneState, departure: ChatDeparture, sink?: DiagnosticCollector) =>
+    applyChatContactDeparture({
+      scene,
+      departure,
+      eventRef: chatContactEventRef("msg_exchange_2"),
+      storyTime: AT + 1,
+      ...(sink === undefined ? {} : { sink }),
+    });
+
+  it("ends every contact the player is part of, reason `separated`", () => {
+    const held = holding(placedAmong(SOLO), "I rest my hand on your shoulder.", SOLO);
+    const sink = new DiagnosticCollector();
+    const ends = depart(held.scene, { targetSubject: null, band: "near" }, sink);
+    expect(ends.commits.map((commit) => commit.contactId)).toEqual([held.contactId]);
+    expect(ends.commits[0]?.reason).toBe("separated");
+    expect(ends.scene.contacts.contacts).toEqual([]);
+    expect(sink.hasErrors).toBe(false);
+  });
+
+  it("ends a contact the CHARACTER is making, which a release may not touch", () => {
+    // Either end, not just the player's own hand: her hand does not survive the
+    // player walking away from her.
+    const hers = herHandOnMe(placedAmong(SOLO));
+    expect(depart(hers.scene, { targetSubject: WREN, band: "near" }).commits.map((c) => c.contactId)).toEqual([
+      hers.contactId,
+    ]);
+    const released = applyChatContactRelease({
+      scene: hers.scene,
+      release: { targetSubject: null },
+      eventRef: chatContactEventRef("msg_exchange_2"),
+      storyTime: AT + 1,
+    });
+    expect(released.commits).toEqual([]);
+  });
+
+  it("ends only the named person's contacts, and an unnamed departure ends them all", () => {
+    const first = holding(placedAmong(PAIR), "I rest my hand on Wren's shoulder.", PAIR);
+    const second = holding(first.scene, "I rest my hand on Vaelith's arm.", PAIR, chatContactEventRef("msg_2"));
+    const named = depart(second.scene, { targetSubject: WREN, band: "near" });
+    expect(named.commits.map((commit) => commit.contactId)).toEqual([first.contactId]);
+    expect(named.scene.contacts.contacts.map((contact) => contact.contactId)).toEqual([second.contactId]);
+
+    const everyone = depart(second.scene, { targetSubject: null, band: "near" });
+    expect(everyone.commits).toHaveLength(2);
+    expect(everyone.scene.contacts.contacts).toEqual([]);
+  });
+
+  it("does nothing, quietly, when nothing was touching", () => {
+    const scene = placedAmong(SOLO);
+    const sink = new DiagnosticCollector();
+    const ends = depart(scene, { targetSubject: null, band: "near" }, sink);
+    expect(ends.commits).toEqual([]);
+    expect(ends.scene).toBe(scene);
+    expect(sink.items).toEqual([]);
+  });
+
+  it("absorbs a departure older than the contact it names (law 4)", () => {
+    const held = holding(placedAmong(SOLO), "I rest my hand on your shoulder.", SOLO);
+    const sink = new DiagnosticCollector();
+    const ends = applyChatContactDeparture({
+      scene: held.scene,
+      departure: { targetSubject: null, band: "near" },
+      eventRef: chatContactEventRef("msg_exchange_0"),
+      storyTime: AT - 5,
+      sink,
+    });
+    expect(ends.commits).toEqual([]);
+    expect(ends.scene.contacts.contacts).toHaveLength(1);
+    expect(sink.items.some((item) => item.severity === "warn")).toBe(true);
+  });
+});
+
+describe("the departure's proximity law — never invent a distance", () => {
+  const intents = (
+    scene: SceneState,
+    departure: ChatDeparture,
+    characters: readonly ChatContactRosterMember[] = SOLO,
+  ) =>
+    chatDepartureSceneIntents(departure, {
+      scene,
+      characters: characters.map((entry) => entry.subjectId),
+      player: CHAT_CONTACT_PLAYER_SUBJECT,
+      ref: REF,
+      storyTime: AT + 1,
+    });
+
+  it("says nothing at all about a pair nobody has placed", () => {
+    // Stepping back from somebody the scene never placed tells us the player moved.
+    // It does not tell us how far apart they are now, and a band here would be this
+    // module inventing the one thing law 2 forbids it to.
+    const scene = seeded();
+    expect(intents(scene, { targetSubject: WREN, band: "near" })).toEqual([]);
+    expect(intents(scene, { targetSubject: null, band: "distant" })).toEqual([]);
+    expect(applySceneIntents(scene, intents(scene, { targetSubject: null, band: "near" })).state.proximity).toEqual([]);
+  });
+
+  it("widens a distance somebody stated, as the player's own claim", () => {
+    const before = placedAmong(SOLO);
+    const scene = applySceneIntents(before, intents(before, { targetSubject: WREN, band: "near" })).state;
+    const fact = sceneProximityFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, WREN);
+    expect(fact?.value).toBe("near");
+    expect(fact?.provenance.source).toBe("player_intent");
+  });
+
+  it("never makes the pair CLOSER than it already was", () => {
+    // A `distant` pair does not become `near` because the player took a step back.
+    const far = placedAmong(SOLO, "distant");
+    expect(intents(far, { targetSubject: WREN, band: "near" })).toEqual([]);
+    // The wider band over the same pair still lands.
+    const close = placedAmong(SOLO, "close");
+    expect(intents(close, { targetSubject: WREN, band: "distant" })).toHaveLength(1);
+  });
+
+  it("takes an active contact as proof they were close", () => {
+    // A hand resting on a shoulder is proof of reach whether or not any movement
+    // said so, so the distance it opens is a real claim rather than a guess.
+    const held = holding(placedAmong(SOLO), "I rest my hand on your shoulder.", SOLO);
+    const unplaced: SceneState = { ...held.scene, proximity: [] };
+    const list = intents(unplaced, { targetSubject: WREN, band: "near" });
+    expect(list).toHaveLength(1);
+    expect(sceneProximityFact(applySceneIntents(unplaced, list).state, CHAT_CONTACT_PLAYER_SUBJECT, WREN)?.value).toBe(
+      "near",
+    );
+  });
+
+  it("moves only the player, and never turns them away", () => {
+    const before = placedAmong(SOLO);
+    const list = intents(before, { targetSubject: WREN, band: "distant" });
+    expect(list.every((intent) => intent.subjectId === CHAT_CONTACT_PLAYER_SUBJECT)).toBe(true);
+    expect(list.every((intent) => intent.origin === "player")).toBe(true);
+    expect(list.every((intent) => intent.change.kind === "set_proximity")).toBe(true);
+    // Stepping back is not turning away — only an explicit turn would be, and this
+    // pass detects none, so the facing the approach wrote still stands.
+    const scene = applySceneIntents(before, list).state;
+    expect(sceneFacingFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, WREN)?.value).toBe("toward");
+  });
+
+  it("an unnamed departure covers every PLACED pair, and only those", () => {
+    const room = applySceneIntents(seeded(PAIR), [
+      {
+        intentId: "probe:proximity:wren",
+        subjectId: CHAT_CONTACT_PLAYER_SUBJECT,
+        origin: "player",
+        change: { kind: "set_proximity", otherId: WREN, band: "close" },
+        ref: REF,
+        storyTime: AT,
+        evidence: [affordanceEvidence("adapter", "probe")],
+      },
+    ]).state;
+    const list = intents(room, { targetSubject: null, band: "near" }, PAIR);
+    expect(list).toHaveLength(1);
+    const scene = applySceneIntents(room, list).state;
+    expect(sceneProximityFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, WREN)?.value).toBe("near");
+    // Vaelith is in the room, and nobody has ever said how far away she is.
+    expect(sceneProximityFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, VAEL)).toBeUndefined();
+  });
+});
+
 describe("ending every contact at once", () => {
   it("sweeps the scene for a skip or a scene change, with the reason it was given", () => {
     const held = holding(placedAmong(SOLO), "I rest my hand on your shoulder.", SOLO);
@@ -935,6 +1323,44 @@ describe("the turn plan", () => {
     if (planned.commit?.status !== "committed") return;
     expect(planned.commit.commit.kind).toBe("contact_started");
     expect(planned.commit.contact.contactId).not.toBe(held.contactId);
+  });
+
+  it("departs BEFORE it approaches, so a step back and a walk over land where they were written", () => {
+    // Two sentences, one message, in the order the player wrote them: the departure
+    // widens the distance and ends the touch, and the approach that FOLLOWS it
+    // re-establishes `close` over the top. Reversed, the player would end the turn a
+    // step away from somebody they had just walked up to.
+    const held = holding(placedAmong(SOLO), "I rest my hand on your shoulder.", SOLO);
+    const planned = planChatContactTurn({
+      scene: held.scene,
+      message: "I step back. I walk over to Wren.",
+      narratorInput: false,
+      characters: SOLO,
+      eventRef: chatContactEventRef("msg_exchange_2"),
+      storyTime: AT + 1,
+    });
+    expect(planned.ended.map((commit) => [commit.contactId, commit.reason])).toEqual([[held.contactId, "separated"]]);
+    expect(sceneProximityFact(planned.scene, CHAT_CONTACT_PLAYER_SUBJECT, WREN)?.value).toBe("close");
+    expect(planned.scene.contacts.contacts).toEqual([]);
+  });
+
+  it("folds a departure into the planned scene, and the touch after it cannot reach", () => {
+    const held = holding(placedAmong(SOLO), "I rest my hand on your shoulder.", SOLO);
+    const planned = planChatContactTurn({
+      scene: held.scene,
+      message: "I step back. I rest my hand on her shoulder.",
+      narratorInput: false,
+      characters: SOLO,
+      eventRef: chatContactEventRef("msg_exchange_2"),
+      storyTime: AT + 1,
+    });
+    expect(planned.ended.map((commit) => commit.reason)).toEqual(["separated"]);
+    expect(sceneProximityFact(planned.scene, CHAT_CONTACT_PLAYER_SUBJECT, WREN)?.value).toBe("near");
+    // Detected, and refused: `near` is one reposition away, and the scene says so
+    // rather than letting the hand cross the gap the player just opened.
+    expect(planned.act).not.toBeNull();
+    expect(planned.resolution?.status).toBe("explicit_transition_required");
+    expect(planned.commit).toBeNull();
   });
 
   it("folds the release into the planned scene, so a release-only turn shows it", () => {

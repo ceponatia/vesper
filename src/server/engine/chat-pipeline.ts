@@ -1246,11 +1246,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     // --- Affectionate contact (`CHAT_CONTACT_ACTIONS`, default OFF) ----------
     // The deterministic contact leg (romantic-contact-affordances.plan.md
-    // §"Continuation order" 1): end what this exchange ended, seed the scene, fold a
-    // movement the player wrote, detect a plainly affectionate hand-touch on a present
-    // roster member, resolve it against the scene owner's reach and support reads, and
-    // — only if it is committable — fold it into the active-contact projection and
-    // write the durable event before anything reaches the prompt.
+    // §"Continuation order" 1): end what this exchange ended, seed the scene, fold the
+    // movements the player wrote — a departure widening the distance and ending what
+    // it separated, then an approach closing it — detect a plainly affectionate
+    // hand-touch on a present roster member, resolve it against the scene owner's
+    // reach and support reads, and — only if it is committable — fold it into the
+    // active-contact projection and write the durable event before anything reaches
+    // the prompt.
     //
     // Gated on THIS flag alone. Detection, the commit, the ledger row, and the scene
     // projection are authoritative state that must roll back with the exchange whether
@@ -1319,7 +1321,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         //    the one that sees it, and `saveChatScenario` clears it at settle).
         // 2. A place CHANGE this exchange (`movedTo`, the same detection that switched
         //    the scene memory above), reason `scene_changed`. Walking into another room
-        //    is leaving the body you were touching behind.
+        //    is leaving the body you were touching behind. This is also the door a
+        //    line like "I walk over to her desk" comes through — the contact detectors
+        //    read it as furniture and state nothing, while the scene memory reads a
+        //    move, and a held touch does not survive the mover either way.
         //
         // Order matters only in that a skip is the stronger, more specific truth: if
         // both fire, the skip empties the projection and the place change finds nothing
@@ -1354,9 +1359,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         const { act, resolution } = planned;
         const commit = planned.commit;
         const committed = commit !== null && commit.status === "committed" ? commit : null;
-        // ONE combined, ordered commit list per exchange — hook ends, then the release
-        // acts the plan folded, then the touch (with whatever it had to end to make
-        // room). The ledger's `sequence` indexes this WHOLE list, so a retry that
+        // ONE combined, ordered commit list per exchange — hook ends, then the ends
+        // the plan folded from the player's own act (the release's `withdrawn`, then
+        // the departure's `separated`), then the touch (with whatever it had to end to
+        // make room). The ledger's `sequence` indexes this WHOLE list, so a retry that
         // re-derives it lands on the identical (eventRef, sequence) keys; splitting the
         // exchange into two appends would restart the sequence and collide.
         const commits: readonly ContactLifecycleCommit[] = [

@@ -78,28 +78,28 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   registry defaults, the Neon backfill, and deployment are **complete**, so
   production registration is no longer gated on corrections or data migration —
   only on reaching its place in the wiring order.
-  **Continuation item 1 — the affectionate integration proof — shipped
-  2026-07-31** behind `CHAT_CONTACT_ACTIONS` (default off): durable
-  `chat_contact_events` ledger + scene/contact projection on the retake
-  anchor (migration 0093), deterministic detectors, persist-before-prompt,
-  and all four proof obligations pinned by integration tests.
-  Remaining continuation order: actor control through the live lane (the
-  read-off-the-scene mechanism already ships with the proof) → the explicit
-  `romantic_touch` permission owner (**spec before implementation**; eight design
-  decisions need owner rulings) → eligibility + blocker-link UI wiring → the
-  romantic proof → channel-aware foot registration with positive texture/glide
-  **last** (blocked on explicit visual/tactile perception channels, perceiver
-  binding, structured path/cross-locus info, and per-surface **and per-side**
-  footwear friction — footwear must first gain a side so one sock is
-  representable; ruled 2026-07-31). The affectionate proof must exercise
-  durable events, snapshot restoration, retry/idempotency, and
-  feature-flag-off, and avoid restraint/pinning while trapped mobility has no
-  producer.
-  Then slice 4's atomic/idempotent contact-caused effects. Successor parity waits
-  for regional pose/contact and clothing adapters. Intimate regions stay behind
-  the foot proof plus explicit adult-eligibility, consent, exposure, and
-  physiology prerequisites. The active doc family archives together only after
-  the plan ships.
+  **The affectionate-contact technical MVP — flag off — shipped 2026-07-31**
+  (the owner's accurate name for what exists: working, tested machinery with
+  no product judgment yet) behind `CHAT_CONTACT_ACTIONS` (default off):
+  durable `chat_contact_events` ledger + scene/contact projection on the
+  retake anchor (migration 0093), deterministic approach/touch detectors,
+  persist-before-prompt, and — via the item-1.1 repairs — atomic verified
+  persistence, possessive-destination guards, unknown-clothing-is-never-bare
+  material honesty, and the ending producers (release `withdrawn`, skip
+  `separated`, scene change `scene_changed`, movement away `separated`).
+  **Next: the internal trial (owner-ruled 2026-07-31), which gates
+  everything.** Both flags go on globally on the Fly deploy; a small
+  scripted set of real conversations is run flag-on vs flag-off and judged
+  against a rubric for narration coherence/naturalness; the owner's verdict
+  on that report decides what un-gates. Queued behind the trial: actor
+  control through the live lane → the `romantic_touch` permission owner
+  (**spec before implementation**; eight design rulings needed) →
+  eligibility + blocker-link UI wiring → the romantic proof. **Parked until
+  the trial succeeds**: additional foot granularity, slice 4's
+  marks/material transfer, intimate physiology, successor parity,
+  channel-aware foot narration, and further generalized contact
+  abstractions. The active doc family archives together only after the plan
+  ships.
 
 ## Next (queued)
 

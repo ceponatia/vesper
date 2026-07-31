@@ -5,6 +5,17 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Affectionate-contact technical MVP — item 1.1 repairs + move-away ending
+  (flag off)** —
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
+  — 2026-07-31 — the owner-confirmed persistence findings repaired (atomic
+  verified ledger+projection writes, unconditional retake prune, acknowledgment
+  bound to verified rows), the pre-enable gaps closed (possessive-destination
+  guard, unknown clothing reads as silence never bare, and the four ending
+  producers: release, skip, scene change, movement away), and the result
+  renamed to what it is — a technical MVP whose internal trial now gates the
+  romantic track and the parked list.
+
 - **Romantic contact — the affectionate integration proof (continuation 1)** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
   [scene spec](romantic-contact-affordances.spec.scene.md) — 2026-07-31 — the
