@@ -329,8 +329,13 @@ const CONTACT_RESTRAINT_RE =
 /**
  * The gates EVERY detector shares: a question, a hedge, a denial, or romantic
  * framing is a sentence this proof reads as nothing at all.
+ *
+ * Exported for the reply-side NPC ending detector (`chat-contact-reply.ts`),
+ * whose sentences take the same four vetoes — an ending read out of a
+ * hypothetical, a negation, a question, or a romantically framed beat would be
+ * exactly the invented act these gates exist to refuse.
  */
-function contactSentenceEligible(sentence: string): boolean {
+export function contactSentenceEligible(sentence: string): boolean {
   if (sentence.includes("?")) return false;
   if (CONTACT_CONDITIONAL_RE.test(sentence)) return false;
   if (CONTACT_NEGATION_RE.test(sentence)) return false;
@@ -1020,7 +1025,7 @@ export interface ChatContactEnds {
 
 /**
  * End every active contact a predicate covers — the shared body of both of the
- * player's own ends.
+ * player's own ends, and of the reply-side NPC ending (`chat-contact-reply.ts`).
  *
  * Per contact through the core's `endContact`, so each end is its own durable
  * commit and law 4 is enforced per contact (an end older than the contact it
@@ -1030,7 +1035,7 @@ export interface ChatContactEnds {
  * let go" on an empty scene, or a step back from an untouched room, is an
  * ordinary sentence rather than a caller bug.
  */
-function endCoveredContacts(input: {
+export function endCoveredContacts(input: {
   readonly scene: SceneState;
   readonly covers: (contact: CommittedContactRead) => boolean;
   readonly reason: ContactEndReason;
@@ -1191,27 +1196,43 @@ export type ChatContactMaterialSource = AdapterRead<EffectiveCoverageRead>;
  * The chat lane has three genuinely different wardrobe situations, and only one
  * of them is "bare":
  *
- * 1. **The wardrobe enumerated this body** — a captured effective-coverage read
- *    exists for their garment actor. That capture IS the answer: entries where
- *    something covers, nothing where it does not. A capture with no entries is a
- *    real "nothing over that surface", not an absence.
- * 2. **The body is dressed in clothes nothing enumerated** — worn garment
- *    instances the coverage pass never ran over, or the legacy free-text path
- *    (`ChatState.outfit` / `wornItemIds` with no materialized instances), where
- *    the look lives in a phrase the narrator imagined. Something IS between the
- *    hand and the skin and this lane cannot name it, so the material is
- *    **unavailable** and the attempt resolves to silence.
- * 3. **The wardrobe says nothing is worn** — no capture, no instances, no worn
- *    ids, no free-text look. Then `[]` is the wardrobe's own answer and the
- *    touch lands on skin.
+ * 1. **This cut modelled the wardrobe into coverage** — the caller derived an
+ *    effective-coverage read from the CURRENT exchange's resolved wardrobe
+ *    (`chatGarmentCoverageForCut`, or the affordance read's own capture when one
+ *    was taken this turn). That read IS the answer: entries where something
+ *    covers, nothing where it does not. A read with no entries is a real
+ *    "nothing over that surface", not an absence.
+ * 2. **The body is dressed in clothes nothing modelled** — worn garment
+ *    instances the coverage stages could not run over, or the legacy free-text
+ *    path (`ChatState.outfit` / `wornItemIds` with no materialized instances),
+ *    where the look lives in a phrase the narrator imagined. Something IS
+ *    between the hand and the skin and this lane cannot name it, so the
+ *    material is **unavailable** and the attempt resolves to silence.
+ * 3. **The wardrobe says nothing is worn** — no modelled coverage, no
+ *    instances, no worn ids, no free-text look. Then `[]` is the wardrobe's own
+ *    answer and the touch lands on skin.
  *
  * Case 2 is the correction this function exists for. Reading an absent answer as
  * `[]` made "we never staged a wardrobe" indistinguishable from "she is bare",
  * and a committed contact then told the narrator it had skin under its hand —
  * a positive physical claim nothing in the conversation supports. Silence costs
  * one beat; that claim costs the fiction's clothes.
+ *
+ * **The persisted capture (`ChatGarmentStore.coverage`) is deliberately NOT
+ * consulted.** It lands at the PREVIOUS exchange's settle, which is the settle
+ * race: a touch sent before the prior turn's post-stream legs finished read "no
+ * capture yet" for a body whose wardrobe this very turn had already resolved —
+ * and, the mirror failure, a capture from an earlier cut could describe garments
+ * the current wardrobe no longer wears. The caller derives `coverage` from the
+ * current cut and hands it in; when that derivation says `null`, an older stored
+ * capture is not a substitute for it.
  */
 export function chatContactMaterialSource(input: {
+  /**
+   * The CURRENT exchange's derived coverage for this actor, or `null` when this
+   * cut could not model their wardrobe into coverage.
+   */
+  readonly coverage: EffectiveCoverageRead | null;
   readonly store: ChatGarmentStore;
   readonly actorId: string;
   /** `ChatState.outfit` — the free-text look, which applies when nothing is materialized. */
@@ -1219,9 +1240,8 @@ export function chatContactMaterialSource(input: {
   /** `ChatState.wornItemIds` — structured ids that may predate materialization. */
   readonly wornItemIds?: readonly string[];
 }): ChatContactMaterialSource {
-  const captured = input.store.coverage[input.actorId];
-  if (captured !== undefined) {
-    return adapterSupported(captured, [affordanceEvidence("coverage", `wardrobe:${input.actorId}`)]);
+  if (input.coverage !== null) {
+    return adapterSupported(input.coverage, [affordanceEvidence("coverage", `wardrobe:${input.actorId}`)]);
   }
   const dressed =
     wornGarmentInstances(input.store, input.actorId).length > 0 ||
@@ -1757,4 +1777,60 @@ export function chatContactActionOutcome(input: ChatContactOutcomeInput): Physic
     disclosure: "consistency_only",
     evidence: input.resolution.evidence,
   });
+}
+
+// ---------------------------------------------------------------------------
+// The reach premise
+// ---------------------------------------------------------------------------
+
+/**
+ * A concrete act whose reach the scene could not establish — the ONE unresolved
+ * case that earns a presentation line.
+ *
+ * An `unresolved` outcome is silence by contract, and that stays true: no
+ * ledger row, no scene fold, no acknowledgment, and the outcome's own wording is
+ * still empty. What the S3 trial showed is that silence alone does not stop the
+ * PROSE from inventing the landing — the player wrote a touch, the guidance said
+ * nothing, and the narrator depicted a hand crossing a room nobody measured. So
+ * exactly one unresolved reason — `geometry_unavailable`, the typed "no
+ * pose/reach owner could place these two surfaces" — produces a premise the
+ * renderer words as a fence: reach is NOT ESTABLISHED, do not depict the touch
+ * landing, do not invent movement to make it land.
+ *
+ * It states only the gap. It never claims the target is far away, pulled back,
+ * or refused — those are positive facts the scene does not own, and the reasons
+ * that DO own them (`out_of_reach`, the reposition/close-distance requirements)
+ * keep their existing typed handling instead of degrading to this.
+ */
+export interface ChatContactReachPremise {
+  /** The resolved target's display name — "Sabrina". */
+  readonly targetName: string;
+  /** The written surface ("shoulder"), when the lexicon can word the locus. */
+  readonly locus?: string;
+}
+
+/**
+ * The reach premise this turn's resolved attempt earns, or `null`.
+ *
+ * Typed end to end: the trigger is the resolution's own `unresolved /
+ * geometry_unavailable` pair, never a diagnostic string. Every other status and
+ * every other unresolved reason — material, support, control, agency — returns
+ * `null`, because wording those as a reach problem would mislabel a different
+ * gap.
+ */
+export function chatContactReachPremise(input: {
+  readonly act: ChatContactAct | null;
+  readonly resolution: ContactResolution | null;
+  readonly characters: readonly ChatContactRosterMember[];
+}): ChatContactReachPremise | null {
+  const { act, resolution } = input;
+  if (act === null || resolution === null) return null;
+  if (resolution.status !== "unresolved" || resolution.reason !== "geometry_unavailable") return null;
+  const target = input.characters.find((member) => member.subjectId === act.targetSubject);
+  if (target === undefined) return null;
+  const locus = chatContactPhrase(locusCode(act.targetLocationId));
+  return {
+    targetName: target.name,
+    ...(locus === undefined ? {} : { locus: locus.phrase }),
+  };
 }

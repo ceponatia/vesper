@@ -8,7 +8,11 @@ import {
   type PhysicalNarrationConstraint,
   type PhysicalPremiseCorrection,
 } from "@/contracts";
-import { chatContactPhrase, type ChatContactPhraseKind } from "./chat-contact-adapter";
+import {
+  chatContactPhrase,
+  type ChatContactPhraseKind,
+  type ChatContactReachPremise,
+} from "./chat-contact-adapter";
 
 /**
  * PROMPT PROJECTION for narrator physical guidance
@@ -82,6 +86,13 @@ export interface ChatPhysicalGuidanceRenderInput {
   readonly characterName: string;
   /** How the lines name the subject — "Wren's". */
   readonly possessive: string;
+  /**
+   * This turn's unestablished-reach premise (`chatContactReachPremise`), when
+   * the contact leg produced one. Presentation only: the attempt it words stayed
+   * `unresolved` — no row, no fold, no acknowledgment — and this line fences the
+   * PROSE from inventing the landing the state refused to record.
+   */
+  readonly reachPremise?: ChatContactReachPremise;
   /** Leak diagnostics land here; the block is dropped either way. */
   readonly sink?: DiagnosticSink;
 }
@@ -258,6 +269,26 @@ function actionOutcomeLine(outcome: PhysicalActionOutcome, input: ChatPhysicalGu
 }
 
 /**
+ * The unestablished-reach line — presentation for the ONE unresolved case that
+ * earns any (`chatContactReachPremise`).
+ *
+ * It states the gap and the two inventions it forecloses, and nothing else. The
+ * wording is deliberately not "too far apart", "across the room", or a refusal:
+ * those are positive facts the scene does not own, and the reasons that do own
+ * them (`out_of_reach`, the reposition requirements) render through
+ * `blockedOutcomeLine` instead. The underlying attempt stays `unresolved` —
+ * this line exists precisely because silence was letting the prose depict the
+ * landing anyway.
+ */
+function reachPremiseLine(premise: ChatContactReachPremise): string {
+  const surface = premise.locus === undefined ? premise.targetName : `${premise.targetName}'s ${premise.locus}`;
+  return (
+    `- Unestablished reach: the current scene does not establish that the player's hand can reach ${surface}. ` +
+    "Do not depict that touch as landing, and do not invent movement by either participant to make it land."
+  );
+}
+
+/**
  * "a, b, or c" — the prohibition register, so a list reads as one forbidden idea.
  *
  * The `or` is skipped when the final phrase already carries one: a display phrase may
@@ -293,8 +324,11 @@ export function renderChatPhysicalGuidance(input: ChatPhysicalGuidanceRenderInpu
   return [
     // Tier order is the compiler's, not this file's: what the player's own act actually
     // did outranks everything, corrections are about the message in front of the
-    // narrator, and constraints are standing truths about the body.
+    // narrator, and constraints are standing truths about the body. The reach premise
+    // rides with the action tier — it is about the act the player just wrote — and
+    // renders where the unresolved outcome it accompanies renders nothing.
     ...input.guidance.actionOutcomes.map((outcome) => actionOutcomeLine(outcome, input)),
+    ...(input.reachPremise === undefined ? [] : [reachPremiseLine(input.reachPremise)]),
     ...input.guidance.corrections.map((correction) => correctionLine(correction, input)),
     ...input.guidance.constraints.map((constraint) => constraintLine(constraint, input.possessive)),
   ].filter((line) => line.length > 0);

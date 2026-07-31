@@ -8,6 +8,7 @@ import {
   DiagnosticCollector,
   emptyEffectiveCoverageRead,
   emptySceneState,
+  garmentActorForCharacter,
   regardBandForValue,
   sceneFacingFact,
   sceneParticipant,
@@ -73,13 +74,14 @@ import { codes } from "@/test/diagnostics";
  * flag off and keep proving flag-off byte-identity.
  *
  * A DRESSED body is the other half of the material rule and it is staged
- * deliberately, in section 11 only: `settleChatExchange({ wornItemIds })` writes
- * one chat's state row with the seeded cardigan on. With the contact flag alone
- * that body has no captured coverage read, so the touch resolves `unresolved`
- * (silence); with `CHAT_PHYSICAL_CONSTRAINTS` on as well, the affordance read
- * captures the coverage at settle and the NEXT exchange's touch commits with a
- * real layer between the hand and the skin. Those are the two enablements a
- * dressed commit is reachable under, and the section runs both.
+ * deliberately, in the material section only: `settleChatExchange({ wornItemIds })`
+ * writes one chat's state row with the seeded cardigan on. The contact leg
+ * derives that body's coverage from the CURRENT exchange's resolved wardrobe
+ * (the settle-race fix), so the dressed commit is reachable under
+ * `CHAT_CONTACT_ACTIONS` alone, first rapid touch included — no persisted
+ * capture, no second flag, no intervening settle. Only a body nothing can model
+ * (a free-text look, legacy worn ids) still answers `unavailable` — silence,
+ * never bare skin.
  *
  * Two mocks, both at seams the sibling chat suites already mock. `./chat-memory`
  * stubs the post-turn archivist legs (`AI_FAKE=1` alone would degrade them and
@@ -121,7 +123,8 @@ vi.mock("./character-chat", async () => {
 
 import { submitChatMessage } from "@/server/engine";
 import { previewChatPhysicalGuidance, previewChatPrompt } from "./chat-pipeline";
-import { applyTimeSkipToScenario, loadChatScenario, saveChatScenario } from "./chat-state";
+import { applyTimeSkipToScenario, loadChatScenario, saveChatScenario, seedChatState } from "./chat-state";
+import { PHYSICAL_GUIDANCE_BLOCK_HEADING } from "./chat-physical-guidance-render";
 import {
   appendChatContactEventsWithScene,
   listChatContactEvents,
@@ -1001,23 +1004,25 @@ describe.runIf(ready)("silence beats a guess", () => {
 // ---------------------------------------------------------------------------
 
 /**
- * The correction the material source exists for (`chatContactMaterialSource`).
+ * The material rule, on its CURRENT-CUT footing (the settle-race fix).
  *
  * The chat lane has three wardrobe situations and only ONE of them is bare:
- * a captured effective-coverage read (the answer), a body dressed in clothes
- * nothing enumerated (**unavailable** — silence), and a wardrobe that says
- * nothing is worn (`[]`, genuinely skin). Reading the second as the third made
- * "we never staged a wardrobe" indistinguishable from "she is bare", and a
- * committed contact then told the narrator it had skin under its hand.
+ * coverage this exchange's own resolved wardrobe models (the answer — derived
+ * pre-prompt, never read from the previous settle's capture), a body dressed in
+ * clothes nothing can model (**unavailable** — silence), and a wardrobe that
+ * says nothing is worn (`[]`, genuinely skin). Reading the second as the third
+ * made "we never staged a wardrobe" indistinguishable from "she is bare"; and
+ * reading the FIRST from the previous settle's capture made a rapid follow-up
+ * touch no-op with `contact.material_unavailable` for a body whose wardrobe the
+ * very same turn had already resolved — the trial's B-S2/B-S5 race.
  *
- * Both halves need a DRESSED body, which is the one thing this fixture does not
- * seed by default — the cardigan goes on one chat's state row here and nowhere
- * else. Which half you get is decided by the enablement, and that is the honest
- * shape of the feature rather than a test convenience: the coverage capture is
- * written by the affordance read, which only runs under `CHAT_AFFORDANCE_CUES`
- * or `CHAT_PHYSICAL_CONSTRAINTS`.
+ * The dressed body is staged deliberately, in this section only: the cardigan
+ * goes on one chat's state row and the finalizer's reconcile materializes the
+ * store. NO flag other than `CHAT_CONTACT_ACTIONS` is needed for the dressed
+ * commit any more — that is the fix — and no settle has to intervene between
+ * the movement and the touch.
  */
-describe.runIf(ready)("a dressed body nobody enumerated is unavailable, not bare", () => {
+describe.runIf(ready)("material honesty — the current cut answers, unmodelled stays silent", () => {
   /** A conversation whose character is wearing the seeded cardigan (which covers shoulders). */
   async function dressedChat(): Promise<ChatSeat> {
     const chat = await newChat(fixture);
@@ -1027,45 +1032,28 @@ describe.runIf(ready)("a dressed body nobody enumerated is unavailable, not bare
     return chat;
   }
 
-  it("the contact flag ALONE: a dressed shoulder resolves unresolved with the material diagnostic", async () => {
+  it("(1) the contact flag ALONE, no persisted capture: the first rapid touch commits WITH the cloth", async () => {
     process.env.CHAT_CONTACT_ACTIONS = "on";
     const chat = await dressedChat();
     await say(chat, move());
-    // Reachable — the approach landed — so this is not the out-of-reach silence.
+    // Reachable — the approach landed — so material is the only question left.
     const placed = await storedScene(chat.chatId);
     expect(sceneProximityFact(placed, CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe("close");
 
-    // The premise, stated rather than assumed: this conversation holds NO captured
-    // coverage read for anyone. The capture is the affordance read's, and the
-    // affordance read needs `CHAT_AFFORDANCE_CUES` or `CHAT_PHYSICAL_CONSTRAINTS`.
+    // The RACE premise, reproduced deliberately: strip the persisted capture so
+    // the touch exchange begins exactly as a rapid send does — the prior
+    // settle's capture not yet landed. (It has to be stripped by hand now
+    // because the leg itself persists a capture at every settle: that thread is
+    // part of the same fix.)
     const staged = await loadChatScenario(chat.chatId);
-    expect(Object.keys(staged?.garments.coverage ?? {})).toEqual([]);
+    if (!staged) throw new Error("scenario missing");
+    await saveChatScenario(chat.chatId, { ...staged, garments: { ...staged.garments, coverage: {} } });
+    const raced = await loadChatScenario(chat.chatId);
+    expect(Object.keys(raced?.garments.coverage ?? {})).toEqual([]);
 
     const turn = await sayWithDiagnostics(chat, touch());
     expect(turn.reply.length).toBeGreaterThan(0);
-
-    // So nothing in this conversation can say what is on that shoulder — and the
-    // resolver answers silence rather than "skin".
-    expect(turn.codes).toContain("contact.material_unavailable");
-    expect(turn.codes).not.toContain("contact.pose_unavailable");
-    expect(await listChatContactEvents(chat.chatId)).toEqual([]);
-    expect(activeContactsOf((await storedScene(chat.chatId)).contacts)).toEqual([]);
-  });
-
-  it("with CHAT_PHYSICAL_CONSTRAINTS on, the captured coverage answers — and the contact carries the cloth", async () => {
-    process.env.CHAT_CONTACT_ACTIONS = "on";
-    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
-    const chat = await dressedChat();
-
-    // The affordance read runs under this flag, and its effective-coverage read is
-    // CAPTURED with the presentation cut at settle — so the movement exchange is
-    // what puts an answer in `scenario.garments.coverage`.
-    await say(chat, move());
-    const staged = await loadChatScenario(chat.chatId);
-    expect(Object.keys(staged?.garments.coverage ?? {})).toHaveLength(1);
-
-    const turn = await sayWithDiagnostics(chat, touch());
-    expect(turn.reply.length).toBeGreaterThan(0);
+    // The current cut answered — no material gap, no guidance flag needed.
     expect(turn.codes).not.toContain("contact.material_unavailable");
 
     const row = await soleRow(chat.chatId);
@@ -1075,12 +1063,190 @@ describe.runIf(ready)("a dressed body nobody enumerated is unavailable, not bare
     const contact = active[0];
     if (!contact) throw new Error("no active contact");
     expect(contact.contactId).toBe(row.contactId);
-    // The whole point: the hand landed on a SLEEVE, and the committed record says so
-    // rather than claiming skin. (`any_material` — an affectionate hand is happy to
-    // land on cloth; demanding bare skin would be the anti-cheat firing on the wrong
-    // side.)
+    // The hand landed on a SLEEVE, and the committed record says so rather than
+    // claiming skin (`any_material` — an affectionate hand is happy with cloth).
     expect(contact.materialBetween.length).toBeGreaterThan(0);
     expect(contact.materialBetween[0]?.tactileTransmission).toBeGreaterThan(0);
+    // (5) Contact-state correctness spent ZERO prompt bytes: guidance stayed off.
+    expect(lastPrompt()).not.toContain(PHYSICAL_GUIDANCE_BLOCK_HEADING);
+
+    // And settlement persisted the very capture the leg derived: the coverage
+    // is threaded to the finalizer, not recomputed at settle.
+    const settled = await loadChatScenario(chat.chatId);
+    expect(Object.keys(settled?.garments.coverage ?? {})).toHaveLength(1);
+  });
+
+  it("(2) a STALE persisted capture loses to the current cut", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const chat = await dressedChat();
+    await say(chat, move());
+
+    // A capture from an earlier cut, claiming the body is BARE — garments the
+    // current wardrobe contradicts (the cardigan covers the shoulders now).
+    const staged = await loadChatScenario(chat.chatId);
+    if (!staged) throw new Error("scenario missing");
+    await saveChatScenario(chat.chatId, {
+      ...staged,
+      garments: {
+        ...staged.garments,
+        coverage: { [garmentActorForCharacter(fixture.characterId)]: { atMinutes: 0, entries: [] } },
+      },
+    });
+
+    const turn = await sayWithDiagnostics(chat, touch());
+    expect(turn.reply.length).toBeGreaterThan(0);
+    expect(turn.codes).not.toContain("contact.material_unavailable");
+    // The CURRENT capture won: the contact carries the cloth the stale capture
+    // said was not there.
+    const active = activeContactsOf((await storedScene(chat.chatId)).contacts);
+    expect(active[0]?.materialBetween.length).toBeGreaterThan(0);
+  });
+
+  it("(3) an UNMODELLED dressed body stays unavailable — silence, never bare skin", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const chat = await newChat(fixture);
+    // A free-text look only: dressed, in clothes no store models. Derivation
+    // cannot run for this body, and no stale capture may answer for it.
+    await settleChatExchange(fixture, {
+      chat,
+      driftedState: { ...seedChatState(fixture.profile), outfit: "a red sundress" },
+    });
+    await say(chat, move());
+
+    const turn = await sayWithDiagnostics(chat, touch());
+    expect(turn.reply.length).toBeGreaterThan(0);
+    expect(turn.codes).toContain("contact.material_unavailable");
+    expect(turn.codes).not.toContain("contact.pose_unavailable");
+    expect(await listChatContactEvents(chat.chatId)).toEqual([]);
+    expect(activeContactsOf((await storedScene(chat.chatId)).contacts)).toEqual([]);
+  });
+
+  it("(7) a retake of the dressed commit keeps its identity — same ref, same contact, one row set", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const chat = await dressedChat();
+    await say(chat, move());
+    await say(chat, touch());
+    const first = await soleRow(chat.chatId);
+
+    await retake(chat);
+
+    // The new take re-derived the same current-cut coverage and re-committed the
+    // identical contact under the identical event ref — one row set, no drift.
+    const second = await soleRow(chat.chatId);
+    expect(second.eventRef).toBe(first.eventRef);
+    expect(second.contactId).toBe(first.contactId);
+    expect(second.sequence).toBe(first.sequence);
+    const active = activeContactsOf((await storedScene(chat.chatId)).contacts);
+    expect(active).toHaveLength(1);
+    expect(active[0]?.materialBetween.length).toBeGreaterThan(0);
+  });
+
+  it("with CHAT_PHYSICAL_CONSTRAINTS on as well, the leg shares the affordance read's capture — same commit, same cloth", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    const chat = await dressedChat();
+    await say(chat, move());
+
+    const turn = await sayWithDiagnostics(chat, touch());
+    expect(turn.reply.length).toBeGreaterThan(0);
+    expect(turn.codes).not.toContain("contact.material_unavailable");
+    const active = activeContactsOf((await storedScene(chat.chatId)).contacts);
+    expect(active).toHaveLength(1);
+    expect(active[0]?.materialBetween.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8b. The reach premise (S3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The S3 finding, fixed at the narrator boundary: an unreachable touch resolves
+ * `unresolved` (honest state — no row, no proximity, the designed diagnostics)
+ * and, under `CHAT_PHYSICAL_CONSTRAINTS`, the prompt now carries ONE typed
+ * presentation constraint saying reach is not established — never that the
+ * target is far away, refused, or moved.
+ */
+describe.runIf(ready)("the reach premise reaches the prompt, and only the prompt", () => {
+  const PREMISE = "Unestablished reach:";
+
+  it("(1) a touch with unknown reach: constraint in the prompt, contact unresolved, state untouched", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    const chat = await newChat(fixture);
+    const turn = await sayWithDiagnostics(chat, touch());
+    expect(turn.reply.length).toBeGreaterThan(0);
+
+    // Honest state, exactly as before the constraint existed.
+    expect(turn.codes).toContain("scene.relation_unavailable");
+    expect(turn.codes).toContain("contact.pose_unavailable");
+    expect(await listChatContactEvents(chat.chatId)).toEqual([]);
+    const scene = await storedScene(chat.chatId);
+    expect(activeContactsOf(scene.contacts)).toEqual([]);
+    expect(scene.proximity).toEqual([]);
+
+    // And the presentation half: the premise line, with the target and surface.
+    const prompt = lastPrompt();
+    expect(prompt).toContain(PREMISE);
+    expect(prompt).toContain(`can reach ${fixture.characterName}'s shoulder`);
+    expect(prompt).toContain("do not invent movement by either participant");
+    // It states the GAP only — never a positive fact the scene does not own.
+    expect(prompt).not.toContain("across the room");
+    expect(prompt).not.toContain("far apart");
+  });
+
+  it("(2)(3) established reach — same turn or earlier — earns no premise", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    const chat = await newChat(fixture);
+    // Same-turn approach + touch: commits, no premise.
+    await say(chat, `${move()} ${touch()}`);
+    expect(lastPrompt()).not.toContain(PREMISE);
+    expect(activeContactsOf((await storedScene(chat.chatId)).contacts)).toHaveLength(1);
+  });
+
+  it("(4)(5) other failures keep their own wording: out-of-reach stays typed, material stays material", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    const chat = await newChat(fixture);
+    await say(chat, move());
+    await say(chat, touch());
+    await say(chat, RELEASE);
+    await say(chat, STEP_BACK);
+    // `near` now: the touch needs a visible reposition — the EXISTING typed
+    // requirement, not an unknown-reach premise.
+    const turn = await sayWithDiagnostics(chat, touch());
+    expect(turn.reply.length).toBeGreaterThan(0);
+    const prompt = lastPrompt();
+    expect(prompt).not.toContain(PREMISE);
+    expect(prompt).toContain("the distance would have to be closed first");
+  });
+
+  it("(6) vetoed lines produce no act and no premise", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    const chat = await newChat(fixture);
+    for (const line of [`I kiss ${fixture.characterName}.`, `Maybe I rest my hand on her shoulder.`]) {
+      await say(chat, line);
+      expect(lastPrompt()).not.toContain(PREMISE);
+    }
+    expect(await listChatContactEvents(chat.chatId)).toEqual([]);
+  });
+
+  it("(7) with CHAT_PHYSICAL_CONSTRAINTS off, the premise spends no bytes — byte-identical prompt", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const chat = await newChat(fixture);
+    // The unreachable touch, contact flag on, guidance off — the S3 state path.
+    await say(chat, touch());
+    const off = lastPrompt();
+    expect(off).not.toContain(PREMISE);
+    expect(off).not.toContain(PHYSICAL_GUIDANCE_BLOCK_HEADING);
+
+    // The same take again with guidance ON adds exactly the guidance block; the
+    // flag-off bytes never carried the premise.
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    await retake(chat);
+    expect(lastPrompt()).toContain(PREMISE);
   });
 });
 

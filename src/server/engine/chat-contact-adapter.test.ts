@@ -44,6 +44,7 @@ import {
   chatContactMaterialLayers,
   chatContactMaterialSource,
   chatContactPhrase,
+  chatContactReachPremise,
   chatDepartureSceneIntents,
   CHAT_CONTACT_PLAYER_SUBJECT,
   CHAT_SCENE_GROUND_SUPPORT,
@@ -536,7 +537,7 @@ describe("the material adapter", () => {
   });
 });
 
-describe("the material SOURCE — absent knowledge is not bare skin", () => {
+describe("the material SOURCE — the current cut answers, and absent knowledge is not bare skin", () => {
   const ACTOR = garmentActorForCharacter("wren");
 
   const worn = (): GarmentInstanceState =>
@@ -558,51 +559,97 @@ describe("the material SOURCE — absent knowledge is not bare skin", () => {
     entries: [{ locationId: "shoulders", band: "opaque", evidence: [] }],
   };
 
-  it("(a) answers from the wardrobe when the wardrobe enumerated this body", () => {
+  it("(a) answers from the CURRENT cut's derived coverage", () => {
     const source = chatContactMaterialSource({
-      store: store({ instances: [worn()], coverage: { [ACTOR]: coverage } }),
+      coverage,
+      store: store({ instances: [worn()] }),
       actorId: ACTOR,
       freeTextOutfit: "",
     });
     expect(source.status).toBe("supported");
     if (source.status !== "supported") return;
     expect(chatContactMaterialLayers(source.value, "shoulders")).toHaveLength(1);
-    // And a location that capture does NOT cover is genuinely bare.
+    // And a location that read does NOT cover is genuinely bare.
     expect(chatContactMaterialLayers(source.value, "hands")).toEqual([]);
   });
 
+  it("(a) the current cut WINS over a stale persisted capture", () => {
+    // The stored capture describes an earlier cut — a cardigan over the
+    // shoulders that the current wardrobe no longer wears. The current
+    // derivation says the shoulders are uncovered, and the current answer is
+    // the answer: the touch lands on skin, not on last exchange's cloth.
+    const stale: EffectiveCoverageRead = {
+      atMinutes: 0,
+      entries: [{ locationId: "shoulders", band: "opaque", evidence: [] }],
+    };
+    const current: EffectiveCoverageRead = { atMinutes: AT, entries: [] };
+    const source = chatContactMaterialSource({
+      coverage: current,
+      store: store({ instances: [worn()], coverage: { [ACTOR]: stale } }),
+      actorId: ACTOR,
+      freeTextOutfit: "",
+    });
+    expect(source.status).toBe("supported");
+    if (source.status !== "supported") return;
+    expect(source.value).toBe(current);
+    expect(chatContactMaterialLayers(source.value, "shoulders")).toEqual([]);
+  });
+
   it("(b) reports UNKNOWN for a look only the narrator can see", () => {
-    // The legacy free-text path: she is dressed, in clothes nothing enumerated.
+    // The legacy free-text path: she is dressed, in clothes nothing modelled.
     expect(
-      chatContactMaterialSource({ store: store(), actorId: ACTOR, freeTextOutfit: "a borrowed hoodie" }).status,
-    ).toBe("unavailable");
-    // The same absence reached two other ways: structured ids that predate
-    // materialization, and materialized garments no coverage pass has run over.
-    expect(
-      chatContactMaterialSource({ store: store(), actorId: ACTOR, freeTextOutfit: "", wornItemIds: ["item_shirt"] })
+      chatContactMaterialSource({ coverage: null, store: store(), actorId: ACTOR, freeTextOutfit: "a borrowed hoodie" })
         .status,
     ).toBe("unavailable");
+    // The same absence reached two other ways: structured ids that predate
+    // materialization, and materialized garments this cut could not model.
     expect(
-      chatContactMaterialSource({ store: store({ instances: [worn()] }), actorId: ACTOR, freeTextOutfit: "" }).status,
+      chatContactMaterialSource({
+        coverage: null,
+        store: store(),
+        actorId: ACTOR,
+        freeTextOutfit: "",
+        wornItemIds: ["item_shirt"],
+      }).status,
+    ).toBe("unavailable");
+    expect(
+      chatContactMaterialSource({ coverage: null, store: store({ instances: [worn()] }), actorId: ACTOR, freeTextOutfit: "" })
+        .status,
     ).toBe("unavailable");
   });
 
+  it("(b) a failed current derivation does NOT fall back to an older capture", () => {
+    // A capture from some earlier cut sits in the store; the current cut could
+    // not model this dressed body. Falling back would answer from garments that
+    // may no longer match the current state — the honest answer is silence.
+    const source = chatContactMaterialSource({
+      coverage: null,
+      store: store({ instances: [worn()], coverage: { [ACTOR]: coverage } }),
+      actorId: ACTOR,
+      freeTextOutfit: "",
+    });
+    expect(source.status).toBe("unavailable");
+  });
+
   it("(c) answers BARE only when the wardrobe says nothing is worn", () => {
-    const source = chatContactMaterialSource({ store: store(), actorId: ACTOR, freeTextOutfit: "   " });
+    const source = chatContactMaterialSource({ coverage: null, store: store(), actorId: ACTOR, freeTextOutfit: "   " });
     expect(source.status).toBe("supported");
     if (source.status !== "supported") return;
     expect(chatContactMaterialLayers(source.value, "shoulders")).toEqual([]);
   });
 
-  it("reads another actor's wardrobe as none of this one's business", () => {
-    const other = garmentActorForCharacter("vaelith");
-    expect(
-      chatContactMaterialSource({
-        store: store({ instances: [worn()], coverage: { [ACTOR]: coverage } }),
-        actorId: other,
-        freeTextOutfit: "",
-      }).status,
-    ).toBe("supported");
+  it("(c) an EMPTY current read is a real answer — bare, not absent", () => {
+    // Derivation ran and nothing covers anything. That is the wardrobe's own
+    // "nothing over that surface", even for a body whose store holds instances.
+    const source = chatContactMaterialSource({
+      coverage: { atMinutes: AT, entries: [] },
+      store: store({ instances: [worn()] }),
+      actorId: ACTOR,
+      freeTextOutfit: "",
+    });
+    expect(source.status).toBe("supported");
+    if (source.status !== "supported") return;
+    expect(chatContactMaterialLayers(source.value, "shoulders")).toEqual([]);
   });
 
   it("(b) resolves to silence end to end, never to a bare shoulder", () => {
@@ -610,7 +657,7 @@ describe("the material SOURCE — absent knowledge is not bare skin", () => {
       WREN,
       "Wren",
       [],
-      chatContactMaterialSource({ store: store(), actorId: ACTOR, freeTextOutfit: "a soft grey sweater" }),
+      chatContactMaterialSource({ coverage: null, store: store(), actorId: ACTOR, freeTextOutfit: "a soft grey sweater" }),
     );
     const planned = planChatContactTurn({
       scene: placed("close"),
@@ -1480,5 +1527,104 @@ describe("the narrator seam", () => {
     // The reason rides the codes for the inspector; the lexicon words none of them.
     expect(outcome.resultCodes).toContain("contact.unresolved.geometry_unavailable");
     expect(chatContactPhrase("contact.unresolved.geometry_unavailable")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The reach premise (S3)
+// ---------------------------------------------------------------------------
+
+describe("the reach premise — one unresolved case earns a presentation fence", () => {
+  /** The plan for one line over one scene — the premise's whole input surface. */
+  function planned(scene: SceneState, message: string, characters: readonly ChatContactRosterMember[] = SOLO) {
+    const plan = planChatContactTurn({ scene, message, narratorInput: false, characters, eventRef: EVENT, storyTime: AT });
+    return {
+      plan,
+      premise: chatContactReachPremise({ act: plan.act, resolution: plan.resolution, characters }),
+    };
+  }
+
+  const TOUCH = "I rest my hand on your shoulder.";
+
+  it("(1) unknown reach: the premise carries the target and surface, and the state stays untouched", () => {
+    const { plan, premise } = planned(seeded(), TOUCH);
+    expect(plan.resolution?.status).toBe("unresolved");
+    if (plan.resolution?.status !== "unresolved") return;
+    expect(plan.resolution.reason).toBe("geometry_unavailable");
+    // The premise exists, names the resolved target, and words the surface.
+    expect(premise).toEqual({ targetName: "Wren", locus: "shoulder" });
+    // The underlying result is untouched: no commit, no ends.
+    expect(plan.commit).toBeNull();
+    expect(plan.ended).toEqual([]);
+  });
+
+  it("(2) a same-turn valid approach establishes reach — no premise, and the touch can commit", () => {
+    const { plan, premise } = planned(seeded(), `I walk over to Wren. ${TOUCH}`);
+    expect(plan.commit?.status).toBe("committed");
+    expect(premise).toBeNull();
+  });
+
+  it("(3) previously established reachable geometry produces no false premise", () => {
+    const { plan, premise } = planned(placed("close"), TOUCH);
+    expect(plan.commit?.status).toBe("committed");
+    expect(premise).toBeNull();
+  });
+
+  it("(4) KNOWN out-of-reach keeps its typed refusal — never degraded to 'unknown'", () => {
+    const far = planned(placed("distant"), TOUCH);
+    expect(far.plan.resolution?.status).toBe("rejected");
+    if (far.plan.resolution?.status === "rejected") expect(far.plan.resolution.reason).toBe("out_of_reach");
+    expect(far.premise).toBeNull();
+
+    const near = planned(placed("near"), TOUCH);
+    expect(near.plan.resolution?.status).toBe("explicit_transition_required");
+    expect(near.premise).toBeNull();
+  });
+
+  it("(5) material unavailable with reach established is NOT mislabeled as a reach problem", () => {
+    const dressed = [member(WREN, "Wren", [], adapterUnavailable)];
+    const { plan, premise } = planned(placed("close"), TOUCH, dressed);
+    expect(plan.resolution?.status).toBe("unresolved");
+    if (plan.resolution?.status === "unresolved") expect(plan.resolution.reason).toBe("material_unavailable");
+    expect(premise).toBeNull();
+  });
+
+  it.each([
+    ["romantic framing", "I kiss your shoulder."],
+    ["forceful framing", "I grab your shoulder."],
+    ["a hedge", "I want to rest my hand on your shoulder."],
+    ["a negation", "I don't rest my hand on your shoulder."],
+    ["a hypothetical", "Maybe I rest my hand on your shoulder."],
+    ["a question", "Do I rest my hand on your shoulder?"],
+  ])("(6) %s stays vetoed and earns no premise", (_label, message) => {
+    const { plan, premise } = planned(seeded(), message);
+    expect(plan.act).toBeNull();
+    expect(premise).toBeNull();
+  });
+
+  it("(6) narrator-mode input is excluded and earns no premise", () => {
+    const plan = planChatContactTurn({
+      scene: seeded(),
+      message: TOUCH,
+      narratorInput: true,
+      characters: SOLO,
+      eventRef: EVENT,
+      storyTime: AT,
+    });
+    expect(plan.act).toBeNull();
+    expect(chatContactReachPremise({ act: plan.act, resolution: plan.resolution, characters: SOLO })).toBeNull();
+  });
+
+  it("words the surface only when the lexicon can — an unwordable locus still names the target", () => {
+    // Directly-shaped inputs: an unresolved geometry answer for a locus with no
+    // lexicon phrase must not sink the premise with it.
+    const act = touch(TOUCH);
+    if (act === null) throw new Error("fixture: the touch must detect");
+    const premise = chatContactReachPremise({
+      act: { ...act, targetLocationId: "collarbone" },
+      resolution: { status: "unresolved", reason: "geometry_unavailable", evidence: [] },
+      characters: SOLO,
+    });
+    expect(premise).toEqual({ targetName: "Wren" });
   });
 });
