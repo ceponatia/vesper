@@ -9,11 +9,12 @@ import {
   sceneFacingFact,
   sceneParticipant,
   sceneProximityFact,
+  type DiagnosticSink,
   type SceneState,
 } from "@/contracts";
 import type { ChatArchivist } from "@/contracts/turns/chat-archivist";
 import { characterChatMessages, characterChats, db } from "@/server/db";
-import { log } from "@/server/log";
+import { codes } from "@/test/diagnostics";
 
 /**
  * The affectionate integration proof (romantic-contact-affordances.plan.md
@@ -136,13 +137,17 @@ const target = () => affordanceSubjectId(fixture.characterId);
  * completion. Returns the streamed reply so a test can prove the turn was not
  * lost.
  */
-async function drive(chat: ChatSeat, args: { kind: "send" | "regenerate"; content?: string }): Promise<string> {
+async function drive(
+  chat: ChatSeat,
+  args: { kind: "send" | "regenerate"; content?: string; sink?: DiagnosticSink },
+): Promise<string> {
   const result = await submitChatMessage({
     chatId: chat.chatId,
     memoryGroupId: chat.memoryGroupId,
     character: { id: fixture.characterId, name: fixture.characterName, profile: fixture.profile },
     kind: args.kind,
     ...(args.content === undefined ? {} : { content: args.content }),
+    ...(args.sink === undefined ? {} : { sink: args.sink }),
   });
   if (!result.ok) throw new Error(`exchange rejected: ${result.code}`);
   let full = "";
@@ -155,26 +160,15 @@ const say = (chat: ChatSeat, content: string): Promise<string> => drive(chat, { 
 /**
  * One exchange, plus the diagnostic codes it filed.
  *
- * `submitChatMessage` neither returns nor accepts its `DiagnosticCollector` — it
- * LOGS the turn's codes and drops the sink — so unlike `settleChatExchange`, which
- * hands its sink back, the only seam an integration test has on the live turn's
- * diagnostics is that log line. Reading it here is deliberate and narrow: the
- * alternative is asserting nothing about the codes the silence paths are designed
- * to file.
+ * `submitChatMessage` takes an optional `sink` that it tees every diagnostic into
+ * as the turn files them, which is what makes the silence paths assertable here.
+ * `drive` drains the stream before returning, so the settle step — where the
+ * post-turn half of the codes land — has already run by the time we read it.
  */
 async function sayWithDiagnostics(chat: ChatSeat, content: string): Promise<{ reply: string; codes: string[] }> {
-  const codes: string[] = [];
-  const spy = vi.spyOn(log, "info").mockImplementation((scope, message, data) => {
-    if (scope !== "engine.chat" || message !== "chat-state diagnostics") return;
-    const filed: unknown = data?.codes;
-    if (!Array.isArray(filed)) return;
-    for (const code of filed as readonly unknown[]) if (typeof code === "string") codes.push(code);
-  });
-  try {
-    return { reply: await say(chat, content), codes };
-  } finally {
-    spy.mockRestore();
-  }
+  const sink = new DiagnosticCollector();
+  const reply = await drive(chat, { kind: "send", content, sink });
+  return { reply, codes: codes(sink) };
 }
 
 /** "Another take" on the newest exchange — the retake path, guard and anchors included. */
