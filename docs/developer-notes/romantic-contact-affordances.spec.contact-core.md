@@ -398,9 +398,11 @@ permission (legacy) as unowned in both lanes, so every one of them arrives as an
 ### Public API
 
 `resolveContactAttempt({ intent, context, sink? }) → ContactResolution` ·
-`commitContactResolution({ state, resolution, eventRef, sink? }) → { state, commit, contact }` ·
+`commitContactResolution({ state, resolution, eventRef, sink? }) → ContactCommitOutcome`
+(a **union** since slice 3A.1 — see
+[As built — slice 3A.1](#as-built--slice-3a1-boundary-corrections)) ·
 `endContact({ state, contactId, reason, storyTime, eventRef, sink? })` ·
-`endAllContacts({ state, reason, storyTime, eventRef })` ·
+`endAllContacts({ state, reason, storyTime, eventRef, sink? })` ·
 `activeContact` / `activeContactForPair` / `activeContactsOf` ·
 `emptyContactLifecycleState` / `parseContactLifecycleState` ·
 `classifyContactAdjustment` · `composeContactMaterial` / `sortContactMaterialLayers` /
@@ -618,3 +620,171 @@ withdrawal under a live contact, malformed version, tampered pair key /
 contact id / transmission / decision participants, capacity without
 projection-only eviction, `committed` only after persistence, and no
 contact-specific `partially_committed`.
+
+## As built — slice 3A.1: boundary corrections
+
+Shipped 2026-07-31, still before any lane wiring, from the owner's review of the
+shipped 3A. The original findings were closed; what the review exposed was a
+**second ring of the same family** — a proof that was checked and then thrown
+away, an acknowledgment that was structurally valid and about the wrong write, a
+staleness rule that guarded one pair and nothing else, and a status line drawn
+between *bad news* and *good news* instead of between *an answer* and *a
+silence*. Contracts only — no storage, no lane, no migration.
+
+### The invariants this slice added
+
+**11. The agency proof is persisted, and one body gets one answer.**
+`implicitAdjustments` is a durable claim that a body MOVED; nothing beside it
+recorded that the body's own authority allowed the movement, because the
+resolver consulted the decision and then discarded it. A committable resolution
+and `CommittedContactRead` now carry **`targetAgencies`** — the CONSULTED,
+participant-keyed decisions, one per non-actor body an admitted adjustment
+moves, empty in the ordinary case. They are start identity like the three reads
+beside them (authorization evidence for the contact that *began*, never patched
+by a later assertion) and they are in the stored schema, where
+`storedContactProblem` demands an `allowed` decision naming every adjusted
+non-actor participant (`agency_does_not_cover_adjustment`).
+
+Coverage is also matched by **first hit**, and a first hit only means something
+when there is exactly one. Two decisions naming the same `targetId` let an
+earlier `allowed` swallow a later `denied` — the refusal most worth honouring is
+the one silently lost — and there is no principled tie-break, because both
+claim the same authority over the same body. A duplicate is therefore a context
+built wrong, not a story fact: `unresolved` / `action_invalid` with an `error`,
+exactly like a decision about a different actor, checked over the whole list
+(a list that contradicts itself about one body says nothing reliable about the
+others) and re-checked on read as `duplicate_agency_decision`.
+
+**12. No contact ends before its own last update.** Invariant 7 protects the
+pair being asserted and nothing else, and every end path could reach a contact
+the assertion never mentioned. An end stamped earlier than the contact's
+`lastUpdatedAt` writes a record whose `endedAt` precedes facts already committed
+about that contact, so replay sees a contact that ended before it was last
+touched. Every end now checks the contact it is about to end (equality is fine —
+a same-minute release is ordinary):
+
+| Path | Ruling | Why not the alternative |
+| --- | --- | --- |
+| `endContact` | No-op, `warn`, state unchanged, no commit | Silently succeeding makes a back-dated end indistinguishable from a real one on replay. A later end at a current story time still closes it. |
+| `endAllContacts` (scene exit at an older time) | **Per contact**: the stale ones stay ALIVE with a `warn`, the rest end normally; the returned state is no longer unconditionally empty | Refusing the whole request would throw away the ends of every contact the exit legitimately covers; ending the newer one anyway would back-date it. A caller really leaving the scene re-issues at the current time or ends the survivors by id. |
+| `endUnauthorizedContacts` (sweep at an older time) | Same: the newer contact survives the sweep, `warn` | A sweep is a read of what is true NOW, so an older one is an out-of-order write — and a lapsed authorization does not un-lapse, so the next sweep ends it at a time that is actually current. |
+| Capacity eviction | **Refuses the new start** (see 13) | The core cannot mint an end at the victim's own later time without inventing a story minute nobody asserted, and cannot end it at the incoming time without back-dating. |
+
+**13. A commit that cannot be made honestly is REFUSED, and a refusal is not a
+contact.** `ContactCommitOutcome` is now a **union** rather than a record:
+
+```ts
+type ContactCommitOutcome =
+  | { status: "committed"; state; commit; contact; ended }
+  | { status: "refused"; reason: ContactCommitRefusalReason; state; blockedBy: readonly ContactId[] };
+```
+
+The discriminant is load-bearing and the shape is the guarantee: a refusal has
+no `commit` and no `contact` **at all**, so a caller cannot read a started
+contact off one by forgetting to check — the same device `ContactResolution`
+uses to stop an attempt masquerading as a commitment, applied one stage later.
+`state` is returned unchanged, `contactCommitEvents` is `[]` (so a lane that
+persists it unconditionally stays correct without learning the union), and the
+one producer today is `capacity_blocked_by_newer_contact`: the projection is
+full and its oldest contact is newer than this assertion. Capacity is evaluated
+**before** anything is ended or reported, so a refusal never has to unwind a
+framing end it already announced. The reason is a vocabulary rather than a
+boolean because "the fold could not proceed" is the shape a future refusal would
+also take. **This reverses slice 3A's reject-vs-end note** for the stale case
+only: ending with a real event is still right when the victims are older, and is
+simply unavailable when they are not.
+
+**14. `committed` means *this action's* commit was persisted.** A structurally
+valid `persisted` acknowledgment used to be enough, and "a write happened" is
+not the claim the narrator hears — the narrator hears "THIS action's contact is
+now current truth". An acknowledgment can be true and still not say that: it can
+name a different contact, report a commit kind this action never produced, be
+the reply to an EARLIER write on the same contact (a retry, a queued turn, a
+rolled-back attempt), or acknowledge the write that **ended** the contact — a
+durable, successful, correctly-shaped write whose meaning is the opposite of
+`committed`.
+
+So the adapter compares instead of trusting. `ContactPersistenceAcknowledgment`
+gains `eventRef` and `actionId`; `contactActionOutcomeStatus` takes
+`expected: ContactCommitExpectation` — `{ contactId, commitKind, eventRef,
+actionId }`, built from the fold by `contactCommitExpectation({ outcome,
+eventRef, actionId })` (which returns `undefined` for a refused outcome, so a
+refusal cannot be acknowledged into existence). Every field must match, and the
+first disagreement is reported as `contact.commit_acknowledgment_mismatch`
+(`error`, with the mismatch named: `contact_id`, `commit_kind`, `event_ref`,
+`action_id`, `commit_ended_the_contact`). Any mismatch, a missing expectation,
+and a missing acknowledgment all resolve `unresolved` — never `committed`. The
+new code is separate from `contact.commit_unacknowledged` on purpose: a missing
+acknowledgment is a pipeline that forgot to ask the store, a mismatched one is a
+pipeline that asked and believed the wrong answer, and only the second means
+somebody's bookkeeping is crossed.
+
+### The status line: an answer versus a silence
+
+`resolve.ts` mapped unresolved actor control, missing target agency,
+unresolved-or-uncovered eligibility, and unanswered permission to **`rejected`**
+— while its own comments said "we could not read the owner" should produce
+silence. Guidance *mandates* that the narrator resolve a `rejected` outcome, so
+a silent adapter had a character written declining something nobody had asked
+her about. The line is now drawn by **who spoke**, not by how bad the news is:
+
+| Outcome | Reason | Narration | Diagnostic |
+| --- | --- | --- | --- |
+| `rejected` | `actor_control_denied` | The refusal is played | none |
+| `rejected` | `target_agency_denied` | The refusal is played | none |
+| `rejected` | `participant_ineligible` | The refusal is played | none |
+| `rejected` | `permission_denied` / `permission_withdrawn` | The refusal is played | none |
+| `rejected` | `permission_scope_missing` — an answered grant that does not cover *this* action is an answer about this action | The refusal is played | `contact.consent_required` (`warn`; a permission UI wants it) |
+| `rejected` | `out_of_reach` | The refusal is played | none |
+| `unresolved` | `actor_control_unresolved` | **Silence** | `contact.actor_control_unavailable` (`warn`) |
+| `unresolved` | `target_agency_unresolved` — missing, `unresolved`, or `not_required` while an adjustment moves that body | **Silence** | `contact.target_agency_unavailable` (`warn`) |
+| `unresolved` | `participant_eligibility_unresolved` — `unresolved`, `not_required`, or not covering every participant | **Silence** | `contact.participant_eligibility_unavailable` (`warn`) |
+| `unresolved` | `permission_unresolved` — `unresolved` or `not_required` | **Silence** | `contact.policy_unavailable` (`warn`) |
+| `unresolved` | `action_invalid` | **Silence** | `contact.action_context_invalid` (`error`) |
+| `unresolved` | `geometry_unavailable` / `support_unavailable` / `material_unavailable` | **Silence** | the matching `contact.*_unavailable` (`warn`) |
+
+The four `*_unresolved` reasons moved from `contactRejectionReasons` to
+`contactUnresolvedReasons` in `decisions.ts`; the diagnostics they already
+emitted are unchanged, so the gap still surfaces — through the diagnostics
+channel and the debug UI, which is where a missing owner belongs, and never
+through the fiction. Two vocabulary laws are pinned by test: no reason ending
+`_unresolved` may live in the rejection vocabulary, and every answered refusal
+must stay in it.
+
+### Rulings — owner, 2026-07-31
+
+**The generic contact core stays ANATOMY-NEUTRAL.** Flagged during 3A: a
+surface ref can carry `side: "center"` for a location where no such side exists,
+and the core will happily key, pair, and commit it. It will **not** learn that —
+the core has no anatomy and may not acquire any (its own
+`domain-neutrality.test.ts` is the guardrail). The law that a foot has no
+`center` side lives in the **foot adapter and schema alone**, which is where the
+knowledge already is; teaching the shared core one domain's body plan is exactly
+how a shared core stops being shared, and the next domain would arrive with its
+own contradicting table.
+
+### File and API deltas
+
+| Change | Callers must know |
+| --- | --- |
+| `CommittableContactResolution` and `CommittedContactRead` gain **`targetAgencies: readonly ContactTargetAgencyDecision[]`** (required; in `committedContactReadSchema`) | Produced by the resolver and carried by the fold; construct a committed read only through `commitContactResolution`. |
+| `commitContactResolution` returns a **union**: `{ status: "committed", … } \| { status: "refused", … }` | Narrow on `status` (or `isCommittedContactOutcome`) before reading `contact` / `commit` / `ended`. `state` and `contactCommitEvents` work on both. |
+| New: `contactCommitRefusalReasons`, `ContactCommitRefusalReason`, `CommittedContactOutcome`, `isCommittedContactOutcome` | — |
+| `endAllContacts` gains **`sink?`** and no longer always returns the empty projection | Contacts newer than the exit survive it; read the returned state rather than assuming it is empty. |
+| `ContactPersistenceAcknowledgment.persisted` gains **`eventRef`** and **`actionId`** | Stamp the acknowledgment with this action's own event and action id. |
+| `contactActionOutcomeStatus` gains **`expected?: ContactCommitExpectation`** | Build it with `contactCommitExpectation({ outcome, eventRef, actionId })`. Omitting it is `unresolved` + `error`. |
+| New: `contactCommitExpectation`, `ContactCommitExpectation`, `contactAcknowledgmentMismatches`, `ContactAcknowledgmentMismatch` | — |
+| Reason codes moved from `contactRejectionReasons` to `contactUnresolvedReasons`: `actor_control_unresolved`, `target_agency_unresolved`, `participant_eligibility_unresolved`, `permission_unresolved` | A `switch` over either vocabulary must move the case. Nothing in the narration seam changes shape — the resolution's `status` does. |
+| New diagnostic: `contact.commit_acknowledgment_mismatch` (`error`) | — |
+| New stored-state failures: `duplicate_agency_decision`, `agency_does_not_cover_adjustment` | — |
+
+Tests: 6 files / **167** cases in `contact/` (was 6 / 139 at slice 3A) — the
+consulted agencies carried onto the resolution and into start identity and
+surviving an update that moves nobody, a duplicate agency decision refused both
+consulted and unconsulted, stored rows dropped for missing / non-`allowed` /
+wrong-body / duplicated agency proof, a stale `endContact` no-op that a current
+end still closes, a scene exit that spares the newer contact and still replays
+coherently, a stale sweep that spares it and a current one that ends it, a
+capacity refusal with nothing written and nothing to read off it, wrong-id,
+wrong-kind, stale-event-ref, wrong-action and ended-contact acknowledgments, an
+acknowledgment with no fold behind it, and the two reason-vocabulary laws.

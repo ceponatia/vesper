@@ -310,26 +310,54 @@ export interface ContactActionRequirement {
   readonly evidence: readonly AffordanceEvidence[];
 }
 
-/** Why an attempt was refused outright. An answer, not a degradation. */
+/**
+ * Why an attempt was refused outright. An ANSWER somebody gave, not a
+ * degradation — every reason here names an authority that spoke.
+ *
+ * The line between this vocabulary and the one below is the line between a
+ * refusal the fiction must carry and a gap the fiction must not invent. A
+ * `rejected` resolution obliges the narrator to resolve it — she pulls back, he
+ * cannot reach — so a reason may only live here when somebody actually said no:
+ * a control owner that denied, a body's authority that refused to move, a
+ * participant the product ruled ineligible, a permission owner that denied or
+ * withdrew, a reach read that placed the surfaces apart. Scope-not-covered
+ * belongs here too: a grant that exists and does not name this action is an
+ * answer about this action, not a silence.
+ *
+ * **Correction, 2026-07-31 (owner).** The four `*_unresolved` reasons used to
+ * live here, so "we could not read the owner" reached the narrator as a refusal
+ * and got narrated as one — the resolver's own comments said it should produce
+ * silence. They moved to `contactUnresolvedReasons` below.
+ */
 export const contactRejectionReasons = [
   "actor_control_denied",
-  "actor_control_unresolved",
   "target_agency_denied",
-  "target_agency_unresolved",
   "participant_ineligible",
-  "participant_eligibility_unresolved",
   "permission_denied",
   "permission_withdrawn",
-  "permission_unresolved",
   "permission_scope_missing",
   "out_of_reach",
 ] as const;
 export const contactRejectionReasonSchema = z.enum(contactRejectionReasons);
 export type ContactRejectionReason = z.infer<typeof contactRejectionReasonSchema>;
 
-/** Why the resolver could not decide. Degradation, not an answer — narrate nothing. */
+/**
+ * Why the resolver could not decide. Degradation, not an answer — narrate
+ * nothing, and let the gap surface through diagnostics and the debug UI.
+ *
+ * Two families, deliberately in one vocabulary because they produce one
+ * behaviour: an owner that could not be READ (`*_unavailable`, and the
+ * `*_unresolved` authority reasons), and an input nobody meant
+ * (`action_invalid`). Both mean the world did not answer, and the only honest
+ * output for an unanswered world is silence — a fictionalized refusal would
+ * invent a character's decision out of a missing adapter.
+ */
 export const contactUnresolvedReasons = [
   "action_invalid",
+  "actor_control_unresolved",
+  "target_agency_unresolved",
+  "participant_eligibility_unresolved",
+  "permission_unresolved",
   "geometry_unavailable",
   "support_unavailable",
   "material_unavailable",

@@ -95,3 +95,17 @@ export const CONTACT_STATE_RECOMPUTED = "contact.state_recomputed";
  * correct output for a contact that may not have been recorded is silence.
  */
 export const CONTACT_COMMIT_UNACKNOWLEDGED = "contact.commit_unacknowledged";
+
+/**
+ * A durable acknowledgment arrived, and it does not name the commit THIS action
+ * produced. `error`.
+ *
+ * Distinct from the code above because the two failures need different fixes: a
+ * missing acknowledgment is a pipeline that forgot to ask the store, while a
+ * mismatched one is a pipeline that asked and then believed the wrong answer —
+ * an acknowledgment from an earlier write, from another contact, for a commit
+ * kind that did not happen, or for the END of the contact rather than its start.
+ * Both resolve `unresolved`; only the second means somebody's bookkeeping is
+ * crossed, which is worth being able to count on its own.
+ */
+export const CONTACT_COMMIT_MISMATCHED = "contact.commit_acknowledgment_mismatch";

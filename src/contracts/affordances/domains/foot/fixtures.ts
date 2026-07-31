@@ -175,6 +175,9 @@ export function committedFootContact(input: FootContactFixtureInput): CommittedC
     resolution,
     eventRef: contactEventRef(input.eventId ?? "foot_fixture_event"),
   });
+  if (committed.status !== "committed") {
+    throw new Error(`foot fixture contact was refused: ${committed.reason}`);
+  }
   return committed.contact;
 }
 

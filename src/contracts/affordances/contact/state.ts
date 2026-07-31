@@ -9,6 +9,7 @@ import {
   contactActionRequiresAdultEligibility,
   contactActionRequiresPermission,
   contactAdjustmentKindSchema,
+  contactAgencyStatusSchema,
   contactControlStatusSchema,
   contactEligibilityStatusSchema,
   contactPolicyScopeSchema,
@@ -95,6 +96,12 @@ const actorControlSchema = z.object({
   evidence: evidenceListSchema,
 });
 
+const targetAgencySchema = z.object({
+  status: contactAgencyStatusSchema,
+  targetId: affordanceSubjectIdSchema,
+  evidence: evidenceListSchema,
+});
+
 const eligibilitySchema = z.object({
   status: contactEligibilityStatusSchema,
   participantIds: z.array(affordanceSubjectIdSchema).max(8).readonly(),
@@ -159,6 +166,7 @@ export const committedContactReadSchema: z.ZodType<CommittedContactRead> = z.obj
   transmission: transmissionSchema,
   implicitAdjustments: z.array(minimalAdjustmentSchema).max(8).readonly(),
   actorControl: actorControlSchema,
+  targetAgencies: z.array(targetAgencySchema).max(8).readonly(),
   participantEligibility: eligibilitySchema,
   policy: policySchema,
   evidence: evidenceListSchema,
@@ -198,6 +206,36 @@ function transmissionsAgree(
 }
 
 /**
+ * The agency proof a stored contact must still carry for the bodies its own
+ * recorded adjustments moved.
+ *
+ * `implicitAdjustments` is a durable claim that a body MOVED. Without this
+ * check, a stored contact could carry an adjustment on a non-actor participant
+ * with no decision behind it at all — the resolver's per-participant gate
+ * enforced at commit time and then nothing enforcing it on read, which is
+ * exactly the gap the pair-key and contact-id re-derivations exist to close for
+ * identity. A row that cannot prove the movement was authorized is dropped like
+ * any other unreadable row: no contact is always the safe answer.
+ *
+ * Duplicates are rejected first, and for the resolver's reason — two answers
+ * about one body make the `find` below meaningless, because the row it returns
+ * is an artifact of array order rather than of anybody's authority.
+ */
+function storedAgencyProblem(contact: CommittedContactRead): string | undefined {
+  const seen = new Set<string>();
+  for (const decision of contact.targetAgencies) {
+    if (seen.has(decision.targetId)) return "duplicate_agency_decision";
+    seen.add(decision.targetId);
+  }
+  for (const adjustment of contact.implicitAdjustments) {
+    if (adjustment.subjectId === contact.actorId) continue;
+    const decision = contact.targetAgencies.find((entry) => entry.targetId === adjustment.subjectId);
+    if (decision?.status !== "allowed") return "agency_does_not_cover_adjustment";
+  }
+  return undefined;
+}
+
+/**
  * Every relationship between fields that a per-field schema cannot see.
  *
  * Returns the first failure as a short structured reason — never prose for a
@@ -214,6 +252,8 @@ function storedContactProblem(contact: CommittedContactRead): string | undefined
   if (contact.source.subjectId !== contact.actorId) return "source_is_not_the_actor";
   if (contact.actorControl.actorId !== contact.actorId) return "actor_control_names_another_subject";
   if (contact.actorControl.status !== "allowed") return "actor_control_did_not_allow";
+  const agencyProblem = storedAgencyProblem(contact);
+  if (agencyProblem !== undefined) return agencyProblem;
   if (contact.lastUpdatedAt < contact.startedAt) return "last_updated_precedes_start";
 
   if (!isInterpersonalContact(contact.source, contact.target)) return undefined;
