@@ -74,22 +74,27 @@ export function probeSupportRelation(overrides: Partial<SceneSupportRelation> = 
   };
 }
 
+/**
+ * One placed body. `null` on any field means **nobody stated it**, which is a
+ * different fixture from a stated-and-empty support set (`[]`) — the first is
+ * silence, the second is a clearing somebody timestamped.
+ */
 export function probeParticipant(
   subjectId: AffordanceSubjectId,
   overrides: {
     control?: SceneControlMode | null;
     posture?: ScenePosture | null;
-    support?: readonly SceneSupportRelation[];
+    support?: readonly SceneSupportRelation[] | null;
   } = {},
 ): SceneParticipant {
   const control = overrides.control === undefined ? defaultControl(subjectId) : overrides.control;
   const posture = overrides.posture === undefined ? "standing" : overrides.posture;
-  const support = overrides.support ?? [probeSupportRelation()];
+  const support = overrides.support === undefined ? [probeSupportRelation()] : overrides.support;
   return {
     subjectId,
     ...(control === null ? {} : { control: probeFact(control) }),
     ...(posture === null ? {} : { posture: probeFact(posture) }),
-    support: support.map((relation) => probeFact(relation)),
+    ...(support === null ? {} : { support: probeFact(support) }),
   };
 }
 

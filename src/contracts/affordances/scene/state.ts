@@ -76,17 +76,32 @@ export interface SceneSupportRelation {
 /**
  * One body in the scene.
  *
- * `control` and `posture` are OPTIONAL and their absence is load-bearing: a
- * participant whose posture nobody stated is not standing, and a participant
- * whose control nobody stated is not the player's. Both make the reads that
- * depend on them answer `unresolved`.
+ * `control`, `posture`, and `support` are OPTIONAL and their absence is
+ * load-bearing: a participant whose posture nobody stated is not standing, a
+ * participant whose control nobody stated is not the player's, and a
+ * participant whose support nobody stated is not on the floor. All three make
+ * the reads that depend on them answer `unresolved`.
+ *
+ * **`support` is ONE fact whose value is the whole relation list**, not a list
+ * of per-relation facts. The set is what an intent replaces
+ * (`set_support` swaps the lot, because standing up off a chair changes what
+ * bears the weight and what the hands are doing at once), so the set is what
+ * has to carry a provenance — including when it is EMPTY. A bare array lost
+ * the timestamp the moment it was cleared, and a clearing with no timestamp
+ * cannot be ordered against anything, which let an older intent silently
+ * un-clear it.
+ *
+ * A stated-empty set is a clearing, not a claim: it says nobody names anything
+ * that carries this body, which is exactly what an absent fact says, and both
+ * read `support_unknown` / `elevation_unknown`. The provenance exists to order
+ * the clearing, never to make a new physical claim out of it.
  */
 export interface SceneParticipant {
   readonly subjectId: AffordanceSubjectId;
   readonly control?: SceneFact<SceneControlMode>;
   readonly posture?: SceneFact<ScenePosture>;
-  /** Empty means nobody said what holds this body up — an unknown elevation, not a floor. */
-  readonly support: readonly SceneFact<SceneSupportRelation>[];
+  /** Absent means nobody said what holds this body up; an empty set means somebody said "nothing does". */
+  readonly support?: SceneFact<readonly SceneSupportRelation[]>;
 }
 
 /** One thing in the room a body can be on, against, or under. */
@@ -134,6 +149,40 @@ export function sceneFacingKey(subjectId: AffordanceSubjectId, towardId: Afforda
   return `${subjectId}${SCENE_KEY_SEPARATOR}${towardId}`;
 }
 
+/**
+ * The key for what a support relation hangs on — one surface, or one body.
+ *
+ * One anchor bears one relationship to one body, so this is also the key a
+ * stored support set may not have two claimants for: "borne by the bed" and
+ * "leaning on the bed" are two answers to one question, and the boundary drops
+ * both rather than picking (`parseSceneState`).
+ */
+export function sceneSupportAnchorKey(anchor: SceneSupportAnchor): string {
+  return anchor.kind === "surface"
+    ? `surface${SCENE_KEY_SEPARATOR}${anchor.supportId}`
+    : `participant${SCENE_KEY_SEPARATOR}${anchor.subjectId}`;
+}
+
+/** Two support sets state the same relations, in the same order. Provenance is not part of the comparison. */
+export function sceneSupportSetsEqual(
+  left: readonly SceneSupportRelation[],
+  right: readonly SceneSupportRelation[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((relation, index) => {
+      const other = right[index];
+      return (
+        other !== undefined &&
+        relation.role === other.role &&
+        sceneSupportAnchorKey(relation.anchor) === sceneSupportAnchorKey(other.anchor) &&
+        relation.loadZones.length === other.loadZones.length &&
+        relation.loadZones.every((zone, zoneIndex) => zone === other.loadZones[zoneIndex])
+      );
+    })
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
@@ -166,7 +215,18 @@ interface SceneStateParts {
   readonly contacts?: ContactLifecycleState;
 }
 
-/** Canonical order + last-write-wins dedupe by key. Sorting is what makes the snapshot byte-stable across a retake. */
+/**
+ * Canonical order + last-write-wins dedupe by key. Sorting is what makes the
+ * snapshot byte-stable across a retake.
+ *
+ * **Last-write-wins is deliberate HERE and forbidden at the boundary.** It is
+ * how `withSceneParticipant` and its siblings express replacement: they append
+ * the new entry and let the dedupe drop the old one, so "last" means "the entry
+ * the caller just wrote" — real ordering information. A stored blob has no such
+ * information; its array order is an accident of whatever wrote it, so
+ * `parseSceneState` drops every claimant of a contradicted key BEFORE calling
+ * this, and by the time construction runs there is nothing left to pick between.
+ */
 function canonical<TEntry>(
   entries: readonly TEntry[],
   keyOf: (entry: TEntry) => string,
@@ -188,6 +248,26 @@ function orientProximity(relation: SceneProximityRelation): SceneProximityRelati
 }
 
 /**
+ * A body cannot be near itself, oriented toward itself, or held up by itself.
+ *
+ * These are not degraded data — they are records that could never be true, and
+ * the constructor drops them rather than throwing (`src/contracts` answers, it
+ * does not raise). A programmatic caller that produces one gets a state without
+ * it, which its own tests see; a STORED one never reaches here, because the
+ * boundary schemas refuse it first and say so in a diagnostic.
+ */
+function withoutSelfSupport(participant: SceneParticipant): SceneParticipant {
+  const support = participant.support;
+  if (support === undefined) return participant;
+  const relations = support.value.filter(
+    (relation) => relation.anchor.kind !== "participant" || relation.anchor.subjectId !== participant.subjectId,
+  );
+  return relations.length === support.value.length
+    ? participant
+    : { ...participant, support: { value: relations, provenance: support.provenance } };
+}
+
+/**
  * Build a scene state from parts, canonicalized and frozen.
  *
  * The only constructor. Every mutation below routes through it, so no code path
@@ -197,15 +277,19 @@ function orientProximity(relation: SceneProximityRelation): SceneProximityRelati
 export function sceneStateOf(parts: SceneStateParts): SceneState {
   const state: SceneState = {
     version: SCENE_STATE_VERSION,
-    participants: canonical(parts.participants ?? [], (entry) => entry.subjectId, SCENE_MAX_PARTICIPANTS),
+    participants: canonical(
+      (parts.participants ?? []).map(withoutSelfSupport),
+      (entry) => entry.subjectId,
+      SCENE_MAX_PARTICIPANTS,
+    ),
     supports: canonical(parts.supports ?? [], (entry) => entry.supportId, SCENE_MAX_SUPPORTS),
     proximity: canonical(
-      (parts.proximity ?? []).map(orientProximity),
+      (parts.proximity ?? []).filter((entry) => entry.subjectId !== entry.otherId).map(orientProximity),
       (entry) => scenePairKey(entry.subjectId, entry.otherId),
       SCENE_MAX_RELATIONS,
     ),
     facing: canonical(
-      parts.facing ?? [],
+      (parts.facing ?? []).filter((entry) => entry.subjectId !== entry.towardId),
       (entry) => sceneFacingKey(entry.subjectId, entry.towardId),
       SCENE_MAX_RELATIONS,
     ),

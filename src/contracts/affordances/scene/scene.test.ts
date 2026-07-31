@@ -1,10 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { bodyLocationRegistry } from "../../body/locations";
 import { DiagnosticCollector } from "../../diagnostics";
-import { adapterSupported, affordanceSubjectId, isAdapterSupported } from "../core";
-import { resolveContactAttempt, type ContactActionContext, type ContactActionIntent } from "../contact";
-import { SCENE_CONTROL_UNAVAILABLE, SCENE_INTENT_INVALID, SCENE_RELATION_UNAVAILABLE, SCENE_STATE_INVALID } from "./diagnostics";
-import { applySceneIntents, commitSceneIntent } from "./intents";
+import { adapterSupported, adapterUnavailable, affordanceSubjectId, isAdapterSupported } from "../core";
+import {
+  commitContactResolution,
+  contactEventRef,
+  emptyContactLifecycleState,
+  resolveContactAttempt,
+  type ContactActionContext,
+  type ContactActionIntent,
+  type ContactSurfaceRef,
+} from "../contact";
+import {
+  SCENE_CONTROL_UNAVAILABLE,
+  SCENE_INTENT_INVALID,
+  SCENE_INTENT_STALE,
+  SCENE_RELATION_UNAVAILABLE,
+  SCENE_STATE_CONTRADICTORY,
+  SCENE_STATE_INVALID,
+} from "./diagnostics";
+import { applySceneIntents, commitSceneIntent, type SceneMovementChange } from "./intents";
 import {
   sceneBodyZoneOf,
   sceneGeometryRead,
@@ -18,6 +33,7 @@ import {
   emptySceneState,
   sceneParticipant,
   sceneStateOf,
+  withSceneContacts,
   withSceneParticipant,
   withSceneProximity,
   type SceneState,
@@ -76,6 +92,46 @@ function reachOf(state: SceneState, sourceLocation: string, targetLocation: stri
 
 function codes(sink: DiagnosticCollector): string[] {
   return sink.items.map((item) => item.code);
+}
+
+/**
+ * The stored blob's shape, as a test may edit it — loose where the point is to
+ * write something the schema will refuse.
+ */
+interface StoredFact<TValue> {
+  value: TValue;
+  provenance: { source: string; ref: string; storyTime: number; evidence: unknown[] };
+}
+interface StoredSupportRelation {
+  role: string;
+  anchor: { kind: string; supportId?: string; subjectId?: string };
+  loadZones: string[];
+}
+interface StoredParticipant {
+  subjectId: string;
+  control?: StoredFact<string>;
+  posture?: StoredFact<string>;
+  support?: StoredFact<StoredSupportRelation[]>;
+}
+interface StoredScene {
+  version: number;
+  participants: StoredParticipant[];
+  supports: { supportId: string; kind: string; height: StoredFact<string> }[];
+  proximity: { subjectId: string; otherId: string; band: StoredFact<string> }[];
+  facing: { subjectId: string; towardId: string; facing: StoredFact<string> }[];
+  contacts: { version: number; contacts: unknown[] };
+}
+
+/** The default scene as a stored blob, ready to be corrupted one field at a time. */
+function storedScene(): StoredScene {
+  return JSON.parse(JSON.stringify(probeScene())) as StoredScene;
+}
+
+/** The stored player, with the support set every contradiction case edits. */
+function storedPlayerSupport(raw: StoredScene): StoredFact<StoredSupportRelation[]> {
+  const player = raw.participants.find((entry) => entry.subjectId === PROBE_PLAYER);
+  if (player?.support === undefined) throw new Error("fixture has no player support");
+  return player.support;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,8 +290,13 @@ describe("absent facts", () => {
     const noFacing = probeScene({ facing: null });
     expect(reachOf(noFacing, HANDS, SHOULDERS)).toMatchObject({ reason: "facing_unknown" });
 
-    const noSupport = probeScene({ player: probeParticipant(PROBE_PLAYER, { support: [] }) });
+    const noSupport = probeScene({ player: probeParticipant(PROBE_PLAYER, { support: null }) });
     expect(reachOf(noSupport, HANDS, SHOULDERS)).toMatchObject({ reason: "elevation_unknown" });
+
+    // A support set somebody CLEARED is a timestamped clearing, not a claim that
+    // she is holding herself up by nothing: it reads exactly like silence.
+    const clearedSupport = probeScene({ player: probeParticipant(PROBE_PLAYER, { support: [] }) });
+    expect(reachOf(clearedSupport, HANDS, SHOULDERS)).toMatchObject({ reason: "elevation_unknown" });
   });
 
   it("refuses to choose between two things that bear the same body", () => {
@@ -294,11 +355,13 @@ describe("support", () => {
   });
 
   it("answers unresolved — not free — when nobody said what holds the body up", () => {
-    const state = probeScene({ player: probeParticipant(PROBE_PLAYER, { support: [] }) });
-    expect(sceneSupportOf(state, bodySurface(PROBE_PLAYER, HANDS))).toMatchObject({
-      status: "unresolved",
-      reason: "support_unknown",
-    });
+    for (const support of [null, []] as const) {
+      const state = probeScene({ player: probeParticipant(PROBE_PLAYER, { support }) });
+      expect(sceneSupportOf(state, bodySurface(PROBE_PLAYER, HANDS))).toMatchObject({
+        status: "unresolved",
+        reason: "support_unknown",
+      });
+    }
   });
 });
 
@@ -469,6 +532,138 @@ describe("actor control", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The ordering law
+// ---------------------------------------------------------------------------
+
+/**
+ * One case per fact an intent can target. `fresh` changes it; `restatement`
+ * asserts exactly what the fixture already says. Every fixture fact is stamped
+ * story minute 100, so 99 is late, 100 is simultaneous, and 101 is new.
+ */
+const ORDERED_CHANGES: readonly {
+  readonly slot: string;
+  readonly fresh: SceneMovementChange;
+  readonly restatement: SceneMovementChange;
+}[] = [
+  {
+    slot: "posture",
+    fresh: { kind: "set_posture", posture: "kneeling" },
+    restatement: { kind: "set_posture", posture: "standing" },
+  },
+  {
+    slot: "facing",
+    fresh: { kind: "set_facing", towardId: PROBE_NPC, facing: "away" },
+    restatement: { kind: "set_facing", towardId: PROBE_NPC, facing: "toward" },
+  },
+  {
+    slot: "proximity",
+    fresh: { kind: "set_proximity", otherId: PROBE_NPC, band: "touching" },
+    restatement: { kind: "set_proximity", otherId: PROBE_NPC, band: "close" },
+  },
+  {
+    slot: "support",
+    fresh: { kind: "set_support", support: [probeLeaning()] },
+    restatement: { kind: "set_support", support: [probeSupportRelation()] },
+  },
+];
+
+describe("the ordering law", () => {
+  it.each(ORDERED_CHANGES)("never lets a late intent overwrite a newer $slot", ({ fresh }) => {
+    const sink = new DiagnosticCollector();
+    const state = probeScene();
+    const outcome = commitSceneIntent({ state, intent: probeMovement({ storyTime: 99, change: fresh }), sink });
+    expect(outcome).toMatchObject({ status: "superseded", reason: "newer_fact_present" });
+    // A refusal must not be mistakable for a commit: there is no scene on it.
+    expect("state" in outcome).toBe(false);
+    expect(outcome.status === "superseded" && outcome.standing.storyTime).toBe(100);
+    expect(codes(sink)).toEqual([SCENE_INTENT_STALE]);
+  });
+
+  it.each(ORDERED_CHANGES)("writes nothing when an intent merely restates the $slot", ({ restatement }) => {
+    const sink = new DiagnosticCollector();
+    const state = probeScene();
+    for (const storyTime of [99, 100, 101]) {
+      const outcome = commitSceneIntent({ state, intent: probeMovement({ storyTime, change: restatement }), sink });
+      expect(outcome).toMatchObject({ status: "superseded", reason: "already_asserted" });
+    }
+    // Agreement is not a fault, and re-stamping a fact that did not change is
+    // how a scene where nothing happened produces a new snapshot every turn.
+    expect(sink.items).toEqual([]);
+  });
+
+  it.each(ORDERED_CHANGES)("commits a different $slot stated in the same story minute", ({ fresh }) => {
+    const outcome = commitSceneIntent({ state: probeScene(), intent: probeMovement({ storyTime: 100, change: fresh }) });
+    expect(outcome.status).toBe("committed");
+  });
+
+  it("has nothing to be late against when the fact does not exist yet", () => {
+    const state = probeScene({ player: probeParticipant(PROBE_PLAYER, { posture: null }) });
+    const outcome = commitSceneIntent({ state, intent: probeMovement({ storyTime: 1 }) });
+    expect(outcome.status).toBe("committed");
+    if (outcome.status !== "committed") return;
+    expect(sceneParticipant(outcome.state, PROBE_PLAYER)?.posture?.value).toBe("kneeling");
+  });
+
+  it("keeps the timestamp of a support set that was CLEARED", () => {
+    const cleared = commitSceneIntent({
+      state: probeScene(),
+      intent: probeMovement({ storyTime: 110, change: { kind: "set_support", support: [] } }),
+    });
+    expect(cleared.status).toBe("committed");
+    if (cleared.status !== "committed") return;
+    const support = sceneParticipant(cleared.state, PROBE_PLAYER)?.support;
+    expect(support?.value).toEqual([]);
+    // The clearing is a fact about minute 110 — which is the whole reason the
+    // SET carries the provenance instead of the relations inside it.
+    expect(support?.provenance.storyTime).toBe(110);
+
+    const sink = new DiagnosticCollector();
+    const late = commitSceneIntent({
+      state: cleared.state,
+      intent: probeMovement({ storyTime: 105, change: { kind: "set_support", support: [probeSupportRelation()] } }),
+      sink,
+    });
+    expect(late).toMatchObject({ status: "superseded", reason: "newer_fact_present" });
+    expect(codes(sink)).toEqual([SCENE_INTENT_STALE]);
+
+    const later = commitSceneIntent({
+      state: cleared.state,
+      intent: probeMovement({ storyTime: 111, change: { kind: "set_support", support: [probeSupportRelation()] } }),
+    });
+    expect(later.status).toBe("committed");
+  });
+
+  it("weighs each intent against its OWN slot, not against the scene's last movement", () => {
+    // A posture written at minute 200 must not make a facing intent from minute
+    // 150 look late: they are different facts about different things.
+    const moved = commitSceneIntent({
+      state: probeScene(),
+      intent: probeMovement({ storyTime: 200, change: { kind: "set_posture", posture: "kneeling" } }),
+    });
+    expect(moved.status).toBe("committed");
+    if (moved.status !== "committed") return;
+    const turned = commitSceneIntent({
+      state: moved.state,
+      intent: probeMovement({ storyTime: 150, change: { kind: "set_facing", towardId: PROBE_NPC, facing: "away" } }),
+    });
+    expect(turned.status).toBe("committed");
+  });
+
+  it("folds the same intents twice into the identical scene", () => {
+    const intents = [
+      probeMovement({ intentId: "a", change: { kind: "set_posture", posture: "sitting" } }),
+      probeMovement({ intentId: "b", change: { kind: "set_proximity", otherId: PROBE_NPC, band: "touching" } }),
+      probeMovement({ intentId: "c", change: { kind: "set_support", support: [probeLeaning()] } }),
+    ];
+    const once = applySceneIntents(probeScene(), intents);
+    const twice = applySceneIntents(once.state, intents);
+    expect(once.outcomes.map((outcome) => outcome.status)).toEqual(["committed", "committed", "committed"]);
+    expect(twice.outcomes.map((outcome) => outcome.status)).toEqual(["superseded", "superseded", "superseded"]);
+    expect(JSON.stringify(twice.state)).toBe(JSON.stringify(once.state));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Snapshot and replay
 // ---------------------------------------------------------------------------
 
@@ -496,17 +691,31 @@ describe("snapshot", () => {
     expect(parseSceneState(undefined)).toEqual(emptySceneState());
   });
 
-  it("refuses a version it was not written for", () => {
+  it.each([
+    ["a future version", 99],
+    ["a version that is not a number", "one"],
+    ["a fractional version", 1.5],
+    ["a null version", null],
+    ["a version key holding nothing", undefined],
+  ])("fails closed on %s rather than assuming the current one", (_label, version) => {
+    // A `.catch(CURRENT)` here would read a blob nobody wrote for this build as
+    // though somebody had, and then trust every placement inside it.
     const sink = new DiagnosticCollector();
-    const raw = { ...JSON.parse(JSON.stringify(probeScene())), version: 99 };
-    expect(parseSceneState(raw, sink)).toEqual(emptySceneState());
-    expect(codes(sink)).toEqual([SCENE_STATE_INVALID]);
+    expect(parseSceneState({ ...storedScene(), version }, sink)).toEqual(emptySceneState());
+    expect(codes(sink)).toContain(SCENE_STATE_INVALID);
+  });
+
+  it("fails closed on a blob with no version at all", () => {
+    const sink = new DiagnosticCollector();
+    const { participants, supports, proximity, facing, contacts } = storedScene();
+    expect(parseSceneState({ participants, supports, proximity, facing, contacts }, sink)).toEqual(emptySceneState());
+    expect(codes(sink)).toContain(SCENE_STATE_INVALID);
   });
 
   it("drops an unreadable participant and says so, rather than voiding the scene", () => {
     const sink = new DiagnosticCollector();
     const raw = JSON.parse(JSON.stringify(probeScene())) as { participants: unknown[] };
-    raw.participants = [...raw.participants, { subjectId: "", support: [] }];
+    raw.participants = [...raw.participants, { subjectId: "" }];
     const parsed = parseSceneState(raw, sink);
     expect(parsed.participants).toHaveLength(2);
     expect(codes(sink)).toEqual([SCENE_STATE_INVALID]);
@@ -539,7 +748,10 @@ describe("snapshot", () => {
     const parsed = parseSceneState(raw, sink);
     expect(parsed.proximity).toEqual([]);
     expect(parsed.facing).toEqual([]);
-    expect(sceneParticipant(parsed, PROBE_PLAYER)?.support).toEqual([]);
+    // The SET survives its own emptying, and keeps the timestamp that says when
+    // the scene last had anything to say about what holds this body up.
+    expect(sceneParticipant(parsed, PROBE_PLAYER)?.support?.value).toEqual([]);
+    expect(sceneParticipant(parsed, PROBE_PLAYER)?.support?.provenance.storyTime).toBe(100);
     expect(codes(sink)).toEqual([SCENE_STATE_INVALID]);
   });
 
@@ -549,6 +761,145 @@ describe("snapshot", () => {
     );
     const state = sceneStateOf({ participants: crowd, supports: [probeSurface()] });
     expect(state.participants.length).toBeLessThanOrEqual(8);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Contradictions in stored state
+// ---------------------------------------------------------------------------
+
+describe("stored contradictions", () => {
+  it("drops both claimants of a duplicated participant id", () => {
+    const sink = new DiagnosticCollector();
+    const raw = storedScene();
+    raw.participants = [...raw.participants, { subjectId: PROBE_PLAYER }];
+    const parsed = parseSceneState(raw, sink);
+    // Neither row is the survivor. Array position is not evidence of recency,
+    // and an absent body is honest where a chosen one would be invented.
+    expect(sceneParticipant(parsed, PROBE_PLAYER)).toBeUndefined();
+    expect(sceneParticipant(parsed, PROBE_NPC)).toBeDefined();
+    expect(codes(sink)).toContain(SCENE_STATE_CONTRADICTORY);
+  });
+
+  it("drops a pair's distance stated twice, whichever way round each was stored", () => {
+    const sink = new DiagnosticCollector();
+    const raw = storedScene();
+    const stated = raw.proximity[0];
+    if (stated === undefined) throw new Error("fixture has no proximity");
+    raw.proximity = [
+      stated,
+      { subjectId: stated.otherId, otherId: stated.subjectId, band: { ...stated.band, value: "distant" } },
+    ];
+    const parsed = parseSceneState(raw, sink);
+    expect(parsed.proximity).toEqual([]);
+    expect(reachOf(parsed, HANDS, SHOULDERS)).toMatchObject({ reason: "proximity_unknown" });
+    expect(codes(sink)).toContain(SCENE_STATE_CONTRADICTORY);
+  });
+
+  it("drops one direction of a facing pair stated twice and keeps the other", () => {
+    const sink = new DiagnosticCollector();
+    const raw = storedScene();
+    const stated = raw.facing.find((entry) => entry.subjectId === PROBE_PLAYER);
+    if (stated === undefined) throw new Error("fixture has no player facing");
+    raw.facing = [...raw.facing, { ...stated, facing: { ...stated.facing, value: "away" } }];
+    const parsed = parseSceneState(raw, sink);
+    expect(parsed.facing).toHaveLength(1);
+    expect(parsed.facing[0]?.subjectId).toBe(PROBE_NPC);
+    expect(codes(sink)).toContain(SCENE_STATE_CONTRADICTORY);
+  });
+
+  it("drops both claimants of a duplicated support surface", () => {
+    const sink = new DiagnosticCollector();
+    const raw = storedScene();
+    const floor = raw.supports[0];
+    if (floor === undefined) throw new Error("fixture has no support surface");
+    raw.supports = [floor, { ...floor, kind: "table", height: { ...floor.height, value: "hip" } }];
+    const parsed = parseSceneState(raw, sink);
+    expect(parsed.supports).toEqual([]);
+    expect(reachOf(parsed, HANDS, SHOULDERS)).toMatchObject({ reason: "elevation_unknown" });
+    expect(codes(sink)).toContain(SCENE_STATE_CONTRADICTORY);
+  });
+
+  it("drops support relations that claim one anchor twice", () => {
+    const sink = new DiagnosticCollector();
+    const raw = storedScene();
+    const support = storedPlayerSupport(raw);
+    const stated = support.value[0];
+    if (stated === undefined) throw new Error("fixture has no support relation");
+    support.value = [stated, { ...stated, role: "leaning_on", loadZones: ["arms"] }];
+    const parsed = parseSceneState(raw, sink);
+    expect(sceneParticipant(parsed, PROBE_PLAYER)?.support?.value).toEqual([]);
+    expect(reachOf(parsed, HANDS, SHOULDERS)).toMatchObject({ reason: "elevation_unknown" });
+    expect(codes(sink)).toContain(SCENE_STATE_CONTRADICTORY);
+  });
+
+  it("drops both things that claim to bear one body", () => {
+    const sink = new DiagnosticCollector();
+    const raw = storedScene();
+    const floor = raw.supports[0];
+    if (floor === undefined) throw new Error("fixture has no support surface");
+    raw.supports = [floor, { supportId: PROBE_BED, kind: "bed", height: { ...floor.height, value: "knee" } }];
+    const support = storedPlayerSupport(raw);
+    const stated = support.value[0];
+    if (stated === undefined) throw new Error("fixture has no support relation");
+    support.value = [stated, { ...stated, anchor: { kind: "surface", supportId: PROBE_BED } }];
+    const parsed = parseSceneState(raw, sink);
+    // The read still refuses to choose between two bearers; the boundary refuses
+    // to STORE the choice at all, so the elevation is honestly unknown instead.
+    expect(sceneParticipant(parsed, PROBE_PLAYER)?.support?.value).toEqual([]);
+    expect(reachOf(parsed, HANDS, SHOULDERS)).toMatchObject({ reason: "elevation_unknown" });
+    expect(codes(sink)).toContain(SCENE_STATE_CONTRADICTORY);
+  });
+
+  it("refuses a stored body that is near or facing ITSELF", () => {
+    const sink = new DiagnosticCollector();
+    const raw = storedScene();
+    const near = raw.proximity[0];
+    const toward = raw.facing[0];
+    if (near === undefined || toward === undefined) throw new Error("fixture has no relations");
+    raw.proximity = [...raw.proximity, { subjectId: PROBE_PLAYER, otherId: PROBE_PLAYER, band: near.band }];
+    raw.facing = [...raw.facing, { subjectId: PROBE_PLAYER, towardId: PROBE_PLAYER, facing: toward.facing }];
+    const parsed = parseSceneState(raw, sink);
+    expect(parsed.proximity).toHaveLength(1);
+    expect(parsed.facing).toHaveLength(2);
+    expect(parsed.facing.every((entry) => entry.subjectId !== entry.towardId)).toBe(true);
+    expect(sink.hasErrors).toBe(true);
+  });
+
+  it("refuses a stored body that holds ITSELF up, and takes the record with it", () => {
+    const sink = new DiagnosticCollector();
+    const raw = storedScene();
+    const support = storedPlayerSupport(raw);
+    support.value = [{ role: "borne_by", anchor: { kind: "participant", subjectId: PROBE_PLAYER }, loadZones: ["legs"] }];
+    const parsed = parseSceneState(raw, sink);
+    expect(sceneParticipant(parsed, PROBE_PLAYER)).toBeUndefined();
+    expect(sceneParticipant(parsed, PROBE_NPC)).toBeDefined();
+    expect(sink.hasErrors).toBe(true);
+  });
+
+  it("cannot be built with a self-relation either, but keeps the body", () => {
+    const state = sceneStateOf({
+      participants: [
+        probeParticipant(PROBE_PLAYER, {
+          support: [probeSupportRelation({ anchor: { kind: "participant", subjectId: PROBE_PLAYER } })],
+        }),
+      ],
+      supports: [probeSurface()],
+      proximity: [{ subjectId: PROBE_PLAYER, otherId: PROBE_PLAYER, band: probeFact("close") }],
+      facing: [{ subjectId: PROBE_PLAYER, towardId: PROBE_PLAYER, facing: probeFact("toward") }],
+    });
+    expect(state.proximity).toEqual([]);
+    expect(state.facing).toEqual([]);
+    // A programmatic caller loses the impossible relation, not the whole body:
+    // the facts around it came from code, not from an untrusted blob.
+    expect(sceneParticipant(state, PROBE_PLAYER)).toBeDefined();
+    expect(sceneParticipant(state, PROBE_PLAYER)?.support?.value).toEqual([]);
+  });
+
+  it("still replaces last-write-wins when a caller writes, which the boundary never does", () => {
+    const replaced = withSceneParticipant(probeScene(), probeParticipant(PROBE_PLAYER, { posture: "kneeling" }));
+    expect(replaced.participants).toHaveLength(2);
+    expect(sceneParticipant(replaced, PROBE_PLAYER)?.posture?.value).toBe("kneeling");
   });
 });
 
@@ -580,15 +931,48 @@ describe("the housed contact projection", () => {
     expect(parsed.participants).toHaveLength(2);
     expect(parsed.contacts.contacts).toEqual([]);
   });
+
+  it("carries a real committed contact through a round trip", () => {
+    const state = sceneHousingContact();
+    expect(state.contacts.contacts).toHaveLength(1);
+    expect(parseSceneState(JSON.parse(JSON.stringify(state))).contacts).toEqual(state.contacts);
+  });
+
+  it("drops a housed contact whose body did not survive restoration", () => {
+    // The contact core heals its rows without knowing who is in this scene, so a
+    // perfectly well-formed touch can come back naming a body that just went.
+    const sink = new DiagnosticCollector();
+    const raw = JSON.parse(JSON.stringify(sceneHousingContact())) as StoredScene;
+    const npc = raw.participants.find((entry) => entry.subjectId === PROBE_NPC);
+    if (npc?.posture === undefined) throw new Error("fixture has no npc posture");
+    npc.posture.value = "levitating";
+    const parsed = parseSceneState(raw, sink);
+    expect(sceneParticipant(parsed, PROBE_NPC)).toBeUndefined();
+    expect(parsed.contacts.contacts).toEqual([]);
+    expect(sink.items.find((item) => item.code === SCENE_STATE_INVALID)?.context).toMatchObject({
+      orphanedContacts: 1,
+    });
+  });
+
+  it("keeps a contact on an object when the body that made it is still placed", () => {
+    const state = sceneHousingContact({ kind: "object", entityId: PROBE_FLOOR, surfaceId: "top" });
+    expect(state.contacts.contacts).toHaveLength(1);
+    const raw = JSON.parse(JSON.stringify(state)) as StoredScene;
+    raw.participants = raw.participants.filter((entry) => entry.subjectId !== PROBE_NPC);
+    // A hand on the floor names one body, so only that body has to be here.
+    expect(parseSceneState(raw).contacts.contacts).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
 // Enough for a contact proof
 // ---------------------------------------------------------------------------
 
-function contactAttempt(state: SceneState): { intent: ContactActionIntent; context: ContactActionContext } {
+function contactAttempt(
+  state: SceneState,
+  target: ContactSurfaceRef = bodySurface(PROBE_NPC, SHOULDERS),
+): { intent: ContactActionIntent; context: ContactActionContext } {
   const source = bodySurface(PROBE_PLAYER, HANDS);
-  const target = bodySurface(PROBE_NPC, SHOULDERS);
   const intent: ContactActionIntent = {
     actionId: "scene_probe_contact",
     actorId: PROBE_PLAYER,
@@ -606,11 +990,31 @@ function contactAttempt(state: SceneState): { intent: ContactActionIntent; conte
     policy: { status: "not_required", scopes: [], evidence: [] },
     geometry: sceneGeometryRead({ state, source, target }),
     sourceSupport: sceneSupportRead(state, source),
-    targetSupport: sceneSupportRead(state, target),
+    // An object has no support answer of its own; the scene owns bodies.
+    targetSupport: target.kind === "body" ? sceneSupportRead(state, target) : adapterUnavailable,
     material: adapterSupported({ layers: [], evidence: [] }),
     adjustments: [],
   };
   return { intent, context };
+}
+
+/**
+ * The default scene with one REAL contact housed in it.
+ *
+ * Committed through the contact core's own resolver and commit path rather than
+ * hand-built, so the fixture carries whatever a valid stored contact carries and
+ * cannot drift from the core's own schema.
+ */
+function sceneHousingContact(target: ContactSurfaceRef = bodySurface(PROBE_NPC, SHOULDERS)): SceneState {
+  const state = probeScene();
+  const resolution = resolveContactAttempt(contactAttempt(state, target));
+  if (resolution.status !== "committable") throw new Error(`fixture contact resolved ${resolution.status}`);
+  const outcome = commitContactResolution({
+    state: emptyContactLifecycleState(),
+    resolution,
+    eventRef: contactEventRef("scene_probe_contact_event"),
+  });
+  return withSceneContacts(state, outcome.state);
 }
 
 describe("as a contact resolver input", () => {
