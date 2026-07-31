@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   adapterSupported,
   commitContactResolution,
+  contactCommitEvents,
   contactEventRef,
   emptyContactLifecycleState,
   endAllContacts,
@@ -15,13 +16,26 @@ import {
 // The contact core's probe builders are deliberately out of the barrel (a probe
 // default that reached production would become a physical claim nobody made).
 import { probeAttempt, probeLayer } from "@/contracts/affordances/contact/test-support";
-import { chatContactEventRowsFor, type AppendChatContactEventsInput } from "./chat-contact-events";
+import {
+  chatContactEventRowsFor,
+  chatContactLedgerMismatches,
+  chatContactRowMatches,
+  type AppendChatContactEventsInput,
+  type ChatContactEventInsert,
+  type ChatContactEventStoredRow,
+} from "./chat-contact-events";
 
 /**
- * The ledger's PURE half (`chatContactEventRowsFor`) — the commit-to-row mapping
- * and the two rules the idempotency key rests on. Fixtures come from the real
- * contact core rather than hand-built literals, so a shape change upstream fails
- * here rather than passing against a stale copy of it.
+ * The ledger's PURE half — the commit-to-row mapping (`chatContactEventRowsFor`,
+ * and the two rules the idempotency key rests on) and the conflict judgment
+ * (`chatContactRowMatches` / `chatContactLedgerMismatches`, which is what stops
+ * an acknowledgment being built over somebody else's record). Fixtures come from
+ * the real contact core rather than hand-built literals, so a shape change
+ * upstream fails here rather than passing against a stale copy of it.
+ *
+ * The database half — that the insert and the projection settle in one
+ * transaction, and that a mismatch leaves neither behind — is the integration
+ * suite's.
  */
 
 const CHAT_ID = "chat_probe";
@@ -125,5 +139,100 @@ describe("chatContactEventRowsFor (the durable contact ledger's row mapping)", (
     expect(second.map((row) => [row.eventRef, row.sequence])).toEqual(
       first.map((row) => [row.eventRef, row.sequence]),
     );
+  });
+
+  it("numbers ONE combined exchange list — hook ends, a held contact, then the touch", () => {
+    // The shape the leg hands the store: the ends its hooks asserted (a time skip,
+    // a room change), whatever the plan folded, then `contactCommitEvents` for the
+    // touch — all in ONE call, because the sequence indexes the whole list and a
+    // second append would restart it on top of these keys.
+    const combined = [...ends, held.commit, ...contactCommitEvents(started)];
+    const rows = chatContactEventRowsFor(appendInput(combined));
+    expect(rows.map((row) => row.kind)).toEqual([...ends.map(() => "contact_ended"), "contact_started"]);
+    expect(new Set(rows.map((row) => row.eventRef))).toEqual(new Set([EVENT]));
+    // The last commit's sequence is its index in the WHOLE list — strictly past its
+    // place among the surviving rows, because the held contact in the middle wrote
+    // nothing and left its index behind.
+    expect(rows.at(-1)?.sequence).toBe(combined.length - 1);
+    expect(rows.at(-1)?.sequence).toBeGreaterThan(rows.length - 1);
+  });
+});
+
+/**
+ * Postgres `jsonb` keeps its OWN key order, not the writer's, so a row read back
+ * is never byte-comparable with the commit that produced it. Reversing every
+ * object's keys is the cheapest way to hold the comparison to that standard.
+ */
+function reorderKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const entries: readonly unknown[] = value;
+    return entries.map((entry) => reorderKeys(entry));
+  }
+  if (value === null || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  const reordered: Record<string, unknown> = {};
+  for (const key of Object.keys(record).reverse()) reordered[key] = reorderKeys(record[key]);
+  return reordered;
+}
+
+/** The row as the store reads it back: through JSON, in the column's own key order. */
+function storedFrom(
+  row: ChatContactEventInsert,
+  overrides: Partial<ChatContactEventStoredRow> = {},
+): ChatContactEventStoredRow {
+  return {
+    sequence: row.sequence,
+    kind: row.kind,
+    contactId: row.contactId,
+    storyMinute: row.storyMinute,
+    payload: reorderKeys(JSON.parse(JSON.stringify(row.payload))),
+    ...overrides,
+  };
+}
+
+const attemptedRows = chatContactEventRowsFor(appendInput([...ends, started.commit]));
+const attempted = attemptedRows.at(-1);
+if (attempted === undefined) throw new Error("fixture produced no rows to compare");
+
+describe("chatContactRowMatches (is the row under this key the row we meant to write?)", () => {
+  it("accepts the same record read back through jsonb, key order and all", () => {
+    // The idempotent retry — the ONLY reading of `inserted: 0` that may be
+    // acknowledged, and it must survive the column's own key ordering.
+    expect(chatContactRowMatches(attempted, storedFrom(attempted))).toBe(true);
+  });
+
+  it("rejects a row recorded under this key for another contact, kind, or minute", () => {
+    expect(chatContactRowMatches(attempted, storedFrom(attempted, { contactId: "contact_other" }))).toBe(false);
+    expect(chatContactRowMatches(attempted, storedFrom(attempted, { kind: "contact_updated" }))).toBe(false);
+    expect(chatContactRowMatches(attempted, storedFrom(attempted, { storyMinute: STORY_MINUTE + 1 }))).toBe(false);
+  });
+
+  it("rejects a row whose payload disagrees, however deep the disagreement", () => {
+    const drifted: unknown = {
+      ...(JSON.parse(JSON.stringify(attempted.payload)) as Record<string, unknown>),
+      kind: "contact_ended",
+    };
+    expect(chatContactRowMatches(attempted, storedFrom(attempted, { payload: drifted }))).toBe(false);
+    expect(chatContactRowMatches(attempted, storedFrom(attempted, { payload: null }))).toBe(false);
+  });
+});
+
+describe("chatContactLedgerMismatches (which conflicting keys hold somebody else's record)", () => {
+  it("finds nothing when every conflicting row is this write, already landed", () => {
+    expect(chatContactLedgerMismatches(attemptedRows, attemptedRows.map((row) => storedFrom(row)))).toEqual([]);
+  });
+
+  it("names the diverging keys, in sequence order", () => {
+    const stored = attemptedRows.map((row, index) =>
+      index === 0 ? storedFrom(row, { contactId: "contact_stale" }) : storedFrom(row),
+    );
+    // A stale take's row under a key this exchange means to write is exactly what
+    // an on→off→on flag sequence can leave behind — and acknowledging it would
+    // report that take's record as this turn's commit.
+    expect(chatContactLedgerMismatches(attemptedRows, stored)).toEqual([{ eventRef: EVENT, sequence: 0 }]);
+  });
+
+  it("treats a key with no stored row as nothing to disagree with", () => {
+    expect(chatContactLedgerMismatches(attemptedRows, [])).toEqual([]);
   });
 });

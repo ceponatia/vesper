@@ -461,6 +461,21 @@ on immobilized limbs.
    fact rather than asserted, which delivers part of item 2's mechanism
    early. No restraint/pinning anywhere.
 
+   **Item 1.1 — persistence repairs and adapter gaps (owner review; shipped
+   2026-07-31).** The ledger append and the scene projection now land in ONE
+   transaction, verified against the stored rows — a conflicting record under
+   the exchange's keys aborts the whole write and the outcome stays
+   `unresolved`; the retake prune runs unconditionally (never flag-gated);
+   the approach detector refuses possessive destinations ("her desk",
+   "Wren's chair"); a dressed body whose wardrobe published no coverage
+   capture reads `unavailable` — silence, never bare skin; and the lane
+   gained its ending producers — player release (`withdrawn`), any
+   story-clock skip (`separated`; owner ruling 2026-07-31), and scene-place
+   change (`scene_changed`) — all persisted as durable end events under the
+   same exchange. 24 integration tests pin the on→off retake,
+   both-halves-mid-stream atomicity, conflicting-retry abort, the three
+   ending paths, and the material honesty split.
+
    **The developer view came with it.** A feature this quiet needs somewhere to
    answer "why did nothing happen", and silence has many causes that look
    identical from the prompt: either flag off, a hedge or a negation in the

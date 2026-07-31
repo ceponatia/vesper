@@ -123,21 +123,32 @@ exchange:
    `scene_default` standing posture on a seeded floor for a new arrival — distance and
    orientation are NEVER seeded, because only a movement the player actually wrote may
    claim those, and a scene nobody has moved in resolves `unresolved`), folds a detected
-   approach as a `player`-origin scene intent over the player's **own** body, and reads
-   the same line for a plainly affectionate hand-to-shoulder/arm/back/hand/head touch. A
-   detected act is resolved by the shared contact core against the scene's reach and
-   support reads; a committable one is folded, its durable commits are **appended to
-   `chat_contact_events` before the prompt builds** (`appendChatContactEvents`, idempotent
-   on `(chat, event ref, sequence)`), and only then does the active-contact projection
-   advance and the write's acknowledgment license a `committed` action outcome. Anything
+   approach as a `player`-origin scene intent over the player's **own** body (a
+   possessive destination — "her desk", "Wren's chair" — names furniture, not a person,
+   and states no distance), detects a player release ("I pull my hand back") ending the
+   matching contacts (`withdrawn`), and reads the same line for a plainly affectionate
+   hand-to-shoulder/arm/back/hand/head touch. Two hooks end contacts before detection
+   runs: a pending story-clock skip ends every active contact (`separated`; owner ruling
+   2026-07-31), and a scene-place change ends them as `scene_changed`. A detected act is
+   resolved by the shared contact core against the scene's reach, support, and material
+   reads — a dressed body whose wardrobe published no coverage capture resolves
+   `unresolved` (silence), never bare skin. A committable one is folded, and ALL of the
+   exchange's durable commits (hook ends, release ends, then the touch's events) are
+   written **atomically with the scene projection before the prompt builds**
+   (`appendChatContactEventsWithScene`: one transaction over the ledger rows and
+   `character_chats.scene`, idempotent on `(chat, event ref, sequence)`, and VERIFIED —
+   a conflicting row under this exchange's keys aborts the whole write, files an `error`
+   diagnostic, and leaves the outcome `unresolved`). Only a verified write's
+   acknowledgment licenses a `committed` action outcome. Anything
    the detectors cannot read cleanly produces silence — a hedge, a negation, a question,
    an ambiguous target, storyteller narration, speech rather than narration, and (owner
    constraint) any romantic, intimate, or restraint framing anywhere in the sentence, so
    a romantic case can never be relabeled into a commit. A retake deletes the discarded
    take's ledger rows under the same exchange guard the scene projection rolls back on
-   (`deleteChatContactEventsForGuard`, beside `rollbackScenario`). The scene itself rides
-   `ChatScenario` to the settle-time save exactly as the garment store and the
-   environment do; the ledger is the record it caches.
+   (`deleteChatContactEventsForGuard`, beside `rollbackScenario` — unconditionally, not
+   flag-gated: pruning a discarded take's durable rows is hygiene, not behavior). The
+   settle-time save re-writes the same scene the transaction already persisted; the
+   ledger is the record the projection caches.
 
    **Constraint-first narrator guidance** (`CHAT_PHYSICAL_CONSTRAINTS`,
    `engine/chat-physical-guidance.ts`): what this body's committed state forbids the

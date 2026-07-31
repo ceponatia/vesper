@@ -2,7 +2,6 @@ import { and, asc, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-or
 import { z } from "zod";
 import {
   affordanceSubjectId,
-  capturedGarmentCoverage,
   characterProfileSchema,
   chatActionIdSchema,
   commitRecognitionMention,
@@ -28,6 +27,8 @@ import {
   type ChatReplyFailure,
   type ChatReplyFailureCode,
   type CharacterProfile,
+  type ContactEndReason,
+  type ContactLifecycleCommit,
   type ContactPersistenceAcknowledgment,
   type DiagnosticSink,
   type PhysicalActionOutcome,
@@ -58,10 +59,16 @@ import {
   chatContactAcknowledgment,
   chatContactActionOutcome,
   chatContactEventRef,
+  chatContactMaterialSource,
+  endAllChatContacts,
   planChatContactTurn,
   type ChatContactRosterMember,
 } from "./chat-contact-adapter";
-import { appendChatContactEvents, deleteChatContactEventsForGuard } from "./chat-contact-events";
+import {
+  appendChatContactEventsWithScene,
+  CHAT_CONTACT_LEDGER_MISMATCH,
+  deleteChatContactEventsForGuard,
+} from "./chat-contact-events";
 import { buildChatPhysicalGuidance, buildChatPhysicalGuidanceStages } from "./chat-physical-guidance";
 import { renderChatPhysicalGuidance } from "./chat-physical-guidance-render";
 import { buildChatPhysicalGuidancePreview, type PhysicalGuidancePreview } from "./chat-physical-guidance-preview";
@@ -773,15 +780,21 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // same id the new take will write under: a retake that re-commits the same touch
       // re-inserts it, and one that does not leaves nothing behind.
       //
+      // UNCONDITIONAL — deliberately outside the `CHAT_CONTACT_ACTIONS` gate. Pruning
+      // the durable rows of a take that is being thrown away is hygiene of state that
+      // already exists, not new behavior, so it does not belong to the flag that
+      // decides whether new contact is produced. Gated, an on→off→retake sequence
+      // would roll the projection back and strand the discarded take's rows under the
+      // very key the next take writes — which the append's verification would then
+      // read as a real divergence. A chat that never recorded a contact deletes zero.
+      //
       // Fenced whole: a ledger that could not be pruned must not cost the exchange.
       // The projection is authoritative for narration, the events are the durable
       // record, and a stale row is a diagnostic rather than a failed reply.
-      if (chatContactActionsEnabled()) {
-        try {
-          await deleteChatContactEventsForGuard(chatId, exchangeGuardMessageId);
-        } catch (error) {
-          log.error("engine.chat", "chat contact ledger rollback failed", { error: describeError(error) });
-        }
+      try {
+        await deleteChatContactEventsForGuard(chatId, exchangeGuardMessageId);
+      } catch (error) {
+        log.error("engine.chat", "chat contact ledger rollback failed", { error: describeError(error) });
       }
     }
     const preExchangeScenario = storedScenario;
@@ -1233,28 +1246,29 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     // --- Affectionate contact (`CHAT_CONTACT_ACTIONS`, default OFF) ----------
     // The deterministic contact leg (romantic-contact-affordances.plan.md
-    // §"Continuation order" 1): seed the scene, fold a movement the player wrote,
-    // detect a plainly affectionate hand-touch on a present roster member, resolve it
-    // against the scene owner's reach and support reads, and — only if it is
-    // committable — fold it into the active-contact projection and write the durable
-    // event before anything reaches the prompt.
+    // §"Continuation order" 1): end what this exchange ended, seed the scene, fold a
+    // movement the player wrote, detect a plainly affectionate hand-touch on a present
+    // roster member, resolve it against the scene owner's reach and support reads, and
+    // — only if it is committable — fold it into the active-contact projection and
+    // write the durable event before anything reaches the prompt.
     //
     // Gated on THIS flag alone. Detection, the commit, the ledger row, and the scene
     // projection are authoritative state that must roll back with the exchange whether
     // or not any prompt reads them; only the OUTCOME's trip to the narrator waits on
     // `CHAT_PHYSICAL_CONSTRAINTS`, which owns the block it would ride in.
     //
-    // **Persist before prompt, with the ledger as truth.** `contactActionOutcomeStatus`
-    // will not say `committed` without an acknowledgment of a durable write, so the
-    // event append is awaited HERE and the acknowledgment is built from it — a failed
-    // write leaves the outcome `unresolved`, which the seam renders as silence. The
-    // scene PROJECTION rides the scenario to the settle-time save, exactly as the
-    // garment store, the environment and the cue memory do: it is a cache of the
-    // ledger, it rolls back on the same anchor, and the retake delete above prunes the
-    // events of any take whose projection was discarded. What the two writes can drift
-    // on is an exchange that appends and then never settles: the row survives with no
-    // projection, and the NEXT exchange re-derives from the rolled-forward scene. The
-    // ledger stays the record; a replay reconciliation is a later slice's job.
+    // **Persist before prompt, atomically, with the ledger as truth.**
+    // `contactActionOutcomeStatus` will not say `committed` without an acknowledgment
+    // of a durable write, so the append is awaited HERE and the acknowledgment is built
+    // from its VERIFIED answer — a failed or mismatched write leaves the outcome
+    // `unresolved`, which the seam renders as silence. The rows and the
+    // `character_chats.scene` they fold into land in one transaction
+    // (`appendChatContactEventsWithScene`), so the projection can no longer survive
+    // without its record or the record without its projection. What is left is settle
+    // re-writing the same column with the same value at the end of the exchange — a
+    // no-op by construction — plus the ordinary rollback story: both halves hang off
+    // the one exchange guard, and the retake delete above prunes the events of any take
+    // whose projection was discarded.
     //
     // Fenced whole (docs/resilience.md): any failure degrades to no contact, no write,
     // and no outcome — which is the flag-off path — and never costs the exchange.
@@ -1264,12 +1278,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         const eventRef = chatContactEventRef(exchangeGuardMessageId);
         const storyMinute = Math.max(0, Math.trunc(scenario.clockMinutes));
         // PRESENT members only: an away character is not a body in the room, and the
-        // seeded scene must never place one. Each carries the captured effective
-        // coverage for their OWN garment actor, which is the whole of the
-        // material-between adapter in this proof.
+        // seeded scene must never place one. Each carries their OWN material answer —
+        // resolved from the garment store, the worn ids and the free-text look
+        // together, so "the wardrobe says nothing is worn" and "nobody staged this
+        // wardrobe" stay different answers.
         const contactRoster: ChatContactRosterMember[] = [
           ...(driftedState.presence === "present"
-            ? [{ characterId, name: characterName, aliases: profile.aliases }]
+            ? [{ characterId, name: characterName, aliases: profile.aliases, state: driftedState }]
             : []),
           ...others
             .filter((member) => member.state.presence === "present")
@@ -1277,16 +1292,55 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               characterId: member.characterId,
               name: member.name,
               aliases: member.profile.aliases,
+              state: member.state,
             })),
         ].map((member) => ({
           subjectId: affordanceSubjectId(member.characterId),
           name: member.name,
           aliases: member.aliases,
-          coverage: capturedGarmentCoverage(scenario.garments, garmentActorForCharacter(member.characterId)),
+          material: chatContactMaterialSource({
+            store: scenario.garments,
+            actorId: garmentActorForCharacter(member.characterId),
+            freeTextOutfit: member.state.outfit,
+            wornItemIds: member.state.wornItemIds,
+          }),
         }));
 
+        // --- The two ends this exchange asserts, BEFORE anything is detected ---
+        // A contact is a claim that two surfaces are in contact NOW, and both of these
+        // are the world saying they are not:
+        //
+        // 1. A story-clock SKIP (owner ruling, 2026-07-31): any skip ends every active
+        //    contact, reason `separated`. Hours do not pass with a hand left resting
+        //    somewhere, and the alternative — carrying a touch across a time jump —
+        //    would have the projection assert a contact nobody re-established. The
+        //    signal is the scenario's one-shot `pendingSkipNote`, read here BEFORE the
+        //    settle-time save consumes it (the skip route stamps it, this exchange is
+        //    the one that sees it, and `saveChatScenario` clears it at settle).
+        // 2. A place CHANGE this exchange (`movedTo`, the same detection that switched
+        //    the scene memory above), reason `scene_changed`. Walking into another room
+        //    is leaving the body you were touching behind.
+        //
+        // Order matters only in that a skip is the stronger, more specific truth: if
+        // both fire, the skip empties the projection and the place change finds nothing
+        // left to end. Ends are STATE, not attempted actions — they produce no narrator
+        // outcome this pass — but they do advance the scene that rides the scenario.
+        const endReasons: readonly ContactEndReason[] = [
+          ...(scenario.pendingSkipNote.trim().length > 0 ? (["separated"] as const) : []),
+          ...(movedTo ? (["scene_changed"] as const) : []),
+        ];
+        let endedScene = scenario.scene;
+        const endedCommits: ContactLifecycleCommit[] = [];
+        for (const reason of endReasons) {
+          const ended = endAllChatContacts(endedScene, { reason, eventRef, storyTime: storyMinute, sink });
+          endedScene = ended.scene;
+          endedCommits.push(...ended.commits);
+        }
+
+        // The plan runs on the POST-hook scene: a touch this turn is resolved against a
+        // world the skip or the room change has already emptied.
         const planned = planChatContactTurn({
-          scene: scenario.scene,
+          scene: endedScene,
           // The raw player line. An opening/continue beat has none, so nothing is
           // detected — a synthetic cue is not the player's body.
           message: playerContent,
@@ -1297,22 +1351,58 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           sink,
         });
 
-        const { act, resolution, commit } = planned;
-        let scene = planned.scene;
+        const { act, resolution } = planned;
+        const commit = planned.commit;
+        const committed = commit !== null && commit.status === "committed" ? commit : null;
+        // ONE combined, ordered commit list per exchange — hook ends, then the release
+        // acts the plan folded, then the touch (with whatever it had to end to make
+        // room). The ledger's `sequence` indexes this WHOLE list, so a retry that
+        // re-derives it lands on the identical (eventRef, sequence) keys; splitting the
+        // exchange into two appends would restart the sequence and collide.
+        const commits: readonly ContactLifecycleCommit[] = [
+          ...endedCommits,
+          ...planned.ended,
+          ...(commit === null ? [] : contactCommitEvents(commit)),
+        ];
+        // The projection this exchange produced, folded before the write so both halves
+        // can be handed to one transaction.
+        const postScene = committed === null ? planned.scene : withSceneContacts(planned.scene, committed.state);
+        let scene = postScene;
         let acknowledgment: ContactPersistenceAcknowledgment | undefined;
-        if (act !== null && commit?.status === "committed") {
-          // Idempotent on `(chatId, eventRef, sequence)`: a retry of the same exchange
-          // re-derives the same contact id and the same rows, and inserts nothing.
-          await appendChatContactEvents({
+        if (commits.length > 0) {
+          const appended = await appendChatContactEventsWithScene({
             chatId,
             guardMessageId: exchangeGuardMessageId,
             eventRef,
             storyMinute,
-            commits: contactCommitEvents(commit),
+            commits,
+            scene: postScene,
           });
-          // Only now — the projection may not advance ahead of the record it caches.
-          scene = withSceneContacts(scene, commit.state);
-          acknowledgment = chatContactAcknowledgment({ commit, eventRef, actionId: act.actionId });
+          if (appended.status === "recorded") {
+            // Only now, and only for a write this turn's own rows are provably part of.
+            if (act !== null && committed !== null) {
+              acknowledgment = chatContactAcknowledgment({ commit: committed, eventRef, actionId: act.actionId });
+            }
+          } else {
+            // The ledger holds a DIFFERENT record under this exchange's keys, so the
+            // transaction rolled back: no rows added, the scene column untouched. The
+            // contact projection therefore may not advance past the record it caches —
+            // it stays exactly where it loaded, while the seeding and any movement,
+            // which the ledger never carried, still ride the scenario. No
+            // acknowledgment, so the outcome below resolves `unresolved` (silence).
+            scene = withSceneContacts(postScene, scenario.scene.contacts);
+            sink.push(
+              diag(
+                "error",
+                CHAT_CONTACT_LEDGER_MISMATCH,
+                "contact ledger holds a different record under this exchange's keys; nothing written",
+                {
+                  path: "chat_contact_events",
+                  context: { eventRef, sequences: appended.mismatched.map((key) => key.sequence) },
+                },
+              ),
+            );
+          }
         }
         // The seeded scene and any movement the player wrote ride the scenario even
         // when no contact resolved: where the bodies are is true regardless.
@@ -2594,14 +2684,22 @@ function previewChatContactOutcomes(input: {
               subjectId: affordanceSubjectId(input.character.id),
               name: input.character.name,
               aliases: cut.profile.aliases,
-              coverage: capturedGarmentCoverage(cut.scenario.garments, garmentActorForCharacter(input.character.id)),
+              material: chatContactMaterialSource({
+                store: cut.scenario.garments,
+                actorId: garmentActorForCharacter(input.character.id),
+                freeTextOutfit: cut.state.outfit,
+                wornItemIds: cut.state.wornItemIds,
+              }),
             },
           ]
         : [];
 
-    // The planned scene — the seeding, and any movement the line wrote — is
-    // deliberately NOT taken: it is authoritative state a live turn persists with the
-    // exchange, and a preview has no exchange to persist it with.
+    // The planned scene — the seeding, any release, and any movement the line wrote —
+    // is deliberately NOT taken, and neither are the plan's `ended` commits: both are
+    // authoritative state a live turn persists with the exchange, and a preview has no
+    // exchange to persist them with. The live leg's own ending hooks (a story-clock
+    // skip, a place change) are skipped here for the same reason — a read-only look at
+    // a turn may not end a contact.
     const { act, resolution, commit } = planChatContactTurn({
       scene: cut.scenario.scene,
       message: input.message.content,
