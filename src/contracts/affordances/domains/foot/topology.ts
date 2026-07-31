@@ -211,6 +211,45 @@ export const footContactLocationIds: ReadonlySet<string> = new Set([
 // ---------------------------------------------------------------------------
 
 /**
+ * Which foot — the domain's own side vocabulary, deliberately narrower than the
+ * contact core's.
+ *
+ * The shared `ContactSurfaceSide` carries `center` because plenty of surfaces
+ * genuinely have a middle: a back, a chest, a mouth. A foot is not one of them.
+ * So every FOOT-OWNED participant read — support, articulation, condition — is
+ * keyed by this enum instead, and a payload naming a `center` foot FAILS its
+ * schema rather than being tolerated: `invalid` at the trust boundary, no value
+ * carried, the dependent phenomenon suppressed. That is the honest degradation,
+ * because a third foot is not a foot somebody could not distinguish — it is an
+ * answer nothing in this domain can hold, and one that could have counted as the
+ * second distinct foot in the agreement rule (`footPoseClosureAt`, support.ts).
+ *
+ * An ABSENT side remains how "the owner did not tell the two feet apart" is
+ * spelled; it is a first-class case everywhere and needs no member of its own.
+ *
+ * `satisfies` keeps this a strict subset of the shared vocabulary, so a locus
+ * side and a foot side stay comparable without a cast.
+ */
+export const footSides = ["left", "right"] as const satisfies readonly ContactSurfaceSide[];
+export const footSideSchema = z.enum(footSides);
+export type FootSide = z.infer<typeof footSideSchema>;
+
+/**
+ * The foot a contact-core side names, or `undefined` when it names none.
+ *
+ * `FootLocusRef.side` keeps the SHARED vocabulary, because it is a projection of
+ * a committed contact and the core is entitled to its own answer there. This is
+ * the single narrowing between the two: a `center` side — like an absent one —
+ * resolves to the undistinguished foot rather than to a foot, which is exactly
+ * how the mechanics lookup and the pose rule already treat "no side given". One
+ * function, so the two vocabularies can never drift into two answers.
+ */
+export function footSideOf(side: ContactSurfaceSide | undefined): FootSide | undefined {
+  const parsed = footSideSchema.safeParse(side);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/**
  * Which toe. Ordinal names rather than "big toe"/"little toe" so the vocabulary
  * is stable across species and authoring registers; `hallux` keeps the one digit
  * with a real name.

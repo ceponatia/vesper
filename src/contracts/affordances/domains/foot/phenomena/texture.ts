@@ -5,7 +5,7 @@ import {
 } from "../../../core";
 import type { FootAffordanceFrame } from "../frame";
 import { footwearCovers, footwearFilterTagAt } from "../footwear";
-import { footInterdigitalClosure, footReadForSide } from "../support";
+import { footPoseClosureAt } from "../support";
 import { footSurfaceMechanics } from "../mechanics";
 import { footSurfaceProfile, type FootTextureBand } from "../profile";
 import {
@@ -110,10 +110,18 @@ export const footSurfaceTextureContact = defineAffordancePhenomenon<FootAffordan
     // articulation. A foot whose toes are pressed together has no space between
     // them to feel, and the pose owner is the only thing that can say so — which
     // is why this is a suppression rather than a quieter texture.
+    //
+    // Which foot's pose that is comes from the domain's ONE rule
+    // (`footPoseClosureAt`): the touched foot's where the locus names one, two
+    // agreeing feet where it does not. This used to fall back to the FIRST pose
+    // in the list, so a single curled left foot could silence an observation
+    // about a space that may well have been the right one's — the same inference
+    // the mechanics rule had already been corrected to refuse (owner review,
+    // finding 6).
     if (locus.surfaceId === "interdigital_spaces") {
-      const posed = footReadForSide(input.articulations, locus.side) ?? input.articulations[0];
-      if (footInterdigitalClosure(posed) > 0) {
-        return footSuppressed(FOOT_SURFACE_TEXTURE_ID, FOOT_INTERDIGITAL_CLOSED, posed?.toes);
+      const posed = footPoseClosureAt(input.articulations, locus.side);
+      if (posed.closure > 0) {
+        return footSuppressed(FOOT_SURFACE_TEXTURE_ID, FOOT_INTERDIGITAL_CLOSED, posed.toes);
       }
     }
 
