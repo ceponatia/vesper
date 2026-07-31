@@ -8,6 +8,7 @@ import {
   footMovementRestrictionOf,
   footMovementRestrictionRank,
   footMovementRestrictions,
+  footPoseClosureAt,
   footReadForSide,
   footSupportSetSchema,
   footToePoses,
@@ -16,6 +17,7 @@ import {
   type FootSupportRead,
   type FootToePose,
 } from "./support";
+import { footSides } from "./topology";
 
 /**
  * Every branch of the restriction precedence, and the per-foot identity that
@@ -74,6 +76,82 @@ describe("one entry per foot", () => {
   it("accepts an empty answer and a one-foot answer", () => {
     expect(footSupportSetSchema.safeParse([]).success).toBe(true);
     expect(footArticulationSetSchema.safeParse([{ side: "left", toes: "curled", arch: "neutral" }]).success).toBe(true);
+  });
+});
+
+describe("a foot is left or right", () => {
+  it("refuses a `center` foot in either payload", () => {
+    // The contact core's shared side list carries `center` for surfaces that
+    // have a middle. A foot does not, so this is not a coarser answer but a
+    // wrong one: it fails the schema and degrades `invalid`, rather than
+    // becoming a third foot that could also have counted as the second distinct
+    // one in the agreement rule.
+    expect(footSupportSetSchema.safeParse([{ side: "center", supportRole: "free", mobility: "free" }]).success).toBe(
+      false,
+    );
+    expect(footArticulationSetSchema.safeParse([{ side: "center", toes: "curled", arch: "neutral" }]).success).toBe(
+      false,
+    );
+  });
+
+  it("refuses any other side, and still accepts the two real ones", () => {
+    for (const side of ["middle", "both", "", "LEFT"]) {
+      expect(footArticulationSetSchema.safeParse([{ side, toes: "curled", arch: "neutral" }]).success, side).toBe(
+        false,
+      );
+    }
+    for (const side of footSides) {
+      expect(footArticulationSetSchema.safeParse([{ side, toes: "curled", arch: "neutral" }]).success, side).toBe(true);
+      expect(footSupportSetSchema.safeParse([{ side, supportRole: "free", mobility: "free" }]).success, side).toBe(
+        true,
+      );
+    }
+  });
+
+  it("has no place for an absent side either — a foot read is about a foot", () => {
+    expect(footArticulationSetSchema.safeParse([{ toes: "curled", arch: "neutral" }]).success).toBe(false);
+    expect(footSupportSetSchema.safeParse([{ supportRole: "free", mobility: "free" }]).success).toBe(false);
+  });
+});
+
+describe("footPoseClosureAt — the one rule for a locus", () => {
+  const curledLeft = articulation({ side: "left", toes: "curled" });
+  const curledRight = articulation({ side: "right", toes: "curled" });
+  const flexedRight = articulation({ side: "right", toes: "flexed" });
+  const spreadRight = articulation({ side: "right", toes: "spread" });
+
+  it("gives a sided locus its own foot's pose, and never the other foot's", () => {
+    expect(footPoseClosureAt([curledLeft], "left")).toEqual({ closure: 1, toes: "curled" });
+    expect(footPoseClosureAt([curledLeft], "right")).toEqual({ closure: 0 });
+  });
+
+  it("moves an unsided locus only when two distinct feet agree", () => {
+    expect(footPoseClosureAt([curledLeft, curledRight])).toEqual({ closure: 1, toes: "curled" });
+    // One foot says nothing about the other, and an unsided locus may BE the
+    // other one (owner ruling, 2026-07-30).
+    expect(footPoseClosureAt([curledLeft])).toEqual({ closure: 0 });
+    expect(footPoseClosureAt([])).toEqual({ closure: 0 });
+    expect(footPoseClosureAt([curledLeft, spreadRight])).toEqual({ closure: 0 });
+  });
+
+  it("names the pose only when the deciding feet name the same one", () => {
+    // Curled and flexed both close the spaces, so the closure is agreed and the
+    // pose is not: reporting one would describe a foot that may not be the one
+    // being touched.
+    expect(footPoseClosureAt([curledLeft, flexedRight])).toEqual({ closure: 1 });
+  });
+
+  it("counts feet, not entries — two reads of one foot are never two feet", () => {
+    // The set schemas already refuse this; the rule does not lean on them, so a
+    // hand-built frame cannot reach two-feet agreement with one foot either.
+    expect(footPoseClosureAt([curledLeft, articulation({ side: "left", toes: "flexed" })])).toEqual({ closure: 0 });
+  });
+
+  it("treats a `center` locus as undistinguished, exactly like an absent side", () => {
+    // No payload can carry a center FOOT, but a contact locus still carries the
+    // shared vocabulary, so the narrowing has to be total.
+    expect(footPoseClosureAt([curledLeft], "center")).toEqual({ closure: 0 });
+    expect(footPoseClosureAt([curledLeft, curledRight], "center")).toEqual({ closure: 1, toes: "curled" });
   });
 });
 

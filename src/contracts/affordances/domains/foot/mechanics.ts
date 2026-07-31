@@ -1,4 +1,4 @@
-import { contactSurfaceSides, type ContactSurfaceSide } from "../../contact";
+import type { ContactSurfaceSide } from "../../contact";
 import { complementUnit, multiplyUnits, toUnitInterval, type UnitInterval } from "../../core";
 import {
   distributeFootCondition,
@@ -11,9 +11,9 @@ import {
 } from "./condition";
 import { footEffectiveFriction } from "./friction";
 import { footwearCovers, type FootwearContactRead } from "./footwear";
-import { footInterdigitalClosure, footReadForSide, type FootArticulationRead } from "./support";
+import { footPoseClosureAt, type FootArticulationRead } from "./support";
 import { footTextureBandOf, type FootStructuralProfile, type FootTextureBand } from "./profile";
-import type { FootSurfaceId } from "./topology";
+import { footSideOf, footSides, type FootSide, type FootSurfaceId } from "./topology";
 
 /**
  * Stage 2 — what each foot surface is like RIGHT NOW: stable structure plus the
@@ -47,7 +47,7 @@ export interface FootSurfaceEffectiveMechanics {
  * distinguish, which is also where a locus that names no side lands.
  */
 export interface FootSideEffectiveMechanics {
-  readonly side?: ContactSurfaceSide;
+  readonly side?: FootSide;
   /** One entry per profile surface, in profile order. */
   readonly surfaces: readonly FootSurfaceEffectiveMechanics[];
 }
@@ -70,39 +70,6 @@ const FOOT_WET_COMPLIANCE_SPAN = 3_500;
 
 /** How much a saturated surface can drop a roughness band. */
 const FOOT_WET_TEXTURE_SPAN = 2_500;
-
-/**
- * The pose effect on the toe spaces for a foot NOBODY distinguished.
- *
- * Every foot the lane named — in the condition set or in the pose set — gets its
- * own block and its own foot's closure, so this covers only the side-less block:
- * a locus that names no side, on a character whose feet the owner did not
- * separate.
- *
- * The modifier applies only when TWO DISTINCT feet were supplied and they agree
- * (owner ruling, 2026-07-30). Anything else is the structural-neutral `0`:
- *
- * - **zero poses** — nothing to agree about;
- * - **one pose** — the trap this rule exists to close. One supplied left foot is
- *   not agreement; it says nothing whatever about the right foot, and an unsided
- *   locus may well BE the right foot. Spending the left foot's curl on it was
- *   the same invention as picking a foot outright, wearing the word "agreement";
- * - **disagreement** — picking one would put a curled foot's damp toe spaces on
- *   a spread one.
- *
- * Two agreeing feet is the one case that survives: whichever foot the locus
- * turns out to be, the answer is the same, so it is a deduction rather than a
- * guess.
- */
-function undistinguishedInterdigitalClosure(articulations: readonly FootArticulationRead[]): -1 | 0 | 1 {
-  // Distinct SIDES, not entries: two reads of the same foot are one foot's pose,
-  // however many times the lane said it.
-  if (new Set(articulations.map((articulation) => articulation.side)).size < 2) return 0;
-  const closures = articulations.map((articulation) => footInterdigitalClosure(articulation));
-  const first = closures[0];
-  if (first === undefined) return 0;
-  return closures.every((closure) => closure === first) ? first : 0;
-}
 
 /** The roughest gritty residue present, or `undefined` when there is none at all. */
 function gritOf(condition: FootSurfaceConditionRead | undefined): UnitInterval | undefined {
@@ -221,11 +188,12 @@ function footSurfacesFor(input: {
  *
  * A block is built for every foot the lane distinguished — one the CONDITION set
  * named, or one the POSE set named, since a foot whose toes are curled needs its
- * own interdigital answer even when both feet share a coarse condition. Each
- * block uses its own foot's closure; the side-less block, which is where a locus
- * naming no side lands, uses the undistinguished rule above. The blocks are in
- * the contact core's side order and the side-less one is last, so the read is
- * byte-stable across a retake.
+ * own interdigital answer even when both feet share a coarse condition. Every
+ * block, sided or not, takes its closure from the ONE shared rule
+ * (`footPoseClosureAt`, support.ts): its own foot's pose where there is a foot,
+ * and two agreeing feet where there is not. The blocks are in the domain's side
+ * order and the side-less one is last, so the read is byte-stable across a
+ * retake.
  */
 export function deriveFootMechanics(input: {
   profile: FootStructuralProfile;
@@ -237,7 +205,10 @@ export function deriveFootMechanics(input: {
 }): FootEffectiveMechanics {
   const conditions = input.conditions ?? [];
   const articulations = input.articulations ?? [];
-  const named = contactSurfaceSides.filter(
+  // Walked over `footSides`, so a block can only ever exist for a foot somebody
+  // actually has: a payload naming any other side failed its schema long before
+  // this stage, and could not have reached it as a third block.
+  const named = footSides.filter(
     (side) =>
       conditions.some((entry) => entry.side === side) || articulations.some((entry) => entry.side === side),
   );
@@ -247,7 +218,7 @@ export function deriveFootMechanics(input: {
     surfaces: footSurfacesFor({
       profile: input.profile,
       coarse: footConditionForSide(conditions, side),
-      closure: footInterdigitalClosure(footReadForSide(articulations, side)),
+      closure: footPoseClosureAt(articulations, side).closure,
       footwear: input.footwear,
     }),
   }));
@@ -256,7 +227,7 @@ export function deriveFootMechanics(input: {
     surfaces: footSurfacesFor({
       profile: input.profile,
       coarse: footConditionForSide(conditions, undefined),
-      closure: undistinguishedInterdigitalClosure(articulations),
+      closure: footPoseClosureAt(articulations).closure,
       footwear: input.footwear,
     }),
   });
@@ -271,14 +242,19 @@ export function deriveFootMechanics(input: {
  * is what makes an unsided locus readable. It does NOT fall back to the other
  * foot: a lane that answered only about the left foot leaves the right one
  * unknown, and unknown suppresses rather than borrowing.
+ *
+ * The lookup side is a LOCUS's, so it carries the contact core's vocabulary; a
+ * `center` side names no foot and lands on the side-less block, exactly where an
+ * absent one does.
  */
 export function footSurfaceMechanics(
   mechanics: FootEffectiveMechanics,
   surfaceId: FootSurfaceId,
   side?: ContactSurfaceSide,
 ): FootSurfaceEffectiveMechanics | undefined {
+  const foot = footSideOf(side);
   const block =
-    (side === undefined ? undefined : mechanics.feet.find((entry) => entry.side === side)) ??
+    (foot === undefined ? undefined : mechanics.feet.find((entry) => entry.side === foot)) ??
     mechanics.feet.find((entry) => entry.side === undefined);
   return block?.surfaces.find((surface) => surface.surfaceId === surfaceId);
 }

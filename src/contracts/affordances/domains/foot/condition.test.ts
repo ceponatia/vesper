@@ -272,6 +272,17 @@ describe("a person has two feet", () => {
     expect(footConditionSetSchema.safeParse([SOAKED, DRY_RIGHT]).success).toBe(true);
   });
 
+  it("refuses a `center` foot rather than holding a third one's condition", () => {
+    // The contact core's shared side list carries `center` for surfaces that
+    // have a middle; a foot has none, so this fails the schema and degrades
+    // `invalid` instead of becoming an answer about a foot nobody has.
+    expect(footConditionSetSchema.safeParse([{ ...EMPTY_COARSE, side: "center" }]).success).toBe(false);
+    expect(footConditionSetSchema.safeParse([{ ...EMPTY_COARSE, side: "middle" }]).success).toBe(false);
+    // Absent is still the undistinguished answer, and still allowed alongside
+    // one entry per real foot.
+    expect(footConditionSetSchema.safeParse([SOAKED, DRY_RIGHT, EMPTY_COARSE]).success).toBe(true);
+  });
+
   it("leaves a foot the owner never mentioned UNKNOWN, never the other foot's answer", () => {
     // Answering about the left foot says nothing about the right one, and an
     // unsided locus has no foot to borrow from either.

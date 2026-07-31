@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { contactSurfaceSideSchema, contactSurfaceSides, type ContactSurfaceSide } from "../../contact";
+import type { ContactSurfaceSide } from "../../contact";
 import {
   addUnits,
   complementUnit,
@@ -10,7 +10,14 @@ import {
   type UnitInterval,
 } from "../../core";
 import type { FootStructuralProfile, FootSurfaceStructuralProfile } from "./profile";
-import { footSurfaceIdSchema, footSurfaceSubtree, type FootSurfaceId } from "./topology";
+import {
+  footSideOf,
+  footSideSchema,
+  footSides,
+  footSurfaceIdSchema,
+  footSurfaceSubtree,
+  type FootSurfaceId,
+} from "./topology";
 
 /**
  * Current regional condition, and the one rule that makes distributing a coarse
@@ -41,6 +48,12 @@ import { footSurfaceIdSchema, footSurfaceSubtree, type FootSurfaceId } from "./t
  * one side-less entry and nothing changes; a lane that can tell the two feet
  * apart sends one entry each, and a damp left sole beside a dry right one stops
  * being a fact the vocabulary cannot hold.
+ *
+ * The side is the FOOT vocabulary (`footSides`, topology.ts): left or right, or
+ * absent for the feet the owner did not distinguish. The contact core's shared
+ * list also carries `center`, which for a foot is not a coarser answer but a
+ * wrong one — so it fails the schema and degrades `invalid` rather than becoming
+ * a third foot with its own condition.
  *
  * ## Placed versus distributed
  *
@@ -142,7 +155,7 @@ export interface FootSurfaceConditionRead {
 const footCoarseConditionObject = z
   .object({
     /** Which foot this answers for. Absent ⇒ every foot not answered separately. */
-    side: contactSurfaceSideSchema.optional(),
+    side: footSideSchema.optional(),
     /** Absent ⇒ the owner cannot answer; every region reads unknown. */
     moisture: unitIntervalSchema.optional(),
     contributors: z.array(footSurfaceSubstanceSchema).max(8).readonly().default([]),
@@ -178,19 +191,26 @@ export type FootCoarseConditionRead = z.infer<typeof footCoarseConditionSchema>;
  */
 export const footConditionSetSchema = z
   .array(footCoarseConditionSchema)
-  .max(contactSurfaceSides.length + 1)
+  .max(footSides.length + 1)
   .readonly()
   .refine((entries) => new Set(entries.map((entry) => entry.side ?? "")).size === entries.length, {
     message: "one condition answer per foot",
   });
 export type FootConditionSetRead = z.infer<typeof footConditionSetSchema>;
 
-/** The answer that applies to one foot: its own, or the undistinguished one. */
+/**
+ * The answer that applies to one foot: its own, or the undistinguished one.
+ *
+ * The lookup side may be a locus's, so it carries the contact core's vocabulary;
+ * `footSideOf` is what makes a side naming no foot — `center` — fall to the
+ * undistinguished answer instead of matching nothing at all.
+ */
 export function footConditionForSide(
   conditions: readonly FootCoarseConditionRead[],
   side: ContactSurfaceSide | undefined,
 ): FootCoarseConditionRead | undefined {
-  const own = side === undefined ? undefined : conditions.find((entry) => entry.side === side);
+  const foot = footSideOf(side);
+  const own = foot === undefined ? undefined : conditions.find((entry) => entry.side === foot);
   return own ?? conditions.find((entry) => entry.side === undefined);
 }
 

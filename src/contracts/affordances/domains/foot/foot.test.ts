@@ -463,6 +463,58 @@ describe("registration is slice 3's job", () => {
     expect(supported.diagnostics.some((entry) => entry.code === AFFORDANCE_INPUT_INVALID)).toBe(true);
   });
 
+  it("refuses a `center` foot in every foot-owned payload", () => {
+    // A foot is left or right. The contact core's shared side vocabulary carries
+    // `center` for surfaces that genuinely have a middle, and a payload spending
+    // it on a foot describes something nobody has — so it fails the FOOT schema
+    // and degrades `invalid` rather than arriving as a third foot, which the
+    // two-distinct-feet agreement rule could then have counted as the second one.
+    const fixture = footWorkedCases.lotionArchToHeelSlide();
+    const centered = {
+      condition: [{ side: "center", contributors: [], placedSubstances: [], placedResidues: [] }],
+      support: [{ side: "center", supportRole: "free", mobility: "free" }],
+      articulation: [{ side: "center", toes: "relaxed", arch: "neutral" }],
+    };
+
+    for (const [key, value] of Object.entries(centered)) {
+      const payload = {
+        ...fixture.payload,
+        // A real foot's pose, so the articulation phenomenon reaches the input
+        // under test instead of stopping at its own missing dependency.
+        articulation: [{ side: "left", toes: "relaxed", arch: "neutral" }],
+        [key]: value,
+      };
+      expect(
+        footAffordanceDomain.trace({
+          subjectId: FOOT_FIXTURE_SUBJECT,
+          storyTime: 100,
+          attributes: resolvedAttributeSnapshot([...fixture.attributes]),
+          payload,
+        }).inputs?.[key],
+        key,
+      ).toBe("invalid");
+
+      const sink = new DiagnosticCollector();
+      const result = readFootAffordances({
+        attributes: fixture.attributes,
+        payload,
+        perception: fixture.perception,
+        sink,
+      });
+      // The dependent phenomenon carries no value at all — required or optional,
+      // a corrupt answer is never run as an absent one — and the standard
+      // diagnostic goes with it.
+      const dependent = key === "condition" ? FOOT_GLIDE_RESPONSE_ID : FOOT_ARTICULATION_ID;
+      expect(result.suppressed.find((entry) => entry.phenomenonId === dependent)?.code, key).toBe(
+        AFFORDANCE_INPUT_INVALID,
+      );
+      expect(
+        sink.items.some((entry) => entry.code === AFFORDANCE_INPUT_INVALID),
+        key,
+      ).toBe(true);
+    }
+  });
+
   it("reports a repeated wardrobe layer id instead of accepting it in silence", () => {
     const sink = new DiagnosticCollector();
     const fixture = footWorkedCases.sockFilteredTouch();

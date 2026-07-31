@@ -40,8 +40,8 @@ import {
 } from "./phenomena";
 import { compileFootProfile } from "./profile";
 import type { FootCoarseConditionRead } from "./condition";
-import type { FootArticulationRead, FootSupportRead } from "./support";
-import type { FootSurfaceId } from "./topology";
+import type { FootArticulationRead, FootSupportRead, FootToePose } from "./support";
+import type { FootSide, FootSurfaceId } from "./topology";
 
 /**
  * Per-phenomenon gates, driven through hand-built frames.
@@ -120,6 +120,34 @@ const ARCH_TOUCH: FootContactFixtureInput = {
   pressure: "moderate",
   area: "broad",
 };
+
+/** A touch between the toes that names NO foot — the unsided-locus cases. */
+const BETWEEN_TOES: FootContactFixtureInput = {
+  detail: "interdigital_spaces",
+  locationId: "toes",
+  pressure: "light",
+};
+
+/** The tag a readable between-toes touch produces — i.e. nothing was suppressed. */
+const OPEN_INTERDIGITAL_TAG = "soft_interdigital_spaces";
+
+function pose(side: FootSide, toes: FootToePose): FootArticulationRead {
+  return { side, toes, arch: "neutral", evidence: [] };
+}
+
+/** The between-toes touch, on the named foot or on none, with the poses supplied. */
+function betweenToes(
+  locus: { readonly side?: FootSide },
+  ...articulations: readonly FootArticulationRead[]
+): AffordanceResolution {
+  return footSurfaceTextureContact.resolveFrame(
+    frameOf({
+      coarse: DRY,
+      contact: { ...BETWEEN_TOES, ...(locus.side === undefined ? {} : { side: locus.side }) },
+      articulations,
+    }),
+  );
+}
 
 describe("no committed contact yields no observation", () => {
   it.each([
@@ -345,28 +373,45 @@ describe("foot.surface_texture_contact", () => {
     expect(resolved.semanticTags).toEqual(["smooth_dorsal_surface"]);
   });
 
-  it("falls silent between toes the committed pose has pressed together", () => {
-    const closed = suppression(
-      footSurfaceTextureContact.resolveFrame(
-        frameOf({
-          coarse: DRY,
-          contact: { detail: "interdigital_spaces", locationId: "toes", pressure: "light" },
-          articulations: [{ side: "left", toes: "curled", arch: "neutral", evidence: [] }],
-        }),
-      ),
-    );
+  it("falls silent between toes the touched foot's own pose has pressed together", () => {
+    const closed = suppression(betweenToes({ side: "left" }, pose("left", "curled")));
     expect(closed.code).toBe(FOOT_INTERDIGITAL_CLOSED);
+    expect(closed.detail).toBe("curled");
 
-    const spread = observation(
-      footSurfaceTextureContact.resolveFrame(
-        frameOf({
-          coarse: DRY,
-          contact: { detail: "interdigital_spaces", locationId: "toes", pressure: "light" },
-          articulations: [{ side: "left", toes: "spread", arch: "neutral", evidence: [] }],
-        }),
-      ),
-    );
-    expect(spread.semanticTags[0]).toBe("soft_interdigital_spaces");
+    const spread = observation(betweenToes({}, pose("left", "spread")));
+    expect(spread.semanticTags[0]).toBe(OPEN_INTERDIGITAL_TAG);
+  });
+
+  it("does not spend the other foot's curl on the foot being touched", () => {
+    const resolved = observation(betweenToes({ side: "left" }, pose("right", "curled")));
+    expect(resolved.semanticTags[0]).toBe(OPEN_INTERDIGITAL_TAG);
+  });
+
+  it("will not let ONE curled foot close a space that names no side", () => {
+    // The residual half of the interdigital inference (owner review, finding 6).
+    // The mechanics rule already refused to spend one foot's pose on an unsided
+    // locus; this resolver kept its own first-entry fallback, so a single curled
+    // left foot silenced an observation about a space that may well have been
+    // the right one's.
+    const resolved = observation(betweenToes({}, pose("left", "curled")));
+    expect(resolved.semanticTags[0]).toBe(OPEN_INTERDIGITAL_TAG);
+  });
+
+  it("closes an unsided space only when two distinct feet agree", () => {
+    // Whichever foot the locus turns out to be, the space is closed — a
+    // deduction, so the observation is suppressed and the shared pose is named.
+    const agreed = suppression(betweenToes({}, pose("left", "curled"), pose("right", "curled")));
+    expect(agreed.code).toBe(FOOT_INTERDIGITAL_CLOSED);
+    expect(agreed.detail).toBe("curled");
+
+    // Two feet that close the space through DIFFERENT poses still agree about
+    // the closure, and the detail is dropped rather than naming one of them.
+    const differently = suppression(betweenToes({}, pose("left", "curled"), pose("right", "flexed")));
+    expect(differently.code).toBe(FOOT_INTERDIGITAL_CLOSED);
+    expect(differently.detail).toBeUndefined();
+
+    const disagreed = observation(betweenToes({}, pose("left", "curled"), pose("right", "spread")));
+    expect(disagreed.semanticTags[0]).toBe(OPEN_INTERDIGITAL_TAG);
   });
 
   it("falls silent when nothing reaches the skin at all", () => {

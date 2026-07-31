@@ -2,14 +2,13 @@ import { z } from "zod";
 import {
   contactSupportMobilitySchema,
   contactSupportRoleSchema,
-  contactSurfaceSideSchema,
-  contactSurfaceSides,
   type ContactSupportMobility,
   type ContactSupportRole,
   type ContactSurfaceSide,
 } from "../../contact";
 import type { AffordanceEvidence } from "../../core";
 import { footwearRestrictsArticulation, type FootwearContactRead } from "./footwear";
+import { footSideOf, footSideSchema, footSides, type FootSide } from "./topology";
 
 /**
  * Support and articulation (romantic-contact-affordances.spec.foot.md
@@ -30,8 +29,14 @@ import { footwearRestrictsArticulation, type FootwearContactRead } from "./footw
  * required. Without it "the left foot is trapped and the right is free" was
  * simply unrepresentable, and the domain contradicted itself: contact reads ARE
  * per-side (`FootLocusRef.side`), so one subject-wide pose read could describe
- * the foot nobody was touching. `side` reuses the contact core's vocabulary for
- * the same reason the support enums do.
+ * the foot nobody was touching.
+ *
+ * `side` is the FOOT vocabulary (`footSides`, topology.ts) rather than the
+ * contact core's, which the support enums do reuse. The difference is deliberate:
+ * the core's side list carries `center` for surfaces that have a middle, and a
+ * "center foot" is not a foot this domain — or anybody — has. A payload naming
+ * one fails the schema and degrades `invalid`, which also keeps it out of the
+ * two-distinct-feet agreement rule below.
  *
  * ## Capacity versus expression
  *
@@ -43,7 +48,7 @@ import { footwearRestrictsArticulation, type FootwearContactRead } from "./footw
 
 export const footSupportReadSchema = z
   .object({
-    side: contactSurfaceSideSchema,
+    side: footSideSchema,
     supportRole: contactSupportRoleSchema,
     mobility: contactSupportMobilitySchema,
     /** The lane's own id for what the foot rests on. Opaque; carried for evidence. */
@@ -52,7 +57,7 @@ export const footSupportReadSchema = z
   .strict();
 
 export interface FootSupportRead {
-  readonly side: ContactSurfaceSide;
+  readonly side: FootSide;
   readonly supportRole: ContactSupportRole;
   readonly mobility: ContactSupportMobility;
   readonly supportSurfaceId?: string;
@@ -78,7 +83,7 @@ export type FootMovementRestriction = z.infer<typeof footMovementRestrictionSche
 
 export const footArticulationReadSchema = z
   .object({
-    side: contactSurfaceSideSchema,
+    side: footSideSchema,
     toes: footToePoseSchema,
     arch: footArchPoseSchema,
     /** An obstruction the pose owner knows about and this domain cannot see. */
@@ -87,7 +92,7 @@ export const footArticulationReadSchema = z
   .strict();
 
 export interface FootArticulationRead {
-  readonly side: ContactSurfaceSide;
+  readonly side: FootSide;
   readonly toes: FootToePose;
   readonly arch: FootArchPose;
   readonly obstructed?: boolean;
@@ -105,7 +110,7 @@ export interface FootArticulationRead {
  * degradation instead (⇒ `invalid` ⇒ the read carries no value at all, so no
  * resolver can reach for one). Same rule, same reason, as the condition set's.
  */
-function oneReadPerSide(entries: readonly { readonly side: ContactSurfaceSide }[]): boolean {
+function oneReadPerSide(entries: readonly { readonly side: FootSide }[]): boolean {
   return new Set(entries.map((entry) => entry.side)).size === entries.length;
 }
 
@@ -114,14 +119,14 @@ const ONE_PER_SIDE_MESSAGE = { message: "one entry per foot" };
 /** The lane's whole support answer: at most one entry per foot. */
 export const footSupportSetSchema = z
   .array(footSupportReadSchema)
-  .max(contactSurfaceSides.length)
+  .max(footSides.length)
   .readonly()
   .refine(oneReadPerSide, ONE_PER_SIDE_MESSAGE);
 
 /** The lane's whole pose answer: at most one entry per foot. */
 export const footArticulationSetSchema = z
   .array(footArticulationReadSchema)
-  .max(contactSurfaceSides.length)
+  .max(footSides.length)
   .readonly()
   .refine(oneReadPerSide, ONE_PER_SIDE_MESSAGE);
 
@@ -171,12 +176,99 @@ export function footMovementRestrictionRank(restriction: FootMovementRestriction
   return footMovementRestrictions.indexOf(restriction);
 }
 
-/** The read for one foot, when the lane supplied one. */
-export function footReadForSide<TRead extends { readonly side: ContactSurfaceSide }>(
+/**
+ * The read for one foot, when the lane supplied one.
+ *
+ * The lookup side is the SHARED vocabulary because callers pass a locus's side
+ * straight through, and `footSideOf` is what turns it into a foot: a `center`
+ * side names no foot, so it matches nothing here rather than accidentally
+ * matching a payload that should never have contained one.
+ */
+export function footReadForSide<TRead extends { readonly side: FootSide }>(
   reads: readonly TRead[],
   side: ContactSurfaceSide | undefined,
 ): TRead | undefined {
-  return side === undefined ? undefined : reads.find((read) => read.side === side);
+  const foot = footSideOf(side);
+  return foot === undefined ? undefined : reads.find((read) => read.side === foot);
+}
+
+// ---------------------------------------------------------------------------
+// The pose modifier at a locus — ONE rule, used by every consumer
+// ---------------------------------------------------------------------------
+
+/** What the current pose does to the interdigital spaces at one locus. */
+export interface FootPoseClosure {
+  /** Closed `1`, open `-1`, structural-neutral `0`. */
+  readonly closure: -1 | 0 | 1;
+  /** The toe pose behind it, when every deciding foot names the same one. */
+  readonly toes?: FootToePose;
+}
+
+/**
+ * The poses that may decide the answer at a locus on `side`.
+ *
+ * - a locus that names a FOOT is decided by that foot, and by nothing else: a
+ *   left arch is not told anything by the right foot's toes;
+ * - a locus that names NO foot — absent, or the shared vocabulary's `center`,
+ *   which is no foot of anybody's — is decided only by both feet together.
+ *
+ * The undistinguished list is taken THROUGH `footSides`, which is what makes the
+ * count trustworthy: two reads of the same foot collapse to one, and nothing but
+ * a left and a right can ever reach two.
+ */
+function decidingPoses(
+  articulations: readonly FootArticulationRead[],
+  side: ContactSurfaceSide | undefined,
+): readonly FootArticulationRead[] {
+  const own = footReadForSide(articulations, side);
+  if (own !== undefined) return [own];
+  if (footSideOf(side) !== undefined) return [];
+  const feet = footSides.flatMap((foot) => {
+    const read = footReadForSide(articulations, foot);
+    return read === undefined ? [] : [read];
+  });
+  return feet.length === footSides.length ? feet : [];
+}
+
+/**
+ * How the committed pose moves the toe spaces AT ONE LOCUS — the domain's single
+ * rule for turning per-foot poses into an answer about a place.
+ *
+ * A sided locus uses its own foot. An unsided locus uses a modifier only when TWO
+ * DISTINCT FEET AGREE (owner ruling, 2026-07-30); everything else is the
+ * structural-neutral `0`:
+ *
+ * - **zero poses** — nothing to agree about;
+ * - **one pose** — the trap this rule exists to close. One supplied left foot is
+ *   not agreement; it says nothing whatever about the right foot, and an unsided
+ *   locus may well BE the right foot. Spending the left foot's curl on it is the
+ *   same invention as picking a foot outright, wearing the word "agreement";
+ * - **disagreement** — picking one would put a curled foot's damp, closed toe
+ *   spaces on a spread one.
+ *
+ * Two agreeing feet is the one case that survives: whichever foot the locus turns
+ * out to be, the answer is the same, so it is a deduction rather than a guess.
+ *
+ * It lives here, beside `footInterdigitalClosure`, because every consumer must
+ * get the SAME answer. It was previously private to `mechanics.ts`, and the one
+ * consumer that could not reach it — `foot.surface_texture_contact` — grew its
+ * own first-entry fallback, which let a single curled left foot suppress an
+ * observation about an unsided space (owner review, finding 6).
+ */
+export function footPoseClosureAt(
+  articulations: readonly FootArticulationRead[],
+  side?: ContactSurfaceSide,
+): FootPoseClosure {
+  const deciding = decidingPoses(articulations, side);
+  const closures = deciding.map((articulation) => footInterdigitalClosure(articulation));
+  const first = closures[0];
+  if (first === undefined || !closures.every((closure) => closure === first)) return { closure: 0 };
+  // The pose is reported only when it is unambiguous: two feet can agree on the
+  // closure through different poses (curled and flexed both close), and naming
+  // one of them would describe a foot that may not be the one being touched.
+  const poses = new Set(deciding.map((articulation) => articulation.toes));
+  const toes = poses.size === 1 ? deciding[0]?.toes : undefined;
+  return { closure: first, ...(toes === undefined ? {} : { toes }) };
 }
 
 interface FootArticulationChoice {
@@ -208,8 +300,10 @@ function restrictionFor(choice: FootArticulationChoice, articulation: FootArticu
  *    about;
  * 2. otherwise the most restricted one, because "she cannot move it" carries
  *    more than "her toes are relaxed";
- * 3. ties break on the contact core's own side order, so the pick survives a
- *    retake.
+ * 3. ties break on the domain's own side order, so the pick survives a retake.
+ *
+ * Nothing is inferred by this choice: the observation NAMES the foot it picked
+ * (`foot_left`), so a pose is never quietly attributed to the other one.
  */
 export function selectFootArticulation(choice: FootArticulationChoice): FootArticulationRead | undefined {
   const touched = footReadForSide(choice.articulations, choice.contactSide);
@@ -219,7 +313,7 @@ export function selectFootArticulation(choice: FootArticulationChoice): FootArti
       footMovementRestrictionRank(restrictionFor(choice, left)) -
       footMovementRestrictionRank(restrictionFor(choice, right));
     if (byRestriction !== 0) return byRestriction;
-    return contactSurfaceSides.indexOf(left.side) - contactSurfaceSides.indexOf(right.side);
+    return footSides.indexOf(left.side) - footSides.indexOf(right.side);
   })[0];
 }
 
