@@ -52,7 +52,16 @@ that pass. See "Done" below._
      by `WHERE profile = <blob the plan was computed from>`; a row edited
      concurrently is re-read, re-planned, and retried (3 attempts), with
      still-conflicted rows reported and a non-zero exit — safe to run against
-     the live application.
+     the live application. Ran clean on Neon 2026-07-30 (11 rows, zero
+     conflicts, idempotent re-run verified), so the deploy gate above is
+     satisfied.
+  4. *(Found by the post-deploy visual check.)* The editor `#anchor` deep
+     links didn't scroll: the browser resolves the hash before the
+     client-fetched editor mounts, so
+     `/personas/<id>#adult-eligibility-declaration` landed unscrolled whenever
+     the declaration sat below the fold. `useHashAnchorScroll` (shared hook)
+     re-runs the hash scroll once the draft is seeded, in both the character
+     and persona edit pages; the pure hash parsing is regression-tested.
 - **Pre-slice-3 foot facts and registration hardening** — 2026-07-30. Four
   pieces, all pinned by tests:
   1. *Persisted-baseline foot facts.* `feet.size/arch/nails/toes` gained
