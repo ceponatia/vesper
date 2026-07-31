@@ -6,12 +6,12 @@ import type { AdultEligibilityParticipantEntity, AdultEligibilityVerdict } from 
  * slice 3's) — the pure half of "a blocked romantic action links the editor
  * that can fix it".
  *
- * The routing law:
+ * The routing law, keyed off the entity descriptor's required `access`:
  * - a failing PERSONA links the persona editor (the viewer always owns it);
- * - a failing OWNED character links the character editor;
- * - a failing FOREIGN character cannot be edited, so the blocker offers
- *   **"Duplicate to edit"** — the existing copy-on-use clone flow, after which
- *   the copy's editor is the fix surface.
+ * - a failing `owned` character links the character editor;
+ * - a failing `public_non_owner` character cannot be edited, so the blocker
+ *   offers **"Duplicate to edit"** — the existing copy-on-use clone flow, after
+ *   which the copy's editor is the fix surface.
  *
  * Every target carries {@link ADULT_ELIGIBILITY_ANCHOR_ID} so the editor can
  * scroll straight to the declaration field. A verdict with no entity descriptor
@@ -39,7 +39,7 @@ export function adultEligibilityEditorTarget(
   if (entity.kind === "persona") {
     return { target: "persona-editor", entityId: entity.entityId, anchorId: ADULT_ELIGIBILITY_ANCHOR_ID, label: "Edit persona" };
   }
-  if (entity.foreign === true) {
+  if (entity.access === "public_non_owner") {
     return {
       target: "duplicate-character",
       entityId: entity.entityId,

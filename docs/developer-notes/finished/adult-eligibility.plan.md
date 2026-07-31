@@ -5,10 +5,24 @@ ruling and resolver law, and built the same day; slices 0–2 all landed —
 shared schema in both profile schemas via JSONB with no migration, controls in
 both editors, and the pure resolver + contact-adapter seam, with every
 resolver-law clause tested. As-built detail:
-[adult-eligibility.spec.md](adult-eligibility.spec.md). Leftovers, neither
-owned here: the blocked-romantic-action deep link to the editor anchor is
-romantic-contact slice-3 wiring, and the declaration's exclusion from
-`PublicCharacterProfile` is flagged for an owner look in the spec)
+[adult-eligibility.spec.md](adult-eligibility.spec.md))
+
+**Both leftovers closed 2026-07-30**, in the pre-slice-3 eligibility follow-ups;
+this document has been updated to current truth (2026-07-31) rather than left
+describing the shipped-day shape. What changed after ship:
+
+- The declaration is **public** on profiles and previews — it IS part of
+  `toPublicCharacterProfile` (owner ruling). It is no longer private.
+- An explicit `minor` declaration now **arms the existing minor-safe prompt
+  fence** through `minorFenceApplies`, so prompts are **not** byte-identical for
+  a declared minor. `adult` and `unresolved` still render byte-identically.
+- `contactParticipantEligibility` **preserves per-participant verdicts**; they
+  are no longer discarded into a single combined status.
+- `adultEligibilityBlockerLinks` routes a blocked action to the persona editor,
+  the character editor, or **duplicate-to-edit** for a public character the
+  viewer does not own.
+- The age parser gained a tightly whitelisted `"17 years"` / `"17 years old"`
+  spelling.
 
 ## In one sentence
 
@@ -28,7 +42,7 @@ that "everyone taking part is an adult" is unverified for one of the two people
 in every scene.
 
 The owner ruled (2026-07-30, recorded in the
-[romantic-contact audit](romantic-contact-affordances.audit.md#owner-decisions-needed))
+[romantic-contact audit](../romantic-contact-affordances.audit.md#owner-decisions-needed))
 that romantic and intimate contact require **positive** adult eligibility for
 every participant, with fantasy-scaled and missing ages staying `unresolved`
 and failing closed. The contact contracts already enforce that rule — which
@@ -125,3 +139,8 @@ values reading `unresolved`, and templates cannot override a participant's
 declaration (satisfied vacuously today — no template→profile merge exists);
 the control sits in both editors with no modal, and the blocked-action deep
 link is romantic-contact slice-3 work.
+
+The blocked-action routing itself has since been **built** as pure contracts
+(`adultEligibilityBlockerLinks`, 2026-07-30 — see
+[the spec §4.1](adult-eligibility.spec.md)); what remains slice-3 work is
+rendering those links in the chat UI, not deciding where they point.

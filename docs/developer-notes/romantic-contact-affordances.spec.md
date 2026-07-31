@@ -62,6 +62,43 @@ The affordance read begins only after the action resolver commits contact.
 Proposed effects are not observations until their owning event has committed
 them.
 
+## Current capability status
+
+Where each piece actually stands as of **2026-07-31** (after slices 0–2 and
+slice 3A). Exactly three labels, and the distinction between the first two is
+the one that keeps being blurred:
+
+- **implemented contract** — the code exists in `src/contracts`, is tested, and
+  is correct as far as its fixtures go. It is **not reachable from the running
+  product**: nothing in a lane calls it.
+- **registered in production** — wired into the production registry/pipeline and
+  reachable by a real turn.
+- **future design** — not built. A named prerequisite is missing, or an owner
+  ruling is outstanding.
+
+A row is never two of these at once. "Implemented contract" is the honest label
+for most of this plan's output so far, and reading it as shipped behaviour is
+the mistake this table exists to prevent.
+
+| Capability | Status | Note |
+| --- | --- | --- |
+| Foot registry defaults (`feet.size/arch/nails/toes`) | **registered in production** | `materializeDefault` tier live; every grounding path stores the baseline facts |
+| Neon backfill of existing bodies | **registered in production** | ran clean 2026-07-30 — 11 rows, zero conflicts, idempotent re-run verified |
+| Deployment of the above | **registered in production** | complete (owner-confirmed) |
+| Adult-eligibility declaration + resolver | **registered in production** | stored, authored in both editors, public on previews; a declared `minor` arms the prompt fence |
+| Contact core (lifecycle, resolution, identity) | **implemented contract** | `src/contracts/affordances/contact/` — pure, no lane wiring, no storage |
+| Foot domain phenomena (pressure, texture, glide, articulation, nails) | **implemented contract** | `src/contracts/affordances/domains/foot/` — deliberately **not** in the production domain set; registration is slice-3 wiring |
+| Scene / body-relations owner | **implemented contract** | minimal owner added in slice 3A — [scene spec](romantic-contact-affordances.spec.scene.md) |
+| Eligibility contact adapter + blocker links | **implemented contract** | pure; no pipeline call site and no UI rendering the links yet |
+| Perception channels (visual / tactile, perceiver binding) | **future design** | the core filter is sight-only; no lane emits `touch`. Blocks positive tactile output |
+| `romantic_touch` permission owner | **future design** | spec before implementation; eight design decisions await owner rulings (see the plan's Open questions) |
+| Positive texture/glide output | **future design** | blocked on perception channels, perceiver binding, structured path/cross-locus info, and per-surface footwear friction. LAST in the continuation order |
+| Contact persistence (durable events + retake-safe projection) | **future design** | ruled in shape, not yet built — step 1 of the continuation order |
+
+The lane-by-lane evidence behind the *absent* rows is the
+[truth-source audit](romantic-contact-affordances.audit.md); its capability
+matrix is a historical 2026-07-28 snapshot, superseded by this table.
+
 ## Current lane capability audit
 
 | Capability | Legacy character chat | Successor chat | Implementation consequence |
@@ -77,7 +114,10 @@ them.
 | Perception | Turn-level allowance plus coverage, no full per-sense proximity model. | Structured witness/channel observations. | Normalize unavailable channels as unavailable, not open. |
 | Retake | Snapshot rollback. | Same-cut re-render. | Capture adapters differ but must produce stable contact/effect/cue fingerprints. |
 
-The body-side evidence is recorded in the
+**This section is the promotion-time (2026-07-28) picture and is kept for the
+implementation consequences it records** — those still hold. For what is built
+now, read [Current capability status](#current-capability-status) above. The
+body-side evidence is recorded in the
 [body-affordance readiness audit](body-attribute-affordances.audit.md).
 
 ## State ownership
@@ -90,7 +130,7 @@ The body-side evidence is recorded in the
 | Wetness, sweat, vascular state, erection, swelling, lubrication, temperature | Physiology/body state | Read current values; never infer from genre, action, or anatomy. |
 | Adult-content eligibility | Product/life-stage policy owner | Hard precondition for romantic/intimate contact; known minors always fail. |
 | Actor control and target agency | Lane action/behavior authority | Prove who may commit each voluntary movement. |
-| Interaction permission and consent | Lane's authoritative policy/consent owner | Mandatory precondition; mechanics cannot manufacture consent. |
+| Interaction permission and consent | Lane's authoritative policy/consent owner | Mandatory precondition **for `romantic` and `intimate` only** — incidental/casual/affectionate touch is permission-neutral. Mechanics cannot manufacture consent for any kind. |
 | Active contact lifecycle, motion, and implicit pose adjustment | Action/contact resolver | Authoritative start/update/end cause for contact phenomena. |
 | Marks, residues, fluid/product transfer | Body/garment/effect event owner | Affordances calculate eligibility; owner commits state. |
 | Sensory access and point of view | Perception/exposure owner | Filter observations before ranking. |
@@ -101,10 +141,14 @@ The body-side evidence is recorded in the
 
 1. An attempted or merely possible contact never enters a contact frame as
    current truth.
-2. Interpersonal contact requires an actor-control/agency decision and the
-   applicable interaction permission. Intimate contact additionally requires
-   an authoritative adult-eligibility and scope-compatible consent pass.
-   Missing or malformed required policy data fails closed.
+2. Interpersonal contact requires an actor-control/agency decision — always,
+   for every action kind. **Permission is scoped, not universal** (owner
+   ruling, 2026-07-30): `romantic` and `intimate` contact additionally require
+   the applicable interaction permission scope AND positive adult eligibility
+   for every participant, while `incidental`, `casual`, and `affectionate`
+   contact are **permission-neutral**. Intimate contact further requires a
+   scope-compatible consent pass. Missing or malformed policy data fails closed
+   for the kinds that require it.
 3. Stable attributes never store current erection, swelling, lubrication,
    sweat, garment displacement, contact, or residue.
 4. A garment layer remains present until wardrobe state commits its movement or

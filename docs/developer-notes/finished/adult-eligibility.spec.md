@@ -4,8 +4,19 @@ The coding-agent companion to [adult-eligibility.plan.md](adult-eligibility.plan
 The plan owns scope, rollout, and open questions; this file owns the contract shapes,
 the resolver law, the storage decision, and the proof points. Owner rulings are recorded
 in the plan and in
-[romantic-contact-affordances.audit.md](romantic-contact-affordances.audit.md#owner-decisions-needed)
+[romantic-contact-affordances.audit.md](../romantic-contact-affordances.audit.md#owner-decisions-needed)
 §1; every ruling below is theirs, not this document's.
+
+**Updated 2026-07-31 to current truth.** This spec originally described the
+shipped-day (2026-07-30 morning) shape. Four things changed the same day in the
+pre-slice-3 eligibility follow-ups, and the sections below now describe the
+code as it actually is: the declaration is **public** on profiles and previews;
+an explicit `minor` declaration **arms the minor-safe prompt fence**
+(`minorFenceApplies`), so prompts are no longer byte-identical for a declared
+minor; `contactParticipantEligibility` **preserves per-participant verdicts**
+and `blocker.ts` routes a blocked action to the surface that can fix it; and the
+age parser gained a tightly whitelisted `"17 years"` / `"17 years old"`
+spelling.
 
 ## 1. The shared schema
 
@@ -111,6 +122,13 @@ Their semantics are life-stage *bands*, not a literal `< 18`: only a bare numera
 that exactly "below 18" for the shapes they accept. They decline `"17.5"` and `"-5"`,
 where a literal reading says minor.
 
+**Parser whitelist (added 2026-07-30 by explicit owner instruction).** The band
+parser's `numericAgeText` accepts one tightly whitelisted unit spelling —
+`"17 years"` and `"17 years old"` — alongside the bare numeral. Word numbers
+("seventeen") and looser prose stay unparsed, so they still read `unresolved`
+without a declaration. This narrows the fail-open hole slightly; it never widens
+eligibility.
+
 Per the instruction to reconcile toward the **stricter** answer for `ineligible`,
 `isNumericMinorAge(age)` is `isMinorAge(age) || (a signed/decimal numeral < 18)`. It can
 only ever add `ineligible` verdicts; it never widens eligibility, and it changes nothing
@@ -126,12 +144,16 @@ without a declaration — which is the whole point of the feature.
 would end that. Direction is one-way: profiles → eligibility → the contact read.
 
 ```ts
-adultEligibilityParticipant(id: AffordanceSubjectId, profile: AdultEligibilityInput): AdultEligibilityParticipant
+adultEligibilityParticipant(
+  id: AffordanceSubjectId,
+  profile: AdultEligibilityInput,
+  entity?: AdultEligibilityParticipantEntity,
+): AdultEligibilityParticipant
 contactParticipantEligibility(
   participants: readonly AdultEligibilityParticipant[],
   sink?: DiagnosticSink,
   path?: string,
-): ContactParticipantEligibilityRead
+): ContactParticipantEligibilityWithVerdicts
 ```
 
 Combination rule: **every** participant `eligible` ⇒ `eligible`; **any** `ineligible` ⇒
@@ -144,6 +166,47 @@ Evidence is one `adapter` entry per participant, `ref: "adult_eligibility:<id>"`
 `detail` = that participant's verdict; the empty case records
 `ref: "adult_eligibility", detail: "no_participants"`.
 
+**Per-participant verdicts are preserved, not discarded** (changed 2026-07-30).
+The return type extends the core's `ContactParticipantEligibilityRead` with a
+`verdicts` array — the contact core still consumes only the base shape, so it
+stays domain-neutral, while a blocked action can ask *which* participant failed.
+Without that, a blocked romantic action could only say "somebody here isn't
+eligible", which is a dead end rather than a fix.
+
+### 4.1 Blocked-action routing (`blocker.ts`)
+
+`adultEligibilityEditorTarget(entity)` turns one participant's library identity
+into the surface that can actually fix it, and
+`adultEligibilityBlockerLinks(verdicts)` maps a failed read to the ordered,
+entity-deduplicated set of those links. Both are pure; the UI wiring is
+romantic-contact slice 3.
+
+The entity descriptor carries a **required access discriminator** (tightened
+2026-07-31 — it was an optional `foreign?: boolean`, where omission was
+indistinguishable from ownership):
+
+```ts
+interface AdultEligibilityParticipantEntity {
+  readonly kind: "character" | "persona";
+  readonly entityId: string;
+  readonly access: "owned" | "public_non_owner";
+}
+```
+
+| Failing participant | Target | Label |
+| --- | --- | --- |
+| persona (always the viewer's own) | `persona-editor` | Edit persona |
+| character, `access: "owned"` | `character-editor` | Edit character |
+| character, `access: "public_non_owner"` | `duplicate-character` | Duplicate to edit |
+| no entity descriptor at all | *(no link)* | — |
+
+Every link carries `ADULT_ELIGIBILITY_ANCHOR_ID` so the editor can scroll
+straight to the declaration field. Both `ineligible` **and** `unresolved` get a
+link — both block a gated action, so both need a fix route. A non-owner
+character cannot be edited, so the route is the existing copy-on-use clone flow;
+the copy's editor is the fix surface. Prefer "non-owner" wording over "foreign"
+throughout this surface — "foreign" reads as either unowned or unfamiliar.
+
 **Nothing wires this into the chat pipeline.** Slice 3 of the romantic-contact plan owns
 that.
 
@@ -152,8 +215,9 @@ that.
 | File | What |
 | --- | --- |
 | `src/contracts/eligibility/declaration.ts` | shared schema, labels, editor option order, deep-link anchor id |
-| `src/contracts/eligibility/resolve.ts` | the law, `isNumericMinorAge`, `adultEligibilityConflict`, the diagnostic code |
-| `src/contracts/eligibility/contact-adapter.ts` | the `ContactParticipantEligibilityRead` seam |
+| `src/contracts/eligibility/resolve.ts` | the law, `isNumericMinorAge`, `minorFenceApplies`, `adultEligibilityConflict`, the diagnostic code |
+| `src/contracts/eligibility/contact-adapter.ts` | the `ContactParticipantEligibilityRead` seam + preserved verdicts + the entity descriptor |
+| `src/contracts/eligibility/blocker.ts` | blocked-action routing (§4.1) |
 | `src/contracts/eligibility/index.ts` | barrel (re-exported from `src/contracts/index.ts`) |
 | `src/contracts/world/profile.ts` | the character field |
 | `src/contracts/players/persona-profile.ts` | the persona field **and** its explicit copy in `personaToCharacterProfile` |
@@ -202,20 +266,47 @@ is why an anchor exists at all.
 
 ## 8. Non-rendering proof points
 
+The declaration **text** is never serialized into a prompt, and that has not
+changed. What changed 2026-07-30: a declared `minor` now **arms the existing
+minor-safe fence**, so the declaration has exactly one prompt-visible
+consequence, expressed through a boolean rather than through its own words.
+
 No prompt builder in the repo serializes a whole profile: every one enumerates the fields
 it renders (`buildCharacterChatPromptParts` at `src/server/engine/prompts/character-chat.ts:1571`,
 the ensemble sheet at `:2317`, `buildCanonBlock` at `src/server/engine/prompts/sim-render.ts:235`,
 the shared section builders in `profile-sections.ts`). There is no `JSON.stringify(profile)`,
 no `Object.entries(profile)` loop, and no generic render-every-field helper anywhere in
-`src/`. The declaration is therefore inert by construction. Three tests turn that from a
-habit into a guarantee:
+`src/`.
 
-- `src/server/engine/prompts/character-chat.test.ts` → *"the adult-eligibility
-  declaration never reaches the narrator"* — the built prompt is **byte-identical** for
-  `adult`, `minor`, and `unresolved`, on the single-character path, the split
-  prefix/tail path, and the ensemble roster path; and it still renders the real age.
-- `src/server/engine/prompts/sim-render.test.ts` → the same byte-identical pin for the
-  successor narrator (`system` and `prompt` both).
+### 8.1 The fence, and what is still byte-identical
+
+`minorFenceApplies(input)` (`resolve.ts`) is
+`declaration === "minor" || isMinorAge(age)` — the numeric fence every prompt
+builder already applied, EXTENDED by the explicit declaration. An author who says
+"this participant is a minor" gets the minor-safe register whatever the age field
+holds, including a numeric adult age; the stricter statement wins, mirroring
+`adultEligibilityConflict`'s one-directional rule. Consumers:
+`chat-state.ts:1762`, `prompts/character-chat.ts` (six sites, incl. the ensemble
+roster and disposition overlays), `prompts/sim-render.ts:590`,
+`prompts/sim-solo-render.ts:177`.
+
+So the byte-identity claim is now **two-valued, not three**:
+
+| Declaration | Prompt |
+| --- | --- |
+| `adult` | byte-identical to `unresolved` — a positive declaration buys eligibility, never prompt text |
+| `unresolved` | the baseline |
+| `minor` | **not** byte-identical — emits exactly the fence output the numeric minor fence always emitted, and nothing new |
+
+The declaration's own words still never appear. A reader looking for "the prompt
+is identical for all three values" is reading the pre-2026-07-30 spec.
+
+- `src/server/engine/prompts/character-chat.test.ts` → the built prompt is
+  byte-identical for `adult` and `unresolved`, on the single-character path, the
+  split prefix/tail path, and the ensemble roster path; and it still renders the
+  real age. A declared `minor` takes the fence branch.
+- `src/server/engine/prompts/sim-render.test.ts` → the same pin for the successor
+  narrator (`system` and `prompt` both).
 - `src/server/authoring/character-fill.test.ts` → `renderSheetConcept` (the
   forge/redraft *input* sheet, `character-fill.ts:46-129`) omits it entirely. The
   authoring model cannot infer a field it never reads.
@@ -259,11 +350,18 @@ save/read cycle"*.
 the library is the only copy path. Nothing to wire; recorded so the next reader does not
 go looking.
 
-**Public previews.** The declaration is deliberately **not** in
-`PublicCharacterProfile`: a foreign viewer sees presentation data only, and that
-projection's docblock is explicit that a new field stays private until someone adds it
-there. Pinned by *"stays out of the public preview"*. A clone still carries it, because
-a clone copies the row, not the preview.
+**Public previews — the declaration IS public** (owner ruling, 2026-07-30;
+reversed from the shipped-day shape, which withheld it). It is a member of
+`PublicCharacterProfile` and is copied by `toPublicCharacterProfile`
+(`src/contracts/world/profile.ts`). The reasoning: the declaration is a
+statement about the fiction that a browsing reader has a legitimate interest in
+before they duplicate a character, and withholding it made a public preview
+unable to answer the one question the feature exists to answer. It is authored
+metadata, not private authoring craft — unlike the guidance/drives/voice fields
+the projection still narrows away.
+
+A clone carries it either way, because a clone copies the row rather than the
+preview (see docs/auth.md §"Publishing and cloning").
 
 **Scenario / world templates.** No template → cast-participant profile merge exists.
 The old World Model's `world_cast.snapshot` copy-on-instantiate was deleted outright in
@@ -304,14 +402,17 @@ Personas carry no age, so no conflict is possible and no persona-route change wa
 | 6 authoring rejects the contradiction | *"clause 6: authoring rejects the same pair up front"* |
 | stricter numeric reconciliation | `isNumericMinorAge` describe (3 cases) |
 | schema default / catch (no migration) | `resolve.test.ts` + `world/profile.test.ts` + `players/persona-profile.test.ts` |
-| adapter combination rule | `eligibility/contact-adapter.test.ts` (6 cases) |
+| adapter combination rule | `eligibility/contact-adapter.test.ts` |
+| per-participant verdicts preserved | `eligibility/contact-adapter.test.ts` *"preserves the per-participant verdicts"* |
+| blocked-action routing (§4.1) | `eligibility/blocker.test.ts` — persona / owned / non-owner targets, the entity-less no-link case, dedupe, and the non-owner-never-reaches-an-editor regression |
+| minor declaration arms the prompt fence | `eligibility/resolve.test.ts` (`minorFenceApplies`) + the prompt-builder tests below |
 | persona adapter copy | `players/persona-profile.test.ts` *"copies the adult-eligibility declaration explicitly"* |
-| never in narrator prompts | `prompts/character-chat.test.ts` (4 cases), `prompts/sim-render.test.ts` |
+| declaration text never in narrator prompts; `adult`/`unresolved` byte-identical | `prompts/character-chat.test.ts`, `prompts/sim-render.test.ts` |
 | never in the authoring model's input | `authoring/character-fill.test.ts` |
 | forge never generates it | `authoring/character-forge.test.ts` (2 cases) |
 | redraft / fill preserve it | `character-scopes.test.ts`, `character-fill.test.ts`, `authoring/character-redraft.test.ts` |
 | clone carries it | `library-routes.int.test.ts` (clone case) + `world/profile.test.ts` round-trip |
-| not in the public preview | `world/profile.test.ts` |
+| public preview **carries** the declaration | `world/profile.test.ts` |
 
 ## 12. Deviations and notes
 
@@ -323,8 +424,15 @@ Personas carry no age, so no conflict is possible and no persona-route change wa
 - **Two write-path changes** were made in existing route handlers to satisfy clause 6's
   "rejected at validation time". No new route was added; the field itself rides existing
   profile persistence.
-- **`isMinorAge` is untouched**, as ruled. `isNumericMinorAge` lives in the eligibility
-  module and is used by nothing else.
-- The declaration is **not** consumed by any lane yet. Until romantic-contact slice 3
-  calls `contactParticipantEligibility`, this feature changes no narrated behaviour for
-  anyone — which is the plan's fourth success criterion.
+- **`isMinorAge` is untouched**, as ruled — its fail-open fallback is unchanged.
+  `isNumericMinorAge` lives in the eligibility module and is used by nothing else. Its
+  shared *parser* (`numericAgeText`) did gain the whitelisted "17 years" spelling (§3.1),
+  which can only ever add `ineligible` verdicts.
+- **The contact adapter is still unwired.** Until romantic-contact slice 3 calls
+  `contactParticipantEligibility`, no *contact* decision consumes the declaration.
+- **But the declaration is no longer inert**, which is the one place the plan's fourth
+  success criterion ("no behavior change for `unresolved` participants") had to be read
+  precisely. A declared `minor` changes prompts through `minorFenceApplies` (§8.1) and the
+  declaration is visible on public previews (§9). An `unresolved` participant — every
+  pre-existing record — still behaves exactly as before, so the criterion holds as
+  written; it was never a promise that an author who *opts in* sees nothing happen.

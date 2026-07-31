@@ -171,6 +171,8 @@ interface PhysicalActionOutcome {
   actionId: string;
   status:
     | "committed"
+    // Generic vocabulary only — reserved for a future domain needing per-locus
+    // commitment. The CONTACT adapter never emits it (see slice 3).
     | "partially_committed"
     | "explicit_transition_required"
     | "rejected"
@@ -379,8 +381,12 @@ constraint-only turn contains no instruction to mention a body detail.
 
 - Feed attempted contact through the shared contact resolver before the
   narrator can describe its outcome.
-- Project committed contact, rejection, partial result, or explicit transition
-  requirement as a mandatory action outcome.
+- Project the contact adapter's outcome as a mandatory action outcome. For
+  contact that is exactly four values: **committed**,
+  **explicit_transition_required**, **rejected**, **unresolved**. There is no
+  romantic-contact partial result — `partially_committed` stays in the generic
+  guidance vocabulary only, reserved for a future domain that needs per-locus
+  commitment, and the contact adapter never emits it.
 - Keep pose, support, material-between, clothing access, actor control,
   permission, consent, and adult eligibility in their authoritative owners.
 - Narrator guidance may explain the observable result but cannot turn a
