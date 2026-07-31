@@ -21,6 +21,7 @@ import {
   chatStateSnapshot,
   driftChatState,
   matchOutfitPresetInText,
+  outfitDescriptionRestatesWorn,
   resolveSeededOutfit,
   rhythmOutfitPatch,
   rollbackScenario,
@@ -830,5 +831,29 @@ describe("emotional weather wiring (emotional-weather.plan.md)", () => {
     const state = seedChatState(makeProfile());
     expect(state.feeling).toEqual({ current: null, bruise: null });
     expect(chatStateSnapshot(state, seedChatScenario(makeProfile())).feeling).toEqual({ current: null, bruise: null });
+  });
+});
+
+describe("outfitDescriptionRestatesWorn — a paraphrase is not a wardrobe action", () => {
+  it("recognizes a restatement: every worn name's tokens appear in the description", () => {
+    expect(
+      outfitDescriptionRestatesWorn("a soft cotton work shirt with the sleeves shoved up", ["soft cotton shirt"]),
+    ).toBe(true);
+    expect(
+      outfitDescriptionRestatesWorn("her denim jacket over a white cotton tee", ["denim jacket", "white cotton tee"]),
+    ).toBe(true);
+  });
+
+  it("refuses a genuinely different look", () => {
+    expect(outfitDescriptionRestatesWorn("a red evening dress", ["soft cotton shirt"])).toBe(false);
+  });
+
+  it("refuses a PARTIAL restatement — one uncovered worn garment fails the whole test", () => {
+    expect(outfitDescriptionRestatesWorn("a white cotton tee", ["denim jacket", "white cotton tee"])).toBe(false);
+  });
+
+  it("refuses empty inputs — nothing restates nothing", () => {
+    expect(outfitDescriptionRestatesWorn("", ["soft cotton shirt"])).toBe(false);
+    expect(outfitDescriptionRestatesWorn("a soft cotton shirt", [])).toBe(true);
   });
 });

@@ -566,6 +566,25 @@ export function matchOutfitPresetInText(
   return undefined;
 }
 
+/**
+ * Does this free-text outfit description merely RESTATE the given worn-item
+ * names? True only when EVERY name's word tokens all appear in the description
+ * — "soft cotton shirt" is restated by "a soft cotton work shirt with the
+ * sleeves shoved up", and is not restated by "a red evening dress".
+ *
+ * Pure and deliberately strict: one worn garment the description does not cover
+ * fails the whole test, so a description that actually changes the look still
+ * reaches the replacement path.
+ */
+export function outfitDescriptionRestatesWorn(description: string, wornNames: readonly string[]): boolean {
+  const tokens = new Set(description.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? []);
+  if (tokens.size === 0) return false;
+  return wornNames.every((name) => {
+    const nameTokens = name.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? [];
+    return nameTokens.length > 0 && nameTokens.every((token) => tokens.has(token));
+  });
+}
+
 export function seedChatState(profile: CharacterProfile): ChatState {
   const authored = profile.playerRelationship;
   const live = authoredRecordToLive(authored ?? { familiarity: "strangers", regard: "neutral", kind: "", history: "", presented: undefined, looming: false });
@@ -1627,6 +1646,41 @@ async function foldOutfitProposal(args: {
       // Copied, not aliased: this becomes the chat's mutable worn list, and the preset's
       // array belongs to the library profile (found via the player twin's test).
       return { wornItemIds: [...preset.items], outfitPresetId: preset.id, outfit: "", outfitExposed: false };
+    }
+    // Before the free-text replacement may wipe a STRUCTURED wardrobe, check
+    // whether the description merely RESTATES what is already worn — the
+    // narrator paraphrasing the standing look ("a soft cotton work shirt with
+    // the sleeves shoved up" over a worn "soft cotton shirt"). The store is the
+    // worn truth once this actor is modelled (clothing-state-graph slice 2) and
+    // a paraphrase is not a wardrobe action; demoting the structured list to
+    // prose here was how a dressed body silently became unmodellable — and
+    // therefore untouchable by the contact leg — one settle into a fresh
+    // conversation. STRICT on purpose: the guard holds only for a pure
+    // restatement (no garment deltas, no exposure claim, every worn item's name
+    // restated), so a description that actually changes the look still replaces.
+    if (
+      args.state.wornItemIds.length > 0 &&
+      !proposal.exposed &&
+      proposal.removed.length === 0 &&
+      proposal.added.length === 0
+    ) {
+      const restated = await loadChatWardrobe(args.ownerId, args.state.wornItemIds, args.sink);
+      if (
+        restated.length > 0 &&
+        outfitDescriptionRestatesWorn(
+          proposal.description,
+          restated.map((item) => item.name),
+        )
+      ) {
+        args.sink?.push(
+          diag(
+            "info",
+            "chat_wardrobe.outfit_restatement",
+            "outfit description restates the structured worn list; keeping the modelled wardrobe",
+          ),
+        );
+        return {};
+      }
     }
     // No matching preset — an ad-hoc whole look falls back to free text (ruled).
     return { wornItemIds: [], outfitPresetId: "", outfit: proposal.description, outfitExposed: proposal.exposed };
