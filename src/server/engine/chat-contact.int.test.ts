@@ -1,14 +1,20 @@
 import { and, eq, sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   activeContactsOf,
+  adapterSupported,
   affordanceSubjectId,
   contactCommitEvents,
   DiagnosticCollector,
+  emptyEffectiveCoverageRead,
   emptySceneState,
+  regardBandForValue,
   sceneFacingFact,
   sceneParticipant,
   sceneProximityFact,
+  withSceneContacts,
+  type CommittedContactOutcome,
+  type ContactEventRef,
   type DiagnosticSink,
   type SceneState,
 } from "@/contracts";
@@ -29,21 +35,49 @@ import { codes } from "@/test/diagnostics";
  *   a real jsonb round trip;
  * - a held touch writes no second row: `contact_continued` is the no-op case, and
  *   ten quiet exchanges must stay ONE start;
+ * - **the two halves land in ONE transaction.** An exchange frozen mid-stream —
+ *   the crash window the old two-write leg had — already shows the row AND the
+ *   column, agreeing, before a single token was drained;
  * - "another take" prunes the discarded take's rows and rolls the contact out of
  *   the scene together, so a retake that re-commits the same touch leaves one row
- *   under the SAME event ref rather than two;
- * - `appendChatContactEvents` is idempotent against its own retry — the crash
- *   guarantee, which only a unique index can demonstrate;
+ *   under the SAME event ref rather than two — and the prune is UNCONDITIONAL, so
+ *   an on→off→retake sequence cannot strand the old take's rows under the very
+ *   key the next take writes;
+ * - `appendChatContactEventsWithScene` is idempotent against its own retry AND
+ *   verifies the conflict: a DIFFERENT record under this exchange's keys aborts
+ *   the whole transaction — no rows added, the scene column untouched — which
+ *   only a database can demonstrate;
+ * - the leg ENDS contacts as well as starting them: the player's own release
+ *   (`withdrawn`), a pending story-clock skip (`separated`, owner ruling), and
+ *   walking out of the scene (`scene_changed`);
  * - with `CHAT_CONTACT_ACTIONS` unset the turn is the pre-feature turn: no rows,
  *   a scene that places nobody, and a system prompt byte-identical to the one the
  *   flag-ON take of that same line builds — the leg can commit a durable contact
  *   and still spend zero prompt bytes;
- * - the two silences (a touch nobody walked over for, a romantically framed line)
- *   commit nothing at all while the exchange settles normally, and file exactly
- *   the diagnostics each case is designed to file;
+ * - the silences commit nothing at all while the exchange settles normally, and
+ *   file exactly the diagnostics each case is designed to file — including the
+ *   MATERIAL one: a dressed body nobody enumerated is `unavailable`, not bare;
  * - a corrupt `scene` blob costs no turn and fails CLOSED;
  * - and the dev inspector explains the whole thing read-only: the same outcome, keyed
  *   to the exchange that wrote it, with no row appended and no body moved.
+ *
+ * ## What this fixture WEARS, and why every test says so
+ *
+ * The shared fixture's profile carries NO outfit preset, so `seedChatState` seeds
+ * an empty worn list and `chatContactMaterialSource` answers
+ * `supported(empty coverage)` — the wardrobe's own "nothing is on that shoulder".
+ * Every committing touch below is therefore a genuinely BARE commit under
+ * `CHAT_CONTACT_ACTIONS` alone, which is what lets those tests hold the second
+ * flag off and keep proving flag-off byte-identity.
+ *
+ * A DRESSED body is the other half of the material rule and it is staged
+ * deliberately, in section 11 only: `settleChatExchange({ wornItemIds })` writes
+ * one chat's state row with the seeded cardigan on. With the contact flag alone
+ * that body has no captured coverage read, so the touch resolves `unresolved`
+ * (silence); with `CHAT_PHYSICAL_CONSTRAINTS` on as well, the affordance read
+ * captures the coverage at settle and the NEXT exchange's touch commits with a
+ * real layer between the hand and the skin. Those are the two enablements a
+ * dressed commit is reachable under, and the section runs both.
  *
  * Two mocks, both at seams the sibling chat suites already mock. `./chat-memory`
  * stubs the post-turn archivist legs (`AI_FAKE=1` alone would degrade them and
@@ -85,16 +119,29 @@ vi.mock("./character-chat", async () => {
 
 import { submitChatMessage } from "@/server/engine";
 import { previewChatPhysicalGuidance, previewChatPrompt } from "./chat-pipeline";
-import { loadChatScenario } from "./chat-state";
-import { appendChatContactEvents, listChatContactEvents } from "./chat-contact-events";
-import { chatContactEventRef, planChatContactTurn, CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact-adapter";
+import { applyTimeSkipToScenario, loadChatScenario, saveChatScenario } from "./chat-state";
+import {
+  appendChatContactEventsWithScene,
+  listChatContactEvents,
+  type ChatContactEventRow,
+} from "./chat-contact-events";
+import {
+  chatContactEventRef,
+  endAllChatContacts,
+  planChatContactTurn,
+  CHAT_CONTACT_PLAYER_SUBJECT,
+  type ChatContactMaterialSource,
+} from "./chat-contact-adapter";
 import {
   chatArchivist,
   dropChatFixture,
   emptyChatFixture,
+  GARMENT_SEEDS,
+  itemId,
   newChat,
   probeIntegrationDb,
   seedChatFixture,
+  settleChatExchange,
   type ChatFixture,
   type ChatSeat,
 } from "@/server/test-support";
@@ -109,13 +156,33 @@ let fixture: ChatFixture = emptyChatFixture();
 const move = (): string => `I walk over to ${fixture.characterName}.`;
 /** The one act this whole proof is built on. */
 const touch = (): string => `I rest my hand on ${fixture.characterName}'s shoulder.`;
+/** The player taking their own hand back — the plainest release in English. */
+const RELEASE = "I pull my hand back.";
 /** A line carrying no act at all — the control for every byte-identity comparison. */
 const NEUTRAL = "I ask her how the shop went today.";
+/** A line `detectSceneMovement` reads as leaving the room (and no detector reads as an act). */
+const LEAVE = "I walk out to the garden.";
 
 beforeAll(async () => {
   if (!ready) return;
-  fixture = await seedChatFixture({ slug: "chat-contact-int", userName: "Contact Int" });
+  fixture = await seedChatFixture({
+    slug: "chat-contact-int",
+    userName: "Contact Int",
+    // A LIBRARY row only — no outfit preset names it, so the seeded state wears
+    // nothing and every touch above section 11 is a bare commit. Section 11 puts
+    // it on one chat's state row by hand, which is the only dressed body here.
+    garments: [GARMENT_SEEDS.greyWoolCardigan],
+  });
   mock.archivist = { value: chatArchivist(), degraded: false };
+});
+
+// The flags are process-global and this file drives both. Clearing them between
+// tests is what keeps each one's enablement its OWN statement rather than an
+// inheritance from whichever test ran before it — load-bearing for the
+// byte-identity and material sections, which mean different things under each.
+beforeEach(() => {
+  delete process.env.CHAT_CONTACT_ACTIONS;
+  delete process.env.CHAT_PHYSICAL_CONSTRAINTS;
 });
 
 afterAll(async () => {
@@ -132,10 +199,21 @@ afterAll(async () => {
 const target = () => affordanceSubjectId(fixture.characterId);
 
 /**
+ * The material answer for a body the wardrobe says is wearing NOTHING.
+ *
+ * `ChatContactRosterMember.material` is required and deliberately not defaulted —
+ * a roster assembled without it would answer "bare skin" for every character the
+ * wardrobe never enumerated. This is the explicit form of the answer the live
+ * leg's `chatContactMaterialSource` derives for this fixture, and the store-level
+ * tests below state it rather than inherit it.
+ */
+const bareMaterial = (): ChatContactMaterialSource => adapterSupported(emptyEffectiveCoverageRead());
+
+/**
  * Run one exchange end to end and DRAIN it, which is what settles it: the ledger
- * write lands pre-stream, the scene projection with the settle at the generator's
- * completion. Returns the streamed reply so a test can prove the turn was not
- * lost.
+ * write and the scene projection land together pre-stream, the rest of the
+ * scenario at the generator's completion. Returns the streamed reply so a test
+ * can prove the turn was not lost.
  */
 async function drive(
   chat: ChatSeat,
@@ -228,6 +306,14 @@ async function rewriteLine(messageId: string, content: string): Promise<void> {
   await db().update(characterChatMessages).set({ content }).where(eq(characterChatMessages.id, messageId));
 }
 
+/** The single ledger row this chat holds, or a failure naming what it holds instead. */
+async function soleRow(chatId: string): Promise<ChatContactEventRow> {
+  const rows = await listChatContactEvents(chatId);
+  const row = rows[0];
+  if (!row || rows.length !== 1) throw new Error(`expected exactly one ledger row, got ${rows.length}`);
+  return row;
+}
+
 /** A conversation that has walked over and touched — the arc most proofs start from. */
 async function touchedChat(): Promise<{ chat: ChatSeat; guardMessageId: string }> {
   const chat = await newChat(fixture);
@@ -271,10 +357,7 @@ describe.runIf(ready)("durable events — one touch, one row, one contact", () =
     // Two settled exchanges on a one-minute tick.
     expect(scenario.clockMinutes).toBe(2);
 
-    const rows = await listChatContactEvents(chat.chatId);
-    expect(rows).toHaveLength(1);
-    const row = rows[0];
-    if (!row) throw new Error("no ledger row");
+    const row = await soleRow(chat.chatId);
     expect(row.kind).toBe("contact_started");
     expect(row.guardMessageId).toBe(guardMessageId);
     expect(row.eventRef).toBe(`contact:${guardMessageId}`);
@@ -293,6 +376,9 @@ describe.runIf(ready)("durable events — one touch, one row, one contact", () =
     expect(contact.actionKind).toBe("affectionate");
     expect(contact.startedByEventRef).toBe(row.eventRef);
     expect(contact.startedAt).toBe(scenario.clockMinutes);
+    // Nothing is worn on this fixture, so the wardrobe's own answer is skin —
+    // asserted here so section 11's dressed commit is a visible contrast.
+    expect(contact.materialBetween).toEqual([]);
 
     // The payload carries the commit itself, not a summary of it.
     expect(row.payload).toMatchObject({ kind: "contact_started", contact: { contactId: contact.contactId } });
@@ -318,7 +404,69 @@ describe.runIf(ready)("durable events — one touch, one row, one contact", () =
 });
 
 // ---------------------------------------------------------------------------
-// 2. Snapshot restoration — a retake leaves no duplicates
+// 2. Atomicity — the row and the projection are ONE write
+// ---------------------------------------------------------------------------
+
+/**
+ * The crash window the two-write leg had, closed by construction.
+ *
+ * Before `appendChatContactEventsWithScene`, the rows were appended pre-prompt
+ * while `character_chats.scene` only persisted at settle — so an exchange that
+ * appended and then never settled (a stream failure, a crash, a chat cleared
+ * mid-turn) left a durable row describing a contact the projection had never
+ * heard of. That gap is not narrow enough to test by racing it; what IS testable
+ * is that it no longer exists, because a mid-stream exchange already shows both
+ * halves agreeing.
+ */
+describe.runIf(ready)("the ledger row and the projection land together", () => {
+  it("shows both halves, agreeing, on an exchange frozen mid-stream — and nothing double-applies at settle", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const chat = await newChat(fixture);
+    await say(chat, move());
+
+    // Drive the pipeline directly and pull ONE token, so the exchange is genuinely
+    // mid-stream: the reply has begun and the settle step has NOT run.
+    const inFlight = await submitChatMessage({
+      chatId: chat.chatId,
+      memoryGroupId: chat.memoryGroupId,
+      character: { id: fixture.characterId, name: fixture.characterName, profile: fixture.profile },
+      kind: "send",
+      content: touch(),
+    });
+    if (!inFlight.ok) throw new Error(`exchange rejected: ${inFlight.code}`);
+    expect((await inFlight.stream.next()).done).toBe(false); // mid-stream now
+
+    // The row is already durable…
+    const midRow = await soleRow(chat.chatId);
+    expect(midRow.kind).toBe("contact_started");
+    expect(midRow.guardMessageId).toBe(await playerLineId(chat.chatId, touch()));
+    // …and so is the COLUMN it folds into — same contact, same value, no settle
+    // involved. Read as raw jsonb first, so this is a claim about the column
+    // rather than about the loader's defaulting.
+    const midColumn = await rawScene(chat.chatId);
+    expect(midColumn).not.toBeNull();
+    // The contact id carries the core's own unit separators, so the needle is the
+    // JSON-ESCAPED form — a raw compare would look for bytes no jsonb ever holds.
+    expect(JSON.stringify(midColumn)).toContain(JSON.stringify(midRow.contactId).slice(1, -1));
+    const midContacts = activeContactsOf((await storedScene(chat.chatId)).contacts);
+    expect(midContacts.map((contact) => contact.contactId)).toEqual([midRow.contactId]);
+
+    // Settle. The finalizer re-writes the same column with the same value — a
+    // no-op by construction — and the ledger gains nothing.
+    let drained = "";
+    for await (const chunk of inFlight.stream) drained += chunk;
+    expect(drained.length).toBeGreaterThan(0);
+
+    const settledRow = await soleRow(chat.chatId);
+    expect(settledRow.id).toBe(midRow.id);
+    expect(settledRow.contactId).toBe(midRow.contactId);
+    const settled = activeContactsOf((await storedScene(chat.chatId)).contacts);
+    expect(settled).toEqual(midContacts);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3. Snapshot restoration — a retake leaves no duplicates
 // ---------------------------------------------------------------------------
 
 describe.runIf(ready)("another take restores the snapshot and prunes what it discarded", () => {
@@ -350,50 +498,254 @@ describe.runIf(ready)("another take restores the snapshot and prunes what it dis
     expect(rows[0]?.guardMessageId).toBe(guardMessageId);
     expect(activeContactsOf((await storedScene(chat.chatId)).contacts)).toHaveLength(1);
   });
+
+  /**
+   * The prune is UNCONDITIONAL — outside `CHAT_CONTACT_ACTIONS`, deliberately.
+   *
+   * Gated, this sequence was the leak: the flag going off rolls the projection back
+   * (that is `rollbackScenario`, which the flag never gated) while the discarded
+   * take's rows survive under the very (chat, event ref, sequence) keys the NEXT
+   * take writes. The append's verification would then read them as a real
+   * divergence — a `mismatched` abort on a chat whose only sin was a flag flip.
+   */
+  it("prunes the discarded take's rows even with the flag OFF for the retake", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const { chat, guardMessageId } = await touchedChat();
+    expect(await listChatContactEvents(chat.chatId)).toHaveLength(1);
+    expect(activeContactsOf((await storedScene(chat.chatId)).contacts)).toHaveLength(1);
+
+    delete process.env.CHAT_CONTACT_ACTIONS;
+    expect((await retake(chat)).length).toBeGreaterThan(0);
+
+    // Nothing is left of the take that committed: the rows are gone with the
+    // projection that cached them, not stranded behind a closed flag.
+    expect(await listChatContactEvents(chat.chatId)).toEqual([]);
+    const restored = await storedScene(chat.chatId);
+    expect(activeContactsOf(restored.contacts)).toEqual([]);
+    // The restored scenario is the PRE-exchange one, which is why the approach the
+    // earlier exchange folded is still standing.
+    expect(sceneProximityFact(restored, CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe("close");
+
+    // …and the keys are genuinely free: turning the flag back on and re-committing
+    // the same touch records cleanly rather than colliding with a stale row.
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    expect((await retake(chat)).length).toBeGreaterThan(0);
+    const row = await soleRow(chat.chatId);
+    expect(row.eventRef).toBe(`contact:${guardMessageId}`);
+    expect(row.kind).toBe("contact_started");
+    expect(activeContactsOf((await storedScene(chat.chatId)).contacts)).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// 3. Retry / idempotency (store level)
+// 4. Retry / idempotency / conflict (store level)
 // ---------------------------------------------------------------------------
 
-describe.runIf(ready)("the ledger is idempotent against its own retry", () => {
-  it("a re-sent event inserts nothing and leaves one row set", async () => {
+describe.runIf(ready)("the ledger is idempotent against its own retry, and verifies the conflict", () => {
+  /** A real commit stream for one chat, planned exactly as the leg plans it. */
+  async function plannedTouch(): Promise<{
+    chat: ChatSeat;
+    eventRef: ContactEventRef;
+    commit: CommittedContactOutcome;
+    scene: SceneState;
+  }> {
     const chat = await newChat(fixture);
     const eventRef = chatContactEventRef(chat.messageId);
-    // A real commit stream, planned exactly as the leg plans it.
     const planned = planChatContactTurn({
       scene: emptySceneState(),
       message: `${move()} ${touch()}`,
       narratorInput: false,
-      characters: [{ subjectId: target(), name: fixture.characterName, aliases: [] }],
+      characters: [{ subjectId: target(), name: fixture.characterName, aliases: [], material: bareMaterial() }],
       eventRef,
       storyTime: 7,
     });
     const commit = planned.commit;
     if (commit?.status !== "committed") throw new Error("fixture: the shoulder touch must commit");
+    return { chat, eventRef, commit, scene: withSceneContacts(planned.scene, commit.state) };
+  }
+
+  it("a re-sent event inserts nothing, leaves one row set, and re-lands the same projection", async () => {
+    const { chat, eventRef, commit, scene } = await plannedTouch();
     const input = {
       chatId: chat.chatId,
       guardMessageId: chat.messageId,
       eventRef,
       storyMinute: 7,
       commits: contactCommitEvents(commit),
+      scene,
     };
 
     // The crash-retry guarantee: the second write re-derives the same
-    // (chat, event ref, sequence) keys and lands nowhere.
-    expect(await appendChatContactEvents(input)).toEqual({ inserted: 1 });
-    expect(await appendChatContactEvents(input)).toEqual({ inserted: 0 });
+    // (chat, event ref, sequence) keys and lands nowhere — and `recorded` still
+    // means "every attempted row is durably present AS ATTEMPTED".
+    expect(await appendChatContactEventsWithScene(input)).toEqual({ status: "recorded", inserted: 1 });
+    const afterFirst = await rawScene(chat.chatId);
+    expect(await appendChatContactEventsWithScene(input)).toEqual({ status: "recorded", inserted: 0 });
+    expect(await rawScene(chat.chatId)).toEqual(afterFirst);
+
+    const row = await soleRow(chat.chatId);
+    expect(row.kind).toBe("contact_started");
+    expect(row.sequence).toBe(0);
+    expect(row.contactId).toBe(commit.contact.contactId);
+    expect(activeContactsOf((await storedScene(chat.chatId)).contacts).map((c) => c.contactId)).toEqual([
+      commit.contact.contactId,
+    ]);
+  });
+
+  it("a DIFFERENT record under this exchange's keys aborts the whole write — no rows, no scene", async () => {
+    const { chat, eventRef, commit, scene } = await plannedTouch();
+    const base = { chatId: chat.chatId, guardMessageId: chat.messageId, eventRef, storyMinute: 7 };
+    expect(
+      await appendChatContactEventsWithScene({ ...base, commits: contactCommitEvents(commit), scene }),
+    ).toEqual({ status: "recorded", inserted: 1 });
+    const recorded = await rawScene(chat.chatId);
+
+    // The divergence a stale take leaves: the SAME exchange re-planned with an end
+    // prepended, so sequence 0 now says `contact_ended` where the ledger holds
+    // `contact_started`, and sequence 1 is a key nothing has taken yet.
+    const swept = endAllChatContacts(scene, { reason: "separated", eventRef, storyTime: 8 });
+    expect(swept.commits).toHaveLength(1);
+    const conflicting = await appendChatContactEventsWithScene({
+      ...base,
+      commits: [...swept.commits, ...contactCommitEvents(commit)],
+      scene: swept.scene,
+    });
+
+    // `inserted: 1` is the honest report of what the statement did — and the
+    // transaction then threw, so that row is gone with everything else.
+    expect(conflicting).toEqual({
+      status: "mismatched",
+      inserted: 1,
+      mismatched: [{ eventRef: String(eventRef), sequence: 0 }],
+    });
 
     const rows = await listChatContactEvents(chat.chatId);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.kind).toBe("contact_started");
     expect(rows[0]?.sequence).toBe(0);
-    expect(rows[0]?.contactId).toBe(commit.contact.contactId);
+    // The sequence-1 row that DID insert rolled back with the abort…
+    expect(rows.map((row) => row.sequence)).toEqual([0]);
+    // …and the projection is exactly what the first write left. A caller must not
+    // acknowledge a record it did not make, and nothing here made one.
+    expect(await rawScene(chat.chatId)).toEqual(recorded);
+    expect(activeContactsOf((await storedScene(chat.chatId)).contacts)).toHaveLength(1);
   });
 });
 
 // ---------------------------------------------------------------------------
-// 4. The flag — off is exactly the pre-feature turn
+// 5. Ending a contact
+// ---------------------------------------------------------------------------
+
+/**
+ * A contact is a claim that two surfaces are in contact NOW, so the leg has to be
+ * able to stop claiming it. Three ways, and only the first is something the player
+ * wrote as an act:
+ *
+ * - the player's own RELEASE (`withdrawn`), read by the plan;
+ * - a pending story-clock SKIP (`separated`, owner ruling 2026-07-31 — hours do
+ *   not pass with a hand left resting somewhere), which ends EVERY contact;
+ * - walking out of the scene (`scene_changed`).
+ *
+ * All three persist through the same transactional append, under the ENDING
+ * exchange's own event ref — the ends are that exchange's record, not an
+ * amendment to the one that started the contact.
+ */
+describe.runIf(ready)("the leg ends contacts as well as starting them", () => {
+  /** The ended row this chat's newest exchange wrote, with the start row filtered out. */
+  async function endRow(chatId: string): Promise<{ row: ChatContactEventRow; all: ChatContactEventRow[] }> {
+    const rows = await listChatContactEvents(chatId);
+    const ended = rows.filter((row) => row.kind === "contact_ended");
+    const row = ended[0];
+    if (!row || ended.length !== 1) throw new Error(`expected exactly one contact_ended row, got ${ended.length}`);
+    return { row, all: rows };
+  }
+
+  it("a release ends the contact the player's own hand was making, reason `withdrawn`", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const { chat } = await touchedChat();
+    const started = await soleRow(chat.chatId);
+
+    expect((await say(chat, RELEASE)).length).toBeGreaterThan(0);
+    const releaseGuardId = await playerLineId(chat.chatId, RELEASE);
+
+    const { row, all } = await endRow(chat.chatId);
+    // The start survives — the ledger is append-only, and the end is a SECOND
+    // record rather than a retraction of the first.
+    expect(all.map((entry) => entry.kind)).toEqual(["contact_started", "contact_ended"]);
+    expect(row.contactId).toBe(started.contactId);
+    expect(row.sequence).toBe(0);
+    // Both the ROW and the ended record inside it are keyed to the new exchange.
+    expect(row.guardMessageId).toBe(releaseGuardId);
+    expect(row.eventRef).toBe(`contact:${releaseGuardId}`);
+    expect(row.payload).toMatchObject({
+      kind: "contact_ended",
+      reason: "withdrawn",
+      contact: { endReason: "withdrawn", endedByEventRef: `contact:${releaseGuardId}`, phase: "ended" },
+    });
+
+    // The projection empties with it — and the bodies stay where they were.
+    const scene = await storedScene(chat.chatId);
+    expect(activeContactsOf(scene.contacts)).toEqual([]);
+    expect(sceneProximityFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe("close");
+  });
+
+  it("a pending time skip ends EVERY contact, reason `separated`, on the exchange that sees it", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const { chat } = await touchedChat();
+    const started = await soleRow(chat.chatId);
+
+    // The skip the way the product applies it: the pure scenario fold the
+    // `/api/chats/:chatId/time-skip` route runs, persisted through the same save.
+    // The one-shot `pendingSkipNote` it stamps is the signal the NEXT exchange reads.
+    const scenario = await loadChatScenario(chat.chatId);
+    if (!scenario) throw new Error("scenario missing");
+    const skipped = applyTimeSkipToScenario(scenario, "hours", regardBandForValue(0).id, new Date());
+    expect(skipped.pendingSkipNote.trim().length).toBeGreaterThan(0);
+    await saveChatScenario(chat.chatId, skipped);
+
+    // ANY next exchange sees it — the line itself carries no act at all.
+    expect((await say(chat, NEUTRAL)).length).toBeGreaterThan(0);
+    const skipGuardId = await playerLineId(chat.chatId, NEUTRAL);
+
+    const { row, all } = await endRow(chat.chatId);
+    expect(all.map((entry) => entry.kind)).toEqual(["contact_started", "contact_ended"]);
+    expect(row.contactId).toBe(started.contactId);
+    expect(row.guardMessageId).toBe(skipGuardId);
+    expect(row.eventRef).toBe(`contact:${skipGuardId}`);
+    expect(row.payload).toMatchObject({ kind: "contact_ended", reason: "separated" });
+    // The end is stamped at the POST-skip clock, which is what makes it later than
+    // the contact it ends rather than a time-travelling sweep the core would absorb.
+    expect(row.storyMinute).toBeGreaterThan(started.storyMinute);
+    expect(activeContactsOf((await storedScene(chat.chatId)).contacts)).toEqual([]);
+  });
+
+  it("leaving the scene ends every contact, reason `scene_changed`", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const { chat } = await touchedChat();
+    const started = await soleRow(chat.chatId);
+
+    // The place change is the pipeline's OWN `movedTo` detection over the player
+    // line — the same read that switches the scene memory — so this is triggered
+    // through `submitChatMessage` input, not through an edit route.
+    expect((await say(chat, LEAVE)).length).toBeGreaterThan(0);
+    const leaveGuardId = await playerLineId(chat.chatId, LEAVE);
+
+    const { row, all } = await endRow(chat.chatId);
+    expect(all.map((entry) => entry.kind)).toEqual(["contact_started", "contact_ended"]);
+    expect(row.contactId).toBe(started.contactId);
+    expect(row.guardMessageId).toBe(leaveGuardId);
+    expect(row.eventRef).toBe(`contact:${leaveGuardId}`);
+    expect(row.payload).toMatchObject({ kind: "contact_ended", reason: "scene_changed" });
+    expect(activeContactsOf((await storedScene(chat.chatId)).contacts)).toEqual([]);
+
+    // The scene memory really did move — the end and the place switch read the same signal.
+    const scenario = await loadChatScenario(chat.chatId);
+    expect(scenario?.sceneMemory.current).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. The flag — off is exactly the pre-feature turn
 // ---------------------------------------------------------------------------
 
 describe.runIf(ready)("the flag — off is today, byte for byte", () => {
@@ -411,7 +763,6 @@ describe.runIf(ready)("the flag — off is today, byte for byte", () => {
    * can commit a durable contact and still spend zero prompt bytes.
    */
   it("commits a real contact and STILL builds the byte-identical prompt", async () => {
-    delete process.env.CHAT_CONTACT_ACTIONS;
     const chat = await newChat(fixture);
     // A conversation that has never settled an exchange has no scene at all.
     expect(await rawScene(chat.chatId)).toBeNull();
@@ -438,7 +789,6 @@ describe.runIf(ready)("the flag — off is today, byte for byte", () => {
   });
 
   it("flag ON over a line with no act builds the identical bytes, and still records nothing", async () => {
-    delete process.env.CHAT_CONTACT_ACTIONS;
     const chat = await newChat(fixture);
     await say(chat, move());
     await say(chat, NEUTRAL);
@@ -464,7 +814,7 @@ describe.runIf(ready)("the flag — off is today, byte for byte", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. Silence rules
+// 7. Silence rules
 // ---------------------------------------------------------------------------
 
 describe.runIf(ready)("silence beats a guess", () => {
@@ -505,10 +855,132 @@ describe.runIf(ready)("silence beats a guess", () => {
       expect(await storedScene(chat.chatId)).toEqual(placed);
     }
   });
+
+  /**
+   * The possessed-destination guard, end to end.
+   *
+   * "I walk over to her desk" is an approach to FURNITURE, and the movement
+   * detector's one-token capture cannot see that on its own — the possessive
+   * resolves to the person who owns the thing. Left unguarded, the turn commits a
+   * `close` proximity claim about a body the player walked PAST, and the touch
+   * that follows then lands on that invented distance. This is the regression
+   * that costs a durable row.
+   */
+  it("an approach to her DESK states no distance, so the touch after it commits nothing", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const chat = await newChat(fixture);
+    // `her` resolves to the sole roster member, so the ONLY thing standing between
+    // this line and a `close` proximity claim is the possessive guard.
+    expect((await say(chat, "I walk over to her desk.")).length).toBeGreaterThan(0);
+
+    // Nobody said how far apart these two are — the sole roster member is not made
+    // reachable by the player crossing the room toward her furniture.
+    const afterApproach = await storedScene(chat.chatId);
+    expect(sceneProximityFact(afterApproach, CHAT_CONTACT_PLAYER_SUBJECT, target())).toBeUndefined();
+    expect(afterApproach.proximity).toEqual([]);
+    expect(afterApproach.participants).toHaveLength(2);
+
+    const turn = await sayWithDiagnostics(chat, touch());
+    expect(turn.reply.length).toBeGreaterThan(0);
+    // The touch is UNREACHABLE, so it resolves `unresolved` and records nothing.
+    expect(turn.codes).toContain("contact.pose_unavailable");
+    expect(await listChatContactEvents(chat.chatId)).toEqual([]);
+    const scene = await storedScene(chat.chatId);
+    expect(activeContactsOf(scene.contacts)).toEqual([]);
+    expect(sceneProximityFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, target())).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
-// 6. Degradation
+// 8. Material honesty
+// ---------------------------------------------------------------------------
+
+/**
+ * The correction the material source exists for (`chatContactMaterialSource`).
+ *
+ * The chat lane has three wardrobe situations and only ONE of them is bare:
+ * a captured effective-coverage read (the answer), a body dressed in clothes
+ * nothing enumerated (**unavailable** — silence), and a wardrobe that says
+ * nothing is worn (`[]`, genuinely skin). Reading the second as the third made
+ * "we never staged a wardrobe" indistinguishable from "she is bare", and a
+ * committed contact then told the narrator it had skin under its hand.
+ *
+ * Both halves need a DRESSED body, which is the one thing this fixture does not
+ * seed by default — the cardigan goes on one chat's state row here and nowhere
+ * else. Which half you get is decided by the enablement, and that is the honest
+ * shape of the feature rather than a test convenience: the coverage capture is
+ * written by the affordance read, which only runs under `CHAT_AFFORDANCE_CUES`
+ * or `CHAT_PHYSICAL_CONSTRAINTS`.
+ */
+describe.runIf(ready)("a dressed body nobody enumerated is unavailable, not bare", () => {
+  /** A conversation whose character is wearing the seeded cardigan (which covers shoulders). */
+  async function dressedChat(): Promise<ChatSeat> {
+    const chat = await newChat(fixture);
+    // One settled exchange that puts the garment on the state row — and, through
+    // the finalizer's own reconcile, materializes the garment store for this actor.
+    await settleChatExchange(fixture, { chat, wornItemIds: [itemId(fixture, "greyWoolCardigan")] });
+    return chat;
+  }
+
+  it("the contact flag ALONE: a dressed shoulder resolves unresolved with the material diagnostic", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const chat = await dressedChat();
+    await say(chat, move());
+    // Reachable — the approach landed — so this is not the out-of-reach silence.
+    const placed = await storedScene(chat.chatId);
+    expect(sceneProximityFact(placed, CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe("close");
+
+    // The premise, stated rather than assumed: this conversation holds NO captured
+    // coverage read for anyone. The capture is the affordance read's, and the
+    // affordance read needs `CHAT_AFFORDANCE_CUES` or `CHAT_PHYSICAL_CONSTRAINTS`.
+    const staged = await loadChatScenario(chat.chatId);
+    expect(Object.keys(staged?.garments.coverage ?? {})).toEqual([]);
+
+    const turn = await sayWithDiagnostics(chat, touch());
+    expect(turn.reply.length).toBeGreaterThan(0);
+
+    // So nothing in this conversation can say what is on that shoulder — and the
+    // resolver answers silence rather than "skin".
+    expect(turn.codes).toContain("contact.material_unavailable");
+    expect(turn.codes).not.toContain("contact.pose_unavailable");
+    expect(await listChatContactEvents(chat.chatId)).toEqual([]);
+    expect(activeContactsOf((await storedScene(chat.chatId)).contacts)).toEqual([]);
+  });
+
+  it("with CHAT_PHYSICAL_CONSTRAINTS on, the captured coverage answers — and the contact carries the cloth", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    const chat = await dressedChat();
+
+    // The affordance read runs under this flag, and its effective-coverage read is
+    // CAPTURED with the presentation cut at settle — so the movement exchange is
+    // what puts an answer in `scenario.garments.coverage`.
+    await say(chat, move());
+    const staged = await loadChatScenario(chat.chatId);
+    expect(Object.keys(staged?.garments.coverage ?? {})).toHaveLength(1);
+
+    const turn = await sayWithDiagnostics(chat, touch());
+    expect(turn.reply.length).toBeGreaterThan(0);
+    expect(turn.codes).not.toContain("contact.material_unavailable");
+
+    const row = await soleRow(chat.chatId);
+    expect(row.kind).toBe("contact_started");
+    const active = activeContactsOf((await storedScene(chat.chatId)).contacts);
+    expect(active).toHaveLength(1);
+    const contact = active[0];
+    if (!contact) throw new Error("no active contact");
+    expect(contact.contactId).toBe(row.contactId);
+    // The whole point: the hand landed on a SLEEVE, and the committed record says so
+    // rather than claiming skin. (`any_material` — an affectionate hand is happy to
+    // land on cloth; demanding bare skin would be the anti-cheat firing on the wrong
+    // side.)
+    expect(contact.materialBetween.length).toBeGreaterThan(0);
+    expect(contact.materialBetween[0]?.tactileTransmission).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9. Degradation
 // ---------------------------------------------------------------------------
 
 describe.runIf(ready)("a corrupt scene blob costs no turn, and fails closed", () => {
@@ -537,7 +1009,7 @@ describe.runIf(ready)("a corrupt scene blob costs no turn, and fails closed", ()
 });
 
 // ---------------------------------------------------------------------------
-// 7. The dev inspector
+// 10. The dev inspector
 // ---------------------------------------------------------------------------
 
 /**
@@ -546,7 +1018,7 @@ describe.runIf(ready)("a corrupt scene blob costs no turn, and fails closed", ()
  *
  * The preview path used to skip the contact leg outright, which left the one surface
  * built to answer "why did this turn say that" unable to answer it for a contact turn
- * — and forced the byte-identity proof in section 4 to capture the LIVE system prompt
+ * — and forced the byte-identity proof in section 6 to capture the LIVE system prompt
  * through a module mock. It runs the leg now, and these are the claims that buys:
  *
  * - the inspector shows the outcome a live turn carries, keyed to the exchange that
@@ -610,7 +1082,7 @@ describe.runIf(ready)("the inspector shows the leg, and writes nothing", () => {
     expect(await previewedPrompt(chat)).not.toContain(committedSentence());
 
     // And with the guidance block off, the contact flag costs nothing at all: the same
-    // flag-off byte-identity section 4 proves against the live prompt, provable here
+    // flag-off byte-identity section 6 proves against the live prompt, provable here
     // from the preview — which is what the preview could not do before the leg was
     // threaded through it.
     delete process.env.CHAT_PHYSICAL_CONSTRAINTS;
