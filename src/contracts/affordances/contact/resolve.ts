@@ -1,5 +1,10 @@
 import { diag, type DiagnosticSink } from "../../diagnostics";
-import { isAdapterSupported, mergeAffordanceEvidence, type AffordanceEvidence } from "../core";
+import {
+  isAdapterSupported,
+  mergeAffordanceEvidence,
+  type AffordanceEvidence,
+  type AffordanceSubjectId,
+} from "../core";
 import {
   CONTACT_ACTION_INVALID,
   CONTACT_ACTOR_CONTROL_UNAVAILABLE,
@@ -18,6 +23,7 @@ import {
   contactActionRequiresPermission,
   type ContactActionRequirement,
   type ContactAdjustmentBlockCode,
+  type ContactAdjustmentProposal,
   type ContactMinimalPoseAdjustment,
   type ContactRejectionReason,
   type ContactUnresolvedReason,
@@ -54,12 +60,14 @@ import type {
  *
  * ## Check order, and why it is this order
  *
- * 1. **Structure.** A surface naming a location the body tree does not know, or
- *    a contact of a surface with itself, is an adapter bug — nothing further is
+ * 1. **Structure.** A surface naming a location the body tree does not know, a
+ *    contact of a surface with itself, or an acting surface that belongs to
+ *    somebody other than the actor, is an adapter bug — nothing further is
  *    meaningful.
- * 2. **Who may move.** Actor control, then the target's own agency. This runs
- *    before permission because "the player wrote the NPC's movement" is not a
- *    question about consent; it is a question about whose story it is.
+ * 2. **Who may move.** Actor control, then the OWN agency of every other body
+ *    the action proposes to move. This runs before permission because "the
+ *    player wrote the NPC's movement" is not a question about consent; it is a
+ *    question about whose story it is.
  * 3. **Who may be touched.** Adult eligibility, then interaction permission.
  *    Before geometry, deliberately: a refusal here must not depend on whether an
  *    unowned pose read happened to be available, or the same denied attempt
@@ -129,6 +137,13 @@ function requireTransition(input: {
 function intentStructureProblem(intent: ContactActionIntent): string | undefined {
   if (intent.actionId.trim().length === 0) return "actionId is blank";
   if (!Number.isInteger(intent.storyTime) || intent.storyTime < 0) return "storyTime is not a story minute";
+  // The acting surface must belong to the acting body. Without this, a control
+  // decision that legitimately says "this principal may move A" authorizes an
+  // attempt whose acting surface is B's — the whole gate answered about the
+  // wrong body, and every check after it inherits the substitution.
+  if (intent.source.subjectId !== intent.actorId) {
+    return "the acting surface belongs to a subject other than the actor";
+  }
   if (!isKnownContactBodyLocation(intent.source.locationId)) {
     return `source location "${intent.source.locationId}" is not in the body registry`;
   }
@@ -137,6 +152,26 @@ function intentStructureProblem(intent: ContactActionIntent): string | undefined
   }
   if (contactSurfacesEqual(intent.source, intent.target)) return "source and target are the same surface";
   return undefined;
+}
+
+/**
+ * Every body other than the actor that an adjustment proposes to move, in first
+ * proposal order.
+ *
+ * First-proposal order rather than sorted: the order is only used to make the
+ * evidence trail and the chosen refusal deterministic, and the caller's own
+ * order is the one a debug pass can follow back to the proposal list.
+ */
+function movedNonActorSubjects(
+  adjustments: readonly ContactAdjustmentProposal[],
+  actorId: AffordanceSubjectId,
+): readonly AffordanceSubjectId[] {
+  const subjects: AffordanceSubjectId[] = [];
+  for (const proposal of adjustments) {
+    if (proposal.subjectId === actorId || subjects.includes(proposal.subjectId)) continue;
+    subjects.push(proposal.subjectId);
+  }
+  return subjects;
 }
 
 export function resolveContactAttempt(request: ContactResolveRequest): ContactResolution {
@@ -176,25 +211,46 @@ export function resolveContactAttempt(request: ContactResolveRequest): ContactRe
       break;
   }
 
-  // A movement on anyone but the actor needs that body's own behaviour authority.
-  const foreignAdjustment = context.adjustments.some((proposal) => proposal.subjectId !== intent.actorId);
-  if (foreignAdjustment) {
-    evidence.push(context.targetAgency.evidence);
-    switch (context.targetAgency.status) {
-      case "denied":
-        return reject("target_agency_denied", evidence);
-      case "unresolved":
-      case "not_required":
-        sink?.push(
-          diag(
-            "warn",
-            CONTACT_TARGET_AGENCY_UNAVAILABLE,
-            "a voluntary movement on the target's body has no behaviour authority",
-          ),
-        );
-        return reject("target_agency_unresolved", evidence);
-      case "allowed":
-        break;
+  // An adjustment may only move a body this contact actually involves. A
+  // proposal naming anyone else is not a story fact to refuse — it is a context
+  // built for a different action, and nothing in it can be trusted.
+  const participants = contactParticipantIds(intent.source, intent.target);
+  const outsider = context.adjustments.find((proposal) => !participants.includes(proposal.subjectId));
+  if (outsider !== undefined) {
+    return unresolved("action_invalid", evidence, {
+      sink,
+      code: CONTACT_ACTION_INVALID,
+      message: `adjustment "${outsider.id}" moves a subject who is not part of this contact`,
+      severity: "error",
+    });
+  }
+
+  // A movement on anyone but the actor needs THAT body's own behaviour
+  // authority — one per moved body, matched by identity. A decision about one
+  // character can never be spent on a movement of another.
+  const movedSubjects = movedNonActorSubjects(context.adjustments, intent.actorId);
+  if (movedSubjects.length > 0) {
+    const decisions = movedSubjects.map((subjectId) =>
+      context.targetAgencies.find((decision) => decision.targetId === subjectId),
+    );
+    for (const decision of decisions) {
+      if (decision !== undefined) evidence.push(decision.evidence);
+    }
+    // A definite refusal outranks a missing answer: "she would not move" is a
+    // beat the narrator can carry, and reporting it as unreadable would throw
+    // that away because some OTHER body's owner happened to stay silent.
+    if (decisions.some((decision) => decision?.status === "denied")) {
+      return reject("target_agency_denied", evidence);
+    }
+    if (decisions.some((decision) => decision?.status !== "allowed")) {
+      sink?.push(
+        diag(
+          "warn",
+          CONTACT_TARGET_AGENCY_UNAVAILABLE,
+          "a voluntary movement has no behaviour authority for every body it moves",
+        ),
+      );
+      return reject("target_agency_unresolved", evidence);
     }
   }
 
@@ -203,7 +259,6 @@ export function resolveContactAttempt(request: ContactResolveRequest): ContactRe
 
   if (interpersonal && contactActionRequiresAdultEligibility(intent.actionKind)) {
     evidence.push(context.participantEligibility.evidence);
-    const participants = contactParticipantIds(intent.source, intent.target);
     const covered = participants.every((id) => context.participantEligibility.participantIds.includes(id));
     if (context.participantEligibility.status === "ineligible") {
       return reject("participant_ineligible", evidence);

@@ -75,8 +75,9 @@ export function probeControl(
 
 export function probeAgency(
   status: ContactTargetAgencyDecision["status"] = "not_required",
+  targetId: AffordanceSubjectId = PROBE_TARGET,
 ): ContactTargetAgencyDecision {
-  return { status, targetId: PROBE_TARGET, evidence: [] };
+  return { status, targetId, evidence: [affordanceEvidence("adapter", `probe.agency.${targetId}`, status)] };
 }
 
 export function probeEligibility(
@@ -156,7 +157,7 @@ export function probeAdjustment(
 export function probeContext(overrides: Partial<ContactActionContext> = {}): ContactActionContext {
   return {
     actorControl: probeControl(),
-    targetAgency: probeAgency(),
+    targetAgencies: [],
     participantEligibility: probeEligibility(),
     policy: probePolicy(),
     geometry: adapterSupported(probeGeometry()),

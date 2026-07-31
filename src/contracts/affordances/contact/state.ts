@@ -2,18 +2,32 @@ import { z } from "zod";
 import { diag, type DiagnosticSink } from "../../diagnostics";
 import { parseOr } from "@/lib/parse";
 import { affordanceSubjectIdSchema, unitIntervalSchema } from "../core";
-import { CONTACT_LIFECYCLE_INVALID } from "./diagnostics";
+import { CONTACT_LIFECYCLE_INVALID, CONTACT_STATE_RECOMPUTED } from "./diagnostics";
 import {
+  CONTACT_ACTION_SCOPE,
   contactActionKindSchema,
+  contactActionRequiresAdultEligibility,
+  contactActionRequiresPermission,
   contactAdjustmentKindSchema,
   contactControlStatusSchema,
   contactEligibilityStatusSchema,
   contactPolicyScopeSchema,
   contactPolicyStatusSchema,
 } from "./decisions";
-import { contactEventRefSchema, contactIdSchema } from "./identity";
-import { contactEvidenceSchema, contactMaterialLayerReadSchema } from "./material";
-import { contactSurfaceRefSchema, contactBodySurfaceRefSchema } from "./surfaces";
+import { contactEventRefSchema, contactIdMatchesDerivation, contactIdSchema } from "./identity";
+import {
+  composeContactMaterial,
+  contactEvidenceSchema,
+  contactMaterialLayerReadSchema,
+  type ContactMaterialTransmissionRead,
+} from "./material";
+import {
+  contactPairKey,
+  contactParticipantIds,
+  contactSurfaceRefSchema,
+  contactBodySurfaceRefSchema,
+  isInterpersonalContact,
+} from "./surfaces";
 import {
   CONTACT_LIFECYCLE_MAX_ACTIVE,
   CONTACT_LIFECYCLE_STATE_VERSION,
@@ -50,6 +64,25 @@ import {
  *
  * So: item-lenient, drop the unreadable, report every drop, and never fail the
  * whole blob over one bad row.
+ *
+ * ## Why field shapes are not enough
+ *
+ * A stored projection is DERIVED data that left this process, and everything
+ * that comes back through here is untrusted — a hand-edited JSONB column, a row
+ * written by an older release, a blob a branch restore carried across. Every
+ * field below can be individually well-formed while the record as a whole claims
+ * something no gate ever allowed: a pair key that names other surfaces than the
+ * ones stored beside it, a contact id that was never derived from this pair, an
+ * acting surface belonging to somebody the actor-control decision never covered,
+ * a transmission that reports bare skin while the layers beside it say a covering
+ * is in the way. `storedContactProblem` checks the RELATIONSHIPS, and a row that
+ * fails one is dropped exactly like a row that failed its schema — the
+ * conservative answer for a contact is that there is no contact.
+ *
+ * The one exception is `transmission`, which is recomputed rather than rejected:
+ * it is derived from `materialBetween`, and re-deriving it can only narrow what
+ * the blob claimed. Every other field is a claim in its own right, and repairing
+ * one would be inventing the thing the plan says may never be invented.
  */
 
 const evidenceListSchema = z.array(contactEvidenceSchema).max(64).readonly();
@@ -131,25 +164,110 @@ export const committedContactReadSchema: z.ZodType<CommittedContactRead> = z.obj
   evidence: evidenceListSchema,
 });
 
+/**
+ * The outer blob. `version` is read as `unknown` ON PURPOSE.
+ *
+ * A `.catch(CURRENT)` here would take a malformed version — a string, a null, a
+ * missing key — and hand back the number this build happens to write, so the
+ * blob would then be read as though a writer of this exact release had produced
+ * it. That is the opposite of the stated rule: an unreadable version means
+ * nothing else in the blob can be interpreted, and the only safe answer is the
+ * empty projection.
+ */
 const rawStateSchema = z.object({
-  version: z.number().int().catch(CONTACT_LIFECYCLE_STATE_VERSION),
+  version: z.unknown(),
   contacts: z.array(z.unknown()).catch([]).default([]),
 });
+
+/** The physical half of a transmission read — everything but its provenance. */
+function transmissionsAgree(
+  left: ContactMaterialTransmissionRead,
+  right: ContactMaterialTransmissionRead,
+): boolean {
+  return (
+    left.directSkinContact === right.directSkinContact &&
+    left.visibleThrough === right.visibleThrough &&
+    left.tactileTransmission === right.tactileTransmission &&
+    left.shapeTransmission === right.shapeTransmission &&
+    left.thermalTransmission === right.thermalTransmission &&
+    left.moistureTransmission === right.moistureTransmission &&
+    left.scentTransmission === right.scentTransmission &&
+    left.layerIds.length === right.layerIds.length &&
+    left.layerIds.every((layerId, index) => layerId === right.layerIds[index])
+  );
+}
+
+/**
+ * Every relationship between fields that a per-field schema cannot see.
+ *
+ * Returns the first failure as a short structured reason — never prose for a
+ * user, and never a repair. Order runs identity first (is this even the contact
+ * it says it is), then authority (was the acting body the one the decision
+ * covered), then the authorization the action kind demands.
+ */
+function storedContactProblem(contact: CommittedContactRead): string | undefined {
+  const pairKey = contactPairKey(contact.source, contact.target);
+  if (pairKey !== contact.pairKey) return "pair_key_mismatch";
+  if (!contactIdMatchesDerivation(contact.contactId, { pairKey, startedByEventRef: contact.startedByEventRef })) {
+    return "contact_id_not_derived";
+  }
+  if (contact.source.subjectId !== contact.actorId) return "source_is_not_the_actor";
+  if (contact.actorControl.actorId !== contact.actorId) return "actor_control_names_another_subject";
+  if (contact.actorControl.status !== "allowed") return "actor_control_did_not_allow";
+  if (contact.lastUpdatedAt < contact.startedAt) return "last_updated_precedes_start";
+
+  if (!isInterpersonalContact(contact.source, contact.target)) return undefined;
+  const participants = contactParticipantIds(contact.source, contact.target);
+
+  if (contactActionRequiresAdultEligibility(contact.actionKind)) {
+    const covered = participants.every((id) => contact.participantEligibility.participantIds.includes(id));
+    if (contact.participantEligibility.status !== "eligible" || !covered) return "eligibility_does_not_cover";
+  }
+  if (contactActionRequiresPermission(contact.actionKind)) {
+    if (contact.policy.status !== "allowed") return "permission_does_not_allow";
+    if (!contact.policy.scopes.includes(CONTACT_ACTION_SCOPE[contact.actionKind])) return "permission_scope_missing";
+  }
+  return undefined;
+}
+
+/**
+ * Re-derive the composed transmission from the stored layers.
+ *
+ * The layers are the physical claim and the composition is a function of them,
+ * so a stored composition that disagrees is either a stale write or a tampered
+ * one — and in both cases the layers win. Recomputation can only ever narrow the
+ * claim (a stack of layers can never compose to bare skin), which is why this
+ * one field is healed instead of dropped.
+ */
+function withRecomposedTransmission(contact: CommittedContactRead, sink?: DiagnosticSink): CommittedContactRead {
+  const recomposed = composeContactMaterial(contact.materialBetween);
+  if (transmissionsAgree(recomposed, contact.transmission)) return contact;
+  sink?.push(
+    diag("warn", CONTACT_STATE_RECOMPUTED, "a stored contact's transmission disagreed with its own layers", {
+      context: {
+        contactId: contact.contactId,
+        storedDirectSkinContact: contact.transmission.directSkinContact,
+        layers: contact.materialBetween.length,
+      },
+    }),
+  );
+  return { ...contact, transmission: recomposed };
+}
 
 /**
  * Parse stored lifecycle state, dropping what cannot be read.
  *
  * A blob that is not even an object degrades to the empty projection — nothing
  * is touching, which is the answer that can never be wrong in a harmful
- * direction. A future `version` also degrades to empty rather than being read
- * optimistically: a newer writer may have meant something this reader would
- * misinterpret, and a missing contact is always safer than a misread one.
+ * direction. A malformed or future `version` degrades the same way rather than
+ * being read optimistically: a newer writer may have meant something this reader
+ * would misinterpret, and a missing contact is always safer than a misread one.
  */
 export function parseContactLifecycleState(raw: unknown, sink?: DiagnosticSink): ContactLifecycleState {
   const outer = parseOr(rawStateSchema, raw, { version: CONTACT_LIFECYCLE_STATE_VERSION, contacts: [] }, sink);
   if (outer.version !== CONTACT_LIFECYCLE_STATE_VERSION) {
     sink?.push(
-      diag("warn", CONTACT_LIFECYCLE_INVALID, "stored contact state is a version this build cannot read", {
+      diag("warn", CONTACT_LIFECYCLE_INVALID, "stored contact state carries no version this build can read", {
         context: { version: outer.version, expected: CONTACT_LIFECYCLE_STATE_VERSION },
       }),
     );
@@ -157,21 +275,30 @@ export function parseContactLifecycleState(raw: unknown, sink?: DiagnosticSink):
   }
 
   const contacts: CommittedContactRead[] = [];
-  let dropped = 0;
+  const problems: string[] = [];
   const seenPairs = new Set<string>();
   for (const entry of outer.contacts.slice(0, CONTACT_LIFECYCLE_MAX_ACTIVE)) {
     const parsed = committedContactReadSchema.safeParse(entry);
-    if (!parsed.success || seenPairs.has(parsed.data.pairKey)) {
-      dropped += 1;
+    if (!parsed.success) {
+      problems.push("unreadable");
+      continue;
+    }
+    if (seenPairs.has(parsed.data.pairKey)) {
+      problems.push("duplicate_pair");
+      continue;
+    }
+    const problem = storedContactProblem(parsed.data);
+    if (problem !== undefined) {
+      problems.push(problem);
       continue;
     }
     seenPairs.add(parsed.data.pairKey);
-    contacts.push(parsed.data);
+    contacts.push(withRecomposedTransmission(parsed.data, sink));
   }
-  if (dropped > 0) {
+  if (problems.length > 0) {
     sink?.push(
-      diag("error", CONTACT_LIFECYCLE_INVALID, "stored contact entries were unreadable and were dropped", {
-        context: { dropped },
+      diag("error", CONTACT_LIFECYCLE_INVALID, "stored contact entries were unusable and were dropped", {
+        context: { dropped: problems.length, problems },
       }),
     );
   }

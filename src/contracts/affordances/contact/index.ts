@@ -47,4 +47,5 @@ export * from "./types";
 export * from "./diagnostics";
 export * from "./resolve";
 export * from "./lifecycle";
+export * from "./outcome";
 export * from "./state";

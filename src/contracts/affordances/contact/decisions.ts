@@ -119,17 +119,26 @@ export const contactAgencyStatusSchema = z.enum(contactAgencyStatuses);
 export type ContactAgencyStatus = z.infer<typeof contactAgencyStatusSchema>;
 
 /**
- * Proof that the TARGET's own behaviour authority committed a voluntary
+ * Proof that ONE named body's own behaviour authority committed a voluntary
  * adjustment on their side. Separate from actor control because being touched is
  * not the same as moving: an attempt may be entirely within the actor's control
- * and still need the target to shift a foot, and only the target's owner may
- * decide that they do.
+ * and still need the other body to shift, and only that body's owner may decide
+ * that it does.
  *
- * `not_required` is the ordinary case — nothing about the target moves.
+ * `targetId` is REQUIRED, and it is the key: the resolver matches every moved
+ * non-actor participant against the decision naming that participant. An
+ * optional identity let one answer about one character be spent on a movement of
+ * another, which is the whole failure this field exists to prevent — so the
+ * context carries a LIST of these, one per moved body, not a single decision
+ * loosely associated with "the target".
+ *
+ * `not_required` is the ordinary case for a body nothing asked to move, and it
+ * is NOT a grant: a decision that says `not_required` while an adjustment moves
+ * that same body is a contradiction, and the resolver treats it as no answer.
  */
 export interface ContactTargetAgencyDecision {
   readonly status: ContactAgencyStatus;
-  readonly targetId?: AffordanceSubjectId;
+  readonly targetId: AffordanceSubjectId;
   readonly evidence: readonly AffordanceEvidence[];
 }
 

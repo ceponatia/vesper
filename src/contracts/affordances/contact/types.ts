@@ -157,7 +157,15 @@ export interface ContactMaterialRead {
  */
 export interface ContactActionContext {
   readonly actorControl: ContactActorControlDecision;
-  readonly targetAgency: ContactTargetAgencyDecision;
+  /**
+   * One decision PER BODY the action proposes to move, keyed by `targetId`.
+   *
+   * A list rather than a single decision because coverage is per participant:
+   * every non-actor body an adjustment moves must have its OWN authority's
+   * answer, and one answer may never be spent on a movement of somebody else.
+   * Empty is the ordinary case — nothing but the actor moves.
+   */
+  readonly targetAgencies: readonly ContactTargetAgencyDecision[];
   readonly participantEligibility: ContactParticipantEligibilityRead;
   readonly policy: ContactInteractionPolicyRead;
   readonly geometry: AdapterRead<ContactGeometryRead>;
@@ -209,16 +217,17 @@ export interface ContactAccessResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Four statuses, aligned 1:1 with the narrator seam's `PhysicalActionStatus`
- * (`guidance/types.ts`) so slice 3 projects a resolution without translating it.
- * The alignment is pinned by a test rather than by this comment.
- *
- * `committable` keeps the spec's name over the seam's `committed`: a resolution
- * is a decision, and the commitment is a separate act by the lifecycle. Losing
+ * Four statuses. `committable` keeps the spec's name over the narrator seam's
+ * `committed`: a resolution is a PRE-COMMIT decision, and the commitment is a
+ * separate act by the lifecycle followed by a durable write by the lane. Losing
  * that distinction is the exact failure the three-type boundary exists to
- * prevent. `partially_committed` has no producer here and is not modelled —
- * a path that commits at some loci and not others is slice 2's problem, and
- * inventing the shape now would be an untested guess at its semantics.
+ * prevent, so there is deliberately NO constant here mapping `committable`
+ * straight onto the seam's `committed` — `outcome.ts` does that translation and
+ * demands a post-persistence acknowledgment before it will say `committed`.
+ *
+ * `partially_committed` has no producer here and is not modelled — a path that
+ * commits at some loci and not others is a later slice's problem, and inventing
+ * the shape now would be an untested guess at its semantics.
  */
 export const contactResolutionStatuses = [
   "committable",
@@ -227,14 +236,6 @@ export const contactResolutionStatuses = [
   "unresolved",
 ] as const;
 export type ContactResolutionStatus = (typeof contactResolutionStatuses)[number];
-
-/** Resolution status → the guidance seam's `PhysicalActionStatus` string. */
-export const CONTACT_RESOLUTION_ACTION_STATUS: Readonly<Record<ContactResolutionStatus, string>> = {
-  committable: "committed",
-  explicit_transition_required: "explicit_transition_required",
-  rejected: "rejected",
-  unresolved: "unresolved",
-};
 
 export type ContactResolution =
   | {
@@ -287,7 +288,11 @@ export function isCommittableContactResolution(
  * could be true.
  *
  * The three decisions are carried rather than dropped so the committed record can
- * prove, later and out of context, WHY it was allowed to exist.
+ * prove, later and out of context, WHY it was allowed to exist. All three are
+ * START IDENTITY like the orientation beside them: they justify the contact that
+ * began, and a later assertion — possibly from the other side — cannot rewrite
+ * them. Authorization that changes AFTER a contact is live is not an update; it
+ * ends the contact (`endUnauthorizedContacts`) or blocks the next attempt.
  */
 export interface CommittedContactRead {
   readonly phase: "active";
@@ -298,6 +303,11 @@ export interface CommittedContactRead {
   readonly lastUpdatedByEventRef: ContactEventRef;
   readonly startedAt: AffordanceStoryTime;
   readonly lastUpdatedAt: AffordanceStoryTime;
+  /**
+   * Who initiated. Immutable: `actorId`, `actionKind`, `source`, and `target`
+   * are the contact's identity, and `source.subjectId` always equals `actorId`
+   * (a body cannot act with somebody else's surface).
+   */
   readonly actorId: AffordanceSubjectId;
   readonly actionKind: ContactActionKind;
   /** Orientation, fixed at start: which side acted. Never patched. */
@@ -338,10 +348,30 @@ export interface EndedContactRecord extends Omit<CommittedContactRead, "phase"> 
   readonly endReason: ContactEndReason;
 }
 
-/** The fields an update may change. Surfaces, actor, and kind are identity. */
-export type CommittedContactUpdate = Partial<
-  Pick<CommittedContactRead, "pressure" | "contactArea" | "motion" | "materialBetween" | "implicitAdjustments">
->;
+/**
+ * Everything an update may change, stated IN FULL.
+ *
+ * A snapshot rather than a partial patch, and every optional value is an
+ * explicit `null` rather than an absent key, because a patch cannot express
+ * removal: a contact whose pressure or motion stopped being stated emitted an
+ * event that simply omitted the field, so replaying the stream kept the value
+ * the projection had already dropped. The returned projection was right and the
+ * durable record was wrong — the worst of the two to get wrong.
+ *
+ * `transmission` rides along even though it is derived from `materialBetween`,
+ * so a fold is a pure replacement and never has to recompute mid-replay. The
+ * store still recomputes it on READ (`state.ts`), which is where a stale or
+ * tampered composition would otherwise buy a claim the layers do not support.
+ */
+export interface CommittedContactSnapshot {
+  readonly pressure: ContactPressureBand | null;
+  readonly contactArea: ContactAreaBand | null;
+  readonly motion: CommittedContactMotionRead | null;
+  readonly materialBetween: readonly ContactMaterialLayerRead[];
+  readonly transmission: ContactMaterialTransmissionRead;
+  readonly implicitAdjustments: readonly ContactMinimalPoseAdjustment[];
+  readonly evidence: readonly AffordanceEvidence[];
+}
 
 /**
  * What happened to the projection.
@@ -350,6 +380,11 @@ export type CommittedContactUpdate = Partial<
  * case in prose only. Making it a case is what lets "an unchanged sustained
  * contact keeps its id without a duplicate start event" be asserted by a test
  * instead of inferred from the absence of one.
+ *
+ * A fold (`applyContactCommit`) rebuilds the projection from the DURABLE fields
+ * only — id, event ref, story time, snapshot. `contact` rides on the start and
+ * update cases for the caller's convenience and is never read by the fold, so a
+ * lane that persists only the durable fields still replays exactly.
  */
 export type ContactLifecycleCommit =
   | { readonly kind: "contact_started"; readonly contact: CommittedContactRead }
@@ -357,7 +392,7 @@ export type ContactLifecycleCommit =
       readonly kind: "contact_updated";
       readonly contactId: ContactId;
       readonly eventRef: ContactEventRef;
-      readonly patch: CommittedContactUpdate;
+      readonly snapshot: CommittedContactSnapshot;
       readonly storyTime: AffordanceStoryTime;
       readonly contact: CommittedContactRead;
     }

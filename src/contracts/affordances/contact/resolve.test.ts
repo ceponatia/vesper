@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector, type Diagnostic } from "../../diagnostics";
 import { adapterInvalid, adapterSupported, adapterUnavailable, affordanceSubjectId } from "../core";
-import { physicalActionStatuses } from "../guidance";
 import {
   CONTACT_ACTION_INVALID,
   CONTACT_ACTOR_CONTROL_UNAVAILABLE,
@@ -15,7 +14,7 @@ import {
 } from "./diagnostics";
 import { contactEntityId } from "./identity";
 import { resolveContactAttempt } from "./resolve";
-import { CONTACT_RESOLUTION_ACTION_STATUS, contactResolutionStatuses, type ContactResolution } from "./types";
+import type { ContactResolution } from "./types";
 import {
   PROBE_ACTOR,
   PROBE_TARGET,
@@ -112,13 +111,24 @@ describe("contact attempt resolution", () => {
       expect(codes(sink)).toEqual([CONTACT_ACTION_INVALID]);
     });
 
+    it("treats an acting surface that belongs to somebody else as a malformed attempt", () => {
+      // The control decision is impeccable and about the right actor. Without
+      // binding the source surface to that actor it would still authorize an
+      // attempt made with the OTHER character's hands.
+      const sink = new DiagnosticCollector();
+      const resolution = run({ intent: { source: probeBodySurface(PROBE_TARGET, "hands") } }, sink);
+      expect(resolution).toMatchObject({ status: "unresolved", reason: "action_invalid" });
+      expect(codes(sink)).toEqual([CONTACT_ACTION_INVALID]);
+      expect(sink.hasErrors).toBe(true);
+    });
+
     it("requires the target's own behaviour authority for a movement on the target's body", () => {
       const sink = new DiagnosticCollector();
       const resolution = run(
         {
           context: {
             adjustments: [probeAdjustment({ subjectId: PROBE_TARGET })],
-            targetAgency: probeAgency("not_required"),
+            targetAgencies: [probeAgency("not_required")],
           },
         },
         sink,
@@ -131,7 +141,7 @@ describe("contact attempt resolution", () => {
       const resolution = run({
         context: {
           adjustments: [probeAdjustment({ subjectId: PROBE_TARGET })],
-          targetAgency: probeAgency("allowed"),
+          targetAgencies: [probeAgency("allowed")],
         },
       });
       expect(resolution.status).toBe("committable");
@@ -139,9 +149,87 @@ describe("contact attempt resolution", () => {
 
     it("rejects a denied target movement", () => {
       const resolution = run({
-        context: { adjustments: [probeAdjustment({ subjectId: PROBE_TARGET })], targetAgency: probeAgency("denied") },
+        context: {
+          adjustments: [probeAdjustment({ subjectId: PROBE_TARGET })],
+          targetAgencies: [probeAgency("denied")],
+        },
       });
       expect(resolution).toMatchObject({ status: "rejected", reason: "target_agency_denied" });
+    });
+
+    it("will not spend an agency decision about one body on a movement of another", () => {
+      const sink = new DiagnosticCollector();
+      const resolution = run(
+        {
+          context: {
+            adjustments: [probeAdjustment({ subjectId: PROBE_TARGET })],
+            targetAgencies: [probeAgency("allowed", affordanceSubjectId("someone_else"))],
+          },
+        },
+        sink,
+      );
+      expect(resolution).toMatchObject({ status: "rejected", reason: "target_agency_unresolved" });
+      expect(codes(sink)).toEqual([CONTACT_TARGET_AGENCY_UNAVAILABLE]);
+    });
+
+    it("refuses an adjustment that moves somebody who is not in this contact", () => {
+      const sink = new DiagnosticCollector();
+      const resolution = run(
+        {
+          context: {
+            adjustments: [probeAdjustment({ id: "third_party", subjectId: affordanceSubjectId("bystander") })],
+            targetAgencies: [probeAgency("allowed", affordanceSubjectId("bystander"))],
+          },
+        },
+        sink,
+      );
+      expect(resolution).toMatchObject({ status: "unresolved", reason: "action_invalid" });
+      expect(codes(sink)).toEqual([CONTACT_ACTION_INVALID]);
+    });
+
+    it("needs an answer for every moved body, and needs none for the actor's own", () => {
+      const moved = {
+        adjustments: [
+          probeAdjustment({ id: "actor_lean", subjectId: PROBE_ACTOR, kind: "lean" }),
+          probeAdjustment({ id: "target_turn", subjectId: PROBE_TARGET }),
+          probeAdjustment({ id: "target_angle", subjectId: PROBE_TARGET, kind: "head_angle" }),
+        ],
+      };
+      // The actor's own movement rides on actor control; the target's needs the
+      // target's authority, and one answer covers both of the target's.
+      const covered = run({ context: { ...moved, targetAgencies: [probeAgency("allowed")] } });
+      expect(covered.status).toBe("committable");
+      if (covered.status !== "committable") return;
+      expect(covered.access.implicitAdjustments.map((adjustment) => adjustment.id)).toEqual([
+        "actor_lean",
+        "target_turn",
+        "target_angle",
+      ]);
+      // An answer that only covers the actor authorizes nothing about the target.
+      const uncovered = run({
+        context: { ...moved, targetAgencies: [probeAgency("allowed", PROBE_ACTOR)] },
+      });
+      expect(uncovered).toMatchObject({ status: "rejected", reason: "target_agency_unresolved" });
+    });
+
+    it("prefers a definite refusal over a missing answer when several bodies move", () => {
+      const resolution = run({
+        context: {
+          adjustments: [probeAdjustment({ subjectId: PROBE_TARGET })],
+          targetAgencies: [probeAgency("denied"), probeAgency("unresolved", PROBE_ACTOR)],
+        },
+      });
+      expect(resolution).toMatchObject({ status: "rejected", reason: "target_agency_denied" });
+    });
+
+    it("records the provenance of every agency decision it consulted", () => {
+      const resolution = run({
+        context: {
+          adjustments: [probeAdjustment({ subjectId: PROBE_TARGET })],
+          targetAgencies: [probeAgency("allowed")],
+        },
+      });
+      expect(resolution.evidence.map((entry) => entry.ref)).toContain(`probe.agency.${PROBE_TARGET}`);
     });
   });
 
@@ -383,11 +471,4 @@ describe("contact attempt resolution", () => {
     });
   });
 
-  describe("the narrator seam", () => {
-    it("maps every resolution status onto a status the guidance layer knows", () => {
-      for (const status of contactResolutionStatuses) {
-        expect(physicalActionStatuses).toContain(CONTACT_RESOLUTION_ACTION_STATUS[status]);
-      }
-    });
-  });
 });
