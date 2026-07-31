@@ -1,11 +1,14 @@
 # Romantic contact affordances — follow-ups
 
-Status: active — the slice-2 hardening list, ordered by the owner 2026-07-30
-(step 1 of the post-slice-2 sequence; see the
-[plan](romantic-contact-affordances.plan.md) for the full order). The five
-hardening items plus the owner's review item all landed 2026-07-30; the
-sequencing constraints below still bind slice 3. Items move to "Done" here as
-they land.
+Status: **complete — shipped 2026-07-31.** Every item on this list has landed:
+the five slice-2 hardening items and the owner's review item (2026-07-30), the
+registration-review corrections and the Neon backfill (2026-07-30), and the
+final foot side/unsided regressions closed in the slice-3A pass (2026-07-31).
+
+Nothing here is outstanding. The live sequencing that governs what happens next
+is in the [plan](romantic-contact-affordances.plan.md) §"Slice 3A" and its
+continuation order — this document is now history, kept for the record of what
+each fix was and why.
 
 ## Hardening pass (owner-ordered, one small PR)
 
@@ -17,19 +20,28 @@ that pass. See "Done" below._
    SINGLE supplied foot pose as "agreement" even though an unsided locus may
    belong to the other, unanswered foot; and the support/articulation payload
    arrays permitted duplicate sides despite their one-entry-per-foot comments.
-   Both must land before slice 3.
+   Both must land before slice 3. ✅ landed 2026-07-30 (see "Done"); the last
+   side/unsided regressions closed 2026-07-31 in slice 3A.
 
-## Sequencing constraints (owner, 2026-07-30)
+## Sequencing constraints (owner, 2026-07-30) — all satisfied
 
 - The [adult declaration](finished/adult-eligibility.plan.md) ships before the first
   genuinely romantic foot trial; slice 3 starts with a genuinely
-  affectionate/non-romantic integration case.
+  affectionate/non-romantic integration case. ✅ the declaration shipped
+  2026-07-30; the affectionate-first order carries forward into the plan's
+  slice-3 continuation order.
 - Positive tactile texture/glide enable only after perceiver-specific
   perception channels (the core filter is sight-only today) and the ruled
-  regional condition ownership are wired.
+  regional condition ownership are wired. ✅ still binding, and carried into the
+  plan as the LAST step of the continuation order — it is future design, not an
+  outstanding follow-up.
 - Slice-3 development may begin, but production registration does not deploy
-  until the registration-review corrections (below, all landed 2026-07-30) and
-  the Neon backfill are complete. Full slice-3 build order: the
+  until the registration-review corrections and the Neon backfill are complete.
+  ✅ **both preconditions met.** The corrections landed 2026-07-30 and the Neon
+  backfill ran clean the same day (11 rows, zero conflicts, idempotent re-run
+  verified), with the foot registry defaults deployed. **The production-registration
+  gate now waits only on slice-3 wiring order**, not on any correction or data
+  migration. Full order: the
   [plan](romantic-contact-affordances.plan.md) §Slice 3 sequencing.
 
 ## Done

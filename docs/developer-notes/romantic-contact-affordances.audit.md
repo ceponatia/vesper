@@ -166,6 +166,20 @@ the classification.
 
 ## Capability matrix
 
+> **Historical snapshot (2026-07-28) — superseded by the hub's current table.**
+> This matrix records what each lane knew at slice 0, with a file and line
+> behind every claim. It is **not** a current-state reference: slices 1–2 and
+> slice 3A have since built several of the rows it records as *absent* (the
+> contact lifecycle, material-between, the foot sub-region loci, a minimal
+> scene owner) and shipped the adult-eligibility declaration it records as
+> *deferred*. For what is true now, read the current capability table in
+> [the technical index](romantic-contact-affordances.spec.md#current-capability-status).
+>
+> The snapshot is kept verbatim rather than rewritten, because it is the
+> evidence for why the later slices took the shape they did — and because
+> "we could not find it" and "it did not exist" have to stay distinguishable a
+> release from now.
+
 Verdicts are **trustworthy** (an authoritative owner exists and the contact
 resolver may read it now), **deferred** (an owner exists but is too narrow, or a
 named prerequisite is queued), or **absent** (no owner; the dependent

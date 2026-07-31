@@ -62,13 +62,16 @@ describe("contactParticipantEligibility (the slice-3 seam)", () => {
 
   it("preserves the per-participant verdicts, entity descriptors riding along", () => {
     const read = contactParticipantEligibility([
-      { ...participant(mara, "unresolved"), entity: { kind: "character" as const, entityId: "c1", foreign: true } },
-      { ...participant(player, "minor"), entity: { kind: "persona" as const, entityId: "p1" } },
+      {
+        ...participant(mara, "unresolved"),
+        entity: { kind: "character" as const, entityId: "c1", access: "public_non_owner" as const },
+      },
+      { ...participant(player, "minor"), entity: { kind: "persona" as const, entityId: "p1", access: "owned" as const } },
     ]);
     expect(read.status).toBe("ineligible");
     expect(read.verdicts).toEqual([
-      { id: mara, result: "unresolved", entity: { kind: "character", entityId: "c1", foreign: true } },
-      { id: player, result: "ineligible", entity: { kind: "persona", entityId: "p1" } },
+      { id: mara, result: "unresolved", entity: { kind: "character", entityId: "c1", access: "public_non_owner" } },
+      { id: player, result: "ineligible", entity: { kind: "persona", entityId: "p1", access: "owned" } },
     ]);
   });
 });

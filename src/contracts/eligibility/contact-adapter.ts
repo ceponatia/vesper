@@ -25,11 +25,22 @@ import { resolveAdultEligibility, type AdultEligibilityInput, type AdultEligibil
  * cannot say (a synthetic subject, a fixture) simply omits it and the blocker
  * helper degrades to no link.
  */
+export const adultEligibilityEntityAccessValues = ["owned", "public_non_owner"] as const;
+export type AdultEligibilityEntityAccess = (typeof adultEligibilityEntityAccessValues)[number];
+
 export interface AdultEligibilityParticipantEntity {
   readonly kind: "character" | "persona";
   readonly entityId: string;
-  /** True when the viewer does not own the row (a public/foreign character). */
-  readonly foreign?: boolean;
+  /**
+   * Whether the viewer owns the row. **Required, never inferred from absence** —
+   * an optional flag would make "I forgot to say" indistinguishable from
+   * "the viewer owns it", and the ownership answer is what decides between an
+   * editor link and a duplicate-to-edit. A caller that supplies an entity at
+   * all must know which of the two it is.
+   *
+   * `public_non_owner` = a public row the viewer may read but not edit.
+   */
+  readonly access: AdultEligibilityEntityAccess;
 }
 
 /** One participant, identified for the read, with the two resolver inputs. */
@@ -50,7 +61,7 @@ export interface AdultEligibilityVerdict {
  * core consumes only the base shape (it stays domain-neutral); the verdicts
  * exist so a blocked action knows WHICH participant failed and whether the fix
  * lives in the persona editor, the character editor, or a duplicate-to-edit of
- * a foreign character.
+ * a public non-owner character.
  */
 export interface ContactParticipantEligibilityWithVerdicts extends ContactParticipantEligibilityRead {
   readonly verdicts: readonly AdultEligibilityVerdict[];

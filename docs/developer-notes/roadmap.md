@@ -50,25 +50,38 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   slice 3 wires it; warmth and scent recorded deferred, no owners exist);
   promoted from deferred 2026-07-28 and sequenced directly behind the
   narrator-guidance plan whose action-outcome seam its slice 3 consumes).
-  Remaining committed scope is slices 3–4 in the owner's ruled order
-  (2026-07-30). The three ruled prerequisites are **done**: the slice-2
-  [hardening pass](romantic-contact-affordances.followups.md) (items 1–6, incl.
-  the owner-found unsided-closure residual), the
+  **Slice 3A — authority and persistence hardening — landed 2026-07-31**: the
+  owner's post-review verdict was that slice 3 was ready to begin as an opening
+  hardening/design phase, **not** ready to proceed directly into production lane
+  wiring unchanged. 3A delivered actor/source + per-participant agency binding,
+  lifecycle clearing/orientation/capacity/state cross-validation, the
+  post-persistence outcome adapter with **no partial status** (contact emits only
+  committed / explicit_transition_required / rejected / unresolved), a minimal
+  scene/body-relations owner
+  ([scene spec](romantic-contact-affordances.spec.scene.md)), the final foot
+  side/unsided regressions, and four carried-forward corrections (required access
+  discriminator on the eligibility entity descriptor, non-owner blocker-routing
+  regression, clone-policy disclosure on publish, and this docs pass).
+  All prerequisites are **done and archived**: the slice-2
+  [hardening pass / follow-ups](finished/romantic-contact-affordances.followups.md)
+  (complete 2026-07-31), the
   [adult declaration](finished/adult-eligibility.plan.md) (shipped 2026-07-30),
-  and the **pre-slice-3 foot facts + registration hardening** (2026-07-30 —
-  persisted foot baselines + backfill, partial foot profiles, the
-  optional-invalid dependency law, eligibility leftovers incl. blocker
-  routing; see [roadmap.shipped.md](roadmap.shipped.md)).
-  Next up: slice 3 — legacy-romantic-chat constraint evaluation behind
-  `CHAT_PHYSICAL_CONSTRAINTS`, wired affectionate-first with the romantic
-  proof gated on eligibility + a legacy `romantic_touch` permission owner +
-  the ruled contact persistence, plus wiring the now-built blocked-action
-  editor links (`adultEligibilityBlockerLinks`) into the UI — then slice 4's
-  atomic/idempotent contact-caused effects. Successor parity waits for regional
-  pose/contact and clothing adapters. Intimate regions stay behind the foot
-  proof plus explicit adult-eligibility, consent, exposure, and physiology
-  prerequisites. The active doc family archives together only after the plan
-  ships.
+  and the pre-slice-3 foot facts + registration hardening (2026-07-30). Foot
+  registry defaults, the Neon backfill, and deployment are **complete**, so
+  production registration is no longer gated on corrections or data migration —
+  only on reaching its place in the wiring order.
+  Continuation order: affectionate integration proof with durable retake-safe
+  persistence → actor control through the live lane → the explicit
+  `romantic_touch` permission owner (**spec before implementation**; eight design
+  decisions need owner rulings) → eligibility + blocker-link UI wiring → the
+  romantic proof → channel-aware foot registration with positive texture/glide
+  **last** (blocked on explicit visual/tactile perception channels, perceiver
+  binding, structured path/cross-locus info, per-surface footwear friction).
+  Then slice 4's atomic/idempotent contact-caused effects. Successor parity waits
+  for regional pose/contact and clothing adapters. Intimate regions stay behind
+  the foot proof plus explicit adult-eligibility, consent, exposure, and
+  physiology prerequisites. The active doc family archives together only after
+  the plan ships.
 
 ## Next (queued)
 

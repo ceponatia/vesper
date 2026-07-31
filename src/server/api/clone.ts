@@ -12,10 +12,18 @@ import { findViewable, type ShareableKind } from "./visibility";
  * guarantee, extended library→library). The source is never mutated.
  *
  * A character clone copies the **whole** authored `profile` — narrator guidance,
- * drives, voice anchors and all — and that is an explicit product decision
- * (security-authz.plan.md OQ2), not an oversight: publishing a character offers
- * it as a full authored starting point, so a clone is richer than the public
- * *preview*, which `toPublicCharacterProfile` narrows to presentation data only.
+ * drives, intimacy notes, voice anchors and all — and that is an explicit
+ * product decision (security-authz.plan.md OQ2), not an oversight: publishing a
+ * character offers it as a full authored starting point, so a clone is richer
+ * than the public *preview*, which `toPublicCharacterProfile` narrows to
+ * presentation data only.
+ *
+ * Re-affirmed by the owner 2026-07-31 ("Disclose on publish"): the duplication
+ * stays full-profile, and the asymmetry is disclosed to the author **at the
+ * publish control** instead (`components/library/publish-toggle.tsx`; policy in
+ * docs/auth.md §"Publishing and cloning"). Publishing is therefore the consent
+ * boundary for the whole profile — a new profile field is clone-visible the day
+ * it is added, and preview-visible only if someone adds it to the projection.
  *
  * Scope note: the snapshot is copied as-is — a character's `defaultOutfit` /
  * a location's links keep referencing the source owner's library ids, which

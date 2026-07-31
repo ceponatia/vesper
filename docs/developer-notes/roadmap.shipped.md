@@ -5,9 +5,21 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Romantic contact slice 3A — authority and persistence hardening** —
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
+  [contact-core spec](romantic-contact-affordances.spec.contact-core.md) ·
+  [scene spec](romantic-contact-affordances.spec.scene.md) — 2026-07-31 —
+  source-bound actors + per-participant agency coverage, immutable start
+  identity with snapshot update events and durable capacity/authorization ends,
+  cross-validated stored projections (fail-closed version), post-persistence
+  outcome adapter (no partial status), the minimal scene/body-relations owner,
+  foot-local left|right side vocabulary + uniform two-feet rule, and the
+  carried-forward corrections (non-owner access discriminator, publish clone
+  disclosure, archived-doc truth pass).
+
 - **Pre-slice-3 foot facts and registration hardening** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
-  [follow-ups record](romantic-contact-affordances.followups.md) ·
+  [follow-ups record](finished/romantic-contact-affordances.followups.md) ·
   [foot spec deltas](romantic-contact-affordances.spec.foot.md) — 2026-07-30 —
   persisted-baseline foot facts (`materializeDefault` registry tier, grounded on
   every character/persona create-patch-forge path +

@@ -1,27 +1,33 @@
 # Romantic contact affordances
 
-Status: active (promoted 2026-07-28; **slices 0–2 shipped 2026-07-30** —
-the truth-source audit is published, the lane-neutral contact lifecycle is
-built as pure contracts, and the foot domain proof is in
+Status: active (promoted 2026-07-28; **slices 0–2 shipped 2026-07-30**, and
+**slice 3A — authority and persistence hardening — landed 2026-07-31**).
+
+Slices 0–2: the truth-source audit is published, the lane-neutral contact
+lifecycle is built as pure contracts, and the foot domain proof is in
 `src/contracts/affordances/domains/foot/` (topology + three registry loci,
 profile inheritance, condition distribution, footwear filtering, and the
 pressure/texture/glide/articulation/nail phenomena — fixture-driven, not
-production-wired; contact warmth and scent recorded deferred); slices 3–4
-remain, in the owner's ruled order (2026-07-30): the slice-2
-[hardening pass](romantic-contact-affordances.followups.md) ✅, then the
-[adult declaration](finished/adult-eligibility.plan.md) ✅, then the
-**pre-slice-3 foot-facts + registration hardening ✅ (2026-07-30** — persisted
+production-wired; contact warmth and scent recorded deferred).
+
+All three ruled prerequisites are **done**: the slice-2
+[hardening pass](finished/romantic-contact-affordances.followups.md) ✅, the
+[adult declaration](finished/adult-eligibility.plan.md) ✅, and the
+**pre-slice-3 foot-facts + registration hardening** ✅ (2026-07-30 — persisted
 foot baselines with a backfill, partial foot profiles, the optional-invalid
-dependency law, and the eligibility leftovers; record in the
-[follow-ups doc](romantic-contact-affordances.followups.md)**)**, then slice 3
-wired affectionate-first with the romantic proof gated on eligibility +
-permission;
-intimate work waits for the foot proof and authoritative adult-eligibility,
-consent, exposure, and physiology; the plan follows
+dependency law, and the eligibility leftovers). The follow-ups list is
+**complete and archived** —
+[record](finished/romantic-contact-affordances.followups.md). Foot registry
+defaults, the Neon backfill, and deployment are all complete, so the
+production-registration gate now waits only on slice-3 wiring order.
+
+Remaining: the slice-3 continuation order below, then slice 4. Intimate work
+waits for the foot proof and authoritative adult-eligibility, consent,
+exposure, and physiology. The plan follows
 [body-attribute affordances](body-attribute-affordances.plan.md)
 and the shared projection contract in
 [constraint-first narrator physical guidance](narrator-physical-guidance.plan.md);
-its active doc family stays together until ship)
+its active doc family stays together until ship.
 
 ## In one sentence
 
@@ -201,9 +207,18 @@ It gives us a test catalog without committing to simulate every case at once.
 - This system describes physical consequences. It does not decide desire,
   consent, attraction, pleasure, climax, withdrawal, or any other character
   choice or emotional response.
-- Any interpersonal body contact must respect actor control, target agency, and
-  the lane's applicable interaction policy. A player describing an NPC's
-  voluntary movement does not make that movement committed truth.
+- Any interpersonal body contact must respect actor control and target agency.
+  A player describing an NPC's voluntary movement does not make that movement
+  committed truth. This applies to every contact, including ordinary ones.
+- **Permission is scoped, not universal** (owner ruling, 2026-07-30). Only
+  **romantic and intimate** contact requires the applicable permission scope
+  and — for those kinds — positive adult eligibility for every participant.
+  Ordinary incidental and affectionate social touch is **permission-neutral**:
+  it is the everyday contact the lane already narrates, and requiring a grant
+  the lane cannot produce would gate ordinary behaviour behind machinery that
+  does not exist. Foot play framed as romantic or fetish attention is
+  `romantic` and needs the scope — it is never relabeled `affectionate` to let
+  a trial commit.
 - Adult intimate contact must pass the authoritative consent and policy check
   before a committed contact exists. Known minors are always ineligible.
   Intimate rollout remains blocked until every participant—including
@@ -350,27 +365,73 @@ Run any positive contact-transition detail as a second, independent campaign on
 top of the winning constraint configuration; do not combine both changes into
 one A/B.
 
-**Sequencing (owner, 2026-07-30; order reaffirmed with the slice-2 review
-corrections).** The build order inside this slice:
+**The owner's revised verdict (2026-07-31).** After a deep external review,
+slice 3 was judged **ready to begin as an opening hardening and design phase —
+but not ready to proceed directly into production lane wiring unchanged.** The
+slice therefore splits: a hardening pass first, then the wiring order.
 
-1. A separately authored, genuinely **affectionate/non-romantic**
-   action-outcome proof — never a romantic case relabeled to commit.
-2. The ruled contact persistence: durable event provenance plus the
-   **versioned, retake-safe active-contact projection** in the snapshot.
-3. **Actor-control enforcement.**
-4. The legacy **`romantic_touch` permission owner**.
-5. The **adult-eligibility adapter** and blocker-link UI wiring.
-6. The genuinely **romantic proof** (gated on 4 and 5 — the
+#### Slice 3A — authority and persistence hardening · shipped 2026-07-31
+
+The opening phase the revised verdict called for. It touches nothing in the
+live lane; it makes the contracts strong enough to be wired.
+
+1. **Actor/source and per-participant agency binding** — an attempted contact
+   carries who is acting and where the assertion came from, and each
+   participant's agency answer is bound to that participant rather than to the
+   attempt as a whole.
+2. **Lifecycle cross-validation** — clearing, orientation, capacity, and state
+   are validated against each other, so an internally contradictory lifecycle
+   transition is rejected rather than half-applied.
+3. **Post-persistence outcome adapter, with no partial status** — the contact
+   adapter emits only `committed`, `explicit_transition_required`, `rejected`,
+   or `unresolved` (see the note under §"Continuation order" below).
+4. **A minimal scene / body-relations owner**, with its spec —
+   [scene spec](romantic-contact-affordances.spec.scene.md).
+5. **Final foot side/unsided regressions** — the last residuals from the
+   slice-2 hardening list.
+6. **The four carried-forward corrections** from the review: the required
+   access discriminator on the eligibility entity descriptor (replacing an
+   optional `foreign?` flag whose omission resembled ownership), the
+   non-owner blocker-routing regression, the clone-policy **disclosure on
+   publish** (owner ruling — full-profile duplication stays, the author is
+   told at the control; see docs/auth.md §"Publishing and cloning"), and this
+   documentation pass.
+
+#### Continuation order (owner-ruled; 1 leads)
+
+1. **Affectionate integration proof** — a separately authored, genuinely
+   affectionate/non-romantic action-outcome proof (never a romantic case
+   relabeled to commit), with **durable, retake-safe persistence**: durable
+   event provenance plus the versioned active-contact projection in the
+   snapshot.
+2. **Actor control through the live lane** — enforcement, not just the
+   contract.
+3. **The explicit `romantic_touch` permission owner — spec before
+   implementation.** Its design decisions need owner rulings first; they are
+   listed in Open questions below.
+4. **Eligibility + blocker-link UI wiring** — the adapter into the pipeline and
+   the blocked-action links into the chat surface.
+5. **The genuinely romantic proof** — gated on 3 and 4; the
    [adult declaration](finished/adult-eligibility.plan.md) must resolve every
-   participant).
-7. Positive tactile **texture/glide** last — only after perceiver-specific
-   perception channels and the ruled regional condition ownership are wired.
+   participant.
+6. **Channel-aware foot registration with positive texture/glide — LAST.**
+   Blocked on explicit visual/tactile perception channels, perceiver binding,
+   structured path and cross-locus information, and per-surface footwear
+   friction. None of those exist yet, so this is future design.
 
-Slice-3 development may begin now, but **production registration does not
-deploy** until the slice-2 review corrections (non-clearable materialized
-fields, the `trimmed` toenail default, the concurrent-edit-safe backfill) and
-the Neon backfill are complete
-([follow-ups](romantic-contact-affordances.followups.md)).
+**No partial contact status.** The contact adapter emits exactly four outcomes:
+committed, explicit-transition-required, rejected, unresolved. `partially_committed`
+stays in the **generic guidance vocabulary only**, reserved for future domains
+that need per-locus commitment; romantic contact never produces it, and no
+document should describe a romantic-contact partial result.
+
+**Production registration.** The two preconditions the earlier gate named — the
+slice-2 review corrections (non-clearable materialized fields, the `trimmed`
+toenail default, the concurrent-edit-safe backfill) and the Neon backfill —
+were **both met 2026-07-30**, and the foot registry defaults are deployed
+([archived follow-ups](finished/romantic-contact-affordances.followups.md)).
+Registration is therefore no longer gated on corrections or data migration; it
+waits only on reaching its place in the wiring order above.
 
 ### Slice 4 — changes caused by contact
 
@@ -441,8 +502,12 @@ regressing those measures.
 ## Open questions
 
 **Five questions were ruled by the owner on 2026-07-30** (after the slice-2 QA
-report) and have left this list — **six remain open below**; each ruling is
-recorded in its detail doc:
+report) and have left this list; each ruling is recorded in its detail doc.
+Below them, two tables: the **six** questions carried over from earlier slices,
+and the **eight** `romantic_touch` permission-owner design decisions the owner's
+2026-07-31 review enumerated.
+
+The five already ruled:
 
 - adult eligibility — an explicit `adult | minor | unresolved` declaration,
   positive-adult required for romantic/intimate, fantasy and missing ages stay
@@ -464,33 +529,39 @@ recorded in its detail doc:
   wet footwear, feeding through material layers
   ([effects companion](romantic-contact-affordances.spec.effects.md)).
 
-Still open:
+### Still open
 
-- **How detailed should foot regions be?** The surface map should distinguish
-  meaningful play without becoming an anatomy mesh. Slice 2 shipped a
-  sixteen-surface working answer
-  ([foot spec](romantic-contact-affordances.spec.foot.md)); the question stays
-  open until the slice-3 trial shows the granularity earns its keep.
-- **Which intimate changes are ready to consume?** Erection, swelling,
-  lubrication, and flushing require authoritative physiology
-  ([intimate spec](romantic-contact-affordances.spec.intimate.md)).
-- **What is the minimum intimate consent scope?** The successor consent ledger
-  is stronger than legacy chat's signals; the lanes are not equivalent
-  ([intimate spec](romantic-contact-affordances.spec.intimate.md)).
-- **Do marks ride the ruled body-surface store, and what are the transaction
-  mechanics?** Ownership of skin condition is ruled (above); whether pressure
-  marks join the same store, and the atomic/idempotent/branch-safe commit
-  design, are slice-4 work
-  ([effects companion](romantic-contact-affordances.spec.effects.md)).
-- **How should scent and taste be phrased?** The vocabulary must stay grounded
-  in current truth without repetitive value judgments
-  ([foot spec](romantic-contact-affordances.spec.foot.md);
-  [intimate spec](romantic-contact-affordances.spec.intimate.md)).
-- **What must retakes capture beyond the contact projection?** The contact
-  projection itself is ruled into the retake snapshot (above); whether effects,
-  perception, selected cues, and repetition history need their own capture is
-  settled per slice as each ships
-  ([shared-contact spec](romantic-contact-affordances.spec.contact-core.md)).
+Each row links to the detail doc that holds the evidence. "Blocking" names the
+slice that cannot finish until the question is answered — a question with a
+later blocking slice is not urgent, but it is not settled either.
+
+| Question | Owner | Required decision | Blocking slice | Status |
+| --- | --- | --- | --- | --- |
+| **How detailed should foot regions be?** ([foot spec](romantic-contact-affordances.spec.foot.md)) | Product | Whether the shipped sixteen-surface map is the right granularity, or should shrink | Slice 3 (the trial answers it) | Open — working answer shipped; awaiting trial evidence |
+| **Which intimate changes are ready to consume?** ([intimate spec](romantic-contact-affordances.spec.intimate.md)) | Physiology plan | Which of erection, swelling, lubrication, flushing have authoritative reads | Slice 6 | Blocked on the deferred physiology plan |
+| **What is the minimum intimate consent scope?** ([intimate spec](romantic-contact-affordances.spec.intimate.md)) | Owner | The floor for intimate contact, and whether the two lanes may claim parity | Slice 5 | Needs owner ruling |
+| **Do marks ride the ruled body-surface store, and what are the transaction mechanics?** ([effects companion](romantic-contact-affordances.spec.effects.md)) | Engineering + owner | Whether pressure marks join the ruled store; the atomic/idempotent/branch-safe commit design | Slice 4 | Open |
+| **How should scent and taste be phrased?** ([foot spec](romantic-contact-affordances.spec.foot.md); [intimate spec](romantic-contact-affordances.spec.intimate.md)) | Owner | Vocabulary that stays grounded without repetitive value judgments | Slice 5 (scent already deferred out of slice 2) | Open |
+| **What must retakes capture beyond the contact projection?** ([contact-core spec](romantic-contact-affordances.spec.contact-core.md)) | Engineering | Whether effects, perception, selected cues, and repetition history need their own capture | Settled per slice as each ships | Open, incremental |
+
+### `romantic_touch` permission-owner design
+
+The continuation order puts the explicit `romantic_touch` permission owner
+before the romantic proof, and **spec before implementation**: the questions
+below are design decisions, not implementation details, and each one changes
+what the stored grant means. Every row is **"needs owner ruling before the
+`romantic_touch` owner is implemented — spec before implementation."**
+
+| Question | Owner | Required decision | Blocking slice | Status |
+| --- | --- | --- | --- | --- |
+| **Directional or bilateral?** | Owner | Whether a grant runs one way (A may touch B) or establishes mutual permission | Slice 3, step 3 | Needs owner ruling — spec before implementation |
+| **Persistent, scene-local, or action-local?** | Owner | The lifetime of a grant: does it survive the scene, the chat, or only the action it was given for | Slice 3, step 3 | Needs owner ruling — spec before implementation |
+| **Exact scope semantics and implication rules** | Owner | Whether a scope implies narrower ones, or each is independent. **Exact-scope membership is the standing default** — a grant covers the named scope only — unless broader implication rules are explicitly ruled | Slice 3, step 3 | Needs owner ruling — spec before implementation; default stands until then |
+| **Grant / deny / withdraw mechanics** | Owner | How each is expressed, whether deny is distinct from absence, and whether withdrawal is a separate act | Slice 3, step 3 | Needs owner ruling — spec before implementation |
+| **NPC versus player authorship** | Owner | Who may author a grant for an NPC, and whether narrator mode may (the actor-control ruling says narrator mode never bypasses consent — this asks whether it may *create* one) | Slice 3, step 3 | Needs owner ruling — spec before implementation |
+| **Retake and branch behavior** | Owner | Whether a grant is captured in the retake snapshot, and what a branch inherits | Slice 3, step 3 | Needs owner ruling — spec before implementation |
+| **Provenance and effective time** | Owner | What a grant records about who gave it and when it takes effect | Slice 3, step 3 | Needs owner ruling — spec before implementation |
+| **Effect of withdrawal on an active romantic contact** | Owner | Whether withdrawal ends a committed contact immediately, requires an explicit transition, or applies only to new attempts | Slice 3, step 3 | Floor already implemented (owner review, 2026-07-31): the contract ends a live contact whose permission lapses and blocks the next attempt. Open: whether the permission owner's spec keeps immediate end or adds an explicit transition beat |
 
 ## Technical companions
 
@@ -500,5 +571,9 @@ Still open:
 - [Technical index and ownership map](romantic-contact-affordances.spec.md)
 - [Shared contact and action contracts](romantic-contact-affordances.spec.contact-core.md)
 - [Observations, effects, and presentation](romantic-contact-affordances.spec.effects.md)
+- [Scene and body-relations owner](romantic-contact-affordances.spec.scene.md) —
+  the minimal scene owner added in slice 3A
 - [Foot-contact domain](romantic-contact-affordances.spec.foot.md)
 - [Intimate-region domain](romantic-contact-affordances.spec.intimate.md)
+- [Follow-ups record](finished/romantic-contact-affordances.followups.md) —
+  complete and archived 2026-07-31
