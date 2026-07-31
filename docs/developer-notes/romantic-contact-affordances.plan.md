@@ -350,15 +350,27 @@ Run any positive contact-transition detail as a second, independent campaign on
 top of the winning constraint configuration; do not combine both changes into
 one A/B.
 
-**Sequencing (owner, 2026-07-30).** This slice begins with a separately
-authored, genuinely affectionate/non-romantic integration case — never a
-romantic case relabeled to commit. The genuinely romantic foot proof runs only
-after both the [adult declaration](finished/adult-eligibility.plan.md) resolves every
-participant and the legacy `romantic_touch` permission owner exists; slice 3
-also implements the ruled contact persistence (durable event provenance + the
-versioned active-contact projection in the retake snapshot). Positive tactile
-texture/glide enable waits further still, on perceiver-specific perception
-channels and the ruled regional condition ownership.
+**Sequencing (owner, 2026-07-30; order reaffirmed with the slice-2 review
+corrections).** The build order inside this slice:
+
+1. A separately authored, genuinely **affectionate/non-romantic**
+   action-outcome proof — never a romantic case relabeled to commit.
+2. The ruled contact persistence: durable event provenance plus the
+   **versioned, retake-safe active-contact projection** in the snapshot.
+3. **Actor-control enforcement.**
+4. The legacy **`romantic_touch` permission owner**.
+5. The **adult-eligibility adapter** and blocker-link UI wiring.
+6. The genuinely **romantic proof** (gated on 4 and 5 — the
+   [adult declaration](finished/adult-eligibility.plan.md) must resolve every
+   participant).
+7. Positive tactile **texture/glide** last — only after perceiver-specific
+   perception channels and the ruled regional condition ownership are wired.
+
+Slice-3 development may begin now, but **production registration does not
+deploy** until the slice-2 review corrections (non-clearable materialized
+fields, the `trimmed` toenail default, the concurrent-edit-safe backfill) and
+the Neon backfill are complete
+([follow-ups](romantic-contact-affordances.followups.md)).
 
 ### Slice 4 — changes caused by contact
 

@@ -69,7 +69,9 @@ export const feetGroup = defineAttributeGroup("feet", [
       "Toenails are only worth a mention when the feet are bare and in view.",
     ],
     // Structural axis of the foot affordance domain (the toenail surface).
-    defaultValue: "neat",
+    // "trimmed" is the neutral baseline: ordinary nail length without assuming
+    // any additional grooming (owner correction, 2026-07-30).
+    defaultValue: "trimmed",
     materializeDefault: true,
   },
   {

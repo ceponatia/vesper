@@ -7,6 +7,7 @@ import {
   defaultValueFor,
   heritageChangePatch,
   isAiSourced,
+  isClearableAttribute,
   isOutOfRuleValue,
   removeAttribute,
   seedRequiredAttributes,
@@ -176,6 +177,37 @@ describe("seedRequiredAttributes — species/heritage default seeding", () => {
     });
     // …but explicitly stripping the feature drops the wings attributes entirely.
     expect(seedRequiredAttributes([], cfg("faerie", [])).some((a) => a.id === "wings.shape")).toBe(false);
+  });
+});
+
+describe("isClearableAttribute — materialized baselines are never clearable", () => {
+  it("a materializeDefault field cannot be cleared; an ordinary sparse field can", () => {
+    // The picker keys the "clear" button AND the blank "—" enum option off this
+    // helper, so the pair of expectations pins both editor behaviors.
+    expect(attrDef("feet.nails").materializeDefault).toBe(true);
+    expect(isClearableAttribute(attrDef("feet.nails"))).toBe(false);
+    expect(attrDef("hair.color").materializeDefault).toBeUndefined();
+    expect(isClearableAttribute(attrDef("hair.color"))).toBe(true);
+  });
+
+  it("every materialized definition is an enum, so the picker's enum-only guard covers them all", () => {
+    // The enum control is the only one whose non-clearable branch exists; a
+    // flagged enum_list/text field would still clear through its own control's
+    // remove path. If this ever fires, extend the guard to that control first.
+    for (const def of attributeRegistry.definitions) {
+      if (def.materializeDefault) expect(def.valueType, def.id).toBe("enum");
+    }
+  });
+
+  it("replacing a materialized default still claims the value as manual", () => {
+    const materialized: AttributeValue = {
+      id: "feet.nails",
+      value: "trimmed",
+      source: "creation",
+      sourceId: "registry-default:feet:v1",
+    };
+    const next = setAttribute([materialized], "feet.nails", "painted");
+    expect(next).toEqual([{ id: "feet.nails", value: "painted", source: "manual" }]);
   });
 });
 

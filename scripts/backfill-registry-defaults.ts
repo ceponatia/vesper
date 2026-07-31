@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { fileURLToPath } from "node:url";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { materializeBodyDefaults, registryDefaultSourceId, type AttributeValue } from "../src/contracts";
 import { characters, db, personas } from "../src/server/db";
 
@@ -35,6 +35,14 @@ import { characters, db, personas } from "../src/server/db";
  * `--dry-run` stops there. Safe to re-run (a filled row re-plans zero
  * additions). Run once per environment (local, then Fly via
  * `fly ssh console -a vesper -C "pnpm tsx scripts/backfill-registry-defaults.ts"`).
+ *
+ * Safe against a LIVE application: every write is compare-and-set — the whole
+ * JSONB profile is replaced only WHERE it still equals the blob the plan was
+ * computed from (jsonb equality is structural, so key order can't false-negative).
+ * A row edited between the read and the write loses the race harmlessly: the
+ * script re-reads it, re-plans against the fresh blob, and retries (up to
+ * MAX_CAS_ATTEMPTS). A row still moving after the retries is reported as
+ * conflicted and the script exits non-zero so the operator re-runs it.
  */
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -82,21 +90,59 @@ export function planProfileBackfill(raw: unknown): { next: unknown; added: reado
   return { next: { ...profile, attributes: [...attributes, ...added] }, added };
 }
 
+type Site = "characters.profile" | "personas.profile";
+
 interface PlannedWrite {
-  readonly site: string;
+  readonly site: Site;
   readonly rowId: string;
+  /** The blob exactly as read — the compare-and-set expectation for the write. */
+  readonly original: unknown;
   readonly next: unknown;
   readonly added: readonly AttributeValue[];
 }
+
+/**
+ * One CAS-guarded write: replace the profile only WHERE it still equals the
+ * blob the plan was computed from. Returns false when a concurrent edit (or a
+ * delete) moved the row first — the caller replans from a fresh read instead
+ * of clobbering what the application just saved. A NULL profile (unseeded
+ * persona) is matched with IS NULL, which `=` can't express.
+ */
+async function casReplace(site: Site, rowId: string, original: unknown, next: unknown): Promise<boolean> {
+  if (site === "characters.profile") {
+    const unchanged = original === null ? isNull(characters.profile) : eq(characters.profile, original);
+    const result = await db()
+      .update(characters)
+      .set({ profile: next })
+      .where(and(eq(characters.id, rowId), unchanged));
+    return (result.rowCount ?? 0) > 0;
+  }
+  const unchanged = original === null ? isNull(personas.profile) : eq(personas.profile, original);
+  const result = await db().update(personas).set({ profile: next }).where(and(eq(personas.id, rowId), unchanged));
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** Fresh single-row read for the replan after a lost CAS race. */
+async function readProfile(site: Site, rowId: string): Promise<{ found: boolean; blob: unknown }> {
+  const rows =
+    site === "characters.profile"
+      ? await db().select({ blob: characters.profile }).from(characters).where(eq(characters.id, rowId))
+      : await db().select({ blob: personas.profile }).from(personas).where(eq(personas.id, rowId));
+  const row = rows[0];
+  return row === undefined ? { found: false, blob: null } : { found: true, blob: row.blob };
+}
+
+/** CAS attempts per row before declaring it conflicted (each retry replans). */
+const MAX_CAS_ATTEMPTS = 3;
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes("--dry-run");
 
   const plans: PlannedWrite[] = [];
-  const plan = (site: string, rows: readonly { id: string; blob: unknown }[]): void => {
+  const plan = (site: Site, rows: readonly { id: string; blob: unknown }[]): void => {
     for (const row of rows) {
       const { next, added } = planProfileBackfill(row.blob);
-      if (added.length > 0) plans.push({ site, rowId: row.id, next, added });
+      if (added.length > 0) plans.push({ site, rowId: row.id, original: row.blob, next, added });
     }
   };
 
@@ -127,14 +173,50 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  let applied = 0;
+  let settled = 0; // a concurrent edit already carries every fact
+  let vanished = 0; // the row was deleted mid-run
+  const conflicted: string[] = [];
   for (const entry of plans) {
-    if (entry.site === "characters.profile") {
-      await db().update(characters).set({ profile: entry.next }).where(eq(characters.id, entry.rowId));
-    } else {
-      await db().update(personas).set({ profile: entry.next }).where(eq(personas.id, entry.rowId));
+    let original = entry.original;
+    let next = entry.next;
+    let outcome: "applied" | "settled" | "vanished" | "conflicted" = "conflicted";
+    for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt++) {
+      if (await casReplace(entry.site, entry.rowId, original, next)) {
+        outcome = "applied";
+        break;
+      }
+      // Lost the race to a live edit: replan against the fresh blob so the
+      // concurrent change survives and only the still-missing facts are added.
+      const fresh = await readProfile(entry.site, entry.rowId);
+      if (!fresh.found) {
+        outcome = "vanished";
+        break;
+      }
+      const replanned = planProfileBackfill(fresh.blob);
+      if (replanned.added.length === 0) {
+        outcome = "settled";
+        break;
+      }
+      original = fresh.blob;
+      next = replanned.next;
     }
+    if (outcome === "applied") applied += 1;
+    else if (outcome === "settled") settled += 1;
+    else if (outcome === "vanished") vanished += 1;
+    else conflicted.push(`${entry.site} ${entry.rowId}`);
   }
-  console.log(`Applied ${plans.length} row update(s).`);
+
+  console.log(`Applied ${applied} row update(s).`);
+  if (settled > 0) console.log(`${settled} row(s) were filled by a concurrent edit — nothing left to add.`);
+  if (vanished > 0) console.log(`${vanished} row(s) were deleted mid-run — skipped.`);
+  if (conflicted.length > 0) {
+    console.error(
+      `${conflicted.length} row(s) still conflicted after ${MAX_CAS_ATTEMPTS} CAS attempts — nothing was lost; re-run to finish:`,
+    );
+    for (const row of conflicted) console.error(`  ${row}`);
+    process.exit(1);
+  }
   process.exit(0);
 }
 

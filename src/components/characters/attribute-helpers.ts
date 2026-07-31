@@ -32,6 +32,18 @@ export function removeAttribute(values: readonly AttributeValue[], id: string): 
   return values.filter((v) => v.id !== id);
 }
 
+/**
+ * Whether the editor may clear this attribute back to unset. Materialized
+ * baselines (`materializeDefault`) are never clearable: the server re-materializes
+ * the registry default on save, so a blank control would show an empty field
+ * while the stored body carries the default. Ordinary sparse attributes stay
+ * clearable. A selected replacement still goes through {@link setAttribute}
+ * (`source: "manual"`) either way.
+ */
+export function isClearableAttribute(def: AttributeDefinition): boolean {
+  return def.materializeDefault !== true;
+}
+
 /** AI chip shows for forge-sourced values until the human touches them. */
 export function isAiSourced(value: AttributeValue): boolean {
   return value.source === "creation";
