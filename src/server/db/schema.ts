@@ -323,6 +323,30 @@ export const characterChats = pgTable(
      * the read reaches the prompt; until then it rides through untouched.
      */
     affordanceCues: jsonb("affordance_cues"),
+    /**
+     * `SceneState` (contracts/affordances/scene/state.ts) — where the bodies are,
+     * how they are configured, what holds them up, and the contact core's
+     * active-contact projection HOUSED inside it (romantic-contact-affordances
+     * slice 3A; the affectionate integration proof).
+     *
+     * Chat-WIDE because a scene has no owner: proximity is a fact about a PAIR
+     * and a contact spans two bodies, so there is no per-character state row it
+     * could sit on without being half a truth. On the SCENARIO for the reason
+     * `affordance_cues` is — the physical read is a pure function of committed
+     * state plus this placement, so restoring both from the one
+     * `pre_exchange_scenario` anchor is what makes "another take" reproduce the
+     * identical read instead of resolving against a beat that no longer exists.
+     *
+     * This column is the PROJECTION; the durable provenance is the
+     * `chat_contact_events` ledger, which replays back into exactly this value
+     * (`replayContactCommits`). That is what keeps the two from becoming two
+     * truths — the projection may always be rebuilt from the events.
+     *
+     * Nullable: pre-feature rows are `null`, which the load boundary reads as the
+     * empty scene (nobody placed) WITHOUT a diagnostic. Anything actually stored
+     * crosses `parseSceneState`, which is total and fail-closed on version.
+     */
+    scene: jsonb("scene"),
     /** SupportingCastMember[] — recurring named side characters (chat-supporting-cast.plan.md). */
     supportingCast: jsonb("supporting_cast").notNull().default([]),
     /** ChatPlan[] — tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */
@@ -795,6 +819,86 @@ export const chatVisualMemory = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.memoryGroupId, t.viewpointId, t.subjectId] })],
+);
+
+/**
+ * The chat lane's DURABLE CONTACT LEDGER (romantic-contact-affordances — the
+ * affectionate integration proof): every `ContactLifecycleCommit` an exchange
+ * produced, stamped with the exchange that produced it.
+ *
+ * The ruled law is **durable event/action provenance plus a versioned
+ * active-contact projection captured in the chat's retake snapshot — never
+ * prompt-local**. This table is the provenance half; `character_chats.scene`
+ * (the `SceneState` riding `ChatScenario`, and therefore `pre_exchange_scenario`)
+ * is the projection half. Nothing about what is touching may live only in a
+ * rendered prompt, which is what the lane had before this: a sentence.
+ *
+ * ## Retakes
+ *
+ * `guard_message_id` is the exchange guard (`promptMessageId ?? assistantMessageId`)
+ * — the same key `chat_visual_memory` and both rollback anchors take, so the
+ * whole exchange rolls back to one boundary. "Another take" restores the
+ * projection through `pre_exchange_scenario` and DELETES this guard's rows
+ * (`deleteChatContactEventsForGuard`) before the new take re-runs the leg, so a
+ * regenerated exchange leaves one ledger entry per thing that happened rather
+ * than one per attempt. The guard FK also CASCADES, so deleting a message takes
+ * its contact provenance with it — the same trade `chat_visual_memory` makes,
+ * and the right one: an exchange that no longer exists cannot go on justifying
+ * what is touching.
+ *
+ * ## Why the idempotency key is (chat, event ref, sequence)
+ *
+ * One lane event can commit SEVERAL contacts at once: `contactCommitEvents` puts
+ * the ends that freed a surface pair ahead of the start that claimed it, and
+ * every one of them carries the same `ContactEventRef`. So the event ref alone
+ * cannot be unique. `sequence` is the commit's index within that event's commit
+ * list, which a retried write re-derives identically — the same event replayed
+ * produces the same (event_ref, sequence) pairs and conflicts harmlessly instead
+ * of duplicating the ledger.
+ *
+ * `payload` is the serialized commit, carried verbatim: this table records what
+ * happened, it does not interpret it (`chat-contact-events.ts` hands the blob
+ * back as `unknown` and leaves the shape to the contact core's own parser).
+ */
+export const chatContactEvents = pgTable(
+  "chat_contact_events",
+  {
+    id: id(),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => characterChats.id, { onDelete: "cascade" }),
+    /** The exchange guard — the retake key (`chat_visual_memory`'s precedent). */
+    guardMessageId: text("guard_message_id")
+      .notNull()
+      .references(() => characterChatMessages.id, { onDelete: "cascade" }),
+    /** The contact core's `ContactEventRef` for the lane event this commit belongs to. */
+    eventRef: text("event_ref").notNull(),
+    /** This commit's index within that event's commit list — the second half of the idempotency key. */
+    sequence: integer("sequence").notNull(),
+    /**
+     * The `ContactLifecycleCommit` discriminant. `contact_continued` is in the
+     * vocabulary and never written: an unchanged held contact across ten
+     * exchanges is ONE start, not ten rows. Naming it anyway keeps a later
+     * decision to record holds a data change rather than a migration.
+     */
+    kind: text("kind", {
+      enum: ["contact_started", "contact_updated", "contact_continued", "contact_ended"],
+    }).notNull(),
+    /** The contact this commit is about (`ContactId` — derived, so a replay reproduces it). */
+    contactId: text("contact_id").notNull(),
+    /** The story-clock minute the commit landed on (`ChatScenario.clockMinutes`). */
+    storyMinute: integer("story_minute").notNull(),
+    /** The serialized `ContactLifecycleCommit`. Never interpreted here. */
+    payload: jsonb("payload").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("chat_contact_events_event_sequence_unique").on(t.chatId, t.eventRef, t.sequence),
+    // The retake delete's index — one exchange's rows, by the guard it hangs on.
+    index("chat_contact_events_chat_guard_idx").on(t.chatId, t.guardMessageId),
+    // The reader's order (createdAt, then sequence within one event).
+    index("chat_contact_events_chat_created_idx").on(t.chatId, t.createdAt),
+  ],
 );
 
 export const locations = pgTable(

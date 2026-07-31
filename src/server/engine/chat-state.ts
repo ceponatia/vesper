@@ -21,6 +21,8 @@ import {
   type GarmentOperationTraceEntry,
   affordanceCueStateSchema,
   emptyAffordanceCueState,
+  emptySceneState,
+  parseSceneState,
   applyEnvironmentProposal,
   applySurfaceWetnessProposals,
   parseSurfaceWetnessProposals,
@@ -30,6 +32,7 @@ import {
   emptyChatEnvironment,
   type AffordanceCueState,
   type BodySurfaceState,
+  type SceneState,
   type ChatEnvironment,
   type ChatSurfaceTraceEntry,
   chatGarmentStoreSchema,
@@ -242,6 +245,30 @@ export interface ChatScenario {
    * through untouched.
    */
   affordanceCues: AffordanceCueState;
+  /**
+   * WHERE THE BODIES ARE (contracts/affordances/scene) — posture, coarse facing
+   * and proximity, what bears the weight, and the contact core's active-contact
+   * projection housed inside it.
+   *
+   * Chat-wide because a scene has no owner: proximity is a fact about a PAIR and
+   * a contact spans two bodies, so there is no per-character `ChatState` it could
+   * sit on without being half a truth. It rides the SCENARIO for the reason
+   * `environment` and `affordanceCues` do — the scenario IS the "another take"
+   * anchor (`pre_exchange_scenario`), and the physical read is a pure function of
+   * committed state plus this placement, so a retake that restores them together
+   * reproduces the identical read rather than resolving a discarded beat's pose.
+   *
+   * `parseSceneState` is the boundary, and it is TOTAL: a malformed blob, a
+   * contradicted key, or a version this build cannot read all degrade to
+   * `emptySceneState()` with the scene module's own diagnostics — it never
+   * throws. That matters more here than anywhere else, because a boundary that
+   * could fail would silently kill every existing rollback anchor.
+   *
+   * This is the PROJECTION. The durable provenance is the `chat_contact_events`
+   * ledger (`chat-contact-events.ts`), which replays back into exactly this value
+   * — so the projection may always be rebuilt and is never a second truth.
+   */
+  scene: SceneState;
   /** Recurring named side characters (chat-supporting-cast.plan.md) — one cast for the roster. */
   supportingCast: SupportingCast;
   /** Tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */
@@ -601,6 +628,9 @@ export function seedChatScenario(profile: CharacterProfile, premise?: string): C
     // a conversation that has never mentioned weather has none.
     environment: emptyChatEnvironment(),
     affordanceCues: emptyAffordanceCueState(),
+    // Nobody placed, nothing touching — the one seed that claims nothing, so
+    // every scene read answers `unresolved` until an adapter states a fact.
+    scene: emptySceneState(),
     supportingCast: emptySupportingCast(),
     plans: emptyChatPlans(),
     clockMinutes: 0,
@@ -623,6 +653,12 @@ const chatScenarioSchema = z.object({
   garments: chatGarmentStoreSchema.catch(emptyChatGarmentStore()).default(emptyChatGarmentStore()),
   environment: chatEnvironmentSchema.catch(emptyChatEnvironment()).default(emptyChatEnvironment()),
   affordanceCues: affordanceCueStateSchema.catch(emptyAffordanceCueState()).default(emptyAffordanceCueState()),
+  // RAW on purpose. The scene carries its own boundary (`parseSceneState`:
+  // total, item-lenient, fail-closed on version, with its own diagnostics), and
+  // a second healing rule living here is exactly the thing that would quietly
+  // disagree with it. The anchor schema carries the bytes; `sceneOrEmpty` below
+  // hands them to the one parser that owns the shape.
+  scene: z.unknown(),
   supportingCast: supportingCastSchema.catch([]).default([]),
   plans: chatPlansSchema.catch([]).default([]),
   clockMinutes: z.number().catch(0).default(0),
@@ -632,6 +668,21 @@ const chatScenarioSchema = z.object({
   meanwhilePassAtMinutes: z.number().catch(0).default(0),
   skipHistory: z.array(skipRecordSchema).catch([]).default([]),
 });
+
+/**
+ * The scene column's trust boundary.
+ *
+ * An ABSENT value — every row and every anchor written before this column
+ * existed — is "nobody placed yet", not a corrupt scene. `parseSceneState` would
+ * rightly refuse a version-less blob and file a diagnostic, and doing that on
+ * every legacy conversation's every load would drown the signal the sink exists
+ * for (the same reason `environment` and `affordanceCues` short-circuit `null`).
+ * The empty scene IS that reading, so take it directly; anything actually stored
+ * goes through the parser, which is total and never throws.
+ */
+function sceneOrEmpty(raw: unknown, sink?: DiagnosticSink): SceneState {
+  return raw === null || raw === undefined ? emptySceneState() : parseSceneState(raw, sink);
+}
 
 /** Load the conversation's scenario off its chat row; null when the chat is gone. */
 export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): Promise<ChatScenario | null> {
@@ -646,6 +697,7 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
       garments: characterChats.garments,
       environment: characterChats.environment,
       affordanceCues: characterChats.affordanceCues,
+      scene: characterChats.scene,
       supportingCast: characterChats.supportingCast,
       plans: characterChats.plans,
       clockMinutes: characterChats.clockMinutes,
@@ -682,6 +734,7 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
       sink,
       "character_chats.affordance_cues",
     ),
+    scene: sceneOrEmpty(row.scene, sink),
     supportingCast: parseOr(supportingCastSchema, row.supportingCast, [], sink, "character_chats.supporting_cast"),
     plans: parseOr(chatPlansSchema, row.plans, [], sink, "character_chats.plans"),
     clockMinutes: row.clockMinutes,
@@ -713,6 +766,7 @@ export async function saveChatScenario(chatId: string, scenario: ChatScenario, g
       garments = ${JSON.stringify(scenario.garments)}::jsonb,
       environment = ${JSON.stringify(scenario.environment)}::jsonb,
       affordance_cues = ${JSON.stringify(scenario.affordanceCues)}::jsonb,
+      scene = ${JSON.stringify(scenario.scene)}::jsonb,
       supporting_cast = ${JSON.stringify(scenario.supportingCast)}::jsonb,
       plans = ${JSON.stringify(scenario.plans)}::jsonb,
       clock_minutes = ${scenario.clockMinutes},
@@ -739,7 +793,14 @@ export async function loadMilestonesSeenAt(chatId: string): Promise<Date | null>
   return row?.milestonesSeenAt ?? null;
 }
 
-/** Persist the scenario rollback anchor ("another take"'s other half). `null` ⇒ `{}`. */
+/**
+ * Persist the scenario rollback anchor ("another take"'s other half). `null` ⇒ `{}`.
+ *
+ * The WHOLE scenario object is serialized in one blob, which is why a new
+ * scenario field inherits the anchor with no new snapshot machinery — `scene`
+ * (and the contact projection housed in it) rides here for free, exactly as
+ * `garments` and `environment` do.
+ */
 export async function savePreExchangeScenario(chatId: string, scenario: ChatScenario | null, guardMessageId?: string): Promise<void> {
   const guard = guardMessageId
     ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
@@ -761,11 +822,15 @@ export async function savePreExchangeScenario(chatId: string, scenario: ChatScen
  * that struck a plan must not double-mint it, and plans are fiction state, not
  * author curation.
  *
- * `environment` and `affordanceCues` ride `...anchor` too, and that is the whole
- * capture mechanism for the affordance read (architecture spec §"Recompute and
- * capture"): the read is a pure function of committed state plus its cue memory,
- * so restoring both here is what makes a retake reproduce the identical read
- * rather than resolving against later weather.
+ * `environment`, `affordanceCues` and `scene` ride `...anchor` too, and that is
+ * the whole capture mechanism for the affordance read (architecture spec
+ * §"Recompute and capture"): the read is a pure function of committed state plus
+ * its cue memory, so restoring them here is what makes a retake reproduce the
+ * identical read rather than resolving against later weather or a pose from a
+ * beat that no longer exists. `scene` carries the active-contact projection, so
+ * the discarded take's touches un-happen with it — the ledger half of that
+ * rollback is `deleteChatContactEventsForGuard` (chat-contact-events.ts), which
+ * the pipeline runs before the new take re-commits.
  */
 export function rollbackScenario(anchor: ChatScenario, live: ChatScenario | null): ChatScenario {
   return { ...anchor, supportingCast: live?.supportingCast ?? anchor.supportingCast };
@@ -779,7 +844,14 @@ export async function loadPreExchangeScenario(chatId: string): Promise<ChatScena
     .where(eq(characterChats.id, chatId))
     .limit(1);
   if (!row || isEmptyJsonObject(row.preExchangeScenario)) return null;
-  return parseOrNull(chatScenarioSchema, row.preExchangeScenario);
+  const parsed = parseOrNull(chatScenarioSchema, row.preExchangeScenario);
+  if (!parsed) return null;
+  // The scene rides the anchor as raw bytes (see the schema slot); this is where
+  // they meet their own parser. An anchor written before the field existed has no
+  // `scene` key at all, which `sceneOrEmpty` reads as the empty scene — nobody
+  // placed, which is the restoration that can never be wrong in a harmful
+  // direction. No sink: a legacy anchor is not a corruption to report.
+  return { ...parsed, scene: sceneOrEmpty(parsed.scene) };
 }
 
 /** Load the stored state for a chat, parsing every jsonb at the trust boundary, or null when no row exists. */
