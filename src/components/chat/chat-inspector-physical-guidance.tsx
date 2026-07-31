@@ -6,6 +6,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   chatInspectorApi,
+  type PhysicalGuidanceActionOutcome,
   type PhysicalGuidanceCandidate,
   type PhysicalGuidancePreview,
 } from "@/lib/api-inspector";
@@ -17,19 +18,22 @@ import {
  * It shows the staircase a developer reads in code, in order —
  *
  * ```text
- * input authority → committed state → relevance → candidates
- *   → disclosure + selection → rendered instruction
+ * input authority → committed state → relevance → candidates (fences, premise
+ *   checks, and the contact leg's resolved act) → disclosure + selection
+ *   → rendered instruction
  * ```
  *
  * — for the stored cut and the newest player line. Like the affordance panel above it,
- * it answers ONE question well: why did this turn say nothing? Silence has six
- * different causes here and they are indistinguishable from the prompt — the flag is
+ * it answers ONE question well: why did this turn say nothing? Silence has eight
+ * different causes here and they are indistinguishable from the prompt — either flag is
  * off, the message was never eligible, the committed owner could not answer, the claim
- * was ambiguous, the fence was true but irrelevant to this turn, or a candidate lost a
- * budget — so every stage shows its own input.
+ * was ambiguous, the fence was true but irrelevant to this turn, a candidate lost a
+ * budget, no act was detected, or one was and it did not resolve — so every stage shows
+ * its own input.
  *
- * Computes on demand and stores nothing. Admin-gated like every other section on this
- * page; the route proves ownership independently.
+ * Computes on demand and stores nothing: the contact leg's plan runs, its ledger write
+ * and scene fold do not. Admin-gated like every other section on this page; the route
+ * proves ownership independently.
  */
 export function ChatInspectorPhysicalGuidance({ chatId }: { chatId: string }) {
   const preview = useAsyncData(() => chatInspectorApi.physicalGuidance(chatId), [chatId]);
@@ -64,6 +68,10 @@ function PreviewBody({ data }: { data: PhysicalGuidancePreview }) {
         Guidance block{" "}
         <span className={data.flagEnabled ? "text-ok-400" : "text-paper-400"}>
           {data.flagEnabled ? "reaching the narrator" : "off (CHAT_PHYSICAL_CONSTRAINTS)"}
+        </span>{" "}
+        · contact leg{" "}
+        <span className={data.contactFlagEnabled ? "text-ok-400" : "text-paper-400"}>
+          {data.contactFlagEnabled ? "live" : "off (CHAT_CONTACT_ACTIONS)"}
         </span>{" "}
         · computed on demand, nothing stored
       </p>
@@ -157,13 +165,23 @@ function PreviewBody({ data }: { data: PhysicalGuidancePreview }) {
       </Panel>
 
       <Panel
-        label={`4 · candidates — ${data.candidates.corrections.length} correction(s), ${data.candidates.constraints.length} constraint(s)`}
+        label={`4 · candidates — ${data.candidates.corrections.length} correction(s), ${data.candidates.constraints.length} constraint(s), ${data.candidates.actionOutcomes.length} action(s)`}
       >
         <Stage label="premise corrections">
           <CandidateList rows={data.candidates.corrections} empty="No premise claim survived the guards." />
         </Stage>
         <Stage label="consistency constraints">
           <CandidateList rows={data.candidates.constraints} empty="Nothing is holding this hair still." />
+        </Stage>
+        <Stage label="resolved actions — the contact leg">
+          <ActionOutcomeList rows={data.candidates.actionOutcomes} />
+          <p className="mt-2 text-[11px] text-paper-500">
+            An act the player just performed is about this turn by construction, so it skips
+            relevance entirely. The outcome is re-derived read-only: the plan runs, the ledger row
+            and the scene fold a live turn would write do not, and the persistence a{" "}
+            <span className="text-paper-300">committed</span> status rests on is the write that turn
+            would have awaited.
+          </p>
         </Stage>
         {data.candidates.diagnostics.length > 0 ? (
           <Stage label="diagnostics">
@@ -182,6 +200,7 @@ function PreviewBody({ data }: { data: PhysicalGuidancePreview }) {
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-[11px]">
           <Row term="corrections kept" value={data.selection.corrections.join(", ") || "—"} />
           <Row term="constraints kept" value={data.selection.constraints.join(", ") || "—"} />
+          <Row term="actions kept" value={data.selection.actionOutcomes.join(", ") || "—"} />
           <Row term="dropped" value={data.selection.dropped.join(", ") || "none"} muted={data.selection.dropped.length > 0} />
         </dl>
         <p className="mt-2 text-[11px] text-paper-500">
@@ -208,6 +227,45 @@ function CandidateList({ rows, empty }: { rows: readonly PhysicalGuidanceCandida
           <span className="text-paper-500">may state</span>{" "}
           <span className="text-ok-400">{row.allowedClaimCodes.join(", ") || "— (nothing; the cause stays out)"}</span>
           {row.locusIds.length > 0 ? <span className="text-paper-600"> @ {row.locusIds.join(", ")}</span> : null}
+          {row.evidence.length > 0 ? (
+            <>
+              <br />
+              <span className="text-paper-600">{row.evidence.join(" · ")}</span>
+            </>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** `committed` is the only positive result this block ever states — everything else is a limit. */
+function outcomeTone(status: string): string {
+  if (status === "committed") return "text-ok-400";
+  if (status === "unresolved") return "text-paper-500";
+  return "text-danger-300";
+}
+
+function ActionOutcomeList({ rows }: { rows: readonly PhysicalGuidanceActionOutcome[] }) {
+  if (rows.length === 0) {
+    return (
+      <p className="text-xs text-paper-500">
+        No act was detected in the player&rsquo;s line. A hedge, a negation, a question, romantic or
+        forceful framing, and an ambiguous target all commit nothing on purpose.
+      </p>
+    );
+  }
+  return (
+    <ul className="flex flex-col gap-2 font-mono text-[11px]">
+      {rows.map((row) => (
+        <li key={row.fingerprint} className="break-words">
+          <span className={outcomeTone(row.status)}>{row.status}</span>{" "}
+          <span className="text-paper-500">· {row.disclosure}</span>
+          {row.narratorMustResolve ? <span className="text-paper-400"> · must be accounted for</span> : null}
+          <br />
+          <span className="text-paper-300">{row.resultCodes.join(", ") || "—"}</span>
+          <br />
+          <span className="text-paper-600">{row.actionId}</span>
           {row.evidence.length > 0 ? (
             <>
               <br />

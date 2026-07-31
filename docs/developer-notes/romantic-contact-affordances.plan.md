@@ -460,6 +460,20 @@ on immobilized limbs.
    corrupt-blob degradation. Actor control is READ off the scene's control
    fact rather than asserted, which delivers part of item 2's mechanism
    early. No restraint/pinning anywhere.
+
+   **The developer view came with it.** A feature this quiet needs somewhere to
+   answer "why did nothing happen", and silence has many causes that look
+   identical from the prompt: either flag off, a hedge or a negation in the
+   line, an ambiguous target, romantic framing, or a reach the scene could not
+   resolve. So both dev previews re-derive the leg **read-only** — they run the
+   detection and word the outcome, and deliberately skip the two things a live
+   turn does that a preview may not: writing the durable row and moving the
+   bodies. The prompt preview obeys the flags, because it is showing the exact
+   bytes a turn would send; the guidance inspector reports them and runs the leg
+   either way, so what turning a flag on would do is visible before turning it
+   on. The one thing the preview assumes rather than observes is that the
+   durable write it did not perform would have succeeded — without that, every
+   contact would preview as silence, which is the blind spot it exists to close.
 2. **Actor control through the live lane** — enforcement, not just the
    contract.
 3. **The explicit `romantic_touch` permission owner — spec before

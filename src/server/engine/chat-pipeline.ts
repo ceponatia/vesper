@@ -2499,17 +2499,118 @@ export async function previewChatAffordances(input: {
  * player said" is the one that produced the reply a developer is looking at. Narrator
  * mode rides the line's own meta, so the preview reproduces the live authority
  * decision rather than assuming ordinary input.
+ *
+ * The row's own id comes back with it because the contact preview needs the exchange
+ * guard: an ordinary send keys its ledger on `promptMessageId`, which IS this row, so
+ * a preview that carries it re-derives the very contact the live turn wrote rather
+ * than a look-alike under a different ref.
  */
-async function lastPlayerMessage(chatId: string): Promise<{ content: string; narrator: boolean }> {
+async function lastPlayerMessage(chatId: string): Promise<{ id: string | null; content: string; narrator: boolean }> {
   const [row] = await db()
-    .select({ content: characterChatMessages.content, meta: characterChatMessages.meta })
+    .select({ id: characterChatMessages.id, content: characterChatMessages.content, meta: characterChatMessages.meta })
     .from(characterChatMessages)
     .where(and(eq(characterChatMessages.chatId, chatId), eq(characterChatMessages.role, "user")))
     .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
     .limit(1);
-  if (!row) return { content: "", narrator: false };
+  if (!row) return { id: null, content: "", narrator: false };
   const meta = parseOr(messageAttachmentsMetaSchema, row.meta ?? {}, {}, undefined, "character_chat_messages.meta");
-  return { content: row.content, narrator: meta.inputMode === "narrator" };
+  return { id: row.id, content: row.content, narrator: meta.inputMode === "narrator" };
+}
+
+/**
+ * This turn's resolved contact, re-derived READ-ONLY for a preview
+ * (romantic-contact-affordances.plan.md §"Continuation order" 1).
+ *
+ * The live leg does four things: plan, write the ledger, advance the scene
+ * projection, and word the outcome. A preview may only do the first and the last, so
+ * this runs the same `planChatContactTurn` over the STORED cut and the newest player
+ * line, keeps the outcome, and drops the planned scene. Nothing is appended to
+ * `chat_contact_events`, and nothing is written back to the scenario: looking at a
+ * prompt must never move a body or record a touch.
+ *
+ * **The one thing it assumes rather than observes.** `contactActionOutcomeStatus`
+ * will not say `committed` without an acknowledgment of a durable write, and a
+ * preview performs none — so a literal "no write, no acknowledgment" preview would
+ * render every contact as silence, which is exactly the blind spot this closes. The
+ * acknowledgment is therefore built from the plan, as the one the live turn's awaited
+ * write produces. That assumption is stated to the inspector rather than hidden (the
+ * contact stage reports its own flag beside these rows), and in the ordinary case it
+ * is not an assumption at all: replaying the newest line against the cut that line
+ * already settled re-derives the SAME contact, which folds `contact_continued` — the
+ * case that legitimately writes no row.
+ *
+ * Two fidelity limits worth knowing while reading the inspector:
+ *
+ * - **One character.** `loadChatPreviewCut` loads the primary participant, so an
+ *   ensemble previews as a 1-on-1. A pronoun resolves only when exactly one character
+ *   is present, so a group chat's preview can resolve a "your" the live turn refuses
+ *   as ambiguous.
+ * - **The cut is post-settle.** The live leg planned against the PRE-exchange scene;
+ *   this replans against the scene that exchange left behind — the same
+ *   after-the-fact reading the guidance preview beside it already takes on the
+ *   premise check.
+ *
+ * Fenced whole like the live leg (docs/resilience.md): any failure degrades to no
+ * outcomes, which is the flag-off preview, and never costs the inspector its page.
+ */
+function previewChatContactOutcomes(input: {
+  chatId: string;
+  character: { id: string; name: string };
+  cut: Awaited<ReturnType<typeof loadChatPreviewCut>>;
+  message: { id: string | null; content: string; narrator: boolean };
+  sink: DiagnosticCollector;
+}): readonly PhysicalActionOutcome[] {
+  const { cut } = input;
+  try {
+    // No player line yet ⇒ no act is detectable, so the fallback ref is only ever a
+    // placeholder for a plan that returns nothing.
+    const eventRef = chatContactEventRef(input.message.id ?? `preview:${input.chatId}`);
+    const storyMinute = Math.max(0, Math.trunc(cut.scenario.clockMinutes));
+    // PRESENT only, exactly as the live roster is built: an away character is not a
+    // body in the room, and an empty roster resolves no target at all.
+    const characters: ChatContactRosterMember[] =
+      cut.state.presence === "present"
+        ? [
+            {
+              subjectId: affordanceSubjectId(input.character.id),
+              name: input.character.name,
+              aliases: cut.profile.aliases,
+              coverage: capturedGarmentCoverage(cut.scenario.garments, garmentActorForCharacter(input.character.id)),
+            },
+          ]
+        : [];
+
+    // The planned scene — the seeding, and any movement the line wrote — is
+    // deliberately NOT taken: it is authoritative state a live turn persists with the
+    // exchange, and a preview has no exchange to persist it with.
+    const { act, resolution, commit } = planChatContactTurn({
+      scene: cut.scenario.scene,
+      message: input.message.content,
+      narratorInput: input.message.narrator,
+      characters,
+      eventRef,
+      storyTime: storyMinute,
+      sink: input.sink,
+    });
+    if (act === null || resolution === null) return [];
+    const acknowledgment =
+      commit?.status === "committed"
+        ? chatContactAcknowledgment({ commit, eventRef, actionId: act.actionId })
+        : undefined;
+    return [
+      chatContactActionOutcome({
+        act,
+        resolution,
+        eventRef,
+        ...(commit === null ? {} : { commit }),
+        ...(acknowledgment === undefined ? {} : { acknowledgment }),
+        sink: input.sink,
+      }),
+    ];
+  } catch (error) {
+    log.error("engine.chat", "chat contact preview failed", { error: describeError(error) });
+    return [];
+  }
 }
 
 /**
@@ -2531,6 +2632,18 @@ export async function previewChatPhysicalGuidance(input: {
   const cut = await loadChatPreviewCut({ chatId: input.chatId, character: input.character, sink });
   const read = previewAffordanceRead({ characterId: input.character.id, cut, sink });
   const message = await lastPlayerMessage(input.chatId);
+  // Reported, never obeyed — the same discipline the affordance read above follows. A
+  // developer asking why a contact turn narrated nothing needs the answer with
+  // `CHAT_CONTACT_ACTIONS` off too, which is why this runs unconditionally and the
+  // flag rides the preview as a field. (`previewChatPrompt` gates on it instead: that
+  // surface is showing prompt bytes, so it has to obey.)
+  const actionOutcomes = previewChatContactOutcomes({
+    chatId: input.chatId,
+    character: input.character,
+    cut,
+    message,
+    sink,
+  });
   const stages = buildChatPhysicalGuidanceStages({
     read: read.read,
     perception: read.request.perception,
@@ -2543,10 +2656,14 @@ export async function previewChatPhysicalGuidance(input: {
     // Same pure detector the live turn runs over the same line, so the inspector cannot
     // report a relevance decision the turn would not have made.
     sensoryFocus: detectSensoryFocus(message.content),
+    // An empty list compiles identically to no list at all
+    // (`normalizeGuidanceCandidates`), so the no-contact staircase is unchanged.
+    actionOutcomes,
     sink,
   });
   return buildChatPhysicalGuidancePreview({
     flagEnabled: chatPhysicalConstraintsEnabled(),
+    contactFlagEnabled: chatContactActionsEnabled(),
     narratorInput: message.narrator,
     message: message.content,
     playerName: cut.player.name,
@@ -2554,6 +2671,7 @@ export async function previewChatPhysicalGuidance(input: {
     committed: read.committed,
     candidateConstraints: stages.candidateConstraints,
     candidateCorrections: stages.candidateCorrections,
+    candidateActionOutcomes: stages.candidateActionOutcomes,
     guidance: stages.guidance,
     relevance: stages.relevance,
     constraintCodes: read.read.constraints.map((constraint) => constraint.code),
@@ -2573,11 +2691,8 @@ export async function previewChatPrompt(input: {
   character: { id: string; name: string; profile: unknown };
 }): Promise<ChatPromptPreview> {
   const sink = new DiagnosticCollector();
-  const { profile, scenario, state, player, wardrobe, playerWardrobe } = await loadChatPreviewCut({
-    chatId: input.chatId,
-    character: input.character,
-    sink,
-  });
+  const cut = await loadChatPreviewCut({ chatId: input.chatId, character: input.character, sink });
+  const { profile, scenario, state, player, wardrobe, playerWardrobe } = cut;
   const summaryState = await loadChatSummary(input.chatId);
   const memory = await retrieveChatMemory({
     groupId: input.memoryGroupId,
@@ -2592,11 +2707,7 @@ export async function previewChatPrompt(input: {
   // cut. The preview never persists `nextCues`, so looking at a prompt can't spend
   // the repeat gate — the read is pure, so rebuilding it costs nothing but CPU.
   const previewAffordance = chatAffordanceCuesEnabled()
-    ? previewAffordanceRead({
-        characterId: input.character.id,
-        cut: { profile, owner: "", scenario, state, player, wardrobe, playerWardrobe },
-        sink,
-      })
+    ? previewAffordanceRead({ characterId: input.character.id, cut, sink })
     : null;
   const previewGarmentNarration = chatGarmentCuesEnabled()
     ? buildChatGarmentNarration({
@@ -2618,12 +2729,15 @@ export async function previewChatPrompt(input: {
   // have been holding. Nothing is stored either way; guidance never was.
   let previewPhysicalGuidance: readonly string[] = [];
   if (chatPhysicalConstraintsEnabled()) {
-    const read = previewAffordanceRead({
-      characterId: input.character.id,
-      cut: { profile, owner: "", scenario, state, player, wardrobe, playerWardrobe },
-      sink,
-    });
+    const read = previewAffordanceRead({ characterId: input.character.id, cut, sink });
     const message = await lastPlayerMessage(input.chatId);
+    // BOTH flags, exactly as the live path gates them: the contact leg is its own
+    // experiment, and its outcome only reaches the narrator inside the guidance block
+    // it rides in. Unlike the inspector, this surface OBEYS `CHAT_CONTACT_ACTIONS` —
+    // it is showing prompt bytes, so a flag-off preview has to BE the flag-off bytes.
+    const actionOutcomes = chatContactActionsEnabled()
+      ? previewChatContactOutcomes({ chatId: input.chatId, character: input.character, cut, message, sink })
+      : [];
     previewPhysicalGuidance = renderChatPhysicalGuidance({
       guidance: buildChatPhysicalGuidance({
         read: read.read,
@@ -2635,6 +2749,9 @@ export async function previewChatPrompt(input: {
         message: message.content,
         narratorInput: message.narrator,
         sensoryFocus: detectSensoryFocus(message.content),
+        // The same conditional spread the live call site uses, for the same reason: a
+        // contact-flag-off preview compiles the exact bytes it compiled before the leg.
+        ...(actionOutcomes.length > 0 ? { actionOutcomes } : {}),
         sink,
       }),
       characterName: input.character.name,

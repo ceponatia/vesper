@@ -2,6 +2,7 @@ import {
   hairClaim,
   type Diagnostic,
   type NarratorPhysicalGuidance,
+  type PhysicalActionOutcome,
   type PhysicalNarrationConstraint,
   type PhysicalPremiseCorrection,
 } from "@/contracts";
@@ -15,19 +16,22 @@ import type { ChatGuidanceRelevance } from "./chat-physical-guidance";
  * source resolution → candidate → disclosure → selection → rendered instruction").
  *
  * It answers the question a fence makes people ask, which is not "what did it say"
- * but "why did it say nothing". Silence here has six different causes and they look
- * identical from the prompt: the flag is off, the message was never eligible, the
+ * but "why did it say nothing". Silence here has eight different causes and they look
+ * identical from the prompt: either flag is off, the message was never eligible, the
  * committed owner could not answer, the claim was ambiguous, the fence was true but
- * not relevant to this turn, or the candidate lost a budget. So each stage is shown
- * separately, with what entered it.
+ * not relevant to this turn, the candidate lost a budget, no act was detected in the
+ * player's line, or one was and it did not resolve. So each stage is shown separately,
+ * with what entered it.
  *
  * Three deliberate properties, matching the affordance preview beside it:
  *
- * - **It stores nothing.** There is nothing to store — guidance is recomputed from the
- *   cut and the message every turn by design, so a preview is simply a second
- *   evaluation and cannot spend anything.
- * - **It ignores the flag and reports it.** A developer asking why a fence never
- *   appeared needs the answer with the flag off too.
+ * - **It stores nothing.** Guidance is recomputed from the cut and the message every
+ *   turn by design, so a preview is simply a second evaluation. The contact leg is the
+ *   one stage that DOES write when a live turn runs it, so the preview runs only its
+ *   pure half — see `previewChatContactOutcomes`, which plans and words the outcome
+ *   while discarding the ledger append and the scene projection.
+ * - **It ignores both flags and reports them.** A developer asking why a fence or a
+ *   contact never appeared needs the answer with the flags off too.
  * - **It renders the same lines production would.** The caller passes the rendered
  *   block through rather than re-wording it, so the preview cannot explain prose that
  *   differs from the prompt's.
@@ -49,6 +53,23 @@ export interface PhysicalGuidancePreviewCandidate {
   readonly evidence: readonly string[];
 }
 
+/**
+ * One resolved physical action, flattened for display. Codes stay raw, exactly as the
+ * candidate rows above keep theirs: this is a debug surface, and the wording those
+ * codes earn is already visible in the rendered block.
+ */
+export interface PhysicalGuidancePreviewActionOutcome {
+  readonly fingerprint: string;
+  readonly actionId: string;
+  /** `committed` · `rejected` · `explicit_transition_required` · `unresolved`. */
+  readonly status: string;
+  readonly disclosure: string;
+  /** Whether the narrator is obliged to account for this result rather than skip it. */
+  readonly narratorMustResolve: boolean;
+  readonly resultCodes: readonly string[];
+  readonly evidence: readonly string[];
+}
+
 /** Where an input-authority decision came from, per span of the current message. */
 export interface PhysicalGuidancePreviewSpan {
   readonly kind: string;
@@ -59,6 +80,13 @@ export interface PhysicalGuidancePreviewSpan {
 export interface PhysicalGuidancePreview {
   /** Whether `CHAT_PHYSICAL_CONSTRAINTS` is on — i.e. whether these lines reach the narrator. */
   readonly flagEnabled: boolean;
+  /**
+   * Whether `CHAT_CONTACT_ACTIONS` is on — i.e. whether a live turn would run the
+   * contact leg at all. Reported rather than obeyed, like the flag above: the outcomes
+   * below are computed either way, so a developer can see what the leg WOULD resolve
+   * before turning it on. Both flags must be on for a contact to reach the narrator.
+   */
+  readonly contactFlagEnabled: boolean;
   /** Stage 1 — who is allowed to assert a premise this turn, and which spans qualified. */
   readonly inputAuthority: {
     readonly narratorInput: boolean;
@@ -91,12 +119,19 @@ export interface PhysicalGuidancePreview {
   readonly candidates: {
     readonly constraints: readonly PhysicalGuidancePreviewCandidate[];
     readonly corrections: readonly PhysicalGuidancePreviewCandidate[];
+    /**
+     * This turn's resolved contact, when the contact leg produced one. It skips the
+     * relevance stage entirely — an act the player just performed is about this turn
+     * by construction — so it appears here with no stage-3 row to explain it.
+     */
+    readonly actionOutcomes: readonly PhysicalGuidancePreviewActionOutcome[];
     readonly diagnostics: readonly { readonly level: string; readonly code: string; readonly message: string }[];
   };
   /** Stage 5 — what survived, and what a budget or the disclosure gate dropped. */
   readonly selection: {
     readonly constraints: readonly string[];
     readonly corrections: readonly string[];
+    readonly actionOutcomes: readonly string[];
     readonly dropped: readonly string[];
   };
   /** Stage 6 — the exact lines the narrator prompt would carry. */
@@ -157,6 +192,18 @@ function correctionRow(correction: PhysicalPremiseCorrection): PhysicalGuidanceP
   };
 }
 
+function actionOutcomeRow(outcome: PhysicalActionOutcome): PhysicalGuidancePreviewActionOutcome {
+  return {
+    fingerprint: outcome.fingerprint,
+    actionId: outcome.actionId,
+    status: outcome.status,
+    disclosure: outcome.disclosure,
+    narratorMustResolve: outcome.narratorMustResolve,
+    resultCodes: [...outcome.resultCodes],
+    evidence: evidenceStrings(outcome.evidence),
+  };
+}
+
 function diagnosticRows(
   diagnostics: readonly Diagnostic[],
 ): readonly { readonly level: string; readonly code: string; readonly message: string }[] {
@@ -192,6 +239,7 @@ function droppedFingerprints(diagnostics: readonly Diagnostic[]): readonly strin
  */
 export function buildChatPhysicalGuidancePreview(input: {
   readonly flagEnabled: boolean;
+  readonly contactFlagEnabled: boolean;
   readonly narratorInput: boolean;
   readonly message: string;
   readonly playerName: string;
@@ -199,6 +247,8 @@ export function buildChatPhysicalGuidancePreview(input: {
   readonly committed: ChatCommittedHairState;
   readonly candidateConstraints: readonly PhysicalNarrationConstraint[];
   readonly candidateCorrections: readonly PhysicalPremiseCorrection[];
+  /** The contact leg's outcomes, before the disclosure gate — empty when it resolved none. */
+  readonly candidateActionOutcomes: readonly PhysicalActionOutcome[];
   /** The relevance decision the compile made, verbatim — never recomputed here. */
   readonly relevance: ChatGuidanceRelevance;
   /** The constraint codes the CUT resolved, so a withheld fence is still visible. */
@@ -223,6 +273,7 @@ export function buildChatPhysicalGuidancePreview(input: {
 
   return {
     flagEnabled: input.flagEnabled,
+    contactFlagEnabled: input.contactFlagEnabled,
     inputAuthority: {
       narratorInput: input.narratorInput,
       message: input.message,
@@ -252,11 +303,13 @@ export function buildChatPhysicalGuidancePreview(input: {
     candidates: {
       constraints: input.candidateConstraints.map(constraintRow),
       corrections: input.candidateCorrections.map(correctionRow),
+      actionOutcomes: input.candidateActionOutcomes.map(actionOutcomeRow),
       diagnostics: diagnosticRows(input.diagnostics),
     },
     selection: {
       constraints: input.guidance.constraints.map((constraint) => constraint.fingerprint),
       corrections: input.guidance.corrections.map((correction) => correction.fingerprint),
+      actionOutcomes: input.guidance.actionOutcomes.map((outcome) => outcome.fingerprint),
       dropped: droppedFingerprints(input.diagnostics),
     },
     rendered: [...input.rendered],

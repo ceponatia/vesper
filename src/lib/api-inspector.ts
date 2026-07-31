@@ -160,8 +160,21 @@ const guidanceCandidateSchema = z.object({
 });
 export type PhysicalGuidanceCandidate = z.infer<typeof guidanceCandidateSchema>;
 
+/** One resolved physical action (the contact leg), as the inspector lists it. */
+const guidanceActionOutcomeSchema = z.object({
+  fingerprint: textOr(""),
+  actionId: textOr(""),
+  status: textOr("unresolved"),
+  disclosure: textOr(""),
+  narratorMustResolve: z.boolean().catch(false),
+  resultCodes: z.array(z.string()).catch([]),
+  evidence: z.array(z.string()).catch([]),
+});
+export type PhysicalGuidanceActionOutcome = z.infer<typeof guidanceActionOutcomeSchema>;
+
 export const physicalGuidancePreviewSchema = z.object({
   flagEnabled: z.boolean().catch(false),
+  contactFlagEnabled: z.boolean().catch(false),
   inputAuthority: z
     .object({
       narratorInput: z.boolean().catch(false),
@@ -192,16 +205,18 @@ export const physicalGuidancePreviewSchema = z.object({
     .object({
       constraints: arrayOf(guidanceCandidateSchema),
       corrections: arrayOf(guidanceCandidateSchema),
+      actionOutcomes: arrayOf(guidanceActionOutcomeSchema),
       diagnostics: arrayOf(z.object({ level: textOr("info"), code: textOr(""), message: textOr("") })),
     })
-    .catch({ constraints: [], corrections: [], diagnostics: [] }),
+    .catch({ constraints: [], corrections: [], actionOutcomes: [], diagnostics: [] }),
   selection: z
     .object({
       constraints: z.array(z.string()).catch([]),
       corrections: z.array(z.string()).catch([]),
+      actionOutcomes: z.array(z.string()).catch([]),
       dropped: z.array(z.string()).catch([]),
     })
-    .catch({ constraints: [], corrections: [], dropped: [] }),
+    .catch({ constraints: [], corrections: [], actionOutcomes: [], dropped: [] }),
   rendered: z.array(z.string()).catch([]),
 });
 export type PhysicalGuidancePreview = z.infer<typeof physicalGuidancePreviewSchema>;
