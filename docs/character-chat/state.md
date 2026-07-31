@@ -53,7 +53,12 @@ per-character rule lists), `scene_auto` (`"off" | "milestones"` — text with he
 never a boolean), `scene_model`, `scene_memory` (the accumulating narrator-imagined
 setting — see §Scene memory), `environment` + `affordance_cues` (the scene's weather and
 what the affordance read has already said about it — see
-[body-state.md](body-state.md)), `supporting_cast` (recurring named side characters — see
+[body-state.md](body-state.md)), `scene` (jsonb, migration 0093 — the scene/body-relations
+owner's `SceneState`: posture, coarse proximity/facing, support, and the housed
+active-contact projection; chat-wide because proximity is a fact about a pair; parsed by
+the scene module's own total `parseSceneState`, absent ⇒ empty scene; the durable
+provenance is the `chat_contact_events` ledger — the projection is its replayable cache,
+gated by `CHAT_CONTACT_ACTIONS`), `supporting_cast` (recurring named side characters — see
 [supporting-cast.md](supporting-cast.md) §Supporting cast), `plans` (tracked commitments
 that come due on the story clock — see §Plans & promises), the time model (`clock_minutes` — **one** story timeline
 for the whole roster, D3/D8; away members skip meter decay, never fork the clock;

@@ -78,8 +78,13 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   registry defaults, the Neon backfill, and deployment are **complete**, so
   production registration is no longer gated on corrections or data migration —
   only on reaching its place in the wiring order.
-  Continuation order: affectionate integration proof with durable retake-safe
-  persistence → actor control through the live lane → the explicit
+  **Continuation item 1 — the affectionate integration proof — shipped
+  2026-07-31** behind `CHAT_CONTACT_ACTIONS` (default off): durable
+  `chat_contact_events` ledger + scene/contact projection on the retake
+  anchor (migration 0093), deterministic detectors, persist-before-prompt,
+  and all four proof obligations pinned by integration tests.
+  Remaining continuation order: actor control through the live lane (the
+  read-off-the-scene mechanism already ships with the proof) → the explicit
   `romantic_touch` permission owner (**spec before implementation**; eight design
   decisions need owner rulings) → eligibility + blocker-link UI wiring → the
   romantic proof → channel-aware foot registration with positive texture/glide

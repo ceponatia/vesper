@@ -5,6 +5,17 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Romantic contact — the affectionate integration proof (continuation 1)** —
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
+  [scene spec](romantic-contact-affordances.spec.scene.md) — 2026-07-31 — the
+  first live-lane wiring, behind `CHAT_CONTACT_ACTIONS` (default off): the
+  `chat_contact_events` durable ledger + scene/contact projection on the
+  chat's retake anchor (migration 0093), deterministic movement/touch
+  detectors with whole-sentence romantic and restraint vetoes, actor control
+  read off the scene, persist-before-prompt acknowledgments, and integration
+  tests pinning durable events, retake restoration without duplicates,
+  retry/idempotency, and flag-off byte-identity.
+
 - **Romantic contact slice 3A.1 — boundary corrections** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
   [contact-core spec](romantic-contact-affordances.spec.contact-core.md) ·

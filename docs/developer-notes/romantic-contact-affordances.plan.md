@@ -442,14 +442,24 @@ on immobilized limbs.
 
 #### Continuation order (owner-ruled; 1 leads)
 
-1. **Affectionate integration proof** — a separately authored, genuinely
-   affectionate/non-romantic action-outcome proof (never a romantic case
-   relabeled to commit), with **durable, retake-safe persistence**: durable
-   event provenance plus the versioned active-contact projection in the
-   snapshot, exercised end-to-end — durable events, snapshot restoration,
-   retry/idempotency, and feature-flag-off (no contact writes, no prompt
-   changes) tests. While trapped mobility has no producer, the proof must
-   avoid restraint/pinning scenarios.
+1. **Affectionate integration proof — ✅ shipped 2026-07-31** (behind
+   `CHAT_CONTACT_ACTIONS`, default **off**). The legacy chat lane gained: the
+   `chat_contact_events` durable ledger (idempotent per exchange, pruned on a
+   retake) + the scene/contact projection riding the scenario's retake anchor
+   (`character_chats.scene`, migration 0093); a deterministic pre-narration
+   leg — conservative movement and affectionate-touch detectors over the
+   player's own narration (romantic verbs/targets, restraint, negation, and
+   hedges all veto whole sentences; pronouns resolve only when unambiguous);
+   resolve → commit → **persist-before-prompt** with the acknowledgment built
+   from the awaited ledger write; and the action-outcome wording in the
+   physical-guidance seam (reaches the prompt only when
+   `CHAT_PHYSICAL_CONSTRAINTS` is also on). All four proof obligations are
+   pinned by integration tests: durable events, retake restoration without
+   duplicates, retry/idempotency, and flag-off byte-identity — plus silence
+   rules (unreachable and romantic-framed lines commit nothing) and
+   corrupt-blob degradation. Actor control is READ off the scene's control
+   fact rather than asserted, which delivers part of item 2's mechanism
+   early. No restraint/pinning anywhere.
 2. **Actor control through the live lane** — enforcement, not just the
    contract.
 3. **The explicit `romantic_touch` permission owner — spec before
