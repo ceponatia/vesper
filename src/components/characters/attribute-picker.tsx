@@ -21,6 +21,7 @@ import {
   asList,
   attributeValueMap,
   isAiSourced,
+  isClearableAttribute,
   isOutOfRuleValue,
   removeAttribute,
   seedValueFor,
@@ -592,7 +593,10 @@ function AttributeRow({
           {def.label}
         </span>
         {value && isAiSourced(value) ? <AiTag /> : null}
-        {value ? (
+        {/* Materialized baselines (materializeDefault) never offer "clear" — the
+            server re-materializes the registry default on save, so clearing here
+            would only make the draft lie about the stored row. */}
+        {value && isClearableAttribute(def) ? (
           <button
             type="button"
             onClick={onRemove}
@@ -629,19 +633,27 @@ function AttributeControl({
 }) {
   switch (def.valueType) {
     case "enum": {
-      const current = value && typeof value.value === "string" ? value.value : "";
+      // A materialized baseline has no unset presentation: the blank "—" option
+      // is omitted and, while nothing is stored yet, the control rests dimmed on
+      // the seed (registry default) — exactly what the server materializes on
+      // save — like the number slider's resting position. Selecting any option
+      // writes it as `source: "manual"` via onSet.
+      const clearable = isClearableAttribute(def);
+      const resting = !clearable && typeof seed === "string" ? seed : "";
+      const current = value && typeof value.value === "string" ? value.value : resting;
       // A stored value outside the species-narrowed set (e.g. after a species change)
       // is surfaced as a flagged option — visible and fixable, never silently rewritten.
       const outOfRule = isOutOfRuleValue(allowed, current);
       return (
         <Select
           value={current}
-          // Picking "—" on a set attribute clears it back to unset.
+          // Picking "—" on a set attribute clears it back to unset (the blank
+          // option only exists when clearable, so onRemove is unreachable otherwise).
           onChange={(e) => (e.target.value === "" ? onRemove() : onSet(e.target.value))}
           aria-label={def.label}
           className={cx("h-8 max-w-72 text-xs", !value && "text-paper-500")}
         >
-          <option value="">—</option>
+          {clearable ? <option value="">—</option> : null}
           {outOfRule ? <option value={current}>{`⚠ ${current.replaceAll("_", " ")} (not allowed)`}</option> : null}
           {allowed.map((option) => (
             <option key={option} value={option} title={def.narratorGuidance?.[option]}>

@@ -27,9 +27,32 @@ that pass. See "Done" below._
 - Positive tactile texture/glide enable only after perceiver-specific
   perception channels (the core filter is sight-only today) and the ruled
   regional condition ownership are wired.
+- Slice-3 development may begin, but production registration does not deploy
+  until the registration-review corrections (below, all landed 2026-07-30) and
+  the Neon backfill are complete. Full slice-3 build order: the
+  [plan](romantic-contact-affordances.plan.md) §Slice 3 sequencing.
 
 ## Done
 
+- **Registration-review corrections (owner review of the foot-facts work)** —
+  2026-07-30. Three fixes before the Neon backfill:
+  1. *Materialized fields are non-clearable in the editor.* The attribute
+     picker keys its "clear" button and blank "—" enum option off the new
+     `isClearableAttribute` helper: a `materializeDefault` field offers
+     neither (unset, its control rests dimmed on the registry default the
+     server will store; any pick is `source: "manual"`), while ordinary sparse
+     attributes stay clearable. Regression in `attribute-helpers.test.ts`,
+     which also pins that every flagged field is an enum (the only control
+     with the non-clearable branch).
+  2. *`feet.nails` defaults to `trimmed`, not `neat`* — the neutral baseline
+     states ordinary nail length without assuming additional grooming. The
+     exact four-value default map (`average/average/trimmed/average`) is
+     pinned in `registry.test.ts`; local rows seeded as `neat` were reseeded.
+  3. *The backfill is compare-and-set.* Each JSONB profile replace is guarded
+     by `WHERE profile = <blob the plan was computed from>`; a row edited
+     concurrently is re-read, re-planned, and retried (3 attempts), with
+     still-conflicted rows reported and a non-zero exit — safe to run against
+     the live application.
 - **Pre-slice-3 foot facts and registration hardening** — 2026-07-30. Four
   pieces, all pinned by tests:
   1. *Persisted-baseline foot facts.* `feet.size/arch/nails/toes` gained

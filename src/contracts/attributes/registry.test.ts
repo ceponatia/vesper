@@ -162,6 +162,22 @@ describe("materialized registry defaults (persisted-baseline)", () => {
     expect(flagged.sort()).toEqual(["feet.arch", "feet.nails", "feet.size", "feet.toes"]);
   });
 
+  it("pins the exact default each materialized fact carries", () => {
+    // The agreed baseline (owner correction, 2026-07-30): structural axes rest
+    // at "average", and toenails at "trimmed" — ordinary nail length without
+    // assuming additional grooming. Neon is backfilled from this map, so a
+    // change here is a data migration, not a data edit.
+    const defaults = Object.fromEntries(
+      registry.definitions.filter((def) => def.materializeDefault).map((def) => [def.id, def.defaultValue]),
+    );
+    expect(defaults).toEqual({
+      "feet.size": "average",
+      "feet.arch": "average",
+      "feet.nails": "trimmed",
+      "feet.toes": "average",
+    });
+  });
+
   it("every flagged definition carries a defaultValue, and none is coreVisual", () => {
     for (const def of registry.definitions) {
       if (!def.materializeDefault) continue;
