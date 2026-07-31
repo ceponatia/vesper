@@ -31,6 +31,7 @@ type Diagnostic = {
 
 - Everything that degrades records a diagnostic. Exchange-scoped diagnostics ride the memory trace; they render in the admin chat inspector.
 - A `DiagnosticSink` is just `{ push(d: Diagnostic): void }`; pipelines thread one through rather than logging from leaf functions.
+- **A pipeline that owns its collector still takes an optional `sink` so callers can watch.** Otherwise the run's degradation record is write-only — logged and dropped — and the only way to assert on it is scraping the log line, which pins a test to a message string rather than to behavior. The shape is `teeSink` (`contracts/diagnostics.ts`): keep the internal `DiagnosticCollector` that drives the log or the persisted `turns.diagnostics`, and fan each push to the caller's sink as well, so threading one in adds a reader without changing what the run records. Live today on `renderResolvedScene` and on `submitChatMessage`, whose diagnostics accrue through the settle step — a reader must drain the reply stream before the sink is complete.
 
 ## 3. LLM structured output: validate → repair → degrade
 

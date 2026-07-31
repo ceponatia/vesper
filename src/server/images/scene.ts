@@ -16,7 +16,7 @@ import {
   type SceneRenderRequest,
 } from "../ai";
 import { log } from "@/server/log";
-import { diag, DiagnosticCollector, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
+import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { SceneVisualReference } from "@/contracts/images/scene-reference";
 import type { SceneGenState, SceneReferenceMode } from "@/contracts/state/scene-gen";
 import { createImageAsset, failImage, saveImageBuffer, type ImageEntityKind } from "./assets";
@@ -385,16 +385,6 @@ function sceneFailureMessage(items: readonly Diagnostic[]): string {
     .reverse()
     .find((d) => d.code === "images.scene_render.all_failed" || d.code === "images.scene_render.service_outage");
   return terminal?.message ?? "all scene image providers failed";
-}
-
-/** Fan each diagnostic into both an external sink (if a caller passed one) and the local collector. */
-function teeSink(external: DiagnosticSink, collector: DiagnosticSink): DiagnosticSink {
-  return {
-    push(diagnostic) {
-      external.push(diagnostic);
-      collector.push(diagnostic);
-    },
-  };
 }
 
 /**

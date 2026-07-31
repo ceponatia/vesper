@@ -21,6 +21,7 @@ import {
   samePlaceName,
   splitStateCues,
   switchScenePlace,
+  teeSink,
   unseenMilestoneReason,
   withSceneContacts,
   type ChatActionId,
@@ -28,6 +29,7 @@ import {
   type ChatReplyFailureCode,
   type CharacterProfile,
   type ContactPersistenceAcknowledgment,
+  type DiagnosticSink,
   type PhysicalActionOutcome,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
@@ -290,6 +292,19 @@ export interface SubmitChatMessageInput {
    * kinds) so the consumer never re-reads the transcript for it.
    */
   onSettled?: (info: { assistantMessageId: string; content: string }) => void;
+  /**
+   * Diagnostics observer: every diagnostic this exchange files is teed here as it
+   * is pushed, alongside the pipeline's own collector (which still drives the
+   * summary log line). The turn's degradation record is otherwise write-only —
+   * the engine logs the codes and drops the sink — so this is the first-class
+   * seam for the admin inspector and for integration tests that must assert a
+   * live turn's codes rather than scraping the log.
+   *
+   * Diagnostics accrue through the settle step, which runs when the reply stream
+   * completes: a caller reading this sink must drain `result.stream` first, or it
+   * sees only the pre-stream half of the turn.
+   */
+  sink?: DiagnosticSink;
 }
 
 export type SubmitChatMessageResult =
@@ -517,7 +532,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
   /** Pre-turn assembly: user line → window/summary → drift → recall → prompt → model stream. */
   async function prepareExchange(): Promise<SubmitChatMessageResult> {
-    const sink = new DiagnosticCollector();
+    // The pipeline keeps its own collector (the summary log below reads `.items`)
+    // and tees to the caller's observer when one was passed — so threading a sink
+    // in adds a reader without changing what the turn records.
+    const collected = new DiagnosticCollector();
+    const sink: DiagnosticSink = input.sink ? teeSink(input.sink, collected) : collected;
 
     // --- Resolve the exchange's rows per kind -------------------------------
     // send: mint + insert the user guard row and a fresh assistant row id.
@@ -1912,8 +1931,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       } catch (error) {
         log.error("engine.chat", "chat-state finalize failed", { error: describeError(error) });
       }
-      if (sink.items.length) {
-        log.info("engine.chat", "chat-state diagnostics", { codes: sink.items.map((d) => d.code) });
+      if (collected.items.length) {
+        log.info("engine.chat", "chat-state diagnostics", { codes: collected.items.map((d) => d.code) });
       }
     };
 
