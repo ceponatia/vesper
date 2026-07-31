@@ -14,7 +14,9 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   detectors with whole-sentence romantic and restraint vetoes, actor control
   read off the scene, persist-before-prompt acknowledgments, and integration
   tests pinning durable events, retake restoration without duplicates,
-  retry/idempotency, and flag-off byte-identity.
+  retry/idempotency, and flag-off byte-identity. The dev inspector re-derives
+  the leg read-only alongside it — same outcome, keyed to the exchange that
+  wrote it, with no row appended and no body moved.
 
 - **Romantic contact slice 3A.1 — boundary corrections** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·

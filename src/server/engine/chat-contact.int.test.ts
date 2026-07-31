@@ -40,14 +40,18 @@ import { log } from "@/server/log";
  * - the two silences (a touch nobody walked over for, a romantically framed line)
  *   commit nothing at all while the exchange settles normally, and file exactly
  *   the diagnostics each case is designed to file;
- * - a corrupt `scene` blob costs no turn and fails CLOSED.
+ * - a corrupt `scene` blob costs no turn and fails CLOSED;
+ * - and the dev inspector explains the whole thing read-only: the same outcome, keyed
+ *   to the exchange that wrote it, with no row appended and no body moved.
  *
  * Two mocks, both at seams the sibling chat suites already mock. `./chat-memory`
  * stubs the post-turn archivist legs (`AI_FAKE=1` alone would degrade them and
  * prove nothing about this leg). `./character-chat` WRAPS the real demo-mode
- * stream so the system prompt each turn actually built is captured — the
- * flag-off byte-identity proof needs the LIVE prompt, and `previewChatPrompt`
- * cannot supply it (see the note on that suite's flag test below).
+ * stream so the system prompt each turn actually built is captured. The preview
+ * path runs the contact leg now (section 7), so it can prove flag-off byte-identity
+ * on its own — but section 4's proof is about the prompt a live RETAKE builds, and a
+ * preview reads the cut that retake settled rather than the one it rebuilt from, so
+ * the capture stays.
  */
 
 const mock = vi.hoisted(() => ({ archivist: { value: null as ChatArchivist | null, degraded: false } }));
@@ -79,6 +83,7 @@ vi.mock("./character-chat", async () => {
 });
 
 import { submitChatMessage } from "@/server/engine";
+import { previewChatPhysicalGuidance, previewChatPrompt } from "./chat-pipeline";
 import { loadChatScenario } from "./chat-state";
 import { appendChatContactEvents, listChatContactEvents } from "./chat-contact-events";
 import { chatContactEventRef, planChatContactTurn, CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact-adapter";
@@ -534,5 +539,139 @@ describe.runIf(ready)("a corrupt scene blob costs no turn, and fails closed", ()
     expect(activeContactsOf(healed.contacts)).toEqual([]);
     // …and the column re-materializes: the seeded bodies are back.
     expect(healed.participants).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. The dev inspector
+// ---------------------------------------------------------------------------
+
+/**
+ * The two preview surfaces, over a conversation that has actually walked over and
+ * touched.
+ *
+ * The preview path used to skip the contact leg outright, which left the one surface
+ * built to answer "why did this turn say that" unable to answer it for a contact turn
+ * — and forced the byte-identity proof in section 4 to capture the LIVE system prompt
+ * through a module mock. It runs the leg now, and these are the claims that buys:
+ *
+ * - the inspector shows the outcome a live turn carries, keyed to the exchange that
+ *   turn actually wrote, and the previewed PROMPT carries the same sentence;
+ * - the prompt preview obeys `CHAT_CONTACT_ACTIONS` (it is showing bytes) while the
+ *   inspector reports it (a developer needs the answer before flipping it);
+ * - previewing writes nothing — no ledger row, no moved body — which is the whole
+ *   licence for running a leg whose live half persists.
+ */
+describe.runIf(ready)("the inspector shows the leg, and writes nothing", () => {
+  /** The sentence a committed contact puts in front of the narrator. */
+  const committedSentence = (): string => `the player's hand rests on ${fixture.characterName}'s shoulder`;
+
+  const character = () => ({ id: fixture.characterId, name: fixture.characterName, profile: fixture.profile });
+
+  const inspect = (chat: ChatSeat) => previewChatPhysicalGuidance({ chatId: chat.chatId, character: character() });
+
+  /** "What reaches the narrator right now", as the prompt inspector renders it. */
+  async function previewedPrompt(chat: ChatSeat): Promise<string> {
+    const built = await previewChatPrompt({
+      chatId: chat.chatId,
+      memoryGroupId: chat.memoryGroupId,
+      character: character(),
+    });
+    return `${built.prefix}\n${built.tail}`;
+  }
+
+  it("shows the committed outcome, keyed to the exchange the live turn wrote", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    const { chat, guardMessageId } = await touchedChat();
+
+    const shown = await inspect(chat);
+    expect(shown.contactFlagEnabled).toBe(true);
+    const outcome = shown.candidates.actionOutcomes[0];
+    expect(outcome?.status).toBe("committed");
+    expect(outcome?.resultCodes).toContain("contact.locus.shoulders");
+    expect(outcome?.resultCodes).toContain("contact.gesture.rest");
+    // It survived the disclosure gate into the compiled block, and the block says so.
+    expect(shown.selection.actionOutcomes).toEqual([outcome?.fingerprint]);
+    expect(shown.rendered.join("\n")).toContain(committedSentence());
+
+    // The preview keyed on the SAME exchange the live turn did: the action id carries
+    // the event ref that turn's row was written under, so the inspector is explaining
+    // THAT contact rather than a look-alike minted for the preview.
+    const row = (await listChatContactEvents(chat.chatId))[0];
+    expect(row?.guardMessageId).toBe(guardMessageId);
+    expect(outcome?.actionId.startsWith(row?.eventRef ?? "unwritten")).toBe(true);
+  });
+
+  it("obeys the contact flag in the prompt, and spends bytes only inside the guidance block", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    const { chat } = await touchedChat();
+
+    const withContact = await previewedPrompt(chat);
+    expect(withContact).toContain(committedSentence());
+
+    // The prompt preview OBEYS the flag — unlike the inspector, it is showing bytes.
+    delete process.env.CHAT_CONTACT_ACTIONS;
+    expect(await previewedPrompt(chat)).not.toContain(committedSentence());
+
+    // And with the guidance block off, the contact flag costs nothing at all: the same
+    // flag-off byte-identity section 4 proves against the live prompt, provable here
+    // from the preview — which is what the preview could not do before the leg was
+    // threaded through it.
+    delete process.env.CHAT_PHYSICAL_CONSTRAINTS;
+    const neither = await previewedPrompt(chat);
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    expect(await previewedPrompt(chat)).toBe(neither);
+  });
+
+  it("reports the contact flag rather than obeying it", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    const { chat } = await touchedChat();
+
+    delete process.env.CHAT_CONTACT_ACTIONS;
+    const shown = await inspect(chat);
+    expect(shown.contactFlagEnabled).toBe(false);
+    // The leg still ran: a developer asking what turning the flag on would do gets the
+    // answer without turning it on.
+    expect(shown.candidates.actionOutcomes.map((entry) => entry.status)).toEqual(["committed"]);
+    expect(shown.rendered.join("\n")).toContain(committedSentence());
+  });
+
+  it("re-derives the outcome without appending a row or moving a body", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    const { chat } = await touchedChat();
+    const rowsBefore = await listChatContactEvents(chat.chatId);
+    const sceneBefore = await storedScene(chat.chatId);
+    expect(rowsBefore).toHaveLength(1);
+
+    const first = await inspect(chat);
+    await previewedPrompt(chat);
+    const second = await inspect(chat);
+
+    // The plan ran three times and its two writes never did.
+    expect(await listChatContactEvents(chat.chatId)).toEqual(rowsBefore);
+    expect(await storedScene(chat.chatId)).toEqual(sceneBefore);
+    // …and it is deterministic, which is what makes it worth reading at all.
+    expect(second.candidates.actionOutcomes).toEqual(first.candidates.actionOutcomes);
+    expect(second.rendered).toEqual(first.rendered);
+  });
+
+  it("shows the attempt behind a silence the prompt cannot explain", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    process.env.CHAT_PHYSICAL_CONSTRAINTS = "on";
+    const chat = await newChat(fixture);
+    // Nobody walked over, so the reach resolves `unresolved` and the seam renders
+    // silence — the exact gap this panel exists to make visible.
+    await say(chat, touch());
+
+    const shown = await inspect(chat);
+    const outcome = shown.candidates.actionOutcomes[0];
+    expect(outcome?.status).toBe("unresolved");
+    expect(outcome?.resultCodes.some((code) => code.startsWith("contact.unresolved."))).toBe(true);
+    expect(shown.rendered.join("\n")).not.toMatch(/Physical fact:|Blocked contact:/u);
+    expect(await previewedPrompt(chat)).not.toContain("Physical fact:");
   });
 });

@@ -148,6 +148,23 @@ exchange:
    anchors reproduce it. It also owns the **only door onto the prompt**, so the contact
    outcome above reaches the narrator only when this flag is on as well: with it off,
    contact still commits and still persists, and the prompt is byte-identical.
+
+   **Both legs are re-derived by the dev previews, read-only** (`previewChatPrompt` and
+   `previewChatPhysicalGuidance`, [api.md](api.md) §API surface). Guidance is pure, so a
+   preview is simply a second evaluation. The contact leg is not — a live turn appends to
+   `chat_contact_events` and advances the scene projection — so `previewChatContactOutcomes`
+   runs `planChatContactTurn` and words the outcome while **discarding the planned scene and
+   performing no write**: looking at a prompt never moves a body or records a touch. It keys
+   on the newest player line's own row id, which for an ordinary send IS the exchange guard
+   the ledger was written under, so the inspector explains that contact rather than a
+   look-alike. The one thing it assumes rather than observes is the persistence
+   acknowledgment a `committed` status rests on (a preview performs no write, and without a
+   synthesized acknowledgment every contact would preview as silence — the exact blind spot
+   this closes); replaying the newest line against the cut that line already settled
+   ordinarily re-derives the same contact and folds `contact_continued`, which legitimately
+   writes no row either way. The prompt preview OBEYS both flags (it is showing bytes); the
+   guidance inspector reports them and runs the leg regardless, so a developer can see what
+   turning a flag on would do before turning it on.
 7. **Prompt build.** `buildCharacterChatPromptParts` (pure, snapshot-tested) — split
    for provider prefix caching (spec §9) into a **stable prefix** (identity → persona →
    scenario → background → regard-colored disposition → the composed **Relationship** block → cards →
