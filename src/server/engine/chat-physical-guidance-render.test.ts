@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   affordanceSubjectId,
+  buildActionOutcome,
   compileNarratorPhysicalGuidance,
   DiagnosticCollector,
   emptyNarratorPhysicalGuidance,
@@ -15,6 +16,8 @@ import {
   HAIR_CLAIM_WETNESS_SOAKED,
   type GuidanceDisclosure,
   type NarratorPhysicalGuidance,
+  type PhysicalActionOutcome,
+  type PhysicalActionStatus,
   type PhysicalNarrationConstraint,
   type PhysicalPremiseCorrection,
 } from "@/contracts";
@@ -75,14 +78,32 @@ function correction(input: {
   };
 }
 
+/**
+ * One action outcome, through the real `buildActionOutcome` seam so the
+ * `narratorMustResolve` floor and the fingerprint are the production ones.
+ */
+function outcome(input: {
+  status: PhysicalActionStatus;
+  resultCodes: readonly string[];
+}): PhysicalActionOutcome {
+  return buildActionOutcome({
+    actionId: "contact:msg_1#character_wren:shoulders",
+    status: input.status,
+    resultCodes: input.resultCodes,
+    disclosure: "consistency_only",
+  });
+}
+
 function guidanceOf(input: {
   constraints?: readonly PhysicalNarrationConstraint[];
   corrections?: readonly PhysicalPremiseCorrection[];
+  actionOutcomes?: readonly PhysicalActionOutcome[];
 }): NarratorPhysicalGuidance {
   return {
     ...emptyNarratorPhysicalGuidance(),
     constraints: input.constraints ?? [],
     corrections: input.corrections ?? [],
+    actionOutcomes: input.actionOutcomes ?? [],
   };
 }
 
@@ -161,6 +182,156 @@ describe("constraint lines", () => {
     }
     // The only imperative about describing is a prohibition.
     expect(text).toContain("do not describe");
+  });
+});
+
+describe("action-outcome lines", () => {
+  it("states a committed contact as present-tense truth, and forecloses only its denial", () => {
+    const lines = render(
+      guidanceOf({
+        actionOutcomes: [
+          outcome({
+            status: "committed",
+            resultCodes: ["contact.locus.shoulders", "contact.gesture.rest", "contact.material.direct"],
+          }),
+        ],
+      }),
+    );
+    expect(lines).toEqual([
+      "- Physical fact: the player's hand rests on Wren's shoulder. " +
+        "That contact is true right now — do not narrate it as missed, refused, or still being attempted. " +
+        "How Wren responds to it is not decided here.",
+    ]);
+  });
+
+  it("says there is cloth between when there is, and stays quiet when there is not", () => {
+    const [through] = render(
+      guidanceOf({
+        actionOutcomes: [
+          outcome({
+            status: "committed",
+            resultCodes: ["contact.locus.arms", "contact.gesture.rest", "contact.material.through"],
+          }),
+        ],
+      }),
+    );
+    expect(through).toContain("rests on Wren's arm, through the cloth over it.");
+    // `contact.material.direct` has no wording: "skin to skin" would be this block
+    // volunteering a positive detail, which is the one thing it never does.
+    const [direct] = render(
+      guidanceOf({
+        actionOutcomes: [
+          outcome({
+            status: "committed",
+            resultCodes: ["contact.locus.arms", "contact.gesture.rest", "contact.material.direct"],
+          }),
+        ],
+      }),
+    );
+    expect(direct).not.toMatch(/skin|bare/iu);
+  });
+
+  it("words every gesture the lane can detect", () => {
+    for (const [code, phrase] of [
+      ["contact.gesture.rest", "rests on Wren's head"],
+      ["contact.gesture.pat", "pats Wren's head"],
+      ["contact.gesture.squeeze", "closes lightly around Wren's head"],
+    ] as const) {
+      const [line] = render(
+        guidanceOf({ actionOutcomes: [outcome({ status: "committed", resultCodes: ["contact.locus.head", code] })] }),
+      );
+      expect(line, code).toContain(phrase);
+    }
+  });
+
+  it("a committed contact is not an invitation to describe anything", () => {
+    const text = chatPhysicalGuidanceBlock(
+      render(
+        guidanceOf({
+          actionOutcomes: [
+            outcome({ status: "committed", resultCodes: ["contact.locus.shoulders", "contact.gesture.rest"] }),
+          ],
+        }),
+      ),
+    );
+    for (const invitation of ["you may", "mention", "weave", "include", "offer", "worth noticing", "if the moment"]) {
+      expect(text.toLowerCase(), invitation).not.toContain(invitation);
+    }
+    // And it never proposes the other person's answer — that is a character choice.
+    expect(text).toContain("not decided here");
+  });
+
+  it("makes a refusal mandatory, and names the reason when it can word one", () => {
+    const lines = render(
+      guidanceOf({
+        actionOutcomes: [
+          outcome({ status: "rejected", resultCodes: ["contact.locus.shoulders", "contact.blocked.out_of_reach"] }),
+        ],
+      }),
+    );
+    expect(lines).toEqual([
+      "- Blocked contact: the player's hand does not reach Wren's shoulder — they are too far apart for it. " +
+        "The narration must account for that; do not write the touch as landing.",
+    ]);
+  });
+
+  it("words a required transition as the thing that would have to happen first", () => {
+    const [line] = render(
+      guidanceOf({
+        actionOutcomes: [
+          outcome({
+            status: "explicit_transition_required",
+            resultCodes: ["contact.locus.arms", "contact.requires.reposition"],
+          }),
+        ],
+      }),
+    );
+    expect(line).toContain("the distance would have to be closed first");
+    expect(line).toContain("do not write the touch as landing");
+  });
+
+  it("still ships a blocked line when it can word neither the surface nor the reason", () => {
+    // An outcome with no budget must never vanish: a refusal that fell out of the
+    // prompt is exactly how prose invents contact that never happened.
+    const lines = render(guidanceOf({ actionOutcomes: [outcome({ status: "rejected", resultCodes: [] })] }));
+    expect(lines).toEqual([
+      "- Blocked contact: the player's attempted touch does not land. " +
+        "The narration must account for that; do not write the touch as landing.",
+    ]);
+  });
+
+  it("renders NOTHING for an unresolved outcome — the resolver did not decide", () => {
+    const lines = render(
+      guidanceOf({
+        actionOutcomes: [
+          outcome({
+            status: "unresolved",
+            resultCodes: ["contact.locus.shoulders", "contact.unresolved.geometry_unavailable"],
+          }),
+        ],
+      }),
+    );
+    expect(lines).toEqual([]);
+    expect(chatPhysicalGuidanceBlock(lines)).toBe("");
+  });
+
+  it("drops a committed outcome it cannot word rather than half-stating it", () => {
+    expect(render(guidanceOf({ actionOutcomes: [outcome({ status: "committed", resultCodes: [] })] }))).toEqual([]);
+  });
+
+  it("renders action outcomes ahead of corrections and constraints", () => {
+    const lines = render(
+      guidanceOf({
+        constraints: [constraint({ prohibited: [HAIR_CLAIM_MOTION_FREE_FLOW] })],
+        corrections: [correction({ claimCode: HAIR_CLAIM_CAUSE_RAIN })],
+        actionOutcomes: [
+          outcome({ status: "committed", resultCodes: ["contact.locus.shoulders", "contact.gesture.rest"] }),
+        ],
+      }),
+    );
+    expect(lines[0]).toContain("Physical fact");
+    expect(lines[1]).toContain("Premise check");
+    expect(lines[2]).toContain("Binding constraint");
   });
 });
 

@@ -1,9 +1,12 @@
 import { and, asc, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  affordanceSubjectId,
+  capturedGarmentCoverage,
   characterProfileSchema,
   chatActionIdSchema,
   commitRecognitionMention,
+  contactCommitEvents,
   currentScenePlace,
   derivePlanSalience,
   DiagnosticCollector,
@@ -19,10 +22,13 @@ import {
   splitStateCues,
   switchScenePlace,
   unseenMilestoneReason,
+  withSceneContacts,
   type ChatActionId,
   type ChatReplyFailure,
   type ChatReplyFailureCode,
   type CharacterProfile,
+  type ContactPersistenceAcknowledgment,
+  type PhysicalActionOutcome,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
@@ -46,6 +52,14 @@ import { buildActionBeatCue } from "./chat-action-beat";
 import { renderChatAffordanceCues } from "./chat-affordance-cues";
 import { buildChatAffordanceRead } from "./chat-affordances";
 import { buildChatAffordancePreview, type AffordancePreview } from "./chat-affordance-preview";
+import {
+  chatContactAcknowledgment,
+  chatContactActionOutcome,
+  chatContactEventRef,
+  planChatContactTurn,
+  type ChatContactRosterMember,
+} from "./chat-contact-adapter";
+import { appendChatContactEvents, deleteChatContactEventsForGuard } from "./chat-contact-events";
 import { buildChatPhysicalGuidance, buildChatPhysicalGuidanceStages } from "./chat-physical-guidance";
 import { renderChatPhysicalGuidance } from "./chat-physical-guidance-render";
 import { buildChatPhysicalGuidancePreview, type PhysicalGuidancePreview } from "./chat-physical-guidance-preview";
@@ -138,6 +152,7 @@ import {
 } from "./prompts/character-chat";
 import {
   chatAffordanceCuesEnabled,
+  chatContactActionsEnabled,
   chatGarmentCuesEnabled,
   chatPhysicalConstraintsEnabled,
   chatPromptLayout,
@@ -662,6 +677,16 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     const opening = effectiveKind === "open";
     await db().update(characterChats).set({ lastMessageAt: new Date() }).where(eq(characterChats.id, chatId));
 
+    /**
+     * The exchange's rollback guard — the SAME id the state and scenario anchors take
+     * (`finalizeChatState`'s `promptMessageId`), which is what lets a store recognize a
+     * retake and recompute from the identical pre-exchange point instead of advancing
+     * twice. Both halves are settled by the kind switch above, so it is hoisted here:
+     * the contact ledger's retake delete runs beside the scenario rollback below, long
+     * before the recognition memory reads it.
+     */
+    const exchangeGuardMessageId = promptMessageId ?? assistantMessageId;
+
     // --- State: load (or roll back), then drift -----------------------------
     // Regenerate restores the pre-exchange snapshot (spec §4.1) so the old take's
     // drift + pulse effects don't double-apply, and retracts the old take's
@@ -721,6 +746,24 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     if (regenerateTarget || (kind === "rerun" && rerunSnapshotApplies)) {
       const anchor = await loadPreExchangeScenario(chatId);
       if (anchor) storedScenario = rollbackScenario(anchor, storedScenario);
+      // The discarded take's contact ledger goes with its projection (romantic-contact
+      // continuation 1). `rollbackScenario` restores the pre-exchange SCENE — the
+      // active-contact projection housed in it — so the durable events that produced
+      // the projection being thrown away have to go too, or the ledger would replay a
+      // contact the scene no longer holds. Keyed by the exchange guard, which is the
+      // same id the new take will write under: a retake that re-commits the same touch
+      // re-inserts it, and one that does not leaves nothing behind.
+      //
+      // Fenced whole: a ledger that could not be pruned must not cost the exchange.
+      // The projection is authoritative for narration, the events are the durable
+      // record, and a stale row is a diagnostic rather than a failed reply.
+      if (chatContactActionsEnabled()) {
+        try {
+          await deleteChatContactEventsForGuard(chatId, exchangeGuardMessageId);
+        } catch (error) {
+          log.error("engine.chat", "chat contact ledger rollback failed", { error: describeError(error) });
+        }
+      }
     }
     const preExchangeScenario = storedScenario;
     const baseScenario = storedScenario ?? seedChatScenario(profile);
@@ -1122,11 +1165,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // weighted by something the observer witnessed — plus the observer-memory
     // commit that makes its cooldown work.
     //
-    // The exchange's rollback guard is the SAME id the state and scenario anchors
-    // take (`finalizeChatState`'s `promptMessageId`), which is what lets the store
-    // recognize a retake and recompute from the identical pre-exchange memory
-    // instead of advancing the notice counts a second time.
-    const exchangeGuardMessageId = promptMessageId ?? assistantMessageId;
+    // The exchange's rollback guard (`exchangeGuardMessageId`, hoisted above) is what
+    // lets this store recognize a retake and recompute from the identical
+    // pre-exchange memory instead of advancing the notice counts a second time.
+    //
     // PERCEPTION SOURCE ONLY when the cue flag is off. The recognition read needs
     // an exposure/channel view and only the affordance adapter builds one, so it
     // is built here — but its `nextCues` and `coverage` are DELIBERATELY dropped:
@@ -1170,6 +1212,109 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // truth — it reads as the added detail rather than competing for the beat.
     const bodyCues = recognition?.cueLine ? [...affordanceCues, recognition.cueLine] : affordanceCues;
 
+    // --- Affectionate contact (`CHAT_CONTACT_ACTIONS`, default OFF) ----------
+    // The deterministic contact leg (romantic-contact-affordances.plan.md
+    // §"Continuation order" 1): seed the scene, fold a movement the player wrote,
+    // detect a plainly affectionate hand-touch on a present roster member, resolve it
+    // against the scene owner's reach and support reads, and — only if it is
+    // committable — fold it into the active-contact projection and write the durable
+    // event before anything reaches the prompt.
+    //
+    // Gated on THIS flag alone. Detection, the commit, the ledger row, and the scene
+    // projection are authoritative state that must roll back with the exchange whether
+    // or not any prompt reads them; only the OUTCOME's trip to the narrator waits on
+    // `CHAT_PHYSICAL_CONSTRAINTS`, which owns the block it would ride in.
+    //
+    // **Persist before prompt, with the ledger as truth.** `contactActionOutcomeStatus`
+    // will not say `committed` without an acknowledgment of a durable write, so the
+    // event append is awaited HERE and the acknowledgment is built from it — a failed
+    // write leaves the outcome `unresolved`, which the seam renders as silence. The
+    // scene PROJECTION rides the scenario to the settle-time save, exactly as the
+    // garment store, the environment and the cue memory do: it is a cache of the
+    // ledger, it rolls back on the same anchor, and the retake delete above prunes the
+    // events of any take whose projection was discarded. What the two writes can drift
+    // on is an exchange that appends and then never settles: the row survives with no
+    // projection, and the NEXT exchange re-derives from the rolled-forward scene. The
+    // ledger stays the record; a replay reconciliation is a later slice's job.
+    //
+    // Fenced whole (docs/resilience.md): any failure degrades to no contact, no write,
+    // and no outcome — which is the flag-off path — and never costs the exchange.
+    let contactActionOutcomes: readonly PhysicalActionOutcome[] = [];
+    if (chatContactActionsEnabled()) {
+      try {
+        const eventRef = chatContactEventRef(exchangeGuardMessageId);
+        const storyMinute = Math.max(0, Math.trunc(scenario.clockMinutes));
+        // PRESENT members only: an away character is not a body in the room, and the
+        // seeded scene must never place one. Each carries the captured effective
+        // coverage for their OWN garment actor, which is the whole of the
+        // material-between adapter in this proof.
+        const contactRoster: ChatContactRosterMember[] = [
+          ...(driftedState.presence === "present"
+            ? [{ characterId, name: characterName, aliases: profile.aliases }]
+            : []),
+          ...others
+            .filter((member) => member.state.presence === "present")
+            .map((member) => ({
+              characterId: member.characterId,
+              name: member.name,
+              aliases: member.profile.aliases,
+            })),
+        ].map((member) => ({
+          subjectId: affordanceSubjectId(member.characterId),
+          name: member.name,
+          aliases: member.aliases,
+          coverage: capturedGarmentCoverage(scenario.garments, garmentActorForCharacter(member.characterId)),
+        }));
+
+        const planned = planChatContactTurn({
+          scene: scenario.scene,
+          // The raw player line. An opening/continue beat has none, so nothing is
+          // detected — a synthetic cue is not the player's body.
+          message: playerContent,
+          narratorInput,
+          characters: contactRoster,
+          eventRef,
+          storyTime: storyMinute,
+          sink,
+        });
+
+        const { act, resolution, commit } = planned;
+        let scene = planned.scene;
+        let acknowledgment: ContactPersistenceAcknowledgment | undefined;
+        if (act !== null && commit?.status === "committed") {
+          // Idempotent on `(chatId, eventRef, sequence)`: a retry of the same exchange
+          // re-derives the same contact id and the same rows, and inserts nothing.
+          await appendChatContactEvents({
+            chatId,
+            guardMessageId: exchangeGuardMessageId,
+            eventRef,
+            storyMinute,
+            commits: contactCommitEvents(commit),
+          });
+          // Only now — the projection may not advance ahead of the record it caches.
+          scene = withSceneContacts(scene, commit.state);
+          acknowledgment = chatContactAcknowledgment({ commit, eventRef, actionId: act.actionId });
+        }
+        // The seeded scene and any movement the player wrote ride the scenario even
+        // when no contact resolved: where the bodies are is true regardless.
+        scenario = { ...scenario, scene };
+        if (act !== null && resolution !== null) {
+          contactActionOutcomes = [
+            chatContactActionOutcome({
+              act,
+              resolution,
+              eventRef,
+              ...(commit === null ? {} : { commit }),
+              ...(acknowledgment === undefined ? {} : { acknowledgment }),
+              sink,
+            }),
+          ];
+        }
+      } catch (error) {
+        log.error("engine.chat", "chat contact leg failed", { error: describeError(error) });
+      }
+    }
+
     // --- Narrator physical guidance (slice 2, `CHAT_PHYSICAL_CONSTRAINTS`, OFF) ---
     // Constraints from the committed cut above, plus the high-confidence false
     // premises in THIS message. Fenced whole for the same reason every optional read
@@ -1197,6 +1342,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             // The turn's sense-targeted beat, already detected above: one of the four
             // relevance signals that decide whether a true fence is worth its bytes.
             sensoryFocus: sensoryFocus ?? null,
+            // This turn's resolved contact, when the contact flag produced one. A
+            // conditional spread, so a contact-flag-off turn compiles the exact bytes
+            // it compiled before the leg existed.
+            ...(contactActionOutcomes.length > 0 ? { actionOutcomes: contactActionOutcomes } : {}),
             sink,
           }),
           characterName,

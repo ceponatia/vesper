@@ -28,6 +28,7 @@ import {
   type HairClaimArea,
   type HairClaimMatch,
   type NarratorPhysicalGuidance,
+  type PhysicalActionOutcome,
   type PhysicalNarrationConstraint,
   type PhysicalPremiseCorrection,
 } from "@/contracts";
@@ -49,8 +50,12 @@ import type { SensoryFocusHint } from "./chat-intent";
  * 2. **Relevance** — decide whether a standing constraint is about anything happening
  *    this turn. A braid is true all day; stating so on every exchange is inventory,
  *    and plan §6 selects risk (see `chatGuidanceRelevance`).
- * 3. **Compilation** — hand this cut's admitted constraints and the turn's corrections
- *    to the lane-neutral compiler, which gates, orders, and budgets them.
+ * 3. **Compilation** — hand this cut's admitted constraints, the turn's corrections, and
+ *    whatever resolved action outcomes the caller supplies to the lane-neutral compiler,
+ *    which gates, orders, and budgets them. The outcomes are only ever PASSED THROUGH:
+ *    the contact adapter (`chat-contact-adapter.ts`) owns the detection, the resolution,
+ *    and the persistence acknowledgment behind them, and this file must never be able to
+ *    manufacture one — a compiled outcome is the strongest claim the block can make.
  *
  * ## Conservative by construction
  *
@@ -799,6 +804,16 @@ export interface ChatPhysicalGuidanceInput extends ChatPremiseDetectionInput {
    * and can no more create a constraint than it can create a correction.
    */
   readonly sensoryFocus?: SensoryFocusHint | null;
+  /**
+   * This turn's resolved physical actions (the contact leg, `CHAT_CONTACT_ACTIONS`).
+   *
+   * Passed THROUGH, never produced here: the contact adapter owns the detection,
+   * the resolution, and the persistence acknowledgment that decides whether an
+   * attempt may be reported as committed. Absent when that flag is off, which is
+   * what keeps the two experiments independent — this file's own two halves are
+   * unchanged either way.
+   */
+  readonly actionOutcomes?: readonly PhysicalActionOutcome[];
 }
 
 /**
@@ -815,6 +830,13 @@ export interface ChatPhysicalGuidanceInput extends ChatPremiseDetectionInput {
 export interface ChatPhysicalGuidanceStages {
   readonly candidateConstraints: readonly PhysicalNarrationConstraint[];
   readonly candidateCorrections: readonly PhysicalPremiseCorrection[];
+  /**
+   * The action outcomes handed in, before the disclosure gate and the tiers.
+   * They are candidates like the other two lists even though nothing here builds
+   * them: the inspector's interesting failure is the same one — an outcome that
+   * existed and did not survive the gate is invisible from the result alone.
+   */
+  readonly candidateActionOutcomes: readonly PhysicalActionOutcome[];
   /** Why the constraint tier was admitted or withheld this turn — the inspector's stage 3a. */
   readonly relevance: ChatGuidanceRelevance;
   readonly guidance: NarratorPhysicalGuidance;
@@ -835,6 +857,7 @@ export interface ChatPhysicalGuidanceStages {
  * about this turn by construction, and the fence for the area it corrects rides with it.
  */
 export function buildChatPhysicalGuidanceStages(input: ChatPhysicalGuidanceInput): ChatPhysicalGuidanceStages {
+  const candidateActionOutcomes = input.actionOutcomes ?? [];
   const candidateCorrections = detectHairPremises(input);
   const relevance = chatGuidanceRelevance({
     detection: input,
@@ -872,17 +895,28 @@ export function buildChatPhysicalGuidanceStages(input: ChatPhysicalGuidanceInput
     }
   }
 
-  if (candidateConstraints.length === 0 && candidateCorrections.length === 0) {
-    return { candidateConstraints, candidateCorrections, relevance, guidance: emptyNarratorPhysicalGuidance() };
+  if (candidateConstraints.length === 0 && candidateCorrections.length === 0 && candidateActionOutcomes.length === 0) {
+    return {
+      candidateConstraints,
+      candidateCorrections,
+      candidateActionOutcomes,
+      relevance,
+      guidance: emptyNarratorPhysicalGuidance(),
+    };
   }
 
   return {
     candidateConstraints,
     candidateCorrections,
+    candidateActionOutcomes,
     relevance,
+    // An empty outcome list compiles identically to no list at all
+    // (`normalizeGuidanceCandidates`), so a contact-flag-off turn is byte-identical
+    // to the pre-feature build without a second branch here to get wrong.
     guidance: compileNarratorPhysicalGuidance({
       constraints: candidateConstraints,
       corrections: candidateCorrections,
+      actionOutcomes: candidateActionOutcomes,
       ...(input.sink === undefined ? {} : { sink: input.sink }),
     }),
   };
