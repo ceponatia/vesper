@@ -1,10 +1,13 @@
 import { diag, type DiagnosticSink } from "../../diagnostics";
 import type { AffordanceEvidence, AffordanceStoryTime, AffordanceSubjectId } from "../core";
-import { SCENE_CONTROL_UNAVAILABLE, SCENE_INTENT_INVALID } from "./diagnostics";
+import { SCENE_CONTROL_UNAVAILABLE, SCENE_INTENT_INVALID, SCENE_INTENT_STALE } from "./diagnostics";
 import { sceneFact, sceneProvenance, type SceneEventRef, type SceneFact, type SceneProvenance } from "./provenance";
 import {
   SCENE_MAX_SUPPORT_RELATIONS,
+  sceneFacingFact,
   sceneParticipant,
+  sceneProximityFact,
+  sceneSupportSetsEqual,
   sceneSupportSurface,
   withSceneFacing,
   withSceneParticipant,
@@ -45,18 +48,45 @@ import {
  * The rule itself lives in `SCENE_CONTROL_ORIGINS` as data, so it can be read
  * and extended without re-deriving it from branches here.
  *
- * ## Committed, rejected, unresolved — and only one of them carries a scene
+ * ## Committed, rejected, superseded, unresolved — and only one carries a scene
  *
  * The contact core separates attempt from commitment with three types rather
  * than a status field, for the reason a collapsed boundary lets a possibility
  * reach a narrator as a fact. The same separation applies here in the cheapest
  * possible form: **only the `committed` branch of `SceneIntentOutcome` has a
- * `state`.** A refused intent has no new scene to pick up by mistake.
+ * `state`.** A refused, stale, or unreadable intent has no new scene to pick up
+ * by mistake.
  *
  * A rejection is an ANSWER (the player does not control that body) and files no
  * diagnostic. `unresolved` means the scene could not be read — an unusable
  * intent, a participant nobody placed, a control nobody stated — and files one,
- * because it is a gap somebody has to close.
+ * because it is a gap somebody has to close. `superseded` is the ordering law
+ * below.
+ *
+ * ## The ordering law
+ *
+ * A scene fact records **when it became true**, so an intent has to be weighed
+ * against the fact it would overwrite rather than simply landing on top of it:
+ *
+ * 1. An intent that **restates** the standing fact — the same posture, the same
+ *    band, the same orientation, the same support set — never writes, at any
+ *    story time. Only the provenance would change, and rewriting provenance for
+ *    a fact that did not change is how a scene where nothing happened produces a
+ *    new snapshot every turn. (The contact core's `contentKey` refuses the same
+ *    churn on the same grounds.) `already_asserted`, no diagnostic: the scene
+ *    agrees, and agreement is not a fault.
+ * 2. An intent **older** than the fact it targets never overwrites it —
+ *    `newer_fact_present` plus `scene.intent_stale`. Out-of-order delivery is an
+ *    adapter or replay gap, and letting yesterday's posture land on today's is
+ *    exactly the silent corruption a provenance-carrying fact exists to prevent.
+ * 3. An intent at the **same** story time as the fact, asserting something
+ *    DIFFERENT, writes. Two movements inside one story minute are ordinary, and
+ *    within an instant the delivery order is the only ordering that exists — a
+ *    fold's order is causal, unlike the array order of a stored blob, which is
+ *    why the boundary may never make the same choice (`parseSceneState`).
+ *
+ * A body with no fact of that kind yet has nothing to be stale against, so a
+ * first placement always writes.
  */
 
 // ---------------------------------------------------------------------------
@@ -116,6 +146,18 @@ export type SceneIntentRejection = (typeof sceneIntentRejections)[number];
 export const sceneIntentUnresolvedReasons = ["intent_invalid", "participant_absent", "control_unresolved"] as const;
 export type SceneIntentUnresolvedReason = (typeof sceneIntentUnresolvedReasons)[number];
 
+/**
+ * Why a legal, authorized intent still wrote nothing.
+ *
+ * - `newer_fact_present` — the scene had already moved past it (stale delivery).
+ * - `already_asserted` — the scene already says exactly this.
+ *
+ * In both cases the state the caller already holds is the correct one, which is
+ * why this branch carries no `state`: there is nothing new to pick up.
+ */
+export const sceneIntentSupersededReasons = ["newer_fact_present", "already_asserted"] as const;
+export type SceneIntentSupersededReason = (typeof sceneIntentSupersededReasons)[number];
+
 /** What a committed intent wrote, for a replay log or a debug pane. */
 export interface SceneIntentCommit {
   readonly intentId: string;
@@ -131,6 +173,12 @@ export type SceneIntentOutcome =
       readonly reason: SceneIntentRejection;
       /** The control fact the refusal rests on — a refusal states its own authority. */
       readonly control: SceneFact<SceneControlMode>;
+    }
+  | {
+      readonly status: "superseded";
+      readonly reason: SceneIntentSupersededReason;
+      /** The provenance of the fact that stands — when it became true, and on whose word. */
+      readonly standing: SceneProvenance;
     }
   | {
       readonly status: "unresolved";
@@ -207,6 +255,84 @@ function supportSetProblem(
 }
 
 // ---------------------------------------------------------------------------
+// Ordering
+// ---------------------------------------------------------------------------
+
+/** The fact an intent would overwrite, and whether the intent merely restates it. */
+interface SceneIntentTarget {
+  readonly provenance: SceneProvenance;
+  readonly restates: boolean;
+}
+
+/**
+ * The single fact this change would replace, if the scene already holds one.
+ *
+ * One slot per change kind, and the slot is the unit of ordering: a posture
+ * intent is weighed against that participant's posture, a facing intent against
+ * that ORDERED pair's orientation, a support intent against the whole support
+ * set. Weighing a facing intent against a posture would let an unrelated
+ * movement make a legal one look stale.
+ */
+function targetedFact(
+  state: SceneState,
+  participant: SceneParticipant,
+  change: SceneMovementChange,
+): SceneIntentTarget | undefined {
+  switch (change.kind) {
+    case "set_posture": {
+      const fact = participant.posture;
+      return fact === undefined ? undefined : { provenance: fact.provenance, restates: fact.value === change.posture };
+    }
+    case "set_facing": {
+      const fact = sceneFacingFact(state, participant.subjectId, change.towardId);
+      return fact === undefined ? undefined : { provenance: fact.provenance, restates: fact.value === change.facing };
+    }
+    case "set_proximity": {
+      const fact = sceneProximityFact(state, participant.subjectId, change.otherId);
+      return fact === undefined ? undefined : { provenance: fact.provenance, restates: fact.value === change.band };
+    }
+    case "set_support": {
+      const fact = participant.support;
+      return fact === undefined
+        ? undefined
+        : { provenance: fact.provenance, restates: sceneSupportSetsEqual(fact.value, change.support) };
+    }
+  }
+}
+
+/**
+ * The ordering law, applied to one intent (see the header).
+ *
+ * Returns the refusal, or `undefined` when the write may proceed. A refusal is
+ * always the `superseded` branch, which carries no state — so no caller can pick
+ * up a scene that was never written.
+ */
+function orderingRefusal(
+  state: SceneState,
+  participant: SceneParticipant,
+  intent: SceneMovementIntent,
+  sink?: DiagnosticSink,
+): SceneIntentOutcome | undefined {
+  const target = targetedFact(state, participant, intent.change);
+  if (target === undefined) return undefined;
+  if (target.restates) {
+    return { status: "superseded", reason: "already_asserted", standing: target.provenance };
+  }
+  if (intent.storyTime >= target.provenance.storyTime) return undefined;
+  sink?.push(
+    diag("warn", SCENE_INTENT_STALE, "movement intent is older than the fact it would have overwritten", {
+      context: {
+        subjectId: intent.subjectId,
+        kind: intent.change.kind,
+        intentStoryTime: intent.storyTime,
+        factStoryTime: target.provenance.storyTime,
+      },
+    }),
+  );
+  return { status: "superseded", reason: "newer_fact_present", standing: target.provenance };
+}
+
+// ---------------------------------------------------------------------------
 // Commit
 // ---------------------------------------------------------------------------
 
@@ -232,10 +358,10 @@ function applyChange(
         band: sceneFact(change.band, provenance),
       });
     case "set_support":
-      return withSceneParticipant(state, {
-        ...participant,
-        support: change.support.map((relation) => sceneFact(relation, provenance)),
-      });
+      // The whole set is one fact, so a CLEARING keeps a timestamp: `[]` stated
+      // at story minute 40 is a fact about minute 40, and an intent from minute
+      // 30 can be told it is late. A bare array had nothing to be late against.
+      return withSceneParticipant(state, { ...participant, support: sceneFact(change.support, provenance) });
   }
 }
 
@@ -248,9 +374,11 @@ function applyChange(
  *
  * Order is deliberate. Structure first (an intent naming a participant nobody
  * placed is an adapter bug, and asking who controls a body that is not there is
- * meaningless), then control, then the write. The control question is never
- * skipped for a "small" change: a lean and a walk across the room are the same
- * question about whose body it is.
+ * meaningless), then control, then ordering, then the write. The control
+ * question is never skipped for a "small" change: a lean and a walk across the
+ * room are the same question about whose body it is. Ordering runs LAST because
+ * it is the only check that consults the fact being replaced — an intent nobody
+ * was allowed to make is refused on that ground whether it was late or not.
  */
 export function commitSceneIntent(request: SceneIntentRequest): SceneIntentOutcome {
   const { state, intent, sink } = request;
@@ -292,6 +420,10 @@ export function commitSceneIntent(request: SceneIntentRequest): SceneIntentOutco
     };
   }
 
+  // --- The ordering law -------------------------------------------------
+  const superseded = orderingRefusal(state, participant, intent, sink);
+  if (superseded !== undefined) return superseded;
+
   const provenance = sceneProvenance({
     source: SCENE_ORIGIN_PROVENANCE[intent.origin],
     ref: intent.ref,
@@ -313,10 +445,14 @@ export function commitSceneIntent(request: SceneIntentRequest): SceneIntentOutco
 /**
  * Fold a sequence of intents.
  *
- * A refused or unresolved intent leaves the state exactly as it was and the
- * fold continues — one participant's illegal movement is not a reason to drop
- * everybody else's legal one. Every outcome is returned in order, so a replay
- * can prove it reproduced not just the same scene but the same refusals.
+ * A refused, superseded, or unresolved intent leaves the state exactly as it was
+ * and the fold continues — one participant's illegal movement is not a reason to
+ * drop everybody else's legal one. Every outcome is returned in order, so a
+ * replay can prove it reproduced not just the same scene but the same refusals.
+ *
+ * Folding the same list twice is therefore safe: the second pass restates every
+ * fact the first one wrote and every intent comes back `already_asserted`,
+ * leaving the state byte-identical rather than re-stamping it.
  */
 export function applySceneIntents(
   state: SceneState,

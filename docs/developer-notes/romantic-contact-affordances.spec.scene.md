@@ -3,7 +3,9 @@
 Status: technical companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
 (slice 3A — the minimal scene/body-relations owner; contracts built 2026-07-31,
-fixture-driven, not lane-wired)
+fixture-driven, not lane-wired. Correction pass **3A.1**, 2026-07-31: the
+version law, the ordering law and support-set provenance, the boundary
+contradiction-drop law, and scene/contact referential integrity.)
 
 ## Why this exists
 
@@ -32,7 +34,7 @@ compile.
 | Participant posture | `SceneFact<ScenePosture>` per participant | Five configurations. Absent ⇒ `unresolved`. |
 | Coarse facing | `SceneFacingRelation` per **ordered** pair | Directional: she may have her back to him while he faces her. |
 | Coarse proximity | `SceneProximityRelation` per **unordered** pair | Symmetric, stored once, so a pair cannot hold two distances. |
-| Support roles | `SceneFact<SceneSupportRelation>[]` per participant | Who or what bears weight, leans, holds, is held. |
+| Support roles | **one** `SceneFact<SceneSupportRelation[]>` per participant | The whole set is one fact, so a clearing keeps a timestamp. |
 | Support surfaces | `SceneSupportSurface` per surface | Kind plus a height rung. |
 | Surface-height relations | derived | Posture × zone offset, plus the base rung of whatever the body rests on. |
 | Active-contact projection | `ContactLifecycleState`, **housed** | The contact core's own type, carried verbatim. |
@@ -146,6 +148,11 @@ SCENE_CONTROL_ORIGINS = {
 
 `commitSceneIntent` checks structure, then control, then writes:
 
+`commitSceneIntent` checks structure, then control, then **ordering**, then writes.
+Ordering runs last because it is the only check that consults the fact being
+replaced: an intent nobody was allowed to make is refused on that ground whether
+it was late or not.
+
 | Situation | Outcome |
 | --- | --- |
 | origin `player`, participant `npc_controlled` | **rejected** `npc_movement_requires_npc_authority` |
@@ -153,12 +160,15 @@ SCENE_CONTROL_ORIGINS = {
 | no control fact on the participant | **unresolved** `control_unresolved` + `scene.control_unavailable` (`warn`) |
 | participant not in the scene | **unresolved** `participant_absent` + `scene.intent_invalid` (`error`) |
 | unusable intent (blank id, negative story time, facing itself, unknown target, two `borne_by`, load-less relation, self-anchored support) | **unresolved** `intent_invalid` + `scene.intent_invalid` (`error`) |
-| origin permitted | **committed**, fact stamped `SCENE_ORIGIN_PROVENANCE[origin]` |
+| older than the fact it targets | **superseded** `newer_fact_present` + `scene.intent_stale` (`warn`) |
+| restates the fact it targets | **superseded** `already_asserted`, no diagnostic |
+| origin permitted, nothing newer in the way | **committed**, fact stamped `SCENE_ORIGIN_PROVENANCE[origin]` |
 
 There is no narrator origin to check for, which is the restrictive reading the
 owner chose. **Only the `committed` branch of `SceneIntentOutcome` carries a
 `state`** — the contact core's attempt/commitment boundary in its cheapest
-form: a refused intent has no new scene to pick up by mistake.
+form: a refused, stale, or unreadable intent has no new scene to pick up by
+mistake.
 
 A rejection files **no diagnostic**: "the player does not control that body" is
 an answer, and logging answers turns the diagnostics channel into a transcript
@@ -167,6 +177,69 @@ of the fiction.
 `applySceneIntents` folds a sequence; a refused intent leaves the state
 untouched and the fold continues, returning every outcome in order so a replay
 can prove it reproduced the same refusals, not just the same scene.
+
+## Ordering law
+
+Added in 3A.1. A scene fact records **when it became true**, so an intent is
+weighed against the fact it would replace rather than landing on top of it.
+`SceneIntentOutcome` gained a fourth branch, `superseded`, which carries the
+provenance of the fact that stands (`standing`) and — like every non-committed
+branch — no `state`.
+
+| The intent | Rule | Outcome |
+| --- | --- | --- |
+| restates the standing fact, at any story time | never writes | `already_asserted`, silent |
+| older than the standing fact | never overwrites | `newer_fact_present` + `scene.intent_stale` |
+| same story time, different value | writes | `committed` |
+| newer, different value | writes | `committed` |
+| targets a fact the scene does not hold yet | nothing to be late against | `committed` |
+
+**Restatement never writes**, because only the provenance would change, and
+re-stamping an unchanged fact is how a scene where nothing happened produces a
+new snapshot every turn — the churn the contact core's `contentKey` exists to
+prevent. It also means folding the same intent list twice is byte-identical, and
+that provenance keeps answering "when did this become true" rather than "when
+was it last mentioned".
+
+**Equal story time writes** when the value differs. Two movements inside one
+story minute are ordinary, and within an instant the fold's delivery order is
+the only ordering that exists — real causal information, unlike the array order
+of a stored blob, which is why the boundary may never make the same choice.
+
+The **slot** is the unit of ordering: a posture intent is weighed against that
+participant's posture, a facing intent against that ordered pair's orientation,
+a proximity intent against that unordered pair's distance, a support intent
+against the whole support set. An unrelated movement can never make a legal one
+look late.
+
+### Support-set provenance
+
+`SceneParticipant.support` is **one optional fact whose value is the relation
+list**, not a list of per-relation facts:
+
+```ts
+support?: SceneFact<readonly SceneSupportRelation[]>
+```
+
+`set_support` replaces the whole set, so the set is what has to carry a
+provenance — including when it is **empty**. A bare array lost its timestamp the
+moment it was cleared, and a clearing with no timestamp cannot be ordered
+against anything, so an older intent could silently un-clear it. Now "she let go
+of the wall at minute 110" is a fact about minute 110, and an intent from minute
+105 is told it is late.
+
+Three states, and the difference between the first two is bookkeeping only:
+
+| `support` | Means | Reads answer |
+| --- | --- | --- |
+| absent | nobody ever said | `support_unknown` / `elevation_unknown` |
+| present, `[]` | somebody said "nothing", at time T | `support_unknown` / `elevation_unknown` |
+| present, relations | the stated set, at time T | the support and reach rules |
+
+A stated-empty set is a **clearing, not a claim**: reading it as "every limb is
+free" would turn a bookkeeping fact into a physical one. Restoration preserves
+the distinction — a set that loses every relation to referential integrity keeps
+its fact, and its timestamp, rather than reverting to "nobody said".
 
 ## Reach rule
 
@@ -233,8 +306,8 @@ second one:
 | --- | --- | --- |
 | a `borne_by` or `bearing` relation | `fixed` | `weight_bearing` |
 | a `leaning_on` or `held_by` relation | `limited` | `partial` |
-| no relation, but the body has support facts | `free` | `free` |
-| the body has **no** support facts at all | `unresolved` (`support_unknown`) | — |
+| no relation, but the set states others | `free` | `free` |
+| no support fact, or a stated-**empty** set | `unresolved` (`support_unknown`) | — |
 
 "Nobody said what she is doing with her hands" is not "her hands are free", and
 the contact resolver is built to fall silent on the difference.
@@ -253,6 +326,10 @@ of being captured separately and drifting from them.
 
 The two versions are independent: a contact projection this build cannot read
 empties the projection without touching the scene, and vice versa.
+
+The one thing the contact core cannot check for itself is whether the bodies its
+contacts name are still in **this** scene — see the referential-integrity rule
+under the snapshot law.
 
 ## Snapshot law
 
@@ -274,12 +351,68 @@ Healing, on the contact core's model:
   reported once (`scene.state_invalid`, `error`). An absent fact makes reads
   answer `unresolved`, which can never be spent — so a quarantine marker would
   only let unreadable data keep occupying a body.
-- **referential integrity**: a proximity or facing entry naming a participant
-  that did not survive is dropped; a support relation whose anchor is not in the
-  scene is dropped while the participant keeps its other facts and simply has an
-  unknown elevation.
+- a **contradicted** key ⇒ every claimant dropped (`scene.state_contradictory`,
+  `error`).
+- **referential integrity**, including the housed contacts.
 - nothing is ever repaired. A corrupt posture drops the participant rather than
   becoming a plausible one.
+
+### Version law
+
+`version` is read as `unknown` and must equal `SCENE_STATE_VERSION` **exactly**;
+anything else — a string, a null, a fraction, a future number, a missing key —
+degrades to the empty scene with a diagnostic. A `.catch(CURRENT)` (which 3A
+shipped and 3A.1 removed) hands back the number this build happens to write, so
+a blob nobody wrote for this release is then read as though somebody had, and
+every placement in it is trusted. The version is the claim that the rest of the
+bytes mean what this reader thinks they mean, and repairing it repairs the only
+thing that could have said otherwise. The contact core made the same correction
+on the same grounds; the two versions stay independent of each other.
+
+### Contradiction law
+
+At the **untrusted boundary**, a key claimed twice loses **every** claimant —
+never the first, never the last. Two participants with one subject id, two
+distances for one pair, two orientations for one ordered pair, two surfaces with
+one support id, two support relations on one anchor, two `borne_by` relations:
+each is a blob claiming a body is in two states at once, and keeping "the last
+one" would be this module choosing which writer to believe on the strength of
+array position, which is evidence of nothing. **An absent fact is honest; a
+chosen one is invented.**
+
+Proximity is keyed by the order-independent pair key, so `(a,b)` and `(b,a)` are
+one contradiction, not two facts.
+
+`sceneStateOf` keeps **last-write-wins**, deliberately: there the last entry is
+the one the caller just wrote, which is how `withSceneParticipant` and its
+siblings express replacement — real ordering information. The boundary is the
+part that must never pick, so the drop happens in `parseSceneState` before
+construction, and by the time the constructor runs there is nothing to pick
+between.
+
+Records that could never be true are refused rather than deduped: **self-facing,
+self-proximity, and self-support** fail the boundary schemas (a self-supporting
+body takes its whole participant record with it, exactly as a corrupt posture
+does) and are dropped by `sceneStateOf` (which keeps the body and loses only the
+impossible relation — the surrounding facts came from code, not from an
+untrusted blob).
+
+### Referential integrity
+
+A relation is only as real as the things it relates. A proximity or facing entry
+naming a participant that did not survive is dropped; a support relation whose
+anchor is not in the scene is dropped while the participant keeps its other
+facts, keeps its support fact and timestamp, and simply has an unknown
+elevation.
+
+The **housed contact projection** is held to the same rule. It heals under the
+contact core's own parser, which knows nothing about who is in this scene, so a
+contact can come back perfectly well-formed while the body it names was just
+dropped as unreadable — an active touch on somebody who is not here. After
+participants are restored, any contact whose **body** participants did not all
+survive is dropped and counted in `context.orphanedContacts`. Which ends belong
+to characters is asked of the contact core's own `contactParticipantIds`, never
+re-derived here, so a contact on an **object** needs only its source body.
 
 ## Degraded behaviour
 
@@ -287,8 +420,10 @@ Healing, on the contact core's model:
 | --- | --- | --- |
 | `scene.intent_invalid` | `error` | A movement intent is unusable or names something absent. |
 | `scene.control_unavailable` | `warn` | Nobody stated who controls the body an intent moves. |
+| `scene.intent_stale` | `warn` | An intent arrived older than the fact it would have overwritten. |
 | `scene.relation_unavailable` | `warn` | A relation read could not answer; the reason rides `context.reason`. |
-| `scene.state_invalid` | `error`/`warn` | Stored state was unreadable in part (`error`) or in whole/version (`warn`). |
+| `scene.state_invalid` | `error`/`warn` | Stored state was unreadable or dangling in part (`error`, with `dropped` / `dangling` / `orphanedContacts`) or unreadable in whole/version (`warn`). |
+| `scene.state_contradictory` | `error` | Stored facts claimed one key twice; every claimant was dropped. |
 
 `SceneUnresolvedReason` is the read-side vocabulary: `participant_absent`,
 `zone_unknown`, `posture_unknown`, `elevation_unknown`, `elevation_ambiguous`,
@@ -303,12 +438,12 @@ or contradictory fact, so the gap is nameable rather than a shrug.
 | `vocabulary.ts` | The closed vocabularies, the posture/zone rung table, the reach spans, and the actor-control table. |
 | `provenance.ts` | `SceneProvenance`, `SceneFact`, `SceneEventRef`, the support id (reused `ContactEntityId`), evidence projection. |
 | `state.ts` | The five collections, canonical construction, keys, accessors, and the contact-projection door. |
-| `intents.ts` | `SceneMovementIntent`, the actor-control law, `commitSceneIntent`, `applySceneIntents`. |
+| `intents.ts` | `SceneMovementIntent`, the actor-control law, the ordering law, `commitSceneIntent`, `applySceneIntents`. |
 | `relations.ts` | `sceneBodyZoneOf`, `sceneReach`, `sceneSupportOf`, and the `sceneGeometryRead` / `sceneSupportRead` projections. |
-| `snapshot.ts` | Boundary schemas and `parseSceneState`. |
-| `diagnostics.ts` | The four codes this module emits. |
+| `snapshot.ts` | Boundary schemas, the version and contradiction laws, referential integrity, `parseSceneState`. |
+| `diagnostics.ts` | The six codes this module emits. |
 | `test-support.ts` | `probe*` fixture builders. Deliberately **not** in the barrel. |
-| `scene.test.ts` | 48 cases: vocabularies, zones, reach, absent facts, support, provenance, actor control, snapshot/replay, housing, contact integration, purity. |
+| `scene.test.ts` | 82 cases: vocabularies, zones, reach, absent facts, support, provenance, actor control, the ordering law, snapshot/replay, stored contradictions, housing, contact integration, purity. |
 
 ## Public API
 
@@ -323,7 +458,8 @@ or contradictory fact, so the gap is nameable rather than a shrug.
 `withSceneProximity` / `withSceneFacing` / `withSceneContacts` ·
 `sceneParticipant` / `sceneSupportSurface` / `sceneProximityFact` /
 `sceneFacingFact` / `sceneParticipantIds` · `sceneFact` / `sceneProvenance` /
-`sceneProvenanceEvidence`.
+`sceneProvenanceEvidence` · `scenePairKey` / `sceneFacingKey` /
+`sceneSupportAnchorKey` / `sceneSupportSetsEqual`.
 
 ## Non-goals
 
@@ -357,6 +493,12 @@ or contradictory fact, so the gap is nameable rather than a shrug.
   a limb caught under a sleeping body both currently read `free`. Adding them
   means a declared per-zone constraint fact, which is a new fact kind rather
   than a new value.
+
+  **Owner ruling, 2026-07-31:** trapped mobility MAY remain unproduced for the
+  affectionate proof, **provided the proof avoids restraint and pinning**. It
+  becomes **mandatory before any feature that relies on immobilized limbs** — a
+  scene that can hold somebody still may not be built on a model in which a
+  pinned wrist reads `free`.
 - **A carried or held body has no elevation.** `held_by` deliberately answers
   `elevation_unknown`: how high a carried body sits depends on how it is
   carried, and 3A has no vocabulary for that.

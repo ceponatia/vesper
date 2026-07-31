@@ -152,32 +152,37 @@ type SceneRungAnswer =
 /**
  * The rung of the surface a body is standing, sitting, or lying ON.
  *
- * Exactly one `borne_by` relation answers it. None means nobody said what holds
- * the body up — not that it is on the floor. Two means the scene contradicts
- * itself, and choosing between them would be this module inventing an
- * elevation, so it refuses. Weight borne by another PARTICIPANT (`held_by`) is
- * a real case with no answer here: how high a carried body sits depends on how
- * it is carried, and 3A does not model that (spec §"Open design questions").
+ * Exactly one `borne_by` relation answers it. None — whether the support fact is
+ * absent or states an empty set — means nobody said what holds the body up, not
+ * that it is on the floor. Two means the scene contradicts itself, and choosing
+ * between them would be this module inventing an elevation, so it refuses.
+ * (A stored scene can no longer carry that contradiction — `parseSceneState`
+ * drops both claimants — but a programmatically built one can, and this is the
+ * guard that keeps the read honest either way.) Weight borne by another
+ * PARTICIPANT (`held_by`) is a real case with no answer here: how high a carried
+ * body sits depends on how it is carried, and 3A does not model that
+ * (spec §"Open design questions").
  */
 function participantBaseRung(state: SceneState, participant: SceneParticipant): SceneRungAnswer {
-  const borne = participant.support.filter((fact) => fact.value.role === "borne_by");
+  const support = participant.support;
+  if (support === undefined) return { status: "unresolved", reason: "elevation_unknown", provenance: [] };
+  const provenance = [support.provenance];
+  const borne = support.value.filter((relation) => relation.role === "borne_by");
   const relation = borne[0];
-  if (relation === undefined) return { status: "unresolved", reason: "elevation_unknown", provenance: [] };
-  if (borne.length > 1) {
-    return { status: "unresolved", reason: "elevation_ambiguous", provenance: borne.map((fact) => fact.provenance) };
-  }
-  const anchor = relation.value.anchor;
+  if (relation === undefined) return { status: "unresolved", reason: "elevation_unknown", provenance };
+  if (borne.length > 1) return { status: "unresolved", reason: "elevation_ambiguous", provenance };
+  const anchor = relation.anchor;
   if (anchor.kind === "participant") {
-    return { status: "unresolved", reason: "elevation_unknown", provenance: [relation.provenance] };
+    return { status: "unresolved", reason: "elevation_unknown", provenance };
   }
   const surface = sceneSupportSurface(state, anchor.supportId);
   if (surface === undefined) {
-    return { status: "unresolved", reason: "support_surface_absent", provenance: [relation.provenance] };
+    return { status: "unresolved", reason: "support_surface_absent", provenance };
   }
   return {
     status: "resolved",
     rung: SCENE_HEIGHT_RUNG_INDEX[surface.height.value],
-    provenance: [relation.provenance, surface.height.provenance],
+    provenance: [...provenance, surface.height.provenance],
   };
 }
 
@@ -288,15 +293,17 @@ export function sceneReach(request: SceneReachRequest): SceneReachAnswer {
   if (target.kind === "object") {
     const surface = sceneSupportSurface(state, target.entityId);
     if (surface === undefined) return reachUnresolved("support_surface_absent", []);
-    const anchor = actor.support.find(
-      (fact) => fact.value.anchor.kind === "surface" && fact.value.anchor.supportId === target.entityId,
-    );
-    if (anchor === undefined) return reachUnresolved("object_surface_unanchored", []);
+    const support = actor.support;
+    const anchored =
+      support?.value.some(
+        (relation) => relation.anchor.kind === "surface" && relation.anchor.supportId === target.entityId,
+      ) ?? false;
+    if (support === undefined || !anchored) return reachUnresolved("object_surface_unanchored", []);
     const actorRung = zoneRung(state, actor, sourceZone);
     if (actorRung.status === "unresolved") {
-      return reachUnresolved(actorRung.reason, [anchor.provenance, ...actorRung.provenance]);
+      return reachUnresolved(actorRung.reason, [support.provenance, ...actorRung.provenance]);
     }
-    const provenance = [anchor.provenance, surface.height.provenance, ...actorRung.provenance];
+    const provenance = [support.provenance, surface.height.provenance, ...actorRung.provenance];
     const delta = Math.abs(actorRung.rung - SCENE_HEIGHT_RUNG_INDEX[surface.height.value]);
     return { status: "resolved", reach: degradeReach("in_contact", heightSteps(delta, span)), provenance };
   }
@@ -355,6 +362,12 @@ export function sceneReach(request: SceneReachRequest): SceneReachAnswer {
  * said what she is doing with her hands" is not "her hands are free", and the
  * contact resolver is built to fall silent on the difference.
  *
+ * A support set that was stated and is EMPTY answers `unresolved` too. The
+ * clearing carries a timestamp so it can be ordered against later intents, but a
+ * timestamp is not a claim: "nothing is named as holding her up" is the same
+ * absence of information as "nobody said", and reading it as five free limbs
+ * would turn a bookkeeping fact into a physical one.
+ *
  * `trapped` has no producer here. Pinning, restraint, and a limb caught under
  * something are real, and 3A does not model them (spec §"Open design
  * questions") — inventing a shape for them now would be an untested guess.
@@ -364,27 +377,28 @@ export function sceneSupportOf(state: SceneState, surface: ContactBodySurfaceRef
   if (participant === undefined) return { status: "unresolved", reason: "participant_absent", provenance: [] };
   const zone = sceneBodyZoneOf(surface.locationId);
   if (zone === undefined) return { status: "unresolved", reason: "zone_unknown", provenance: [] };
-  if (participant.support.length === 0) {
-    return { status: "unresolved", reason: "support_unknown", provenance: [] };
+  const support = participant.support;
+  if (support === undefined || support.value.length === 0) {
+    return {
+      status: "unresolved",
+      reason: "support_unknown",
+      provenance: support === undefined ? [] : [support.provenance],
+    };
   }
 
-  const loading = participant.support.filter((fact) => fact.value.loadZones.includes(zone));
-  const provenance = loading.map((fact) => fact.provenance);
-  const bearing = loading.some((fact) => fact.value.role === "borne_by" || fact.value.role === "bearing");
+  // The whole set is one fact, so every answer below rests on the same single
+  // provenance entry — including `free`, which is an answer FROM the support
+  // facts: the zone is free because every stated relation loads something else.
+  const provenance = [support.provenance];
+  const loading = support.value.filter((relation) => relation.loadZones.includes(zone));
+  const bearing = loading.some((relation) => relation.role === "borne_by" || relation.role === "bearing");
   if (bearing) {
     return { status: "resolved", mobility: "fixed", supportRole: "weight_bearing", provenance };
   }
   if (loading.length > 0) {
     return { status: "resolved", mobility: "limited", supportRole: "partial", provenance };
   }
-  return {
-    status: "resolved",
-    mobility: "free",
-    supportRole: "free",
-    // A free zone is still an answer FROM the support facts — it is free because
-    // every stated relation loads something else, and the trail says which.
-    provenance: participant.support.map((fact) => fact.provenance),
-  };
+  return { status: "resolved", mobility: "free", supportRole: "free", provenance };
 }
 
 // ---------------------------------------------------------------------------
