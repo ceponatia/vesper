@@ -62,6 +62,14 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   side/unsided regressions, and four carried-forward corrections (required access
   discriminator on the eligibility entity descriptor, non-owner blocker-routing
   regression, clone-policy disclosure on publish, and this docs pass).
+  **Slice 3A.1 — boundary corrections — landed 2026-07-31** (the owner's review
+  of 3A): scene versions fail closed, target-agency proof persisted into start
+  identity, acknowledgments bound to the actual commit, stale scene/contact
+  writes and ends refused (capacity refuses the start over a time-travelling
+  end), boundary contradictions dropped rather than last-write-wins with
+  scene→contact referential integrity, unavailable authority now `unresolved`
+  (never narrated as refusal), and character publishing gained a confirmation
+  with the fuller disclosure (images duplicated; unpublish recalls nothing).
   All prerequisites are **done and archived**: the slice-2
   [hardening pass / follow-ups](finished/romantic-contact-affordances.followups.md)
   (complete 2026-07-31), the
@@ -76,7 +84,12 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   decisions need owner rulings) → eligibility + blocker-link UI wiring → the
   romantic proof → channel-aware foot registration with positive texture/glide
   **last** (blocked on explicit visual/tactile perception channels, perceiver
-  binding, structured path/cross-locus info, per-surface footwear friction).
+  binding, structured path/cross-locus info, and per-surface **and per-side**
+  footwear friction — footwear must first gain a side so one sock is
+  representable; ruled 2026-07-31). The affectionate proof must exercise
+  durable events, snapshot restoration, retry/idempotency, and
+  feature-flag-off, and avoid restraint/pinning while trapped mobility has no
+  producer.
   Then slice 4's atomic/idempotent contact-caused effects. Successor parity waits
   for regional pose/contact and clothing adapters. Intimate regions stay behind
   the foot proof plus explicit adult-eligibility, consent, exposure, and

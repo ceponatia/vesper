@@ -5,6 +5,19 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Romantic contact slice 3A.1 — boundary corrections** —
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
+  [contact-core spec](romantic-contact-affordances.spec.contact-core.md) ·
+  [scene spec](romantic-contact-affordances.spec.scene.md) — 2026-07-31 — the
+  owner's review of 3A: scene versions fail closed, target-agency proof
+  persisted into start identity (duplicates are contradictions), acknowledgments
+  bound to the actual commit, stale scene intents and contact ends refused
+  (capacity refuses the start over a time-travelling end), boundary
+  contradictions dropped with scene→contact referential integrity, unavailable
+  authority now unresolved (never narrated as refusal), and a character publish
+  confirmation with the fuller disclosure (images duplicated; unpublish recalls
+  nothing).
+
 - **Romantic contact slice 3A — authority and persistence hardening** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
   [contact-core spec](romantic-contact-affordances.spec.contact-core.md) ·

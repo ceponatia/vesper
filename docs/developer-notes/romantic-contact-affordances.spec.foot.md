@@ -515,6 +515,14 @@ lane yields zero observations, zero constraints, zero cues, and one `warn`.
   a bare toe box reports the sandal's leather for the toes too. No phenomenon
   reads it today (glide uses the per-surface skin friction), which is why it
   shipped as is — slice 3 must make it per-surface before wiring anything to it.
+- **`FootwearContactRead` has no side — RULED a registration blocker (owner,
+  2026-07-31).** One wardrobe answer covers both feet, so "a sock on one foot"
+  is unrepresentable. The ruling: footwear gains a foot **side** (the
+  `footSides` vocabulary; absent = both/undistinguished is a design call for
+  that change), and friction becomes surface- **and side-**specific, **before
+  channel-aware registration** — the same gate as the per-surface friction item
+  above. Until then a partially-shod pair cannot be authored truthfully and
+  registration stays blocked on it.
 - **Fixture-matrix rows that need an unowned owner** — standing/weight-bearing
   lift, trapped-foot reposition, reach-after-rotation, and hand-but-not-mouth
   geometry are decided by the contact-core RESOLVER (reach, support, geometry),

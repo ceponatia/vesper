@@ -1,7 +1,9 @@
 # Romantic contact affordances
 
-Status: active (promoted 2026-07-28; **slices 0–2 shipped 2026-07-30**, and
-**slice 3A — authority and persistence hardening — landed 2026-07-31**).
+Status: active (promoted 2026-07-28; **slices 0–2 shipped 2026-07-30**,
+**slice 3A — authority and persistence hardening — landed 2026-07-31**, and
+**slice 3A.1 — boundary corrections — landed 2026-07-31** after the owner's
+review of 3A).
 
 Slices 0–2: the truth-source audit is published, the lane-neutral contact
 lifecycle is built as pure contracts, and the foot domain proof is in
@@ -397,13 +399,57 @@ live lane; it makes the contracts strong enough to be wired.
    told at the control; see docs/auth.md §"Publishing and cloning"), and this
    documentation pass.
 
+#### Slice 3A.1 — boundary corrections · shipped 2026-07-31
+
+The owner's review of the shipped 3A found the original findings closed but a
+set of **newly exposed boundary problems**, fixed here before any lane wiring:
+
+1. **Scene-state versions fail closed** — the scene snapshot no longer heals a
+   malformed version into the current one (the same bug 3A fixed in contact
+   state).
+2. **Target-agency proof is persisted** — the consulted, participant-keyed
+   agency decisions ride the committable resolution into the committed
+   contact's start identity, and stored-state validation demands an `allowed`
+   decision for every adjusted non-actor participant; duplicate decisions for
+   one participant are a contradiction, not a first-match win.
+3. **Acknowledgments are bound to the actual commit** — `committed` requires
+   the acknowledgment to name this action's own contact id, commit kind, and
+   event; wrong-id, wrong-kind, stale, and ended-contact acknowledgments all
+   resolve `unresolved`.
+4. **Stale writes cannot rewrite newer facts** — scene intents older than the
+   targeted fact's provenance no-op (support-set provenance survives even an
+   empty set), and stale contact ends no-op everywhere (capacity refuses the
+   new start rather than writing a time-travelling end).
+5. **Boundary contradictions drop instead of winning by array order** —
+   duplicate scene keys and self-referential facts are dropped at restore, and
+   a housed contact whose body participant did not survive restoration is
+   dropped with it.
+6. **Unavailable is not narrated as refusal** — only explicit denial stays
+   `rejected`; missing/unresolved authority returns `unresolved` (silence +
+   diagnostics), so the fiction never carries a refusal nobody made.
+7. **Character publishing confirms** — publishing a character now asks first,
+   with the fuller disclosure (private fields **and images** are duplicated;
+   unpublishing does not recall existing copies), pinned by regression;
+   unpublish and non-character kinds stay one-click.
+
+Rulings recorded with this pass: the generic contact core stays
+**anatomy-neutral** (the no-`center`-foot law lives in the foot schema alone);
+footwear must gain a **side** (one sock is currently unrepresentable) and
+per-surface, per-side friction before channel-aware registration; trapped
+mobility may stay unproduced for the affectionate proof **provided the proof
+avoids restraint/pinning**, and becomes mandatory before any feature relying
+on immobilized limbs.
+
 #### Continuation order (owner-ruled; 1 leads)
 
 1. **Affectionate integration proof** — a separately authored, genuinely
    affectionate/non-romantic action-outcome proof (never a romantic case
    relabeled to commit), with **durable, retake-safe persistence**: durable
    event provenance plus the versioned active-contact projection in the
-   snapshot.
+   snapshot, exercised end-to-end — durable events, snapshot restoration,
+   retry/idempotency, and feature-flag-off (no contact writes, no prompt
+   changes) tests. While trapped mobility has no producer, the proof must
+   avoid restraint/pinning scenarios.
 2. **Actor control through the live lane** — enforcement, not just the
    contract.
 3. **The explicit `romantic_touch` permission owner — spec before
@@ -417,7 +463,10 @@ live lane; it makes the contracts strong enough to be wired.
 6. **Channel-aware foot registration with positive texture/glide — LAST.**
    Blocked on explicit visual/tactile perception channels, perceiver binding,
    structured path and cross-locus information, and per-surface footwear
-   friction. None of those exist yet, so this is future design.
+   friction — including a footwear **side** (owner ruling, 2026-07-31: one
+   sock or shoe must be representable before registration; friction stops
+   being globally aggregated). None of those exist yet, so this is future
+   design.
 
 **No partial contact status.** The contact adapter emits exactly four outcomes:
 committed, explicit-transition-required, rejected, unresolved. `partially_committed`
