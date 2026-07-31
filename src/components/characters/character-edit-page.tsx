@@ -18,6 +18,7 @@ import {
 } from "@/lib/client/api";
 import { resolveChatModelId } from "@/lib/narrative-models";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
+import { useHashAnchorScroll } from "@/components/hooks/use-hash-anchor";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useAutosave } from "@/components/hooks/use-autosave";
 import { PublishToggle } from "@/components/library/publish-toggle";
@@ -91,6 +92,11 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     setDirty(false);
     setChatModel(resolveChatModelId(null));
   }
+
+  // The editor renders client-side after a fetch, so the browser's native
+  // #anchor scroll (adult-eligibility blocker deep links) must be re-run once
+  // the sheet exists.
+  useHashAnchorScroll(draft !== null);
 
   const save = async (opts: { silent?: boolean } = {}): Promise<boolean> => {
     if (!draft) return false;

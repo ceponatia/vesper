@@ -7,6 +7,7 @@ import { personasApi } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useAutosave } from "@/components/hooks/use-autosave";
+import { useHashAnchorScroll } from "@/components/hooks/use-hash-anchor";
 import { LibraryBackLink } from "@/components/library/back-link";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,11 @@ export function PersonaEditPage({ personaId }: { personaId: string }) {
     setDraft(null);
     setDirty(false);
   }
+
+  // The editor renders client-side after a fetch, so the browser's native
+  // #anchor scroll (adult-eligibility blocker deep links) must be re-run once
+  // the sheet exists.
+  useHashAnchorScroll(draft !== null);
 
   const save = async (opts: { silent?: boolean } = {}): Promise<boolean> => {
     if (!draft) return false;
