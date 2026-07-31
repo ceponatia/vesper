@@ -1,5 +1,6 @@
 import {
   adapterSupported,
+  adapterUnavailable,
   affordanceEvidence,
   affordanceSubjectId,
   applySceneIntents,
@@ -9,6 +10,10 @@ import {
   contactCommitExpectation,
   contactEventRef,
   effectiveCoverageAt,
+  emptyEffectiveCoverageRead,
+  endAllContacts,
+  endContact,
+  isAdapterSupported,
   resolveContactAttempt,
   sceneEventRef,
   sceneFact,
@@ -20,20 +25,28 @@ import {
   sceneSupportRead,
   sceneSupportSurface,
   toUnitInterval,
+  withSceneContacts,
   withSceneParticipant,
   withSceneSupportSurface,
+  wornGarmentInstances,
+  type AdapterRead,
   type AffordanceEvidence,
   type AffordanceStoryTime,
   type AffordanceSubjectId,
+  type ChatGarmentStore,
   type CommittedContactOutcome,
+  type CommittedContactRead,
   type ContactActionContext,
   type ContactActionIntent,
   type ContactActorControlDecision,
   type ContactAreaBand,
   type ContactBodySurfaceRef,
   type ContactCommitOutcome,
+  type ContactEndedCommit,
+  type ContactEndReason,
   type ContactEventRef,
   type ContactMaterialLayerRead,
+  type ContactMaterialRead,
   type ContactMotionBand,
   type ContactPersistenceAcknowledgment,
   type ContactPressureBand,
@@ -60,7 +73,8 @@ import { parseMessageSpans } from "@/lib/message-spans";
  * (romantic-contact-affordances.plan.md §"Continuation order" 1).
  *
  * Everything here is PURE and deterministic: a scene in, a player line in, a
- * seeded scene / a movement intent / a resolved attempt / an action outcome out.
+ * seeded scene / a movement intent / a release's ends / a resolved attempt / an
+ * action outcome out.
  * No IO, no clock, no model call. The lane's durable writes (the contact ledger,
  * the scenario's scene slot) belong to the pipeline, and the one ordering rule
  * this module cannot enforce for itself is stated where it is broken:
@@ -94,8 +108,15 @@ import { parseMessageSpans } from "@/lib/message-spans";
  *    against a mobility model that cannot represent them.
  * 5. **Silence beats a guess.** Every gate below fails toward "no act detected".
  *    A hypothetical, a question, a negation, an ambiguous target, an unknown body
- *    part: all of them produce nothing, because a contact this layer invented is
- *    worse than a contact it missed.
+ *    part, a possessed destination ("her desk"), a wardrobe nobody enumerated:
+ *    all of them produce nothing, because a contact this layer invented — or a
+ *    bare shoulder it assumed — is worse than a contact it missed.
+ *
+ * The one thing that fails the OTHER way is a release. `detectChatContactRelease`
+ * only ever ENDS contacts, so refusing to read one leaves a durable row claiming
+ * a hand that is no longer there; its gates are therefore the shared ones minus
+ * the restraint veto, and its silence rule applies to WHICH contacts end rather
+ * than whether the sentence counts.
  */
 
 // ---------------------------------------------------------------------------
@@ -153,11 +174,13 @@ export interface ChatContactRosterMember {
   readonly name: string;
   readonly aliases: readonly string[];
   /**
-   * This member's captured effective-coverage read, when the conversation has
-   * one. The material-between adapter reads it and nothing else — see
-   * `chatContactMaterialLayers` for why that is deliberately minimal here.
+   * Whether this conversation can say what lies between a hand and this body,
+   * from `chatContactMaterialSource`. REQUIRED, and deliberately not defaulted:
+   * a roster assembled without it would answer "bare skin" for every character
+   * the wardrobe never enumerated, which is the one answer this lane may not
+   * invent (see `chatContactMaterialSource`).
    */
-  readonly coverage?: EffectiveCoverageRead;
+  readonly material: ChatContactMaterialSource;
 }
 
 // ---------------------------------------------------------------------------
@@ -293,15 +316,31 @@ const CONTACT_ROMANTIC_TARGET_RE =
 const CONTACT_RESTRAINT_RE =
   /\b(?:pin\w*|trap\w*|restrain\w*|held down|hold\w* down|grabs?|grabb\w*|grips?|gripp\w*|yank\w*|shov(?:e|es|ed|ing)|push\w*|pull\w*|forc(?:e|es|ed|ing)|wrestl\w*|tackl\w*|drag\w*|hold\w* still|struggl\w*)\b/iu;
 
-/** Is this sentence something this proof may read as a plain affectionate act? */
+/**
+ * The gates EVERY detector shares: a question, a hedge, a denial, or romantic
+ * framing is a sentence this proof reads as nothing at all.
+ */
 function contactSentenceEligible(sentence: string): boolean {
   if (sentence.includes("?")) return false;
   if (CONTACT_CONDITIONAL_RE.test(sentence)) return false;
   if (CONTACT_NEGATION_RE.test(sentence)) return false;
   if (CONTACT_ROMANTIC_VERB_RE.test(sentence)) return false;
   if (CONTACT_ROMANTIC_TARGET_RE.test(sentence)) return false;
-  if (CONTACT_RESTRAINT_RE.test(sentence)) return false;
   return true;
+}
+
+/**
+ * The above PLUS the restraint veto — the gate for anything that starts or
+ * sustains a contact.
+ *
+ * The restraint list exists because `trapped` mobility has no producer (law 4),
+ * so a contact framed as force is refused rather than resolved against a model
+ * that cannot hold it. That argument is about contacts this lane would CREATE,
+ * which is why the release scan below does not use this gate: see
+ * `releaseSentences`.
+ */
+function contactCommitSentenceEligible(sentence: string): boolean {
+  return contactSentenceEligible(sentence) && !CONTACT_RESTRAINT_RE.test(sentence);
 }
 
 export interface ChatContactDetectionInput {
@@ -327,7 +366,10 @@ export interface ChatContactDetectionInput {
  * be exactly the narrator-gains-physical-authority failure the scene owner
  * exists to prevent.
  */
-function contactSentences(input: ChatContactDetectionInput): readonly string[] {
+function contactSentences(
+  input: ChatContactDetectionInput,
+  eligible: (sentence: string) => boolean = contactCommitSentenceEligible,
+): readonly string[] {
   if (input.narratorInput) return [];
   const message = input.message.trim();
   if (message.length === 0) return [];
@@ -335,7 +377,7 @@ function contactSentences(input: ChatContactDetectionInput): readonly string[] {
   for (const span of parseMessageSpans(message)) {
     if (span.kind !== "narration") continue;
     for (const sentence of span.text.split(CONTACT_SENTENCE_SPLIT)) {
-      if (sentence.trim().length > 0 && contactSentenceEligible(sentence)) sentences.push(sentence);
+      if (sentence.trim().length > 0 && eligible(sentence)) sentences.push(sentence);
     }
   }
   return sentences;
@@ -408,14 +450,53 @@ const APPROACH_TOUCHING: ReadonlySet<string> = new Set([
 
 /**
  * A first-person movement verb, at most two filler words, a destination
- * preposition, and a person. The first-person subject is the guard rail: "she
- * walks over to me" is an NPC's movement and this detector must never produce
- * one.
+ * preposition, a person, and — zero-width — whether an ordinary word follows.
+ *
+ * The first-person subject is the guard rail: "she walks over to me" is an NPC's
+ * movement and this detector must never produce one. The trailing lookahead is
+ * the possessive guard's only input; it consumes nothing, so the scan for a
+ * later clause still starts immediately after the destination token.
  */
 const APPROACH_RE = new RegExp(
-  `\\bi\\s+(?:[\\p{L}']+\\s+){0,2}?(?:${APPROACH_VERBS})\\b[^.?!;:]{0,60}?\\b(${APPROACH_ADJACENCY})\\s+([\\p{L}][\\p{L}\\p{N}'’-]*)\\b`,
+  `\\bi\\s+(?:[\\p{L}']+\\s+){0,2}?(?:${APPROACH_VERBS})\\b[^.?!;:]{0,60}?\\b(${APPROACH_ADJACENCY})\\s+([\\p{L}][\\p{L}\\p{N}'’-]*)\\b(?=(\\s+[\\p{L}])?)`,
   "giu",
 );
+
+/**
+ * The pronouns that can introduce a noun rather than BE one.
+ *
+ * `you`, `him`, `them` are absent because they are never determiners: "I walk
+ * over to you and sit" names a person and must keep matching. These five can go
+ * either way, and the word after them is what decides.
+ */
+const APPROACH_POSSESSIVE_PRONOUNS: ReadonlySet<string> = new Set(["your", "her", "his", "their", "its"]);
+
+/**
+ * Is this destination token a POSSESSOR rather than the destination?
+ *
+ * "I walk over to her desk" and "I walk over to Wren's desk" are approaches to
+ * FURNITURE, and the movement detector's one-token capture cannot see that on
+ * its own: the possessive resolves to the person who owns the thing, and the
+ * turn commits `close` proximity to a body nobody walked up to. A possessive
+ * followed by another ordinary word is therefore refused.
+ *
+ * Two deliberate edges:
+ *
+ * - **Clause-final wins.** "I walk over to her." and "I walk over to Wren,
+ *   smiling" are people — a comma, a full stop, or the end of the line means
+ *   nothing was possessed, and both still match. Only whitespace-then-a-letter
+ *   counts as "another word".
+ * - **`Wren's side` is refused, and that is the conservative call.** A body part
+ *   or a position ("her side", "his left") is a person as often as it is a
+ *   thing, and this proof answers an ambiguous target with silence everywhere
+ *   else. The cost is one missed approach; the alternative cost is a durable
+ *   distance claim about a body the player walked past.
+ */
+function approachDestinationIsPossessive(token: string, followedByWord: boolean): boolean {
+  if (!followedByWord) return false;
+  const lowered = token.trim().toLowerCase();
+  return APPROACH_POSSESSIVE_PRONOUNS.has(lowered) || /['’]s$/u.test(lowered);
+}
 
 /**
  * The player's approach this turn, or `null`.
@@ -431,7 +512,11 @@ export function detectChatApproach(input: ChatContactDetectionInput): ChatApproa
     // person, and stopping there would throw away the movement that happened.
     // `matchAll` clones the regex, so the module-level `lastIndex` is never shared.
     for (const match of sentence.matchAll(APPROACH_RE)) {
-      const target = resolveContactTarget(match[2] ?? "", input.characters);
+      const token = match[2] ?? "";
+      // A possessed destination keeps SCANNING rather than ending the sentence:
+      // "I walk over to her desk, then I step closer to Wren" still moves.
+      if (approachDestinationIsPossessive(token, (match[3] ?? "").length > 0)) continue;
+      const target = resolveContactTarget(token, input.characters);
       if (target === null) continue;
       const adjacency = (match[1] ?? "").toLowerCase();
       return { targetSubject: target.subjectId, band: APPROACH_TOUCHING.has(adjacency) ? "touching" : "close" };
@@ -583,6 +668,171 @@ export function detectChatAffectionateTouch(
 }
 
 // ---------------------------------------------------------------------------
+// Release — the player taking their own hand back
+// ---------------------------------------------------------------------------
+
+/** The player ending contact. `targetSubject: null` ⇒ every hand they have on somebody. */
+export interface ChatContactRelease {
+  /** Whose contacts this ends, when the sentence named one. */
+  readonly targetSubject: AffordanceSubjectId | null;
+}
+
+const RELEASE_HAND = "(?:my|the)\\s+(?:hand|hands|palm)";
+/** Verbs that need a direction word after the hand: "pull my hand BACK". */
+const RELEASE_MOVED_VERBS =
+  "pull|pulls|pulled|pulling|draw|draws|drew|drawing|take|takes|took|taking|move|moves|moved|moving";
+/** Verbs that already mean "off it" on their own: "I withdraw my hand". */
+const RELEASE_LIFTED_VERBS =
+  "lift|lifts|lifted|lifting|remove|removes|removed|removing|withdraw|withdraws|withdrew|withdrawing" +
+  "|drop|drops|dropped|dropping";
+
+const RELEASE_RES: readonly RegExp[] = [
+  new RegExp(
+    `\\bi\\s+(?:[\\p{L}']+\\s+){0,2}?(?:${RELEASE_MOVED_VERBS})\\s+${RELEASE_HAND}\\s+(?:back|away|off)\\b`,
+    "iu",
+  ),
+  // The lookahead is what keeps "I drop my hand onto your shoulder" out: those
+  // verbs mean "off it" only when no destination follows, and a placement read as
+  // a release would end a contact the sentence was busy making.
+  new RegExp(
+    `\\bi\\s+(?:[\\p{L}']+\\s+){0,2}?(?:${RELEASE_LIFTED_VERBS})\\s+${RELEASE_HAND}\\b(?!\\s+(?:on|onto|against|over)\\b)`,
+    "iu",
+  ),
+  new RegExp(`\\bi\\s+(?:[\\p{L}']+\\s+){0,2}?(?:let|lets|letting)\\s+go\\b`, "iu"),
+];
+
+/** "…of her hand", "…from Wren's shoulder", "…off the railing" — who or what was let go of. */
+const RELEASE_OF_RE = /\b(?:of|from|off(?:\s+of)?)\s+(?:the\s+)?([\p{L}][\p{L}\p{N}'’-]*)\b/iu;
+
+/**
+ * The sentences a release may be read from: every shared gate, minus restraint.
+ *
+ * The restraint veto (law 4) refuses sentences whose framing this lane cannot
+ * MODEL, and it is right to refuse to start a contact on one. A release starts
+ * nothing — it removes a row — and the word it would veto on is usually the
+ * release itself: "I pull my hand back" is the plainest way in English to say
+ * this, and dropping it would leave a durable contact the player explicitly
+ * ended. A stale contact that outlives the hand is worse than a release this
+ * proof read from a forceful-sounding sentence, so the veto is lifted HERE and
+ * nowhere else. Nothing forceful can sneak a contact in through this door: the
+ * lexicon only matches the player's own hand leaving, and its only power is to
+ * end.
+ */
+function releaseSentences(input: ChatContactDetectionInput): readonly string[] {
+  return contactSentences(input, contactSentenceEligible);
+}
+
+/**
+ * The player's release this turn, or `null`.
+ *
+ * A NAMED target narrows the ends to that person; an unnamed one ("I pull my
+ * hand back") ends every contact the player's hand is making. A target that is
+ * named but does NOT resolve — "I let go of the railing", or an ambiguous "her"
+ * in a group — produces no release at all rather than falling back to ending
+ * everything: the sentence said which thing it let go of, and this layer is not
+ * entitled to substitute a different one.
+ */
+export function detectChatContactRelease(input: ChatContactDetectionInput): ChatContactRelease | null {
+  for (const sentence of releaseSentences(input)) {
+    if (!RELEASE_RES.some((pattern) => pattern.test(sentence))) continue;
+    const owner = RELEASE_OF_RE.exec(sentence);
+    if (owner === null) return { targetSubject: null };
+    const target = resolveContactTarget(owner[1] ?? "", input.characters);
+    if (target === null) continue;
+    return { targetSubject: target.subjectId };
+  }
+  return null;
+}
+
+/** Is this active contact one the player's own hand is making? */
+function playerHandContact(contact: CommittedContactRead): boolean {
+  return (
+    contact.source.subjectId === CHAT_CONTACT_PLAYER_SUBJECT &&
+    contact.source.locationId === CHAT_CONTACT_SOURCE_LOCATION
+  );
+}
+
+export interface ChatContactEnds {
+  readonly scene: SceneState;
+  readonly commits: readonly ContactEndedCommit[];
+}
+
+/**
+ * Apply a release to the scene's contacts.
+ *
+ * Per contact through the core's `endContact`, so each end is its own durable
+ * commit and law 4 is enforced per contact (an end older than the contact it
+ * names is absorbed with a `warn` and that contact survives). The contacts are
+ * filtered to the ones this release actually covers BEFORE any end is requested,
+ * so a release with nothing under the hand produces zero commits and zero
+ * diagnostics — "I let go" on an empty scene is an ordinary sentence, not a
+ * caller bug.
+ *
+ * Only the player's own `hands` are ever released: it is the only source this
+ * lane produces, and a release is a claim about the player's body alone.
+ */
+export function applyChatContactRelease(input: {
+  readonly scene: SceneState;
+  readonly release: ChatContactRelease;
+  readonly eventRef: ContactEventRef;
+  readonly storyTime: AffordanceStoryTime;
+  readonly sink?: DiagnosticSink;
+}): ChatContactEnds {
+  const { release } = input;
+  const covered = input.scene.contacts.contacts.filter(
+    (contact) =>
+      playerHandContact(contact) &&
+      (release.targetSubject === null ||
+        (contact.target.kind === "body" && contact.target.subjectId === release.targetSubject)),
+  );
+  let state = input.scene.contacts;
+  const commits: ContactEndedCommit[] = [];
+  for (const contact of covered) {
+    const outcome = endContact({
+      state,
+      contactId: contact.contactId,
+      reason: "withdrawn",
+      storyTime: input.storyTime,
+      eventRef: input.eventRef,
+      ...(input.sink === undefined ? {} : { sink: input.sink }),
+    });
+    state = outcome.state;
+    if (outcome.commit !== null) commits.push(outcome.commit);
+  }
+  return { scene: state === input.scene.contacts ? input.scene : withSceneContacts(input.scene, state), commits };
+}
+
+/**
+ * End every active contact in the scene — the hook the lane's own transitions use.
+ *
+ * Two callers, both outside the turn plan because both are things that happen TO
+ * a conversation rather than things the player wrote: a story-clock skip ends
+ * everything as `separated` (owner ruling, 2026-07-31 — an hour later, nobody's
+ * hand is still where it was), and leaving the scene ends everything as
+ * `scene_changed`. The core's law 4 still applies per contact, so a sweep
+ * asserted from before a contact's last update leaves that contact alone with a
+ * `warn` rather than writing a time-travelling end.
+ */
+export function endAllChatContacts(
+  scene: SceneState,
+  input: {
+    readonly reason: ContactEndReason;
+    readonly eventRef: ContactEventRef;
+    readonly storyTime: AffordanceStoryTime;
+    readonly sink?: DiagnosticSink;
+  },
+): ChatContactEnds {
+  const { state, commits } = endAllContacts({
+    state: scene.contacts,
+    reason: input.reason,
+    storyTime: input.storyTime,
+    eventRef: input.eventRef,
+    ...(input.sink === undefined ? {} : { sink: input.sink }),
+  });
+  return { scene: commits.length === 0 ? scene : withSceneContacts(scene, state), commits };
+}
+
+// ---------------------------------------------------------------------------
 // Material between
 // ---------------------------------------------------------------------------
 
@@ -608,23 +858,74 @@ const COVERAGE_TRANSMISSION: Readonly<
 };
 
 /**
- * What lies between the player's hand and the target surface.
+ * Whether this conversation can say what is on a given body — and if so, what.
+ *
+ * `supported` is an ANSWER (layers where the wardrobe covers, bare where it does
+ * not); `unavailable` means nobody in this lane knows, and the resolver turns
+ * that into `unresolved` — silence — rather than a guess. The adapter result law
+ * is reused verbatim rather than restated as a bespoke union: this is exactly
+ * one lane input as the adapter found it.
+ */
+export type ChatContactMaterialSource = AdapterRead<EffectiveCoverageRead>;
+
+/**
+ * Where a roster member's material answer comes from, resolved ONCE per member.
+ *
+ * The chat lane has three genuinely different wardrobe situations, and only one
+ * of them is "bare":
+ *
+ * 1. **The wardrobe enumerated this body** — a captured effective-coverage read
+ *    exists for their garment actor. That capture IS the answer: entries where
+ *    something covers, nothing where it does not. A capture with no entries is a
+ *    real "nothing over that surface", not an absence.
+ * 2. **The body is dressed in clothes nothing enumerated** — worn garment
+ *    instances the coverage pass never ran over, or the legacy free-text path
+ *    (`ChatState.outfit` / `wornItemIds` with no materialized instances), where
+ *    the look lives in a phrase the narrator imagined. Something IS between the
+ *    hand and the skin and this lane cannot name it, so the material is
+ *    **unavailable** and the attempt resolves to silence.
+ * 3. **The wardrobe says nothing is worn** — no capture, no instances, no worn
+ *    ids, no free-text look. Then `[]` is the wardrobe's own answer and the
+ *    touch lands on skin.
+ *
+ * Case 2 is the correction this function exists for. Reading an absent answer as
+ * `[]` made "we never staged a wardrobe" indistinguishable from "she is bare",
+ * and a committed contact then told the narrator it had skin under its hand —
+ * a positive physical claim nothing in the conversation supports. Silence costs
+ * one beat; that claim costs the fiction's clothes.
+ */
+export function chatContactMaterialSource(input: {
+  readonly store: ChatGarmentStore;
+  readonly actorId: string;
+  /** `ChatState.outfit` — the free-text look, which applies when nothing is materialized. */
+  readonly freeTextOutfit: string;
+  /** `ChatState.wornItemIds` — structured ids that may predate materialization. */
+  readonly wornItemIds?: readonly string[];
+}): ChatContactMaterialSource {
+  const captured = input.store.coverage[input.actorId];
+  if (captured !== undefined) {
+    return adapterSupported(captured, [affordanceEvidence("coverage", `wardrobe:${input.actorId}`)]);
+  }
+  const dressed =
+    wornGarmentInstances(input.store, input.actorId).length > 0 ||
+    (input.wornItemIds?.length ?? 0) > 0 ||
+    input.freeTextOutfit.trim().length > 0;
+  return dressed ? adapterUnavailable : adapterSupported(emptyEffectiveCoverageRead());
+}
+
+/**
+ * What lies between the player's hand and the target surface, given an answer.
  *
  * A location NO worn garment reaches has no coverage entry, and that is bare
  * skin — the wardrobe's own answer, not something invented here. An entry in ANY
  * band is one interposed layer: `exposed` means the cover stopped CONCEALING,
  * which is a statement about sight, and the fabric is still there to touch.
  *
- * **The declared simplification.** An absent CAPTURE — a conversation whose
- * wardrobe was never staged at all — also reads `[]`, and that is a guess rather
- * than an answer, which this repo ordinarily refuses. It is accepted here on a
- * narrow argument: the intent asks for `any_material` access, so the layer list
- * cannot change WHETHER the touch commits, only whether the narrator line adds
- * "through the cloth over it". A wrong guess costs one clause; reporting the
- * material `unavailable` instead would resolve every attempt in an unstaged
- * conversation to silence, which would make the proof untestable without proving
- * anything. When the wardrobe's real material terms are projected into the
- * contact core (the continuation order's LAST item), this becomes an answer.
+ * **Minimal, not wrong.** Only the BAND is consulted; the wardrobe's real
+ * material terms (weave, thickness, friction) are not projected into the contact
+ * core yet, so the numbers below are carried rather than decided upon. What this
+ * function may never be handed is an ABSENCE — that case belongs to
+ * `chatContactMaterialSource`, which reports it as `unavailable` instead.
  */
 export function chatContactMaterialLayers(
   coverage: EffectiveCoverageRead | undefined,
@@ -694,8 +995,12 @@ function chatActorControl(scene: SceneState, actorId: AffordanceSubjectId): Cont
 export interface ChatContactAttemptInput {
   readonly scene: SceneState;
   readonly act: ChatContactAct;
-  /** From `chatContactMaterialLayers`; `[]` is bare skin, not "unknown". */
-  readonly garmentLayers: readonly ContactMaterialLayerRead[];
+  /**
+   * The TARGET's material source, from `chatContactMaterialSource`. Not a layer
+   * list: `[]` and "nobody knows" are different answers, and only this type can
+   * carry both.
+   */
+  readonly material: ChatContactMaterialSource;
   readonly storyTime: AffordanceStoryTime;
   readonly sink?: DiagnosticSink;
 }
@@ -730,7 +1035,16 @@ export function resolveChatContactAttempt(input: ChatContactAttemptInput): Conta
     locationId: act.targetLocationId,
   };
   const gesture = GESTURE_CONTACT[act.gesture];
-  const materialEvidence = input.garmentLayers.flatMap((layer) => [...layer.evidence]);
+  // An `unavailable` wardrobe rides through UNTOUCHED: the resolver's own
+  // material gate answers `unresolved` with a diagnostic, which is where an
+  // absent answer is supposed to be turned into silence.
+  const garmentLayers = isAdapterSupported(input.material)
+    ? chatContactMaterialLayers(input.material.value, act.targetLocationId)
+    : [];
+  const materialEvidence = garmentLayers.flatMap((layer) => [...layer.evidence]);
+  const material: AdapterRead<ContactMaterialRead> = isAdapterSupported(input.material)
+    ? adapterSupported({ layers: garmentLayers, evidence: materialEvidence }, materialEvidence)
+    : adapterUnavailable;
 
   const intent: ContactActionIntent = {
     actionId: act.actionId,
@@ -768,7 +1082,7 @@ export function resolveChatContactAttempt(input: ChatContactAttemptInput): Conta
     }),
     sourceSupport: sceneSupportRead(scene, source, input.sink),
     targetSupport: sceneSupportRead(scene, targetSurface, input.sink),
-    material: adapterSupported({ layers: input.garmentLayers, evidence: materialEvidence }, materialEvidence),
+    material,
     adjustments: [],
   };
   return resolveContactAttempt({ intent, context, ...(input.sink === undefined ? {} : { sink: input.sink }) });
@@ -788,9 +1102,18 @@ export interface ChatContactTurnInput extends ChatContactDetectionInput {
 
 export interface ChatContactTurn {
   /**
-   * The scene with seeding and any movement folded in — but NOT the contact.
-   * The projection only advances once the caller has durably recorded the fold,
-   * so a caller that persists nothing writes no contact either.
+   * The scene with seeding, any release, and any movement folded in — but NOT
+   * the new contact. The projection only advances once the caller has durably
+   * recorded the fold, so a caller that persists nothing writes no contact
+   * either.
+   *
+   * The RELEASE is folded, and the asymmetry is deliberate: the touch's fold is
+   * held back because a contact the ledger never heard of would be a claim with
+   * no record, while a release the ledger never heard of is a contact that stays
+   * live — and it must not stay live inside the very scene the following touch
+   * resolves against. The obligation moves to the caller instead: `ended` is
+   * persisted with the same write as `commit`, and a caller that writes neither
+   * must keep neither scene.
    */
   readonly scene: SceneState;
   readonly act: ChatContactAct | null;
@@ -802,11 +1125,24 @@ export interface ChatContactTurn {
    * `committed` without the acknowledgment that write produces.
    */
   readonly commit: ContactCommitOutcome | null;
+  /**
+   * The ends the player's own release produced, oldest pair first. Only the
+   * release's: a lane hook that swept the scene (a clock skip, a scene change)
+   * ran before this plan and owns its own commits.
+   */
+  readonly ended: readonly ContactEndedCommit[];
 }
 
 /**
- * The whole deterministic half of the contact leg: seed, move, detect, resolve,
- * fold.
+ * The whole deterministic half of the contact leg: seed, RELEASE, move, detect,
+ * resolve, fold.
+ *
+ * Release leads, and the order is load-bearing rather than tidy. "I let go of
+ * her hand and rest my hand on her shoulder" is one sentence describing two
+ * things in sequence, and a plan that resolved the touch against a projection
+ * still holding the released contact would either evict it for capacity or
+ * carry two live contacts from one hand. Ending first makes the fold say what
+ * the sentence said.
  *
  * Pure and total. Same scene + same message ⇒ same plan, which is what makes a
  * retake reproduce the identical contact id (it is derived from the pair and the
@@ -826,6 +1162,21 @@ export function planChatContactTurn(input: ChatContactTurnInput): ChatContactTur
     narratorInput: input.narratorInput,
     characters: input.characters,
   };
+
+  const release = detectChatContactRelease(detection);
+  const released =
+    release === null
+      ? null
+      : applyChatContactRelease({
+          scene,
+          release,
+          eventRef: input.eventRef,
+          storyTime: input.storyTime,
+          ...(input.sink === undefined ? {} : { sink: input.sink }),
+        });
+  const ended = released?.commits ?? [];
+  if (released !== null) scene = released.scene;
+
   const approach = detectChatApproach(detection);
   if (approach !== null) {
     scene = applySceneIntents(
@@ -836,17 +1187,20 @@ export function planChatContactTurn(input: ChatContactTurnInput): ChatContactTur
   }
 
   const act = detectChatAffectionateTouch({ ...detection, eventRef: input.eventRef });
-  if (act === null) return { scene, act: null, resolution: null, commit: null };
+  if (act === null) return { scene, act: null, resolution: null, commit: null, ended };
 
+  // A target with no roster entry cannot happen (the act's subject came FROM the
+  // roster), and if it ever did, `unavailable` is the honest read of a body this
+  // turn knows nothing about.
   const target = input.characters.find((member) => member.subjectId === act.targetSubject);
   const resolution = resolveChatContactAttempt({
     scene,
     act,
-    garmentLayers: chatContactMaterialLayers(target?.coverage, act.targetLocationId),
+    material: target?.material ?? adapterUnavailable,
     storyTime: input.storyTime,
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });
-  if (resolution.status !== "committable") return { scene, act, resolution, commit: null };
+  if (resolution.status !== "committable") return { scene, act, resolution, commit: null, ended };
 
   const commit = commitContactResolution({
     state: scene.contacts,
@@ -854,7 +1208,7 @@ export function planChatContactTurn(input: ChatContactTurnInput): ChatContactTur
     eventRef: input.eventRef,
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });
-  return { scene, act, resolution, commit };
+  return { scene, act, resolution, commit, ended };
 }
 
 /**

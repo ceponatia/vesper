@@ -1,8 +1,8 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { ContactEventRef, ContactLifecycleCommit, DiagnosticSink } from "@/contracts";
+import type { ContactEventRef, ContactLifecycleCommit, DiagnosticSink, SceneState } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
-import { chatContactEvents, db } from "../db";
+import { characterChats, chatContactEvents, db } from "../db";
 
 /**
  * THE CHAT LANE'S DURABLE CONTACT LEDGER (romantic-contact-affordances — the
@@ -28,6 +28,10 @@ import { chatContactEvents, db } from "../db";
  * lived in the rendered sentence and died with it, because per-message `meta` is
  * deliberately thin and the `events` table is fire-and-forget observability.
  *
+ * **Both halves are written together.** `appendChatContactEventsWithScene` puts
+ * the rows and the `character_chats.scene` they fold into in ONE transaction, so
+ * the cache cannot outlive — or fall behind — the record it caches.
+ *
  * ## The retake contract
  *
  * `guardMessageId` is the exchange guard (`promptMessageId ?? assistantMessageId`)
@@ -37,7 +41,9 @@ import { chatContactEvents, db } from "../db";
  * `deleteChatContactEventsForGuard` before the leg re-runs, so a regenerated
  * exchange leaves one ledger entry per thing that happened rather than one per
  * attempt. The `onConflictDoNothing` below is the belt to that suspenders: a
- * retried write of the SAME event re-derives identical keys and lands nowhere.
+ * retried write of the SAME event re-derives identical keys and lands nowhere —
+ * and the conflict is then VERIFIED rather than assumed, because "the key is
+ * taken" and "the key is taken by this very write" are not the same fact.
  *
  * ## Degradation
  *
@@ -64,7 +70,7 @@ export const chatContactEventKinds = [
 
 export type ChatContactEventKind = ContactLifecycleCommit["kind"];
 
-/** One row to write. Pure data — `chatContactEventRowsFor` builds it, `appendChatContactEvents` sends it. */
+/** One row to write. Pure data — `chatContactEventRowsFor` builds it, the append sends it. */
 export interface ChatContactEventInsert {
   readonly chatId: string;
   readonly guardMessageId: string;
@@ -174,28 +180,236 @@ export function chatContactEventRowsFor(input: AppendChatContactEventsInput): Ch
   );
 }
 
+// ---------------------------------------------------------------------------
+// The append: rows and projection, in one transaction
+// ---------------------------------------------------------------------------
+
+/** One ledger row's identity, as a mismatch report names it. */
+export interface ChatContactLedgerKey {
+  readonly eventRef: string;
+  readonly sequence: number;
+}
+
 /**
- * Append this event's commits. Idempotent: a retried write of the same event
- * re-derives the same (chat, event ref, sequence) keys and conflicts harmlessly,
- * so the caller never has to know whether it already ran.
+ * What the append did.
  *
- * Returns how many rows actually landed — 0 is a perfectly ordinary answer (an
- * event that only continued existing contacts, or a re-send of one already
- * recorded), never an error.
+ * `recorded` means every attempted row is durably present AS ATTEMPTED — either
+ * inserted by this call, or already there carrying identical content — and the
+ * projection landed with it. `inserted` is how many rows landed THIS time, and 0
+ * is an ordinary answer (an idempotent retry, or an event that only continued
+ * existing contacts).
+ *
+ * `mismatched` is the case `onConflictDoNothing` alone cannot see: the keys are
+ * taken by rows that say something ELSE. Nothing was written — not the rows, not
+ * the scene — and the caller must not acknowledge a record it did not make.
  */
-export async function appendChatContactEvents(
-  input: AppendChatContactEventsInput,
-): Promise<{ inserted: number }> {
-  const rows = chatContactEventRowsFor(input);
-  if (rows.length === 0) return { inserted: 0 };
-  const inserted = await db()
-    .insert(chatContactEvents)
-    .values(rows)
-    .onConflictDoNothing({
-      target: [chatContactEvents.chatId, chatContactEvents.eventRef, chatContactEvents.sequence],
+export type ChatContactAppendResult =
+  | { readonly status: "recorded"; readonly inserted: number }
+  | {
+      readonly status: "mismatched";
+      readonly inserted: number;
+      readonly mismatched: readonly ChatContactLedgerKey[];
+    };
+
+/** The diagnostic code a caller files when an append comes back `mismatched`. */
+export const CHAT_CONTACT_LEDGER_MISMATCH = "chat_contact.ledger.mismatch";
+
+/**
+ * The stored half of a comparison — the columns a conflicting row is judged on.
+ *
+ * `guardMessageId` is deliberately absent: the event ref is DERIVED from the
+ * guard (`chatContactEventRef`), so two rows sharing a key already share a
+ * guard, and comparing it would only restate the key.
+ */
+export interface ChatContactEventStoredRow {
+  readonly sequence: number;
+  readonly kind: ChatContactEventKind;
+  readonly contactId: string;
+  readonly storyMinute: number;
+  readonly payload: unknown;
+}
+
+/**
+ * Two JSON values in ONE normal form.
+ *
+ * Postgres `jsonb` does not preserve key order — it stores an object's keys
+ * sorted by length then bytes — so a row read back is NOT byte-comparable with
+ * the commit that was written, however stable this module's own serialization
+ * is. Sorting keys recursively is what makes the comparison about CONTENT.
+ *
+ * The round-trip through `JSON.stringify`/`parse` first is the other half: it
+ * drops `undefined` members and applies any `toJSON`, so a live commit object is
+ * reduced to exactly the value the column received.
+ */
+function canonicalJson(value: unknown): string {
+  if (value === undefined) return "";
+  const parsed: unknown = JSON.parse(JSON.stringify(value));
+  return JSON.stringify(canonicalize(parsed));
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const entries: readonly unknown[] = value;
+    return entries.map((entry) => canonicalize(entry));
+  }
+  if (value === null || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(record).sort()) sorted[key] = canonicalize(record[key]);
+  return sorted;
+}
+
+/** Is the row already under this key the row this write meant to put there? PURE. */
+export function chatContactRowMatches(
+  attempted: ChatContactEventInsert,
+  stored: ChatContactEventStoredRow,
+): boolean {
+  return (
+    stored.kind === attempted.kind &&
+    stored.contactId === attempted.contactId &&
+    stored.storyMinute === attempted.storyMinute &&
+    canonicalJson(stored.payload) === canonicalJson(attempted.payload)
+  );
+}
+
+/**
+ * The attempted rows whose key is held by a DIFFERENT record, in sequence order.
+ * PURE — the whole judgment, extracted so it is testable without a database.
+ *
+ * An attempted row with no stored counterpart is not a mismatch: it did not
+ * conflict, so there is nothing that could disagree with it. (Inside the
+ * transaction the case cannot arise — a row either inserted or collided with one
+ * that is therefore visible to the same statement — but a total function is
+ * cheaper than a comment promising it never happens.)
+ */
+export function chatContactLedgerMismatches(
+  attempted: readonly ChatContactEventInsert[],
+  stored: readonly ChatContactEventStoredRow[],
+): readonly ChatContactLedgerKey[] {
+  const bySequence = new Map(stored.map((row) => [row.sequence, row]));
+  return attempted
+    .flatMap((row) => {
+      const existing = bySequence.get(row.sequence);
+      if (existing === undefined || chatContactRowMatches(row, existing)) return [];
+      return [{ eventRef: row.eventRef, sequence: row.sequence }];
     })
-    .returning({ id: chatContactEvents.id });
-  return { inserted: inserted.length };
+    .sort((left, right) => left.sequence - right.sequence);
+}
+
+/**
+ * The abort.
+ *
+ * Verification needs the insert's OWN result — which keys collided — so it
+ * cannot run before the write. It runs inside the transaction and throws, which
+ * is the only way to un-write rows that already landed. Caught at the boundary
+ * below and turned back into a value: the leg above takes diagnostics, not
+ * exceptions (docs/resilience.md §2).
+ */
+class ChatContactLedgerMismatchError extends Error {
+  readonly mismatched: readonly ChatContactLedgerKey[];
+  readonly inserted: number;
+
+  constructor(mismatched: readonly ChatContactLedgerKey[], inserted: number) {
+    super(`chat contact ledger holds a different record for ${mismatched.length} key(s)`);
+    this.name = "ChatContactLedgerMismatchError";
+    this.mismatched = mismatched;
+    this.inserted = inserted;
+  }
+}
+
+export interface AppendChatContactEventsWithSceneInput extends AppendChatContactEventsInput {
+  /**
+   * The POST-commit scene — the projection with this event's contact state
+   * already folded in (`withSceneContacts(scene, commit.state)`). The caller
+   * folds; this store records what it was handed, so the lifecycle rules stay in
+   * one pure place.
+   */
+  readonly scene: SceneState;
+}
+
+/**
+ * Record this event's commits AND the projection they produce, atomically.
+ *
+ * The two halves of the ruled law are ONE write. Before this, the rows were
+ * appended pre-prompt while `character_chats.scene` only persisted at settle, so
+ * an exchange that appended and then never settled (a stream failure, a crash, a
+ * chat cleared mid-turn) left durable rows describing a contact the projection
+ * had never heard of. Now the commits and the scene land together or neither
+ * does. Settle re-writes the same column afterwards with the same value — the
+ * only drift left, and a no-op by construction.
+ *
+ * ## Idempotent, and verified
+ *
+ * A retried write of the same event re-derives the same
+ * (chat, event ref, sequence) keys, so `onConflictDoNothing` makes the retry
+ * land nowhere and the caller never has to know whether it already ran.
+ *
+ * But a conflict is only evidence that the KEY is taken. `inserted: 0` covers
+ * two different worlds: the ordinary idempotent retry, and a stale row recorded
+ * under this key by some other take (an on→off→on flag sequence can leave one —
+ * the retake delete only prunes while the flag is on). Acknowledging the second
+ * would report somebody else's record as this turn's commit, and the whole point
+ * of the acknowledgment is that it proves the write happened. So every
+ * conflicting key is read back and compared against what was attempted; a
+ * disagreement aborts the transaction and comes back as `mismatched`, leaving no
+ * rows added and the scene column untouched.
+ */
+export async function appendChatContactEventsWithScene(
+  input: AppendChatContactEventsWithSceneInput,
+): Promise<ChatContactAppendResult> {
+  const rows = chatContactEventRowsFor(input);
+  try {
+    return await db().transaction(async (tx): Promise<ChatContactAppendResult> => {
+      let inserted = 0;
+      if (rows.length > 0) {
+        const landed = await tx
+          .insert(chatContactEvents)
+          .values(rows)
+          .onConflictDoNothing({
+            target: [chatContactEvents.chatId, chatContactEvents.eventRef, chatContactEvents.sequence],
+          })
+          .returning({ sequence: chatContactEvents.sequence });
+        inserted = landed.length;
+        if (inserted < rows.length) {
+          const landedSequences = new Set(landed.map((row) => row.sequence));
+          const conflicted = rows.filter((row) => !landedSequences.has(row.sequence));
+          const stored = await tx
+            .select({
+              sequence: chatContactEvents.sequence,
+              kind: chatContactEvents.kind,
+              contactId: chatContactEvents.contactId,
+              storyMinute: chatContactEvents.storyMinute,
+              payload: chatContactEvents.payload,
+            })
+            .from(chatContactEvents)
+            .where(
+              and(
+                eq(chatContactEvents.chatId, input.chatId),
+                eq(chatContactEvents.eventRef, input.eventRef),
+                inArray(
+                  chatContactEvents.sequence,
+                  conflicted.map((row) => row.sequence),
+                ),
+              ),
+            );
+          const mismatched = chatContactLedgerMismatches(conflicted, stored);
+          if (mismatched.length > 0) throw new ChatContactLedgerMismatchError(mismatched, inserted);
+        }
+      }
+      // The projection, in the same transaction. Written even when the event
+      // produced no rows (an all-`contact_continued` fold): the scene still
+      // advanced, and the ledger correctly has nothing to add.
+      await tx.execute(sql`
+        update ${characterChats} set scene = ${JSON.stringify(input.scene)}::jsonb where id = ${input.chatId}
+      `);
+      return { status: "recorded", inserted };
+    });
+  } catch (error) {
+    if (error instanceof ChatContactLedgerMismatchError) {
+      return { status: "mismatched", inserted: error.inserted, mismatched: error.mismatched };
+    }
+    throw error;
+  }
 }
 
 /**
@@ -205,6 +419,12 @@ export async function appendChatContactEvents(
  * Run BEFORE the leg re-commits, alongside the scenario rollback that restores
  * the projection those rows replay into — the two together are what make a
  * second take of one exchange indistinguishable from a first.
+ *
+ * The caller runs this UNCONDITIONALLY, not behind the contact flag: pruning the
+ * durable rows of a discarded take is hygiene of state that already exists, and
+ * a chat that never recorded a contact deletes zero for free. Gating it would
+ * mean an on→off→retake sequence rolled the projection back and left the old
+ * take's rows behind to be verified against — or replayed — later.
  */
 export async function deleteChatContactEventsForGuard(
   chatId: string,
