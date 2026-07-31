@@ -298,17 +298,32 @@ no FK (security-authz.plan.md slice 3). Cache policy follows that split —
 A clone copies the **stored row, not the public preview**. For a character that
 means the whole authored `profile`: narrator guidance, drives, intimacy notes,
 and voice anchors included — every field `toPublicCharacterProfile` narrows away
-for a browsing non-owner. That asymmetry is deliberate (a published character is
+for a browsing non-owner. **Images come too**: `cloneToLibrary` runs
+`cloneEntityImages` for character, location, and item (social cards carry none),
+re-storing each file under the copier's account. And a clone is an **independent
+row** — making the source private again stops *new* copies but **cannot recall
+copies already made**. That asymmetry is deliberate (a published character is
 offered as a full authored starting point, not a screenshot), and the owner
 **re-affirmed it 2026-07-31** rather than narrowing the clone.
 
-What the ruling added instead is **disclosure at the publish control**:
-`PublishToggle` (`components/library/publish-toggle.tsx`) renders inline helper
-text stating that publishing lets others duplicate the full profile including
-private fields, and the publish toast repeats it. Inline, never a modal — an
-author should read it while deciding, not dismiss it afterwards. The other three
-shareable kinds (location, item, social card) carry the plain copyable
-statement; they have no private-vs-preview split to disclose.
+What the ruling added instead is **disclosure at the publish control**, in two
+layers, both owned by `PublishToggle`
+(`components/library/publish-toggle.tsx`), with the copy and the flow rule
+extracted to the pure `publish-disclosure.ts` beside it so a test
+(`publish-disclosure.test.ts`) pins the wording:
+
+1. **Inline helper text** under the control, for every kind — an author should
+   read it while deciding, not dismiss it afterwards.
+2. **A confirmation step on character publish only** (`publishConfirmRequired`,
+   private → public). It states all three facts: a copy takes the full profile
+   including the private fields, its images are duplicated too, and unpublishing
+   later will not recall copies people already made. Cancel leaves it private.
+
+Everything else stays one click: **unpublishing** for every kind (it takes
+nothing away the author can't redo), and publishing a location, item, or social
+card — they have no private-vs-preview split to consent to, so they keep the
+plain copyable one-liner. The made-private toast is careful not to imply
+existing copies come back.
 
 If a future field is added to a character profile, it is **clone-visible by
 default** and only preview-visible if someone adds it to
