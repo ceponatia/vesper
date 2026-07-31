@@ -153,7 +153,7 @@ export function committedFootContact(input: FootContactFixtureInput): CommittedC
     },
     context: {
       actorControl: { status: "allowed", actorId: FOOT_FIXTURE_ACTOR, evidence: [] },
-      targetAgency: { status: "not_required", targetId: FOOT_FIXTURE_SUBJECT, evidence: [] },
+      targetAgencies: [],
       participantEligibility: {
         status: "eligible",
         participantIds: [FOOT_FIXTURE_ACTOR, FOOT_FIXTURE_SUBJECT],

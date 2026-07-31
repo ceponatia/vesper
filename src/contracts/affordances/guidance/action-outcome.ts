@@ -10,6 +10,14 @@ import type { GuidanceDisclosure, PhysicalActionOutcome, PhysicalActionStatus } 
  * function only stamps the result with a deterministic identity so it can be
  * ordered and reproduced on a retake. It adds no policy of its own except the
  * `narratorMustResolve` floor below.
+ *
+ * One obligation this seam cannot check and every producer owes it: `committed`
+ * means the action HAPPENED and was durably recorded, not that a resolver would
+ * have allowed it. A pre-commit conclusion mapped straight onto `committed`
+ * hands the narrator a fact the store may never have written. The contact core
+ * makes that explicit — `contact/outcome.ts` will not return `committed` without
+ * a post-persistence acknowledgment — and any other producer joining this seam
+ * inherits the same rule.
  */
 
 /**

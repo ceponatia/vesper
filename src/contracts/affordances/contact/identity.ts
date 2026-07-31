@@ -36,8 +36,14 @@ export const CONTACT_ID_EVENT_SEPARATOR = "\u001D";
  * A committed contact's identity. Wider than the other ids because it is a
  * derived composite (pair key + start event), and truncating it would let two
  * different contacts share an id.
+ *
+ * The bound is generous on purpose: two surface keys can each carry a subject id
+ * of 256 characters plus a location, a side, and a detail token, so a perfectly
+ * legal contact between two verbosely-identified surfaces composes an id well
+ * past a kilobyte. A bound that a legitimate id could cross would turn
+ * `deriveContactId` into a throw on the commit path.
  */
-export const contactIdSchema = z.string().trim().min(1).max(1024).brand<"ContactId">();
+export const contactIdSchema = z.string().trim().min(1).max(4096).brand<"ContactId">();
 export type ContactId = z.infer<typeof contactIdSchema>;
 
 /** Construct a contact id. A blank id is a caller bug, not degraded data — it throws. */
@@ -86,5 +92,25 @@ export function contactPairKeyOf(left: string, right: string): string {
  * should start fresh.
  */
 export function deriveContactId(input: { pairKey: string; startedByEventRef: ContactEventRef }): ContactId {
-  return contactId(`${input.pairKey}${CONTACT_ID_EVENT_SEPARATOR}${input.startedByEventRef}`);
+  return contactId(contactIdText(input));
+}
+
+function contactIdText(input: { pairKey: string; startedByEventRef: ContactEventRef }): string {
+  return `${input.pairKey}${CONTACT_ID_EVENT_SEPARATOR}${input.startedByEventRef}`;
+}
+
+/**
+ * Is this id the one these inputs derive?
+ *
+ * The non-throwing half of `deriveContactId`, for the store boundary: a stored
+ * blob's pair key and event ref are untrusted, and re-deriving through the
+ * branded constructor would throw on data that is merely corrupt. A boundary
+ * check must return an answer, never an exception (docs/resilience.md), and
+ * both halves share one derivation so they cannot drift apart.
+ */
+export function contactIdMatchesDerivation(
+  id: ContactId,
+  input: { pairKey: string; startedByEventRef: ContactEventRef },
+): boolean {
+  return contactIdText(input) === id;
 }

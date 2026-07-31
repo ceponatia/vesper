@@ -407,13 +407,14 @@ permission (legacy) as unowned in both lanes, so every one of them arrives as an
 `directContactTransmission` · `contactPairKey` / `contactSurfaceKey` /
 `contactParticipantIds` / `isInterpersonalContact` / `isKnownContactBodyLocation` ·
 `contactActionRequiresAdultEligibility` / `contactActionRequiresPermission` /
-`CONTACT_ACTION_SCOPE` · `CONTACT_RESOLUTION_ACTION_STATUS`.
+`CONTACT_ACTION_SCOPE` · ~~`CONTACT_RESOLUTION_ACTION_STATUS`~~ (removed in
+slice 3A; `contactActionOutcomeStatus` replaces it).
 
 ### Deltas from the draft above — this section is the authority
 
 | Draft | As built | Why |
 | --- | --- | --- |
-| `ContactResolution` has three statuses | **Four**: `committable`, `explicit_transition_required`, `rejected`, `unresolved` | The narrator seam already exists and its `PhysicalActionStatus` carries `unresolved`. An unanswerable owner is not a rejection: a rejection is a story fact the narrator must resolve, while `unresolved` produces silence. `CONTACT_RESOLUTION_ACTION_STATUS` maps the four onto the seam's strings, and a test asserts every value is a member of `physicalActionStatuses`. `partially_committed` is deliberately **not** modelled — no producer exists until the foot slice needs per-locus commitment. |
+| `ContactResolution` has three statuses | **Four**: `committable`, `explicit_transition_required`, `rejected`, `unresolved` | The narrator seam already exists and its `PhysicalActionStatus` carries `unresolved`. An unanswerable owner is not a rejection: a rejection is a story fact the narrator must resolve, while `unresolved` produces silence. `partially_committed` is deliberately **not** modelled — no producer exists until the foot slice needs per-locus commitment. *(Slice 3A superseded the translation: `CONTACT_RESOLUTION_ACTION_STATUS` mapped `committable → committed` directly and is **gone** — see [As built — slice 3A](#as-built--slice-3a-authority-and-persistence-hardening).)* |
 | `EventId`, `CharacterId`, `EntityId`, `StoryTimestamp` | `ContactEventRef`, `AffordanceSubjectId`, `ContactEntityId`, `AffordanceStoryTime` | The successor lane's branded `EventId` is a simulation id legacy chat cannot mint; binding to it would fork the core. Subject ids and story time already exist in `affordances/core` and are reused unchanged. |
 | `MaterialLayerRead`, `MaterialTransmissionRead`, `MinimalPoseAdjustment`, `ActionRequirement` | `Contact`-prefixed | These names go through `export *` in `affordances/index.ts`; unprefixed generic nouns in a shared barrel are a collision waiting to happen. |
 | `wardrobe: PairWardrobeRead` | `material: AdapterRead<ContactMaterialRead>` | The core has no idea whether a layer is a garment, a blanket, or a table, and the neutrality test forbids it learning. Same reason `remove_garment` → `remove_material_layer` and `contact_wardrobe_unavailable` → `contact.material_unavailable`. |
@@ -456,3 +457,164 @@ provenance, plus a versioned active-contact projection captured in the chat's
 retake snapshot — contact can never remain prompt-local. `state.ts`'s
 `parseContactLifecycleState` is already shaped for exactly that projection;
 the slice that wires the lane (slice 3) implements the ruling.
+
+## As built — slice 3A: authority and persistence hardening
+
+Shipped 2026-07-31, before any lane wiring, from the owner's external review of
+slice 1. Four defects, all of the same family: a gate that answered about the
+right *question* but not about the right *body*, and a projection that was
+treated as truth rather than as a cache of durable events. Contracts only — no
+storage, no lane, no migration.
+
+### The invariants this slice added
+
+**1. The acting surface belongs to the actor.** `intent.source.subjectId` must
+equal `intent.actorId`; a mismatch is `unresolved` / `action_invalid` with an
+`error` diagnostic, checked in the structure pass before anything else. A
+control decision that legitimately covers actor A otherwise authorized an
+attempt made with B's hands, and every check after it inherited the
+substitution. `CommittedContactRead` documents the same equality as start
+identity, and `state.ts` re-checks it on read.
+
+**2. Agency coverage is per participant.** `ContactActionContext.targetAgency`
+(one decision) became `targetAgencies` (a list), and
+`ContactTargetAgencyDecision.targetId` is now **required**. The resolver
+collects every non-actor body an adjustment moves and demands the decision
+naming *that* body; a decision about somebody else covers nothing. An
+adjustment naming a subject who is not part of the contact at all is
+`unresolved` / `action_invalid` (`error`) — a third character's movement is its
+own action, not a rider on this one. Consequence worth stating: because a
+contact has at most two participants and the source belongs to the actor, the
+set of moved non-actor bodies is at most one; the list shape is what makes
+coverage checkable rather than a promise. When several decisions are consulted,
+a `denied` outranks a missing or `unresolved` one — "she would not move" is a
+beat the narrator can carry, and reporting it as unreadable would throw that
+away.
+
+**3. Start identity is immutable for the contact's lifetime.** `contactId`,
+`pairKey`, `startedAt`, `startedByEventRef`, `actorId`, `actionKind`, `source`,
+`target`, **and the three decisions** belong to the contact that began. The pair
+key is order-independent, so the same touch can be re-asserted from the other
+side; taking that assertion's orientation silently rewrote who was touching
+whom. An update replaces only the physical half plus its evidence. (The material
+stack is snapshotted from the asserting read, and `order` is relative to that
+read's source — composition is invariant under reversal, so only the recorded
+stack order differs.)
+
+**4. Update events are full snapshots, not patches.** `CommittedContactUpdate`
+became `CommittedContactSnapshot`, with `null` for every optional value that is
+not stated and `transmission` carried along. A patch cannot express removal: an
+event that simply omitted a pressure the contact no longer has replayed as the
+old pressure, so the returned projection was right and the durable record was
+wrong. `applyContactCommit` / `replayContactCommits` fold a stream back into a
+projection using **only** the durable fields — the `contact` riding on an update
+commit is ignored, so a lane that persists the minimum replays identically.
+
+**5. Nothing leaves the projection without an event.** Capacity pressure used to
+drop the oldest contact from the projection and file a diagnostic; a drop with
+no event behind it replays back into existence and is indistinguishable from a
+contact that really ended. Capacity now ends the oldest with real
+`contact_ended` commits (`state_invalidated`), returned on
+`ContactCommitOutcome.ended` and ordered ahead of the new commit by
+`contactCommitEvents`. **Reject-vs-end:** ending was chosen over refusing the
+new contact because the core cannot mint an event ref of its own, so "persist an
+explicit end event" is the only one of the owner's two options it can perform
+without inventing lane identity — and it keeps the outcome type additive for
+callers.
+
+**6. A framing change is a new contact.** An assertion whose `actionKind`
+differs from the live contact's ends that contact (`state_invalidated`, `warn`)
+and starts a fresh one with its own id and its own permission evidence — the
+answer to "what happens when action framing changes while contact continues".
+Subject to invariant 7 below: a *stale* framing change ends nothing.
+Silently keeping the old kind would have left an escalated touch recorded under
+the framing that was permitted for the gentler one.
+
+**7. A stale assertion cannot rewrite a newer projection.** An intent whose
+story time predates the contact's `lastUpdatedAt` continues the contact and
+files a `warn` rather than winding time backwards — which is also what keeps
+`lastUpdatedAt >= startedAt` true by construction, the invariant `state.ts`
+enforces on read. The check runs **first, for every assertion on an occupied
+pair**, ahead of the same-kind/framing split: guarding only the update path
+left the rule a door, because a stale assertion carrying a different
+`actionKind` fell through to invariant 6 and ended a newer contact at a story
+time before its own last update, then started a replacement whose `startedAt`
+predated what it displaced. "This is a different kind of touch" says nothing
+about which of two writes is the later one, so nothing ends and nothing starts
+until the assertion has proved it is current.
+
+**8. Withdrawn permission ENDS a live contact (owner ruling).** The resolver is
+the *block* half — a withdrawn or unresolved grant never produces a committable
+resolution — and `endUnauthorizedContacts` is the *end* half, for contacts
+nobody re-asserted. Per active contact whose kind needs authorization
+(interpersonal `romantic` / `intimate`): a `denied`/`withdrawn` answer, or a
+grant that no longer names the action's scope, ends it as `policy_withdrawn`;
+silence, an `unresolved` answer, or eligibility that stopped covering a
+participant ends it as `state_invalidated` — the two reasons keep "she withdrew
+it" distinguishable from "we could not ask" in the durable record. Kinds that
+never needed a grant (incidental / casual / affectionate, self-contact, contact
+with an object) are untouched, exactly as the resolver never demanded one.
+
+**9. Stored projections are untrusted derived data.** `parseContactLifecycleState`
+now **fails closed on the version**: `version` is read as `unknown` and anything
+that is not exactly the current integer degrades to the empty projection with a
+diagnostic. The old `.catch(CURRENT)` turned a malformed version into the
+current one — a blob nobody wrote for this build, read as though they had. Every
+surviving row then passes cross-field checks, and a row that fails one is
+dropped exactly like a row that failed its schema (an absent contact means *no
+contact*, which can never buy a claim):
+
+| Checked on read | Failure |
+| --- | --- |
+| `pairKey` recomputed from `source`/`target` | `pair_key_mismatch` |
+| `contactId` re-derived from pair + start event (via `contactIdMatchesDerivation`, the non-throwing half of `deriveContactId` — a boundary check must return an answer, not raise) | `contact_id_not_derived` |
+| `source.subjectId === actorId` | `source_is_not_the_actor` |
+| `actorControl.actorId === actorId`, status `allowed` | `actor_control_names_another_subject` / `actor_control_did_not_allow` |
+| `lastUpdatedAt >= startedAt` | `last_updated_precedes_start` |
+| eligibility covers every participant, when the kind needs it | `eligibility_does_not_cover` |
+| permission `allowed` and naming the action's scope, when the kind needs it | `permission_does_not_allow` / `permission_scope_missing` |
+
+`transmission` is the one field **recomputed rather than rejected**
+(`CONTACT_STATE_RECOMPUTED`, `warn`): it is derived from `materialBetween`, and
+re-deriving can only ever narrow the claim — a stack of layers can never compose
+to bare skin. That is the exact direction the owner named: a stored
+`directSkinContact: true` sitting beside stored layers is not trusted. Every
+other field is a claim in its own right, and repairing one would invent the
+thing the plan says may never be invented.
+
+**10. `committed` means persisted.** `CONTACT_RESOLUTION_ACTION_STATUS` mapped
+`committable → committed` with a constant, handing the narrator a fact the store
+may never have written. It is gone. `contact/outcome.ts` replaces it with
+`contactActionOutcomeStatus({ resolution, acknowledgment, sink })`: the three
+non-committable statuses pass through, and `committed` is reachable **only**
+through a `{ kind: "persisted", contactId, commitKind }` acknowledgment the lane
+produces after its durable write. No acknowledgment is an `error` diagnostic and
+`unresolved`; a `not_persisted` answer is a `warn` and `unresolved` — silence,
+never a claim. `ContactActionOutcomeStatus` is the four-value subset of the
+seam's `PhysicalActionStatus`, so a contact `partially_committed` is
+**unrepresentable**, not merely untested; the generic guidance vocabulary keeps
+its fifth value for a future domain that grows a producer, and a test pins both
+halves.
+
+### File and API deltas
+
+| Change | Callers must know |
+| --- | --- |
+| `ContactActionContext.targetAgency` → **`targetAgencies: readonly ContactTargetAgencyDecision[]`** | Wrap the single decision in a list. |
+| `ContactTargetAgencyDecision.targetId` optional → **required** | Name the body the decision is about. |
+| `CommittedContactUpdate` → **`CommittedContactSnapshot`**; `contact_updated.patch` → **`.snapshot`** | Full replacement, `null` for cleared optionals. |
+| `ContactCommitOutcome` gains **`ended: readonly ContactEndedCommit[]`** (additive) | Persist `contactCommitEvents(outcome)`, ends first. |
+| **`CONTACT_RESOLUTION_ACTION_STATUS` removed** | Use `contactActionOutcomeStatus`. |
+| New: `outcome.ts`, `applyContactCommit`, `replayContactCommits`, `contactCommitEvents`, `endUnauthorizedContacts`, `contactIdMatchesDerivation` | — |
+| `contactIdSchema` max 1024 → **4096** | A legal id composed from two verbose subject ids already crossed the old bound, which made `deriveContactId` a throw on the commit path. |
+| New diagnostics: `contact.authorization_lapsed`, `contact.state_recomputed`, `contact.commit_unacknowledged`; `contact.lifecycle_invalid` now also `warn` for absorbed contradictions | — |
+
+Tests: 6 files / 139 cases in `contact/` (was 5 / 92 at slice 1), including
+every regression the review asked for — actor/source mismatch, wrong-target
+authorization, several adjusted participants, changed contact preserving
+orientation, cleared pressure/motion/area surviving replay, a stale assertion
+refused through both the update and the framing door, permission
+withdrawal under a live contact, malformed version, tampered pair key /
+contact id / transmission / decision participants, capacity without
+projection-only eviction, `committed` only after persistence, and no
+contact-specific `partially_committed`.

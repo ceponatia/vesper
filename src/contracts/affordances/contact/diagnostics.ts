@@ -4,9 +4,9 @@
  * house dotted convention that `affordance.input.unavailable` and
  * `guidance.disclosure.leak` already use).
  *
- * Only the codes slice 1 actually emits live here. A constant for a code nobody
- * pushes is a promise the diagnostics surface cannot keep, and the later slices
- * add theirs when they add the behaviour.
+ * Only the codes this layer actually emits live here. A constant for a code
+ * nobody pushes is a promise the diagnostics surface cannot keep, and the later
+ * slices add theirs when they add the behaviour.
  *
  * Severity follows one rule, inherited from the guidance layer:
  *
@@ -55,5 +55,43 @@ export const CONTACT_SUPPORT_UNAVAILABLE = "contact.support_unavailable";
  */
 export const CONTACT_MATERIAL_UNAVAILABLE = "contact.material_unavailable";
 
-/** A lifecycle commit named a contact that is not active, or stored state failed to parse. `error`. */
+/**
+ * The lifecycle was asked for something the projection contradicts. `error` when
+ * a caller or a replayed stream named a contact that is not there; `warn` when
+ * the fold ABSORBED the contradiction deterministically — a stale assertion that
+ * was not applied, a framing change that ended a live contact, capacity pressure
+ * that ended the oldest ones. Also the code for stored state that failed to
+ * parse or failed a cross-field check (`error`).
+ */
 export const CONTACT_LIFECYCLE_INVALID = "contact.lifecycle_invalid";
+
+/**
+ * An active contact's authorization no longer holds and the contact was ended.
+ * `warn`.
+ *
+ * Not a refusal, and not a bug: permission being withdrawn mid-scene is an
+ * ordinary story event. It is reported because a contact disappearing from the
+ * projection for a reason no attempt produced is otherwise invisible.
+ */
+export const CONTACT_AUTHORIZATION_LAPSED = "contact.authorization_lapsed";
+
+/**
+ * A stored contact's transmission disagreed with its own material layers and was
+ * recomputed from them. `warn`.
+ *
+ * The layers are the physical claim; the composition is derived. Recomputing can
+ * only ever narrow what the stored blob claimed — the direction that cannot buy
+ * a claim nobody committed.
+ */
+export const CONTACT_STATE_RECOMPUTED = "contact.state_recomputed";
+
+/**
+ * An action outcome was asked for a committable resolution with no durable
+ * acknowledgment behind it. `error` when the caller supplied none at all (asking
+ * before the write is a pipeline bug), `warn` when the store answered that the
+ * write did not happen.
+ *
+ * Either way the outcome is `unresolved`, never `committed`: the narrator's
+ * correct output for a contact that may not have been recorded is silence.
+ */
+export const CONTACT_COMMIT_UNACKNOWLEDGED = "contact.commit_unacknowledged";
