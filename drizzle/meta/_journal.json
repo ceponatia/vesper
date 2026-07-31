@@ -652,6 +652,13 @@
       "when": 1785338242170,
       "tag": "0092_careful_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1785508946386,
+      "tag": "0093_mature_madripoor",
+      "breakpoints": true
     }
   ]
 }
