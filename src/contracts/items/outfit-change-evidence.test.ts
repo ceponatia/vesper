@@ -138,7 +138,16 @@ describe("classifyOutfitChangeQuote — non-events never license a wardrobe wipe
 
 describe("classifyOutfitChangeQuote — a stated change still validates", () => {
   it.each(ACCEPTS.map((quote) => ({ quote })))("accepts: $quote", ({ quote }) => {
-    expect(classifyOutfitChangeQuote(lower(quote))).toEqual({ asserted: true });
+    const verdict = classifyOutfitChangeQuote(lower(quote));
+    expect(verdict.asserted).toBe(true);
+    // An acceptance now carries the asserting sentence — the owner-attribution half of
+    // the gate reads exactly that span, so it must be a verbatim slice of the quote.
+    if (verdict.asserted) expect(lower(quote)).toContain(verdict.sentence);
+  });
+
+  it("hands back the ONE sentence that asserted, not the whole quote", () => {
+    const verdict = classifyOutfitChangeQuote("she nods at the rain. she takes off her jacket.");
+    expect(verdict).toEqual({ asserted: true, sentence: "she takes off her jacket." });
   });
 });
 

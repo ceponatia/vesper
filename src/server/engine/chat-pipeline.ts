@@ -2005,6 +2005,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // sequential pass (the store is one jsonb field; concurrent
         // read-modify-writes of it would lose updates).
         const memberWornChanges: ChatGarmentWardrobeChange[] = [];
+        // Who is on stage — computed ONCE for the whole settle, because every
+        // member's whole-look evidence gate reads the same scene shape: with more
+        // than one character present, a bare pronoun cannot pick a wardrobe owner
+        // and only a name licenses a replacement (`outfitChangeEvidenceValidated`).
+        const presentCharacterNames = [
+          ...(driftedState.presence === "present" ? [characterName] : []),
+          ...others.filter((o) => o.state.presence === "present").map((o) => o.name),
+        ];
         await Promise.all(
           others.map(async (member) => {
           try {
@@ -2045,7 +2053,16 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               preRegard,
               pulsed: shouldPulse,
               personal: personal?.value ?? null,
-              exchangeText: `${agentPlayerContent}\n${full}`,
+              exchange: { player: agentPlayerContent, assistant: full },
+              evidenceOwner: {
+                names: [member.name, ...member.profile.aliases],
+                isPlayer: false,
+                otherNames: [
+                  player.name,
+                  ...presentCharacterNames.filter((n) => n.trim().toLowerCase() !== member.name.trim().toLowerCase()),
+                ],
+                presentCharacterCount: presentCharacterNames.length,
+              },
               profile: member.profile,
               characterName: member.name,
               assistantMessageId,

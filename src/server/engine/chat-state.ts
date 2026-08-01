@@ -583,20 +583,111 @@ function normalizeEvidenceText(text: string): string {
     .trim();
 }
 
+/** The two halves of the exchange a whole-look `changeEvidence` may quote — kept separate because first/second person attribute differently per half. */
+export interface OutfitEvidenceExchange {
+  player: string;
+  assistant: string;
+}
+
+/** The wardrobe owner the evidence must be about, plus the scene shape that decides pronoun ambiguity. */
+export interface OutfitEvidenceOwner {
+  /** Display name + authored aliases referring to the owner (for the player: the persona/account name). */
+  names: readonly string[];
+  /** True when the owner is the player persona (first/second-person forms can attribute). */
+  isPlayer: boolean;
+  /** Names of every OTHER scene participant — other present characters, plus the player's name when the owner is a character. */
+  otherNames: readonly string[];
+  /** Characters present in the scene, the owner included when the owner is a character. >1 ⇒ bare pronouns are ambiguous and fail closed. */
+  presentCharacterCount: number;
+}
+
+/** Word-boundary name match on already-normalized text — the shape `mentionsCharacter` uses, kept local so this pure gate owns no cross-module dependency. */
+function textNamesAnyOf(text: string, names: readonly string[]): boolean {
+  return names
+    .map((name) => name.trim())
+    .filter((name) => name.length > 1)
+    .some((needle) =>
+      new RegExp(`(?:^|[^\\p{L}\\p{N}])${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:[^\\p{L}\\p{N}]|$)`, "iu").test(
+        text,
+      ),
+    );
+}
+
+/** Person forms in a normalized (lowercased) sentence — the only grammar this gate reads. */
+const EVIDENCE_FIRST_PERSON = /\b(?:i|me|my|mine|myself)\b/;
+const EVIDENCE_SECOND_PERSON = /\b(?:you|your|yours|yourself)\b/;
+const EVIDENCE_THIRD_PERSON = /\b(?:she|he|they|her|hers|him|his|their|theirs|herself|himself|themselves)\b/;
+
+/**
+ * Is this change clause about the WARDROBE OWNER's clothes (condition 3)?
+ *
+ * Runs against the ONE sentence `classifyOutfitChangeQuote` said asserts the
+ * change, not the whole quote — a multi-sentence quote can narrate two bodies,
+ * and only the asserting sentence says whose clothes moved.
+ *
+ * Bounded attribution, deliberately NOT coreference resolution: a name settles
+ * it outright, person forms settle it only where the half they appear in makes
+ * them unambiguous, and an ensemble scene fails closed on bare pronouns.
+ */
+function evidenceAttributesToOwner(args: {
+  sentence: string;
+  owner: OutfitEvidenceOwner;
+  inPlayer: boolean;
+  inAssistant: boolean;
+}): boolean {
+  const { sentence, owner, inPlayer, inAssistant } = args;
+  // A named owner wins wherever the name sits in the clause, including the
+  // possessive object ("Mara pulls off Sabrina's jacket" IS Sabrina's change) — the
+  // owner need not be the actor.
+  if (textNamesAnyOf(sentence, owner.names)) return true;
+  // …and a clause that names only somebody ELSE is that participant's evidence, not this one's.
+  if (textNamesAnyOf(sentence, owner.otherNames)) return false;
+
+  const first = EVIDENCE_FIRST_PERSON.test(sentence);
+  const second = EVIDENCE_SECOND_PERSON.test(sentence);
+  const third = EVIDENCE_THIRD_PERSON.test(sentence);
+  const solo = owner.presentCharacterCount <= 1;
+
+  if (owner.isPlayer) {
+    // "I take off my jacket" is the player only in the player's own line; "she
+    // tugs you out of your shirt" is the player only in the reply. The wrong
+    // half flips the referent (first person in the reply is the character
+    // speaking), so it does not attribute.
+    if (first && inPlayer) return true;
+    if (second && inAssistant) return true;
+    return solo && !first && !second && !third;
+  }
+  // Character owner. Bare pronouns are only unambiguous while one character is on
+  // stage; with a second body present, only the name licenses the replacement.
+  if (!solo) return false;
+  if (third) return true;
+  if (first && inAssistant) return true;
+  if (second && inPlayer) return true;
+  // A markerless clause ("kicks off the boots") in a two-body scene: the character
+  // is the only wardrobe the reply can be moving.
+  return !first && !second;
+}
+
 /**
  * Did the archivist's whole-look outfit proposal come with REAL evidence that
- * the outfit changed during this exchange (owner ruling, 2026-08-01)?
+ * the outfit changed during this exchange, TO THIS OWNER (owner ruling,
+ * 2026-08-01)?
  *
- * TWO conditions, and the second was bought the hard way. The quote must
+ * THREE conditions, and each of the last two was bought the hard way. The quote must
  *
- * 1. **be in the exchange** — non-empty and present under `normalizeEvidenceText`; and
+ * 1. **be in the exchange** — non-empty and present under `normalizeEvidenceText`
+ *    in one half or (spanning them) in the joined text; and
  * 2. **assert a change** — say that the clothes moved, per
  *    `classifyOutfitChangeQuote` (`contracts/items/outfit-change-evidence.ts`),
  *    which owns the whole reading: the wardrobe-verb table, the non-event vetoes
  *    (negation, modality, questions, commands, incompletes, hypotheticals…) and
  *    the garment-object window that tells "takes off her jacket" from "takes off
  *    for work". Its rejection reason is diagnostic detail this gate does not
- *    surface — the fold's message text is the same whichever way a quote failed.
+ *    surface — the fold's message text is the same whichever way a quote failed;
+ *    its ACCEPTANCE hands back the one sentence that asserted, which is the text
+ *    condition 3 reads; and
+ * 3. **attribute to the wardrobe owner** — `evidenceAttributesToOwner`, run on
+ *    that asserting sentence.
  *
  * Presence alone was the first cut of this gate, and the live check on the
  * deployed build (2026-08-01) proved it trivially satisfiable: a fresh chat's
@@ -609,6 +700,24 @@ function normalizeEvidenceText(text: string): string {
  * quoted clause SAYS separates "she slips out of the work clothes" from "her
  * sleeves are shoved past her elbows".
  *
+ * Condition 3 came from the adversarial audit of that fix (2026-08-01): all three
+ * call sites validated against ONE shared exchange text, so a quote of participant
+ * A's genuine change ("Mara pulls on her coat.") licensed participant B's whole-look
+ * replacement — the extractor's member-scoped prompting was the only thing standing
+ * between an ensemble and a cross-wiped wardrobe, and prompting is not a gate.
+ *
+ * The scoping is BOUNDED — a name test plus person forms read against the half they
+ * appear in — never coreference resolution, which no regex can do and which would
+ * fail unpredictably rather than closed. Canonically: "She takes off her jacket"
+ * attributes to the sole character on stage; "I take off my jacket" attributes to the
+ * player in the PLAYER's half; "Mara pulls off Sabrina's jacket" is valid evidence for
+ * SABRINA (the owner is named, actor or not). Two deliberate acceptances make the
+ * boundedness honest — the named ACTOR passes for their own wardrobe as readily as
+ * the named object does, and a compound like "she tugs you out of your shirt"
+ * passes for a solo CHARACTER owner on its third-person marker. Both are the price of
+ * not parsing; ensemble scenes, where the confusion actually costs a wardrobe, still
+ * fail closed without the owner's name.
+ *
  * This is the one gate that lets a free-text `description` replace a modelled
  * wardrobe (alongside the character fold's exposure claim and an authored-preset
  * match), and it replaces the old garment-noun predicate outright. A noun list
@@ -617,11 +726,27 @@ function normalizeEvidenceText(text: string): string {
  * "white cotton tee" is a different word for the SAME garment; "a paint-streaked
  * tank top" names a compound no unigram registry holds.
  */
-export function outfitChangeEvidenceValidated(evidence: string, exchangeText: string): boolean {
+export function outfitChangeEvidenceValidated(
+  evidence: string,
+  exchange: OutfitEvidenceExchange,
+  owner: OutfitEvidenceOwner,
+): boolean {
   const quote = normalizeEvidenceText(evidence);
   if (!quote) return false;
-  if (!normalizeEvidenceText(exchangeText).includes(quote)) return false;
-  return classifyOutfitChangeQuote(quote).asserted;
+  // Which half the quote came from is what makes "I"/"you" attributable, so
+  // grounding resolves the half first. A quote spanning both halves is still
+  // grounded, but carries no half attribution — person forms in it cannot decide.
+  const inPlayer = normalizeEvidenceText(exchange.player).includes(quote);
+  const inAssistant = normalizeEvidenceText(exchange.assistant).includes(quote);
+  if (!inPlayer && !inAssistant && !normalizeEvidenceText(`${exchange.player}\n${exchange.assistant}`).includes(quote)) {
+    return false;
+  }
+  const verdict = classifyOutfitChangeQuote(quote);
+  if (!verdict.asserted) return false;
+  // Attribution reads the ASSERTING sentence the classifier hands back, never the
+  // whole quote: "Mara pulls on her coat. Sabrina laughs." must not attribute to
+  // Sabrina on a name that sits outside the clause claiming a change.
+  return evidenceAttributesToOwner({ sentence: verdict.sentence, owner, inPlayer, inAssistant });
 }
 
 export function seedChatState(profile: CharacterProfile): ChatState {
@@ -1711,8 +1836,10 @@ async function foldOutfitProposal(args: {
   ownerId: string;
   state: ChatState;
   proposal: OutfitProposal | undefined;
-  /** This exchange's player line + reply — what the proposal's `changeEvidence` is checked against. */
-  exchangeText: string;
+  /** This exchange's two halves — what the proposal's `changeEvidence` is checked against, per half. */
+  exchange: OutfitEvidenceExchange;
+  /** Whose wardrobe this fold moves — the evidence must be attributable to them, not to another body in the scene. */
+  evidenceOwner: OutfitEvidenceOwner;
   sink?: DiagnosticSink;
 }): Promise<Partial<ChatState>> {
   const { proposal } = args;
@@ -1725,8 +1852,9 @@ async function foldOutfitProposal(args: {
       return { wornItemIds: [...preset.items], outfitPresetId: preset.id, outfit: "", outfitExposed: false };
     }
     // Before the free-text replacement may wipe a STRUCTURED wardrobe, the
-    // proposal must SHOW that the outfit changed: a verbatim clause from this
-    // exchange saying so (owner ruling, 2026-08-01 — `outfitChangeEvidenceValidated`).
+    // proposal must SHOW that THIS character's outfit changed: a verbatim clause
+    // from this exchange saying so, attributable to them and not to another body
+    // in the scene (owner ruling, 2026-08-01 — `outfitChangeEvidenceValidated`).
     // The store is the worn truth once this actor is modelled
     // (clothing-state-graph slice 2) and a paraphrase of the standing look is not
     // a wardrobe action; demoting the structured list to prose on one was how a
@@ -1747,7 +1875,7 @@ async function foldOutfitProposal(args: {
       !proposal.exposed &&
       proposal.removed.length === 0 &&
       proposal.added.length === 0 &&
-      !outfitChangeEvidenceValidated(proposal.changeEvidence, args.exchangeText)
+      !outfitChangeEvidenceValidated(proposal.changeEvidence, args.exchange, args.evidenceOwner)
     ) {
       const foreign = await foreignGarmentIdentities(
         proposal.description,
@@ -1790,7 +1918,7 @@ async function foldOutfitProposal(args: {
 
 /**
  * The same fold for the **PLAYER's** clothing (persona-library.plan.md slice 8) — "she
- * tugs your shirt over your head" is a state change, not just prose.
+ * tugs you out of your shirt" is a state change, not just prose.
  *
  * Reuses `applyWornGarmentChanges` verbatim: the reducer is already generic over
  * `{wornIds, worn, pool}` and knows nothing about characters, so the player needs no
@@ -1811,8 +1939,10 @@ async function foldPlayerOutfitProposal(args: {
   ownerId: string;
   playerState: ChatPlayerState;
   proposal: PlayerOutfitProposal | undefined;
-  /** This exchange's player line + reply — what the proposal's `changeEvidence` is checked against. */
-  exchangeText: string;
+  /** This exchange's two halves — what the proposal's `changeEvidence` is checked against, per half. */
+  exchange: OutfitEvidenceExchange;
+  /** The PLAYER as evidence owner — first person in their own line, second person in the reply. */
+  evidenceOwner: OutfitEvidenceOwner;
   sink?: DiagnosticSink;
 }): Promise<Partial<ChatPlayerState>> {
   const { proposal, persona } = args;
@@ -1827,7 +1957,8 @@ async function foldPlayerOutfitProposal(args: {
     // look the persona arrived in doesn't demote a never-touched wardrobe to prose,
     // stripping the modelled body's coverage). Same boundary: with no garment
     // deltas, a whole-look description replaces only when this exchange's text
-    // actually states the change — and only a wardrobe that IS structured is
+    // actually states the change AS THE PLAYER'S — first person in their own line,
+    // second person in the reply — and only a wardrobe that IS structured is
     // guarded (a persona with no worn garments has nothing to protect). No
     // exposure condition because the player proposal has no `exposed` — it is
     // always computed.
@@ -1836,7 +1967,7 @@ async function foldPlayerOutfitProposal(args: {
       guardedWornIds.length > 0 &&
       proposal.removed.length === 0 &&
       proposal.added.length === 0 &&
-      !outfitChangeEvidenceValidated(proposal.changeEvidence, args.exchangeText)
+      !outfitChangeEvidenceValidated(proposal.changeEvidence, args.exchange, args.evidenceOwner)
     ) {
       const foreign = await foreignGarmentIdentities(
         proposal.description,
@@ -2236,16 +2367,32 @@ export async function finalizeChatState(input: {
   const outfitChanged = Boolean(
     outfitProposal && (outfitProposal.description || outfitProposal.removed.length || outfitProposal.added.length),
   );
-  // The text a whole-look description's `changeEvidence` must be quoting: BOTH
-  // halves of the exchange, because either can state the change ("I pull my shirt
-  // off" / "she tugs your shirt over your head" are the same event to the archivist).
-  const exchangeText = `${input.exchange.player}\n${input.exchange.assistant}`;
+  // Either half of the exchange can state a whole-look change ("I peel off my
+  // shirt" / "she tugs you out of your shirt" are the same event to the
+  // archivist), so both are offered as evidence — but which half a quote came from
+  // decides who "I"/"you" refers to, so they stay separate rather than joined.
+  //
+  // The scene shape decides the other half of the scoping: with a second body on
+  // stage a bare pronoun cannot pick an owner, and the gate fails closed. The
+  // roster carries the primary as its first entry (and is absent for 1-on-1), so
+  // present OTHERS are what it contributes and the primary counts itself.
+  const presentOthers = (input.roster ?? []).filter(
+    (m) => m.presence === "present" && m.name.trim().toLowerCase() !== input.characterName.trim().toLowerCase(),
+  );
+  const presentOtherNames = presentOthers.map((m) => m.name);
+  const presentCharacterCount = 1 + presentOthers.length;
   const outfitPatch = await foldOutfitProposal({
     profile: input.profile,
     ownerId: input.ownerId,
     state: input.driftedState,
     proposal: outfitProposal,
-    exchangeText,
+    exchange: input.exchange,
+    evidenceOwner: {
+      names: [input.characterName, ...input.profile.aliases],
+      isPlayer: false,
+      otherNames: [...presentOtherNames, input.playerName],
+      presentCharacterCount,
+    },
     sink: input.sink,
   });
 
@@ -2258,7 +2405,13 @@ export async function finalizeChatState(input: {
     ownerId: input.ownerId,
     playerState: input.scenario.playerState,
     proposal: lane === "legacy" ? archivist.value?.playerOutfit : undefined,
-    exchangeText,
+    exchange: input.exchange,
+    evidenceOwner: {
+      names: [input.playerName],
+      isPlayer: true,
+      otherNames: [input.characterName, ...input.profile.aliases, ...presentOtherNames],
+      presentCharacterCount,
+    },
     sink: input.sink,
   });
 
@@ -2641,8 +2794,14 @@ export function settleEnsembleMember(args: {
   pulsed: boolean;
   /** The personal pass result; null keeps the member's prior personal fields. */
   personal: ChatPersonalNotes | null;
-  /** This exchange's player line + reply — what the proposal's `changeEvidence` is checked against. */
-  exchangeText: string;
+  /** This exchange's two halves — what the proposal's `changeEvidence` is checked against, per half. */
+  exchange: OutfitEvidenceExchange;
+  /**
+   * THIS member as evidence owner. An ensemble is exactly the scene where a quote
+   * of somebody else's genuine change would otherwise license this member's
+   * whole-look replacement, so the count here is >1 and bare pronouns fail closed.
+   */
+  evidenceOwner: OutfitEvidenceOwner;
   /** The member's authored presets — what a whole-look `description` can name to re-seed the worn list. */
   profile: Pick<CharacterProfile, "outfits">;
   characterName: string;
@@ -2705,9 +2864,11 @@ export function settleEnsembleMember(args: {
     //
     // Gated exactly like `foldOutfitProposal`/`foldPlayerOutfitProposal` (owner ruling,
     // 2026-08-01): over a MODELLED worn list, a description carrying no exposure claim, no
-    // garment delta and no verbatim clause from this exchange saying the clothes moved is a
-    // restatement of the standing look — demoting the structured list to prose on one is how a
-    // dressed member silently becomes unmodellable. A matched preset never reaches the gate
+    // garment delta and no verbatim clause from this exchange saying THIS member's clothes
+    // moved is a restatement of the standing look — demoting the structured list to prose on
+    // one is how a dressed member silently becomes unmodellable, and taking somebody else's
+    // change clause as the licence is how one member's coat wipes another's whole outfit
+    // (which is why the evidence is owner-scoped). A matched preset never reaches the gate
     // (an authored look is authoritative); deltas only SKIP it here, they remain the primary's
     // path.
     const proposal = args.personal.outfit;
@@ -2719,7 +2880,7 @@ export function settleEnsembleMember(args: {
       !proposal.exposed &&
       proposal.removed.length === 0 &&
       proposal.added.length === 0 &&
-      !outfitChangeEvidenceValidated(proposal.changeEvidence, args.exchangeText);
+      !outfitChangeEvidenceValidated(proposal.changeEvidence, args.exchange, args.evidenceOwner);
     if (proposal.description && restatesWornList) {
       args.sink?.push(
         diag(
