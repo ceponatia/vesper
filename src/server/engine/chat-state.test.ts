@@ -630,6 +630,49 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(true);
   });
 
+  /**
+   * Grounded quotes that name a wardrobe verb and still assert nothing: a
+   * negated habit, an order in dialogue, and an idiom whose object is no
+   * garment. Presence in the exchange is not the question — what the words SAY
+   * is (contracts/items/outfit-change-evidence.ts).
+   */
+  const NON_EVENT_EVIDENCE = [
+    "she never changes out of the apron",
+    '"Change into the silk one," you tell her.',
+    "The festival kicks off.",
+  ];
+
+  it.each(NON_EVENT_EVIDENCE)("evidence quoting a non-event keeps the modelled wardrobe: %s", (evidence) => {
+    const sink = new DiagnosticCollector();
+    const next = settle({
+      state: dressed(),
+      personal: notes({ description: "a flour-dusted apron over a white tee", changeEvidence: evidence }),
+      exchangeText: `you glance over\n[Vera] ${evidence}`,
+      sink,
+    });
+    expect(next.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
+    expect(next.outfitPresetId).toBe("everyday");
+    expect(next.outfit).toBe("");
+    expect(next.outfitExposed).toBe(false);
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(true);
+  });
+
+  it("…and the same proposal replaces once its quote states the change", () => {
+    const sink = new DiagnosticCollector();
+    const evidence = "she ties a flour-dusted apron over her clothes";
+    const next = settle({
+      state: dressed(),
+      personal: notes({ description: "a flour-dusted apron over a white tee", changeEvidence: evidence }),
+      exchangeText: `you glance over\n[Vera] ${evidence}`,
+      sink,
+    });
+    expect(next.wornItemIds).toEqual([]);
+    expect(next.outfitPresetId).toBe("");
+    expect(next.outfit).toBe("a flour-dusted apron over a white tee");
+    expect(next.outfitExposed).toBe(false);
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(false);
+  });
+
   it("validated evidence replaces the modelled wardrobe with the free-text look", () => {
     const sink = new DiagnosticCollector();
     const next = settle({
@@ -1067,5 +1110,23 @@ describe("outfitChangeEvidenceValidated — only the exchange's own words licens
 
   it("still requires presence — a real change clause the exchange never contained is no evidence", () => {
     expect(outfitChangeEvidenceValidated("she slips into a red evening dress", exchange)).toBe(false);
+  });
+
+  /**
+   * Both halves compose: grounding proves the words are the exchange's, the
+   * classifier (`contracts/items/outfit-change-evidence.ts`) proves the words say
+   * the clothes moved. A quote that is genuinely in the text still fails when it
+   * reports a non-event — which is the whole reason the second half exists.
+   */
+  it("composes grounding with classification — a grounded NON-event is still no evidence", () => {
+    const refused = "She doesn't take off her jacket.";
+    expect(outfitChangeEvidenceValidated(refused, `He waits by the door. ${refused}`)).toBe(false);
+    const ordered = '"Take off your jacket," she says.';
+    expect(outfitChangeEvidenceValidated(ordered, `She folds her arms. ${ordered}`)).toBe(false);
+    const planned = "She plans to take off her jacket.";
+    expect(outfitChangeEvidenceValidated(planned, `He watches. ${planned}`)).toBe(false);
+    // …and the same sentence, actually happening, validates.
+    const done = "She takes off her jacket.";
+    expect(outfitChangeEvidenceValidated(done, `He waits by the door. ${done}`)).toBe(true);
   });
 });

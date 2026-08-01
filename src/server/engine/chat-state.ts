@@ -97,6 +97,7 @@ import {
   SKIP_HISTORY_CAP,
   WHEREABOUTS_MAX_CHARS,
   applyWornGarmentChanges,
+  classifyOutfitChangeQuote,
   garmentIdentitiesIn,
   outfitItems,
   outfitPresetByName,
@@ -583,76 +584,19 @@ function normalizeEvidenceText(text: string): string {
 }
 
 /**
- * Clauses that ASSERT a clothing change — tier A of the evidence gate, matched
- * against the normalized (lowercased, whitespace-collapsed) quote.
- *
- * Every entry is word-boundary anchored and, where the verb is ambiguous on its
- * own, requires the particle or article that makes it a wardrobe action: "ties
- * A/THE/ON …" so styling ("the apron ties loose at the waist") never matches,
- * "dressed IN" so the noun "a red evening dress" never matches, "don A/THE …"
- * so "don't" never matches. Precision-biased in the same direction as the
- * garment registry: a verb missing from this list keeps the modelled wardrobe,
- * which is the safe failure.
- */
-const OUTFIT_CHANGE_SIGNALS: readonly RegExp[] = [
-  // Into / out of a garment.
-  /\b(?:slip|slips|slipped|slipping)\s+(?:into|out of)\b/,
-  /\b(?:zip|zips|zipped|zipping)\s+(?:herself|himself|themselves|myself|yourself|you|me|her|him|them)?\s*(?:into|out of)\b/,
-  /\b(?:step|steps|stepped|stepping)\s+into\b/,
-  /\b(?:wriggle|wriggles|wriggled|wriggling|wiggle|wiggles|wiggled|wiggling)\s+(?:into|out of)\b/,
-  /\b(?:shrug|shrugs|shrugged|shrugging)\s+(?:into|out of|on|off)\b/,
-  /\b(?:tug|tugs|tugged|tugging)\s+(?:you|me|him|her|them)?\s*(?:into|out of|on|off)\b/,
-  // On / off.
-  /\b(?:put|puts|putting)\s+on\b/,
-  /\b(?:pull|pulls|pulled|pulling)\s+(?:on|off)\b/,
-  /\b(?:yank|yanks|yanked|yanking)\s+(?:on|off)\b/,
-  /\b(?:throw|throws|threw|throwing)\s+on\b/,
-  /\b(?:take|takes|took|taking)\s+off\b/,
-  /\b(?:kick|kicks|kicked|kicking)\s+off\b/,
-  /\b(?:strip|strips|stripped|stripping)\s+(?:off|out of)\b/,
-  /\b(?:peel|peels|peeled|peeling)\s+(?:off|out of)\b/,
-  // Swapped one garment for another.
-  /\b(?:swap|swaps|swapped|swapping|trade|trades|traded|trading)\s+(?:\S+\s+){0,6}for\b/,
-  // Shed / don / doff — inherently wardrobe verbs, except bare "don" (vs "don't").
-  /\b(?:shed|sheds|shedding)\b/,
-  /\b(?:dons|donned|donning|doff|doffs|doffed|doffing)\b/,
-  /\bdon\s+(?:a|an|the|her|his|their|your|my)\b/,
-  // Tying a garment ON (never "the apron ties loose at the waist").
-  /\b(?:tie|ties|tied|tying)\s+(?:a|an|the|on|it|her|his|their|your|my)\b/,
-  // Undressed / dressed in / the standing-look assertions.
-  /\b(?:undress|undresses|undressed|undressing)\b/,
-  /\b(?:dressed|dresses|dressing)\s+in\b/,
-  /\bnow\s+wearing\b/,
-  /\bno\s+longer\s+wearing\b/,
-  /\bback\s+in\s+(?:a|an|the|her|his|their|your|my)\b/,
-  /\b(?:come|comes|came)\s+back\s+(?:down\s+)?in\b/,
-];
-
-/** Tier B: the ambiguous "chang*" family, and the context that makes it about clothes. */
-const CHANGE_VERB = /\bchang(?:e|es|ed|ing)\b/;
-const CHANGE_CLOTHING_CONTEXT = /\b(?:into|out of|clothes|clothing|outfit|outfits|uniform|costume|wardrobe)\b/;
-
-/**
- * Does this (already normalized) quote actually CLAIM the clothes moved?
- *
- * Tier A is self-sufficient; tier B accepts "changed" only with clothing context
- * beside it — "she changed into her sundress" and "changed out of the work
- * clothes" pass, "the weather changed" does not.
- */
-function quoteAssertsOutfitChange(quote: string): boolean {
-  if (OUTFIT_CHANGE_SIGNALS.some((pattern) => pattern.test(quote))) return true;
-  if (!CHANGE_VERB.test(quote)) return false;
-  return CHANGE_CLOTHING_CONTEXT.test(quote) || garmentIdentitiesIn(quote).size > 0;
-}
-
-/**
  * Did the archivist's whole-look outfit proposal come with REAL evidence that
  * the outfit changed during this exchange (owner ruling, 2026-08-01)?
  *
  * TWO conditions, and the second was bought the hard way. The quote must
  *
  * 1. **be in the exchange** — non-empty and present under `normalizeEvidenceText`; and
- * 2. **assert a change** — carry a clothing-change clause (`quoteAssertsOutfitChange`).
+ * 2. **assert a change** — say that the clothes moved, per
+ *    `classifyOutfitChangeQuote` (`contracts/items/outfit-change-evidence.ts`),
+ *    which owns the whole reading: the wardrobe-verb table, the non-event vetoes
+ *    (negation, modality, questions, commands, incompletes, hypotheticals…) and
+ *    the garment-object window that tells "takes off her jacket" from "takes off
+ *    for work". Its rejection reason is diagnostic detail this gate does not
+ *    surface — the fold's message text is the same whichever way a quote failed.
  *
  * Presence alone was the first cut of this gate, and the live check on the
  * deployed build (2026-08-01) proved it trivially satisfiable: a fresh chat's
@@ -677,7 +621,7 @@ export function outfitChangeEvidenceValidated(evidence: string, exchangeText: st
   const quote = normalizeEvidenceText(evidence);
   if (!quote) return false;
   if (!normalizeEvidenceText(exchangeText).includes(quote)) return false;
-  return quoteAssertsOutfitChange(quote);
+  return classifyOutfitChangeQuote(quote).asserted;
 }
 
 export function seedChatState(profile: CharacterProfile): ChatState {
