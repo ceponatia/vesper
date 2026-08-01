@@ -280,7 +280,8 @@ const FIELDS: Record<ChatExtractorFieldKey, ExtractorField> = {
         `"outfit": what ${ctx.characterName} is WEARING, only when this exchange CHANGED it. Two ways to say it — pick whichever fits, or {} when nothing changed (the common case). Never record anyone else's clothing here.`,
         `   • WHOLE change (dressed for the day, changed outfits): "description" = the complete current look as a FULL replacement (never a delta), naming their outfit if it matches one ("her work clothes", "her date-night dress"); "exposed": true when intimate areas are bared.`,
         `   • SINGLE-garment change (a piece comes off or goes on mid-scene): "removed": ["<the garment taken off, e.g. 'her jacket'>"] and/or "added": ["<the garment put on>"] — short garment phrases, one per piece. Use this for "she slips off her jacket" / "he pulls on a hoodie" rather than restating the whole look.`,
-        `   Shape: { "description": "...", "exposed": <bool>, "removed": [...], "added": [...] }. Undressing counts: either describe what remains via "description" (with "exposed": true when it bares them) or list the pieces in "removed".`,
+        `   A "description" is only ever for clothes that CHANGED during this exchange, and it must come with "changeEvidence": the sentence or clause from the text above, COPIED WORD FOR WORD, that says so (e.g. "She shrugs off the work shirt and pulls on a black silk blouse"). If the prose only describes or paraphrases what they already had on, leave both "description" and "changeEvidence" empty — a re-description is not a change, and an evidence quote that is not in the text is discarded.`,
+        `   Shape: { "description": "...", "changeEvidence": "...", "exposed": <bool>, "removed": [...], "added": [...] }. Undressing counts: either describe what remains via "description" (with "exposed": true when it bares them) or list the pieces in "removed".`,
       ].join("\n"),
   },
 
@@ -294,9 +295,9 @@ const FIELDS: Record<ChatExtractorFieldKey, ExtractorField> = {
       [
         `"playerOutfit": the same, but for what ${ctx.playerName} — the PLAYER — is wearing, only when this exchange CHANGED it. {} when nothing changed (the common case).`,
         `   It does not matter WHO did it: ${ctx.playerName} taking their own shirt off and ${ctx.characterName} pulling it over their head are the same change, and both belong here. Record it whether the player wrote it or ${ctx.characterName} did.`,
-        `   • WHOLE change: "description" = the player's complete current look as a FULL replacement (never a delta).`,
+        `   • WHOLE change: "description" = the player's complete current look as a FULL replacement (never a delta), with "changeEvidence" = the sentence or clause from the text above, COPIED WORD FOR WORD, that says their clothes changed. No such clause ⇒ leave both empty; a re-description of what they already had on is not a change.`,
         `   • SINGLE-garment change: "removed": ["<the garment taken off, e.g. 'your shirt'>"] and/or "added": ["<the garment put on>"] — short garment phrases, one per piece. Prefer this for a piece coming off mid-scene.`,
-        `   Shape: { "description": "...", "removed": [...], "added": [...] }. There is no "exposed" here — the player's exposure is worked out from what they have on.`,
+        `   Shape: { "description": "...", "changeEvidence": "...", "removed": [...], "added": [...] }. There is no "exposed" here — the player's exposure is worked out from what they have on.`,
         `   Only ${ctx.playerName}'s OWN clothing. ${ctx.characterName}'s goes in "outfit" above.`,
       ].join("\n"),
   },
@@ -532,7 +533,14 @@ const EXAMPLES: readonly ExtractorExample[] = [
       episodeSummary:
         "Mara disappeared into the bedroom and came back dressed for the dinner reservation, fishing for a verdict she pretended not to want.",
       memoryQueries: ["the dinner reservation"],
-      outfit: { description: "a black wrap dress and low heels, hair pinned up", exposed: false },
+      // The whole-look grammar always travels with its quote: "description" is a
+      // replacement of the modelled wardrobe, and the fold only applies one when
+      // this clause is genuinely in the exchange text.
+      outfit: {
+        description: "a black wrap dress and low heels, hair pinned up",
+        changeEvidence: "she comes back down in a black wrap dress and low heels, hair pinned up",
+        exposed: false,
+      },
     },
   },
   {

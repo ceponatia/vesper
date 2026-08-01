@@ -134,14 +134,32 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
 - **Archivist changes.** The archivist's `outfit` field (`contracts/turns/chat-archivist.ts`)
   drives two grammars, folded by `foldOutfitProposal` in `finalizeChatState`: a whole-outfit
   `description` naming an authored preset ("her work clothes" → the Work preset) seeds the worn
-  list from it, an unmatched description is a free-text replacement — **unless it merely
-  restates the standing worn look** (no deltas, no exposure claim, every worn item's name-tokens
-  present — `outfitDescriptionRestatesWorn`), in which case the structured list is kept
-  (`chat_wardrobe.outfit_restatement`; a narrator paraphrase is not a wardrobe action) — and garment-level
+  list from it, an unmatched description over a MODELLED wardrobe replaces it **only when the
+  proposal's verbatim `changeEvidence` is present in this exchange's text AND classifies as an
+  asserted, completed change** (`outfitChangeEvidenceValidated` → `classifyOutfitChangeQuote`
+  — negated, modal, conditional, questioned, commanded, quoted, incomplete, or idiomatic
+  non-events all keep the wardrobe), or on an exposure claim. Owner ruling 2026-08-01: nouns
+  cannot tell a same-head change like "a black silk shirt" over a worn cotton shirt from a
+  paraphrase, nor an alias "t-shirt"-for-"tee" from a new garment, so only the exchange SAYING
+  the outfit changed replaces. Lacking validated evidence the structured list is kept
+  (`chat_wardrobe.outfit_restatement`; a narrator paraphrase — even one naming no garment,
+  like "sleeves shoved past her elbows" — is not a wardrobe action), and the diagnostic
+  message names any garment identities the kept description mentioned that no worn item
+  accounts for (the `contracts/items/garment-nouns.ts` registry: canonical
+  plural/alias/compound identities; telemetry here, and the identity gate in `matchGarment`'s
+  delta matching). With nothing structured worn there is nothing to protect and the
+  free-text replacement runs as before — and garment-level
   `removed`/`added` fold through the pure `applyWornGarmentChanges` (contracts) against the
   loaded worn items + the character's preset pool — a removed garment drops its id, an
   unmatched added garment rides the overlay (both degrade with a diagnostic, never fail the
-  turn). Rollback-safe: `worn_item_ids`/`outfit_preset_id` ride `storedChatStateSchema`.
+  turn). The ensemble members' **personal pass** runs the same two description rungs through
+  the pure `settleEnsembleMember` ([multi-character.md](multi-character.md) §Multi-character):
+  a whole-look description naming an authored preset re-seeds their worn list exactly like the
+  primary (parity closed 2026-08-01) and never reaches the gate, an unmatched one replaces a
+  modelled worn list only past validated evidence or an exposure claim, and otherwise the list
+  is kept with `chat_wardrobe.ensemble_outfit_restatement` — a bare message, since naming the
+  description's unworn garments needs an item load and that fold is pure. Garment-level
+  `removed`/`added` remain the primary's IO-backed path. Rollback-safe: `worn_item_ids`/`outfit_preset_id` ride `storedChatStateSchema`.
 - **Editing.** The Character sheet's per-slot equip/remove editor + preset switcher
   (`components/characters/chat-wardrobe-editor.tsx` — [ui.md](../ui.md) §The conversation
   page).
@@ -218,8 +236,9 @@ snapshot for free, so "another take" can't leave the player undressed by a disca
   The archivist reads the whole exchange, so the player writing "I pull my shirt off" and
   the character doing it are the same event to it. `foldPlayerOutfitProposal` reuses
   `applyWornGarmentChanges` verbatim against the **persona's** preset pool, and carries the
-  same restatement guard as the character fold — tested against `playerWornIds` (so the
-  default preset is protected before seeding too; `chat_wardrobe.player_outfit_restatement`).
+  same change-evidence gate as the character fold (presence **and** asserted completed
+  change) — tested against `playerWornIds` (so the default preset is protected before seeding
+  too; `chat_wardrobe.player_outfit_restatement`).
 - **Switching persona resets the wardrobe** (`seeded: false`) — the worn list described the
   person who was wearing it.
 
