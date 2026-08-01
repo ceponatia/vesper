@@ -341,10 +341,11 @@ then one guarded state write:
   `foldOutfitProposal` (in `finalizeChatState`) reads the archivist's two grammars —
   a whole-outfit `description` (naming an authored preset → seeds the structured
   `worn_item_ids` via `matchOutfitPresetInText`; unmatched → a free-text overlay
-  replacement, unless it merely restates the worn look, completely or partially — then
-  the structured list is kept, `chat_wardrobe.outfit_restatement` / the player twin's
-  `chat_wardrobe.player_outfit_restatement`; only evidence of a different look in the
-  description — an undress claim or a foreign garment noun — replaces) and garment-level `removed`/`added` (folded through the pure
+  replacement — but over a modelled wardrobe only when the proposal's verbatim
+  `changeEvidence` validates against this exchange's text (owner ruling 2026-08-01);
+  otherwise the structured list is kept, `chat_wardrobe.outfit_restatement` / the player
+  twin's `chat_wardrobe.player_outfit_restatement`, with any unworn garments the kept
+  description named reported in the diagnostic message) and garment-level `removed`/`added` (folded through the pure
   `applyWornGarmentChanges` against the loaded worn items + the character's preset pool
   — an unmatched removal skips with a diagnostic, an unmatched addition rides the
   free-text overlay). The narrator wearing-line, the scene image, and the `chat_look`

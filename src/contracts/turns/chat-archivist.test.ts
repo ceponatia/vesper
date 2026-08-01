@@ -61,20 +61,34 @@ describe("chatArchivistSchema (parsed-empty IS the degraded fallback)", () => {
 
   it("parses the outfit proposal (chat-wardrobe-parity): whole swap + garment deltas, never rejected", () => {
     const changed = chatArchivistSchema.parse({
-      outfit: { description: "  a black wrap dress and heels ", exposed: false },
+      outfit: {
+        description: "  a black wrap dress and heels ",
+        changeEvidence: "she comes back down in a black wrap dress",
+        exposed: false,
+      },
     });
-    expect(changed.outfit).toEqual({ description: "a black wrap dress and heels", exposed: false, removed: [], added: [] });
+    expect(changed.outfit).toEqual({
+      description: "a black wrap dress and heels",
+      changeEvidence: "she comes back down in a black wrap dress",
+      exposed: false,
+      removed: [],
+      added: [],
+    });
     // {} is the no-change no-op (the common case in the prompt's examples).
-    expect(chatArchivistSchema.parse({ outfit: {} }).outfit).toEqual({ description: "", exposed: false, removed: [], added: [] });
+    expect(chatArchivistSchema.parse({ outfit: {} }).outfit).toEqual({ description: "", changeEvidence: "", exposed: false, removed: [], added: [] });
+    // A whole-look description with NO change evidence still parses — the FOLD is what
+    // refuses to replace a modelled wardrobe on it (owner ruling 2026-08-01), not the schema.
+    expect(chatArchivistSchema.parse({ outfit: { description: "a soft cotton shirt" } }).outfit.changeEvidence).toBe("");
+    expect(chatArchivistSchema.parse({ outfit: { changeEvidence: 42 } }).outfit.changeEvidence).toBe("");
     // Garment-level deltas (rung 2): individual pieces off/on, whitespace-trimmed, capped.
     const delta = chatArchivistSchema.parse({ outfit: { removed: [" her jacket "], added: ["a wool cardigan"] } });
-    expect(delta.outfit).toEqual({ description: "", exposed: false, removed: ["her jacket"], added: ["a wool cardigan"] });
+    expect(delta.outfit).toEqual({ description: "", changeEvidence: "", exposed: false, removed: ["her jacket"], added: ["a wool cardigan"] });
     // Long descriptions pass through whole — outfits are uncapped (owner ruling 2026-07-12).
     const long = chatArchivistSchema.parse({ outfit: { description: "x".repeat(1000), exposed: true } });
     expect(long.outfit.description.length).toBe(1000);
     expect(long.outfit.exposed).toBe(true);
     // A malformed proposal degrades to the no-op without rejecting the object.
-    expect(chatArchivistSchema.parse({ outfit: "naked" }).outfit).toEqual({ description: "", exposed: false, removed: [], added: [] });
+    expect(chatArchivistSchema.parse({ outfit: "naked" }).outfit).toEqual({ description: "", changeEvidence: "", exposed: false, removed: [], added: [] });
   });
 
   it("parses the supporting-cast proposal (chat-supporting-cast.plan.md): lenient, [] on garbage", () => {

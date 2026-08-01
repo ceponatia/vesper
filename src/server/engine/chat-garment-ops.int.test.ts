@@ -227,7 +227,9 @@ describe.runIf(ready)("the legacy free-text bridge", () => {
     const { scenario, state, sink } = await settle({
       chat,
       scenario: chat.scenario,
-      archivist: { outfit: { description: "", exposed: false, removed: ["her jacket"], added: ["a wool cardigan"] } },
+      archivist: {
+        outfit: { description: "", changeEvidence: "", exposed: false, removed: ["her jacket"], added: ["a wool cardigan"] },
+      },
     });
 
     expect(sink.items.filter((d) => d.code === "chat_garments.legacy_outfit_bridge")).toHaveLength(1);
@@ -246,7 +248,7 @@ describe.runIf(ready)("the legacy free-text bridge", () => {
       archivist: {
         ...withOps([{ op: "move", garment: "wren.jacket", to: "put_away" }]),
         // A model that answered in BOTH grammars: the free text is ignored whole.
-        outfit: { description: "", exposed: false, removed: [], added: ["a wool cardigan"] },
+        outfit: { description: "", changeEvidence: "", exposed: false, removed: [], added: ["a wool cardigan"] },
       },
     });
 
