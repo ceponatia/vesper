@@ -1,28 +1,42 @@
 /**
- * Garment head-nouns for the outfit restatement guard (chat-state's
- * `outfitDescriptionRestatesWorn`): the vocabulary that decides whether a
- * whole-look outfit description names a garment FOREIGN to the structured worn
- * list — the positive evidence of a genuinely different look, as opposed to a
- * narration-only restatement ("sleeves shoved past her elbows") that must not
- * demote a modelled wardrobe to free text.
+ * Garment IDENTITIES for the chat lane's wardrobe telemetry (chat-state's outfit
+ * folds): the vocabulary that names which garments a free-text outfit
+ * description mentions, so a KEPT restatement can report the garments it named
+ * that no worn item accounts for — the observable trace of a change the guard
+ * may have missed.
+ *
+ * **It no longer decides keep-vs-replace** (owner ruling, 2026-08-01). That
+ * decision belongs to the archivist's verbatim `changeEvidence`, validated
+ * against the exchange text (`outfitChangeEvidenceValidated` in
+ * `server/engine/chat-state.ts`): a whole-look description replaces the modelled
+ * wardrobe only when the exchange itself says the outfit CHANGED. A noun list
+ * could never make that call — "a black silk shirt" over a worn "soft cotton
+ * shirt" shares its head noun and IS a change, while "her white cotton t-shirt"
+ * over a worn "white cotton tee" is a different word for the SAME garment.
  *
  * Registry rules (CLAUDE.md): vocabulary changes are data edits here, never
  * schema or logic changes.
  *
- * **Precision beats recall in this set.** A noun missing from the list makes
- * the guard KEEP the modelled wardrobe (the safe direction — the store stays
- * structured and the next explicit change still applies); an over-eager entry
- * wrongly WIPES it, which is exactly the defect the guard exists to stop. So
- * ambiguous tokens stay out even though they can name garments: "top" (top
- * button), "tie"/"ties" (ties at the waist), "hood" (hood of a worn hoodie),
- * "slip" (verb), "pumps" (espresso), "flats" (housing), "trainers" (people).
+ * **Precision beats recall in this set.** A missing entry costs a line of
+ * telemetry detail; an over-eager one names a garment nobody was wearing. So
+ * ambiguous tokens stay out AS UNIGRAMS even though they can name garments:
+ * "top" (top button), "tie"/"ties" (ties at the waist), "hood" (hood of a worn
+ * hoodie), "slip" (verb), "pumps" (espresso), "flats" (housing), "trainers"
+ * (people). Excluding the bare "top" is only affordable because the genuine
+ * compounds — "tank top", "crop top" — are recognized as multiword heads.
+ *
+ * Every spelling of one garment folds to ONE canonical identity (boot/boots,
+ * tee/t-shirt/tshirts, jacket/jackets), so a plural or an alias is never
+ * mistaken for a garment nobody is wearing.
  */
-const GARMENT_NOUN_LIST = [
+
+/**
+ * Garments whose canonical identity is the SINGULAR; the regular plural folds
+ * onto it ("jackets" → "jacket", "dresses" → "dress").
+ */
+const GARMENT_SINGULARS = [
   // tops
   "shirt",
-  "tee",
-  "t-shirt",
-  "tshirt",
   "blouse",
   "camisole",
   "chemise",
@@ -65,15 +79,11 @@ const GARMENT_NOUN_LIST = [
   "toga",
   "jumpsuit",
   "romper",
-  "overalls",
-  "dungarees",
   "suit",
   "tuxedo",
   "uniform",
   "costume",
   "apron",
-  "pajamas",
-  "pyjamas",
   "swimsuit",
   "bikini",
   "leotard",
@@ -81,6 +91,35 @@ const GARMENT_NOUN_LIST = [
   "bodice",
   // bottoms
   "skirt",
+  // underwear
+  "bra",
+  "bralette",
+  "underwear",
+  "thong",
+  "lingerie",
+  "garter",
+  // footwear
+  "sock",
+  "shoe",
+  "boot",
+  // hands / head
+  "glove",
+  "hat",
+  "beanie",
+  "helmet",
+  // fantasy / armor
+  "armor",
+  "breastplate",
+  "chainmail",
+] as const;
+
+/**
+ * Inherently-plural garments: the bare form IS the identity. Never stripped to a
+ * bogus singular ("jean", "trouser", "greave") — an s-stripping rule applied to
+ * these would mint identities no worn item name can ever match.
+ */
+const GARMENT_PLURALS = [
+  // bottoms
   "jeans",
   "pants",
   "trousers",
@@ -91,82 +130,112 @@ const GARMENT_NOUN_LIST = [
   "shorts",
   "pantyhose",
   // underwear
-  "bra",
-  "bralette",
   "panties",
   "briefs",
   "boxers",
-  "underwear",
-  "thong",
-  "lingerie",
-  "garter",
   "stockings",
   // footwear
-  "sock",
-  "socks",
-  "shoe",
-  "shoes",
-  "boot",
-  "boots",
   "sneakers",
   "sandals",
   "slippers",
   "loafers",
   "heels",
   "stilettos",
-  // hands / head
-  "glove",
-  "gloves",
+  // hands
   "mittens",
-  "hat",
-  "beanie",
-  "helmet",
+  // whole-body
+  "overalls",
+  "dungarees",
+  "pajamas",
   // fantasy / armor
-  "armor",
-  "armour",
-  "breastplate",
   "gauntlets",
   "greaves",
-  "chainmail",
 ] as const;
 
-const GARMENT_NOUNS: ReadonlySet<string> = new Set(GARMENT_NOUN_LIST);
+/**
+ * Alias groups — every spelling/plural of ONE garment, folded to one identity.
+ * This is what makes "her white cotton t-shirt" and a worn "white cotton tee"
+ * the same garment rather than two, and it is where irregular plurals
+ * ("scarves") and regional spellings ("pyjamas", "armour") live.
+ */
+const GARMENT_ALIASES: readonly (readonly [string, readonly string[]])[] = [
+  ["tee", ["tee", "tees", "t-shirt", "t-shirts", "tshirt", "tshirts"]],
+  ["scarf", ["scarves"]],
+  ["pajamas", ["pyjamas"]],
+  ["armor", ["armour", "armours"]],
+];
 
 /**
- * Words that CLAIM an undressed body outright. A description carrying one is
- * never a restatement of a dressed worn list, even with no garment noun in it.
- * Deliberately excludes "bare"/"stripped" — routine styling narration ("her
- * forearms bare where the sleeves are pushed up") must not read as undress.
+ * Unambiguous multiword heads, recognized as single identities. Scanned BEFORE
+ * any unigram (and consuming both tokens), which is what lets the ambiguous
+ * "top" stay out of the registry while "a paint-streaked tank top" still names a
+ * garment. "sports bra" and "dress shirt" fold onto the plain garment they are:
+ * a description saying "dress shirt" must not read as naming a dress.
  */
-const UNDRESS_WORDS: ReadonlySet<string> = new Set([
-  "naked",
-  "nude",
-  "undressed",
-  "unclothed",
-  "topless",
-  "bottomless",
+const GARMENT_COMPOUNDS: ReadonlyMap<string, string> = new Map([
+  ["tank top", "tank_top"],
+  ["crop top", "crop_top"],
+  ["tube top", "tube_top"],
+  ["sports bra", "bra"],
+  ["dress shirt", "shirt"],
 ]);
 
-/** True when this (lowercased) token claims an undressed body. */
-export function isUndressWord(token: string): boolean {
-  return UNDRESS_WORDS.has(token);
+/** The regular English plural of a registry singular (the only forms folded automatically). */
+function regularPlural(word: string): string {
+  if (/(?:s|x|z|ch|sh)$/.test(word)) return `${word}es`;
+  if (/[^aeiou]y$/.test(word)) return `${word.slice(0, -1)}ies`;
+  return `${word}s`;
+}
+
+/** variant token → canonical identity. Built once; the data above is the only edit surface. */
+function buildGarmentIdentities(): ReadonlyMap<string, string> {
+  const identities = new Map<string, string>();
+  for (const word of GARMENT_SINGULARS) {
+    identities.set(word, word);
+    identities.set(regularPlural(word), word);
+  }
+  for (const word of GARMENT_PLURALS) identities.set(word, word);
+  for (const [identity, variants] of GARMENT_ALIASES) {
+    for (const variant of variants) identities.set(variant, identity);
+  }
+  return identities;
+}
+
+const GARMENT_IDENTITIES = buildGarmentIdentities();
+
+/**
+ * The canonical garment identity a (lowercased) token names, or undefined when
+ * it names none. Every variant of one garment answers with the SAME string —
+ * `garmentNounOf("boot") === garmentNounOf("boots")` — so a plural, an irregular
+ * plural, or an alias spelling can never read as a second, foreign garment.
+ */
+export function garmentNounOf(token: string): string | undefined {
+  return GARMENT_IDENTITIES.get(token);
 }
 
 /**
- * The canonical garment noun a (lowercased) token names, or undefined when it
- * names none. Folds simple plurals — "jackets" → "jacket", "dresses" →
- * "dress" — by trying the stripped forms against the set, so "dress" itself
- * never mis-strips.
+ * Every garment identity named in a stretch of text — a description, or a worn
+ * item's name. Tokenizes with the chat lane's word pattern, takes adjacent-token
+ * COMPOUNDS first (consuming both tokens), then unigrams via `garmentNounOf`.
+ *
+ * Both sides of the fold's foreign-garment telemetry go through this one
+ * function, so "leather boots" over a worn "leather boot" compares equal.
  */
-export function garmentNounOf(token: string): string | undefined {
-  if (GARMENT_NOUNS.has(token)) return token;
-  if (token.endsWith("es")) {
-    const stem = token.slice(0, -2);
-    if (GARMENT_NOUNS.has(stem)) return stem;
+export function garmentIdentitiesIn(text: string): Set<string> {
+  const tokens = text.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? [];
+  const found = new Set<string>();
+  for (let i = 0; i < tokens.length; i += 1) {
+    const head = tokens[i];
+    if (head === undefined) continue;
+    const next = tokens[i + 1];
+    const compound = next === undefined ? undefined : GARMENT_COMPOUNDS.get(`${head} ${next}`);
+    if (compound !== undefined) {
+      found.add(compound);
+      i += 1;
+      continue;
+    }
+    const identity = garmentNounOf(head);
+    if (identity !== undefined) found.add(identity);
   }
-  if (token.endsWith("s")) {
-    const stem = token.slice(0, -1);
-    if (GARMENT_NOUNS.has(stem)) return stem;
-  }
-  return undefined;
+  return found;
 }

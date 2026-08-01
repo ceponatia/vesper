@@ -21,7 +21,7 @@ import {
   chatStateSnapshot,
   driftChatState,
   matchOutfitPresetInText,
-  outfitDescriptionRestatesWorn,
+  outfitChangeEvidenceValidated,
   resolveSeededOutfit,
   rhythmOutfitPatch,
   rollbackScenario,
@@ -563,7 +563,13 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
       personal: {
         openLoops: ["show the player her studio"],
         attributeChanges: [],
-        outfit: { description: "a paint-streaked tank top", exposed: false, removed: [], added: [] },
+        outfit: {
+          description: "a paint-streaked tank top",
+          changeEvidence: "she pulls on a paint-streaked tank top",
+          exposed: false,
+          removed: [],
+          added: [],
+        },
         driveUpdates: [],
       },
     });
@@ -599,7 +605,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
       personal: {
         openLoops: [],
         attributeChanges: [],
-        outfit: { description: "", exposed: false, removed: [], added: [] },
+        outfit: { description: "", changeEvidence: "", exposed: false, removed: [], added: [] },
         driveUpdates: [{ want: "leave this town", progress: "", revealed: true, resolved: false }],
       },
     });
@@ -834,59 +840,37 @@ describe("emotional weather wiring (emotional-weather.plan.md)", () => {
   });
 });
 
-describe("outfitDescriptionRestatesWorn — a paraphrase is not a wardrobe action", () => {
-  it("recognizes a complete restatement: every worn name's tokens appear in the description", () => {
-    expect(
-      outfitDescriptionRestatesWorn("a soft cotton work shirt with the sleeves shoved up", ["soft cotton shirt"]),
-    ).toBe(true);
-    expect(
-      outfitDescriptionRestatesWorn("her denim jacket over a white cotton tee", ["denim jacket", "white cotton tee"]),
-    ).toBe(true);
-  });
+describe("outfitChangeEvidenceValidated — only the exchange's own words license a wardrobe wipe", () => {
+  const exchange = [
+    "I lean in the doorway while she gets ready.",
+    'Mara shrugs off the work shirt and pulls on a black silk blouse. "Better?" she says.',
+  ].join("\n");
 
-  it("recognizes a PARTIAL restatement — a subset of the worn look is still the worn look", () => {
-    expect(outfitDescriptionRestatesWorn("a white cotton tee", ["denim jacket", "white cotton tee"])).toBe(true);
-  });
-
-  it("recognizes a styling paraphrase naming no garment at all (the trial's residual case)", () => {
-    // Rerun B — S3 attempt 1: "sleeves shoved past her elbows" wiped the
-    // modelled shirt under the every-name-restated rule (trial evidence
-    // §Residuals 1). It names no garment — nothing about it is a change.
-    expect(outfitDescriptionRestatesWorn("sleeves shoved past her elbows", ["soft cotton shirt"])).toBe(true);
-    expect(outfitDescriptionRestatesWorn("her hair loose over her collar", ["soft cotton shirt"])).toBe(true);
-  });
-
-  it("refuses a genuinely different look — a foreign garment noun is evidence of change", () => {
-    expect(outfitDescriptionRestatesWorn("a red evening dress", ["soft cotton shirt"])).toBe(false);
-    // The original trial's B-S2 fold: an apron the worn list doesn't have.
-    expect(outfitDescriptionRestatesWorn("a flour-dusted apron over her clothes", ["white cotton tee"])).toBe(false);
-    // A worn garment named ALONGSIDE a foreign one is still a different look.
-    expect(
-      outfitDescriptionRestatesWorn("her cotton shirt under a borrowed leather jacket", ["soft cotton shirt"]),
-    ).toBe(false);
-  });
-
-  it("refuses an undress claim even with no garment noun", () => {
-    expect(outfitDescriptionRestatesWorn("she is completely naked now", ["soft cotton shirt"])).toBe(false);
-    expect(outfitDescriptionRestatesWorn("undressed, towel over one shoulder", ["soft cotton shirt"])).toBe(false);
-  });
-
-  it("does not false-positive on ambiguous garment-ish words (precision-biased registry)", () => {
-    // "top" (top button) and "ties" (ties at the waist) are deliberately not
-    // in the noun registry — each would wrongly read styling as a new garment.
-    expect(outfitDescriptionRestatesWorn("her shirt with the top button undone", ["soft cotton shirt"])).toBe(true);
-    expect(outfitDescriptionRestatesWorn("the apron ties loose at the waist", ["café apron"])).toBe(true);
-  });
-
-  it("folds simple plurals when matching nouns against the worn names", () => {
-    expect(outfitDescriptionRestatesWorn("worn jeans and a faded tee", ["blue jeans", "white cotton tee"])).toBe(
+  it("validates a clause copied verbatim out of the exchange", () => {
+    expect(outfitChangeEvidenceValidated("shrugs off the work shirt and pulls on a black silk blouse", exchange)).toBe(
       true,
     );
-    expect(outfitDescriptionRestatesWorn("worn jeans and a faded tee", ["white cotton tee"])).toBe(false);
+    // Case is not part of the quote — a model that re-capitalizes still quoted it.
+    expect(outfitChangeEvidenceValidated("Mara shrugs off the work shirt", exchange)).toBe(true);
   });
 
-  it("refuses empty inputs — with nothing worn, any description is a claim, not a restatement", () => {
-    expect(outfitDescriptionRestatesWorn("", ["soft cotton shirt"])).toBe(false);
-    expect(outfitDescriptionRestatesWorn("a soft cotton shirt", [])).toBe(false);
+  it("validates across whitespace runs and curly quotes — the differences a re-typed quote picks up", () => {
+    const curly = "She tugs at her collar.\nMara pulls on a black silk blouse — “it’s the good one”, she says.";
+    expect(outfitChangeEvidenceValidated("Mara  pulls   on\na black silk blouse", curly)).toBe(true);
+    expect(outfitChangeEvidenceValidated("\"it's the good one\"", curly)).toBe(true);
+  });
+
+  it("rejects empty evidence — a description with no quote is a re-description, not a change", () => {
+    expect(outfitChangeEvidenceValidated("", exchange)).toBe(false);
+    expect(outfitChangeEvidenceValidated("   ", exchange)).toBe(false);
+  });
+
+  it("rejects evidence that is not in the exchange — an invented quote fails closed", () => {
+    // The defect this gate exists for: the archivist paraphrasing the standing
+    // look ("sleeves shoved past her elbows") and wiping the modelled wardrobe.
+    expect(outfitChangeEvidenceValidated("she changes into a red evening dress", exchange)).toBe(false);
+    expect(outfitChangeEvidenceValidated("sleeves shoved past her elbows", exchange)).toBe(false);
+    // …and an empty exchange can license nothing.
+    expect(outfitChangeEvidenceValidated("pulls on a black silk blouse", "")).toBe(false);
   });
 });
