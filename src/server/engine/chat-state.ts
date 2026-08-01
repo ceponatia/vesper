@@ -1621,6 +1621,29 @@ interface PlayerOutfitProposal {
 }
 
 /**
+ * The IO half of the restatement guard both outfit folds share: load the given
+ * worn ids and test the description against the resolved item names. False for
+ * an empty worn list (nothing structured to protect) and when nothing loads
+ * (an unresolvable list must not make every description read as a restatement).
+ */
+async function outfitDescriptionRestatesWornIds(
+  description: string,
+  ownerId: string,
+  wornIds: readonly string[],
+  sink?: DiagnosticSink,
+): Promise<boolean> {
+  if (wornIds.length === 0) return false;
+  const worn = await loadChatWardrobe(ownerId, wornIds, sink);
+  return (
+    worn.length > 0 &&
+    outfitDescriptionRestatesWorn(
+      description,
+      worn.map((item) => item.name),
+    )
+  );
+}
+
+/**
  * Fold an archivist outfit proposal into a structured-wardrobe state patch (chat-wardrobe-parity).
  * Three cases, all rollback-safe (the patched columns ride `storedChatStateSchema`):
  *
@@ -1659,28 +1682,19 @@ async function foldOutfitProposal(args: {
     // restatement (no garment deltas, no exposure claim, every worn item's name
     // restated), so a description that actually changes the look still replaces.
     if (
-      args.state.wornItemIds.length > 0 &&
       !proposal.exposed &&
       proposal.removed.length === 0 &&
-      proposal.added.length === 0
+      proposal.added.length === 0 &&
+      (await outfitDescriptionRestatesWornIds(proposal.description, args.ownerId, args.state.wornItemIds, args.sink))
     ) {
-      const restated = await loadChatWardrobe(args.ownerId, args.state.wornItemIds, args.sink);
-      if (
-        restated.length > 0 &&
-        outfitDescriptionRestatesWorn(
-          proposal.description,
-          restated.map((item) => item.name),
-        )
-      ) {
-        args.sink?.push(
-          diag(
-            "info",
-            "chat_wardrobe.outfit_restatement",
-            "outfit description restates the structured worn list; keeping the modelled wardrobe",
-          ),
-        );
-        return {};
-      }
+      args.sink?.push(
+        diag(
+          "info",
+          "chat_wardrobe.outfit_restatement",
+          "outfit description restates the structured worn list; keeping the modelled wardrobe",
+        ),
+      );
+      return {};
     }
     // No matching preset — an ad-hoc whole look falls back to free text (ruled).
     return { wornItemIds: [], outfitPresetId: "", outfit: proposal.description, outfitExposed: proposal.exposed };
@@ -1734,6 +1748,31 @@ async function foldPlayerOutfitProposal(args: {
     const preset = matchOutfitPresetInText(persona, proposal.description);
     if (preset && preset.items.length > 0) {
       return { wornItemIds: [...preset.items], outfitPresetId: preset.id, overlay: "", seeded: true };
+    }
+    // The character twin's restatement guard, against what the player has on RIGHT
+    // NOW (the default preset until seeded — so a narrator paraphrase of the look
+    // the persona arrived in doesn't demote a never-touched wardrobe to prose,
+    // stripping the modelled body's coverage). Same strictness: only a pure
+    // restatement with no garment deltas keeps the structured list. No exposure
+    // condition because the player proposal has no `exposed` — it is always computed.
+    if (
+      proposal.removed.length === 0 &&
+      proposal.added.length === 0 &&
+      (await outfitDescriptionRestatesWornIds(
+        proposal.description,
+        args.ownerId,
+        playerWornIds(args.playerState, persona),
+        args.sink,
+      ))
+    ) {
+      args.sink?.push(
+        diag(
+          "info",
+          "chat_wardrobe.player_outfit_restatement",
+          "player outfit description restates the structured worn list; keeping the modelled wardrobe",
+        ),
+      );
+      return {};
     }
     // No matching preset — an ad-hoc whole look rides the overlay text (the ruling the
     // character path follows), and clears the structured list it replaces.

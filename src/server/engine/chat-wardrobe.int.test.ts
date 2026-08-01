@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { emptyChatPlayerState, type ChatPlayerState } from "@/contracts/players/chat-player-state";
+import { personaProfileSchema, type PersonaProfile } from "@/contracts/players/persona-profile";
 import type { ChatArchivist } from "@/contracts/turns/chat-archivist";
 
 /**
@@ -30,6 +32,7 @@ import {
   seedChatFixture,
   settleChatExchange,
   withOutfit,
+  withPlayerOutfit,
   type ChatFixture,
   type ChatSeat,
 } from "@/server/test-support";
@@ -43,6 +46,9 @@ let chat: ChatSeat = { chatId: "", memoryGroupId: "", messageId: "" };
 const jacket = () => itemId(fixture, "denimJacket");
 const tee = () => itemId(fixture, "whiteCottonTee");
 const cardigan = () => itemId(fixture, "greyWoolCardigan");
+/** The PLAYER persona's wardrobe (same owner — items are owner-scoped, not character-scoped). */
+const shirt = () => itemId(fixture, "cottonShirt");
+const wool = () => itemId(fixture, "woolCardigan");
 
 beforeAll(async () => {
   if (!ready) return;
@@ -53,6 +59,8 @@ beforeAll(async () => {
       bareGarment(GARMENT_SEEDS.denimJacket),
       bareGarment(GARMENT_SEEDS.whiteCottonTee),
       bareGarment(GARMENT_SEEDS.greyWoolCardigan),
+      bareGarment(GARMENT_SEEDS.cottonShirt),
+      bareGarment(GARMENT_SEEDS.woolCardigan),
     ],
     // The default preset holds jacket + tee (the seeded worn list); the cardigan is in the
     // wardrobe pool but not worn (an add-candidate).
@@ -139,5 +147,61 @@ describe.runIf(ready)("finalizeChatState — archivist-proposed garment changes 
     const rollback = await loadPreExchangeState(chat.chatId, fixture.characterId);
     expect(rollback.found).toBe(true);
     expect(rollback.state?.wornItemIds).toEqual([jacket(), tee()]);
+  });
+});
+
+/** A persona whose one preset (the implicit default) holds exactly these worn items. */
+function persona(items: readonly string[]): PersonaProfile {
+  return personaProfileSchema.parse({ outfits: [{ id: "everyday", name: "Everyday", items }] });
+}
+
+/** Run one finalize with the player's pre-exchange state and an archivist PLAYER-outfit proposal. */
+async function runPlayerFinalize(
+  wardrobe: readonly string[],
+  playerState: Partial<ChatPlayerState>,
+  playerOutfit: Partial<ChatArchivist["playerOutfit"]>,
+) {
+  mock.archivist = { value: withPlayerOutfit(playerOutfit), degraded: false };
+  return settleChatExchange(fixture, {
+    chat,
+    playerPersona: persona(wardrobe),
+    playerState: { ...emptyChatPlayerState(), ...playerState },
+    preExchangeScenario: null,
+  });
+}
+
+describe.runIf(ready)("finalizeChatState — the PLAYER's outfit fold (persona-library slice 8)", () => {
+  it("a description that merely RESTATES the player's worn look keeps the structured wardrobe", async () => {
+    // Unseeded state — the persona is implicitly wearing the default preset. The
+    // narrator paraphrased that look; wiping the structured list to overlay prose
+    // here de-modelled the player's wardrobe (and, with overlay contributing no
+    // coverage, stripped the modelled body) one settle into a fresh conversation.
+    const { scenario, sink } = await runPlayerFinalize([shirt()], {}, {
+      description: "a soft cotton shirt with the sleeves rolled to the elbow",
+    });
+    expect(scenario?.playerState.wornItemIds).toEqual([shirt()]);
+    expect(scenario?.playerState.overlay).toBe("");
+    expect(sink.items.some((item) => item.code === "chat_wardrobe.player_outfit_restatement")).toBe(true);
+  });
+
+  it("a restatement of the SEEDED stored list holds the same way", async () => {
+    const { scenario, sink } = await runPlayerFinalize([shirt(), wool()], { seeded: true, wornItemIds: [wool()] }, {
+      description: "the wool cardigan pulled close against the cold",
+    });
+    expect(scenario?.playerState.wornItemIds).toEqual([wool()]);
+    expect(sink.items.some((item) => item.code === "chat_wardrobe.player_outfit_restatement")).toBe(true);
+  });
+
+  it("a genuinely different whole look still replaces (the ruled overlay fallback)", async () => {
+    const { scenario } = await runPlayerFinalize([shirt()], {}, { description: "a red evening dress" });
+    expect(scenario?.playerState.wornItemIds).toEqual([]);
+    expect(scenario?.playerState.overlay).toBe("a red evening dress");
+    expect(scenario?.playerState.seeded).toBe(true);
+  });
+
+  it("a PARTIAL restatement of a multi-garment look still replaces — the guard is strict", async () => {
+    const { scenario } = await runPlayerFinalize([shirt(), wool()], {}, { description: "a cotton shirt" });
+    expect(scenario?.playerState.wornItemIds).toEqual([]);
+    expect(scenario?.playerState.overlay).toBe("a cotton shirt");
   });
 });

@@ -123,6 +123,15 @@ export function withOutfit(outfit: Partial<ChatArchivist["outfit"]>): ChatArchiv
   return chatArchivist({ outfit: { description: "", exposed: false, removed: [], added: [], ...outfit } });
 }
 
+/**
+ * An archivist whose PLAYER-outfit field carries the given free-text proposal —
+ * the same legacy grammar, folded against the persona's wardrobe (persona-library
+ * slice 8). No `exposed`: the player's exposure is always computed from coverage.
+ */
+export function withPlayerOutfit(outfit: Partial<ChatArchivist["playerOutfit"]>): ChatArchivist {
+  return chatArchivist({ playerOutfit: { description: "", removed: [], added: [], ...outfit } });
+}
+
 /** An archivist whose continuity leg returned exactly these typed garment operations. */
 export function withOps(proposals: readonly GarmentOperationProposal[]): ChatArchivist {
   return chatArchivist({ garmentOperations: [...proposals] });
