@@ -1,4 +1,5 @@
 import { diag, type DiagnosticSink } from "../diagnostics";
+import { garmentIdentitiesIn } from "./garment-nouns";
 import { clothingSubtypeLabel } from "./subtypes";
 
 /**
@@ -46,10 +47,43 @@ function candidateTokens(item: GarmentDescriptor): Set<string> {
 }
 
 /**
- * Match a free-text garment phrase to the best candidate by token overlap on
- * name / subtype / description. Returns undefined when nothing overlaps (the
- * caller degrades). Ties keep the FIRST candidate (worn/pool order is meaningful).
- * PURE.
+ * The canonical garment identities a candidate IS. The item's named type wins;
+ * the description is consulted only when the name + subtype label name no
+ * registry garment at all — a description's incidental comparison text ("cut
+ * like a jacket") must never re-type the item it describes.
+ */
+function candidateIdentities(item: GarmentDescriptor): Set<string> {
+  const label = clothingSubtypeLabel(item.subtype) ?? "";
+  const named = garmentIdentitiesIn(`${item.name} ${label}`);
+  return named.size > 0 ? named : garmentIdentitiesIn(item.description ?? "");
+}
+
+/** How many entries two sets share. */
+function sharedCount(needle: ReadonlySet<string>, hay: ReadonlySet<string>): number {
+  let count = 0;
+  for (const value of needle) if (hay.has(value)) count += 1;
+  return count;
+}
+
+/**
+ * Match a free-text garment phrase to the best candidate. Two layers:
+ *
+ * 1. **Identity gate.** When the phrase names a registry garment
+ *    (`garment-nouns.ts`), only candidates sharing an identity are eligible —
+ *    both sides fold through the same table, so "boot"/"boots", "t-shirt"/"tee"
+ *    and "tank top" compare equal, and raw material/adjective overlap can NEVER
+ *    promote a mistyped candidate ("leather boots" must not take off a leather
+ *    jacket).
+ * 2. **Token overlap ranks the eligible.** Shared-identity count first, then the
+ *    raw name/subtype/description overlap, which is what separates same-type
+ *    candidates ("black suede boots" vs "brown leather boots"). An
+ *    identity-sharing candidate with zero raw overlap is still a match — that is
+ *    the plural/alias fix.
+ *
+ * A phrase naming no registry garment (custom pieces, categories outside the
+ * vocabulary) falls back to raw token overlap alone. Returns undefined when
+ * nothing is eligible (the caller degrades). Ties keep the FIRST candidate
+ * (worn/pool order is meaningful). PURE.
  */
 export function matchGarment(
   phrase: string,
@@ -57,18 +91,25 @@ export function matchGarment(
 ): GarmentDescriptor | undefined {
   const needle = garmentTokens(phrase);
   if (needle.size === 0) return undefined;
+  const phraseIdentities = garmentIdentitiesIn(phrase);
+  const gated = phraseIdentities.size > 0;
   let best: GarmentDescriptor | undefined;
-  let bestScore = 0;
+  let bestIdentityScore = 0;
+  let bestTokenScore = 0;
   for (const item of candidates) {
-    const hay = candidateTokens(item);
-    let score = 0;
-    for (const token of needle) if (hay.has(token)) score += 1;
-    if (score > bestScore) {
-      bestScore = score;
-      best = item;
-    }
+    const tokenScore = sharedCount(needle, candidateTokens(item));
+    const identityScore = gated ? sharedCount(phraseIdentities, candidateIdentities(item)) : 0;
+    if (gated && identityScore === 0) continue;
+    const better =
+      identityScore > bestIdentityScore ||
+      (identityScore === bestIdentityScore && tokenScore > bestTokenScore);
+    if (!better) continue;
+    bestIdentityScore = identityScore;
+    bestTokenScore = tokenScore;
+    best = item;
   }
-  return bestScore >= 1 ? best : undefined;
+  // Ungated matches still need one shared token; a gated one is carried by its identity.
+  return best;
 }
 
 export interface WornGarmentChange {

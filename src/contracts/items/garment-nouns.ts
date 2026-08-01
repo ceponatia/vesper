@@ -1,11 +1,18 @@
 /**
- * Garment IDENTITIES for the chat lane's wardrobe telemetry (chat-state's outfit
- * folds): the vocabulary that names which garments a free-text outfit
- * description mentions, so a KEPT restatement can report the garments it named
- * that no worn item accounts for — the observable trace of a change the guard
- * may have missed.
+ * Garment IDENTITIES for the chat lane's wardrobe folds: the vocabulary that
+ * names which garments a stretch of free text mentions. Two consumers:
  *
- * **It no longer decides keep-vs-replace** (owner ruling, 2026-08-01). That
+ * - **Telemetry** (chat-state's outfit folds) — a KEPT restatement can report
+ *   the garments it named that no worn item accounts for, the observable trace
+ *   of a change the guard may have missed.
+ * - **Delta matching** (`chat-wardrobe.ts`'s `matchGarment`) — where the
+ *   archivist's typed `removed`/`added` phrases ARE the change grammar, so the
+ *   only question left is which worn/pool item each phrase names. Identity gates
+ *   that match: both sides fold through this table, so a plural, an alias or a
+ *   compound resolves to the right garment, and adjective/material overlap can
+ *   never pick a mistyped one ("leather boots" ≠ a leather jacket).
+ *
+ * **It does not decide keep-vs-replace** (owner ruling, 2026-08-01). That
  * decision belongs to the archivist's verbatim `changeEvidence`, validated
  * against the exchange text (`outfitChangeEvidenceValidated` in
  * `server/engine/chat-state.ts`): a whole-look description replaces the modelled
@@ -18,7 +25,8 @@
  * schema or logic changes.
  *
  * **Precision beats recall in this set.** A missing entry costs a line of
- * telemetry detail; an over-eager one names a garment nobody was wearing. So
+ * telemetry detail and drops matching back to raw token overlap; an over-eager
+ * one names a garment nobody was wearing, on both consumers. So
  * ambiguous tokens stay out AS UNIGRAMS even though they can name garments:
  * "top" (top button), "tie"/"ties" (ties at the waist), "hood" (hood of a worn
  * hoodie), "slip" (verb), "pumps" (espresso), "flats" (housing), "trainers"
@@ -218,8 +226,9 @@ export function garmentNounOf(token: string): string | undefined {
  * item's name. Tokenizes with the chat lane's word pattern, takes adjacent-token
  * COMPOUNDS first (consuming both tokens), then unigrams via `garmentNounOf`.
  *
- * Both sides of the fold's foreign-garment telemetry go through this one
- * function, so "leather boots" over a worn "leather boot" compares equal.
+ * Both sides of a comparison — telemetry's foreign-garment check and
+ * `matchGarment`'s identity gate alike — go through this one function, so
+ * "leather boots" over a worn "leather boot" compares equal.
  */
 export function garmentIdentitiesIn(text: string): Set<string> {
   const tokens = text.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? [];
