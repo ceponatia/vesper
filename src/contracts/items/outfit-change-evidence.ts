@@ -3,12 +3,13 @@ import { garmentIdentitiesIn } from "./garment-nouns";
 /**
  * Does a quoted clause ACTUALLY assert that someone's clothes moved?
  *
- * This is the second half of the chat lane's whole-look evidence gate
+ * This is the middle third of the chat lane's whole-look evidence gate
  * (`outfitChangeEvidenceValidated` in `server/engine/chat-state.ts`, owner
- * ruling 2026-08-01). That gate's first half asks whether the archivist's
+ * ruling 2026-08-01). That gate first asks whether the archivist's
  * `changeEvidence` is VERBATIM from the exchange; this module asks what the
- * quoted words SAY. Only both together may let a free-text description wipe a
- * modelled wardrobe.
+ * quoted words SAY; the gate then asks WHOSE clothes moved, reading the
+ * asserting sentence this module returns. Only all three together may let a
+ * free-text description wipe a modelled wardrobe.
  *
  * Word-pattern matching alone was the first cut and it validated non-events: a
  * negation ("she doesn't take off her jacket"), a plan ("plans to take off her
@@ -50,9 +51,16 @@ export type OutfitChangeRejection =
   | "hypothetical"
   | "habitual";
 
-/** The verdict: an assertion, or the most informative reason it is not one. */
+/**
+ * The verdict: an assertion, or the most informative reason it is not one.
+ *
+ * An acceptance carries the ONE sentence that asserted — the caller's attribution
+ * half (`outfitChangeEvidenceValidated`'s owner scoping) must read exactly the
+ * clause that claimed a change, not the whole quote, or a multi-sentence quote
+ * narrating two bodies would attribute on a name from the wrong sentence.
+ */
 export type OutfitChangeVerdict =
-  | { readonly asserted: true }
+  | { readonly asserted: true; readonly sentence: string }
   | { readonly asserted: false; readonly reason: OutfitChangeRejection };
 
 /**
@@ -402,12 +410,12 @@ function evaluateSentence(sentence: string): OutfitChangeVerdict | null {
       continue;
     }
     if (signal.kind === "change_verb") {
-      if (changeIsAboutClothes(sentence, match)) return { asserted: true };
+      if (changeIsAboutClothes(sentence, match)) return { asserted: true, sentence };
       reason = moreInformative(reason, "no_garment_object");
       continue;
     }
     if (signal.garmentFree === true || namesGarment(objectWindow(sentence, match, OBJECT_WINDOW_TOKENS))) {
-      return { asserted: true };
+      return { asserted: true, sentence };
     }
     reason = moreInformative(reason, "no_garment_object");
   }
@@ -422,8 +430,9 @@ function evaluateSentence(sentence: string): OutfitChangeVerdict | null {
  * this module never disagrees with the grounding check about what the text is.
  *
  * The FIRST sentence that fully asserts wins ("she doesn't hesitate. she takes
- * off her jacket." is a change); otherwise the most informative rejection across
- * every sentence is returned.
+ * off her jacket." is a change) and is handed back on the verdict — the caller's
+ * owner-attribution half reads that sentence and nothing else; otherwise the most
+ * informative rejection across every sentence is returned.
  */
 export function classifyOutfitChangeQuote(quote: string): OutfitChangeVerdict {
   let reason: OutfitChangeRejection = "no_signal";

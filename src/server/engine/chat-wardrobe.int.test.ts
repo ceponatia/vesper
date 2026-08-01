@@ -283,8 +283,23 @@ describe.runIf(ready)("finalizeChatState — archivist-proposed garment changes 
     expect(restatement(sink, RESTATED)).toBe(KEPT);
   });
 
+  it("the PLAYER's own change clause never licenses the CHARACTER's replacement", async () => {
+    // The 2026-08-01 audit's cross-target case: the quote is genuinely in the exchange and
+    // genuinely asserts a change — only owner scoping rejects it, because the shirt coming
+    // off is the player's. The reply, meanwhile, restates her standing look.
+    const line = "I peel off my shirt and drop it over the chair back.";
+    const { state, sink } = await runFinalize(
+      [shirt()],
+      { description: "a black silk shirt", changeEvidence: line },
+      { player: line, assistant: "She keeps her cotton shirt buttoned to the collar." },
+    );
+    expect(state?.wornItemIds).toEqual([shirt()]);
+    expect(state?.outfit).toBe("");
+    expect(restatement(sink, RESTATED)).toBe(KEPT);
+  });
+
   /**
-   * The gate's SECOND half, end to end: a quote may be genuinely in the exchange
+   * The gate's SECOND condition, end to end: a quote may be genuinely in the exchange
    * and still assert no change (`contracts/items/outfit-change-evidence.ts`) — a
    * negation, an order in dialogue, an idiom whose object is no garment. Same
    * shape as the same-head rows above (a black silk shirt over a worn cotton
@@ -491,6 +506,21 @@ describe.runIf(ready)("finalizeChatState — the PLAYER's outfit fold (persona-l
       description: "a black silk shirt",
       changeEvidence: "you changed into a black silk shirt",
     });
+    expect(scenario?.playerState.wornItemIds).toEqual([shirt()]);
+    expect(scenario?.playerState.overlay).toBe("");
+    expect(restatement(sink, PLAYER_RESTATED)).toBe(KEPT_PLAYER);
+  });
+
+  it("the CHARACTER's change clause never licenses the PLAYER's replacement", async () => {
+    // The audit's cross-target case, mirrored: the quote is in the exchange and asserts a
+    // change — it is simply her dress coming off, not the player's shirt.
+    const line = "She slips out of her dress and leaves it over the chair.";
+    const { scenario, sink } = await runPlayerFinalize(
+      [shirt()],
+      {},
+      { description: "a black silk shirt", changeEvidence: line },
+      narrated(line),
+    );
     expect(scenario?.playerState.wornItemIds).toEqual([shirt()]);
     expect(scenario?.playerState.overlay).toBe("");
     expect(restatement(sink, PLAYER_RESTATED)).toBe(KEPT_PLAYER);

@@ -135,13 +135,25 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
   drives two grammars, folded by `foldOutfitProposal` in `finalizeChatState`: a whole-outfit
   `description` naming an authored preset ("her work clothes" → the Work preset) seeds the worn
   list from it, an unmatched description over a MODELLED wardrobe replaces it **only when the
-  proposal's verbatim `changeEvidence` is present in this exchange's text AND classifies as an
-  asserted, completed change** (`outfitChangeEvidenceValidated` → `classifyOutfitChangeQuote`
-  — negated, modal, conditional, questioned, commanded, quoted, incomplete, or idiomatic
-  non-events all keep the wardrobe), or on an exposure claim. Owner ruling 2026-08-01: nouns
-  cannot tell a same-head change like "a black silk shirt" over a worn cotton shirt from a
-  paraphrase, nor an alias "t-shirt"-for-"tee" from a new garment, so only the exchange SAYING
-  the outfit changed replaces. Lacking validated evidence the structured list is kept
+  proposal's verbatim `changeEvidence` is present in this exchange's text, classifies as an
+  asserted, completed change, AND is attributable to the wardrobe's owner**
+  (`outfitChangeEvidenceValidated` — grounded + asserted + owner-attributed). Owner ruling
+  2026-08-01: nouns cannot tell a same-head change like "a black silk shirt" over a worn cotton
+  shirt from a paraphrase, nor an alias "t-shirt"-for-"tee" from a new garment, so only the
+  exchange SAYING the outfit changed replaces — and only for the owner it says it about. The
+  **assertion** half is the pure `classifyOutfitChangeQuote`
+  (`contracts/items/outfit-change-evidence.ts`): negated, modal, conditional, questioned,
+  commanded, quoted, incomplete, hypothetical, habitual or idiomatic non-events all keep the
+  wardrobe, and a wardrobe verb must put a garment in its object window ("takes off her jacket",
+  never "takes off for work"). It returns the ONE sentence that asserted, which is the text the
+  **attribution** half then reads. Attribution is **bounded, not coreference**: the owner's
+  name/alias anywhere in that sentence carries it, possessives included (the actor need not be
+  the owner — "Mara pulls off Sabrina's jacket" is SABRINA's evidence); a sentence naming only
+  another participant never does; the player additionally takes first person in their own line
+  and second person in the reply; 1-on-1 scenes stay lenient about third-person and markerless
+  clauses; and ensemble scenes **fail closed** on a bare pronoun, so one character's change
+  clause cannot license another's replacement. An exposure claim skips the gate entirely.
+  Lacking validated evidence the structured list is kept
   (`chat_wardrobe.outfit_restatement`; a narrator paraphrase — even one naming no garment,
   like "sleeves shoved past her elbows" — is not a wardrobe action), and the diagnostic
   message names any garment identities the kept description mentioned that no worn item
@@ -156,7 +168,8 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
   the pure `settleEnsembleMember` ([multi-character.md](multi-character.md) §Multi-character):
   a whole-look description naming an authored preset re-seeds their worn list exactly like the
   primary (parity closed 2026-08-01) and never reaches the gate, an unmatched one replaces a
-  modelled worn list only past validated evidence or an exposure claim, and otherwise the list
+  modelled worn list only past validated evidence (scoped to THAT member — on a roster of two
+  or more, only their own name in the clause licenses it) or an exposure claim, and otherwise the list
   is kept with `chat_wardrobe.ensemble_outfit_restatement` — a bare message, since naming the
   description's unworn garments needs an item load and that fold is pure. Garment-level
   `removed`/`added` remain the primary's IO-backed path. Rollback-safe: `worn_item_ids`/`outfit_preset_id` ride `storedChatStateSchema`.
@@ -236,9 +249,11 @@ snapshot for free, so "another take" can't leave the player undressed by a disca
   The archivist reads the whole exchange, so the player writing "I pull my shirt off" and
   the character doing it are the same event to it. `foldPlayerOutfitProposal` reuses
   `applyWornGarmentChanges` verbatim against the **persona's** preset pool, and carries the
-  same change-evidence gate as the character fold (presence **and** asserted completed
-  change) — tested against `playerWornIds` (so the default preset is protected before seeding
-  too; `chat_wardrobe.player_outfit_restatement`).
+  same change-evidence gate as the character fold (grounded, asserted **and** owner-attributed)
+  — tested against `playerWornIds` (so the default preset is protected before seeding too;
+  `chat_wardrobe.player_outfit_restatement`) and owner-scoped to the PLAYER: first person
+  attributes in the player's own line, second person in the reply, and the wrong half does not
+  (first person in the reply is the character speaking).
 - **Switching persona resets the wardrobe** (`seeded: false`) — the worn list described the
   person who was wearing it.
 

@@ -307,7 +307,10 @@ deterministic pure + settlement suites carry the proof.
 **Known bounded limitation, recorded:** evidence attribution is not
 actor-scoped — the pipeline passes one shared exchange text to every settling
 participant, so cross-participant attribution relies on the extractor's
-member-scoped prompting. Filed as a follow-up outside this correction.
+member-scoped prompting. Filed as a follow-up outside this correction. That
+follow-up has since landed (`fix/wardrobe-evidence-owner-scoping`): the gate is
+now grounded + asserted + **owner-attributed**, reading the asserting sentence
+the classifier returns, so this limitation no longer stands.
 
 ## Artifacts
 
