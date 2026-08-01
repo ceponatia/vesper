@@ -2697,6 +2697,8 @@ export function settleEnsembleMember(args: {
   pulsed: boolean;
   /** The personal pass result; null keeps the member's prior personal fields. */
   personal: ChatPersonalNotes | null;
+  /** This exchange's player line + reply — what the proposal's `changeEvidence` is checked against. */
+  exchangeText: string;
   characterName: string;
   assistantMessageId: string;
   now: Date;
@@ -2752,9 +2754,34 @@ export function settleEnsembleMember(args: {
     // Ensemble members take the free-text wardrobe path (chat-wardrobe-parity v1): this pure
     // fold has no item-loading seam, so a whole-look `description` clears the structured worn
     // list and lands as free text; garment-level removed/added are the primary's (IO-backed) path.
-    const outfitPatch = args.personal.outfit.description
-      ? { wornItemIds: [], outfitPresetId: "", outfit: args.personal.outfit.description, outfitExposed: args.personal.outfit.exposed }
-      : {};
+    //
+    // Gated exactly like `foldOutfitProposal`/`foldPlayerOutfitProposal` (owner ruling,
+    // 2026-08-01): over a MODELLED worn list, a description carrying no exposure claim, no
+    // garment delta and no verbatim clause from this exchange saying the clothes moved is a
+    // restatement of the standing look — demoting the structured list to prose on one is how a
+    // dressed member silently becomes unmodellable. Deltas only SKIP the gate here; they
+    // remain the primary's path. Unlike the siblings the diagnostic names no unworn garment:
+    // that detail needs an item load, and this fold is pure.
+    const proposal = args.personal.outfit;
+    const restatesWornList =
+      next.wornItemIds.length > 0 &&
+      !proposal.exposed &&
+      proposal.removed.length === 0 &&
+      proposal.added.length === 0 &&
+      !outfitChangeEvidenceValidated(proposal.changeEvidence, args.exchangeText);
+    if (proposal.description && restatesWornList) {
+      args.sink?.push(
+        diag(
+          "info",
+          "chat_wardrobe.ensemble_outfit_restatement",
+          "ensemble outfit description restates the structured worn list; keeping the modelled wardrobe",
+        ),
+      );
+    }
+    const outfitPatch =
+      proposal.description && !restatesWornList
+        ? { wornItemIds: [], outfitPresetId: "", outfit: proposal.description, outfitExposed: proposal.exposed }
+        : {};
     const driveResult = applyDriveUpdates(next.drives, args.personal.driveUpdates);
     for (const revealedDrive of driveResult.revealed) {
       exchangeMilestones.push({

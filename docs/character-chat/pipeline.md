@@ -344,8 +344,12 @@ then one guarded state write:
   replacement — but over a modelled wardrobe only when the proposal's verbatim
   `changeEvidence` validates against this exchange's text (owner ruling 2026-08-01);
   otherwise the structured list is kept, `chat_wardrobe.outfit_restatement` / the player
-  twin's `chat_wardrobe.player_outfit_restatement`, with any unworn garments the kept
-  description named reported in the diagnostic message) and garment-level `removed`/`added` (folded through the pure
+  twin's `chat_wardrobe.player_outfit_restatement` / the per-member personal pass's
+  `chat_wardrobe.ensemble_outfit_restatement` (`settleEnsembleMember` — the same evidence
+  gate, though no preset-seeding or delta path), with any unworn garments the kept
+  description named reported in the diagnostic message by the two IO-backed folds — the
+  pure ensemble one has no item-loading seam) and garment-level `removed`/`added`
+  (folded through the pure
   `applyWornGarmentChanges` against the loaded worn items + the character's preset pool
   — an unmatched removal skips with a diagnostic, an unmatched addition rides the
   free-text overlay). The narrator wearing-line, the scene image, and the `chat_look`
