@@ -211,6 +211,61 @@ the verdict authorized. Per the verdict: the NPC-ending producer's first
 organic production occurrence should be monitored; no further broad
 contact-foundation review before the next ruled item.
 
+## Post-verdict verification, round 2 (2026-08-01 — the PR review's rejection of the noun guard)
+
+The PR #26 review REJECTED the head above for merge and continued flag
+enablement (flags were returned to off): two P1 threads (plural variants
+not canonicalized under one identity — boot vs boots read as different
+garments; compound heads like "tank top" unrecognized) plus a blocking
+case the threads didn't cover — the noun-only predicate reads a same-head
+replacement ("black silk shirt" over a worn "soft cotton shirt") as a
+restatement and preserves stale material, while aliases ("t-shirt" for a
+worn "tee") fail the opposite way.
+
+**The ruled redesign, landed (`6088b9c`):** whole-look proposals carry a
+verbatim `changeEvidence` clause from the current exchange; the folds
+replace a modelled wardrobe only when that evidence validates against the
+exchange text. Presets, garment deltas, and exposure claims keep their
+authoritative paths; the garment-identity registry became telemetry-only
+(canonical identities + compounds, fixing both P1s). The re-verification
+live check then caught a hole in presence-only validation — the extractor
+self-quoted the styling paraphrase as its own "evidence", which trivially
+validated, and the wardrobe was wiped (chat `zyaj5adiw3gpxtb2br4d6jtu`,
+preserved). Fixed in `8603fd7`: validation also requires the quote to
+ASSERT a change (a precision-biased change-signal tier plus a
+context-gated `chang*` tier), pinned by the exact failing quote in the
+pure suite.
+
+**Targeted re-verification — PASS on `8603fd7`** (fresh disposable chats,
+QA account):
+
+- *Partial restatement*: the paraphrase line ("Her sleeves are shoved past
+  her elbows, one cuff dusted with flour.") settled in five fresh chats.
+  Four settles: the tightened extractor declined to propose at all (lane
+  `none`), wardrobe intact. One settle (chat `tor2mw0ufdsfyhtbd4a7id4a`,
+  flag-on): the extractor DID propose through the legacy lane and the
+  fold KEPT the modelled wardrobe — the same input that wiped it pre-fix —
+  and the immediately following touch **committed with the correct cloth
+  layer** (`contact_started` @minute 2, one `materialBetween` layer,
+  `coverage:shoulders`, `directSkinContact: false`; prose: "the warmth of
+  her shoulder seeps through the soft cotton under your palm").
+- *Explicit same-head whole replacement*: a narrator line stating the swap
+  ("Sabrina swaps her cotton work shirt for a black silk shirt…") settled
+  as a legacy-lane replacement in chat `udxpf792u3m8upo3piajvz8i`:
+  `worn_item_ids: []`, `outfit: "a black silk shirt, sleeves rolled to
+  the elbow"` — the case the noun guard could not express.
+- The owner's regression matrix (boot↔boots, tee↔t-shirt, partial
+  multi-garment, styling-only, shirt→tank top, cotton→silk shirt both
+  ways, hallucinated-quote rejection, removal/addition deltas,
+  preset/exposure paths) is pinned on both folds in
+  `chat-wardrobe.int.test.ts` (37 cases); CI green on `8603fd7`.
+
+**Both P1 review threads are replied to and resolved.** Per the review's
+until-clause (flags off until the checks pass and the threads are
+resolved), both conditions are met and the flags were re-enabled
+(2026-08-01 ~18:08Z) during the passing touch check. Merge remains the
+owner's call.
+
 ## Artifacts
 
 - [Evidence appendix](romantic-contact-affordances.trial.evidence.md) — full
