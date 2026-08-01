@@ -342,10 +342,11 @@ then one guarded state write:
   a whole-outfit `description` (naming an authored preset → seeds the structured
   `worn_item_ids` via `matchOutfitPresetInText`; unmatched → a free-text overlay
   replacement — but over a modelled wardrobe only when the proposal's verbatim
-  `changeEvidence` validates against this exchange's text AND attributes to that
-  wardrobe's owner (owner ruling 2026-08-01 — the two halves are passed separately,
-  since which half a quote came from decides who "I"/"you" is, see [state.md](state.md)
-  §Wardrobe);
+  `changeEvidence` is present in this exchange's text, asserts a completed change
+  (`classifyOutfitChangeQuote`, `contracts/items/outfit-change-evidence.ts`), AND attributes
+  to that wardrobe's owner in the very sentence that asserted (owner rulings 2026-08-01 — the
+  two halves of the exchange are passed separately, since which half a quote came from decides
+  who "I"/"you" is, see [state.md](state.md) §Wardrobe);
   otherwise the structured list is kept, `chat_wardrobe.outfit_restatement` / the player
   twin's `chat_wardrobe.player_outfit_restatement` / the per-member personal pass's
   `chat_wardrobe.ensemble_outfit_restatement` (`settleEnsembleMember` — the same preset rung
