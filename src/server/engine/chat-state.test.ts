@@ -543,7 +543,10 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
       pulsed: false,
       personal: null,
       // Fails the evidence check by default — every replacement below opts in explicitly.
-      exchangeText: "",
+      exchange: { player: "", assistant: "" },
+      // Vera alone on stage with the player — the scene these fixtures always described,
+      // where a bare "she …" clause can only be hers. Ensemble cases override it.
+      evidenceOwner: { names: ["Vera"], isPlayer: false, otherNames: [], presentCharacterCount: 1 },
       profile: presets,
       characterName: "Vera",
       assistantMessageId: "msg-1",
@@ -589,7 +592,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
         }),
         openLoops: ["show the player her studio"],
       },
-      exchangeText: 'you knock\n[Vera] she pulls on a paint-streaked tank top. "come in"',
+      exchange: { player: "you knock", assistant: '[Vera] she pulls on a paint-streaked tank top. "come in"' },
     });
     expect(next.openLoops).toEqual(["show the player her studio"]);
     // A whole-look description clears the structured worn list and lands as free text (v1).
@@ -605,7 +608,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     const next = settle({
       state,
       personal: notes({ description: "a white cotton t-shirt and jeans" }),
-      exchangeText: 'you sit down\n[Vera] "long day," she says, sleeves shoved past her elbows',
+      exchange: { player: "you sit down", assistant: '[Vera] "long day," she says, sleeves shoved past her elbows' },
       sink,
     });
     expect(next.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
@@ -622,7 +625,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
         description: "a black silk shirt",
         changeEvidence: "she changes into a black silk shirt",
       }),
-      exchangeText: 'you sit down\n[Vera] "long day," she says',
+      exchange: { player: "you sit down", assistant: '[Vera] "long day," she says' },
       sink,
     });
     expect(next.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
@@ -638,7 +641,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
         description: "a black silk shirt",
         changeEvidence: "she changes into a black silk shirt",
       }),
-      exchangeText: 'you wait\n[Vera] she changes into a black silk shirt, still talking',
+      exchange: { player: "you wait", assistant: '[Vera] she changes into a black silk shirt, still talking' },
       sink,
     });
     expect(next.wornItemIds).toEqual([]);
@@ -647,12 +650,54 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(false);
   });
 
+  /**
+   * The audit's third regression (2026-08-01): with all three folds validating against one
+   * shared exchange text, a quote of ANOTHER member's genuine change was licence enough to
+   * replace this member's whole look. The clause below is in the reply and does assert a
+   * change — it is simply Mara's coat, not Vera's.
+   */
+  it("another member's change clause never moves THIS member's look (the cross-member case)", () => {
+    const sink = new DiagnosticCollector();
+    const next = settle({
+      state: dressed(),
+      personal: notes({
+        description: "a heavy charcoal coat over her shirt",
+        changeEvidence: "Mara pulls on her coat.",
+      }),
+      exchange: { player: "you look up", assistant: "[Mara] Mara pulls on her coat. [Vera] she stays where she is." },
+      evidenceOwner: { names: ["Vera"], isPlayer: false, otherNames: ["Mara", "You"], presentCharacterCount: 2 },
+      sink,
+    });
+    expect(next.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
+    expect(next.outfitPresetId).toBe("everyday");
+    expect(next.outfit).toBe("");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(true);
+  });
+
+  it("…and the same scene DOES move it once the clause names this member", () => {
+    const sink = new DiagnosticCollector();
+    const next = settle({
+      state: dressed(),
+      personal: notes({
+        description: "a heavy charcoal coat over her shirt",
+        changeEvidence: "Vera pulls on her coat.",
+      }),
+      exchange: { player: "you look up", assistant: "[Vera] Vera pulls on her coat. [Mara] she stays where she is." },
+      evidenceOwner: { names: ["Vera"], isPlayer: false, otherNames: ["Mara", "You"], presentCharacterCount: 2 },
+      sink,
+    });
+    expect(next.wornItemIds).toEqual([]);
+    expect(next.outfitPresetId).toBe("");
+    expect(next.outfit).toBe("a heavy charcoal coat over her shirt");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(false);
+  });
+
   it("a garment delta skips the gate — the description applies, the delta itself does not", () => {
     const sink = new DiagnosticCollector();
     const next = settle({
       state: dressed(),
       personal: notes({ description: "a cardigan over the t-shirt", removed: ["her cardigan"] }),
-      exchangeText: "you glance over\n[Vera] she shrugs",
+      exchange: { player: "you glance over", assistant: "[Vera] she shrugs" },
       sink,
     });
     // Deliberate parity with `foldOutfitProposal`, whose description branch also returns
@@ -668,7 +713,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     const next = settle({
       state: dressed(),
       personal: notes({ description: "the shirt hanging open", exposed: true }),
-      exchangeText: "you watch\n[Vera] she leans back",
+      exchange: { player: "you watch", assistant: "[Vera] she leans back" },
     });
     expect(next.wornItemIds).toEqual([]);
     expect(next.outfit).toBe("the shirt hanging open");
@@ -692,7 +737,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
       // Modelled worn list + NO change evidence: the combination the gate guards.
       state: dressed(),
       personal: notes({ description: "changes into her work clothes" }),
-      exchangeText: 'you sit down\n[Vera] "long day ahead," she says',
+      exchange: { player: "you sit down", assistant: '[Vera] "long day ahead," she says' },
       sink,
     });
     expect(next.wornItemIds).toEqual(["itemid9xyz"]);
@@ -705,7 +750,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     const kept = settle({
       state: dressed(),
       personal: notes({ description: "heavy work boots and a red sundress" }),
-      exchangeText: "you look her over\n[Vera] she shifts her weight",
+      exchange: { player: "you look her over", assistant: "[Vera] she shifts her weight" },
       sink,
     });
     expect(kept.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
@@ -717,7 +762,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
         description: "heavy work boots and a red sundress",
         changeEvidence: "she pulls on heavy work boots",
       }),
-      exchangeText: "you look her over\n[Vera] she pulls on heavy work boots",
+      exchange: { player: "you look her over", assistant: "[Vera] she pulls on heavy work boots" },
     });
     expect(replaced.wornItemIds).toEqual([]);
     expect(replaced.outfitPresetId).toBe("");
@@ -731,7 +776,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     const next = settle({
       state,
       personal: notes({ description: "a white cotton t-shirt and jeans" }),
-      exchangeText: 'you sit down\n[Vera] "long day," she says',
+      exchange: { player: "you sit down", assistant: '[Vera] "long day," she says' },
       sink,
     });
     expect(next.outfit).toBe("a white cotton t-shirt and jeans");
@@ -998,36 +1043,43 @@ describe("emotional weather wiring (emotional-weather.plan.md)", () => {
 });
 
 describe("outfitChangeEvidenceValidated — only the exchange's own words license a wardrobe wipe", () => {
-  const exchange = [
-    "I lean in the doorway while she gets ready.",
-    'Mara shrugs off the work shirt and pulls on a black silk blouse. "Better?" she says.',
-  ].join("\n");
+  /** Mara alone with the player: the 1-on-1 scene where a bare "she …" can only be hers. */
+  const MARA_SOLO = { names: ["Mara"], isPlayer: false, otherNames: [], presentCharacterCount: 1 } as const;
+  /** An exchange whose evidence lives in the reply — the shape most of these fixtures describe. */
+  const reply = (assistant: string) => ({ player: "", assistant });
+
+  const exchange = {
+    player: "I lean in the doorway while she gets ready.",
+    assistant: 'Mara shrugs off the work shirt and pulls on a black silk blouse. "Better?" she says.',
+  };
 
   it("validates a clause copied verbatim out of the exchange", () => {
-    expect(outfitChangeEvidenceValidated("shrugs off the work shirt and pulls on a black silk blouse", exchange)).toBe(
-      true,
-    );
+    expect(
+      outfitChangeEvidenceValidated("shrugs off the work shirt and pulls on a black silk blouse", exchange, MARA_SOLO),
+    ).toBe(true);
     // Case is not part of the quote — a model that re-capitalizes still quoted it.
-    expect(outfitChangeEvidenceValidated("Mara shrugs off the work shirt", exchange)).toBe(true);
+    expect(outfitChangeEvidenceValidated("Mara shrugs off the work shirt", exchange, MARA_SOLO)).toBe(true);
   });
 
   it("validates across whitespace runs and curly quotes — the differences a re-typed quote picks up", () => {
-    const curly = "She tugs at her collar.\nMara pulls on a black silk blouse — “it’s the good one”, she says.";
-    expect(outfitChangeEvidenceValidated("Mara  pulls   on\na black silk blouse", curly)).toBe(true);
+    const curly = reply("She tugs at her collar.\nMara pulls on a black silk blouse — “it’s the good one”, she says.");
+    expect(outfitChangeEvidenceValidated("Mara  pulls   on\na black silk blouse", curly, MARA_SOLO)).toBe(true);
     // The needle types the quotes straight where the text has them curly.
-    expect(outfitChangeEvidenceValidated('pulls on a black silk blouse — "it\'s the good one"', curly)).toBe(true);
+    expect(outfitChangeEvidenceValidated('pulls on a black silk blouse — "it\'s the good one"', curly, MARA_SOLO)).toBe(
+      true,
+    );
   });
 
   it("rejects empty evidence — a description with no quote is a re-description, not a change", () => {
-    expect(outfitChangeEvidenceValidated("", exchange)).toBe(false);
-    expect(outfitChangeEvidenceValidated("   ", exchange)).toBe(false);
+    expect(outfitChangeEvidenceValidated("", exchange, MARA_SOLO)).toBe(false);
+    expect(outfitChangeEvidenceValidated("   ", exchange, MARA_SOLO)).toBe(false);
   });
 
   it("rejects evidence that is not in the exchange — an invented quote fails closed", () => {
-    expect(outfitChangeEvidenceValidated("she changes into a red evening dress", exchange)).toBe(false);
-    expect(outfitChangeEvidenceValidated("sleeves shoved past her elbows", exchange)).toBe(false);
+    expect(outfitChangeEvidenceValidated("she changes into a red evening dress", exchange, MARA_SOLO)).toBe(false);
+    expect(outfitChangeEvidenceValidated("sleeves shoved past her elbows", exchange, MARA_SOLO)).toBe(false);
     // …and an empty exchange can license nothing.
-    expect(outfitChangeEvidenceValidated("pulls on a black silk blouse", "")).toBe(false);
+    expect(outfitChangeEvidenceValidated("pulls on a black silk blouse", reply(""), MARA_SOLO)).toBe(false);
   });
 
   /**
@@ -1037,35 +1089,168 @@ describe("outfitChangeEvidenceValidated — only the exchange's own words licens
    * and the fold wiped the modelled wardrobe — so a quote must also SAY the clothes moved.
    */
   it("rejects a self-quoted styling paraphrase — present in the text, but asserting no change", () => {
-    const styling =
-      "I walk over to her. Her sleeves are shoved past her elbows, one cuff dusted with flour.\nShe glances up.";
+    const styling = {
+      player: "I walk over to her. Her sleeves are shoved past her elbows, one cuff dusted with flour.",
+      assistant: "She glances up.",
+    };
     expect(
-      outfitChangeEvidenceValidated("Her sleeves are shoved past her elbows, one cuff dusted with flour.", styling),
+      outfitChangeEvidenceValidated(
+        "Her sleeves are shoved past her elbows, one cuff dusted with flour.",
+        styling,
+        MARA_SOLO,
+      ),
     ).toBe(false);
   });
 
   it("accepts the clothing-change clauses the archivist can actually quote", () => {
     const swap =
       "Sabrina swaps her cotton work shirt for a black silk shirt before the first customer arrives, rolling the new sleeves to the elbow.";
-    expect(outfitChangeEvidenceValidated(swap, swap)).toBe(true);
+    expect(outfitChangeEvidenceValidated(swap, reply(swap), MARA_SOLO)).toBe(true);
     const apron = "She ties a flour-dusted apron over her clothes.";
-    expect(outfitChangeEvidenceValidated(apron, apron)).toBe(true);
+    expect(outfitChangeEvidenceValidated(apron, reply(apron), MARA_SOLO)).toBe(true);
     const wearing = "now wearing a tank top";
-    expect(outfitChangeEvidenceValidated(wearing, `She turns, ${wearing} and nothing else.`)).toBe(true);
+    expect(outfitChangeEvidenceValidated(wearing, reply(`She turns, ${wearing} and nothing else.`), MARA_SOLO)).toBe(
+      true,
+    );
   });
 
   it("keeps the ambiguous verbs honest: a tie that fastens nothing, a change that isn't clothes", () => {
     // "ties" needs an article or "on" after it — styling prose never qualifies.
     const ties = "the apron ties loose at the waist";
-    expect(outfitChangeEvidenceValidated(ties, `She leans back and ${ties}.`)).toBe(false);
+    expect(outfitChangeEvidenceValidated(ties, reply(`She leans back and ${ties}.`), MARA_SOLO)).toBe(false);
     // "chang*" counts only beside clothing context (a garment, "into"/"out of", clothes…).
     const dressed = "she changed into her sundress";
-    expect(outfitChangeEvidenceValidated(dressed, `Upstairs ${dressed}.`)).toBe(true);
+    expect(outfitChangeEvidenceValidated(dressed, reply(`Upstairs ${dressed}.`), MARA_SOLO)).toBe(true);
     const weather = "the weather changed";
-    expect(outfitChangeEvidenceValidated(weather, `Overnight ${weather}.`)).toBe(false);
+    expect(outfitChangeEvidenceValidated(weather, reply(`Overnight ${weather}.`), MARA_SOLO)).toBe(false);
   });
 
   it("still requires presence — a real change clause the exchange never contained is no evidence", () => {
-    expect(outfitChangeEvidenceValidated("she slips into a red evening dress", exchange)).toBe(false);
+    expect(outfitChangeEvidenceValidated("she slips into a red evening dress", exchange, MARA_SOLO)).toBe(false);
+  });
+
+  /**
+   * Condition 3, from the adversarial audit of the presence+assertion gate (2026-08-01):
+   * all three settlement sites validated against ONE shared player+assistant text, so a
+   * quote of participant A's genuine change ("Mara pulls on her coat.") licensed
+   * participant B's whole-look replacement. Every quote below IS in the exchange and DOES
+   * assert a change — attribution is the only thing deciding.
+   */
+  describe("owner scoping — evidence must be about the wardrobe owner", () => {
+    /** The player persona, NAMED (never "You") so the pronoun rules, not the name test, decide. */
+    const CASS_SOLO = { names: ["Cass"], isPlayer: true, otherNames: ["Mara"], presentCharacterCount: 1 } as const;
+    /** Sabrina and Mara both on stage — the scene where a bare pronoun picks no wardrobe. */
+    const SABRINA_ENSEMBLE = {
+      names: ["Sabrina"],
+      isPlayer: false,
+      otherNames: ["Mara", "Cass"],
+      presentCharacterCount: 2,
+    } as const;
+    const MARA_ENSEMBLE = {
+      names: ["Mara"],
+      isPlayer: false,
+      otherNames: ["Sabrina", "Cass"],
+      presentCharacterCount: 2,
+    } as const;
+    /** The player in a crowded scene — three characters on stage, none of them the player. */
+    const CASS_ENSEMBLE = {
+      names: ["Cass"],
+      isPlayer: true,
+      otherNames: ["Mara", "Sabrina", "Wren"],
+      presentCharacterCount: 3,
+    } as const;
+    /** The mirror of `reply` — an exchange whose evidence lives in the PLAYER's own line. */
+    const playerLine = (player: string) => ({ player, assistant: "" });
+
+    it("a bare third-person clause is the sole character's — the 1-on-1 case the scoping must not break", () => {
+      const jacket = "She takes off her jacket";
+      expect(outfitChangeEvidenceValidated(jacket, reply(`${jacket} and folds it over the chair.`), MARA_SOLO)).toBe(
+        true,
+      );
+    });
+
+    it("the player's first-person clause moves the PLAYER's wardrobe, never the character's (regression 1)", () => {
+      const mine = playerLine("I take off my jacket and hang it by the door.");
+      expect(outfitChangeEvidenceValidated("I take off my jacket", mine, CASS_SOLO)).toBe(true);
+      // The same clause offered for the CHARACTER's fold: it is the player's jacket.
+      expect(outfitChangeEvidenceValidated("I take off my jacket", mine, MARA_SOLO)).toBe(false);
+    });
+
+    it("the character's third-person clause moves the CHARACTER's wardrobe, never the player's (regression 2)", () => {
+      const hers = reply("She slips out of her dress and drapes it over the chair.");
+      expect(outfitChangeEvidenceValidated("She slips out of her dress", hers, MARA_SOLO)).toBe(true);
+      expect(outfitChangeEvidenceValidated("She slips out of her dress", hers, CASS_SOLO)).toBe(false);
+    });
+
+    it("the owner need not be the ACTOR — a named possessive object is their evidence, ensemble included", () => {
+      const taken = "Mara pulls off Sabrina's jacket";
+      const scene = reply(`${taken} and drops it on the bench.`);
+      expect(outfitChangeEvidenceValidated(taken, scene, SABRINA_ENSEMBLE)).toBe(true);
+      // …and the named ACTOR passes for her OWN wardrobe off the very same clause. That is
+      // the documented bounded compromise, not an oversight: the gate asks whether the
+      // owner is named, never who is doing what to whom — deciding that is coreference
+      // resolution, which fails unpredictably rather than closed.
+      expect(outfitChangeEvidenceValidated(taken, scene, MARA_ENSEMBLE)).toBe(true);
+    });
+
+    it("an ensemble fails closed on a bare pronoun and opens only on the owner's name", () => {
+      const bare = "she shrugs off her coat";
+      expect(outfitChangeEvidenceValidated(bare, reply(`Across the room ${bare}.`), SABRINA_ENSEMBLE)).toBe(false);
+      const named = "Sabrina shrugs off her coat";
+      expect(outfitChangeEvidenceValidated(named, reply(`${named} and hangs it by the door.`), SABRINA_ENSEMBLE)).toBe(
+        true,
+      );
+    });
+
+    it("one member's clause never moves another member's look (regression 3, at the gate)", () => {
+      const maras = "Mara pulls on her coat.";
+      expect(outfitChangeEvidenceValidated(maras, reply(maras), MARA_ENSEMBLE)).toBe(true);
+      expect(outfitChangeEvidenceValidated(maras, reply(maras), SABRINA_ENSEMBLE)).toBe(false);
+      // …and the same the other way round — neither member's name licenses the other's fold.
+      const sabrinas = "Sabrina pulls on her coat.";
+      expect(outfitChangeEvidenceValidated(sabrinas, reply(sabrinas), SABRINA_ENSEMBLE)).toBe(true);
+      expect(outfitChangeEvidenceValidated(sabrinas, reply(sabrinas), MARA_ENSEMBLE)).toBe(false);
+    });
+
+    it("the player's own forms stay attributable in a crowded scene — the count gates PRONOUNS, not persons", () => {
+      const mine = playerLine("I peel off my jacket before anyone can ask.");
+      expect(outfitChangeEvidenceValidated("I peel off my jacket", mine, CASS_ENSEMBLE)).toBe(true);
+    });
+
+    it("half discipline: 'I' is the player only in their own line, 'you' only in the reply", () => {
+      // First person in the REPLY is the character speaking, not the player.
+      const inReply = reply('"I take off my jacket," she says, already halfway out of it.');
+      expect(outfitChangeEvidenceValidated("I take off my jacket", inReply, CASS_SOLO)).toBe(false);
+      // Second person in the PLAYER's line addresses the character, not the player.
+      const addressed = playerLine("You take off your jacket and toss it on the bed.");
+      expect(outfitChangeEvidenceValidated("You take off your jacket", addressed, CASS_SOLO)).toBe(false);
+      // …and second person in the reply is exactly the player being undressed.
+      const undressed = "tugs you out of your shirt";
+      expect(outfitChangeEvidenceValidated(undressed, reply(`She ${undressed} before you can answer.`), CASS_SOLO)).toBe(
+        true,
+      );
+    });
+
+    it("markerless clauses stay lenient 1-on-1 — for both bodies — and fail closed in an ensemble", () => {
+      const boots = "kicks off the boots";
+      const scene = reply(`She stops in the doorway and ${boots}.`);
+      expect(outfitChangeEvidenceValidated(boots, scene, MARA_SOLO)).toBe(true);
+      // The player's side of the same leniency: a clause marking nobody, with one character
+      // on stage, can only be about the two bodies in the room — so either fold may take it.
+      // The price of not parsing, and confined to the scene where it costs nothing.
+      expect(outfitChangeEvidenceValidated(boots, scene, CASS_SOLO)).toBe(true);
+      // A second character on stage and the same clause names nobody at all.
+      expect(outfitChangeEvidenceValidated(boots, scene, SABRINA_ENSEMBLE)).toBe(false);
+    });
+
+    it("the other-name veto outranks the second-person rule — a mixed clause fails toward the wardrobe", () => {
+      // The accepted reply-half clause above with one word in front: the actor is now named,
+      // and that name belongs to somebody else on stage. The veto is checked BEFORE the
+      // person forms deliberately — a clause naming one participant while marking another is
+      // exactly the ambiguity the audit found, and its safe direction is keeping the
+      // modelled wardrobe.
+      const mixed = "Mara tugs you out of your shirt";
+      expect(outfitChangeEvidenceValidated(mixed, reply(`${mixed} before you can answer.`), CASS_SOLO)).toBe(false);
+    });
   });
 });
