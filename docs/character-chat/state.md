@@ -135,17 +135,20 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
   drives two grammars, folded by `foldOutfitProposal` in `finalizeChatState`: a whole-outfit
   `description` naming an authored preset ("her work clothes" → the Work preset) seeds the worn
   list from it, an unmatched description over a MODELLED wardrobe replaces it **only when the
-  proposal's verbatim `changeEvidence` validates against this exchange's text**
-  (`outfitChangeEvidenceValidated` — owner ruling 2026-08-01: nouns cannot tell a same-head
-  change like "a black silk shirt" over a worn cotton shirt from a paraphrase, nor an alias
-  "t-shirt"-for-"tee" from a new garment, so only the exchange SAYING the outfit changed
-  replaces). Lacking validated evidence the structured list is kept
+  proposal's verbatim `changeEvidence` is present in this exchange's text AND classifies as an
+  asserted, completed change** (`outfitChangeEvidenceValidated` → `classifyOutfitChangeQuote`
+  — negated, modal, conditional, questioned, commanded, quoted, incomplete, or idiomatic
+  non-events all keep the wardrobe), or on an exposure claim. Owner ruling 2026-08-01: nouns
+  cannot tell a same-head change like "a black silk shirt" over a worn cotton shirt from a
+  paraphrase, nor an alias "t-shirt"-for-"tee" from a new garment, so only the exchange SAYING
+  the outfit changed replaces. Lacking validated evidence the structured list is kept
   (`chat_wardrobe.outfit_restatement`; a narrator paraphrase — even one naming no garment,
   like "sleeves shoved past her elbows" — is not a wardrobe action), and the diagnostic
   message names any garment identities the kept description mentioned that no worn item
   accounts for (the `contracts/items/garment-nouns.ts` registry: canonical
-  plural/alias/compound identities, telemetry-only). With nothing structured worn there is
-  nothing to protect and the free-text replacement runs as before — and garment-level
+  plural/alias/compound identities; telemetry here, and the identity gate in `matchGarment`'s
+  delta matching). With nothing structured worn there is nothing to protect and the
+  free-text replacement runs as before — and garment-level
   `removed`/`added` fold through the pure `applyWornGarmentChanges` (contracts) against the
   loaded worn items + the character's preset pool — a removed garment drops its id, an
   unmatched added garment rides the overlay (both degrade with a diagnostic, never fail the
@@ -233,8 +236,9 @@ snapshot for free, so "another take" can't leave the player undressed by a disca
   The archivist reads the whole exchange, so the player writing "I pull my shirt off" and
   the character doing it are the same event to it. `foldPlayerOutfitProposal` reuses
   `applyWornGarmentChanges` verbatim against the **persona's** preset pool, and carries the
-  same change-evidence gate as the character fold — tested against `playerWornIds` (so the
-  default preset is protected before seeding too; `chat_wardrobe.player_outfit_restatement`).
+  same change-evidence gate as the character fold (presence **and** asserted completed
+  change) — tested against `playerWornIds` (so the default preset is protected before seeding
+  too; `chat_wardrobe.player_outfit_restatement`).
 - **Switching persona resets the wardrobe** (`seeded: false`) — the worn list described the
   person who was wearing it.
 

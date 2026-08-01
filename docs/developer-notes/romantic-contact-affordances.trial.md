@@ -123,12 +123,16 @@ the appendix.
   guard is strict on purpose), and the player-side outfit fold has the same
   unguarded fallback (follow-up filed). This is wardrobe-track work, not
   contact-lane work. **Resolved 2026-08-01** (the verdict's enablement
-  condition): the finished guard protects both folds from complete AND
-  partial narration-only restatements — the boundary is now evidence of a
-  DIFFERENT look (an undress claim or a garment noun foreign to the worn
-  names, per the `contracts/items/garment-nouns.ts` registry) rather than
-  every-name-restated; multi-garment and false-positive regressions pinned
-  in `chat-state.test.ts` + `chat-wardrobe.int.test.ts`.
+  condition): the finished guard protects every fold from complete AND
+  partial narration-only restatements — the boundary is a verbatim
+  `changeEvidence` quote from the current exchange, which replaces a
+  modelled wardrobe only when it is present in the exchange text AND
+  classifies as an asserted, completed clothing change (the
+  `contracts/items/garment-nouns.ts` registry is telemetry plus garment
+  delta matching, never the keep-vs-replace decision), enforced identically
+  on the character, player, and ensemble folds; regressions pinned in
+  `chat-state.test.ts`, `outfit-change-evidence.test.ts`, and
+  `chat-wardrobe.int.test.ts`.
 - **S6's prose teleport class** (invented scenes on object/furniture lines)
   remains: the state ends contacts durably through scene changes, but nothing
   fences the narrator's own scene invention. Out of this pass's scope.
@@ -158,6 +162,9 @@ named above and owned elsewhere (wardrobe extraction, scene invention).
 the owner set — bounded repairs plus their evidence — is met.
 
 ## Post-verdict verification (2026-08-01)
+
+*(Superseded by rounds 2–3 below — this section records the noun-guard build
+the PR review later rejected; kept as the historical record.)*
 
 The verdict's enablement condition, discharged:
 
@@ -205,11 +212,12 @@ account, both flags on, image = this branch):
   flags false. Reset to `on`; every result above is from the corrected
   configuration.
 
-**Flags are now ON and stay on** (`CHAT_CONTACT_ACTIONS=on`,
+**Flags were turned ON at this point** (`CHAT_CONTACT_ACTIONS=on`,
 `CHAT_PHYSICAL_CONSTRAINTS=on`, set 2026-08-01 ~16:39Z) — the enablement
 the verdict authorized. Per the verdict: the NPC-ending producer's first
 organic production occurrence should be monitored; no further broad
-contact-foundation review before the next ruled item.
+contact-foundation review before the next ruled item. (Returned to **off**
+on 2026-08-01 pending the round-3 correction — see below.)
 
 ## Post-verdict verification, round 2 (2026-08-01 — the PR review's rejection of the noun guard)
 
@@ -226,9 +234,10 @@ worn "tee") fail the opposite way.
 verbatim `changeEvidence` clause from the current exchange; the folds
 replace a modelled wardrobe only when that evidence validates against the
 exchange text. Presets, garment deltas, and exposure claims keep their
-authoritative paths; the garment-identity registry became telemetry-only
-(canonical identities + compounds, fixing both P1s). The re-verification
-live check then caught a hole in presence-only validation — the extractor
+authoritative paths; the garment-identity registry was demoted from the
+keep-vs-replace decision to telemetry (and, since `1a4de0a`, the identity
+gate in garment delta matching). The re-verification live check then caught
+a hole in presence-only validation — the extractor
 self-quoted the styling paraphrase as its own "evidence", which trivially
 validated, and the wardrobe was wiped (chat `zyaj5adiw3gpxtb2br4d6jtu`,
 preserved). Fixed in `8603fd7`: validation also requires the quote to
@@ -264,7 +273,41 @@ QA account):
 until-clause (flags off until the checks pass and the threads are
 resolved), both conditions are met and the flags were re-enabled
 (2026-08-01 ~18:08Z) during the passing touch check. Merge remains the
-owner's call.
+owner's call. (Flags subsequently returned to **off**, verified
+2026-08-01, pending the round-3 correction below.)
+
+## Post-verdict verification, round 3 (2026-08-01 — the evidence-assertion correction)
+
+The owner's follow-up review found the round-2 validator's positive patterns
+accepted **non-events**: a negation ("She doesn't take off her jacket."),
+modal / planned / conditional / questioned / commanded / quoted forms, and
+clothing-adjacent idioms ("takes off for work", "sheds light", "kicks off the
+meeting", "swaps stories for drinks"). Any of those could still clear a
+modelled wardrobe, because the extractor can self-quote a line that is
+genuinely present in the exchange — presence alone never asked whether the
+quote described a change that actually happened.
+
+**The correction.** Evidence now passes only when it is BOTH grounded in the
+exchange text AND classified as an asserted, completed clothing change
+(`classifyOutfitChangeQuote` in `contracts/items/outfit-change-evidence.ts`,
+called by `outfitChangeEvidenceValidated`): sentence-scoped vetoes for
+negation, modality, conditionals, futures/plans, questions, commands,
+quoted speech, refusals, and incomplete actions, plus a garment-object
+window on every action and state signal (one garment-free exception for
+"strips bare"). So "She doesn't hesitate. She takes off her jacket." still
+validates (a veto never escapes its own sentence), "no longer wearing"
+survives as a real change, and "Wearing her jacket, she takes off for work."
+does not. The invariant covers character, player, and ensemble settlement
+through the one shared validator.
+
+Both contact flags remain **off** pending the owner's review of this
+correction; no deployment or live rerun was performed in this pass — the
+deterministic pure + settlement suites carry the proof.
+
+**Known bounded limitation, recorded:** evidence attribution is not
+actor-scoped — the pipeline passes one shared exchange text to every settling
+participant, so cross-participant attribution relies on the extractor's
+member-scoped prompting. Filed as a follow-up outside this correction.
 
 ## Artifacts
 
