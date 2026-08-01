@@ -157,6 +157,60 @@ named above and owned elsewhere (wardrobe extraction, scene invention).
 **Recommend: verdict PASS for the affectionate tier.** The enablement gate
 the owner set — bounded repairs plus their evidence — is met.
 
+## Post-verdict verification (2026-08-01)
+
+The verdict's enablement condition, discharged:
+
+**The finished guard.** `fe971f8` gave the player fold the character fold's
+restatement guard; the follow-up commit on this branch re-cut the shared
+predicate from *every-worn-name-restated* to *evidence-of-a-different-look*
+(an undress claim or a garment noun foreign to the worn names, per the new
+precision-biased `contracts/items/garment-nouns.ts` registry — a noun the
+registry misses fails toward KEEPING the structured wardrobe). Complete and
+partial restatements — including styling paraphrases naming no garment, the
+trial's exact residual — now keep the modelled wardrobe on both folds;
+explicit deltas, exposure claims, preset matches, and genuine whole-look
+replacements still apply. Multi-garment and false-positive regressions are
+pinned in `chat-state.test.ts`, `garment-nouns.test.ts`, and both fold
+suites in `chat-wardrobe.int.test.ts`.
+
+**The targeted live check — PASS** (fresh disposable chat on the QA
+account, both flags on, image = this branch):
+
+- Chat `xt7zc2ujgou87g339f278xpw`. Exchange 1
+  (`pna1lzgcijpvefvd04v3qnpk` @16:44:01.032Z): "I walk over to her. Her
+  sleeves are shoved past her elbows, one cuff dusted with flour." — the
+  approach plus a strictly PARTIAL outfit paraphrase (no garment named).
+  Settle-1 @16:44:14.139Z filed `chat_garments.legacy_outfit_bridge` +
+  `chat_wardrobe.outfit_restatement` — the archivist extracted the
+  paraphrase, the legacy bridge folded it, and the guard held: the state row
+  kept `worn_item_ids: [sabrinacottonshirt0trial]`, preset `work`, overlay
+  `""` (trace lane `legacy`).
+- Exchange 2, the immediately following line (`pngg0a36go2vlccl6qve35vq`
+  @16:44:42.596Z): "I rest my hand on her shoulder." — **committed**:
+  `contact_started` @story-minute 2 under
+  `contact:pngg0a36go2vlccl6qve35vq`, `materialBetween` = one cloth layer
+  (`s2oq4myennj3u0wiegup43w3:root`, evidence `coverage:shoulders/opaque`),
+  `directSkinContact: false`, and the reply narrates it: "…through the soft
+  cotton of her work shirt." No `contact.material_unavailable` anywhere.
+- Supporting runs from the same window: `rdgir5apwv9jake3iaviuxu1` (an
+  ORGANIC partial opening — "sleeves already pushed up" — guard held at
+  settle-1, same diagnostic pair) and `jawc4smbqg3xt73thx09s5d4` (a
+  complete-restatement settle followed by a committed touch with the same
+  1-layer material shape).
+- **Configuration note, disclosed:** the first enablement attempt set the
+  flag secrets to `1`, which the parser (`=== "on"`) reads as OFF — caught
+  when `rdgir5apwv9jake3iaviuxu1`'s touch resolved
+  `unresolved / geometry_unavailable` with the inspector reporting both
+  flags false. Reset to `on`; every result above is from the corrected
+  configuration.
+
+**Flags are now ON and stay on** (`CHAT_CONTACT_ACTIONS=on`,
+`CHAT_PHYSICAL_CONSTRAINTS=on`, set 2026-08-01 ~16:39Z) — the enablement
+the verdict authorized. Per the verdict: the NPC-ending producer's first
+organic production occurrence should be monitored; no further broad
+contact-foundation review before the next ruled item.
+
 ## Artifacts
 
 - [Evidence appendix](romantic-contact-affordances.trial.evidence.md) — full
