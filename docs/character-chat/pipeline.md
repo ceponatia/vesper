@@ -342,11 +342,15 @@ then one guarded state write:
   a whole-outfit `description` (naming an authored preset → seeds the structured
   `worn_item_ids` via `matchOutfitPresetInText`; unmatched → a free-text overlay
   replacement — but over a modelled wardrobe only when the proposal's verbatim
-  `changeEvidence` validates against this exchange's text (owner ruling 2026-08-01);
+  `changeEvidence` validates against this exchange's text AND attributes to that
+  wardrobe's owner (owner ruling 2026-08-01 — the two halves are passed separately,
+  since which half a quote came from decides who "I"/"you" is, see [state.md](state.md)
+  §Wardrobe);
   otherwise the structured list is kept, `chat_wardrobe.outfit_restatement` / the player
   twin's `chat_wardrobe.player_outfit_restatement` / the per-member personal pass's
   `chat_wardrobe.ensemble_outfit_restatement` (`settleEnsembleMember` — the same preset rung
-  and evidence gate, though no delta path), with any unworn garments the kept
+  and evidence gate, each member scoped to their OWN name so a roster-mate's change clause
+  cannot wipe their look, though no delta path), with any unworn garments the kept
   description named reported in the diagnostic message by the two IO-backed folds — the
   pure ensemble one has no item-loading seam) and garment-level `removed`/`added`
   (folded through the pure
