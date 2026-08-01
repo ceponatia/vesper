@@ -857,7 +857,8 @@ describe("outfitChangeEvidenceValidated — only the exchange's own words licens
   it("validates across whitespace runs and curly quotes — the differences a re-typed quote picks up", () => {
     const curly = "She tugs at her collar.\nMara pulls on a black silk blouse — “it’s the good one”, she says.";
     expect(outfitChangeEvidenceValidated("Mara  pulls   on\na black silk blouse", curly)).toBe(true);
-    expect(outfitChangeEvidenceValidated("\"it's the good one\"", curly)).toBe(true);
+    // The needle types the quotes straight where the text has them curly.
+    expect(outfitChangeEvidenceValidated('pulls on a black silk blouse — "it\'s the good one"', curly)).toBe(true);
   });
 
   it("rejects empty evidence — a description with no quote is a re-description, not a change", () => {
@@ -866,11 +867,48 @@ describe("outfitChangeEvidenceValidated — only the exchange's own words licens
   });
 
   it("rejects evidence that is not in the exchange — an invented quote fails closed", () => {
-    // The defect this gate exists for: the archivist paraphrasing the standing
-    // look ("sleeves shoved past her elbows") and wiping the modelled wardrobe.
     expect(outfitChangeEvidenceValidated("she changes into a red evening dress", exchange)).toBe(false);
     expect(outfitChangeEvidenceValidated("sleeves shoved past her elbows", exchange)).toBe(false);
     // …and an empty exchange can license nothing.
     expect(outfitChangeEvidenceValidated("pulls on a black silk blouse", "")).toBe(false);
+  });
+
+  /**
+   * The live-check failure that mandated the second condition (2026-08-01): on the
+   * deployed build the extractor proposed a styling paraphrase as the description AND
+   * quoted the very sentence it came from as its own evidence. Presence alone passed
+   * and the fold wiped the modelled wardrobe — so a quote must also SAY the clothes moved.
+   */
+  it("rejects a self-quoted styling paraphrase — present in the text, but asserting no change", () => {
+    const styling =
+      "I walk over to her. Her sleeves are shoved past her elbows, one cuff dusted with flour.\nShe glances up.";
+    expect(
+      outfitChangeEvidenceValidated("Her sleeves are shoved past her elbows, one cuff dusted with flour.", styling),
+    ).toBe(false);
+  });
+
+  it("accepts the clothing-change clauses the archivist can actually quote", () => {
+    const swap =
+      "Sabrina swaps her cotton work shirt for a black silk shirt before the first customer arrives, rolling the new sleeves to the elbow.";
+    expect(outfitChangeEvidenceValidated(swap, swap)).toBe(true);
+    const apron = "She ties a flour-dusted apron over her clothes.";
+    expect(outfitChangeEvidenceValidated(apron, apron)).toBe(true);
+    const wearing = "now wearing a tank top";
+    expect(outfitChangeEvidenceValidated(wearing, `She turns, ${wearing} and nothing else.`)).toBe(true);
+  });
+
+  it("keeps the ambiguous verbs honest: a tie that fastens nothing, a change that isn't clothes", () => {
+    // "ties" needs an article or "on" after it — styling prose never qualifies.
+    const ties = "the apron ties loose at the waist";
+    expect(outfitChangeEvidenceValidated(ties, `She leans back and ${ties}.`)).toBe(false);
+    // "chang*" counts only beside clothing context (a garment, "into"/"out of", clothes…).
+    const dressed = "she changed into her sundress";
+    expect(outfitChangeEvidenceValidated(dressed, `Upstairs ${dressed}.`)).toBe(true);
+    const weather = "the weather changed";
+    expect(outfitChangeEvidenceValidated(weather, `Overnight ${weather}.`)).toBe(false);
+  });
+
+  it("still requires presence — a real change clause the exchange never contained is no evidence", () => {
+    expect(outfitChangeEvidenceValidated("she slips into a red evening dress", exchange)).toBe(false);
   });
 });
