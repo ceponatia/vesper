@@ -81,6 +81,9 @@ proven on the future substrate.
   their worn list to free text and `removed`/`added` deltas are the primary's
   (IO-backed) path only. Members keep full structured worn state that the player
   edits in their sheet; only the archivist's per-member auto-updates degrade.
+  (Half closed 2026-08-01: a member's description naming an authored preset now
+  re-seeds their worn list exactly like the primary — no item load needed. The
+  garment-level deltas remain the primary's path.)
 
 ## Completion note (2026-07-14)
 

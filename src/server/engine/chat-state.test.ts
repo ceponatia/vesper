@@ -530,6 +530,13 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     outfit: { description: "", changeEvidence: "", exposed: false, removed: [], added: [], ...outfit },
     driveUpdates: [],
   });
+  /** Authored presets a whole-look description can name — the preset re-seed's precondition. */
+  const presets = makeProfile({
+    outfits: [
+      { id: "everyday", name: "Everyday", items: ["itemid1abc", "itemid2def"] },
+      { id: "work", name: "Work", items: ["itemid9xyz"] },
+    ],
+  });
   const settle = (args: Partial<Parameters<typeof settleEnsembleMember>[0]> & { state: ChatState }) =>
     settleEnsembleMember({
       preRegard: args.state.regard,
@@ -537,6 +544,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
       personal: null,
       // Fails the evidence check by default — every replacement below opts in explicitly.
       exchangeText: "",
+      profile: presets,
       characterName: "Vera",
       assistantMessageId: "msg-1",
       now,
@@ -665,6 +673,55 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     expect(next.wornItemIds).toEqual([]);
     expect(next.outfit).toBe("the shirt hanging open");
     expect(next.outfitExposed).toBe(true);
+  });
+
+  it("a description naming an authored preset re-seeds the structured worn list (primary parity)", () => {
+    const next = settle({
+      state: base({ outfit: "a sundress" }),
+      personal: notes({ description: "changes into her work clothes" }),
+    });
+    expect(next.wornItemIds).toEqual(["itemid9xyz"]);
+    expect(next.outfitPresetId).toBe("work");
+    expect(next.outfit).toBe(""); // the prior free-text look is replaced by the structured one
+    expect(next.outfitExposed).toBe(false);
+  });
+
+  it("the preset rung precedes the evidence gate — an authored look is authoritative", () => {
+    const sink = new DiagnosticCollector();
+    const next = settle({
+      // Modelled worn list + NO change evidence: the combination the gate guards.
+      state: dressed(),
+      personal: notes({ description: "changes into her work clothes" }),
+      exchangeText: 'you sit down\n[Vera] "long day ahead," she says',
+      sink,
+    });
+    expect(next.wornItemIds).toEqual(["itemid9xyz"]);
+    expect(next.outfitPresetId).toBe("work");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(false);
+  });
+
+  it("prose merely containing a preset word never hijacks — it takes the ordinary gate path", () => {
+    const sink = new DiagnosticCollector();
+    const kept = settle({
+      state: dressed(),
+      personal: notes({ description: "heavy work boots and a red sundress" }),
+      exchangeText: "you look her over\n[Vera] she shifts her weight",
+      sink,
+    });
+    expect(kept.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(true);
+    // …and past the gate it lands as free text, still not the "work" preset.
+    const replaced = settle({
+      state: dressed(),
+      personal: notes({
+        description: "heavy work boots and a red sundress",
+        changeEvidence: "she pulls on heavy work boots",
+      }),
+      exchangeText: "you look her over\n[Vera] she pulls on heavy work boots",
+    });
+    expect(replaced.wornItemIds).toEqual([]);
+    expect(replaced.outfitPresetId).toBe("");
+    expect(replaced.outfit).toBe("heavy work boots and a red sundress");
   });
 
   it("an UNMODELLED member takes the description without evidence — nothing structured to protect", () => {

@@ -345,8 +345,8 @@ then one guarded state write:
   `changeEvidence` validates against this exchange's text (owner ruling 2026-08-01);
   otherwise the structured list is kept, `chat_wardrobe.outfit_restatement` / the player
   twin's `chat_wardrobe.player_outfit_restatement` / the per-member personal pass's
-  `chat_wardrobe.ensemble_outfit_restatement` (`settleEnsembleMember` — the same evidence
-  gate, though no preset-seeding or delta path), with any unworn garments the kept
+  `chat_wardrobe.ensemble_outfit_restatement` (`settleEnsembleMember` — the same preset rung
+  and evidence gate, though no delta path), with any unworn garments the kept
   description named reported in the diagnostic message by the two IO-backed folds — the
   pure ensemble one has no item-loading seam) and garment-level `removed`/`added`
   (folded through the pure
