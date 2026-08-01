@@ -633,6 +633,49 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(true);
   });
 
+  /**
+   * Grounded quotes that name a wardrobe verb and still assert nothing: a
+   * negated habit, an order in dialogue, and an idiom whose object is no
+   * garment. Presence in the exchange is not the question — what the words SAY
+   * is (contracts/items/outfit-change-evidence.ts).
+   */
+  const NON_EVENT_EVIDENCE = [
+    "she never changes out of the apron",
+    '"Change into the silk one," you tell her.',
+    "The festival kicks off.",
+  ];
+
+  it.each(NON_EVENT_EVIDENCE)("evidence quoting a non-event keeps the modelled wardrobe: %s", (evidence) => {
+    const sink = new DiagnosticCollector();
+    const next = settle({
+      state: dressed(),
+      personal: notes({ description: "a flour-dusted apron over a white tee", changeEvidence: evidence }),
+      exchange: { player: "you glance over", assistant: `[Vera] ${evidence}` },
+      sink,
+    });
+    expect(next.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
+    expect(next.outfitPresetId).toBe("everyday");
+    expect(next.outfit).toBe("");
+    expect(next.outfitExposed).toBe(false);
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(true);
+  });
+
+  it("…and the same proposal replaces once its quote states the change", () => {
+    const sink = new DiagnosticCollector();
+    const evidence = "she ties a flour-dusted apron over her clothes";
+    const next = settle({
+      state: dressed(),
+      personal: notes({ description: "a flour-dusted apron over a white tee", changeEvidence: evidence }),
+      exchange: { player: "you glance over", assistant: `[Vera] ${evidence}` },
+      sink,
+    });
+    expect(next.wornItemIds).toEqual([]);
+    expect(next.outfitPresetId).toBe("");
+    expect(next.outfit).toBe("a flour-dusted apron over a white tee");
+    expect(next.outfitExposed).toBe(false);
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(false);
+  });
+
   it("validated evidence replaces the modelled wardrobe with the free-text look", () => {
     const sink = new DiagnosticCollector();
     const next = settle({
@@ -1252,5 +1295,42 @@ describe("outfitChangeEvidenceValidated — only the exchange's own words licens
       const mixed = "Mara tugs you out of your shirt";
       expect(outfitChangeEvidenceValidated(mixed, reply(`${mixed} before you can answer.`), CASS_SOLO)).toBe(false);
     });
+  });
+
+  /**
+   * All three conditions compose: grounding proves the words are the exchange's,
+   * the classifier (`contracts/items/outfit-change-evidence.ts`) proves the words
+   * say the clothes moved, and owner scoping proves whose. A quote that is
+   * genuinely in the text still fails when it reports a non-event — which is the
+   * whole reason the second condition exists. (Owner is the sole character on
+   * stage here, so attribution passes on the third person and only the
+   * classification is under test.)
+   */
+  it("composes grounding with classification — a grounded NON-event is still no evidence", () => {
+    const refused = "She doesn't take off her jacket.";
+    expect(outfitChangeEvidenceValidated(refused, reply(`He waits by the door. ${refused}`), MARA_SOLO)).toBe(false);
+    const ordered = '"Take off your jacket," she says.';
+    expect(outfitChangeEvidenceValidated(ordered, reply(`She folds her arms. ${ordered}`), MARA_SOLO)).toBe(false);
+    const planned = "She plans to take off her jacket.";
+    expect(outfitChangeEvidenceValidated(planned, reply(`He watches. ${planned}`), MARA_SOLO)).toBe(false);
+    // …and the same sentence, actually happening, validates.
+    const done = "She takes off her jacket.";
+    expect(outfitChangeEvidenceValidated(done, reply(`He waits by the door. ${done}`), MARA_SOLO)).toBe(true);
+  });
+
+  /**
+   * The seam the two lines of work meet at: the classifier hands back the ONE
+   * sentence that asserted, and attribution reads exactly that. A quote whose
+   * asserting sentence is about somebody else does not become this owner's
+   * evidence because a later sentence happens to name them.
+   */
+  it("attributes on the ASSERTING sentence, not on a name from elsewhere in the quote", () => {
+    const quote = "Mara pulls on her coat. Sabrina laughs at the doorway.";
+    const scene = reply(quote);
+    const sabrina = { names: ["Sabrina"], isPlayer: false, otherNames: ["Mara"], presentCharacterCount: 2 } as const;
+    expect(outfitChangeEvidenceValidated(quote, scene, sabrina)).toBe(false);
+    // …and it IS Mara's evidence, off the very same quote.
+    const mara = { names: ["Mara"], isPlayer: false, otherNames: ["Sabrina"], presentCharacterCount: 2 } as const;
+    expect(outfitChangeEvidenceValidated(quote, scene, mara)).toBe(true);
   });
 });

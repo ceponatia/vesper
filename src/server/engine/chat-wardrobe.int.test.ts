@@ -298,6 +298,38 @@ describe.runIf(ready)("finalizeChatState — archivist-proposed garment changes 
     expect(restatement(sink, RESTATED)).toBe(KEPT);
   });
 
+  /**
+   * The gate's SECOND condition, end to end: a quote may be genuinely in the exchange
+   * and still assert no change (`contracts/items/outfit-change-evidence.ts`) — a
+   * negation, an order in dialogue, an idiom whose object is no garment. Same
+   * shape as the same-head rows above (a black silk shirt over a worn cotton
+   * shirt, so there is nothing unworn to report): only the quote varies, so only
+   * the quote can be what kept the wardrobe.
+   */
+  const NON_EVENT_EVIDENCE = [
+    "She doesn't take off the cotton shirt.",
+    '"Take off the cotton shirt," you say.',
+    "He takes off for work.",
+  ];
+
+  it.each(NON_EVENT_EVIDENCE)("a grounded quote asserting no change keeps the wardrobe: %s", async (line) => {
+    const { state, sink } = await runFinalize(
+      [shirt()],
+      { description: "a black silk shirt", changeEvidence: line },
+      narrated(line),
+    );
+    expect(state?.wornItemIds).toEqual([shirt()]);
+    expect(state?.outfit).toBe("");
+    expect(restatement(sink, RESTATED)).toBe(KEPT);
+  });
+
+  it("an UNMODELLED character takes the description with no evidence — nothing to protect", async () => {
+    const { state, sink } = await runFinalize([], { description: "a black silk shirt" });
+    expect(state?.wornItemIds).toEqual([]);
+    expect(state?.outfit).toBe("a black silk shirt");
+    expect(restatement(sink, RESTATED)).toBe("");
+  });
+
   it("a restatement carrying an exposure claim still replaces — exposure is a real change", async () => {
     // Matrix row (j): the exposure claim skips the gate, with no evidence passed.
     const { state } = await runFinalize([tee()], {
@@ -492,6 +524,35 @@ describe.runIf(ready)("finalizeChatState — the PLAYER's outfit fold (persona-l
     expect(scenario?.playerState.wornItemIds).toEqual([shirt()]);
     expect(scenario?.playerState.overlay).toBe("");
     expect(restatement(sink, PLAYER_RESTATED)).toBe(KEPT_PLAYER);
+  });
+
+  it("a MODAL quote — what you might do — never replaces the player's wardrobe", async () => {
+    // Grounded in the player's own line and still not a change: the classifier's
+    // veto is the only thing standing between "might change" and a wiped wardrobe.
+    const line = "You might change into a black silk shirt.";
+    const { scenario, sink } = await runPlayerFinalize(
+      [shirt()],
+      {},
+      { description: "a black silk shirt", changeEvidence: line },
+      { player: line, assistant: "Hello." },
+    );
+    expect(scenario?.playerState.wornItemIds).toEqual([shirt()]);
+    expect(scenario?.playerState.overlay).toBe("");
+    // The fold wrote NOTHING (the persona's own default is what the ids still
+    // are); `seeded` flips because the garment reconcile modelled the player's
+    // wardrobe this write — `syncGarmentsForExchange`, not the outfit fold.
+    expect(scenario?.playerState.seeded).toBe(true);
+    expect(restatement(sink, PLAYER_RESTATED)).toBe(KEPT_PLAYER);
+  });
+
+  it("an UNMODELLED persona — an empty default preset — takes the description as before", async () => {
+    // `playerWornIds` resolves to [] with nothing authored, so the guard's
+    // precondition is absent and the description lands on the overlay, seeded.
+    const { scenario, sink } = await runPlayerFinalize([], {}, { description: "a black silk shirt" });
+    expect(scenario?.playerState.wornItemIds).toEqual([]);
+    expect(scenario?.playerState.overlay).toBe("a black silk shirt");
+    expect(scenario?.playerState.seeded).toBe(true);
+    expect(restatement(sink, PLAYER_RESTATED)).toBe("");
   });
 
   it("a removal delta applies with no evidence — the player's deltas are authoritative too", async () => {
