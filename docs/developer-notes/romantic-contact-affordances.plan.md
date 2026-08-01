@@ -4,9 +4,10 @@ Status: active (promoted 2026-07-28; **slices 0–2 shipped 2026-07-30**,
 **slice 3A — authority and persistence hardening — landed 2026-07-31**,
 **slice 3A.1 — boundary corrections — landed 2026-07-31**, and the
 **affectionate-contact technical MVP — flag off — shipped 2026-07-31** with
-its item-1.1 persistence repairs and ending producers. **Next: the internal
-trial** (§"Continuation order" 2), which gates the romantic track and the
-parked list — nothing else builds until it succeeds).
+its item-1.1 persistence repairs and ending producers. **The internal trial
+ran 2026-07-31 and PASSED (owner verdict 2026-08-01)** — continuation items
+3–6 are un-gated in their existing sequence; the parked list stays parked.
+**Next: item 3, actor control through the live lane.**)
 
 Slices 0–2: the truth-source audit is published, the lane-neutral contact
 lifecycle is built as pure contracts, and the foot domain proof is in
@@ -560,34 +561,43 @@ on immobilized limbs.
    transcripts; the owner's verdict on that report decides whether anything
    below un-gates. Until the trial succeeds, items 3–6 are queued-but-gated
    and the parked list at the end of this section stays parked.
-   **Run 2026-07-31 — [trial report](romantic-contact-affordances.trial.md),
-   awaiting verdict.** Headline: clear coherence wins wherever the machinery
-   had authority (held touches persist and release cleanly; scene changes end
-   contacts durably; material reaches prose — ledger-verified in production),
-   no naturalness regressions anywhere, and three bounded gaps: the
-   unresolved-attempt prose teleport (S3), the coverage settle race (which
-   invalidated S2/S5 as contact-lifecycle proofs), and NPC-prose endings the
-   projection could not see. All three are fixed by **item 1.2 above**; the
-   affected cases (S2, S5, S3, plus an NPC-withdrawal case) were rerun on
-   fresh disposable chats and the report amended with a full evidence
-   appendix. Flags returned to off pending the verdict.
+   **Run 2026-07-31 — [trial report](romantic-contact-affordances.trial.md).
+   Verdict: PASS (owner, 2026-08-01).** Headline: clear coherence wins
+   wherever the machinery had authority (held touches persist and release
+   cleanly; scene changes end contacts durably; material reaches prose —
+   ledger-verified in production), no naturalness regressions anywhere, and
+   three bounded gaps: the unresolved-attempt prose teleport (S3), the
+   coverage settle race (which invalidated S2/S5 as contact-lifecycle
+   proofs), and NPC-prose endings the projection could not see. All three are
+   fixed by **item 1.2 above**; the affected cases (S2, S5, S3, plus an
+   NPC-withdrawal case) were rerun on fresh disposable chats and the report
+   amended with a full evidence appendix. The owner's PASS accepted the
+   product-value gate and the three repairs, un-gated items 3–6 in their
+   existing sequence, kept the parked list parked, and conditioned
+   enablement on finishing the wardrobe restatement guard for partial
+   paraphrases (both folds) plus one targeted live check — see the report's
+   §Verdict and §Post-verdict verification.
 
-3. **Actor control through the live lane** (gated on the trial) —
+3. **Actor control through the live lane** (un-gated by the 2026-08-01
+   verdict) —
    enforcement, not just the contract. Its FIRST bounded deliverable — the
    minimal NPC-authored contact-ending producer — landed early as part of
    item 1.2 above; the general case (NPC movement, starts, a broader
    scene-language read) stays gated here and is explicitly out of 1.2's scope.
 4. **The explicit `romantic_touch` permission owner — spec before
-   implementation** (gated on the trial). Its design decisions need owner
+   implementation** (un-gated by the 2026-08-01 verdict). Its design decisions need owner
    rulings first; they are listed in Open questions below.
-5. **Eligibility + blocker-link UI wiring** (gated on the trial) — the
+5. **Eligibility + blocker-link UI wiring** (un-gated by the 2026-08-01
+   verdict) — the
    adapter into the pipeline and the blocked-action links into the chat
    surface.
-6. **The genuinely romantic proof** (gated on the trial, then on 4 and 5) —
+6. **The genuinely romantic proof** (un-gated by the 2026-08-01 verdict;
+   still sequenced after 4 and 5) —
    the [adult declaration](finished/adult-eligibility.plan.md) must resolve
    every participant.
 
-**Parked until the trial succeeds (owner ruling, 2026-07-31)** — deliberate
+**Parked (owner ruling 2026-07-31; reaffirmed by the 2026-08-01 PASS verdict
+— the broader parked list remains parked)** — deliberate
 reprioritization, not abandonment; each keeps its recorded design and
 prerequisites and none may be built while parked:
 

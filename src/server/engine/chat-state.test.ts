@@ -835,7 +835,7 @@ describe("emotional weather wiring (emotional-weather.plan.md)", () => {
 });
 
 describe("outfitDescriptionRestatesWorn — a paraphrase is not a wardrobe action", () => {
-  it("recognizes a restatement: every worn name's tokens appear in the description", () => {
+  it("recognizes a complete restatement: every worn name's tokens appear in the description", () => {
     expect(
       outfitDescriptionRestatesWorn("a soft cotton work shirt with the sleeves shoved up", ["soft cotton shirt"]),
     ).toBe(true);
@@ -844,16 +844,49 @@ describe("outfitDescriptionRestatesWorn — a paraphrase is not a wardrobe actio
     ).toBe(true);
   });
 
-  it("refuses a genuinely different look", () => {
+  it("recognizes a PARTIAL restatement — a subset of the worn look is still the worn look", () => {
+    expect(outfitDescriptionRestatesWorn("a white cotton tee", ["denim jacket", "white cotton tee"])).toBe(true);
+  });
+
+  it("recognizes a styling paraphrase naming no garment at all (the trial's residual case)", () => {
+    // Rerun B — S3 attempt 1: "sleeves shoved past her elbows" wiped the
+    // modelled shirt under the every-name-restated rule (trial evidence
+    // §Residuals 1). It names no garment — nothing about it is a change.
+    expect(outfitDescriptionRestatesWorn("sleeves shoved past her elbows", ["soft cotton shirt"])).toBe(true);
+    expect(outfitDescriptionRestatesWorn("her hair loose over her collar", ["soft cotton shirt"])).toBe(true);
+  });
+
+  it("refuses a genuinely different look — a foreign garment noun is evidence of change", () => {
     expect(outfitDescriptionRestatesWorn("a red evening dress", ["soft cotton shirt"])).toBe(false);
+    // The original trial's B-S2 fold: an apron the worn list doesn't have.
+    expect(outfitDescriptionRestatesWorn("a flour-dusted apron over her clothes", ["white cotton tee"])).toBe(false);
+    // A worn garment named ALONGSIDE a foreign one is still a different look.
+    expect(
+      outfitDescriptionRestatesWorn("her cotton shirt under a borrowed leather jacket", ["soft cotton shirt"]),
+    ).toBe(false);
   });
 
-  it("refuses a PARTIAL restatement — one uncovered worn garment fails the whole test", () => {
-    expect(outfitDescriptionRestatesWorn("a white cotton tee", ["denim jacket", "white cotton tee"])).toBe(false);
+  it("refuses an undress claim even with no garment noun", () => {
+    expect(outfitDescriptionRestatesWorn("she is completely naked now", ["soft cotton shirt"])).toBe(false);
+    expect(outfitDescriptionRestatesWorn("undressed, towel over one shoulder", ["soft cotton shirt"])).toBe(false);
   });
 
-  it("refuses empty inputs — nothing restates nothing", () => {
+  it("does not false-positive on ambiguous garment-ish words (precision-biased registry)", () => {
+    // "top" (top button) and "ties" (ties at the waist) are deliberately not
+    // in the noun registry — each would wrongly read styling as a new garment.
+    expect(outfitDescriptionRestatesWorn("her shirt with the top button undone", ["soft cotton shirt"])).toBe(true);
+    expect(outfitDescriptionRestatesWorn("the apron ties loose at the waist", ["café apron"])).toBe(true);
+  });
+
+  it("folds simple plurals when matching nouns against the worn names", () => {
+    expect(outfitDescriptionRestatesWorn("worn jeans and a faded tee", ["blue jeans", "white cotton tee"])).toBe(
+      true,
+    );
+    expect(outfitDescriptionRestatesWorn("worn jeans and a faded tee", ["white cotton tee"])).toBe(false);
+  });
+
+  it("refuses empty inputs — with nothing worn, any description is a claim, not a restatement", () => {
     expect(outfitDescriptionRestatesWorn("", ["soft cotton shirt"])).toBe(false);
-    expect(outfitDescriptionRestatesWorn("a soft cotton shirt", [])).toBe(true);
+    expect(outfitDescriptionRestatesWorn("a soft cotton shirt", [])).toBe(false);
   });
 });

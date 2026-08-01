@@ -97,6 +97,8 @@ import {
   SKIP_HISTORY_CAP,
   WHEREABOUTS_MAX_CHARS,
   applyWornGarmentChanges,
+  garmentNounOf,
+  isUndressWord,
   outfitItems,
   outfitPresetByName,
   resolveOutfitPreset,
@@ -567,21 +569,44 @@ export function matchOutfitPresetInText(
 }
 
 /**
- * Does this free-text outfit description merely RESTATE the given worn-item
- * names? True only when EVERY name's word tokens all appear in the description
- * — "soft cotton shirt" is restated by "a soft cotton work shirt with the
- * sleeves shoved up", and is not restated by "a red evening dress".
+ * Does this free-text outfit description merely RESTATE the worn look —
+ * completely OR partially — rather than describe a genuinely different one?
  *
- * Pure and deliberately strict: one worn garment the description does not cover
- * fails the whole test, so a description that actually changes the look still
- * reaches the replacement path.
+ * The original guard (370d583) held only for a COMPLETE restatement (every
+ * worn name's tokens present), which the trial rerun proved insufficient: the
+ * archivist extracted "sleeves shoved past her elbows" — a styling paraphrase
+ * that names no garment at all — and the fold wiped the modelled shirt
+ * (trial evidence §Residuals 1). A paraphrase of the standing look, partial
+ * or complete, is not a wardrobe action.
+ *
+ * So the test is now for positive EVIDENCE OF A DIFFERENT LOOK, and the
+ * description replaces only when it carries some:
+ *
+ * - an **undress claim** ("naked", "undressed" — `isUndressWord`), or
+ * - a **foreign garment noun**: a word from the garment-noun registry
+ *   (`contracts/items/garment-nouns.ts`) that no worn item's name accounts
+ *   for — "a red evening **dress**" over a worn cotton shirt, "a flour-dusted
+ *   **apron** over her clothes" over a worn tee.
+ *
+ * Absent both, the description restates: it names only worn garments ("a
+ * white cotton tee" while a tee + jacket are worn), or styles them without
+ * naming any ("sleeves shoved past her elbows"). The noun registry is
+ * precision-biased on purpose — a noun it misses fails toward KEEPING the
+ * structured wardrobe, the safe direction.
+ *
+ * Explicit deltas, exposure claims, and preset matches never reach this test
+ * (the callers gate on them first), so real changes always still apply.
+ * Nothing worn ⇒ false: with no standing look, any description is a claim.
  */
 export function outfitDescriptionRestatesWorn(description: string, wornNames: readonly string[]): boolean {
-  const tokens = new Set(description.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? []);
-  if (tokens.size === 0) return false;
-  return wornNames.every((name) => {
-    const nameTokens = name.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? [];
-    return nameTokens.length > 0 && nameTokens.every((token) => tokens.has(token));
+  const tokens = description.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? [];
+  if (tokens.length === 0 || wornNames.length === 0) return false;
+  if (tokens.some((token) => isUndressWord(token))) return false;
+  const wornTokens = new Set(wornNames.flatMap((name) => name.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? []));
+  const wornNouns = new Set([...wornTokens].flatMap((token) => garmentNounOf(token) ?? []));
+  return tokens.every((token) => {
+    const noun = garmentNounOf(token);
+    return noun === undefined || wornNouns.has(noun) || wornTokens.has(token);
   });
 }
 
@@ -1672,15 +1697,17 @@ async function foldOutfitProposal(args: {
     }
     // Before the free-text replacement may wipe a STRUCTURED wardrobe, check
     // whether the description merely RESTATES what is already worn — the
-    // narrator paraphrasing the standing look ("a soft cotton work shirt with
-    // the sleeves shoved up" over a worn "soft cotton shirt"). The store is the
-    // worn truth once this actor is modelled (clothing-state-graph slice 2) and
-    // a paraphrase is not a wardrobe action; demoting the structured list to
-    // prose here was how a dressed body silently became unmodellable — and
-    // therefore untouchable by the contact leg — one settle into a fresh
-    // conversation. STRICT on purpose: the guard holds only for a pure
-    // restatement (no garment deltas, no exposure claim, every worn item's name
-    // restated), so a description that actually changes the look still replaces.
+    // narrator paraphrasing the standing look, completely ("a soft cotton work
+    // shirt with the sleeves shoved up" over a worn "soft cotton shirt") or
+    // partially ("sleeves shoved past her elbows", naming no garment at all).
+    // The store is the worn truth once this actor is modelled
+    // (clothing-state-graph slice 2) and a paraphrase is not a wardrobe
+    // action; demoting the structured list to prose here was how a dressed
+    // body silently became unmodellable — and therefore untouchable by the
+    // contact leg — one settle into a fresh conversation. The guard holds only
+    // absent every change signal: no garment deltas, no exposure claim, and no
+    // evidence of a different look in the description itself (see
+    // `outfitDescriptionRestatesWorn`) — so a real change always replaces.
     if (
       !proposal.exposed &&
       proposal.removed.length === 0 &&
@@ -1752,9 +1779,11 @@ async function foldPlayerOutfitProposal(args: {
     // The character twin's restatement guard, against what the player has on RIGHT
     // NOW (the default preset until seeded — so a narrator paraphrase of the look
     // the persona arrived in doesn't demote a never-touched wardrobe to prose,
-    // stripping the modelled body's coverage). Same strictness: only a pure
-    // restatement with no garment deltas keeps the structured list. No exposure
-    // condition because the player proposal has no `exposed` — it is always computed.
+    // stripping the modelled body's coverage). Same boundary: a complete or
+    // partial restatement with no garment deltas keeps the structured list; a
+    // description carrying evidence of a different look still replaces. No
+    // exposure condition because the player proposal has no `exposed` — it is
+    // always computed.
     if (
       proposal.removed.length === 0 &&
       proposal.added.length === 0 &&

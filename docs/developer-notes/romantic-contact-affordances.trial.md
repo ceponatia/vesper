@@ -1,9 +1,32 @@
 # Affectionate-contact technical MVP — internal trial report
 
-Status: **amended 2026-07-31 (rev 2) — original run + the item-1.2 reruns;
-awaiting the owner's verdict.** The verdict decides what un-gates (plan
-§"Continuation order" 2). Flags were returned to **off** after each window;
-migration 0093 and the backfill-free schema stay deployed either way.
+Status: **verdict PASS (owner, 2026-08-01) — rev 3.**
+
+## The verdict (owner, 2026-08-01)
+
+**PASS for the affectionate-contact tier.** The product-value gate and the
+three bounded contact-lane repairs (item 1.2) are accepted. Continuation
+items 3–6 un-gate in their existing sequence; the broader parked list
+remains parked. The live NPC-withdrawal case may remain "not exercised" —
+its deterministic persistence suite is sufficient for this gate, and its
+first organic production occurrence should be monitored.
+
+**One condition on enablement:** both flags stay off until the
+outfit-restatement work is FINISHED and passes targeted verification. The
+strict guard (`370d583`) fixed complete restatements only; the rerun proved
+partial paraphrases still demote a modelled wardrobe (evidence §Residuals).
+The finished guard must protect both the character-side and player-side
+modelled wardrobes from narration-only complete or partial restatements,
+preserve every real change (garment deltas, exposure claims, preset changes,
+genuine whole-look replacements), carry multi-garment and false-positive
+regression tests, and pass one targeted live check: a partial outfit
+description settles and an immediate valid touch still commits with the
+correct cloth layer. No full S2/S5/S3 rerun.
+
+**The condition is met — see §"Post-verdict verification (2026-08-01)"
+at the end of this report.** Flags were returned to **off** after each trial
+window; migration 0093 and the backfill-free schema stayed deployed
+throughout.
 
 **The full auditable record — every chat id, message id, timestamp, verbatim
 transcript, ledger row, scene projection, diagnostic code, and every labeled
@@ -54,7 +77,7 @@ Two windows:
 | Case | Flag-off baseline | Flag-on result |
 | --- | --- | --- |
 | S2 (rapid pacing, ≤0.3s between exchanges) | she pre-ends the touch herself | **PASS, attempt 2** (attempt 1 failed and is preserved — see below): touch **committed with the cloth layer** from the current cut (no persisted capture, no settle wait); "the cotton of her work shirt warm between you" reached the prose; touch **held**; step-back → `contact_ended / separated`; proximity `near` with `chat.contact.departure` provenance; projection empty; no resurrection. C5/Ct5/N5/NI5 |
-| S5 (touch → `hours` skip, rapid) | she pre-ends the touch | **PASS**: touch committed (with layer) BEFORE the skip; skip wrote `contact_ended / separated` @+180min; projection empty; post-skip prose references the touch as past, never carries it; zero `material_unavailable`. C5/Ct5/N5/NI5 |
+| S5 (touch → `hours` skip, rapid) | she pre-ends the touch | **PASS**: touch committed (with layer) BEFORE the skip; the skip request stamps the pending skip, and the first subsequent exchange writes `contact_ended / separated` at the advanced story minute (+180) before its prompt; projection empty; post-skip prose references the touch as past, never carries it; zero `material_unavailable`. C5/Ct5/N5/NI5 |
 | S3 (touch, no approach) | **teleport reproduced** — touch lands instantly | **PASS**: zero rows, zero proximity, the designed diagnostics — and now the PROSE holds too: "the contact sliding past empty air instead of her shoulder" (attempt 1), "the counter keeps the distance fixed; **nothing lands**" (attempt 2). The captured built guidance carries exactly the typed reach premise: *"Unestablished reach: the current scene does not establish that the player's hand can reach Sabrina Vale's shoulder. Do not depict that touch as landing, and do not invent movement by either participant to make it land."* C5/Ct5/N5/NI5 |
 | NPC withdrawal (live) | — | **Not exercised** (reported honestly, three labeled attempts): the flag-on narrator consistently chose to HOLD the committed touch — "your hand still rests", "not quite stepping out from under your hand" — including under a narrator-mode customer arrival, whose "shifts under your hand just enough to step toward the counter" is genuinely ambiguous and correctly below the conservative allow-list. The producer's durable behavior (end row identity, retake prune, idempotent replay, fail-closed conflict, no-resurrection) is proven by the mandatory 10-case integration suite instead. |
 
@@ -82,8 +105,10 @@ the appendix.
    constraint, and both rerun S3 attempts kept the touch from landing without
    inventing movement or a refusal.
 4. **Endings are durable.** Player release (`withdrawn`), departure
-   (`separated` + the proximity it licenses), story-clock skip (`separated`),
-   scene change (`scene_changed`) — all ledger-verified in production.
+   (`separated` + the proximity it licenses), story-clock skip (`separated`,
+   written by the first post-skip exchange at the advanced minute — the skip
+   endpoint itself only stamps the pending skip), scene change
+   (`scene_changed`) — all ledger-verified in production.
 5. **Nothing got stilted.** No mechanical wording, no forced body detail, in
    any flag-on run across both windows.
 
@@ -97,7 +122,13 @@ the appendix.
 - **Partial paraphrases still demote a modelled wardrobe** (the restatement
   guard is strict on purpose), and the player-side outfit fold has the same
   unguarded fallback (follow-up filed). This is wardrobe-track work, not
-  contact-lane work.
+  contact-lane work. **Resolved 2026-08-01** (the verdict's enablement
+  condition): the finished guard protects both folds from complete AND
+  partial narration-only restatements — the boundary is now evidence of a
+  DIFFERENT look (an undress claim or a garment noun foreign to the worn
+  names, per the `contracts/items/garment-nouns.ts` registry) rather than
+  every-name-restated; multi-garment and false-positive regressions pinned
+  in `chat-state.test.ts` + `chat-wardrobe.int.test.ts`.
 - **S6's prose teleport class** (invented scenes on object/furniture lines)
   remains: the state ends contacts durably through scene changes, but nothing
   fences the narrator's own scene invention. Out of this pass's scope.
