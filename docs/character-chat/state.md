@@ -149,7 +149,12 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
   `removed`/`added` fold through the pure `applyWornGarmentChanges` (contracts) against the
   loaded worn items + the character's preset pool — a removed garment drops its id, an
   unmatched added garment rides the overlay (both degrade with a diagnostic, never fail the
-  turn). Rollback-safe: `worn_item_ids`/`outfit_preset_id` ride `storedChatStateSchema`.
+  turn). The ensemble members' **personal pass** carries the same gate through the pure
+  `settleEnsembleMember` ([multi-character.md](multi-character.md) §Multi-character): its
+  whole-look description replaces a modelled worn list only past validated evidence or an
+  exposure claim, and otherwise keeps it with `chat_wardrobe.ensemble_outfit_restatement` —
+  a bare message, since naming the description's unworn garments needs an item load and that
+  fold is pure. Rollback-safe: `worn_item_ids`/`outfit_preset_id` ride `storedChatStateSchema`.
 - **Editing.** The Character sheet's per-slot equip/remove editor + preset switcher
   (`components/characters/chat-wardrobe-editor.tsx` — [ui.md](../ui.md) §The conversation
   page).

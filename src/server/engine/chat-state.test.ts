@@ -4,6 +4,7 @@ import { initialMeters } from "@/contracts/meters/registry";
 import { stageMidpoint } from "@/contracts/relationships/stages";
 import { familiarityBandMidpoint, regardBandForValue, regardBandMidpoint } from "@/contracts/relationships/bands";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
+import type { ChatPersonalNotes } from "@/contracts/turns/chat-archivist";
 import type { ChatPulse } from "@/contracts/turns/chat-pulse";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { characterProfileSchema } from "@/contracts/world/profile";
@@ -518,11 +519,24 @@ describe("applyChatAction (test-bed chips)", () => {
 describe("settleEnsembleMember (followups rulings 10-11)", () => {
   const now = new Date("2026-07-12T12:00:00Z");
   const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(makeProfile()), ...overrides });
+  /** A member whose wardrobe IS modelled — the only state the restatement gate guards. */
+  const dressed = (overrides: Partial<ChatState> = {}): ChatState => ({
+    ...seedChatState(makeProfile({ outfits: [{ id: "everyday", name: "Everyday", items: ["itemid1abc", "itemid2def"] }] })),
+    ...overrides,
+  });
+  const notes = (outfit: Partial<ChatPersonalNotes["outfit"]>): ChatPersonalNotes => ({
+    openLoops: [],
+    attributeChanges: [],
+    outfit: { description: "", changeEvidence: "", exposed: false, removed: [], added: [], ...outfit },
+    driveUpdates: [],
+  });
   const settle = (args: Partial<Parameters<typeof settleEnsembleMember>[0]> & { state: ChatState }) =>
     settleEnsembleMember({
       preRegard: args.state.regard,
       pulsed: false,
       personal: null,
+      // Fails the evidence check by default — every replacement below opts in explicitly.
+      exchangeText: "",
       characterName: "Vera",
       assistantMessageId: "msg-1",
       now,
@@ -561,22 +575,110 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     const next = settle({
       state: base({ openLoops: ["old promise"], outfit: "a sundress", outfitExposed: false }),
       personal: {
-        openLoops: ["show the player her studio"],
-        attributeChanges: [],
-        outfit: {
+        ...notes({
           description: "a paint-streaked tank top",
           changeEvidence: "she pulls on a paint-streaked tank top",
-          exposed: false,
-          removed: [],
-          added: [],
-        },
-        driveUpdates: [],
+        }),
+        openLoops: ["show the player her studio"],
       },
+      exchangeText: 'you knock\n[Vera] she pulls on a paint-streaked tank top. "come in"',
     });
     expect(next.openLoops).toEqual(["show the player her studio"]);
     // A whole-look description clears the structured worn list and lands as free text (v1).
+    // The restatement gate is NOT exercised here — `base()` models no worn garments, so the
+    // evidence above never has to carry the replacement; the modelled cases are below.
     expect(next.outfit).toBe("a paint-streaked tank top");
     expect(next.wornItemIds).toEqual([]);
+  });
+
+  it("a description with no change evidence keeps a MODELLED wardrobe and reports the restatement", () => {
+    const sink = new DiagnosticCollector();
+    const state = dressed();
+    const next = settle({
+      state,
+      personal: notes({ description: "a white cotton t-shirt and jeans" }),
+      exchangeText: 'you sit down\n[Vera] "long day," she says, sleeves shoved past her elbows',
+      sink,
+    });
+    expect(next.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
+    expect(next.outfitPresetId).toBe("everyday");
+    expect(next.outfit).toBe("");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(true);
+  });
+
+  it("invented evidence — a quote absent from the exchange — fails closed the same way", () => {
+    const sink = new DiagnosticCollector();
+    const next = settle({
+      state: dressed(),
+      personal: notes({
+        description: "a black silk shirt",
+        changeEvidence: "she changes into a black silk shirt",
+      }),
+      exchangeText: 'you sit down\n[Vera] "long day," she says',
+      sink,
+    });
+    expect(next.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
+    expect(next.outfit).toBe("");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(true);
+  });
+
+  it("validated evidence replaces the modelled wardrobe with the free-text look", () => {
+    const sink = new DiagnosticCollector();
+    const next = settle({
+      state: dressed(),
+      personal: notes({
+        description: "a black silk shirt",
+        changeEvidence: "she changes into a black silk shirt",
+      }),
+      exchangeText: 'you wait\n[Vera] she changes into a black silk shirt, still talking',
+      sink,
+    });
+    expect(next.wornItemIds).toEqual([]);
+    expect(next.outfitPresetId).toBe("");
+    expect(next.outfit).toBe("a black silk shirt");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(false);
+  });
+
+  it("a garment delta skips the gate — the description applies, the delta itself does not", () => {
+    const sink = new DiagnosticCollector();
+    const next = settle({
+      state: dressed(),
+      personal: notes({ description: "a cardigan over the t-shirt", removed: ["her cardigan"] }),
+      exchangeText: "you glance over\n[Vera] she shrugs",
+      sink,
+    });
+    // Deliberate parity with `foldOutfitProposal`, whose description branch also returns
+    // before the delta path: a delta only means the proposal is not a restatement, so the
+    // whole look replaces (the worn list clears) — folding the delta itself stays the
+    // primary's IO-backed job.
+    expect(next.wornItemIds).toEqual([]);
+    expect(next.outfit).toBe("a cardigan over the t-shirt");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(false);
+  });
+
+  it("an exposure claim replaces without evidence — bared is a real change", () => {
+    const next = settle({
+      state: dressed(),
+      personal: notes({ description: "the shirt hanging open", exposed: true }),
+      exchangeText: "you watch\n[Vera] she leans back",
+    });
+    expect(next.wornItemIds).toEqual([]);
+    expect(next.outfit).toBe("the shirt hanging open");
+    expect(next.outfitExposed).toBe(true);
+  });
+
+  it("an UNMODELLED member takes the description without evidence — nothing structured to protect", () => {
+    const sink = new DiagnosticCollector();
+    const state = base();
+    expect(state.wornItemIds).toEqual([]); // the guard's precondition is absent
+    const next = settle({
+      state,
+      personal: notes({ description: "a white cotton t-shirt and jeans" }),
+      exchangeText: 'you sit down\n[Vera] "long day," she says',
+      sink,
+    });
+    expect(next.outfit).toBe("a white cotton t-shirt and jeans");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(false);
   });
 
   it("a null personal pass (absent/degraded) keeps the member's prior personal fields", () => {
@@ -603,9 +705,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     const next = settle({
       state: withDrive,
       personal: {
-        openLoops: [],
-        attributeChanges: [],
-        outfit: { description: "", changeEvidence: "", exposed: false, removed: [], added: [] },
+        ...notes({}),
         driveUpdates: [{ want: "leave this town", progress: "", revealed: true, resolved: false }],
       },
     });
