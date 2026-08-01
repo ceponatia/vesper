@@ -124,10 +124,25 @@ describe.runIf(ready)("finalizeChatState — archivist-proposed garment changes 
     expect(state?.outfit).toBe("a red evening dress");
   });
 
-  it("a PARTIAL restatement of a multi-garment look still replaces — the guard is strict", async () => {
-    const { state } = await runFinalize([jacket(), tee()], { description: "a white cotton tee" });
+  it("a PARTIAL restatement of a multi-garment look keeps the structured wardrobe too", async () => {
+    // Owner ruling on the trial verdict (2026-08-01): a subset of the worn
+    // look is still the worn look — only evidence of a DIFFERENT look replaces.
+    const { state, sink } = await runFinalize([jacket(), tee()], { description: "a white cotton tee" });
+    expect(state?.wornItemIds).toEqual([jacket(), tee()]);
+    expect(state?.outfit).toBe("");
+    expect(sink.items.some((item) => item.code === "chat_wardrobe.outfit_restatement")).toBe(true);
+  });
+
+  it("a styling paraphrase naming no garment keeps the wardrobe (the trial's residual case)", async () => {
+    const { state } = await runFinalize([tee()], { description: "sleeves shoved past her elbows" });
+    expect(state?.wornItemIds).toEqual([tee()]);
+    expect(state?.outfit).toBe("");
+  });
+
+  it("a foreign garment noun still replaces — an apron the worn list doesn't have", async () => {
+    const { state } = await runFinalize([tee()], { description: "a flour-dusted apron over her clothes" });
     expect(state?.wornItemIds).toEqual([]);
-    expect(state?.outfit).toBe("a white cotton tee");
+    expect(state?.outfit).toBe("a flour-dusted apron over her clothes");
   });
 
   it("a restatement carrying an exposure claim still replaces — exposure is a real change", async () => {
@@ -199,9 +214,16 @@ describe.runIf(ready)("finalizeChatState — the PLAYER's outfit fold (persona-l
     expect(scenario?.playerState.seeded).toBe(true);
   });
 
-  it("a PARTIAL restatement of a multi-garment look still replaces — the guard is strict", async () => {
-    const { scenario } = await runPlayerFinalize([shirt(), wool()], {}, { description: "a cotton shirt" });
-    expect(scenario?.playerState.wornItemIds).toEqual([]);
-    expect(scenario?.playerState.overlay).toBe("a cotton shirt");
+  it("a PARTIAL restatement of a multi-garment look keeps the structured wardrobe too", async () => {
+    const { scenario, sink } = await runPlayerFinalize([shirt(), wool()], {}, { description: "a cotton shirt" });
+    expect(scenario?.playerState.wornItemIds).toEqual([shirt(), wool()]);
+    expect(scenario?.playerState.overlay).toBe("");
+    expect(sink.items.some((item) => item.code === "chat_wardrobe.player_outfit_restatement")).toBe(true);
+  });
+
+  it("a styling paraphrase naming no garment keeps the player's wardrobe too", async () => {
+    const { scenario } = await runPlayerFinalize([shirt()], {}, { description: "collar open, sleeves rolled" });
+    expect(scenario?.playerState.wornItemIds).toEqual([shirt()]);
+    expect(scenario?.playerState.overlay).toBe("");
   });
 });

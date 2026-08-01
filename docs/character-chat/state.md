@@ -135,9 +135,12 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
   drives two grammars, folded by `foldOutfitProposal` in `finalizeChatState`: a whole-outfit
   `description` naming an authored preset ("her work clothes" → the Work preset) seeds the worn
   list from it, an unmatched description is a free-text replacement — **unless it merely
-  restates the standing worn look** (no deltas, no exposure claim, every worn item's name-tokens
-  present — `outfitDescriptionRestatesWorn`), in which case the structured list is kept
-  (`chat_wardrobe.outfit_restatement`; a narrator paraphrase is not a wardrobe action) — and garment-level
+  restates the standing worn look, completely or partially** (no deltas, no exposure claim,
+  and no evidence of a different look: no undress claim and no garment noun foreign to the
+  worn names, per the `contracts/items/garment-nouns.ts` registry —
+  `outfitDescriptionRestatesWorn`), in which case the structured list is kept
+  (`chat_wardrobe.outfit_restatement`; a narrator paraphrase — even one naming no garment,
+  like "sleeves shoved past her elbows" — is not a wardrobe action) — and garment-level
   `removed`/`added` fold through the pure `applyWornGarmentChanges` (contracts) against the
   loaded worn items + the character's preset pool — a removed garment drops its id, an
   unmatched added garment rides the overlay (both degrade with a diagnostic, never fail the
