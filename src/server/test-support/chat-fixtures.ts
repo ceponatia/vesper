@@ -1,6 +1,8 @@
 import type { AffordanceCueState } from "@/contracts/affordances/core/ranking";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import type { GarmentCueState } from "@/contracts/items/garment-instance";
+import type { ChatPlayerState } from "@/contracts/players/chat-player-state";
+import type { PersonaProfile } from "@/contracts/players/persona-profile";
 import { characterProfileSchema, type CharacterProfile } from "@/contracts/world/profile";
 import { newId } from "@/lib/ids";
 import { characterChatMessages, characterChats, characters, chatParticipants, db, items } from "@/server/db";
@@ -277,6 +279,10 @@ export interface SettleChatExchangeArgs {
   preExchangeState?: ChatState | null;
   /** Convenience over `driftedState`: the pre-exchange worn list. */
   wornItemIds?: readonly string[];
+  /** The player's persona sheet — arms the player-side outfit fold (persona-library slice 8). */
+  playerPersona?: PersonaProfile;
+  /** Convenience over `scenario`: the pre-exchange player state (worn list / seeded flag). */
+  playerState?: ChatPlayerState;
   /** Slice-6 cue memory the prompt surfaced; omitted ⇒ the store's memory is untouched. */
   garmentCueState?: GarmentCueState;
   /** Affordance cue memory the prompt surfaced; omitted ⇒ the scenario's memory is untouched. */
@@ -304,7 +310,9 @@ export async function settleChatExchange(
   args: SettleChatExchangeArgs,
 ): Promise<SettledChatExchange> {
   const sink = args.sink ?? new DiagnosticCollector();
-  const scenario = args.scenario ?? seedChatScenario(fixture.profile);
+  const seededScenario = args.scenario ?? seedChatScenario(fixture.profile);
+  const scenario =
+    args.playerState === undefined ? seededScenario : { ...seededScenario, playerState: args.playerState };
   const seeded: ChatState = seedChatState(fixture.profile);
   const worn = args.wornItemIds;
   const driftedState =
@@ -328,6 +336,7 @@ export async function settleChatExchange(
     preExchangeScenario: args.preExchangeScenario === undefined ? scenario : args.preExchangeScenario,
     ...(args.garmentCueState === undefined ? {} : { garmentCueState: args.garmentCueState }),
     ...(args.affordanceCueState === undefined ? {} : { affordanceCueState: args.affordanceCueState }),
+    ...(args.playerPersona === undefined ? {} : { playerPersona: args.playerPersona }),
     sink,
   });
 

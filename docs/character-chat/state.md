@@ -134,7 +134,10 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
 - **Archivist changes.** The archivist's `outfit` field (`contracts/turns/chat-archivist.ts`)
   drives two grammars, folded by `foldOutfitProposal` in `finalizeChatState`: a whole-outfit
   `description` naming an authored preset ("her work clothes" → the Work preset) seeds the worn
-  list from it, an unmatched description is a free-text replacement, and garment-level
+  list from it, an unmatched description is a free-text replacement — **unless it merely
+  restates the standing worn look** (no deltas, no exposure claim, every worn item's name-tokens
+  present — `outfitDescriptionRestatesWorn`), in which case the structured list is kept
+  (`chat_wardrobe.outfit_restatement`; a narrator paraphrase is not a wardrobe action) — and garment-level
   `removed`/`added` fold through the pure `applyWornGarmentChanges` (contracts) against the
   loaded worn items + the character's preset pool — a removed garment drops its id, an
   unmatched added garment rides the overlay (both degrade with a diagnostic, never fail the
@@ -214,7 +217,9 @@ snapshot for free, so "another take" can't leave the player undressed by a disca
   where several ensemble members would each propose changes to the one player's clothes.
   The archivist reads the whole exchange, so the player writing "I pull my shirt off" and
   the character doing it are the same event to it. `foldPlayerOutfitProposal` reuses
-  `applyWornGarmentChanges` verbatim against the **persona's** preset pool.
+  `applyWornGarmentChanges` verbatim against the **persona's** preset pool, and carries the
+  same restatement guard as the character fold — tested against `playerWornIds` (so the
+  default preset is protected before seeding too; `chat_wardrobe.player_outfit_restatement`).
 - **Switching persona resets the wardrobe** (`seeded: false`) — the worn list described the
   person who was wearing it.
 
