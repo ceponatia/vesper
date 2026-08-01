@@ -4,6 +4,7 @@ import { initialMeters } from "@/contracts/meters/registry";
 import { stageMidpoint } from "@/contracts/relationships/stages";
 import { familiarityBandMidpoint, regardBandForValue, regardBandMidpoint } from "@/contracts/relationships/bands";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
+import type { ChatPersonalNotes } from "@/contracts/turns/chat-archivist";
 import type { ChatPulse } from "@/contracts/turns/chat-pulse";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { characterProfileSchema } from "@/contracts/world/profile";
@@ -21,7 +22,7 @@ import {
   chatStateSnapshot,
   driftChatState,
   matchOutfitPresetInText,
-  outfitDescriptionRestatesWorn,
+  outfitChangeEvidenceValidated,
   resolveSeededOutfit,
   rhythmOutfitPatch,
   rollbackScenario,
@@ -518,11 +519,32 @@ describe("applyChatAction (test-bed chips)", () => {
 describe("settleEnsembleMember (followups rulings 10-11)", () => {
   const now = new Date("2026-07-12T12:00:00Z");
   const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(makeProfile()), ...overrides });
+  /** A member whose wardrobe IS modelled — the only state the restatement gate guards. */
+  const dressed = (overrides: Partial<ChatState> = {}): ChatState => ({
+    ...seedChatState(makeProfile({ outfits: [{ id: "everyday", name: "Everyday", items: ["itemid1abc", "itemid2def"] }] })),
+    ...overrides,
+  });
+  const notes = (outfit: Partial<ChatPersonalNotes["outfit"]>): ChatPersonalNotes => ({
+    openLoops: [],
+    attributeChanges: [],
+    outfit: { description: "", changeEvidence: "", exposed: false, removed: [], added: [], ...outfit },
+    driveUpdates: [],
+  });
+  /** Authored presets a whole-look description can name — the preset re-seed's precondition. */
+  const presets = makeProfile({
+    outfits: [
+      { id: "everyday", name: "Everyday", items: ["itemid1abc", "itemid2def"] },
+      { id: "work", name: "Work", items: ["itemid9xyz"] },
+    ],
+  });
   const settle = (args: Partial<Parameters<typeof settleEnsembleMember>[0]> & { state: ChatState }) =>
     settleEnsembleMember({
       preRegard: args.state.regard,
       pulsed: false,
       personal: null,
+      // Fails the evidence check by default — every replacement below opts in explicitly.
+      exchangeText: "",
+      profile: presets,
       characterName: "Vera",
       assistantMessageId: "msg-1",
       now,
@@ -561,16 +583,202 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     const next = settle({
       state: base({ openLoops: ["old promise"], outfit: "a sundress", outfitExposed: false }),
       personal: {
+        ...notes({
+          description: "a paint-streaked tank top",
+          changeEvidence: "she pulls on a paint-streaked tank top",
+        }),
         openLoops: ["show the player her studio"],
-        attributeChanges: [],
-        outfit: { description: "a paint-streaked tank top", exposed: false, removed: [], added: [] },
-        driveUpdates: [],
       },
+      exchangeText: 'you knock\n[Vera] she pulls on a paint-streaked tank top. "come in"',
     });
     expect(next.openLoops).toEqual(["show the player her studio"]);
     // A whole-look description clears the structured worn list and lands as free text (v1).
+    // The restatement gate is NOT exercised here — `base()` models no worn garments, so the
+    // evidence above never has to carry the replacement; the modelled cases are below.
     expect(next.outfit).toBe("a paint-streaked tank top");
     expect(next.wornItemIds).toEqual([]);
+  });
+
+  it("a description with no change evidence keeps a MODELLED wardrobe and reports the restatement", () => {
+    const sink = new DiagnosticCollector();
+    const state = dressed();
+    const next = settle({
+      state,
+      personal: notes({ description: "a white cotton t-shirt and jeans" }),
+      exchangeText: 'you sit down\n[Vera] "long day," she says, sleeves shoved past her elbows',
+      sink,
+    });
+    expect(next.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
+    expect(next.outfitPresetId).toBe("everyday");
+    expect(next.outfit).toBe("");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(true);
+  });
+
+  it("invented evidence — a quote absent from the exchange — fails closed the same way", () => {
+    const sink = new DiagnosticCollector();
+    const next = settle({
+      state: dressed(),
+      personal: notes({
+        description: "a black silk shirt",
+        changeEvidence: "she changes into a black silk shirt",
+      }),
+      exchangeText: 'you sit down\n[Vera] "long day," she says',
+      sink,
+    });
+    expect(next.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
+    expect(next.outfit).toBe("");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(true);
+  });
+
+  /**
+   * Grounded quotes that name a wardrobe verb and still assert nothing: a
+   * negated habit, an order in dialogue, and an idiom whose object is no
+   * garment. Presence in the exchange is not the question — what the words SAY
+   * is (contracts/items/outfit-change-evidence.ts).
+   */
+  const NON_EVENT_EVIDENCE = [
+    "she never changes out of the apron",
+    '"Change into the silk one," you tell her.',
+    "The festival kicks off.",
+  ];
+
+  it.each(NON_EVENT_EVIDENCE)("evidence quoting a non-event keeps the modelled wardrobe: %s", (evidence) => {
+    const sink = new DiagnosticCollector();
+    const next = settle({
+      state: dressed(),
+      personal: notes({ description: "a flour-dusted apron over a white tee", changeEvidence: evidence }),
+      exchangeText: `you glance over\n[Vera] ${evidence}`,
+      sink,
+    });
+    expect(next.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
+    expect(next.outfitPresetId).toBe("everyday");
+    expect(next.outfit).toBe("");
+    expect(next.outfitExposed).toBe(false);
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(true);
+  });
+
+  it("…and the same proposal replaces once its quote states the change", () => {
+    const sink = new DiagnosticCollector();
+    const evidence = "she ties a flour-dusted apron over her clothes";
+    const next = settle({
+      state: dressed(),
+      personal: notes({ description: "a flour-dusted apron over a white tee", changeEvidence: evidence }),
+      exchangeText: `you glance over\n[Vera] ${evidence}`,
+      sink,
+    });
+    expect(next.wornItemIds).toEqual([]);
+    expect(next.outfitPresetId).toBe("");
+    expect(next.outfit).toBe("a flour-dusted apron over a white tee");
+    expect(next.outfitExposed).toBe(false);
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(false);
+  });
+
+  it("validated evidence replaces the modelled wardrobe with the free-text look", () => {
+    const sink = new DiagnosticCollector();
+    const next = settle({
+      state: dressed(),
+      personal: notes({
+        description: "a black silk shirt",
+        changeEvidence: "she changes into a black silk shirt",
+      }),
+      exchangeText: 'you wait\n[Vera] she changes into a black silk shirt, still talking',
+      sink,
+    });
+    expect(next.wornItemIds).toEqual([]);
+    expect(next.outfitPresetId).toBe("");
+    expect(next.outfit).toBe("a black silk shirt");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(false);
+  });
+
+  it("a garment delta skips the gate — the description applies, the delta itself does not", () => {
+    const sink = new DiagnosticCollector();
+    const next = settle({
+      state: dressed(),
+      personal: notes({ description: "a cardigan over the t-shirt", removed: ["her cardigan"] }),
+      exchangeText: "you glance over\n[Vera] she shrugs",
+      sink,
+    });
+    // Deliberate parity with `foldOutfitProposal`, whose description branch also returns
+    // before the delta path: a delta only means the proposal is not a restatement, so the
+    // whole look replaces (the worn list clears) — folding the delta itself stays the
+    // primary's IO-backed job.
+    expect(next.wornItemIds).toEqual([]);
+    expect(next.outfit).toBe("a cardigan over the t-shirt");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(false);
+  });
+
+  it("an exposure claim replaces without evidence — bared is a real change", () => {
+    const next = settle({
+      state: dressed(),
+      personal: notes({ description: "the shirt hanging open", exposed: true }),
+      exchangeText: "you watch\n[Vera] she leans back",
+    });
+    expect(next.wornItemIds).toEqual([]);
+    expect(next.outfit).toBe("the shirt hanging open");
+    expect(next.outfitExposed).toBe(true);
+  });
+
+  it("a description naming an authored preset re-seeds the structured worn list (primary parity)", () => {
+    const next = settle({
+      state: base({ outfit: "a sundress" }),
+      personal: notes({ description: "changes into her work clothes" }),
+    });
+    expect(next.wornItemIds).toEqual(["itemid9xyz"]);
+    expect(next.outfitPresetId).toBe("work");
+    expect(next.outfit).toBe(""); // the prior free-text look is replaced by the structured one
+    expect(next.outfitExposed).toBe(false);
+  });
+
+  it("the preset rung precedes the evidence gate — an authored look is authoritative", () => {
+    const sink = new DiagnosticCollector();
+    const next = settle({
+      // Modelled worn list + NO change evidence: the combination the gate guards.
+      state: dressed(),
+      personal: notes({ description: "changes into her work clothes" }),
+      exchangeText: 'you sit down\n[Vera] "long day ahead," she says',
+      sink,
+    });
+    expect(next.wornItemIds).toEqual(["itemid9xyz"]);
+    expect(next.outfitPresetId).toBe("work");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(false);
+  });
+
+  it("prose merely containing a preset word never hijacks — it takes the ordinary gate path", () => {
+    const sink = new DiagnosticCollector();
+    const kept = settle({
+      state: dressed(),
+      personal: notes({ description: "heavy work boots and a red sundress" }),
+      exchangeText: "you look her over\n[Vera] she shifts her weight",
+      sink,
+    });
+    expect(kept.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(true);
+    // …and past the gate it lands as free text, still not the "work" preset.
+    const replaced = settle({
+      state: dressed(),
+      personal: notes({
+        description: "heavy work boots and a red sundress",
+        changeEvidence: "she pulls on heavy work boots",
+      }),
+      exchangeText: "you look her over\n[Vera] she pulls on heavy work boots",
+    });
+    expect(replaced.wornItemIds).toEqual([]);
+    expect(replaced.outfitPresetId).toBe("");
+    expect(replaced.outfit).toBe("heavy work boots and a red sundress");
+  });
+
+  it("an UNMODELLED member takes the description without evidence — nothing structured to protect", () => {
+    const sink = new DiagnosticCollector();
+    const state = base();
+    expect(state.wornItemIds).toEqual([]); // the guard's precondition is absent
+    const next = settle({
+      state,
+      personal: notes({ description: "a white cotton t-shirt and jeans" }),
+      exchangeText: 'you sit down\n[Vera] "long day," she says',
+      sink,
+    });
+    expect(next.outfit).toBe("a white cotton t-shirt and jeans");
+    expect(sink.items.some((d) => d.code === "chat_wardrobe.ensemble_outfit_restatement")).toBe(false);
   });
 
   it("a null personal pass (absent/degraded) keeps the member's prior personal fields", () => {
@@ -597,9 +805,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     const next = settle({
       state: withDrive,
       personal: {
-        openLoops: [],
-        attributeChanges: [],
-        outfit: { description: "", exposed: false, removed: [], added: [] },
+        ...notes({}),
         driveUpdates: [{ want: "leave this town", progress: "", revealed: true, resolved: false }],
       },
     });
@@ -834,26 +1040,93 @@ describe("emotional weather wiring (emotional-weather.plan.md)", () => {
   });
 });
 
-describe("outfitDescriptionRestatesWorn — a paraphrase is not a wardrobe action", () => {
-  it("recognizes a restatement: every worn name's tokens appear in the description", () => {
+describe("outfitChangeEvidenceValidated — only the exchange's own words license a wardrobe wipe", () => {
+  const exchange = [
+    "I lean in the doorway while she gets ready.",
+    'Mara shrugs off the work shirt and pulls on a black silk blouse. "Better?" she says.',
+  ].join("\n");
+
+  it("validates a clause copied verbatim out of the exchange", () => {
+    expect(outfitChangeEvidenceValidated("shrugs off the work shirt and pulls on a black silk blouse", exchange)).toBe(
+      true,
+    );
+    // Case is not part of the quote — a model that re-capitalizes still quoted it.
+    expect(outfitChangeEvidenceValidated("Mara shrugs off the work shirt", exchange)).toBe(true);
+  });
+
+  it("validates across whitespace runs and curly quotes — the differences a re-typed quote picks up", () => {
+    const curly = "She tugs at her collar.\nMara pulls on a black silk blouse — “it’s the good one”, she says.";
+    expect(outfitChangeEvidenceValidated("Mara  pulls   on\na black silk blouse", curly)).toBe(true);
+    // The needle types the quotes straight where the text has them curly.
+    expect(outfitChangeEvidenceValidated('pulls on a black silk blouse — "it\'s the good one"', curly)).toBe(true);
+  });
+
+  it("rejects empty evidence — a description with no quote is a re-description, not a change", () => {
+    expect(outfitChangeEvidenceValidated("", exchange)).toBe(false);
+    expect(outfitChangeEvidenceValidated("   ", exchange)).toBe(false);
+  });
+
+  it("rejects evidence that is not in the exchange — an invented quote fails closed", () => {
+    expect(outfitChangeEvidenceValidated("she changes into a red evening dress", exchange)).toBe(false);
+    expect(outfitChangeEvidenceValidated("sleeves shoved past her elbows", exchange)).toBe(false);
+    // …and an empty exchange can license nothing.
+    expect(outfitChangeEvidenceValidated("pulls on a black silk blouse", "")).toBe(false);
+  });
+
+  /**
+   * The live-check failure that mandated the second condition (2026-08-01): on the
+   * deployed build the extractor proposed a styling paraphrase as the description AND
+   * quoted the very sentence it came from as its own evidence. Presence alone passed
+   * and the fold wiped the modelled wardrobe — so a quote must also SAY the clothes moved.
+   */
+  it("rejects a self-quoted styling paraphrase — present in the text, but asserting no change", () => {
+    const styling =
+      "I walk over to her. Her sleeves are shoved past her elbows, one cuff dusted with flour.\nShe glances up.";
     expect(
-      outfitDescriptionRestatesWorn("a soft cotton work shirt with the sleeves shoved up", ["soft cotton shirt"]),
-    ).toBe(true);
-    expect(
-      outfitDescriptionRestatesWorn("her denim jacket over a white cotton tee", ["denim jacket", "white cotton tee"]),
-    ).toBe(true);
+      outfitChangeEvidenceValidated("Her sleeves are shoved past her elbows, one cuff dusted with flour.", styling),
+    ).toBe(false);
   });
 
-  it("refuses a genuinely different look", () => {
-    expect(outfitDescriptionRestatesWorn("a red evening dress", ["soft cotton shirt"])).toBe(false);
+  it("accepts the clothing-change clauses the archivist can actually quote", () => {
+    const swap =
+      "Sabrina swaps her cotton work shirt for a black silk shirt before the first customer arrives, rolling the new sleeves to the elbow.";
+    expect(outfitChangeEvidenceValidated(swap, swap)).toBe(true);
+    const apron = "She ties a flour-dusted apron over her clothes.";
+    expect(outfitChangeEvidenceValidated(apron, apron)).toBe(true);
+    const wearing = "now wearing a tank top";
+    expect(outfitChangeEvidenceValidated(wearing, `She turns, ${wearing} and nothing else.`)).toBe(true);
   });
 
-  it("refuses a PARTIAL restatement — one uncovered worn garment fails the whole test", () => {
-    expect(outfitDescriptionRestatesWorn("a white cotton tee", ["denim jacket", "white cotton tee"])).toBe(false);
+  it("keeps the ambiguous verbs honest: a tie that fastens nothing, a change that isn't clothes", () => {
+    // "ties" needs an article or "on" after it — styling prose never qualifies.
+    const ties = "the apron ties loose at the waist";
+    expect(outfitChangeEvidenceValidated(ties, `She leans back and ${ties}.`)).toBe(false);
+    // "chang*" counts only beside clothing context (a garment, "into"/"out of", clothes…).
+    const dressed = "she changed into her sundress";
+    expect(outfitChangeEvidenceValidated(dressed, `Upstairs ${dressed}.`)).toBe(true);
+    const weather = "the weather changed";
+    expect(outfitChangeEvidenceValidated(weather, `Overnight ${weather}.`)).toBe(false);
   });
 
-  it("refuses empty inputs — nothing restates nothing", () => {
-    expect(outfitDescriptionRestatesWorn("", ["soft cotton shirt"])).toBe(false);
-    expect(outfitDescriptionRestatesWorn("a soft cotton shirt", [])).toBe(true);
+  it("still requires presence — a real change clause the exchange never contained is no evidence", () => {
+    expect(outfitChangeEvidenceValidated("she slips into a red evening dress", exchange)).toBe(false);
+  });
+
+  /**
+   * Both halves compose: grounding proves the words are the exchange's, the
+   * classifier (`contracts/items/outfit-change-evidence.ts`) proves the words say
+   * the clothes moved. A quote that is genuinely in the text still fails when it
+   * reports a non-event — which is the whole reason the second half exists.
+   */
+  it("composes grounding with classification — a grounded NON-event is still no evidence", () => {
+    const refused = "She doesn't take off her jacket.";
+    expect(outfitChangeEvidenceValidated(refused, `He waits by the door. ${refused}`)).toBe(false);
+    const ordered = '"Take off your jacket," she says.';
+    expect(outfitChangeEvidenceValidated(ordered, `She folds her arms. ${ordered}`)).toBe(false);
+    const planned = "She plans to take off her jacket.";
+    expect(outfitChangeEvidenceValidated(planned, `He watches. ${planned}`)).toBe(false);
+    // …and the same sentence, actually happening, validates.
+    const done = "She takes off her jacket.";
+    expect(outfitChangeEvidenceValidated(done, `He waits by the door. ${done}`)).toBe(true);
   });
 });

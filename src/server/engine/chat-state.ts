@@ -97,6 +97,8 @@ import {
   SKIP_HISTORY_CAP,
   WHEREABOUTS_MAX_CHARS,
   applyWornGarmentChanges,
+  classifyOutfitChangeQuote,
+  garmentIdentitiesIn,
   outfitItems,
   outfitPresetByName,
   resolveOutfitPreset,
@@ -567,22 +569,59 @@ export function matchOutfitPresetInText(
 }
 
 /**
- * Does this free-text outfit description merely RESTATE the given worn-item
- * names? True only when EVERY name's word tokens all appear in the description
- * — "soft cotton shirt" is restated by "a soft cotton work shirt with the
- * sleeves shoved up", and is not restated by "a red evening dress".
- *
- * Pure and deliberately strict: one worn garment the description does not cover
- * fails the whole test, so a description that actually changes the look still
- * reaches the replacement path.
+ * Light normalization for the change-evidence check: case, whitespace runs and
+ * curly quotes/apostrophes are all things a model re-types differently while
+ * still quoting the exchange verbatim. Everything else — wording, punctuation,
+ * order — must match, which is the whole point of a VERBATIM quote.
  */
-export function outfitDescriptionRestatesWorn(description: string, wornNames: readonly string[]): boolean {
-  const tokens = new Set(description.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? []);
-  if (tokens.size === 0) return false;
-  return wornNames.every((name) => {
-    const nameTokens = name.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? [];
-    return nameTokens.length > 0 && nameTokens.every((token) => tokens.has(token));
-  });
+function normalizeEvidenceText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[‘’‛′]/g, "'")
+    .replace(/[“”‟″]/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Did the archivist's whole-look outfit proposal come with REAL evidence that
+ * the outfit changed during this exchange (owner ruling, 2026-08-01)?
+ *
+ * TWO conditions, and the second was bought the hard way. The quote must
+ *
+ * 1. **be in the exchange** — non-empty and present under `normalizeEvidenceText`; and
+ * 2. **assert a change** — say that the clothes moved, per
+ *    `classifyOutfitChangeQuote` (`contracts/items/outfit-change-evidence.ts`),
+ *    which owns the whole reading: the wardrobe-verb table, the non-event vetoes
+ *    (negation, modality, questions, commands, incompletes, hypotheticals…) and
+ *    the garment-object window that tells "takes off her jacket" from "takes off
+ *    for work". Its rejection reason is diagnostic detail this gate does not
+ *    surface — the fold's message text is the same whichever way a quote failed.
+ *
+ * Presence alone was the first cut of this gate, and the live check on the
+ * deployed build (2026-08-01) proved it trivially satisfiable: a fresh chat's
+ * player line read "I walk over to her. Her sleeves are shoved past her elbows,
+ * one cuff dusted with flour." — a pure styling paraphrase — and the extractor
+ * proposed that very sentence as BOTH the description and its own
+ * `changeEvidence`. The quote was genuinely in the text, so the gate passed and
+ * the fold wiped the modelled wardrobe. Extracted descriptions are almost always
+ * lifted from the prose, so a self-quote always "validates"; only asking what the
+ * quoted clause SAYS separates "she slips out of the work clothes" from "her
+ * sleeves are shoved past her elbows".
+ *
+ * This is the one gate that lets a free-text `description` replace a modelled
+ * wardrobe (alongside the character fold's exposure claim and an authored-preset
+ * match), and it replaces the old garment-noun predicate outright. A noun list
+ * could never decide it: "a black silk shirt" over a worn "soft cotton shirt"
+ * shares its head noun and IS a change; "her white cotton t-shirt" over a worn
+ * "white cotton tee" is a different word for the SAME garment; "a paint-streaked
+ * tank top" names a compound no unigram registry holds.
+ */
+export function outfitChangeEvidenceValidated(evidence: string, exchangeText: string): boolean {
+  const quote = normalizeEvidenceText(evidence);
+  if (!quote) return false;
+  if (!normalizeEvidenceText(exchangeText).includes(quote)) return false;
+  return classifyOutfitChangeQuote(quote).asserted;
 }
 
 export function seedChatState(profile: CharacterProfile): ChatState {
@@ -1608,6 +1647,8 @@ function arousalBumpForConcept(concept: string): number {
 /** The archivist's outfit proposal shape (chat-wardrobe-parity) — structural, so the fold never imports the schema type. */
 interface OutfitProposal {
   description: string;
+  /** The verbatim clause from this exchange stating the outfit changed ("" ⇒ no claim). */
+  changeEvidence: string;
   exposed: boolean;
   removed: readonly string[];
   added: readonly string[];
@@ -1616,31 +1657,39 @@ interface OutfitProposal {
 /** The player's outfit proposal (persona-library slice 8) — the same, minus `exposed` (always computed). */
 interface PlayerOutfitProposal {
   description: string;
+  changeEvidence: string;
   removed: readonly string[];
   added: readonly string[];
 }
 
 /**
- * The IO half of the restatement guard both outfit folds share: load the given
- * worn ids and test the description against the resolved item names. False for
- * an empty worn list (nothing structured to protect) and when nothing loads
- * (an unresolvable list must not make every description read as a restatement).
+ * The TELEMETRY half of the kept-restatement path both outfit folds share: which
+ * garment identities the kept description names that no worn item's name
+ * accounts for (`contracts/items/garment-nouns.ts`). A kept description naming
+ * an apron over a worn tee is the shape of a change the evidence gate may have
+ * missed, so it rides the diagnostic message rather than being invisible.
+ *
+ * IO only when it can change the answer: no named garments ⇒ no load, and
+ * nothing structured worn ⇒ nothing to account for them, so every named
+ * identity is reported without touching the wardrobe.
  */
-async function outfitDescriptionRestatesWornIds(
+async function foreignGarmentIdentities(
   description: string,
   ownerId: string,
   wornIds: readonly string[],
   sink?: DiagnosticSink,
-): Promise<boolean> {
-  if (wornIds.length === 0) return false;
+): Promise<string[]> {
+  const named = [...garmentIdentitiesIn(description)];
+  if (named.length === 0 || wornIds.length === 0) return named;
   const worn = await loadChatWardrobe(ownerId, wornIds, sink);
-  return (
-    worn.length > 0 &&
-    outfitDescriptionRestatesWorn(
-      description,
-      worn.map((item) => item.name),
-    )
-  );
+  const wornIdentities = new Set(worn.flatMap((item) => [...garmentIdentitiesIn(item.name)]));
+  return named.filter((identity) => !wornIdentities.has(identity));
+}
+
+/** The kept-restatement diagnostic's message: the base ruling plus any unworn garment it named. */
+function restatementMessage(base: string, foreign: readonly string[]): string {
+  if (foreign.length === 0) return base;
+  return `${base}; description names unworn garment(s): ${foreign.join(", ")} — no validated change evidence`;
 }
 
 /**
@@ -1648,17 +1697,22 @@ async function outfitDescriptionRestatesWornIds(
  * Three cases, all rollback-safe (the patched columns ride `storedChatStateSchema`):
  *
  * 1. `description` naming an authored preset → seed the worn list from it (rung 1, structured).
- * 2. `description` matching no preset → free-text full replacement (clear the worn list, ad-hoc look).
+ * 2. `description` matching no preset → free-text full replacement (clear the worn list, ad-hoc
+ *    look) — but only past the change-evidence gate, or on an exposure claim; otherwise the
+ *    modelled wardrobe is KEPT and the restatement is recorded as a diagnostic.
  * 3. `removed`/`added` garment deltas → `applyWornGarmentChanges` against the loaded worn items +
  *    the character's wardrobe pool (rung 2). Unmatched additions ride the free-text overlay.
  *
- * `{}` (no change) for an empty proposal. IO only in case 3, and only when a delta is present.
+ * `{}` (no change) for an empty proposal. IO in case 3 when a delta is present, and in case 2
+ * only to name the unworn garments a KEPT description mentioned (the telemetry detail).
  */
 async function foldOutfitProposal(args: {
   profile: CharacterProfile;
   ownerId: string;
   state: ChatState;
   proposal: OutfitProposal | undefined;
+  /** This exchange's player line + reply — what the proposal's `changeEvidence` is checked against. */
+  exchangeText: string;
   sink?: DiagnosticSink;
 }): Promise<Partial<ChatState>> {
   const { proposal } = args;
@@ -1670,28 +1724,45 @@ async function foldOutfitProposal(args: {
       // array belongs to the library profile (found via the player twin's test).
       return { wornItemIds: [...preset.items], outfitPresetId: preset.id, outfit: "", outfitExposed: false };
     }
-    // Before the free-text replacement may wipe a STRUCTURED wardrobe, check
-    // whether the description merely RESTATES what is already worn — the
-    // narrator paraphrasing the standing look ("a soft cotton work shirt with
-    // the sleeves shoved up" over a worn "soft cotton shirt"). The store is the
-    // worn truth once this actor is modelled (clothing-state-graph slice 2) and
-    // a paraphrase is not a wardrobe action; demoting the structured list to
-    // prose here was how a dressed body silently became unmodellable — and
-    // therefore untouchable by the contact leg — one settle into a fresh
-    // conversation. STRICT on purpose: the guard holds only for a pure
-    // restatement (no garment deltas, no exposure claim, every worn item's name
-    // restated), so a description that actually changes the look still replaces.
+    // Before the free-text replacement may wipe a STRUCTURED wardrobe, the
+    // proposal must SHOW that the outfit changed: a verbatim clause from this
+    // exchange saying so (owner ruling, 2026-08-01 — `outfitChangeEvidenceValidated`).
+    // The store is the worn truth once this actor is modelled
+    // (clothing-state-graph slice 2) and a paraphrase of the standing look is not
+    // a wardrobe action; demoting the structured list to prose on one was how a
+    // dressed body silently became unmodellable — and therefore untouchable by
+    // the contact leg — one settle into a fresh conversation.
+    //
+    // The gate replaces the old garment-noun predicate, which could not tell a
+    // same-noun change ("a black silk shirt" over a worn cotton shirt) from a
+    // paraphrase, nor an alias ("t-shirt" for a worn "tee") from a new garment.
+    // Everything else keeps its authoritative path: garment deltas and an
+    // exposure claim skip the gate entirely, and an authored preset matched
+    // above never reaches it — so a real change always still applies. It only
+    // guards a wardrobe that IS structured: with nothing modelled (a legacy
+    // free-text chat) there is nothing to protect, and the description keeps
+    // updating the overlay exactly as before.
     if (
+      args.state.wornItemIds.length > 0 &&
       !proposal.exposed &&
       proposal.removed.length === 0 &&
       proposal.added.length === 0 &&
-      (await outfitDescriptionRestatesWornIds(proposal.description, args.ownerId, args.state.wornItemIds, args.sink))
+      !outfitChangeEvidenceValidated(proposal.changeEvidence, args.exchangeText)
     ) {
+      const foreign = await foreignGarmentIdentities(
+        proposal.description,
+        args.ownerId,
+        args.state.wornItemIds,
+        args.sink,
+      );
       args.sink?.push(
         diag(
           "info",
           "chat_wardrobe.outfit_restatement",
-          "outfit description restates the structured worn list; keeping the modelled wardrobe",
+          restatementMessage(
+            "outfit description restates the structured worn list; keeping the modelled wardrobe",
+            foreign,
+          ),
         ),
       );
       return {};
@@ -1740,6 +1811,8 @@ async function foldPlayerOutfitProposal(args: {
   ownerId: string;
   playerState: ChatPlayerState;
   proposal: PlayerOutfitProposal | undefined;
+  /** This exchange's player line + reply — what the proposal's `changeEvidence` is checked against. */
+  exchangeText: string;
   sink?: DiagnosticSink;
 }): Promise<Partial<ChatPlayerState>> {
   const { proposal, persona } = args;
@@ -1749,27 +1822,36 @@ async function foldPlayerOutfitProposal(args: {
     if (preset && preset.items.length > 0) {
       return { wornItemIds: [...preset.items], outfitPresetId: preset.id, overlay: "", seeded: true };
     }
-    // The character twin's restatement guard, against what the player has on RIGHT
-    // NOW (the default preset until seeded — so a narrator paraphrase of the look
-    // the persona arrived in doesn't demote a never-touched wardrobe to prose,
-    // stripping the modelled body's coverage). Same strictness: only a pure
-    // restatement with no garment deltas keeps the structured list. No exposure
-    // condition because the player proposal has no `exposed` — it is always computed.
+    // The character twin's change-evidence gate, against what the player has on
+    // RIGHT NOW (the default preset until seeded — so a narrator paraphrase of the
+    // look the persona arrived in doesn't demote a never-touched wardrobe to prose,
+    // stripping the modelled body's coverage). Same boundary: with no garment
+    // deltas, a whole-look description replaces only when this exchange's text
+    // actually states the change — and only a wardrobe that IS structured is
+    // guarded (a persona with no worn garments has nothing to protect). No
+    // exposure condition because the player proposal has no `exposed` — it is
+    // always computed.
+    const guardedWornIds = playerWornIds(args.playerState, persona);
     if (
+      guardedWornIds.length > 0 &&
       proposal.removed.length === 0 &&
       proposal.added.length === 0 &&
-      (await outfitDescriptionRestatesWornIds(
+      !outfitChangeEvidenceValidated(proposal.changeEvidence, args.exchangeText)
+    ) {
+      const foreign = await foreignGarmentIdentities(
         proposal.description,
         args.ownerId,
-        playerWornIds(args.playerState, persona),
+        guardedWornIds,
         args.sink,
-      ))
-    ) {
+      );
       args.sink?.push(
         diag(
           "info",
           "chat_wardrobe.player_outfit_restatement",
-          "player outfit description restates the structured worn list; keeping the modelled wardrobe",
+          restatementMessage(
+            "player outfit description restates the structured worn list; keeping the modelled wardrobe",
+            foreign,
+          ),
         ),
       );
       return {};
@@ -2154,11 +2236,16 @@ export async function finalizeChatState(input: {
   const outfitChanged = Boolean(
     outfitProposal && (outfitProposal.description || outfitProposal.removed.length || outfitProposal.added.length),
   );
+  // The text a whole-look description's `changeEvidence` must be quoting: BOTH
+  // halves of the exchange, because either can state the change ("I pull my shirt
+  // off" / "she tugs your shirt over your head" are the same event to the archivist).
+  const exchangeText = `${input.exchange.player}\n${input.exchange.assistant}`;
   const outfitPatch = await foldOutfitProposal({
     profile: input.profile,
     ownerId: input.ownerId,
     state: input.driftedState,
     proposal: outfitProposal,
+    exchangeText,
     sink: input.sink,
   });
 
@@ -2171,6 +2258,7 @@ export async function finalizeChatState(input: {
     ownerId: input.ownerId,
     playerState: input.scenario.playerState,
     proposal: lane === "legacy" ? archivist.value?.playerOutfit : undefined,
+    exchangeText,
     sink: input.sink,
   });
 
@@ -2553,6 +2641,10 @@ export function settleEnsembleMember(args: {
   pulsed: boolean;
   /** The personal pass result; null keeps the member's prior personal fields. */
   personal: ChatPersonalNotes | null;
+  /** This exchange's player line + reply — what the proposal's `changeEvidence` is checked against. */
+  exchangeText: string;
+  /** The member's authored presets — what a whole-look `description` can name to re-seed the worn list. */
+  profile: Pick<CharacterProfile, "outfits">;
   characterName: string;
   assistantMessageId: string;
   now: Date;
@@ -2605,12 +2697,45 @@ export function settleEnsembleMember(args: {
   }
 
   if (args.personal) {
-    // Ensemble members take the free-text wardrobe path (chat-wardrobe-parity v1): this pure
-    // fold has no item-loading seam, so a whole-look `description` clears the structured worn
-    // list and lands as free text; garment-level removed/added are the primary's (IO-backed) path.
-    const outfitPatch = args.personal.outfit.description
-      ? { wornItemIds: [], outfitPresetId: "", outfit: args.personal.outfit.description, outfitExposed: args.personal.outfit.exposed }
-      : {};
+    // The description branch runs `foldOutfitProposal`'s rungs in order: an authored preset
+    // named in the text re-seeds the structured worn list (rung 1), and only an ad-hoc look
+    // falls back to free text. What stays ensemble-specific is the reach of that fallback —
+    // this fold is PURE, with no item-loading seam, so garment-level removed/added remain the
+    // primary's (IO-backed) path and the restatement diagnostic names no unworn garment.
+    //
+    // Gated exactly like `foldOutfitProposal`/`foldPlayerOutfitProposal` (owner ruling,
+    // 2026-08-01): over a MODELLED worn list, a description carrying no exposure claim, no
+    // garment delta and no verbatim clause from this exchange saying the clothes moved is a
+    // restatement of the standing look — demoting the structured list to prose on one is how a
+    // dressed member silently becomes unmodellable. A matched preset never reaches the gate
+    // (an authored look is authoritative); deltas only SKIP it here, they remain the primary's
+    // path.
+    const proposal = args.personal.outfit;
+    const matched = proposal.description ? matchOutfitPresetInText(args.profile, proposal.description) : undefined;
+    const preset = matched && matched.items.length > 0 ? matched : undefined;
+    const restatesWornList =
+      !preset &&
+      next.wornItemIds.length > 0 &&
+      !proposal.exposed &&
+      proposal.removed.length === 0 &&
+      proposal.added.length === 0 &&
+      !outfitChangeEvidenceValidated(proposal.changeEvidence, args.exchangeText);
+    if (proposal.description && restatesWornList) {
+      args.sink?.push(
+        diag(
+          "info",
+          "chat_wardrobe.ensemble_outfit_restatement",
+          "ensemble outfit description restates the structured worn list; keeping the modelled wardrobe",
+        ),
+      );
+    }
+    // The preset's items are COPIED, not aliased: this becomes the member's mutable worn
+    // list, and the array belongs to the library profile.
+    const outfitPatch: Partial<ChatState> = preset
+      ? { wornItemIds: [...preset.items], outfitPresetId: preset.id, outfit: "", outfitExposed: false }
+      : proposal.description && !restatesWornList
+        ? { wornItemIds: [], outfitPresetId: "", outfit: proposal.description, outfitExposed: proposal.exposed }
+        : {};
     const driveResult = applyDriveUpdates(next.drives, args.personal.driveUpdates);
     for (const revealedDrive of driveResult.revealed) {
       exchangeMilestones.push({

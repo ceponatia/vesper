@@ -169,8 +169,16 @@ export const chatArchivistSchema = z.object({
    * - `description` — a WHOLE-outfit swap: the complete current look (never a delta). When
    *   it names an authored outfit preset ("her work clothes" → the "Work" preset) the fold
    *   seeds the structured worn list from that preset (rung 1); otherwise it lands as the
-   *   free-text overlay/replacement. `exposed` = intimate areas bared (free-text path only —
-   *   the structured path computes exposure from coverage).
+   *   free-text overlay/replacement — but ONLY when `changeEvidence` checks out (below).
+   *   `exposed` = intimate areas bared (free-text path only — the structured path computes
+   *   exposure from coverage).
+   * - `changeEvidence` — the verbatim sentence or clause from THIS exchange stating the
+   *   outfit actually CHANGED, and the gate on the free-text replacement (owner ruling,
+   *   2026-08-01): the fold validates it against the exchange text and keeps the modelled
+   *   wardrobe when it is empty or absent from that text. A narrator paraphrase of the
+   *   standing look ("sleeves shoved past her elbows", "her white cotton t-shirt") has no
+   *   such clause to copy, which is exactly what distinguishes it from a real change that
+   *   happens to reuse the worn garment's head noun ("a black silk shirt").
    * - `removed` / `added` — garment-LEVEL deltas (rung 2): individual pieces the fiction took
    *   off or put on this exchange ("she slips off her jacket" → `removed: ["her jacket"]`).
    *   Resolved against the worn items / wardrobe pool by `applyWornGarmentChanges`; an
@@ -189,6 +197,13 @@ export const chatArchivistSchema = z.object({
         .catch("")
         .default("")
         .transform((s) => s.trim()),
+      /**
+       * The verbatim sentence or clause from THIS exchange's text that states the outfit
+       * actually changed; "" when the description merely describes the standing look.
+       * Validated against the exchange text at the fold — an unvalidated description
+       * never replaces a modelled wardrobe.
+       */
+      changeEvidence: z.string().catch("").default(""),
       exposed: z.boolean().catch(false).default(false),
       removed: z
         .array(z.string().trim().min(1))
@@ -201,8 +216,8 @@ export const chatArchivistSchema = z.object({
         .default([])
         .transform((g) => g.slice(0, CHAT_ARCHIVIST_MAX_WORN_CHANGES)),
     })
-    .catch({ description: "", exposed: false, removed: [], added: [] })
-    .default({ description: "", exposed: false, removed: [], added: [] }),
+    .catch({ description: "", changeEvidence: "", exposed: false, removed: [], added: [] })
+    .default({ description: "", changeEvidence: "", exposed: false, removed: [], added: [] }),
   /**
    * The same, for the **PLAYER's** clothing (persona-library.plan.md slice 8).
    *
@@ -226,6 +241,8 @@ export const chatArchivistSchema = z.object({
         .catch("")
         .default("")
         .transform((s) => s.trim()),
+      /** The character twin's gate: the verbatim clause from THIS exchange stating the change. */
+      changeEvidence: z.string().catch("").default(""),
       removed: z
         .array(z.string().trim().min(1))
         .catch([])
@@ -237,8 +254,8 @@ export const chatArchivistSchema = z.object({
         .default([])
         .transform((g) => g.slice(0, CHAT_ARCHIVIST_MAX_WORN_CHANGES)),
     })
-    .catch({ description: "", removed: [], added: [] })
-    .default({ description: "", removed: [], added: [] }),
+    .catch({ description: "", changeEvidence: "", removed: [], added: [] })
+    .default({ description: "", changeEvidence: "", removed: [], added: [] }),
   /**
    * Drive updates (character-drives.plan.md): progress/reveal/resolution on the
    * character's EXISTING drives (matched by `want` text — unmatched entries drop).
@@ -333,8 +350,8 @@ export function degradedChatArchivist(): ChatArchivist {
     environment: {},
     surfaceWetness: [],
     garmentOperations: [],
-    outfit: { description: "", exposed: false, removed: [], added: [] },
-    playerOutfit: { description: "", removed: [], added: [] },
+    outfit: { description: "", changeEvidence: "", exposed: false, removed: [], added: [] },
+    playerOutfit: { description: "", changeEvidence: "", removed: [], added: [] },
     driveUpdates: [],
     presence: [],
     cast: [],

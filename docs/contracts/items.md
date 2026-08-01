@@ -59,6 +59,12 @@ chat's worn item ids run through `exposedRegions` for coverage-computed exposure
 `wardrobeOutfitText` for the rendered garment phrase ([../character-chat/state.md](../character-chat/state.md)
 §Wardrobe). The pure garment-phrase matcher + worn-list reducer the chat archivist's add/remove
 proposals fold through live in `items/chat-wardrobe.ts` (`matchGarment` / `applyWornGarmentChanges`).
+`matchGarment` is **identity-aware**: a phrase naming a garment in the noun registry
+(`items/garment-nouns.ts`) only matches candidates of the same canonical identity — both sides fold
+through `garmentIdentitiesIn`, so plurals, aliases and spaced compounds ("boot"/"boots",
+"t-shirt"/"tee", "tank top") resolve, and shared material or color can never take off the wrong
+garment type; raw name/description token overlap then ranks the same-type candidates, and remains
+the whole match for garments outside the registry.
 
 ### Effective coverage — the final read
 

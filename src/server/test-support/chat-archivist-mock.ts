@@ -120,7 +120,9 @@ export function chatArchivist(overrides: Partial<ChatArchivist> = {}): ChatArchi
  * legacy (pre-garment-graph) continuity grammar the name-matching bridge folds.
  */
 export function withOutfit(outfit: Partial<ChatArchivist["outfit"]>): ChatArchivist {
-  return chatArchivist({ outfit: { description: "", exposed: false, removed: [], added: [], ...outfit } });
+  return chatArchivist({
+    outfit: { description: "", changeEvidence: "", exposed: false, removed: [], added: [], ...outfit },
+  });
 }
 
 /**
@@ -129,7 +131,7 @@ export function withOutfit(outfit: Partial<ChatArchivist["outfit"]>): ChatArchiv
  * slice 8). No `exposed`: the player's exposure is always computed from coverage.
  */
 export function withPlayerOutfit(outfit: Partial<ChatArchivist["playerOutfit"]>): ChatArchivist {
-  return chatArchivist({ playerOutfit: { description: "", removed: [], added: [], ...outfit } });
+  return chatArchivist({ playerOutfit: { description: "", changeEvidence: "", removed: [], added: [], ...outfit } });
 }
 
 /** An archivist whose continuity leg returned exactly these typed garment operations. */

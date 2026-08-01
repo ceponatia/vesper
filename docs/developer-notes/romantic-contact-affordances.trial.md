@@ -1,9 +1,32 @@
 # Affectionate-contact technical MVP — internal trial report
 
-Status: **amended 2026-07-31 (rev 2) — original run + the item-1.2 reruns;
-awaiting the owner's verdict.** The verdict decides what un-gates (plan
-§"Continuation order" 2). Flags were returned to **off** after each window;
-migration 0093 and the backfill-free schema stay deployed either way.
+Status: **verdict PASS (owner, 2026-08-01) — rev 3.**
+
+## The verdict (owner, 2026-08-01)
+
+**PASS for the affectionate-contact tier.** The product-value gate and the
+three bounded contact-lane repairs (item 1.2) are accepted. Continuation
+items 3–6 un-gate in their existing sequence; the broader parked list
+remains parked. The live NPC-withdrawal case may remain "not exercised" —
+its deterministic persistence suite is sufficient for this gate, and its
+first organic production occurrence should be monitored.
+
+**One condition on enablement:** both flags stay off until the
+outfit-restatement work is FINISHED and passes targeted verification. The
+strict guard (`370d583`) fixed complete restatements only; the rerun proved
+partial paraphrases still demote a modelled wardrobe (evidence §Residuals).
+The finished guard must protect both the character-side and player-side
+modelled wardrobes from narration-only complete or partial restatements,
+preserve every real change (garment deltas, exposure claims, preset changes,
+genuine whole-look replacements), carry multi-garment and false-positive
+regression tests, and pass one targeted live check: a partial outfit
+description settles and an immediate valid touch still commits with the
+correct cloth layer. No full S2/S5/S3 rerun.
+
+**The condition is met — see §"Post-verdict verification (2026-08-01)"
+at the end of this report.** Flags were returned to **off** after each trial
+window; migration 0093 and the backfill-free schema stayed deployed
+throughout.
 
 **The full auditable record — every chat id, message id, timestamp, verbatim
 transcript, ledger row, scene projection, diagnostic code, and every labeled
@@ -54,7 +77,7 @@ Two windows:
 | Case | Flag-off baseline | Flag-on result |
 | --- | --- | --- |
 | S2 (rapid pacing, ≤0.3s between exchanges) | she pre-ends the touch herself | **PASS, attempt 2** (attempt 1 failed and is preserved — see below): touch **committed with the cloth layer** from the current cut (no persisted capture, no settle wait); "the cotton of her work shirt warm between you" reached the prose; touch **held**; step-back → `contact_ended / separated`; proximity `near` with `chat.contact.departure` provenance; projection empty; no resurrection. C5/Ct5/N5/NI5 |
-| S5 (touch → `hours` skip, rapid) | she pre-ends the touch | **PASS**: touch committed (with layer) BEFORE the skip; skip wrote `contact_ended / separated` @+180min; projection empty; post-skip prose references the touch as past, never carries it; zero `material_unavailable`. C5/Ct5/N5/NI5 |
+| S5 (touch → `hours` skip, rapid) | she pre-ends the touch | **PASS**: touch committed (with layer) BEFORE the skip; the skip request stamps the pending skip, and the first subsequent exchange writes `contact_ended / separated` at the advanced story minute (+180) before its prompt; projection empty; post-skip prose references the touch as past, never carries it; zero `material_unavailable`. C5/Ct5/N5/NI5 |
 | S3 (touch, no approach) | **teleport reproduced** — touch lands instantly | **PASS**: zero rows, zero proximity, the designed diagnostics — and now the PROSE holds too: "the contact sliding past empty air instead of her shoulder" (attempt 1), "the counter keeps the distance fixed; **nothing lands**" (attempt 2). The captured built guidance carries exactly the typed reach premise: *"Unestablished reach: the current scene does not establish that the player's hand can reach Sabrina Vale's shoulder. Do not depict that touch as landing, and do not invent movement by either participant to make it land."* C5/Ct5/N5/NI5 |
 | NPC withdrawal (live) | — | **Not exercised** (reported honestly, three labeled attempts): the flag-on narrator consistently chose to HOLD the committed touch — "your hand still rests", "not quite stepping out from under your hand" — including under a narrator-mode customer arrival, whose "shifts under your hand just enough to step toward the counter" is genuinely ambiguous and correctly below the conservative allow-list. The producer's durable behavior (end row identity, retake prune, idempotent replay, fail-closed conflict, no-resurrection) is proven by the mandatory 10-case integration suite instead. |
 
@@ -82,8 +105,10 @@ the appendix.
    constraint, and both rerun S3 attempts kept the touch from landing without
    inventing movement or a refusal.
 4. **Endings are durable.** Player release (`withdrawn`), departure
-   (`separated` + the proximity it licenses), story-clock skip (`separated`),
-   scene change (`scene_changed`) — all ledger-verified in production.
+   (`separated` + the proximity it licenses), story-clock skip (`separated`,
+   written by the first post-skip exchange at the advanced minute — the skip
+   endpoint itself only stamps the pending skip), scene change
+   (`scene_changed`) — all ledger-verified in production.
 5. **Nothing got stilted.** No mechanical wording, no forced body detail, in
    any flag-on run across both windows.
 
@@ -97,7 +122,17 @@ the appendix.
 - **Partial paraphrases still demote a modelled wardrobe** (the restatement
   guard is strict on purpose), and the player-side outfit fold has the same
   unguarded fallback (follow-up filed). This is wardrobe-track work, not
-  contact-lane work.
+  contact-lane work. **Resolved 2026-08-01** (the verdict's enablement
+  condition): the finished guard protects every fold from complete AND
+  partial narration-only restatements — the boundary is a verbatim
+  `changeEvidence` quote from the current exchange, which replaces a
+  modelled wardrobe only when it is present in the exchange text AND
+  classifies as an asserted, completed clothing change (the
+  `contracts/items/garment-nouns.ts` registry is telemetry plus garment
+  delta matching, never the keep-vs-replace decision), enforced identically
+  on the character, player, and ensemble folds; regressions pinned in
+  `chat-state.test.ts`, `outfit-change-evidence.test.ts`, and
+  `chat-wardrobe.int.test.ts`.
 - **S6's prose teleport class** (invented scenes on object/furniture lines)
   remains: the state ends contacts durably through scene changes, but nothing
   fences the narrator's own scene invention. Out of this pass's scope.
@@ -125,6 +160,154 @@ named above and owned elsewhere (wardrobe extraction, scene invention).
 
 **Recommend: verdict PASS for the affectionate tier.** The enablement gate
 the owner set — bounded repairs plus their evidence — is met.
+
+## Post-verdict verification (2026-08-01)
+
+*(Superseded by rounds 2–3 below — this section records the noun-guard build
+the PR review later rejected; kept as the historical record.)*
+
+The verdict's enablement condition, discharged:
+
+**The finished guard.** `fe971f8` gave the player fold the character fold's
+restatement guard; the follow-up commit on this branch re-cut the shared
+predicate from *every-worn-name-restated* to *evidence-of-a-different-look*
+(an undress claim or a garment noun foreign to the worn names, per the new
+precision-biased `contracts/items/garment-nouns.ts` registry — a noun the
+registry misses fails toward KEEPING the structured wardrobe). Complete and
+partial restatements — including styling paraphrases naming no garment, the
+trial's exact residual — now keep the modelled wardrobe on both folds;
+explicit deltas, exposure claims, preset matches, and genuine whole-look
+replacements still apply. Multi-garment and false-positive regressions are
+pinned in `chat-state.test.ts`, `garment-nouns.test.ts`, and both fold
+suites in `chat-wardrobe.int.test.ts`.
+
+**The targeted live check — PASS** (fresh disposable chat on the QA
+account, both flags on, image = this branch):
+
+- Chat `xt7zc2ujgou87g339f278xpw`. Exchange 1
+  (`pna1lzgcijpvefvd04v3qnpk` @16:44:01.032Z): "I walk over to her. Her
+  sleeves are shoved past her elbows, one cuff dusted with flour." — the
+  approach plus a strictly PARTIAL outfit paraphrase (no garment named).
+  Settle-1 @16:44:14.139Z filed `chat_garments.legacy_outfit_bridge` +
+  `chat_wardrobe.outfit_restatement` — the archivist extracted the
+  paraphrase, the legacy bridge folded it, and the guard held: the state row
+  kept `worn_item_ids: [sabrinacottonshirt0trial]`, preset `work`, overlay
+  `""` (trace lane `legacy`).
+- Exchange 2, the immediately following line (`pngg0a36go2vlccl6qve35vq`
+  @16:44:42.596Z): "I rest my hand on her shoulder." — **committed**:
+  `contact_started` @story-minute 2 under
+  `contact:pngg0a36go2vlccl6qve35vq`, `materialBetween` = one cloth layer
+  (`s2oq4myennj3u0wiegup43w3:root`, evidence `coverage:shoulders/opaque`),
+  `directSkinContact: false`, and the reply narrates it: "…through the soft
+  cotton of her work shirt." No `contact.material_unavailable` anywhere.
+- Supporting runs from the same window: `rdgir5apwv9jake3iaviuxu1` (an
+  ORGANIC partial opening — "sleeves already pushed up" — guard held at
+  settle-1, same diagnostic pair) and `jawc4smbqg3xt73thx09s5d4` (a
+  complete-restatement settle followed by a committed touch with the same
+  1-layer material shape).
+- **Configuration note, disclosed:** the first enablement attempt set the
+  flag secrets to `1`, which the parser (`=== "on"`) reads as OFF — caught
+  when `rdgir5apwv9jake3iaviuxu1`'s touch resolved
+  `unresolved / geometry_unavailable` with the inspector reporting both
+  flags false. Reset to `on`; every result above is from the corrected
+  configuration.
+
+**Flags were turned ON at this point** (`CHAT_CONTACT_ACTIONS=on`,
+`CHAT_PHYSICAL_CONSTRAINTS=on`, set 2026-08-01 ~16:39Z) — the enablement
+the verdict authorized. Per the verdict: the NPC-ending producer's first
+organic production occurrence should be monitored; no further broad
+contact-foundation review before the next ruled item. (Returned to **off**
+on 2026-08-01 pending the round-3 correction — see below.)
+
+## Post-verdict verification, round 2 (2026-08-01 — the PR review's rejection of the noun guard)
+
+The PR #26 review REJECTED the head above for merge and continued flag
+enablement (flags were returned to off): two P1 threads (plural variants
+not canonicalized under one identity — boot vs boots read as different
+garments; compound heads like "tank top" unrecognized) plus a blocking
+case the threads didn't cover — the noun-only predicate reads a same-head
+replacement ("black silk shirt" over a worn "soft cotton shirt") as a
+restatement and preserves stale material, while aliases ("t-shirt" for a
+worn "tee") fail the opposite way.
+
+**The ruled redesign, landed (`6088b9c`):** whole-look proposals carry a
+verbatim `changeEvidence` clause from the current exchange; the folds
+replace a modelled wardrobe only when that evidence validates against the
+exchange text. Presets, garment deltas, and exposure claims keep their
+authoritative paths; the garment-identity registry was demoted from the
+keep-vs-replace decision to telemetry (and, since `1a4de0a`, the identity
+gate in garment delta matching). The re-verification live check then caught
+a hole in presence-only validation — the extractor
+self-quoted the styling paraphrase as its own "evidence", which trivially
+validated, and the wardrobe was wiped (chat `zyaj5adiw3gpxtb2br4d6jtu`,
+preserved). Fixed in `8603fd7`: validation also requires the quote to
+ASSERT a change (a precision-biased change-signal tier plus a
+context-gated `chang*` tier), pinned by the exact failing quote in the
+pure suite.
+
+**Targeted re-verification — PASS on `8603fd7`** (fresh disposable chats,
+QA account):
+
+- *Partial restatement*: the paraphrase line ("Her sleeves are shoved past
+  her elbows, one cuff dusted with flour.") settled in five fresh chats.
+  Four settles: the tightened extractor declined to propose at all (lane
+  `none`), wardrobe intact. One settle (chat `tor2mw0ufdsfyhtbd4a7id4a`,
+  flag-on): the extractor DID propose through the legacy lane and the
+  fold KEPT the modelled wardrobe — the same input that wiped it pre-fix —
+  and the immediately following touch **committed with the correct cloth
+  layer** (`contact_started` @minute 2, one `materialBetween` layer,
+  `coverage:shoulders`, `directSkinContact: false`; prose: "the warmth of
+  her shoulder seeps through the soft cotton under your palm").
+- *Explicit same-head whole replacement*: a narrator line stating the swap
+  ("Sabrina swaps her cotton work shirt for a black silk shirt…") settled
+  as a legacy-lane replacement in chat `udxpf792u3m8upo3piajvz8i`:
+  `worn_item_ids: []`, `outfit: "a black silk shirt, sleeves rolled to
+  the elbow"` — the case the noun guard could not express.
+- The owner's regression matrix (boot↔boots, tee↔t-shirt, partial
+  multi-garment, styling-only, shirt→tank top, cotton→silk shirt both
+  ways, hallucinated-quote rejection, removal/addition deltas,
+  preset/exposure paths) is pinned on both folds in
+  `chat-wardrobe.int.test.ts` (37 cases); CI green on `8603fd7`.
+
+**Both P1 review threads are replied to and resolved.** Per the review's
+until-clause (flags off until the checks pass and the threads are
+resolved), both conditions are met and the flags were re-enabled
+(2026-08-01 ~18:08Z) during the passing touch check. Merge remains the
+owner's call. (Flags subsequently returned to **off**, verified
+2026-08-01, pending the round-3 correction below.)
+
+## Post-verdict verification, round 3 (2026-08-01 — the evidence-assertion correction)
+
+The owner's follow-up review found the round-2 validator's positive patterns
+accepted **non-events**: a negation ("She doesn't take off her jacket."),
+modal / planned / conditional / questioned / commanded / quoted forms, and
+clothing-adjacent idioms ("takes off for work", "sheds light", "kicks off the
+meeting", "swaps stories for drinks"). Any of those could still clear a
+modelled wardrobe, because the extractor can self-quote a line that is
+genuinely present in the exchange — presence alone never asked whether the
+quote described a change that actually happened.
+
+**The correction.** Evidence now passes only when it is BOTH grounded in the
+exchange text AND classified as an asserted, completed clothing change
+(`classifyOutfitChangeQuote` in `contracts/items/outfit-change-evidence.ts`,
+called by `outfitChangeEvidenceValidated`): sentence-scoped vetoes for
+negation, modality, conditionals, futures/plans, questions, commands,
+quoted speech, refusals, and incomplete actions, plus a garment-object
+window on every action and state signal (one garment-free exception for
+"strips bare"). So "She doesn't hesitate. She takes off her jacket." still
+validates (a veto never escapes its own sentence), "no longer wearing"
+survives as a real change, and "Wearing her jacket, she takes off for work."
+does not. The invariant covers character, player, and ensemble settlement
+through the one shared validator.
+
+Both contact flags remain **off** pending the owner's review of this
+correction; no deployment or live rerun was performed in this pass — the
+deterministic pure + settlement suites carry the proof.
+
+**Known bounded limitation, recorded:** evidence attribution is not
+actor-scoped — the pipeline passes one shared exchange text to every settling
+participant, so cross-participant attribution relies on the extractor's
+member-scoped prompting. Filed as a follow-up outside this correction.
 
 ## Artifacts
 

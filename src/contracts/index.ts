@@ -30,6 +30,8 @@ export * from "./items/subtypes";
 export * from "./items/wearer";
 export * from "./items/visibility";
 export * from "./items/chat-wardrobe";
+export * from "./items/garment-nouns";
+export * from "./items/outfit-change-evidence";
 export * from "./items/garment-material";
 export * from "./items/effective-coverage-read";
 export * from "./items/garment-blueprint";
