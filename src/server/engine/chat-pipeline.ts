@@ -2046,6 +2046,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               pulsed: shouldPulse,
               personal: personal?.value ?? null,
               exchangeText: `${agentPlayerContent}\n${full}`,
+              profile: member.profile,
               characterName: member.name,
               assistantMessageId,
               now,

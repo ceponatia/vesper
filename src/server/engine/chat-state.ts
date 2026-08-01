@@ -2699,6 +2699,8 @@ export function settleEnsembleMember(args: {
   personal: ChatPersonalNotes | null;
   /** This exchange's player line + reply — what the proposal's `changeEvidence` is checked against. */
   exchangeText: string;
+  /** The member's authored presets — what a whole-look `description` can name to re-seed the worn list. */
+  profile: Pick<CharacterProfile, "outfits">;
   characterName: string;
   assistantMessageId: string;
   now: Date;
@@ -2751,19 +2753,24 @@ export function settleEnsembleMember(args: {
   }
 
   if (args.personal) {
-    // Ensemble members take the free-text wardrobe path (chat-wardrobe-parity v1): this pure
-    // fold has no item-loading seam, so a whole-look `description` clears the structured worn
-    // list and lands as free text; garment-level removed/added are the primary's (IO-backed) path.
+    // The description branch runs `foldOutfitProposal`'s rungs in order: an authored preset
+    // named in the text re-seeds the structured worn list (rung 1), and only an ad-hoc look
+    // falls back to free text. What stays ensemble-specific is the reach of that fallback —
+    // this fold is PURE, with no item-loading seam, so garment-level removed/added remain the
+    // primary's (IO-backed) path and the restatement diagnostic names no unworn garment.
     //
     // Gated exactly like `foldOutfitProposal`/`foldPlayerOutfitProposal` (owner ruling,
     // 2026-08-01): over a MODELLED worn list, a description carrying no exposure claim, no
     // garment delta and no verbatim clause from this exchange saying the clothes moved is a
     // restatement of the standing look — demoting the structured list to prose on one is how a
-    // dressed member silently becomes unmodellable. Deltas only SKIP the gate here; they
-    // remain the primary's path. Unlike the siblings the diagnostic names no unworn garment:
-    // that detail needs an item load, and this fold is pure.
+    // dressed member silently becomes unmodellable. A matched preset never reaches the gate
+    // (an authored look is authoritative); deltas only SKIP it here, they remain the primary's
+    // path.
     const proposal = args.personal.outfit;
+    const matched = proposal.description ? matchOutfitPresetInText(args.profile, proposal.description) : undefined;
+    const preset = matched && matched.items.length > 0 ? matched : undefined;
     const restatesWornList =
+      !preset &&
       next.wornItemIds.length > 0 &&
       !proposal.exposed &&
       proposal.removed.length === 0 &&
@@ -2778,8 +2785,11 @@ export function settleEnsembleMember(args: {
         ),
       );
     }
-    const outfitPatch =
-      proposal.description && !restatesWornList
+    // The preset's items are COPIED, not aliased: this becomes the member's mutable worn
+    // list, and the array belongs to the library profile.
+    const outfitPatch: Partial<ChatState> = preset
+      ? { wornItemIds: [...preset.items], outfitPresetId: preset.id, outfit: "", outfitExposed: false }
+      : proposal.description && !restatesWornList
         ? { wornItemIds: [], outfitPresetId: "", outfit: proposal.description, outfitExposed: proposal.exposed }
         : {};
     const driveResult = applyDriveUpdates(next.drives, args.personal.driveUpdates);
