@@ -1,10 +1,10 @@
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db, images, items, locations } from "../db";
-import { describeProviderError, isDemoMode, unwrapVeniceImage, veniceGenerateImage, veniceImageModelId } from "../ai";
+import { isDemoMode, unwrapVeniceImage, veniceGenerateImage, veniceImageModelId } from "../ai";
 import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
-import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { createImageAsset, failImage, purgeImagesWhere, saveImageBuffer } from "./assets";
+import type { DiagnosticSink } from "@/contracts/diagnostics";
+import { purgeImagesWhere, runImagePipeline } from "./assets";
 import { monogramSvg } from "./monogram";
 import { buildItemImagePrompt, buildLocationImagePrompt } from "./prompts";
 
@@ -25,8 +25,10 @@ const ASPECT: Record<EntityImageKind, `${number}:${number}`> = { item: "1:1", lo
  * generation composed from the item/location's own fields, stored as a `kind:
  * "entity"` asset and set as the row's `imageId`. There is no gallery — a
  * regenerate replaces the old image (the previous asset is reclaimed). No
- * reference edit, no variants. Generation failure marks the row failed and
- * returns its id; callers never catch. Demo mode paints a monogram.
+ * reference edit, no variants. Runs on the shared reserve → generate →
+ * save-or-fail → log shell (`runImagePipeline`); generation failure marks the
+ * row failed and returns its id, callers never catch. Demo mode paints a
+ * monogram.
  */
 export async function generateEntityImage(input: GenerateEntityImageInput): Promise<string> {
   const demo = isDemoMode();
@@ -34,54 +36,52 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
     input.entityKind === "item"
       ? await loadItemPrompt(input.entityId, input.userId)
       : await loadLocationPrompt(input.entityId, input.userId);
+  const prompt = loaded?.prompt ?? "";
 
-  const asset = await createImageAsset({
-    ownerId: input.userId,
-    kind: "entity",
-    entityKind: input.entityKind,
-    entityId: input.entityId,
-    prompt: loaded?.prompt ?? "",
-    meta: { model: demo ? "demo" : `venice/${veniceImageModelId()}`, demo },
-  });
-
-  if (!loaded) {
-    await failImage(asset.id, `${input.entityKind} ${input.entityId} not found`);
-    return asset.id;
-  }
-
-  const started = Date.now();
-  try {
-    const buffer = demo ? monogramSvg(loaded.name) : await generateEntityBuffer(loaded.prompt, ASPECT[input.entityKind]);
-    const saved = await saveImageBuffer(asset.id, buffer, input.sink);
-    if (saved?.status === "ready") {
+  const { imageId } = await runImagePipeline({
+    asset: {
+      ownerId: input.userId,
+      kind: "entity",
+      entityKind: input.entityKind,
+      entityId: input.entityId,
+      prompt,
+      meta: { model: demo ? "demo" : `venice/${veniceImageModelId()}`, demo },
+    },
+    // A missing entity still leaves a failed row behind — no event, no diagnostic.
+    failedPrecondition: loaded ? null : `${input.entityKind} ${input.entityId} not found`,
+    // Only reached once the entity loaded, so the name fallback never fires.
+    produce: async () => ({
+      ok: true,
+      image: demo ? monogramSvg(loaded?.name ?? "") : await generateEntityBuffer(prompt, ASPECT[input.entityKind]),
+    }),
+    onReady: async (asset) => {
       await setEntityImage(input.entityKind, input.entityId, input.userId, asset.id);
       await reclaimOldImages(input.entityKind, input.entityId, input.userId, asset.id);
-    }
-    void logEvent("image.entity", {
-      imageId: asset.id,
-      entityKind: input.entityKind,
-      entityId: input.entityId,
-      status: saved?.status ?? "failed",
-      demo,
-      durationMs: Date.now() - started,
-    });
-  } catch (err) {
-    const message = describeProviderError(err);
-    await failImage(asset.id, message);
-    input.sink?.push(
-      diag("warn", "images.entity.generate_failed", message.slice(0, 300), {
-        context: { entityKind: input.entityKind, entityId: input.entityId, imageId: asset.id },
+    },
+    onSettled: ({ imageId: id, status, startedMs }) =>
+      void logEvent("image.entity", {
+        imageId: id,
+        entityKind: input.entityKind,
+        entityId: input.entityId,
+        status,
+        demo,
+        durationMs: Date.now() - startedMs,
       }),
-    );
-    void logEvent("image.entity", {
-      imageId: asset.id,
-      entityKind: input.entityKind,
-      entityId: input.entityId,
-      status: "failed",
-      error: message.slice(0, 300),
-    });
-  }
-  return asset.id;
+    onThrown: ({ imageId: id, message }) =>
+      void logEvent("image.entity", {
+        imageId: id,
+        entityKind: input.entityKind,
+        entityId: input.entityId,
+        status: "failed",
+        error: message.slice(0, 300),
+      }),
+    failureDiagnostic: {
+      code: "images.entity.generate_failed",
+      context: { entityKind: input.entityKind, entityId: input.entityId },
+    },
+    sink: input.sink,
+  });
+  return imageId;
 }
 
 interface LoadedPrompt {
