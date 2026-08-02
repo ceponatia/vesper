@@ -84,6 +84,10 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
     // which carry `durationMs` here where avatar/entity's thrown line does not.
     onSettled: ({ imageId: id, status, startedMs }) => void logVariant(id, input, status, startedMs),
     onThrown: ({ imageId: id, startedMs }) => void logVariant(id, input, "failed", startedMs),
+    // The RETURNED Venice failure pushes this code inside produce (above); the
+    // shell covers the thrown path, which nothing in this lane reaches today.
+    // The two paths are exclusive, so the diagnostic can never double-fire.
+    failureDiagnostic: { code: "images.variant.generate_failed", context: { characterId: input.characterId } },
     sink: input.sink,
   });
   return imageId;
