@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hasChatEvidenceNegation } from "@/lib/chat-input-evidence";
 import type { ContactAreaBand, ContactMotionBand, ContactPressureBand } from "../affordances/contact/types";
 
 /**
@@ -56,14 +57,6 @@ export const CHAT_CONTACT_CONDITIONAL_RE =
   /\b(?:if|would|could|should|might|may|maybe|perhaps|imagine|suppose|pretend|wish|almost|nearly|want to|wanted to|going to|about to|tr(?:y|ies|ied|ying) to|as if|as though|like a|like the)\b/iu;
 
 /**
- * Negation anywhere in the sentence silences it. The premise detector can afford
- * a positional rule because it is judging a claim; here the question is whether
- * a body moved, and "I don't rest my hand on your shoulder" must never commit.
- */
-export const CHAT_CONTACT_NEGATION_RE =
-  /\b(?:not|never|no longer|don'?t|doesn'?t|didn'?t|won'?t|can'?t|cannot|without)\b/iu;
-
-/**
  * Romantic and intimate framing — vetoed WHOLE-SENTENCE (owner ruling: a
  * genuinely affectionate proof, never a romantic case relabeled to commit).
  *
@@ -97,7 +90,10 @@ export const CHAT_CONTACT_RESTRAINT_RE =
 export function contactSentenceEligible(sentence: string): boolean {
   if (sentence.includes("?")) return false;
   if (CHAT_CONTACT_CONDITIONAL_RE.test(sentence)) return false;
-  if (CHAT_CONTACT_NEGATION_RE.test(sentence)) return false;
+  // Negation is judged by the shared chat-evidence primitive — ONE negation
+  // judge for the whole lane (the complete auxiliary-contraction family,
+  // apostrophe-normalized), not a second regex that could drift from it.
+  if (hasChatEvidenceNegation(sentence)) return false;
   if (CHAT_CONTACT_ROMANTIC_VERB_RE.test(sentence)) return false;
   if (CHAT_CONTACT_ROMANTIC_TARGET_RE.test(sentence)) return false;
   return true;

@@ -1,10 +1,10 @@
+import { hasChatEvidenceNegation } from "@/lib/chat-input-evidence";
 import { parseMessageSpansWithOffsets } from "@/lib/message-spans";
 import {
   chatAffectionateTargetLocationOf,
   chatContactTargetNounAlternation,
   normalizeTypographicQuotes,
   CHAT_CONTACT_CONDITIONAL_RE,
-  CHAT_CONTACT_NEGATION_RE,
   CHAT_CONTACT_RESTRAINT_RE,
   CHAT_CONTACT_ROMANTIC_TARGET_RE,
   CHAT_CONTACT_ROMANTIC_VERB_RE,
@@ -262,7 +262,7 @@ function assertionDrop(grounding: Grounding, contactFraming: boolean): NpcSceneE
   if (grounding.sentences.length === 0) return { reason: "evidence_unasserted" };
   for (const sentence of grounding.sentences) {
     if (sentence.text.includes("?")) return { reason: "evidence_unasserted" };
-    if (CHAT_CONTACT_NEGATION_RE.test(sentence.text)) return { reason: "evidence_unasserted" };
+    if (hasChatEvidenceNegation(sentence.text)) return { reason: "evidence_unasserted" };
     if (CHAT_CONTACT_CONDITIONAL_RE.test(sentence.text)) return { reason: "evidence_unasserted" };
     if (NPC_ASSERTION_HEDGE_RE.test(sentence.text)) return { reason: "evidence_unasserted" };
     if (NPC_ASSERTION_REFUSAL_RE.test(sentence.text)) return { reason: "evidence_unasserted" };

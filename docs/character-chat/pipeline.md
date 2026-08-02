@@ -145,7 +145,8 @@ exchange:
    a conflicting row under this exchange's keys aborts the whole write, files an `error`
    diagnostic, and leaves the outcome `unresolved`). Only a verified write's
    acknowledgment licenses a `committed` action outcome. Anything
-   the detectors cannot read cleanly produces silence — a hedge, a negation, a question,
+   the detectors cannot read cleanly produces silence — a hedge, a negation (including the
+   complete straight/curly/apostrophe-free auxiliary-contraction family), a question,
    an ambiguous target, storyteller narration, speech rather than narration, and (owner
    constraint) any romantic, intimate, or restraint framing anywhere in the sentence, so
    a romantic case can never be relabeled into a commit (the two ENDS lift the restraint
@@ -232,7 +233,11 @@ exchange:
    character's side only, reaching the player solely through comms — rule 15). See
    [prompts.md](prompts.md) §§Character-chat sensory cues / player-input perception /
    player-POV narration / state as a narration system / long-term memory, plus the
-   regex-only one-turn cue (`engine/chat-intent.ts`).
+   regex-only one-turn cue (`engine/chat-intent.ts`). The cue, movement, sensory-focus,
+   and contact reads share the channel/sentence and contraction primitives in
+   `lib/chat-input-evidence.ts`, then apply detector-specific evidence policies; there is
+   no universal eligibility gate because a visual accent, a prompt premise, a
+   scene-memory mutation, and a durable contact have different false-positive costs.
 8. **Stream.** `streamCharacterChat` — a `streamText` + `openrouter().chat()` shape,
    through `stripNarratorArtifactStream` and then
    `collapseRepeatedBlocksStream` (server/ai/narrator-repeats.ts — drops Aion

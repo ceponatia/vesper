@@ -4,6 +4,7 @@ import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/
 import type { ChatDrive } from "@/contracts/personality/drives";
 import type { RelationshipRecord } from "@/contracts/relationships/record";
 import { attr, drive, expectNumberedRule, expectOrder, maraProfile, promptSection } from "@/server/test-support";
+import { deriveChatSensoryAllowance, detectChatCue, detectSensoryFocus } from "../chat-intent";
 import {
   buildCharacterChatPromptParts,
   buildCharacterChatSystemPrompt,
@@ -1161,7 +1162,7 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
       state: { meters: { hygiene: 0.2 }, regard: 0, conditions: [] },
       sensoryFocus: { sense: "smell", target: "hair", intimate: false, region: "hair" },
     });
-    expect(parts.tail).toContain("Sensory focus — Theo is breathing in Mara's hair.");
+    expect(parts.tail).toContain("Sensory focus candidate — Theo breathing in Mara's hair.");
     expect(parts.tail).toContain("cedar and warm skin");
     expect(parts.tail).toMatch(/unwashed/i); // the low-hygiene band layered over the scent
     expect(parts.tail).toContain("never trade it for a milder");
@@ -1178,9 +1179,30 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
     expect(parts.tail).toContain("OPEN your reply with the experience itself");
     expect(parts.tail).toContain("before Mara reacts or the scene moves on");
     expect(parts.tail).toContain("names the CHARACTER of a sensation");
+    expect(parts.tail).toContain("Use this block only if the CURRENT player narration explicitly performs that action now");
+    expect(parts.tail).toContain("Negated, hypothetical, remembered, spoken, third-party, or storyteller wording");
+    expect(parts.tail).toContain("Never add contact or movement beyond what the player wrote");
     // The old taste clause hardcoded "its warmth and salt" — the word steered every foot
     // beat toward "salty" prose whatever the authored scent said (owner report 2026-07-13).
     expect(parts.tail).not.toContain("warmth and salt");
+  });
+
+  it("renders the reported negated-perfect message as visual accent only, with no focus premise", () => {
+    const message =
+      "She isn't afraid of me. I notice the faint glow in her eyes. I haven't even touched her yet.";
+    const cue = detectChatCue(message);
+    const sensoryFocus = detectSensoryFocus(message, {
+      characters: [{ id: "character_mara", name: "Mara", aliases: [] }],
+    });
+    const parts = promptParts({
+      player: { name: "Theo" },
+      sensoryAllowance: deriveChatSensoryAllowance({ cue, sensoryFocus }),
+      ...(sensoryFocus ? { sensoryFocus } : {}),
+    });
+    expect(sensoryFocus).toBeNull();
+    expect(parts.tail).not.toContain("Sensory focus candidate");
+    expect(parts.tail).toContain("Sensory allowance this turn: one visual accent");
+    expect(parts.tail).not.toContain("touching Mara's eyes");
   });
 
   it("surfaces the TARGET REGION's own authored values — a foot beat carries feet.smell, sense-ranked first", () => {
@@ -1277,7 +1299,7 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
       state: chatState(),
       sensoryFocus: { sense: "touch", target: "breasts", intimate: true, region: "breasts" },
     });
-    expect(earned.tail).toContain("Sensory focus — Theo is touching Mara's breasts.");
+    expect(earned.tail).toContain("Sensory focus candidate — Theo touching Mara's breasts.");
     expect(earned.tail).toMatch(/breast size: full/i);
     // A non-intimate focus never surfaces the intimate attribute.
     const notEarned = promptParts({
@@ -1311,7 +1333,7 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
       state: chatState({ outfit: "a linen sundress" }),
       sensoryFocus: { sense: "study", target: "dress", intimate: false },
     });
-    expect(parts.tail).toContain("Sensory focus — Theo is taking in Mara's dress.");
+    expect(parts.tail).toContain("Sensory focus candidate — Theo taking in Mara's dress.");
     expect(parts.tail).toContain("Wearing: a linen sundress");
   });
 });
@@ -1353,7 +1375,7 @@ describe("buildCharacterChatSystemPrompt — per-turn sensory allowance (narrato
       state: chatState(),
     });
     expect(focused.tail).not.toContain("Sensory allowance this turn");
-    expect(focused.tail).toContain("Sensory focus — Theo is breathing in Mara's hair.");
+    expect(focused.tail).toContain("Sensory focus candidate — Theo breathing in Mara's hair.");
 
     const absent = buildCharacterChatPromptParts(base);
     expect(absent.tail).not.toContain("Sensory allowance this turn");
@@ -1368,7 +1390,7 @@ describe("buildCharacterChatSystemPrompt — per-turn sensory allowance (narrato
       sensoryFocus: { sense: "touch", target: "wrist", intimate: false, region: "wrist" },
       state: chatState(),
     });
-    expect(parts.tail).not.toContain("Sensory focus —");
+    expect(parts.tail).not.toContain("Sensory focus candidate —");
     expect(parts.tail).toContain("Sensory allowance this turn: one close-range hook");
   });
 
@@ -1884,7 +1906,7 @@ describe("ensemble group perks (followups ruling 12)", () => {
       ],
       { sensoryFocus: { hint: { sense: "study", target: "hands", intimate: false }, memberName: "Vera" } },
     );
-    expect(parts.tail).toContain("Brian is taking in Vera's hands");
+    expect(parts.tail).toContain("Sensory focus candidate — Brian taking in Vera's hands");
     expect(parts.tail).toContain("a paint-streaked tank top");
   });
 

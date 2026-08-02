@@ -9,7 +9,6 @@ import {
   chatContactTargetNounAlternation,
   contactSentenceEligible,
   CHAT_CONTACT_RESTRAINT_RE,
-  CHAT_CONTACT_SENTENCE_SPLIT,
   CHAT_CONTACT_SOURCE_LOCATION,
   CHAT_GESTURE_CONTACT,
   commitContactResolution,
@@ -73,7 +72,7 @@ import {
   type SceneSupportRelation,
   type UnitInterval,
 } from "@/contracts";
-import { parseMessageSpans } from "@/lib/message-spans";
+import { chatEvidenceSentences } from "@/lib/chat-input-evidence";
 
 /**
  * The CHAT LANE's contact adapter — the affectionate integration proof
@@ -349,11 +348,8 @@ function contactSentences(
   const message = input.message.trim();
   if (message.length === 0) return [];
   const sentences: string[] = [];
-  for (const span of parseMessageSpans(message)) {
-    if (span.kind !== "narration") continue;
-    for (const sentence of span.text.split(CHAT_CONTACT_SENTENCE_SPLIT)) {
-      if (sentence.trim().length > 0 && eligible(sentence)) sentences.push(sentence);
-    }
+  for (const { text } of chatEvidenceSentences(message, ["narration"])) {
+    if (eligible(text)) sentences.push(text);
   }
   return sentences;
 }

@@ -982,13 +982,33 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     // Regex-first reads of the player's input, computed once and shared: the cue arm, the
     // sense-targeted focus, and the reply-discipline gates (over the window's last replies).
-    const cueHint = playerContent ? detectChatCue(playerContent) : null;
+    const cueHint = playerContent ? detectChatCue(playerContent, { narratorInput }) : null;
     const intimateBeat = (cueHint?.intimate ?? false) || (driftedState.meters.arousal ?? 0) >= INTIMATE_AROUSAL_FLOOR;
     const recentReplies = history.filter((m) => m.role === "assistant").map((m) => m.content);
 
     // One-turn sense-targeted focus (scope guard): a smell/taste/touch/study beat aimed at
-    // a body region / garment ⇒ assemble the authored sensory values into a focus block.
-    const sensoryFocus = playerContent ? (detectSensoryFocus(playerContent) ?? undefined) : undefined;
+    // a body region / garment ⇒ assemble that RESOLVED member's authored values into a
+    // focus block. Present-roster context makes group pronouns fail closed and prevents
+    // a named action on one member from being rendered with another member's body data.
+    const sensoryFocusCharacters = [
+      ...(driftedState.presence === "present"
+        ? [{ id: characterId, name: characterName, aliases: profile.aliases }]
+        : []),
+      ...others
+        .filter((member) => member.state.presence === "present")
+        .map((member) => ({ id: member.characterId, name: member.name, aliases: member.profile.aliases })),
+    ];
+    const sensoryFocus = playerContent
+      ? (detectSensoryFocus(playerContent, { characters: sensoryFocusCharacters, narratorInput }) ?? undefined)
+      : undefined;
+    const sensoryFocusMember = sensoryFocus?.targetCharacterId
+      ? sensoryFocusCharacters.find((member) => member.id === sensoryFocus.targetCharacterId)
+      : undefined;
+    const primarySensoryFocus =
+      sensoryFocus &&
+      (sensoryFocus.targetCharacterId === undefined || sensoryFocus.targetCharacterId === characterId)
+        ? sensoryFocus
+        : undefined;
     const firstExchange = !opening && !recentReplies.length;
 
     // --- Action beat (chat-action-beats.plan.md) -----------------------------
@@ -1582,7 +1602,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             narratorInput,
             // The turn's sense-targeted beat, already detected above: one of the four
             // relevance signals that decide whether a true fence is worth its bytes.
-            sensoryFocus: sensoryFocus ?? null,
+            sensoryFocus: primarySensoryFocus ?? null,
             // This turn's resolved contact, when the contact flag produced one. A
             // conditional spread, so a contact-flag-off turn compiles the exact bytes
             // it compiled before the leg existed.
@@ -1749,8 +1769,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             ? { selfie: { kind: "offer" as const, memberName: characterName } }
             : {}),
         ...(ensembleCallback ? { callback: ensembleCallback } : {}),
-        ...(sensoryFocus
-          ? { sensoryFocus: { hint: sensoryFocus, memberName: addressedOther?.name ?? characterName } }
+        ...(sensoryFocus && sensoryFocusMember
+          ? { sensoryFocus: { hint: sensoryFocus, memberName: sensoryFocusMember.name } }
           : {}),
       };
     }
@@ -2922,6 +2942,27 @@ async function lastPlayerMessage(chatId: string): Promise<{ id: string | null; c
 }
 
 /**
+ * Both developer previews run the exact context-aware sensory detector used by a
+ * live 1-on-1 cut. The preview loader currently exposes only the primary member;
+ * keeping this in one helper at least prevents the guidance inspector and prompt
+ * preview from disagreeing about actor, owner, register, or negation.
+ */
+function previewSensoryFocus(input: {
+  character: { id: string; name: string };
+  cut: Awaited<ReturnType<typeof loadChatPreviewCut>>;
+  message: { content: string; narrator: boolean };
+}): ReturnType<typeof detectSensoryFocus> {
+  const characters =
+    input.cut.state.presence === "present"
+      ? [{ id: input.character.id, name: input.character.name, aliases: input.cut.profile.aliases }]
+      : [];
+  return detectSensoryFocus(input.message.content, {
+    characters,
+    narratorInput: input.message.narrator,
+  });
+}
+
+/**
  * This turn's resolved contact, re-derived READ-ONLY for a preview
  * (romantic-contact-affordances.plan.md §"Continuation order" 1).
  *
@@ -3063,6 +3104,7 @@ export async function previewChatPhysicalGuidance(input: {
   const cut = await loadChatPreviewCut({ chatId: input.chatId, character: input.character, sink });
   const read = previewAffordanceRead({ characterId: input.character.id, cut, sink });
   const message = await lastPlayerMessage(input.chatId);
+  const sensoryFocus = previewSensoryFocus({ character: input.character, cut, message });
   // Reported, never obeyed — the same discipline the affordance read above follows. A
   // developer asking why a contact turn narrated nothing needs the answer with
   // `CHAT_CONTACT_ACTIONS` off too, which is why this runs unconditionally and the
@@ -3087,7 +3129,7 @@ export async function previewChatPhysicalGuidance(input: {
     narratorInput: message.narrator,
     // Same pure detector the live turn runs over the same line, so the inspector cannot
     // report a relevance decision the turn would not have made.
-    sensoryFocus: detectSensoryFocus(message.content),
+    sensoryFocus,
     // An empty list compiles identically to no list at all
     // (`normalizeGuidanceCandidates`), so the no-contact staircase is unchanged.
     actionOutcomes,
@@ -3164,6 +3206,7 @@ export async function previewChatPrompt(input: {
   if (chatPhysicalConstraintsEnabled()) {
     const read = previewAffordanceRead({ characterId: input.character.id, cut, sink });
     const message = await lastPlayerMessage(input.chatId);
+    const sensoryFocus = previewSensoryFocus({ character: input.character, cut, message });
     // BOTH flags, exactly as the live path gates them: the contact leg is its own
     // experiment, and its outcome only reaches the narrator inside the guidance block
     // it rides in. Unlike the inspector, this surface OBEYS `CHAT_CONTACT_ACTIONS` —
@@ -3181,7 +3224,7 @@ export async function previewChatPrompt(input: {
         playerName: player.name,
         message: message.content,
         narratorInput: message.narrator,
-        sensoryFocus: detectSensoryFocus(message.content),
+        sensoryFocus,
         // The same conditional spread the live call site uses, for the same reason: a
         // contact-flag-off preview compiles the exact bytes it compiled before the leg.
         ...(contact.outcomes.length > 0 ? { actionOutcomes: contact.outcomes } : {}),
