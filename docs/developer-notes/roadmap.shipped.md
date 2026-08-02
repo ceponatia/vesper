@@ -5,6 +5,12 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Misplaced name brackets never render** — `src/server/ai/narrator-speaker-tags.ts`
+  (no plan — owner report) — 2026-08-02 — brackets mean a line-opening speaker tag
+  and nothing else: chat rule 3 (1-on-1 + ensemble) now scopes them with a worked
+  negative example, and a stream filter de-brackets known names written anywhere
+  else — so `"Nice to see you, [Brian]."` reaches neither the bubble nor the DB.
+
 - **Image pipeline consolidation — one path from prompt to saved asset** —
   [image-pipeline-consolidation.plan.md](finished/image-pipeline-consolidation.plan.md)
   — 2026-08-02 — audit items C1–C5 + C10: the golden-pinned shared FNV-1a hash
