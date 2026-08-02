@@ -4,7 +4,15 @@ import type { AttributeValue } from "@/contracts/attributes/value";
 import type { RegionExposure } from "@/contracts/items/visibility";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { fnv1aHex } from "@/lib/hash";
-import { describeProviderError, hasVenice, isDemoMode, veniceEditImage, veniceGenerateImage, veniceSceneImageModelId } from "../ai";
+import {
+  describeProviderError,
+  hasVenice,
+  isDemoMode,
+  unwrapVeniceImage,
+  veniceEditImage,
+  veniceGenerateImage,
+  veniceSceneImageModelId,
+} from "../ai";
 import { db, images } from "../db";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer } from "./assets";
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts";
@@ -154,8 +162,7 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
   });
   try {
     const edit = await veniceEditImage({ prompt, reference: input.avatar });
-    if (!edit.ok || !edit.image) throw new Error(edit.error || "venice edit failed");
-    const saved = await saveImageBuffer(asset.id, edit.image, input.sink);
+    const saved = await saveImageBuffer(asset.id, unwrapVeniceImage(edit, "venice edit failed"), input.sink);
     if (saved?.status !== "ready") return null;
     // Keep-latest (ruled): the superseded looks go with their files.
     const stale = await db()
@@ -207,8 +214,7 @@ export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise
   });
   try {
     const generated = await veniceGenerateImage({ prompt, aspectRatio: "3:2" });
-    if (!generated.ok || !generated.image) throw new Error(generated.error || "venice generate failed");
-    const saved = await saveImageBuffer(asset.id, generated.image, input.sink);
+    const saved = await saveImageBuffer(asset.id, unwrapVeniceImage(generated, "venice generate failed"), input.sink);
     return saved?.status === "ready" ? asset.id : null;
   } catch (err) {
     const message = describeProviderError(err);
