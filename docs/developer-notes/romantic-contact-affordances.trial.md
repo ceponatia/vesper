@@ -300,9 +300,18 @@ survives as a real change, and "Wearing her jacket, she takes off for work."
 does not. The invariant covers character, player, and ensemble settlement
 through the one shared validator.
 
-Both contact flags remain **off** pending the owner's review of this
-correction; no deployment or live rerun was performed in this pass — the
+Both contact flags remained **off** pending the owner's review of this
+correction; no deployment or live rerun was performed in that pass — the
 deterministic pure + settlement suites carry the proof.
+
+**Enablement completed (2026-08-02).** The owner's acceptance arrived as the
+merges themselves: PR #26 (the round-3 evidence-assertion correction) and
+PR #27 (the owner-scoping follow-up) both merged to main 2026-08-01. On
+2026-08-02, merged main was deployed to Fly (the prior image predated both
+merges) and `CHAT_CONTACT_ACTIONS` + `CHAT_PHYSICAL_CONSTRAINTS` were set to
+the literal `on`, verified by reading both variables inside the running
+machine. The verdict's standing watch item — the NPC-ending producer's first
+organic production occurrence — remains open.
 
 **Known bounded limitation, recorded:** evidence attribution is not
 actor-scoped — the pipeline passes one shared exchange text to every settling

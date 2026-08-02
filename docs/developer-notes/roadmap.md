@@ -103,10 +103,19 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   items 3–6 un-gated in their existing sequence; the parked list stays
   parked. Enablement was conditioned on finishing the wardrobe restatement
   guard for partial paraphrases on both folds plus one targeted live check
-  (report §Verdict / §Post-verdict verification).
-  **Next: actor control through the live lane** → the `romantic_touch`
-  permission owner (**spec before implementation**; eight design rulings
-  needed) → eligibility + blocker-link UI wiring → the romantic proof.
+  (report §Verdict / §Post-verdict verification) — **conditions met and
+  enablement completed 2026-08-02** (PRs #26/#27 merged, main deployed, both
+  flags set to the literal `on`, verified in-machine; standing watch: the
+  NPC-ending producer's first organic occurrence).
+  **Next: actor control through the live lane** —
+  [spec drafted 2026-08-02](romantic-contact-affordances.spec.actor-control.md)
+  (spec before implementation: two-tier structured NPC-decision source,
+  closed permitted-changes set, reply-side persistence extension, fail-closed
+  ambiguity rules; `CHAT_NPC_SCENE_DECISIONS`, three increments: movement →
+  starts → updates; two owner rulings queued in the plan's Open questions) →
+  the `romantic_touch` permission owner (**spec before implementation**;
+  eight design rulings needed) → eligibility + blocker-link UI wiring → the
+  romantic proof.
   **Still parked (reaffirmed by the verdict)**: additional foot granularity,
   slice 4's marks/material transfer, intimate physiology, successor parity,
   channel-aware foot narration, and further generalized contact
