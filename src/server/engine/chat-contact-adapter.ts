@@ -5,6 +5,13 @@ import {
   affordanceSubjectId,
   applySceneIntents,
   buildActionOutcome,
+  chatAffectionateTargetLocationOf,
+  chatContactTargetNounAlternation,
+  contactSentenceEligible,
+  CHAT_CONTACT_RESTRAINT_RE,
+  CHAT_CONTACT_SENTENCE_SPLIT,
+  CHAT_CONTACT_SOURCE_LOCATION,
+  CHAT_GESTURE_CONTACT,
   commitContactResolution,
   contactActionOutcomeStatus,
   contactCommitExpectation,
@@ -35,13 +42,13 @@ import {
   type AffordanceEvidence,
   type AffordanceStoryTime,
   type AffordanceSubjectId,
+  type ChatContactGesture,
   type ChatGarmentStore,
   type CommittedContactOutcome,
   type CommittedContactRead,
   type ContactActionContext,
   type ContactActionIntent,
   type ContactActorControlDecision,
-  type ContactAreaBand,
   type ContactBodySurfaceRef,
   type ContactCommitOutcome,
   type ContactEndedCommit,
@@ -49,9 +56,7 @@ import {
   type ContactEventRef,
   type ContactMaterialLayerRead,
   type ContactMaterialRead,
-  type ContactMotionBand,
   type ContactPersistenceAcknowledgment,
-  type ContactPressureBand,
   type ContactRejectionReason,
   type ContactRequirementCode,
   type ContactResolution,
@@ -147,8 +152,15 @@ export const CHAT_CONTACT_PLAYER_SUBJECT = affordanceSubjectId("player");
 /** The scene's floor. One ground surface per conversation; seeded once. */
 export const CHAT_SCENE_GROUND_SUPPORT = sceneSupportId("ground");
 
-/** The acting surface for every act this proof detects. */
-export const CHAT_CONTACT_SOURCE_LOCATION = "hands";
+/**
+ * Re-exported from the shared chat-contact vocabulary
+ * (`contracts/turns/chat-contact-vocabulary.ts`), where the acting-surface
+ * constant and the shared sentence gate moved so the NPC reply-scene evidence
+ * gates (pure contracts) can read the SAME data. The frozen reply-side ending
+ * floor (`chat-contact-reply.ts`) keeps importing `contactSentenceEligible`
+ * from here, so its veto set is unchanged by the move.
+ */
+export { contactSentenceEligible, CHAT_CONTACT_SOURCE_LOCATION };
 
 /**
  * The lane event ref for one exchange's contact writes.
@@ -285,68 +297,16 @@ export function seededChatScene(existing: SceneState, roster: ChatSceneSeedInput
 // Text gates
 // ---------------------------------------------------------------------------
 
-/** Sentence boundaries: terminal punctuation, or a line break. */
-const CONTACT_SENTENCE_SPLIT = /(?<=[.!?])\s+|\n+/u;
-
 /**
- * Markers that put a whole sentence out of reach.
- *
- * Wider and blunter than the premise detector's positional rules on purpose: a
- * missed touch costs a turn of silence, and a committed one the player did not
- * make is a durable row claiming a contact that never happened.
+ * The sentence split and the shared eligibility gates now live in the shared
+ * chat-contact vocabulary (`contracts/turns/chat-contact-vocabulary.ts`) —
+ * moved verbatim so the NPC reply-scene evidence gates read the SAME vetoes.
+ * This module keeps only the composition that is player-line-specific.
  */
-const CONTACT_CONDITIONAL_RE =
-  /\b(?:if|would|could|should|might|may|maybe|perhaps|imagine|suppose|pretend|wish|almost|nearly|want to|wanted to|going to|about to|tr(?:y|ies|ied|ying) to|as if|as though|like a|like the)\b/iu;
 
 /**
- * Negation anywhere in the sentence silences it. The premise detector can afford
- * a positional rule because it is judging a claim; here the question is whether
- * a body moved, and "I don't rest my hand on your shoulder" must never commit.
- */
-const CONTACT_NEGATION_RE = /\b(?:not|never|no longer|don'?t|doesn'?t|didn'?t|won'?t|can'?t|cannot|without)\b/iu;
-
-/**
- * Romantic and intimate framing — vetoed WHOLE-SENTENCE (owner ruling: a
- * genuinely affectionate proof, never a romantic case relabeled to commit).
- *
- * A sentence that kisses and also rests a hand on a shoulder is not an
- * affectionate touch with decoration; it is a beat whose framing this proof has
- * no permission owner for, and the honest answer is to commit nothing.
- */
-const CONTACT_ROMANTIC_VERB_RE =
-  /\b(?:kiss\w*|caress\w*|strok\w*|nuzzl\w*|cuddl\w*|snuggl\w*|embrac\w*|hugs?|hugg\w*|straddl\w*|grind\w*|undress\w*|strip\w*|lick\w*|tast\w*|suck\w*|nibbl\w*|bit(?:e|es|ing)|moan\w*|arous\w*|seduc\w*|fondl\w*|grop\w*|cups?|cupp\w*|trac(?:e|es|ed|ing)|glid\w*|fingertips?)\b/iu;
-const CONTACT_ROMANTIC_TARGET_RE =
-  /\b(?:lips?|mouth|tongue|thighs?|chest|breasts?|nipples?|cleavage|waist|hips?|belly|stomach|navel|neck|throat|nape|jaw|chin|cheeks?|ears?|earlobes?|buttocks?|butt|ass|arse|rear|groin|crotch|pussy|cunt|vulva|clit\w*|penis|cock|dick|naked|nude|bare skin|small of)\b/iu;
-
-/**
- * Restraint, pinning, and force. `trapped` mobility has no producer in the scene
- * owner, so a scenario that would need one is refused at the door rather than
- * resolved against a model that cannot express it.
- */
-const CONTACT_RESTRAINT_RE =
-  /\b(?:pin\w*|trap\w*|restrain\w*|held down|hold\w* down|grabs?|grabb\w*|grips?|gripp\w*|yank\w*|shov(?:e|es|ed|ing)|push\w*|pull\w*|forc(?:e|es|ed|ing)|wrestl\w*|tackl\w*|drag\w*|hold\w* still|struggl\w*)\b/iu;
-
-/**
- * The gates EVERY detector shares: a question, a hedge, a denial, or romantic
- * framing is a sentence this proof reads as nothing at all.
- *
- * Exported for the reply-side NPC ending detector (`chat-contact-reply.ts`),
- * whose sentences take the same four vetoes — an ending read out of a
- * hypothetical, a negation, a question, or a romantically framed beat would be
- * exactly the invented act these gates exist to refuse.
- */
-export function contactSentenceEligible(sentence: string): boolean {
-  if (sentence.includes("?")) return false;
-  if (CONTACT_CONDITIONAL_RE.test(sentence)) return false;
-  if (CONTACT_NEGATION_RE.test(sentence)) return false;
-  if (CONTACT_ROMANTIC_VERB_RE.test(sentence)) return false;
-  if (CONTACT_ROMANTIC_TARGET_RE.test(sentence)) return false;
-  return true;
-}
-
-/**
- * The above PLUS the restraint veto — the gate for anything that starts or
- * sustains a contact.
+ * The shared gates PLUS the restraint veto — the gate for anything that starts
+ * or sustains a contact.
  *
  * The restraint list exists because `trapped` mobility has no producer (law 4),
  * so a contact framed as force is refused rather than resolved against a model
@@ -355,7 +315,7 @@ export function contactSentenceEligible(sentence: string): boolean {
  * `releaseSentences`.
  */
 function contactCommitSentenceEligible(sentence: string): boolean {
-  return contactSentenceEligible(sentence) && !CONTACT_RESTRAINT_RE.test(sentence);
+  return contactSentenceEligible(sentence) && !CHAT_CONTACT_RESTRAINT_RE.test(sentence);
 }
 
 export interface ChatContactDetectionInput {
@@ -391,7 +351,7 @@ function contactSentences(
   const sentences: string[] = [];
   for (const span of parseMessageSpans(message)) {
     if (span.kind !== "narration") continue;
-    for (const sentence of span.text.split(CONTACT_SENTENCE_SPLIT)) {
+    for (const sentence of span.text.split(CHAT_CONTACT_SENTENCE_SPLIT)) {
       if (sentence.trim().length > 0 && eligible(sentence)) sentences.push(sentence);
     }
   }
@@ -845,10 +805,6 @@ export function chatDepartureSceneIntents(
 // Affectionate touch
 // ---------------------------------------------------------------------------
 
-/** How the hand meets the surface. Three gestures, and each one states its own pressure. */
-export const chatContactGestures = ["rest", "pat", "squeeze"] as const;
-export type ChatContactGesture = (typeof chatContactGestures)[number];
-
 /** The identity half of an act — everything `chatContactActionId` keys on. */
 export interface ChatContactActShape {
   readonly targetSubject: AffordanceSubjectId;
@@ -865,31 +821,12 @@ export interface ChatContactAct extends ChatContactActShape {
 }
 
 /**
- * The target lexicon: written noun → body-registry location id.
- *
- * An ALLOW-list, and everything romantic is simply absent from it rather than
- * being filtered afterwards. These are the surfaces an ordinary affectionate
- * hand lands on, and every id is one `bodyLocationRegistry` already carries — a
- * parallel anatomy is exactly what the contact core refuses to own.
+ * The target lexicon (written noun → body-registry location id) and its
+ * longest-first regex alternation moved to the shared vocabulary
+ * (`chatAffectionateTargetLocationOf` / `chatContactTargetNounAlternation`),
+ * so the classifier schema and the evidence verifiers can never accept a
+ * surface this detector cannot produce.
  */
-const CONTACT_TARGET_LOCATION: Readonly<Record<string, string>> = {
-  shoulder: "shoulders",
-  shoulders: "shoulders",
-  "upper arm": "upper_arms",
-  arm: "arms",
-  arms: "arms",
-  forearm: "forearms",
-  forearms: "forearms",
-  hand: "hands",
-  hands: "hands",
-  "upper back": "back",
-  back: "back",
-  head: "head",
-  hair: "hair",
-};
-
-/** Longest-first, so "upper back" is not read as "back". */
-const CONTACT_TARGET_ALTERNATION = "upper back|upper arm|shoulders?|forearms?|arms?|hands?|back|head|hair";
 const CONTACT_OWNER = "your|her|his|their|[\\p{L}][\\p{L}\\p{N}'’-]*['’]s";
 
 /** "I rest my hand on your shoulder" — the hand is the object, the body part the destination. */
@@ -897,14 +834,14 @@ const CONTACT_PLACE_RE = new RegExp(
   `\\bi\\s+(?:[\\p{L}']+\\s+){0,2}?(rest|rests|rested|resting|place|places|placed|placing|put|puts|putting` +
     `|lay|lays|laid|laying|set|sets|setting|settle|settles|settled|settling)\\s+` +
     `(?:my|a|one|the)\\s+(?:hand|hands|palm)\\s+(?:on|onto|against|over|to)\\s+` +
-    `(${CONTACT_OWNER})\\s+(${CONTACT_TARGET_ALTERNATION})\\b`,
+    `(${CONTACT_OWNER})\\s+(${chatContactTargetNounAlternation})\\b`,
   "iu",
 );
 
 /** "I pat your head" / "I squeeze your hand" — the body part is the direct object. */
 const CONTACT_DIRECT_RE = new RegExp(
   `\\bi\\s+(?:[\\p{L}']+\\s+){0,2}?(pat|pats|patted|patting|squeeze|squeezes|squeezed|squeezing)\\s+` +
-    `(${CONTACT_OWNER})\\s+(${CONTACT_TARGET_ALTERNATION})\\b`,
+    `(${CONTACT_OWNER})\\s+(${chatContactTargetNounAlternation})\\b`,
   "iu",
 );
 
@@ -931,7 +868,7 @@ export function detectChatAffectionateTouch(
     if (match === null) continue;
     const target = resolveContactTarget(match[2] ?? "", input.characters);
     if (target === null) continue;
-    const locationId = CONTACT_TARGET_LOCATION[(match[3] ?? "").toLowerCase()];
+    const locationId = chatAffectionateTargetLocationOf(match[3] ?? "");
     if (locationId === undefined) continue;
     const shape: ChatContactActShape = { targetSubject: target.subjectId, targetLocationId: locationId };
     return {
@@ -1293,25 +1230,6 @@ export function chatContactMaterialLayers(
 // ---------------------------------------------------------------------------
 
 /**
- * What each gesture states about the contact it makes.
- *
- * Pressure is stated because the VERB states it: "rest a hand" is a description
- * of light contact, not a guess at one. Area is deliberately absent — nobody
- * said how much of the hand — and the contact core is built to leave an unstated
- * band unknown rather than defaulting it to the lightest thing that could be true.
- */
-const GESTURE_CONTACT: Readonly<
-  Record<
-    ChatContactGesture,
-    { readonly pressure: ContactPressureBand; readonly motion?: ContactMotionBand; readonly area?: ContactAreaBand }
-  >
-> = {
-  rest: { pressure: "light" },
-  pat: { pressure: "light", motion: "tapping" },
-  squeeze: { pressure: "moderate" },
-};
-
-/**
  * The actor-control decision, READ from the scene rather than asserted.
  *
  * The chat lane's player really is the controlling principal for the player
@@ -1371,7 +1289,7 @@ export function resolveChatContactAttempt(input: ChatContactAttemptInput): Conta
     subjectId: act.targetSubject,
     locationId: act.targetLocationId,
   };
-  const gesture = GESTURE_CONTACT[act.gesture];
+  const gesture = CHAT_GESTURE_CONTACT[act.gesture];
   // An `unavailable` wardrobe rides through UNTOUCHED: the resolver's own
   // material gate answers `unresolved` with a diagnostic, which is where an
   // absent answer is supposed to be turned into silence.
