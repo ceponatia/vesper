@@ -394,20 +394,58 @@ describe("congruence", () => {
   });
 
   it("supports depart bands: steps back is near, walking across the room is distant", () => {
+    // An active contact makes the unnamed counterpart determinable (the
+    // composite-departure reading), so these fixtures isolate the BAND field.
+    const held = { contacts: [contact("contact-held", "shoulders")] };
     const stepBack = "Mara steps back.";
-    expectAdmitted(admitNpcSceneCandidate(context(stepBack), depart({ band: "near", evidence: stepBack })));
+    expectAdmitted(admitNpcSceneCandidate(context(stepBack, held), depart({ band: "near", evidence: stepBack })));
     expectDrop(
-      admitNpcSceneCandidate(context(stepBack), depart({ band: "distant", evidence: stepBack })),
+      admitNpcSceneCandidate(context(stepBack, held), depart({ band: "distant", evidence: stepBack })),
       "evidence_incongruent",
       "band",
     );
     const across = "Mara walks across the room.";
-    expectAdmitted(admitNpcSceneCandidate(context(across), depart({ band: "distant", evidence: across })));
+    expectAdmitted(admitNpcSceneCandidate(context(across, held), depart({ band: "distant", evidence: across })));
     expectDrop(
-      admitNpcSceneCandidate(context(across), depart({ band: "near", evidence: across })),
+      admitNpcSceneCandidate(context(across, held), depart({ band: "near", evidence: across })),
       "evidence_incongruent",
       "band",
     );
+  });
+
+  it("proves the unnamed departure counterpart, never presumes it", () => {
+    const bare = "Mara steps back.";
+    // Ensemble, no live contact, no `from` clause: nobody can say away from
+    // WHOM, so the counterpart field is unprovable — ambiguous, not admitted.
+    expectDrop(admitNpcSceneCandidate(context(bare), depart({ evidence: bare })), "evidence_ambiguous");
+    // A live contact pins the referent — and a candidate naming anybody else
+    // fails the exact field.
+    const held = { contacts: [contact("contact-held", "shoulders")] };
+    expectDrop(
+      admitNpcSceneCandidate(context(bare, held), depart({ counterpartRef: npcRefAt(1), evidence: bare })),
+      "evidence_incongruent",
+      "counterpartRef",
+    );
+    // A 1-on-1 roster leaves exactly one possible referent: the player.
+    const soloDigest = buildNpcSceneDigest({
+      playerSubjectId: PLAYER_ID,
+      roster: [{ subjectId: MARA_ID, name: "Mara", aliases: [], presence: "present" }],
+      contacts: [],
+      proximity: [],
+    }).digest;
+    expectAdmitted(
+      admitNpcSceneCandidate(
+        { reply: bare, digest: soloDigest, eligibleNpcRefs: [npcRefAt(0)] },
+        depart({ evidence: bare }),
+      ),
+    );
+  });
+
+  it("refuses a cross-clause departure origin — another subject's `from` never lends an origin", () => {
+    // "from Sabrina" belongs to the player's clause; Mara's movement names no
+    // origin, and the ensemble leaves her unnamed counterpart unprovable.
+    const reply = "Mara steps back as you pull away from Sabrina.";
+    expectDrop(admitNpcSceneCandidate(context(reply), depart({ evidence: reply })), "evidence_ambiguous");
   });
 
   it("refuses a possessive departure origin — stepping back from her desk names furniture", () => {
