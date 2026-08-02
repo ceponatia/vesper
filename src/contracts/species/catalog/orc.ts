@@ -1,5 +1,6 @@
 import { defineSpecies } from "../types";
 import { DEFAULT_BODY_PLAN_ID } from "../../body/plans";
+import { organicHumanoidSensoryRules } from "./humanoid-sensory";
 
 export const orc = defineSpecies({
   id: "orc",
@@ -14,6 +15,7 @@ export const orc = defineSpecies({
   intimacy:
     "Runs hot — an orc brings frank appetite and real stamina to intimacy, ardent and physical, though far gentler and more attentive with a chosen partner than the stereotype allows.",
   attributeRules: [
+    ...organicHumanoidSensoryRules,
     {
       attributeId: "build.frame",
       applicability: "required",

@@ -246,10 +246,11 @@ export const characterProfileObjectSchema = z.object({
   adultEligibilityDeclaration: adultEligibilityDeclarationSchema,
   speciesId: z.string().default("human"),
   /**
-   * Optional heritage within the species (e.g. "dark_elf" inside "elf") — a pure
-   * overlay realizeBody composes after the species. Absent ⇒ bare species, the
-   * pre-heritage behavior (old rows parse unchanged). Validated loosely as a
-   * string; a heritage id not belonging to the species is ignored at realize time.
+   * Optional heritage/subtype within the species (e.g. "dark_elf" inside "elf",
+   * "synthetic_android" inside "android") — a pure overlay realizeBody composes
+   * after the species. Absent ⇒ the species' `defaultHeritageId` when defined,
+   * otherwise bare species (old rows parse unchanged). Validated loosely as a
+   * string; an unknown id degrades to that same default/bare behavior.
    */
   heritageId: z.string().optional(),
   bodyPlanId: z.string().default(DEFAULT_BODY_PLAN_ID),

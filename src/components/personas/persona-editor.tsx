@@ -82,7 +82,12 @@ export function PersonaEditor({ draft, onChange, titleError }: PersonaEditorProp
     const patch = heritageChangePatch(draft.profile, heritageId);
     if (patch) patchProfile(patch);
   };
+  const selectedSpecies = speciesById(draft.profile.speciesId);
   const heritages = heritagesForSpecies(draft.profile.speciesId);
+  const selectedHeritageId =
+    heritages.find((heritage) => heritage.id === draft.profile.heritageId)?.id ??
+    selectedSpecies?.defaultHeritageId ??
+    "";
 
   return (
     <div className="flex flex-col gap-5">
@@ -136,10 +141,17 @@ export function PersonaEditor({ draft, onChange, titleError }: PersonaEditorProp
             )}
           </Field>
           {heritages.length > 0 ? (
-            <Field label="Heritage" hint="A sub-group within the species.">
+            <Field
+              label={selectedSpecies?.subtypeLabel ?? "Heritage"}
+              hint={selectedSpecies?.subtypeLabel ? "The persona's body subtype." : "A sub-group within the species."}
+            >
               {(id) => (
-                <Select id={id} value={draft.profile.heritageId ?? ""} onChange={(e) => setHeritage(e.target.value)}>
-                  <option value="">— None —</option>
+                <Select
+                  id={id}
+                  value={selectedHeritageId}
+                  onChange={(e) => setHeritage(e.target.value)}
+                >
+                  {selectedSpecies?.defaultHeritageId ? null : <option value="">— None —</option>}
                   {heritages.map((heritage) => (
                     <option key={heritage.id} value={heritage.id}>
                       {heritage.label}
