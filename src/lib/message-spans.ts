@@ -212,17 +212,63 @@ function classifyAsterisk(inner: string, standalone: boolean, ctx: MessageSpanCo
 }
 
 /**
- * Segment a player message into ordered spans. Unmatched or empty sigils fall back to
- * literal narration text, so degenerate input never throws and never drops characters.
+ * A span plus where its text sits in the ORIGINAL input.
+ *
+ * `[start, end)` bounds the span's trimmed body, so for narration and the
+ * simple sigil spans `input.slice(start, end) === text` — the property the
+ * NPC reply-scene evidence grounding gate rests on (a grounded quote's offsets
+ * must be reply offsets, not span-relative ones). The one exception is a comms
+ * span, whose `text` is the parsed message BODY while the offsets bound the
+ * whole inner sigil region (sender prefix included): comms never grounds
+ * physical evidence, so its offsets are informational only.
  */
-export function parseMessageSpans(input: string | null | undefined, context: MessageSpanContext = {}): MessageSpan[] {
-  const text = input ?? "";
-  const spans: MessageSpan[] = [];
+export interface MessageSpanWithOffsets extends MessageSpan {
+  start: number;
+  end: number;
+}
+
+/** One walker product: the span exactly as `parseMessageSpans` has always built it, plus its range. */
+interface SpanEntry {
+  span: MessageSpan;
+  start: number;
+  end: number;
+}
+
+/** The trimmed body of `text[rawStart, rawEnd)` and where that body actually sits. */
+function trimmedRange(text: string, rawStart: number, rawEnd: number): { body: string; start: number; end: number } {
+  const raw = text.slice(rawStart, rawEnd);
+  const body = raw.trim();
+  const leading = raw.length - raw.trimStart().length;
+  return { body, start: rawStart + leading, end: rawStart + leading + body.length };
+}
+
+/**
+ * The single walker behind both parse entry points. `parseMessageSpans` existed
+ * first and its output is CONTRACT (three renderers and two detectors consume
+ * it), so the walker builds exactly the spans it always built and the offsets
+ * ride beside them — offset support must never be able to change what a span
+ * says, only add where it came from.
+ */
+function walkMessageSpans(text: string, context: MessageSpanContext): SpanEntry[] {
+  const entries: SpanEntry[] = [];
   let buf = "";
+  // Where the current narration buffer began. The buffer only ever accumulates
+  // CONTIGUOUS input (each append starts where the previous one ended), so one
+  // start index plus the buffer length always bounds its raw text.
+  let bufStart = 0;
+  const append = (piece: string, at: number): void => {
+    if (buf.length === 0) bufStart = at;
+    buf += piece;
+  };
   const flush = (): void => {
-    const t = buf.trim();
-    if (t) spans.push({ kind: "narration", text: t });
+    if (buf.length === 0) return;
+    const { body, start, end } = trimmedRange(text, bufStart, bufStart + buf.length);
+    if (body) entries.push({ span: { kind: "narration", text: body }, start, end });
     buf = "";
+  };
+  const pushSigil = (span: MessageSpan, innerStart: number, innerEnd: number): void => {
+    const { start, end } = trimmedRange(text, innerStart, innerEnd);
+    entries.push({ span, start, end });
   };
 
   let i = 0;
@@ -236,9 +282,9 @@ export function parseMessageSpans(input: string | null | undefined, context: Mes
         const inner = text.slice(i + 2, close).trim();
         if (inner) {
           flush();
-          spans.push({ kind: "ooc", text: inner });
+          pushSigil({ kind: "ooc", text: inner }, i + 2, close);
         } else {
-          buf += text.slice(i, close + 2);
+          append(text.slice(i, close + 2), i);
         }
         i = close + 2;
         continue;
@@ -252,9 +298,9 @@ export function parseMessageSpans(input: string | null | undefined, context: Mes
         const inner = text.slice(i + 1, close).trim();
         if (inner) {
           flush();
-          spans.push({ kind: "speech", text: inner });
+          pushSigil({ kind: "speech", text: inner }, i + 1, close);
         } else {
-          buf += text.slice(i, close + 1);
+          append(text.slice(i, close + 1), i);
         }
         i = close + 1;
         continue;
@@ -269,9 +315,9 @@ export function parseMessageSpans(input: string | null | undefined, context: Mes
         if (inner) {
           const standalone = isLineEdgeBefore(text, i) && isLineEdgeAfter(text, close);
           flush();
-          spans.push(classifyAsterisk(inner, standalone, context));
+          pushSigil(classifyAsterisk(inner, standalone, context), i + 1, close);
         } else {
-          buf += text.slice(i, close + 1);
+          append(text.slice(i, close + 1), i);
         }
         i = close + 1;
         continue;
@@ -285,18 +331,42 @@ export function parseMessageSpans(input: string | null | undefined, context: Mes
         const inner = text.slice(i + 1, close).trim();
         if (inner) {
           flush();
-          spans.push({ kind: "styled", text: inner });
+          pushSigil({ kind: "styled", text: inner }, i + 1, close);
         } else {
-          buf += text.slice(i, close + 1);
+          append(text.slice(i, close + 1), i);
         }
         i = close + 1;
         continue;
       }
     }
 
-    buf += ch;
+    append(ch ?? "", i);
     i += 1;
   }
   flush();
-  return spans;
+  return entries;
+}
+
+/**
+ * Segment a player message into ordered spans. Unmatched or empty sigils fall back to
+ * literal narration text, so degenerate input never throws and never drops characters.
+ */
+export function parseMessageSpans(input: string | null | undefined, context: MessageSpanContext = {}): MessageSpan[] {
+  return walkMessageSpans(input ?? "", context).map((entry) => entry.span);
+}
+
+/**
+ * `parseMessageSpans` plus each span's `[start, end)` range in the input — the
+ * SAME walker, so span classification can never diverge between the offset-free
+ * consumers and the evidence-grounding one.
+ */
+export function parseMessageSpansWithOffsets(
+  input: string | null | undefined,
+  context: MessageSpanContext = {},
+): MessageSpanWithOffsets[] {
+  return walkMessageSpans(input ?? "", context).map((entry) => ({
+    ...entry.span,
+    start: entry.start,
+    end: entry.end,
+  }));
 }
