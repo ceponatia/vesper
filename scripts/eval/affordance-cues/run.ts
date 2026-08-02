@@ -414,6 +414,9 @@ async function generateReply(input: {
     system: input.system,
     history: input.history,
     name: input.name,
+    // The eval's prompts are built for the fixed "Sam" player (see the prompt
+    // builder below) — the same vocabulary the chat pipeline hands the stream.
+    names: { speakers: [input.name], plain: ["Sam"] },
     model: input.model,
   })) {
     text += delta;
