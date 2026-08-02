@@ -1,8 +1,9 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, items } from "../db";
-import { describeProviderError, isDemoMode, veniceGenerateImage, veniceT2IModelId } from "../ai";
+import { describeProviderError, isDemoMode, unwrapVeniceImage, veniceGenerateImage, veniceT2IModelId } from "../ai";
 import { logEvent } from "../events";
+import { runInBatches } from "@/lib/batches";
 import { parseOr } from "@/lib/parse";
 import { DEFAULT_AVATAR_IMAGE_MODEL, outfitItems, type AvatarImageModel } from "@/contracts";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
@@ -221,8 +222,7 @@ async function generateAvatarBuffer(prompt: string, model: AvatarImageModel): Pr
   // Venice uncensored text-to-image (3:4 portrait). A missing key / API error
   // throws here and the caller marks the row failed with the message.
   const result = await veniceGenerateImage({ prompt, aspectRatio: "3:4", model: veniceT2IModelId(model) });
-  if (!result.ok || !result.image) throw new Error(result.error ?? "venice generate returned no image");
-  return result.image;
+  return unwrapVeniceImage(result, "venice generate returned no image");
 }
 
 /** Concurrency for batched avatar generation — matches the entity-image batch. */
@@ -238,18 +238,5 @@ export async function generateAvatarsBatch(
   userId: string,
   sink?: DiagnosticSink,
 ): Promise<number> {
-  let done = 0;
-  for (let i = 0; i < characterIds.length; i += AVATAR_BATCH_SIZE) {
-    const chunk = characterIds.slice(i, i + AVATAR_BATCH_SIZE);
-    await Promise.all(
-      chunk.map((characterId) =>
-        generateAvatar({ characterId, userId, sink })
-          .then(() => {
-            done += 1;
-          })
-          .catch(() => undefined),
-      ),
-    );
-  }
-  return done;
+  return runInBatches(characterIds, AVATAR_BATCH_SIZE, (characterId) => generateAvatar({ characterId, userId, sink }));
 }

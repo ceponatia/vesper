@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db, images, items, locations } from "../db";
-import { describeProviderError, isDemoMode, veniceGenerateImage, veniceImageModelId } from "../ai";
+import { describeProviderError, isDemoMode, unwrapVeniceImage, veniceGenerateImage, veniceImageModelId } from "../ai";
 import { logEvent } from "../events";
+import { runInBatches } from "@/lib/batches";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer } from "./assets";
 import { monogramSvg } from "./monogram";
@@ -157,8 +158,7 @@ async function generateEntityBuffer(prompt: string, aspectRatio: `${number}:${nu
   // location shots are SFW (product/establishing), but the backend is Venice
   // now; a missing key / API error throws and the caller marks the row failed.
   const result = await veniceGenerateImage({ prompt, aspectRatio });
-  if (!result.ok || !result.image) throw new Error(result.error ?? "venice generate returned no image");
-  return result.image;
+  return unwrapVeniceImage(result, "venice generate returned no image");
 }
 
 /** How many entity images generate concurrently in a batch (user spec). */
@@ -200,18 +200,7 @@ export async function generateEntityImagesBatch(
   userId: string,
   sink?: DiagnosticSink,
 ): Promise<number> {
-  let done = 0;
-  for (let i = 0; i < ids.length; i += ENTITY_IMAGE_BATCH_SIZE) {
-    const chunk = ids.slice(i, i + ENTITY_IMAGE_BATCH_SIZE);
-    await Promise.all(
-      chunk.map((entityId) =>
-        generateEntityImage({ entityKind, entityId, userId, sink })
-          .then(() => {
-            done += 1;
-          })
-          .catch(() => undefined),
-      ),
-    );
-  }
-  return done;
+  return runInBatches(ids, ENTITY_IMAGE_BATCH_SIZE, (entityId) =>
+    generateEntityImage({ entityKind, entityId, userId, sink }),
+  );
 }

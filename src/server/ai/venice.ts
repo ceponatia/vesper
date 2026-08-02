@@ -74,45 +74,43 @@ export interface VeniceEditRequest {
   reference: Buffer;
 }
 
-export interface VeniceEditResult {
+/**
+ * What every Venice image call returns: the bytes, or the failure text. None of
+ * them throw — a failure degrades to a message the caller turns into a failed
+ * image row. `VeniceEditResult` / `VeniceGenerateResult` are the per-lane names
+ * for this one shape (image-pipeline-consolidation.plan.md C2).
+ */
+export interface VeniceImageResult {
   ok: boolean;
   image?: Buffer;
   error?: string;
 }
 
+export type VeniceEditResult = VeniceImageResult;
+export type VeniceGenerateResult = VeniceImageResult;
+
+/**
+ * Unwrap a Venice image result: the bytes, or a thrown Error carrying the
+ * upstream failure text — the shape the pipelines that mark a row failed from a
+ * caught message want (avatar, entity, the chat look/place anchors). `||`, not
+ * `??`: an empty-string error also falls back, so the thrown Error can never
+ * carry an empty message. Consumers that classify a failure instead of throwing
+ * (the scene provider chain, portrait variants) shape the result themselves.
+ */
+export function unwrapVeniceImage(result: VeniceImageResult, fallback: string): Buffer {
+  if (!result.ok || !result.image) throw new Error(result.error || fallback);
+  return result.image;
+}
+
 /** Single-reference image edit (docs/images.md). Never throws. */
 export async function veniceEditImage(request: VeniceEditRequest): Promise<VeniceEditResult> {
   if (!hasVenice()) return { ok: false, error: "VENICE_API_KEY not configured" };
-  try {
-    const response = await fetch(`${VENICE_BASE}/image/edit`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.VENICE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: veniceEditModelId(),
-        prompt: request.prompt,
-        image: request.reference.toString("base64"),
-        safe_mode: process.env.VENICE_SAFE_MODE === "true",
-      }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      return { ok: false, error: `venice ${response.status}: ${body.slice(0, 300)}` };
-    }
-    const contentType = response.headers.get("content-type") ?? "";
-    if (contentType.includes("application/json")) {
-      const data = (await response.json()) as { images?: string[] };
-      const b64 = data.images?.[0];
-      if (!b64) return { ok: false, error: "venice returned no image" };
-      return { ok: true, image: Buffer.from(stripDataUrl(b64), "base64") };
-    }
-    return { ok: true, image: Buffer.from(await response.arrayBuffer()) };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
+  return veniceImageCall("/image/edit", {
+    model: veniceEditModelId(),
+    prompt: request.prompt,
+    image: request.reference.toString("base64"),
+    safe_mode: process.env.VENICE_SAFE_MODE === "true",
+  });
 }
 
 export interface VeniceGenerateRequest {
@@ -123,12 +121,6 @@ export interface VeniceGenerateRequest {
   aspectRatio?: string;
   /** Explicit Venice model id; defaults to `veniceImageModelId()` (Qwen-Image-2). */
   model?: string;
-}
-
-export interface VeniceGenerateResult {
-  ok: boolean;
-  image?: Buffer;
-  error?: string;
 }
 
 /**
@@ -142,37 +134,13 @@ export interface VeniceGenerateResult {
  */
 export async function veniceGenerateImage(request: VeniceGenerateRequest): Promise<VeniceGenerateResult> {
   if (!hasVenice()) return { ok: false, error: "VENICE_API_KEY not configured" };
-  try {
-    const response = await fetch(`${VENICE_BASE}/image/generate`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.VENICE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: request.model ?? veniceImageModelId(),
-        prompt: request.prompt,
-        aspect_ratio: request.aspectRatio ?? "3:4",
-        format: "webp",
-        safe_mode: process.env.VENICE_SAFE_MODE === "true",
-      }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      return { ok: false, error: `venice ${response.status}: ${body.slice(0, 300)}` };
-    }
-    const contentType = response.headers.get("content-type") ?? "";
-    if (contentType.includes("application/json")) {
-      const data = (await response.json()) as { images?: string[] };
-      const b64 = data.images?.[0];
-      if (!b64) return { ok: false, error: "venice returned no image" };
-      return { ok: true, image: Buffer.from(stripDataUrl(b64), "base64") };
-    }
-    return { ok: true, image: Buffer.from(await response.arrayBuffer()) };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
+  return veniceImageCall("/image/generate", {
+    model: request.model ?? veniceImageModelId(),
+    prompt: request.prompt,
+    aspect_ratio: request.aspectRatio ?? "3:4",
+    format: "webp",
+    safe_mode: process.env.VENICE_SAFE_MODE === "true",
+  });
 }
 
 export interface VeniceMultiEditRequest {
@@ -197,25 +165,36 @@ export async function veniceMultiEditImage(request: VeniceMultiEditRequest): Pro
   if (!hasVenice()) return { ok: false, error: "VENICE_API_KEY not configured" };
   const references = request.references.slice(0, 3);
   if (references.length === 0) return { ok: false, error: "multi-edit requires at least one reference image" };
+  return veniceImageCall("/image/multi-edit", {
+    modelId: veniceMultiEditModelId(),
+    prompt: request.prompt,
+    images: references.map((ref) => ref.toString("base64")),
+    output_format: "webp",
+    // The endpoint defaults to 1K (half the single-edit route's output) — faces
+    // lose the detail the identity lock depends on. Pin 2K + the 3:4 every scene
+    // lane renders at (auto would follow the base image).
+    resolution: "2K",
+    aspect_ratio: "3:4",
+    safe_mode: process.env.VENICE_SAFE_MODE === "true",
+  });
+}
+
+/**
+ * The one Venice image call: POST a JSON payload to an image endpoint and read
+ * whatever comes back. Every exported image entry point routes through here, so
+ * the response handling lives once — the HTTP failure text, the JSON envelope's
+ * base64 `images[0]` (data-URL prefix stripped), the raw-bytes fallback for a
+ * non-JSON response, the 120s timeout, and the never-throws contract.
+ */
+async function veniceImageCall(path: string, payload: Record<string, unknown>): Promise<VeniceImageResult> {
   try {
-    const response = await fetch(`${VENICE_BASE}/image/multi-edit`, {
+    const response = await fetch(`${VENICE_BASE}${path}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.VENICE_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        modelId: veniceMultiEditModelId(),
-        prompt: request.prompt,
-        images: references.map((ref) => ref.toString("base64")),
-        output_format: "webp",
-        // The endpoint defaults to 1K (half the single-edit route's output) —
-        // faces lose the detail the identity lock depends on. Pin 2K + the 3:4
-        // every scene lane renders at (auto would follow the base image).
-        resolution: "2K",
-        aspect_ratio: "3:4",
-        safe_mode: process.env.VENICE_SAFE_MODE === "true",
-      }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(120_000),
     });
     if (!response.ok) {
