@@ -10,8 +10,9 @@ ran 2026-07-31 and PASSED (owner verdict 2026-08-01)** — continuation items
 **Enablement is LIVE (2026-08-02): both flags set to the literal `on` on the
 Fly deploy** after the verdict's conditions merged (PRs #26/#27).
 **Next: item 3, actor control through the live lane —
-[spec drafted 2026-08-02](romantic-contact-affordances.spec.actor-control.md),
-spec before implementation.**)
+[spec revised 2026-08-02 after pre-implementation review](romantic-contact-affordances.spec.actor-control.md).
+Pure/durability foundations and a measured shadow pass now precede any new
+authority.**)
 
 Slices 0–2: the truth-source audit is published, the lane-neutral contact
 lifecycle is built as pure contracts, and the foot domain proof is in
@@ -588,21 +589,28 @@ on immobilized limbs.
    producer's first organic production occurrence (per the verdict).
 
 3. **Actor control through the live lane** (un-gated by the 2026-08-01
-   verdict) —
-   enforcement, not just the contract. Its FIRST bounded deliverable — the
-   minimal NPC-authored contact-ending producer — landed early as part of
-   item 1.2 above; the general case (NPC movement, affectionate starts and
-   updates) is specified in the
+   verdict, but gated by its own foundation + shadow review) — its first bounded
+   deliverable, the deterministic NPC contact-ending producer, landed in item
+   1.2 and remains the frozen ending floor.
+
+   A 2026-08-02 pre-implementation review found that the first general-case
+   draft was not safe to build: an ensemble decision did not identify its actor;
+   a grounded quote did not have to prove the proposed action; movement and
+   empty/degraded outcomes had no durable retry identity; action order could
+   reverse the prose; and the proposed save guard, post-settle presence cut,
+   source-side clothing read, and opening coverage did not exist.
+
+   The revised
    [actor-control spec](romantic-contact-affordances.spec.actor-control.md)
-   (drafted 2026-08-02, spec before implementation): a two-tier structured
-   NPC-decision source (the frozen deterministic ending floor + a settle-time
-   structured decision read validated by a verbatim-evidence gate), a closed
-   permitted-changes set, the shipped reply-side persistence/retake model
-   extended, and enumerated fail-closed ambiguity rules. The "broader
-   scene-language read" is explicitly fenced there: it may never become
-   generalized English parsing — no new prose-detector families, ever. Rolls
-   out behind `CHAT_NPC_SCENE_DECISIONS` in three increments (movement →
-   starts → updates); its two design rulings are in Open questions below.
+   closes those holes before authority: one classifier call for the whole reply,
+   stable roster/contact references, field-by-field evidence proof, written-order
+   folding, final presence/wardrobe reads, a durable assistant-message decision
+   envelope (including no-decision tombstones), and one guarded atomic save for
+   envelope/contact rows/scene. The classifier first runs in shadow so accuracy,
+   latency, timeout rate, and cost are measured. Authority then rolls out as
+   movement → starts → updates. The frozen floor stays the only prose extractor;
+   closed verifier vocabulary may confirm an exact proposed field but may never
+   invent one.
 4. **The explicit `romantic_touch` permission owner — spec before
    implementation** (un-gated by the 2026-08-01 verdict). Its design decisions need owner
    rulings first; they are listed in Open questions below.
@@ -715,9 +723,9 @@ regressing those measures.
 
 **Five questions were ruled by the owner on 2026-07-30** (after the slice-2 QA
 report) and have left this list; each ruling is recorded in its detail doc.
-Below them, two tables: the **six** questions carried over from earlier slices,
-and the **eight** `romantic_touch` permission-owner design decisions the owner's
-2026-07-31 review enumerated.
+The first table now lists every remaining general question, including the
+measured item-3 cost gate; the second lists the eight `romantic_touch`
+permission-owner decisions from the 2026-07-31 review.
 
 The five already ruled:
 
@@ -755,7 +763,7 @@ later blocking slice is not urgent, but it is not settled either.
 | **Do marks ride the ruled body-surface store, and what are the transaction mechanics?** ([effects companion](romantic-contact-affordances.spec.effects.md)) | Engineering + owner | Whether pressure marks join the ruled store; the atomic/idempotent/branch-safe commit design | Slice 4 | Open |
 | **How should scent and taste be phrased?** ([foot spec](romantic-contact-affordances.spec.foot.md); [intimate spec](romantic-contact-affordances.spec.intimate.md)) | Owner | Vocabulary that stays grounded without repetitive value judgments | Slice 5 (scent already deferred out of slice 2) | Open |
 | **What must retakes capture beyond the contact projection?** ([contact-core spec](romantic-contact-affordances.spec.contact-core.md)) | Engineering | Whether effects, perception, selected cues, and repetition history need their own capture | Settled per slice as each ships | Open, incremental |
-| **Is the NPC decision read's standing cost acceptable?** ([actor-control spec](romantic-contact-affordances.spec.actor-control.md)) | Owner | One trigger-gated agent call per qualifying settle, off the reply path (RECOMMENDED: accept — the pulse already runs per member per settle, and the trigger keeps quiet turns free) | Item 3, increment 1 | Needs owner ruling — same class as the intake-agent cost reversal |
+| **Is the NPC decision read's measured cost/latency acceptable?** ([actor-control spec](romantic-contact-affordances.spec.actor-control.md)) | Owner | One trigger-gated call per qualifying assistant reply, launched beside settlement but still inside the exchange lock; review shadow fire rate, p50/p95/p99 added latency, timeout rate, and cost per 100 replies | Item 3, movement authority | Foundation + shadow may proceed; owner ruling required before authority is enabled |
 | **When do NPC posture/support changes join the permitted set?** ([actor-control spec](romantic-contact-affordances.spec.actor-control.md)) | Owner | "She sits beside you" needs support surfaces beyond `ground` (a seat vocabulary at minimum); deferred out of increments 1–3, owner may pull it forward as increment 4 with a named surface design | Item 3, post-increment 3 | Deferred by the spec; ruling only needed to pull it forward |
 
 ### `romantic_touch` permission-owner design
@@ -779,18 +787,17 @@ what the stored grant means. Every row is **"needs owner ruling before the
 
 ## Technical companions
 
-- [Truth-source audit](romantic-contact-affordances.audit.md) — what each lane
-  actually knows today, with a file and line behind every claim, plus the three
-  decisions waiting on the owner
+- [Truth-source audit](romantic-contact-affordances.audit.md) — the
+  promotion-time lane evidence and the three owner rulings it produced
 - [Technical index and ownership map](romantic-contact-affordances.spec.md)
 - [Shared contact and action contracts](romantic-contact-affordances.spec.contact-core.md)
 - [Observations, effects, and presentation](romantic-contact-affordances.spec.effects.md)
 - [Scene and body-relations owner](romantic-contact-affordances.spec.scene.md) —
   the minimal scene owner added in slice 3A
 - [NPC actor control through the live lane](romantic-contact-affordances.spec.actor-control.md) —
-  item 3's structured NPC-decision source, permitted scene changes,
-  persistence/retake behavior, and fail-closed ambiguity rules (drafted
-  2026-08-02, spec before implementation)
+  item 3's stable actor/contact references, field-by-field evidence proof,
+  chronology, post-settle cut, durable envelope/CAS, shadow gate, and three
+  authority increments (revised 2026-08-02 after pre-implementation review)
 - [Foot-contact domain](romantic-contact-affordances.spec.foot.md)
 - [Intimate-region domain](romantic-contact-affordances.spec.intimate.md)
 - [Follow-ups record](finished/romantic-contact-affordances.followups.md) —

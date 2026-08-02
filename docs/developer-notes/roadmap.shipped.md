@@ -14,6 +14,16 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   all six image lanes; failed avatar/variant generations now record warn
   diagnostics (the one ruled behavior change).
 
+- **Chat-switch reset integrity — no per-chat state survives a chat change** —
+  [deferred/chat-conversation-refactor.plan.md](deferred/chat-conversation-refactor.plan.md)
+  — 2026-08-02 — the live-bug half of the parked G25 stub: a `/chat/[chatId]`
+  switch is not a remount, so the conversation now resets every per-chat item in
+  that render (composer draft, staged photo ids, narrator/OOC register, busy
+  flags, every sheet and dialog) from one typed source of truth
+  (`components/chat/chat-conversation-state.ts`), with the per-chat refs reset in
+  the matching layout effect — which also supersedes a reply still streaming for
+  the chat just left. The G25 decomposition itself stays parked.
+
 - **Affectionate-contact technical MVP — item 1.1 repairs + move-away ending
   (flag off)** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
@@ -1068,7 +1078,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   never be revived (a same-title propose opens a fresh thread). See
   `story-threads.md` (doc retired in rollout R6, 2026-07-22).
 - **Chat initiative — the remainder slices (plan complete)** —
-  [chat-initiative.plan.md](chat-initiative.plan.md) — 2026-07-12 — the §8.4 v2
+  [chat-initiative.plan.md](finished/chat-initiative.plan.md) — 2026-07-12 — the §8.4 v2
   marker (unseen-milestone seen-cursor `milestones_seen_at`, migration 0043 —
   ruled: loops + milestones only, never real time), light `profile.schedule`
   authoring (day-part vocabulary, the Profile tab's Daily-rhythm card, the
@@ -1137,7 +1147,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   2026-07-12. Leftovers: the two report-only conflict flips stay in the plan's
   §Open questions, flip on request.
 - **Chat initiative — the reopen opener (core)** —
-  [chat-initiative.plan.md](chat-initiative.plan.md) — 2026-07-12 — the pickup
+  [chat-initiative.plan.md](finished/chat-initiative.plan.md) — 2026-07-12 — the pickup
   strip's "Let {who} start ✦" runs a continue exchange with a server-built cue
   (`chat-initiative.ts`): her own material (loops + non-secret wants), the "a
   life meanwhile" license folded in (no separate life-event agent — build
