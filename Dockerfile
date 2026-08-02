@@ -25,7 +25,12 @@ FROM base AS build
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
-RUN pnpm run build
+# NODE_OPTIONS raises V8's old-space ceiling for the build only (inline, so the
+# runner stage never inherits it). Without it a Next build worker aborts on
+# `FatalProcessOutOfMemory` — V8's own heap limit, not the kernel's OOM killer
+# (that would exit 137) — which is what the default cap does once the route and
+# type graph passes a certain size.
+RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build
 
 # ---- runner ----
 # Keep the FULL dependency tree (no `pnpm prune --prod`). Two reasons:
