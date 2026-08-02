@@ -1,5 +1,6 @@
 import { defineSpecies } from "../types";
 import { DEFAULT_BODY_PLAN_ID } from "../../body/plans";
+import { organicHumanoidSensoryRules } from "./humanoid-sensory";
 
 export const succubus = defineSpecies({
   id: "succubus",
@@ -14,5 +15,5 @@ export const succubus = defineSpecies({
   intimacy:
     "Feeds on intimacy itself — for a succubus sex and sustenance are the same act, so she gives herself to it wholly and without shame. Instinctively dominant and preternaturally attuned to a partner's arousal, she reads what a lover wants and leans into it; her fangs distend as her own hunger climbs.",
   defaultFeatureGroups: ["wings", "horns", "tail"],
-  attributeRules: [],
+  attributeRules: organicHumanoidSensoryRules,
 });

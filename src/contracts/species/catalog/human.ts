@@ -1,5 +1,6 @@
 import { defineSpecies } from "../types";
 import { DEFAULT_BODY_PLAN_ID } from "../../body/plans";
+import { organicHumanoidSensoryRules } from "./humanoid-sensory";
 
 export const human = defineSpecies({
   id: "human",
@@ -9,5 +10,5 @@ export const human = defineSpecies({
   description:
     "A natural humanoid species with ordinary human anatomy and broad individual variation. Which intimate anatomy a given character has is the per-character body-config, not the species.",
   lore: "",
-  attributeRules: [],
+  attributeRules: organicHumanoidSensoryRules,
 });

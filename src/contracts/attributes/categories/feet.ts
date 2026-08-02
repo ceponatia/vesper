@@ -1,4 +1,5 @@
 import { defineAttributeGroup } from "../types";
+import { SYNTHETIC_SCENT_VALUES, SYNTHETIC_SCENT_GUIDANCE } from "../shared-values";
 
 export const feetGroup = defineAttributeGroup("feet", [
   {
@@ -108,7 +109,9 @@ export const feetGroup = defineAttributeGroup("feet", [
       "sharp_vinegar",
       "rank",
       "overpowering",
+      ...SYNTHETIC_SCENT_VALUES,
     ],
+    autoDefaultExcludes: [...SYNTHETIC_SCENT_VALUES],
     bodyLocationId: "feet",
     aliases: ["feet", "foot", "sole", "heel"],
     promptHints: [
@@ -138,6 +141,7 @@ export const feetGroup = defineAttributeGroup("feet", [
       sharp_vinegar: "acrid vinegar sting that pricks the eyes",
       rank: "aggressively foul — a wall of it",
       overpowering: "saturates every breath; the strongest thing in the room",
+      ...SYNTHETIC_SCENT_GUIDANCE,
     },
   },
   {

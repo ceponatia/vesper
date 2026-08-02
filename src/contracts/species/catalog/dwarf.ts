@@ -1,5 +1,6 @@
 import { defineSpecies } from "../types";
 import { DEFAULT_BODY_PLAN_ID } from "../../body/plans";
+import { organicHumanoidSensoryRules } from "./humanoid-sensory";
 
 export const dwarf = defineSpecies({
   id: "dwarf",
@@ -12,6 +13,7 @@ export const dwarf = defineSpecies({
     "Short and powerfully sturdy, broad through the chest and shoulders, with thick, weathered features and very often a heavy beard.",
   lore: "Dwarves are one of the most ancient races in the world. From their lineage came the Gnomes and Goblins. Although they have joined the other races in the cities in contemporary times, Dwarves traditionally lived underground in massive vaulted undercities. Many of these cities still exist today and serve as capitols of the Dwarven people. They are a proud, somewhat private race and adept merchants and miners. They work closely with Orcs, employing them to perform the labor duties that Dwarves are not as capable of.",
   attributeRules: [
+    ...organicHumanoidSensoryRules,
     {
       attributeId: "build.height",
       applicability: "required",

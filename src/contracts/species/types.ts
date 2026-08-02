@@ -62,6 +62,18 @@ export const speciesDefinitionSchema = z.object({
   /** Extra names used by deterministic forge inference before fuzzy fallback. */
   aliases: z.array(z.string().min(1)).readonly().optional(),
   bodyPlanId: z.string().min(1),
+  /**
+   * Optional UI label for the heritage overlay when it represents a mechanical
+   * subtype rather than ancestry (Android uses "Subtype"). Internal storage stays
+   * `heritageId` so the one overlay mechanism remains authoritative.
+   */
+  subtypeLabel: z.string().min(1).optional(),
+  /**
+   * Heritage/subtype selected when a profile omits `heritageId`. The id must name
+   * one of this definition's `heritages` (registry invariant). This gives a species
+   * with mandatory subtypes a degraded-safe default without a profile migration.
+   */
+  defaultHeritageId: z.string().min(1).optional(),
   /** Short internal/UI descriptor of what the species *is*. Not surfaced to models. */
   description: z.string().default(""),
   /**

@@ -1,5 +1,6 @@
 import { defineSpecies } from "../types";
 import { DEFAULT_BODY_PLAN_ID } from "../../body/plans";
+import { organicHumanoidSensoryRules } from "./humanoid-sensory";
 
 export const elf = defineSpecies({
   id: "elf",
@@ -14,6 +15,7 @@ export const elf = defineSpecies({
   intimacy:
     "Long-lived and unhurried, an elf treats intimacy as an art to be savoured rather than rushed — attentive, graceful, and quietly exacting about a partner's pleasure.",
   attributeRules: [
+    ...organicHumanoidSensoryRules,
     {
       attributeId: "ears.shape",
       applicability: "required",

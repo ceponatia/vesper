@@ -1,5 +1,6 @@
 import { defineSpecies } from "../types";
 import { DEFAULT_BODY_PLAN_ID } from "../../body/plans";
+import { organicHumanoidSensoryRules } from "./humanoid-sensory";
 
 export const goblin = defineSpecies({
   id: "goblin",
@@ -12,6 +13,7 @@ export const goblin = defineSpecies({
     "Short and wiry, with a greenish cast to the skin and long, floppy, oversized ears.",
   lore: "Goblins are distant relatives to gnomes and have been looked down upon by society, even in contemporary times. They are known for their slightly green skin, long floppy ears, and skill with machinery (though less so digital technology). They share the short height of gnomes, standing at about 4 feet tall on average.",
   attributeRules: [
+    ...organicHumanoidSensoryRules,
     {
       attributeId: "build.height",
       applicability: "required",
