@@ -32,8 +32,11 @@ dead precisely where it matters most, and the player gets no feedback at all.
   the turn lands as "withheld" (rerenderable later) rather than half-written.
   A player Stop must never leave committed world events without a transcript
   row explaining them.
-- Until built, report `canStop: false` through the D17 capability manifest so
-  the button doesn't render on sim chats.
+- ~~Until built, report `canStop: false` through the D17 capability manifest so
+  the button doesn't render on sim chats.~~ *(Shipped with D17, 2026-07-28:
+  `chat-capabilities.ts` sets `canStop: false` and the stop route returns an
+  honest `409 sim_unsupported_operation` instead of the silent 404. The core
+  AbortSignal work above is untouched — verified 2026-08-02.)*
 
 ## Open questions
 
