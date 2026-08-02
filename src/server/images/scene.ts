@@ -1,7 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db, imageReferences, images } from "../db";
 import {
-  describeProviderError,
   executeImageProvider,
   generateChecked,
   isDemoMode,
@@ -19,7 +18,7 @@ import { log } from "@/server/log";
 import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { SceneVisualReference } from "@/contracts/images/scene-reference";
 import type { SceneGenState, SceneReferenceMode } from "@/contracts/state/scene-gen";
-import { createImageAsset, failImage, saveImageBuffer, type ImageEntityKind } from "./assets";
+import { imageMeta, runImagePipeline, type ImageEntityKind } from "./assets";
 import { monogramSvg } from "./monogram";
 import {
   buildSceneComposerPrompt,
@@ -132,6 +131,12 @@ export interface RenderResolvedSceneInput {
  * fails visibly, never a different-looking t2i person). Every reference is
  * persisted to `image_references`. Failures mark the row failed and return its
  * id — callers are never blocked by image work.
+ *
+ * The reserve → generate → save-or-fail → log skeleton is the shared shell's
+ * (`runImagePipeline`): the reference rows ride its `afterReserve` hook, the
+ * chain + the fallback rung's prompt/model correction ride its `produce`, and
+ * `logResult` rides its settled/thrown hooks. Only the diagnostic collector's
+ * drain stays here, wrapping the call the way its `finally` always did.
  */
 export async function renderResolvedScene(input: RenderResolvedSceneInput): Promise<string> {
   const demo = isDemoMode();
@@ -197,55 +202,58 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           : `venice/${veniceSceneImageModelId()}`;
 
   const primary = chain[0] ?? "venice_generate";
-  const asset = await createImageAsset({
-    ownerId: linkage.ownerId,
-    kind: "scene",
-    entityKind: linkage.entityKind,
-    entityId: linkage.entityId,
-    chatId: linkage.chatId,
-    anchorMessageId: linkage.anchorMessageId,
-    prompt: promptFor(primary),
-    sourceImageId: anchorRef?.imageId,
-    meta: {
-      demo,
-      focalName: plan.focal?.name ?? null,
-      referenceName: anchorRef?.name ?? null,
-      model: modelFor(primary),
-      ...(input.flavor ? { flavor: input.flavor } : {}),
-    },
-  });
-  await recordImageReferences(asset.id, references, sink);
-
   const ctx: SceneAttemptContext = {
     promptFor,
     primaryBuffer,
     multiBuffers,
     focalName: plan.focal?.name ?? "Scene",
   };
-  const started = Date.now();
   try {
-    const outcome = await executeSceneChain(chain, (id) => runSceneProvider(id, ctx), sink);
-    if (!outcome) {
-      // Surface the real upstream cause on the row so the failed tile explains
-      // why (e.g. a Venice edit content-rejection), not a generic placeholder.
-      await failImage(asset.id, sceneFailureMessage(collected.items));
-      input.logResult(asset.id, "failed", started);
-      return asset.id;
-    }
-    // A fallback rung won — correct the recorded prompt + model to what ran.
-    if (outcome.providerId !== primary) {
-      await correctProviderMeta(asset.id, promptFor(outcome.providerId), modelFor(outcome.providerId));
-    }
-    const saved = await saveImageBuffer(asset.id, outcome.image, sink);
-    input.logResult(asset.id, saved?.status ?? "failed", started);
-  } catch (err) {
-    const message = describeProviderError(err);
-    await failImage(asset.id, message);
-    input.logResult(asset.id, "failed", started);
+    const { imageId } = await runImagePipeline({
+      asset: {
+        ownerId: linkage.ownerId,
+        kind: "scene",
+        entityKind: linkage.entityKind,
+        entityId: linkage.entityId,
+        chatId: linkage.chatId,
+        anchorMessageId: linkage.anchorMessageId,
+        prompt: promptFor(primary),
+        sourceImageId: anchorRef?.imageId,
+        meta: {
+          demo,
+          focalName: plan.focal?.name ?? null,
+          referenceName: anchorRef?.name ?? null,
+          model: modelFor(primary),
+          ...(input.flavor ? { flavor: input.flavor } : {}),
+        },
+      },
+      // Belongs to the row, not to the generation — so it stays off the clock.
+      afterReserve: (asset) => recordImageReferences(asset.id, references, sink),
+      produce: async (asset) => {
+        const outcome = await executeSceneChain(chain, (id) => runSceneProvider(id, ctx), sink);
+        // Surface the real upstream cause on the row so the failed tile explains
+        // why (e.g. a Venice edit content-rejection), not a generic placeholder.
+        // The chain reports exhaustion rather than throwing, so this is a
+        // returned failure; its diagnostics are already in the collector.
+        if (!outcome) return { ok: false, error: sceneFailureMessage(collected.items) };
+        // A fallback rung won — correct the recorded prompt + model to what ran.
+        if (outcome.providerId !== primary) {
+          await correctProviderMeta(asset.id, promptFor(outcome.providerId), modelFor(outcome.providerId));
+        }
+        return { ok: true, image: outcome.image };
+      },
+      onSettled: ({ imageId, status, startedMs }) => input.logResult(imageId, status, startedMs),
+      onThrown: ({ imageId, startedMs }) => input.logResult(imageId, "failed", startedMs),
+      sink,
+    });
+    return imageId;
   } finally {
+    // The one scene-specific step that does NOT ride a hook: this lane owns a
+    // diagnostic COLLECTOR (the provider chain's fallback record), and draining
+    // it must cover the whole call — including a throw out of the pipeline
+    // itself — exactly as this `finally` did before the shell existed.
     drainSceneDiagnostics(collected.items, plan.focal?.name ?? null);
   }
-  return asset.id;
 }
 
 interface SceneAttemptContext {
@@ -371,12 +379,8 @@ async function correctProviderMeta(assetId: string, prompt: string, model: strin
   const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, assetId)).limit(1);
   await db()
     .update(images)
-    .set({ prompt, meta: { ...metaRecord(row?.meta), model } })
+    .set({ prompt, meta: { ...imageMeta(row?.meta), model } })
     .where(eq(images.id, assetId));
-}
-
-function metaRecord(meta: unknown): Record<string, unknown> {
-  return meta && typeof meta === "object" && !Array.isArray(meta) ? { ...(meta as Record<string, unknown>) } : {};
 }
 
 /** The user-facing reason a whole render chain failed, drawn from the terminal diagnostic the chain pushed. */

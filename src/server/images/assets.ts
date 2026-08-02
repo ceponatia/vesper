@@ -2,9 +2,10 @@ import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, images, items, locations } from "../db";
+import { describeProviderError } from "../ai";
 import { newId } from "@/lib/ids";
 import { log } from "@/server/log";
 import { parseOr } from "@/lib/parse";
@@ -15,6 +16,7 @@ import {
   dataRoot,
   imageRelativePath,
   imagesDirectoryPath,
+  type StoredImagePath,
 } from "./paths";
 
 export { absoluteImagePath, dataRoot, imageRelativePath } from "./paths";
@@ -27,6 +29,20 @@ export interface ImageFileRef {
   id: string;
   ownerId: string;
   path: string;
+}
+
+/**
+ * A stored row's file bytes, or null when the file is lost. Every image read is
+ * degradable by design (docs/images.md): the row is written before the file, and
+ * image_sweep reconciles a row whose file vanished — so a reader falls back to
+ * another reference or skips the read rather than failing the turn.
+ */
+export async function readImageBytes(row: StoredImagePath): Promise<Buffer | null> {
+  try {
+    return await fs.readFile(absoluteImagePath(row));
+  } catch {
+    return null;
+  }
 }
 
 export interface CreateImageAssetOptions {
@@ -120,8 +136,23 @@ function pendingPathFor(absolutePath: string): string {
 
 const metaSchema = z.record(z.string(), z.unknown());
 
+/**
+ * The write-path merge: the stored jsonb re-parsed at the trust boundary, plus
+ * the fields this update contributes. Deliberately NOT built on `imageMeta` —
+ * `parseOr` additionally JSON-decodes a string column value and drops a
+ * `__proto__` key, and the write path is where that hardening belongs.
+ */
 function mergeMeta(raw: unknown, extra: Record<string, unknown>): Record<string, unknown> {
   return { ...parseOr(metaSchema, raw, {}), ...extra };
+}
+
+/**
+ * An images row's jsonb `meta` as a plain record for READING one stored field
+ * (`lookKey`, `source`, `error`) — `{}` for null, an array, or any non-object,
+ * so a caller's field lookup simply misses instead of throwing.
+ */
+export function imageMeta(meta: unknown): Record<string, unknown> {
+  return typeof meta === "object" && meta !== null && !Array.isArray(meta) ? (meta as Record<string, unknown>) : {};
 }
 
 /**
@@ -153,6 +184,184 @@ export async function saveImageBuffer(imageId: string, buffer: Buffer, sink?: Di
   }
 }
 
+/** What a lane's generate step hands back: bytes to save, or the text a failed row records. */
+export type ImageProduceResult = { ok: true; image: Buffer } | { ok: false; error: string };
+
+/** `ready` ⇒ the file landed and the row says so; `failed` ⇒ the row carries the reason. */
+export type ImagePipelineStatus = "ready" | "failed";
+
+export interface ImagePipelineOutcome {
+  imageId: string;
+  status: ImagePipelineStatus;
+  /** When generation started (after the reserve) — the lanes' `durationMs` baseline. */
+  startedMs: number;
+}
+
+export interface ImagePipelineThrown {
+  imageId: string;
+  /** `describeProviderError`'s text — already written to the row. */
+  message: string;
+  startedMs: number;
+}
+
+export interface ImagePipelineOptions {
+  /** The row reserved before anything is generated. */
+  asset: CreateImageAssetOptions;
+  /** Non-null ⇒ fail the reserved row with this text and stop: no generation, no hooks. */
+  failedPrecondition?: string | null;
+  /** Runs once the row exists, before the generation clock starts. */
+  afterReserve?: (asset: ImageRow) => Promise<void>;
+  /** The generation step, handed its own reserved row. Anything it throws is caught here. */
+  produce: (asset: ImageRow) => Promise<ImageProduceResult>;
+  /** Runs only when the file landed and the row reads `ready`. */
+  onReady?: (asset: ImageRow) => Promise<void>;
+  /** Produce returned (saved or failed) — the lane's event log. */
+  onSettled?: (outcome: ImagePipelineOutcome) => void;
+  /** Produce threw — the row is already failed with `message`. */
+  onThrown?: (outcome: ImagePipelineThrown) => void;
+  /** Warn diagnostic recorded when produce throws; `imageId` joins any context supplied. */
+  failureDiagnostic?: { code: string; context?: Record<string, unknown> };
+  sink?: DiagnosticSink;
+}
+
+export interface ImagePipelineResult {
+  imageId: string;
+  status: ImagePipelineStatus;
+}
+
+/**
+ * The one reserve → generate → save-or-fail → log sequence every image lane runs
+ * (audit C1, image-pipeline-consolidation.plan.md slice 4). Six copies of it had
+ * already drifted in ways nobody decided — one lane recorded a failure
+ * diagnostic and its neighbour didn't — so the ordering, and with it the
+ * row-before-file invariant (docs/images.md), lives here and nowhere else:
+ *
+ *   reserve → afterReserve → precondition → produce → save-or-fail → onReady → log
+ *
+ * The shell owns execution, never the answer: each lane keeps its own return
+ * type, event payload and diagnostics, and every hook below exists because a
+ * lane needs it.
+ *
+ * - **`failedPrecondition`** — the "row exists, nothing was attempted" shape.
+ *   avatar/entity/variants reserve the row BEFORE they know the character or
+ *   entity is missing, then fail it with no event log and no diagnostic. Lanes
+ *   whose precondition is cheaper than a row (the chat look/place anchors: demo
+ *   mode, no Venice key) return before calling in at all — the shell supports
+ *   both orderings because it never moves the reserve relative to a lane's own
+ *   checks.
+ * - **`afterReserve`** — work that belongs to the row rather than to the
+ *   generation, and so must not be on the clock: the scene lane's
+ *   `image_references` rows.
+ * - **`produce`** — the provider call. Bytes, or a structured failure for a
+ *   provider that reports one instead of throwing (the scene chain exhausting
+ *   every rung; a Venice edit returning `ok: false`). Whatever it throws is
+ *   caught here and `describeProviderError` writes the row's failure text, so no
+ *   lane repeats that.
+ * - **`onReady`** — the pointer writes that are only correct once the file
+ *   exists: `characters.avatar_image_id`, an entity's `image_id` + reclaim, the
+ *   look anchor's keep-latest purge.
+ * - **`onSettled` / `onThrown`** — the per-lane event log, injected by the
+ *   caller (ruled: the event log stays per-lane, and a lane without one gains
+ *   none). Two hooks rather than one because avatar and entity log a DIFFERENT
+ *   payload when the provider threw (`error`, no `demo`/`durationMs`) than when
+ *   it settled, while variants and scene log the same line either way.
+ * - **`failureDiagnostic`** — the warn diagnostic for a THROWN generation
+ *   failure; the failing row's `imageId` joins whatever context is supplied, and
+ *   supplying none leaves the diagnostic context-free (the chat look/place
+ *   shape). A lane whose generation failure is a RETURNED failure pushes its own
+ *   diagnostic at that branch, because only the lane can tell a precondition it
+ *   cannot satisfy (variants with no reference avatar — diagnostic-free, exactly
+ *   like entity's not-found) from a generation that actually failed.
+ *
+ * **Lane differences preserved, not normalized:** avatar/entity/variants/scene
+ * return the asset id even when the row failed, while the chat anchors return
+ * null; variants stamps `durationMs` on its failure event and avatar/entity do
+ * not; the chat anchors log no event at all; only the scene lane keeps a
+ * diagnostic COLLECTOR (its provider chain's fallback record), and it drains
+ * that itself around this call, as its `finally` always did.
+ *
+ * **The one ruled normalization** (plan §Review rulings 2026-07-30 — a
+ * deliberate resilience improvement, not behaviour-neutral cleanup): a
+ * generation failure now records a warn diagnostic in every lane.
+ * `images.avatar.generate_failed` and `images.variant.generate_failed` joined
+ * the entity lane's long-standing `images.entity.generate_failed`.
+ */
+export async function runImagePipeline(opts: ImagePipelineOptions): Promise<ImagePipelineResult> {
+  const asset = await createImageAsset(opts.asset);
+  await opts.afterReserve?.(asset);
+
+  const precondition = opts.failedPrecondition ?? null;
+  if (precondition !== null) {
+    await failImage(asset.id, precondition);
+    return { imageId: asset.id, status: "failed" };
+  }
+
+  const startedMs = Date.now();
+  try {
+    const produced = await opts.produce(asset);
+    if (!produced.ok) {
+      await failImage(asset.id, produced.error);
+      opts.onSettled?.({ imageId: asset.id, status: "failed", startedMs });
+      return { imageId: asset.id, status: "failed" };
+    }
+    const saved = await saveImageBuffer(asset.id, produced.image, opts.sink);
+    const status: ImagePipelineStatus = saved?.status === "ready" ? "ready" : "failed";
+    if (status === "ready") await opts.onReady?.(asset);
+    opts.onSettled?.({ imageId: asset.id, status, startedMs });
+    return { imageId: asset.id, status };
+  } catch (err) {
+    const message = describeProviderError(err);
+    await failImage(asset.id, message);
+    const failure = opts.failureDiagnostic;
+    if (failure) {
+      opts.sink?.push(
+        diag(
+          "warn",
+          failure.code,
+          message.slice(0, 300),
+          failure.context ? { context: { ...failure.context, imageId: asset.id } } : undefined,
+        ),
+      );
+    }
+    opts.onThrown?.({ imageId: asset.id, message, startedMs });
+    return { imageId: asset.id, status: "failed" };
+  }
+}
+
+/**
+ * Delete every images row matching `where` and unlink their files best-effort
+ * (image_sweep reconciles stragglers). The CALLER owns the predicate — build it
+ * with the same owner/kind/chat guards the call site needs; this helper adds
+ * nothing and so can never widen one. Returns how many rows were removed.
+ *
+ * An `undefined` predicate would match the whole table, so it is refused: a
+ * caller whose guards all collapsed to `undefined` deletes nothing rather than
+ * everything.
+ */
+export async function purgeImagesWhere(where: SQL | undefined): Promise<number> {
+  if (where === undefined) {
+    log.warn("images", "purgeImagesWhere refused an unguarded predicate");
+    return 0;
+  }
+  const rows = await db()
+    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
+    .from(images)
+    .where(where);
+  if (rows.length === 0) return 0;
+  await db().delete(images).where(where);
+  await Promise.all(rows.map((row) => unlinkImageFile(row)));
+  return rows.length;
+}
+
+/** Best-effort file removal for a purged row — never throws; image_sweep reconciles stragglers. */
+async function unlinkImageFile(row: ImageFileRef): Promise<void> {
+  try {
+    await fs.unlink(absoluteImagePath(row));
+  } catch {
+    // already gone, or a path that no longer resolves — the sweep reconciles
+  }
+}
+
 /**
  * Hard-delete one owned image — the row first, then its file best-effort
  * (image_sweep reconciles a straggler). Owner-scoped, with an optional `kind`
@@ -165,16 +374,8 @@ export async function deleteOwnedImage(
   ownerId: string,
   opts: { kind?: ImageKind; kinds?: readonly ImageKind[] } = {},
 ): Promise<boolean> {
-  const where = and(eq(images.id, imageId), eq(images.ownerId, ownerId), kindGuard(opts));
-  const [row] = await db()
-    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
-    .from(images)
-    .where(where)
-    .limit(1);
-  if (!row) return false;
-  await db().delete(images).where(eq(images.id, imageId));
-  await fs.unlink(absoluteImagePath(row)).catch(() => undefined); // sweep reconciles stragglers
-  return true;
+  const removed = await purgeImagesWhere(and(eq(images.id, imageId), eq(images.ownerId, ownerId), kindGuard(opts)));
+  return removed > 0;
 }
 
 /** The optional single/multi kind guard shared by the owned-delete helpers. */
@@ -217,15 +418,7 @@ export async function deleteOwnedImages(
   opts: { kind?: ImageKind; kinds?: readonly ImageKind[] } = {},
 ): Promise<number> {
   if (imageIds.length === 0) return 0;
-  const where = and(inArray(images.id, imageIds), eq(images.ownerId, ownerId), kindGuard(opts));
-  const rows = await db()
-    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
-    .from(images)
-    .where(where);
-  if (rows.length === 0) return 0;
-  await db().delete(images).where(where);
-  await Promise.all(rows.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
-  return rows.length;
+  return purgeImagesWhere(and(inArray(images.id, imageIds), eq(images.ownerId, ownerId), kindGuard(opts)));
 }
 
 /**
@@ -239,17 +432,11 @@ export async function deleteOwnedImages(
  */
 export async function deleteChatUploads(chatId: string, anchorMessageIds?: readonly string[]): Promise<number> {
   if (anchorMessageIds !== undefined && anchorMessageIds.length === 0) return 0;
-  const where = anchorMessageIds
-    ? and(eq(images.chatId, chatId), eq(images.kind, "chat_upload"), inArray(images.anchorMessageId, [...anchorMessageIds]))
-    : and(eq(images.chatId, chatId), eq(images.kind, "chat_upload"));
-  const rows = await db()
-    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
-    .from(images)
-    .where(where);
-  if (rows.length === 0) return 0;
-  await db().delete(images).where(where);
-  await Promise.all(rows.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
-  return rows.length;
+  return purgeImagesWhere(
+    anchorMessageIds
+      ? and(eq(images.chatId, chatId), eq(images.kind, "chat_upload"), inArray(images.anchorMessageId, [...anchorMessageIds]))
+      : and(eq(images.chatId, chatId), eq(images.kind, "chat_upload")),
+  );
 }
 
 /**
@@ -259,15 +446,7 @@ export async function deleteChatUploads(chatId: string, anchorMessageIds?: reado
  */
 export async function deleteChatAssets(chatId: string, kinds: readonly ImageKind[]): Promise<number> {
   if (kinds.length === 0) return 0;
-  const where = and(eq(images.chatId, chatId), inArray(images.kind, [...kinds]));
-  const rows = await db()
-    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
-    .from(images)
-    .where(where);
-  if (rows.length === 0) return 0;
-  await db().delete(images).where(where);
-  await Promise.all(rows.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
-  return rows.length;
+  return purgeImagesWhere(and(eq(images.chatId, chatId), inArray(images.kind, [...kinds])));
 }
 
 /**

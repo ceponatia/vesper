@@ -1,11 +1,18 @@
-import fs from "node:fs/promises";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import type { AttributeValue } from "@/contracts/attributes/value";
 import type { RegionExposure } from "@/contracts/items/visibility";
-import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { describeProviderError, hasVenice, isDemoMode, veniceEditImage, veniceGenerateImage, veniceSceneImageModelId } from "../ai";
+import type { DiagnosticSink } from "@/contracts/diagnostics";
+import { fnv1aHex } from "@/lib/hash";
+import {
+  hasVenice,
+  isDemoMode,
+  unwrapVeniceImage,
+  veniceEditImage,
+  veniceGenerateImage,
+  veniceSceneImageModelId,
+} from "../ai";
 import { db, images } from "../db";
-import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer } from "./assets";
+import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts";
 
 /**
@@ -29,16 +36,6 @@ import { PORTRAIT_IDENTITY_LOCK } from "./prompts";
  * and hard-deleted with the conversation.
  */
 
-/** FNV-1a 32-bit hex over a string — a stable, cheap cache key. */
-function fnv1a(text: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
 /**
  * The look cache key (chat-wardrobe-parity — new key shape, ruled): sorted structured
  * worn item ids + the free-text overlay + a coverage-computed exposure fingerprint +
@@ -46,6 +43,10 @@ function fnv1a(text: string): string {
  * of clothes). Structured worn state replaces the old free-text `outfit` string; a
  * legacy/free-text chat (empty worn list) keys on the overlay alone, so its key stays
  * stable across the change. PURE and order-stable.
+ *
+ * A DETERMINISM SEAM: this is the `meta.lookKey` `latestChatLook` compares, so if
+ * the assembled string or its hash ever moves, every existing chat silently
+ * re-renders its anchor. Golden-pinned in `chat-look.test.ts` and `lib/hash.test.ts`.
  */
 export function chatLookKey(input: {
   wornItemIds: readonly string[];
@@ -72,7 +73,7 @@ export function chatLookKey(input: {
     .sort()
     .join(";");
   const garments = input.garmentKey?.trim() ? `|${input.garmentKey.trim()}` : "";
-  return fnv1a(`${worn}|${input.overlay.trim().toLowerCase()}|${exposure}|${overlays}${garments}`);
+  return fnv1aHex(`${worn}|${input.overlay.trim().toLowerCase()}|${exposure}|${overlays}${garments}`);
 }
 
 /** The identity-locked look-edit instruction: same person, new outfit, neutral framing — age-anchored (2026-07-29 ruling). */
@@ -115,13 +116,9 @@ export async function latestChatLook(
     .orderBy(desc(images.createdAt))
     .limit(1);
   if (!row) return null;
-  const meta = row.meta && typeof row.meta === "object" && !Array.isArray(row.meta) ? (row.meta as Record<string, unknown>) : {};
-  if (meta.lookKey !== lookKey) return null;
-  try {
-    return { imageId: row.id, buffer: await fs.readFile(absoluteImagePath(row)) };
-  } catch {
-    return null; // file lost — the sweep reconciles; fall back to the avatar
-  }
+  if (imageMeta(row.meta).lookKey !== lookKey) return null;
+  const buffer = await readImageBytes(row);
+  return buffer ? { imageId: row.id, buffer } : null; // no bytes — the sweep reconciles; fall back to the avatar
 }
 
 export interface RenderChatLookInput {
@@ -140,44 +137,42 @@ export interface RenderChatLookInput {
 
 /**
  * Mint (or refresh) the chat's current-look reference: one identity-locked edit
- * from the avatar wearing the tracked outfit. On success every OTHER `chat_look`
- * row for the chat deletes (keep-latest, ruled). Failures mark the row failed
- * and return null — the anchor loader just keeps falling back to the avatar and
- * the outfit-change trigger re-fires on the next change. Never throws.
+ * from the avatar wearing the tracked outfit, on the shared reserve → generate →
+ * save-or-fail → log shell (`runImagePipeline`). On success every OTHER
+ * `chat_look` row for the chat deletes (keep-latest, ruled). Failures mark the
+ * row failed and return null — the anchor loader just keeps falling back to the
+ * avatar and the outfit-change trigger re-fires on the next change. Never throws.
+ *
+ * Both anchor lanes check their preconditions BEFORE reserving anything (a
+ * keyless or demo chat leaves no row at all) and log no event — the two
+ * differences from the avatar/entity shape, both deliberate.
  */
 export async function renderChatLookImage(input: RenderChatLookInput): Promise<string | null> {
   if (isDemoMode() || !hasVenice()) return null;
   const prompt = buildChatLookPrompt({ outfit: input.outfit, outfitExposed: input.outfitExposed, ageAnchor: input.ageAnchor });
-  const asset = await createImageAsset({
-    ownerId: input.userId,
-    kind: "chat_look",
-    entityKind: "character",
-    entityId: input.characterId,
-    chatId: input.chatId,
-    prompt,
-    meta: { lookKey: input.lookKey },
-  });
-  try {
-    const edit = await veniceEditImage({ prompt, reference: input.avatar });
-    if (!edit.ok || !edit.image) throw new Error(edit.error || "venice edit failed");
-    const saved = await saveImageBuffer(asset.id, edit.image, input.sink);
-    if (saved?.status !== "ready") return null;
+  const { imageId, status } = await runImagePipeline({
+    asset: {
+      ownerId: input.userId,
+      kind: "chat_look",
+      entityKind: "character",
+      entityId: input.characterId,
+      chatId: input.chatId,
+      prompt,
+      meta: { lookKey: input.lookKey },
+    },
+    produce: async () => ({
+      ok: true,
+      image: unwrapVeniceImage(await veniceEditImage({ prompt, reference: input.avatar }), "venice edit failed"),
+    }),
     // Keep-latest (ruled): the superseded looks go with their files.
-    const stale = await db()
-      .select({ id: images.id, path: images.path })
-      .from(images)
-      .where(and(eq(images.chatId, input.chatId), eq(images.kind, "chat_look"), ne(images.id, asset.id)));
-    if (stale.length) {
-      await db().delete(images).where(and(eq(images.chatId, input.chatId), eq(images.kind, "chat_look"), ne(images.id, asset.id)));
-      await Promise.all(stale.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
-    }
-    return asset.id;
-  } catch (err) {
-    const message = describeProviderError(err);
-    await failImage(asset.id, message);
-    input.sink?.push(diag("warn", "images.chat_look.failed", message.slice(0, 300)));
-    return null;
-  }
+    onReady: async (asset) => {
+      await purgeImagesWhere(and(eq(images.chatId, input.chatId), eq(images.kind, "chat_look"), ne(images.id, asset.id)));
+    },
+    failureDiagnostic: { code: "images.chat_look.failed" },
+    sink: input.sink,
+  });
+  // A save that never reached `ready` already pushed its own diagnostic.
+  return status === "ready" ? imageId : null;
 }
 
 export interface RenderChatPlaceInput {
@@ -203,22 +198,20 @@ export function buildChatPlacePrompt(input: { placeName: string; sketch: string 
 export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise<string | null> {
   if (isDemoMode() || !hasVenice() || !input.sketch.trim()) return null;
   const prompt = buildChatPlacePrompt(input);
-  const asset = await createImageAsset({
-    ownerId: input.userId,
-    kind: "chat_place",
-    chatId: input.chatId,
-    prompt,
-    meta: { placeName: input.placeName, model: `venice/${veniceSceneImageModelId()}` },
+  const { imageId, status } = await runImagePipeline({
+    asset: {
+      ownerId: input.userId,
+      kind: "chat_place",
+      chatId: input.chatId,
+      prompt,
+      meta: { placeName: input.placeName, model: `venice/${veniceSceneImageModelId()}` },
+    },
+    produce: async () => ({
+      ok: true,
+      image: unwrapVeniceImage(await veniceGenerateImage({ prompt, aspectRatio: "3:2" }), "venice generate failed"),
+    }),
+    failureDiagnostic: { code: "images.chat_place.failed" },
+    sink: input.sink,
   });
-  try {
-    const generated = await veniceGenerateImage({ prompt, aspectRatio: "3:2" });
-    if (!generated.ok || !generated.image) throw new Error(generated.error || "venice generate failed");
-    const saved = await saveImageBuffer(asset.id, generated.image, input.sink);
-    return saved?.status === "ready" ? asset.id : null;
-  } catch (err) {
-    const message = describeProviderError(err);
-    await failImage(asset.id, message);
-    input.sink?.push(diag("warn", "images.chat_place.failed", message.slice(0, 300)));
-    return null;
-  }
+  return status === "ready" ? imageId : null;
 }

@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { diag, itemDefinitionSchema, type Diagnostic, type DiagnosticSink, type ItemDefinition } from "@/contracts";
@@ -8,7 +7,7 @@ import { currentEmbedder, embedText, toVectorLiteral } from "@/server/ai";
 import { db, images, items, locationLinks, locations } from "@/server/db";
 import { escapeLikePattern } from "@/server/authoring";
 import { fuzzyResolve, ITEM_DEDUPE_MIN_SCORE, refreshSearchEmbedding, type LibraryKind } from "@/server/memory";
-import { absoluteImagePath, type ImageEntityKind } from "@/server/images";
+import { purgeImagesWhere, type ImageEntityKind } from "@/server/images";
 import { startJob } from "./jobs";
 import { errorText } from "./respond";
 import { invalidCoverageIds, itemExtrasSchema, type ItemExtras } from "./schemas";
@@ -395,19 +394,9 @@ export function composeItemDefinition(row: {
  * files best-effort — sweepOrphans reconciles anything missed.
  */
 export async function deleteEntityImages(entityKind: ImageEntityKind, entityId: string, ownerId: string): Promise<void> {
-  const rows = await db()
-    .select({ id: images.id, path: images.path })
-    .from(images)
-    .where(and(eq(images.ownerId, ownerId), eq(images.entityKind, entityKind), eq(images.entityId, entityId)));
-  if (rows.length === 0) return;
-  await db()
-    .delete(images)
-    .where(and(eq(images.ownerId, ownerId), eq(images.entityKind, entityKind), eq(images.entityId, entityId)));
-  for (const row of rows) {
-    void fs.unlink(absoluteImagePath(row)).catch(() => {
-      // already gone or transient — image_sweep reconciles
-    });
-  }
+  await purgeImagesWhere(
+    and(eq(images.ownerId, ownerId), eq(images.entityKind, entityKind), eq(images.entityId, entityId)),
+  );
 }
 
 // ---------------------------------------------------------------------------

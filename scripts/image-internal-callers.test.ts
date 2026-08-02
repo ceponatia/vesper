@@ -7,20 +7,19 @@ const ROOTS = [path.join(process.cwd(), "src"), path.join(process.cwd(), "script
 const INTERNAL_NAMES = new Set(["saveImageBuffer", "deleteChatUploads", "deleteChatAssets"]);
 
 /**
- * Reviewed 2026-07-26. Every entry is either an image worker that minted the row
- * it writes, the route-safe owner-checking adapter, or the chat pipeline's
- * authenticated rerun / ownership-reverified delete cascade.
+ * Reviewed 2026-07-26; re-reviewed 2026-08-02 (image-pipeline-consolidation
+ * C1): the five generation lanes no longer import `saveImageBuffer` — they run
+ * on `runImagePipeline`, and the shell's save call lives inside `assets.ts`
+ * itself (the defining module, so it never appears as an import). Every
+ * remaining entry is either the upload worker that minted the row it writes,
+ * the route-safe owner-checking adapter, or the chat pipeline's authenticated
+ * rerun / ownership-reverified delete cascade.
  */
 const APPROVED: Readonly<Record<string, readonly string[]>> = {
   saveImageBuffer: [
-    "src/server/images/avatar.ts",
-    "src/server/images/chat-look.ts",
-    "src/server/images/entity.ts",
     "src/server/images/internal.ts",
     "src/server/images/route-safe.ts",
-    "src/server/images/scene.ts",
     "src/server/images/upload.ts",
-    "src/server/images/variants.ts",
   ],
   deleteChatUploads: ["src/server/engine/chat-pipeline.ts", "src/server/images/internal.ts"],
   deleteChatAssets: ["src/server/engine/chat-pipeline.ts", "src/server/images/internal.ts"],
