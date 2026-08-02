@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
@@ -12,7 +11,7 @@ import { diag } from "@/contracts/diagnostics";
 import { classifyImageFailure, hasVenice, isDemoMode } from "../ai";
 import { db, images } from "../db";
 import { logEvent } from "../events";
-import { absoluteImagePath, deleteOwnedImage } from "./assets";
+import { deleteOwnedImage, imageMeta, readImageBytes } from "./assets";
 import { latestChatLook } from "./chat-look";
 import {
   apparentAgeAnchor,
@@ -236,11 +235,8 @@ async function loadChatPlaceImage(ownerId: string, imageId: string): Promise<{ i
     .where(and(eq(images.id, imageId), eq(images.ownerId, ownerId), eq(images.kind, "chat_place"), eq(images.status, "ready")))
     .limit(1);
   if (!row) return null;
-  try {
-    return { imageId: row.id, buffer: await fs.readFile(absoluteImagePath(row)) };
-  } catch {
-    return null; // file lost — render single-reference; the sweep reconciles
-  }
+  const buffer = await readImageBytes(row);
+  return buffer ? { imageId: row.id, buffer } : null; // no bytes — render single-reference; the sweep reconciles
 }
 
 /** Read the character's canonical avatar for reference editing — owned + ready, else null (text-to-image). */
@@ -255,14 +251,10 @@ async function loadCharacterAvatar(
     .where(and(eq(images.id, avatarImageId), eq(images.ownerId, ownerId)))
     .limit(1);
   if (!row || row.status !== "ready") return null;
-  try {
-    const buffer = await fs.readFile(absoluteImagePath(row));
-    const uploaded =
-      row.meta && typeof row.meta === "object" && !Array.isArray(row.meta) && (row.meta as Record<string, unknown>).source === "upload";
-    return { imageId: row.id, buffer, source: uploaded ? "uploaded" : "generated" };
-  } catch {
-    return null; // file lost — fall through to text-to-image
-  }
+  const buffer = await readImageBytes(row);
+  if (!buffer) return null; // no bytes — fall through to text-to-image
+  const uploaded = imageMeta(row.meta).source === "upload";
+  return { imageId: row.id, buffer, source: uploaded ? "uploaded" : "generated" };
 }
 
 /**
@@ -390,8 +382,8 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
 async function imageFailure(imageId: string): Promise<string | null> {
   const [row] = await db().select({ status: images.status, meta: images.meta }).from(images).where(eq(images.id, imageId)).limit(1);
   if (!row || row.status !== "failed") return null;
-  const meta = row.meta && typeof row.meta === "object" && !Array.isArray(row.meta) ? (row.meta as Record<string, unknown>) : {};
-  return typeof meta.error === "string" ? meta.error : "";
+  const error = imageMeta(row.meta).error;
+  return typeof error === "string" ? error : "";
 }
 
 /**

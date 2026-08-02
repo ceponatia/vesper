@@ -4,7 +4,12 @@
  * kernel) so every projector, replay, and store can depend on identical
  * canonicalization without a cross-family import. No IO, no clock, no ambient
  * randomness (engine.spec §31–32).
+ *
+ * The checksum itself is the app-wide `lib/hash` FNV-1a; what this module owns is
+ * the CANONICALIZATION in front of it.
  */
+
+import { fnv1aHex } from "../hash";
 
 /** Recursively key-sort objects so structurally-equal values serialize identically. */
 export function canonicalize(value: unknown): unknown {
@@ -22,13 +27,7 @@ export function canonicalize(value: unknown): unknown {
 
 /** Stable non-cryptographic checksum for deterministic replay/equality evidence. */
 export function simulationHash(value: unknown): string {
-  const serialized = JSON.stringify(canonicalize(value));
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < serialized.length; index += 1) {
-    hash ^= serialized.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return fnv1aHex(JSON.stringify(canonicalize(value)));
 }
 
 /** Total order over strings with no locale surprises (byte-wise comparison). */

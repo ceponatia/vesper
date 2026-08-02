@@ -59,6 +59,51 @@ describe("chatLookKey (chat-wardrobe-parity — structured key)", () => {
   });
 });
 
+/**
+ * GOLDEN DETERMINISM PINS — never "update to fix" a failure here.
+ *
+ * `chatLookKey` is the `meta.lookKey` stamped on every `chat_look` row, and the
+ * loader (`latestChatLook`) reads a mismatch as "this look is stale". The values
+ * below were computed from the hand-rolled FNV-1a this file carried BEFORE it
+ * adopted the shared `@/lib/hash` (image-pipeline-consolidation.plan.md C10), so
+ * they prove the consolidation moved nothing.
+ *
+ * If one of them ever changes, every conversation already in the database misses
+ * its cache on the next turn and silently re-renders its look anchor against the
+ * provider. Nothing throws — that invisibility is exactly why these are pinned.
+ * A failure here IS the breakage: fix the hash, never the pin.
+ */
+describe("chatLookKey — golden determinism pins", () => {
+  it("pins a fully-populated key", () => {
+    expect(
+      chatLookKey({
+        // Deliberately unsorted: the sort is part of what these values pin.
+        wornItemIds: ["item-c", "item-a", "item-b"],
+        // Mixed case with surrounding whitespace — the trim+lowercase is pinned too.
+        overlay: "  A Borrowed Hoodie ",
+        exposure: { torso: "covered", pelvis: "sheer", legs: "bare", feet: "covered" },
+        attributeOverlays: [
+          { id: "hair.length", value: "short", source: "narrative" },
+          { id: "hair.color", value: "auburn", source: "narrative" },
+        ],
+        garmentKey: " g1|sleeve_left=rolled|| ",
+      }),
+    ).toBe("505c4537");
+  });
+
+  it("pins a legacy free-text chat's key (empty worn list, overlay alone, no garment fingerprint)", () => {
+    expect(
+      chatLookKey({ wornItemIds: [], overlay: "a linen sundress", exposure: FULLY_COVERED, attributeOverlays: [] }),
+    ).toBe("5fb5063f");
+  });
+
+  it("pins the fully-covered, overlay-free key the cases above build on", () => {
+    expect(
+      chatLookKey({ wornItemIds: ["item-b", "item-a"], overlay: "", exposure: FULLY_COVERED, attributeOverlays: [] }),
+    ).toBe("7a2348c8");
+  });
+});
+
 describe("look/place prompts", () => {
   it("the look edit keeps identity, swaps the outfit, and forbids extra garments", () => {
     const prompt = buildChatLookPrompt({ outfit: "a linen sundress", outfitExposed: false });

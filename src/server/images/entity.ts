@@ -1,10 +1,10 @@
-import fs from "node:fs/promises";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db, images, items, locations } from "../db";
-import { describeProviderError, isDemoMode, veniceGenerateImage, veniceImageModelId } from "../ai";
+import { isDemoMode, unwrapVeniceImage, veniceGenerateImage, veniceImageModelId } from "../ai";
 import { logEvent } from "../events";
-import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer } from "./assets";
+import { runInBatches } from "@/lib/batches";
+import type { DiagnosticSink } from "@/contracts/diagnostics";
+import { purgeImagesWhere, runImagePipeline } from "./assets";
 import { monogramSvg } from "./monogram";
 import { buildItemImagePrompt, buildLocationImagePrompt } from "./prompts";
 
@@ -25,8 +25,10 @@ const ASPECT: Record<EntityImageKind, `${number}:${number}`> = { item: "1:1", lo
  * generation composed from the item/location's own fields, stored as a `kind:
  * "entity"` asset and set as the row's `imageId`. There is no gallery — a
  * regenerate replaces the old image (the previous asset is reclaimed). No
- * reference edit, no variants. Generation failure marks the row failed and
- * returns its id; callers never catch. Demo mode paints a monogram.
+ * reference edit, no variants. Runs on the shared reserve → generate →
+ * save-or-fail → log shell (`runImagePipeline`); generation failure marks the
+ * row failed and returns its id, callers never catch. Demo mode paints a
+ * monogram.
  */
 export async function generateEntityImage(input: GenerateEntityImageInput): Promise<string> {
   const demo = isDemoMode();
@@ -34,54 +36,52 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
     input.entityKind === "item"
       ? await loadItemPrompt(input.entityId, input.userId)
       : await loadLocationPrompt(input.entityId, input.userId);
+  const prompt = loaded?.prompt ?? "";
 
-  const asset = await createImageAsset({
-    ownerId: input.userId,
-    kind: "entity",
-    entityKind: input.entityKind,
-    entityId: input.entityId,
-    prompt: loaded?.prompt ?? "",
-    meta: { model: demo ? "demo" : `venice/${veniceImageModelId()}`, demo },
-  });
-
-  if (!loaded) {
-    await failImage(asset.id, `${input.entityKind} ${input.entityId} not found`);
-    return asset.id;
-  }
-
-  const started = Date.now();
-  try {
-    const buffer = demo ? monogramSvg(loaded.name) : await generateEntityBuffer(loaded.prompt, ASPECT[input.entityKind]);
-    const saved = await saveImageBuffer(asset.id, buffer, input.sink);
-    if (saved?.status === "ready") {
+  const { imageId } = await runImagePipeline({
+    asset: {
+      ownerId: input.userId,
+      kind: "entity",
+      entityKind: input.entityKind,
+      entityId: input.entityId,
+      prompt,
+      meta: { model: demo ? "demo" : `venice/${veniceImageModelId()}`, demo },
+    },
+    // A missing entity still leaves a failed row behind — no event, no diagnostic.
+    failedPrecondition: loaded ? null : `${input.entityKind} ${input.entityId} not found`,
+    // Only reached once the entity loaded, so the name fallback never fires.
+    produce: async () => ({
+      ok: true,
+      image: demo ? monogramSvg(loaded?.name ?? "") : await generateEntityBuffer(prompt, ASPECT[input.entityKind]),
+    }),
+    onReady: async (asset) => {
       await setEntityImage(input.entityKind, input.entityId, input.userId, asset.id);
       await reclaimOldImages(input.entityKind, input.entityId, input.userId, asset.id);
-    }
-    void logEvent("image.entity", {
-      imageId: asset.id,
-      entityKind: input.entityKind,
-      entityId: input.entityId,
-      status: saved?.status ?? "failed",
-      demo,
-      durationMs: Date.now() - started,
-    });
-  } catch (err) {
-    const message = describeProviderError(err);
-    await failImage(asset.id, message);
-    input.sink?.push(
-      diag("warn", "images.entity.generate_failed", message.slice(0, 300), {
-        context: { entityKind: input.entityKind, entityId: input.entityId, imageId: asset.id },
+    },
+    onSettled: ({ imageId: id, status, startedMs }) =>
+      void logEvent("image.entity", {
+        imageId: id,
+        entityKind: input.entityKind,
+        entityId: input.entityId,
+        status,
+        demo,
+        durationMs: Date.now() - startedMs,
       }),
-    );
-    void logEvent("image.entity", {
-      imageId: asset.id,
-      entityKind: input.entityKind,
-      entityId: input.entityId,
-      status: "failed",
-      error: message.slice(0, 300),
-    });
-  }
-  return asset.id;
+    onThrown: ({ imageId: id, message }) =>
+      void logEvent("image.entity", {
+        imageId: id,
+        entityKind: input.entityKind,
+        entityId: input.entityId,
+        status: "failed",
+        error: message.slice(0, 300),
+      }),
+    failureDiagnostic: {
+      code: "images.entity.generate_failed",
+      context: { entityKind: input.entityKind, entityId: input.entityId },
+    },
+    sink: input.sink,
+  });
+  return imageId;
 }
 
 interface LoadedPrompt {
@@ -138,18 +138,9 @@ async function setEntityImage(kind: EntityImageKind, id: string, ownerId: string
  * attempts) and unlink their files — there is no gallery to preserve them.
  */
 async function reclaimOldImages(kind: EntityImageKind, id: string, ownerId: string, keepId: string): Promise<void> {
-  const where = and(
-    eq(images.ownerId, ownerId),
-    eq(images.entityKind, kind),
-    eq(images.entityId, id),
-    ne(images.id, keepId),
+  await purgeImagesWhere(
+    and(eq(images.ownerId, ownerId), eq(images.entityKind, kind), eq(images.entityId, id), ne(images.id, keepId)),
   );
-  const rows = await db().select({ id: images.id, path: images.path }).from(images).where(where);
-  if (rows.length === 0) return;
-  await db().delete(images).where(where);
-  for (const row of rows) {
-    void fs.unlink(absoluteImagePath(row)).catch(() => undefined); // image_sweep reconciles stragglers
-  }
 }
 
 async function generateEntityBuffer(prompt: string, aspectRatio: `${number}:${number}`): Promise<Buffer> {
@@ -157,8 +148,7 @@ async function generateEntityBuffer(prompt: string, aspectRatio: `${number}:${nu
   // location shots are SFW (product/establishing), but the backend is Venice
   // now; a missing key / API error throws and the caller marks the row failed.
   const result = await veniceGenerateImage({ prompt, aspectRatio });
-  if (!result.ok || !result.image) throw new Error(result.error ?? "venice generate returned no image");
-  return result.image;
+  return unwrapVeniceImage(result, "venice generate returned no image");
 }
 
 /** How many entity images generate concurrently in a batch (user spec). */
@@ -200,18 +190,7 @@ export async function generateEntityImagesBatch(
   userId: string,
   sink?: DiagnosticSink,
 ): Promise<number> {
-  let done = 0;
-  for (let i = 0; i < ids.length; i += ENTITY_IMAGE_BATCH_SIZE) {
-    const chunk = ids.slice(i, i + ENTITY_IMAGE_BATCH_SIZE);
-    await Promise.all(
-      chunk.map((entityId) =>
-        generateEntityImage({ entityKind, entityId, userId, sink })
-          .then(() => {
-            done += 1;
-          })
-          .catch(() => undefined),
-      ),
-    );
-  }
-  return done;
+  return runInBatches(ids, ENTITY_IMAGE_BATCH_SIZE, (entityId) =>
+    generateEntityImage({ entityKind, entityId, userId, sink }),
+  );
 }

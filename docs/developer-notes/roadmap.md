@@ -298,16 +298,17 @@ umbrella further down.)
   [audit disposition](codebase-efficiency.audit.md#review-disposition-and-owner-rulings--2026-07-30)
   · [command shell](sim-command-shell.plan.md) ·
   [fork registry](sim-fork-registry.plan.md) ·
-  [image pipeline](image-pipeline-consolidation.plan.md) ·
+  [image pipeline](finished/image-pipeline-consolidation.plan.md) (shipped 2026-08-02) ·
   [client safety](client-type-safety.plan.md) ·
   [library routes](library-route-registry.plan.md) ·
   [editor scaffold](editor-scaffold.plan.md) ·
   [contracts](contracts-hygiene.plan.md) ·
   [dead exports](dead-export-sweep.plan.md) ·
   [tooling](tooling-gates.plan.md)
-  (draft; dependency order only, **not all promoted to next**). After the approved
-  near-term tranche and the feature work above: command-shell consolidation →
-  fork registry → image pipeline → client D10/D11/D12 → library registry/routes →
+  (draft; dependency order only, **not all promoted to next**; the image
+  pipeline plan was pulled forward on owner request and **shipped 2026-08-02**).
+  After the approved near-term tranche and the feature work above: command-shell
+  consolidation → fork registry → client D10/D11/D12 → library registry/routes →
   `ConfirmDialog`, followed by a go/no-go on the full editor scaffold → broad
   contracts/dead-export/eval-tooling hygiene. Settled exclusions: no expanded
   snapshots without measurements, no suggested-item write batching, no D14 client

@@ -1,9 +1,26 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { canCreateSymlinks, testPngBuffer, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
-import { absoluteImagePath, dataRoot, imageRelativePath, writeWebpAtomic } from "./assets";
+
+vi.mock("../db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db")>();
+  return { ...actual, db: vi.fn() };
+});
+
+import { db, type Db } from "../db";
+import {
+  absoluteImagePath,
+  dataRoot,
+  imageMeta,
+  imageRelativePath,
+  runImagePipeline,
+  writeWebpAtomic,
+  type ImagePipelineOutcome,
+  type ImagePipelineThrown,
+} from "./assets";
 import { monogramSvg } from "./monogram";
 
 const symlinksAvailable = canCreateSymlinks();
@@ -31,6 +48,22 @@ describe("dataRoot / paths", () => {
   it("derives the canonical relative path and resolves it against the root", () => {
     expect(imageRelativePath("owner1", "img1")).toBe("images/owner1/img1.webp");
     expect(absoluteImagePath({ path: "images/owner1/img1.webp" })).toBe(path.join(tmp, "images/owner1/img1.webp"));
+  });
+});
+
+describe("imageMeta", () => {
+  it("passes an object through and degrades every other jsonb shape to {}", () => {
+    expect(imageMeta({ lookKey: "abc", source: "upload" })).toEqual({ lookKey: "abc", source: "upload" });
+    // The shapes a jsonb column can legally hold besides an object — each must
+    // read as "no fields" rather than throw or expose an index.
+    for (const raw of [null, undefined, [], ["a"], "lookKey", 7, true]) {
+      expect(imageMeta(raw)).toEqual({});
+    }
+  });
+
+  it("misses cleanly on an absent field, so a caller's guard just fails", () => {
+    expect(imageMeta({}).lookKey).toBeUndefined();
+    expect(imageMeta([{ lookKey: "abc" }]).lookKey).toBeUndefined(); // an array is not a record
   });
 });
 
@@ -78,5 +111,200 @@ describe("writeWebpAtomic", () => {
 
     await expect(writeWebpAtomic(target, await testPngBuffer())).rejects.toThrow("symbolic link");
     expect(await fs.readFile(outside, "utf8")).toBe("untouched");
+  });
+});
+
+/** The reserved row every fake pipeline run below starts from. */
+const RESERVED = {
+  id: "pipelinerow1abcdefghijkl",
+  ownerId: "owner1",
+  path: "images/owner1/pipelinerow1abcdefghijkl.webp",
+  status: "pending",
+  meta: {},
+};
+
+/**
+ * Enough of the drizzle builder for the shell's own writes — the reserve insert,
+ * the fail update, and the save update — so the sequence can be asserted without
+ * a database. Each `set` is recorded, which is how a test reads what the row
+ * ended up saying. The lane-level pipelines (real rows, real files, real
+ * provider misses) are covered in assets.int.test.ts.
+ */
+function fakePipelineDb(): { client: Db; updates: Record<string, unknown>[] } {
+  const updates: Record<string, unknown>[] = [];
+  const client = {
+    insert: () => ({ values: () => ({ returning: () => Promise.resolve([RESERVED]) }) }),
+    select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([RESERVED]) }) }) }),
+    update: () => ({
+      set: (values: Record<string, unknown>) => {
+        updates.push(values);
+        return { where: () => ({ returning: () => Promise.resolve([{ ...RESERVED, ...values }]) }) };
+      },
+    }),
+  };
+  return { client: client as unknown as Db, updates };
+}
+
+function rowError(values: Record<string, unknown> | undefined): unknown {
+  return imageMeta(values?.meta).error;
+}
+
+/**
+ * The one reserve → generate → save-or-fail → log sequence (audit C1). These pin
+ * the shell's own contract — which hooks fire on which path, and the warn
+ * diagnostic a thrown generation records, since recording it in EVERY lane is
+ * the deliberate resilience change slice 4 shipped
+ * (image-pipeline-consolidation.plan.md §Review rulings 2026-07-30).
+ */
+describe("runImagePipeline", () => {
+  const asset = { ownerId: RESERVED.ownerId, kind: "avatar" as const };
+  const diagnostic = { code: "images.avatar.generate_failed", context: { characterId: "char-1" } };
+
+  it("saves, then updates pointers, then logs — and reports ready", async () => {
+    const { client, updates } = fakePipelineDb();
+    vi.mocked(db).mockReturnValue(client);
+    const order: string[] = [];
+    const settled: ImagePipelineOutcome[] = [];
+
+    const result = await runImagePipeline({
+      asset,
+      produce: () => Promise.resolve({ ok: true, image: monogramSvg("Mira Vale") }),
+      onReady: () => {
+        order.push("ready");
+        return Promise.resolve();
+      },
+      onSettled: (outcome) => {
+        order.push("settled");
+        settled.push(outcome);
+      },
+      failureDiagnostic: diagnostic,
+    });
+
+    expect(result).toEqual({ imageId: RESERVED.id, status: "ready" });
+    // The file exists because the row already did — row before file, unmoved.
+    await expect(fs.access(absoluteImagePath(RESERVED))).resolves.toBeUndefined();
+    expect(updates.at(-1)).toMatchObject({ status: "ready" });
+    expect(order).toEqual(["ready", "settled"]); // pointers first, log last
+    expect(settled[0]?.status).toBe("ready");
+    expect(settled[0]?.startedMs).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("a produce that throws fails the row, records the lane's warn diagnostic, and never settles", async () => {
+    const { client, updates } = fakePipelineDb();
+    vi.mocked(db).mockReturnValue(client);
+    const sink = new DiagnosticCollector();
+    const settled: ImagePipelineOutcome[] = [];
+    const thrown: ImagePipelineThrown[] = [];
+    let readied = false;
+
+    const result = await runImagePipeline({
+      asset,
+      produce: () => Promise.reject(new Error("VENICE_API_KEY not configured")),
+      onReady: () => {
+        readied = true;
+        return Promise.resolve();
+      },
+      onSettled: (outcome) => settled.push(outcome),
+      onThrown: (outcome) => thrown.push(outcome),
+      failureDiagnostic: diagnostic,
+      sink,
+    });
+
+    expect(result).toEqual({ imageId: RESERVED.id, status: "failed" });
+    expect(updates.at(-1)).toMatchObject({ status: "failed" });
+    expect(rowError(updates.at(-1))).toBe("VENICE_API_KEY not configured");
+    expect(readied).toBe(false);
+    // The two log hooks are exclusive: a lane logging different payloads on the
+    // two paths (avatar, entity) must never emit both for one generation.
+    expect(thrown.map((t) => t.message)).toEqual(["VENICE_API_KEY not configured"]);
+    expect(settled).toEqual([]);
+    expect(sink.items).toHaveLength(1);
+    expect(sink.items[0]?.severity).toBe("warn");
+    expect(sink.items[0]?.code).toBe("images.avatar.generate_failed");
+    // The failing row's id joins the lane's context — the entity lane's shape.
+    expect(sink.items[0]?.context).toEqual({ characterId: "char-1", imageId: RESERVED.id });
+  });
+
+  it("a produce that reports a failure fails the row and settles — the lane owns any diagnostic there", async () => {
+    // The scene chain and the Venice edit report failure rather than throwing;
+    // the shell must not mistake that for a thrown provider error, and must not
+    // record the thrown path's diagnostic for a lane's own precondition miss.
+    const { client, updates } = fakePipelineDb();
+    vi.mocked(db).mockReturnValue(client);
+    const sink = new DiagnosticCollector();
+    const settled: ImagePipelineOutcome[] = [];
+
+    const result = await runImagePipeline({
+      asset,
+      produce: () => Promise.resolve({ ok: false, error: "no ready canonical avatar to use as reference" }),
+      onSettled: (outcome) => settled.push(outcome),
+      failureDiagnostic: diagnostic,
+      sink,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(rowError(updates.at(-1))).toBe("no ready canonical avatar to use as reference");
+    expect(settled.map((s) => s.status)).toEqual(["failed"]);
+    expect(sink.items).toEqual([]);
+  });
+
+  it("a failed precondition records the row and stops — no generation, no hooks, no diagnostic", async () => {
+    // The avatar/entity/variant shape: the row is reserved BEFORE the lane knows
+    // its entity is missing, so it stays on record as failed, unlogged.
+    const { client, updates } = fakePipelineDb();
+    vi.mocked(db).mockReturnValue(client);
+    const sink = new DiagnosticCollector();
+    let produced = false;
+    let logged = 0;
+
+    const result = await runImagePipeline({
+      asset,
+      failedPrecondition: "character char-1 not found",
+      produce: () => {
+        produced = true;
+        return Promise.resolve({ ok: true, image: monogramSvg("Never") });
+      },
+      onSettled: () => {
+        logged += 1;
+      },
+      onThrown: () => {
+        logged += 1;
+      },
+      failureDiagnostic: diagnostic,
+      sink,
+    });
+
+    expect(result).toEqual({ imageId: RESERVED.id, status: "failed" });
+    expect(produced).toBe(false);
+    expect(rowError(updates.at(-1))).toBe("character char-1 not found");
+    expect(logged).toBe(0);
+    expect(sink.items).toEqual([]);
+  });
+
+  it("runs afterReserve before generating, and a context-free lane gets a context-free diagnostic", async () => {
+    // The chat anchors' shape (no context supplied) and the scene lane's
+    // reference rows, which are written against the row before the clock starts.
+    const { client } = fakePipelineDb();
+    vi.mocked(db).mockReturnValue(client);
+    const sink = new DiagnosticCollector();
+    const order: string[] = [];
+
+    await runImagePipeline({
+      asset,
+      afterReserve: (reserved) => {
+        order.push(`reserved:${reserved.id}`);
+        return Promise.resolve();
+      },
+      produce: () => {
+        order.push("produce");
+        return Promise.reject(new Error("venice edit failed"));
+      },
+      failureDiagnostic: { code: "images.chat_look.failed" },
+      sink,
+    });
+
+    expect(order).toEqual([`reserved:${RESERVED.id}`, "produce"]);
+    expect(sink.items[0]?.code).toBe("images.chat_look.failed");
+    expect(sink.items[0]?.context).toBeUndefined();
   });
 });

@@ -5,6 +5,15 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Image pipeline consolidation — one path from prompt to saved asset** —
+  [image-pipeline-consolidation.plan.md](finished/image-pipeline-consolidation.plan.md)
+  — 2026-08-02 — audit items C1–C5 + C10: the golden-pinned shared FNV-1a hash
+  (forge seed + chat-look key provably unmoved), one Venice unwrap, one batch
+  runner, shared bytes/meta readers, one caller-owned purge predicate, and the
+  `runImagePipeline` shell owning reserve → generate → save-or-fail → log for
+  all six image lanes; failed avatar/variant generations now record warn
+  diagnostics (the one ruled behavior change).
+
 - **Android species — synthetic and organic humanoid subtypes** —
   [finished/android-species.plan.md](finished/android-species.plan.md) ·
   [spec](finished/android-species.spec.md) — 2026-08-02 — a complete humanoid
