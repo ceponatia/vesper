@@ -12,6 +12,24 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   Organic as a clone-body/cybernetic overlay; subtype-aware forge/editor flows,
   synthetic scent/taste/texture/sensitivity/voice vocabulary fenced away from
   biological humanoids, and contract tests pinning full human physical parity.
+- **Starter-world seeds — seed the life the engine already supports** —
+  [finished/starter-world-seeds.plan.md](finished/starter-world-seeds.plan.md)
+  — 2026-08-02 — pure seed data, no engine code: a consumable meal (so
+  `eat_meal` is finally legal in the primary's noon window), a firm midday
+  obligation at the market plus a soft evening promise at the square, a third
+  zone + second link + second action, and authored-lore documents so turn-1
+  recall returns backstory. A fresh world now demonstrates the living world on
+  its first day instead of after the player authors one.
+
+- **Chat-switch reset integrity — no per-chat state survives a chat change** —
+  [deferred/chat-conversation-refactor.plan.md](deferred/chat-conversation-refactor.plan.md)
+  — 2026-08-02 — the live-bug half of the parked G25 stub: a `/chat/[chatId]`
+  switch is not a remount, so the conversation now resets every per-chat item in
+  that render (composer draft, staged photo ids, narrator/OOC register, busy
+  flags, every sheet and dialog) from one typed source of truth
+  (`components/chat/chat-conversation-state.ts`), with the per-chat refs reset in
+  the matching layout effect — which also supersedes a reply still streaming for
+  the chat just left. The G25 decomposition itself stays parked.
 
 - **Affectionate-contact technical MVP — item 1.1 repairs + move-away ending
   (flag off)** —

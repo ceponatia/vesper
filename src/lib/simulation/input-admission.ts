@@ -31,10 +31,17 @@ export type AdmittedCommand =
   | { kind: "accompany"; toZoneId: string; placeWord: string }
   | { kind: "start_activity"; actionDefinitionId: string; verb: string };
 
-/** Words that name a zone, by zone KIND — grows as world templates grow. */
+/**
+ * Words that name a zone, by zone KIND — grows as world templates grow.
+ *
+ * `market` moved off `plaza` when the starter world grew a real market zone
+ * (starter-world-seeds.plan.md / B8): a kind must not claim another kind's
+ * word, or "I walk to the market" silently admits a move to the square.
+ */
 const ZONE_KIND_WORDS: Record<string, readonly string[]> = {
   home: ["home", "house", "indoors", "inside"],
-  plaza: ["square", "plaza", "market", "town"],
+  plaza: ["square", "plaza", "town"],
+  market: ["market", "stall", "stalls"],
   town: ["town"],
 };
 
