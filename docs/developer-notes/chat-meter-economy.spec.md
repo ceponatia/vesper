@@ -270,9 +270,14 @@ available to take rather than parallel (owner, 2026-07-16). What this work claim
   … do **not** fix chat by inflating `perHour`" was the reason for the exchange-keyed drift
   table. There is no parity left to protect, so rates get honest values in the registry —
   the one table where a rate per story hour has always belonged.
-- **`rhythmOutfitPatch` is the precedent to copy.** "A schedule row covering the skipped-to
-  clock re-dresses the character" is already shipped and already the exact shape of rhythm
-  self-care. `rhythmBodyPatch` is its sibling, not a new idea.
+- **`rhythmOutfitPatch` is the precedent in shape, not in mechanics.** "A schedule row
+  covering the skipped-to clock re-dresses the character" is already shipped and motivates
+  rhythm self-care — but verification (world-engine-refactor.claude.md §5.2, 2026-07-16)
+  showed the shipped function is **arrival-covering**: it takes a single `clockMinutes`,
+  asks which row *covers* that minute, and overwrites — no `fromMinutes`, no window, no
+  crossing check. The planned `rhythmBodyPatch` is **window-crossing** (every row the skip
+  passed through fires). They are different functions; calling one the other's sibling
+  understates the work. Copy the integration seam, write the crossing logic new.
 
 ## Latent bugs found while speccing
 

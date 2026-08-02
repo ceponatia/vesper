@@ -246,7 +246,9 @@ or persist it.
 ### Slice 7 — body-garment interactions
 
 - Only after the shared scene/body-relations owner ships, add accepted hand
-  insertion and garment-part grasp relations.
+  insertion and garment-part grasp relations. *(Gate met — a minimal
+  scene/body-relations owner shipped 2026-07-31 with romantic-contact
+  slice 3A; re-verify its surface covers grasp/insertion on promotion.)*
 - Validate relations against garment locus, opening accessibility, current
   presentation, pose, and body-part availability.
 - Capture or replay relations according to that owner's lifecycle, not inside
