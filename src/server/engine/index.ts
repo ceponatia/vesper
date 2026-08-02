@@ -31,6 +31,7 @@ export * from "./chat-physical-guidance-render";
 export * from "./chat-physical-guidance-preview";
 export * from "./chat-recognition-adapter";
 export * from "./chat-contact-events";
+export * from "./chat-npc-scene-envelope";
 export * from "./visual-memory-store";
 export * from "./chat-wardrobe";
 export * from "./chat-garments";

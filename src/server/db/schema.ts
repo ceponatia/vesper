@@ -901,6 +901,81 @@ export const chatContactEvents = pgTable(
   ],
 );
 
+/**
+ * The NPC reply-scene DECISION ENVELOPE — one row per persisted assistant
+ * message that ran the reply-scene leg
+ * (romantic-contact-affordances.spec.actor-control.md §"Durable decision
+ * envelope and transaction"). Movement commits and EMPTY outcomes need durable
+ * identity as much as contact rows do: a trigger miss, a degraded classifier
+ * call, and an all-rejected proposal set are tombstones the retry/reuse logic
+ * reads, not absences it re-runs — the same assistant reply is never
+ * reclassified into different authority.
+ *
+ * This table is the TRACE. There is deliberately no best-effort
+ * `lastSceneDecisionTrace` field on the chat: the dev inspector reads the
+ * newest non-pruned envelope instead, so the record it explains is the record
+ * the transaction actually committed.
+ *
+ * ## The retake guard
+ *
+ * (chat_id, assistant_message_id) is UNIQUE — the assistant message IS the
+ * retake guard. Concurrent first writers race on this key: one wins, and a
+ * loser whose envelope is not canonical-byte-equivalent fails closed
+ * (`chat-npc-scene-envelope.ts` owns the guarded transaction). "Another take"
+ * deletes this row unconditionally beside the `pre_exchange_scenario`
+ * restoration, and both FKs CASCADE so a hard-deleted reply (or chat) takes its
+ * decision record with it — the same backstop `chat_contact_events` has.
+ *
+ * ## What the columns pin
+ *
+ * `reply_hash`/`digest_hash` tie the decision to the exact persisted reply
+ * bytes and the classifier digest it read; `base_scene_hash`/
+ * `result_scene_hash` fingerprint the pre/post scene projections so replay can
+ * prove what the decision saw and what it left. `payload` carries the bounded
+ * parsed-slot outcomes, grounded spans/hashes, gate-drop reasons, normalized
+ * ordered actions (the actual committed scene intents, not only the model
+ * candidates), resolver outcomes, contact-row references, and model/latency
+ * telemetry — parsed at the read boundary, never trusted.
+ */
+export const chatNpcSceneDecisions = pgTable(
+  "chat_npc_scene_decisions",
+  {
+    id: id(),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => characterChats.id, { onDelete: "cascade" }),
+    /** The assistant reply this decision is about — the retake guard. */
+    assistantMessageId: text("assistant_message_id")
+      .notNull()
+      .references(() => characterChatMessages.id, { onDelete: "cascade" }),
+    /** sha256 hex of the exact persisted reply bytes (utf8). */
+    replyHash: text("reply_hash").notNull(),
+    /** sha256 hex of the canonical classifier digest; "" when no digest was assembled (trigger miss). */
+    digestHash: text("digest_hash").notNull(),
+    /** The decision-output schema version this envelope was produced under. */
+    schemaVersion: integer("schema_version").notNull(),
+    /** `shadow` (no authority granted) versus `authority`. */
+    mode: text("mode", { enum: ["shadow", "authority"] }).notNull(),
+    /** The post-settle story-clock minute, truncated ONCE for the whole envelope. */
+    storyMinute: integer("story_minute").notNull(),
+    /** All three are durable tombstones — an empty outcome is as idempotent as a commit. */
+    status: text("status", { enum: ["trigger_miss", "degraded", "evaluated"] }).notNull(),
+    /** Exact fingerprint of the post-settle scene the decision resolved against. */
+    baseSceneHash: text("base_scene_hash").notNull(),
+    /** Exact fingerprint of the projection the decision left behind. */
+    resultSceneHash: text("result_scene_hash").notNull(),
+    /** `NpcSceneDecisionPayload` — bounded, parsed defensively at the read boundary. */
+    payload: jsonb("payload").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // The retake guard AND the first-writer race's arbiter: one decision per reply.
+    uniqueIndex("chat_npc_scene_decisions_assistant_unique").on(t.chatId, t.assistantMessageId),
+    // The inspector's newest-envelope read.
+    index("chat_npc_scene_decisions_chat_created_idx").on(t.chatId, t.createdAt),
+  ],
+);
+
 export const locations = pgTable(
   "locations",
   {

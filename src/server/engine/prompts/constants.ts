@@ -233,6 +233,42 @@ export function chatContactActionsEnabled(): boolean {
 }
 
 /**
+ * The NPC REPLY-SCENE DECISION SHADOW switch
+ * (romantic-contact-affordances.spec.actor-control.md §"Execution, flags, and
+ * cost gate"; delivery-order step 3) — experimental, default-off, the same
+ * literal-`on` shape as every flag above.
+ *
+ * OFF (the default, and anything other than `on`) is today's behavior to the
+ * byte: no trigger, no digest, no classifier call, no decision envelope — the
+ * legacy reply-side ending block runs exactly as it ships under
+ * `CHAT_CONTACT_ACTIONS`. ON runs the one reply-scene classifier call per
+ * persisted nonempty assistant reply and records a durable decision envelope
+ * (`chat_npc_scene_decisions`), but grants NO new scene/contact authority:
+ * tier-2 proposals are evaluated DRY and recorded, and only the frozen
+ * deterministic ending floor — which ships today under `CHAT_CONTACT_ACTIONS`
+ * — still changes the scene. Shadow exists to measure trigger rates, candidate
+ * quality, latency, and cost before any authority increment is enabled.
+ * Env-only, no dev route.
+ */
+export function chatNpcSceneDecisionShadowEnabled(): boolean {
+  return process.env.CHAT_NPC_SCENE_DECISION_SHADOW === "on";
+}
+
+/**
+ * The NPC REPLY-SCENE DECISION AUTHORITY switch (same spec §) — default-off,
+ * and effective ONLY with `CHAT_CONTACT_ACTIONS=on`: the decisions this flag
+ * would let commit are contact-lane authority, and granting them while the
+ * contact lane itself is off would be a flag that quietly re-enables another
+ * flag's feature. Authority WINS over shadow when both flags are on (the mode
+ * resolution lives in `chat-npc-scene-decision.ts`); the authority increments
+ * themselves (movement / starts / updates) land in delivery-order steps 4–6 —
+ * until they do, an authority-mode envelope still evaluates dry.
+ */
+export function chatNpcSceneDecisionsEnabled(): boolean {
+  return process.env.CHAT_NPC_SCENE_DECISIONS === "on" && chatContactActionsEnabled();
+}
+
+/**
  * The RECOGNIZABLE-FEATURES switch (body-attribute-affordances.plan.md slice 7) —
  * experimental, default-off, the third of the same shape as `CHAT_GARMENT_CUES`
  * and `CHAT_AFFORDANCE_CUES` above, and for the same reason: slice 7 is a trial,

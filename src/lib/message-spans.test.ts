@@ -3,6 +3,7 @@ import {
   formatCommsReply,
   parseEmphasisRuns,
   parseMessageSpans,
+  parseMessageSpansWithOffsets,
   spanChannel,
   type MessageSpanContext,
   type MessageSpanKind,
@@ -234,5 +235,49 @@ describe("spanChannel — the perception fact-channel map (slice 6 forward-compa
     expect(spanChannel("styled")).toBe("perceived");
     expect(spanChannel("thought")).toBe("private");
     expect(spanChannel("ooc")).toBe("ooc");
+  });
+});
+
+describe("parseMessageSpansWithOffsets — the same walker, plus where each span sits", () => {
+  it("returns offsets whose input slices equal the span text for narration and simple sigils", () => {
+    const input = 'He nods slowly. "Hi there." *what a strange day* She waves.';
+    const spans = parseMessageSpansWithOffsets(input);
+    expect(spans.map((s) => s.kind)).toEqual(["narration", "speech", "thought", "narration"]);
+    for (const span of spans) {
+      expect(input.slice(span.start, span.end)).toBe(span.text);
+    }
+  });
+
+  it("produces exactly the spans parseMessageSpans produces — offsets ride beside, never change classification", () => {
+    const inputs = [
+      'Plain narration only.',
+      '"Speech." *thought here maybe* _styled_ ((ooc note)) trailing narration',
+      'Unmatched *sigil stays literal narration',
+      "*Wren: on my way*",
+    ];
+    for (const input of inputs) {
+      const plain = parseMessageSpans(input, { playerName: "Rio", knownNames: ["Wren"] });
+      const offset = parseMessageSpansWithOffsets(input, { playerName: "Rio", knownNames: ["Wren"] });
+      expect(offset).toHaveLength(plain.length);
+      expect(offset.map(shape)).toEqual(plain.map(shape));
+    }
+  });
+
+  it("keeps narration offsets exact when sigil fallbacks glue literal text into the buffer", () => {
+    const input = "before *  * after";
+    const spans = parseMessageSpansWithOffsets(input);
+    expect(spans).toHaveLength(1);
+    const only = spans[0]!;
+    expect(only.kind).toBe("narration");
+    expect(input.slice(only.start, only.end)).toBe(only.text);
+  });
+
+  it("bounds a comms span by its whole inner region (the parsed text is the body only)", () => {
+    const input = "*Wren: running late*";
+    const spans = parseMessageSpansWithOffsets(input, { playerName: "Rio", knownNames: ["Wren"] });
+    const comms = spans[0]!;
+    expect(comms.kind).toBe("comms");
+    expect(comms.text).toBe("running late");
+    expect(input.slice(comms.start, comms.end)).toBe("Wren: running late");
   });
 });

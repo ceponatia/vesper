@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ContactEventRef, ContactLifecycleCommit, DiagnosticSink, SceneState } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
-import { characterChats, chatContactEvents, db } from "../db";
+import { characterChats, chatContactEvents, db, type Db } from "../db";
 
 /**
  * THE CHAT LANE'S DURABLE CONTACT LEDGER (romantic-contact-affordances — the
@@ -240,8 +240,13 @@ export interface ChatContactEventStoredRow {
  * The round-trip through `JSON.stringify`/`parse` first is the other half: it
  * drops `undefined` members and applies any `toJSON`, so a live commit object is
  * reduced to exactly the value the column received.
+ *
+ * Exported for the decision-envelope transaction (`chat-npc-scene-envelope.ts`),
+ * whose canonical-byte-equivalence and scene fingerprints must judge jsonb
+ * round-trips by exactly this rule — a second normal form living beside this one
+ * is how two comparisons quietly start disagreeing.
  */
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   if (value === undefined) return "";
   const parsed: unknown = JSON.parse(JSON.stringify(value));
   return JSON.stringify(canonicalize(parsed));
@@ -294,6 +299,69 @@ export function chatContactLedgerMismatches(
       return [{ eventRef: row.eventRef, sequence: row.sequence }];
     })
     .sort((left, right) => left.sequence - right.sequence);
+}
+
+/** The transaction handle a `db().transaction` callback receives — the surface both contact-writing transactions share. */
+export type ChatDbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/**
+ * The IO half of the ledger's idempotent-and-verified write, factored so BOTH
+ * contact-writing transactions run the identical judgment: this module's
+ * `appendChatContactEventsWithScene` (the player leg and the reply-side ending
+ * floor) and the decision-envelope transaction in `chat-npc-scene-envelope.ts`
+ * (the reply-scene leg). Two copies of "insert, then verify every collided key"
+ * would be two chances for one of them to acknowledge somebody else's record.
+ *
+ * Runs INSIDE the caller's transaction and returns a value rather than
+ * throwing: each caller owns its own abort shape (this module's mismatch error,
+ * the envelope module's conflict error), and a helper that threw one of them
+ * would couple the two result vocabularies together.
+ *
+ * `inserted` counts the rows that landed THIS call; `mismatched` names every
+ * attempted key held by a DIFFERENT record. A non-empty `mismatched` means the
+ * caller must abort — rows this call DID insert are already part of its
+ * transaction and roll back with it.
+ */
+export async function insertVerifiedChatContactRows(
+  tx: ChatDbTransaction,
+  input: {
+    readonly chatId: string;
+    readonly eventRef: string;
+    readonly rows: readonly ChatContactEventInsert[];
+  },
+): Promise<{ inserted: number; mismatched: readonly ChatContactLedgerKey[] }> {
+  if (input.rows.length === 0) return { inserted: 0, mismatched: [] };
+  const landed = await tx
+    .insert(chatContactEvents)
+    .values([...input.rows])
+    .onConflictDoNothing({
+      target: [chatContactEvents.chatId, chatContactEvents.eventRef, chatContactEvents.sequence],
+    })
+    .returning({ sequence: chatContactEvents.sequence });
+  const inserted = landed.length;
+  if (inserted === input.rows.length) return { inserted, mismatched: [] };
+  const landedSequences = new Set(landed.map((row) => row.sequence));
+  const conflicted = input.rows.filter((row) => !landedSequences.has(row.sequence));
+  const stored = await tx
+    .select({
+      sequence: chatContactEvents.sequence,
+      kind: chatContactEvents.kind,
+      contactId: chatContactEvents.contactId,
+      storyMinute: chatContactEvents.storyMinute,
+      payload: chatContactEvents.payload,
+    })
+    .from(chatContactEvents)
+    .where(
+      and(
+        eq(chatContactEvents.chatId, input.chatId),
+        eq(chatContactEvents.eventRef, input.eventRef),
+        inArray(
+          chatContactEvents.sequence,
+          conflicted.map((row) => row.sequence),
+        ),
+      ),
+    );
+  return { inserted, mismatched: chatContactLedgerMismatches(conflicted, stored) };
 }
 
 /**
@@ -360,42 +428,12 @@ export async function appendChatContactEventsWithScene(
   const rows = chatContactEventRowsFor(input);
   try {
     return await db().transaction(async (tx): Promise<ChatContactAppendResult> => {
-      let inserted = 0;
-      if (rows.length > 0) {
-        const landed = await tx
-          .insert(chatContactEvents)
-          .values(rows)
-          .onConflictDoNothing({
-            target: [chatContactEvents.chatId, chatContactEvents.eventRef, chatContactEvents.sequence],
-          })
-          .returning({ sequence: chatContactEvents.sequence });
-        inserted = landed.length;
-        if (inserted < rows.length) {
-          const landedSequences = new Set(landed.map((row) => row.sequence));
-          const conflicted = rows.filter((row) => !landedSequences.has(row.sequence));
-          const stored = await tx
-            .select({
-              sequence: chatContactEvents.sequence,
-              kind: chatContactEvents.kind,
-              contactId: chatContactEvents.contactId,
-              storyMinute: chatContactEvents.storyMinute,
-              payload: chatContactEvents.payload,
-            })
-            .from(chatContactEvents)
-            .where(
-              and(
-                eq(chatContactEvents.chatId, input.chatId),
-                eq(chatContactEvents.eventRef, input.eventRef),
-                inArray(
-                  chatContactEvents.sequence,
-                  conflicted.map((row) => row.sequence),
-                ),
-              ),
-            );
-          const mismatched = chatContactLedgerMismatches(conflicted, stored);
-          if (mismatched.length > 0) throw new ChatContactLedgerMismatchError(mismatched, inserted);
-        }
-      }
+      const { inserted, mismatched } = await insertVerifiedChatContactRows(tx, {
+        chatId: input.chatId,
+        eventRef: input.eventRef,
+        rows,
+      });
+      if (mismatched.length > 0) throw new ChatContactLedgerMismatchError(mismatched, inserted);
       // The projection, in the same transaction. Written even when the event
       // produced no rows (an all-`contact_continued` fold): the scene still
       // advanced, and the ledger correctly has nothing to add.
