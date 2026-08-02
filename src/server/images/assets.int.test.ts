@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { and, eq, inArray } from "drizzle-orm";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   endTestPool,
   probeIntegrationDb,
@@ -22,6 +23,7 @@ import {
   GALLERY_IMAGE_KINDS,
   saveImageBuffer,
   sweepOrphans,
+  type ImageRow,
 } from "./assets";
 import { monogramSvg } from "./monogram";
 import { generateAvatar, generateAvatarsBatch } from "./avatar";
@@ -309,5 +311,100 @@ describe.skipIf(!ready)("demo-mode pipelines (AI_FAKE=1)", () => {
     // the pre-pictured item keeps its original image, untouched
     const [after] = await db().select().from(items).where(eq(items.id, pictured?.id ?? "")).limit(1);
     expect(after?.imageId).toBe("img-placeholder");
+  });
+});
+
+/**
+ * Run one lane out of demo mode, so its Venice call is actually attempted.
+ * `src/test/setup.ts` deletes VENICE_API_KEY, so the attempt reports "not
+ * configured" without a network hop — which is exactly the two generation
+ * failures the ruled normalization added a diagnostic to: the avatar lane's
+ * throws (through `unwrapVeniceImage`), the variant lane's `ok: false`.
+ */
+async function outsideDemoMode<T>(run: () => Promise<T>): Promise<T> {
+  const fake = process.env.AI_FAKE;
+  const openrouter = process.env.OPENROUTER_API_KEY;
+  delete process.env.AI_FAKE;
+  process.env.OPENROUTER_API_KEY = "int-test-never-called";
+  try {
+    return await run();
+  } finally {
+    if (fake === undefined) delete process.env.AI_FAKE;
+    else process.env.AI_FAKE = fake;
+    if (openrouter === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = openrouter;
+  }
+}
+
+async function seedCharacter(name: string): Promise<string> {
+  const [row] = await db().insert(characters).values({ ownerId: userId, name }).returning({ id: characters.id });
+  if (!row) throw new Error("failed to create character");
+  return row.id;
+}
+
+async function imageRow(imageId: string): Promise<ImageRow | undefined> {
+  const [row] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
+  return row;
+}
+
+/**
+ * The ruled normalization (image-pipeline-consolidation.plan.md §Review rulings
+ * 2026-07-30): a generation failure records a warn diagnostic in EVERY lane, not
+ * just the entity one. Both cases assert the fallback AND the code
+ * (docs/resilience.md §8) — a failed row is only half the contract.
+ */
+describe.skipIf(!ready)("generation-failure degradation", () => {
+  it("a failed avatar generation fails the row AND records images.avatar.generate_failed", async () => {
+    const characterId = await seedCharacter("Diagnostic Subject");
+    const sink = new DiagnosticCollector();
+
+    const imageId = await outsideDemoMode(() => generateAvatar({ characterId, userId, sink }));
+
+    const row = await imageRow(imageId);
+    expect(row?.status).toBe("failed");
+    expect((row?.meta as Record<string, unknown>).error).toContain("VENICE_API_KEY");
+    const recorded = sink.items.filter((d) => d.code === "images.avatar.generate_failed");
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.severity).toBe("warn");
+    expect(recorded[0]?.context).toMatchObject({ characterId, imageId });
+    // A failed attempt is never promoted — the character stays avatar-less.
+    const [character] = await db().select().from(characters).where(eq(characters.id, characterId)).limit(1);
+    expect(character?.avatarImageId).toBeNull();
+  });
+
+  it("a failed portrait-variant edit fails the row AND records images.variant.generate_failed", async () => {
+    // The lane needs a ready canonical avatar or it takes the reference-less
+    // branch below; demo mode paints one for free.
+    const characterId = await seedCharacter("Variant Subject");
+    await generateAvatar({ characterId, userId });
+    const sink = new DiagnosticCollector();
+
+    const imageId = await outsideDemoMode(() =>
+      generateVariant({ characterId, userId, kind: "pose", instruction: "leaning on a railing", sink }),
+    );
+
+    const row = await imageRow(imageId);
+    expect(row?.status).toBe("failed");
+    expect((row?.meta as Record<string, unknown>).error).toContain("VENICE_API_KEY");
+    const recorded = sink.items.filter((d) => d.code === "images.variant.generate_failed");
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.severity).toBe("warn");
+    expect(recorded[0]?.context).toMatchObject({ characterId, imageId });
+  });
+
+  it("a variant with no reference avatar fails the row WITHOUT a diagnostic — a precondition, not a failed generation", async () => {
+    // Deliberately preserved: this branch is the variant lane's counterpart to
+    // entity's not-found, and both stay diagnostic-free.
+    const characterId = await seedCharacter("No Avatar Yet");
+    const sink = new DiagnosticCollector();
+
+    const imageId = await outsideDemoMode(() =>
+      generateVariant({ characterId, userId, kind: "pose", instruction: "seated", sink }),
+    );
+
+    const row = await imageRow(imageId);
+    expect(row?.status).toBe("failed");
+    expect((row?.meta as Record<string, unknown>).error).toBe("no ready canonical avatar to use as reference");
+    expect(sink.items).toEqual([]);
   });
 });
