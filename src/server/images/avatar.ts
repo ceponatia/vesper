@@ -1,7 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, items } from "../db";
-import { describeProviderError, isDemoMode, unwrapVeniceImage, veniceGenerateImage, veniceT2IModelId } from "../ai";
+import { isDemoMode, unwrapVeniceImage, veniceGenerateImage, veniceT2IModelId } from "../ai";
 import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
 import { parseOr } from "@/lib/parse";
@@ -10,7 +10,7 @@ import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { resolveGarmentVisibility } from "@/contracts/items/visibility";
 import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
-import { createImageAsset, failImage, saveImageBuffer } from "./assets";
+import { runImagePipeline } from "./assets";
 import { monogramSvg } from "./monogram";
 import {
   buildAvatarPrompt,
@@ -38,8 +38,10 @@ function avatarModelLabel(model: AvatarImageModel): string {
 
 /**
  * Avatar pipeline (docs/images.md): registry prompt → Venice/Qwen uncensored
- * text-to-image (3:4), monogram in demo mode. Generation failure marks the row
- * failed and returns its id — callers poll the row, never catch.
+ * text-to-image (3:4), monogram in demo mode, run through the shared
+ * reserve → generate → save-or-fail → log shell (`runImagePipeline`).
+ * Generation failure marks the row failed and returns its id — callers poll the
+ * row, never catch.
  */
 export async function generateAvatar(input: GenerateAvatarInput): Promise<string> {
   const style = input.style ?? "realistic";
@@ -60,45 +62,45 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
   // waist-up framing cut) — intimate detail is scene-render-only.
   const prompt = character ? buildAvatarPrompt(character.name, profile, style, wardrobe) : "";
 
-  const asset = await createImageAsset({
-    ownerId: input.userId,
-    kind: "avatar",
-    entityKind: "character",
-    entityId: input.characterId,
-    prompt,
-    meta: { style, model: demo ? "demo" : avatarModelLabel(model), demo },
-  });
-
-  if (!character) {
-    await failImage(asset.id, `character ${input.characterId} not found`);
-    return asset.id;
-  }
-
-  const started = Date.now();
-  try {
-    const buffer = demo ? monogramSvg(character.name) : await generateAvatarBuffer(prompt, model);
-    const saved = await saveImageBuffer(asset.id, buffer, input.sink);
-    if (saved?.status === "ready") {
+  const { imageId } = await runImagePipeline({
+    asset: {
+      ownerId: input.userId,
+      kind: "avatar",
+      entityKind: "character",
+      entityId: input.characterId,
+      prompt,
+      meta: { style, model: demo ? "demo" : avatarModelLabel(model), demo },
+    },
+    // The row is on record even for a character that vanished between the lookup
+    // and now — failed, with no event and no diagnostic (nothing was attempted).
+    failedPrecondition: character ? null : `character ${input.characterId} not found`,
+    // Only reached when the character loaded, so the name fallback never fires.
+    produce: async () => ({
+      ok: true,
+      image: demo ? monogramSvg(character?.name ?? "") : await generateAvatarBuffer(prompt, model),
+    }),
+    onReady: async (asset) => {
       await db().update(characters).set({ avatarImageId: asset.id }).where(eq(characters.id, input.characterId));
-    }
-    void logEvent("image.avatar", {
-      imageId: asset.id,
-      characterId: input.characterId,
-      status: saved?.status ?? "failed",
-      demo,
-      durationMs: Date.now() - started,
-    });
-  } catch (err) {
-    const message = describeProviderError(err);
-    await failImage(asset.id, message);
-    void logEvent("image.avatar", {
-      imageId: asset.id,
-      characterId: input.characterId,
-      status: "failed",
-      error: message.slice(0, 300),
-    });
-  }
-  return asset.id;
+    },
+    onSettled: ({ imageId: id, status, startedMs }) =>
+      void logEvent("image.avatar", {
+        imageId: id,
+        characterId: input.characterId,
+        status,
+        demo,
+        durationMs: Date.now() - startedMs,
+      }),
+    onThrown: ({ imageId: id, message }) =>
+      void logEvent("image.avatar", {
+        imageId: id,
+        characterId: input.characterId,
+        status: "failed",
+        error: message.slice(0, 300),
+      }),
+    failureDiagnostic: { code: "images.avatar.generate_failed", context: { characterId: input.characterId } },
+    sink: input.sink,
+  });
+  return imageId;
 }
 
 const outfitExtrasSchema = z.object({
