@@ -1,11 +1,10 @@
-import fs from "node:fs/promises";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db, images, items, locations } from "../db";
 import { describeProviderError, isDemoMode, unwrapVeniceImage, veniceGenerateImage, veniceImageModelId } from "../ai";
 import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer } from "./assets";
+import { createImageAsset, failImage, purgeImagesWhere, saveImageBuffer } from "./assets";
 import { monogramSvg } from "./monogram";
 import { buildItemImagePrompt, buildLocationImagePrompt } from "./prompts";
 
@@ -139,18 +138,9 @@ async function setEntityImage(kind: EntityImageKind, id: string, ownerId: string
  * attempts) and unlink their files — there is no gallery to preserve them.
  */
 async function reclaimOldImages(kind: EntityImageKind, id: string, ownerId: string, keepId: string): Promise<void> {
-  const where = and(
-    eq(images.ownerId, ownerId),
-    eq(images.entityKind, kind),
-    eq(images.entityId, id),
-    ne(images.id, keepId),
+  await purgeImagesWhere(
+    and(eq(images.ownerId, ownerId), eq(images.entityKind, kind), eq(images.entityId, id), ne(images.id, keepId)),
   );
-  const rows = await db().select({ id: images.id, path: images.path }).from(images).where(where);
-  if (rows.length === 0) return;
-  await db().delete(images).where(where);
-  for (const row of rows) {
-    void fs.unlink(absoluteImagePath(row)).catch(() => undefined); // image_sweep reconciles stragglers
-  }
 }
 
 async function generateEntityBuffer(prompt: string, aspectRatio: `${number}:${number}`): Promise<Buffer> {

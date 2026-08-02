@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import type { AttributeValue } from "@/contracts/attributes/value";
 import type { RegionExposure } from "@/contracts/items/visibility";
@@ -14,7 +13,7 @@ import {
   veniceSceneImageModelId,
 } from "../ai";
 import { db, images } from "../db";
-import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer } from "./assets";
+import { createImageAsset, failImage, imageMeta, purgeImagesWhere, readImageBytes, saveImageBuffer } from "./assets";
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts";
 
 /**
@@ -118,13 +117,9 @@ export async function latestChatLook(
     .orderBy(desc(images.createdAt))
     .limit(1);
   if (!row) return null;
-  const meta = row.meta && typeof row.meta === "object" && !Array.isArray(row.meta) ? (row.meta as Record<string, unknown>) : {};
-  if (meta.lookKey !== lookKey) return null;
-  try {
-    return { imageId: row.id, buffer: await fs.readFile(absoluteImagePath(row)) };
-  } catch {
-    return null; // file lost — the sweep reconciles; fall back to the avatar
-  }
+  if (imageMeta(row.meta).lookKey !== lookKey) return null;
+  const buffer = await readImageBytes(row);
+  return buffer ? { imageId: row.id, buffer } : null; // no bytes — the sweep reconciles; fall back to the avatar
 }
 
 export interface RenderChatLookInput {
@@ -165,14 +160,7 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
     const saved = await saveImageBuffer(asset.id, unwrapVeniceImage(edit, "venice edit failed"), input.sink);
     if (saved?.status !== "ready") return null;
     // Keep-latest (ruled): the superseded looks go with their files.
-    const stale = await db()
-      .select({ id: images.id, path: images.path })
-      .from(images)
-      .where(and(eq(images.chatId, input.chatId), eq(images.kind, "chat_look"), ne(images.id, asset.id)));
-    if (stale.length) {
-      await db().delete(images).where(and(eq(images.chatId, input.chatId), eq(images.kind, "chat_look"), ne(images.id, asset.id)));
-      await Promise.all(stale.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
-    }
+    await purgeImagesWhere(and(eq(images.chatId, input.chatId), eq(images.kind, "chat_look"), ne(images.id, asset.id)));
     return asset.id;
   } catch (err) {
     const message = describeProviderError(err);

@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -14,7 +13,7 @@ import {
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { isDemoMode } from "../ai";
 import { characterChats, characters, db, images } from "../db";
-import { absoluteImagePath, apparentAgeAnchor, chatHasRenders, chatLookKey, latestChatLook, renderChatLookImage, renderChatPlaceImage } from "../images";
+import { apparentAgeAnchor, chatHasRenders, chatLookKey, latestChatLook, readImageBytes, renderChatLookImage, renderChatPlaceImage } from "../images";
 import { chatGarmentLookKey } from "./chat-garments";
 import { loadChatScenario, loadChatState } from "./chat-state";
 import { resolveChatWardrobe } from "./chat-wardrobe";
@@ -90,12 +89,8 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>)
     .where(and(eq(images.id, ctx.avatarImageId), eq(images.ownerId, ctx.ownerId), eq(images.status, "ready")))
     .limit(1);
   if (!avatarRow) return;
-  let avatar: Buffer;
-  try {
-    avatar = await fs.readFile(absoluteImagePath(avatarRow));
-  } catch {
-    return; // file lost — the sweep reconciles; the next change re-fires
-  }
+  const avatar = await readImageBytes(avatarRow);
+  if (!avatar) return; // file lost — the sweep reconciles; the next change re-fires
 
   await renderChatLookImage({
     chatId: input.chatId,

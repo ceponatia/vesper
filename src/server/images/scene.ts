@@ -19,7 +19,7 @@ import { log } from "@/server/log";
 import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { SceneVisualReference } from "@/contracts/images/scene-reference";
 import type { SceneGenState, SceneReferenceMode } from "@/contracts/state/scene-gen";
-import { createImageAsset, failImage, saveImageBuffer, type ImageEntityKind } from "./assets";
+import { createImageAsset, failImage, imageMeta, saveImageBuffer, type ImageEntityKind } from "./assets";
 import { monogramSvg } from "./monogram";
 import {
   buildSceneComposerPrompt,
@@ -371,12 +371,8 @@ async function correctProviderMeta(assetId: string, prompt: string, model: strin
   const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, assetId)).limit(1);
   await db()
     .update(images)
-    .set({ prompt, meta: { ...metaRecord(row?.meta), model } })
+    .set({ prompt, meta: { ...imageMeta(row?.meta), model } })
     .where(eq(images.id, assetId));
-}
-
-function metaRecord(meta: unknown): Record<string, unknown> {
-  return meta && typeof meta === "object" && !Array.isArray(meta) ? { ...(meta as Record<string, unknown>) } : {};
 }
 
 /** The user-facing reason a whole render chain failed, drawn from the terminal diagnostic the chain pushed. */

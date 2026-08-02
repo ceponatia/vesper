@@ -119,12 +119,13 @@ export default defineConfig([
               "saveImageBuffer",
               "deleteChatUploads",
               "deleteChatAssets",
+              "purgeImagesWhere",
               "internalSaveImageBuffer",
               "internalDeleteChatUploads",
               "internalDeleteChatAssets",
             ],
             message:
-              "Route handlers must use saveOwnedImageBuffer/deleteOwnedChatUploads/deleteOwnedChatAssets and pass the authenticated owner id.",
+              "Route handlers must use saveOwnedImageBuffer/deleteOwnedChatUploads/deleteOwnedChatAssets/deleteOwnedImage(s) and pass the authenticated owner id — never a hand-built delete predicate.",
           },
         ],
         patterns: [
