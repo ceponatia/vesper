@@ -611,6 +611,14 @@ on immobilized limbs.
    movement → starts → updates. The frozen floor stays the only prose extractor;
    closed verifier vocabulary may confirm an exact proposed field but may never
    invent one.
+   **Delivery steps 1–3 built 2026-08-02**: the pure foundation and its
+   adversarial fixtures, the durable decision envelope (one row per assistant
+   reply, no-decision tombstones included) with its guarded atomic save, and
+   the shadow leg — one classifier call per qualifying reply, dry evaluation,
+   every reply kind covered including openings — behind
+   `CHAT_NPC_SCENE_DECISION_SHADOW`, default off. The shadow flag has not
+   been enabled; the measurement window, its review, and the standing-cost
+   ruling remain before any authority increment starts.
 4. **The explicit `romantic_touch` permission owner — spec before
    implementation** (un-gated by the 2026-08-01 verdict). Its design decisions need owner
    rulings first; they are listed in Open questions below.
