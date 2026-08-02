@@ -26,8 +26,6 @@ import {
   chatsApi,
   sendChatMessage,
   type ChatMessage,
-  type ChatRosterMember,
-  type ChatStateSnapshot,
   type ChatStreamOutcome,
   type ChatTranscript,
 } from "@/lib/client/api";
@@ -43,6 +41,7 @@ import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { usePrivacyMode } from "@/components/hooks/use-privacy-mode";
 import { AvatarPanel } from "@/components/avatar";
 import { fileToAttachmentDataUrl } from "@/components/chat/attachment-file";
+import { PER_CHAT_DEFAULTS, type PerChatState } from "@/components/chat/chat-conversation-state";
 import { ChatPickupStrip } from "@/components/chat/chat-pickup-strip";
 import { ChatRelationshipPanel } from "@/components/chat/chat-relationship-panel";
 import { ChatRelationshipsEditor } from "@/components/chat/chat-relationships-editor";
@@ -161,76 +160,83 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const name = character?.name ?? "";
   const who = name.trim() || "this character";
 
-  const [lines, setLines] = useState<ChatLine[]>([]);
+  // Per-chat state (chat-conversation-state.ts): EVERY item below belongs to one
+  // conversation and is seeded from `PER_CHAT_DEFAULTS`, the same object the
+  // chat-switch reset applies — one list, one set of at-rest values, so a switch
+  // can't carry an item into the next chat by omission.
+  const [lines, setLines] = useState(PER_CHAT_DEFAULTS.lines);
   // Transcript pagination (ux-improvements.plan.md slice 2): the GET returns the
   // newest page; "Load earlier" keysets older pages via `nextBefore`.
-  const [hasEarlier, setHasEarlier] = useState(false);
-  const [earlierCursor, setEarlierCursor] = useState<string | null>(null);
-  const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [hasEarlier, setHasEarlier] = useState(PER_CHAT_DEFAULTS.hasEarlier);
+  const [earlierCursor, setEarlierCursor] = useState(PER_CHAT_DEFAULTS.earlierCursor);
+  const [loadingEarlier, setLoadingEarlier] = useState(PER_CHAT_DEFAULTS.loadingEarlier);
   // Mutable chat header (rename / archive write through these mirrors).
-  const [title, setTitle] = useState("");
-  const [archived, setArchived] = useState(false);
-  const [chatModel, setChatModel] = useState(() => resolveChatModelId(null));
-  const [input, setInput] = useState("");
+  const [title, setTitle] = useState(PER_CHAT_DEFAULTS.title);
+  const [archived, setArchived] = useState(PER_CHAT_DEFAULTS.archived);
+  const [chatModel, setChatModel] = useState(PER_CHAT_DEFAULTS.chatModel);
+  const [input, setInput] = useState(PER_CHAT_DEFAULTS.input);
   // True while the composer caret sits inside a `((…))` OOC block — drives the
   // amber affordance (player-input-perception slice 5). A plain flag, not caret
   // state: recomputed from the live textarea on every edit / selection change.
-  const [oocActive, setOocActive] = useState(false);
+  const [oocActive, setOocActive] = useState(PER_CHAT_DEFAULTS.oocActive);
   // Composer register (chat-supporting-cast.plan.md §Narrator input): narrator mode
   // sends the line as story narration authored as the storyteller, not the player's POV.
-  const [narratorMode, setNarratorMode] = useState(false);
-  const [sending, setSending] = useState(false);
+  const [narratorMode, setNarratorMode] = useState(PER_CHAT_DEFAULTS.narratorMode);
+  const [sending, setSending] = useState(PER_CHAT_DEFAULTS.sending);
   // True from a Stop click until the truncated stream settles (disables the button).
-  const [stopping, setStopping] = useState(false);
+  const [stopping, setStopping] = useState(PER_CHAT_DEFAULTS.stopping);
   // Light chat state (character-chat-state.spec.md): the strip + premise. Held in
   // local state (not useAsyncData) so a post-send refresh can drive the
   // stage-change toast off the value it just fetched.
-  const [chatState, setChatState] = useState<ChatStateSnapshot | null>(null);
-  const [actionBusy, setActionBusy] = useState<ChatActionId | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [scenarioOpen, setScenarioOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
+  const [chatState, setChatState] = useState(PER_CHAT_DEFAULTS.chatState);
+  const [actionBusy, setActionBusy] = useState(PER_CHAT_DEFAULTS.actionBusy);
+  const [menuOpen, setMenuOpen] = useState(PER_CHAT_DEFAULTS.menuOpen);
+  const [scenarioOpen, setScenarioOpen] = useState(PER_CHAT_DEFAULTS.scenarioOpen);
+  const [toolsOpen, setToolsOpen] = useState(PER_CHAT_DEFAULTS.toolsOpen);
   // Dedicated responsive world sheet. Below `lg` this is the first-class path
   // to location, clock, inventory, travel, and activities; Roster stays people.
-  const [worldOpen, setWorldOpen] = useState(false);
+  const [worldOpen, setWorldOpen] = useState(PER_CHAT_DEFAULTS.worldOpen);
   // Roster sheet (multi-character-chat.plan.md slice 1) — the phone-width path to
   // the roster panel; desktop also gets it inline in the aside.
-  const [rosterOpen, setRosterOpen] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(PER_CHAT_DEFAULTS.rosterOpen);
   // Per-character sheet (followups ruling 13): tapping a roster member opens THEIR
   // sheet — their state fetched fresh on open, edited via characterId targeting.
-  const [sheetMember, setSheetMember] = useState<ChatRosterMember | null>(null);
-  const [sheetSnapshot, setSheetSnapshot] = useState<ChatStateSnapshot | null>(null);
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [sheetMember, setSheetMember] = useState(PER_CHAT_DEFAULTS.sheetMember);
+  const [sheetSnapshot, setSheetSnapshot] = useState(PER_CHAT_DEFAULTS.sheetSnapshot);
+  const [renameOpen, setRenameOpen] = useState(PER_CHAT_DEFAULTS.renameOpen);
+  const [deleteOpen, setDeleteOpen] = useState(PER_CHAT_DEFAULTS.deleteOpen);
+  const [deleting, setDeleting] = useState(PER_CHAT_DEFAULTS.deleting);
+  const [archiveBusy, setArchiveBusy] = useState(PER_CHAT_DEFAULTS.archiveBusy);
   // Attached photos staged for the next send (chat-image-input.plan.md): uploaded
   // eagerly on pick (the ids preview via the immutable file route), sent as ids.
   // Removing a staged photo only unstages it — the orphaned upload row is cleaned
   // up with the conversation, never surfaced anywhere.
-  const [attachments, setAttachments] = useState<string[]>([]);
-  const [attachBusy, setAttachBusy] = useState(false);
+  const [attachments, setAttachments] = useState(PER_CHAT_DEFAULTS.attachments);
+  const [attachBusy, setAttachBusy] = useState(PER_CHAT_DEFAULTS.attachBusy);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
   // "Remember this" (spec §6.4): the pinned-note dialog, openable from the composer
   // affordance (blank) or a message hover action (prefilled with that line).
-  const [rememberOpen, setRememberOpen] = useState(false);
-  const [rememberText, setRememberText] = useState("");
-  const [rememberBusy, setRememberBusy] = useState(false);
+  const [rememberOpen, setRememberOpen] = useState(PER_CHAT_DEFAULTS.rememberOpen);
+  const [rememberText, setRememberText] = useState(PER_CHAT_DEFAULTS.rememberText);
+  const [rememberBusy, setRememberBusy] = useState(PER_CHAT_DEFAULTS.rememberBusy);
   // The Relationship panel (spec §7) + the reopen pickup strip / time skips (spec §8.1).
-  const [relationshipOpen, setRelationshipOpen] = useState(false);
-  const [pickupDismissed, setPickupDismissed] = useState(false);
-  const [skipBusy, setSkipBusy] = useState(false);
+  const [relationshipOpen, setRelationshipOpen] = useState(PER_CHAT_DEFAULTS.relationshipOpen);
+  const [pickupDismissed, setPickupDismissed] = useState(PER_CHAT_DEFAULTS.pickupDismissed);
+  const [skipBusy, setSkipBusy] = useState(PER_CHAT_DEFAULTS.skipBusy);
   // "Has something to say" (spec §8.4): a marker tap arrives as ?say=1 — surfaced as a
   // one-tap opener banner (generation stays player-triggered), the param stripped so a
   // reload doesn't re-offer it.
-  const [wantsSay, setWantsSay] = useState(false);
+  const [wantsSay, setWantsSay] = useState(PER_CHAT_DEFAULTS.wantsSay);
   const isAdmin = useIsAdmin();
   // The scene-image disclosure: collapsed by default at every width — the
-  // transcript keeps the room; a tap remembers the choice for this mount only.
-  const [scenesOpen, setScenesOpen] = useState(false);
+  // transcript keeps the room; a tap remembers the choice for this conversation.
+  const [scenesOpen, setScenesOpen] = useState(PER_CHAT_DEFAULTS.scenesOpen);
   // The character-portrait lightbox, openable from the header portrait, the desktop
   // standing portrait, and each reply's avatar (the mobile path to a big portrait).
-  const [portraitOpen, setPortraitOpen] = useState(false);
+  const [portraitOpen, setPortraitOpen] = useState(PER_CHAT_DEFAULTS.portraitOpen);
+  // Mirrors stickRef (declared with the scroll refs below) for rendering — the
+  // jump-to-latest pill; the ref stays the synchronous truth the effects read.
+  const [pinned, setPinned] = useState(PER_CHAT_DEFAULTS.pinned);
 
   const stageRef = useRef<string | null>(null);
   const tempId = useRef(0);
@@ -243,7 +249,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   // abort) — it is kept purely as the active-stream identity token: each stream owns it
   // while active, and a superseding stream (rerun starting while an old reply is still
   // settling) installs its own, so the stale one can't clear `sending` or refetch over
-  // the new one's optimistic transcript.
+  // the new one's optimistic transcript. A chat switch clears it for the same reason —
+  // the previous chat's reply is superseded by the new conversation.
   const abortRef = useRef<AbortController | null>(null);
   /** Bumped per chat-model pick so a superseded pick is skipped, plus the serializing chain. */
   const chatModelGenRef = useRef(0);
@@ -253,20 +260,87 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   /** Wraps the menu trigger + desktop popover, for the popover's outside-click test. */
   const menuWrapRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * Drop every per-chat item back to its at-rest value. One entry per key of
+   * `PerChatState`, so the mapped type keeps this exhaustive: a new piece of
+   * per-chat state can be added to `chat-conversation-state.ts` (where its
+   * `useState` seed lives) only by also resetting it here, or the build fails.
+   * That is the point — the previous hand-written reset covered 10 of ~25 items
+   * and everything else rode into the next conversation.
+   */
+  const resetPerChatState = () => {
+    const atRest = PER_CHAT_DEFAULTS;
+    const resets: { [K in keyof PerChatState]: () => void } = {
+      lines: () => setLines(atRest.lines),
+      hasEarlier: () => setHasEarlier(atRest.hasEarlier),
+      earlierCursor: () => setEarlierCursor(atRest.earlierCursor),
+      loadingEarlier: () => setLoadingEarlier(atRest.loadingEarlier),
+      title: () => setTitle(atRest.title),
+      archived: () => setArchived(atRest.archived),
+      chatModel: () => setChatModel(atRest.chatModel),
+      input: () => setInput(atRest.input),
+      oocActive: () => setOocActive(atRest.oocActive),
+      narratorMode: () => setNarratorMode(atRest.narratorMode),
+      attachments: () => setAttachments(atRest.attachments),
+      attachBusy: () => setAttachBusy(atRest.attachBusy),
+      sending: () => setSending(atRest.sending),
+      stopping: () => setStopping(atRest.stopping),
+      actionBusy: () => setActionBusy(atRest.actionBusy),
+      skipBusy: () => setSkipBusy(atRest.skipBusy),
+      chatState: () => setChatState(atRest.chatState),
+      sheetMember: () => setSheetMember(atRest.sheetMember),
+      sheetSnapshot: () => setSheetSnapshot(atRest.sheetSnapshot),
+      menuOpen: () => setMenuOpen(atRest.menuOpen),
+      scenarioOpen: () => setScenarioOpen(atRest.scenarioOpen),
+      toolsOpen: () => setToolsOpen(atRest.toolsOpen),
+      worldOpen: () => setWorldOpen(atRest.worldOpen),
+      rosterOpen: () => setRosterOpen(atRest.rosterOpen),
+      renameOpen: () => setRenameOpen(atRest.renameOpen),
+      deleteOpen: () => setDeleteOpen(atRest.deleteOpen),
+      deleting: () => setDeleting(atRest.deleting),
+      archiveBusy: () => setArchiveBusy(atRest.archiveBusy),
+      rememberOpen: () => setRememberOpen(atRest.rememberOpen),
+      rememberText: () => setRememberText(atRest.rememberText),
+      rememberBusy: () => setRememberBusy(atRest.rememberBusy),
+      relationshipOpen: () => setRelationshipOpen(atRest.relationshipOpen),
+      scenesOpen: () => setScenesOpen(atRest.scenesOpen),
+      portraitOpen: () => setPortraitOpen(atRest.portraitOpen),
+      pickupDismissed: () => setPickupDismissed(atRest.pickupDismissed),
+      wantsSay: () => setWantsSay(atRest.wantsSay),
+      pinned: () => setPinned(atRest.pinned),
+    };
+    for (const key of Object.keys(resets) as (keyof PerChatState)[]) resets[key]();
+  };
+
+  // The chat this mount's per-chat state currently belongs to. Next reuses the
+  // client component across /chat/[chatId] param navigations (a hub link, a
+  // ?say= tap, the dashboard's "latest chat"), so a switch is NOT a remount:
+  // without this, everything the reset below missed — the composer draft, the
+  // staged photo ids, the narrator/OOC register, the busy flags, every open
+  // sheet and dialog — carried into the new conversation. Keyed on chatId
+  // rather than on the seed verdict so the reset can't be raced by the fetch:
+  // it fires on the switch itself, whether or not anything has loaded yet.
+  const [stateForChat, setStateForChat] = useState(chatId);
   // Seed the transcript + chat header from the bootstrap exactly once per chatId
   // (decideDraftSeed via the "adjust state while rendering" pattern) so a
   // streamed/optimistic reply is never clobbered by the fetch settling. "seed"
   // only fires once the fetched payload is *this* chat's (loadedId === chatId), so
-  // a stale previous-chat payload can never seed during a chatId switch; "clear"
-  // drops the previous chat's transcript/header immediately on that switch instead
-  // of letting them linger until the new fetch lands.
+  // a stale previous-chat payload can never seed during a chatId switch.
   const [seededFor, setSeededFor] = useState<string | null>(null);
   const seedAction = decideDraftSeed({
     entityId: chatId,
     seededId: seededFor,
     loadedId: bootstrap.data?.chat.id ?? null,
   });
-  if (seedAction === "seed" && bootstrap.data) {
+  if (stateForChat !== chatId) {
+    // Switched chats: the previous conversation's everything goes, immediately —
+    // its transcript/header included, rather than lingering until the new fetch
+    // lands. `seededFor` is bookkeeping for the seed-once machinery, not per-chat
+    // payload, so the switch clears it here and the new chat seeds when it loads.
+    setStateForChat(chatId);
+    setSeededFor(null);
+    resetPerChatState();
+  } else if (seedAction === "seed" && bootstrap.data) {
     setSeededFor(chatId);
     setLines(bootstrap.data.messages.map(toLine));
     setHasEarlier(bootstrap.data.hasMore);
@@ -278,17 +352,6 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     // the load effect below, which re-seeds stageRef from the fresh snapshot before
     // any send can compare against it.
     setChatState(null);
-  } else if (seedAction === "clear") {
-    setSeededFor(null);
-    setLines([]);
-    setHasEarlier(false);
-    setEarlierCursor(null);
-    setTitle("");
-    setArchived(false);
-    setChatModel(resolveChatModelId(null));
-    setChatState(null);
-    setPickupDismissed(false);
-    setWantsSay(false);
   }
 
   // Read (and strip) the ?say=1 marker-tap param once per chat mount (spec §8.4).
@@ -355,12 +418,32 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
-  // Mirrors stickRef for rendering (the jump-to-latest pill) — the ref stays the
-  // synchronous truth the effects read.
-  const [pinned, setPinned] = useState(true);
   // Set before a "Load earlier" prepend renders; the layout effect restores the
   // viewport from it so the reader is never yanked (lib/scroll-pin.ts).
   const prependAnchorRef = useRef<PrependAnchor | null>(null);
+
+  // The ref half of the chat-switch reset (the state half is
+  // `resetPerChatState` above — refs can't be written during render). A layout
+  // effect, not a passive one, on both counts that matter: it runs before the
+  // scroll correction below (declaration order, same commit) so a new
+  // conversation opens pinned to its newest line, and it runs synchronously with
+  // the commit, so a reply still streaming for the PREVIOUS chat can never
+  // settle in the gap and write its transcript over this one.
+  useLayoutEffect(() => {
+    // The previous chat's regard band: the state load below re-seeds it, and
+    // until then `refreshState` must not compare against another chat's stage.
+    stageRef.current = null;
+    // A conversation opens at its newest line, however the last one was scrolled.
+    stickRef.current = true;
+    // A pending prepend anchor belongs to the transcript that is going away.
+    prependAnchorRef.current = null;
+    // Clearing the active-stream identity token supersedes any reply still
+    // streaming for the previous chat: it settles into a no-op instead of
+    // clearing `sending` here or reloading that chat's transcript over this one.
+    sendingRef.current = false;
+    abortRef.current = null;
+  }, [chatId]);
+
   // One layout effect owns scroll correction (the session feed's pattern):
   // restore after a prepend, otherwise stick to the bottom while pinned.
   // Unpinned appends fall through to "do nothing".
@@ -565,7 +648,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     // cleanup below sees the real content (a partial held mid-hold must survive).
     flushHeld();
     // Only release the busy state if we're still the active stream — a rerun may
-    // have aborted us and installed its own controller, which now owns `sending`.
+    // have aborted us and installed its own controller, which now owns `sending`,
+    // or a chat switch may have cleared the token out from under us (this reply
+    // belongs to a conversation that is no longer on screen).
     const superseded = abortRef.current !== controller;
     if (!superseded) {
       abortRef.current = null;
@@ -584,7 +669,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         setLines((prev) => prev.filter((l) => !(l.id === assistantId && l.content === "")));
       }
       // The server 409s sends into an archived conversation — flip to read-only.
-      if (!outcome.ok && outcome.error?.code === "chat_archived") setArchived(true);
+      // Never on a superseded stream: `archived` describes the chat on screen, and
+      // a switch supersedes, so the outcome may be about the one we just left.
+      if (!superseded && !outcome.ok && outcome.error?.code === "chat_archived") setArchived(true);
       return outcome;
     }
     // Swap the optimistic temp-ids for the persisted ids so the exchange just sent
