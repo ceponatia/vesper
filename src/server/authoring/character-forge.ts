@@ -154,17 +154,17 @@ function speciesForForgeContext(context: CharacterForgeContext): SpeciesDefiniti
 }
 
 /**
- * The heritage within the resolved species — the draft's stored `heritageId`
- * when editing, else inferred from the prompt ("a drow ranger" → dark_elf).
- * Scoped to the resolved species so an inferred heritage can never belong to a
- * different one.
+ * The heritage/subtype within the resolved species — the draft's stored
+ * `heritageId` when editing, else inferred from the prompt ("a drow ranger" →
+ * dark_elf), then the species default when inference is silent. Scoped to the
+ * resolved species so a selected overlay can never belong to a different one.
  */
 function heritageForForgeContext(context: CharacterForgeContext): HeritageDefinition | undefined {
   const species = speciesForForgeContext(context);
   if (!species) return undefined;
   const draftId = context.draft?.profile.heritageId;
   if (draftId) return heritageFor(species.id, draftId);
-  return inferHeritageFromText(species.id, context.prompt);
+  return inferHeritageFromText(species.id, context.prompt) ?? heritageFor(species.id, undefined);
 }
 
 function realizedBodyForForgeContext(context: CharacterForgeContext) {

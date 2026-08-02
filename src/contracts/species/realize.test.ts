@@ -109,7 +109,7 @@ describe("realizeBody — anatomy gating", () => {
   });
 
   it("non-feature fantasy species stay baseline humanoid until traits are authored", () => {
-    for (const speciesId of ["elf", "dwarf", "gnome", "orc", "goblin"]) {
+    for (const speciesId of ["android", "elf", "dwarf", "gnome", "orc", "goblin"]) {
       const body = realizeBody({ speciesId });
       expect([...body.bodyFeatures], speciesId).toEqual([]);
       expect(body.isLocationPresent("head"), speciesId).toBe(true);
@@ -117,6 +117,28 @@ describe("realizeBody — anatomy gating", () => {
       expect(body.isLocationPresent("horns"), speciesId).toBe(false);
       expect(body.isLocationPresent("tail"), speciesId).toBe(false);
     }
+  });
+
+  it("Android subtypes retain the full human physical body and split sensory vocabulary", () => {
+    const regions = ["breasts", "vulva", "penis", "testicles"];
+    const human = realizeBody({ speciesId: "human", intimateRegions: regions });
+    const synthetic = realizeBody({ speciesId: "android", intimateRegions: regions });
+    const organic = realizeBody({ speciesId: "android", heritageId: "organic_android", intimateRegions: regions });
+
+    expect(synthetic.heritageId).toBe("synthetic_android");
+    expect(organic.heritageId).toBe("organic_android");
+    expect([...synthetic.locationIds].sort()).toEqual([...human.locationIds].sort());
+    expect([...organic.locationIds].sort()).toEqual([...human.locationIds].sort());
+    for (const attribute of attributeRegistry.definitions) {
+      expect(synthetic.isAttributeApplicable(attribute), attribute.id).toBe(human.isAttributeApplicable(attribute));
+      expect(organic.isAttributeApplicable(attribute), attribute.id).toBe(human.isAttributeApplicable(attribute));
+    }
+
+    const skinTexture = def("skin.texture");
+    expect(synthetic.allowedValuesFor(skinTexture)).toContain("silicone_smooth");
+    expect(organic.allowedValuesFor(skinTexture)).toEqual(human.allowedValuesFor(skinTexture));
+    expect(organic.allowedValuesFor(def("vulva.scent"))).not.toContain("faint_ozone");
+    expect(synthetic.allowedValuesFor(def("vulva.scent"))).toContain("faint_ozone");
   });
 
   it("explicit bodyFeatures override the species defaults", () => {

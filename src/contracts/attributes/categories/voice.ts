@@ -1,4 +1,5 @@
 import { defineAttributeGroup } from "../types";
+import { SYNTHETIC_VOICE_TIMBRES, SYNTHETIC_VOICE_TIMBRE_GUIDANCE } from "../shared-values";
 
 export const voiceGroup = defineAttributeGroup("voice", [
   {
@@ -23,7 +24,9 @@ export const voiceGroup = defineAttributeGroup("voice", [
     allowedValues: [
       "clear", "warm", "soft_spoken", "husky", "raspy", "smoky",
       "breathy", "nasal", "resonant", "gravelly", "silvery", "reedy",
+      ...SYNTHETIC_VOICE_TIMBRES,
     ],
+    autoDefaultExcludes: [...SYNTHETIC_VOICE_TIMBRES],
     aliases: ["voice timbre", "husky voice", "raspy voice"],
     // Slice-4 authoring batch (attribute-narrator-guidance.plan.md) — DRAFTS AWAITING
     // OWNER REVIEW. Timbre = the texture/color of the voice only; pitch (its own
@@ -39,6 +42,7 @@ export const voiceGroup = defineAttributeGroup("voice", [
       gravelly: "coarse and rumbling, a rough gravel scrape",
       silvery: "bright, clear, bell-like — light on the ear",
       reedy: "thin and faintly buzzing, like a reed",
+      ...SYNTHETIC_VOICE_TIMBRE_GUIDANCE,
     },
   },
   {

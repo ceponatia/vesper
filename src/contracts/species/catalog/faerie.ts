@@ -1,5 +1,6 @@
 import { defineSpecies } from "../types";
 import { DEFAULT_BODY_PLAN_ID } from "../../body/plans";
+import { organicHumanoidSensoryRules } from "./humanoid-sensory";
 
 export const faerie = defineSpecies({
   id: "faerie",
@@ -15,6 +16,7 @@ export const faerie = defineSpecies({
     "Ethereal and weightless about it — a faerie takes to intimacy the way she takes to flight, playful and unhurried, delighting in touch for its own sake more than any destination.",
   defaultFeatureGroups: ["wings"],
   attributeRules: [
+    ...organicHumanoidSensoryRules,
     // The species' signature wing shape, carried structurally so a heritage
     // (e.g. Sprite) can override it without the prose contradicting the image.
     // Locked to its one value — butterfly wings are faerie-specific.

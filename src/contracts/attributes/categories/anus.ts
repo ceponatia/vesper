@@ -4,6 +4,12 @@ import {
   INTIMATE_SCENT_GUIDANCE,
   INTIMATE_SCENT_SWEAT,
   INTIMATE_SCENT_SWEAT_GUIDANCE,
+  SYNTHETIC_INTIMATE_TEXTURES,
+  SYNTHETIC_INTIMATE_TEXTURE_GUIDANCE,
+  SYNTHETIC_SCENT_VALUES,
+  SYNTHETIC_SCENT_GUIDANCE,
+  SYNTHETIC_SENSITIVITY_VALUES,
+  SYNTHETIC_SENSITIVITY_GUIDANCE,
 } from "../shared-values";
 
 /**
@@ -88,7 +94,9 @@ export const anusGroup = defineAttributeGroup("anus", [
     valueType: "enum",
     description: "Surface feel of the anus and the ring of skin around it.",
     mutability: "inherent",
-    allowedValues: ["smooth", "soft", "delicate", "wrinkled", "puckered", "ridged"],
+    allowedValues: ["smooth", "soft", "delicate", "wrinkled", "puckered", "ridged", ...SYNTHETIC_INTIMATE_TEXTURES],
+    autoDefaultExcludes: [...SYNTHETIC_INTIMATE_TEXTURES],
+    narratorGuidance: { ...SYNTHETIC_INTIMATE_TEXTURE_GUIDANCE },
     bodyLocationId: "anus",
   },
   {
@@ -110,7 +118,9 @@ export const anusGroup = defineAttributeGroup("anus", [
     valueType: "enum",
     description: "Baseline responsiveness to touch — a tendency, not live arousal.",
     mutability: "mutable",
-    allowedValues: ["numb", "low", "average", "high", "responsive", "extremely_sensitive"],
+    allowedValues: ["numb", "low", "average", "high", "responsive", "extremely_sensitive", ...SYNTHETIC_SENSITIVITY_VALUES],
+    autoDefaultExcludes: [...SYNTHETIC_SENSITIVITY_VALUES],
+    narratorGuidance: { ...SYNTHETIC_SENSITIVITY_GUIDANCE },
     bodyLocationId: "anus",
   },
   {
@@ -133,8 +143,9 @@ export const anusGroup = defineAttributeGroup("anus", [
     valueType: "enum",
     description: "Intimate scent; shifts with hygiene and arousal. Surfaces only when scent is earned at intimate range.",
     mutability: "mutable",
-    allowedValues: [...INTIMATE_SCENT_BASE, ...INTIMATE_SCENT_SWEAT],
+    allowedValues: [...INTIMATE_SCENT_BASE, ...INTIMATE_SCENT_SWEAT, ...SYNTHETIC_SCENT_VALUES],
+    autoDefaultExcludes: [...SYNTHETIC_SCENT_VALUES],
     bodyLocationId: "anus",
-    narratorGuidance: { ...INTIMATE_SCENT_GUIDANCE, ...INTIMATE_SCENT_SWEAT_GUIDANCE },
+    narratorGuidance: { ...INTIMATE_SCENT_GUIDANCE, ...INTIMATE_SCENT_SWEAT_GUIDANCE, ...SYNTHETIC_SCENT_GUIDANCE },
   },
 ]);

@@ -4,6 +4,12 @@ import {
   INTIMATE_SCENT_GUIDANCE,
   INTIMATE_TASTE_BASE,
   INTIMATE_TASTE_GUIDANCE,
+  SYNTHETIC_INTIMATE_TEXTURES,
+  SYNTHETIC_INTIMATE_TEXTURE_GUIDANCE,
+  SYNTHETIC_SCENT_VALUES,
+  SYNTHETIC_SCENT_GUIDANCE,
+  SYNTHETIC_TASTE_VALUES,
+  SYNTHETIC_TASTE_GUIDANCE,
 } from "../../shared-values";
 
 /**
@@ -269,7 +275,10 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
       "meaty",
       "wrinkled",
       "ribbed",
+      ...SYNTHETIC_INTIMATE_TEXTURES,
     ],
+    autoDefaultExcludes: [...SYNTHETIC_INTIMATE_TEXTURES],
+    narratorGuidance: { ...SYNTHETIC_INTIMATE_TEXTURE_GUIDANCE },
     bodyLocationId: "vulva",
     promptHints: [
       "Primarily used during intimate physical contact descriptions.",
@@ -346,7 +355,8 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
     valueType: "enum",
     description: "Intimate scent; shifts with hygiene, cycle, and arousal.",
     mutability: "mutable",
-    allowedValues: [...INTIMATE_SCENT_BASE, "sweet", "salty", "fermented", "floral_musk"],
+    allowedValues: [...INTIMATE_SCENT_BASE, "sweet", "salty", "fermented", "floral_musk", ...SYNTHETIC_SCENT_VALUES],
+    autoDefaultExcludes: [...SYNTHETIC_SCENT_VALUES],
     bodyLocationId: "vulva",
     promptHints: [
       "Surfaces only at close/intimate range when scent is earned.",
@@ -357,6 +367,7 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
       salty: "clean sweat-salt over warm skin",
       fermented: "a tangy, sourdough ferment note",
       floral_musk: "musk with an incongruous floral sweetness laid over it",
+      ...SYNTHETIC_SCENT_GUIDANCE,
     },
   },
   {
@@ -367,13 +378,15 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
     valueType: "enum",
     description: "Taste when orally stimulated.",
     mutability: "mutable",
-    allowedValues: [...INTIMATE_TASTE_BASE, "sweet", "creamy"],
+    allowedValues: [...INTIMATE_TASTE_BASE, "sweet", "creamy", ...SYNTHETIC_TASTE_VALUES],
+    autoDefaultExcludes: [...SYNTHETIC_TASTE_VALUES],
     bodyLocationId: "vulva",
     promptHints: ["Only surfaces at the intimate taste tier (oral contact)."],
     narratorGuidance: {
       ...INTIMATE_TASTE_GUIDANCE,
       sweet: "distinctly sweet — a honeyed taste",
       creamy: "a thick, rounded, dairy-soft note on the tongue",
+      ...SYNTHETIC_TASTE_GUIDANCE,
     },
   },
 ]);

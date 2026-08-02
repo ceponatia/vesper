@@ -1,5 +1,6 @@
 import type { SpeciesDefinition } from "../types";
 import { human } from "./human";
+import { android } from "./android";
 import { elf } from "./elf";
 import { dwarf } from "./dwarf";
 import { gnome } from "./gnome";
@@ -16,6 +17,7 @@ import { succubus } from "./succubus";
  */
 export const speciesCatalog: readonly SpeciesDefinition[] = [
   human,
+  android,
   elf,
   dwarf,
   gnome,

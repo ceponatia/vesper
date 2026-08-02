@@ -1,4 +1,5 @@
 import { defineAttributeGroup } from "../../types";
+import { SYNTHETIC_SENSITIVITY_VALUES, SYNTHETIC_SENSITIVITY_GUIDANCE } from "../../shared-values";
 
 /**
  * Breasts — intimate region, gated by the body-config group "breasts" (distinct
@@ -209,7 +210,9 @@ export const breastsGroup = defineAttributeGroup("breasts", [
     valueType: "enum",
     description: "Baseline responsiveness of the breasts and nipples to touch — a tendency, not live arousal.",
     mutability: "mutable",
-    allowedValues: ["numb", "low", "average", "high", "extremely_sensitive"],
+    allowedValues: ["numb", "low", "average", "high", "extremely_sensitive", ...SYNTHETIC_SENSITIVITY_VALUES],
+    autoDefaultExcludes: [...SYNTHETIC_SENSITIVITY_VALUES],
+    narratorGuidance: { ...SYNTHETIC_SENSITIVITY_GUIDANCE },
     bodyLocationId: "breasts",
   },
 ]);
