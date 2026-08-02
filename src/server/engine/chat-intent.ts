@@ -16,6 +16,11 @@
  * assistant replies).
  */
 
+import {
+  chatEvidenceCandidateFlags,
+  chatEvidenceSentences,
+  normalizeChatEvidenceText,
+} from "@/lib/chat-input-evidence";
 import { parseMessageSpans } from "@/lib/message-spans";
 
 export interface ChatCueHint {
@@ -50,13 +55,55 @@ const ATTENTION_RE =
 const INTIMATE_RE =
   /\b(?:kiss(?:es|ed|ing)?|taste(?:s|d)?|tasting|lick(?:s|ed|ing)?|nibble(?:s|d|ing)?|undress(?:es|ed|ing)?|strip(?:s|ped|ping)?|naked|bare(?:s|d)? (?:skin|chest|body)?|slip(?:s|ped)? (?:off|out of)|pull(?:s|ed)? off (?:your|her|his|their|my)|bite(?:s)? (?:your|her|his|their) (?:lip|neck)|breath(?:e|es)? against|mouth(?:es|ed)? (?:at|on))\b/i;
 
-export function detectChatCue(input: string): ChatCueHint {
-  const text = input ?? "";
+interface IndexedRegexMatch {
+  readonly index: number;
+  readonly end: number;
+  readonly text: string;
+}
+
+function indexedMatches(text: string, pattern: RegExp): readonly IndexedRegexMatch[] {
+  const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+  const matcher = new RegExp(pattern.source, flags);
+  const matches: IndexedRegexMatch[] = [];
+  for (const match of text.matchAll(matcher)) {
+    if (match.index === undefined || !match[0]) continue;
+    matches.push({ index: match.index, end: match.index + match[0].length, text: match[0] });
+  }
+  return matches;
+}
+
+/** Current-event policy for proximity/touch/intimacy and scene movement. */
+function hasCurrentActionMatch(sentence: string, pattern: RegExp): boolean {
+  return indexedMatches(sentence, pattern).some((match) => {
+    const flags = chatEvidenceCandidateFlags(sentence, match.index);
+    return !flags.question && !flags.negated && !flags.irrealis && !flags.historical;
+  });
+}
+
+export interface ChatCueDetectionContext {
+  /** Storyteller-mode text is authored story, not a player body performing the cue. */
+  readonly narratorInput?: boolean;
+}
+
+export function detectChatCue(input: string, context: ChatCueDetectionContext = {}): ChatCueHint {
+  const physicalSentences = context.narratorInput ? [] : chatEvidenceSentences(input, ["narration"]);
+  // Appearance attention may be narrated or directly spoken/texted. It is not a
+  // physical-action premise, but questions/irrealis/history still do not earn it.
+  const attentionSentences = context.narratorInput
+    ? []
+    : chatEvidenceSentences(input, ["narration", "speech", "comms", "styled"]);
   return {
-    proximity: PROXIMITY_RE.test(text),
-    touch: TOUCH_RE.test(text),
-    intimate: INTIMATE_RE.test(text),
-    attention: ATTENTION_RE.test(text),
+    proximity: physicalSentences.some(({ text }) => hasCurrentActionMatch(text, PROXIMITY_RE)),
+    touch: physicalSentences.some(({ text }) => hasCurrentActionMatch(text, TOUCH_RE)),
+    intimate: physicalSentences.some(({ text }) => hasCurrentActionMatch(text, INTIMATE_RE)),
+    attention: attentionSentences.some(({ text }) =>
+      indexedMatches(text, ATTENTION_RE).some((match) => {
+        const flags = chatEvidenceCandidateFlags(text, match.index);
+        // "can't stop staring" is an explicit positive arm in ATTENTION_RE, so
+        // negation is deliberately not a blanket attention veto.
+        return !flags.question && !flags.irrealis && !flags.historical;
+      }),
+    ),
   };
 }
 
@@ -152,10 +199,22 @@ const MOVE_BARE_RE = new RegExp(
  * false positive only mints a stub place the archivist then reconciles — a soft error.
  */
 export function detectSceneMovement(input: string): string | null {
-  const text = input ?? "";
-  const dest = MOVE_DEST_RE.exec(text)?.[1] ?? MOVE_BARE_RE.exec(text)?.[1];
-  if (!dest) return null;
-  return dest.trim().replace(/\s+/g, " ").toLowerCase();
+  for (const { text } of chatEvidenceSentences(input, ["narration"])) {
+    const candidates = [MOVE_DEST_RE, MOVE_BARE_RE]
+      .flatMap((pattern) => {
+        const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+        return [...text.matchAll(new RegExp(pattern.source, flags))]
+          .filter((match) => match.index !== undefined && Boolean(match[1]))
+          .map((match) => ({ index: match.index ?? 0, destination: match[1] ?? "" }));
+      })
+      .sort((a, b) => a.index - b.index);
+    for (const candidate of candidates) {
+      const flags = chatEvidenceCandidateFlags(text, candidate.index);
+      if (flags.question || flags.negated || flags.irrealis || flags.historical) continue;
+      return candidate.destination.trim().replace(/\s+/g, " ").toLowerCase();
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,6 +237,23 @@ export interface SensoryFocusHint {
    * garment targets (a dress has no anatomy to expand) and unmapped colloquialisms.
    */
   region?: string;
+  /** The present roster member the target owner resolved to, when context was supplied. */
+  targetCharacterId?: string;
+  /** Detector provenance: only ordinary player narration can produce a focus premise. */
+  source?: "player_narration";
+}
+
+export interface SensoryFocusCharacter {
+  readonly id: string;
+  readonly name: string;
+  readonly aliases: readonly string[];
+}
+
+export interface SensoryFocusDetectionContext {
+  /** PRESENT roster only. Pronouns fail closed unless this contains exactly one member. */
+  readonly characters?: readonly SensoryFocusCharacter[];
+  /** Storyteller narration is authored story, never evidence that the player performed an action. */
+  readonly narratorInput?: boolean;
 }
 
 const SMELL_RE =
@@ -189,20 +265,15 @@ const TOUCH_FOCUS_RE =
 const STUDY_RE =
   /\b(?:study(?:ing|ies)?|studied|examine(?:s|d)?|examining|inspect(?:s|ing|ed)?|scrutiniz(?:e|es|ed|ing)|look(?:s|ing|ed)? (?:closely|over)|takes? in|taking in|drink(?:s|ing)? in|drank in)\b/i;
 
-// The target noun is the CHARACTER's body/garment, never the actor's own hand doing the
-// touching — the two negative lookbehinds drop a noun owned by "my"/"our" so "run my
-// fingers along your collarbone" targets the collarbone, not the fingers.
-const NOT_ACTOR = "(?<!\\bmy )(?<!\\bour )";
+// Target vocabularies only. Ownership is resolved positionally below, so the player's
+// own hand in "run my fingers along your collarbone" is rejected while the character's
+// collarbone remains eligible.
 /** Intimate anatomy nouns — a match sets `intimate`, gating the intimate-attribute surfacing. */
-const INTIMATE_TARGET_RE = new RegExp(
-  `${NOT_ACTOR}\\b(breasts?|nipples?|cleavage|vulva|pussy|cunt|clit(?:oris)?|labia|folds|penis|cock|dick|shaft|balls|testicles?|groin|crotch|anus|ass|arse|buttocks?|butt|rear|panties|thong|lingerie)\\b`,
-  "i",
-);
+const INTIMATE_TARGET_RE =
+  /\b(breasts?|nipples?|cleavage|vulva|pussy|cunt|clit(?:oris)?|labia|folds|penis|cock|dick|shaft|balls|testicles?|groin|crotch|anus|ass|arse|buttocks?|butt|rear|panties|thong|lingerie)\b/gi;
 /** Everyday body-region + garment nouns the sense can land on. */
-const BODY_TARGET_RE = new RegExp(
-  `${NOT_ACTOR}\\b(hair|neck|throat|nape|collarbones?|shoulders?|skin|cheeks?|jaw|chin|forehead|temples?|ears?|eyes?|nose|lips?|mouth|wrists?|hands?|palms?|fingers?|knuckles?|forearms?|arms?|chest|waist|midriff|tummy|abdomen|hips?|thighs?|legs?|knees?|calves|calf|ankles?|feet|foot|soles?|heels?|toes?|back|spine|tail|wings?|horns?|stomach|belly|navel|face|dress|skirt|blouse|shirt|sweater|collar|neckline|sleeves?|stockings?|lace|hem|bodice|corset|bra|scarf|coat|jacket)\\b`,
-  "i",
-);
+const BODY_TARGET_RE =
+  /\b(hair|neck|throat|nape|collarbones?|shoulders?|skin|cheeks?|jaw|chin|forehead|temples?|ears?|eyes?|nose|lips?|mouth|wrists?|hands?|palms?|fingers?|knuckles?|forearms?|arms?|chest|waist|midriff|tummy|abdomen|hips?|thighs?|legs?|knees?|calves|calf|ankles?|feet|foot|soles?|heels?|toes?|back|spine|tail|wings?|horns?|stomach|belly|navel|face|dress|skirt|blouse|shirt|sweater|collar|neckline|sleeves?|stockings?|lace|hem|bodice|corset|bra|scarf|coat|jacket)\b/gi;
 
 /**
  * Colloquial intimate noun → the body-registry region it names, for the hint's `region`.
@@ -310,29 +381,188 @@ const GARMENT_NOUNS: ReadonlySet<string> = new Set([
  * block is deliberately sense×TARGET, so a bare "I feel nervous" never fires. Regex-first and
  * pure; the builder joins `region` to the character's authored per-location sensory values.
  */
-export function detectSensoryFocus(input: string): SensoryFocusHint | null {
-  const text = input ?? "";
-  const sense: SensoryFocusSense | null = SMELL_RE.test(text)
-    ? "smell"
-    : TASTE_RE.test(text)
-      ? "taste"
-      : TOUCH_FOCUS_RE.test(text)
-        ? "touch"
-        : STUDY_RE.test(text)
-          ? "study"
-          : null;
-  if (!sense) return null;
-  const intimateMatch = INTIMATE_TARGET_RE.exec(text)?.[1];
-  if (intimateMatch) {
-    const target = intimateMatch.toLowerCase();
-    const region = INTIMATE_REGION_BY_NOUN[target];
-    return { sense, target, intimate: true, ...(region ? { region } : {}) };
+interface ResolvedTargetOwner {
+  readonly targetCharacterId?: string;
+}
+
+interface FocusTargetCandidate extends ResolvedTargetOwner {
+  readonly index: number;
+  readonly end: number;
+  readonly target: string;
+  readonly intimate: boolean;
+  readonly region?: string;
+}
+
+interface FocusSenseCandidate extends IndexedRegexMatch {
+  readonly sense: SensoryFocusSense;
+}
+
+const OTHER_OWNER_TOKENS = ["your", "her", "his", "their"] as const;
+const OTHER_OWNER_TOKEN_SET: ReadonlySet<string> = new Set(OTHER_OWNER_TOKENS);
+const SELF_OWNER_TOKENS = new Set(["my", "our"]);
+const PAIR_BARRIER_RE =
+  /[.!?;:\n]|\b(?:while|whereas|although|because|unless|before|after|as|but|yet)\b|\band\s+(?:the|a|an|she|he|they|it|that|this|those|these)\b/iu;
+
+function sensoryOwnerSource(context: SensoryFocusDetectionContext): string {
+  const names = (context.characters ?? [])
+    .flatMap((character) => [character.name, ...character.aliases])
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .map((name) => `${escapeRegExp(name)}['’]s`);
+  return [...OTHER_OWNER_TOKENS, ...SELF_OWNER_TOKENS, ...names].join("|");
+}
+
+function resolveSensoryOwner(
+  owner: string,
+  context: SensoryFocusDetectionContext,
+): ResolvedTargetOwner | null {
+  const token = normalizeChatEvidenceText(owner).trim().replace(/'s$/iu, "").toLowerCase();
+  if (SELF_OWNER_TOKENS.has(token)) return null;
+  const named = (context.characters ?? []).find(
+    (character) =>
+      character.name.trim().toLowerCase() === token ||
+      character.aliases.some((alias) => alias.trim().toLowerCase() === token),
+  );
+  if (named) return { targetCharacterId: named.id };
+  if (!OTHER_OWNER_TOKEN_SET.has(token)) return null;
+  if (context.characters === undefined) return {};
+  const sole = context.characters.length === 1 ? context.characters[0] : undefined;
+  return sole ? { targetCharacterId: sole.id } : null;
+}
+
+function targetOwner(
+  sentence: string,
+  match: IndexedRegexMatch,
+  context: SensoryFocusDetectionContext,
+): ResolvedTargetOwner | null {
+  const source = sensoryOwnerSource(context);
+  const left = sentence.slice(Math.max(0, match.index - 80), match.index);
+  // Allow a short adjective/material phrase between the owner and noun:
+  // "her dark silk dress". Resolve the nearest owner token so the `your` in
+  // "run my fingers along your collarbone" beats the earlier `my`.
+  const ownerMatcher = new RegExp(`\\b(${source})\\b`, "giu");
+  const ownerMatches = [...left.matchAll(ownerMatcher)];
+  const nearest = ownerMatches.at(-1);
+  if (nearest?.index !== undefined && nearest[0] && nearest[1]) {
+    const afterOwner = left.slice(nearest.index + nearest[0].length);
+    if (/^(?:\s+[\p{L}'-]+){0,3}\s*$/iu.test(afterOwner)) {
+      return resolveSensoryOwner(nearest[1], context);
+    }
   }
-  const bodyMatch = BODY_TARGET_RE.exec(text)?.[1];
-  if (bodyMatch) {
-    const target = bodyMatch.toLowerCase();
-    const region = GARMENT_NOUNS.has(target) ? undefined : (EVERYDAY_REGION_BY_NOUN[target] ?? target);
-    return { sense, target, intimate: false, ...(region ? { region } : {}) };
+  // Partitive nouns keep the named region as the focus: "the sole of her foot"
+  // returns `sole`, with ownership proved by the phrase to its right.
+  const right = sentence.slice(match.end, Math.min(sentence.length, match.end + 60));
+  const partitive = new RegExp(`^\\s+(?:of|on|at)\\s+(?:the\\s+)?(${source})\\b`, "iu").exec(right)?.[1];
+  return partitive ? resolveSensoryOwner(partitive, context) : null;
+}
+
+function sensoryTargets(
+  sentence: string,
+  context: SensoryFocusDetectionContext,
+): readonly FocusTargetCandidate[] {
+  const candidates: FocusTargetCandidate[] = [];
+  for (const [pattern, intimate] of [
+    [INTIMATE_TARGET_RE, true],
+    [BODY_TARGET_RE, false],
+  ] as const) {
+    for (const match of indexedMatches(sentence, pattern)) {
+      const owner = targetOwner(sentence, match, context);
+      if (!owner) continue;
+      const target = match.text.toLowerCase();
+      const region = intimate
+        ? INTIMATE_REGION_BY_NOUN[target]
+        : GARMENT_NOUNS.has(target)
+          ? undefined
+          : (EVERYDAY_REGION_BY_NOUN[target] ?? target);
+      candidates.push({
+        index: match.index,
+        end: match.end,
+        target,
+        intimate,
+        ...(region ? { region } : {}),
+        ...(owner.targetCharacterId ? { targetCharacterId: owner.targetCharacterId } : {}),
+      });
+    }
+  }
+  return candidates;
+}
+
+function playerPerformsSenseAction(
+  sentence: string,
+  candidate: FocusSenseCandidate,
+  context: SensoryFocusDetectionContext,
+): boolean {
+  const before = sentence.slice(0, candidate.index);
+  const clause = before.split(/[,;:]|\b(?:and|but|while|whereas|as|then)\b/iu).at(-1) ?? before;
+  const namedSubjects = (context.characters ?? [])
+    .flatMap((character) => [character.name, ...character.aliases])
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp);
+  const thirdPersonSource = ["she", "he", "they", "you", ...namedSubjects].join("|");
+  if (new RegExp(`\\b(?:${thirdPersonSource})(?:\\s+[\\p{L}'-]+){0,3}\\s*$`, "iu").test(clause)) return false;
+  const throughCandidate = sentence.slice(0, candidate.end);
+  if (/\b(?:i|we|my|our)\b/iu.test(throughCandidate)) return true;
+  // Leading participial narration is common RP grammar: "Touching her cheek, I
+  // smile." It is still player-owned when the sentence supplies a first-person
+  // subject immediately afterward.
+  return candidate.index === 0 && /\b(?:i|we)\b/iu.test(sentence.slice(candidate.end));
+}
+
+function locallyBound(candidate: FocusSenseCandidate, target: FocusTargetCandidate, sentence: string): boolean {
+  const betweenStart = Math.min(candidate.end, target.end);
+  const betweenEnd = Math.max(candidate.index, target.index);
+  const between = sentence.slice(betweenStart, betweenEnd);
+  if (PAIR_BARRIER_RE.test(between)) return false;
+  const wordCount = between.split(/\s+/u).filter(Boolean).length;
+  return wordCount <= 8;
+}
+
+function senseCandidates(sentence: string): readonly FocusSenseCandidate[] {
+  const candidates: FocusSenseCandidate[] = [];
+  for (const [sense, pattern] of [
+    ["smell", SMELL_RE],
+    ["taste", TASTE_RE],
+    ["touch", TOUCH_FOCUS_RE],
+    ["study", STUDY_RE],
+  ] as const) {
+    candidates.push(...indexedMatches(sentence, pattern).map((match) => ({ ...match, sense })));
+  }
+  return candidates.sort((a, b) => a.index - b.index);
+}
+
+export function detectSensoryFocus(
+  input: string,
+  context: SensoryFocusDetectionContext = {},
+): SensoryFocusHint | null {
+  if (context.narratorInput) return null;
+  for (const { text: rawSentence } of chatEvidenceSentences(input, ["narration"])) {
+    const sentence = normalizeChatEvidenceText(rawSentence);
+    const targets = sensoryTargets(sentence, context);
+    if (!targets.length) continue;
+    for (const candidate of senseCandidates(sentence)) {
+      const flags = chatEvidenceCandidateFlags(sentence, candidate.index);
+      if (flags.question || flags.negated || flags.irrealis || flags.historical) continue;
+      if (!playerPerformsSenseAction(sentence, candidate, context)) continue;
+      const target = targets
+        .filter((entry) => locallyBound(candidate, entry, sentence))
+        .sort((a, b) => {
+          const distanceA = Math.max(a.index - candidate.end, candidate.index - a.end, 0);
+          const distanceB = Math.max(b.index - candidate.end, candidate.index - b.end, 0);
+          return distanceA - distanceB || a.index - b.index;
+        })[0];
+      if (!target) continue;
+      const hint: SensoryFocusHint = {
+        sense: candidate.sense,
+        target: target.target,
+        intimate: target.intimate,
+        ...(target.region ? { region: target.region } : {}),
+        ...(target.targetCharacterId ? { targetCharacterId: target.targetCharacterId } : {}),
+      };
+      return context.characters !== undefined ? { ...hint, source: "player_narration" } : hint;
+    }
   }
   return null;
 }

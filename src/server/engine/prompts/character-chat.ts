@@ -1455,8 +1455,10 @@ function buildSensoryFocusSection(
 
   if (!lines.length) return "";
   return [
-    `Sensory focus — ${player} is ${SENSE_FOCUS_VERB[hint.sense]} ${name}'s ${hint.target}. ` +
-      `OPEN your reply with the experience itself: two to four sentences of what ${player} directly perceives — ` +
+    `Sensory focus candidate — ${player} ${SENSE_FOCUS_VERB[hint.sense]} ${name}'s ${hint.target}. ` +
+      `Use this block only if the CURRENT player narration explicitly performs that action now. ` +
+      `Negated, hypothetical, remembered, spoken, third-party, or storyteller wording performs no player action; ignore this block if the written beat does not prove it. ` +
+      `Never add contact or movement beyond what the player wrote. If verified, OPEN your reply with the experience itself: two to four sentences of what ${player} directly perceives — ` +
       `${focusExperienceClause(hint.sense, player)} — written as sensation landing in ${player}'s senses, before ${name} reacts or the scene moves on. ` +
       `Ground it in the values below — they are the truth of what ${player} perceives, and each names the CHARACTER of a sensation. ` +
       `Unfold each into rich, specific, felt prose that stays inside what it names — never trade it for a milder, cleaner, or more generic sensation (a scent authored pungent lands pungent, not fresh, not faintly salty). ` +
