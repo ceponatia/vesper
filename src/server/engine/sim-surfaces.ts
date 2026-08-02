@@ -58,6 +58,9 @@ export interface SimChatPresence {
 const ZONE_KIND_LABELS: Record<string, string> = {
   home: "at home",
   plaza: "at the town square",
+  // B8: the starter world's third zone. Without an entry here the market would
+  // render as a humanized raw id — charter law says a display label is data.
+  market: "at the market",
   town: "in town",
 };
 

@@ -14,6 +14,15 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   all six image lanes; failed avatar/variant generations now record warn
   diagnostics (the one ruled behavior change).
 
+- **Starter-world seeds — seed the life the engine already supports** —
+  [finished/starter-world-seeds.plan.md](finished/starter-world-seeds.plan.md)
+  — 2026-08-02 — pure seed data, no engine code: a consumable meal (so
+  `eat_meal` is finally legal in the primary's noon window), a firm midday
+  obligation at the market plus a soft evening promise at the square, a third
+  zone + second link + second action, and authored-lore documents so turn-1
+  recall returns backstory. A fresh world now demonstrates the living world on
+  its first day instead of after the player authors one.
+
 - **Chat-switch reset integrity — no per-chat state survives a chat change** —
   [deferred/chat-conversation-refactor.plan.md](deferred/chat-conversation-refactor.plan.md)
   — 2026-08-02 — the live-bug half of the parked G25 stub: a `/chat/[chatId]`
