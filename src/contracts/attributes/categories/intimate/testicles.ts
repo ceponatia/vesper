@@ -4,6 +4,10 @@ import {
   INTIMATE_SCENT_GUIDANCE,
   INTIMATE_SCENT_SWEAT,
   INTIMATE_SCENT_SWEAT_GUIDANCE,
+  SYNTHETIC_INTIMATE_TEXTURES,
+  SYNTHETIC_INTIMATE_TEXTURE_GUIDANCE,
+  SYNTHETIC_SCENT_VALUES,
+  SYNTHETIC_SCENT_GUIDANCE,
 } from "../../shared-values";
 
 /**
@@ -43,7 +47,9 @@ export const testiclesGroup = defineAttributeGroup("testicles", [
     valueType: "enum",
     description: "Surface feel of the scrotum.",
     mutability: "inherent",
-    allowedValues: ["smooth", "soft", "firm", "wrinkled", "heavy"],
+    allowedValues: ["smooth", "soft", "firm", "wrinkled", "heavy", ...SYNTHETIC_INTIMATE_TEXTURES],
+    autoDefaultExcludes: [...SYNTHETIC_INTIMATE_TEXTURES],
+    narratorGuidance: { ...SYNTHETIC_INTIMATE_TEXTURE_GUIDANCE },
     bodyLocationId: "testicles",
   },
   {
@@ -54,8 +60,9 @@ export const testiclesGroup = defineAttributeGroup("testicles", [
     valueType: "enum",
     description: "Intimate scent; shifts with hygiene and arousal. Surfaces only when scent is earned at close/intimate range.",
     mutability: "mutable",
-    allowedValues: [...INTIMATE_SCENT_BASE, ...INTIMATE_SCENT_SWEAT],
+    allowedValues: [...INTIMATE_SCENT_BASE, ...INTIMATE_SCENT_SWEAT, ...SYNTHETIC_SCENT_VALUES],
+    autoDefaultExcludes: [...SYNTHETIC_SCENT_VALUES],
     bodyLocationId: "testicles",
-    narratorGuidance: { ...INTIMATE_SCENT_GUIDANCE, ...INTIMATE_SCENT_SWEAT_GUIDANCE },
+    narratorGuidance: { ...INTIMATE_SCENT_GUIDANCE, ...INTIMATE_SCENT_SWEAT_GUIDANCE, ...SYNTHETIC_SCENT_GUIDANCE },
   },
 ]);

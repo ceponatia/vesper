@@ -4,6 +4,10 @@ import {
   INTIMATE_SCENT_GUIDANCE,
   INTIMATE_SCENT_SWEAT,
   INTIMATE_SCENT_SWEAT_GUIDANCE,
+  SYNTHETIC_SCENT_VALUES,
+  SYNTHETIC_SCENT_GUIDANCE,
+  SYNTHETIC_SENSITIVITY_VALUES,
+  SYNTHETIC_SENSITIVITY_GUIDANCE,
 } from "../../shared-values";
 
 /**
@@ -147,7 +151,9 @@ export const penisGroup = defineAttributeGroup("penis", [
     valueType: "enum",
     description: "Baseline responsiveness to touch — a tendency, not live arousal.",
     mutability: "mutable",
-    allowedValues: ["numb", "low", "average", "high", "extremely_sensitive"],
+    allowedValues: ["numb", "low", "average", "high", "extremely_sensitive", ...SYNTHETIC_SENSITIVITY_VALUES],
+    autoDefaultExcludes: [...SYNTHETIC_SENSITIVITY_VALUES],
+    narratorGuidance: { ...SYNTHETIC_SENSITIVITY_GUIDANCE },
     bodyLocationId: "penis",
   },
   {
@@ -158,8 +164,9 @@ export const penisGroup = defineAttributeGroup("penis", [
     valueType: "enum",
     description: "Intimate scent; shifts with hygiene and arousal. Surfaces only when scent is earned at close/intimate range.",
     mutability: "mutable",
-    allowedValues: [...INTIMATE_SCENT_BASE, ...INTIMATE_SCENT_SWEAT],
+    allowedValues: [...INTIMATE_SCENT_BASE, ...INTIMATE_SCENT_SWEAT, ...SYNTHETIC_SCENT_VALUES],
+    autoDefaultExcludes: [...SYNTHETIC_SCENT_VALUES],
     bodyLocationId: "penis",
-    narratorGuidance: { ...INTIMATE_SCENT_GUIDANCE, ...INTIMATE_SCENT_SWEAT_GUIDANCE },
+    narratorGuidance: { ...INTIMATE_SCENT_GUIDANCE, ...INTIMATE_SCENT_SWEAT_GUIDANCE, ...SYNTHETIC_SCENT_GUIDANCE },
   },
 ]);

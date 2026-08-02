@@ -156,6 +156,99 @@ export const INTIMATE_TASTE_GUIDANCE: Record<string, string> = {
 };
 
 /**
+ * Sensory values unique to constructed humanoid bodies. The attribute registry's
+ * vocabularies are global, while species rules decide which bodies may select these
+ * members. Existing biological humanoid species spread
+ * `organicHumanoidSensoryRules`, so these never leak into their forge/editor choices;
+ * the synthetic Android subtype inherits the expanded sets.
+ */
+export const SYNTHETIC_SCENT_VALUES = [
+  "odorless",
+  "sterile",
+  "faint_ozone",
+  "warm_polymer",
+  "machine_oil",
+] as const;
+
+export const SYNTHETIC_SCENT_GUIDANCE: Record<string, string> = {
+  odorless: "no body scent at all, even at intimate range",
+  sterile: "clinical cleanliness with no organic musk underneath",
+  faint_ozone: "a dry electrical trace, like air after a spark",
+  warm_polymer: "clean artificial skin warmed to body temperature",
+  machine_oil: "a faint lubricating-oil note from hidden mechanisms",
+};
+
+export const SYNTHETIC_TASTE_VALUES = [
+  "neutral",
+  "sterile",
+  "faintly_metallic",
+  "synthetic_sweet",
+  "coolant_bitter",
+] as const;
+
+export const SYNTHETIC_TASTE_GUIDANCE: Record<string, string> = {
+  neutral: "almost flavorless — texture and temperature dominate",
+  sterile: "clean and clinical, without an organic aftertaste",
+  faintly_metallic: "a light conductive-metal trace",
+  synthetic_sweet: "precise manufactured sweetness, sugar-like but not organic",
+  coolant_bitter: "a controlled bitter-mineral note from synthetic fluid",
+};
+
+export const SYNTHETIC_SKIN_TEXTURES = [
+  "seamless",
+  "silicone_smooth",
+  "supple_polymer",
+  "porcelain_smooth",
+] as const;
+
+export const SYNTHETIC_SKIN_TEXTURE_GUIDANCE: Record<string, string> = {
+  seamless: "continuous artificial skin with no visible joins",
+  silicone_smooth: "silicone-soft and uniformly smooth under the fingers",
+  supple_polymer: "pliant engineered skin with a subtle synthetic give",
+  porcelain_smooth: "flawlessly even and almost ceramic-smooth",
+};
+
+export const SYNTHETIC_INTIMATE_TEXTURES = [
+  "seamless",
+  "silicone_smooth",
+  "supple_polymer",
+  "precision_ridged",
+] as const;
+
+export const SYNTHETIC_INTIMATE_TEXTURE_GUIDANCE: Record<string, string> = {
+  seamless: "continuous engineered surface without organic irregularity",
+  silicone_smooth: "soft silicone-like smoothness with controlled give",
+  supple_polymer: "warm, pliant polymer that yields like soft tissue",
+  precision_ridged: "deliberate fine ridges formed with machine precision",
+};
+
+export const SYNTHETIC_SENSITIVITY_VALUES = [
+  "adaptive",
+  "tunable",
+  "feedback_amplified",
+] as const;
+
+export const SYNTHETIC_SENSITIVITY_GUIDANCE: Record<string, string> = {
+  adaptive: "sensor gain adjusts itself to the contact",
+  tunable: "responsiveness can be deliberately raised or lowered",
+  feedback_amplified: "touch feedback is digitally intensified beyond human baseline",
+};
+
+export const SYNTHETIC_VOICE_TIMBRES = [
+  "synthetic_clear",
+  "harmonic",
+  "modulated",
+  "speaker_smooth",
+] as const;
+
+export const SYNTHETIC_VOICE_TIMBRE_GUIDANCE: Record<string, string> = {
+  synthetic_clear: "unnaturally clean articulation with no breath noise",
+  harmonic: "subtle layered overtones beneath the natural-sounding voice",
+  modulated: "precisely shaped resonance with a faint electronic edge",
+  speaker_smooth: "warm speaker-like polish, perfectly even across every word",
+};
+
+/**
  * Non-skin surface colors for visible fantasy morphology (horns, tail, wings) — a
  * material palette distinct from the curated skin/hair/eye color lists. `matches_skin`
  * covers creatures whose feature shares their skin tone. Used as an `enum_list` so a
