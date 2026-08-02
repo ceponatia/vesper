@@ -111,6 +111,21 @@ export const CHAT_PERSONAL_NOTES_MAX_OUTPUT_TOKENS = 400;
 // Matched to CHAT_EXTRACTOR_TIMEOUT_MS — TEMPORARY 60_000 diagnostic (2026-07-15). REVERT with the others.
 export const CHAT_PERSONAL_NOTES_TIMEOUT_MS = 60_000;
 /**
+ * The NPC reply-scene decision classifier (romantic-contact-affordances
+ * .spec.actor-control.md §"Execution, flags, and cost gate"): ONE structured
+ * call per persisted nonempty assistant reply, launched beside settlement and
+ * awaited only after the post-settle cut. A dedicated budget, capped at 8s
+ * from launch per the spec — explicitly NOT `CHAT_PULSE_TIMEOUT_MS`, whose
+ * temporary 60s diagnostic ceiling this call must never inherit: the call runs
+ * inside settlement and the exchange lock, so its latency is part of the
+ * shadow rollout evidence, and an unbounded wait would hide exactly the number
+ * the shadow gate exists to measure. On a trip the leg degrades to a durable
+ * `degraded` envelope tombstone; the settled reply is never charged.
+ */
+export const CHAT_NPC_SCENE_DECISION_TIMEOUT_MS = 8_000;
+/** Output cap for the decision call: two bounded proposals + JSON scaffolding, evidence ≤480 chars each. */
+export const CHAT_NPC_SCENE_DECISION_MAX_OUTPUT_TOKENS = 600;
+/**
  * The background location-sketch agent (chat-scene-fidelity.plan.md slice 2b) runs as a
  * DETACHED job — nothing waits on it — so it affords a roomier timeout than the post-flush
  * legs. A miss just leaves the place unsketched; the absent-sketch trigger re-fires.
