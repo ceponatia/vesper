@@ -5,7 +5,9 @@ import {
   narrativeModelId,
   narrativeProviderOptions,
   openrouter,
+  stripMisplacedSpeakerTagStream,
   stripNarratorArtifactStream,
+  type SpeakerTagVocabulary,
 } from "../ai";
 import { CHARACTER_CHAT_HISTORY_TURNS, NARRATIVE_TEMPERATURE } from "./constants";
 
@@ -39,6 +41,14 @@ export interface StreamCharacterChatInput {
   history: ChatTurn[];
   /** Character display name — only used to tag the demo-mode placeholder line. */
   name: string;
+  /**
+   * The reply's name vocabulary (server/ai/narrator-speaker-tags.ts): `speakers`
+   * is the roster the renderer accepts as a line-opening `[Name]` tag, `plain` the
+   * names that are never a tag (the player, supporting cast). A known name wrapped
+   * in brackets anywhere else — `"Nice to see you, [Brian]."` — is de-bracketed on
+   * the way out, so the literal brackets reach neither the bubble nor the DB.
+   */
+  names: SpeakerTagVocabulary;
   /** Narrator model override (a curated NARRATIVE_MODELS id); falls back to the default. */
   model?: string | null;
   /** Player Stop (spec §4.2): aborting cuts the stream; the caller keeps the accumulated prefix. */
@@ -75,11 +85,15 @@ export async function* streamCharacterChat(input: StreamCharacterChatInput): Asy
     abortSignal: input.signal,
   });
   // Strip the Aion "uncensored response" wrapper tags that leak into the stream
-  // (server/ai/narrator-artifacts.ts), then collapse Aion tandem-repeat blocks
-  // (server/ai/narrator-repeats.ts) — both clean the live feed AND, because the
-  // route persists the accumulated deltas, the stored reply + history. Tag
-  // stripping runs first so a leaked tag can't break the verbatim repeat match.
-  yield* collapseRepeatedBlocksStream(stripNarratorArtifactStream(result.textStream));
+  // (server/ai/narrator-artifacts.ts), de-bracket a name wrapped in `[…]` where a
+  // speaker tag can't go (server/ai/narrator-speaker-tags.ts), then collapse Aion
+  // tandem-repeat blocks (server/ai/narrator-repeats.ts) — all three clean the live
+  // feed AND, because the route persists the accumulated deltas, the stored reply +
+  // history. Both normalizers run before the repeat collapse so a leaked tag or a
+  // stray bracket can't break its verbatim block match.
+  yield* collapseRepeatedBlocksStream(
+    stripMisplacedSpeakerTagStream(stripNarratorArtifactStream(result.textStream), input.names),
+  );
 }
 
 /** Deterministic placeholder for demo mode — tagged like a real narrator line. */
