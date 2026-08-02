@@ -239,7 +239,10 @@ exchange:
    no universal eligibility gate because a visual accent, a prompt premise, a
    scene-memory mutation, and a durable contact have different false-positive costs.
 8. **Stream.** `streamCharacterChat` — a `streamText` + `openrouter().chat()` shape,
-   through `stripNarratorArtifactStream` and then
+   through `stripNarratorArtifactStream`, then `stripMisplacedSpeakerTagStream`
+   (server/ai/narrator-speaker-tags.ts — de-brackets a known name written outside a
+   line-opening tag position, e.g. `"Nice to see you, [Brian]."`; the roster comes in as
+   `speakers`, the player + supporting cast as `plain`), then
    `collapseRepeatedBlocksStream` (server/ai/narrator-repeats.ts — drops Aion
    tandem-repeat blocks, a verbatim re-emit of the reply's own trailing paragraphs,
    before they reach the live feed or the persisted accumulated reply). The narrator model is

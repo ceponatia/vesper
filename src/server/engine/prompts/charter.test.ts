@@ -105,6 +105,12 @@ describe("charter — attribution & notation", () => {
     expect(rule).toMatch(/never a bare quoted paragraph/);
   });
 
+  it("scopes brackets to the line-opening tag — never around a name inside quoted speech (owner report 2026-08-02)", () => {
+    const rule = attributionTagRule({ characterName: "Mara", player: "Theo" });
+    expect(rule).toMatch(/Square brackets have exactly ONE use/);
+    expect(rule).toContain('NEVER "It\'s good to see you, [Theo]."');
+  });
+
   it("renders the notation legend for a named player, with the sigil grammar", () => {
     const block = messageNotationBlock({ characterName: "Mara", player: "Theo", playerName: "Theo" });
     expect(block).toContain("Message notation Theo may use");
