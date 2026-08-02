@@ -920,6 +920,14 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
     const elf = await forgeCharacter({ prompt: "an elven scholar", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
     expect(elf.profile.speciesId).toBe("elf");
     expect(elf.profile.heritageId).toBeUndefined();
+
+    const defaultAndroid = await forgeCharacter({ prompt: "an android concierge", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
+    expect(defaultAndroid.profile.speciesId).toBe("android");
+    expect(defaultAndroid.profile.heritageId).toBe("synthetic_android");
+
+    const organicAndroid = await forgeCharacter({ prompt: "an organic android medic", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
+    expect(organicAndroid.profile.speciesId).toBe("android");
+    expect(organicAndroid.profile.heritageId).toBe("organic_android");
   });
 
   it("seeds new fantasy species from aliases and fuzzy prompt names", async () => {

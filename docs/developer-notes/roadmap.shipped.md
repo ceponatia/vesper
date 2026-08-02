@@ -14,6 +14,13 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   all six image lanes; failed avatar/variant generations now record warn
   diagnostics (the one ruled behavior change).
 
+- **Android species — synthetic and organic humanoid subtypes** —
+  [finished/android-species.plan.md](finished/android-species.plan.md) ·
+  [spec](finished/android-species.spec.md) — 2026-08-02 — a complete humanoid
+  Android species with Synthetic as its degraded-safe default subtype and
+  Organic as a clone-body/cybernetic overlay; subtype-aware forge/editor flows,
+  synthetic scent/taste/texture/sensitivity/voice vocabulary fenced away from
+  biological humanoids, and contract tests pinning full human physical parity.
 - **Starter-world seeds — seed the life the engine already supports** —
   [finished/starter-world-seeds.plan.md](finished/starter-world-seeds.plan.md)
   — 2026-08-02 — pure seed data, no engine code: a consumable meal (so

@@ -1,4 +1,5 @@
 import { defineAttributeGroup } from "../types";
+import { SYNTHETIC_SKIN_TEXTURES, SYNTHETIC_SKIN_TEXTURE_GUIDANCE } from "../shared-values";
 
 export const skinGroup = defineAttributeGroup("skin", [
   {
@@ -46,7 +47,8 @@ export const skinGroup = defineAttributeGroup("skin", [
     valueType: "enum",
     description: "Overall skin texture at close range.",
     mutability: "mutable",
-    allowedValues: ["smooth", "soft", "dewy", "dry", "rough", "weathered", "leathery"],
+    allowedValues: ["smooth", "soft", "dewy", "dry", "rough", "weathered", "leathery", ...SYNTHETIC_SKIN_TEXTURES],
+    autoDefaultExcludes: [...SYNTHETIC_SKIN_TEXTURES],
     aliases: ["skin texture"],
     // Slice-4 authoring batch (attribute-narrator-guidance.plan.md) — DRAFTS AWAITING
     // OWNER REVIEW. Texture = surface feel only, never tone/color. Sparse: smooth/soft/dry stay bare.
@@ -55,6 +57,7 @@ export const skinGroup = defineAttributeGroup("skin", [
       rough: "coarse to the touch — texture you can feel",
       weathered: "sun- and wind-worn, roughened by exposure",
       leathery: "tough and thick, tanned like worn hide",
+      ...SYNTHETIC_SKIN_TEXTURE_GUIDANCE,
     },
   },
   {

@@ -24,10 +24,19 @@ export function isSpeciesId(id: string): boolean {
   return byId.has(id);
 }
 
-/** The heritage record for an id within a species, or undefined (unknown / not a member). */
+/**
+ * The heritage/subtype record within a species. An absent or unknown id falls
+ * back to the species' `defaultHeritageId` when one exists; species without a
+ * default retain the original bare-species behavior.
+ */
 export function heritageFor(speciesId: string, heritageId: string | undefined): HeritageDefinition | undefined {
-  if (!heritageId) return undefined;
-  return byId.get(speciesId)?.heritages.find((h) => h.id === heritageId);
+  const species = byId.get(speciesId);
+  if (!species) return undefined;
+  const explicit = heritageId ? species.heritages.find((h) => h.id === heritageId) : undefined;
+  if (explicit) return explicit;
+  return species.defaultHeritageId
+    ? species.heritages.find((h) => h.id === species.defaultHeritageId)
+    : undefined;
 }
 
 /** The heritages a species offers (empty array for a species with none). */

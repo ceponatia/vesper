@@ -182,22 +182,26 @@ export interface BodyProfileParts {
 }
 
 /**
- * The patch for changing species: a heritage belongs to ONE species, so it clears,
- * the body plan follows the species, the feature config resets to the species
+ * The patch for changing species: a heritage belongs to ONE species, so the old
+ * value clears to the new species' default subtype (when it has one), the body plan
+ * follows the species, the feature config resets to the resolved species/subtype
  * defaults, and required attributes re-seed. Returns `null` for an unknown id
  * (the caller leaves state alone).
  */
 export function speciesChangePatch(profile: BodyProfileParts, speciesId: string): Partial<BodyProfileParts> | null {
   const species = speciesById(speciesId);
   if (!species) return null;
-  const bodyFeatures = species.defaultFeatureGroups ? [...species.defaultFeatureGroups] : undefined;
+  const heritage = heritageFor(species.id, undefined);
+  const groups = [...(species.defaultFeatureGroups ?? []), ...(heritage?.defaultFeatureGroups ?? [])];
+  const bodyFeatures = groups.length > 0 ? [...new Set(groups)] : undefined;
   return {
     speciesId: species.id,
-    heritageId: undefined,
+    heritageId: heritage?.id,
     bodyPlanId: species.bodyPlanId,
     bodyFeatures,
     attributes: seedRequiredAttributes(profile.attributes, {
       speciesId: species.id,
+      heritageId: heritage?.id,
       bodyPlanId: species.bodyPlanId,
       intimateRegions: profile.intimateRegions,
       bodyFeatures,
@@ -208,7 +212,8 @@ export function speciesChangePatch(profile: BodyProfileParts, speciesId: string)
 /**
  * The patch for changing heritage: features compose species + heritage defaults, and
  * required attributes re-seed. Returns `null` when the profile's species is unknown;
- * an unknown/blank heritage id clears the heritage (the "— None —" option).
+ * an unknown/blank heritage id resolves the species default subtype when one exists,
+ * otherwise it clears the heritage (the "— None —" option).
  */
 export function heritageChangePatch(profile: BodyProfileParts, heritageId: string): Partial<BodyProfileParts> | null {
   const species = speciesById(profile.speciesId);
