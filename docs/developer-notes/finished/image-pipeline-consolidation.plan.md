@@ -1,6 +1,20 @@
 # Image pipeline consolidation — one path from prompt to saved asset
 
-Status: active (pulled forward on owner request 2026-08-02; golden determinism baselines precede consolidation)
+Status: shipped — 2026-08-02 (all five slices; pulled forward from the later-consolidation
+sequence on owner request the same day. Completion note: the six lanes run on
+`runImagePipeline` in `images/assets.ts`; the shared hash landed golden-pinned first
+(`@/lib/hash`, forge seed + chat-look key proven unmoved); `unwrapVeniceImage`,
+`runInBatches`, `readImageBytes`/`imageMeta`, and `purgeImagesWhere` replaced their copies.
+**Release note — the one deliberate behavior change (ruled below):** a failed avatar or
+portrait-variant generation now records a warn diagnostic like the entity lane always did —
+`images.avatar.generate_failed` / `images.variant.generate_failed` — with degradation tests
+asserting fallback and code. Leftovers, each deliberate: `uploadAvatar` (`images/upload.ts`)
+keeps its own skeleton — it is not one of the six generation lanes (no provider, per-failure
+user-facing strings) and is an easy follow-up if wanted; the eval scripts keep their inline
+Venice unwraps until the eval-harness work (**C11**); `pseudoEmbed` (`server/ai/embeddings.ts`)
+keeps its inline FNV loop — it is a hash chain consuming intermediate states, not a string
+hash; `contracts/affordances/guidance/fingerprint.ts` stays independently parameterized by
+design. Keeping the copies from returning remains the tooling batch's **F1**.)
 
 ## Why
 
@@ -126,10 +140,11 @@ Invisible-risk item first, the broad one last. Each slice is independently shipp
 - **Keeping the copies from returning** is a tooling change (**F1** — the duplication gate's
   global threshold and its `scripts/` blind spot), owned by the audit's tooling batch.
 
-## Open questions
+## Resolved questions (rulings recorded at ship, 2026-08-02)
 
-- Should eval scripts that already import Venice adopt the shared unwrap in this
-  plan, or migrate only when the eval-harness work lands?
-- Does the event log stay per-lane, or become one shared event with explicit lane
-  metadata? Decide from the inspector and failed-placeholder behavior, not from
-  whichever lane migrates first.
+- **Eval scripts and the shared unwrap:** they migrate with the eval-harness work
+  (**C11**), not here. `scripts/` stays untouched by this plan.
+- **The event log stays per-lane.** The shell exposes it as injected hooks
+  (`onSettled`/`onThrown`), each lane keeps its exact payload shape — including
+  which fields appear on success vs failure — and a lane that never logged (the
+  chat look/place anchors) gains no event. No shared event row was introduced.
