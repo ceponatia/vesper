@@ -1851,6 +1851,15 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       system,
       history: modelHistory,
       name: characterName,
+      // The reply's name vocabulary (server/ai/narrator-speaker-tags.ts). `speakers` is
+      // exactly the renderer's tag vocabulary — the roster the chat bubble passes to the
+      // segmenter — so a line-opening `[Name]` stays. Everyone else brackets can reach
+      // (the player, the supporting cast) is `plain`: never a tag in ANY position, since
+      // a bracketed name the segmenter doesn't know renders literally.
+      names: {
+        speakers: input.roster?.length ? input.roster.map((r) => r.name) : [characterName],
+        plain: [player.name, ...scenario.supportingCast.map((m) => m.name)],
+      },
       model: input.model,
       signal: abortController.signal,
     });

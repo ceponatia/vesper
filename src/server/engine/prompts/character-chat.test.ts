@@ -1821,6 +1821,10 @@ describe("ensemble frame (multi-character-chat.plan.md slice 2)", () => {
     // Universal tag discipline — in a group nothing is auto-attributed.
     expect(parts.prefix).toContain("Tag EVERY spoken character line");
     expect(parts.prefix).toContain("[Mara]");
+    // …and brackets go nowhere else — never around a name inside quoted speech
+    // (owner report 2026-08-02).
+    expect(parts.prefix).toContain("Square brackets have exactly ONE use");
+    expect(parts.prefix).toContain('NEVER "Good to see you, [Brian]."');
     // Ruling 3: the player owns himself; the cutaway rule rides with it.
     expect(parts.prefix).toContain("never write Brian's actions, speech, decisions");
     expect(parts.prefix).toContain("the reply is a cutaway");
