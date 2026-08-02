@@ -9,8 +9,10 @@ const surface: AdmissionSurface = {
   zones: [
     { zoneId: "zone-home", kind: "home" },
     { zoneId: "zone-square", kind: "plaza" },
+    // B8: the starter world's third zone — a real place, not a plaza synonym.
+    { zoneId: "zone-market", kind: "market" },
   ],
-  actionDefinitionIds: ["stw-x-action-rest"],
+  actionDefinitionIds: ["stw-x-action-rest", "stw-x-action-browse"],
 };
 
 describe("admitPlayerCommand", () => {
@@ -32,6 +34,15 @@ describe("admitPlayerCommand", () => {
     expect(admitPlayerCommand("I head home before it gets dark.", surface)).toMatchObject({
       kind: "move",
       toZoneId: "zone-home",
+    });
+    // B8: the market is its own place now — "market" must not resolve to the
+    // square the way it did while `plaza` owned the word.
+    expect(admitPlayerCommand("I walk down to the market.", surface)).toMatchObject({
+      kind: "move",
+      toZoneId: "zone-market",
+    });
+    expect(admitPlayerCommand("I walk to the town square.", surface)).toMatchObject({
+      toZoneId: "zone-square",
     });
   });
 
