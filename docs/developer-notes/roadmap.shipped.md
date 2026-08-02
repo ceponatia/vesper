@@ -21,6 +21,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   Organic as a clone-body/cybernetic overlay; subtype-aware forge/editor flows,
   synthetic scent/taste/texture/sensitivity/voice vocabulary fenced away from
   biological humanoids, and contract tests pinning full human physical parity.
+
 - **Starter-world seeds — seed the life the engine already supports** —
   [finished/starter-world-seeds.plan.md](finished/starter-world-seeds.plan.md)
   — 2026-08-02 — pure seed data, no engine code: a consumable meal (so
@@ -179,7 +180,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md) ·
   [feature spec](body-attribute-affordances.spec.recognizable-features.md) ·
   [visual-memory detail](body-attribute-affordances.recognizable-features.memory.md)
-  — 2026-07-29 — recognizability stayed a *view* of body truth, never a
+  — 2026-07-29 — recognizability stayed a _view_ of body truth, never a
   `recognizable_features[]` list: a new appearance-features package (fine
   locus + finite hand schema, feature-kind registry, located facts with
   supersedence, evented anatomy, the attribute catalog) projects lane-neutral
@@ -267,8 +268,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   adapter result law, fail-closed perception, ≤2-cue repeat-gated ranking)
   under `src/contracts/affordances/`; the four hair phenomena fixture-proven
   against the spec's worked cases; new authoritative chat-lane owners for
-  body-surface wetness + scene environment (extraction-committed, migration
-  0091) with the `buildChatAffordanceRead` adapter and retake capture via
+  body-surface wetness + scene environment (extraction-committed, migration 0091) with the `buildChatAffordanceRead` adapter and retake capture via
   deterministic recompute + anchor-riding cue memory; narrator cues behind
   `CHAT_AFFORDANCE_CUES` (env, default OFF — the comparison trial gates
   default-on). Remainder (slices 6–8 + companion rulings) stays queued in
@@ -327,12 +327,11 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   retired), a successor chat's world hard-deletes with it (Worlds-page delete
   control + consequence copy on all three confirm surfaces), the quota counts
   playable worlds race-free, and the orphan sweeper reclaimed the 6
-  historically-leaked worlds on deploy (follow-up dry-run empty). Migration
-  0089. Verified end-to-end on Fly, API and UI.
+  historically-leaked worlds on deploy (follow-up dry-run empty). Migration 0089. Verified end-to-end on Fly, API and UI.
 
 - **Rate limits & cost controls** — [rate-limits.plan.md](finished/rate-limits.plan.md) —
-  2026-07-26 — the authorization batch closed *who may touch what*; this closes
-  *how much*. Burst limits and cost controls split by what losing them would
+  2026-07-26 — the authorization batch closed _who may touch what_; this closes
+  _how much_. Burst limits and cost controls split by what losing them would
   cost: per-IP windows ahead of authentication and named per-user policies stay
   in-process, while daily provider budgets, the per-owner storage quota, and the
   concurrent-job cap are durable, because an in-memory budget is reset by
@@ -352,7 +351,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   a 31-site route-mutation tripwire and a two-user authorization matrix are
   permanent gates; `docs/auth.md` carries the Before-`ALLOW_SIGNUP` checklist.
   **Same-day follow-up hardening batch** (external review of the shipped
-  cut): production magic-link now requires a *registered concrete transport*
+  cut): production magic-link now requires a _registered concrete transport_
   (env vars alone are inert — disabled until a real sender exists); the
   durable sim command runner verifies principal-vs-branch-owner before any
   write; `promoteVariant` is owner-strict in its own queries; persona scope
@@ -386,15 +385,15 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   [sim-read-seam-guards.plan.md](finished/sim-read-seam-guards.plan.md) — 2026-07-24 —
   graduated + built same day (backlog C14+C16). The four successor state-read
   seams (`readSimChatPresence/Meters/Relationship/Outfit`) now degrade to `null`
-  + a per-seam `engine.sim` diagnostic instead of 500ing the whole state strip;
-  meters integrate to the branch clock **on read** (no longer frozen at the last
-  body event) via an extracted shared `buildMeterView` that also dedups the two
-  command stores; the composed departure/accompany loop stops re-reading the same
-  space projection (two genuine re-reads collapsed, mutation-crossing reads left
-  with reasons) with two pure step-planners extracted and the first composed-flow
-  integration coverage. Built by two Opus subagents; five local gates green
-  (2534 pure). Leftovers: the integration tests gate in CI (no local Postgres);
-  Fly UI verification pending.
+  - a per-seam `engine.sim` diagnostic instead of 500ing the whole state strip;
+    meters integrate to the branch clock **on read** (no longer frozen at the last
+    body event) via an extracted shared `buildMeterView` that also dedups the two
+    command stores; the composed departure/accompany loop stops re-reading the same
+    space projection (two genuine re-reads collapsed, mutation-crossing reads left
+    with reasons) with two pure step-planners extracted and the first composed-flow
+    integration coverage. Built by two Opus subagents; five local gates green
+    (2534 pure). Leftovers: the integration tests gate in CI (no local Postgres);
+    Fly UI verification pending.
 
 - **Drain hardening — honest, durable, correctly-stamped time advancement
   (COMPLETE)** — [drain-hardening.plan.md](finished/drain-hardening.plan.md) ·
@@ -402,13 +401,13 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   gated, and deployed the day it was promoted. Composed-turn degradations are
   recorded on two surfaces (durable admin tally + public-safe reply-meta codes);
   the sim-command composites stopped 500ing after a committed write (honest 200
-  + `drainShort`); a backed-off trigger stops the drain at its due second
-  (`trigger_backoff`, §12.4 invariance) with poison triggers surfaced not
-  hidden; travel drains target `expectedArrivalAt` with a post-drain arrival
-  check; and long skips are now **server-owned durable time jobs** (leased,
-  fenced, one-per-branch — validated by 10 int tests against Postgres) with a
-  branch mutation guard and a staged catch-up UI. Migration 0086 live on Neon
-  (Fly version 118).
+  - `drainShort`); a backed-off trigger stops the drain at its due second
+    (`trigger_backoff`, §12.4 invariance) with poison triggers surfaced not
+    hidden; travel drains target `expectedArrivalAt` with a post-drain arrival
+    check; and long skips are now **server-owned durable time jobs** (leased,
+    fenced, one-per-branch — validated by 10 int tests against Postgres) with a
+    branch mutation guard and a staged catch-up UI. Migration 0086 live on Neon
+    (Fly version 118).
 
 - **World UI — the player-facing surface of the successor world** —
   [world-ui.plan.md](finished/world-ui.plan.md) · rulings 20–21 in
@@ -462,7 +461,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   the drain call via the wall-clock `available_at` default — fresh arms are now
   born eligible (epoch-pinned at the one projector insert). 3 109 pure +
   467 int green. **Gate 7 is optional/post-foundation; its opening is the
-  owner's call.**
+  owner's call.\*\*
 - **World-engine actor promotion, dependency-wake & catch-up (E6.4)** —
   [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md) §"Gate 6 build order" · contract
   [engine.spec.md](engine.spec.md) §27.7 (authored this work) — 2026-07-21 —
@@ -825,13 +824,13 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   advance ruling.** Deterministic synthetic-month harness (`runGate2Soak`): 21/21 proof
   checks at the full profile — partition-invariant material hashes stable across runs
   (`80421ced`), no duplicate outcomes under 79 injected transaction crashes + 66 stale
-  + 54 duplicate submissions, idempotent outbox crash-resume, rebuilds matching live on
-  every branch, queues bounded and drained, structured diagnostics throughout; direct
-  submit p95 4.1 ms. CI runs the small profile as `test:engine-e2-6`; the full month is
-  `pnpm eval:engine-gate2-soak`. One accepted caveat for Gate 3 design: schedule-time
-  trigger templates go stale under live load (457/600 fire-time rejections) —
-  re-validation belongs at fire time, as the kernel already does. Next engine target:
-  **Gate 3** (blocked on 10 owner rulings).
+  - 54 duplicate submissions, idempotent outbox crash-resume, rebuilds matching live on
+    every branch, queues bounded and drained, structured diagnostics throughout; direct
+    submit p95 4.1 ms. CI runs the small profile as `test:engine-e2-6`; the full month is
+    `pnpm eval:engine-gate2-soak`. One accepted caveat for Gate 3 design: schedule-time
+    trigger templates go stale under live load (457/600 fire-time rejections) —
+    re-validation belongs at fire time, as the kernel already does. Next engine target:
+    **Gate 3** (blocked on 10 owner rulings).
 - **World-engine forks, snapshots, and audit (E2.5)** —
   [engine-forks-snapshots-audit.plan.md](finished/engine/engine-forks-snapshots-audit.plan.md) · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — branch ancestry with the R4
@@ -889,7 +888,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   wardrobe the fiction can undress** — `playerOutfit` on the shared continuity leg folds
   through the existing `applyWornGarmentChanges` against the persona's pool, rides the
   "another take" rollback, and is structured-only so exposure is always coverage-computed.
-  Title is barred from prompts *structurally* — it isn't a field on the resolver's shape.
+  Title is barred from prompts _structurally_ — it isn't a field on the resolver's shape.
   **Unblocks** [scene-pov-embodiment.plan.md](finished/scene-pov-embodiment.plan.md) slices 2–4.
 - **Scene POV embodiment — the player's own body in frame** —
   [scene-pov-embodiment.plan.md](finished/scene-pov-embodiment.plan.md) — 2026-07-16 — chat-lane
@@ -900,7 +899,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   makes the part structurally unavailable; the composer has no intimate vocabulary at all).
   Third-person leakage is fought with a **positive person-count assertion + frame geometry**,
   never negatives, which anchor on exactly what they forbid (the "no camera" scar). Viewer
-  parts are a closed registry — the phrasing *is* the feature. Also slice 0, the standalone
+  parts are a closed registry — the phrasing _is_ the feature. Also slice 0, the standalone
   **blush scrub**: "flushed" rendered as stage blusher, and `visualStateNote` said it in 3
   of 5 phrases; the narrator's arousal hint echoes it through the composer, so a rule **and**
   `scrubBlush` close it. Session lane untouched and byte-identical, pinned by test.
@@ -916,7 +915,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   assume-kept), away **whereabouts** (+ presence-read `where`, one-turn return license),
   and a one-shot meanwhile note beside the skip note. Grounded improvisation everywhere
   else: skip-note grounding, opener cast material + dedupe rule F, rhythm in ordinary
-  turns. Migration 0050. *Returning after "two weeks" finally feels like two weeks.*
+  turns. Migration 0050. _Returning after "two weeks" finally feels like two weeks._
 - **Chat clock & calendar — story time the player can see** —
   [chat-clock-calendar.plan.md](finished/chat-clock-calendar.plan.md) — 2026-07-15 — the chat clock
   anchored to a real Date-backed calendar (`calendar_start`, migration 0049; default Jan 1
@@ -924,8 +923,8 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   skip chips whose tooltips and toast name the landing ("→ Friday evening"); ONE authoritative
   time — the binding Story-time tail line replaces the removed archivist `timeOfDay`; real
   weekdays in plan labels (render-derived, anchor-rebasable) and schedules; tick 4 → 1
-  min/exchange with meter pacing preserved (`CHAT_METER_DRIFT_MINUTES`). *Skips stop being a
-  leap in the dark — the off-screen-life prerequisite.*
+  min/exchange with meter pacing preserved (`CHAT_METER_DRIFT_MINUTES`). _Skips stop being a
+  leap in the dark — the off-screen-life prerequisite._
 - **Chat plans & promises — commitments that come due** —
   [chat-plans-promises.plan.md](finished/chat-plans-promises.plan.md) · spec
   [chat-plans-promises.spec.md](finished/chat-plans-promises.spec.md) — 2026-07-15 — all four slices:
@@ -940,7 +939,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   ensemble **arrival/exit license** (the presence law's one principled don't-teleport
   exception). Author surface: the **Plans** card + lightbox editor (`ChatStateEdit.plans`).
   Rulings A–F in the spec. The chat descendant of the retired scheduled-arrivals spec —
-  *time skips finally have teeth*. Leftover: NPC↔NPC fact-filing rides
+  _time skips finally have teeth_. Leftover: NPC↔NPC fact-filing rides
   [chat-offscreen-life.plan.md](finished/chat-offscreen-life.plan.md)'s meanwhile pass.
 - **Agent health — failed legs are visible instead of silent** —
   [chat-agent-improvements.plan.md](finished/chat-agent-improvements.plan.md) §Agent health —
