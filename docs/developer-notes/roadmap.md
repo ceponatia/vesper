@@ -121,6 +121,13 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   channel-aware foot narration, and further generalized contact
   abstractions. The active doc family archives together only after the plan
   ships.
+- **Image pipeline consolidation — one path from prompt to saved asset** —
+  [image-pipeline-consolidation.plan.md](image-pipeline-consolidation.plan.md)
+  (active; pulled forward from the later-consolidation sequence on owner
+  request 2026-08-02). C1–C5 + C10 from the efficiency audit: golden-pinned
+  shared hash first, then the leaf helpers (Venice unwrap, batch runner,
+  readers, purge), then the shared reserve → generate → save-or-fail → log
+  pipeline shell adopted by all six image lanes, one lane at a time.
 
 ## Next (queued)
 
@@ -304,7 +311,8 @@ umbrella further down.)
   [contracts](contracts-hygiene.plan.md) ·
   [dead exports](dead-export-sweep.plan.md) ·
   [tooling](tooling-gates.plan.md)
-  (draft; dependency order only, **not all promoted to next**). After the approved
+  (draft; dependency order only, **not all promoted to next**; the image
+  pipeline plan was pulled forward to Active 2026-08-02). After the approved
   near-term tranche and the feature work above: command-shell consolidation →
   fork registry → image pipeline → client D10/D11/D12 → library registry/routes →
   `ConfirmDialog`, followed by a go/no-go on the full editor scaffold → broad

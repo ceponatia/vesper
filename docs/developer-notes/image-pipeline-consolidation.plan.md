@@ -1,6 +1,6 @@
 # Image pipeline consolidation — one path from prompt to saved asset
 
-Status: draft (sequenced after fork-registry; golden determinism baselines precede consolidation)
+Status: active (pulled forward on owner request 2026-08-02; golden determinism baselines precede consolidation)
 
 ## Why
 
