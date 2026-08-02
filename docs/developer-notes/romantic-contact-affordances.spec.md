@@ -16,6 +16,7 @@ fixtures.
 | --- | --- |
 | [Shared contact core](romantic-contact-affordances.spec.contact-core.md) | Attempted action versus committed contact, access result, contact frame, policy/perception gates, effects, cue ranking, retake capture, and shared tests. |
 | [Observations, effects, and presentation](romantic-contact-affordances.spec.effects.md) | Observation/constraint contracts, perception and repetition rules, plus atomic, conservative, idempotent effect commits. |
+| [NPC actor control](romantic-contact-affordances.spec.actor-control.md) | Item 3's live-lane NPC authority: the two-tier structured NPC-decision source, decision schema, evidence gate, permitted scene changes, reply-side persistence/retake extension, and fail-closed ambiguity rules. |
 | [Foot contact](romantic-contact-affordances.spec.foot.md) | Foot surface topology, structural profiles, footwear integration, foot phenomena, and foot fixtures. |
 | [Intimate contact](romantic-contact-affordances.spec.intimate.md) | Intimate topology, exposure and consent requirements, physiology inputs, intimate phenomena, and leak-prevention fixtures. |
 
