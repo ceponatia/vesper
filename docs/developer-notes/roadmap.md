@@ -123,13 +123,6 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   abstractions. The active doc family archives together only after the plan
   ships.
 
-- **Starter-world seeds — seed the life the engine already supports** —
-  [starter-world-seeds.plan.md](starter-world-seeds.plan.md) (active; B8
-  promoted from deferred 2026-08-02 on the owner's build request). Pure seed
-  data: a consumable food item (un-breaks `eat_meal`), 2–3 commitments on the
-  primary, a third zone + second link + second action, authored-lore memory
-  documents — so a fresh world demonstrates the living world on day one.
-
 ## Next (queued)
 
 - **Data lifecycle — chat-scoped deletion, retention sweeps, intentional

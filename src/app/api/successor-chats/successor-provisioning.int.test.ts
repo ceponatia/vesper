@@ -347,11 +347,12 @@ describe.runIf(ready)("successor provisioning: resume, replay, cleanup", () => {
     const res = await create(key);
     expect(res.status).toBe(201);
     // The missing stage was re-seeded; the stages that HAD committed were skipped.
+    // Both B8 actions come back — the guard is per STAGE, not per row.
     const actions = await db()
       .select({ id: simActionDefinitions.actionDefinitionId })
       .from(simActionDefinitions)
       .where(eq(simActionDefinitions.branchId, world.branchId));
-    expect(actions).toHaveLength(1);
+    expect(actions).toHaveLength(2);
     expect(await branchCount(world.worldId)).toBe(1);
     const cast = await db()
       .select({ id: simCharacters.characterId })

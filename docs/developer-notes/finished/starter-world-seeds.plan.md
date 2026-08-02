@@ -1,8 +1,33 @@
 # Seed the life the engine already supports
 
-Status: **active** — promoted 2026-08-02 from the deferred backlog (B8, parked
-2026-07-23) on the owner's build request during the docs sweep. The stub's
-sketch was already discussion-complete; this plan builds it as one slice.
+Status: **shipped — 2026-08-02** — promoted the same day from the deferred
+backlog (B8, parked 2026-07-23) on the owner's build request during the docs
+sweep, and built as the single slice below. The stub's sketch was already
+discussion-complete.
+
+Completion note. All four seed groups landed in
+`src/server/engine/simulation/starter-world.ts`, whose authored content now
+lives in a pure `starterWorldSeedPlan(input)` builder so the seed is
+reviewable and testable without a database (`starter-world.test.ts`, pure
+suite). Two deviations worth naming, both recorded in the code:
+
+- **The meal item is seeded HELD by the primary, not resting in the home
+  zone.** `seedDurableMaterialBranch` writes items before
+  `seedDurableSpaceTopology` creates the zones, so a `zone` locus has no FK
+  target at seed time (that seeder's own doc spells out the three-step order a
+  zone-resting seed item would need). Actor-rooted is also the more robust
+  choice: §26.5 selection prefers it, and it stays eligible if the noon window
+  ever catches her out on an errand or mid-journey.
+- **Two vocabulary rows outside `starter-world.ts`** were required for the new
+  third zone to be addressable and nameable, both one-line data edits to
+  existing registries: `market` in `ZONE_KIND_LABELS` (`sim-surfaces.ts` —
+  otherwise the market renders as a humanized raw id) and a `market` entry in
+  `ZONE_KIND_WORDS` (`input-admission.ts`), taking the word "market" back off
+  `plaza` so "I walk to the market" stops admitting a move to the square.
+
+Leftovers: none of this changes the primary's LOD, so the seeded routine still
+only runs for `event`-LOD actors — that ruling stays parked in B9
+(`deferred/primary-lod-ruling.plan.md`), exactly as the cross-link below says.
 
 ## What
 
