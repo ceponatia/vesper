@@ -92,7 +92,7 @@ It applies four stages in order:
 | --- | --- |
 | 1. Body plan | The superset of locations. |
 | 2. Species | `allowedBodyLocationIds` / `disallowedBodyLocationIds` + `defaultFeatureGroups` + attribute rules. |
-| 3. Heritage | *Optional* refinement within the species — adds feature groups and overrides attribute rules per `attributeId`. Never touches the body plan or locations. |
+| 3. Heritage/subtype | Refinement within the species — adds feature groups and overrides attribute rules per `attributeId`. Usually optional; a species may declare a degraded-safe `defaultHeritageId`. Never touches the body plan or locations. |
 | 4. Body-config | Which intimate groups and additive features are present. |
 
 **What it answers:**
@@ -112,17 +112,18 @@ All three `AttributeRule` applicabilities are live:
 
 ### Forge species inference
 
-Before the forge's parallel sections run, it infers the species from text (`inferSpeciesFromText`) using registry id / label / alias matching plus a conservative token-level fuzzy fallback. A feature-bearing match seeds `speciesId`, `bodyPlanId`, and the species-default `bodyFeatures`, then unlocks the realized feature attributes for the attribute agent.
+Before the forge's parallel sections run, it infers the species from text (`inferSpeciesFromText`) using registry id / label / alias matching plus a conservative token-level fuzzy fallback, then resolves a named heritage/subtype or the species default. A match seeds `speciesId`, `heritageId`, `bodyPlanId`, and the resolved species/subtype `bodyFeatures`, then unlocks the realized attributes for the attribute agent.
 
 ### The species catalog
 
-Species live **one file per species** under `species/catalog/` — parity with attribute categories: a `defineSpecies(...)` per file, listed in `catalog/index.ts`. `registry.ts` derives everything from that array (`speciesById`, `isSpeciesId`, `inferSpeciesFromText`, `speciesAppearancePhrase`, `speciesLorePhrase`, `heritageFor`, `heritagesForSpecies`, `inferHeritageFromText`), so **adding a species is a single new file.**
+Species live **one file per species** under `species/catalog/` — parity with attribute categories: a `defineSpecies(...)` per file, listed in `catalog/index.ts`. `registry.ts` derives everything from that array (`speciesById`, `isSpeciesId`, `inferSpeciesFromText`, `speciesAppearancePhrase`, `speciesLorePhrase`, `heritageFor`, `heritagesForSpecies`, `inferHeritageFromText`), so **adding a species is normally a single new file.** Android is the first species with a default subtype: an absent/unknown `heritageId` resolves to Synthetic Android; Organic Android is an explicit overlay. Both use the complete humanoid plan, while species rules keep synthetic-only sensory enum members out of every biological humanoid's vocabulary.
 
 What ships:
 
 | Species | Default features |
 | --- | --- |
 | human | — (unmarked default) |
+| android | — (Synthetic default subtype; Organic explicit) |
 | succubus | wings, horns, tail |
 | faerie | wings |
 | elf, dwarf, gnome, orc, goblin | baseline humanoid records |
@@ -143,13 +144,13 @@ The narrator's *physical* detail comes from per-character attributes (`buildGlan
 
 ### Heritages
 
-A species may also carry **`heritages`** — optional sub-groups within it (e.g. `dark_elf` inside `elf`, which ships as the worked example). A heritage is a pure **overlay**:
+A species may also carry **`heritages`** — sub-groups within it (e.g. `dark_elf` inside `elf`). The same overlay represents Android's mechanical **subtypes**; `subtypeLabel` changes the editor label and `defaultHeritageId` supplies a required/default choice without a new profile field. A heritage/subtype is a pure **overlay**:
 
 - adds feature groups,
 - **overrides** the species attribute rule for any shared `attributeId` (last-wins),
 - carries its own `appearance` (**combined** with the species look), `lore` (**replaces** the species culture note, falling back to it when absent), and `intimacy` (**replaces** the species intimate-disposition note, falling back to it when absent — same rule as `lore`; the sprite/faerie pair is the worked example).
 
-The character stores an optional `profile.heritageId`. `realizeBody`'s `heritageId` composes the overlay, the phrase helpers take it as a second argument, and the forge infers it (`inferHeritageFromText`, scoped to the resolved species — heritage names like "drow" also resolve the parent species). Heritage never changes the body plan, so structural non-humanoids stay future work.
+The character stores an optional `profile.heritageId`. When absent or invalid, `realizeBody` composes the species' `defaultHeritageId` if one exists (otherwise the bare species); the phrase helpers take the stored id as a second argument, and the forge infers it (`inferHeritageFromText`, scoped to the resolved species — heritage names like "drow" also resolve the parent species). Heritage never changes the body plan, so structural non-humanoids stay future work.
 
 (`appliesToBodyPlans` / `excludesBodyPlans` on attributes — previously inert — are now consumed here.)
 

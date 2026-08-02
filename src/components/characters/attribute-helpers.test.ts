@@ -225,10 +225,14 @@ describe("speciesChangePatch / heritageChangePatch", () => {
     ...over,
   });
 
-  it("changing species clears the heritage — a heritage belongs to exactly one species", () => {
-    const patch = speciesChangePatch(profile({ speciesId: "elf", heritageId: "dark_elf" }), "human");
-    expect(patch?.speciesId).toBe("human");
-    expect(patch?.heritageId).toBeUndefined();
+  it("changing species clears the old heritage and applies the new species' default subtype", () => {
+    const humanPatch = speciesChangePatch(profile({ speciesId: "elf", heritageId: "dark_elf" }), "human");
+    expect(humanPatch?.speciesId).toBe("human");
+    expect(humanPatch?.heritageId).toBeUndefined();
+
+    const androidPatch = speciesChangePatch(profile(), "android");
+    expect(androidPatch?.speciesId).toBe("android");
+    expect(androidPatch?.heritageId).toBe("synthetic_android");
   });
 
   it("changing species follows the body plan and re-seeds required attributes", () => {
@@ -250,9 +254,12 @@ describe("speciesChangePatch / heritageChangePatch", () => {
     expect(ears?.value).toBe("long_pointed");
   });
 
-  it("a blank/unknown heritage id clears the heritage (the '— None —' option)", () => {
-    const patch = heritageChangePatch(profile({ speciesId: "elf", heritageId: "dark_elf" }), "");
-    expect(patch?.heritageId).toBeUndefined();
+  it("blank/unknown heritage clears to bare species, or to a configured default subtype", () => {
+    const elfPatch = heritageChangePatch(profile({ speciesId: "elf", heritageId: "dark_elf" }), "");
+    expect(elfPatch?.heritageId).toBeUndefined();
+
+    const androidPatch = heritageChangePatch(profile({ speciesId: "android", heritageId: "organic_android" }), "");
+    expect(androidPatch?.heritageId).toBe("synthetic_android");
   });
 
   it("returns null when the profile's species is unknown", () => {

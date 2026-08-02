@@ -1,4 +1,5 @@
 import { defineAttributeGroup } from "../types";
+import { SYNTHETIC_INTIMATE_TEXTURES, SYNTHETIC_INTIMATE_TEXTURE_GUIDANCE, SYNTHETIC_SENSITIVITY_VALUES, SYNTHETIC_SENSITIVITY_GUIDANCE } from "../shared-values";
 
 /**
  * Perineum — the short bridge of skin between the genitals and the anus.
@@ -20,7 +21,9 @@ export const perineumGroup = defineAttributeGroup("perineum", [
     valueType: "enum",
     description: "Surface feel of the perineal skin between the genitals and anus.",
     mutability: "inherent",
-    allowedValues: ["smooth", "soft", "velvety", "delicate", "ridged"],
+    allowedValues: ["smooth", "soft", "velvety", "delicate", "ridged", ...SYNTHETIC_INTIMATE_TEXTURES],
+    autoDefaultExcludes: [...SYNTHETIC_INTIMATE_TEXTURES],
+    narratorGuidance: { ...SYNTHETIC_INTIMATE_TEXTURE_GUIDANCE },
     bodyLocationId: "perineum",
     aliases: ["perineum", "taint"],
     promptHints: ["Surfaces only at the intimate exposure/touch tier."],
@@ -33,7 +36,9 @@ export const perineumGroup = defineAttributeGroup("perineum", [
     valueType: "enum",
     description: "Baseline responsiveness to touch — a tendency, not live arousal.",
     mutability: "mutable",
-    allowedValues: ["numb", "low", "average", "high", "extremely_sensitive"],
+    allowedValues: ["numb", "low", "average", "high", "extremely_sensitive", ...SYNTHETIC_SENSITIVITY_VALUES],
+    autoDefaultExcludes: [...SYNTHETIC_SENSITIVITY_VALUES],
+    narratorGuidance: { ...SYNTHETIC_SENSITIVITY_GUIDANCE },
     bodyLocationId: "perineum",
   },
   {

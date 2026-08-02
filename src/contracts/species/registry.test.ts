@@ -25,6 +25,7 @@ import type { SpeciesDefinition } from "./types";
  */
 const SPECIES_INFERENCE_PROMPTS: Readonly<Record<string, string>> = {
   human: "a human dockworker",
+  android: "a humanoid synthetic concierge",
   succubus: "one of the succubi who owns the club",
   elf: "an elven ranger",
   dwarf: "a dwarven smith",
@@ -192,6 +193,12 @@ describe("heritage lookups and inference", () => {
     expect(heritageFor("elf", undefined)).toBeUndefined();
   });
 
+  it("resolves a species default subtype and degrades an unknown subtype to it", () => {
+    expect(heritageFor("android", undefined)?.id).toBe("synthetic_android");
+    expect(heritageFor("android", "not_a_subtype")?.id).toBe("synthetic_android");
+    expect(heritageFor("android", "organic_android")?.id).toBe("organic_android");
+  });
+
   it("lists the heritages a species offers", () => {
     expect(heritagesForSpecies("elf").map((h) => h.id)).toContain("dark_elf");
     expect(heritagesForSpecies("human")).toEqual([]);
@@ -202,6 +209,17 @@ describe("heritage lookups and inference", () => {
     expect(inferHeritageFromText("elf", "a drow assassin in the dark")?.id).toBe("dark_elf");
     expect(inferHeritageFromText("elf", "an elven ranger")).toBeUndefined(); // no heritage named
     expect(inferHeritageFromText("human", "a dark elf")).toBeUndefined(); // human has no heritages
+    expect(inferHeritageFromText("android", "an organic android")?.id).toBe("organic_android");
+  });
+
+  it("every default subtype names a heritage owned by that species", () => {
+    for (const species of speciesCatalog) {
+      if (!species.defaultHeritageId) continue;
+      expect(
+        species.heritages.some((heritage) => heritage.id === species.defaultHeritageId),
+        `${species.id} default subtype must resolve inside its own heritage list`,
+      ).toBe(true);
+    }
   });
 });
 
