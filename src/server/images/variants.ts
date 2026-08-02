@@ -5,8 +5,8 @@ import { characters, db, images } from "../db";
 import { isDemoMode, veniceEditImage, veniceEditModelId } from "../ai";
 import { logEvent } from "../events";
 import { log } from "@/server/log";
-import type { DiagnosticSink } from "@/contracts/diagnostics";
-import { createImageAsset, failImage, readImageBytes, saveImageBuffer, type ImageRow } from "./assets";
+import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { readImageBytes, runImagePipeline, type ImageRow } from "./assets";
 import { monogramSvg } from "./monogram";
 import { apparentAgeAnchor, buildVariantInstruction, type VariantKind } from "./prompts";
 
@@ -23,7 +23,15 @@ export interface GenerateVariantInput {
  * the canonical avatar, identity-locked + age-anchored (owner ruling 2026-07-29 —
  * "preserve apparent age" alone preserves the model's over-read and each
  * generation drifts older). Always re-rolls from the canonical portrait — never
- * chains edits (drift compounds). Failures mark the row failed and return its id.
+ * chains edits (drift compounds). Runs on the shared reserve → generate →
+ * save-or-fail → log shell (`runImagePipeline`); failures mark the row failed
+ * and return its id.
+ *
+ * Venice reports an edit failure as `ok: false` rather than throwing, so this
+ * lane's generation failure is a RETURNED failure and pushes its own
+ * `images.variant.generate_failed` (the ruled normalization). Its two
+ * precondition misses — no character, no ready reference avatar — stay
+ * diagnostic-free, exactly like the entity lane's not-found.
  */
 export async function generateVariant(input: GenerateVariantInput): Promise<string> {
   const demo = isDemoMode();
@@ -39,48 +47,46 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
   const prompt = buildVariantInstruction(input.kind, input.instruction, ageAnchor);
   const reference = character ? await loadReference(character.avatarImageId) : null;
 
-  const asset = await createImageAsset({
-    ownerId: input.userId,
-    kind: "portrait_variant",
-    entityKind: "character",
-    entityId: input.characterId,
-    prompt,
-    sourceImageId: reference?.row.id,
-    meta: {
-      variantKind: input.kind,
-      demo,
-      model: demo ? "demo" : `venice/${veniceEditModelId()}`,
+  const { imageId } = await runImagePipeline({
+    asset: {
+      ownerId: input.userId,
+      kind: "portrait_variant",
+      entityKind: "character",
+      entityId: input.characterId,
+      prompt,
+      sourceImageId: reference?.row.id,
+      meta: {
+        variantKind: input.kind,
+        demo,
+        model: demo ? "demo" : `venice/${veniceEditModelId()}`,
+      },
     },
+    // The row is on record for a missing character too — failed, unlogged.
+    failedPrecondition: character ? null : `character ${input.characterId} not found`,
+    produce: async (asset) => {
+      // Only reached once the character loaded, so the name fallback never fires.
+      if (demo) return { ok: true, image: monogramSvg(`${character?.name ?? ""} ${input.kind}`) };
+      // A precondition this lane can't satisfy, not a generation that failed: no diagnostic.
+      if (!reference) return { ok: false, error: "no ready canonical avatar to use as reference" };
+      const edit = await veniceEditImage({ prompt, reference: reference.buffer });
+      if (!edit.ok || !edit.image) {
+        const error = edit.error ?? "venice edit returned no image";
+        input.sink?.push(
+          diag("warn", "images.variant.generate_failed", error.slice(0, 300), {
+            context: { characterId: input.characterId, imageId: asset.id },
+          }),
+        );
+        return { ok: false, error };
+      }
+      return { ok: true, image: edit.image };
+    },
+    // Every branch past the character check logs — including the two failures,
+    // which carry `durationMs` here where avatar/entity's thrown line does not.
+    onSettled: ({ imageId: id, status, startedMs }) => void logVariant(id, input, status, startedMs),
+    onThrown: ({ imageId: id, startedMs }) => void logVariant(id, input, "failed", startedMs),
+    sink: input.sink,
   });
-
-  if (!character) {
-    await failImage(asset.id, `character ${input.characterId} not found`);
-    return asset.id;
-  }
-
-  const started = Date.now();
-  if (demo) {
-    const saved = await saveImageBuffer(asset.id, monogramSvg(`${character.name} ${input.kind}`), input.sink);
-    void logVariant(asset.id, input, saved?.status ?? "failed", started);
-    return asset.id;
-  }
-
-  if (!reference) {
-    await failImage(asset.id, "no ready canonical avatar to use as reference");
-    void logVariant(asset.id, input, "failed", started);
-    return asset.id;
-  }
-
-  const edit = await veniceEditImage({ prompt, reference: reference.buffer });
-  if (!edit.ok || !edit.image) {
-    await failImage(asset.id, edit.error ?? "venice edit returned no image");
-    void logVariant(asset.id, input, "failed", started);
-    return asset.id;
-  }
-
-  const saved = await saveImageBuffer(asset.id, edit.image, input.sink);
-  void logVariant(asset.id, input, saved?.status ?? "failed", started);
-  return asset.id;
+  return imageId;
 }
 
 async function loadReference(avatarImageId: string | null): Promise<{ row: ImageRow; buffer: Buffer } | null> {
