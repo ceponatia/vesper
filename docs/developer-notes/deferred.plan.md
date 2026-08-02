@@ -24,8 +24,9 @@ successor-world-lifecycle all shipped 2026-07-23..27. Still parked:_
 
 - **A. Bugs first** — **A3** solo-reply regenerate 409
   ([deferred/solo-retake.plan.md](deferred/solo-retake.plan.md)).
-- **B. Living world** — seed the built-but-unseeded life (commitments, third
-  zone, meal item, lore memories — the standout cheap win); the primary's LOD
+- **B. Living world** — seed the built-but-unseeded life — B8 graduated
+  2026-08-02 → [starter-world-seeds.plan.md](starter-world-seeds.plan.md);
+  the primary's LOD
   ruling (at `exact` she is mechanically inert forever); remote text/voice when
   apart; successor NPC initiative; named daylight-band skips (the R5 leftover);
   autonomous NPC travel toward commitments.
