@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import type { AttributeValue } from "@/contracts/attributes/value";
 import type { RegionExposure } from "@/contracts/items/visibility";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { fnv1aHex } from "@/lib/hash";
 import { describeProviderError, hasVenice, isDemoMode, veniceEditImage, veniceGenerateImage, veniceSceneImageModelId } from "../ai";
 import { db, images } from "../db";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer } from "./assets";
@@ -29,16 +30,6 @@ import { PORTRAIT_IDENTITY_LOCK } from "./prompts";
  * and hard-deleted with the conversation.
  */
 
-/** FNV-1a 32-bit hex over a string — a stable, cheap cache key. */
-function fnv1a(text: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
 /**
  * The look cache key (chat-wardrobe-parity — new key shape, ruled): sorted structured
  * worn item ids + the free-text overlay + a coverage-computed exposure fingerprint +
@@ -46,6 +37,10 @@ function fnv1a(text: string): string {
  * of clothes). Structured worn state replaces the old free-text `outfit` string; a
  * legacy/free-text chat (empty worn list) keys on the overlay alone, so its key stays
  * stable across the change. PURE and order-stable.
+ *
+ * A DETERMINISM SEAM: this is the `meta.lookKey` `latestChatLook` compares, so if
+ * the assembled string or its hash ever moves, every existing chat silently
+ * re-renders its anchor. Golden-pinned in `chat-look.test.ts` and `lib/hash.test.ts`.
  */
 export function chatLookKey(input: {
   wornItemIds: readonly string[];
@@ -72,7 +67,7 @@ export function chatLookKey(input: {
     .sort()
     .join(";");
   const garments = input.garmentKey?.trim() ? `|${input.garmentKey.trim()}` : "";
-  return fnv1a(`${worn}|${input.overlay.trim().toLowerCase()}|${exposure}|${overlays}${garments}`);
+  return fnv1aHex(`${worn}|${input.overlay.trim().toLowerCase()}|${exposure}|${overlays}${garments}`);
 }
 
 /** The identity-locked look-edit instruction: same person, new outfit, neutral framing — age-anchored (2026-07-29 ruling). */

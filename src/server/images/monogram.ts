@@ -1,3 +1,5 @@
+import { fnv1a32 } from "@/lib/hash";
+
 const WIDTH = 768;
 const HEIGHT = 1024; // 3:4, matching avatar aspect
 
@@ -8,7 +10,7 @@ const HEIGHT = 1024; // 3:4, matching avatar aspect
  */
 export function monogramSvg(name: string): Buffer {
   const display = name.trim() || "?";
-  const seed = fnv1a(display.toLowerCase());
+  const seed = fnv1a32(display.toLowerCase());
   const hueA = seed % 360;
   const hueB = (hueA + 50 + ((seed >>> 9) % 90)) % 360;
   const angle = (seed >>> 4) % 2 === 0 ? "0%" : "100%";
@@ -40,13 +42,4 @@ function escapeXml(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
-}
-
-function fnv1a(text: string): number {
-  let hash = 2166136261;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
 }

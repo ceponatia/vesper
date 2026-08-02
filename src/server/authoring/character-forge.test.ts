@@ -314,6 +314,35 @@ describe("groundSocialCards (forge-gaps gap 2)", () => {
     expect(sink.items).toEqual([]);
   });
 
+  /**
+   * GOLDEN DETERMINISM PIN — never "update to fix" a failure here.
+   *
+   * A card id is `card_<base36 of the normalized label's FNV-1a>`, which is the
+   * forge's reproducibility seam (resilience §6 — the same seed must forge the
+   * same character). This value was computed from the local `hashSeed` this
+   * module carried BEFORE it adopted the shared `@/lib/hash`
+   * (image-pipeline-consolidation.plan.md C10). If it moves, nothing throws: the
+   * forge just quietly stops reproducing. Fix the hash, never the pin.
+   */
+  it("mints a golden label-derived id (the forge's reproducibility seam)", () => {
+    const card = groundSocialCards(
+      [{ label: " Her art is not negotiable ", description: "", kind: "taboo", severity: 40, triggers: ["criticize"] }],
+      [],
+    )[0];
+    expect(card?.id).toBe("card_py3fje");
+    // Case and whitespace normalize into the same id; a different label does not.
+    const shouted = groundSocialCards(
+      [{ label: "HER ART IS NOT NEGOTIABLE", description: "", kind: "taboo", severity: 40, triggers: ["criticize"] }],
+      [],
+    )[0];
+    expect(shouted?.id).toBe("card_py3fje");
+    const other = groundSocialCards(
+      [{ label: "Rule A", description: "", kind: "social_rule", severity: 30, triggers: ["flirt"] }],
+      [],
+    )[0];
+    expect(other?.id).toBe("card_u70kl4");
+  });
+
   it("drops unknown triggers and a card left with none", () => {
     const sink = new DiagnosticCollector();
     const cards = groundSocialCards(
