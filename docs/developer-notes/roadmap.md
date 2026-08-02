@@ -108,11 +108,12 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   flags set to the literal `on`, verified in-machine; standing watch: the
   NPC-ending producer's first organic occurrence).
   **Next: actor control through the live lane** —
-  [spec drafted 2026-08-02](romantic-contact-affordances.spec.actor-control.md)
-  (spec before implementation: two-tier structured NPC-decision source,
-  closed permitted-changes set, reply-side persistence extension, fail-closed
-  ambiguity rules; `CHAT_NPC_SCENE_DECISIONS`, three increments: movement →
-  starts → updates; two owner rulings queued in the plan's Open questions) →
+  [spec revised 2026-08-02 after pre-implementation review](romantic-contact-affordances.spec.actor-control.md).
+  The deterministic ending floor stays frozen; the general case now begins
+  with pure evidence/chronology fixtures, a durable per-reply decision envelope
+  + guarded scene save, and one whole-reply classifier in measured shadow.
+  Only after that gate does authority roll out movement → starts → updates;
+  the owner accepts measured cost/latency before movement is enabled. Then:
   the `romantic_touch` permission owner (**spec before implementation**;
   eight design rulings needed) → eligibility + blocker-link UI wiring → the
   romantic proof.
@@ -122,16 +123,6 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   abstractions. The active doc family archives together only after the plan
   ships.
 
-- **Chat-switch reset integrity — the composer can't leak across chats** —
-  bounded correctness fix pulled forward 2026-08-02 from the parked G25 stub
-  ([deferred/chat-conversation-refactor.plan.md](deferred/chat-conversation-refactor.plan.md))
-  on the owner's build request (active). The chat-change reset in
-  `chat-conversation.tsx` clears only ~10 of ~25 state items — `input`, staged
-  `attachments`, `narratorMode`, `oocActive`, open sheets/dialogs, and
-  `skipBusy` all survive a chat switch (staged photo ids from the previous
-  chat would be submitted to the new one). Complete the reset structurally so
-  a switch can't leak by omission. **The full G25 decomposition stays
-  parked** — this is only its live-bug half.
 ## Next (queued)
 
 - **Data lifecycle — chat-scoped deletion, retention sweeps, intentional
