@@ -2,303 +2,447 @@
 
 Status: technical companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(§"Continuation order" item 3 — **spec drafted 2026-08-02, before
-implementation**. The item's first bounded deliverable, the NPC-authored
-contact-ending producer, shipped 2026-07-31 inside item 1.2 and is treated
-here as frozen precedent, not open surface.)
+(continuation item 3 — **revised 2026-08-02 after pre-implementation review;
+not ready for authority until the foundation and shadow gates below pass**).
+The deterministic NPC contact-ending producer shipped 2026-07-31 and remains
+the frozen floor described here.
 
-## Scope, in one paragraph
+## Scope and boundary
 
-The lane can already commit the player's own movement and affectionate touch
-(the deterministic player leg) and can END a contact the NPC's prose plainly
-walked away from (the reply-side ending producer). What it cannot do is give
-an NPC any other physical authority: an NPC who crosses the room, sits beside
-the player, takes the player's hand, or shifts a resting touch into a squeeze
-changes nothing in the scene, so the projection and the prose drift until a
-player action re-anchors them. This spec defines the remaining item-3 surface:
-**authoritative NPC-side movement (approach and departure) and affectionate
-contact starts and updates**, fed by a structured NPC-decision source, with
-persistence and retake behavior extending the shipped reply-side model, and
-every ambiguity failing closed to silence.
+The character-chat lane already commits the player's typed movement and
+affectionate hand contact, and it can end contact when an NPC's narration
+plainly withdraws or departs. The remaining item-3 surface is deliberately
+small:
 
-Out of scope, permanently or until named prerequisites exist: any movement of
-the **player's** body (`player_movement_requires_player_authority` stands —
-scene spec §"Actor-control law"); romantic or intimate contact (waits for the
-`romantic_touch` permission owner, item 4); restraint or pinning (`trapped`
-has no producer — scene spec §"Open design questions"); posture and support
-changes (deferred to a later increment — the scene owns only one `ground`
-surface, so "she sits on the couch" has no surface to land on); wardrobe or
-exposure changes; and any generalized reading of reply prose (§"The fence"
-below).
+- an NPC may approach or depart relative to one present counterpart;
+- an NPC may start one allow-listed affectionate hand contact;
+- an NPC may change the gesture of one unambiguously identified contact they
+  started with their own hand.
 
-## The structured NPC-decision source
+This work never moves the player's body, never creates romantic or intimate
+contact, never restrains or pins, never changes posture/support or wardrobe,
+and never treats narrator prose as state. Supporting-cast JSON entries are not
+actors in this increment: only the player and stable `chat_participants` rows
+have scene-subject identity. Successor chats remain out of scope.
 
-### Ruling this spec makes
+## Authority model
 
-NPC decisions arrive through **two tiers, and only two**:
+There are two decision sources and only one model call:
 
-1. **The deterministic floor (shipped, frozen).** The ending producer in
-   `chat-contact-reply.ts` keeps exactly its current vocabulary: whole-sentence
-   allow-list detection of `withdrawn` / `separated` endings, narration spans
-   only, shared vetoes, sole-pronoun rule. It stays because it is proven, it
-   is retake-reproducible from the persisted reply bytes, and it still works
-   when tier 2 degrades. **It does not grow.**
+1. **Frozen deterministic ending floor.** `chat-contact-reply.ts` keeps its
+   current whole-sentence ending vocabulary and vetoes. It remains the only
+   free-prose extractor and the only tier that produces contact endings. Its
+   result gains source offsets for ordering, but its accepted language does not
+   grow.
+2. **One reply-scene classifier call.** At most once per persisted assistant
+   message, one structured call reads the reply and a compact digest for the
+   whole roster. It may propose at most one movement and one contact
+   start/update. Each proposal names its NPC actor explicitly. The model cannot
+   commit state; deterministic validation, resolution, and persistence decide
+   whether anything lands.
 
-2. **The reply-scene decision read (new).** A settle-time structured agent
-   call — the `generateChecked` pattern the pulse and the scene sketch already
-   use — that reads the settled reply plus a compact scene digest and returns
-   a **closed decision schema** (below). The model classifies; it never
-   narrates, never proposes numbers, and never touches state. Every decision
-   carries a **verbatim evidence quote**, and a deterministic evidence gate —
-   the wardrobe restatement guard's architecture, proven through the round-2/3
-   corrections — must pass before the decision reaches any resolver:
+There is never one call per NPC. An ensemble reply such as “Mara crosses the
+room and Sabrina takes your hand” can return two proposals with different
+`actorRef` values from the one call.
 
-   - **grounded** — the quote appears verbatim in the reply's *narration*
-     spans (`parseMessageSpans`, curly quotes normalized; dialogue, thoughts,
-     OOC, comms, and styled spans can never be evidence);
-   - **asserted** — the containing sentence is a completed action: the full
-     veto set applies (negation, hedge/modal/conditional/future/intent,
-     question, command, quoted speech, refusal, incomplete action, **romantic
-     framing, restraint** — for starts and updates the restraint veto is
-     mandatory, unlike the ending floor);
-   - **actor-attributed** — the asserting sentence's grammatical subject
-     resolves to the deciding NPC by the shipped rule: name or alias always;
-     a bare pronoun only when exactly one NPC is present.
+### The fence
 
-   The LLM proposes; deterministic code disposes. A decision that fails any
-   clause is dropped with a diagnostic, never repaired.
+No free-prose extractor may mint a movement, start, or update. Small, closed
+positive lexicons may **verify** that a model-proposed field is entailed by a
+grounded quote. A verifier receives the proposed actor, kind, counterpart,
+band, gesture, target location, or contact handle and can answer only
+supported/unsupported/ambiguous. It may not substitute a different field or
+create a proposal the model omitted.
 
-The precedent split is deliberate and worth naming: the **pulse** shows a
-settle-time structured read can carry NPC decisions (presence changes and
-`sentPhoto` already ride it), and the **wardrobe evidence gate** shows a
-structured read must not be trusted without deterministic verbatim-evidence
-validation (the extractor self-quoting its own paraphrase is exactly the hole
-`classifyOutfitChangeQuote` closed). Tier 2 composes both lessons.
+The trigger may use a broader verb-stem list because it controls cost, not
+authority. Trigger misses are measured and produce a durable no-decision
+outcome; they never cause fallback extraction.
 
-### The fence — what "broader scene-language read" may never become
+## Compact digest and stable references
 
-The phrase in the plan's item 3 is bounded by this rule: **no new regex
-families are added for NPC movement, starts, or updates, and no code path may
-interpret free reply prose into scene facts.** The only prose the deterministic
-side ever reads is (a) the frozen ending floor and (b) the evidence gate's
-verification of a quote the structured read proposed — verification of a claim,
-not extraction of one. If a decision kind is not expressible in the schema, the
-lane stays silent; the answer to "the model keeps phrasing it differently" is
-never "loosen the parser", it is "the schema does not carry that decision".
+The digest is assembled before state fan-out so classification can run beside
+settlement. It contains no database subject IDs. References are local to this
+assistant message and assigned deterministically:
 
-A pure test pins the fence the way the scene spec pins its no-prose-provenance
-law: the decision schema's enums are asserted closed, and the reply-side leg
-exports no detector beyond the frozen ending set.
+- `player` — the chat player;
+- `npc_0` … `npc_3` — `chat_participants` in stable roster order, with display
+  name, aliases, and pre-settle presence;
+- `contact_0` … — active contacts sorted by stable contact ID, with their actor,
+  action kind, source/target roster refs, and canonical surface IDs;
+- current pair proximity facts needed to understand the bounded choices.
 
-### Cost control (not authority)
+The contact list exposes only roster-resolvable contacts. The resolver still
+re-checks the post-settle contact by durable `contactId`; a local handle is not
+authority. The stored envelope carries the digest hash and the resolved subject
+and contact IDs so a later replay never depends on names or array position.
 
-The decision read runs only when a cheap deterministic **trigger** fires: the
-reply's narration contains at least one movement/contact verb stem from a
-small lexicon within a sentence that also names a present roster member or a
-sole-NPC pronoun. The trigger is pure cost control — a miss costs one missed
-decision, a false fire costs one small agent call — so it may be broad and
-sloppy in the way authority-bearing readers may not. Model: `agentModelId`
-with a timeout and degraded default, exactly as the pulse.
+Previously-away roster members remain in the digest so an arrival narrated in
+this reply can be classified. Whether they may act is decided only from the
+post-settle presence cut. Recurring supporting-cast names are omitted until
+they gain stable participant and scene-body identity.
 
-## The decision schema
+## Closed decision schema
 
-`src/contracts/turns/npc-scene-decision.ts` — pure, zod, fully
-`.catch()`/`.default()`ed so a malformed answer degrades to the empty decision
-set (docs/resilience.md §3). All enums are existing vocabularies; the only
-free text is the evidence quote.
+`src/contracts/turns/npc-scene-decision.ts` owns strict, length-bounded schemas.
+The outer result has two raw nullable slots so each slot can be parsed and
+traced independently; one malformed slot must not erase a valid sibling. No
+slot uses `.catch(null)`, because “absent” and “malformed” are different trace
+outcomes.
 
 ```ts
-movement: {
-  kind: "approach" | "depart",
-  otherName: string,          // resolved against the present roster, fail-closed
-  adjacency?: "beside" | "arms_length",   // approach only; maps to touching | close
-  evidence: string,           // verbatim quote from the reply's narration
-} | null                      // .catch(null) — at most ONE movement per reply
+interface NpcSceneDecisionOutputV1 {
+  readonly version: 1;
+  readonly movement: NpcMovementCandidate | null;
+  readonly contact: NpcContactCandidate | null;
+}
 
-contact: {
-  kind: "start" | "update" | "end",
-  targetName: string,                       // start: whose body; update/end: whose contact
-  gesture?: "rest" | "pat" | "squeeze",     // start/update — chatContactGestures verbatim
-  targetPart?: string,                      // start only; must key CONTACT_TARGET_LOCATION
-  endReason?: "withdrawn" | "separated",    // end only
-  evidence: string,
-} | null                      // .catch(null) — at most ONE contact decision per reply
+type NpcMovementCandidate =
+  | {
+      readonly kind: "approach";
+      readonly actorRef: NpcRef;
+      readonly counterpartRef: ParticipantRef;
+      readonly band: "touching" | "close";
+      readonly facing: "toward" | null;
+      readonly evidence: EvidenceQuote;
+    }
+  | {
+      readonly kind: "depart";
+      readonly actorRef: NpcRef;
+      readonly counterpartRef: ParticipantRef;
+      readonly band: "near" | "distant";
+      readonly evidence: EvidenceQuote;
+    };
+
+type NpcContactCandidate =
+  | {
+      readonly kind: "start";
+      readonly actorRef: NpcRef;
+      readonly targetRef: ParticipantRef;
+      readonly gesture: ChatContactGesture;
+      readonly targetLocationId: ChatAffectionateTargetLocationId;
+      readonly evidence: EvidenceQuote;
+    }
+  | {
+      readonly kind: "update";
+      readonly actorRef: NpcRef;
+      readonly contactRef: ContactRef;
+      readonly gesture: ChatContactGesture;
+      readonly evidence: EvidenceQuote;
+    };
 ```
 
-At most one movement and one contact decision per reply mirrors the player
-leg's "first eligible sentence wins": two movements in one reply is a beat
-this proof does not model, and a list invites the model to enumerate the whole
-scene. A reply that genuinely does more loses the tail, which costs a turn of
-drift — the same price the player side already pays.
+`NpcRef`, `ParticipantRef`, and `ContactRef` are dynamic enums built from the
+digest, not arbitrary strings. `EvidenceQuote` is the only free text: nonblank,
+maximum 480 characters. All objects are strict; unknown keys make that slot
+malformed. Tier 2 has no `end` case—the deterministic floor already owns it.
 
-## Validation and resolution
+Before this schema lands, extract the current private
+`CONTACT_TARGET_LOCATION`, `chatContactGestures`, and `GESTURE_CONTACT` data
+into one pure shared chat-contact vocabulary. The detector, classifier schema,
+evidence verifier, and adapter must import that single vocabulary. The output
+uses canonical location IDs, not model-authored body-part strings.
 
-Order per decision: **schema → roster → evidence gate → resolver/intent
-machinery**. Nothing skips the fourth step — a validated decision is still only
-an *attempt*, and every gate that refuses a player act refuses an NPC act the
-same way.
+## Evidence admission
 
-**Movement** becomes `npc`-origin `SceneMovementIntent`s through
-`commitSceneIntent`, which already enforces the actor-control law
-(`SCENE_CONTROL_ORIGINS`: `npc` may move only `npc_controlled` bodies), the
-ordering law (stale intents no-op, restatements never write), and structural
-validation. Specifically:
+Every candidate passes four gates in order. A failure drops only that candidate
+and records a bounded reason; no gate repairs it.
 
-- **approach** → `set_proximity` (band from `adjacency`: `beside` ⇒
-  `touching`, `arms_length` or absent ⇒ `close` — the player mapping's
-  semantics) plus `set_facing` toward the other body, both stamped
-  `npc_decision` provenance under the reply's scene event ref. The pair may be
-  NPC↔player or NPC↔NPC; the *moved* body is always the deciding NPC's own.
-- **depart** → the player departure's laws mirrored: end every active contact
-  involving the NPC (`separated`), and write a **wider** band only for a pair
-  the scene already placed or an active contact proves was `touching`; never a
-  band nearer than the standing one; a pair nobody ever placed keeps its
-  unknown distance. This closes the shipped ending producer's documented gap
-  ("the distance simply stays whatever the scene last said") — with an
-  authoritative movement design, a stated departure may now open distance.
+1. **Grounded.** After the same curly-quote normalization used by message-span
+   parsing, the quote occurs exactly once in a narration span. Dialogue,
+   thought, OOC, comms, and styled non-narration never ground authority. Zero or
+   multiple occurrences fail closed. The gate returns absolute reply offsets.
+2. **Asserted.** The supporting clause describes a completed action. Negation,
+   hedges, modal/conditional/future/intent language, questions, commands,
+   refusals, and incomplete clauses fail. Contact starts/updates additionally
+   fail on romantic/intimate framing or restraint. The ending floor keeps its
+   existing veto set unchanged.
+3. **Actor-attributed.** The action verb's grammatical subject is the proposed
+   NPC. A name or alias in a possessive object does not count. A bare third-
+   person pronoun is accepted only when the post-settle scene has exactly one
+   eligible NPC; ensembles require the actor's name/alias in the action clause.
+4. **Decision-congruent.** A bounded verifier proves every proposed field, not
+   merely that some action happened. It returns one unique action span.
 
-**Start** mirrors `resolveChatContactAttempt` with the sides swapped: source =
-the NPC's `hands`; actor control **read** from the scene's control fact
-(`allowed` iff `npc_controlled` — the mirror of `chatActorControl`, same
-no-hardcoding rule); `targetAgencies` empty for the same reason the player leg's
-is — only the actor's own hand moves; eligibility and policy `not_required`
-(affectionate is permission-neutral, owner ruling 2026-07-30, and the evidence
-gate's romantic veto is what keeps the label honest); geometry and support
-through the scene reads; material through `chatContactMaterialSource` for the
-target body — the player as target resolves under the player's garment actor,
-and a body whose coverage nobody modelled reads `unavailable` ⇒ `unresolved` ⇒
-silence, never bare skin. Gesture maps through `GESTURE_CONTACT` unchanged.
-`explicit_transition_required` produces **nothing** — the lane never invents
-the adjustment an NPC "would have" made; `rejected` and `unresolved` keep
-their shapes (silence + diagnostics).
+| Candidate | Congruence that must be proven |
+| --- | --- |
+| approach | completed nearer movement by `actorRef`, relative to `counterpartRef`, supporting the exact `band`; `facing: toward` needs independent forward/toward evidence |
+| depart | completed whole-body movement away by `actorRef`, relative to `counterpartRef`, supporting `near` versus `distant` |
+| start | completed hand contact by `actorRef` on `targetRef`, exact gesture and canonical target location, with language that creates rather than merely considers contact |
+| update | completed modulation by `actorRef` of the exact active contact behind `contactRef`, supporting the new gesture and that contact's counterpart/location |
 
-**Update** applies only to an **active** contact whose source body is the
-deciding NPC (an NPC may not modulate the player's hand on her shoulder);
-the new pressure/motion comes from the same closed gesture map and lands as
-the core's `contact_updated` commit. No active matching contact ⇒ dropped
-with a diagnostic — an update is never promoted into a start.
+Assistant-narration `you/your` resolves only to `player`. Other pronouns may
+resolve only when the candidate plus the live contact/roster leaves exactly one
+compatible referent. If a quote supports two contacts or two action clauses,
+it is ambiguous. Ordinary `beside` supports `close`; only explicit physical
+adjacency such as “right beside” supports `touching`. “Steps back” supports
+`near`; crossing/walking across the room supports `distant`.
 
-**End** folds through the same `endCoveredContacts` body as the floor. When
-both tiers state an ending, the second fold finds the contact already ended
-and the core's stale-end law no-ops it — composition needs no dedup logic.
+The verifier returns `{ start, end }` for the exact action phrase plus a
+field-level verdict. These offsets order admitted actions and make evidence
+congruence testable independently of the classifier.
 
-## Permitted scene changes — the closed set
+## Authoritative post-settle cut
 
-| NPC decision | May change | May never change |
-| --- | --- | --- |
-| approach | own proximity band (nearer), own facing (`toward`) | the other body's facing or posture; anything about a third body |
-| depart | own proximity band (wider only, placed pairs only); ends own contacts (`separated`) | a band for an unplaced pair; the other body's anything |
-| start | one new affectionate contact, NPC hands → allow-listed target location | clothing, exposure, target's pose, romantic/intimate surfaces (absent from the lexicon) |
-| update | pressure/motion of an active own-sourced contact | the contact's surfaces, its material, its target |
-| end | ends own contacts (`withdrawn`/`separated`) | proximity (that is `depart`'s claim), any other fact |
+Classification may run concurrently, but resolution waits until all primary
+and ensemble state settlement and the sequential garment reconcile finish.
+The reply scene leg then reloads, rather than reusing the pipeline's stale
+`scenario` variable:
 
-Everything else — posture, support, player-body movement, wardrobe, restraint,
-third-party puppeting — is structurally unrepresentable in the schema, which is
-the enforcement.
+- the persisted assistant row and exact reply bytes;
+- the current scenario/scene and story minute;
+- current `chat_participants` presence;
+- current garment store and per-actor coverage;
+- active contacts.
 
-## Persistence, ordering, retakes
+Presence has precedence over classifier output:
 
-One **reply scene leg** replaces the shipped ending producer's pipeline slot
-and subsumes it — same position, same invariant: it runs LAST, after
-`finalizeChatState` and the garment reconcile, so nothing later re-writes
-`character_chats.scene` from a pre-decision projection.
+1. A participant confirmed `away` cannot act or be a target. Every active
+   contact involving them ends deterministically as `separated` before tier-2
+   proposals resolve.
+2. A participant confirmed `present` is seeded into the scene before movement
+   or contact resolution; a newly arrived roster member may then act.
+3. A participant absent from the post-settle roster cannot be rescued by a
+   name, pre-settle presence, or model output.
 
-- **One ordered commit list per reply**: floor endings first, then validated
-  decisions in schema order (movement, then contact), exactly as the player
-  leg builds one list per exchange so the ledger's `sequence` indexes the
-  whole reply and a replay re-derives identical keys.
-- **Event identity**: the existing reply-side ref
-  (`contact-reply:<assistantMessageId>`), guarded by the assistant row.
-  Contact commits and the folded projection land in ONE verified transaction
-  (`appendChatContactEventsWithScene`); a conflicting record under the reply's
-  keys fails closed with the projection unchanged, as shipped.
-- **Movement-only replies** produce scene changes but no ledger rows (the
-  player-side precedent: movement rides the scenario, only contacts ride the
-  ledger). The leg extends the reply-side write to persist the projection
-  under the same assistant-row guard with compare-and-swap semantics even when
-  `commits` is empty. Recorded alternative, rejected for scope: minting
-  movement event rows in `chat_contact_events` would buy uniform provenance at
-  the cost of widening a contact ledger into a scene journal — reopen only if
-  movement provenance proves insufficient in practice.
-- **Retakes**: unchanged from the shipped model — the retake prune deletes
-  reply-ref rows beside the exchange prune, the scenario rollback restores the
-  snapshot projection, deletes cascade off the assistant row, and the
-  nondeterminism of tier 2 is harmless because a discarded take's decisions
-  are durably discarded with it; the new take runs its own read.
-- **Story time**: `trunc(scenario.clockMinutes)` at settle, as shipped.
-- **Trace**: the leg persists a `lastSceneDecisionTrace` beside the scene
-  (pulse-trace pattern): trigger fired?, raw decision presence, per-decision
-  gate outcome (which clause dropped it), resolver outcome, degraded flag +
-  diagnostic code. The dev inspector renders it — "why did nothing happen"
-  must stay answerable, and tier 2 adds three new silent causes (trigger miss,
-  gate drop, schema degrade) to the flag-off/hedge/ambiguity causes the
-  previews already explain.
+The common reply-scene leg runs for every persisted nonempty assistant reply:
+initial openings, initiative reopeners, ordinary turns, continue beats, action
+beats, and user-stopped or timed-out partial replies. Assertion validation
+rejects any cut-off action. Empty replies have no assistant decision envelope.
+The current opening branch must call the common leg before returning.
 
-## Fail-closed ambiguity rules
+## Resolution laws
 
-Every rule resolves to **silence plus a diagnostic**, never a guess:
+All accepted candidates remain attempts. Existing scene/contact resolvers still
+enforce actor control, presence, geometry, reach, support, policy, eligibility,
+capacity, ordering, and lifecycle laws.
 
-1. Trigger fires but the call times out, errors, or returns unparseable JSON ⇒
-   degraded empty decision set (`npc_decision.degraded`).
-2. A name that resolves to zero or ≥2 present roster members ⇒ that decision
-   dropped (`npc_decision.subject_ambiguous`). "The player" resolves only via
-   the player's stated name/handle; pronouns never name the player.
-3. Evidence quote not found verbatim in narration spans ⇒ dropped
-   (`npc_decision.evidence_ungrounded`).
-4. Evidence sentence vetoed (negation/hedge/question/dialogue/romantic/
-   restraint/…) ⇒ dropped (`npc_decision.evidence_unasserted`).
-5. Evidence sentence's subject is not the deciding NPC ⇒ dropped
-   (`npc_decision.evidence_misattributed`).
-6. `targetPart` outside `CONTACT_TARGET_LOCATION`, gesture outside
-   `chatContactGestures`, band request outside the schema ⇒ unrepresentable
-   (schema `.catch`) ⇒ that decision null.
-7. Movement targeting the player's body, an absent body, or an unplaced pair
-   (for `depart`'s band) ⇒ refused by the existing intent machinery
-   (`commitSceneIntent` rejection / ordering), no new code path.
-8. Update with no matching active own-sourced contact ⇒ dropped
-   (`npc_decision.update_without_contact`).
-9. Two decisions in one slot (schema arrays are not arrays — the slots are
-   nullable singletons) ⇒ unrepresentable by construction.
-10. Ledger conflict under the reply's keys ⇒ transaction rolls back, projection
-    unchanged (`CHAT_CONTACT_LEDGER_MISMATCH`, shipped).
+### Movement
 
-## Flag and rollout
+Both bodies must be post-settle present. The moved `subjectId` is always the
+candidate's NPC actor, `origin` is `npc`, and every resulting intent still goes
+through `commitSceneIntent`.
 
-New flag **`CHAT_NPC_SCENE_DECISIONS`**, literal `"on"`, default off, effective
-only when `CHAT_CONTACT_ACTIONS` is also on (it feeds the same projection; the
-guidance trip still rides `CHAT_PHYSICAL_CONSTRAINTS`). Flag off ⇒ the reply
-leg is byte-identical to the shipped ending producer — pinned by the same
-flag-off identity obligation the MVP carries.
+Add adapter helpers before constructing the intents:
 
-Increments, each with its own integration obligations before the next starts
-(the durable-ending suite's ten obligations are the template — durable rows,
-retake prune, idempotent replay, fail-closed conflict, flag-off identity):
+- `approachedBand` may create a first proximity fact from explicit evidence or
+  replace a standing fact only with a strictly nearer band. An active contact
+  counts as effective `touching`, so an approach can never overwrite it with
+  `close`. Equal/closer standing distance is a no-op.
+- `departedBand` mirrors the player helper: it may widen an existing proximity
+  fact, or use an active contact as proof that an otherwise unplaced pair was
+  touching. It never creates a band for a pair with neither fact nor contact,
+  and never makes a pair nearer.
+- approach writes `facing: toward` only when the candidate proposed it and the
+  congruence gate proved it. Backing into place may change proximity without
+  changing facing.
 
-1. **Movement** — approach/depart, including depart's band-widening and the
-   ending fold. Smallest new authority; exercises the whole tier-2 chain.
-2. **Starts** — the NPC hand on an allow-listed surface, full resolver path,
-   material honesty on the player's body included.
-3. **Updates** — gesture modulation on active contacts.
+`commitSceneIntent` alone does not enforce these direction/placement laws; the
+NPC adapter must not claim that it does.
+
+### Contact start
+
+The source is the NPC's `hands`; actor control is read from the scene and is
+allowed only for `npc_controlled`. The target must differ from the actor and be
+post-settle present. The action kind is always `affectionate`, with eligibility
+and permission `not_required`; romantic/intimate/restraint language was already
+vetoed. Target agencies stay empty because only the NPC's own hand moves.
+
+Material is resolved from **both sides**. Generalize the chat adapter to compose
+the NPC-hand coverage (gloves, source first) with target-surface coverage
+(target garments after it). If either involved wardrobe is dressed but cannot
+be modeled, material is unavailable and the start is unresolved. The read uses
+the reloaded post-settle garment cut, never the pre-settle scenario.
+
+If either the source or target participant's wardrobe authoritatively changed
+during this same reply, the start is dropped as
+`wardrobe_chronology_ambiguous`. The final wardrobe does not prove which layers
+existed at the contact's action offset. A later chronology design may lift this
+conservative rule; increment 2 does not guess.
+
+### Contact update
+
+`contactRef` must still resolve to exactly one active contact whose immutable
+identity says:
+
+- `actorId` is the candidate NPC;
+- source is that NPC's `hands`;
+- `actionKind` is `affectionate`;
+- the evidence supports that contact's counterpart and target location.
+
+Zero or more than one compatible result is silence. An update is never promoted
+to a start and never modulates another actor's contact.
+
+Before increment 3, add a gesture-only lifecycle operation. It may change
+pressure/motion and the update stamp; it must preserve contact ID, actor,
+action kind, source, target, area, material-between, transmission, implicit
+adjustments, and start authorization byte-for-byte. Re-resolving a full contact
+attempt is forbidden for updates. An unchanged gesture produces the existing
+`contact_continued` no-row result.
+
+## Chronology and folding
+
+The fixed floor→movement→contact order is removed. Every admitted floor result
+and tier-2 candidate carries one action span and is sorted by absolute start
+offset. If two state-changing actions cannot be totally ordered, the ambiguous
+tier-2 candidates are dropped; the independently valid frozen floor remains.
+
+Examples that must work:
+
+- “She squeezes your hand, then steps away.” updates first, then separates.
+- “She steps closer, then takes your hand.” approaches first, then resolves the
+  start against the nearer scene.
+
+When the floor and a `depart` proposal describe the same action span, they form
+one composite departure: compute the allowable wider proximity from the scene
+**before that action's contact ends**, fold `separated` endings, then apply the
+prevalidated proximity intent. This preserves an active contact as closeness
+evidence without running the ending twice.
+
+The normalized ordered actions—not schema slot order—are what the durable
+envelope records.
+
+## Durable decision envelope and transaction
+
+Movement and empty outcomes need durable identity. Add
+`chat_npc_scene_decisions`, one row per assistant message:
+
+| Column | Contract |
+| --- | --- |
+| `chat_id`, `assistant_message_id` | FKs with cascade; unique together; assistant message is the retake guard |
+| `reply_hash`, `digest_hash` | hashes of exact persisted reply bytes and the classifier digest |
+| `schema_version`, `mode`, `story_minute` | replay/version boundary and `shadow` versus `authority` |
+| `status` | `trigger_miss`, `degraded`, or `evaluated`—all are durable tombstones |
+| `base_scene_hash`, `result_scene_hash` | exact pre/post projection fingerprints |
+| `payload` | bounded parsed-slot outcomes, grounded spans/hashes, gate reasons, normalized ordered actions, resolver outcomes, contact-row references, model/latency telemetry |
+
+Do not add a best-effort `lastSceneDecisionTrace` field to the chat. The
+envelope is the trace; the dev inspector reads the newest non-pruned envelope.
+The existing `contact-reply:<assistantMessageId>` event ref remains the contact
+event identity. Its row sequence follows chronological **contact-commit** order;
+movement positions and no-row continuations live in the envelope's full ordered
+action list. The envelope stores the actual committed scene intents, not only
+the model candidates, so movement provenance can be replayed. Story minute is
+read from the post-settle scenario and truncated once for the whole envelope.
+
+One new transaction owns the envelope, contact rows, and scene projection. Its
+required predicate is explicit:
+
+1. the assistant row still exists in this chat and its stored content hashes to
+   `reply_hash`;
+2. `character_chats.scene` is JSONB-equal to the expected post-settle base
+   scene (or an equivalent exact revision predicate);
+3. no envelope exists for this assistant message, or the existing envelope is
+   canonical-byte-equivalent to the attempted one;
+4. every conflicting contact row under the reply event ref matches exactly.
+
+For a new envelope, the transaction inserts/validates contact rows, performs a
+compare-and-swap scene update (including movement-only and no-row updates), and
+commits the envelope atomically. Zero matched scene rows, a missing/changed
+assistant row, or any envelope/ledger mismatch returns a typed stale/conflict
+result and rolls everything back. `appendChatContactEventsWithScene` does not
+currently provide this guard or CAS; factor its row-verification logic into the
+new transaction instead of calling it separately.
+
+Before classification, an existing envelope with the same reply hash is reused
+regardless of current flags; the same assistant reply is never reclassified
+into different authority. Concurrent first writers race on the unique key: one
+wins, and a different loser fails closed. A trigger miss, timeout, malformed
+output, all-rejected proposal set, or `contact_continued` result is just as
+idempotent as a movement/contact commit.
+
+Retake rollback unconditionally deletes this assistant's decision envelope and
+reply-side contact rows beside restoration of `pre_exchange_scenario`, even if
+either feature flag is now off. The regenerated take then gets a new envelope.
+Cascade deletion remains the hard-delete backstop.
+
+## Execution, flags, and cost gate
+
+The pure trigger runs after nonempty reply persistence. If no reusable envelope
+exists and it fires, launch the single classifier call concurrently with normal
+post-reply settlement. Resolution waits for the post-settle cut. The call has a
+dedicated `CHAT_NPC_SCENE_DECISION_TIMEOUT_MS`, initially capped at 8 seconds
+from launch; it must not inherit the pulse's temporary 60-second diagnostic
+timeout. The call remains inside settlement and the exchange lock, so latency is
+part of the rollout evidence—not “off the reply path.”
+
+Flags use the repository's literal `on` convention:
+
+- `CHAT_NPC_SCENE_DECISION_SHADOW=on` runs the classifier and persists a shadow
+  envelope but grants no new scene/contact authority; the frozen floor still
+  behaves normally.
+- `CHAT_NPC_SCENE_DECISIONS=on` enables authority after the shadow gate and is
+  effective only with `CHAT_CONTACT_ACTIONS=on`. Authority wins if both are on.
+
+Before movement authority is enabled, shadow results must report trigger fire
+rate/misses, candidate acceptance and drop reasons, false positives/negatives on
+the review corpus, p50/p95/p99 added settle latency, timeout rate, and cost per
+100 replies. The owner cost ruling is made from those measurements, not from the
+incorrect claim that pulse already runs once per roster member.
 
 ## Diagnostics
 
-`npc_decision.degraded` (warn) · `npc_decision.subject_ambiguous` (warn) ·
-`npc_decision.evidence_ungrounded` (warn) · `npc_decision.evidence_unasserted`
-(warn) · `npc_decision.evidence_misattributed` (warn) ·
-`npc_decision.update_without_contact` (warn) · plus every existing scene,
-contact, and ledger code unchanged. A rejection by the actor-control law stays
-undiagnosed on the scene side by that module's own rule (an answer, not a
-failure); the trace records it instead.
+Use one namespace with bounded reason fields rather than a code per sentence:
 
-## Open questions (restated in the plan)
+- `npc_scene_decision.degraded`;
+- `npc_scene_decision.slot_malformed`;
+- `npc_scene_decision.ref_invalid`;
+- `npc_scene_decision.evidence_ungrounded`;
+- `npc_scene_decision.evidence_ambiguous`;
+- `npc_scene_decision.evidence_unasserted`;
+- `npc_scene_decision.evidence_misattributed`;
+- `npc_scene_decision.evidence_incongruent` (`field` names the mismatch);
+- `npc_scene_decision.chronology_ambiguous`;
+- `npc_scene_decision.presence_conflict`;
+- `npc_scene_decision.contact_conflict`;
+- `npc_scene_decision.wardrobe_chronology_ambiguous`;
+- `npc_scene_decision.persistence_conflict`.
 
-- **Cost envelope for tier 2** — one trigger-gated agent call per qualifying
-  settle, off the reply path. RECOMMENDED: accept (the pulse already runs per
-  member per settle; the trigger keeps quiet turns free). Owner call because it
-  is a standing per-turn cost, the same class of ruling as the intake-agent
-  reversal.
-- **Posture/support increment timing** — "she sits beside you" is common
-  enough that increment 1 will visibly miss it, but doing it honestly needs
-  support surfaces beyond `ground` (a seat vocabulary at minimum). Deferred
-  here; the owner may pull it forward as increment 4 with a named surface
-  design.
+Agent failure/latency telemetry follows the other structured legs. Resolver,
+scene, contact, material, and ledger diagnostics retain their existing codes.
+
+## Delivery order and gates
+
+No pipeline authority work starts with the old “increment 1.” The order is:
+
+1. **Pure foundation and adversarial fixtures:** shared vocabularies; strict
+   dynamic-ref schema; digest/contact handles; unique grounding and full
+   congruence verifiers; action offsets and chronological planner.
+2. **Durability foundation:** decision-envelope migration and parser; guarded
+   CAS transaction; exact conflict/idempotency behavior; unconditional retake
+   prune; dev trace reader.
+3. **Shadow:** one call per reply across every included reply kind, post-settle
+   presence/wardrobe cut, no authority. Review measured quality, latency, and
+   cost before proceeding.
+4. **Increment 1—movement:** monotonic approach/depart helpers, composite
+   departure ordering, opening/presence integration.
+5. **Increment 2—starts:** arbitrary actor adapter, two-sided material, and
+   same-reply wardrobe-change veto.
+6. **Increment 3—updates:** stable contact handles and gesture-only lifecycle
+   operation.
+
+Each authority increment must pin durable envelope/rows, exact retry, degraded
+tombstone, stale CAS rollback, retake prune across flag changes, shadow/flag-off
+scene identity, and the new behavior's resolver outcomes before the next starts.
+
+Minimum adversarial fixtures include: actor/object possessive confusion; two
+NPCs acting in one reply; evidence supporting the wrong kind/actor/target/band/
+gesture/location; duplicate quotes; dialogue and styled spans; every assertion
+veto; ensemble pronouns; ordinary versus “right” beside; approach from
+`touching`; departure from an unplaced pair; facing while backing up; both mixed
+action orders; floor/depart composition; multiple contacts with one
+counterpart; wrong actor/source/action kind on update; gesture-only material
+preservation; NPC gloves; dressed-but-unmodellable wardrobes; same-reply outfit
+change; departure/arrival presence transitions; supporting-cast rejection;
+opening/initiative/continue/action/partial/empty replies; trigger miss, timeout,
+and all-rejected retries; assistant deletion and stale-scene CAS; retake with
+flags changed; and shadow producing zero authoritative scene difference.
+
+## Remaining product questions
+
+- **Standing cost:** implementation may proceed through shadow; enabling
+  movement authority requires the owner to accept the measured cost/latency
+  envelope.
+- **Posture/support:** “she sits beside you” remains outside increments 1–3.
+  Pulling it forward requires a separate surface/support design with at least a
+  seat vocabulary; this classifier schema must not grow a free-text posture
+  escape hatch.
