@@ -18,6 +18,14 @@ chats as unplayable (`sim-shared.ts:28-30`). A chat with `simBranchId: null`
 archive/delete (despite the cap error telling users to "delete one first"),
 no search (API hard-limits 100, no `q`). (LOW-MED · M)
 
+*(Partial overlap shipped via E20, 2026-07-27: the delete control + confirm
+dialog exist on the worlds page, and the quota now counts only playable
+worlds. Still open as of 2026-08-02: the listing GET still uses
+`ne(engineAuthority, "legacy_chat")` so shadow chats list and link to
+`/chat/{id}`, still `.limit(100)` with no `q`, orphan rows still render with
+no clock and no warning, and no per-row location / cast / last-activity /
+catch-up-health.)*
+
 ## Why it matters
 
 The Worlds page is the successor lane's front door and its only fleet view.

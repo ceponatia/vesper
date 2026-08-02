@@ -1059,7 +1059,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   never be revived (a same-title propose opens a fresh thread). See
   `story-threads.md` (doc retired in rollout R6, 2026-07-22).
 - **Chat initiative — the remainder slices (plan complete)** —
-  [chat-initiative.plan.md](chat-initiative.plan.md) — 2026-07-12 — the §8.4 v2
+  [chat-initiative.plan.md](finished/chat-initiative.plan.md) — 2026-07-12 — the §8.4 v2
   marker (unseen-milestone seen-cursor `milestones_seen_at`, migration 0043 —
   ruled: loops + milestones only, never real time), light `profile.schedule`
   authoring (day-part vocabulary, the Profile tab's Daily-rhythm card, the
@@ -1128,7 +1128,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   2026-07-12. Leftovers: the two report-only conflict flips stay in the plan's
   §Open questions, flip on request.
 - **Chat initiative — the reopen opener (core)** —
-  [chat-initiative.plan.md](chat-initiative.plan.md) — 2026-07-12 — the pickup
+  [chat-initiative.plan.md](finished/chat-initiative.plan.md) — 2026-07-12 — the pickup
   strip's "Let {who} start ✦" runs a continue exchange with a server-built cue
   (`chat-initiative.ts`): her own material (loops + non-secret wants), the "a
   life meanwhile" license folded in (no separate life-event agent — build

@@ -38,6 +38,9 @@ nonzero-uncertainty travel) MUST NOT ship before the drain-hardening plan has
 — promoted 2026-07-23, see
 [../drain-hardening.plan.md](../drain-hardening.plan.md) (§Tripwire) and
 [../drain-hardening.arrival.md](../drain-hardening.arrival.md) ruling 4.
+*(Tripwire satisfied — drain-hardening shipped 2026-07-23; the gate no longer
+blocks promotion. Verified 2026-08-02: `space.ts` still hardcodes
+`uncertaintySeconds: 0`, so the work itself is untouched.)*
 
 ## Open questions
 

@@ -158,12 +158,12 @@ through the surfaces, not around them.
   which invites confusion: the derived live level is NEVER written back
   into the attribute. Attributes hold the authored/slow tendency; live
   state lives in the physiology layer only.
-- **Prerequisite seam fix**: `readSimChatMeters` returns stored fixed-point
+- ~~**Prerequisite seam fix**: `readSimChatMeters` returns stored fixed-point
   rows without calling `integrateMeterValue` at the branch clock
   (`sim-surfaces.ts:273-289`) — the state strip shows last-event values,
-  not now. Physiology reads compose on top of integrated meters; fix this
-  read (integrate at the clock) before physiology consumes it. Noted also
-  in C14 [sim-read-seam-guards.plan.md](sim-read-seam-guards.plan.md).
+  not now.~~ *(Resolved — shipped with C14's sim-read hardening 2026-07-24
+  (`eac4b34`): `sim-surfaces.ts` now integrates meters at the branch clock on
+  read. Physiology reads can compose on top directly — verified 2026-08-02.)*
 - **Capture with the cut.** Physiology facts a committed cut rendered
   against are recorded in that cut's presentation context, so a retake
   re-renders the SAME body state — recomputing from the later live clock
