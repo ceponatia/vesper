@@ -227,7 +227,7 @@ jobs:
   production-build:
     name: production build
     needs: changes
-    if: github.event_name == 'pull_request' && github.base_ref == 'prod' && needs.changes.outputs.code == 'true'
+    if: github.event_name == 'pull_request' && needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -241,6 +241,10 @@ jobs:
           HUSKY: 0
       - name: Next.js production build
         run: pnpm build
+        env:
+          # Same heap ceiling as the Dockerfile build stage — a build that
+          # would OOM on the Fly builder must fail here, on the PR, first.
+          NODE_OPTIONS: --max-old-space-size=4096
 
   verify:
     name: verify
