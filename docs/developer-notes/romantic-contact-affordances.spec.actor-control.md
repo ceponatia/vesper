@@ -6,6 +6,13 @@ Status: technical companion to
 not ready for authority until the foundation and shadow gates below pass**).
 The deterministic NPC contact-ending producer shipped 2026-07-31 and remains
 the frozen floor described here.
+**Delivery steps 1–3 are built (2026-08-02):** the pure foundation with its
+adversarial fixtures, the durable decision envelope with the guarded CAS
+transaction (migration 0094), and the shadow leg behind
+`CHAT_NPC_SCENE_DECISION_SHADOW` (default off; with both new flags off the
+lane is byte-identical to before). The shadow flag has **not** been enabled —
+the measurement window, its review, and the cost ruling remain, and the
+authority increments (4–6) are unbuilt by design.
 
 ## Scope and boundary
 

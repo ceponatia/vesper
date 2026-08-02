@@ -73,6 +73,13 @@ import {
   deleteChatContactEventsForGuard,
 } from "./chat-contact-events";
 import {
+  beginChatNpcSceneDecision,
+  chatNpcSceneDecisionMode,
+  finishChatNpcSceneDecision,
+  type ChatNpcSceneDecisionHandle,
+} from "./chat-npc-scene-decision";
+import { deleteChatNpcSceneDecision } from "./chat-npc-scene-envelope";
+import {
   applyChatNpcContactEnding,
   chatReplyContactEventRef,
   detectChatNpcContactEnding,
@@ -814,6 +821,17 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         if (assistantMessageId !== exchangeGuardMessageId) {
           await deleteChatContactEventsForGuard(chatId, assistantMessageId);
         }
+        // The discarded take's DECISION ENVELOPE goes with its reply-side rows
+        // (actor-control step 3). It is keyed by the assistant row a regenerate
+        // reuses IN PLACE, so no FK cascade prunes it, and the guarded
+        // transaction's predicate 3 would refuse the regenerated take's new
+        // envelope forever while the old tombstone held the unique key.
+        // UNCONDITIONAL like both contact prunes above — no flag checks —
+        // because pruning the durable record of a discarded take is hygiene of
+        // state that already exists, and an on→off→retake sequence must not
+        // strand it. (A rerun's deleted assistant successors cascade their
+        // envelopes via the FK; deleting zero rows here is the ordinary answer.)
+        await deleteChatNpcSceneDecision(chatId, assistantMessageId);
       } catch (error) {
         log.error("engine.chat", "chat contact ledger rollback failed", { error: describeError(error) });
       }
@@ -1845,6 +1863,47 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         });
       }
 
+      // --- NPC reply-scene decision leg: launch (actor-control step 3, SHADOW) --
+      // Started HERE — after the reply row is durable, before the state fan-out —
+      // so the one classifier call per reply runs BESIDE settlement and is awaited
+      // only after the post-settle cut (spec §"Execution, flags, and cost gate").
+      // The digest is assembled from the PRE-settle cut on purpose (prompt-time
+      // roster presence, the scene exactly as the player leg left it): the
+      // authoritative presence/scene cut is reloaded fresh inside
+      // `finishChatNpcSceneDecision`, never carried from here. Empty replies never
+      // reach settle, so they never earn an envelope. Mode-gated: with both new
+      // flags off the leg does not exist and the legacy reply-side ending block at
+      // the settle tail runs byte-identically. Fenced whole (docs/resilience.md):
+      // a failed launch leaves the handle null, which routes the tail to the
+      // legacy block — the flag-off path — and never costs the settled reply.
+      const npcSceneMode = chatNpcSceneDecisionMode();
+      let npcSceneDecision: ChatNpcSceneDecisionHandle | null = null;
+      if (npcSceneMode !== null) {
+        try {
+          npcSceneDecision = await beginChatNpcSceneDecision({
+            chatId,
+            assistantMessageId,
+            reply: full,
+            mode: npcSceneMode,
+            // Stable roster order — the primary first, then the others exactly as
+            // the roster handed them in; the order IS the `npc_N` ref assignment.
+            roster: [
+              { characterId, name: characterName, aliases: profile.aliases, presence: driftedState.presence },
+              ...others.map((member) => ({
+                characterId: member.characterId,
+                name: member.name,
+                aliases: member.profile.aliases,
+                presence: member.state.presence,
+              })),
+            ],
+            scene: scenario.scene,
+            sink,
+          });
+        } catch (error) {
+          log.error("engine.chat", "npc scene decision launch failed", { error: describeError(error) });
+        }
+      }
+
       if (opening) {
         // Opening beat: fold drift into the state — no fan-out, there was no
         // player act and barely any narrative to archive. Record the surfaced
@@ -1864,6 +1923,15 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // observer noticed on it counts — without this, the first real turn would
         // re-offer the same first-notice cue.
         await commitRecognitionMemory();
+        // The common reply-scene leg runs for opening beats too (spec
+        // §"Authoritative post-settle cut": "the current opening branch must call
+        // the common leg before returning") — AFTER the opening's own state and
+        // scenario persists above, so the leg's fresh reload IS this beat's
+        // settled cut, and it stays the beat's last scene writer (nothing after
+        // this return touches the column). Internally fenced; a noop handle
+        // (existing envelope) returns immediately, and flags-off leaves the
+        // handle null so this line is unreached.
+        if (npcSceneDecision !== null) await finishChatNpcSceneDecision(npcSceneDecision);
         return;
       }
 
@@ -2146,20 +2214,38 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             log.error("engine.chat", "ensemble garment reconcile failed", { error: describeError(error) });
           }
         }
-        // --- Reply-side NPC contact ending (chat-contact-reply.ts) ------------
-        // The exchange's LAST scene write, and the ordering is the invariant:
-        // `finalizeChatState` and the garment reconcile above both re-write
-        // `character_chats.scene` from the pre-ending projection, so the
-        // NPC-authored end applies AFTER them, against the scenario this settle
-        // just persisted — nothing later in the exchange touches the column, so
-        // the ended projection cannot be overwritten by a settle step. The ends
-        // and the projection land in one verified transaction under the
-        // reply-side event ref, guarded by the assistant row itself: retaking or
-        // deleting the reply removes its ending provenance, replaying it lands
-        // nowhere, and a conflicting record fails closed with the projection
-        // unchanged. Gated on the contact flag with the rest of the leg; fenced
-        // whole (docs/resilience.md) — a failed ending costs nothing but itself.
-        if (chatContactActionsEnabled()) {
+        // --- The exchange's LAST scene writer ---------------------------------
+        // One of two mutually exclusive blocks runs here, and the ordering is
+        // the shared invariant: `finalizeChatState` and the garment reconcile
+        // above both re-write `character_chats.scene` from the pre-ending
+        // projection, so whichever block runs applies AFTER them, against the
+        // settled column — nothing later in the exchange touches it, so the
+        // ended projection cannot be overwritten by a settle step.
+        //
+        // With a decision mode on (actor-control step 3), the COMMON REPLY-SCENE
+        // LEG takes the slot: it reloads the post-settle cut fresh (assistant
+        // bytes, scene column, story minute, roster presence — never this
+        // closure's stale `scenario`), awaits the classifier launched beside
+        // settlement, evaluates tier-2 candidates DRY (shadow grants no new
+        // authority), and records the durable decision envelope — with the
+        // frozen floor's ending commits riding the SAME guarded transaction, so
+        // the scene changes exactly as the legacy block below would have changed
+        // it, atomically with its decision record. Internally fenced: any
+        // failure degrades to "no envelope this exchange", never a failed reply.
+        //
+        // With both new flags off the handle is null and the legacy block runs
+        // byte-identically — flag-off behavior is indistinguishable from HEAD.
+        if (npcSceneDecision !== null) {
+          await finishChatNpcSceneDecision(npcSceneDecision);
+        } else if (chatContactActionsEnabled()) {
+          // --- Reply-side NPC contact ending (chat-contact-reply.ts) ----------
+          // The legacy block: the ends and the projection land in one verified
+          // transaction under the reply-side event ref, guarded by the assistant
+          // row itself: retaking or deleting the reply removes its ending
+          // provenance, replaying it lands nowhere, and a conflicting record
+          // fails closed with the projection unchanged. Gated on the contact
+          // flag with the rest of the leg; fenced whole (docs/resilience.md) —
+          // a failed ending costs nothing but itself.
           try {
             const npcRoster: ChatNpcEndingCharacter[] = [
               ...(driftedState.presence === "present"

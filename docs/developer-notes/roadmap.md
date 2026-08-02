@@ -112,6 +112,11 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   The deterministic ending floor stays frozen; the general case now begins
   with pure evidence/chronology fixtures, a durable per-reply decision envelope
   + guarded scene save, and one whole-reply classifier in measured shadow.
+  **Delivery steps 1–3 built 2026-08-02** (pure foundation + adversarial
+  fixtures; envelope table 0094 + guarded CAS transaction + retake prune +
+  inspector trace; shadow leg behind `CHAT_NPC_SCENE_DECISION_SHADOW`,
+  default off — not yet enabled, so the measurement window has not started;
+  flags-off behavior byte-identical).
   Only after that gate does authority roll out movement → starts → updates;
   the owner accepts measured cost/latency before movement is enabled. Then:
   the `romantic_touch` permission owner (**spec before implementation**;
