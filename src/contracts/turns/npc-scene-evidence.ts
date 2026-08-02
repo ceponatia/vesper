@@ -546,6 +546,68 @@ const DEPART_SHAPES: readonly { readonly pattern: string; readonly band: "near" 
 
 const DEPART_FROM_RE = /\bfrom\s+(?:the\s+)?([\p{L}][\p{L}\p{N}'’-]*)\b(?=(\s+[\p{L}])?)/iu;
 
+/**
+ * Who an UNNAMED departure ("she steps back", no `from` clause) can be proven
+ * to move away from. The congruence table demands the counterpart field be
+ * PROVEN, and a bare movement names nobody — so it is provable only when the
+ * scene leaves exactly one candidate:
+ *
+ * - the actor's live contacts first: a body easing away while a touch is held
+ *   is leaving the body it touches (the composite-departure reading), whichever
+ *   side of the contact the actor is on. One distinct other participant across
+ *   all of them proves the counterpart; two distinct ones prove nothing.
+ * - with no live contact, only a roster with exactly one OTHER participant —
+ *   the ordinary 1-on-1 chat, where "away" has one possible referent — can
+ *   prove it. An ensemble's unnamed departure stays ambiguous, which is the
+ *   conservative miss this proof accepts everywhere else.
+ */
+function departCounterpartDeterminable(
+  context: NpcSceneEvidenceContext,
+  actorRef: NpcRef,
+): ParticipantRef | "ambiguous" {
+  const engaged = new Set<ParticipantRef>();
+  for (const row of context.digest.contacts) {
+    const parties = [row.actorRef, row.sourceRef, row.targetRef];
+    if (!parties.includes(actorRef)) continue;
+    for (const party of parties) {
+      if (party !== actorRef) engaged.add(party);
+    }
+  }
+  const [sole] = [...engaged];
+  if (engaged.size === 1 && sole !== undefined) return sole;
+  if (engaged.size > 1) return "ambiguous";
+  const others: ParticipantRef[] = [
+    NPC_SCENE_PLAYER_REF,
+    ...context.digest.npcs.map((npc) => npc.ref).filter((ref) => ref !== actorRef),
+  ];
+  const [only] = others;
+  return others.length === 1 && only !== undefined ? only : "ambiguous";
+}
+
+/**
+ * A `from <X>` clause counts only when it belongs to the matched movement's own
+ * clause: nothing but ordinary words may sit between the movement match and the
+ * `from` — clause punctuation or another subject token (a roster name,
+ * `you`/`your`, or a bare subject pronoun) cuts it off, so "Mara steps back as
+ * you pull from Sabrina" can never lend Mara's movement somebody else's origin.
+ * The same temper the approach window applies, pointed backwards.
+ */
+function departFromClause(
+  context: NpcSceneEvidenceContext,
+  quote: string,
+  matchEnd: number,
+): RegExpExecArray | null {
+  const tail = quote.slice(matchEnd);
+  const from = DEPART_FROM_RE.exec(tail);
+  if (from === null) return null;
+  const between = tail.slice(0, from.index);
+  if (/[.?!;:,]/u.test(between)) return null;
+  const names = context.digest.npcs.flatMap((npc) => npcNameTokens(context.digest, npc.ref)).map(escapeRegex);
+  const blockers = new RegExp(`\\b(?:you|your|she|he|they|${names.join("|")})\\b`, "iu");
+  if (blockers.test(between)) return null;
+  return from;
+}
+
 function verifyDepart(context: NpcSceneEvidenceContext, grounding: Grounding, candidate: NpcDepartCandidate): Verdict {
   const subjects = actorSubjectAlternation(context, candidate.actorRef);
   if (subjects === null) return { status: "unsupported", field: "actorRef" };
@@ -564,7 +626,7 @@ function verifyDepart(context: NpcSceneEvidenceContext, grounding: Grounding, ca
   const match = merged[0];
   if (match === undefined) return { status: "unsupported", field: "kind" };
   if (merged.length > 1) return { status: "ambiguous" };
-  const from = DEPART_FROM_RE.exec(grounding.quote);
+  const from = departFromClause(context, grounding.quote, match.to);
   if (from !== null) {
     if (destinationIsPossessive(from[1] ?? "", (from[2] ?? "").length > 0)) {
       return { status: "unsupported", field: "counterpartRef" };
@@ -574,6 +636,12 @@ function verifyDepart(context: NpcSceneEvidenceContext, grounding: Grounding, ca
     if (named === null || named !== candidate.counterpartRef) {
       return { status: "unsupported", field: "counterpartRef" };
     }
+  } else {
+    // No origin named: the counterpart field still has to be PROVEN, not
+    // presumed — only a uniquely determinable referent admits.
+    const determinable = departCounterpartDeterminable(context, candidate.actorRef);
+    if (determinable === "ambiguous") return { status: "ambiguous" };
+    if (determinable !== candidate.counterpartRef) return { status: "unsupported", field: "counterpartRef" };
   }
   if (match.band !== candidate.band) return { status: "unsupported", field: "band" };
   return {
