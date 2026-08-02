@@ -57,6 +57,7 @@ import {
   type SpeciesDefinition,
   type TraitValue,
 } from "@/contracts";
+import { fnv1a32 } from "@/lib/hash";
 import { parseOrNull } from "@/lib/parse";
 import { generateChecked } from "@/server/ai";
 import {
@@ -572,7 +573,7 @@ export function groundSocialCards(
     seen.add(key);
     const severity = Math.min(100, Math.max(0, Math.round(card.severity)));
     out.push({
-      id: `card_${hashSeed(key).toString(36)}`,
+      id: `card_${fnv1a32(key).toString(36)}`,
       label,
       description: card.description.trim(),
       kind: card.kind,
@@ -1025,16 +1026,6 @@ async function forgeAttributesSection(context: CharacterForgeContext): Promise<C
   return { profile: { attributes, intimateRegions } };
 }
 
-/** FNV-1a over the seed text — deterministic, dependency-free. */
-function hashSeed(text: string): number {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return hash >>> 0;
-}
-
 /**
  * Seed species-required attribute defaults the model left unset. Unlike
  * fillVisualDefaults this is NOT limited to visual-flagged attributes: a
@@ -1129,7 +1120,7 @@ export function fillVisualDefaults(
         if (filtered.length > 0) pool = filtered;
       }
     }
-    const pick = pool[hashSeed(`${seedText}::${def.id}`) % pool.length];
+    const pick = pool[fnv1a32(`${seedText}::${def.id}`) % pool.length];
     if (!pick) continue;
     filled.push({ id: def.id, value: pick, source: "creation" });
     added.push(`${def.id}=${pick}`);
