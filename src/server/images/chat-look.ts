@@ -1,10 +1,9 @@
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import type { AttributeValue } from "@/contracts/attributes/value";
 import type { RegionExposure } from "@/contracts/items/visibility";
-import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { fnv1aHex } from "@/lib/hash";
 import {
-  describeProviderError,
   hasVenice,
   isDemoMode,
   unwrapVeniceImage,
@@ -13,7 +12,7 @@ import {
   veniceSceneImageModelId,
 } from "../ai";
 import { db, images } from "../db";
-import { createImageAsset, failImage, imageMeta, purgeImagesWhere, readImageBytes, saveImageBuffer } from "./assets";
+import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts";
 
 /**
@@ -138,36 +137,42 @@ export interface RenderChatLookInput {
 
 /**
  * Mint (or refresh) the chat's current-look reference: one identity-locked edit
- * from the avatar wearing the tracked outfit. On success every OTHER `chat_look`
- * row for the chat deletes (keep-latest, ruled). Failures mark the row failed
- * and return null — the anchor loader just keeps falling back to the avatar and
- * the outfit-change trigger re-fires on the next change. Never throws.
+ * from the avatar wearing the tracked outfit, on the shared reserve → generate →
+ * save-or-fail → log shell (`runImagePipeline`). On success every OTHER
+ * `chat_look` row for the chat deletes (keep-latest, ruled). Failures mark the
+ * row failed and return null — the anchor loader just keeps falling back to the
+ * avatar and the outfit-change trigger re-fires on the next change. Never throws.
+ *
+ * Both anchor lanes check their preconditions BEFORE reserving anything (a
+ * keyless or demo chat leaves no row at all) and log no event — the two
+ * differences from the avatar/entity shape, both deliberate.
  */
 export async function renderChatLookImage(input: RenderChatLookInput): Promise<string | null> {
   if (isDemoMode() || !hasVenice()) return null;
   const prompt = buildChatLookPrompt({ outfit: input.outfit, outfitExposed: input.outfitExposed, ageAnchor: input.ageAnchor });
-  const asset = await createImageAsset({
-    ownerId: input.userId,
-    kind: "chat_look",
-    entityKind: "character",
-    entityId: input.characterId,
-    chatId: input.chatId,
-    prompt,
-    meta: { lookKey: input.lookKey },
-  });
-  try {
-    const edit = await veniceEditImage({ prompt, reference: input.avatar });
-    const saved = await saveImageBuffer(asset.id, unwrapVeniceImage(edit, "venice edit failed"), input.sink);
-    if (saved?.status !== "ready") return null;
+  const { imageId, status } = await runImagePipeline({
+    asset: {
+      ownerId: input.userId,
+      kind: "chat_look",
+      entityKind: "character",
+      entityId: input.characterId,
+      chatId: input.chatId,
+      prompt,
+      meta: { lookKey: input.lookKey },
+    },
+    produce: async () => ({
+      ok: true,
+      image: unwrapVeniceImage(await veniceEditImage({ prompt, reference: input.avatar }), "venice edit failed"),
+    }),
     // Keep-latest (ruled): the superseded looks go with their files.
-    await purgeImagesWhere(and(eq(images.chatId, input.chatId), eq(images.kind, "chat_look"), ne(images.id, asset.id)));
-    return asset.id;
-  } catch (err) {
-    const message = describeProviderError(err);
-    await failImage(asset.id, message);
-    input.sink?.push(diag("warn", "images.chat_look.failed", message.slice(0, 300)));
-    return null;
-  }
+    onReady: async (asset) => {
+      await purgeImagesWhere(and(eq(images.chatId, input.chatId), eq(images.kind, "chat_look"), ne(images.id, asset.id)));
+    },
+    failureDiagnostic: { code: "images.chat_look.failed" },
+    sink: input.sink,
+  });
+  // A save that never reached `ready` already pushed its own diagnostic.
+  return status === "ready" ? imageId : null;
 }
 
 export interface RenderChatPlaceInput {
@@ -193,21 +198,20 @@ export function buildChatPlacePrompt(input: { placeName: string; sketch: string 
 export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise<string | null> {
   if (isDemoMode() || !hasVenice() || !input.sketch.trim()) return null;
   const prompt = buildChatPlacePrompt(input);
-  const asset = await createImageAsset({
-    ownerId: input.userId,
-    kind: "chat_place",
-    chatId: input.chatId,
-    prompt,
-    meta: { placeName: input.placeName, model: `venice/${veniceSceneImageModelId()}` },
+  const { imageId, status } = await runImagePipeline({
+    asset: {
+      ownerId: input.userId,
+      kind: "chat_place",
+      chatId: input.chatId,
+      prompt,
+      meta: { placeName: input.placeName, model: `venice/${veniceSceneImageModelId()}` },
+    },
+    produce: async () => ({
+      ok: true,
+      image: unwrapVeniceImage(await veniceGenerateImage({ prompt, aspectRatio: "3:2" }), "venice generate failed"),
+    }),
+    failureDiagnostic: { code: "images.chat_place.failed" },
+    sink: input.sink,
   });
-  try {
-    const generated = await veniceGenerateImage({ prompt, aspectRatio: "3:2" });
-    const saved = await saveImageBuffer(asset.id, unwrapVeniceImage(generated, "venice generate failed"), input.sink);
-    return saved?.status === "ready" ? asset.id : null;
-  } catch (err) {
-    const message = describeProviderError(err);
-    await failImage(asset.id, message);
-    input.sink?.push(diag("warn", "images.chat_place.failed", message.slice(0, 300)));
-    return null;
-  }
+  return status === "ready" ? imageId : null;
 }
