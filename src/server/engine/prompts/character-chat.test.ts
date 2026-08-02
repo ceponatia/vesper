@@ -1906,7 +1906,7 @@ describe("ensemble group perks (followups ruling 12)", () => {
       ],
       { sensoryFocus: { hint: { sense: "study", target: "hands", intimate: false }, memberName: "Vera" } },
     );
-    expect(parts.tail).toContain("Brian is taking in Vera's hands");
+    expect(parts.tail).toContain("Sensory focus candidate — Brian taking in Vera's hands");
     expect(parts.tail).toContain("a paint-streaked tank top");
   });
 
