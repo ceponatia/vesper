@@ -122,16 +122,6 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   abstractions. The active doc family archives together only after the plan
   ships.
 
-- **Chat-switch reset integrity — the composer can't leak across chats** —
-  bounded correctness fix pulled forward 2026-08-02 from the parked G25 stub
-  ([deferred/chat-conversation-refactor.plan.md](deferred/chat-conversation-refactor.plan.md))
-  on the owner's build request (active). The chat-change reset in
-  `chat-conversation.tsx` clears only ~10 of ~25 state items — `input`, staged
-  `attachments`, `narratorMode`, `oocActive`, open sheets/dialogs, and
-  `skipBusy` all survive a chat switch (staged photo ids from the previous
-  chat would be submitted to the new one). Complete the reset structurally so
-  a switch can't leak by omission. **The full G25 decomposition stays
-  parked** — this is only its live-bug half.
 - **Starter-world seeds — seed the life the engine already supports** —
   [starter-world-seeds.plan.md](starter-world-seeds.plan.md) (active; B8
   promoted from deferred 2026-08-02 on the owner's build request). Pure seed
