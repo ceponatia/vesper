@@ -19,6 +19,10 @@ const cue = (overrides: Partial<ChatCueHint> = {}): ChatCueHint => ({
   ...overrides,
 });
 
+const maraFocusContext = {
+  characters: [{ id: "character_mara", name: "Mara", aliases: ["Mars"] }],
+} as const;
+
 describe("detectChatCue", () => {
   it("flags proximity when the player draws close", () => {
     expect(detectChatCue("She leans in close to you.").proximity).toBe(true);
@@ -52,6 +56,15 @@ describe("detectChatCue", () => {
   it("flags nothing for ordinary distant conversation", () => {
     expect(detectChatCue("What did you do today?")).toEqual(cue());
     expect(detectChatCue("")).toEqual(cue());
+  });
+
+  it("does not turn denials, hypotheticals, speech, or history into physical cues", () => {
+    expect(detectChatCue("I haven't touched her yet.").touch).toBe(false);
+    expect(detectChatCue("I wouldn’t touch her.").touch).toBe(false);
+    expect(detectChatCue("I wouldnt touch her.").touch).toBe(false);
+    expect(detectChatCue('"Don\'t touch me."').touch).toBe(false);
+    expect(detectChatCue("I've touched her before.").touch).toBe(false);
+    expect(detectChatCue("I touch her now.", { narratorInput: true })).toEqual(cue());
   });
 });
 
@@ -120,6 +133,14 @@ describe("detectSceneMovement (chat scene memory)", () => {
     expect(detectSceneMovement("What did you do today?")).toBeNull();
     expect(detectSceneMovement("")).toBeNull();
   });
+
+  it("rejects denied, hypothetical, and historical scene transitions", () => {
+    expect(detectSceneMovement("I didn't go to the kitchen.")).toBeNull();
+    expect(detectSceneMovement("I wouldn’t go to the kitchen.")).toBeNull();
+    expect(detectSceneMovement("If she asks, I go to the kitchen.")).toBeNull();
+    expect(detectSceneMovement("I have moved to the kitchen before.")).toBeNull();
+    expect(detectSceneMovement("I moved to the kitchen.")).toBe("kitchen");
+  });
 });
 
 describe("detectSensoryFocus (scope guard)", () => {
@@ -182,6 +203,75 @@ describe("detectSensoryFocus (scope guard)", () => {
     expect(detectSensoryFocus("She smells wonderful.")).toBeNull();
     expect(detectSensoryFocus("What are you thinking about?")).toBeNull();
     expect(detectSensoryFocus("")).toBeNull();
+  });
+
+  it("keeps the reported denial visual-only instead of fabricating eye contact", () => {
+    const message =
+      "She isn't afraid of me. I notice the faint glow in her eyes. I haven't even touched her yet.";
+    const cueHint = detectChatCue(message);
+    const focus = detectSensoryFocus(message, maraFocusContext);
+    expect(cueHint).toEqual(cue({ attention: true }));
+    expect(focus).toBeNull();
+    expect(deriveChatSensoryAllowance({ cue: cueHint, sensoryFocus: focus })).toBe("visual_accent");
+  });
+
+  it("binds the first valid sense and owned target locally, in textual order", () => {
+    expect(detectSensoryFocus("I touch her cheek and smell her hair.", maraFocusContext)).toEqual({
+      sense: "touch",
+      target: "cheek",
+      intimate: false,
+      region: "face",
+      targetCharacterId: "character_mara",
+      source: "player_narration",
+    });
+    expect(detectSensoryFocus("I touch her breasts and smell her hair.", maraFocusContext)).toMatchObject({
+      sense: "touch",
+      target: "breasts",
+      intimate: true,
+      targetCharacterId: "character_mara",
+    });
+  });
+
+  it("rejects cross-sentence, cross-clause, wrong-actor, and self-owned pairings", () => {
+    expect(detectSensoryFocus("I touched the tabletop. The glow in her eyes brightened.", maraFocusContext)).toBeNull();
+    expect(
+      detectSensoryFocus("I touched the tabletop while the faint glow in her eyes brightened.", maraFocusContext),
+    ).toBeNull();
+    expect(detectSensoryFocus("She touched her eyes.", maraFocusContext)).toBeNull();
+    expect(detectSensoryFocus("I touched my own eyes.", maraFocusContext)).toBeNull();
+  });
+
+  it("accepts current plain-past narration but rejects perfect history and every denial contraction", () => {
+    expect(detectSensoryFocus("I touched her cheek.", maraFocusContext)).toMatchObject({
+      sense: "touch",
+      target: "cheek",
+      targetCharacterId: "character_mara",
+    });
+    expect(detectSensoryFocus("I've touched her cheek before.", maraFocusContext)).toBeNull();
+    expect(detectSensoryFocus("I had gently touched her cheek before.", maraFocusContext)).toBeNull();
+    expect(detectSensoryFocus("I haven't touched her cheek yet.", maraFocusContext)).toBeNull();
+    expect(detectSensoryFocus("I wouldn’t touch her cheek.", maraFocusContext)).toBeNull();
+    expect(detectSensoryFocus("I couldnt touch her cheek.", maraFocusContext)).toBeNull();
+    expect(detectSensoryFocus("I used to touch her cheek.", maraFocusContext)).toBeNull();
+  });
+
+  it("reads only ordinary player narration and fails closed on an ambiguous ensemble owner", () => {
+    expect(detectSensoryFocus('I say, "I touch her cheek."', maraFocusContext)).toBeNull();
+    expect(detectSensoryFocus("*I touch her cheek.*", maraFocusContext)).toBeNull();
+    expect(detectSensoryFocus("((I touch her cheek.))", maraFocusContext)).toBeNull();
+    expect(detectSensoryFocus("I touch her cheek.", { ...maraFocusContext, narratorInput: true })).toBeNull();
+
+    const ensemble = {
+      characters: [
+        ...maraFocusContext.characters,
+        { id: "character_sen", name: "Sen", aliases: [] },
+      ],
+    } as const;
+    expect(detectSensoryFocus("I touch her cheek.", ensemble)).toBeNull();
+    expect(detectSensoryFocus("I touch Mara's cheek.", ensemble)).toMatchObject({
+      target: "cheek",
+      targetCharacterId: "character_mara",
+    });
   });
 });
 
