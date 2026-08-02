@@ -68,7 +68,7 @@ import {
   type SceneSupportRelation,
   type UnitInterval,
 } from "@/contracts";
-import { parseMessageSpans } from "@/lib/message-spans";
+import { chatEvidenceSentences, hasChatEvidenceNegation } from "@/lib/chat-input-evidence";
 
 /**
  * The CHAT LANE's contact adapter — the affectionate integration proof
@@ -285,9 +285,6 @@ export function seededChatScene(existing: SceneState, roster: ChatSceneSeedInput
 // Text gates
 // ---------------------------------------------------------------------------
 
-/** Sentence boundaries: terminal punctuation, or a line break. */
-const CONTACT_SENTENCE_SPLIT = /(?<=[.!?])\s+|\n+/u;
-
 /**
  * Markers that put a whole sentence out of reach.
  *
@@ -303,8 +300,6 @@ const CONTACT_CONDITIONAL_RE =
  * a positional rule because it is judging a claim; here the question is whether
  * a body moved, and "I don't rest my hand on your shoulder" must never commit.
  */
-const CONTACT_NEGATION_RE = /\b(?:not|never|no longer|don'?t|doesn'?t|didn'?t|won'?t|can'?t|cannot|without)\b/iu;
-
 /**
  * Romantic and intimate framing — vetoed WHOLE-SENTENCE (owner ruling: a
  * genuinely affectionate proof, never a romantic case relabeled to commit).
@@ -338,7 +333,7 @@ const CONTACT_RESTRAINT_RE =
 export function contactSentenceEligible(sentence: string): boolean {
   if (sentence.includes("?")) return false;
   if (CONTACT_CONDITIONAL_RE.test(sentence)) return false;
-  if (CONTACT_NEGATION_RE.test(sentence)) return false;
+  if (hasChatEvidenceNegation(sentence)) return false;
   if (CONTACT_ROMANTIC_VERB_RE.test(sentence)) return false;
   if (CONTACT_ROMANTIC_TARGET_RE.test(sentence)) return false;
   return true;
@@ -389,11 +384,8 @@ function contactSentences(
   const message = input.message.trim();
   if (message.length === 0) return [];
   const sentences: string[] = [];
-  for (const span of parseMessageSpans(message)) {
-    if (span.kind !== "narration") continue;
-    for (const sentence of span.text.split(CONTACT_SENTENCE_SPLIT)) {
-      if (sentence.trim().length > 0 && eligible(sentence)) sentences.push(sentence);
-    }
+  for (const { text } of chatEvidenceSentences(message, ["narration"])) {
+    if (eligible(text)) sentences.push(text);
   }
   return sentences;
 }
