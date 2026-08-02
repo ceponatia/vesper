@@ -33,6 +33,10 @@ Machine with a persistent volume — so `auto_stop_machines` must be **off**.
   `start` script hardcodes `-p 3200`, which would mismatch Fly's `internal_port`.
 - `sharp` works from its prebuilt `@img/sharp-*` binary; the "Ignored build
   scripts: sharp" pnpm warning is benign.
+- **`NODE_OPTIONS=--max-old-space-size=4096` on the build step**, inline so the
+  runner never inherits a heap cap it does not need. The app outgrew Node's
+  default old-space ceiling on 2026-08-02; raise this number if the build worker
+  starts aborting again (see Troubleshooting).
 
 ## Recommended `fly.toml`
 
@@ -179,6 +183,15 @@ a Tailscale sidecar.) Set strong, unique `BETTER_AUTH_SECRET` and `DEV_PASSWORD`
 - **Turbopack NFT "Encountered unexpected file" warnings** (`next.config.ts` →
   `assets.ts`) — benign; from `DATA_ROOT` filesystem access being traced.
 - **App OOMs / restarts** — bump `[[vm]] memory`; 256 MB is far too small.
+- **Build fails with `Next.js build worker exited ... SIGABRT` and a
+  `FatalProcessOutOfMemory` V8 stack** — the BUILDER ran out of JS heap, which is
+  a different failure from the app OOMing. Read the exit signal: V8's own
+  `OOMErrorHandler`/`FatalProcessOutOfMemory` + SIGABRT means the process hit
+  Node's `--max-old-space-size` ceiling, whereas the kernel's OOM killer exits
+  137 with no V8 stack. The Dockerfile raises the ceiling to 4096 MB on the build
+  step; if it recurs the app simply grew again, so raise that number (and only if
+  exit 137 appears instead, give the builder more RAM rather than more heap).
+  First seen 2026-08-02, after four PRs landed between deploys.
 - **Images vanish after restart** — the `[[mounts]]` volume is missing or
   `DATA_ROOT` doesn't point at it.
 - **React error #418 (hydration mismatch) in the console on loads right after a
