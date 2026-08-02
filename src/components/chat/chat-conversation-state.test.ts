@@ -37,6 +37,9 @@ describe("PER_CHAT_DEFAULTS", () => {
   // disabled in the new conversation with nothing in flight to release them.
   it("opens with nothing in flight — no spinner or disabled control survives a switch", () => {
     for (const [key, value] of Object.entries(PER_CHAT_DEFAULTS)) {
+      // `actionBusy` is an id-or-null, not a boolean flag — its idle value is
+      // asserted as null below.
+      if (key === "actionBusy") continue;
       if (key.endsWith("Busy")) expect(value, `${key} must default to idle`).toBe(false);
     }
     expect(PER_CHAT_DEFAULTS.sending).toBe(false);
