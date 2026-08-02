@@ -114,7 +114,9 @@ function energyView(): MeterIntegrationView {
 
 /** The §26 authority view a fresh world presents at the meal boundary. */
 function materialView(items: readonly SimulationMaterialItem[]): MaterialResolutionView {
-  const byId = new Map(items.map((item) => [item.id, item]));
+  // Keyed as plain string: the view's `itemById` receives an unbranded id, and
+  // widening the key beats casting the lookup argument into the brand.
+  const byId = new Map<string, SimulationMaterialItem>(items.map((item) => [item.id, item]));
   return {
     ...env.meta({ headSequence: 0, storySecond: mealWindowStartSecond() }),
     version: 0,
