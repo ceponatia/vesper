@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, images, items, locations } from "../db";
 import { newId } from "@/lib/ids";
@@ -15,6 +15,7 @@ import {
   dataRoot,
   imageRelativePath,
   imagesDirectoryPath,
+  type StoredImagePath,
 } from "./paths";
 
 export { absoluteImagePath, dataRoot, imageRelativePath } from "./paths";
@@ -27,6 +28,20 @@ export interface ImageFileRef {
   id: string;
   ownerId: string;
   path: string;
+}
+
+/**
+ * A stored row's file bytes, or null when the file is lost. Every image read is
+ * degradable by design (docs/images.md): the row is written before the file, and
+ * image_sweep reconciles a row whose file vanished — so a reader falls back to
+ * another reference or skips the read rather than failing the turn.
+ */
+export async function readImageBytes(row: StoredImagePath): Promise<Buffer | null> {
+  try {
+    return await fs.readFile(absoluteImagePath(row));
+  } catch {
+    return null;
+  }
 }
 
 export interface CreateImageAssetOptions {
@@ -120,8 +135,23 @@ function pendingPathFor(absolutePath: string): string {
 
 const metaSchema = z.record(z.string(), z.unknown());
 
+/**
+ * The write-path merge: the stored jsonb re-parsed at the trust boundary, plus
+ * the fields this update contributes. Deliberately NOT built on `imageMeta` —
+ * `parseOr` additionally JSON-decodes a string column value and drops a
+ * `__proto__` key, and the write path is where that hardening belongs.
+ */
 function mergeMeta(raw: unknown, extra: Record<string, unknown>): Record<string, unknown> {
   return { ...parseOr(metaSchema, raw, {}), ...extra };
+}
+
+/**
+ * An images row's jsonb `meta` as a plain record for READING one stored field
+ * (`lookKey`, `source`, `error`) — `{}` for null, an array, or any non-object,
+ * so a caller's field lookup simply misses instead of throwing.
+ */
+export function imageMeta(meta: unknown): Record<string, unknown> {
+  return typeof meta === "object" && meta !== null && !Array.isArray(meta) ? (meta as Record<string, unknown>) : {};
 }
 
 /**
@@ -154,6 +184,40 @@ export async function saveImageBuffer(imageId: string, buffer: Buffer, sink?: Di
 }
 
 /**
+ * Delete every images row matching `where` and unlink their files best-effort
+ * (image_sweep reconciles stragglers). The CALLER owns the predicate — build it
+ * with the same owner/kind/chat guards the call site needs; this helper adds
+ * nothing and so can never widen one. Returns how many rows were removed.
+ *
+ * An `undefined` predicate would match the whole table, so it is refused: a
+ * caller whose guards all collapsed to `undefined` deletes nothing rather than
+ * everything.
+ */
+export async function purgeImagesWhere(where: SQL | undefined): Promise<number> {
+  if (where === undefined) {
+    log.warn("images", "purgeImagesWhere refused an unguarded predicate");
+    return 0;
+  }
+  const rows = await db()
+    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
+    .from(images)
+    .where(where);
+  if (rows.length === 0) return 0;
+  await db().delete(images).where(where);
+  await Promise.all(rows.map((row) => unlinkImageFile(row)));
+  return rows.length;
+}
+
+/** Best-effort file removal for a purged row — never throws; image_sweep reconciles stragglers. */
+async function unlinkImageFile(row: ImageFileRef): Promise<void> {
+  try {
+    await fs.unlink(absoluteImagePath(row));
+  } catch {
+    // already gone, or a path that no longer resolves — the sweep reconciles
+  }
+}
+
+/**
  * Hard-delete one owned image — the row first, then its file best-effort
  * (image_sweep reconciles a straggler). Owner-scoped, with an optional `kind`
  * guard so a route can't delete the wrong class of asset through it. Returns
@@ -165,16 +229,8 @@ export async function deleteOwnedImage(
   ownerId: string,
   opts: { kind?: ImageKind; kinds?: readonly ImageKind[] } = {},
 ): Promise<boolean> {
-  const where = and(eq(images.id, imageId), eq(images.ownerId, ownerId), kindGuard(opts));
-  const [row] = await db()
-    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
-    .from(images)
-    .where(where)
-    .limit(1);
-  if (!row) return false;
-  await db().delete(images).where(eq(images.id, imageId));
-  await fs.unlink(absoluteImagePath(row)).catch(() => undefined); // sweep reconciles stragglers
-  return true;
+  const removed = await purgeImagesWhere(and(eq(images.id, imageId), eq(images.ownerId, ownerId), kindGuard(opts)));
+  return removed > 0;
 }
 
 /** The optional single/multi kind guard shared by the owned-delete helpers. */
@@ -217,15 +273,7 @@ export async function deleteOwnedImages(
   opts: { kind?: ImageKind; kinds?: readonly ImageKind[] } = {},
 ): Promise<number> {
   if (imageIds.length === 0) return 0;
-  const where = and(inArray(images.id, imageIds), eq(images.ownerId, ownerId), kindGuard(opts));
-  const rows = await db()
-    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
-    .from(images)
-    .where(where);
-  if (rows.length === 0) return 0;
-  await db().delete(images).where(where);
-  await Promise.all(rows.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
-  return rows.length;
+  return purgeImagesWhere(and(inArray(images.id, imageIds), eq(images.ownerId, ownerId), kindGuard(opts)));
 }
 
 /**
@@ -239,17 +287,11 @@ export async function deleteOwnedImages(
  */
 export async function deleteChatUploads(chatId: string, anchorMessageIds?: readonly string[]): Promise<number> {
   if (anchorMessageIds !== undefined && anchorMessageIds.length === 0) return 0;
-  const where = anchorMessageIds
-    ? and(eq(images.chatId, chatId), eq(images.kind, "chat_upload"), inArray(images.anchorMessageId, [...anchorMessageIds]))
-    : and(eq(images.chatId, chatId), eq(images.kind, "chat_upload"));
-  const rows = await db()
-    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
-    .from(images)
-    .where(where);
-  if (rows.length === 0) return 0;
-  await db().delete(images).where(where);
-  await Promise.all(rows.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
-  return rows.length;
+  return purgeImagesWhere(
+    anchorMessageIds
+      ? and(eq(images.chatId, chatId), eq(images.kind, "chat_upload"), inArray(images.anchorMessageId, [...anchorMessageIds]))
+      : and(eq(images.chatId, chatId), eq(images.kind, "chat_upload")),
+  );
 }
 
 /**
@@ -259,15 +301,7 @@ export async function deleteChatUploads(chatId: string, anchorMessageIds?: reado
  */
 export async function deleteChatAssets(chatId: string, kinds: readonly ImageKind[]): Promise<number> {
   if (kinds.length === 0) return 0;
-  const where = and(eq(images.chatId, chatId), inArray(images.kind, [...kinds]));
-  const rows = await db()
-    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
-    .from(images)
-    .where(where);
-  if (rows.length === 0) return 0;
-  await db().delete(images).where(where);
-  await Promise.all(rows.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
-  return rows.length;
+  return purgeImagesWhere(and(eq(images.chatId, chatId), inArray(images.kind, [...kinds])));
 }
 
 /**

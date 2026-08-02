@@ -16,7 +16,10 @@ import {
   absoluteImagePath,
   createImageAsset,
   dataRoot,
+  deleteOwnedImage,
+  deleteOwnedImages,
   failImage,
+  GALLERY_IMAGE_KINDS,
   saveImageBuffer,
   sweepOrphans,
 } from "./assets";
@@ -75,6 +78,36 @@ describe.skipIf(!ready)("asset registry protocol", () => {
     const failed = await failImage(asset.id, "provider exploded");
     expect(failed?.status).toBe("failed");
     expect((failed?.meta as Record<string, unknown>).error).toBe("provider exploded");
+  });
+
+  // The purge helpers all run one caller-built predicate for both the select and
+  // the delete, so what a call site guards on is exactly what it removes. These
+  // assert the guard from the outside: a wrong-kind row in the same request must
+  // survive with its file, and the count/boolean each form returns must describe
+  // what actually went.
+  it("the kind guard scopes a delete to the allowed class, files and all", async () => {
+    const scene = await createImageAsset({ ownerId: userId, kind: "scene" });
+    const look = await createImageAsset({ ownerId: userId, kind: "chat_look" });
+    await saveImageBuffer(scene.id, monogramSvg("Scene"));
+    await saveImageBuffer(look.id, monogramSvg("Look"));
+
+    // The Gallery's allowed-kinds restriction: the chat_look id rides along in
+    // the same request and is silently skipped, never deleted.
+    expect(await deleteOwnedImages([scene.id, look.id], userId, { kinds: GALLERY_IMAGE_KINDS })).toBe(1);
+    await expect(fs.access(absoluteImagePath(scene))).rejects.toThrow();
+    await expect(fs.access(absoluteImagePath(look))).resolves.toBeUndefined();
+    const survivors = await db()
+      .select({ id: images.id })
+      .from(images)
+      .where(inArray(images.id, [scene.id, look.id]));
+    expect(survivors.map((r) => r.id)).toEqual([look.id]);
+
+    // Single form: false for a guarded-out row, true for the one delete that
+    // lands, false again once it is gone.
+    expect(await deleteOwnedImage(look.id, userId, { kinds: GALLERY_IMAGE_KINDS })).toBe(false);
+    expect(await deleteOwnedImage(look.id, userId, { kind: "chat_look" })).toBe(true);
+    expect(await deleteOwnedImage(look.id, userId, { kind: "chat_look" })).toBe(false);
+    await expect(fs.access(absoluteImagePath(look))).rejects.toThrow();
   });
 
   it("sweepOrphans reconciles both directions and never throws", async () => {

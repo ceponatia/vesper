@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import { characterProfileSchema, emptyCharacterProfile, resolveAttributes } from "@/contracts";
 import { parseOr } from "@/lib/parse";
@@ -7,7 +6,7 @@ import { isDemoMode, veniceEditImage, veniceEditModelId } from "../ai";
 import { logEvent } from "../events";
 import { log } from "@/server/log";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
-import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer, type ImageRow } from "./assets";
+import { createImageAsset, failImage, readImageBytes, saveImageBuffer, type ImageRow } from "./assets";
 import { monogramSvg } from "./monogram";
 import { apparentAgeAnchor, buildVariantInstruction, type VariantKind } from "./prompts";
 
@@ -88,11 +87,8 @@ async function loadReference(avatarImageId: string | null): Promise<{ row: Image
   if (!avatarImageId) return null;
   const [row] = await db().select().from(images).where(eq(images.id, avatarImageId)).limit(1);
   if (!row || row.status !== "ready") return null;
-  try {
-    return { row, buffer: await fs.readFile(absoluteImagePath(row)) };
-  } catch {
-    return null; // file lost — sweepOrphans will fail the row; treat as no reference
-  }
+  const buffer = await readImageBytes(row);
+  return buffer ? { row, buffer } : null; // no bytes — sweepOrphans will fail the row; treat as no reference
 }
 
 function logVariant(imageId: string, input: GenerateVariantInput, status: string, started: number): Promise<void> {

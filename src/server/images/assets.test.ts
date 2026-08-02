@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { canCreateSymlinks, testPngBuffer, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
-import { absoluteImagePath, dataRoot, imageRelativePath, writeWebpAtomic } from "./assets";
+import { absoluteImagePath, dataRoot, imageMeta, imageRelativePath, writeWebpAtomic } from "./assets";
 import { monogramSvg } from "./monogram";
 
 const symlinksAvailable = canCreateSymlinks();
@@ -31,6 +31,22 @@ describe("dataRoot / paths", () => {
   it("derives the canonical relative path and resolves it against the root", () => {
     expect(imageRelativePath("owner1", "img1")).toBe("images/owner1/img1.webp");
     expect(absoluteImagePath({ path: "images/owner1/img1.webp" })).toBe(path.join(tmp, "images/owner1/img1.webp"));
+  });
+});
+
+describe("imageMeta", () => {
+  it("passes an object through and degrades every other jsonb shape to {}", () => {
+    expect(imageMeta({ lookKey: "abc", source: "upload" })).toEqual({ lookKey: "abc", source: "upload" });
+    // The shapes a jsonb column can legally hold besides an object — each must
+    // read as "no fields" rather than throw or expose an index.
+    for (const raw of [null, undefined, [], ["a"], "lookKey", 7, true]) {
+      expect(imageMeta(raw)).toEqual({});
+    }
+  });
+
+  it("misses cleanly on an absent field, so a caller's guard just fails", () => {
+    expect(imageMeta({}).lookKey).toBeUndefined();
+    expect(imageMeta([{ lookKey: "abc" }]).lookKey).toBeUndefined(); // an array is not a record
   });
 });
 
