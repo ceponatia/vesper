@@ -7,6 +7,7 @@ import {
   exposedRegions,
   FULLY_COVERED,
   garmentActorForCharacter,
+  GARMENT_PLAYER_ACTOR,
   garmentBlueprintForSeed,
   garmentBlueprintHash,
   emptyChatGarmentStore,
@@ -134,13 +135,34 @@ describe("outfit_exposed is no longer authoritative once an actor is modelled", 
     expect(resolved.exposure).not.toEqual(FULLY_COVERED);
   });
 
-  it("still reads conservatively while non-mechanical overlay prose stands in for the look", async () => {
+  it("reads overlay prose that names clothing as that clothing, per region", async () => {
     // Nothing modelled is worn, but the fiction put them in something the
-    // wardrobe does not own — guessing "bare" there would be spectacularly wrong.
+    // wardrobe does not own. The garment noun is the only wardrobe there is, so
+    // it answers where it covers (torso) and only there — "just his hoodie" is a
+    // real look, not a fully-dressed one (garment-noun-coverage.ts).
     const resolved = await resolveChatWardrobe(
       {
         wornItemIds: [],
         outfit: "a borrowed hoodie",
+        outfitExposed: false,
+        garments: modelledStore([]),
+        garmentActorId: ACTOR,
+      },
+      "owner",
+      profile,
+    );
+    expect(resolved.exposure.torso).toBe("covered");
+    expect(resolved.exposure.pelvis).toBe("bare");
+  });
+
+  it("keeps the covered default for prose that names no clothing at all", async () => {
+    // The conservative read the case above used to get unconditionally: with no
+    // garment named, nobody knows what is on this body, and guessing "bare"
+    // would be spectacularly wrong.
+    const resolved = await resolveChatWardrobe(
+      {
+        wornItemIds: [],
+        outfit: "wrapped in the dark, half-lit",
         outfitExposed: false,
         garments: modelledStore([]),
         garmentActorId: ACTOR,
@@ -190,6 +212,143 @@ describe("outfit_exposed is no longer authoritative once an actor is modelled", 
     const resolved = await resolvePlayerWardrobe(emptyChatPlayerState(), "owner", undefined, undefined, store);
     expect(resolved.wornItemIds).toEqual([]);
     expect(resolved.exposure).not.toEqual(FULLY_COVERED);
+  });
+});
+
+/**
+ * The overlay carries coverage (garment-noun-coverage.ts).
+ *
+ * The defect: the free-text "Also / instead" field contributed ZERO coverage, so
+ * a character wearing a modelled thong plus an overlay reading "pale lavender
+ * gown" computed `torso: "bare"` and the scene prompt drew intimate chest
+ * anatomy through the described gown.
+ *
+ * Pure, and deliberately so: the worn instances carry NO `definitionId`, which is
+ * what makes `loadGarmentWardrobeItems` skip the library load entirely (one item
+ * per worn instance — a garment with no library provenance still reads).
+ */
+describe("garment nouns in the free-text overlay", () => {
+  const ACTOR = garmentActorForCharacter("alice");
+  const profile = emptyCharacterProfile();
+  const THONG = garmentBlueprintForSeed({
+    definitionId: "def_thong",
+    name: "black lace thong",
+    categoryId: "underwear",
+    coverage: ["pelvis"],
+    materialProfileId: "woven_cotton_linen",
+  });
+
+  const wearing = (actorId: string): ChatGarmentStore => ({
+    seeded: true,
+    blueprints: { [garmentBlueprintHash(THONG)]: THONG },
+    instances: [
+      {
+        id: "g_thong",
+        blueprintHash: garmentBlueprintHash(THONG),
+        name: "black lace thong",
+        locus: { kind: "worn", actorId },
+        presentation: emptyGarmentPresentationState(),
+        condition: pristineGarmentConditionState(),
+        lastChange: { kind: "mint", atMinutes: 0 },
+      },
+    ],
+    cues: emptyGarmentCueState(),
+    coverage: {},
+  });
+
+  const dressedIn = (outfit: string) =>
+    resolveChatWardrobe(
+      { wornItemIds: [], outfit, outfitExposed: false, garments: wearing(ACTOR), garmentActorId: ACTOR },
+      "owner",
+      profile,
+    );
+
+  it("a described gown covers the chest a thong leaves bare", async () => {
+    const resolved = await dressedIn("pale lavender gown with delicate beading");
+    expect(resolved.exposure.torso).toBe("covered");
+    expect(resolved.exposure.pelvis).toBe("covered");
+    expect(resolved.exposed).toBe(false);
+  });
+
+  it("without the overlay the same wardrobe still reads topless", async () => {
+    // The control: coverage, not the text, is what changed the answer above.
+    expect((await dressedIn("")).exposure.torso).toBe("bare");
+  });
+
+  it("keeps the synthetic rows out of occlusion, cues, and the affordance read", async () => {
+    // They exist for `exposedRegions` and nothing else — a described garment is
+    // not something the wardrobe owns, and no consumer may treat it as one.
+    const resolved = await dressedIn("pale lavender gown with delicate beading");
+    expect(resolved.worn?.map((row) => row.garmentId)).toEqual(["g_thong"]);
+    expect(Object.keys(resolved.partVisibility)).toEqual(["g_thong:root"]);
+    // The overlay still rides the garment PHRASE, as it always has.
+    expect(resolved.garments).toContain("pale lavender gown");
+  });
+
+  it("an exposure claim still wins over a garment noun on the free-text path", async () => {
+    // The archivist writes `exposed: true` for "the gown pooled at her waist" —
+    // that beat has to beat the gown noun sitting in the text it describes.
+    const resolved = await resolveChatWardrobe(
+      { wornItemIds: [], outfit: "the pale lavender gown pooled at her waist", outfitExposed: true },
+      "owner",
+      profile,
+    );
+    expect(resolved.exposed).toBe(true);
+    expect(resolved.exposure.torso).toBe("bare");
+  });
+
+  it("reads a free-text look per region — 'only a thong' is pelvis-covered", async () => {
+    const resolved = await resolveChatWardrobe(
+      { wornItemIds: [], outfit: "wearing only a red thong", outfitExposed: false },
+      "owner",
+      profile,
+    );
+    expect(resolved.exposure.pelvis).toBe("covered");
+    expect(resolved.exposure.torso).toBe("bare");
+    expect(resolved.exposed).toBe(true);
+  });
+
+  it("a garment that says nothing about the intimate regions cannot strip her", async () => {
+    // A hat names real clothing and answers for no region that matters; letting
+    // it speak would read the whole body as naked.
+    const resolved = await resolveChatWardrobe(
+      { wornItemIds: [], outfit: "a wide-brimmed straw hat", outfitExposed: false },
+      "owner",
+      profile,
+    );
+    expect(resolved.exposure).toEqual(FULLY_COVERED);
+  });
+
+  it("adds coverage over the PLAYER's worn items too", async () => {
+    const resolved = await resolvePlayerWardrobe(
+      { ...emptyChatPlayerState(), overlay: "a heavy wool coat" },
+      "owner",
+      undefined,
+      undefined,
+      wearing(GARMENT_PLAYER_ACTOR),
+    );
+    expect(resolved.exposure.torso).toBe("covered");
+  });
+
+  it("the player's stripped read still wins over overlay prose", async () => {
+    // Seeded, personaed, and wearing nothing is a positive claim ("stripped"),
+    // not the absence of one — text cannot dress her back up.
+    const resolved = await resolvePlayerWardrobe(
+      { ...emptyChatPlayerState(), seeded: true, overlay: "a pale lavender gown" },
+      "owner",
+      personaProfileSchema.parse({}),
+    );
+    expect(resolved.exposure.torso).toBe("bare");
+  });
+
+  it("the player's unseeded overlay reads per region", async () => {
+    const resolved = await resolvePlayerWardrobe(
+      { ...emptyChatPlayerState(), overlay: "wearing only a red thong" },
+      "owner",
+      personaProfileSchema.parse({}),
+    );
+    expect(resolved.exposure.pelvis).toBe("covered");
+    expect(resolved.exposure.torso).toBe("bare");
   });
 });
 
