@@ -95,25 +95,33 @@ through the described gown.
   is not the fabric.
 - **Every qualifier attaches to ONE noun.** The tokens between two garment nouns
   are the first one's post-modifier ground and the second one's pre-modifier
-  ground at the same time, so the span is apportioned at its first
-  `windowSplitters` hinge — the layering prepositions and coordinators (over,
-  under, beneath, atop, above, below, and, or, nor). Before the hinge attaches
-  BACKWARD, after it FORWARD, the hinge itself belongs to neither, and a
+  ground at the same time, so the span is apportioned at a hinge. Before it
+  attaches BACKWARD, after it FORWARD, the hinge itself belongs to neither, and a
   hinge-less shared span goes wholly forward (English stacks bare adjectives ahead
-  of the noun). **"with" is conditional** (`conditionalSplitters`): it hinges only
-  when a marker (`displacementMarkers` / `negationMarkers` / `sheerModifiers`)
-  already stands before it in the span, because unmarked it introduces the
-  PREVIOUS garment's postmodifier ("a shirt with buttons open and jeans" — the
-  shirt is open, the jeans are on) or plain accompaniment ("a jacket with a tee"),
-  and splitting there inverted both; marked, it is a layering hinge like the
-  prepositions ("shirt unbuttoned with jeans"). A clause-initial span is all
-  pre-modifier ("unbuttoned jacket"), a clause-final one all post-modifier ("her
-  shirt hanging open"). Reading a shared span whole is what "a shirt under an open
-  jacket" broke: `open` displaced the shirt as well as the jacket and a covered
-  torso read BARE. No hinge word may join `negationCarryWords` for the
-  mirror-image reason — the carry check reads its window UNSPLIT, which is exactly
-  why "no shirt under her jacket" and "no shirt with jeans" leave the later
-  garment covering.
+  of the noun). Three hinge registries, in the order the scan tries them:
+  `windowSplitters` — the layering prepositions (over, under, underneath, beneath,
+  atop, above, below) — hinge on first hit. **Coordinators are conditional**
+  (`coordinatorSplitters` — and, or, nor): one does NOT hinge when a
+  `displacementMarkers` word stands between it and the next hinge candidate,
+  because displacement markers are participial POSTmodifiers, so "shirt unbuttoned
+  and hanging open with jeans" coordinates two descriptions of the SHIRT — hinging
+  at that "and" opened the jeans and left the open shirt covering. `sheerModifiers`
+  premodify the noun after them and so never defer the hinge ("a shirt unbuttoned
+  and sheer stockings" still fences). **"with" is conditional too**
+  (`conditionalSplitters`): it hinges only when a marker (`displacementMarkers` /
+  `negationMarkers` / `sheerModifiers`) already stands before it in the span,
+  because unmarked it introduces the PREVIOUS garment's postmodifier ("a shirt with
+  buttons open and jeans" — the shirt is open, the jeans are on) or plain
+  accompaniment ("a jacket with a tee"), and splitting there inverted both; marked,
+  it is a layering hinge like the prepositions ("shirt unbuttoned with jeans"). A
+  clause-initial span is all pre-modifier ("unbuttoned jacket"), a clause-final one
+  all post-modifier ("her shirt hanging open"). Reading a shared span whole is what
+  "a shirt under an open jacket" broke: `open` displaced the shirt as well as the
+  jacket and a covered torso read BARE. No hinge but the coordinators may join
+  `negationCarryWords` — the carry check reads its window UNSPLIT, which is exactly
+  why "no shirt under her jacket" and "no shirt with jeans" leave the later garment
+  covering, while "or" hinges AND carries so that "without a shirt or bra" is one
+  denial.
 - **Named is not worn.** A noun contributes NO row when the segment before it
   holds a `negationMarkers` word (no, without, sans, minus, lacking, missing) or a
   `negatedWearingLeads` word immediately followed by "wearing" (not, never, isn't,
@@ -122,15 +130,26 @@ through the described gown.
   off, aside, …): "without a shirt", "jeans and not wearing a shirt", "her shirt
   hanging open", "gown pooled at her waist" all name clothing that is not covering
   anything. The "wearing" bigram is the whole rule — a standalone "not" is a hedge
-  ("not the shirt she meant to wear") and never denies. A denial carries to the
-  next noun only across pure filler (`negationCarryWords` — and/or/the/her/a…), so
-  "without a shirt or bra" denies both while "no bra under her sweater" leaves the
-  sweater covering; clause-scoped negation would have stripped that sweater. The
-  failure directions are asymmetric on purpose: suppressing wrongly just costs
-  that garment's coverage (the pre-overlay behavior, and on the free-text path the
-  intimate-region gate below then keeps the covered default), while a MISSED
-  displacement leaves bared anatomy reading as covered. Hyphenated compounds stay
-  one token here too, so "off-the-shoulder gown" still covers.
+  ("not the shirt she meant to wear") and never denies. An **exception word**
+  (`negationExceptions` — but, except, save, besides, excluding, barring, than)
+  ENDS a denial: the segment denies only when its last negation stands after its
+  last exception, so "not wearing anything but a thong" wears the thong (pelvis
+  covered, torso bare) while "but not wearing a shirt" still denies. Exceptions are
+  deliberately NOT `negationCarryWords` — "without a shirt but jeans" has to keep
+  the jeans. Multiword exceptives ("apart from", "aside from") are out of scope:
+  this scanner reads unigrams, so the denial stands and the garment simply
+  contributes nothing — and "aside" is a displacement marker before it is anything
+  else. A denial carries to the next noun only across pure filler
+  (`negationCarryWords` — and/or/the/her/a…), so "without a shirt or bra" denies
+  both while "no bra under her sweater" leaves the sweater covering; clause-scoped
+  negation would have stripped that sweater. What carries is the segment's verdict,
+  so an excepted noun carries its un-negated state on ("not wearing anything but a
+  bra or panties" wears both). The failure directions are asymmetric on purpose:
+  suppressing wrongly just costs that garment's coverage (the pre-overlay behavior,
+  and on the free-text path the intimate-region gate below then keeps the covered
+  default), while a MISSED displacement leaves bared anatomy reading as covered.
+  Hyphenated compounds stay one token here too, so "off-the-shoulder gown" still
+  covers.
 - **These rows only ever reach `exposedRegions`** — never occlusion, garment
   cues, or the effective-coverage read. Nothing may mistake described prose for a
   garment the wardrobe owns.

@@ -3,10 +3,12 @@ import { expectRefsResolve } from "@/test/registry-invariants";
 import { bodyLocationRegistry } from "../body/locations";
 import {
   conditionalSplitters,
+  coordinatorSplitters,
   displacementMarkers,
   garmentNounCoverage,
   negatedWearingLeads,
   negationCarryWords,
+  negationExceptions,
   negationMarkers,
   overlayWornInputs,
   sheerModifiers,
@@ -196,6 +198,60 @@ describe("overlayWornInputs — named, but not covering", () => {
   it("a suppressed noun still closes the sheer window (the modifier was ITS adjective)", () => {
     expect(rowFor("no sheer bra under her sweater", "sweater")?.opacity).toBe("opaque");
   });
+
+  it("an exception word ENDS the denial — what it excepts is worn", () => {
+    // The defect: this denied the thong, and zero rows is the same shape as "no
+    // clothing named at all", which the free-text caller's intimate-region gate
+    // reads as fully covered — the opposite of what the sentence says.
+    const text = "not wearing anything but a thong";
+    expect(rowFor(text, "thong")).toBeDefined();
+    const regions = regionsOf(text);
+    expect(regions.pelvis).toBe("covered");
+    expect(regions.torso).toBe("bare");
+  });
+
+  it("excepts a plain negation marker as readily as the 'wearing' bigram", () => {
+    expect(rowFor("isn't wearing anything except a bra", "bra")).toBeDefined();
+    expect(rowFor("without anything but a thong", "thong")).toBeDefined();
+  });
+
+  it("every exception word un-negates both denial shapes, and denies nothing alone", () => {
+    for (const word of negationExceptions) {
+      expect(overlayWornInputs(`not wearing anything ${word} a robe`), `bigram + ${word}`).toHaveLength(1);
+      expect(overlayWornInputs(`without anything ${word} a robe`), `marker + ${word}`).toHaveLength(1);
+      expect(overlayWornInputs(`${word} a robe`), `${word} alone`).toHaveLength(1);
+    }
+  });
+
+  it("an exception BEFORE the negation is inert — it excepts nothing yet denied", () => {
+    // Positional, not a presence check: the denial is the LAST word of the two.
+    expect(overlayWornInputs("but not wearing a shirt")).toEqual([]);
+  });
+
+  it("carries the un-negated verdict across a conjunction, like any other", () => {
+    const text = "not wearing anything but a bra or panties";
+    expect(rowFor(text, "bra")).toBeDefined();
+    expect(rowFor(text, "panties")).toBeDefined();
+  });
+
+  it("an exception is not filler, so it breaks the carry", () => {
+    // The half of the rule that keeps the exceptions OUT of `negationCarryWords`:
+    // the denial has to stop at "but", or the jeans go with the shirt.
+    expect([...negationExceptions].filter((word) => negationCarryWords.has(word))).toEqual([]);
+    const text = "without a shirt but jeans";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+    expect(regionsOf(text).pelvis).toBe("covered");
+  });
+
+  it("multiword exceptives stay out of scope, and fail the benign way", () => {
+    // This scanner reads unigrams, and a bare "apart" is not reliably exceptive,
+    // so the denial stands and the garment contributes nothing — the direction
+    // that costs coverage rather than baring a body. "aside" would never reach
+    // the negation scan anyway: it is a displacement marker first.
+    expect(overlayWornInputs("not wearing anything apart from a thong")).toEqual([]);
+    expect(overlayWornInputs("not wearing anything aside from a thong")).toEqual([]);
+  });
 });
 
 /**
@@ -311,13 +367,82 @@ describe("overlayWornInputs — which garment a shared window modifies", () => {
     // A layering preposition in `negationCarryWords` would carry the denial above,
     // and so would a conditional hinge — "no shirt with jeans" must keep the jeans.
     // The coordinators are in both on purpose: "or" hinges AND carries, which is
-    // what makes "without a shirt or bra" one denial. Both hinge sets are read, so
-    // splitting the registry cannot open a gap in the invariant.
-    const hinges = [...windowSplitters, ...conditionalSplitters];
-    expect(hinges.filter((word) => negationCarryWords.has(word)).sort()).toEqual(["and", "nor", "or"]);
-    // …and the conditional set stays out of the unconditional one: a word in both
-    // would hinge on first hit and the marker gate would never run.
-    expect([...conditionalSplitters].filter((word) => windowSplitters.has(word))).toEqual([]);
+    // what makes "without a shirt or bra" one denial. Asserted as set identity
+    // against `coordinatorSplitters` rather than a literal, so neither registry can
+    // drift into the other's job. All three hinge sets are read, so splitting the
+    // registry cannot open a gap in the invariant.
+    const hinges = [...windowSplitters, ...coordinatorSplitters, ...conditionalSplitters];
+    expect(hinges.filter((word) => negationCarryWords.has(word)).sort()).toEqual([...coordinatorSplitters].sort());
+    // …and the three sets stay disjoint: a word in two of them would match the
+    // first gate the scan reaches and the other's condition would never run.
+    expect([...coordinatorSplitters].filter((word) => windowSplitters.has(word))).toEqual([]);
+    const conditional = [...conditionalSplitters];
+    expect(conditional.filter((word) => windowSplitters.has(word) || coordinatorSplitters.has(word))).toEqual([]);
+  });
+});
+
+/**
+ * When a coordinator is NOT a garment boundary. "and" joins two garments ("a
+ * shirt and jeans") or two postmodifiers of ONE garment ("shirt unbuttoned and
+ * hanging open with jeans") — and hinging at the second shape inverted the whole
+ * look: `hanging open` sailed forward to displace the jeans while the
+ * stated-open shirt kept covering, so a torso the prose bared read as covered.
+ * The lookahead that tells them apart is grammatical, not lexical: displacement
+ * markers are participial POSTmodifiers, so one after the coordinator means the
+ * coordination is still inside the previous garment's postmodifier phrase.
+ */
+describe("overlayWornInputs — when a coordinator is not a hinge", () => {
+  it("keeps a coordinated participle phrase on the garment it describes", () => {
+    const text = "shirt unbuttoned and hanging open with jeans";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("bare");
+    expect(regions.pelvis).toBe("covered");
+  });
+
+  it("reads the reported look whole — bra on, jeans on, open shirt covering nothing", () => {
+    const text = "a bra, shirt unbuttoned and hanging open with jeans";
+    // The "and" declines the hinge and the "with" takes it, which is what leaves
+    // the jeans with an empty pre-segment instead of the shirt's participles.
+    expect(overlayWornInputs(text).map((row) => row.name)).toEqual(["bra", "jeans"]);
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("covered");
+    expect(regions.pelvis).toBe("covered");
+  });
+
+  it("still hinges when nothing displacing follows it", () => {
+    const text = "shirt unbuttoned and jeans";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+  });
+
+  it("leaves a bare coordination alone — both garments are on", () => {
+    const text = "a shirt and jeans";
+    expect(rowFor(text, "shirt")).toBeDefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+  });
+
+  it("a sheer PREmodifier does not defer the hinge", () => {
+    // The other half of the grammar: `sheerModifiers` premodify the noun AFTER
+    // them, so they say nothing about whether the shirt's phrase has ended — and
+    // the marker still has to reach the stockings it qualifies.
+    const text = "a shirt unbuttoned and sheer stockings";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "stockings")?.opacity).toBe("sheer");
+  });
+
+  it("a displacing PREmodifier lands forward either way", () => {
+    // The happy accident that makes the lookahead cheap: skipped, the window goes
+    // hinge-less and attaches wholly forward; hinged, everything past the
+    // coordinator attaches forward too. Discarded jeans are not worn on either
+    // reading, and the shirt never picks the marker up.
+    const text = "a shirt and discarded jeans";
+    expect(rowFor(text, "jeans")).toBeUndefined();
+    expect(rowFor(text, "shirt")).toBeDefined();
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("covered");
+    expect(regions.pelvis).toBe("bare");
   });
 });
 
