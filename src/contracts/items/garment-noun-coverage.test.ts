@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { expectRefsResolve } from "@/test/registry-invariants";
 import { bodyLocationRegistry } from "../body/locations";
 import {
+  conditionalSplitters,
   displacementMarkers,
   garmentNounCoverage,
   negatedWearingLeads,
@@ -198,11 +199,14 @@ describe("overlayWornInputs — named, but not covering", () => {
 });
 
 /**
- * Who owns a SHARED window (`windowSplitters`). The span between two garment
- * nouns is the first one's post-modifier ground and the second one's
- * pre-modifier ground at once, and reading it whole suppressed both: "a shirt
- * under an open jacket" lost the shirt as well as the jacket and reported a
- * covered torso as BARE — the under-covering direction the module forbids.
+ * Who owns a SHARED window (`windowSplitters`, plus the marker-gated
+ * `conditionalSplitters`). The span between two garment nouns is the first one's
+ * post-modifier ground and the second one's pre-modifier ground at once, and
+ * reading it whole suppressed both: "a shirt under an open jacket" lost the shirt
+ * as well as the jacket and reported a covered torso as BARE — the under-covering
+ * direction the module forbids. Splitting at the wrong word inverts it instead:
+ * "a shirt with buttons open and jeans" dressed the open shirt and stripped the
+ * jeans, which is why "with" hinges only when it has something to fence.
  */
 describe("overlayWornInputs — which garment a shared window modifies", () => {
   it("a layering hinge keeps the displacement off the garment underneath", () => {
@@ -246,6 +250,54 @@ describe("overlayWornInputs — which garment a shared window modifies", () => {
     expect(rowFor(text, "bra")?.opacity).toBe("opaque");
   });
 
+  it("'with' opening a POSTMODIFIER is not a hinge — the phrase stays on the garment it describes", () => {
+    // The inversion this rule exists for: splitting at the "with" left the shirt
+    // opaque and sent "buttons open" forward to displace the JEANS — exactly
+    // backwards from the prose, and a stated-open torso read as covered. Unmarked,
+    // the "with" is transparent and the hinge lands on the coordinator instead.
+    const text = "a shirt with buttons open and jeans";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("bare");
+    expect(regions.pelvis).toBe("covered");
+  });
+
+  it("'with' IS a hinge once a marker precedes it — the layering reading", () => {
+    // The other half of the ambiguity: here "with" joins two garments, and the
+    // marker before it is the shirt's alone.
+    const text = "shirt unbuttoned with jeans";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+    expect(regionsOf(text).pelvis).toBe("covered");
+  });
+
+  it("an ordinary adjective does not arm the conditional hinge", () => {
+    // "loose" is no marker registry's word, so there is still nothing to fence:
+    // the "with" stays transparent and the whole phrase is the shirt's.
+    const text = "a shirt loose with buttons open and jeans";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+  });
+
+  it("plain accompaniment dresses both garments", () => {
+    // Nothing to apportion on either side of the "with", so the hinge-less window
+    // attaches forward and neither noun picks up a qualifier it never had.
+    const text = "a jacket with a tee";
+    expect(rowFor(text, "jacket")).toBeDefined();
+    expect(rowFor(text, "tee")).toBeDefined();
+    expect(regionsOf(text).torso).toBe("covered");
+  });
+
+  it("a transparent 'with' still breaks the negation carry — it is not filler", () => {
+    const text = "no shirt with jeans";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("bare");
+    expect(regions.pelvis).toBe("covered");
+  });
+
   it("the negation carry still reads the window WHOLE — a hinge breaks it", () => {
     // Apportioned, the jacket's segment is the pure filler "her", which would
     // carry the denial onto it and bare a covered torso.
@@ -256,10 +308,16 @@ describe("overlayWornInputs — which garment a shared window modifies", () => {
   });
 
   it("only the coordinators may be both a hinge and negation filler", () => {
-    // A layering preposition in `negationCarryWords` would carry the denial above.
+    // A layering preposition in `negationCarryWords` would carry the denial above,
+    // and so would a conditional hinge — "no shirt with jeans" must keep the jeans.
     // The coordinators are in both on purpose: "or" hinges AND carries, which is
-    // what makes "without a shirt or bra" one denial.
-    expect([...windowSplitters].filter((word) => negationCarryWords.has(word)).sort()).toEqual(["and", "nor", "or"]);
+    // what makes "without a shirt or bra" one denial. Both hinge sets are read, so
+    // splitting the registry cannot open a gap in the invariant.
+    const hinges = [...windowSplitters, ...conditionalSplitters];
+    expect(hinges.filter((word) => negationCarryWords.has(word)).sort()).toEqual(["and", "nor", "or"]);
+    // …and the conditional set stays out of the unconditional one: a word in both
+    // would hinge on first hit and the marker gate would never run.
+    expect([...conditionalSplitters].filter((word) => windowSplitters.has(word))).toEqual([]);
   });
 });
 

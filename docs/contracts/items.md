@@ -97,16 +97,23 @@ through the described gown.
   are the first one's post-modifier ground and the second one's pre-modifier
   ground at the same time, so the span is apportioned at its first
   `windowSplitters` hinge — the layering prepositions and coordinators (over,
-  under, beneath, atop, above, below, and, or, nor, with). Before the hinge
-  attaches BACKWARD, after it FORWARD, the hinge itself belongs to neither, and a
+  under, beneath, atop, above, below, and, or, nor). Before the hinge attaches
+  BACKWARD, after it FORWARD, the hinge itself belongs to neither, and a
   hinge-less shared span goes wholly forward (English stacks bare adjectives ahead
-  of the noun). A clause-initial span is all pre-modifier ("unbuttoned jacket"), a
-  clause-final one all post-modifier ("her shirt hanging open"). Reading a shared
-  span whole is what "a shirt under an open jacket" broke: `open` displaced the
-  shirt as well as the jacket and a covered torso read BARE. Prepositions must
-  never join `negationCarryWords` for the mirror-image reason — the carry check
-  reads its window UNSPLIT, which is exactly why "no shirt under her jacket"
-  leaves the jacket covering.
+  of the noun). **"with" is conditional** (`conditionalSplitters`): it hinges only
+  when a marker (`displacementMarkers` / `negationMarkers` / `sheerModifiers`)
+  already stands before it in the span, because unmarked it introduces the
+  PREVIOUS garment's postmodifier ("a shirt with buttons open and jeans" — the
+  shirt is open, the jeans are on) or plain accompaniment ("a jacket with a tee"),
+  and splitting there inverted both; marked, it is a layering hinge like the
+  prepositions ("shirt unbuttoned with jeans"). A clause-initial span is all
+  pre-modifier ("unbuttoned jacket"), a clause-final one all post-modifier ("her
+  shirt hanging open"). Reading a shared span whole is what "a shirt under an open
+  jacket" broke: `open` displaced the shirt as well as the jacket and a covered
+  torso read BARE. No hinge word may join `negationCarryWords` for the
+  mirror-image reason — the carry check reads its window UNSPLIT, which is exactly
+  why "no shirt under her jacket" and "no shirt with jeans" leave the later
+  garment covering.
 - **Named is not worn.** A noun contributes NO row when the segment before it
   holds a `negationMarkers` word (no, without, sans, minus, lacking, missing) or a
   `negatedWearingLeads` word immediately followed by "wearing" (not, never, isn't,
