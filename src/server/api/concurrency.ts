@@ -1,5 +1,5 @@
 import { and, count, eq, gt, inArray, sql } from "drizzle-orm";
-import { db, jobs } from "@/server/db";
+import { db, jobs, JOB_STALE_MS } from "@/server/db";
 import { newId } from "@/lib/ids";
 import type { ApiJobType } from "./job-types";
 
@@ -18,8 +18,12 @@ export const MAX_CONCURRENT_JOBS_PER_USER = 4;
  * A job orphaned by a crash keeps `status = 'running'` forever. Counting only
  * recent rows means a lost job costs its owner a slot for this long instead of
  * permanently — self-healing without a reaper process.
+ *
+ * The same cutoff bounds the one-live-per-chat enqueue dedupe (`server/db/
+ * job-liveness.ts`), so the two readings of "in flight" can never drift apart —
+ * an orphan that no longer costs a slot must not still block a re-render.
  */
-export const JOB_SLOT_STALE_MS = 15 * 60_000;
+export const JOB_SLOT_STALE_MS = JOB_STALE_MS;
 
 const ACTIVE_STATUSES = ["queued", "running"] as const;
 

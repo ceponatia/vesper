@@ -5,6 +5,13 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **A deploy can't wedge a chat's background work** — `src/server/db/job-liveness.ts`
+  (no plan — owner report) — 2026-08-02 — a `chat_scene_image` job orphaned by a
+  deploy stayed `running` forever, so the one-live-per-chat dedupe refused every
+  later render and the "rendering" spinner never cleared. Liveness is now
+  staleness-bounded (15 min, the cap's existing cutoff) in one shared helper used
+  by all five enqueue paths.
+
 - **Misplaced name brackets never render** — `src/server/ai/narrator-speaker-tags.ts`
   (no plan — owner report) — 2026-08-02 — brackets mean a line-opening speaker tag
   and nothing else: chat rule 3 (1-on-1 + ensemble) now scopes them with a worked

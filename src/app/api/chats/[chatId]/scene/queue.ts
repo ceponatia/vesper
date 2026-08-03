@@ -1,4 +1,4 @@
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   characterProfileSchema,
   currentScenePlace,
@@ -10,7 +10,7 @@ import {
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { startJob } from "@/server/api";
-import { characterChatMessages, db, jobs } from "@/server/db";
+import { characterChatMessages, db, hasLiveChatJob } from "@/server/db";
 import {
   buildChatGarmentNarration,
   chatGarmentCuesEnabled,
@@ -46,25 +46,18 @@ export interface QueueChatSceneArgs {
 }
 
 /**
- * Whether a scene render job is live (queued/running) for this chat. Doubles as the
- * queue dedupe check and the GET route's `rendering` flag — the client polls on it
- * through the composer step, BEFORE the pending image row exists (the
- * painting-forever fix: without it the strip's placeholder never resolved until a
- * manual refresh).
+ * Whether a scene render job is live (queued/running, non-stale — `hasLiveChatJob`)
+ * for this chat. Doubles as the queue dedupe check and the GET route's `rendering`
+ * flag — the client polls on it through the composer step, BEFORE the pending image
+ * row exists (the painting-forever fix: without it the strip's placeholder never
+ * resolved until a manual refresh).
+ *
+ * The staleness bound is load-bearing on BOTH readings: a job orphaned by a deploy
+ * would otherwise refuse every later render AND keep the flag true forever — a
+ * spinner that can never finish (owner report 2026-08-02).
  */
 export async function hasLiveChatSceneJob(chatId: string): Promise<boolean> {
-  const [live] = await db()
-    .select({ id: jobs.id })
-    .from(jobs)
-    .where(
-      and(
-        eq(jobs.type, "chat_scene_image"),
-        or(eq(jobs.status, "queued"), eq(jobs.status, "running")),
-        sql`${jobs.payload} ->> 'chatId' = ${chatId}`,
-      ),
-    )
-    .limit(1);
-  return live !== undefined;
+  return hasLiveChatJob("chat_scene_image", chatId);
 }
 
 /**
