@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   applyDriveUpdates,
@@ -22,7 +22,7 @@ import {
 import { formatElapsed } from "@/lib/clock";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
-import { characterChats, characterChatState, characters, chatParticipants, db, jobs } from "../db";
+import { characterChats, characterChatState, characters, chatParticipants, db, hasLiveChatJob } from "../db";
 import { addFacts, chatScope, type FactDraftInput } from "../memory";
 import { resolveChatPersona } from "../players";
 import { log } from "../log";
@@ -79,18 +79,7 @@ export { armMeanwhilePass };
 /** Enqueue one meanwhile pass (detached). Deduped: at most one live pass per chat. Never throws. */
 export async function enqueueChatMeanwhile(args: EnqueueChatMeanwhileArgs): Promise<void> {
   try {
-    const [live] = await db()
-      .select({ id: jobs.id })
-      .from(jobs)
-      .where(
-        and(
-          eq(jobs.type, "chat_meanwhile"),
-          inArray(jobs.status, ["queued", "running"]),
-          sql`${jobs.payload} ->> 'chatId' = ${args.chatId}`,
-        ),
-      )
-      .limit(1);
-    if (live) return;
+    if (await hasLiveChatJob("chat_meanwhile", args.chatId)) return;
     await enqueueJob({ type: "chat_meanwhile", payload: { ...args } });
   } catch (err) {
     log.warn("chat_meanwhile", "failed to enqueue meanwhile pass", {
