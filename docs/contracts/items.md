@@ -121,13 +121,24 @@ through the described gown.
   at that "and" opened the jeans and left the open shirt covering. `sheerModifiers`
   premodify the noun after them and so never defer the hinge ("a shirt unbuttoned
   and sheer stockings" still fences). **"with" is conditional too**
-  (`conditionalSplitters`): it hinges only when a marker (`displacementMarkers` /
-  `negationMarkers` / `sheerModifiers`) already stands before it in the span,
-  because unmarked it introduces the PREVIOUS garment's postmodifier ("a shirt with
-  buttons open and jeans" — the shirt is open, the jeans are on) or plain
-  accompaniment ("a jacket with a tee"), and splitting there inverted both; marked,
-  it is a layering hinge like the prepositions ("shirt unbuttoned with jeans"). A
-  clause-final span is all post-modifier ("her shirt hanging open") — hinge or no
+  (`conditionalSplitters`), and on both counts: it hinges only when a marker
+  (`displacementMarkers` / `negationMarkers` / `sheerModifiers`) already stands
+  before it in the span **and** no displacement marker follows it. Unmarked it
+  introduces the PREVIOUS garment's postmodifier ("a shirt with buttons open and
+  jeans" — the shirt is open, the jeans are on) or plain accompaniment ("a jacket
+  with a tee"), and splitting there inverted both. Marked, it is a layering hinge
+  like the prepositions ("shirt unbuttoned with jeans") — unless its own phrase
+  runs on into another participle, which is the coordinator's lookahead asking the
+  coordinator's question: "a shirt hanging open with buttons undone and jeans" is
+  one postmodifier of the SHIRT, and hinging at that "with" fenced the shirt right
+  and then sent `buttons undone` forward to strip the jeans as well, reporting a
+  bare pelvis over a worn garment. Being marked says something needs fencing; only
+  the lookahead says the phrase has ENDED. Deferring never ends the scan — the
+  hinge lands on the next eligible splitter (the "and" here) — and it pays the
+  coordinator's stranded-marker cost on the same terms ("a shirt unbuttoned with
+  discarded jeans" keeps the shirt, over-covering by one rather than
+  under-covering the next). A clause-final span is all post-modifier ("her shirt
+  hanging open") — hinge or no
   hinge, since the displacement scan wants the whole tail and no negation reads it.
   A clause-INITIAL span is pre-modifier ground too, but it splits at the same hinge
   and keeps only the remainder: hinge-less it is all the noun's ("unbuttoned
