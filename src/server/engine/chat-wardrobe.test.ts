@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   applyGarmentOperations,
+  DiagnosticCollector,
   emptyCharacterProfile,
   emptyChatPlayerState,
   emptyGarmentPresentationState,
@@ -21,6 +22,21 @@ import {
   type GarmentSeed,
   emptyGarmentCueState,
 } from "@/contracts";
+// The degraded-load shape, without Postgres: every `db()` throws, so
+// `loadDefaultWardrobe` catches, reports `images.avatar.outfit_load_failed`, and
+// returns [] — the same empty result a deleted-row lookup produces. Every OTHER
+// test in this file stays on the branches that take no IO at all, so the mock
+// costs them nothing.
+vi.mock("@/server/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/db")>();
+  return {
+    ...actual,
+    db: () => {
+      throw new Error("simulated wardrobe load failure");
+    },
+  };
+});
+
 import { toWornInputs, wardrobeOutfitText, type AvatarWardrobeItem } from "../images";
 import { garmentWardrobeItem, playerWornIds, resolveChatWardrobe, resolvePlayerWardrobe } from "./chat-wardrobe";
 
@@ -366,6 +382,59 @@ describe("garment nouns in the free-text overlay", () => {
     );
     expect(resolved.exposure.torso).toBe("bare");
     expect(resolved.exposure.pelvis).toBe("covered");
+  });
+});
+
+/**
+ * A wardrobe that FAILED to load must not hand the overlay nouns authority
+ * (docs/resilience.md — degraded defaults over failed turns).
+ *
+ * Worn ids plus a load that comes back empty is degradation, not an undressed
+ * body — but it lands on the free-text path, where the overlay is the only
+ * wardrobe there is. Letting "a borrowed hoodie" answer there reports every
+ * region the unloadable items covered as BARE, which is the scene-image gate
+ * reading intimate anatomy as showing. The covered default is what this path
+ * returned before the overlay carried coverage at all, and it is the read a
+ * degraded load has to keep.
+ */
+describe("a wardrobe that failed to load keeps the covered default", () => {
+  const profile = emptyCharacterProfile();
+
+  it("the character's overlay cannot bare what the unloadable items covered", async () => {
+    const sink = new DiagnosticCollector();
+    const resolved = await resolveChatWardrobe(
+      { wornItemIds: ["def_vanished"], outfit: "a borrowed hoodie", outfitExposed: false },
+      "owner",
+      profile,
+      sink,
+    );
+    expect(resolved.exposure).toEqual(FULLY_COVERED);
+    expect(resolved.exposed).toBe(false);
+    // The load reports the degradation itself, so the gate stays silent — one
+    // diagnostic for one failure.
+    expect(sink.items.map((item) => item.code)).toContain("images.avatar.outfit_load_failed");
+    // The control: the SAME text with a genuinely free-text wardrobe still speaks
+    // per region — the gate is the worn ids, not the prose.
+    const freeText = await resolveChatWardrobe(
+      { wornItemIds: [], outfit: "a borrowed hoodie", outfitExposed: false },
+      "owner",
+      profile,
+    );
+    expect(freeText.exposure.torso).toBe("covered");
+    expect(freeText.exposure.pelvis).toBe("bare");
+  });
+
+  it("the player's overlay cannot either", async () => {
+    // Seeded with a worn list that resolves to nothing: a persona whose items
+    // failed to load stays dressed. `seeded` alone would read as stripped only
+    // with a genuinely EMPTY list, which is the neighbouring guard.
+    const resolved = await resolvePlayerWardrobe(
+      { ...emptyChatPlayerState(), seeded: true, wornItemIds: ["def_vanished"], overlay: "a borrowed hoodie" },
+      "owner",
+      personaProfileSchema.parse({}),
+    );
+    expect(resolved.exposure).toEqual(FULLY_COVERED);
+    expect(resolved.wornItemIds).toEqual([]);
   });
 });
 
