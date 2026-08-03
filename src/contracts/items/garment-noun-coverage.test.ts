@@ -678,6 +678,89 @@ describe("overlayWornInputs — which garment a shared window modifies", () => {
 });
 
 /**
+ * What ENDS a clause. The comma was never the only separator prose uses to finish
+ * one garment's description mid-line: the dashes do it constantly ("a shirt
+ * hanging open — jeans"), a colon opens a list of garments, and the sentence
+ * enders close one outright. The tokenizer erases every one of those characters,
+ * so a separator missing from the boundary set does not merely fail to split — it
+ * leaves the two garments sharing one hinge-less window, which attaches wholly
+ * FORWARD, so `hanging open` displaced the JEANS and left the stated-open shirt
+ * covering. That is the inversion the layering hinge exists to prevent, arriving
+ * one punctuation mark smaller. The ASCII hyphen is the one that needs care:
+ * SPACED it stands in for a dash, bare it is the joint of a compound the tokenizer
+ * deliberately keeps whole.
+ */
+describe("overlayWornInputs — the separators that end a clause", () => {
+  it("a dash or a colon ends the clause, exactly as the comma does", () => {
+    // The defect: hinge-less and boundary-less, the whole span attached forward
+    // and the sentence read backwards — an open shirt covering the torso, and the
+    // jeans the text plainly puts on displaced.
+    for (const text of [
+      "a shirt hanging open — jeans",
+      "a shirt hanging open – jeans",
+      "a shirt hanging open - jeans",
+      "a shirt hanging open: jeans",
+      "a shirt hanging open, jeans",
+    ]) {
+      expect(rowFor(text, "shirt"), text).toBeUndefined();
+      expect(rowFor(text, "jeans"), text).toBeDefined();
+      const regions = regionsOf(text);
+      expect(regions.torso, text).toBe("bare");
+      expect(regions.pelvis, text).toBe("covered");
+    }
+  });
+
+  it("so do the sentence enders", () => {
+    for (const text of [
+      "a shirt hanging open. jeans",
+      "a shirt hanging open! jeans",
+      "a shirt hanging open? jeans",
+      "a shirt hanging open… jeans",
+    ]) {
+      expect(rowFor(text, "shirt"), text).toBeUndefined();
+      expect(rowFor(text, "jeans"), text).toBeDefined();
+      expect(regionsOf(text).pelvis, text).toBe("covered");
+    }
+  });
+
+  it("a BARE hyphen is no boundary — hyphenated compounds stay one token", () => {
+    // Splitting inside one would break a single opaque token into two words, one
+    // of them a `sheerModifiers` hit: "lace-trimmed" would read as lace, and the
+    // trim is not the fabric.
+    expect(rowFor("a lace-trimmed cotton robe", "robe")?.opacity).toBe("opaque");
+    expect(rowFor("off-the-shoulder gown", "gown")).toBeDefined();
+    // Both readings in one string: the compound survives whole, and the spaced
+    // hyphen beside it still ends the clause.
+    const mixed = "a lace-trimmed robe - jeans";
+    expect(rowFor(mixed, "robe")?.opacity).toBe("opaque");
+    expect(rowFor(mixed, "jeans")).toBeDefined();
+  });
+
+  it("stops a modifier reaching backwards, the way the comma already did", () => {
+    const text = "a lace-trimmed cotton robe — sheer stockings";
+    expect(rowFor(text, "robe")?.opacity).toBe("opaque");
+    expect(rowFor(text, "stockings")?.opacity).toBe("sheer");
+  });
+
+  it("the exception carry composes with every one of them", () => {
+    // A clause boundary resets the denial scope, and the one exception to that
+    // reset is punctuation-blind: "not wearing underwear — except a bra" is the
+    // sentence the comma spelling is, and the bra is the one thing on.
+    for (const separator of [",", "—", "–", " -", ":", "."]) {
+      const text = `not wearing underwear${separator} except a bra`;
+      expect(rowFor(text, "bra"), text).toBeDefined();
+      expect(regionsOf(text).pelvis, text).toBe("bare");
+    }
+    // …and so does the RESET itself: a clause that denied nothing leaves the
+    // exclusion as its own denial, dash and comma alike.
+    const reset = "no shirt — jeans excluding a bra";
+    expect(rowFor(reset, "bra")).toBeUndefined();
+    expect(rowFor(reset, "jeans")).toBeDefined();
+    expect(regionsOf(reset).torso).toBe("bare");
+  });
+});
+
+/**
  * The correlative `as … as` — a simile, and the one reading of "as" that is not a
  * hinge. "a blouse as sheer as a negligee" hinged at the first "as", handed the
  * blouse an empty post-segment and sent `sheer` forward: the described-sheer

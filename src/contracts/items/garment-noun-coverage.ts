@@ -674,8 +674,31 @@ const OVERLAY_ROW_PREFIX = "overlay:";
 /**
  * A modifier only reaches past a comma if we let it, and we do not: "a
  * lace-trimmed cotton robe, sheer stockings" must leave the robe opaque.
+ *
+ * Every separator prose uses to end a garment description mid-line belongs here,
+ * not just the comma: the sentence enders (`.` `!` `?` `…`), the colon that opens
+ * a list ("wearing: a shirt hanging open: jeans"), and the DASHES — em, en, and
+ * the spaced ASCII hyphen a keyboard types for them. The tokenizer erases every
+ * one of those characters (`garmentNounTokens` keeps only letter runs), so a
+ * missing separator does not merely fail to split — it leaves the two garments
+ * sharing one hinge-less window, which attaches wholly FORWARD: "a shirt hanging
+ * open — jeans" displaced the JEANS and left the stated-open shirt covering, the
+ * inversion the layering hinge exists to prevent.
+ *
+ * **Never a bare `-`.** The tokenizer keeps hyphenated compounds whole on
+ * purpose ("lace-trimmed", "off-the-shoulder"), and splitting inside one would
+ * turn a single opaque token into two words, one of them a `sheerModifiers` hit.
+ * Only whitespace on BOTH sides makes a hyphen the dash it is standing in for.
+ *
+ * A clause boundary — not a hinge — is the right strength for all of them: these
+ * separators end the previous garment's description outright rather than relating
+ * two garments, so each side scans its own windows, and the negation carry resets
+ * with the clause exactly as it does across a comma. The one exception composes
+ * unchanged: a clause OPENING with a `negationExceptions` word still inherits the
+ * previous clause's verdict, so "not wearing underwear — except a bra" wears the
+ * bra the same way the comma spelling does.
  */
-const CLAUSE_BOUNDARY = /[,;.\n]+/;
+const CLAUSE_BOUNDARY = /(?:[,;.:!?\n—–…]|\s-\s)+/;
 
 /** One clause as the garment nouns it names plus the token windows around them. */
 interface ClauseScan {
@@ -1041,7 +1064,8 @@ export interface OverlayGarmentReads {
  *
  * **The windows, and who owns them.** Every scan here reads the tokens between
  * two garment nouns (or between a noun and the clause edge); clause boundaries
- * (`,` `;` `.` newline) end them. A window BETWEEN two nouns belongs to both —
+ * (`,` `;` `.` `:` `!` `?` `…`, a dash — em, en, or a SPACED hyphen — and a
+ * newline) end them. A window BETWEEN two nouns belongs to both —
  * the first garment's post-modifier ground and the second's pre-modifier ground
  * are the same span — so `attachWindow` apportions it at the layering hinge
  * (`windowSplitters` always, bar an "as" a comparative span claimed; a
