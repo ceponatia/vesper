@@ -34,16 +34,18 @@ import type { WornItemInput } from "./visibility";
  * from the table below even though the noun registry knows them.
  *
  * **A named garment is not a worn one.** "without a shirt", "no panties", "not
- * wearing a bra", "her shirt hanging open", "gown pooled at her waist" all NAME
- * clothing while saying it is not covering anything, so `negationMarkers` /
- * `negatedWearingLeads` / `displacementMarkers` suppress the row entirely — unless
- * a `negationExceptions` word un-negates what comes after it ("not wearing
- * anything but a thong" is a worn thong). The failure directions are asymmetric
- * and decide the design: suppressing wrongly costs nothing — that garment
- * contributes nothing, which is the pre-overlay behavior, and on the free-text
- * path the caller's intimate-region gate then keeps the covered default — while
- * MISSING a displacement over-covers, and over-covering a bared body is the
- * failure this module exists to make impossible in the other direction.
+ * wearing a bra", "excluding a bra", "her shirt hanging open", "gown pooled at
+ * her waist" all NAME clothing while saying it is not covering anything, so
+ * `negationMarkers` / `negatedWearingLeads` / `exclusionMarkers` /
+ * `displacementMarkers` suppress the row entirely — unless a `negationExceptions`
+ * word un-negates what comes after it ("not wearing anything but a thong" is a
+ * worn thong, and `bareStateWords` is what arms that flip). The failure
+ * directions are asymmetric and decide the design: suppressing wrongly costs
+ * nothing — that garment contributes nothing, which is the pre-overlay behavior,
+ * and on the free-text path the caller's intimate-region gate keeps the covered
+ * default — while MISSING a displacement over-covers, and over-covering a bared
+ * body is the failure this module exists to make impossible in the other
+ * direction.
  * Under-covering a genuinely worn garment is the one thing that must never
  * happen, which is why every qualifier is scoped to ONE noun — window-scoped
  * negation with conjunction inheritance, and a shared window apportioned at its
@@ -325,6 +327,28 @@ export const negatedWearingLeads: ReadonlySet<string> = new Set([
 const WEARING = "wearing";
 
 /**
+ * Words that state a BARE body rather than deny a named garment — "wearing
+ * nothing under her dress", "nothing but a thong", "none of it". They are
+ * negation HITS in `segmentDenies`, but they get their own registry rather than
+ * joining `negationMarkers` because their job is different: a negation marker
+ * denies the noun it qualifies ("no bra"), while these qualify no noun at all —
+ * they deny the whole outfit, and the garment the sentence goes on to name is
+ * usually the ONE thing that is on. So what they really do here is ARM the
+ * exception flip, which is what keeps "nothing but a thong" a worn thong now that
+ * a standalone `exclusionMarkers` word denies on its own.
+ *
+ * Being a negation hit is still load-bearing on its own: without it "nothing but
+ * a thong" would read as a bare exclusion and lose the thong. What keeps that hit
+ * from stripping a genuinely worn garment is the layering hinge — "wearing
+ * nothing under her dress" apportions `wearing nothing under` to the span BEFORE
+ * the hinge, which no noun owns, so the dress keeps covering (`attachWindow`).
+ *
+ * Deliberately tiny, and only the pronouns: an adverbial "not at all" or a
+ * bare "no" is somebody else's registry.
+ */
+export const bareStateWords: ReadonlySet<string> = new Set(["nothing", "none"]);
+
+/**
  * Words that END a negation — everything after one is EXCEPTED from it, and so
  * is worn: "not wearing anything but a thong", "isn't wearing anything except a
  * bra", "nothing other than a corset". Read against the same segment as the
@@ -360,6 +384,30 @@ export const negationExceptions: ReadonlySet<string> = new Set([
   "barring",
   "than",
 ]);
+
+/**
+ * The `negationExceptions` words that DENY on their own — an exclusion with no
+ * negation anywhere before it to except FROM. "jeans, excluding a bra" and
+ * "everything except a bra" are stating what is NOT on, and reading them as mere
+ * exceptions emitted an opaque bra row over a bared chest.
+ *
+ * A strict SUBSET of `negationExceptions`, because the exceptive reading is still
+ * the primary one: these words only turn into denials when the flip has nothing
+ * to undo. The subset is where the precision lives, and "but" is why it exists —
+ * a standalone "but" is an ordinary coordinator ("without a shirt but jeans"
+ * keeps the jeans), so promoting the whole exception registry would strip a
+ * garment the prose plainly puts on. That leaves the exclusive "everything BUT a
+ * bra" unread — a known limitation, and the deliberate side of the trade: telling
+ * the two "but"s apart needs more context than a unigram scan has, and guessing
+ * wrong on the common one strips a worn garment.
+ *
+ * Only the words whose sole reading is exclusion-of-a-named-thing. "save" and
+ * "besides" are held out on purpose: "save" is a verb far more often than a
+ * preposition ("save her dress from the wash"), and a standalone "besides" is
+ * additive as readily as exceptive ("besides a bra, jeans and a tee"). Both still
+ * cancel a real negation, which is the reading that costs nothing when wrong.
+ */
+export const exclusionMarkers: ReadonlySet<string> = new Set(["except", "excluding", "barring"]);
 
 /**
  * Words that say a named garment is open, displaced, or off the body — worn in
@@ -436,18 +484,23 @@ export const negationCarryWords: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The HINGE in a window shared by two garment nouns — here, the layering
- * prepositions. The span between two nouns is the first one's post-modifier
- * ground AND the second one's pre-modifier ground at once, and only a word like
- * these says where one ends: "a shirt under an open jacket" puts `open` on the
- * jacket (the shirt keeps covering), "jacket unbuttoned over a tee" puts
- * `unbuttoned` on the jacket (the tee keeps covering). Reading such a window
+ * The HINGE in a window shared by two garment nouns — the layering prepositions
+ * and the clause transitions. The span between two nouns is the first one's
+ * post-modifier ground AND the second one's pre-modifier ground at once, and only
+ * a word like these says where one ends: "a shirt under an open jacket" puts
+ * `open` on the jacket (the shirt keeps covering), "jacket unbuttoned over a tee"
+ * puts `unbuttoned` on the jacket (the tee keeps covering). Reading such a window
  * whole displaced BOTH garments and bared the torso — the exact under-covering
  * the module comment calls the one unacceptable failure.
  *
- * Deliberately just the layering words. A hinge that is not one would split a
- * modifier off the noun it belongs to; a missing hinge hands a post-modifier to
- * the wrong garment.
+ * Deliberately just the layering words plus "while"/"whilst". A hinge that is not
+ * one would split a modifier off the noun it belongs to; a missing hinge hands a
+ * post-modifier to the wrong garment — which is what "a shirt hanging open while
+ * wearing jeans" did: with nothing to hinge on, the whole span attached forward,
+ * so `hanging open` displaced the JEANS and the stated-open shirt kept covering,
+ * inverting the sentence. "while" earns the unconditional treatment for the same
+ * reason a preposition does: it never premodifies the noun after it, so anything
+ * before it is finished business.
  *
  * **The layering prepositions must never join `negationCarryWords`.** The carry
  * check reads the WHOLE window on purpose, and these two registries pulling in
@@ -460,9 +513,10 @@ export const negationCarryWords: ReadonlySet<string> = new Set([
  * is what keeps "without a shirt or bra" one denial.
  *
  * Every word here hinges UNCONDITIONALLY, on first hit — a preposition genuinely
- * relates two garments, so an empty `toPrevious` ("a shirt under…") is the right
- * read. The two sets that cannot promise that are `coordinatorSplitters` and
- * `conditionalSplitters` below.
+ * relates two garments and a clause transition genuinely ends a phrase, so an
+ * empty `toPrevious` ("a shirt under…") is the right read. The two sets that
+ * cannot promise that are `coordinatorSplitters` and `conditionalSplitters`
+ * below.
  */
 export const windowSplitters: ReadonlySet<string> = new Set([
   "over",
@@ -472,6 +526,8 @@ export const windowSplitters: ReadonlySet<string> = new Set([
   "atop",
   "above",
   "below",
+  "while",
+  "whilst",
 ]);
 
 /**
@@ -585,32 +641,47 @@ function windowHas(segment: readonly string[], markers: ReadonlySet<string>): bo
 }
 
 /**
- * Does this segment DENY the garment named after it — a `negationMarkers` word,
- * or a `negatedWearingLeads` + "wearing" bigram, with no `negationExceptions`
- * word after it? The bigram is checked here and nowhere else, so a standalone
- * lead can never deny on its own.
+ * Does this segment DENY the garment named after it — a `negationMarkers` or
+ * `bareStateWords` word, or a `negatedWearingLeads` + "wearing" bigram, with no
+ * `negationExceptions` word after it? The bigram is checked here and nowhere
+ * else, so a standalone lead can never deny on its own.
  *
- * Positional, not boolean: the LAST negation must stand after the LAST exception.
- * "not wearing anything but a thong" negates at 0 and excepts at 3, so the thong
- * is worn; "but not wearing a shirt" excepts at 0 and negates at 1, so the shirt
- * is not. Reading either registry as a bare presence check gets one of those two
- * shapes wrong.
+ * Positional, not boolean, and three readings decided by which registry hit LAST:
+ *
+ * - **negation after every exception ⇒ denies.** "but not wearing a shirt"
+ *   excepts at 0 and negates at 1: the exception excepted nothing yet denied.
+ * - **exception after a real negation ⇒ worn.** "not wearing anything but a
+ *   thong" negates at 0 and excepts at 3, so the thong is on.
+ * - **an `exclusionMarkers` word with NO negation at all ⇒ denies.** "excluding a
+ *   bra" has nothing to except from, so the exclusion is itself the denial. Only
+ *   the exclusion subset flips this way; a bare "but" is a coordinator ("without
+ *   a shirt but jeans" keeps the jeans), and the segment simply has no verdict.
+ *
+ * Reading either registry as a bare presence check gets one of the three wrong.
  */
 function segmentDenies(segment: readonly string[]): boolean {
   // Explicitly typed on purpose: loop-carried indices read and reassigned in the
   // same scan are where this module has hit TS7022 (implicit-`any` cycle) before.
   let lastNegation: number = -1;
   let lastException: number = -1;
+  let lastExclusion: number = -1;
   for (let index = 0; index < segment.length; index += 1) {
     const token = segment[index];
     if (token === undefined) continue;
-    if (negationMarkers.has(token) || (negatedWearingLeads.has(token) && segment[index + 1] === WEARING)) {
+    if (
+      negationMarkers.has(token) ||
+      bareStateWords.has(token) ||
+      (negatedWearingLeads.has(token) && segment[index + 1] === WEARING)
+    ) {
       lastNegation = index;
       continue;
     }
-    if (negationExceptions.has(token)) lastException = index;
+    if (negationExceptions.has(token)) {
+      lastException = index;
+      if (exclusionMarkers.has(token)) lastExclusion = index;
+    }
   }
-  return lastNegation > lastException;
+  return lastNegation > lastException || (lastNegation < 0 && lastExclusion >= 0);
 }
 
 /** One window's tokens divided between the garment before it and the garment after it. */
@@ -691,9 +762,15 @@ function findHinge(window: readonly string[]): number {
 /**
  * Apportion one window to the nouns on either side of it.
  *
- * - **No noun before it** (clause-initial): wholly FORWARD — "unbuttoned jacket".
  * - **No noun after it** (clause-final): wholly BACKWARD — "her shirt hanging
- *   open", "gown pooled at her waist".
+ *   open", "gown pooled at her waist". Hinge or no hinge: the post-noun
+ *   displacement scan wants the whole tail, and no negation reads it.
+ * - **No noun before it** (clause-initial): the post-hinge remainder, FORWARD.
+ *   "unbuttoned jacket" is hinge-less and attaches whole, while "wearing nothing
+ *   under her dress" hands the dress only "her" — the pre-hinge tokens are
+ *   DISCARDED, because there is no previous noun to own them. Dropping them is
+ *   the point: they qualify something the text never named, so letting them reach
+ *   forward would strip a garment on a qualifier that was never its own.
  * - **Shared**: split at the hinge `findHinge` picks, which is excluded from both
  *   sides. "a shirt under an open jacket" gives the shirt an empty post-segment
  *   and the jacket "an open"; "jacket unbuttoned over a tee" gives the jacket
@@ -707,9 +784,9 @@ function findHinge(window: readonly string[]): number {
  * qualified — the under-covering the module comment forbids.
  */
 function attachWindow(window: readonly string[], hasPrevious: boolean, hasNext: boolean): WindowAttachment {
-  if (!hasPrevious) return { toPrevious: [], toNext: window };
   if (!hasNext) return { toPrevious: window, toNext: [] };
   const hinge = findHinge(window);
+  if (!hasPrevious) return { toPrevious: [], toNext: hinge < 0 ? window : window.slice(hinge + 1) };
   if (hinge < 0) return { toPrevious: [], toNext: window };
   return { toPrevious: window.slice(0, hinge), toNext: window.slice(hinge + 1) };
 }
@@ -727,7 +804,10 @@ function attachWindow(window: readonly string[], hasPrevious: boolean, hasNext: 
  * marker follows it, so "shirt unbuttoned and hanging open with jeans" keeps the
  * whole participle phrase on the shirt; `conditionalSplitters`' "with" only once
  * a marker precedes it, so "a shirt with buttons open and jeans" opens the shirt
- * and leaves the jeans on), and each noun scans only the segment it owns.
+ * and leaves the jeans on), and each noun scans only the segment it owns. A
+ * clause-INITIAL window splits at the same hinge and keeps only the remainder —
+ * the tokens before it modify a garment the text never named, so no noun owns
+ * them ("wearing nothing under her dress" hands the dress just "her").
  *
  * - **Sheer** reads the owned PRE segment: a modifier there makes THIS garment
  *   sheer and is then spent, so "a sheer robe over a shift" leaves the shift
@@ -737,16 +817,19 @@ function attachWindow(window: readonly string[], hasPrevious: boolean, hasNext: 
  *   adjective is inert — inert is right, and better than dressing the jacket in
  *   the chemise's fabric.
  * - **Negation** reads the same owned segment and SUPPRESSES the row: "without a
- *   shirt" — or "not wearing a shirt" (`negatedWearingLeads`) — names a shirt
- *   that is not on — unless a `negationExceptions` word stands after the negation
- *   in that segment, which un-negates what follows ("not wearing anything but a
- *   thong" wears the thong). It carries to the next noun when the window between
- *   them is nothing but `negationCarryWords`, and that check reads the window
- *   WHOLE, unapportioned: "without a shirt or bra" denies both, while "no shirt
- *   under her jacket" keeps the jacket precisely because the hinge it holds is not
- *   filler. An empty window carries vacuously, which is the same reading. What
- *   carries is the segment's VERDICT, so an excepted noun carries its
- *   un-negated state on ("not wearing anything but a bra or panties" wears both).
+ *   shirt" — or "not wearing a shirt" (`negatedWearingLeads`), or a bare
+ *   `exclusionMarkers` word with nothing to except from ("excluding a bra") —
+ *   names a shirt that is not on, unless a `negationExceptions` word stands after
+ *   a real negation in that segment, which un-negates what follows ("not wearing
+ *   anything but a thong", "nothing but a thong", where the `bareStateWords` hit
+ *   is the negation being excepted). It carries to the next noun when the window
+ *   between them is nothing but `negationCarryWords`, and that check reads the
+ *   window WHOLE, unapportioned: "without a shirt or bra" denies both — as does
+ *   "excluding a bra or panties" — while "no shirt under her jacket" keeps the
+ *   jacket precisely because the hinge it holds is not filler. An empty window
+ *   carries vacuously, which is the same reading. What carries is the segment's
+ *   VERDICT, so an excepted noun carries its un-negated state on ("not wearing
+ *   anything but a bra or panties" wears both).
  * - **Displacement** reads both owned segments and suppresses: "unbuttoned
  *   jacket" puts the marker before the noun, "her shirt hanging open" after it,
  *   and "a shirt under an open jacket" puts it after one noun and before another

@@ -100,7 +100,12 @@ through the described gown.
   hinge-less shared span goes wholly forward (English stacks bare adjectives ahead
   of the noun). Three hinge registries, in the order the scan tries them:
   `windowSplitters` — the layering prepositions (over, under, underneath, beneath,
-  atop, above, below) — hinge on first hit. **Coordinators are conditional**
+  atop, above, below) plus the clause transitions (while, whilst) — hinge on first
+  hit. A clause transition earns the unconditional treatment for the same reason a
+  preposition does: it never premodifies the noun after it, so everything before it
+  is finished business — without it, "a shirt hanging open while wearing jeans"
+  attached whole and forward, displacing the JEANS while the open shirt kept
+  covering. **Coordinators are conditional**
   (`coordinatorSplitters` — and, or, nor): one does NOT hinge when a
   `displacementMarkers` word stands between it and the next hinge candidate,
   because displacement markers are participial POSTmodifiers, so "shirt unbuttoned
@@ -114,8 +119,13 @@ through the described gown.
   buttons open and jeans" — the shirt is open, the jeans are on) or plain
   accompaniment ("a jacket with a tee"), and splitting there inverted both; marked,
   it is a layering hinge like the prepositions ("shirt unbuttoned with jeans"). A
-  clause-initial span is all pre-modifier ("unbuttoned jacket"), a clause-final one
-  all post-modifier ("her shirt hanging open"). Reading a shared span whole is what
+  clause-final span is all post-modifier ("her shirt hanging open") — hinge or no
+  hinge, since the displacement scan wants the whole tail and no negation reads it.
+  A clause-INITIAL span is pre-modifier ground too, but it splits at the same hinge
+  and keeps only the remainder: hinge-less it is all the noun's ("unbuttoned
+  jacket"), while the tokens before a hinge qualify a garment the text never named,
+  so nobody owns them ("wearing nothing under her dress" hands the dress just
+  "her", and the dress keeps covering). Reading a shared span whole is what
   "a shirt under an open jacket" broke: `open` displaced the shirt as well as the
   jacket and a covered torso read BARE. No hinge but the coordinators may join
   `negationCarryWords` — the carry check reads its window UNSPLIT, which is exactly
@@ -136,8 +146,21 @@ through the described gown.
   last exception, so "not wearing anything but a thong" wears the thong (pelvis
   covered, torso bare) while "but not wearing a shirt" still denies. Exceptions are
   deliberately NOT `negationCarryWords` — "without a shirt but jeans" has to keep
-  the jeans. Multiword exceptives ("apart from", "aside from") are out of scope:
-  this scanner reads unigrams, so the denial stands and the garment simply
+  the jeans. With **no negation anywhere to except from**, an exception flips the
+  other way and becomes the denial itself ("jeans, excluding a bra", "everything
+  except a bra" — which used to emit an opaque chest row over a bared one), and it
+  carries like any other ("excluding a bra or panties" denies both). Only the
+  `exclusionMarkers` subset (except, excluding, barring) flips: a standalone "but"
+  is an ordinary coordinator, and "save"/"besides" read as verb and additive as
+  readily as exceptive. That leaves "everything **but** a bra" out of reach on
+  purpose — the coordinator reading is too common to promote on context this thin.
+  `bareStateWords` (nothing, none) are what keep the flip honest: they state a bare
+  BODY rather than deny a named garment, so they are negation hits in their own
+  registry, which is what makes "nothing but a thong" a worn thong rather than a
+  bare exclusion. The layering hinge is what stops that hit from stripping a
+  garment that IS on — "wearing nothing under her dress" apportions everything up
+  to `under` to a span no noun owns. Multiword exceptives ("apart from", "aside
+  from") are out of scope: this scanner reads unigrams, so the denial stands and the garment simply
   contributes nothing — and "aside" is a displacement marker before it is anything
   else. A denial carries to the next noun only across pure filler
   (`negationCarryWords` — and/or/the/her/a…), so "without a shirt or bra" denies

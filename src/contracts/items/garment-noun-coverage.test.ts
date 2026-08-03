@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { expectRefsResolve } from "@/test/registry-invariants";
 import { bodyLocationRegistry } from "../body/locations";
 import {
+  bareStateWords,
   conditionalSplitters,
   coordinatorSplitters,
   displacementMarkers,
+  exclusionMarkers,
   garmentNounCoverage,
   negatedWearingLeads,
   negationCarryWords,
@@ -215,11 +217,20 @@ describe("overlayWornInputs — named, but not covering", () => {
     expect(rowFor("without anything but a thong", "thong")).toBeDefined();
   });
 
-  it("every exception word un-negates both denial shapes, and denies nothing alone", () => {
+  it("every exception word un-negates both denial shapes", () => {
     for (const word of negationExceptions) {
       expect(overlayWornInputs(`not wearing anything ${word} a robe`), `bigram + ${word}`).toHaveLength(1);
       expect(overlayWornInputs(`without anything ${word} a robe`), `marker + ${word}`).toHaveLength(1);
-      expect(overlayWornInputs(`${word} a robe`), `${word} alone`).toHaveLength(1);
+    }
+  });
+
+  it("alone, only an EXCLUSION denies — every other exception word is inert", () => {
+    // The split the `exclusionMarkers` subset exists for: with no negation to
+    // except from, "excluding a robe" is itself the denial, while a bare "but" is
+    // an ordinary coordinator and must leave the garment on.
+    for (const word of negationExceptions) {
+      const rows = overlayWornInputs(`${word} a robe`);
+      expect(rows.length, `${word} alone`).toBe(exclusionMarkers.has(word) ? 0 : 1);
     }
   });
 
@@ -251,6 +262,91 @@ describe("overlayWornInputs — named, but not covering", () => {
     // the negation scan anyway: it is a displacement marker first.
     expect(overlayWornInputs("not wearing anything apart from a thong")).toEqual([]);
     expect(overlayWornInputs("not wearing anything aside from a thong")).toEqual([]);
+  });
+});
+
+/**
+ * The third reading of an exception word: with no negation anywhere before it to
+ * except FROM, an `exclusionMarkers` word is itself the denial. "jeans, excluding
+ * a bra" and "everything except a bra" state what is NOT on, and reading them as
+ * mere exceptions emitted an opaque chest row over a bared one — the
+ * over-covering direction this module exists to close.
+ *
+ * The subset is the whole precision story, and it is why the flip cannot be read
+ * off `negationExceptions` wholesale: a standalone "but" is an ordinary
+ * coordinator ("without a shirt but jeans"), so promoting it would strip a
+ * garment the prose plainly puts on.
+ */
+describe("overlayWornInputs — an exclusion with nothing to except from", () => {
+  it("denies the garment an exclusion names", () => {
+    const text = "jeans, excluding a bra";
+    expect(rowFor(text, "bra")).toBeUndefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("bare");
+    expect(regions.pelvis).toBe("covered");
+  });
+
+  it("reads the total-wardrobe phrasing too", () => {
+    expect(rowFor("everything except a bra", "bra")).toBeUndefined();
+    expect(regionsOf("everything except a bra").torso).toBe("bare");
+  });
+
+  it("rides the conjunction carry like any other denial", () => {
+    expect(overlayWornInputs("excluding a bra or panties")).toEqual([]);
+  });
+
+  it("keeps the coordinating 'but' out of it — the protected phrasing", () => {
+    // The reason `exclusionMarkers` is a strict subset rather than the whole
+    // exception registry: here "but" joins two clauses, and denying on it would
+    // strip jeans the sentence puts on.
+    const text = "without a shirt but jeans";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+    // Same word, other order: a negation AFTER the exception still stands.
+    expect(rowFor("jeans but no shirt", "shirt")).toBeUndefined();
+    expect(rowFor("jeans but no shirt", "jeans")).toBeDefined();
+    expect(overlayWornInputs("but not wearing a shirt")).toEqual([]);
+  });
+
+  it("every exclusion word is an exception word first", () => {
+    // Subset, not a parallel registry: an exclusion still CANCELS a real negation
+    // ("not wearing anything except a bra" wears the bra), and only flips to a
+    // denial when there is no negation to cancel.
+    expect([...exclusionMarkers].filter((word) => !negationExceptions.has(word))).toEqual([]);
+    for (const word of exclusionMarkers) {
+      expect(overlayWornInputs(`not wearing anything ${word} a robe`), `${word} cancels`).toHaveLength(1);
+      expect(overlayWornInputs(`${word} a robe`), `${word} alone`).toEqual([]);
+    }
+  });
+
+  it("a bare-state word is the negation an exception flips, and nothing else", () => {
+    // `bareStateWords` deny no garment of their own — they state a bare BODY — but
+    // they are negation hits, which is what keeps "nothing but a thong" a worn
+    // thong now that a standalone exclusion denies.
+    expect(rowFor("nothing but a thong", "thong")).toBeDefined();
+    expect(regionsOf("nothing but a thong").pelvis).toBe("covered");
+    expect(rowFor("she wore nothing except the apron", "apron")).toBeDefined();
+    for (const word of bareStateWords) {
+      expect(overlayWornInputs(`wearing ${word} but a robe`), `${word} + exception`).toHaveLength(1);
+      // …and the layering hinge fences the hit off the garment underneath.
+      expect(overlayWornInputs(`wearing ${word} under a robe`), `${word} + hinge`).toHaveLength(1);
+    }
+  });
+
+  it("keeps the bare-state words in their own registry", () => {
+    // In `negationMarkers` they would deny the noun they precede, which is the
+    // opposite of what "wearing nothing under her dress" says; in
+    // `negationExceptions` or `negationCarryWords` they would cancel or carry
+    // denials they are supposed to BE.
+    const words = [...bareStateWords];
+    expect(words.filter((word) => negationMarkers.has(word) || negatedWearingLeads.has(word))).toEqual([]);
+    expect(words.filter((word) => negationExceptions.has(word) || negationCarryWords.has(word))).toEqual([]);
+    expect(
+      words.filter(
+        (word) => windowSplitters.has(word) || coordinatorSplitters.has(word) || conditionalSplitters.has(word),
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -295,8 +391,33 @@ describe("overlayWornInputs — which garment a shared window modifies", () => {
     expect(rowFor(text, "bra")).toBeDefined();
   });
 
-  it("a clause-initial window attaches wholly FORWARD", () => {
+  it("a clause transition hinges like a preposition", () => {
+    // The inversion this fixes: with no hinge in "hanging open while wearing",
+    // the whole span attached forward, so the participle displaced the JEANS and
+    // the stated-open shirt kept covering — the sentence read backwards.
+    const text = "a shirt hanging open while wearing jeans";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("bare");
+    expect(regions.pelvis).toBe("covered");
+    // The forward half is the inert standalone "wearing", exactly as it is in
+    // "wearing only a red thong".
+    expect(rowFor("a shirt hanging open whilst wearing jeans", "jeans")).toBeDefined();
+  });
+
+  it("a clause-initial window attaches FORWARD from its hinge", () => {
+    // Hinge-less, that is the whole span: the marker is the jacket's.
     expect(overlayWornInputs("unbuttoned jacket")).toEqual([]);
+    expect(overlayWornInputs("unbuttoned jacket over a tee").map((row) => row.name)).toEqual(["tee"]);
+    // Hinged, only the remainder reaches the noun — the tokens before the hinge
+    // qualify a garment the text never named, so no noun owns them. Without the
+    // split, the `nothing` hit sailed forward and stripped a dress that is ON.
+    expect(rowFor("wearing nothing under her dress", "dress")).toBeDefined();
+    expect(regionsOf("wearing nothing under her dress").torso).toBe("covered");
+    expect(rowFor("with nothing on under her coat", "coat")).toBeDefined();
+    // The same rescue for a negation that was never about the later garment.
+    expect(rowFor("not wearing anything under her dress", "dress")).toBeDefined();
   });
 
   it("a hinge-less shared window attaches FORWARD (English stacks adjectives ahead of the noun)", () => {
@@ -364,8 +485,9 @@ describe("overlayWornInputs — which garment a shared window modifies", () => {
   });
 
   it("only the coordinators may be both a hinge and negation filler", () => {
-    // A layering preposition in `negationCarryWords` would carry the denial above,
-    // and so would a conditional hinge — "no shirt with jeans" must keep the jeans.
+    // A layering preposition or clause transition in `negationCarryWords` would
+    // carry the denial above, and so would a conditional hinge — "no shirt with
+    // jeans" must keep the jeans, and "no jacket while wearing a shirt" the shirt.
     // The coordinators are in both on purpose: "or" hinges AND carries, which is
     // what makes "without a shirt or bra" one denial. Asserted as set identity
     // against `coordinatorSplitters` rather than a literal, so neither registry can
