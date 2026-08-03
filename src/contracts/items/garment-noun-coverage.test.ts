@@ -685,10 +685,12 @@ describe("overlayWornInputs — which garment a shared window modifies", () => {
  * Both halves of one sentence, backwards.
  *
  * So the span is read whole. Neither "as" hinges, the inner words describe the
- * garment BEFORE it, and the noun after it — reached across nothing but filler —
- * is the yardstick the comparison measures against, which is not clothing on
- * anybody: it emits no row AND no denial, exactly as an unmapped noun does.
- * "as well as" coordinates rather than compares, and keeps the plain hinge.
+ * garment BEFORE it — sheer makes it see-through, displacement denies it — and the
+ * noun after it is the yardstick the comparison measures against, which is not
+ * clothing on anybody: it emits no row AND no denial, exactly as an unmapped noun
+ * does. What ends a yardstick phrase is a HINGE word, never an adjective: "as
+ * sheer as a black negligee" is still a simile. "as well as" coordinates rather
+ * than compares, and keeps the plain hinge.
  */
 describe("overlayWornInputs — the comparative 'as … as'", () => {
   it("puts the comparison's fabric on the garment it describes (the P1)", () => {
@@ -718,13 +720,33 @@ describe("overlayWornInputs — the comparative 'as … as'", () => {
     expect(rowFor(text, "jacket")?.opacity).toBe("opaque");
   });
 
-  it("a substantive token after the span cancels the object reading", () => {
-    // Only filler between the closing "as" and the noun makes that noun the
-    // yardstick. "over a negligee" is the sentence moving on to a second garment.
-    const text = "a blouse as sheer as glass over a negligee";
-    expect(rowFor(text, "blouse")?.opacity).toBe("sheer");
-    expect(rowFor(text, "negligee")?.opacity).toBe("opaque");
-    expect(regionsOf(text).torso).toBe("covered");
+  it("a MODIFIED yardstick is still a yardstick — an adjective ends no simile", () => {
+    // The finding: "black" is not a carry word, so the negligee read as the
+    // sentence moving on and landed a WORN opaque row — which beats the blouse's
+    // sheer row region-wise, reporting a covered torso for prose that calls it
+    // see-through. An adjective is part of the simile, not the end of it.
+    const reads = overlayGarmentReads("a blouse as sheer as a black negligee");
+    expect(reads.worn.map((row) => row.name)).toEqual(["blouse"]);
+    expect(reads.worn[0]?.opacity).toBe("sheer");
+    // Nobody's garment in either direction — the yardstick is not denied either.
+    expect(reads.deniedCoverage).toEqual([]);
+    expect(regionsOf("a blouse as sheer as a black negligee").torso).toBe("sheer");
+  });
+
+  it("a HINGE word after the span cancels the object reading", () => {
+    // What ends a yardstick phrase is a layering or joining word, because that is
+    // what says a genuinely worn garment follows. "over a negligee" is the
+    // sentence moving on to a second garment…
+    const layered = "a blouse as sheer as glass over a negligee";
+    expect(rowFor(layered, "blouse")?.opacity).toBe("sheer");
+    expect(rowFor(layered, "negligee")?.opacity).toBe("opaque");
+    expect(regionsOf(layered).torso).toBe("covered");
+    // …and a coordinator does the same job: the simile is spent on the blouse and
+    // the jeans are a second garment, not a second yardstick.
+    const joined = "a blouse as sheer as silk and jeans";
+    expect(overlayWornInputs(joined).map((row) => row.name)).toEqual(["blouse", "jeans"]);
+    expect(rowFor(joined, "blouse")?.opacity).toBe("sheer");
+    expect(regionsOf(joined).pelvis).toBe("covered");
   });
 
   it("reads a clause-FINAL span backward too — the postmodifier is the noun's", () => {
@@ -732,6 +754,38 @@ describe("overlayWornInputs — the comparative 'as … as'", () => {
     // …and an inner that says nothing about fabric leaves it opaque, which is
     // what keeps "a gown as dark as night" a dressed gown.
     expect(rowFor("a gown as dark as night", "gown")?.opacity).toBe("opaque");
+  });
+
+  it("an OPEN comparison denies the garment it describes, as a sheer one thins it", () => {
+    // Displacement inside the span belongs to the preceding noun exactly as sheer
+    // does: "as open as a gown" states an open SHIRT. While only sheer travelled
+    // backward, the stated-open shirt kept covering — the span had already
+    // swallowed `open`, and the yardstick that would have carried it emits
+    // nothing — so a bared torso read as covered. Displacement is a denial
+    // everywhere else in this module, and it is one here.
+    const reads = overlayGarmentReads("a shirt as open as a gown");
+    expect(reads.worn).toEqual([]);
+    // Exactly the SHIRT's coverage: a worn or denied gown would have brought the
+    // pelvis and the legs with it, so the yardstick still says nothing either way.
+    expect([...reads.deniedCoverage].sort()).toEqual([...(garmentNounCoverage.get("shirt")?.coverage ?? [])].sort());
+  });
+
+  it("denies per region, so the rest of the look keeps covering", () => {
+    // What the caller reads: the torso the open shirt bares comes back bare, and
+    // the jeans past the hinge still cover the pelvis.
+    const text = "a shirt as open as a gown over jeans";
+    expect(overlayWornInputs(text).map((row) => row.name)).toEqual(["jeans"]);
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("bare");
+    expect(regions.pelvis).toBe("covered");
+  });
+
+  it("lets suppression win when one span says both", () => {
+    // "as sheer and open as a gown" makes two claims about the shirt, and they
+    // do not compete: a row that is never emitted has no opacity to be sheer.
+    const reads = overlayGarmentReads("a shirt as sheer and open as a gown");
+    expect(reads.worn).toEqual([]);
+    expect(reads.deniedCoverage).toContain("chest");
   });
 
   it("overrides the opaque-wins dedup, because it is not a second naming", () => {
