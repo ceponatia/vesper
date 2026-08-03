@@ -138,11 +138,13 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
   ADD cover: the fix for a modelled thong plus an overlay reading "pale lavender gown"
   computing `torso: "bare"` and putting chest anatomy in the scene prompt. On the **free-text**
   path they are the whole wardrobe, and the precedence is: an exposure claim still wins
-  (`outfit_exposed`, or a modelled actor wearing nothing — the archivist's "the gown pooled at
-  her waist" has to beat the gown noun in the text it describes), then the named garments
-  answer PER REGION ("wearing only a red thong" is pelvis-covered and torso-bare, which the old
-  all-or-nothing fallback could not express), then the covered default. Text naming no clothing
-  — or naming only garments that answer for neither intimate region, like a hat — keeps that
+  (`outfit_exposed`, or a modelled actor wearing nothing — a stated bare has to beat any garment
+  noun still sitting in the text it describes), then the named garments answer PER REGION
+  ("wearing only a red thong" is pelvis-covered and torso-bare, which the old all-or-nothing
+  fallback could not express), then the covered default. A noun the text itself DENIES or
+  DISPLACES ("without a shirt", "the gown pooled at her waist") contributes nothing to begin
+  with, so the flag is the backstop rather than the only guard. Text naming no clothing — or
+  naming only garments that answer for neither intimate region, like a hat — keeps that
   default: an unmodelled wardrobe is unknown, not nude.
 - **Archivist changes.** The archivist's `outfit` field (`contracts/turns/chat-archivist.ts`)
   drives two grammars, folded by `foldOutfitProposal` in `finalizeChatState`: a whole-outfit

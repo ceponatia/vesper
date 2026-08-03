@@ -190,6 +190,16 @@ const GARMENT_COMPOUNDS: ReadonlyMap<string, string> = new Map([
   ["tube top", "tube_top"],
   ["sports bra", "bra"],
   ["dress shirt", "shirt"],
+  // Bikini SEPARATES are their own identities, never the pair. Coverage is the
+  // reason: bare "bikini" claims chest AND pelvis, so without these a bikini top
+  // covered the pelvis and bottoms covered the chest — anatomy suppressed on a
+  // garment that is demonstrably not there (garment-noun-coverage.ts). Distinct
+  // identities also give the archivist's matcher two things to tell apart, so
+  // "she unties the bikini top" can never resolve to the bottoms.
+  ["bikini top", "bikini_top"],
+  ["bikini tops", "bikini_top"],
+  ["bikini bottom", "bikini_bottom"],
+  ["bikini bottoms", "bikini_bottom"],
 ]);
 
 /** The regular English plural of a registry singular (the only forms folded automatically). */
