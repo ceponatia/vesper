@@ -143,7 +143,10 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
   ("wearing only a red thong" is pelvis-covered and torso-bare, which the old all-or-nothing
   fallback could not express), then the covered default. A noun the text itself DENIES or
   DISPLACES ("without a shirt", "not wearing a shirt", "the gown pooled at her waist")
-  contributes nothing to begin with, so the flag is the backstop rather than the only guard.
+  contributes no coverage row, so the flag is the backstop rather than the only guard — and
+  when the denials are ALL the text says, they answer per region themselves: "not wearing a
+  shirt" reads torso-bare with the untouched rest still covered, where zero rows used to look
+  exactly like prose naming no clothing and came back fully dressed.
   Text naming no clothing — or naming only garments that answer for neither intimate region,
   like a hat — keeps that default: an unmodelled wardrobe is unknown, not nude. So does a
   DEGRADED load: worn ids that resolve to nothing land on this path too, and the nouns are

@@ -1,12 +1,14 @@
 import {
   actorHasGarmentInstances,
   exposedRegions,
+  exposureRegionsTouched,
   FULLY_COVERED,
   garmentBlueprintFor,
   garmentEffectiveCoverage,
   GARMENT_PLAYER_ACTOR,
   intimateRegionsBare,
   outfitItems,
+  overlayGarmentReads,
   overlayWornInputs,
   resolveOutfitPreset,
   resolveWardrobeVisibility,
@@ -19,6 +21,7 @@ import {
   type GarmentDescriptor,
   type GarmentInstanceState,
   type PersonaProfile,
+  type RegionCoverage,
   type RegionExposure,
   type WornItemInput,
   type WornVisibility,
@@ -198,21 +201,39 @@ function partVisibilityOf(worn: readonly WornItemInput[]): Record<string, WornVi
 
 /**
  * Exposure the overlay TEXT alone can answer for, or `undefined` when it cannot
- * (`overlayWornInputs`, contracts). The free-text path has no other wardrobe, so
+ * (`overlayGarmentReads`, contracts). The free-text path has no other wardrobe, so
  * named clothing is the read: "wearing only a red thong" is genuinely torso-bare
  * and pelvis-covered, and getting that per-region is the whole point.
  *
- * The gate is that the named garments must cover an INTIMATE region. A garment
- * noun can be exposure-irrelevant — "a wide-brimmed straw hat" names real
- * clothing and says nothing whatever about the body — and letting it answer would
- * read every region it does not touch as naked, which is the loudest possible
- * wrong answer. Silent there, so the caller keeps the conservative default.
+ * The gate is that the text must speak about an INTIMATE region, and it can do so
+ * in two ways — a garment covering one, or a garment DENIED over one:
+ *
+ * - **Worn rows reaching torso or pelvis answer alone**, exactly as they always
+ *   have: `exposedRegions` verbatim, feet included. A described outfit that names
+ *   no shoes deliberately reads barefoot, and folding denials in here would
+ *   second-guess a read nobody complained about.
+ * - **Otherwise a denial over an intimate region answers**, merged. "not wearing
+ *   a shirt" (and "everything except a bra") used to produce ZERO rows — the same
+ *   shape as prose naming no clothing — so the covered default came back over an
+ *   explicitly bared chest. Per region: a worn row still wins where it covers (a
+ *   hat or boots keeps its own region), a denial bares what it touched, and
+ *   everything else stays covered. That last default is the conservative half —
+ *   a denial states what is MISSING, and says nothing about the rest of the body,
+ *   so the rest stays dressed.
+ * - **Neither ⇒ silent**, and the caller keeps the covered default. "a
+ *   wide-brimmed straw hat" names real clothing and says nothing whatever about
+ *   the body; letting it answer would read every region it does not touch as
+ *   naked, the loudest possible wrong answer.
  */
 function overlayTextExposure(text: string): RegionExposure | undefined {
-  const rows = overlayWornInputs(text);
-  if (rows.length === 0) return undefined;
-  const exposure = exposedRegions(rows);
-  return exposure.torso === "bare" && exposure.pelvis === "bare" ? undefined : exposure;
+  const { worn, deniedCoverage } = overlayGarmentReads(text);
+  const exposure = exposedRegions(worn);
+  if (exposure.torso !== "bare" || exposure.pelvis !== "bare") return exposure;
+  const denied = new Set(exposureRegionsTouched(deniedCoverage));
+  if (!denied.has("torso") && !denied.has("pelvis")) return undefined;
+  const merge = (region: keyof RegionExposure): RegionCoverage =>
+    exposure[region] !== "bare" ? exposure[region] : denied.has(region) ? "bare" : "covered";
+  return { torso: merge("torso"), pelvis: merge("pelvis"), legs: merge("legs"), feet: merge("feet") };
 }
 
 /**
@@ -248,10 +269,12 @@ function garmentActorModelled(garments: ChatGarmentStore | undefined, actorId: s
  * **The free-text overlay carries coverage on both paths** (`overlayWornInputs`):
  * garment nouns in it are read as garments. Structured, they only ADD cover to
  * the real items — the fix for a described gown that computed torso-bare and put
- * chest anatomy in a scene prompt. Free-text, they ARE the coverage, unless the
- * exposure flag has claimed bare (which still wins), they name nothing, or the
- * wardrobe was not free-text at all and merely failed to load (below) — nouns
- * never get to speak for items nobody could read.
+ * chest anatomy in a scene prompt; a denial never strips a modelled item, because
+ * the wardrobe knows what is on this body better than prose about it does.
+ * Free-text, they ARE the coverage — worn nouns AND denied ones
+ * (`overlayTextExposure`) — unless the exposure flag has claimed bare (which still
+ * wins), they name nothing, or the wardrobe was not free-text at all and merely
+ * failed to load (below) — nouns never get to speak for items nobody could read.
  */
 export async function resolveChatWardrobe(
   state: {
@@ -319,10 +342,12 @@ export async function resolveChatWardrobe(
   // Precedence, owner ruling: a bare claim still WINS. The archivist writes
   // `exposed: true` for "the gown pooled at her waist", and that beat has to beat
   // the gown noun still sitting in the text it describes. Only with no such claim
-  // does the text get to dress her — per region, so "wearing only a red thong" is
+  // does the text get to speak — per region, so "wearing only a red thong" is
   // pelvis-covered AND torso-bare instead of the flat FULLY_COVERED that used to
-  // be the only alternative to naked. Prose naming no clothing at all keeps that
-  // conservative default: an unmodelled wardrobe is unknown, not nude.
+  // be the only alternative to naked, and "not wearing a shirt" is torso-bare
+  // rather than silently dressed. Prose naming no clothing at all — neither worn
+  // nor denied — keeps the conservative default: an unmodelled wardrobe is
+  // unknown, not nude.
   const exposure = stripped || state.outfitExposed ? exposedRegions([]) : (overlayExposure ?? FULLY_COVERED);
   const exposed = intimateRegionsBare(exposure);
   return {

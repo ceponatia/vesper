@@ -100,12 +100,16 @@ through the described gown.
   hinge-less shared span goes wholly forward (English stacks bare adjectives ahead
   of the noun). Three hinge registries, in the order the scan tries them:
   `windowSplitters` — the layering prepositions (over, under, underneath, beneath,
-  atop, above, below) plus the clause transitions (while, whilst) — hinge on first
-  hit. A clause transition earns the unconditional treatment for the same reason a
-  preposition does: it never premodifies the noun after it, so everything before it
-  is finished business — without it, "a shirt hanging open while wearing jeans"
-  attached whole and forward, displacing the JEANS while the open shirt kept
-  covering. **Coordinators are conditional**
+  atop, above, below) plus the clause transitions (while, whilst, as) — hinge on
+  first hit. A clause transition earns the unconditional treatment for the same
+  reason a preposition does: it never premodifies the noun after it, so everything
+  before it is finished business — without it, "a shirt hanging open while wearing
+  jeans" attached whole and forward, displacing the JEANS while the open shirt kept
+  covering. "as" is in despite its comparative reading ("a robe soft as silk over a
+  chemise"): the hinge fires on first hit and nothing fenceable precedes a
+  comparative, so both garments keep covering, while the transition reading ("a
+  shirt hanging open as she wears jeans") is the one that costs a garment when
+  missed. **Coordinators are conditional**
   (`coordinatorSplitters` — and, or, nor): one does NOT hinge when a
   `displacementMarkers` word stands between it and the next hinge candidate,
   because displacement markers are participial POSTmodifiers, so "shirt unbuttoned
@@ -174,14 +178,43 @@ through the described gown.
   negation would have stripped that sweater. What carries is the segment's verdict,
   so an excepted noun carries its un-negated state on ("not wearing anything but a
   bra or panties" wears both). The failure directions are asymmetric on purpose:
-  suppressing wrongly just costs that garment's coverage (the pre-overlay behavior,
-  and on the free-text path the intimate-region gate below then keeps the covered
-  default), while a MISSED displacement leaves bared anatomy reading as covered.
+  suppressing wrongly costs that garment's coverage, and on the free-text path
+  (where the denial now speaks — see below) reports that region bare, while a
+  MISSED displacement leaves bared anatomy reading as covered with nothing but the
+  archivist's exposure flag to fight it. Both cost something now; the second is
+  still the worse one, which is why the qualifier registries stay wide and the
+  coverage table stays narrow.
   Hyphenated compounds stay one token here too, so "off-the-shoulder gown" still
   covers.
+- **A denial is information, not the absence of it.** A suppressed noun leaves no
+  row, and for the union path that is the whole story — but "not wearing a shirt"
+  alone then produced ZERO rows, which is the same shape as prose naming no
+  clothing, so the free-text caller's covered default dressed an explicitly bared
+  chest. So the scan reports both sides: `overlayGarmentReads(text)` returns the
+  `worn` rows **and** `deniedCoverage`, the deduped coverage ids the denied
+  garments claimed (`overlayWornInputs` is a thin wrapper over the same scan, so
+  the two can never disagree). **Displacement counts as denial** — "her shirt
+  hanging open" makes the same claim "not wearing a shirt" does — while an
+  UNMAPPED noun stays out of both halves: nobody knows what a cloak covers, so a
+  denied one can no more bare a region than a worn one can dress it.
+- **Worn beats denied, per region.** `resolveChatWardrobe`'s free-text read
+  (`overlayTextExposure`) merges the two: worn rows reaching an intimate region
+  answer alone, exactly as before (`exposedRegions` verbatim, so a described
+  outfit naming no shoes still reads barefoot); otherwise a denial over torso or
+  pelvis answers, with each region taken from the worn rows where they cover it (a
+  hat or boots keeps its own), BARE where the denial reached
+  (`exposureRegionsTouched` in `items/visibility.ts`, which answers the region
+  question while keeping the four-region location table private), and covered
+  everywhere else — a denial states what is MISSING and says nothing
+  about the rest of the body. With neither, the read stays silent and the caller
+  keeps its covered default. A bare-state word with no noun ("not wearing
+  anything") names nothing to bare and lands there too; the archivist's exposure
+  flag is that beat's channel.
 - **These rows only ever reach `exposedRegions`** — never occlusion, garment
   cues, or the effective-coverage read. Nothing may mistake described prose for a
-  garment the wardrobe owns.
+  garment the wardrobe owns. `deniedCoverage` is bounded the same way and reaches
+  one place further in: only the free-text exposure read, never the structured
+  union, where prose must never strip an item the wardrobe actually models.
 
 ### Effective coverage — the final read
 

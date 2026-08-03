@@ -370,6 +370,17 @@ describe("garment nouns in the free-text overlay", () => {
     expect(resolved.exposure.torso).toBe("bare");
   });
 
+  it("a garment the overlay DENIES cannot strip a modelled one", async () => {
+    // The structured path unions worn items with the overlay's WORN nouns only:
+    // text may add cover, never remove it. "no thong" over a modelled thong is
+    // prose losing an argument with the wardrobe, which knows what is on her.
+    const resolved = await dressedIn("not wearing a thong or a shirt");
+    expect(resolved.exposure.pelvis).toBe("covered");
+    // …and the chest the thong never covered still reads bare, as it does with
+    // no overlay at all.
+    expect(resolved.exposure.torso).toBe("bare");
+  });
+
   it("a DENIED garment cannot dress the player back up", async () => {
     // The player path has no manual exposure flag to correct it, so the overlay's
     // nouns are the whole read: "no shirt" used to contribute an opaque chest row
@@ -377,6 +388,87 @@ describe("garment nouns in the free-text overlay", () => {
     // pelvis, which is what makes this per-region rather than silence.
     const resolved = await resolvePlayerWardrobe(
       { ...emptyChatPlayerState(), overlay: "jeans and no shirt" },
+      "owner",
+      personaProfileSchema.parse({}),
+    );
+    expect(resolved.exposure.torso).toBe("bare");
+    expect(resolved.exposure.pelvis).toBe("covered");
+  });
+});
+
+/**
+ * A denial is INFORMATION, not the absence of it — at the RESOLVER, where the
+ * fallback actually lives.
+ *
+ * The P1: on the free-text path with the exposure flag off, "not wearing a shirt"
+ * denied its one noun, produced zero coverage rows, and zero rows is the same
+ * shape as prose naming no clothing at all — so `overlayTextExposure` went silent
+ * and the caller's covered default dressed an explicitly bared chest. The contract
+ * suite could not catch it: it asserts on the rows, and the rows were right.
+ */
+describe("an all-denied overlay reads bare per region", () => {
+  const profile = emptyCharacterProfile();
+  const freeText = (outfit: string, outfitExposed = false) =>
+    resolveChatWardrobe({ wornItemIds: [], outfit, outfitExposed }, "owner", profile);
+
+  it("bares the region the denial names, and only that one", async () => {
+    const resolved = await freeText("not wearing a shirt");
+    expect(resolved.exposure.torso).toBe("bare");
+    expect(resolved.exposed).toBe(true);
+    // The conservative half: a denial says what is MISSING and nothing about the
+    // rest of the body, so everything it never touched stays dressed.
+    expect(resolved.exposure.pelvis).toBe("covered");
+    expect(resolved.exposure.legs).toBe("covered");
+    expect(resolved.exposure.feet).toBe("covered");
+  });
+
+  it("reads the exclusion phrasing the same way", async () => {
+    const resolved = await freeText("everything except a bra");
+    expect(resolved.exposure.torso).toBe("bare");
+    expect(resolved.exposure.pelvis).toBe("covered");
+    expect(resolved.exposed).toBe(true);
+  });
+
+  it("lets an exposure-irrelevant garment ride the merge without widening it", async () => {
+    // The hat covers hair, which answers for no exposure region — so it neither
+    // speaks for the body (the gate that keeps a hat from stripping her) nor
+    // blocks the denial that does.
+    const resolved = await freeText("a straw hat, not wearing a shirt");
+    expect(resolved.exposure.torso).toBe("bare");
+    expect(resolved.exposure.pelvis).toBe("covered");
+    expect(resolved.exposure.feet).toBe("covered");
+  });
+
+  it("a worn garment still wins its OWN region inside the merge", async () => {
+    // Boots answer for the feet and nothing intimate, so the denial decides the
+    // torso while the boots keep her shod.
+    const resolved = await freeText("boots, not wearing a shirt");
+    expect(resolved.exposure.torso).toBe("bare");
+    expect(resolved.exposure.feet).toBe("covered");
+  });
+
+  it("leaves the worn-intimate read exactly as it was", async () => {
+    // Unchanged by design: once a worn noun covers an intimate region the rows
+    // answer alone, feet included — a described outfit that names no shoes reads
+    // barefoot, and the denial merge must not quietly shoe her.
+    const resolved = await freeText("jeans and not wearing a shirt");
+    expect(resolved.exposure).toEqual({ torso: "bare", pelvis: "covered", legs: "covered", feet: "bare" });
+  });
+
+  it("a bare-state word with no garment noun keeps the covered default", async () => {
+    // Documented limitation, and a safe one: this scan speaks through garment
+    // nouns, so "not wearing anything" names nothing to bare — and the archivist's
+    // exposure flag is exactly the channel for that beat.
+    expect((await freeText("not wearing anything")).exposure).toEqual(FULLY_COVERED);
+    expect((await freeText("not wearing anything", true)).exposure.torso).toBe("bare");
+  });
+
+  it("bares the player's regions on the same terms", async () => {
+    // The persona twin has no manual flag at all, so the overlay is the entire
+    // read — and the scene-image gate that decides whether the viewer's anatomy
+    // renders is downstream of it.
+    const resolved = await resolvePlayerWardrobe(
+      { ...emptyChatPlayerState(), overlay: "not wearing a shirt" },
       "owner",
       personaProfileSchema.parse({}),
     );
