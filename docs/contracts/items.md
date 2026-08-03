@@ -149,7 +149,13 @@ through the described gown.
   the jeans. With **no negation anywhere to except from**, an exception flips the
   other way and becomes the denial itself ("jeans, excluding a bra", "everything
   except a bra" — which used to emit an opaque chest row over a bared one), and it
-  carries like any other ("excluding a bra or panties" denies both). Only the
+  carries like any other ("excluding a bra or panties" denies both). **"Anywhere"
+  reaches back a noun**: a garment denied one step earlier is still something to
+  except from, so "not wearing underwear except a bra" cancels that denial and
+  wears the bra (a kept noun then ends the scope, which is how "…except a bra and
+  panties" keeps both) — only a span with nothing denied in scope reads the
+  exclusion as a denial, which the clause reset restores ("no shirt, jeans
+  excluding a bra" leaves the bra off). Only the
   `exclusionMarkers` subset (except, excluding, barring) flips: a standalone "but"
   is an ordinary coordinator, and "save"/"besides" read as verb and additive as
   readily as exceptive. That leaves "everything **but** a bra" out of reach on

@@ -391,6 +391,14 @@ export const negationExceptions: ReadonlySet<string> = new Set([
  * "everything except a bra" are stating what is NOT on, and reading them as mere
  * exceptions emitted an opaque bra row over a bared chest.
  *
+ * **"Anywhere before it" reaches past the segment**, which is why `segmentDenies`
+ * takes the previous noun's verdict: "jeans and not wearing underwear except a
+ * bra" denies the underwear and then excepts the BRA from that denial — the bra
+ * is the one thing on, and reading its lone "except" as a fresh exclusion bared a
+ * torso the sentence dresses. The clause boundary is what keeps the standalone
+ * reading alive: "no shirt, jeans excluding a bra" starts the second clause with
+ * nothing denied, so the exclusion is again the denial.
+ *
  * A strict SUBSET of `negationExceptions`, because the exceptive reading is still
  * the primary one: these words only turn into denials when the flip has nothing
  * to undo. The subset is where the precision lives, and "but" is why it exists —
@@ -646,20 +654,35 @@ function windowHas(segment: readonly string[], markers: ReadonlySet<string>): bo
  * `negationExceptions` word after it? The bigram is checked here and nowhere
  * else, so a standalone lead can never deny on its own.
  *
- * Positional, not boolean, and three readings decided by which registry hit LAST:
+ * Positional, not boolean. Three readings come from which registry hit LAST
+ * inside the segment; the fourth needs `deniedBefore` — the verdict the PREVIOUS
+ * noun reached — because an exclusion's meaning is entirely a question of whether
+ * there is a denial to except from, and that denial can live one noun back:
  *
  * - **negation after every exception ⇒ denies.** "but not wearing a shirt"
  *   excepts at 0 and negates at 1: the exception excepted nothing yet denied.
  * - **exception after a real negation ⇒ worn.** "not wearing anything but a
  *   thong" negates at 0 and excepts at 3, so the thong is on.
- * - **an `exclusionMarkers` word with NO negation at all ⇒ denies.** "excluding a
- *   bra" has nothing to except from, so the exclusion is itself the denial. Only
- *   the exclusion subset flips this way; a bare "but" is a coordinator ("without
- *   a shirt but jeans" keeps the jeans), and the segment simply has no verdict.
+ * - **an `exclusionMarkers` word with no negation in THIS segment ⇒ the previous
+ *   noun decides.** Nothing denied upstream and the exclusion is itself the
+ *   denial ("jeans, excluding a bra" — the comma resets the scope, so the bra is
+ *   off). A denied noun upstream and the exclusion excepts FROM that denial
+ *   ("jeans and not wearing underwear except a bra" — the underwear is off and
+ *   the bra is the exception, i.e. on), exactly as it would inside one segment.
+ *   Only the exclusion subset asks the question; a bare "but" is a coordinator
+ *   ("without a shirt but jeans" keeps the jeans) and never denies either way.
+ * - **anything else ⇒ no verdict, worn.**
  *
- * Reading either registry as a bare presence check gets one of the three wrong.
+ * Reading either registry as a bare presence check gets one of the three
+ * in-segment readings wrong; ignoring `deniedBefore` gets the fourth wrong in the
+ * one direction this module refuses — a stated-worn garment stripped, and on the
+ * free-text path a bare torso reported through it.
+ *
+ * A kept-via-exception noun reports `false`, which ENDS the denial scope for the
+ * noun after it — the vacuous carry then keeps "not wearing underwear except a
+ * bra and panties" wearing both, the same way an in-segment exception does.
  */
-function segmentDenies(segment: readonly string[]): boolean {
+function segmentDenies(segment: readonly string[], deniedBefore: boolean): boolean {
   // Explicitly typed on purpose: loop-carried indices read and reassigned in the
   // same scan are where this module has hit TS7022 (implicit-`any` cycle) before.
   let lastNegation: number = -1;
@@ -681,7 +704,15 @@ function segmentDenies(segment: readonly string[]): boolean {
       if (exclusionMarkers.has(token)) lastExclusion = index;
     }
   }
-  return lastNegation > lastException || (lastNegation < 0 && lastExclusion >= 0);
+  // A negation standing after every exception in this segment denies outright.
+  if (lastNegation > lastException) return true;
+  // Still a real negation here, so the only way past the check above is an
+  // exception after it (the two roles never share an index) — the local cancel.
+  if (lastNegation >= 0) return false;
+  // No negation in this segment: an exclusion word is the denial when nothing is
+  // denied yet, and the cancel of an inherited denial when something is.
+  if (lastExclusion >= 0) return !deniedBefore;
+  return false;
 }
 
 /** One window's tokens divided between the garment before it and the garment after it. */
@@ -818,11 +849,15 @@ function attachWindow(window: readonly string[], hasPrevious: boolean, hasNext: 
  *   the chemise's fabric.
  * - **Negation** reads the same owned segment and SUPPRESSES the row: "without a
  *   shirt" — or "not wearing a shirt" (`negatedWearingLeads`), or a bare
- *   `exclusionMarkers` word with nothing to except from ("excluding a bra") —
- *   names a shirt that is not on, unless a `negationExceptions` word stands after
- *   a real negation in that segment, which un-negates what follows ("not wearing
- *   anything but a thong", "nothing but a thong", where the `bareStateWords` hit
- *   is the negation being excepted). It carries to the next noun when the window
+ *   `exclusionMarkers` word with nothing anywhere before it to except from
+ *   ("excluding a bra") — names a shirt that is not on, unless a
+ *   `negationExceptions` word stands after a real negation, which un-negates what
+ *   follows ("not wearing anything but a thong", "nothing but a thong", where the
+ *   `bareStateWords` hit is the negation being excepted). That negation may be
+ *   the PREVIOUS noun's rather than this segment's — "not wearing underwear
+ *   except a bra" excepts the bra from the underwear's denial and wears it — so
+ *   the exclusion reading is reserved for the case with no denial in scope. It
+ *   carries to the next noun when the window
  *   between them is nothing but `negationCarryWords`, and that check reads the
  *   window WHOLE, unapportioned: "without a shirt or bra" denies both — as does
  *   "excluding a bra or panties" — while "no shirt under her jacket" keeps the
@@ -867,8 +902,14 @@ export function overlayWornInputs(text: string): WornItemInput[] {
       if (noun === undefined || between === undefined || pre === undefined || post === undefined) continue;
       // Annotated: the initializer reads `negatedBefore`, which is assigned from
       // this value below — without the annotation TS sees the cycle as `any`.
+      //
+      // `negatedBefore` feeds BOTH halves, for opposite reasons: it is what an
+      // exclusion in `pre` excepts from (so "not wearing underwear except a bra"
+      // keeps the bra), and what the filler carry propagates (so "without a shirt
+      // or bra" denies both). The two can never fight — the carry needs a window
+      // of pure `negationCarryWords`, and no exception word is one.
       const negated: boolean =
-        segmentDenies(pre) || (negatedBefore && between.every((token) => negationCarryWords.has(token)));
+        segmentDenies(pre, negatedBefore) || (negatedBefore && between.every((token) => negationCarryWords.has(token)));
       // Updated BEFORE the coverage lookup, so the carry flows through nouns this
       // table does not map: "without a scarf or shirt" denies the shirt too.
       negatedBefore = negated;
