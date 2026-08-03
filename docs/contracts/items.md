@@ -89,24 +89,41 @@ through the described gown.
   cape, poncho, cloak, garter, costume) are deliberately absent: a cloak may hang
   open over a bare chest.
 - **Sheer is stated, never assumed.** A modifier from `sheerModifiers` (sheer,
-  gauzy, mesh, lace, fishnet, …) in the window between the previous garment noun
-  (or a `,` `;` `.` clause boundary) and this one makes THIS garment sheer, and is
-  spent there. Hyphenated compounds stay one token, so "a lace-trimmed cotton
-  robe" is opaque — the trim is not the fabric.
-- **Named is not worn.** A noun with a `negationMarkers` word in its pre-window
-  (no, without, sans, minus, lacking, missing) or a `displacementMarkers` word in
-  EITHER window (open, unbuttoned, pooled, shoved, hanging, slipped, off, aside,
-  …) contributes NO row: "without a shirt", "her shirt hanging open", "gown
-  pooled at her waist" all name clothing that is not covering anything. A denial
-  carries to the next noun only across pure filler (`negationCarryWords` —
-  and/or/the/her/a…), so "without a shirt or bra" denies both while "no bra under
-  her sweater" leaves the sweater covering; clause-scoped negation would have
-  stripped that sweater. The failure directions are asymmetric on purpose:
-  suppressing wrongly just costs that garment's coverage (the pre-overlay
-  behavior, and on the free-text path the intimate-region gate below then keeps
-  the covered default), while a MISSED displacement leaves bared anatomy reading
-  as covered. Hyphenated compounds stay one token here too, so "off-the-shoulder
-  gown" still covers.
+  gauzy, mesh, lace, fishnet, …) in the segment a garment owns before it (see
+  attachment, below) makes THIS garment sheer, and is spent there. Hyphenated
+  compounds stay one token, so "a lace-trimmed cotton robe" is opaque — the trim
+  is not the fabric.
+- **Every qualifier attaches to ONE noun.** The tokens between two garment nouns
+  are the first one's post-modifier ground and the second one's pre-modifier
+  ground at the same time, so the span is apportioned at its first
+  `windowSplitters` hinge — the layering prepositions and coordinators (over,
+  under, beneath, atop, above, below, and, or, nor, with). Before the hinge
+  attaches BACKWARD, after it FORWARD, the hinge itself belongs to neither, and a
+  hinge-less shared span goes wholly forward (English stacks bare adjectives ahead
+  of the noun). A clause-initial span is all pre-modifier ("unbuttoned jacket"), a
+  clause-final one all post-modifier ("her shirt hanging open"). Reading a shared
+  span whole is what "a shirt under an open jacket" broke: `open` displaced the
+  shirt as well as the jacket and a covered torso read BARE. Prepositions must
+  never join `negationCarryWords` for the mirror-image reason — the carry check
+  reads its window UNSPLIT, which is exactly why "no shirt under her jacket"
+  leaves the jacket covering.
+- **Named is not worn.** A noun contributes NO row when the segment before it
+  holds a `negationMarkers` word (no, without, sans, minus, lacking, missing) or a
+  `negatedWearingLeads` word immediately followed by "wearing" (not, never, isn't,
+  wasn't, stopped, quit …), or when either segment it owns holds a
+  `displacementMarkers` word (open, unbuttoned, pooled, shoved, hanging, slipped,
+  off, aside, …): "without a shirt", "jeans and not wearing a shirt", "her shirt
+  hanging open", "gown pooled at her waist" all name clothing that is not covering
+  anything. The "wearing" bigram is the whole rule — a standalone "not" is a hedge
+  ("not the shirt she meant to wear") and never denies. A denial carries to the
+  next noun only across pure filler (`negationCarryWords` — and/or/the/her/a…), so
+  "without a shirt or bra" denies both while "no bra under her sweater" leaves the
+  sweater covering; clause-scoped negation would have stripped that sweater. The
+  failure directions are asymmetric on purpose: suppressing wrongly just costs
+  that garment's coverage (the pre-overlay behavior, and on the free-text path the
+  intimate-region gate below then keeps the covered default), while a MISSED
+  displacement leaves bared anatomy reading as covered. Hyphenated compounds stay
+  one token here too, so "off-the-shoulder gown" still covers.
 - **These rows only ever reach `exposedRegions`** — never occlusion, garment
   cues, or the effective-coverage read. Nothing may mistake described prose for a
   garment the wardrobe owns.

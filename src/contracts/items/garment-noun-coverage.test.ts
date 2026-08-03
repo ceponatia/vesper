@@ -4,9 +4,12 @@ import { bodyLocationRegistry } from "../body/locations";
 import {
   displacementMarkers,
   garmentNounCoverage,
+  negatedWearingLeads,
+  negationCarryWords,
   negationMarkers,
   overlayWornInputs,
   sheerModifiers,
+  windowSplitters,
 } from "./garment-noun-coverage";
 import { exposedRegions } from "./visibility";
 
@@ -133,6 +136,36 @@ describe("overlayWornInputs — named, but not covering", () => {
     }
   });
 
+  it("reads a contextual 'not wearing' as a denial", () => {
+    // The opaque row this used to emit reported a stated-bare torso as covered.
+    const text = "jeans and not wearing a shirt";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("bare");
+    // Per region, as always: the jeans are still on.
+    expect(regions.pelvis).toBe("covered");
+  });
+
+  it("carries a 'not wearing' denial across a conjunction, like any other", () => {
+    expect(overlayWornInputs("not wearing a shirt or bra")).toEqual([]);
+  });
+
+  it("a standalone lead is NOT a denial — only the bigram is", () => {
+    // "not" is a hedge far more often than a denial, and suppressing a covering
+    // garment on a hedge is the one failure direction this module refuses.
+    expect(rowFor("not the shirt she meant to wear", "shirt")).toBeDefined();
+    expect(regionsOf("not the shirt she meant to wear").torso).toBe("covered");
+    // The verb alone is equally inert, or the canonical free-text look would undress.
+    expect(regionsOf("wearing only a red thong").pelvis).toBe("covered");
+  });
+
+  it("every lead denies through 'wearing', and none of them denies alone", () => {
+    for (const lead of negatedWearingLeads) {
+      expect(overlayWornInputs(`${lead} wearing a robe`), `${lead} wearing`).toEqual([]);
+      expect(overlayWornInputs(`${lead} a robe`), `${lead} alone`).toHaveLength(1);
+    }
+  });
+
   it("a DISPLACED garment contributes nothing, marker before or after the noun", () => {
     expect(overlayWornInputs("her shirt hanging open")).toEqual([]);
     expect(overlayWornInputs("gown pooled at her waist")).toEqual([]);
@@ -161,6 +194,72 @@ describe("overlayWornInputs — named, but not covering", () => {
 
   it("a suppressed noun still closes the sheer window (the modifier was ITS adjective)", () => {
     expect(rowFor("no sheer bra under her sweater", "sweater")?.opacity).toBe("opaque");
+  });
+});
+
+/**
+ * Who owns a SHARED window (`windowSplitters`). The span between two garment
+ * nouns is the first one's post-modifier ground and the second one's
+ * pre-modifier ground at once, and reading it whole suppressed both: "a shirt
+ * under an open jacket" lost the shirt as well as the jacket and reported a
+ * covered torso as BARE — the under-covering direction the module forbids.
+ */
+describe("overlayWornInputs — which garment a shared window modifies", () => {
+  it("a layering hinge keeps the displacement off the garment underneath", () => {
+    const text = "a shirt under an open jacket and jeans";
+    expect(rowFor(text, "jacket")).toBeUndefined();
+    expect(rowFor(text, "shirt")).toBeDefined();
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("covered");
+    expect(regions.pelvis).toBe("covered");
+  });
+
+  it("splits the same window from the other side — the marker before the hinge is the FIRST garment's", () => {
+    // Pure forward attachment would have displaced the tee here, which is the
+    // covering layer: the hinge is what tells the two apart.
+    const text = "jacket unbuttoned over a tee";
+    expect(rowFor(text, "jacket")).toBeUndefined();
+    expect(rowFor(text, "tee")).toBeDefined();
+    expect(regionsOf(text).torso).toBe("covered");
+  });
+
+  it("a clause-final window attaches wholly BACKWARD, hinge or no hinge", () => {
+    // Nothing follows, so every word of it is the last noun's post-modifier —
+    // including a hinge with no garment on the far side of it.
+    expect(overlayWornInputs("her shirt hanging open")).toEqual([]);
+    expect(overlayWornInputs("gown pooled at her waist")).toEqual([]);
+    expect(overlayWornInputs("her shirt hanging open over her hips")).toEqual([]);
+    // …and it belongs to its OWN noun only: the shirt goes, the bra under it stays.
+    const text = "a bra under a shirt hanging open";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "bra")).toBeDefined();
+  });
+
+  it("a clause-initial window attaches wholly FORWARD", () => {
+    expect(overlayWornInputs("unbuttoned jacket")).toEqual([]);
+  });
+
+  it("a hinge-less shared window attaches FORWARD (English stacks adjectives ahead of the noun)", () => {
+    // Terse overlay prose with no punctuation: the modifier is the stockings'.
+    const text = "a black bra sheer stockings";
+    expect(rowFor(text, "stockings")?.opacity).toBe("sheer");
+    expect(rowFor(text, "bra")?.opacity).toBe("opaque");
+  });
+
+  it("the negation carry still reads the window WHOLE — a hinge breaks it", () => {
+    // Apportioned, the jacket's segment is the pure filler "her", which would
+    // carry the denial onto it and bare a covered torso.
+    const text = "no shirt under her jacket";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "jacket")).toBeDefined();
+    expect(regionsOf(text).torso).toBe("covered");
+  });
+
+  it("only the coordinators may be both a hinge and negation filler", () => {
+    // A layering preposition in `negationCarryWords` would carry the denial above.
+    // The coordinators are in both on purpose: "or" hinges AND carries, which is
+    // what makes "without a shirt or bra" one denial.
+    expect([...windowSplitters].filter((word) => negationCarryWords.has(word)).sort()).toEqual(["and", "nor", "or"]);
   });
 });
 
@@ -196,5 +295,13 @@ describe("overlayWornInputs — the sheer window", () => {
 
   it("an unmapped garment still closes the window (the modifier was ITS adjective)", () => {
     expect(rowFor("a sheer scarf and a linen dress", "dress")?.opacity).toBe("opaque");
+  });
+
+  it("does not bleed forward past a layering hinge", () => {
+    // A postposed modifier belongs to the garment BEFORE it, where it is inert —
+    // which beats dressing the jacket in the chemise's fabric.
+    const text = "a chemise sheer beneath a jacket";
+    expect(rowFor(text, "jacket")?.opacity).toBe("opaque");
+    expect(rowFor(text, "chemise")?.opacity).toBe("opaque");
   });
 });

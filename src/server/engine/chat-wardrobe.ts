@@ -249,7 +249,9 @@ function garmentActorModelled(garments: ChatGarmentStore | undefined, actorId: s
  * garment nouns in it are read as garments. Structured, they only ADD cover to
  * the real items — the fix for a described gown that computed torso-bare and put
  * chest anatomy in a scene prompt. Free-text, they ARE the coverage, unless the
- * exposure flag has claimed bare (which still wins) or they name nothing.
+ * exposure flag has claimed bare (which still wins), they name nothing, or the
+ * wardrobe was not free-text at all and merely failed to load (below) — nouns
+ * never get to speak for items nobody could read.
  */
 export async function resolveChatWardrobe(
   state: {
@@ -304,6 +306,16 @@ export async function resolveChatWardrobe(
   // A MODELLED actor wearing nothing is stripped — coverage says so, not the flag
   // (finding 6).
   const stripped = modelled && healed.length === 0;
+  // The overlay nouns may only ANSWER for a wardrobe that is genuinely free text.
+  // Reaching here with worn ids means the item load came back empty — a failed
+  // lookup or deleted rows, not an undressed body — and letting "a borrowed
+  // hoodie" speak there would report every region those unloadable items covered
+  // as BARE. Degraded defaults over failed turns (docs/resilience.md): the covered
+  // default is the conservative read this path had before the overlay carried
+  // coverage at all. `loadChatWardrobe` already reports the failure itself
+  // (`images.avatar.outfit_load_failed`), so this gate stays silent rather than
+  // double-reporting it.
+  const overlayExposure = state.wornItemIds.length === 0 ? overlayTextExposure(healed) : undefined;
   // Precedence, owner ruling: a bare claim still WINS. The archivist writes
   // `exposed: true` for "the gown pooled at her waist", and that beat has to beat
   // the gown noun still sitting in the text it describes. Only with no such claim
@@ -311,8 +323,7 @@ export async function resolveChatWardrobe(
   // pelvis-covered AND torso-bare instead of the flat FULLY_COVERED that used to
   // be the only alternative to naked. Prose naming no clothing at all keeps that
   // conservative default: an unmodelled wardrobe is unknown, not nude.
-  const exposure =
-    stripped || state.outfitExposed ? exposedRegions([]) : (overlayTextExposure(healed) ?? FULLY_COVERED);
+  const exposure = stripped || state.outfitExposed ? exposedRegions([]) : (overlayExposure ?? FULLY_COVERED);
   const exposed = intimateRegionsBare(exposure);
   return {
     garments: healed,
@@ -401,11 +412,17 @@ export async function resolvePlayerWardrobe(
     // MODELLED player has no ids at all — one item per worn instance means an
     // empty list there is an empty wardrobe, never a failed lookup.
     const strippedAfterSeeding = ids.length === 0 && (modelled || (state.seeded && persona !== undefined));
+    // …and it gates the overlay's nouns for the same reason (the character twin's
+    // degradation guard): with ids that resolved to nothing, "a borrowed hoodie"
+    // would answer BARE for every region those unloadable items covered. Degraded
+    // defaults over failed turns (docs/resilience.md) — a persona whose items did
+    // not load keeps the covered default, and the load reports the failure itself.
+    const overlayExposure = ids.length === 0 ? overlayTextExposure(overlay) : undefined;
     return {
       garments: overlay,
       // Same precedence as the character's free-text path: stripped wins, then the
       // overlay's own garment nouns speak per region, then the covered default.
-      exposure: strippedAfterSeeding ? exposedRegions([]) : (overlayTextExposure(overlay) ?? FULLY_COVERED),
+      exposure: strippedAfterSeeding ? exposedRegions([]) : (overlayExposure ?? FULLY_COVERED),
       wornItemIds: [],
       overlay,
       partVisibility: {},
