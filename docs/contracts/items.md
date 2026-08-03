@@ -137,7 +137,14 @@ through the described gown.
   hinge lands on the next eligible splitter (the "and" here) — and it pays the
   coordinator's stranded-marker cost on the same terms ("a shirt unbuttoned with
   discarded jeans" keeps the shirt, over-covering by one rather than
-  under-covering the next). A clause-final span is all post-modifier ("her shirt
+  under-covering the next). **What ENDS a clause** is every separator prose uses to
+  finish a garment description mid-line: `,` `;` `.` `:` `!` `?` `…`, a newline, and
+  the dashes — em, en, and a **spaced** ASCII hyphen, never a bare one (that is the
+  joint of a compound the tokenizer keeps whole). The dashes had to be in the set
+  because the tokenizer erases them, so a missing separator does not merely fail to
+  split — "a shirt hanging open — jeans" became one hinge-less shared span, which
+  attaches forward, displacing the JEANS and leaving the stated-open shirt covering.
+  A clause-final span is all post-modifier ("her shirt
   hanging open") — hinge or no
   hinge, since the displacement scan wants the whole tail and no negation reads it.
   A clause-INITIAL span is pre-modifier ground too, but it splits at the same hinge
