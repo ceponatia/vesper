@@ -10,7 +10,7 @@ import {
 import { parseOrNull } from "@/lib/parse";
 import { log } from "@/server/log";
 import { generateChecked } from "../ai";
-import { characterChatMessages, characterChatSummaries, characters, chatParticipants, db, jobs } from "../db";
+import { characterChatMessages, characterChatSummaries, characters, chatParticipants, db, hasLiveChatJob } from "../db";
 import type { ChatTurn } from "./character-chat";
 import { CHARACTER_CHAT_HISTORY_TURNS, CHARACTER_CHAT_SUMMARIZE_AT, CHARACTER_CHAT_VERBATIM_KEEP } from "./constants";
 import { enqueueJob, registerJobHandler } from "./jobs";
@@ -169,18 +169,7 @@ export function normalizeChatSummary(
  */
 export async function enqueueChatSummary(args: { chatId: string }): Promise<void> {
   try {
-    const [pending] = await db()
-      .select({ id: jobs.id })
-      .from(jobs)
-      .where(
-        and(
-          eq(jobs.type, "chat_summary"),
-          or(eq(jobs.status, "queued"), eq(jobs.status, "running")),
-          sql`${jobs.payload} ->> 'chatId' = ${args.chatId}`,
-        ),
-      )
-      .limit(1);
-    if (pending) return;
+    if (await hasLiveChatJob("chat_summary", args.chatId)) return;
     await enqueueJob({ type: "chat_summary", payload: { ...args } });
   } catch (err) {
     log.warn("chat_summary", "failed to enqueue fold", { ...args, error: errorText(err) });

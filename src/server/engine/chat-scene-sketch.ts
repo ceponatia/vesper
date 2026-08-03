@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   CHAT_DEFAULT_CALENDAR_START,
@@ -14,7 +14,7 @@ import {
 import { calendarStartSchema } from "@/lib/clock";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
-import { characterChatMessages, characterChats, db, jobs } from "../db";
+import { characterChatMessages, characterChats, db, hasLiveChatJob } from "../db";
 import { log } from "../log";
 import { CHAT_SCENE_SKETCH_MAX_OUTPUT_TOKENS, CHAT_SCENE_SKETCH_TIMEOUT_MS } from "./constants";
 import { enqueueJob, registerJobHandler } from "./jobs";
@@ -51,18 +51,7 @@ export interface EnqueueChatSceneSketchArgs {
  */
 export async function enqueueChatSceneSketch(args: EnqueueChatSceneSketchArgs): Promise<void> {
   try {
-    const [live] = await db()
-      .select({ id: jobs.id })
-      .from(jobs)
-      .where(
-        and(
-          eq(jobs.type, "chat_scene_sketch"),
-          inArray(jobs.status, ["queued", "running"]),
-          sql`${jobs.payload} ->> 'chatId' = ${args.chatId}`,
-        ),
-      )
-      .limit(1);
-    if (live) return;
+    if (await hasLiveChatJob("chat_scene_sketch", args.chatId)) return;
     await enqueueJob({ type: "chat_scene_sketch", payload: { ...args } });
   } catch (err) {
     log.warn("chat_scene_sketch", "failed to enqueue sketch", {
