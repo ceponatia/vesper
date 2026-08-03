@@ -2,12 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import {
-  attributeRegistry,
-  readAdultEligibilityDeclaration,
-  ADULT_ELIGIBILITY_DECLARATION_LABELS,
-  type Diagnostic,
-} from "@/contracts";
+import { attributeRegistry, type Diagnostic } from "@/contracts";
 import { mergeFillDraft } from "@/lib/character-fill";
 import { mergeRedraftScope, type CharacterSheetScope } from "@/lib/character-scopes";
 import {
@@ -18,7 +13,6 @@ import {
 } from "@/lib/client/api";
 import { resolveChatModelId } from "@/lib/narrative-models";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
-import { useHashAnchorScroll } from "@/components/hooks/use-hash-anchor";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useAutosave } from "@/components/hooks/use-autosave";
 import { PublishToggle } from "@/components/library/publish-toggle";
@@ -92,11 +86,6 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     setDirty(false);
     setChatModel(resolveChatModelId(null));
   }
-
-  // The editor renders client-side after a fetch, so the browser's native
-  // #anchor scroll (adult-eligibility blocker deep links) must be re-run once
-  // the sheet exists.
-  useHashAnchorScroll(draft !== null);
 
   const save = async (opts: { silent?: boolean } = {}): Promise<boolean> => {
     if (!draft) return false;
@@ -340,12 +329,6 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
             </p>
             {detail.data.tags.length ? <p className="text-xs text-paper-500">{detail.data.tags.join(" · ")}</p> : null}
             {profile.age ? <p className="text-xs text-paper-500">Age: {profile.age}</p> : null}
-            {/* The adult-eligibility declaration is public by owner ruling (2026-07-30):
-                a browsing user sees what the author declared before duplicating or chatting. */}
-            <p className="text-xs text-paper-500">
-              Participant declaration:{" "}
-              {ADULT_ELIGIBILITY_DECLARATION_LABELS[readAdultEligibilityDeclaration(profile.adultEligibilityDeclaration)]}
-            </p>
             {profile.bio ? <p>{profile.bio}</p> : null}
             {profile.personality ? <p className="text-paper-400">{profile.personality}</p> : null}
           </div>

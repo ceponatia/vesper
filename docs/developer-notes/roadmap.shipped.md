@@ -5,6 +5,21 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Adult-eligibility declaration rolled back** —
+  [finished/adult-eligibility.plan.md](finished/adult-eligibility.plan.md) —
+  2026-08-03 — owner ruling: the declaration dropdown + numeric-age conflict
+  check were scope creep, and species-relative ages mean a flat human 18 is
+  the wrong adult test. Removed whole: the `contracts/eligibility` module
+  (resolver/adapter/blocker/schema), the `adultEligibilityDeclaration` field
+  in both profile schemas and the public projection, both editor controls and
+  the deep-link anchor/hook, the API conflict rejection, `minorFenceApplies`
+  (prompt fences back to the numeric `isMinorAge`/life-stage read), and the
+  "17 years (old)" age-parser whitelist. The contact core's domain-neutral
+  eligibility seam (`contactActionRequiresAdultEligibility`) predates the
+  feature and stays; romantic-contact slice-3 items that assumed a positive
+  declaration now need a re-planned eligibility source (noted in
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)).
+
 - **The image sweep actually runs** — `src/server/images/assets.ts` §Scheduling the
   sweep (no plan — owner report) — 2026-08-03 — `sweepOrphans` had been written,
   tested and documented as periodic but never called; it is now kicked by
@@ -135,6 +150,7 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   romantic-contact slice 3, controls in both editors with a stable deep-link
   anchor, and byte-identical-prompt proof that the declaration never reaches
   narrator text. Cross-cutting prerequisite for the romantic foot trial.
+  **Rolled back 2026-08-03** (see the entry above).
 
 - **Romantic contact affordances, slices 0–2** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·

@@ -105,34 +105,6 @@ describe("profile.schedule boundary (element-wise catch)", () => {
   });
 });
 
-describe("profile.adultEligibilityDeclaration (adult-eligibility.plan.md slice 0)", () => {
-  it("reads every stored character as unresolved until someone declares (no backfill)", () => {
-    expect(emptyCharacterProfile().adultEligibilityDeclaration).toBe("unresolved");
-    // A JSONB row written before the field existed parses unchanged, and reads unresolved.
-    const legacy = characterProfileSchema.parse({ bio: "Runs the glassworks.", age: "34", speciesId: "elf" });
-    expect(legacy.adultEligibilityDeclaration).toBe("unresolved");
-    expect(legacy.bio).toBe("Runs the glassworks.");
-  });
-
-  it("self-heals a corrupt value rather than failing the whole profile (docs/resilience.md §1)", () => {
-    const parsed = characterProfileSchema.parse({ bio: "kept", adultEligibilityDeclaration: { over: "engineered" } });
-    expect(parsed.adultEligibilityDeclaration).toBe("unresolved");
-    expect(parsed.bio).toBe("kept");
-  });
-
-  it("round-trips an authored declaration through a save/read cycle", () => {
-    const saved = characterProfileSchema.parse({ adultEligibilityDeclaration: "adult", age: "34" });
-    // The clone/export path copies the stored JSONB whole; re-parsing must not drop it.
-    expect(characterProfileSchema.parse(JSON.parse(JSON.stringify(saved))).adultEligibilityDeclaration).toBe("adult");
-  });
-
-  it("rides the public preview — a browsing user sees the declaration before duplicating (owner ruling 2026-07-30)", () => {
-    const declared = characterProfileSchema.parse({ adultEligibilityDeclaration: "adult" });
-    expect(toPublicCharacterProfile(declared).adultEligibilityDeclaration).toBe("adult");
-    expect(toPublicCharacterProfile(emptyCharacterProfile()).adultEligibilityDeclaration).toBe("unresolved");
-  });
-});
-
 describe("toPublicCharacterProfile (security-authz.plan.md OQ2)", () => {
   /** A profile with something authored in EVERY section, so an exclusion is a real one. */
   const authored = characterProfileSchema.parse({
@@ -166,7 +138,6 @@ describe("toPublicCharacterProfile (security-authz.plan.md OQ2)", () => {
 
   it("is exactly the allow-listed presentation keys", () => {
     expect(Object.keys(toPublicCharacterProfile(authored)).sort()).toEqual([
-      "adultEligibilityDeclaration",
       "age",
       "attributes",
       "bio",
@@ -226,7 +197,6 @@ describe("toPublicCharacterProfile (security-authz.plan.md OQ2)", () => {
       personality: "",
       age: "",
       speciesId: "human",
-      adultEligibilityDeclaration: "unresolved",
       attributes: [],
     });
   });

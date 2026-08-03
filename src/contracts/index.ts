@@ -51,7 +51,6 @@ export * from "./facts/taxonomy";
 export * from "./images/scene-reference";
 export * from "./images/image-models";
 export * from "./images/viewer-body";
-export * from "./eligibility";
 export * from "./players/persona-profile";
 export * from "./players/chat-player-state";
 export * from "./world/profile";

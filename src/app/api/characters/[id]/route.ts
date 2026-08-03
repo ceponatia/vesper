@@ -1,7 +1,6 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq } from "drizzle-orm";
 import {
-  adultEligibilityConflict,
   characterProfileSchema,
   emptyCharacterProfile,
   materializeBodyDefaults,
@@ -63,12 +62,6 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   if (body.value.profile !== undefined) {
     const current = parseOr(characterProfileSchema, existing.profile, emptyCharacterProfile(), undefined, "characters.profile");
     const merged = { ...current, ...body.value.profile };
-    // Checked on the MERGED profile, not the patch: a PATCH that sends only the
-    // declaration, or only the age, still has to agree with the field it did not send
-    // (adult-eligibility.spec.md §Resolver law clause 6).
-    if (adultEligibilityConflict(merged)) {
-      return jsonError("eligibility_conflict", "a character whose age reads as a minor cannot be declared an adult", 400);
-    }
     // Persisted-baseline facts have no blank state: a PATCH that removed one
     // (or predates one) re-materializes it, fill-only, against the merged
     // profile's own body. Players change the value; the fact stays present.

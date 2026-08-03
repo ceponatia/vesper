@@ -239,10 +239,7 @@ because the edit surfaces need every column; everyone else gets the projection
   field definitions so adding a profile field puts the reviewer next to the
   decision (security-authz.plan.md OQ2, ruled **conservative
   private-by-default**). A public preview shows **presentation only**: `bio`,
-  `personality`, `age`, `speciesId`, the `adultEligibilityDeclaration` (public
-  by owner ruling 2026-07-30 — a safety gate input a browsing user needs before
-  duplicating or chatting, rendered on the read-only preview), and an
-  allow-listed slice of `attributes`
+  `personality`, `age`, `speciesId`, and an allow-listed slice of `attributes`
   (today just `identity.gender`, which the browse route already publishes as a
   facet — each surviving row reduced to `{ id, value }`, no provenance). Withheld:
   narrator guidance (`voice`, `voiceAnchors`, `microExemplars`, `intimacy`,
