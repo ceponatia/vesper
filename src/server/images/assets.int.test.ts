@@ -151,6 +151,25 @@ describe.skipIf(!ready)("asset registry protocol", () => {
     expect(again.orphanFilesRemoved).toBe(0);
     expect(again.rowsMarkedFailed).toBe(0);
   });
+
+  it("skips the file side entirely when the rows are empty but files exist", async () => {
+    // The DB and the volume disagreeing (a fresh/branched database, a mis-set
+    // DATABASE_URL) must never read as "every file is an orphan" — that would wipe
+    // the volume unrecoverably, and the sweep now runs on a schedule.
+    const old = new Date(Date.now() - 20 * 60_000);
+    const emptyOwner = `${userId}-no-rows`;
+    const dir = path.join(dataRoot(), "images", emptyOwner);
+    await fs.mkdir(dir, { recursive: true });
+    const survivor = path.join(dir, "keep-me.webp");
+    await fs.writeFile(survivor, "x");
+    await fs.utimes(survivor, old, old);
+
+    const result = await sweepOrphans({ ownerId: emptyOwner });
+    expect(result.rowsScanned).toBe(0);
+    expect(result.orphanFilesRemoved).toBe(0);
+    await expect(fs.access(survivor)).resolves.toBeUndefined();
+    await fs.rm(dir, { recursive: true, force: true });
+  });
 });
 
 describe.skipIf(!ready)("demo-mode pipelines (AI_FAKE=1)", () => {
