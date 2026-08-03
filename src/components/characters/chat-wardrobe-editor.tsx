@@ -200,7 +200,9 @@ export function ChatWardrobeEditor({
       {other.length > 0 ? <ul className="flex flex-col gap-1.5">{other.map(renderRow)}</ul> : null}
 
       <label className="flex flex-col gap-1">
-        <span className="text-[11px] text-paper-500">Also / instead (free text — a borrowed hoodie, an ad-hoc look)</span>
+        <span className="text-[11px] text-paper-500">
+          Also / instead (free text — a borrowed hoodie, an ad-hoc look; garments named here count as coverage)
+        </span>
         <Textarea
           rows={2}
           value={outfit}
@@ -216,7 +218,8 @@ export function ChatWardrobeEditor({
           onChange={(e) => onChange({ outfitExposed: e.target.checked })}
           className="size-4 accent-accent-500"
         />
-        Reveal intimate anatomy in scene images (used when nothing is equipped — coverage decides otherwise)
+        Reveal intimate anatomy in scene images (used when nothing is equipped; off lets coverage — worn or named
+        above — decide)
       </label>
 
       <EntityPickerDialog

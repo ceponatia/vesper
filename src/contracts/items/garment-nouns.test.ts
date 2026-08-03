@@ -50,6 +50,13 @@ describe("garmentIdentitiesIn — compounds before unigrams", () => {
     expect(garmentIdentitiesIn("her tank top and jeans")).toEqual(new Set(["tank_top", "jeans"]));
   });
 
+  it("keeps bikini separates apart from the pair", () => {
+    // Each half is its own identity, so coverage can give a top the chest and
+    // bottoms the pelvis instead of both panels to either.
+    expect(garmentIdentitiesIn("a bikini top and bikini bottoms")).toEqual(new Set(["bikini_top", "bikini_bottom"]));
+    expect([...garmentIdentitiesIn("a string bikini")]).toEqual(["bikini"]);
+  });
+
   it("does not invent a garment from an ambiguous word inside styling prose", () => {
     expect([...garmentIdentitiesIn("her shirt with the top button undone")]).toEqual(["shirt"]);
     expect([...garmentIdentitiesIn("the apron ties loose at the waist")]).toEqual(["apron"]);
