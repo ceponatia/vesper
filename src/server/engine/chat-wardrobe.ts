@@ -7,6 +7,7 @@ import {
   GARMENT_PLAYER_ACTOR,
   intimateRegionsBare,
   outfitItems,
+  overlayWornInputs,
   resolveOutfitPreset,
   resolveWardrobeVisibility,
   wornGarmentInstances,
@@ -151,7 +152,12 @@ export function wardrobeDescriptors(items: readonly AvatarWardrobeItem[]): Garme
 export interface ResolvedChatWardrobe {
   /** Rendered garment phrase — structured worn items (occlusion-filtered, subtype-led) + free-text overlay. */
   garments: string;
-  /** Per-region coverage — COMPUTED from worn items, or manual-flag-derived on the free-text path. */
+  /**
+   * Per-region coverage — COMPUTED from the worn items PLUS whatever garments the
+   * free-text overlay names (`overlayWornInputs`, contracts). On the structured
+   * path the text can only add cover; on the free-text path it is the wardrobe,
+   * behind the manual exposure flag which still overrides it.
+   */
   exposure: RegionExposure;
   /** "Intimate areas bared" — the prompt tone-steer + legacy look-key flag (coverage-accurate). */
   exposed: boolean;
@@ -191,6 +197,25 @@ function partVisibilityOf(worn: readonly WornItemInput[]): Record<string, WornVi
 }
 
 /**
+ * Exposure the overlay TEXT alone can answer for, or `undefined` when it cannot
+ * (`overlayWornInputs`, contracts). The free-text path has no other wardrobe, so
+ * named clothing is the read: "wearing only a red thong" is genuinely torso-bare
+ * and pelvis-covered, and getting that per-region is the whole point.
+ *
+ * The gate is that the named garments must cover an INTIMATE region. A garment
+ * noun can be exposure-irrelevant — "a wide-brimmed straw hat" names real
+ * clothing and says nothing whatever about the body — and letting it answer would
+ * read every region it does not touch as naked, which is the loudest possible
+ * wrong answer. Silent there, so the caller keeps the conservative default.
+ */
+function overlayTextExposure(text: string): RegionExposure | undefined {
+  const rows = overlayWornInputs(text);
+  if (rows.length === 0) return undefined;
+  const exposure = exposedRegions(rows);
+  return exposure.torso === "bare" && exposure.pelvis === "bare" ? undefined : exposure;
+}
+
+/**
  * True when this actor's wardrobe has actually been MODELLED as garment
  * instances (clothing-state-graph.plan.md slice 2). Two things follow:
  *
@@ -219,6 +244,12 @@ function garmentActorModelled(garments: ChatGarmentStore | undefined, actorId: s
  * `garments` + `garmentActorId` are optional: callers that hold the scenario pass
  * them so the garment store is the wardrobe truth; callers that do not fall back
  * to the projection column, which the store keeps in sync.
+ *
+ * **The free-text overlay carries coverage on both paths** (`overlayWornInputs`):
+ * garment nouns in it are read as garments. Structured, they only ADD cover to
+ * the real items — the fix for a described gown that computed torso-bare and put
+ * chest anatomy in a scene prompt. Free-text, they ARE the coverage, unless the
+ * exposure flag has claimed bare (which still wins) or they name nothing.
  */
 export async function resolveChatWardrobe(
   state: {
@@ -248,7 +279,14 @@ export async function resolveChatWardrobe(
     // ONE pass over the coverage rows feeds exposure, occlusion, and the
     // affordance adapter's coverage read — three consumers, one truth.
     const worn = toWornInputs(items);
-    const exposure = exposedRegions(worn);
+    // Overlay text is wardrobe too: an "Also / instead" reading "pale lavender
+    // gown" used to contribute NOTHING, so a modelled thong alone computed
+    // torso-bare and the scene prompt drew chest anatomy through the gown. The
+    // synthetic rows join ONLY here — `partVisibility`, the returned `worn`, and
+    // the garment phrase stay real items, so no occlusion / cue / affordance read
+    // can mistake described prose for something the wardrobe owns. Coverage only
+    // ever accumulates, so text can hide anatomy and never bare it.
+    const exposure = exposedRegions([...worn, ...overlayWornInputs(overlay)]);
     const garments = [garmentPhrase, overlay].filter(Boolean).join("; ");
     return {
       garments,
@@ -264,11 +302,18 @@ export async function resolveChatWardrobe(
   // Free-text / legacy path: heal any id-marker, then decide exposure.
   const healed = (await healOutfitMarker(state.outfit, ownerId, profile, sink)).trim();
   // A MODELLED actor wearing nothing is stripped — coverage says so, not the flag
-  // (finding 6). Except while non-mechanical overlay prose still stands in for a
-  // look nobody modelled ("a borrowed hoodie"), where the conservative read wins.
+  // (finding 6).
   const stripped = modelled && healed.length === 0;
-  const exposed = stripped || state.outfitExposed;
-  const exposure = exposed ? exposedRegions([]) : FULLY_COVERED;
+  // Precedence, owner ruling: a bare claim still WINS. The archivist writes
+  // `exposed: true` for "the gown pooled at her waist", and that beat has to beat
+  // the gown noun still sitting in the text it describes. Only with no such claim
+  // does the text get to dress her — per region, so "wearing only a red thong" is
+  // pelvis-covered AND torso-bare instead of the flat FULLY_COVERED that used to
+  // be the only alternative to naked. Prose naming no clothing at all keeps that
+  // conservative default: an unmodelled wardrobe is unknown, not nude.
+  const exposure =
+    stripped || state.outfitExposed ? exposedRegions([]) : (overlayTextExposure(healed) ?? FULLY_COVERED);
+  const exposed = intimateRegionsBare(exposure);
   return {
     garments: healed,
     exposure,
@@ -300,7 +345,10 @@ export function playerWornIds(
 export interface ResolvedPlayerWardrobe {
   /** Rendered garment phrase — worn items (occlusion-filtered, subtype-led) + the overlay text. */
   garments: string;
-  /** Per-region coverage, ALWAYS computed from worn items (there is no manual flag to fake it). */
+  /**
+   * Per-region coverage, ALWAYS computed from coverage — worn items plus any garment
+   * the overlay text names (there is no manual flag to fake it).
+   */
   exposure: RegionExposure;
   /** The ids that actually resolved — a deleted item drops out. */
   wornItemIds: string[];
@@ -317,6 +365,9 @@ export interface ResolvedPlayerWardrobe {
  *   because a persona is a library entity with real outfit presets. Exposure is always
  *   computed from coverage — which is what makes the scene-image gate that decides
  *   whether the viewer's anatomy renders unfakeable (scene-pov-embodiment.plan.md).
+ *   The overlay's own garment nouns count as coverage here exactly as they do for the
+ *   character (`overlayWornInputs`): additive over worn items, and the read of last
+ *   resort when nothing resolved and the player was never stripped.
  * - **Unseeded reads the persona's default preset** rather than reading as naked (see
  *   `ChatPlayerState.seeded`).
  *
@@ -352,7 +403,9 @@ export async function resolvePlayerWardrobe(
     const strippedAfterSeeding = ids.length === 0 && (modelled || (state.seeded && persona !== undefined));
     return {
       garments: overlay,
-      exposure: strippedAfterSeeding ? exposedRegions([]) : FULLY_COVERED,
+      // Same precedence as the character's free-text path: stripped wins, then the
+      // overlay's own garment nouns speak per region, then the covered default.
+      exposure: strippedAfterSeeding ? exposedRegions([]) : (overlayTextExposure(overlay) ?? FULLY_COVERED),
       wornItemIds: [],
       overlay,
       partVisibility: {},
@@ -361,7 +414,9 @@ export async function resolvePlayerWardrobe(
   const worn = toWornInputs(items);
   return {
     garments: [wardrobeOutfitText(items), overlay].filter(Boolean).join("; "),
-    exposure: exposedRegions(worn),
+    // Overlay nouns add coverage here too — the persona twin of the character's
+    // union, and the reason a described robe can no longer be seen through.
+    exposure: exposedRegions([...worn, ...overlayWornInputs(overlay)]),
     wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
     overlay,
     partVisibility: partVisibilityOf(worn),

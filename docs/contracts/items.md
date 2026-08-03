@@ -66,6 +66,34 @@ through `garmentIdentitiesIn`, so plurals, aliases and spaced compounds ("boot"/
 garment type; raw name/description token overlap then ranks the same-type candidates, and remains
 the whole match for garments outside the registry.
 
+### Coverage from garment nouns
+
+Free text is wardrobe too. `items/garment-noun-coverage.ts` maps each canonical
+garment identity (`garment-nouns.ts`) to the coverage it contributes, so the chat
+lane's free-text overlay — the character sheet's "Also / instead" field — stops
+reading as nothing: `overlayWornInputs(text)` returns synthetic `WornItemInput`
+rows (`overlay:<identity>`) that `resolveChatWardrobe` folds into
+`exposedRegions`. Without it, a character in a thong plus an overlay reading "pale
+lavender gown" computed `torso: "bare"` and the scene prompt drew chest anatomy
+through the described gown.
+
+- **Coverage ids come from the category templates** wherever one fits, so the
+  lists live in one place; the handful that has no template (bikini, corset,
+  hosiery, armor) is spelled out beside them.
+- **Precision beats recall, harder than in the noun registry.** An unmapped noun
+  contributes nothing — today's behavior, and safe. A wrong one suppresses or
+  bares anatomy nobody asked for. So ambiguous-coverage garments (scarf, shawl,
+  cape, poncho, cloak, garter, costume) are deliberately absent: a cloak may hang
+  open over a bare chest.
+- **Sheer is stated, never assumed.** A modifier from `sheerModifiers` (sheer,
+  gauzy, mesh, lace, fishnet, …) in the window between the previous garment noun
+  (or a `,` `;` `.` clause boundary) and this one makes THIS garment sheer, and is
+  spent there. Hyphenated compounds stay one token, so "a lace-trimmed cotton
+  robe" is opaque — the trim is not the fabric.
+- **These rows only ever reach `exposedRegions`** — never occlusion, garment
+  cues, or the effective-coverage read. Nothing may mistake described prose for a
+  garment the wardrobe owns.
+
 ### Effective coverage — the final read
 
 The visibility rule above answers "which garment does the eye reach here". A

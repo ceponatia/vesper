@@ -131,6 +131,19 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
   free-text path (`outfit` + the manual `outfit_exposed`), self-healing the moment a preset
   switch / equip populates the worn list (**migration**: legacy chats stay on the free-text
   path until re-dressed — no sweep).
+- **The overlay carries coverage.** Garment nouns in the free-text `outfit` resolve to real
+  coverage rows (`contracts/items/garment-noun-coverage.ts`, [../contracts/items.md](../contracts/items.md)
+  §Coverage from garment nouns) and reach `exposedRegions` — and ONLY `exposedRegions`, never
+  occlusion, cues, or the affordance read, which stay real items. Structured, they can only
+  ADD cover: the fix for a modelled thong plus an overlay reading "pale lavender gown"
+  computing `torso: "bare"` and putting chest anatomy in the scene prompt. On the **free-text**
+  path they are the whole wardrobe, and the precedence is: an exposure claim still wins
+  (`outfit_exposed`, or a modelled actor wearing nothing — the archivist's "the gown pooled at
+  her waist" has to beat the gown noun in the text it describes), then the named garments
+  answer PER REGION ("wearing only a red thong" is pelvis-covered and torso-bare, which the old
+  all-or-nothing fallback could not express), then the covered default. Text naming no clothing
+  — or naming only garments that answer for neither intimate region, like a hat — keeps that
+  default: an unmodelled wardrobe is unknown, not nude.
 - **Archivist changes.** The archivist's `outfit` field (`contracts/turns/chat-archivist.ts`)
   drives two grammars, folded by `foldOutfitProposal` in `finalizeChatState`: a whole-outfit
   `description` naming an authored preset ("her work clothes" → the Work preset) seeds the worn
@@ -237,7 +250,9 @@ snapshot for free, so "another take" can't leave the player undressed by a disca
   presets, so `resolvePlayerWardrobe` (the character seam's twin in `chat-wardrobe.ts`)
   always computes exposure from coverage. There is deliberately no `exposed` toggle: it
   would be a hole through the scene-image gate that decides whether the viewer's anatomy
-  renders (scene-pov-embodiment.plan.md).
+  renders (scene-pov-embodiment.plan.md). Their `overlay` carries garment-noun coverage on
+  the same terms as the character's (§Wardrobe) — additive over worn items, and the read of
+  last resort when nothing resolved and the player was never stripped.
 - **`seeded` breaks a real ambiguity.** An empty worn list means *"not dressed yet"* before
   seeding and *"stripped"* after it. Unseeded, `playerWornIds` resolves the persona's
   default preset — so a fresh chat, or a persona whose wardrobe was never authored, doesn't
