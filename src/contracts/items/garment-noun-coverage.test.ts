@@ -458,14 +458,16 @@ describe("overlayWornInputs — an exclusion with nothing to except from", () =>
 });
 
 /**
- * Who owns a SHARED window (`windowSplitters`, plus the marker-gated
+ * Who owns a SHARED window (`windowSplitters`, plus the marker-and-lookahead-gated
  * `conditionalSplitters`). The span between two garment nouns is the first one's
  * post-modifier ground and the second one's pre-modifier ground at once, and
  * reading it whole suppressed both: "a shirt under an open jacket" lost the shirt
  * as well as the jacket and reported a covered torso as BARE — the under-covering
  * direction the module forbids. Splitting at the wrong word inverts it instead:
  * "a shirt with buttons open and jeans" dressed the open shirt and stripped the
- * jeans, which is why "with" hinges only when it has something to fence.
+ * jeans, which is why "with" hinges only when it has something to fence — and,
+ * on the coordinator's own lookahead, only when its phrase has actually ended
+ * ("a shirt hanging open with buttons undone and jeans" stripped the jeans too).
  */
 describe("overlayWornInputs — which garment a shared window modifies", () => {
   it("a layering hinge keeps the displacement off the garment underneath", () => {
@@ -578,6 +580,47 @@ describe("overlayWornInputs — which garment a shared window modifies", () => {
     expect(rowFor(text, "shirt")).toBeUndefined();
     expect(rowFor(text, "jeans")).toBeDefined();
     expect(regionsOf(text).pelvis).toBe("covered");
+  });
+
+  it("a marked 'with' running on into displacement is still the shirt's phrase", () => {
+    // Marked says something needs fencing; it does not say the phrase has ENDED.
+    // "hanging open with buttons undone" is ONE postmodifier of the shirt, so
+    // hinging at that "with" fenced the shirt right and then sent `buttons undone`
+    // forward to displace the JEANS too — a worn garment stripped and the
+    // free-text read reporting a bare pelvis. The coordinator's lookahead answers
+    // it, for the same participial-postmodifier reason.
+    const text = "a shirt hanging open with buttons undone and jeans";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("bare");
+    expect(regions.pelvis).toBe("covered");
+    // Deferring never ends the scan: the hinge lands on whatever splitter comes
+    // next, coordinator or preposition or clause transition.
+    expect(rowFor("a shirt hanging open with buttons undone over a tee", "tee")).toBeDefined();
+    expect(rowFor("a shirt hanging open with buttons undone while wearing jeans", "jeans")).toBeDefined();
+  });
+
+  it("a sheer PREmodifier after the 'with' does not defer it", () => {
+    // The same grammar that lets the deferral work: `sheerModifiers` premodify the
+    // noun AFTER them, so one says nothing about whether the shirt's phrase has
+    // ended — and the marker still has to reach the stockings it qualifies.
+    const text = "shirt unbuttoned with sheer stockings";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "stockings")?.opacity).toBe("sheer");
+  });
+
+  it("pays the coordinator's stranded-marker cost, exactly as the coordinator does", () => {
+    // A displacing PREmodifier defers the hinge with nothing later to catch it, so
+    // the window goes hinge-less and attaches wholly forward: the shirt's own
+    // marker is stranded in the jeans' segment and the shirt reads covering. That
+    // over-covers by one garment rather than under-covering the next one — the
+    // trade `coordinatorSplitters` already documents, and the two hinge registries
+    // must not disagree about it.
+    for (const text of ["a shirt unbuttoned with discarded jeans", "a shirt unbuttoned and discarded jeans"]) {
+      expect(rowFor(text, "jeans"), text).toBeUndefined();
+      expect(rowFor(text, "shirt"), text).toBeDefined();
+    }
   });
 
   it("an ordinary adjective does not arm the conditional hinge", () => {

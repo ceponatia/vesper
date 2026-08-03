@@ -51,7 +51,7 @@ import type { WornItemInput } from "./visibility";
  * happen, which is why every qualifier is scoped to ONE noun — window-scoped
  * negation with conjunction inheritance, and a shared window apportioned at its
  * layering hinge (`windowSplitters` always bar the comparative `as … as` span,
- * the lookahead-gated `coordinatorSplitters` and the marker-gated
+ * the lookahead-gated `coordinatorSplitters` and the marker-plus-lookahead-gated
  * `conditionalSplitters` when they earn it) — rather than clause-scoped:
  * clause-scoped, "no bra under her sweater, jeans" would strip the sweater and
  * bare the torso, and an unapportioned "a shirt under an open jacket" would strip
@@ -652,6 +652,15 @@ export const coordinatorSplitters: ReadonlySet<string> = new Set(["and", "or", "
  * qualifier to apportion) or the opening of the previous garment's postmodifier
  * phrase ("with buttons open"). Both readings want the tokens up to the next REAL
  * splitter to attach backward, which is exactly what skipping the "with" does.
+ *
+ * **A marked "with" still defers to displacement after it**, on the same
+ * lookahead `coordinatorSplitters` uses and for the same grammar: "a shirt
+ * hanging open with buttons undone and jeans" is one continuous postmodifier
+ * phrase of the SHIRT, and the participle after the "with" is what says so.
+ * Hinging there fenced the shirt right and then handed `buttons undone` forward
+ * to displace the jeans too — the worn garment stripped and the free-text read
+ * reporting a bare pelvis. Being marked says something needs fencing; it does not
+ * say the phrase has ENDED, and only the lookahead answers that.
  */
 export const conditionalSplitters: ReadonlySet<string> = new Set(["with"]);
 
@@ -799,11 +808,13 @@ function isHingeCandidate(token: string): boolean {
 }
 
 /**
- * Does a displacement marker stand in the stretch a coordinator at `from - 1`
- * governs — from `from` to the next hinge candidate, or the window end? Past that
- * next candidate the tokens are somebody else's apportionment question, so they
- * say nothing about whether THIS coordinator joins garments or postmodifiers.
- * See `coordinatorSplitters` for why a following participle means it does not.
+ * Does a displacement marker stand in the stretch the hinge candidate at
+ * `from - 1` governs — from `from` to the next hinge candidate, or the window
+ * end? Past that next candidate the tokens are somebody else's apportionment
+ * question, so they say nothing about whether THIS word joins garments or
+ * postmodifiers. See `coordinatorSplitters` for why a following participle means
+ * it does not; `conditionalSplitters`' marked "with" asks the same question for
+ * the same reason.
  */
 function displacementFollows(window: readonly string[], from: number): boolean {
   for (let index = from; index < window.length; index += 1) {
@@ -897,15 +908,20 @@ function readComparatives(window: readonly string[]): WindowComparatives {
  * unless a displacement marker follows it, which makes it the joint of the
  * previous garment's postmodifier phrase rather than a garment boundary ("shirt
  * unbuttoned and hanging open with jeans"). A `conditionalSplitters` word
- * ("with") hinges only when a fenceable marker precedes it in this window;
- * unmarked, the search reads past it, so "a shirt with buttons open and jeans"
- * lands on the "and" and keeps "with buttons open" on the shirt.
+ * ("with") needs BOTH: a fenceable marker before it in this window, and no
+ * displacement after it. Unmarked, the search reads past it, so "a shirt with
+ * buttons open and jeans" lands on the "and" and keeps "with buttons open" on the
+ * shirt; marked but still running into displacement, it reads past it for the
+ * other reason, so "a shirt hanging open with buttons undone and jeans" also
+ * lands on the "and" and the jeans keep covering.
  *
- * Skipping never ends the scan: the tokens after a passed-over coordinator still
- * arm `marked`, which is what lets the "with" in "shirt unbuttoned and hanging
- * open with jeans" be the hinge the coordinator declined to be. An "as" a
- * comparative span claimed is skipped for a different reason — it is a
- * postmodifier's opener rather than a boundary (`readComparatives`).
+ * Skipping never ends the scan: the tokens after a passed-over hinge candidate
+ * still arm `marked`, which is what lets the "with" in "shirt unbuttoned and
+ * hanging open with jeans" be the hinge the coordinator declined to be — and,
+ * the other way around, lets the "and" in "a shirt hanging open with buttons
+ * undone and jeans" be the hinge the "with" declined to be. An "as" a comparative
+ * span claimed is skipped for a different reason — it is a postmodifier's opener
+ * rather than a boundary (`readComparatives`).
  */
 function findHinge(window: readonly string[], spanned: ReadonlySet<number> | undefined): number {
   // Explicitly typed on purpose: loop-carried booleans read and reassigned in the
@@ -921,7 +937,16 @@ function findHinge(window: readonly string[], spanned: ReadonlySet<number> | und
       continue;
     }
     if (conditionalSplitters.has(token)) {
-      if (marked) return index;
+      // Marked is necessary but not sufficient: a "with" whose own phrase runs on
+      // into more displacement ("a shirt hanging open with buttons undone and
+      // jeans") is still INSIDE the previous garment's postmodifier, not the
+      // layering hinge between two garments — the same participial-postmodifier
+      // rationale the coordinator lookahead above documents, and the same
+      // lookahead answers it. Hinging there fenced the shirt correctly and then
+      // sent `buttons undone` forward to displace the JEANS as well, suppressing
+      // a garment the prose plainly puts on. Deferred, the scan runs on with
+      // `marked` still armed, so the hinge lands on the next eligible splitter.
+      if (marked && !displacementFollows(window, index + 1)) return index;
       continue;
     }
     if (isFenceableMarker(token)) marked = true;
@@ -992,10 +1017,11 @@ export interface OverlayGarmentReads {
  * are the same span — so `attachWindow` apportions it at the layering hinge
  * (`windowSplitters` always, bar an "as" a comparative span claimed; a
  * `coordinatorSplitters` word unless a displacement marker follows it, so "shirt
- * unbuttoned and hanging open with jeans" keeps the
- * whole participle phrase on the shirt; `conditionalSplitters`' "with" only once
- * a marker precedes it, so "a shirt with buttons open and jeans" opens the shirt
- * and leaves the jeans on), and each noun scans only the segment it owns. A
+ * unbuttoned and hanging open with jeans" keeps the whole participle phrase on
+ * the shirt; `conditionalSplitters`' "with" only once a marker precedes it AND no
+ * displacement follows it, so "a shirt with buttons open and jeans" and "a shirt
+ * hanging open with buttons undone and jeans" alike open the shirt and leave the
+ * jeans on), and each noun scans only the segment it owns. A
  * clause-INITIAL window splits at the same hinge and keeps only the remainder —
  * the tokens before it modify a garment the text never named, so no noun owns
  * them ("wearing nothing under her dress" hands the dress just "her").
