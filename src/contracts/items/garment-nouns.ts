@@ -1,6 +1,6 @@
 /**
  * Garment IDENTITIES for the chat lane's wardrobe folds: the vocabulary that
- * names which garments a stretch of free text mentions. Two consumers:
+ * names which garments a stretch of free text mentions. Three consumers:
  *
  * - **Telemetry** (chat-state's outfit folds) — a KEPT restatement can report
  *   the garments it named that no worn item accounts for, the observable trace
@@ -11,6 +11,10 @@
  *   that match: both sides fold through this table, so a plural, an alias or a
  *   compound resolves to the right garment, and adjective/material overlap can
  *   never pick a mistyped one ("leather boots" ≠ a leather jacket).
+ * - **Coverage** (`garment-noun-coverage.ts`) — where a named garment in the
+ *   free-text overlay contributes real coverage to the exposure read. It scans
+ *   positionally (`garmentIdentityAt` over `garmentNounTokens`) because it cares
+ *   WHERE each garment was named, but reads this same vocabulary.
  *
  * **It does not decide keep-vs-replace** (owner ruling, 2026-08-01). That
  * decision belongs to the archivist's verbatim `changeEvidence`, validated
@@ -186,6 +190,16 @@ const GARMENT_COMPOUNDS: ReadonlyMap<string, string> = new Map([
   ["tube top", "tube_top"],
   ["sports bra", "bra"],
   ["dress shirt", "shirt"],
+  // Bikini SEPARATES are their own identities, never the pair. Coverage is the
+  // reason: bare "bikini" claims chest AND pelvis, so without these a bikini top
+  // covered the pelvis and bottoms covered the chest — anatomy suppressed on a
+  // garment that is demonstrably not there (garment-noun-coverage.ts). Distinct
+  // identities also give the archivist's matcher two things to tell apart, so
+  // "she unties the bikini top" can never resolve to the bottoms.
+  ["bikini top", "bikini_top"],
+  ["bikini tops", "bikini_top"],
+  ["bikini bottom", "bikini_bottom"],
+  ["bikini bottoms", "bikini_bottom"],
 ]);
 
 /** The regular English plural of a registry singular (the only forms folded automatically). */
@@ -222,6 +236,39 @@ export function garmentNounOf(token: string): string | undefined {
 }
 
 /**
+ * The chat lane's garment word tokens (lowercased). A hyphenated compound stays
+ * ONE token — "lace-trimmed" is not "lace" — so a trim or material adjective can
+ * never read as the thing itself.
+ */
+export function garmentNounTokens(text: string): string[] {
+  return text.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? [];
+}
+
+/** A garment identity read at one token position, with the tokens it consumed. */
+export interface GarmentIdentityMatch {
+  identity: string;
+  /** 2 for a compound head ("tank top"), 1 for a unigram. */
+  length: 1 | 2;
+}
+
+/**
+ * The garment identity starting at `index` — COMPOUNDS first (two tokens), then
+ * the unigram fold. Positional, so a caller that cares WHERE a garment was named
+ * (the overlay-coverage scanner's sheer window, garment-noun-coverage.ts) reads
+ * the same vocabulary `garmentIdentitiesIn` does instead of re-deriving the
+ * compound table.
+ */
+export function garmentIdentityAt(tokens: readonly string[], index: number): GarmentIdentityMatch | undefined {
+  const head = tokens[index];
+  if (head === undefined) return undefined;
+  const next = tokens[index + 1];
+  const compound = next === undefined ? undefined : GARMENT_COMPOUNDS.get(`${head} ${next}`);
+  if (compound !== undefined) return { identity: compound, length: 2 };
+  const identity = garmentNounOf(head);
+  return identity === undefined ? undefined : { identity, length: 1 };
+}
+
+/**
  * Every garment identity named in a stretch of text — a description, or a worn
  * item's name. Tokenizes with the chat lane's word pattern, takes adjacent-token
  * COMPOUNDS first (consuming both tokens), then unigrams via `garmentNounOf`.
@@ -231,20 +278,13 @@ export function garmentNounOf(token: string): string | undefined {
  * "leather boots" over a worn "leather boot" compares equal.
  */
 export function garmentIdentitiesIn(text: string): Set<string> {
-  const tokens = text.toLowerCase().match(/[a-z][a-z'’-]*/g) ?? [];
+  const tokens = garmentNounTokens(text);
   const found = new Set<string>();
   for (let i = 0; i < tokens.length; i += 1) {
-    const head = tokens[i];
-    if (head === undefined) continue;
-    const next = tokens[i + 1];
-    const compound = next === undefined ? undefined : GARMENT_COMPOUNDS.get(`${head} ${next}`);
-    if (compound !== undefined) {
-      found.add(compound);
-      i += 1;
-      continue;
-    }
-    const identity = garmentNounOf(head);
-    if (identity !== undefined) found.add(identity);
+    const match = garmentIdentityAt(tokens, i);
+    if (match === undefined) continue;
+    found.add(match.identity);
+    i += match.length - 1;
   }
   return found;
 }

@@ -66,6 +66,51 @@ through `garmentIdentitiesIn`, so plurals, aliases and spaced compounds ("boot"/
 garment type; raw name/description token overlap then ranks the same-type candidates, and remains
 the whole match for garments outside the registry.
 
+### Coverage from garment nouns
+
+Free text is wardrobe too. `items/garment-noun-coverage.ts` maps each canonical
+garment identity (`garment-nouns.ts`) to the coverage it contributes, so the chat
+lane's free-text overlay — the character sheet's "Also / instead" field — stops
+reading as nothing: `overlayWornInputs(text)` returns synthetic `WornItemInput`
+rows (`overlay:<identity>`) that `resolveChatWardrobe` folds into
+`exposedRegions`. Without it, a character in a thong plus an overlay reading "pale
+lavender gown" computed `torso: "bare"` and the scene prompt drew chest anatomy
+through the described gown.
+
+- **Coverage ids come from the category templates** wherever one fits, so the
+  lists live in one place; the handful that has no template (bikini, corset,
+  hosiery, armor) is spelled out beside them. Bikini **separates** are compound
+  identities in the noun registry (`bikini top` → `bikini_top`, `bikini bottoms`
+  → `bikini_bottom`), so each claims only its own panel — the bare noun is still
+  the pair.
+- **Precision beats recall, harder than in the noun registry.** An unmapped noun
+  contributes nothing — today's behavior, and safe. A wrong one suppresses or
+  bares anatomy nobody asked for. So ambiguous-coverage garments (scarf, shawl,
+  cape, poncho, cloak, garter, costume) are deliberately absent: a cloak may hang
+  open over a bare chest.
+- **Sheer is stated, never assumed.** A modifier from `sheerModifiers` (sheer,
+  gauzy, mesh, lace, fishnet, …) in the window between the previous garment noun
+  (or a `,` `;` `.` clause boundary) and this one makes THIS garment sheer, and is
+  spent there. Hyphenated compounds stay one token, so "a lace-trimmed cotton
+  robe" is opaque — the trim is not the fabric.
+- **Named is not worn.** A noun with a `negationMarkers` word in its pre-window
+  (no, without, sans, minus, lacking, missing) or a `displacementMarkers` word in
+  EITHER window (open, unbuttoned, pooled, shoved, hanging, slipped, off, aside,
+  …) contributes NO row: "without a shirt", "her shirt hanging open", "gown
+  pooled at her waist" all name clothing that is not covering anything. A denial
+  carries to the next noun only across pure filler (`negationCarryWords` —
+  and/or/the/her/a…), so "without a shirt or bra" denies both while "no bra under
+  her sweater" leaves the sweater covering; clause-scoped negation would have
+  stripped that sweater. The failure directions are asymmetric on purpose:
+  suppressing wrongly just costs that garment's coverage (the pre-overlay
+  behavior, and on the free-text path the intimate-region gate below then keeps
+  the covered default), while a MISSED displacement leaves bared anatomy reading
+  as covered. Hyphenated compounds stay one token here too, so "off-the-shoulder
+  gown" still covers.
+- **These rows only ever reach `exposedRegions`** — never occlusion, garment
+  cues, or the effective-coverage read. Nothing may mistake described prose for a
+  garment the wardrobe owns.
+
 ### Effective coverage — the final read
 
 The visibility rule above answers "which garment does the eye reach here". A
