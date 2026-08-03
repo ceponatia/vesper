@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { db } from "./client";
 import { jobs } from "./schema";
 
@@ -41,6 +41,35 @@ export type JobType = (typeof jobs.$inferSelect)["type"];
  * Callers use it both as the enqueue dedupe and (for the scene lane) as the
  * client's "still rendering" flag, so the same staleness rule governs both.
  */
+/**
+ * Fail every `queued`/`running` row older than {@link JOB_STALE_MS} — the rows whose
+ * process is gone. Nothing re-drives this table (a `queued` row is kicked in-process the
+ * moment it is inserted, and only that process ever settles it), so a row past the bound
+ * is dead by construction, not merely slow.
+ *
+ * The staleness bound already makes those rows harmless; this is the bookkeeping half,
+ * so the table reads honestly and an operator looking at `running` sees work that is
+ * actually running. Runs from the periodic sweep (`images/sweep-schedule.ts`). Returns
+ * how many rows were reclaimed.
+ */
+export async function reclaimOrphanedJobs(now: Date = new Date()): Promise<number> {
+  const reclaimed = await db()
+    .update(jobs)
+    .set({
+      status: "failed",
+      error: "orphaned (the process that started it never settled it); reclaimed by the sweep",
+      finishedAt: now,
+    })
+    .where(
+      and(
+        inArray(jobs.status, ["queued", "running"]),
+        lt(jobs.createdAt, new Date(now.getTime() - JOB_STALE_MS)),
+      ),
+    )
+    .returning({ id: jobs.id });
+  return reclaimed.length;
+}
+
 export async function hasLiveChatJob(type: JobType, chatId: string): Promise<boolean> {
   const [live] = await db()
     .select({ id: jobs.id })

@@ -2,9 +2,9 @@ import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { and, eq, inArray, type SQL } from "drizzle-orm";
+import { and, eq, gt, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { characters, db, images, items, locations } from "../db";
+import { characters, db, images, items, jobs, locations, reclaimOrphanedJobs } from "../db";
 import { describeProviderError } from "../ai";
 import { newId } from "@/lib/ids";
 import { log } from "@/server/log";
@@ -287,6 +287,11 @@ export interface ImagePipelineResult {
  * the entity lane's long-standing `images.entity.generate_failed`.
  */
 export async function runImagePipeline(opts: ImagePipelineOptions): Promise<ImagePipelineResult> {
+  // Periodic maintenance rides the work it maintains (see §Scheduling the sweep):
+  // fire-and-forget, throttled to one pass per SWEEP_INTERVAL_MS, and deliberately
+  // BEFORE the generation — a render that dies mid-flight is precisely the row a
+  // later sweep has to reclaim, so the kick must not depend on reaching the end.
+  kickImageSweep();
   const asset = await createImageAsset(opts.asset);
   await opts.afterReserve?.(asset);
 
@@ -619,6 +624,20 @@ export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult
       // no data directory yet — nothing on the files side
     }
 
+    // Safety rail, now that this actually runs on a schedule: NO rows at all with
+    // files on disk means the database and the volume disagree — a fresh or branched
+    // database, a mis-set DATABASE_URL — not that every file is an orphan. Wiping the
+    // volume on that reading is unrecoverable, so the file side is skipped entirely
+    // and the disagreement is logged. (Row-side reconciliation is a no-op anyway with
+    // no rows, so nothing else is lost.)
+    const filesPresent = entries.some((entry) => entry.isFile());
+    if (rows.length === 0 && filesPresent) {
+      log.warn("images", "sweep skipped the file side: image rows are empty but files exist", {
+        dir: path.relative(root, imagesDir).split(path.sep).join("/"),
+      });
+      return result;
+    }
+
     for (const entry of entries) {
       if (!entry.isFile()) continue;
       result.filesScanned += 1;
@@ -673,4 +692,102 @@ async function fileExists(absolute: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling the sweep
+// ---------------------------------------------------------------------------
+
+/**
+ * `sweepOrphans` had no caller — it was written, tested, and documented as
+ * "on-demand + periodic", but nothing ever ran it, so a row whose render died
+ * (a deploy replacing the machine mid-generation) stayed `pending` forever and
+ * painted a tile that never resolved (owner report 2026-08-02).
+ *
+ * Scheduling shape: **request-driven, not a timer** — the same pattern the durable
+ * time-jobs use ("the boot/next-request sweep", `engine/sim-time-jobs.ts`). A
+ * `setInterval` inside a Next server has no owner, no visibility, and silently
+ * doubles under a second instance; a kick off work the app is already doing needs
+ * no infrastructure and is self-limiting. The kick sits on `runImagePipeline`, so
+ * maintenance runs while the app is doing image work — exactly when orphans are
+ * created, and exactly when a stale tile is about to be looked at.
+ *
+ * Lives here rather than in its own module because the scheduler and the sweep it
+ * schedules would otherwise import each other (a real cycle, and `pnpm lint:cycles`
+ * is right to refuse it).
+ */
+
+/** How often the reconciliation actually runs. Orphans are rare and never urgent. */
+const SWEEP_INTERVAL_MS = 6 * 60 * 60_000;
+
+/** In-process throttle: a burst of renders costs one durable check, not one per render. */
+let lastSweepAttemptMs = 0;
+
+/** Guards a second kick starting while one pass is still running in this process. */
+let sweepRunning = false;
+
+/** Whether an `image_sweep` row exists inside the interval — the durable "already swept". */
+async function sweptRecently(now: Date): Promise<boolean> {
+  const [recent] = await db()
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.type, "image_sweep"), gt(jobs.createdAt, new Date(now.getTime() - SWEEP_INTERVAL_MS))))
+    .limit(1);
+  return recent !== undefined;
+}
+
+/**
+ * One reconciliation pass, recorded as an `image_sweep` job row — the row IS the
+ * "last swept" marker the durable guard reads. Also reclaims job rows orphaned the
+ * same way the image rows were (`reclaimOrphanedJobs`): one periodic tick, both
+ * kinds of leftovers.
+ */
+async function runScheduledSweep(now: Date): Promise<void> {
+  const [row] = await db()
+    .insert(jobs)
+    .values({ type: "image_sweep", status: "running", payload: {}, attempts: 1, startedAt: now })
+    .returning({ id: jobs.id });
+  if (!row) return;
+  try {
+    const result = await sweepOrphans();
+    const jobsReclaimed = await reclaimOrphanedJobs();
+    const summary = { ...result, jobsReclaimed };
+    if (result.orphanFilesRemoved + result.stalePendingFilesRemoved + result.rowsMarkedFailed + jobsReclaimed > 0) {
+      log.warn("images", "sweep reconciled orphaned rows/files", summary);
+    }
+    await db().update(jobs).set({ status: "done", payload: summary, finishedAt: new Date() }).where(eq(jobs.id, row.id));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.warn("images", "scheduled image sweep failed", { error: message });
+    try {
+      await db()
+        .update(jobs)
+        .set({ status: "failed", error: message.slice(0, 500), finishedAt: new Date() })
+        .where(eq(jobs.id, row.id));
+    } catch {
+      // the marker row is bookkeeping; failing to close it just means the next kick re-sweeps
+    }
+  }
+}
+
+/**
+ * Fire-and-forget maintenance kick. Returns immediately and never throws, so the
+ * render that triggered it is never blocked, delayed, or failed by maintenance.
+ * Safe to call on every image generation. A double sweep would be harmless anyway
+ * (`sweepOrphans` is idempotent) — the guards are about cost, not correctness.
+ */
+export function kickImageSweep(): void {
+  const now = new Date();
+  if (sweepRunning || now.getTime() - lastSweepAttemptMs < SWEEP_INTERVAL_MS) return;
+  lastSweepAttemptMs = now.getTime();
+  sweepRunning = true;
+  void (async () => {
+    try {
+      if (!(await sweptRecently(now))) await runScheduledSweep(now);
+    } catch (err) {
+      log.warn("images", "image sweep kick failed", { error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      sweepRunning = false;
+    }
+  })();
 }

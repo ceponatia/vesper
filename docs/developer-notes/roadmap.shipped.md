@@ -5,6 +5,13 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **The image sweep actually runs** — `src/server/images/assets.ts` §Scheduling the
+  sweep (no plan — owner report) — 2026-08-03 — `sweepOrphans` had been written,
+  tested and documented as periodic but never called; it is now kicked by
+  `runImagePipeline` (throttled, durable-marker-guarded, request-driven like the
+  time-job sweep), reclaims orphaned `jobs` rows in the same tick, and refuses the
+  file side when the rows are empty but files exist.
+
 - **A deploy can't wedge a chat's background work** — `src/server/db/job-liveness.ts`
   (no plan — owner report) — 2026-08-02 — a `chat_scene_image` job orphaned by a
   deploy stayed `running` forever, so the one-live-per-chat dedupe refused every
