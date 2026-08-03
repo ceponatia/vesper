@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   exposedRegions,
+  exposureRegionsTouched,
   resolveGarmentVisibility,
   resolveWardrobeVisibility,
   rollUpGarmentVisibility,
@@ -208,5 +209,46 @@ describe("exposedRegions", () => {
 
   it("parent coverage expands to children: a dress covering the torso covers the chest", () => {
     expect(exposedRegions([worn({ instanceId: "dress", coverage: ["torso"], layer: 1 })]).torso).toBe("covered");
+  });
+});
+
+/**
+ * The same region table asked WITHOUT a garment. Coverage that is stated MISSING
+ * — the free-text overlay's denied garments, "not wearing a shirt" — still names
+ * real locations, and mapping those to regions needs the four-region vocabulary
+ * that `exposedRegions` classifies with. One definition, so a denial can never
+ * reach a region a worn row could not.
+ */
+describe("exposureRegionsTouched", () => {
+  it("maps a garment's coverage to the regions it reaches", () => {
+    expect(exposureRegionsTouched(["chest"])).toEqual(["torso"]);
+    expect(exposureRegionsTouched(["pelvis"])).toEqual(["pelvis"]);
+    expect(exposureRegionsTouched(["feet"])).toEqual(["feet"]);
+    // The dress template, whole: torso through the calves, and no feet.
+    expect(exposureRegionsTouched(["shoulders", "chest", "back", "waist", "upper_arms", "pelvis", "thighs", "calves"])).toEqual([
+      "torso",
+      "pelvis",
+      "legs",
+    ]);
+  });
+
+  it("expands parents exactly as the classifier does", () => {
+    expect(exposureRegionsTouched(["torso"])).toEqual(["torso"]);
+    // `legs` is an ancestor of the feet, so it reaches both — the same read a
+    // worn row covering `legs` gets.
+    expect(exposureRegionsTouched(["legs"])).toEqual(["legs", "feet"]);
+  });
+
+  it("touches nothing for coverage no exposure region cares about", () => {
+    // A hat and a belt answer for no region that matters, which is what keeps
+    // "a straw hat, not wearing a shirt" from baring anything but the torso.
+    expect(exposureRegionsTouched(["hair"])).toEqual([]);
+    expect(exposureRegionsTouched(["waist"])).toEqual([]);
+  });
+
+  it("is empty for empty input, and ignores ids the registry does not know", () => {
+    // Total, like every contract here: a typo covers nothing rather than throwing.
+    expect(exposureRegionsTouched([])).toEqual([]);
+    expect(exposureRegionsTouched(["not_a_location", ""])).toEqual([]);
   });
 });

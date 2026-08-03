@@ -142,10 +142,16 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
   noun still sitting in the text it describes), then the named garments answer PER REGION
   ("wearing only a red thong" is pelvis-covered and torso-bare, which the old all-or-nothing
   fallback could not express), then the covered default. A noun the text itself DENIES or
-  DISPLACES ("without a shirt", "the gown pooled at her waist") contributes nothing to begin
-  with, so the flag is the backstop rather than the only guard. Text naming no clothing — or
-  naming only garments that answer for neither intimate region, like a hat — keeps that
-  default: an unmodelled wardrobe is unknown, not nude.
+  DISPLACES ("without a shirt", "not wearing a shirt", "the gown pooled at her waist")
+  contributes no coverage row, so the flag is the backstop rather than the only guard — and
+  when the denials are ALL the text says, they answer per region themselves: "not wearing a
+  shirt" reads torso-bare with the untouched rest still covered, where zero rows used to look
+  exactly like prose naming no clothing and came back fully dressed.
+  Text naming no clothing — or naming only garments that answer for neither intimate region,
+  like a hat — keeps that default: an unmodelled wardrobe is unknown, not nude. So does a
+  DEGRADED load: worn ids that resolve to nothing land on this path too, and the nouns are
+  gated on `worn_item_ids` being genuinely empty, so "a borrowed hoodie" can never bare the
+  regions the unloadable items were covering ([../resilience.md](../resilience.md)).
 - **Archivist changes.** The archivist's `outfit` field (`contracts/turns/chat-archivist.ts`)
   drives two grammars, folded by `foldOutfitProposal` in `finalizeChatState`: a whole-outfit
   `description` naming an authored preset ("her work clothes" → the Work preset) seeds the worn
@@ -254,7 +260,9 @@ snapshot for free, so "another take" can't leave the player undressed by a disca
   would be a hole through the scene-image gate that decides whether the viewer's anatomy
   renders (scene-pov-embodiment.plan.md). Their `overlay` carries garment-noun coverage on
   the same terms as the character's (§Wardrobe) — additive over worn items, and the read of
-  last resort when nothing resolved and the player was never stripped.
+  last resort when there was nothing to resolve and the player was never stripped. Worn ids
+  that FAILED to resolve are not that case: the same degradation gate keeps the covered
+  default rather than letting the prose bare what the missing items covered.
 - **`seeded` breaks a real ambiguity.** An empty worn list means *"not dressed yet"* before
   seeding and *"stripped"* after it. Unseeded, `playerWornIds` resolves the persona's
   default preset — so a fresh chat, or a persona whose wardrobe was never authored, doesn't
