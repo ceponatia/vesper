@@ -276,6 +276,11 @@ describe("overlayWornInputs — named, but not covering", () => {
  * off `negationExceptions` wholesale: a standalone "but" is an ordinary
  * coordinator ("without a shirt but jeans"), so promoting it would strip a
  * garment the prose plainly puts on.
+ *
+ * "Nothing to except from" is scoped to the DENIAL, not to the segment: a noun
+ * denied one step back is still something to except from, so "not wearing
+ * underwear except a bra" wears the bra. Only a clause that has denied nothing
+ * yet reads the exclusion as a denial of its own.
  */
 describe("overlayWornInputs — an exclusion with nothing to except from", () => {
   it("denies the garment an exclusion names", () => {
@@ -294,6 +299,49 @@ describe("overlayWornInputs — an exclusion with nothing to except from", () =>
 
   it("rides the conjunction carry like any other denial", () => {
     expect(overlayWornInputs("excluding a bra or panties")).toEqual([]);
+  });
+
+  it("excepts from the PREVIOUS noun's denial rather than opening a new one", () => {
+    // The defect: the underwear's denial stopped at its own segment, so the bra's
+    // lone "except" read as a standalone exclusion and stripped the one garment
+    // the sentence puts ON — free-text exposure then reported a bare torso
+    // straight through a worn bra.
+    const text = "jeans and not wearing underwear except a bra";
+    expect(rowFor(text, "underwear")).toBeUndefined();
+    expect(rowFor(text, "bra")).toBeDefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("covered");
+    expect(regions.pelvis).toBe("covered");
+  });
+
+  it("inherits a plain negation marker's denial as readily as the bigram", () => {
+    expect(rowFor("no shirt except a camisole", "camisole")).toBeDefined();
+    expect(regionsOf("no shirt except a camisole").torso).toBe("covered");
+    // Every exclusion cancels an inherited denial exactly as it cancels a local
+    // one — the same word, the same reading, one noun further back.
+    for (const word of exclusionMarkers) {
+      expect(overlayWornInputs(`not wearing a shirt ${word} a robe`), `${word} inherits`).toHaveLength(1);
+    }
+  });
+
+  it("an excepted noun ENDS the denial, so the carry keeps what follows", () => {
+    // The kept verdict propagates like any other: the bra un-negates, and the
+    // pure-filler "and" carries that un-negated state onto the panties.
+    const text = "not wearing underwear except a bra and panties";
+    expect(rowFor(text, "underwear")).toBeUndefined();
+    expect(rowFor(text, "bra")).toBeDefined();
+    expect(rowFor(text, "panties")).toBeDefined();
+  });
+
+  it("a clause boundary resets the scope, so the exclusion denies again", () => {
+    // What keeps the standalone reading alive at all: the second clause has
+    // denied nothing, so "excluding" is the denial rather than a cancel.
+    const text = "no shirt, jeans excluding a bra";
+    expect(rowFor(text, "bra")).toBeUndefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+    expect(regionsOf(text).torso).toBe("bare");
+    expect(regionsOf(text).pelvis).toBe("covered");
   });
 
   it("keeps the coordinating 'but' out of it — the protected phrasing", () => {
