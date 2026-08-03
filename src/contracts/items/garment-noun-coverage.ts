@@ -40,12 +40,13 @@ import type { WornItemInput } from "./visibility";
  * `displacementMarkers` suppress the row entirely — unless a `negationExceptions`
  * word un-negates what comes after it ("not wearing anything but a thong" is a
  * worn thong, and `bareStateWords` is what arms that flip). The failure
- * directions are asymmetric and decide the design: suppressing wrongly costs
- * nothing — that garment contributes nothing, which is the pre-overlay behavior,
- * and on the free-text path the caller's intimate-region gate keeps the covered
- * default — while MISSING a displacement over-covers, and over-covering a bared
- * body is the failure this module exists to make impossible in the other
- * direction.
+ * directions are asymmetric and decide the design: suppressing wrongly costs that
+ * garment's coverage, and — since a denial now speaks for the free-text read
+ * (below) — reports its region bare, while MISSING a displacement over-covers,
+ * and over-covering a bared body is the failure this module exists to make
+ * impossible in the other direction, with nothing but the archivist's `exposed`
+ * flag to fight it. Both cost something; the second still costs more, which is
+ * why the qualifier registries stay wide while the coverage table stays narrow.
  * Under-covering a genuinely worn garment is the one thing that must never
  * happen, which is why every qualifier is scoped to ONE noun — window-scoped
  * negation with conjunction inheritance, and a shared window apportioned at its
@@ -54,6 +55,23 @@ import type { WornItemInput } from "./visibility";
  * earn it) — rather than clause-scoped: clause-scoped, "no bra under her sweater,
  * jeans" would strip the sweater and bare the torso, and an unapportioned "a
  * shirt under an open jacket" would strip the shirt.
+ *
+ * **A denial is INFORMATION, not the absence of it** (`overlayGarmentReads`). A
+ * suppressed garment leaves no coverage row, and for the union path that is the
+ * whole story — but "not wearing a shirt" with nothing else named then produced
+ * ZERO rows, which is the same shape as prose naming no clothing at all, and the
+ * free-text caller reads that shape as fully covered: a stated-bare chest came
+ * back dressed. So the scan reports BOTH sides. The worn rows are unchanged; the
+ * denied garments hand back the coverage ids they claimed, which the resolver
+ * reads as bareness wherever no worn row speaks for the same region.
+ *
+ * **Displacement counts as denial here.** "her shirt hanging open" and "gown
+ * pooled at her waist" make the same claim a negation does — that garment is not
+ * covering what it names — and the two suppression reasons are one verdict to
+ * every consumer. An UNMAPPED noun is the genuinely different case and stays out
+ * of both outputs: nobody knows what a cloak covers, so it can neither dress a
+ * region nor bare one. Denied coverage is bounded exactly as the worn rows are —
+ * the same table, so a garment nobody mapped bares nothing.
  *
  * Registry rules (CLAUDE.md): vocabulary and coverage changes are data edits in
  * the tables below, never logic changes. Coverage ids come from the
@@ -501,14 +519,23 @@ export const negationCarryWords: ReadonlySet<string> = new Set([
  * whole displaced BOTH garments and bared the torso — the exact under-covering
  * the module comment calls the one unacceptable failure.
  *
- * Deliberately just the layering words plus "while"/"whilst". A hinge that is not
- * one would split a modifier off the noun it belongs to; a missing hinge hands a
- * post-modifier to the wrong garment — which is what "a shirt hanging open while
- * wearing jeans" did: with nothing to hinge on, the whole span attached forward,
- * so `hanging open` displaced the JEANS and the stated-open shirt kept covering,
- * inverting the sentence. "while" earns the unconditional treatment for the same
- * reason a preposition does: it never premodifies the noun after it, so anything
- * before it is finished business.
+ * Deliberately just the layering words plus the clause transitions
+ * "while"/"whilst"/"as". A hinge that is not one would split a modifier off the
+ * noun it belongs to; a missing hinge hands a post-modifier to the wrong garment
+ * — which is what "a shirt hanging open while wearing jeans" did: with nothing to
+ * hinge on, the whole span attached forward, so `hanging open` displaced the JEANS
+ * and the stated-open shirt kept covering, inverting the sentence. A clause
+ * transition earns the unconditional treatment for the same reason a preposition
+ * does: it never premodifies the noun after it, so anything before it is finished
+ * business.
+ *
+ * **"as" is here despite its comparative reading** ("a robe soft as silk over a
+ * chemise"). The two readings agree on what matters: the hinge fires on FIRST
+ * hit, and a comparative "as" only ever stands after the previous noun's own
+ * post-modifiers, so splitting there fences exactly what a later preposition
+ * would have fenced — nothing marked precedes it, so both garments keep covering.
+ * The transition reading ("a shirt hanging open as she wears jeans") is the one
+ * that costs a garment when missed, which is the direction that decides it.
  *
  * **The layering prepositions must never join `negationCarryWords`.** The carry
  * check reads the WHOLE window on purpose, and these two registries pulling in
@@ -536,6 +563,7 @@ export const windowSplitters: ReadonlySet<string> = new Set([
   "below",
   "while",
   "whilst",
+  "as",
 ]);
 
 /**
@@ -822,9 +850,24 @@ function attachWindow(window: readonly string[], hasPrevious: boolean, hasNext: 
   return { toPrevious: window.slice(0, hinge), toNext: window.slice(hinge + 1) };
 }
 
+/** Both sides of one overlay read: what the text puts ON, and what it takes OFF. */
+export interface OverlayGarmentReads {
+  /** Coverage rows for the garments the text says are worn — the union input. */
+  worn: WornItemInput[];
+  /**
+   * Body-location ids claimed by garments the text DENIES or DISPLACES, deduped
+   * and unordered. Not a negative row — coverage a caller with no other wardrobe
+   * may read as stated-bare, and the only output of this module that can bare
+   * anything. Bounded by the same `garmentNounCoverage` table as `worn`, so an
+   * unmapped noun contributes to neither side.
+   */
+  deniedCoverage: string[];
+}
+
 /**
  * Coverage rows for the garments a stretch of overlay text names — one row per
- * canonical identity, mapped and unsuppressed ones only.
+ * canonical identity, mapped and unsuppressed ones only — PLUS the coverage the
+ * text says is missing.
  *
  * **The windows, and who owns them.** Every scan here reads the tokens between
  * two garment nouns (or between a noun and the clause edge); clause boundaries
@@ -870,18 +913,25 @@ function attachWindow(window: readonly string[], hasPrevious: boolean, hasNext: 
  *   and "a shirt under an open jacket" puts it after one noun and before another
  *   in the same breath — where only the hinge says it displaces the jacket alone.
  *
- * A suppressed noun contributes nothing but still bounds its neighbors' windows,
- * exactly as an unmapped one does. Suppression never DELETES a row an earlier
- * clause affirmed — "a linen shirt, then no shirt" keeps the cover, the safe
- * direction (see the module comment on failure directions).
+ * A suppressed noun contributes no ROW but still bounds its neighbors' windows,
+ * exactly as an unmapped one does — and, unlike an unmapped one, it reports the
+ * coverage it would have had as `deniedCoverage` (module comment: a denial is
+ * information). Suppression never DELETES a row an earlier clause affirmed — "a
+ * linen shirt, then no shirt" keeps the cover, the safe direction (see the module
+ * comment on failure directions) — and never subtracts from a row either: the two
+ * outputs are independent, and it is the CALLER that decides a worn row outranks
+ * a denial of the same region.
  *
  * One identity named twice keeps the most-covering read (opaque wins), the same
  * direction the rest of this module leans.
  *
  * PURE and total: odd text simply yields fewer rows, never a throw.
  */
-export function overlayWornInputs(text: string): WornItemInput[] {
+export function overlayGarmentReads(text: string): OverlayGarmentReads {
   const rows = new Map<string, WornItemInput>();
+  // Deduped by construction, and never expanded here: the ids stay exactly what
+  // the table says, so the caller's own expansion rule is the only one in play.
+  const denied = new Set<string>();
   for (const clause of text.split(CLAUSE_BOUNDARY)) {
     const { nouns, windows } = scanClause(garmentNounTokens(clause));
     // Window `i` has a noun before it whenever it is not the clause-initial one,
@@ -914,8 +964,18 @@ export function overlayWornInputs(text: string): WornItemInput[] {
       // table does not map: "without a scarf or shirt" denies the shirt too.
       negatedBefore = negated;
       const mapped = garmentNounCoverage.get(noun.identity);
+      // An unmapped noun is the one case that says nothing in EITHER direction:
+      // we do not know what it covers, so it can neither dress a region nor bare
+      // one. Everything below is a claim about a garment whose coverage we know.
       if (mapped === undefined) continue;
-      if (negated || windowHas(pre, displacementMarkers) || windowHas(post, displacementMarkers)) continue;
+      const displaced = windowHas(pre, displacementMarkers) || windowHas(post, displacementMarkers);
+      if (negated || displaced) {
+        // Denied and displaced are ONE verdict — "not wearing a shirt" and "her
+        // shirt hanging open" both say this garment is not covering what it
+        // names, and that is a positive statement about the body under it.
+        for (const id of mapped.coverage) denied.add(id);
+        continue;
+      }
       if (rows.get(noun.identity)?.opacity === "opaque") continue;
       const id = `${OVERLAY_ROW_PREFIX}${noun.identity}`;
       rows.set(noun.identity, {
@@ -928,5 +988,15 @@ export function overlayWornInputs(text: string): WornItemInput[] {
       });
     }
   }
-  return [...rows.values()];
+  return { worn: [...rows.values()], deniedCoverage: [...denied] };
+}
+
+/**
+ * The worn half alone — the union input both structured paths hand to
+ * `exposedRegions` alongside the real items. Text may only ADD cover there, so
+ * the denials are deliberately unreachable from this shape: a modelled wardrobe
+ * knows what is on the body better than prose describing it does.
+ */
+export function overlayWornInputs(text: string): WornItemInput[] {
+  return overlayGarmentReads(text).worn;
 }

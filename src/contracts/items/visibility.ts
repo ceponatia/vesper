@@ -169,6 +169,21 @@ const EXPOSURE_REGION_LOCATIONS: Record<keyof RegionExposure, readonly string[]>
   feet: ["feet", "top_of_foot", "sole", "heel", "toes"],
 };
 
+/** The four regions in the order every read reports them — one list, so no caller invents an order. */
+const EXPOSURE_REGIONS: readonly (keyof RegionExposure)[] = ["torso", "pelvis", "legs", "feet"];
+
+/**
+ * Coverage ids → every body location they reach, the registry's
+ * parent-implies-descendants rule applied once. Unregistered ids are dropped
+ * (contracts never throw): a typo simply covers nothing.
+ */
+function expandCoverage(coverage: readonly string[], registry: BodyLocationRegistry, into: Set<string>): void {
+  for (const cover of coverage) {
+    if (!registry.byId(cover)) continue;
+    for (const loc of registry.expand(cover)) into.add(loc);
+  }
+}
+
 /**
  * Per-region coverage from the worn garments, using the same coverage-expansion
  * rule as resolveWardrobeVisibility (coverage of a parent implies its
@@ -181,13 +196,7 @@ export function exposedRegions(
 ): RegionExposure {
   const opaque = new Set<string>();
   const sheer = new Set<string>();
-  for (const item of worn) {
-    for (const cover of item.coverage) {
-      if (!registry.byId(cover)) continue;
-      const target = item.opacity === "sheer" ? sheer : opaque;
-      for (const loc of registry.expand(cover)) target.add(loc);
-    }
-  }
+  for (const item of worn) expandCoverage(item.coverage, registry, item.opacity === "sheer" ? sheer : opaque);
   const classify = (locs: readonly string[]): RegionCoverage =>
     locs.some((l) => opaque.has(l)) ? "covered" : locs.some((l) => sheer.has(l)) ? "sheer" : "bare";
   return {
@@ -196,4 +205,25 @@ export function exposedRegions(
     legs: classify(EXPOSURE_REGION_LOCATIONS.legs),
     feet: classify(EXPOSURE_REGION_LOCATIONS.feet),
   };
+}
+
+/**
+ * WHICH exposure regions a bare list of coverage ids reaches — the same locations
+ * and the same expansion `exposedRegions` classifies with, asked without a
+ * garment to hang them on.
+ *
+ * It exists for coverage that is stated MISSING rather than worn: the free-text
+ * overlay's denied garments ("not wearing a shirt") name real coverage that is
+ * absent, and answering "which regions did that claim touch" needs the region
+ * table without inventing a second copy of it (`EXPOSURE_REGION_LOCATIONS` stays
+ * private, so the four-region vocabulary has exactly one definition). Ids the
+ * registry does not know are ignored, and an empty input touches nothing. PURE.
+ */
+export function exposureRegionsTouched(
+  coverage: readonly string[],
+  registry: BodyLocationRegistry = bodyLocationRegistry,
+): Array<keyof RegionExposure> {
+  const reached = new Set<string>();
+  expandCoverage(coverage, registry, reached);
+  return EXPOSURE_REGIONS.filter((region) => EXPOSURE_REGION_LOCATIONS[region].some((loc) => reached.has(loc)));
 }

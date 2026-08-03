@@ -12,6 +12,7 @@ import {
   negationCarryWords,
   negationExceptions,
   negationMarkers,
+  overlayGarmentReads,
   overlayWornInputs,
   sheerModifiers,
   windowSplitters,
@@ -202,9 +203,9 @@ describe("overlayWornInputs — named, but not covering", () => {
   });
 
   it("an exception word ENDS the denial — what it excepts is worn", () => {
-    // The defect: this denied the thong, and zero rows is the same shape as "no
-    // clothing named at all", which the free-text caller's intimate-region gate
-    // reads as fully covered — the opposite of what the sentence says.
+    // The defect: this denied the thong, and a denied garment is now read as its
+    // own region BARE — the exact opposite of what the sentence says, where the
+    // thong is the one thing that IS on.
     const text = "not wearing anything but a thong";
     expect(rowFor(text, "thong")).toBeDefined();
     const regions = regionsOf(text);
@@ -454,6 +455,29 @@ describe("overlayWornInputs — which garment a shared window modifies", () => {
     expect(rowFor("a shirt hanging open whilst wearing jeans", "jeans")).toBeDefined();
   });
 
+  it("'as' is a clause transition too — the same inversion, one word smaller", () => {
+    // Missing from the hinge registry, the span attached wholly forward and
+    // `hanging open` displaced the JEANS while the stated-open shirt covered.
+    const text = "a shirt hanging open as she wears jeans";
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "jeans")).toBeDefined();
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("bare");
+    expect(regions.pelvis).toBe("covered");
+  });
+
+  it("a comparative 'as' costs nothing — the hinge fences an empty segment", () => {
+    // The reading that made "as" look risky. It hinges on first hit, but nothing
+    // fenceable stands before it, so both garments keep covering — and the same
+    // is true of the correlative "as well as".
+    const soft = "a robe soft as silk over a chemise";
+    expect(rowFor(soft, "robe")).toBeDefined();
+    expect(rowFor(soft, "chemise")).toBeDefined();
+    expect(regionsOf(soft).torso).toBe("covered");
+    expect(rowFor("a gown as dark as night", "gown")).toBeDefined();
+    expect(overlayWornInputs("a bra as well as a thong").map((row) => row.name)).toEqual(["bra", "thong"]);
+  });
+
   it("a clause-initial window attaches FORWARD from its hinge", () => {
     // Hinge-less, that is the whole span: the marker is the jacket's.
     expect(overlayWornInputs("unbuttoned jacket")).toEqual([]);
@@ -613,6 +637,81 @@ describe("overlayWornInputs — when a coordinator is not a hinge", () => {
     const regions = regionsOf(text);
     expect(regions.torso).toBe("covered");
     expect(regions.pelvis).toBe("bare");
+  });
+});
+
+/**
+ * The second output (`overlayGarmentReads.deniedCoverage`). A suppressed garment
+ * leaves no row, and for the union path that is the whole story — but "not
+ * wearing a shirt" alone then produced ZERO rows, the same shape as prose naming
+ * no clothing, which the free-text caller reads as fully covered. A stated-bare
+ * chest came back dressed.
+ *
+ * So the scan reports both sides. The worn half is untouched (`overlayWornInputs`
+ * is now a thin wrapper over the same scan, so the two can never disagree), and
+ * the denied half is bounded by the SAME coverage table — an unmapped noun bares
+ * nothing, exactly as it dresses nothing.
+ */
+describe("overlayGarmentReads — the coverage a denial reports", () => {
+  it("hands the worn half back unchanged (the wrapper reads one scan)", () => {
+    for (const text of ["a linen shirt", "not wearing a shirt", "a bra, shirt unbuttoned and hanging open with jeans"]) {
+      expect(overlayGarmentReads(text).worn, text).toEqual(overlayWornInputs(text));
+    }
+  });
+
+  it("reports what a DENIED garment would have covered", () => {
+    const reads = overlayGarmentReads("not wearing a shirt");
+    expect(reads.worn).toEqual([]);
+    // The top template's chest is what makes this answerable per region; the
+    // caller expands and maps it to torso.
+    expect(reads.deniedCoverage).toContain("chest");
+  });
+
+  it("counts a DISPLACED garment as denied — it is the same claim", () => {
+    // "not covering what it names" is one verdict however the text phrases it;
+    // splitting them would leave "her shirt hanging open" reading as covered
+    // prose that mentions a shirt.
+    expect(overlayGarmentReads("her shirt hanging open").deniedCoverage).toContain("chest");
+    expect(overlayGarmentReads("gown pooled at her waist").deniedCoverage).toContain("pelvis");
+  });
+
+  it("an UNMAPPED noun contributes to NEITHER side", () => {
+    // The genuinely different case: nobody knows what a cloak covers, so a denied
+    // one can no more bare a region than a worn one can dress it.
+    const reads = overlayGarmentReads("not wearing a cloak");
+    expect(reads.worn).toEqual([]);
+    expect(reads.deniedCoverage).toEqual([]);
+  });
+
+  it("a worn garment reports no denial, and a denial no row", () => {
+    expect(overlayGarmentReads("a linen shirt").deniedCoverage).toEqual([]);
+    expect(overlayGarmentReads("not wearing a shirt").worn).toEqual([]);
+  });
+
+  it("dedupes across the whole text, however many nouns claim the same location", () => {
+    const reads = overlayGarmentReads("no shirt, no blouse, not wearing a camisole");
+    expect(reads.deniedCoverage.filter((id) => id === "chest")).toHaveLength(1);
+  });
+
+  it("carries the denial across a conjunction, exactly as the rows do", () => {
+    const reads = overlayGarmentReads("not wearing a bra or panties");
+    expect(reads.deniedCoverage).toContain("chest");
+    expect(reads.deniedCoverage).toContain("pelvis");
+  });
+
+  it("an EXCEPTED garment is worn, not denied", () => {
+    const reads = overlayGarmentReads("not wearing anything but a thong");
+    expect(reads.worn.map((row) => row.name)).toEqual(["thong"]);
+    expect(reads.deniedCoverage).toEqual([]);
+  });
+
+  it("a bare-state word with no noun denies nothing — there is no garment to bound it", () => {
+    // Documented, and the reason it is acceptable: this scanner only ever speaks
+    // through garment nouns, so "not wearing anything" leaves the caller on its
+    // covered default and the archivist's exposure flag carries that beat.
+    const reads = overlayGarmentReads("not wearing anything");
+    expect(reads.worn).toEqual([]);
+    expect(reads.deniedCoverage).toEqual([]);
   });
 });
 
