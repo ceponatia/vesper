@@ -65,10 +65,14 @@ import type { WornItemInput } from "./visibility";
  * **A compared garment is not a worn one either.** "a blouse as sheer as a
  * negligee" names a negligee nobody has on: the `as … as` span is a simile, its
  * inner words describe the garment BEFORE it, and the noun after it is only the
- * yardstick. So the span hinges nowhere, its sheer reading lands backward on the
- * blouse, and the object emits nothing in either direction — no row and no denial,
- * exactly like an unmapped noun (`readComparatives`). "as well as" is the one span
- * that coordinates rather than compares, and it keeps the plain hinge.
+ * yardstick. So the span hinges nowhere, its inner reading lands backward on the
+ * blouse — a sheer word makes that garment see-through, a displacement word denies
+ * it, the same verdict displacement carries anywhere else — and the object emits
+ * nothing in either direction, no row and no denial, exactly like an unmapped noun
+ * (`readComparatives`). A yardstick keeps its own adjectives ("as sheer as a BLACK
+ * negligee" measures against no garment anybody has on), so only a hinge word
+ * after the span says the simile ended and a real garment follows. "as well as" is
+ * the one span that coordinates rather than compares, and it keeps the plain hinge.
  *
  * **A denial is INFORMATION, not the absence of it** (`overlayGarmentReads`). A
  * suppressed garment leaves no coverage row, and for the union path that is the
@@ -841,9 +845,18 @@ interface WindowComparatives {
    */
   sheerBackward: boolean;
   /**
+   * A `displacementMarkers` word stands INSIDE a span ⇒ the noun BEFORE this
+   * window is the open/displaced one. "a shirt as open as a vest" says the SHIRT
+   * hangs open, and displacement is a denial everywhere else in this module, so it
+   * is one here too — the garment lands on the denied side rather than merely
+   * losing its opacity. Both flags at once ("as sheer and open as gauze")
+   * suppresses: a row that is not there has no opacity to state.
+   */
+  displacedBackward: boolean;
+  /**
    * The noun this window ENDS at is the comparison's object — the yardstick a
-   * simile measures against, not clothing on this body — because nothing but
-   * `negationCarryWords` filler stands between the closing "as" and it.
+   * simile measures against, not clothing on this body — because no hinge word
+   * stands between the closing "as" and it.
    */
   objectFollows: boolean;
 }
@@ -862,10 +875,23 @@ interface WindowComparatives {
  *
  * A span is an "as" plus the next one at least two tokens on, because a
  * comparison needs something to compare: "as as" has no inner and opens nothing.
- * Neither "as" hinges, the inner tokens describe the PRECEDING noun, and the noun
- * the window ends at is the yardstick that noun is held against — worn by nobody.
+ * Neither "as" hinges, the inner tokens describe the PRECEDING noun — in both of
+ * the readings this module has, fabric and displacement alike — and the noun the
+ * window ends at is the yardstick that noun is held against, worn by nobody.
  * `additiveAsInners` is the one inner that means coordination instead, and it
  * leaves both tokens to the ordinary hinge.
+ *
+ * **A modified yardstick is still a yardstick.** What ends a simile is a hinge
+ * word, not an adjective: "a blouse as sheer as a black negligee" measures against
+ * a negligee nobody has on exactly as the bare spelling does, and reading `black`
+ * as the sentence moving on emitted an OPAQUE negligee row that outranked the
+ * blouse's sheer one region-wise — the described-sheer torso read covered, which
+ * is the very failure the span reading exists to fix. So the object suppression
+ * holds unless a hinge candidate (`windowSplitters` ∪ `coordinatorSplitters` ∪
+ * `conditionalSplitters`) stands between the closing "as" and the noun: only a
+ * layering or joining word says the yardstick phrase ended and a genuinely worn
+ * garment follows ("as sheer as glass OVER a negligee", "as sheer as silk AND
+ * jeans"). Premodifiers — colors, fabrics, "lace" — are part of the simile.
  *
  * Known limitation, and the shape it takes: the pairing is greedy and
  * left-to-right, so a TRANSITION "as" sharing an unpunctuated window with a later
@@ -879,6 +905,7 @@ function readComparatives(window: readonly string[]): WindowComparatives {
   // Explicitly typed on purpose: loop-carried values read and reassigned in the
   // same scan are where this module has hit TS7022 (implicit-`any` cycle) before.
   let sheerBackward: boolean = false;
+  let displacedBackward: boolean = false;
   let objectFollows: boolean = false;
   let open: number = window.indexOf(AS);
   while (open >= 0) {
@@ -889,16 +916,18 @@ function readComparatives(window: readonly string[]): WindowComparatives {
       spanned.add(open);
       spanned.add(close);
       if (inner.some((token) => sheerModifiers.has(token))) sheerBackward = true;
-      // Only filler between the span and the window's end means the noun that
-      // closes the window IS the yardstick. A substantive token means the
+      if (inner.some((token) => displacementMarkers.has(token))) displacedBackward = true;
+      // No HINGE word between the span and the window's end means the noun that
+      // closes the window IS the yardstick — its own premodifiers ride along with
+      // it ("as sheer as a black negligee"). A layering or joining word means the
       // sentence moved on and that noun is dressed prose again ("a blouse as
       // sheer as glass over a negligee" wears the negligee). The LAST span in a
       // window is the one that answers — it is the one standing next to the noun.
-      objectFollows = window.slice(close + 1).every((token) => negationCarryWords.has(token));
+      objectFollows = !window.slice(close + 1).some((token) => isHingeCandidate(token));
     }
     open = window.indexOf(AS, close + 1);
   }
-  return { spanned, sheerBackward, objectFollows };
+  return { spanned, sheerBackward, displacedBackward, objectFollows };
 }
 
 /**
@@ -1060,11 +1089,16 @@ export interface OverlayGarmentReads {
  *   and "a shirt under an open jacket" puts it after one noun and before another
  *   in the same breath — where only the hinge says it displaces the jacket alone.
  * - **Comparison** (`readComparatives`) reads a whole window for an `as … as`
- *   span, and answers in both directions at once: a `sheerModifiers` word inside
- *   the span makes the noun BEFORE the window sheer ("a blouse as sheer as a
- *   negligee" describes the blouse), and the noun AFTER it, reached across nothing
- *   but filler, is the simile's yardstick and emits nothing at all. "as well as"
- *   (`additiveAsInners`) coordinates instead, and keeps the ordinary hinge.
+ *   span, and answers in both directions at once. The inner words describe the
+ *   noun BEFORE the window: a `sheerModifiers` word makes it sheer ("a blouse as
+ *   sheer as a negligee" describes the blouse) and a `displacementMarkers` word
+ *   denies it outright ("a shirt as open as a vest" opens the shirt), with
+ *   suppression winning when a span says both. The noun AFTER the span is the
+ *   simile's yardstick and emits nothing at all — no row, no denial — unless a
+ *   hinge word stands between the closing "as" and it, which is the only thing
+ *   that ends a yardstick phrase: "as sheer as a black negligee" is still a
+ *   simile, while "as sheer as glass over a negligee" wears the negligee. "as well
+ *   as" (`additiveAsInners`) coordinates instead, and keeps the ordinary hinge.
  *
  * A suppressed noun contributes no ROW but still bounds its neighbors' windows,
  * exactly as an unmapped one does — and, unlike an unmapped one, it reports the
@@ -1141,16 +1175,30 @@ export function overlayGarmentReads(text: string): OverlayGarmentReads {
       negatedBefore = negated;
       // A comparison OBJECT is the yardstick a simile holds the previous garment
       // against, not clothing on this body: "a blouse as sheer as a negligee"
-      // names exactly one worn garment. So it contributes to NEITHER output — no
-      // row and no denial — while still closing windows and bounding its
-      // neighbours, which is precisely how an unmapped noun behaves.
+      // names exactly one worn garment, and so does "as sheer as a BLACK negligee"
+      // — the yardstick's own adjectives belong to the simile. So it contributes
+      // to NEITHER output — no row and no denial — while still closing windows and
+      // bounding its neighbours, which is precisely how an unmapped noun behaves.
       if (comparatives[k]?.objectFollows === true) continue;
       const mapped = garmentNounCoverage.get(noun.identity);
       // An unmapped noun is the one case that says nothing in EITHER direction:
       // we do not know what it covers, so it can neither dress a region nor bare
       // one. Everything below is a claim about a garment whose coverage we know.
       if (mapped === undefined) continue;
-      const displaced = windowHas(pre, displacementMarkers) || windowHas(post, displacementMarkers);
+      // A comparative in the noun's POST window is a postmodifier of THIS naming,
+      // and displacement is one of the two things such a postmodifier can say: "a
+      // shirt as open as a vest" states an open SHIRT. The span swallows the
+      // marker where the ordinary post-segment scan would have found it — a
+      // hinge-less window attaches wholly FORWARD, onto a yardstick that emits
+      // nothing — so without this the stated-open shirt kept covering while the
+      // vest was (correctly) discarded, reporting a covered torso for a garment
+      // the prose hangs open. Displacement is a denial everywhere else here, and
+      // it is one here: the row goes to `denied`, which also settles a span
+      // holding both readings — suppression wins, because a row that is not
+      // emitted has no opacity to be sheer.
+      const comparativeDisplaced = comparatives[k + 1]?.displacedBackward === true;
+      const displaced =
+        comparativeDisplaced || windowHas(pre, displacementMarkers) || windowHas(post, displacementMarkers);
       if (negated || displaced) {
         // Denied and displaced are ONE verdict — "not wearing a shirt" and "her
         // shirt hanging open" both say this garment is not covering what it

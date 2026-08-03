@@ -210,18 +210,29 @@ through the described gown.
 - **A compared garment is not a worn one.** An `as … as` span (`readComparatives`
   — an "as" and the next one at least two tokens on, so "as as" is nothing) is a
   simile, and it answers in both directions at once. Its inner words describe the
-  garment BEFORE the span, so a `sheerModifiers` word there makes THAT garment
-  see-through — a postmodifier of one naming rather than a second naming, which is
-  why it is the single read exempt from opaque-wins. The noun the span's window
-  ends at, reached across nothing but `negationCarryWords` filler, is the yardstick
-  the comparison measures against and contributes to NEITHER output — no row and no
-  denial, exactly like an unmapped noun (a substantive token in between cancels
-  that: "a blouse as sheer as glass over a negligee" wears the negligee). Read as a
-  hinge instead, "a blouse as sheer as a negligee" left the blouse opaque and put
-  the negligee on the body — both halves of one sentence backwards. With no noun
-  before the span there is nothing to upgrade and the object is still an object, so
-  "as sheer as a negligee" alone claims nothing and the free-text caller keeps its
-  covered default.
+  garment BEFORE the span, in both of the readings this scanner has: a
+  `sheerModifiers` word there makes THAT garment see-through — a postmodifier of
+  one naming rather than a second naming, which is why it is the single read exempt
+  from opaque-wins — and a `displacementMarkers` word DENIES it ("a shirt as open
+  as a vest" states an open shirt), the same verdict displacement carries anywhere
+  else, so the garment lands on the denied side and reads bare per region. A span
+  saying both suppresses: a row that is never emitted has no opacity to be sheer.
+  While only sheer travelled backward, the span swallowed `open` and the yardstick
+  that would otherwise have carried it emits nothing, so an explicitly open shirt
+  reported a covered torso. The noun the span's window ends at is the yardstick the
+  comparison measures against and contributes to NEITHER output — no row and no
+  denial, exactly like an unmapped noun. **What ends a yardstick phrase is a HINGE
+  word, never an adjective**: only `windowSplitters` / `coordinatorSplitters` /
+  `conditionalSplitters` between the closing "as" and the noun say the simile is
+  over and a genuinely worn garment follows ("as sheer as glass **over** a
+  negligee", "as sheer as silk **and** jeans"), while premodifiers ride along with
+  the yardstick — "a blouse as sheer as a black negligee" is one worn blouse, and
+  reading `black` as the sentence moving on emitted an opaque negligee row that
+  outranked the blouse's sheer one region-wise. Read as a hinge instead, "a blouse
+  as sheer as a negligee" left the blouse opaque and put the negligee on the body —
+  both halves of one sentence backwards. With no noun before the span there is
+  nothing to upgrade and the object is still an object, so "as sheer as a negligee"
+  alone claims nothing and the free-text caller keeps its covered default.
 - **A denial is information, not the absence of it.** A suppressed noun leaves no
   row, and for the union path that is the whole story — but "not wearing a shirt"
   alone then produced ZERO rows, which is the same shape as prose naming no
