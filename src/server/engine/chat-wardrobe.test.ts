@@ -286,10 +286,13 @@ describe("garment nouns in the free-text overlay", () => {
   });
 
   it("an exposure claim still wins over a garment noun on the free-text path", async () => {
-    // The archivist writes `exposed: true` for "the gown pooled at her waist" —
-    // that beat has to beat the gown noun sitting in the text it describes.
+    // The archivist writes `exposed: true` for a beat the noun scan cannot see,
+    // and that claim has to beat the gown noun sitting in the overlay text. The
+    // fixture deliberately names a gown the scanner DOES read as covering (a
+    // displaced one — "the gown pooled at her waist" — contributes nothing on its
+    // own now, and would prove nothing about precedence).
     const resolved = await resolveChatWardrobe(
-      { wornItemIds: [], outfit: "the pale lavender gown pooled at her waist", outfitExposed: true },
+      { wornItemIds: [], outfit: "the pale lavender gown", outfitExposed: true },
       "owner",
       profile,
     );
@@ -349,6 +352,20 @@ describe("garment nouns in the free-text overlay", () => {
     );
     expect(resolved.exposure.pelvis).toBe("covered");
     expect(resolved.exposure.torso).toBe("bare");
+  });
+
+  it("a DENIED garment cannot dress the player back up", async () => {
+    // The player path has no manual exposure flag to correct it, so the overlay's
+    // nouns are the whole read: "no shirt" used to contribute an opaque chest row
+    // and report a stated-bare torso as covered. The jeans still speak for the
+    // pelvis, which is what makes this per-region rather than silence.
+    const resolved = await resolvePlayerWardrobe(
+      { ...emptyChatPlayerState(), overlay: "jeans and no shirt" },
+      "owner",
+      personaProfileSchema.parse({}),
+    );
+    expect(resolved.exposure.torso).toBe("bare");
+    expect(resolved.exposure.pelvis).toBe("covered");
   });
 });
 
