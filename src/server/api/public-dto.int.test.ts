@@ -157,10 +157,8 @@ describe.skipIf(!ready)("public representations for foreign viewers", () => {
     const row = await findViewable("character", publicCharacterId, ownerB);
     expect(row).toBeTruthy();
     const profile: Record<string, unknown> = { ...toPublicCharacter(row!).profile };
-    // The allow-list (security-authz.plan.md OQ2), top level — plus the
-    // declaration, public by owner ruling 2026-07-30 (eligibility follow-ups).
+    // The allow-list (security-authz.plan.md OQ2), top level.
     expect(Object.keys(profile).sort()).toEqual([
-      "adultEligibilityDeclaration",
       "age",
       "attributes",
       "bio",

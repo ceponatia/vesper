@@ -2,11 +2,7 @@
 
 import { useState } from "react";
 import {
-  ADULT_ELIGIBILITY_ANCHOR_ID,
-  ADULT_ELIGIBILITY_DECLARATION_LABELS,
-  ADULT_ELIGIBILITY_DECLARATION_OPTIONS,
   heritagesForSpecies,
-  readAdultEligibilityDeclaration,
   speciesById,
   speciesCatalog,
   type PersonaProfile,
@@ -161,29 +157,6 @@ export function PersonaEditor({ draft, onChange, titleError }: PersonaEditorProp
               )}
             </Field>
           ) : null}
-          {/* Stable anchor: romantic-contact slice 3 will deep-link a blocked action here. */}
-          <div id={ADULT_ELIGIBILITY_ANCHOR_ID} className="scroll-mt-24 sm:col-span-2">
-            <Field
-              label="Adult eligibility"
-              hint="A statement about your persona as a participant in the fiction. Romantic and intimate framing stays unavailable until everyone in a scene — you included — is declared an adult. Leaving it unstated changes nothing else."
-            >
-              {(id) => (
-                <Select
-                  id={id}
-                  value={draft.profile.adultEligibilityDeclaration}
-                  onChange={(e) =>
-                    patchProfile({ adultEligibilityDeclaration: readAdultEligibilityDeclaration(e.target.value) })
-                  }
-                >
-                  {ADULT_ELIGIBILITY_DECLARATION_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {ADULT_ELIGIBILITY_DECLARATION_LABELS[option]}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-          </div>
           <Field label="About you" className="sm:col-span-2" hint="A couple of sentences on who you are. Characters read this.">
             {(id) => (
               <Textarea

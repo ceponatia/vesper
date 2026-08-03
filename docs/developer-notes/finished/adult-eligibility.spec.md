@@ -1,5 +1,11 @@
 # Adult eligibility — technical spec
 
+> **Rolled back 2026-08-03** — every contract, field, control, and check this
+> spec describes has been removed from the codebase (owner ruling: scope creep;
+> species-scaled ages make a flat human 18 the wrong adult test). See the
+> rollback note atop [adult-eligibility.plan.md](adult-eligibility.plan.md).
+> Historical record only.
+
 The coding-agent companion to [adult-eligibility.plan.md](adult-eligibility.plan.md).
 The plan owns scope, rollout, and open questions; this file owns the contract shapes,
 the resolver law, the storage decision, and the proof points. Owner rulings are recorded

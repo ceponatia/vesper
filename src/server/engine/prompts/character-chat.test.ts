@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { AdultEligibilityDeclaration } from "@/contracts/eligibility/declaration";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import type { ChatDrive } from "@/contracts/personality/drives";
 import type { RelationshipRecord } from "@/contracts/relationships/record";
@@ -2455,61 +2454,5 @@ describe("the intimate disposition gate (ensemble)", () => {
     ]);
     expect(tail).toContain("Mara's note.");
     expect(tail).not.toContain("never renders");
-  });
-});
-
-describe("the adult-eligibility declaration text never reaches the narrator (adult-eligibility.plan.md)", () => {
-  /**
-   * The pin, post follow-ups: `adult` and `unresolved` render byte-identically
-   * to the undeclared baseline — the declaration is a gate input, not prompt
-   * text. An explicit `minor` ARMS the existing minor-safe fence (the same
-   * output a numeric minor age produces) while the declaration's own vocabulary
-   * still never appears; this fails the moment anyone serializes a profile into
-   * prompt text.
-   */
-  const declared = (declaration: AdultEligibilityDeclaration) => maraProfile({ adultEligibilityDeclaration: declaration });
-
-  it("renders byte-identically for adult and unresolved — single character", () => {
-    const baseline = systemPrompt({ profile: declared("unresolved") });
-    expect(systemPrompt({ profile: declared("adult") })).toBe(baseline);
-    expect(baseline).not.toMatch(/eligib/iu);
-    expect(baseline).not.toContain("adultEligibilityDeclaration");
-  });
-
-  it("a declared minor gets the minor-safe frame — numeric-adult age notwithstanding — without the declaration text", () => {
-    // maraProfile carries age "29": the declaration alone arms the fence.
-    const prompt = systemPrompt({ profile: declared("minor") });
-    expect(prompt).toContain("This character is a minor");
-    expect(prompt).not.toMatch(/eligib/iu);
-    expect(prompt).not.toContain("adultEligibilityDeclaration");
-    // The same fence output a numeric minor age produces — no new vocabulary.
-    expect(systemPrompt({ profile: maraProfile({ age: "15" }) })).toContain("This character is a minor");
-  });
-
-  it("renders byte-identically through the split prefix/tail builder", () => {
-    const baseline = promptParts({ profile: declared("unresolved") });
-    const adult = promptParts({ profile: declared("adult") });
-    expect(adult.prefix).toBe(baseline.prefix);
-    expect(adult.tail).toBe(baseline.tail);
-  });
-
-  it("renders byte-identically on the ensemble roster path for adult; a declared-minor member arms the cast fence", () => {
-    const roster = (declaration: AdultEligibilityDeclaration) =>
-      buildChatPromptPartsForRoster(input({ profile: declared(declaration) }), [
-        member("Mara", { profile: declared(declaration) }),
-        member("Rhett", { profile: declared(declaration) }),
-      ]);
-    const baseline = roster("unresolved");
-    const adult = roster("adult");
-    expect(adult.prefix).toBe(baseline.prefix);
-    expect(adult.tail).toBe(baseline.tail);
-    expect(baseline.prefix).not.toMatch(/eligib/iu);
-    const fenced = roster("minor");
-    expect(fenced.prefix).toContain("Some characters in this cast are minors");
-    expect(fenced.prefix).not.toMatch(/eligib/iu);
-  });
-
-  it("still renders the real age — the declaration replaces nothing", () => {
-    expect(systemPrompt({ profile: declared("minor") })).toContain("You are 29 years old.");
   });
 });

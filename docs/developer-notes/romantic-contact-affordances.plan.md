@@ -21,12 +21,18 @@ profile inheritance, condition distribution, footwear filtering, and the
 pressure/texture/glide/articulation/nail phenomena — fixture-driven, not
 production-wired; contact warmth and scent recorded deferred).
 
-All three ruled prerequisites are **done**: the slice-2
-[hardening pass](finished/romantic-contact-affordances.followups.md) ✅, the
-[adult declaration](finished/adult-eligibility.plan.md) ✅, and the
+Two of the three ruled prerequisites are **done**: the slice-2
+[hardening pass](finished/romantic-contact-affordances.followups.md) ✅ and the
 **pre-slice-3 foot-facts + registration hardening** ✅ (2026-07-30 — persisted
 foot baselines with a backfill, partial foot profiles, the optional-invalid
-dependency law, and the eligibility leftovers). The follow-ups list is
+dependency law). The third, the
+[adult declaration](finished/adult-eligibility.plan.md), shipped 2026-07-30 but
+was **rolled back 2026-08-03** (owner ruling: scope creep, and species-scaled
+ages make a flat human 18 the wrong adult test) — see the rollback note atop
+its plan. **This plan's eligibility-dependent items need reanalysis**: the
+positive adult-eligibility source that continuation items 5–6 and the romantic
+gate assumed no longer exists, and what replaces it (if anything) is an owner
+decision, not something this document can assume. The follow-ups list is
 **complete and archived** —
 [record](finished/romantic-contact-affordances.followups.md). Foot registry
 defaults, the Neon backfill, and deployment are all complete, so the
@@ -622,14 +628,15 @@ on immobilized limbs.
 4. **The explicit `romantic_touch` permission owner — spec before
    implementation** (un-gated by the 2026-08-01 verdict). Its design decisions need owner
    rulings first; they are listed in Open questions below.
-5. **Eligibility + blocker-link UI wiring** (un-gated by the 2026-08-01
-   verdict) — the
-   adapter into the pipeline and the blocked-action links into the chat
-   surface.
-6. **The genuinely romantic proof** (un-gated by the 2026-08-01 verdict;
-   still sequenced after 4 and 5) —
-   the [adult declaration](finished/adult-eligibility.plan.md) must resolve
-   every participant.
+5. **Eligibility + blocker-link UI wiring** — **blocked since 2026-08-03**:
+   the adapter and blocker links this item was to wire were removed with the
+   [adult declaration rollback](finished/adult-eligibility.plan.md). Needs a
+   re-planned eligibility source (an owner decision) before it can be
+   re-scoped.
+6. **The genuinely romantic proof** (still sequenced after 4 and 5) —
+   previously gated on the adult declaration resolving every participant;
+   **blocked since the 2026-08-03 rollback** on the same re-planned
+   eligibility source as item 5.
 
 **Parked (owner ruling 2026-07-31; reaffirmed by the 2026-08-01 PASS verdict
 — the broader parked list remains parked)** — deliberate
@@ -740,7 +747,10 @@ The five already ruled:
 - adult eligibility — an explicit `adult | minor | unresolved` declaration,
   positive-adult required for romantic/intimate, fantasy and missing ages stay
   unresolved, the repo-wide fail-open age fallback untouched
-  ([audit](romantic-contact-affordances.audit.md#owner-decisions-needed));
+  ([audit](romantic-contact-affordances.audit.md#owner-decisions-needed)).
+  **Superseded 2026-08-03: the declaration was rolled back** (scope creep;
+  species-scaled ages make a flat human 18 the wrong adult test), so the
+  eligibility source for romantic/intimate contact is an open question again;
 - actor control — player input commits only player-controlled movement; NPC
   movement originates NPC/narrator/simulation-side; narrator mode never
   bypasses target agency or consent (same audit section);
@@ -765,6 +775,7 @@ later blocking slice is not urgent, but it is not settled either.
 
 | Question | Owner | Required decision | Blocking slice | Status |
 | --- | --- | --- | --- | --- |
+| **What replaces the rolled-back adult-eligibility declaration?** ([rollback note](finished/adult-eligibility.plan.md)) | Owner | The 2026-07-30 `adult \| minor \| unresolved` declaration + numeric-18 check were rolled back 2026-08-03 (species-scaled ages make a flat human 18 the wrong adult test). What positive eligibility proof, if any, gates romantic/intimate contact — and how it accounts for non-human ages | Slice 3, items 5–6 | **Reopened by the rollback** — needs owner ruling |
 | **How detailed should foot regions be?** ([foot spec](romantic-contact-affordances.spec.foot.md)) | Product | Whether the shipped sixteen-surface map is the right granularity, or should shrink | Parked (owner ruling 2026-07-31) | **Parked** with the rest of the foot track until the MVP trial succeeds |
 | **Which intimate changes are ready to consume?** ([intimate spec](romantic-contact-affordances.spec.intimate.md)) | Physiology plan | Which of erection, swelling, lubrication, flushing have authoritative reads | Slice 6 | Blocked on the deferred physiology plan |
 | **What is the minimum intimate consent scope?** ([intimate spec](romantic-contact-affordances.spec.intimate.md)) | Owner | The floor for intimate contact, and whether the two lanes may claim parity | Slice 5 | Needs owner ruling |
