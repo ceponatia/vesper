@@ -50,11 +50,25 @@ import type { WornItemInput } from "./visibility";
  * Under-covering a genuinely worn garment is the one thing that must never
  * happen, which is why every qualifier is scoped to ONE noun — window-scoped
  * negation with conjunction inheritance, and a shared window apportioned at its
- * layering hinge (`windowSplitters` always, the lookahead-gated
- * `coordinatorSplitters` and the marker-gated `conditionalSplitters` when they
- * earn it) — rather than clause-scoped: clause-scoped, "no bra under her sweater,
- * jeans" would strip the sweater and bare the torso, and an unapportioned "a
- * shirt under an open jacket" would strip the shirt.
+ * layering hinge (`windowSplitters` always bar the comparative `as … as` span,
+ * the lookahead-gated `coordinatorSplitters` and the marker-gated
+ * `conditionalSplitters` when they earn it) — rather than clause-scoped:
+ * clause-scoped, "no bra under her sweater, jeans" would strip the sweater and
+ * bare the torso, and an unapportioned "a shirt under an open jacket" would strip
+ * the shirt. A clause boundary RESETS that denial scope, with one exception that
+ * is literally one: a clause OPENING with a `negationExceptions` word inherits the
+ * previous clause's closing verdict, because "not wearing underwear, except a bra"
+ * is the same sentence "not wearing underwear except a bra" is — the comma is
+ * punctuation, not a change of subject, and reading that lone "except" as a
+ * standalone exclusion denied the one garment the sentence puts ON.
+ *
+ * **A compared garment is not a worn one either.** "a blouse as sheer as a
+ * negligee" names a negligee nobody has on: the `as … as` span is a simile, its
+ * inner words describe the garment BEFORE it, and the noun after it is only the
+ * yardstick. So the span hinges nowhere, its sheer reading lands backward on the
+ * blouse, and the object emits nothing in either direction — no row and no denial,
+ * exactly like an unmapped noun (`readComparatives`). "as well as" is the one span
+ * that coordinates rather than compares, and it keeps the plain hinge.
  *
  * **A denial is INFORMATION, not the absence of it** (`overlayGarmentReads`). A
  * suppressed garment leaves no coverage row, and for the union path that is the
@@ -529,13 +543,14 @@ export const negationCarryWords: ReadonlySet<string> = new Set([
  * does: it never premodifies the noun after it, so anything before it is finished
  * business.
  *
- * **"as" is here despite its comparative reading** ("a robe soft as silk over a
- * chemise"). The two readings agree on what matters: the hinge fires on FIRST
- * hit, and a comparative "as" only ever stands after the previous noun's own
- * post-modifiers, so splitting there fences exactly what a later preposition
- * would have fenced — nothing marked precedes it, so both garments keep covering.
- * The transition reading ("a shirt hanging open as she wears jeans") is the one
- * that costs a garment when missed, which is the direction that decides it.
+ * **"as" is here for its transition reading** ("a shirt hanging open as she wears
+ * jeans"), which is the one that costs a garment when missed. A LONE comparative
+ * "as" agrees with it on what matters — the hinge fires on first hit, and a
+ * comparative only ever stands after the previous noun's own post-modifiers, so
+ * "a robe soft as silk over a chemise" fences exactly what the later preposition
+ * would have fenced and both garments keep covering. The correlative `as … as`
+ * SPAN is the reading that disagrees, and `readComparatives` takes it out of this
+ * registry's hands: inside a span neither "as" hinges.
  *
  * **The layering prepositions must never join `negationCarryWords`.** The carry
  * check reads the WHOLE window on purpose, and these two registries pulling in
@@ -565,6 +580,24 @@ export const windowSplitters: ReadonlySet<string> = new Set([
   "whilst",
   "as",
 ]);
+
+/** The token a comparative span is two of. A span, never either half alone. */
+const AS = "as";
+
+/**
+ * The INNER text of an `as … as` span that COORDINATES rather than compares — the
+ * additive idiom. "a bra as well as a thong" names two garments and both are on,
+ * so its two "as" tokens keep their ordinary `windowSplitters` reading (the first
+ * hinges, exactly as it did before spans existed) instead of being consumed as a
+ * simile that would strand the thong as a yardstick nobody wears.
+ *
+ * Registry-style, keyed on the JOINED inner tokens so a multiword idiom is a line
+ * here rather than a branch. Deliberately tiny: every other "as X as" in wardrobe
+ * prose compares ("as sheer as", "as dark as"), and reading one of THOSE as
+ * additive puts the comparison's yardstick on the body as clothing — the
+ * over-covering direction this module exists to close.
+ */
+export const additiveAsInners: ReadonlySet<string> = new Set(["well"]);
 
 /**
  * Hinge words that hinge only when they join two GARMENTS rather than two
@@ -782,6 +815,81 @@ function displacementFollows(window: readonly string[], from: number): boolean {
   return false;
 }
 
+/** What an `as … as` span in one window says about the nouns on either side of it. */
+interface WindowComparatives {
+  /**
+   * The index of every "as" a span claimed. No hinge fires on one: the span is a
+   * POSTmodifier of the noun before this window, so splitting there fences an
+   * empty segment off the garment being described and hands the whole simile
+   * forward to the next one.
+   */
+  spanned: ReadonlySet<number>;
+  /**
+   * A `sheerModifiers` word stands INSIDE a span ⇒ the noun BEFORE this window is
+   * the see-through one. "a blouse as sheer as a negligee" describes the blouse.
+   */
+  sheerBackward: boolean;
+  /**
+   * The noun this window ENDS at is the comparison's object — the yardstick a
+   * simile measures against, not clothing on this body — because nothing but
+   * `negationCarryWords` filler stands between the closing "as" and it.
+   */
+  objectFollows: boolean;
+}
+
+/**
+ * The comparative `as … as` spans in one window — the reading of "as" that is not
+ * a hinge.
+ *
+ * "as" earns its `windowSplitters` place on the clause transition ("a shirt
+ * hanging open as she wears jeans"), and that was safe while every other reading
+ * merely fenced an empty segment. The correlative span with a garment on the far
+ * side of it is the reading that is not: "a blouse as sheer as a negligee" hinged
+ * at the first "as", handed the blouse an empty post-segment and `sheer` forward,
+ * so the described-sheer blouse read OPAQUE and a negligee nobody is wearing
+ * appeared as a row — both halves of one sentence, backwards.
+ *
+ * A span is an "as" plus the next one at least two tokens on, because a
+ * comparison needs something to compare: "as as" has no inner and opens nothing.
+ * Neither "as" hinges, the inner tokens describe the PRECEDING noun, and the noun
+ * the window ends at is the yardstick that noun is held against — worn by nobody.
+ * `additiveAsInners` is the one inner that means coordination instead, and it
+ * leaves both tokens to the ordinary hinge.
+ *
+ * Known limitation, and the shape it takes: the pairing is greedy and
+ * left-to-right, so a TRANSITION "as" sharing an unpunctuated window with a later
+ * comparative one is read as that span's opener and loses its hinge ("a shirt
+ * hanging open as she is as tired as ever jeans" would displace the jeans). It
+ * takes two "as" readings, no comma between them, and no other hinge word in the
+ * window to reach — every one of which is rarer than the comparative this fixes.
+ */
+function readComparatives(window: readonly string[]): WindowComparatives {
+  const spanned = new Set<number>();
+  // Explicitly typed on purpose: loop-carried values read and reassigned in the
+  // same scan are where this module has hit TS7022 (implicit-`any` cycle) before.
+  let sheerBackward: boolean = false;
+  let objectFollows: boolean = false;
+  let open: number = window.indexOf(AS);
+  while (open >= 0) {
+    const close: number = window.indexOf(AS, open + 2);
+    if (close < 0) break;
+    const inner = window.slice(open + 1, close);
+    if (!additiveAsInners.has(inner.join(" "))) {
+      spanned.add(open);
+      spanned.add(close);
+      if (inner.some((token) => sheerModifiers.has(token))) sheerBackward = true;
+      // Only filler between the span and the window's end means the noun that
+      // closes the window IS the yardstick. A substantive token means the
+      // sentence moved on and that noun is dressed prose again ("a blouse as
+      // sheer as glass over a negligee" wears the negligee). The LAST span in a
+      // window is the one that answers — it is the one standing next to the noun.
+      objectFollows = window.slice(close + 1).every((token) => negationCarryWords.has(token));
+    }
+    open = window.indexOf(AS, close + 1);
+  }
+  return { spanned, sheerBackward, objectFollows };
+}
+
 /**
  * Where a shared window splits — the index of its hinge, or `-1` for hinge-less.
  *
@@ -795,15 +903,18 @@ function displacementFollows(window: readonly string[], from: number): boolean {
  *
  * Skipping never ends the scan: the tokens after a passed-over coordinator still
  * arm `marked`, which is what lets the "with" in "shirt unbuttoned and hanging
- * open with jeans" be the hinge the coordinator declined to be.
+ * open with jeans" be the hinge the coordinator declined to be. An "as" a
+ * comparative span claimed is skipped for a different reason — it is a
+ * postmodifier's opener rather than a boundary (`readComparatives`).
  */
-function findHinge(window: readonly string[]): number {
+function findHinge(window: readonly string[], spanned: ReadonlySet<number> | undefined): number {
   // Explicitly typed on purpose: loop-carried booleans read and reassigned in the
   // same scan are where this module has hit TS7022 (implicit-`any` cycle) before.
   let marked: boolean = false;
   for (let index = 0; index < window.length; index += 1) {
     const token = window[index];
     if (token === undefined) continue;
+    if (spanned?.has(index) === true) continue;
     if (windowSplitters.has(token)) return index;
     if (coordinatorSplitters.has(token)) {
       if (!displacementFollows(window, index + 1)) return index;
@@ -842,9 +953,14 @@ function findHinge(window: readonly string[]): number {
  * the same modifier landing backward would suppress a garment the text never
  * qualified — the under-covering the module comment forbids.
  */
-function attachWindow(window: readonly string[], hasPrevious: boolean, hasNext: boolean): WindowAttachment {
+function attachWindow(
+  window: readonly string[],
+  hasPrevious: boolean,
+  hasNext: boolean,
+  spanned: ReadonlySet<number> | undefined,
+): WindowAttachment {
   if (!hasNext) return { toPrevious: window, toNext: [] };
-  const hinge = findHinge(window);
+  const hinge = findHinge(window, spanned);
   if (!hasPrevious) return { toPrevious: [], toNext: hinge < 0 ? window : window.slice(hinge + 1) };
   if (hinge < 0) return { toPrevious: [], toNext: window };
   return { toPrevious: window.slice(0, hinge), toNext: window.slice(hinge + 1) };
@@ -874,8 +990,9 @@ export interface OverlayGarmentReads {
  * (`,` `;` `.` newline) end them. A window BETWEEN two nouns belongs to both —
  * the first garment's post-modifier ground and the second's pre-modifier ground
  * are the same span — so `attachWindow` apportions it at the layering hinge
- * (`windowSplitters` always; a `coordinatorSplitters` word unless a displacement
- * marker follows it, so "shirt unbuttoned and hanging open with jeans" keeps the
+ * (`windowSplitters` always, bar an "as" a comparative span claimed; a
+ * `coordinatorSplitters` word unless a displacement marker follows it, so "shirt
+ * unbuttoned and hanging open with jeans" keeps the
  * whole participle phrase on the shirt; `conditionalSplitters`' "with" only once
  * a marker precedes it, so "a shirt with buttons open and jeans" opens the shirt
  * and leaves the jeans on), and each noun scans only the segment it owns. A
@@ -907,11 +1024,21 @@ export interface OverlayGarmentReads {
  *   jacket precisely because the hinge it holds is not filler. An empty window
  *   carries vacuously, which is the same reading. What carries is the segment's
  *   VERDICT, so an excepted noun carries its un-negated state on ("not wearing
- *   anything but a bra or panties" wears both).
+ *   anything but a bra or panties" wears both). A clause boundary resets the
+ *   scope, EXCEPT for a clause opening on a `negationExceptions` word: "not
+ *   wearing underwear, except a bra" inherits the previous clause's closing
+ *   verdict and wears the bra, while "no shirt, jeans excluding a bra" — nothing
+ *   denied at that clause's close — still reads the exclusion as its own denial.
  * - **Displacement** reads both owned segments and suppresses: "unbuttoned
  *   jacket" puts the marker before the noun, "her shirt hanging open" after it,
  *   and "a shirt under an open jacket" puts it after one noun and before another
  *   in the same breath — where only the hinge says it displaces the jacket alone.
+ * - **Comparison** (`readComparatives`) reads a whole window for an `as … as`
+ *   span, and answers in both directions at once: a `sheerModifiers` word inside
+ *   the span makes the noun BEFORE the window sheer ("a blouse as sheer as a
+ *   negligee" describes the blouse), and the noun AFTER it, reached across nothing
+ *   but filler, is the simile's yardstick and emits nothing at all. "as well as"
+ *   (`additiveAsInners`) coordinates instead, and keeps the ordinary hinge.
  *
  * A suppressed noun contributes no ROW but still bounds its neighbors' windows,
  * exactly as an unmapped one does — and, unlike an unmapped one, it reports the
@@ -923,7 +1050,9 @@ export interface OverlayGarmentReads {
  * a denial of the same region.
  *
  * One identity named twice keeps the most-covering read (opaque wins), the same
- * direction the rest of this module leans.
+ * direction the rest of this module leans — with one exemption, the postpositive
+ * comparative, which is one naming's own modifier landing after its row rather
+ * than a second naming competing with it.
  *
  * PURE and total: odd text simply yields fewer rows, never a throw.
  */
@@ -932,16 +1061,37 @@ export function overlayGarmentReads(text: string): OverlayGarmentReads {
   // Deduped by construction, and never expanded here: the ids stay exactly what
   // the table says, so the caller's own expansion rule is the only one in play.
   const denied = new Set<string>();
+  // The verdict the PREVIOUS clause closed on. Annotated: it is read into the next
+  // clause's seed and assigned from that clause's own result, which is the
+  // loop-carried cycle TS reads as `any` without help.
+  let carriedDenial: boolean = false;
   for (const clause of text.split(CLAUSE_BOUNDARY)) {
-    const { nouns, windows } = scanClause(garmentNounTokens(clause));
+    const tokens = garmentNounTokens(clause);
+    const { nouns, windows } = scanClause(tokens);
+    // Read once per window, before anything asks a question of it: the hinge
+    // search, the preceding noun's opacity, and the following noun's very
+    // existence as clothing all come out of the same span analysis.
+    const comparatives = windows.map(readComparatives);
     // Window `i` has a noun before it whenever it is not the clause-initial one,
     // and a noun after it whenever it is not the clause-final one — the whole
     // input `attachWindow` needs, computed once so the two nouns sharing a window
     // can never read it apart differently.
-    const attachments = windows.map((window, index) => attachWindow(window, index > 0, index < nouns.length));
+    const attachments = windows.map((window, index) =>
+      attachWindow(window, index > 0, index < nouns.length, comparatives[index]?.spanned),
+    );
     // Negation carries noun-to-noun within a clause and resets with it: a new
-    // clause states its own denial or none at all.
-    let negatedBefore = false;
+    // clause states its own denial or none at all — UNLESS it opens with an
+    // exception word, which has to have something to except FROM. "not wearing
+    // underwear, except a bra" is the sentence "not wearing underwear except a
+    // bra" with punctuation in it, and the reset made that lone "except" a
+    // standalone exclusion that denied the one garment the sentence puts ON.
+    //
+    // The seed can only ever be READ by an exclusion in the first noun's segment,
+    // never propagated by the filler carry: the exception word that armed it
+    // stands in that same window, and no exception word is a `negationCarryWords`
+    // one. So the reach is exactly the exclusion reading and nothing wider.
+    const opener = tokens[0];
+    let negatedBefore: boolean = opener !== undefined && negationExceptions.has(opener) ? carriedDenial : false;
     for (let k = 0; k < nouns.length; k += 1) {
       const noun = nouns[k];
       // The unsplit pre window — the ONLY scan that reads a window whole (see
@@ -963,6 +1113,12 @@ export function overlayGarmentReads(text: string): OverlayGarmentReads {
       // Updated BEFORE the coverage lookup, so the carry flows through nouns this
       // table does not map: "without a scarf or shirt" denies the shirt too.
       negatedBefore = negated;
+      // A comparison OBJECT is the yardstick a simile holds the previous garment
+      // against, not clothing on this body: "a blouse as sheer as a negligee"
+      // names exactly one worn garment. So it contributes to NEITHER output — no
+      // row and no denial — while still closing windows and bounding its
+      // neighbours, which is precisely how an unmapped noun behaves.
+      if (comparatives[k]?.objectFollows === true) continue;
       const mapped = garmentNounCoverage.get(noun.identity);
       // An unmapped noun is the one case that says nothing in EITHER direction:
       // we do not know what it covers, so it can neither dress a region nor bare
@@ -976,7 +1132,14 @@ export function overlayGarmentReads(text: string): OverlayGarmentReads {
         for (const id of mapped.coverage) denied.add(id);
         continue;
       }
-      if (rows.get(noun.identity)?.opacity === "opaque") continue;
+      // A comparative in the noun's POST window is a postmodifier of THIS naming
+      // ("a blouse as sheer as a negligee"), which is why it may overrule an
+      // opaque row an earlier clause left: the opaque-wins dedup arbitrates two
+      // competing NAMINGS of one identity, and a postpositive modifier arriving
+      // after its own row is not a second naming. The dedup rule itself is
+      // untouched — this is the one read exempt from it.
+      const comparativeSheer = comparatives[k + 1]?.sheerBackward === true;
+      if (!comparativeSheer && rows.get(noun.identity)?.opacity === "opaque") continue;
       const id = `${OVERLAY_ROW_PREFIX}${noun.identity}`;
       rows.set(noun.identity, {
         instanceId: id,
@@ -984,9 +1147,14 @@ export function overlayGarmentReads(text: string): OverlayGarmentReads {
         name: noun.identity,
         coverage: mapped.coverage,
         layer: mapped.layer,
-        opacity: windowHas(pre, sheerModifiers) ? "sheer" : "opaque",
+        opacity: comparativeSheer || windowHas(pre, sheerModifiers) ? "sheer" : "opaque",
       });
     }
+    // Whatever this clause closed on is what an exception OPENING the next one
+    // excepts from. A clause naming no garment closes on its own seed, so it
+    // carries `false` — the garment-keeping direction, and the reading that keeps
+    // "no shirt, jeans excluding a bra" a standalone exclusion.
+    carriedDenial = negatedBefore;
   }
   return { worn: [...rows.values()], deniedCoverage: [...denied] };
 }
