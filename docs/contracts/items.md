@@ -105,11 +105,15 @@ through the described gown.
   reason a preposition does: it never premodifies the noun after it, so everything
   before it is finished business — without it, "a shirt hanging open while wearing
   jeans" attached whole and forward, displacing the JEANS while the open shirt kept
-  covering. "as" is in despite its comparative reading ("a robe soft as silk over a
-  chemise"): the hinge fires on first hit and nothing fenceable precedes a
-  comparative, so both garments keep covering, while the transition reading ("a
-  shirt hanging open as she wears jeans") is the one that costs a garment when
-  missed. **Coordinators are conditional**
+  covering. "as" is in for its transition reading ("a shirt hanging open as she
+  wears jeans"), which is the one that costs a garment when missed; a LONE
+  comparative "as" agrees, since nothing fenceable precedes one ("a robe soft as
+  silk over a chemise" keeps both garments). The correlative `as … as` **span** is
+  the exception, and `readComparatives` takes it out of the registry's hands —
+  neither "as" hinges (see the compared-garment bullet below). **"as well as" is
+  additive, not comparative** (`additiveAsInners`, keyed on the joined inner
+  tokens): it is no span at all, so its first "as" hinges as ever and "a bra as
+  well as a thong" dresses both. **Coordinators are conditional**
   (`coordinatorSplitters` — and, or, nor): one does NOT hinge when a
   `displacementMarkers` word stands between it and the next hinge candidate,
   because displacement markers are participial POSTmodifiers, so "shirt unbuttoned
@@ -159,7 +163,13 @@ through the described gown.
   wears the bra (a kept noun then ends the scope, which is how "…except a bra and
   panties" keeps both) — only a span with nothing denied in scope reads the
   exclusion as a denial, which the clause reset restores ("no shirt, jeans
-  excluding a bra" leaves the bra off). Only the
+  excluding a bra" leaves the bra off). **A clause OPENING with an exception word
+  inherits instead of resetting**: "not wearing underwear, except a bra" is the
+  same sentence with punctuation in it, and the reset made that lone "except" a
+  standalone exclusion that stripped the one garment the prose puts on. The seed is
+  the previous clause's closing verdict, and it reaches no further than that first
+  segment's exclusion — the exception word that armed it sits in that same window
+  and is not filler, so the conjunction carry can never pick it up. Only the
   `exclusionMarkers` subset (except, excluding, barring) flips: a standalone "but"
   is an ordinary coordinator, and "save"/"besides" read as verb and additive as
   readily as exceptive. That leaves "everything **but** a bra" out of reach on
@@ -186,6 +196,21 @@ through the described gown.
   coverage table stays narrow.
   Hyphenated compounds stay one token here too, so "off-the-shoulder gown" still
   covers.
+- **A compared garment is not a worn one.** An `as … as` span (`readComparatives`
+  — an "as" and the next one at least two tokens on, so "as as" is nothing) is a
+  simile, and it answers in both directions at once. Its inner words describe the
+  garment BEFORE the span, so a `sheerModifiers` word there makes THAT garment
+  see-through — a postmodifier of one naming rather than a second naming, which is
+  why it is the single read exempt from opaque-wins. The noun the span's window
+  ends at, reached across nothing but `negationCarryWords` filler, is the yardstick
+  the comparison measures against and contributes to NEITHER output — no row and no
+  denial, exactly like an unmapped noun (a substantive token in between cancels
+  that: "a blouse as sheer as glass over a negligee" wears the negligee). Read as a
+  hinge instead, "a blouse as sheer as a negligee" left the blouse opaque and put
+  the negligee on the body — both halves of one sentence backwards. With no noun
+  before the span there is nothing to upgrade and the object is still an object, so
+  "as sheer as a negligee" alone claims nothing and the free-text caller keeps its
+  covered default.
 - **A denial is information, not the absence of it.** A suppressed noun leaves no
   row, and for the union path that is the whole story — but "not wearing a shirt"
   alone then produced ZERO rows, which is the same shape as prose naming no

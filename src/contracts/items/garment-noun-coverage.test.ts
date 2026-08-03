@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { expectRefsResolve } from "@/test/registry-invariants";
 import { bodyLocationRegistry } from "../body/locations";
 import {
+  additiveAsInners,
   bareStateWords,
   conditionalSplitters,
   coordinatorSplitters,
@@ -40,6 +41,18 @@ describe("garment-noun coverage registry", () => {
   it("every mapping covers something (an empty row would be a dead entry)", () => {
     const empty = [...garmentNounCoverage].filter(([, mapping]) => mapping.coverage.length === 0);
     expect(empty.map(([identity]) => identity)).toEqual([]);
+  });
+
+  it("keeps the additive 'as … as' idiom as data, and out of the comparative's way", () => {
+    const inners = [...additiveAsInners];
+    const tokens = inners.flatMap((inner) => inner.split(" "));
+    // An empty inner is the "as as" the span scan already refuses, and an inner
+    // holding "as" could never be reached (the scan closes on the NEXT one).
+    expect(inners.filter((inner) => inner.trim() === "")).toEqual([]);
+    expect(tokens.filter((token) => token === "as")).toEqual([]);
+    // A sheer word here would let the idiom swallow the very signal the
+    // comparative reading exists to deliver — the idiom skips the span whole.
+    expect(tokens.filter((token) => sheerModifiers.has(token))).toEqual([]);
   });
 });
 
@@ -345,6 +358,51 @@ describe("overlayWornInputs — an exclusion with nothing to except from", () =>
     expect(regionsOf(text).pelvis).toBe("covered");
   });
 
+  it("a comma before the exception does NOT end the denial it excepts from", () => {
+    // The defect: the clause reset zeroed the denial, so this lone "except" read
+    // as a standalone exclusion and stripped the one garment the sentence puts
+    // ON — a bra reported bare over a torso the prose dresses. Punctuating
+    // "not wearing underwear except a bra" cannot invert it.
+    const text = "not wearing underwear, except a bra";
+    expect(rowFor(text, "bra")).toBeDefined();
+    expect(rowFor(text, "underwear")).toBeUndefined();
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("covered");
+    // The denied underwear still speaks for the pelvis — only the bra was excepted.
+    expect(overlayGarmentReads(text).deniedCoverage).toContain("pelvis");
+    expect(regions.pelvis).toBe("bare");
+  });
+
+  it("reads a sentence break the same way, and a conjoined denial too", () => {
+    expect(rowFor("no shirt. Except a camisole", "camisole")).toBeDefined();
+    // The carried verdict is the clause's LAST one, so a denial that rode a
+    // conjunction is still there to be excepted from.
+    const text = "not wearing a shirt or bra, except panties";
+    expect(rowFor(text, "panties")).toBeDefined();
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(rowFor(text, "bra")).toBeUndefined();
+    const regions = regionsOf(text);
+    expect(regions.torso).toBe("bare");
+    expect(regions.pelvis).toBe("covered");
+  });
+
+  it("only an OPENING exception inherits — an ordinary clause still resets", () => {
+    // The narrowness is the whole safety of it: without a leading exception word
+    // the denial stops at the comma, or "not wearing a shirt, jeans" would strip
+    // jeans the sentence plainly puts on.
+    const text = "not wearing a shirt, jeans";
+    expect(rowFor(text, "jeans")).toBeDefined();
+    expect(rowFor(text, "shirt")).toBeUndefined();
+    expect(regionsOf(text).pelvis).toBe("covered");
+    // And a clause that closed on NO denial hands the exclusion nothing to
+    // except from, which is the reset that keeps standalone exclusions denying.
+    expect(rowFor("jeans, excluding a bra", "bra")).toBeUndefined();
+    for (const word of exclusionMarkers) {
+      expect(rowFor(`jeans, ${word} a robe`, "robe"), `${word} after a clean clause`).toBeUndefined();
+      expect(rowFor(`no shirt, ${word} a robe`, "robe"), `${word} after a denial`).toBeDefined();
+    }
+  });
+
   it("keeps the coordinating 'but' out of it — the protected phrasing", () => {
     // The reason `exclusionMarkers` is a strict subset rather than the whole
     // exception registry: here "but" joins two clauses, and denying on it would
@@ -466,10 +524,11 @@ describe("overlayWornInputs — which garment a shared window modifies", () => {
     expect(regions.pelvis).toBe("covered");
   });
 
-  it("a comparative 'as' costs nothing — the hinge fences an empty segment", () => {
-    // The reading that made "as" look risky. It hinges on first hit, but nothing
-    // fenceable stands before it, so both garments keep covering — and the same
-    // is true of the correlative "as well as".
+  it("a LONE comparative 'as' costs nothing — the hinge fences an empty segment", () => {
+    // The reading that made "as" look risky. A single "as" still hinges on first
+    // hit, but nothing fenceable stands before it, so both garments keep
+    // covering. The correlative SPAN is a different animal (see below), and "as
+    // well as" is the one span that stays a plain hinge.
     const soft = "a robe soft as silk over a chemise";
     expect(rowFor(soft, "robe")).toBeDefined();
     expect(rowFor(soft, "chemise")).toBeDefined();
@@ -572,6 +631,98 @@ describe("overlayWornInputs — which garment a shared window modifies", () => {
     expect([...coordinatorSplitters].filter((word) => windowSplitters.has(word))).toEqual([]);
     const conditional = [...conditionalSplitters];
     expect(conditional.filter((word) => windowSplitters.has(word) || coordinatorSplitters.has(word))).toEqual([]);
+  });
+});
+
+/**
+ * The correlative `as … as` — a simile, and the one reading of "as" that is not a
+ * hinge. "a blouse as sheer as a negligee" hinged at the first "as", handed the
+ * blouse an empty post-segment and sent `sheer` forward: the described-sheer
+ * blouse read OPAQUE and a negligee nobody is wearing appeared as a worn row.
+ * Both halves of one sentence, backwards.
+ *
+ * So the span is read whole. Neither "as" hinges, the inner words describe the
+ * garment BEFORE it, and the noun after it — reached across nothing but filler —
+ * is the yardstick the comparison measures against, which is not clothing on
+ * anybody: it emits no row AND no denial, exactly as an unmapped noun does.
+ * "as well as" coordinates rather than compares, and keeps the plain hinge.
+ */
+describe("overlayWornInputs — the comparative 'as … as'", () => {
+  it("puts the comparison's fabric on the garment it describes (the P1)", () => {
+    const text = "a blouse as sheer as a negligee";
+    expect(overlayWornInputs(text).map((row) => row.name)).toEqual(["blouse"]);
+    expect(rowFor(text, "blouse")?.opacity).toBe("sheer");
+    // The whole point: the torso reads see-through rather than covered, and no
+    // phantom negligee stands in for the blouse.
+    expect(regionsOf(text).torso).toBe("sheer");
+  });
+
+  it("wears nobody's yardstick — the object emits no row and no denial", () => {
+    // A simile names a garment without putting it on anything. Denying it would
+    // be just as wrong as wearing it: the sentence says nothing about a bikini.
+    const reads = overlayGarmentReads("a blouse as red as a bikini");
+    expect(reads.worn.map((row) => row.name)).toEqual(["blouse"]);
+    expect(reads.worn[0]?.opacity).toBe("opaque");
+    expect(reads.deniedCoverage).toEqual([]);
+    expect(regionsOf("a blouse as red as a bikini").pelvis).toBe("bare");
+  });
+
+  it("still bounds its neighbours, exactly as an unmapped noun does", () => {
+    const text = "a blouse as sheer as a negligee under a jacket";
+    expect(overlayWornInputs(text).map((row) => row.name)).toEqual(["blouse", "jacket"]);
+    expect(rowFor(text, "blouse")?.opacity).toBe("sheer");
+    // The span is spent on the blouse, so the jacket past the hinge is opaque.
+    expect(rowFor(text, "jacket")?.opacity).toBe("opaque");
+  });
+
+  it("a substantive token after the span cancels the object reading", () => {
+    // Only filler between the closing "as" and the noun makes that noun the
+    // yardstick. "over a negligee" is the sentence moving on to a second garment.
+    const text = "a blouse as sheer as glass over a negligee";
+    expect(rowFor(text, "blouse")?.opacity).toBe("sheer");
+    expect(rowFor(text, "negligee")?.opacity).toBe("opaque");
+    expect(regionsOf(text).torso).toBe("covered");
+  });
+
+  it("reads a clause-FINAL span backward too — the postmodifier is the noun's", () => {
+    expect(rowFor("a gown as sheer as glass", "gown")?.opacity).toBe("sheer");
+    // …and an inner that says nothing about fabric leaves it opaque, which is
+    // what keeps "a gown as dark as night" a dressed gown.
+    expect(rowFor("a gown as dark as night", "gown")?.opacity).toBe("opaque");
+  });
+
+  it("overrides the opaque-wins dedup, because it is not a second naming", () => {
+    // The dedup arbitrates two competing NAMINGS of one identity; a postpositive
+    // modifier landing after its own row is one naming finishing its sentence.
+    const rows = overlayWornInputs("a shirt over another shirt as sheer as gauze");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.opacity).toBe("sheer");
+  });
+
+  it("a denied garment stays denied, and takes its simile with it", () => {
+    // The worst of the old reading: the denial suppressed the blouse and the
+    // yardstick negligee became the only worn row, dressing a stated-bare torso.
+    const reads = overlayGarmentReads("not wearing a blouse as sheer as a negligee");
+    expect(reads.worn).toEqual([]);
+    expect(reads.deniedCoverage).toContain("chest");
+  });
+
+  it("with no preceding noun, the span is consumed and nothing is claimed", () => {
+    // Clause-initial: there is no row to upgrade and the object is still an
+    // object, so the scan speaks for nothing at all — which leaves the free-text
+    // caller on its covered default rather than reporting a bare torso.
+    const reads = overlayGarmentReads("as sheer as a negligee");
+    expect(reads.worn).toEqual([]);
+    expect(reads.deniedCoverage).toEqual([]);
+  });
+
+  it("'as well as' is additive, so both garments are on", () => {
+    // The correlative that coordinates instead of comparing: consumed as a span,
+    // the thong would become a yardstick and vanish off the body.
+    expect(overlayWornInputs("a bra as well as a thong").map((row) => row.name)).toEqual(["bra", "thong"]);
+    const regions = regionsOf("a bra as well as a thong");
+    expect(regions.torso).toBe("covered");
+    expect(regions.pelvis).toBe("covered");
   });
 });
 
