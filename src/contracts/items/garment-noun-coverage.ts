@@ -45,10 +45,10 @@ import type { WornItemInput } from "./visibility";
  * in the other direction. Under-covering a genuinely worn garment is the one
  * thing that must never happen, which is why every qualifier is scoped to ONE
  * noun — window-scoped negation with conjunction inheritance, and a shared window
- * apportioned at its layering preposition (`windowSplitters`) — rather than
- * clause-scoped: clause-scoped, "no bra under her sweater, jeans" would strip the
- * sweater and bare the torso, and an unapportioned "a shirt under an open jacket"
- * would strip the shirt.
+ * apportioned at its layering hinge (`windowSplitters`, plus the marker-gated
+ * `conditionalSplitters`) — rather than clause-scoped: clause-scoped, "no bra
+ * under her sweater, jeans" would strip the sweater and bare the torso, and an
+ * unapportioned "a shirt under an open jacket" would strip the shirt.
  *
  * Registry rules (CLAUDE.md): vocabulary and coverage changes are data edits in
  * the tables below, never logic changes. Coverage ids come from the
@@ -415,7 +415,13 @@ export const negationCarryWords: ReadonlySet<string> = new Set([
  * filler-only "her", which would carry the denial onto the jacket, while the
  * unsplit "under her" holds a preposition that is not filler and correctly breaks
  * it. The coordinators are deliberately in both sets — "or" hinges AND carries,
- * which is what keeps "without a shirt or bra" one denial.
+ * which is what keeps "without a shirt or bra" one denial. The same holds for
+ * `conditionalSplitters`: "with" is not filler, so "no shirt with jeans" breaks
+ * the carry and the jeans keep covering.
+ *
+ * Every word here hinges UNCONDITIONALLY, on first hit — each genuinely relates
+ * two garments, so an empty `toPrevious` ("a shirt under…") is the right read.
+ * The one word that cannot promise that lives in `conditionalSplitters` below.
  */
 export const windowSplitters: ReadonlySet<string> = new Set([
   "over",
@@ -428,8 +434,33 @@ export const windowSplitters: ReadonlySet<string> = new Set([
   "and",
   "or",
   "nor",
-  "with",
 ]);
+
+/**
+ * Hinge words that only hinge when there is something to fence — "with", which
+ * is two different words in wardrobe prose:
+ *
+ * - a **layering hinge**, joining two garments the way the prepositions do:
+ *   "shirt unbuttoned with jeans" (the marker is the shirt's, the jeans are on);
+ * - a **postmodifier introducer**, opening a phrase that describes the garment
+ *   BEFORE it: "a shirt with buttons open and jeans" (the shirt is open, the
+ *   jeans are on).
+ *
+ * Splitting unconditionally read the second shape as the first and inverted it —
+ * the shirt kept covering while `buttons open` sailed forward and displaced the
+ * jeans. So "with" hinges only when a fenceable marker
+ * (`displacementMarkers` ∪ `negationMarkers` ∪ `sheerModifiers`) already stands
+ * before it in the window; otherwise the hinge search reads straight past it and
+ * the window is hinge-less unless a real splitter follows.
+ *
+ * The rule falls out of what a hinge is FOR: fencing the previous noun's
+ * postmodifiers off the next noun's premodifiers. A "with" preceded by nothing
+ * that needs fencing is either accompaniment ("a jacket with a tee" — no
+ * qualifier to apportion) or the opening of the previous garment's postmodifier
+ * phrase ("with buttons open"). Both readings want the tokens up to the next REAL
+ * splitter to attach backward, which is exactly what skipping the "with" does.
+ */
+export const conditionalSplitters: ReadonlySet<string> = new Set(["with"]);
 
 /** Synthetic-row id prefix — never collides with a real instance or definition id. */
 const OVERLAY_ROW_PREFIX = "overlay:";
@@ -506,15 +537,50 @@ interface WindowAttachment {
 }
 
 /**
+ * A qualifier a hinge exists to fence — the only tokens whose side of the split
+ * changes an outcome. Everything else in a window (articles, colors, nouns like
+ * "buttons") is inert whichever garment it lands on.
+ */
+function isFenceableMarker(token: string): boolean {
+  return displacementMarkers.has(token) || negationMarkers.has(token) || sheerModifiers.has(token);
+}
+
+/**
+ * Where a shared window splits — the index of its hinge, or `-1` for hinge-less.
+ *
+ * `windowSplitters` hinge on first hit. A `conditionalSplitters` word ("with")
+ * hinges only when a fenceable marker precedes it in this window; unmarked, the
+ * search reads past it, so "a shirt with buttons open and jeans" lands on the
+ * "and" and keeps "with buttons open" on the shirt. See `conditionalSplitters`
+ * for why an unmarked "with" is never the boundary.
+ */
+function findHinge(window: readonly string[]): number {
+  // Explicitly typed on purpose: loop-carried booleans read and reassigned in the
+  // same scan are where this module has hit TS7022 (implicit-`any` cycle) before.
+  let marked: boolean = false;
+  for (let index = 0; index < window.length; index += 1) {
+    const token = window[index];
+    if (token === undefined) continue;
+    if (windowSplitters.has(token)) return index;
+    if (conditionalSplitters.has(token)) {
+      if (marked) return index;
+      continue;
+    }
+    if (isFenceableMarker(token)) marked = true;
+  }
+  return -1;
+}
+
+/**
  * Apportion one window to the nouns on either side of it.
  *
  * - **No noun before it** (clause-initial): wholly FORWARD — "unbuttoned jacket".
  * - **No noun after it** (clause-final): wholly BACKWARD — "her shirt hanging
  *   open", "gown pooled at her waist".
- * - **Shared**: split at the FIRST `windowSplitters` hinge, which is excluded
- *   from both sides. "a shirt under an open jacket" gives the shirt an empty
- *   post-segment and the jacket "an open"; "jacket unbuttoned over a tee" gives
- *   the jacket "unbuttoned" and the tee "a".
+ * - **Shared**: split at the hinge `findHinge` picks, which is excluded from both
+ *   sides. "a shirt under an open jacket" gives the shirt an empty post-segment
+ *   and the jacket "an open"; "jacket unbuttoned over a tee" gives the jacket
+ *   "unbuttoned" and the tee "a".
  * - **Shared with no hinge**: wholly FORWARD, because English stacks bare
  *   attributive modifiers ahead of their noun.
  *
@@ -526,7 +592,7 @@ interface WindowAttachment {
 function attachWindow(window: readonly string[], hasPrevious: boolean, hasNext: boolean): WindowAttachment {
   if (!hasPrevious) return { toPrevious: [], toNext: window };
   if (!hasNext) return { toPrevious: window, toNext: [] };
-  const hinge = window.findIndex((token) => windowSplitters.has(token));
+  const hinge = findHinge(window);
   if (hinge < 0) return { toPrevious: [], toNext: window };
   return { toPrevious: window.slice(0, hinge), toNext: window.slice(hinge + 1) };
 }
@@ -539,8 +605,10 @@ function attachWindow(window: readonly string[], hasPrevious: boolean, hasNext: 
  * two garment nouns (or between a noun and the clause edge); clause boundaries
  * (`,` `;` `.` newline) end them. A window BETWEEN two nouns belongs to both —
  * the first garment's post-modifier ground and the second's pre-modifier ground
- * are the same span — so `attachWindow` apportions it at the layering hinge, and
- * each noun scans only the segment it owns.
+ * are the same span — so `attachWindow` apportions it at the layering hinge
+ * (`windowSplitters` always; `conditionalSplitters`' "with" only once a marker
+ * precedes it, so "a shirt with buttons open and jeans" opens the shirt and
+ * leaves the jeans on), and each noun scans only the segment it owns.
  *
  * - **Sheer** reads the owned PRE segment: a modifier there makes THIS garment
  *   sheer and is then spent, so "a sheer robe over a shift" leaves the shift
