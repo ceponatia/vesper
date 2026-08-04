@@ -12,7 +12,7 @@ If a complete reanalysis and rewrite of the planned work is needed due to other 
   questions. Prefer ordinary examples over type names, algorithms, file trees,
   schema sketches, or implementation pseudocode.
 - **Specs are the technical version for coding agents.** Put contracts, type
-  shapes, ownership tables, algorithms, persistence decisions, diagnostics,
+  shapes, ownership rules, algorithms, persistence decisions, diagnostics,
   code organization, migrations, and detailed fixtures in `<topic>.spec.md` or
   `<topic>.spec.<area>.md`.
 - A plan may link to a technical term or summarize a key invariant when the
@@ -23,6 +23,18 @@ If a complete reanalysis and rewrite of the planned work is needed due to other 
 - When an existing `.plan.md` reads like a coding design, move that detail into
   a matching spec as part of the next substantive edit instead of continuing to
   grow the technical plan.
+
+## Trial reports and Markdown formatting
+
+- **Trial result documents are stakeholder summaries.** Write them in plain
+  English for product owners and other non-development readers. Lead with the
+  decision, player-visible outcomes, limitations, and next steps. Put chat and
+  message identifiers, timestamps, logs, diagnostic names, internal state,
+  implementation references, and detailed verification history in a matching
+  evidence appendix.
+- **Markdown files in this folder and its subfolders must not contain tables.**
+  Use short sections and lists instead. When editing an existing Markdown file
+  that contains a table, convert the table as part of that edit.
 
 ## Ship close-out: move shipped docs to finished/
 
@@ -56,7 +68,7 @@ edited whole:
 - **One doc per gate: `engine.gateN.<slug>.md`** (e.g. `engine.gate6.dual-lod.md`),
   where the slug names what the gate delivers. Each holds that gate's full plan
   section — scope, build order, and the shipped E-package histories.
-  [engine.plan.md](engine.plan.md) stays the hub: goals, the gate index table
+  [engine.plan.md](engine.plan.md) stays the hub: goals, the gate index list
   (one-line status + link per gate), dependency order, and cost/quality material.
   **Future gates get their own file at planning time** (Gate 7 already has one) —
   never grow a new gate inline in the hub. Gate numbers in filenames are NOT the
