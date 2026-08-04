@@ -24,11 +24,11 @@ describe("strict model-id resolvers (codebase-review B3)", () => {
 
 describe("providerRouting", () => {
   it("returns undefined when no routing knob applies", () => {
-    expect(providerRouting("deepseek/deepseek-v4-flash")).toBeUndefined();
+    expect(providerRouting("~deepseek/deepseek-v4-flash-latest")).toBeUndefined();
   });
 
   it("sorts by latency when asked", () => {
-    expect(providerRouting("deepseek/deepseek-v4-flash", { sortLatency: true })).toEqual({ sort: "latency" });
+    expect(providerRouting("~deepseek/deepseek-v4-flash-latest", { sortLatency: true })).toEqual({ sort: "latency" });
   });
 
   it("drops the per-model bad endpoint (DeepInfra on GLM 5.2)", () => {
@@ -64,12 +64,12 @@ describe("narrativeProviderOptions", () => {
   });
 
   it("carries only provider routing for a model with no reasoning ruling", () => {
-    expect(narrativeProviderOptions("deepseek/deepseek-v4-flash", { sortLatency: true })).toEqual({
+    expect(narrativeProviderOptions("~deepseek/deepseek-v4-flash-latest", { sortLatency: true })).toEqual({
       openrouter: { provider: { sort: "latency" } },
     });
   });
 
   it("returns undefined when nothing applies (no routing, no reasoning ruling)", () => {
-    expect(narrativeProviderOptions("deepseek/deepseek-v4-flash")).toBeUndefined();
+    expect(narrativeProviderOptions("~deepseek/deepseek-v4-flash-latest")).toBeUndefined();
   });
 });
