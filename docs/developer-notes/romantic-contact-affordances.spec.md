@@ -76,7 +76,6 @@ the item-1.2 repairs, and production enablement. These labels are exclusive:
 | Capability | Status | Note |
 | --- | --- | --- |
 | Foot registry defaults + existing-body backfill | **registered in production** | Baselines are stored; the 2026-07-30 backfill completed and was idempotent |
-| Adult-eligibility declaration + resolver | **future design** | Shipped 2026-07-30, **rolled back 2026-08-03** ([rollback note](finished/adult-eligibility.plan.md)) — the eligibility source for romantic/intimate contact is an open owner question again |
 | Contact core (resolution, lifecycle, identity) | **registered in production** | The character-chat affectionate path resolves and commits through `src/contracts/affordances/contact/` |
 | Scene/body-relations owner | **registered in production** | Character chat seeds/reads proximity, facing, control, support, and active-contact projection |
 | Player affectionate-contact adapter | **registered in production** | Deterministic player movement/touch path, current-cut target coverage, resolver, guidance, and persistence |
@@ -84,7 +83,6 @@ the item-1.2 repairs, and production enablement. These labels are exclusive:
 | NPC deterministic contact endings | **registered in production** | Frozen reply-side withdrawal/departure floor; durable under `contact-reply:<assistantMessageId>` |
 | Broader NPC movement, starts, and updates | **future design** | Revised [actor-control spec](romantic-contact-affordances.spec.actor-control.md): pure + durability foundations, then shadow, then three authority increments |
 | Foot domain phenomena (pressure, texture, glide, articulation, nails) | **implemented contract** | Pure domain exists but remains outside the production domain set |
-| Eligibility blocker-link adapter | **implemented contract** | Pure adapter exists; no production pipeline/UI link rendering yet |
 | Perception channels (visual/tactile + perceiver binding) | **future design** | No chat `touch` channel; blocks positive tactile output |
 | `romantic_touch` permission owner | **future design** | Eight product decisions remain in the plan |
 | Positive texture/glide output | **future design** | Still blocked on perception, path/cross-locus detail, and per-side footwear friction |
@@ -98,7 +96,6 @@ not a statement of current wiring.
 | Capability | Character chat now | Successor chat | Consequence |
 | --- | --- | --- | --- |
 | Actor control and NPC agency | Player movement/touch is typed; NPC prose can deterministically end contact. General NPC movement/start/update is not authoritative yet. | Command/deliberation authority is stronger, but no regional contact adapter exists. | Item 3 must prove an explicit NPC actor per decision; prose alone never commits a voluntary action. |
-| Adult eligibility | The 2026-07-30 declaration + resolver were rolled back 2026-08-03; only the numeric `isMinorAge` fence remains, and affectionate touch is permission/eligibility-neutral. | Shares profile rules; no contact-specific adapter. | Romantic/intimate work still requires positive eligibility for every participant — its source needs re-planning. |
 | Consent/permission | Intimate-scene/touch-welcomeness signals are not grants. | Consent ledger is fail-closed. | Never label the chat signals equivalent to successor consent; wait for `romantic_touch`. |
 | Pose, reach, support, and proximity | Minimal scene owner and reach reads are live; seat/posture vocabulary remains incomplete. | No body-region pose/support owner. | Keep NPC posture/support outside item 3; unresolved geometry stays silence/constraint. |
 | Active body-surface contact | Affectionate contact has typed lifecycle, durable rows, and a retake-safe projection. | No regional contact lifecycle. | Character chat remains the first proof; successor parity is separate. |
@@ -120,11 +117,10 @@ The body-side evidence remains in the
 | Current posture, articulation, support, proximity | Pose/space owner | Validate access; never infer whole posture from one local fact. |
 | Garment instances, layer order, closures, displacement, material condition | Clothing state graph | Resolve material-between, exposure, compression, and filtering. |
 | Wetness, sweat, vascular state, erection, swelling, lubrication, temperature | Physiology/body state | Read current values; never infer from genre, action, or anatomy. |
-| Adult-content eligibility | Product/life-stage policy owner | Hard precondition for romantic/intimate contact; known minors always fail. |
 | Actor control and target agency | Lane action/behavior authority | Prove who may commit each voluntary movement. |
 | Interaction permission and consent | Lane's authoritative policy/consent owner | Mandatory precondition **for `romantic` and `intimate` only** — incidental/casual/affectionate touch is permission-neutral. Mechanics cannot manufacture consent for any kind. |
 | Active contact lifecycle, motion, and implicit pose adjustment | Action/contact resolver | Authoritative start/update/end cause for contact phenomena. |
-| Marks, residues, fluid/product transfer | Body/garment/effect event owner | Affordances calculate eligibility; owner commits state. |
+| Marks, residues, fluid/product transfer | Body/garment/effect event owner | Affordances calculate possible effects; the owner commits state. |
 | Sensory access and point of view | Perception/exposure owner | Filter observations before ranking. |
 | Mention and notice history | Presentation/visual-sensory memory | Suppress unchanged repetition without deleting physical truth. |
 | Narrator wording | Narrator | Realize bounded semantic cues; no raw coefficients. |
@@ -136,9 +132,9 @@ The body-side evidence remains in the
 2. Interpersonal contact requires an actor-control/agency decision — always,
    for every action kind. **Permission is scoped, not universal** (owner
    ruling, 2026-07-30): `romantic` and `intimate` contact additionally require
-   the applicable interaction permission scope AND positive adult eligibility
-   for every participant, while `incidental`, `casual`, and `affectionate`
-   contact are **permission-neutral**. Intimate contact further requires a
+   the applicable interaction permission scope, while `incidental`, `casual`,
+   and `affectionate` contact are **permission-neutral**. Intimate contact
+   further requires a
    scope-compatible consent pass. Missing or malformed policy data fails closed
    for the kinds that require it.
 3. Stable attributes never store current erection, swelling, lubrication,
@@ -254,7 +250,6 @@ safe degraded result:
 | Missing input | Required behavior |
 | --- | --- |
 | Actor control/agency for interpersonal contact | Reject commitment; never turn player-authored NPC movement into truth. |
-| Adult eligibility or consent/policy for an intimate attempt | Reject or withhold intimate contact; never guess. |
 | Pose or reach | Require explicit reposition or return geometry unavailable. |
 | Clothing layer state | Treat potentially covered intimate skin as unavailable. |
 | Live physiology | Omit physiology-derived phenomena; baseline anatomy may remain. |
@@ -267,7 +262,6 @@ Diagnostics remain bounded and structured. Suggested codes:
 
 - `contact_action_context_invalid`;
 - `contact_actor_control_unavailable`;
-- `contact_participant_eligibility_unavailable`;
 - `contact_pose_unavailable`;
 - `contact_policy_unavailable`;
 - `contact_consent_required`;
@@ -315,8 +309,7 @@ The current continuation order is:
 5. Generalize the adapter for NPC starts with two-sided material and wardrobe
    chronology protection.
 6. Add stable contact handles and a gesture-only update operation.
-7. Design/ship `romantic_touch`, then eligibility/blocker UI, before any
-   genuinely romantic proof.
+7. Design and ship `romantic_touch` before any genuinely romantic proof.
 8. Resume parked phenomena/effects only in the plan's ruled order; generalize
    only semantics proven in more than one domain.
 
