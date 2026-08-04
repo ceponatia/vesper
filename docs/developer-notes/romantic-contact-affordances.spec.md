@@ -3,7 +3,7 @@
 Status: companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
 (promoted 2026-07-28; affectionate contact is live in character chat;
-continuation item 3 was revised 2026-08-02 and now requires foundation +
+continuation item 4 was revised 2026-08-02 and now requires foundation +
 shadow gates before broader NPC authority)
 
 This is the coding-agent entry point. The plan owns the product intent,
@@ -17,7 +17,7 @@ fixtures.
 | --- | --- |
 | [Shared contact core](romantic-contact-affordances.spec.contact-core.md) | Attempted action versus committed contact, access result, contact frame, policy/perception gates, effects, cue ranking, retake capture, and shared tests. |
 | [Observations, effects, and presentation](romantic-contact-affordances.spec.effects.md) | Observation/constraint contracts, perception and repetition rules, plus atomic, conservative, idempotent effect commits. |
-| [NPC actor control](romantic-contact-affordances.spec.actor-control.md) | Item 3's live-lane NPC authority: stable actor/contact references, field-by-field evidence proof, chronological folding, post-settle presence/wardrobe reads, durable decision envelopes, guarded persistence, shadow gate, and fail-closed rollout. |
+| [NPC actor control](romantic-contact-affordances.spec.actor-control.md) | Item 4's live-lane NPC authority: stable actor/contact references, field-by-field evidence proof, chronological folding, post-settle presence/wardrobe reads, durable decision envelopes, guarded persistence, shadow gate, and fail-closed rollout. |
 | [Foot contact](romantic-contact-affordances.spec.foot.md) | Foot surface topology, structural profiles, footwear integration, foot phenomena, and foot fixtures. |
 | [Intimate contact](romantic-contact-affordances.spec.intimate.md) | Intimate topology, exposure and consent requirements, physiology inputs, intimate phenomena, and leak-prevention fixtures. |
 
@@ -95,16 +95,16 @@ not a statement of current wiring.
 
 | Capability | Character chat now | Successor chat | Consequence |
 | --- | --- | --- | --- |
-| Actor control and NPC agency | Player movement/touch is typed; NPC prose can deterministically end contact. General NPC movement/start/update is not authoritative yet. | Command/deliberation authority is stronger, but no regional contact adapter exists. | Item 3 must prove an explicit NPC actor per decision; prose alone never commits a voluntary action. |
+| Actor control and NPC agency | Player movement/touch is typed; NPC prose can deterministically end contact. General NPC movement/start/update is not authoritative yet. | Command/deliberation authority is stronger, but no regional contact adapter exists. | Item 4 must prove an explicit NPC actor per decision; prose alone never commits a voluntary action. |
 | Consent/permission | Intimate-scene/touch-welcomeness signals are not grants. | Consent ledger is fail-closed. | Never label the chat signals equivalent to successor consent; wait for `romantic_touch`. |
-| Pose, reach, support, and proximity | Minimal scene owner and reach reads are live; seat/posture vocabulary remains incomplete. | No body-region pose/support owner. | Keep NPC posture/support outside item 3; unresolved geometry stays silence/constraint. |
+| Pose, reach, support, and proximity | Minimal scene owner and reach reads are live; seat/posture vocabulary remains incomplete. | No body-region pose/support owner. | Keep NPC posture/support outside item 4; unresolved geometry stays silence/constraint. |
 | Active body-surface contact | Affectionate contact has typed lifecycle, durable rows, and a retake-safe projection. | No regional contact lifecycle. | Character chat remains the first proof; successor parity is separate. |
 | Clothing/material-between | Current player-hand path reads the target's current-cut coverage. It does not yet compose source-side gloves for arbitrary NPC actors. | Shared garment adapter remains pending. | NPC starts require two-sided material and post-settle wardrobe reads before authority. |
-| Presence and reply settlement | Presence may change during fan-out; the shipped reply ending currently uses its pre-settle roster/scenario variable, and openings return early. | Presence is engine-owned. | Item 3 must reload post-settle presence/scenario and run the common leg for openings/initiative/continue/action/partial replies. |
+| Presence and reply settlement | Presence may change during fan-out; the shipped reply ending currently uses its pre-settle roster/scenario variable, and openings return early. | Presence is engine-owned. | Item 4 must reload post-settle presence/scenario and run the common leg for openings/initiative/continue/action/partial replies. |
 | Body-surface moisture/residue/marks | No shared regional mutation owner. | No shared regional mutation owner. | Unknown suppresses dependent reads; effects remain parked. |
 | Physiology/temperature | General physiology is deferred. | General physiology is deferred. | Foot warmth and intimate live-state phenomena remain blocked. |
 | Perception | Turn-level allowance + coverage, no explicit tactile channel. | Structured witness/channel observations. | Normalize unavailable channels as unavailable, never open. |
-| Retake/idempotency | Contact rows are pruned and scenario restored, but movement/model-empty outcomes have no durable identity yet. | Same-cut re-render/event identity. | Item 3 needs an assistant-message decision envelope, including trigger miss/degraded/rejected tombstones. |
+| Retake/idempotency | Contact rows are pruned and scenario restored, but movement/model-empty outcomes have no durable identity yet. | Same-cut re-render/event identity. | Item 4 needs an assistant-message decision envelope, including trigger miss/degraded/rejected tombstones. |
 
 The body-side evidence remains in the
 [body-affordance readiness audit](body-attribute-affordances.audit.md).
@@ -232,7 +232,7 @@ contact endings, projection/ledger persistence, and retake restoration. Those
 are narrower than a complete implementation of the conceptual interface:
 
 - the current start path assumes the player's hand and reads target-side
-  material; item 3 must generalize actor control and compose both material sides;
+  material; item 4 must generalize actor control and compose both material sides;
 - the core's ordinary update re-resolves a full mutable snapshot; NPC gesture
   updates require the narrower operation in the actor-control spec;
 - effects, positive contact observations, and full presentation capture remain
