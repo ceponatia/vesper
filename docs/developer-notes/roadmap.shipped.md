@@ -5,6 +5,16 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Participant-declaration residue removed (romantic-contact item 3)** —
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) —
+  2026-08-04 — the contact core's deliberately-kept eligibility seam deleted
+  end to end (the adult-eligibility action gate, the participant-eligibility
+  read, both reason vocabulary members, the diagnostic, and every fixture,
+  test, helper, and adapter path), with no replacement field or gate; contacts
+  persisted by older builds still parse (pinned by regression test); migration
+  0095 idempotently strips the obsolete `adultEligibilityDeclaration` key from
+  every character and persona profile.
+
 - **Adult-eligibility declaration rolled back** —
   [finished/adult-eligibility.plan.md](finished/adult-eligibility.plan.md) —
   2026-08-03 — owner ruling: the declaration dropdown + numeric-age conflict

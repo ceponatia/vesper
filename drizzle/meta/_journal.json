@@ -666,6 +666,13 @@
       "when": 1785698900596,
       "tag": "0094_colossal_omega_red",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1785856575702,
+      "tag": "0095_strip-adult-eligibility-declaration",
+      "breakpoints": true
     }
   ]
 }
