@@ -8,14 +8,34 @@ Status: technical companion to
 
 This domain applies the
 [shared contact core](romantic-contact-affordances.spec.contact-core.md) to
-consent-gated intimate contact. It handles only anatomy present in the
-character's body configuration and only after the lane's authoritative
-actor-control, consent, exposure, and point-of-view checks.
+permission-gated intimate contact. The
+[directional permission owner](romantic-contact-affordances.spec.permission.md)
+defines the common direction, chronology, revocation, authorship, and rollback
+laws. This domain handles only anatomy present in the character's body
+configuration and only after the lane's authoritative actor-control,
+permission, exposure, and point-of-view checks.
 
 The domain calculates physical and sensory observations. It never decides or
 infers desire, consent, attraction, pleasure, orgasm, withdrawal, resistance,
 or an expressive reaction. An arousal-related body read is an input from
-physiology, not evidence of consent.
+physiology, not evidence of permission.
+
+## Permission scopes
+
+Intimate contact is outside the current `romantic_touch` MVP. That grant must
+never authorize kissing, contact with intimate anatomy, removing another
+participant's clothes, exposing oneself to them, or sex.
+
+Later work should introduce exact directional scopes for the distinct
+interactions the product chooses to support. A broad relationship label such as
+`cherished` or `smitten` may eventually help set per-scope automatic
+revocation thresholds, but it never creates a grant. A relationship recovery
+does not restore a revoked grant.
+
+The player-target exception remains an authorship rule: the system does not
+pre-calculate the player's acceptance before an NPC acts, and the narrator may
+not invent the player's reaction. It does not relax actor control, exposure,
+anatomy, content, or point-of-view gates.
 
 ## Existing topology
 
@@ -287,12 +307,14 @@ failed attempt.
 
 ## Sensory channels
 
-| Channel | Additional intimate requirements |
-| --- | --- |
-| Visual | Valid exposure plus viewpoint; contour-through-clothing stays distinct from anatomy detail. |
-| Tactile | Actor participates in committed contact; material transmission and locus are preserved. |
-| Olfactory | Current baseline/condition contributor, intimate proximity, exposure/permeability, and airflow. |
-| Gustatory | Explicit direct oral contact with the qualifying surface and policy pass. |
+- **Channel: Visual**
+  - **Additional intimate requirements:** Valid exposure plus viewpoint; contour-through-clothing stays distinct from anatomy detail.
+- **Channel: Tactile**
+  - **Additional intimate requirements:** Actor participates in committed contact; material transmission and locus are preserved.
+- **Channel: Olfactory**
+  - **Additional intimate requirements:** Current baseline/condition contributor, intimate proximity, exposure/permeability, and airflow.
+- **Channel: Gustatory**
+  - **Additional intimate requirements:** Explicit direct oral contact with the qualifying surface and policy pass.
 
 Authored scent/taste attributes provide baseline character identity. Hygiene,
 physiology, products, and residue may modulate intensity or add grounded notes;
@@ -347,5 +369,7 @@ at most one relevant sensory cue, not a catalog.
 - narrator cues contain semantic results, not policy, anatomy coefficients, or
   rejected alternatives.
 
-Open questions are centralized in the
+Common permission mechanics are settled in the
+[permission-owner spec](romantic-contact-affordances.spec.permission.md).
+Remaining intimate physiology and presentation questions stay in the
 [plain-English plan](romantic-contact-affordances.plan.md#open-questions).
