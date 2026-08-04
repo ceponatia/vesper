@@ -13,6 +13,7 @@ import {
   emptySceneState,
   garmentActorForCharacter,
   garmentInstanceStateSchema,
+  isAdapterSupported,
   resolveContactAttempt,
   sceneEventRef,
   sceneFacingFact,
@@ -36,11 +37,14 @@ import {
 import {
   applyChatContactDeparture,
   applyChatContactRelease,
+  approachedBand,
+  chatActorControl,
   chatApproachSceneIntents,
   chatContactAcknowledgment,
   chatContactActionId,
   chatContactActionOutcome,
   chatContactEventRef,
+  chatContactMaterialBetween,
   chatContactMaterialLayers,
   chatContactMaterialSource,
   chatContactPhrase,
@@ -48,13 +52,16 @@ import {
   chatDepartureSceneIntents,
   CHAT_CONTACT_PLAYER_SUBJECT,
   CHAT_SCENE_GROUND_SUPPORT,
+  departedBand,
   detectChatAffectionateTouch,
   detectChatApproach,
   detectChatContactRelease,
   detectChatDeparture,
   endAllChatContacts,
+  npcMovementSceneIntents,
   planChatContactTurn,
   resolveChatContactAttempt,
+  chatSceneAfterDiscontinuity,
   seededChatScene,
   type ChatContactAct,
   type ChatContactMaterialSource,
@@ -411,11 +418,23 @@ describe("affectionate touch detection", () => {
     expect(shoulder?.actionId).toBe(again?.actionId);
     expect(shoulder?.actionId).not.toBe(arm?.actionId);
     expect(shoulder?.actionId).toBe(
-      chatContactActionId(EVENT, { targetSubject: WREN, targetLocationId: "shoulders" }),
+      chatContactActionId(EVENT, {
+        actorSubject: CHAT_CONTACT_PLAYER_SUBJECT,
+        targetSubject: WREN,
+        targetLocationId: "shoulders",
+      }),
     );
     // A different exchange is a different attempt, so a stale acknowledgment cannot match.
     expect(chatContactActionId(chatContactEventRef("msg_exchange_2"), {
+      actorSubject: CHAT_CONTACT_PLAYER_SUBJECT,
       targetSubject: WREN,
+      targetLocationId: "shoulders",
+    })).not.toBe(shoulder?.actionId);
+    // ...and so is a different ACTOR: one reply event ref spans the whole roster
+    // on the NPC leg, so two hands on the same shoulder must not share an id.
+    expect(chatContactActionId(EVENT, {
+      actorSubject: WREN,
+      targetSubject: CHAT_CONTACT_PLAYER_SUBJECT,
       targetLocationId: "shoulders",
     })).not.toBe(shoulder?.actionId);
   });
@@ -432,8 +451,18 @@ describe("attempt resolution", () => {
     return detected;
   };
 
+  /** The player leg's one-sided read: the target's shoulder and nothing else. */
+  const targetSide = (material: ChatContactMaterialSource) =>
+    chatContactMaterialBetween([{ side: "target", material, locationId: "shoulders" }]);
+
   const resolve = (scene: SceneState, material: ChatContactMaterialSource = BARE) =>
-    resolveChatContactAttempt({ scene, act: act(), material, storyTime: AT });
+    resolveChatContactAttempt({
+      scene,
+      act: act(),
+      material: targetSide(material),
+      control: "player_controlled",
+      storyTime: AT,
+    });
 
   it("commits a hand on a shoulder at arm's length", () => {
     const resolution = resolve(placed("close"));
@@ -451,7 +480,8 @@ describe("attempt resolution", () => {
     const resolution = resolveChatContactAttempt({
       scene: seeded(),
       act: act(),
-      material: BARE,
+      material: targetSide(BARE),
+      control: "player_controlled",
       storyTime: AT,
       sink,
     });
@@ -485,7 +515,13 @@ describe("attempt resolution", () => {
       ...(player?.posture === undefined ? {} : { posture: player.posture }),
       ...(player?.support === undefined ? {} : { support: player.support }),
     });
-    const resolution = resolveChatContactAttempt({ scene: uncontrolled, act: act(), material: BARE, storyTime: AT });
+    const resolution = resolveChatContactAttempt({
+      scene: uncontrolled,
+      act: act(),
+      material: targetSide(BARE),
+      control: "player_controlled",
+      storyTime: AT,
+    });
     expect(resolution.status).toBe("unresolved");
     if (resolution.status !== "unresolved") return;
     expect(resolution.reason).toBe("actor_control_unresolved");
@@ -510,7 +546,8 @@ describe("attempt resolution", () => {
     const resolution = resolveChatContactAttempt({
       scene: placed("close"),
       act: act(),
-      material: adapterUnavailable,
+      material: targetSide(adapterUnavailable),
+      control: "player_controlled",
       storyTime: AT,
       sink,
     });
@@ -533,6 +570,106 @@ describe("the material adapter", () => {
     );
     expect(layers).toHaveLength(1);
     expect(layers[0]?.visibleThrough).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two-sided material (actor-control spec §"Resolution laws → Contact start")
+// ---------------------------------------------------------------------------
+
+describe("chatContactMaterialBetween — both wardrobes, one stack", () => {
+  const covers = (locationId: string, band: "opaque" | "hinted" | "exposed") =>
+    adapterSupported({ atMinutes: AT, entries: [{ locationId, band, evidence: [] }] });
+  const bare = () => adapterSupported(emptyEffectiveCoverageRead());
+
+  const between = (source: ChatContactMaterialSource, target: ChatContactMaterialSource) =>
+    chatContactMaterialBetween([
+      { side: "source", material: source, locationId: "hands" },
+      { side: "target", material: target, locationId: "shoulders" },
+    ]);
+
+  it("puts the reaching hand's own cover FIRST and the touched surface's after it", () => {
+    const read = between(covers("hands", "opaque"), covers("shoulders", "hinted"));
+    expect(isAdapterSupported(read)).toBe(true);
+    if (!isAdapterSupported(read)) return;
+    expect(read.value.layers.map((layer) => layer.layerId)).toEqual([
+      "source:coverage:hands",
+      "target:coverage:shoulders",
+    ]);
+    // One CONTINUOUS stack: the second side is renumbered rather than restarting
+    // at zero, which is what the lifecycle's content fingerprint reads.
+    expect(read.value.layers.map((layer) => layer.order)).toEqual([0, 1]);
+  });
+
+  it("keeps two `hands` reads apart — a glove and the hand it lands on are different layers", () => {
+    const read = chatContactMaterialBetween([
+      { side: "source", material: covers("hands", "opaque"), locationId: "hands" },
+      { side: "target", material: covers("hands", "opaque"), locationId: "hands" },
+    ]);
+    if (!isAdapterSupported(read)) throw new Error("both sides were readable");
+    expect(new Set(read.value.layers.map((layer) => layer.layerId)).size).toBe(2);
+  });
+
+  it("both bodies bare ⇒ no layers at all, which is skin", () => {
+    const read = between(bare(), bare());
+    if (!isAdapterSupported(read)) throw new Error("both sides were readable");
+    expect(read.value.layers).toEqual([]);
+  });
+
+  it("an unreadable SOURCE makes the whole read unavailable", () => {
+    expect(isAdapterSupported(between(adapterUnavailable, covers("shoulders", "opaque")))).toBe(false);
+  });
+
+  it("an unreadable TARGET makes the whole read unavailable", () => {
+    expect(isAdapterSupported(between(bare(), adapterUnavailable))).toBe(false);
+  });
+
+  it("a location the wardrobe does not reach contributes nothing, on either side", () => {
+    // She is wearing something, just not over the surfaces this touch involves.
+    const read = between(covers("back", "opaque"), covers("back", "opaque"));
+    if (!isAdapterSupported(read)) throw new Error("both sides were readable");
+    expect(read.value.layers).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Actor control — the same read, mirrored per origin
+// ---------------------------------------------------------------------------
+
+describe("chatActorControl reads the scene rather than asserting the caller's authority", () => {
+  const scene = () => placed("close");
+
+  it("an NPC-origin act over an `npc_controlled` body is allowed", () => {
+    expect(chatActorControl({ scene: scene(), actorId: WREN, requires: "npc_controlled" }).status).toBe("allowed");
+  });
+
+  it("an NPC-origin act over the PLAYER's body is denied", () => {
+    expect(
+      chatActorControl({ scene: scene(), actorId: CHAT_CONTACT_PLAYER_SUBJECT, requires: "npc_controlled" }).status,
+    ).toBe("denied");
+  });
+
+  it("the player leg's question is the exact mirror", () => {
+    expect(
+      chatActorControl({ scene: scene(), actorId: CHAT_CONTACT_PLAYER_SUBJECT, requires: "player_controlled" }).status,
+    ).toBe("allowed");
+    expect(chatActorControl({ scene: scene(), actorId: WREN, requires: "player_controlled" }).status).toBe("denied");
+  });
+
+  it("a body with no control fact is UNRESOLVED for either origin — silence, not a refusal", () => {
+    const base = scene();
+    const wren = sceneParticipant(base, WREN);
+    const uncontrolled = withSceneParticipant(base, {
+      subjectId: WREN,
+      ...(wren?.posture === undefined ? {} : { posture: wren.posture }),
+      ...(wren?.support === undefined ? {} : { support: wren.support }),
+    });
+    expect(chatActorControl({ scene: uncontrolled, actorId: WREN, requires: "npc_controlled" }).status).toBe(
+      "unresolved",
+    );
+    expect(chatActorControl({ scene: uncontrolled, actorId: WREN, requires: "player_controlled" }).status).toBe(
+      "unresolved",
+    );
   });
 });
 
@@ -1235,6 +1372,132 @@ describe("the departure's proximity law — never invent a distance", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// The actor-generic band laws (actor-control spec §"Resolution laws → Movement")
+// ---------------------------------------------------------------------------
+
+describe("the approach band law — nearer only, and a contact outranks a sentence", () => {
+  it("creates a FIRST fact for a pair nobody placed", () => {
+    // Unlike a departure, an approach on an unplaced pair is not a guess: the
+    // admitted evidence states where the body ended up, and the congruence gate
+    // already proved the band.
+    expect(approachedBand(seeded(), WREN, CHAT_CONTACT_PLAYER_SUBJECT, "close")).toBe("close");
+    expect(approachedBand(seeded(), WREN, CHAT_CONTACT_PLAYER_SUBJECT, "touching")).toBe("touching");
+  });
+
+  it("replaces a standing fact only with a STRICTLY nearer band", () => {
+    const near = placed("near");
+    expect(approachedBand(near, WREN, CHAT_CONTACT_PLAYER_SUBJECT, "close")).toBe("close");
+    const close = placed("close");
+    // Equal is a no-op, not a restatement handed to the ordering law.
+    expect(approachedBand(close, WREN, CHAT_CONTACT_PLAYER_SUBJECT, "close")).toBeNull();
+    expect(approachedBand(close, WREN, CHAT_CONTACT_PLAYER_SUBJECT, "touching")).toBe("touching");
+  });
+
+  it("never downgrades a pair the scene already calls `touching`", () => {
+    const touching = placed("touching");
+    expect(approachedBand(touching, WREN, CHAT_CONTACT_PLAYER_SUBJECT, "close")).toBeNull();
+    expect(approachedBand(touching, WREN, CHAT_CONTACT_PLAYER_SUBJECT, "touching")).toBeNull();
+  });
+
+  it("counts an active contact as effective `touching`, whatever the facts say", () => {
+    // A hand on a shoulder is stronger evidence of distance than any sentence
+    // about walking over: an approach may never demote a live touch to `close`.
+    const held = holding(placedAmong(SOLO), "I rest my hand on your shoulder.", SOLO);
+    const unplaced: SceneState = { ...held.scene, proximity: [] };
+    expect(approachedBand(unplaced, WREN, CHAT_CONTACT_PLAYER_SUBJECT, "close")).toBeNull();
+    expect(approachedBand(unplaced, WREN, CHAT_CONTACT_PLAYER_SUBJECT, "touching")).toBeNull();
+    // …and the same holds when the standing fact is stale and further out.
+    expect(approachedBand(held.scene, WREN, CHAT_CONTACT_PLAYER_SUBJECT, "close")).toBeNull();
+  });
+});
+
+describe("the departure band law is actor-generic — the same helper serves both lanes", () => {
+  it("says nothing about a pair with neither a fact nor a contact", () => {
+    expect(departedBand(seeded(), WREN, CHAT_CONTACT_PLAYER_SUBJECT, "near")).toBeNull();
+    expect(departedBand(seeded(), WREN, CHAT_CONTACT_PLAYER_SUBJECT, "distant")).toBeNull();
+  });
+
+  it("widens a standing fact and never narrows one", () => {
+    expect(departedBand(placed("close"), WREN, CHAT_CONTACT_PLAYER_SUBJECT, "near")).toBe("near");
+    expect(departedBand(placed("distant"), WREN, CHAT_CONTACT_PLAYER_SUBJECT, "near")).toBeNull();
+    expect(departedBand(placed("near"), WREN, CHAT_CONTACT_PLAYER_SUBJECT, "near")).toBeNull();
+  });
+
+  it("takes an active contact as proof an unplaced pair was touching", () => {
+    const held = holding(placedAmong(SOLO), "I rest my hand on your shoulder.", SOLO);
+    const unplaced: SceneState = { ...held.scene, proximity: [] };
+    expect(departedBand(unplaced, WREN, CHAT_CONTACT_PLAYER_SUBJECT, "distant")).toBe("distant");
+  });
+});
+
+describe("the NPC movement intent builder", () => {
+  const build = (
+    kind: "approach" | "depart",
+    band: SceneProximityBand,
+    facing: "toward" | null,
+  ): readonly SceneMovementIntent[] =>
+    npcMovementSceneIntents({
+      kind,
+      actor: WREN,
+      counterpart: CHAT_CONTACT_PLAYER_SUBJECT,
+      band,
+      facing,
+      ref: REF,
+      storyTime: AT + 1,
+    });
+
+  it("moves the NPC's OWN body, NPC-origin — never the player's", () => {
+    const intents = build("approach", "close", null);
+    expect(intents.every((intent) => intent.subjectId === WREN)).toBe(true);
+    expect(intents.every((intent) => intent.origin === "npc")).toBe(true);
+    const scene = applySceneIntents(placedAmong(SOLO, "near"), intents).state;
+    expect(sceneProximityFact(scene, WREN, CHAT_CONTACT_PLAYER_SUBJECT)?.value).toBe("close");
+    expect(sceneProximityFact(scene, WREN, CHAT_CONTACT_PLAYER_SUBJECT)?.provenance.source).toBe("npc_decision");
+  });
+
+  it("writes facing ONLY when the candidate proposed it", () => {
+    expect(build("approach", "close", null).map((intent) => intent.change.kind)).toEqual(["set_proximity"]);
+    expect(build("approach", "close", "toward").map((intent) => intent.change.kind)).toEqual([
+      "set_proximity",
+      "set_facing",
+    ]);
+  });
+
+  it("backing into place changes proximity without changing facing", () => {
+    // A departure never turns a body: `facing` is ignored outright on that side,
+    // so even a caller that passed one cannot make an NPC look away.
+    expect(build("depart", "near", "toward").map((intent) => intent.change.kind)).toEqual(["set_proximity"]);
+    const before = applySceneIntents(placedAmong(SOLO, "close"), build("approach", "close", "toward")).state;
+    expect(sceneFacingFact(before, WREN, CHAT_CONTACT_PLAYER_SUBJECT)?.value).toBe("toward");
+    const after = applySceneIntents(before, build("depart", "near", null)).state;
+    expect(sceneProximityFact(after, WREN, CHAT_CONTACT_PLAYER_SUBJECT)?.value).toBe("near");
+    expect(sceneFacingFact(after, WREN, CHAT_CONTACT_PLAYER_SUBJECT)?.value).toBe("toward");
+  });
+
+  it("gives two NPCs distinct intent ids under ONE reply event ref", () => {
+    const hers = npcMovementSceneIntents({
+      kind: "approach",
+      actor: WREN,
+      counterpart: CHAT_CONTACT_PLAYER_SUBJECT,
+      band: "close",
+      facing: null,
+      ref: REF,
+      storyTime: AT,
+    });
+    const theirs = npcMovementSceneIntents({
+      kind: "approach",
+      actor: VAEL,
+      counterpart: CHAT_CONTACT_PLAYER_SUBJECT,
+      band: "close",
+      facing: null,
+      ref: REF,
+      storyTime: AT,
+    });
+    expect(hers[0]?.intentId).not.toBe(theirs[0]?.intentId);
+  });
+});
+
 describe("ending every contact at once", () => {
   it("sweeps the scene for a skip or a scene change, with the reason it was given", () => {
     const held = holding(placedAmong(SOLO), "I rest my hand on your shoulder.", SOLO);
@@ -1626,3 +1889,68 @@ describe("the reach premise — one unresolved case earns a presentation fence",
     expect(premise).toEqual({ targetName: "Wren" });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Scene discontinuities (owner ruling 2026-08-04)
+// ---------------------------------------------------------------------------
+
+/**
+ * Proximity and facing are valid only during CONTINUOUS CO-PRESENCE in one
+ * place. Three discontinuities break it — a member going away, the place
+ * changing, an explicit story-clock skip — and each already ends the active
+ * contacts, so keeping the distance across them is internally contradictory.
+ * The ordinary per-turn clock tick is NOT one of the three.
+ */
+describe("scene discontinuities clear pair relations", () => {
+  it("clears EVERY pair when the place changes or the clock skips", () => {
+    const before = placed("touching");
+    expect(before.proximity).toHaveLength(1);
+    const after = chatSceneAfterDiscontinuity(before, { wholeScene: true, awaySubjects: [] });
+    expect(after.proximity).toEqual([]);
+    expect(after.facing).toEqual([]);
+    // Cleared means UNKNOWN — never a substituted band. `distant` would be this
+    // layer deciding how far away the next room is.
+    expect(sceneProximityFact(after, CHAT_CONTACT_PLAYER_SUBJECT, WREN)).toBeUndefined();
+  });
+
+  it("clears only the departing member's relations when one body leaves", () => {
+    // Two characters placed against the player; only Wren leaves.
+    const both = placedAmong(PAIR, "near");
+    const after = chatSceneAfterDiscontinuity(both, { wholeScene: false, awaySubjects: [WREN] });
+    expect(sceneProximityFact(after, CHAT_CONTACT_PLAYER_SUBJECT, WREN)).toBeUndefined();
+    // Vaelith did not move because somebody else walked out.
+    expect(sceneProximityFact(after, CHAT_CONTACT_PLAYER_SUBJECT, VAEL)?.value).toBe("near");
+  });
+
+  it("leaves the scene untouched on an ordinary clock tick", () => {
+    const before = placed("close");
+    // No discontinuity at all — minutes passing inside one continuous scene is
+    // what a conversation IS, and clearing on it would make reach permanently
+    // unknown. Identity by REFERENCE, so nothing churns the projection either.
+    expect(chatSceneAfterDiscontinuity(before, { wholeScene: false, awaySubjects: [] })).toBe(before);
+  });
+
+  it("is idempotent, so re-entry does not resurrect the old distance", () => {
+    const gone = chatSceneAfterDiscontinuity(placed("close"), { wholeScene: false, awaySubjects: [WREN] });
+    // She is still away next exchange: nothing left to drop, and the band stays
+    // unknown until explicit movement states a new one.
+    const again = chatSceneAfterDiscontinuity(gone, { wholeScene: false, awaySubjects: [WREN] });
+    expect(again).toBe(gone);
+    // And simply being present again places no distance — a returning body is
+    // seeded, and seeding never invents proximity.
+    const returned = seededChatScene(again, {
+      player: CHAT_CONTACT_PLAYER_SUBJECT,
+      characters: [WREN],
+      ref: REF,
+      storyTime: AT + 30,
+    });
+    expect(sceneProximityFact(returned, CHAT_CONTACT_PLAYER_SUBJECT, WREN)).toBeUndefined();
+  });
+
+  it("keeps the bodies themselves placed — this repair only touches pair facts", () => {
+    const after = chatSceneAfterDiscontinuity(placed("touching"), { wholeScene: true, awaySubjects: [] });
+    expect(sceneParticipant(after, WREN)?.control?.value).toBe("npc_controlled");
+    expect(sceneParticipant(after, CHAT_CONTACT_PLAYER_SUBJECT)?.posture).toBeDefined();
+  });
+});
+
