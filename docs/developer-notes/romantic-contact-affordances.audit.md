@@ -25,67 +25,13 @@ citations. Where they differ, this document is newer.
 
 ## Owner decisions needed
 
-**All three RULED 2026-07-30.** Three questions the plan assigned to slice 0 had **no ruling anywhere in the
-repo** at audit time. Searching all six `engine.spec*.md` files for
-`minor|adult|age.?verif|underage` returned zero hits; §39
-(`engine.spec.operations.md:342`) held 33 rulings of which exactly one —
-ruling 16, interpersonal consent — touches this area, and it governs the
-successor ledger only. Each item below carried a RECOMMENDED default that the
-contracts implemented so slice 1 could ship. **The owner ruled on all three on
-2026-07-30, after the slice-2 QA report; each ruling is recorded inline
-below.** The evidence sections stay as written — they are why the defaults
-took the shape they did.
+**Both RULED 2026-07-30.** Two questions the plan assigned to slice 0 had no
+ruling anywhere in the repo at audit time: actor control in legacy chat and the
+permission rule for the first foot trial. Each carried a RECOMMENDED default so
+slice 1 could ship. The owner ruled on both after the slice-2 QA report; each
+ruling is recorded inline below.
 
-### 1. Does the foot trial require an adult-eligibility proof, and what is one?
-
-The existing fence is **negative and fails open**. `isMinorAge`
-(`src/contracts/world/life-stage.ts:149`) returns `lifeStageForAge(age)?.minor
-?? false`, and `lifeStageForAge` returns `undefined` for any non-numeric age
-(`:142`) or any age above `LIFE_STAGE_MAX_HUMAN_YEARS` 120 (`:144`). So `""`,
-`"ancient"`, `"seventeen"`, and `"312"` all read **adult**. The player persona
-has no age at all — `personaProfileSchema`
-(`src/contracts/players/persona-profile.ts:36-61`) omits the field by design, so
-`personaToCharacterProfile` always yields `age: ""`. Meanwhile
-`CONTENT_FRAMING` asserts in the prompt that *"Everyone taking part in romantic
-or intimate content is an adult"* (`src/server/engine/prompts/charter.ts:49`)
-— an unverified claim about one of the two participants in every scene.
-
-**RECOMMENDED default (implemented in slice 1, not a ruling):** the contact core
-requires an explicit `ContactParticipantEligibilityRead` covering **every**
-participant for `romantic` and `intimate` action kinds, and treats `unresolved`
-and `not_required` as rejections for those kinds. A lane adapter maps a
-resolved non-minor life stage to `eligible`, a minor band to `ineligible`, and
-**everything else — unparseable age, absent age, over-120 age, and the player
-persona — to `unresolved`**. Consequence: the foot trial ships at the
-`affectionate` action kind (no eligibility gate) and romantically-framed contact
-fails closed in legacy chat until the owner rules.
-
-**What the owner must decide:** (a) whether the player persona gains an
-age/eligibility declaration, and (b) whether an unknown or fantasy-scaled
-character age reads `unresolved` for contact even though today's prompt fence
-reads it as adult. Inverting `life-stage.ts:150`'s `?? false` is a repo-wide
-behaviour change across 19 call sites and is deliberately **not** proposed here.
-
-**RULING (owner, 2026-07-30; scope corrected same day):** add an explicit
-`adult | minor | unresolved` **eligibility declaration**, independent of
-numeric/display age. Every participant — player persona included — must be
-**positively adult** for `romantic` or `intimate` contact; fantasy-scaled ages
-and the ageless player persona remain `unresolved` (and therefore fail closed)
-until they carry the declaration. The repo-wide `isMinorAge` fail-open fallback
-is **not** changed as part of this feature. The slice-1 default above is
-confirmed as the permanent gate. The declaration is a **cross-cutting
-prerequisite, not an intimate-track one**: the ruled foot trial is `romantic`,
-and `romantic` requires positive adult eligibility, so slice 3's
-`romantic_touch` permission owner alone still cannot permit the trial while
-the player reads `unresolved`. Build order ruled: existing records default to
-`unresolved`; player and NPC declarations are authoritative inputs; the legacy
-adapter maps them into the existing eligibility read; and the declaration
-ships **before the first genuinely romantic foot trial**. Slice 3 may begin
-with a separately authored, genuinely affectionate/non-romantic integration
-case — that does not violate the "never relabel romantic contact" ruling.
-Plan: [adult-eligibility.plan.md](finished/adult-eligibility.plan.md).
-
-### 2. What proves actor control in legacy chat?
+### 1. What proves actor control in legacy chat?
 
 Legacy chat has **no typed actor-control gate**. `checkPuppetContradiction`
 exists (`src/contracts/personality/puppet.ts:56`) but is dead code — its
@@ -120,7 +66,7 @@ still requires the target-agency and permission gates, whatever the input
 mode. The slice-1/slice-3 default above is confirmed, with the narrator-mode
 carve-out resolved in the restrictive direction.
 
-### 3. What permission rule applies to the first foot trial?
+### 2. What permission rule applies to the first foot trial?
 
 Legacy chat has **no consent grant of any kind**. `chatSceneIsIntimate`
 (`src/contracts/turns/chat-intimacy.ts:55-59`) is `characterExposed ||
@@ -170,9 +116,8 @@ the classification.
 > This matrix records what each lane knew at slice 0, with a file and line
 > behind every claim. It is **not** a current-state reference: slices 1–2 and
 > slice 3A have since built several of the rows it records as *absent* (the
-> contact lifecycle, material-between, the foot sub-region loci, a minimal
-> scene owner) and shipped the adult-eligibility declaration it records as
-> *deferred*. For what is true now, read the current capability table in
+> contact lifecycle, material-between, the foot sub-region loci, and a minimal
+> scene owner). For what is true now, read the current capability table in
 > [the technical index](romantic-contact-affordances.spec.md#current-capability-status).
 >
 > The snapshot is kept verbatim rather than rewritten, because it is the
@@ -195,7 +140,6 @@ observation is omitted or fixture-only).
 | Material between two surfaces | **Absent.** `grep materialBetween\|material_between` over `src/` → 0. The nearest primitive, `GarmentBodyContactRead` (`src/contracts/affordances/domains/garment/frame.ts:76-87`), is garment↔own-body and only self-establishes for `fitted`/`tight` fits. `resolveWardrobeVisibility` (`src/contracts/items/visibility.ts:55-94`) answers which *garment* is on top, never what lies between actor A's hand and actor B's foot. | Absent. | **absent — built by this plan** |
 | Body surfaces | `BodySurfaceState` (`src/contracts/state/body-surface.ts:165-173`) is **wetness only**, per body location, fixed-point, with a quarantine third state (`:128-138`). Primary character only (`:48-52`), persisted `src/server/db/schema.ts:754`. The proposal vocabulary caps it further: `surfaceWetnessLocations = ["hair"]` (`src/contracts/turns/chat-surface-ops.ts:64`). | Absent — zero imports of `body-surface.ts` from any `simulation` tree. | **deferred** — one channel, one writable location; products, residue, marks, temperature have no owner |
 | Physiology | Six float meters (`src/contracts/meters/registry.ts:36-105`); `arousal` at `:71` is the only physiological scalar. Erection, lubrication, swelling are authored **tendency** attributes explicitly documented as *"not live state"* (`src/contracts/attributes/categories/intimate/vulva.ts:281-299`, `penis.ts:11`). No sweat meter; every `temperature` hit in `src/` is LLM sampling temperature. | Fixed-point body meters (`src/contracts/simulation/bodies.ts:154-249`) with `arousal` at `:195-206`; reads `deriveIntimacyRead` / `deriveVisibleBodySigns` (`src/lib/simulation/body-reads.ts:176`, `:196`). `visibleBodySigns` (`bodies.ts:499`) deliberately excludes contact/exposure-gated signs — *"the vocabulary having no such member is what makes leaking it impossible"* (`:493-498`). | **absent** for every contact-relevant physiology read |
-| Adult eligibility | Negative fence only; **fails open** on unparseable/absent/over-120 ages (`src/contracts/world/life-stage.ts:142-151`); 13 prompt surfaces in `character-chat.ts` consume it. Player persona has no age (`src/contracts/players/persona-profile.ts:36-61`). No content-rating flag on user, chat, character, or world (`contentRating`, `isAdult`, `ageVerif`, `underage` → 0 hits). | Same derivation in `sim-render.ts:587`, `sim-solo-render.ts:175`. No contact-specific eligibility contract. | **deferred** — usable as a negative fence, never as a positive adult proof; see owner decision 1 |
 | Consent / permission | **Absent as a grant.** `chatSceneIsIntimate` is exposure ∨ arousal ≥ 0.55 (`src/contracts/turns/chat-intimacy.ts:55-59`); touch welcomeness is a mood projection (`src/contracts/mood/events.ts:59-64`); the escalation floor is a prompt sentence that yields to the scenario (`src/contracts/relationships/law.ts:356-358`). | **Trustworthy but idle.** Typed scopes (`src/contracts/simulation/social.ts:49`), fail-closed resolution (`:437-453`), precondition wiring (`src/contracts/simulation/activities.ts:94-97`; `src/lib/simulation/activities.ts:252-263`), default `false` (`activity-store.ts:995-1008`). Zero seeded actions declare it. | **absent (legacy)**, **trustworthy but unused (successor)** |
 | Actor control / NPC puppeting | **Absent as a gate.** Prompt text only, protecting the player from the narrator (`src/server/engine/prompts/character-chat.ts:2093`). `checkPuppetContradiction` (`src/contracts/personality/puppet.ts:56`) is unwired dead code. `inputMode` (`chat-pipeline.ts:208-212`) is a typed authoring **grant**, not a restraint. | Three layers: account ownership (`src/server/engine/simulation/command-authz.ts:119`), `controlledActorIds` (`src/contracts/simulation/envelopes.ts:50`, enforced at `src/lib/simulation/activities.ts:231`), and per-action `controllerKinds` (`activities.ts:147`, `:236-238`). | **absent (legacy)**, **trustworthy (successor)**; see owner decision 2 |
 | Perception / exposure | Wardrobe visibility `visible`/`hinted`/`hidden` plus a turn-level `ChatSensoryAllowance` (`src/server/engine/chat-intent.ts:76-84`). No per-sense proximity mask. | `observationChannels` includes `touch` and `smell` (`src/contracts/simulation/perception.ts:35`) but **no deriver emits them** — `src/lib/simulation/perception.ts` emits only `embodied`, `device`, `sight`, `sound`, `social`. Detail tiers 1–3 at `perception.ts:61`. | **deferred** — sight/coverage usable; **tactile, olfactory and gustatory channels are absent in both lanes** |
@@ -226,9 +170,9 @@ which is already the conservative answer — dropping cannot buy a claim.
    recorded **absent**, not assumed. ✔
 2. Clothing state, effective coverage, and the legacy retake boundary are
    recorded **trustworthy** with citations. ✔
-3. Body surfaces, adult eligibility, successor consent, successor perception,
-   successor retake, and foot sub-regions are recorded **deferred** with the
-   specific narrowness that makes them so. ✔
+3. Body surfaces, successor consent, successor perception, successor retake,
+   and foot sub-regions are recorded **deferred** with the specific narrowness
+   that makes them so. ✔
 4. The three product questions slice 0 was told to settle have RECOMMENDED
    defaults implemented in slice 1 and are flagged above as unresolved. ✔
 5. First production lane: **legacy character chat**. Second-lane parity claim:
