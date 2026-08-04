@@ -25,11 +25,6 @@ that pass. See "Done" below._
 
 ## Sequencing constraints (owner, 2026-07-30) — all satisfied
 
-- The [adult declaration](finished/adult-eligibility.plan.md) ships before the first
-  genuinely romantic foot trial; slice 3 starts with a genuinely
-  affectionate/non-romantic integration case. ✅ the declaration shipped
-  2026-07-30; the affectionate-first order carries forward into the plan's
-  slice-3 continuation order.
 - Positive tactile texture/glide enable only after perceiver-specific
   perception channels (the core filter is sight-only today) and the ruled
   regional condition ownership are wired. ✅ still binding, and carried into the
@@ -67,14 +62,7 @@ that pass. See "Done" below._
      the live application. Ran clean on Neon 2026-07-30 (11 rows, zero
      conflicts, idempotent re-run verified), so the deploy gate above is
      satisfied.
-  4. *(Found by the post-deploy visual check.)* The editor `#anchor` deep
-     links didn't scroll: the browser resolves the hash before the
-     client-fetched editor mounts, so
-     `/personas/<id>#adult-eligibility-declaration` landed unscrolled whenever
-     the declaration sat below the fold. `useHashAnchorScroll` (shared hook)
-     re-runs the hash scroll once the draft is seeded, in both the character
-     and persona edit pages; the pure hash parsing is regression-tested.
-- **Pre-slice-3 foot facts and registration hardening** — 2026-07-30. Four
+- **Pre-slice-3 foot facts and registration hardening** — 2026-07-30. Three
   pieces, all pinned by tests:
   1. *Persisted-baseline foot facts.* `feet.size/arch/nails/toes` gained
      `defaultValue` + the new `materializeDefault` registry tier: every
@@ -95,15 +83,6 @@ that pass. See "Done" below._
      unavailable continues; optional + invalid now SUPPRESSES with the invalid
      code and diagnostic (an unparseable "trapped" support no longer reads as
      unrestricted). Audited across hair/garment/foot.
-  4. *Eligibility follow-ups closed* (the adult plan's leftovers): an explicit
-     `minor` declaration arms the existing minor-safe prompt fence
-     (`minorFenceApplies`; declaration text still never serialized), the
-     declaration is public on profiles/previews (owner ruling), per-participant
-     verdicts ride `contactParticipantEligibility` and
-     `adultEligibilityBlockerLinks` routes a blocked action to the persona
-     editor / character editor / "Duplicate to edit" for foreign characters,
-     and the age parser recognizes the tight "17 years" / "17 years old"
-     whitelist.
 - **Rigid-footwear articulation leak** — 2026-07-30. `foot.articulation_observation`
   now gates its pose-detail tags (`toes_*`, `arch_*`) per surface on
   `footwearHidesDeformation`, marks a dropped detail with
@@ -134,7 +113,7 @@ that pass. See "Done" below._
   Detail: [foot spec](romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
 - **Stale ruling comments** — 2026-07-30. `contact/decisions.ts`,
   `contact/state.ts`, and the foot fixtures/tests now state the owner's
-  2026-07-30 rulings (adult eligibility, permission scope split, contact storage
-  home) as settled law and point at the
+  2026-07-30 rulings (permission scope split and contact storage home) as
+  settled law and point at the
   [audit](romantic-contact-affordances.audit.md#owner-decisions-needed).
   Comments only — no behaviour change.
