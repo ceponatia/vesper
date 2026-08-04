@@ -1,0 +1,84 @@
+name: Apply agent reasoning profiles
+
+on:
+  push:
+    branches:
+      - agent/admin-agent-reasoning-profiles
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/admin-agent-reasoning-profiles
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Apply source changes
+        run: python3 scripts/agent-reasoning-bootstrap.py
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate migration
+        run: pnpm db:generate --name agent_reasoning_profiles
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Check route authorization
+        run: pnpm lint:authz
+
+      - name: Lint changed TypeScript
+        run: >-
+          pnpm exec eslint --max-warnings 0
+          src/lib/agent-reasoning.ts
+          src/lib/agent-reasoning.test.ts
+          src/lib/api-inspector.ts
+          src/server/db/schema.ts
+          src/server/ai/index.ts
+          src/server/ai/agent-reasoning.ts
+          src/server/ai/agent-failures.ts
+          src/server/ai/generate-checked.ts
+          src/server/ai/generate-timeout.ts
+          src/contracts/turns/agent-failure.ts
+          src/server/engine/chat-memory.ts
+          src/server/engine/chat-state.ts
+          src/server/engine/chat-scene-sketch.ts
+          src/server/engine/chat-meanwhile.ts
+          src/components/chat/agent-reasoning-select.tsx
+          src/components/chat/chat-conversation.tsx
+          src/components/chat/chat-inspector-agent-health.tsx
+          src/app/api/admin/agent-reasoning/[chatId]/route.ts
+          src/app/api/admin/self/agent-reasoning/[chatId]/route.ts
+
+      - name: Run focused tests
+        run: pnpm test -- src/lib/agent-reasoning.test.ts src/server/ai/provider.test.ts
+
+      - name: Remove one-shot bootstrap files
+        run: rm .github/workflows/agent-reasoning-bootstrap.yml scripts/agent-reasoning-bootstrap.py
+
+      - name: Verify patch cleanliness
+        run: git diff --check
+
+      - name: Commit implementation
+        env:
+          HUSKY: "0"
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat(ai): add admin agent reasoning profiles"
+          git push origin HEAD:agent/admin-agent-reasoning-profiles
