@@ -1,6 +1,23 @@
 # Adult eligibility — the explicit participant declaration
 
-Status: shipped — 2026-07-30 (planned, green-lit with the owner's storage
+Status: shipped — 2026-07-30; **rolled back — 2026-08-03**
+
+> **Rollback (owner ruling, 2026-08-03).** The declaration dropdown, the
+> numeric-age conflict check, and everything they fed were scope creep and have
+> been removed from the codebase: the `contracts/eligibility` module, the
+> `adultEligibilityDeclaration` field in both profile schemas (and the public
+> projection), both editor controls with their deep-link anchor, the API
+> conflict rejection, `minorFenceApplies` (the prompt fences are back on the
+> numeric `isMinorAge` / life-stage read), and the `"17 years (old)"`
+> age-parser whitelist. The stated reason: many characters have non-human,
+> species-scaled ages, so a flat human 18 is not the right adult test. The
+> contact core's domain-neutral eligibility seam
+> (`contactActionRequiresAdultEligibility`) predates this plan and remains;
+> romantic-contact slice-3 work that assumed a positive declaration needs a
+> re-planned eligibility source. This document and the spec are kept as the
+> historical record of what was built and then removed.
+
+Shipped-day status detail: (planned, green-lit with the owner's storage
 ruling and resolver law, and built the same day; slices 0–2 all landed —
 shared schema in both profile schemas via JSONB with no migration, controls in
 both editors, and the pure resolver + contact-adapter seam, with every

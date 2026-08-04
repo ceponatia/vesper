@@ -136,7 +136,6 @@ import {
 import { catalogConditionForLabel } from "@/contracts/conditions/catalog";
 // life-stage is not re-exported by the @/contracts barrel (see scene.ts / prompts/character-chat.ts) — import direct.
 import { lifeStageForAge, lifeStageThirdPersonLine } from "@/contracts/world/life-stage";
-import { minorFenceApplies } from "@/contracts/eligibility/resolve";
 import { evaluateActReaction } from "@/contracts/personality/act-reaction";
 import { attributeRegistry } from "@/contracts/attributes";
 import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } from "@/contracts/attributes/value";
@@ -2134,10 +2133,9 @@ export async function finalizeChatState(input: {
   // Character-fidelity slices 7-10: arm the archivist's voice reads (voiceExemplar /
   // characterSlip) with a compact voice reference, and its trait-shift proposals with the
   // character's DEVELOPABLE traits at their current (authored + evolved) band. Intimate
-  // traits are fenced for a minor, mirroring the prompt-builder fence — including
-  // the explicit `minor` declaration (eligibility follow-ups).
+  // traits are fenced for a minor, mirroring the prompt-builder fence.
   const lifeStage = lifeStageForAge(input.profile.age);
-  const minor = minorFenceApplies(input.profile);
+  const minor = lifeStage?.minor ?? false;
   const evolvedTraits = resolveTraits(input.profile.traits, input.driftedState.traitOverlays);
   const developableTraits = evolvedTraits.flatMap((t) => {
     const def = traitRegistry.byId(t.id);

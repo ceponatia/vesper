@@ -18,11 +18,13 @@ fantasy-scaled, and player ages need an explicit eligibility answer. **The
 owner ruled 2026-07-30** (recorded in the
 [audit](romantic-contact-affordances.audit.md#owner-decisions-needed)): an
 explicit `adult | minor | unresolved` declaration, independent of
-numeric/display age, with every participant positively `adult`; fantasy and
-missing ages — the player persona included — stay `unresolved` and fail
-closed, and the repo-wide `isMinorAge` fallback is not changed for this
-feature. This domain remains unshippable until the selected lane carries that
-declaration for every participant.
+numeric/display age, with every participant positively `adult`. **That
+declaration was rolled back 2026-08-03**
+([rollback note](finished/adult-eligibility.plan.md) — scope creep, and
+species-scaled ages make a flat human 18 the wrong adult test), so what
+provides the positive proof is an open owner question again. This domain
+remains unshippable until a re-planned eligibility source answers it for
+every participant.
 
 The domain calculates physical and sensory observations. It never decides or
 infers desire, consent, attraction, pleasure, orgasm, withdrawal, resistance,

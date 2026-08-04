@@ -2,7 +2,6 @@ import type { NextRequest } from "next/server";
 import { inArray, eq, and, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
-  adultEligibilityConflict,
   materializeBodyDefaults,
   seedBodyConfigFromAttributes,
   seedRegistryDefaultValues,
@@ -57,18 +56,6 @@ export const GET = withUser(async (user, req: NextRequest) => {
 export const POST = withUser(async (user, req: NextRequest) => {
   const body = await readBody(req, characterCreateSchema);
   if (!body.ok) return body.response;
-  // The declaration adds positive proof; it never overrides the numeric-age fence, so
-  // the contradiction is refused at authoring time (adult-eligibility.spec.md §Resolver
-  // law clause 6). Checked BEFORE materializing suggested items — a rejected create
-  // must not leave library rows behind.
-  if (adultEligibilityConflict(body.value.profile)) {
-    return jsonError(
-      "eligibility_conflict",
-      "a character whose age reads as a minor cannot be declared an adult",
-      400,
-    );
-  }
-
   // Forge outfit suggestions become real library items before the character
   // row exists — a stray item is harmless, a dangling outfit id is not.
   const sink = new DiagnosticCollector();

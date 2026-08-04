@@ -257,14 +257,3 @@ describe("isSpeciesUnset", () => {
     expect(isSpeciesUnset({ ...emptyCharacterProfile(), bodyPlanId: `${DEFAULT_BODY_PLAN_ID}_x` })).toBe(false);
   });
 });
-
-describe("mergeFillDraft — the adult-eligibility declaration", () => {
-  it("keeps an authored declaration and never adopts a generated one", () => {
-    const declared = draftOf({}, { adultEligibilityDeclaration: "adult" });
-    const generated = draftOf({}, { adultEligibilityDeclaration: "minor" });
-    expect(mergeFillDraft(declared, generated).profile.adultEligibilityDeclaration).toBe("adult");
-    // Undeclared stays undeclared: a sheet fill may not answer a policy question.
-    const blank = draftOf({}, {});
-    expect(mergeFillDraft(blank, generated).profile.adultEligibilityDeclaration).toBe("unresolved");
-  });
-});
