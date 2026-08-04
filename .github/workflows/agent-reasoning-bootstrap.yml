@@ -73,7 +73,11 @@ jobs:
           src/app/api/admin/self/agent-reasoning/[chatId]/route.ts
 
       - name: Run focused tests
-        run: pnpm test -- src/lib/agent-reasoning.test.ts src/server/ai/provider.test.ts
+        run: >-
+          pnpm exec vitest run
+          src/lib/agent-reasoning.test.ts
+          src/server/ai/provider.test.ts
+          src/server/api/ownership-guardrail.test.ts
 
       - name: Remove one-shot bootstrap files
         run: rm .github/workflows/agent-reasoning-bootstrap.yml scripts/agent-reasoning-bootstrap.py scripts/fix-agent-reasoning-bootstrap.py
