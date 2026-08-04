@@ -66,15 +66,17 @@ replace_once(
 )
 ''',
     ),
-    (
-        '    "  const modelId = agentModelId();\\\\n  const telemetry: Partial<AgentTelemetry> = {\\\\n",\n',
-        '    "  const modelId = agentModelId();\\\\n  // Failure telemetry (contracts/turns/agent-failure.ts) — a pulse that times out every\\\\n  // exchange freezes the whole relationship curve silently; now it lands in the tally.\\\\n  const telemetry: Partial<AgentTelemetry> = {\\\\n",\n',
-    ),
 ]
 
 for old, new in replacements:
     if text.count(old) != 1:
         raise RuntimeError(f"expected bootstrap compatibility block exactly once: {old[:100]!r}")
     text = text.replace(old, new, 1)
+
+old_pulse_target = '    "  const modelId = agentModelId();\\n  const telemetry: Partial<AgentTelemetry> = {\\n",\n'
+new_pulse_target = '    "  const modelId = agentModelId();\\n  // Failure telemetry (contracts/turns/agent-failure.ts) — a pulse that times out every\\n  // exchange freezes the whole relationship curve silently; now it lands in the tally.\\n  const telemetry: Partial<AgentTelemetry> = {\\n",\n'
+if text.count(old_pulse_target) != 1:
+    raise RuntimeError(f"expected pulse bootstrap target exactly once: {old_pulse_target!r}")
+text = text.replace(old_pulse_target, new_pulse_target, 1)
 
 path.write_text(text)
