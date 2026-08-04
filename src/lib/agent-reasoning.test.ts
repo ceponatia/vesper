@@ -65,4 +65,16 @@ describe("agent reasoning profiles", () => {
       },
     });
   });
+
+  it("caps experimental budgets so an oversized leg cannot wait or bill without bound", () => {
+    const plan = agentReasoningPlan({
+      profileId: "broad_post_turn",
+      leg: "memory",
+      maxOutputTokens: 20_000,
+      timeoutMs: 90_000,
+    });
+
+    expect(plan.maxOutputTokens).toBe(32_768);
+    expect(plan.timeoutMs).toBe(120_000);
+  });
 });
