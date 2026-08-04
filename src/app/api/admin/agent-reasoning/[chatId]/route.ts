@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   AGENT_REASONING_PROFILES,
@@ -30,14 +30,14 @@ export const GET = withOwnerAdminOwnedChat<Params, OwnedChat>(ownedChat, async (
 });
 
 /** Apply beginning with the next helper-agent call; story rollback never touches it. */
-export const PATCH = withOwnerAdminOwnedChat<Params, OwnedChat>(ownedChat, async (_user, owned, req) => {
+export const PATCH = withOwnerAdminOwnedChat<Params, OwnedChat>(ownedChat, async (user, owned, req) => {
   const body = await readBody(req, patchSchema);
   if (!body.ok) return body.response;
 
   await db()
     .update(characterChats)
     .set({ agentReasoningProfile: body.value.profile })
-    .where(eq(characterChats.id, owned.chat.id));
+    .where(and(eq(characterChats.id, owned.chat.id), eq(characterChats.ownerId, user.id)));
 
   return jsonOk({
     profile: body.value.profile,
