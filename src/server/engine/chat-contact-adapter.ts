@@ -16,6 +16,7 @@ import {
   contactCommitExpectation,
   contactEventRef,
   contactParticipantIds,
+  diag,
   effectiveCoverageAt,
   emptyEffectiveCoverageRead,
   endAllContacts,
@@ -33,6 +34,8 @@ import {
   sceneSupportRead,
   sceneSupportSurface,
   toUnitInterval,
+  withoutAllScenePairRelations,
+  withoutScenePairRelations,
   withSceneContacts,
   withSceneParticipant,
   withSceneSupportSurface,
@@ -42,6 +45,7 @@ import {
   type AffordanceStoryTime,
   type AffordanceSubjectId,
   type ChatContactGesture,
+  type ChatEnvironment,
   type ChatGarmentStore,
   type CommittedContactOutcome,
   type CommittedContactRead,
@@ -71,8 +75,11 @@ import {
   type SceneState,
   type SceneSupportRelation,
   type UnitInterval,
+  type WornItemInput,
+  type WornVisibility,
 } from "@/contracts";
 import { chatEvidenceSentences } from "@/lib/chat-input-evidence";
+import { chatGarmentCoverageForCut } from "./chat-garment-affordances";
 
 /**
  * The CHAT LANE's contact adapter — the affectionate integration proof
@@ -131,6 +138,26 @@ import { chatEvidenceSentences } from "@/lib/chat-input-evidence";
  * scene already placed (or that an active contact proves was close), and never a
  * band nearer than the one already standing. Stepping back from somebody nobody
  * ever placed leaves the distance unknown, exactly as it was.
+ *
+ * ## The one thing here that is not about the player's body
+ *
+ * The proximity BAND LAWS (`departedBand`, `approachedBand`), the NPC movement
+ * builder (`npcMovementSceneIntents`), the actor-control read
+ * (`chatActorControl`), the material composer (`chatContactMaterialBetween`),
+ * the NPC act builder (`chatNpcContactAct`) and the attempt resolver
+ * (`resolveChatContactAttempt`) are all ACTOR-GENERIC, and the reply-scene
+ * decision leg (`chat-npc-scene-execute.ts`) calls them for an NPC actor
+ * (actor-control spec §"Resolution laws"). That is deliberate and it does not
+ * weaken law 1: a band law is a property of a PAIR of bodies rather than of
+ * whose turn it is, a control fact is read from the scene either way, and what
+ * lies between two surfaces is a question about clothes rather than about turns.
+ * Keeping one implementation is what stops the two lanes from drifting into
+ * different distance, control, or material rules.
+ *
+ * What stays strictly player-only is every DETECTOR in this module — nothing
+ * here reads an NPC's prose, and nothing here decides that an NPC moved or
+ * touched. That decision belongs to the classifier's admitted candidates, which
+ * arrive already gated.
  */
 
 // ---------------------------------------------------------------------------
@@ -174,15 +201,24 @@ export function chatContactEventRef(guardMessageId: string): ContactEventRef {
 }
 
 /**
- * One attempt's id: the exchange's event plus the surface the act reaches for.
+ * One attempt's id: the exchange's event, WHO reached, and the surface they
+ * reached for.
  *
- * The pair is what makes it unique WITHIN an exchange (a turn could in principle
- * detect a different act after a retake) while staying reproducible ACROSS a
- * retake of the same take, which is what `contactActionOutcomeStatus` compares
- * an acknowledgment against.
+ * The triple is what makes it unique WITHIN an exchange (a turn could in
+ * principle detect a different act after a retake) while staying reproducible
+ * ACROSS a retake of the same take, which is what `contactActionOutcomeStatus`
+ * compares an acknowledgment against.
+ *
+ * The ACTOR is part of the key because one event ref no longer covers one
+ * actor's acts. A reply-scene decision's event ref (`contact-reply:<message>`)
+ * spans the whole roster (actor-control spec §"Resolution laws → Contact
+ * start"), so two NPCs resting a hand on the same shoulder in one reply would
+ * otherwise mint the identical action id — and an acknowledgment for one would
+ * verify the other's write. The contact ID itself is unaffected either way: it
+ * is derived from the surface pair and the start event, never from this id.
  */
 export function chatContactActionId(eventRef: ContactEventRef, act: ChatContactActShape): string {
-  return `${eventRef}#${act.targetSubject}:${act.targetLocationId}`;
+  return `${eventRef}#${act.actorSubject}:${act.targetSubject}:${act.targetLocationId}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -726,7 +762,14 @@ function contactProvesCloseness(scene: SceneState, left: AffordanceSubjectId, ri
 }
 
 /**
- * The band this departure may state about one pair, or `null` for "say nothing".
+ * The band a departure may state about one pair, or `null` for "say nothing".
+ *
+ * ACTOR-GENERIC: `mover` is whichever body the sentence moved — the player on
+ * the player leg, the NPC actor on the reply-scene leg (actor-control spec
+ * §"Resolution laws → Movement": "`departedBand` mirrors the player helper").
+ * The law is a property of the PAIR, not of whose turn it is, and proximity
+ * facts are pair-symmetric, so one helper serves both and neither lane can
+ * quietly acquire a different distance rule.
  *
  * **Never invent a distance** (law 2). Two sources can license the claim and
  * nothing else can:
@@ -734,30 +777,129 @@ function contactProvesCloseness(scene: SceneState, left: AffordanceSubjectId, ri
  * 1. the pair already HAS a proximity fact — then stepping back is an honest
  *    edit of a distance somebody stated, and the new band is written only when
  *    it is genuinely farther. A `distant` pair does not become `near` because
- *    the player took a step backwards; a departure can only widen.
+ *    the mover took a step backwards; a departure can only widen.
  * 2. an active contact between them — a hand resting on a shoulder is proof
  *    they were within reach, whether or not any movement said so, so the
  *    distance it opens is a real claim rather than a guess.
  *
  * A pair with neither stays UNKNOWN. Stepping back from somebody the scene never
- * placed tells us the player moved; it does not tell us how far apart they are
+ * placed tells us a body moved; it does not tell us how far apart they are
  * now, and the scene's answer to "can this hand reach that shoulder" must stay
  * `proximity_unknown` rather than become a number this module made up.
  *
- * The player's FACING is deliberately untouched. Stepping back is not turning
- * away — an approach turns toward, because crossing a room toward somebody IS
- * facing them, but a body that backs off is usually still looking. Only an
- * explicit turn should write that fact, and this pass detects none.
+ * FACING is deliberately untouched. Stepping back is not turning away — an
+ * approach turns toward, because crossing a room toward somebody IS facing
+ * them, but a body that backs off is usually still looking. Only an explicit
+ * turn should write that fact, and neither the player lexicon nor the NPC
+ * congruence gate reads a departure as one.
  */
-function departedBand(
+export function departedBand(
   scene: SceneState,
-  player: AffordanceSubjectId,
+  mover: AffordanceSubjectId,
   otherId: AffordanceSubjectId,
   band: ChatDepartureBand,
 ): SceneProximityBand | null {
-  const stated = sceneProximityFact(scene, player, otherId)?.value;
-  if (stated === undefined) return contactProvesCloseness(scene, player, otherId) ? band : null;
+  const stated = sceneProximityFact(scene, mover, otherId)?.value;
+  if (stated === undefined) return contactProvesCloseness(scene, mover, otherId) ? band : null;
   return DEPARTURE_BAND_DISTANCE[band] > DEPARTURE_BAND_DISTANCE[stated] ? band : null;
+}
+
+/**
+ * The mirror: the band an APPROACH may state about one pair, or `null`.
+ *
+ * The departure helper's inverse, and the same law read the other way round
+ * (actor-control spec §"Resolution laws → Movement"):
+ *
+ * 1. **A first fact may be created.** Unlike a departure, an approach that
+ *    lands on an unplaced pair is not a guess — the admitted evidence is the
+ *    explicit licence ("she crosses the room and stops right beside you" states
+ *    where she ended up), and the congruence gate has already proven the band.
+ *    A pair nobody placed is exactly the pair an arrival is about.
+ * 2. **A standing fact is replaced only by a STRICTLY NEARER band.** An
+ *    approach is a claim about closing distance; letting it widen one would be
+ *    a departure wearing the wrong verb.
+ * 3. **An active contact between the pair counts as effective `touching`** —
+ *    the nearest band there is — so an approach can never overwrite a live
+ *    touch with `close`. A hand on a shoulder is stronger evidence of distance
+ *    than any sentence about walking over, and demoting it would tell the reach
+ *    read that a contact it is holding has moved out of range.
+ *
+ * Equal-or-nearer standing distance is a NO-OP (`null`), which the caller reads
+ * as "construct no intent at all" rather than handing `commitSceneIntent` a
+ * restatement: the ordering law would answer `already_asserted` for an equal
+ * band, but it has no opinion at all about a NEARER one, so the monotonic law
+ * has to be decided here, before an intent exists.
+ */
+export function approachedBand(
+  scene: SceneState,
+  mover: AffordanceSubjectId,
+  otherId: AffordanceSubjectId,
+  band: SceneProximityBand,
+): SceneProximityBand | null {
+  const stated = sceneProximityFact(scene, mover, otherId)?.value;
+  const effective = contactProvesCloseness(scene, mover, otherId) ? "touching" : stated;
+  if (effective === undefined) return band;
+  return DEPARTURE_BAND_DISTANCE[band] < DEPARTURE_BAND_DISTANCE[effective] ? band : null;
+}
+
+/**
+ * One NPC actor's movement as typed scene intents — the reply-scene leg's
+ * builder, and the counterpart of `chatApproachSceneIntents` on the player leg.
+ *
+ * Three differences from the player builder, each a law rather than a detail:
+ *
+ * - **`origin` is `npc`** and `subjectId` is the NPC ACTOR. The actor-control
+ *   law (`commitSceneIntent`) admits an NPC-origin intent only over an
+ *   `npc_controlled` body, so a proposal naming the player as the mover is
+ *   refused by the scene owner rather than by a check here.
+ * - **The band is already decided.** `approachedBand` / `departedBand` ran
+ *   against the scene first and answered `null` for a no-op; `commitSceneIntent`
+ *   does NOT enforce those monotonic placement laws (it only refuses an exact
+ *   restatement and a stale write), so an intent must never be constructed for
+ *   a band the helpers refused.
+ * - **Facing rides only on an approach that PROPOSED it.** The player builder
+ *   always turns the player toward the target because crossing a room toward
+ *   somebody is turning toward them; on this side the congruence gate has to
+ *   have proven `facing: toward` independently, because backing into place
+ *   changes proximity without changing where a body is looking. A departure
+ *   never writes facing at all.
+ */
+export function npcMovementSceneIntents(input: {
+  readonly kind: "approach" | "depart";
+  readonly actor: AffordanceSubjectId;
+  readonly counterpart: AffordanceSubjectId;
+  /** The band the helpers licensed — never the candidate's raw proposal. */
+  readonly band: SceneProximityBand;
+  /** `toward` only when the candidate proposed it AND congruence proved it; ignored for `depart`. */
+  readonly facing: "toward" | null;
+  readonly ref: SceneEventRef;
+  readonly storyTime: AffordanceStoryTime;
+}): readonly SceneMovementIntent[] {
+  const base = {
+    subjectId: input.actor,
+    origin: "npc" as const,
+    ref: input.ref,
+    storyTime: input.storyTime,
+    evidence: [affordanceEvidence("adapter", `chat.contact.npc_${input.kind}`)],
+  };
+  const intents: SceneMovementIntent[] = [
+    {
+      ...base,
+      // The actor is part of the id because one reply event ref covers the whole
+      // roster's movements: two NPCs approaching the player in one reply must not
+      // collide on an intent id.
+      intentId: `${input.ref}:npc:${input.actor}:proximity:${input.counterpart}`,
+      change: { kind: "set_proximity", otherId: input.counterpart, band: input.band },
+    },
+  ];
+  if (input.kind === "approach" && input.facing === "toward") {
+    intents.push({
+      ...base,
+      intentId: `${input.ref}:npc:${input.actor}:facing:${input.counterpart}`,
+      change: { kind: "set_facing", towardId: input.counterpart, facing: "toward" },
+    });
+  }
+  return intents;
 }
 
 /**
@@ -803,14 +945,23 @@ export function chatDepartureSceneIntents(
 
 /** The identity half of an act — everything `chatContactActionId` keys on. */
 export interface ChatContactActShape {
+  readonly actorSubject: AffordanceSubjectId;
   readonly targetSubject: AffordanceSubjectId;
   readonly targetLocationId: string;
 }
 
-/** One detected affectionate act by the player, on the player's own hand. */
+/**
+ * One affectionate act, on the ACTOR's own hand.
+ *
+ * Actor-generic by construction, and it always was: the player-line detector
+ * fills `actorSubject` with the player, and the reply-scene leg's
+ * `chatNpcContactAct` fills it with the NPC an admitted `start` candidate named
+ * (actor-control spec §"Resolution laws → Contact start"). Nothing downstream of
+ * this shape asks whose turn it is — `resolveChatContactAttempt` reads the
+ * scene's own control fact for whichever body is acting.
+ */
 export interface ChatContactAct extends ChatContactActShape {
   readonly actionId: string;
-  readonly actorSubject: AffordanceSubjectId;
   readonly sourceLocationId: string;
   readonly actionKind: "affectionate";
   readonly gesture: ChatContactGesture;
@@ -866,11 +1017,14 @@ export function detectChatAffectionateTouch(
     if (target === null) continue;
     const locationId = chatAffectionateTargetLocationOf(match[3] ?? "");
     if (locationId === undefined) continue;
-    const shape: ChatContactActShape = { targetSubject: target.subjectId, targetLocationId: locationId };
+    const shape: ChatContactActShape = {
+      actorSubject: CHAT_CONTACT_PLAYER_SUBJECT,
+      targetSubject: target.subjectId,
+      targetLocationId: locationId,
+    };
     return {
       ...shape,
       actionId: chatContactActionId(input.eventRef, shape),
-      actorSubject: CHAT_CONTACT_PLAYER_SUBJECT,
       sourceLocationId: CHAT_CONTACT_SOURCE_LOCATION,
       actionKind: "affectionate",
       gesture: gestureOf(match[1] ?? ""),
@@ -1087,6 +1241,55 @@ export function endAllChatContacts(
   return { scene: commits.length === 0 ? scene : withSceneContacts(scene, state), commits };
 }
 
+/**
+ * The scene discontinuities this exchange asserts — what stops the pair
+ * relations from being about anything any more (owner ruling, 2026-08-04;
+ * `withoutScenePairRelations`).
+ *
+ * Exactly three, and the ruling's own asymmetry decides the blast radius:
+ *
+ * - `wholeScene` — the place changed, or the story clock explicitly skipped.
+ *   The whole chat moved or time jumped, so EVERY pair's distance is a claim
+ *   about a room or a moment that is gone.
+ * - `awaySubjects` — the members this cut says are offstage. Only the relations
+ *   they are party to clear; the bodies still in the room did not move relative
+ *   to each other because somebody else walked out.
+ *
+ * The ordinary per-turn clock tick is deliberately NOT a discontinuity. Minutes
+ * passing inside one continuous scene is what a conversation IS, and treating
+ * it as a break would erase the distance every turn and make the reach read
+ * permanently unknown.
+ */
+export interface ChatSceneDiscontinuity {
+  /** A place change or an explicit story-clock skip — clears every pair. */
+  readonly wholeScene: boolean;
+  /** Members this cut says are offstage — clears only their own relations. */
+  readonly awaySubjects: readonly AffordanceSubjectId[];
+}
+
+/**
+ * Apply this exchange's scene discontinuities to the projection.
+ *
+ * Pure, total, and idempotent: applying it twice changes nothing the first pass
+ * did not, and a scene with nothing to clear comes back by reference. That
+ * idempotence is what makes RE-ENTRY behave — a member who is still away next
+ * exchange simply has nothing left to drop, and their distance stays unknown
+ * until explicit movement states a new one.
+ *
+ * Contacts are NOT ended here. The two producers are deliberately separate:
+ * `endAllChatContacts` already owns the skip/place-change ends under their own
+ * event refs and ledger rows, and this is the state that has to move with them.
+ */
+export function chatSceneAfterDiscontinuity(
+  scene: SceneState,
+  input: ChatSceneDiscontinuity,
+): SceneState {
+  if (input.wholeScene) return withoutAllScenePairRelations(scene);
+  let next = scene;
+  for (const subjectId of input.awaySubjects) next = withoutScenePairRelations(next, subjectId);
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 // Material between
 // ---------------------------------------------------------------------------
@@ -1183,6 +1386,85 @@ export function chatContactMaterialSource(input: {
   return dressed ? adapterUnavailable : adapterSupported(emptyEffectiveCoverageRead());
 }
 
+/** The diagnostic a failed current-cut coverage derivation files. */
+export const CHAT_CONTACT_COVERAGE_DERIVE_FAILED = "chat_contact.coverage.derive_failed";
+
+/**
+ * One body's material answer AT THE CUT THE CALLER IS STANDING IN — the whole
+ * derivation, fenced, shared by both legs that need it.
+ *
+ * The pre-prompt player leg derives it from the exchange's resolved wardrobes;
+ * the reply-scene decision leg derives it again from the POST-settle scenario
+ * (actor-control spec §"Authoritative post-settle cut": "current garment store
+ * and per-actor coverage"). Those are two different cuts and must stay two
+ * different reads — but they are the SAME derivation, and two copies of it is how
+ * one leg quietly acquires a different answer to "is this body dressed in
+ * something nobody modelled".
+ *
+ * `coverage` rides out beside the material because settlement persists the exact
+ * object the resolver consumed rather than recomputing one, and because a caller
+ * that took a capture this turn hands it back in as `captured` so both consumers
+ * share one object.
+ *
+ * Fenced (docs/resilience.md §2): a derivation that throws degrades to "this cut
+ * could not model the wardrobe", which the three-way law turns into
+ * `unavailable` for a dressed body — silence with a diagnostic, never a stale
+ * capture and never bare skin.
+ */
+export function chatContactMaterialAtCut(input: {
+  readonly store: ChatGarmentStore;
+  readonly actorId: string;
+  /** The resolved wardrobe's coverage rows; absent ⇒ the wardrobe could not be read at all. */
+  readonly worn?: readonly WornItemInput[];
+  readonly visibility?: Readonly<Record<string, WornVisibility>>;
+  readonly environment: ChatEnvironment;
+  readonly clockMinutes: number;
+  /** A read this turn already took for this actor — reused VERBATIM when present. */
+  readonly captured?: EffectiveCoverageRead | null;
+  /** `ChatState.outfit` / `ChatPlayerState.overlay` — the free-text look. */
+  readonly freeTextOutfit: string;
+  /** The structured worn ids, which may predate materialization. */
+  readonly wornItemIds?: readonly string[];
+  readonly sink?: DiagnosticSink;
+}): { readonly coverage: EffectiveCoverageRead | null; readonly material: ChatContactMaterialSource } {
+  let coverage: EffectiveCoverageRead | null = input.captured ?? null;
+  if (coverage === null) {
+    try {
+      coverage = chatGarmentCoverageForCut({
+        store: input.store,
+        actorId: input.actorId,
+        ...(input.worn === undefined ? {} : { worn: input.worn }),
+        ...(input.visibility === undefined ? {} : { visibility: input.visibility }),
+        environment: input.environment,
+        clockMinutes: input.clockMinutes,
+      });
+    } catch (error) {
+      input.sink?.push(
+        diag(
+          "warn",
+          CHAT_CONTACT_COVERAGE_DERIVE_FAILED,
+          "current-cut coverage derivation failed; this body's material reads unavailable",
+          {
+            path: "chat_contact",
+            context: { actorId: input.actorId, error: error instanceof Error ? error.message : String(error) },
+          },
+        ),
+      );
+      coverage = null;
+    }
+  }
+  return {
+    coverage,
+    material: chatContactMaterialSource({
+      coverage,
+      store: input.store,
+      actorId: input.actorId,
+      freeTextOutfit: input.freeTextOutfit,
+      ...(input.wornItemIds === undefined ? {} : { wornItemIds: input.wornItemIds }),
+    }),
+  };
+}
+
 /**
  * What lies between the player's hand and the target surface, given an answer.
  *
@@ -1221,9 +1503,74 @@ export function chatContactMaterialLayers(
   ];
 }
 
+/**
+ * One participant's contribution to what lies between two surfaces: whose
+ * wardrobe answer, over which of their own locations.
+ *
+ * `source` is the ACTING surface — the hand doing the touching, and whatever is
+ * over it (a glove). `target` is the surface being touched. The distinction is
+ * carried rather than inferred because it decides both the stack ORDER (a glove
+ * is nearer the hand than her sleeve is) and the layer's identity: two hands
+ * meeting produce two `hands` coverage reads, and un-prefixed ids would collide
+ * into one layer that claims to be both.
+ */
+export interface ChatContactMaterialSide {
+  readonly side: "source" | "target";
+  /** That participant's answer, from `chatContactMaterialSource`. */
+  readonly material: ChatContactMaterialSource;
+  /** The location on THAT participant's own body. */
+  readonly locationId: string;
+}
+
+/**
+ * What lies between the two surfaces, composed from every side this lane can
+ * read (actor-control spec §"Resolution laws → Contact start": "material is
+ * resolved from both sides … compose the NPC-hand coverage (gloves, source
+ * first) with target-surface coverage (target garments after it)").
+ *
+ * **One unreadable side makes the whole read unavailable.** A hand whose glove
+ * nobody modelled is exactly as unknown as a shoulder whose blouse nobody
+ * modelled: in either case the lane cannot say what the touch lands through, and
+ * `chatContactMaterialSource`'s three-way law already decided which of "modelled",
+ * "dressed but unmodellable", and "genuinely bare" each side is. `unavailable`
+ * rides out of here untouched, and the resolver's own material gate turns it into
+ * `unresolved` — silence — with its own diagnostic. Composing the readable side
+ * alone would be worse than silence: it would state a material the other body's
+ * clothes may contradict.
+ *
+ * Stack order is the ARRAY order, with `order` renumbered across sides so the
+ * composed list is one continuous stack rather than two stacks that both start at
+ * zero. The player leg passes one side (the target's) and is unchanged by the
+ * generalization beyond its layer ids gaining that side's prefix.
+ */
+export function chatContactMaterialBetween(
+  sides: readonly ChatContactMaterialSide[],
+): AdapterRead<ContactMaterialRead> {
+  const layers: ContactMaterialLayerRead[] = [];
+  for (const side of sides) {
+    if (!isAdapterSupported(side.material)) return adapterUnavailable;
+    for (const layer of chatContactMaterialLayers(side.material.value, side.locationId)) {
+      layers.push({ ...layer, layerId: `${side.side}:${layer.layerId}`, order: layers.length });
+    }
+  }
+  const evidence = layers.flatMap((layer) => [...layer.evidence]);
+  return adapterSupported({ layers, evidence }, evidence);
+}
+
 // ---------------------------------------------------------------------------
 // Attempt assembly
 // ---------------------------------------------------------------------------
+
+/**
+ * Which control fact an act's ORIGIN needs the scene to be carrying: a typed
+ * line the player wrote may only move a `player_controlled` body, and an
+ * NPC-origin reply-scene decision may only move an `npc_controlled` one.
+ *
+ * The same two literals `SceneParticipant.control` speaks in, deliberately — the
+ * requirement is a claim about the fact, so restating it in a private vocabulary
+ * would only create something to keep in sync.
+ */
+export type ChatContactControlRequirement = "player_controlled" | "npc_controlled";
 
 /**
  * The actor-control decision, READ from the scene rather than asserted.
@@ -1232,26 +1579,51 @@ export function chatContactMaterialLayers(
  * subject, so it would be easy to hard-code `allowed` — and that is exactly the
  * shortcut the actor-control law exists to close. Reading the scene's own
  * control fact means a body nobody declared a controller for produces
- * `unresolved` (silence, plus a diagnostic from the resolver) and a body the
- * scene says is NPC-controlled produces a refusal, whatever this lane believes.
+ * `unresolved` (silence, plus a diagnostic from the resolver), and a body whose
+ * control fact says something other than what this origin requires produces a
+ * refusal, whatever the calling lane believes.
+ *
+ * ACTOR-GENERIC, with the origin as an argument rather than a second copy
+ * (actor-control spec §"Resolution laws → Contact start": "actor control is read
+ * from the scene and is allowed only for `npc_controlled`"). Two copies of this
+ * function would be two places for the "missing fact ⇒ unresolved, wrong fact ⇒
+ * denied" rule to drift, and the mirrored rule is the whole content of both.
  */
-function chatActorControl(scene: SceneState, actorId: AffordanceSubjectId): ContactActorControlDecision {
-  const laneEvidence: readonly AffordanceEvidence[] = [affordanceEvidence("adapter", "chat.contact.player_line")];
-  const control = sceneParticipant(scene, actorId)?.control;
+export function chatActorControl(input: {
+  readonly scene: SceneState;
+  readonly actorId: AffordanceSubjectId;
+  readonly requires: ChatContactControlRequirement;
+}): ContactActorControlDecision {
+  const { actorId } = input;
+  // The lane tag names WHICH leg read the fact, so a committed contact's
+  // evidence still says whether a typed player line or an admitted reply-scene
+  // candidate was the thing that claimed authority over this body.
+  const laneEvidence: readonly AffordanceEvidence[] = [
+    affordanceEvidence(
+      "adapter",
+      input.requires === "player_controlled" ? "chat.contact.player_line" : "chat.contact.npc_reply",
+    ),
+  ];
+  const control = sceneParticipant(input.scene, actorId)?.control;
   if (control === undefined) return { status: "unresolved", actorId, evidence: laneEvidence };
   const evidence: readonly AffordanceEvidence[] = [...laneEvidence, ...sceneProvenanceEvidence([control.provenance])];
-  return { status: control.value === "player_controlled" ? "allowed" : "denied", actorId, evidence };
+  return { status: control.value === input.requires ? "allowed" : "denied", actorId, evidence };
 }
 
 export interface ChatContactAttemptInput {
   readonly scene: SceneState;
   readonly act: ChatContactAct;
   /**
-   * The TARGET's material source, from `chatContactMaterialSource`. Not a layer
-   * list: `[]` and "nobody knows" are different answers, and only this type can
-   * carry both.
+   * What lies between the two surfaces, ALREADY composed
+   * (`chatContactMaterialBetween`). Composed by the caller because how many
+   * sides are read is the caller's law, not the resolver's: the player leg reads
+   * the target's wardrobe alone, and the reply-scene leg reads both.
+   * `adapterUnavailable` rides through untouched — the resolver's own material
+   * gate is where an absent answer becomes silence.
    */
-  readonly material: ChatContactMaterialSource;
+  readonly material: AdapterRead<ContactMaterialRead>;
+  /** The control fact this act's origin requires — `chatActorControl`'s question. */
+  readonly control: ChatContactControlRequirement;
   readonly storyTime: AffordanceStoryTime;
   readonly sink?: DiagnosticSink;
 }
@@ -1265,11 +1637,56 @@ export interface ChatContactAttemptInput {
  * consults it. It rides the committed record anyway, where it says exactly what
  * happened: nobody was asked, because for this action kind nobody had to be.
  *
- * `targetAgencies` is empty because the act moves ONE body — the player's hand.
- * Nothing is proposed on the other person's side, so there is no movement of
- * hers for her own authority to allow, and an `adjustments` list that proposed
- * one would need it.
+ * `targetAgencies` is empty because the act moves ONE body — the ACTOR's hand,
+ * whoever the actor is. Nothing is proposed on the other person's side, so there
+ * is no movement of theirs for their own authority to allow, and an
+ * `adjustments` list that proposed one would need it. That argument is identical
+ * for an NPC-origin start (actor-control spec §"Resolution laws → Contact
+ * start": "target agencies stay empty because only the NPC's own hand moves"),
+ * which is why one resolver serves both legs.
  */
+/**
+ * One admitted NPC `start` candidate as an act — the reply-scene leg's builder,
+ * and the counterpart of `detectChatAffectionateTouch` on the player leg
+ * (actor-control spec §"Resolution laws → Contact start").
+ *
+ * There is no detection here and there never will be: the actor, the target, the
+ * gesture, and the canonical target location all arrive already proven by the
+ * four admission gates, and this function's whole job is to state the three
+ * facts the candidate does NOT carry, each of them a law rather than a default:
+ *
+ * - **The source is the actor's `hands`** — the one acting surface this lane
+ *   models, the same shared constant the player detector uses, so a start and a
+ *   release can never disagree about which surface a chat contact is made with.
+ * - **The action kind is `affectionate`.** Romantic, intimate, and restraint
+ *   framings were vetoed whole at the assertion gate, so this is the only kind an
+ *   admitted candidate can be — not a widening of what the model may propose.
+ * - **The action id is deterministic** in the reply event ref, the actor, the
+ *   target and the location, so a retake of the same reply reproduces the
+ *   identical attempt (and, through the surface pair, the identical contact id).
+ */
+export function chatNpcContactAct(input: {
+  readonly actor: AffordanceSubjectId;
+  readonly target: AffordanceSubjectId;
+  readonly targetLocationId: string;
+  readonly gesture: ChatContactGesture;
+  /** The REPLY event ref (`contact-reply:<assistantMessageId>`) — the id's ref half. */
+  readonly eventRef: ContactEventRef;
+}): ChatContactAct {
+  const shape: ChatContactActShape = {
+    actorSubject: input.actor,
+    targetSubject: input.target,
+    targetLocationId: input.targetLocationId,
+  };
+  return {
+    ...shape,
+    actionId: chatContactActionId(input.eventRef, shape),
+    sourceLocationId: CHAT_CONTACT_SOURCE_LOCATION,
+    actionKind: "affectionate",
+    gesture: input.gesture,
+  };
+}
+
 export function resolveChatContactAttempt(input: ChatContactAttemptInput): ContactResolution {
   const { act, scene } = input;
   const source: ContactBodySurfaceRef = {
@@ -1284,16 +1701,6 @@ export function resolveChatContactAttempt(input: ChatContactAttemptInput): Conta
     locationId: act.targetLocationId,
   };
   const gesture = CHAT_GESTURE_CONTACT[act.gesture];
-  // An `unavailable` wardrobe rides through UNTOUCHED: the resolver's own
-  // material gate answers `unresolved` with a diagnostic, which is where an
-  // absent answer is supposed to be turned into silence.
-  const garmentLayers = isAdapterSupported(input.material)
-    ? chatContactMaterialLayers(input.material.value, act.targetLocationId)
-    : [];
-  const materialEvidence = garmentLayers.flatMap((layer) => [...layer.evidence]);
-  const material: AdapterRead<ContactMaterialRead> = isAdapterSupported(input.material)
-    ? adapterSupported({ layers: garmentLayers, evidence: materialEvidence }, materialEvidence)
-    : adapterUnavailable;
 
   const intent: ContactActionIntent = {
     actionId: act.actionId,
@@ -1311,7 +1718,7 @@ export function resolveChatContactAttempt(input: ChatContactAttemptInput): Conta
     storyTime: input.storyTime,
   };
   const context: ContactActionContext = {
-    actorControl: chatActorControl(scene, act.actorSubject),
+    actorControl: chatActorControl({ scene, actorId: act.actorSubject, requires: input.control }),
     targetAgencies: [],
     policy: {
       status: "not_required",
@@ -1326,7 +1733,7 @@ export function resolveChatContactAttempt(input: ChatContactAttemptInput): Conta
     }),
     sourceSupport: sceneSupportRead(scene, source, input.sink),
     targetSupport: sceneSupportRead(scene, targetSurface, input.sink),
-    material,
+    material: input.material,
     adjustments: [],
   };
   return resolveContactAttempt({ intent, context, ...(input.sink === undefined ? {} : { sink: input.sink }) });
@@ -1471,11 +1878,21 @@ export function planChatContactTurn(input: ChatContactTurnInput): ChatContactTur
   // A target with no roster entry cannot happen (the act's subject came FROM the
   // roster), and if it ever did, `unavailable` is the honest read of a body this
   // turn knows nothing about.
+  //
+  // ONE-SIDED on purpose: the player's own hand contributes no layer here. This
+  // leg has never modelled the player's wardrobe into coverage, and reading their
+  // side would turn every touch by an unmodellable player into silence — a
+  // behavior change to shipped authority that the actor-control work has no
+  // business making. The reply-scene leg reads both sides because it must
+  // (spec §"Resolution laws → Contact start"), through the same composer.
   const target = input.characters.find((member) => member.subjectId === act.targetSubject);
   const resolution = resolveChatContactAttempt({
     scene,
     act,
-    material: target?.material ?? adapterUnavailable,
+    material: chatContactMaterialBetween([
+      { side: "target", material: target?.material ?? adapterUnavailable, locationId: act.targetLocationId },
+    ]),
+    control: "player_controlled",
     storyTime: input.storyTime,
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });
@@ -1741,3 +2158,4 @@ export function chatContactReachPremise(input: {
     ...(locus === undefined ? {} : { locus: locus.phrase }),
   };
 }
+
