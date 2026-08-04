@@ -125,7 +125,7 @@ the prose had already shed two beats earlier). Scores C4 / Ct3 / N5 / NI5.
 
 | guard | event_ref | seq | kind | contact_id | reason | story_minute | payload highlights |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `m5klutduf30i5sko42jxhn5j` | `contact:m5klutduf30i5sko42jxhn5j` | 0 | contact_started | `body␟player␟hands␟␟␞body␟wdijgtnp5dnosx3or16wwsvv␟shoulders␟␟␝contact:m5klutduf30i5sko42jxhn5j` | — | 2 | affectionate rest, pressure light, `materialBetween: []`, `directSkinContact: true` (the state said nothing was worn), actorControl allowed, policy/eligibility not_required |
+| `m5klutduf30i5sko42jxhn5j` | `contact:m5klutduf30i5sko42jxhn5j` | 0 | contact_started | `body␟player␟hands␟␟␞body␟wdijgtnp5dnosx3or16wwsvv␟shoulders␟␟␝contact:m5klutduf30i5sko42jxhn5j` | — | 2 | affectionate rest, pressure light, `materialBetween: []`, `directSkinContact: true` (the state said nothing was worn), actorControl allowed, policy not_required |
 | `myp9c520wfy09lris5mdra46` | `contact:myp9c520wfy09lris5mdra46` | 0 | contact_ended | same contact id | withdrawn | 4 | endedByEventRef = the release exchange's own ref |
 
 Scores C5 / Ct5 / N5 / NI5 — held across an unrelated beat ("still under your
