@@ -369,7 +369,7 @@ export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof 
                       at: new Date().toISOString(),
                     },
                   })
-                  .where(eq(characterChats.id, chatId));
+                  .where(and(eq(characterChats.id, chatId), eq(characterChats.ownerId, user.id)));
               }
             } catch (err) {
               await db()
@@ -382,7 +382,7 @@ export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof 
                     at: new Date().toISOString(),
                   },
                 })
-                .where(eq(characterChats.id, chatId))
+                .where(and(eq(characterChats.id, chatId), eq(characterChats.ownerId, user.id)))
                 .catch(() => undefined);
             } finally {
               clearInterval(heartbeat);
