@@ -104,7 +104,6 @@ The resolver consumes authoritative reads without taking ownership of them.
 ```ts
 interface ContactActionContext {
   actorControl: ActorControlDecision;
-  participantEligibility: ParticipantEligibilityRead;
   pose: PairPoseRead;
   sourceSupport: RegionalSupportRead;
   targetSupport: RegionalSupportRead;
@@ -121,12 +120,6 @@ interface ActorControlDecision {
   evidence: readonly AffordanceEvidence[];
 }
 
-interface ParticipantEligibilityRead {
-  status: "eligible" | "ineligible" | "unresolved" | "not_required";
-  participantIds: readonly EntityId[];
-  evidence: readonly AffordanceEvidence[];
-}
-
 interface InteractionPolicyRead {
   status: "allowed" | "denied" | "withdrawn" | "unresolved";
   scopes: readonly ContactPolicyScope[];
@@ -139,11 +132,6 @@ actor's voluntary movement. Player-authored narration about an NPC is not
 control. A target's voluntary adjustment or reaction needs its own behavior/
 agency decision before commitment.
 
-`ParticipantEligibilityRead` reuses the product life-stage/minor fence and any
-future explicit adult-participant policy. Known minors always fail
-romantic/intimate eligibility. Unknown, nonnumeric, fantasy-scaled, and player
-ages need an explicit product ruling; absence cannot be hidden inside the
-contact calculation.
 
 `InteractionPolicyRead` is a result from the lane's existing permission/
 consent owner. It is not calculated from attraction, arousal, relationship
@@ -160,7 +148,6 @@ For interpersonal contact:
 
 For romantic/intimate actions in addition:
 
-- all participants must pass the adult-eligibility rule;
 - `allowed` must be explicit and scope-compatible;
 - withdrawal or contradiction rejects the action;
 - missing/invalid policy fails closed;
@@ -338,8 +325,6 @@ current truth.
 - player-authored NPC movement fails without an actor-control decision;
 - a voluntary target adjustment requires target behavior authority;
 - ordinary interpersonal contact applies its permission rule;
-- a known minor cannot enter romantic/intimate contact;
-- unresolved adult eligibility fails the intimate gate;
 - permission missing or withdrawn rejects intimate contact;
 - legacy intimacy framing does not become a consent grant;
 - direct skin action fails while a material layer remains;
@@ -386,7 +371,7 @@ permission (legacy) as unowned in both lanes, so every one of them arrives as an
 | `identity.ts` | `ContactId`, `ContactEventRef`, `ContactEntityId`; the order-independent pair key and `deriveContactId`. |
 | `surfaces.ts` | Body and object surface refs over `bodyLocationRegistry`; surface/pair keys; participant extraction. |
 | `material.ts` | `ContactMaterialLayerRead`, `ContactMaterialTransmissionRead`, `composeContactMaterial`. |
-| `decisions.ts` | Action kinds → policy scopes; actor control, target agency, eligibility, permission; the implicit-adjustment policy; requirement and rejection vocabularies. |
+| `decisions.ts` | Action kinds → policy scopes; actor control, target agency, and permission; the implicit-adjustment policy; requirement and rejection vocabularies. |
 | `types.ts` | Bands, intent, context, access result, the four-status resolution, `CommittedContactRead`, `EndedContactRecord`, the lifecycle commit union. |
 | `resolve.ts` | `resolveContactAttempt` — the whole gate. |
 | `lifecycle.ts` | `commitContactResolution`, `endContact`, `endAllContacts`, the active projection and its reads. |
@@ -408,7 +393,7 @@ permission (legacy) as unowned in both lanes, so every one of them arrives as an
 `classifyContactAdjustment` · `composeContactMaterial` / `sortContactMaterialLayers` /
 `directContactTransmission` · `contactPairKey` / `contactSurfaceKey` /
 `contactParticipantIds` / `isInterpersonalContact` / `isKnownContactBodyLocation` ·
-`contactActionRequiresAdultEligibility` / `contactActionRequiresPermission` /
+`contactActionRequiresPermission` /
 `CONTACT_ACTION_SCOPE` · ~~`CONTACT_RESOLUTION_ACTION_STATUS`~~ (removed in
 slice 3A; `contactActionOutcomeStatus` replaces it).
 
@@ -433,14 +418,9 @@ slice 3A; `contactActionOutcomeStatus` replaces it).
 
 ### Rulings — confirmed by the owner 2026-07-30
 
-`contactActionRequiresAdultEligibility` and `contactActionRequiresPermission`
-both return true for `romantic` and `intimate` only. That was shipped as the
-conservative half of the audit's
-[owner decisions](romantic-contact-affordances.audit.md#owner-decisions-needed)
-1 and 3; **the owner has since confirmed it as the ruling** (recorded inline in
-the audit): positive adult eligibility for every participant on romantic and
-intimate kinds, permission-neutral incidental/affectionate touch, and
-romantic/fetish-framed foot play classified `romantic` — never relabeled to
+`contactActionRequiresPermission` returns true for `romantic` and `intimate`
+only. The owner confirmed permission-neutral incidental/affectionate touch and
+classified romantic/fetish-framed foot play as `romantic` — never relabeled to
 make a trial commit. Scope membership is checked exactly: the core never
 widens a grant, because "the more intimate permission implies the less
 intimate one" is a product decision and not an obvious one. A lane that
@@ -551,9 +531,9 @@ resolution — and `endUnauthorizedContacts` is the *end* half, for contacts
 nobody re-asserted. Per active contact whose kind needs authorization
 (interpersonal `romantic` / `intimate`): a `denied`/`withdrawn` answer, or a
 grant that no longer names the action's scope, ends it as `policy_withdrawn`;
-silence, an `unresolved` answer, or eligibility that stopped covering a
-participant ends it as `state_invalidated` — the two reasons keep "she withdrew
-it" distinguishable from "we could not ask" in the durable record. Kinds that
+silence or an `unresolved` answer ends it as `state_invalidated` — the two
+reasons keep "she withdrew it" distinguishable from "we could not ask" in the
+durable record. Kinds that
 never needed a grant (incidental / casual / affectionate, self-contact, contact
 with an object) are untouched, exactly as the resolver never demanded one.
 
@@ -573,7 +553,6 @@ contact*, which can never buy a claim):
 | `source.subjectId === actorId` | `source_is_not_the_actor` |
 | `actorControl.actorId === actorId`, status `allowed` | `actor_control_names_another_subject` / `actor_control_did_not_allow` |
 | `lastUpdatedAt >= startedAt` | `last_updated_precedes_start` |
-| eligibility covers every participant, when the kind needs it | `eligibility_does_not_cover` |
 | permission `allowed` and naming the action's scope, when the kind needs it | `permission_does_not_allow` / `permission_scope_missing` |
 
 `transmission` is the one field **recomputed rather than rejected**
@@ -722,7 +701,7 @@ somebody's bookkeeping is crossed.
 ### The status line: an answer versus a silence
 
 `resolve.ts` mapped unresolved actor control, missing target agency,
-unresolved-or-uncovered eligibility, and unanswered permission to **`rejected`**
+and unanswered permission to **`rejected`**
 — while its own comments said "we could not read the owner" should produce
 silence. Guidance *mandates* that the narrator resolve a `rejected` outcome, so
 a silent adapter had a character written declining something nobody had asked
@@ -732,18 +711,16 @@ her about. The line is now drawn by **who spoke**, not by how bad the news is:
 | --- | --- | --- | --- |
 | `rejected` | `actor_control_denied` | The refusal is played | none |
 | `rejected` | `target_agency_denied` | The refusal is played | none |
-| `rejected` | `participant_ineligible` | The refusal is played | none |
 | `rejected` | `permission_denied` / `permission_withdrawn` | The refusal is played | none |
 | `rejected` | `permission_scope_missing` — an answered grant that does not cover *this* action is an answer about this action | The refusal is played | `contact.consent_required` (`warn`; a permission UI wants it) |
 | `rejected` | `out_of_reach` | The refusal is played | none |
 | `unresolved` | `actor_control_unresolved` | **Silence** | `contact.actor_control_unavailable` (`warn`) |
 | `unresolved` | `target_agency_unresolved` — missing, `unresolved`, or `not_required` while an adjustment moves that body | **Silence** | `contact.target_agency_unavailable` (`warn`) |
-| `unresolved` | `participant_eligibility_unresolved` — `unresolved`, `not_required`, or not covering every participant | **Silence** | `contact.participant_eligibility_unavailable` (`warn`) |
 | `unresolved` | `permission_unresolved` — `unresolved` or `not_required` | **Silence** | `contact.policy_unavailable` (`warn`) |
 | `unresolved` | `action_invalid` | **Silence** | `contact.action_context_invalid` (`error`) |
 | `unresolved` | `geometry_unavailable` / `support_unavailable` / `material_unavailable` | **Silence** | the matching `contact.*_unavailable` (`warn`) |
 
-The four `*_unresolved` reasons moved from `contactRejectionReasons` to
+The three `*_unresolved` reasons moved from `contactRejectionReasons` to
 `contactUnresolvedReasons` in `decisions.ts`; the diagnostics they already
 emitted are unchanged, so the gap still surfaces — through the diagnostics
 channel and the debug UI, which is where a missing owner belongs, and never
@@ -774,7 +751,7 @@ own contradicting table.
 | `ContactPersistenceAcknowledgment.persisted` gains **`eventRef`** and **`actionId`** | Stamp the acknowledgment with this action's own event and action id. |
 | `contactActionOutcomeStatus` gains **`expected?: ContactCommitExpectation`** | Build it with `contactCommitExpectation({ outcome, eventRef, actionId })`. Omitting it is `unresolved` + `error`. |
 | New: `contactCommitExpectation`, `ContactCommitExpectation`, `contactAcknowledgmentMismatches`, `ContactAcknowledgmentMismatch` | — |
-| Reason codes moved from `contactRejectionReasons` to `contactUnresolvedReasons`: `actor_control_unresolved`, `target_agency_unresolved`, `participant_eligibility_unresolved`, `permission_unresolved` | A `switch` over either vocabulary must move the case. Nothing in the narration seam changes shape — the resolution's `status` does. |
+| Reason codes moved from `contactRejectionReasons` to `contactUnresolvedReasons`: `actor_control_unresolved`, `target_agency_unresolved`, `permission_unresolved` | A `switch` over either vocabulary must move the case. Nothing in the narration seam changes shape — the resolution's `status` does. |
 | New diagnostic: `contact.commit_acknowledgment_mismatch` (`error`) | — |
 | New stored-state failures: `duplicate_agency_decision`, `agency_does_not_cover_adjustment` | — |
 
