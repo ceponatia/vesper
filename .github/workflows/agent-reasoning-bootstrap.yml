@@ -42,6 +42,8 @@ jobs:
         run: pnpm db:generate --name agent_reasoning_profiles
 
       - name: Typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: pnpm typecheck
 
       - name: Check route authorization
