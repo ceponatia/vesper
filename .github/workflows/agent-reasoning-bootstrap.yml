@@ -31,7 +31,9 @@ jobs:
         run: corepack enable
 
       - name: Apply source changes
-        run: python3 scripts/agent-reasoning-bootstrap.py
+        run: |
+          python3 scripts/fix-agent-reasoning-bootstrap.py
+          python3 scripts/agent-reasoning-bootstrap.py
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -72,7 +74,7 @@ jobs:
         run: pnpm test -- src/lib/agent-reasoning.test.ts src/server/ai/provider.test.ts
 
       - name: Remove one-shot bootstrap files
-        run: rm .github/workflows/agent-reasoning-bootstrap.yml scripts/agent-reasoning-bootstrap.py
+        run: rm .github/workflows/agent-reasoning-bootstrap.yml scripts/agent-reasoning-bootstrap.py scripts/fix-agent-reasoning-bootstrap.py
 
       - name: Verify patch cleanliness
         run: git diff --check
