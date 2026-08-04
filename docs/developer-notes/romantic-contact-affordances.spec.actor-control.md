@@ -2,7 +2,7 @@
 
 Status: technical companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(continuation item 3 — **revised 2026-08-02 after pre-implementation review;
+(continuation item 4 — **revised 2026-08-02 after pre-implementation review;
 not ready for authority until the foundation and shadow gates below pass**).
 The deterministic NPC contact-ending producer shipped 2026-07-31 and remains
 the frozen floor described here.
@@ -166,7 +166,7 @@ and records a bounded reason; no gate repairs it.
 3. **Actor-attributed.** The action verb's grammatical subject is the proposed
    NPC. A name or alias in a possessive object does not count. A bare third-
    person pronoun is accepted only when the post-settle scene has exactly one
-   eligible NPC; ensembles require the actor's name/alias in the action clause.
+   present NPC; ensembles require the actor's name/alias in the action clause.
 4. **Decision-congruent.** A bounded verifier proves every proposed field, not
    merely that some action happened. It returns one unique action span.
 
@@ -220,8 +220,8 @@ The current opening branch must call the common leg before returning.
 ## Resolution laws
 
 All accepted candidates remain attempts. Existing scene/contact resolvers still
-enforce actor control, presence, geometry, reach, support, policy, eligibility,
-capacity, ordering, and lifecycle laws.
+enforce actor control, presence, geometry, reach, support, policy, capacity,
+ordering, and lifecycle laws.
 
 ### Movement
 
@@ -250,8 +250,8 @@ NPC adapter must not claim that it does.
 
 The source is the NPC's `hands`; actor control is read from the scene and is
 allowed only for `npc_controlled`. The target must differ from the actor and be
-post-settle present. The action kind is always `affectionate`, with eligibility
-and permission `not_required`; romantic/intimate/restraint language was already
+post-settle present. The action kind is always `affectionate`, with permission
+`not_required`; romantic/intimate/restraint language was already
 vetoed. Target agencies stay empty because only the NPC's own hand moves.
 
 Material is resolved from **both sides**. Generalize the chat adapter to compose
