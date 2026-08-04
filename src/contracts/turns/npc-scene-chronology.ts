@@ -34,7 +34,12 @@ import type { NpcSceneReplySpan } from "./npc-scene-evidence";
 // Entries
 // ---------------------------------------------------------------------------
 
-/** The frozen floor's detected ending, with the source offsets the planner ordered it by. */
+/**
+ * The frozen floor's detected ending, with the source offsets the planner
+ * orders it by. `span` is the matched ACTION PHRASE ("Wren steps back"), the
+ * same grain as every tier-2 span — a sentence-grain span here would overlap,
+ * and therefore drop, every other action written in the same sentence.
+ */
 export interface NpcSceneFloorEntry {
   readonly reason: "withdrawn" | "separated";
   /**
@@ -92,15 +97,25 @@ function spansOverlap(left: NpcSceneReplySpan, right: NpcSceneReplySpan): boolea
   return left.start < right.end && right.start < left.end;
 }
 
-function spansEqual(left: NpcSceneReplySpan, right: NpcSceneReplySpan): boolean {
-  return left.start === right.start && left.end === right.end;
-}
-
-/** May this tier-2 entry composite with this floor ending? Same action span, same body. */
+/**
+ * May this tier-2 entry composite with this floor ending? Same written action,
+ * same body.
+ *
+ * "Same action" is span OVERLAP, not equality, because the two sides match at
+ * slightly different boundaries over the same words: the floor's phrase
+ * includes its subject token ("Wren steps away") while the congruence
+ * verifier's phrase is whatever its own lexicon anchored ("steps away" — or a
+ * hair wider or narrower). The same written departure always overlaps itself;
+ * a DIFFERENT action in the same sentence occupies different words and does
+ * not. Requiring equality would leave every real floor+depart pair
+ * uncomposited — the depart would drop as ambiguous and the distance would
+ * never widen when the floor fires, which is precisely the case the composite
+ * exists for.
+ */
 function compositesWith(floor: NpcSceneFloorEntry, entry: NpcSceneTier2Entry): boolean {
   return (
     entry.candidate.kind === "depart" &&
-    spansEqual(floor.span, entry.span) &&
+    spansOverlap(floor.span, entry.span) &&
     (floor.subjectRef === null || floor.subjectRef === entry.candidate.actorRef)
   );
 }
@@ -109,10 +124,10 @@ function compositesWith(floor: NpcSceneFloorEntry, entry: NpcSceneTier2Entry): b
  * Order one reply's admitted actions. Pure and total; same entries ⇒ same
  * plan. Three rules, applied in this order:
  *
- * 1. **Composite first.** A `depart` sharing the floor ending's exact span and
- *    body is the same written action; they merge into one composite entry.
- *    Two departs claiming the same span is unresolvable — both drop, the
- *    floor stands alone.
+ * 1. **Composite first.** A `depart` whose action phrase overlaps the floor
+ *    ending's, by the same body, is the same written action; they merge into
+ *    one composite entry. Two departs both claiming it is unresolvable — both
+ *    drop, the floor stands alone.
  * 2. **Overlap drops tier 2 only.** A tier-2 span overlapping the floor's (or
  *    another tier-2's) cannot be totally ordered against it; every tier-2
  *    party to the overlap drops as `chronology_ambiguous`. The floor entry is
