@@ -15,10 +15,10 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   the deep-link anchor/hook, the API conflict rejection, `minorFenceApplies`
   (prompt fences back to the numeric `isMinorAge`/life-stage read), and the
   "17 years (old)" age-parser whitelist. The contact core's domain-neutral
-  eligibility seam (`contactActionRequiresAdultEligibility`) predates the
-  feature and stays; romantic-contact slice-3 items that assumed a positive
-  declaration now need a re-planned eligibility source (noted in
-  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)).
+  contact-core seams and stored JSONB keys left by the feature are now scheduled
+  for complete removal in
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md);
+  that plan does not assume or design a replacement gate.
 
 - **The image sweep actually runs** — `src/server/images/assets.ts` §Scheduling the
   sweep (no plan — owner report) — 2026-08-03 — `sweepOrphans` had been written,
