@@ -59,9 +59,8 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   committed / explicit_transition_required / rejected / unresolved), a minimal
   scene/body-relations owner
   ([scene spec](romantic-contact-affordances.spec.scene.md)), the final foot
-  side/unsided regressions, and four carried-forward corrections (required access
-  discriminator on the eligibility entity descriptor, non-owner blocker-routing
-  regression, clone-policy disclosure on publish, and this docs pass).
+  side/unsided regressions, plus the clone-policy disclosure on publish and
+  its documentation pass.
   **Slice 3A.1 — boundary corrections — landed 2026-07-31** (the owner's review
   of 3A): scene versions fail closed, target-agency proof persisted into start
   identity, acknowledgments bound to the actual commit, stale scene/contact
@@ -73,12 +72,11 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   Prerequisites: the slice-2
   [hardening pass / follow-ups](finished/romantic-contact-affordances.followups.md)
   (complete 2026-07-31) and the pre-slice-3 foot facts + registration
-  hardening (2026-07-30) are **done and archived**. The
-  [adult declaration](finished/adult-eligibility.plan.md) (shipped 2026-07-30)
-  was **rolled back 2026-08-03** (owner: scope creep — species-relative ages
-  mean a flat human 18 is the wrong adult test), so the positive
-  adult-eligibility source the romantic slice-3 items assumed no longer
-  exists and needs re-planning before those items proceed. Foot
+  hardening (2026-07-30) are **done and archived**. Before more authority work,
+  continuation item 3 removes the rolled-back participant-declaration feature
+  end to end, including an idempotent sweep of obsolete keys still stored in
+  character/persona JSONB and production verification that none remain.
+  Broader moderation is separate pre-launch work outside this plan. Foot
   registry defaults, the Neon backfill, and deployment are **complete**, so
   production registration is no longer gated on corrections or data migration —
   only on reaching its place in the wiring order.
@@ -111,9 +109,10 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   enablement completed 2026-08-02** (PRs #26/#27 merged, main deployed, both
   flags set to the literal `on`, verified in-machine; standing watch: the
   NPC-ending producer's first organic occurrence).
-  **Next: actor control through the live lane** —
-  [spec revised 2026-08-02 after pre-implementation review](romantic-contact-affordances.spec.actor-control.md).
-  The deterministic ending floor stays frozen; the general case now begins
+  **Next: remove the rolled-back participant-declaration feature completely.**
+  After that cleanup, actor control continues through the live lane under the
+  [revised spec](romantic-contact-affordances.spec.actor-control.md). The
+  deterministic ending floor stays frozen; the general case begins
   with pure evidence/chronology fixtures, a durable per-reply decision envelope
   + guarded scene save, and one whole-reply classifier in measured shadow.
   **Delivery steps 1–3 built 2026-08-02** (pure foundation + adversarial
@@ -124,8 +123,7 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   Only after that gate does authority roll out movement → starts → updates;
   the owner accepts measured cost/latency before movement is enabled. Then:
   the `romantic_touch` permission owner (**spec before implementation**;
-  eight design rulings needed) → eligibility + blocker-link UI wiring → the
-  romantic proof.
+  eight design rulings needed) → the romantic proof.
   **Still parked (reaffirmed by the verdict)**: additional foot granularity,
   slice 4's marks/material transfer, intimate physiology, successor parity,
   channel-aware foot narration, and further generalized contact
