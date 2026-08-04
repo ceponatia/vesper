@@ -269,217 +269,217 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
 export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof loadOwnedChat>>>>(
   (user, params) => loadOwnedChat(params.chatId, user.id),
   async (user, owned, req: NextRequest, ctx) => {
-  const { chatId } = await ctx.params;
-  const body = await readBody(req, sendBodySchema);
-  if (!body.ok) return body.response;
+    const { chatId } = await ctx.params;
+    const body = await readBody(req, sendBodySchema);
+    if (!body.ok) return body.response;
 
-  if (owned.chat.archivedAt) return jsonError("chat_archived", "this conversation is archived; restore it to continue", 409);
+    if (owned.chat.archivedAt) return jsonError("chat_archived", "this conversation is archived; restore it to continue", 409);
 
-  // Re-running a turn the caller already has is the cheapest thing to spam and
-  // costs a full narrator call each time, so it carries its own tighter window
-  // on top of the route-wide `chat` one.
-  if (body.value.kind === "regenerate" || body.value.kind === "rerun") {
-    const throttled = userRateLimitRejection("regenerate", user.id, req);
-    if (throttled) return throttled;
-  }
-
-  const shed = await backpressureRejection("text", user, req);
-  if (shed) return shed;
-
-  const overBudget = await dailyBudgetRejection("provider_text_day", user, req);
-  if (overBudget) return overBudget;
-
-  // Routing parity (presentation-charter.plan.md §4; engine.spec.operations.md
-  // §39 rulings 18-19): authority is resolved ONCE, before kind dispatch. On a
-  // sim-routed chat EVERY operation has successor semantics or is refused — the
-  // legacy pipeline below is unreachable for it. `send` drives a turn;
-  // continue/open run an utterance-free turn (time advances). Retakes/reruns,
-  // attachments, and legacy action chips are refused until the capability
-  // manifest can advertise honest successor semantics for them.
-  const simRouted = isSimRoutedAuthority(await readChatEngineAuthority(chatId));
-  if (simRouted) {
-    const decision = decideSimOperation({
-      kind: body.value.kind,
-      hasAttachments: (body.value.attachmentIds?.length ?? 0) > 0,
-      hasAction: body.value.action !== undefined,
-    });
-    if (decision.action === "refuse") {
-      return jsonError(decision.code, decision.message, 409);
+    // Re-running a turn the caller already has is the cheapest thing to spam and
+    // costs a full narrator call each time, so it carries its own tighter window
+    // on top of the route-wide `chat` one.
+    if (body.value.kind === "regenerate" || body.value.kind === "rerun") {
+      const throttled = userRateLimitRejection("regenerate", user.id, req);
+      if (throttled) return throttled;
     }
-    const mode = decision.mode;
-    const message = (body.value.content ?? "").trim();
 
-    let releaseSimLock!: () => void;
-    const simLockGate = new Promise<void>((resolve) => {
-      releaseSimLock = resolve;
-    });
-    // The same per-chat exchange lock the legacy pipeline takes — one reply
-    // in flight per conversation regardless of lane or kind.
-    const simLock = tryKeyedLock(`chat_exchange:${chatId}`, () => simLockGate, CHAT_LOCK_LABEL_REPLY);
-    if (simLock === null) {
-      return jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);
-    }
-    // The successor turn can spend 30–60s resolving world state, recalling,
-    // generating, and auditing before prose is safe to show. Send a first byte
-    // immediately and an invisible zero-width-space heartbeat every 8s so
-    // fly-proxy keeps the response alive. Once the full narrator result passes
-    // the §23 audit, reveal that APPROVED prose in lightly paced chunks instead
-    // of dropping it into the UI as one blob. Raw provider tokens stay hidden:
-    // an attempt may still be rejected and retried before presentation.
-    const encoder = new TextEncoder();
-    let clientOpen = true;
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        const send = (text: string): void => {
-          if (!clientOpen) return;
-          try {
-            controller.enqueue(encoder.encode(text));
-          } catch {
-            // A disconnected client is only a display failure. Keep the world
-            // turn running so its audited reply still persists server-side.
-            clientOpen = false;
-          }
-        };
-        send("\u200B");
-        const heartbeat = setInterval(() => send("\u200B"), 8_000);
-        void (async () => {
-          try {
-            const sim = await runSimChatExchange({
-              chatId,
-              userId: user.id,
-              speakerCharacterId: owned.character.id,
-              speakerName: owned.character.name,
-              mode,
-              message,
-              inputMode: body.value.inputMode,
-            });
-            if (sim.ok) {
-              for await (const delta of pacedTextReveal(sim.prose)) {
-                if (!clientOpen) break;
-                send(delta);
+    const shed = await backpressureRejection("text", user, req);
+    if (shed) return shed;
+
+    const overBudget = await dailyBudgetRejection("provider_text_day", user, req);
+    if (overBudget) return overBudget;
+
+    // Routing parity (presentation-charter.plan.md §4; engine.spec.operations.md
+    // §39 rulings 18-19): authority is resolved ONCE, before kind dispatch. On a
+    // sim-routed chat EVERY operation has successor semantics or is refused — the
+    // legacy pipeline below is unreachable for it. `send` drives a turn;
+    // continue/open run an utterance-free turn (time advances). Retakes/reruns,
+    // attachments, and legacy action chips are refused until the capability
+    // manifest can advertise honest successor semantics for them.
+    const simRouted = isSimRoutedAuthority(await readChatEngineAuthority(chatId));
+    if (simRouted) {
+      const decision = decideSimOperation({
+        kind: body.value.kind,
+        hasAttachments: (body.value.attachmentIds?.length ?? 0) > 0,
+        hasAction: body.value.action !== undefined,
+      });
+      if (decision.action === "refuse") {
+        return jsonError(decision.code, decision.message, 409);
+      }
+      const mode = decision.mode;
+      const message = (body.value.content ?? "").trim();
+
+      let releaseSimLock!: () => void;
+      const simLockGate = new Promise<void>((resolve) => {
+        releaseSimLock = resolve;
+      });
+      // The same per-chat exchange lock the legacy pipeline takes — one reply
+      // in flight per conversation regardless of lane or kind.
+      const simLock = tryKeyedLock(`chat_exchange:${chatId}`, () => simLockGate, CHAT_LOCK_LABEL_REPLY);
+      if (simLock === null) {
+        return jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);
+      }
+      // The successor turn can spend 30–60s resolving world state, recalling,
+      // generating, and auditing before prose is safe to show. Send a first byte
+      // immediately and an invisible zero-width-space heartbeat every 8s so
+      // fly-proxy keeps the response alive. Once the full narrator result passes
+      // the §23 audit, reveal that APPROVED prose in lightly paced chunks instead
+      // of dropping it into the UI as one blob. Raw provider tokens stay hidden:
+      // an attempt may still be rejected and retried before presentation.
+      const encoder = new TextEncoder();
+      let clientOpen = true;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const send = (text: string): void => {
+            if (!clientOpen) return;
+            try {
+              controller.enqueue(encoder.encode(text));
+            } catch {
+              // A disconnected client is only a display failure. Keep the world
+              // turn running so its audited reply still persists server-side.
+              clientOpen = false;
+            }
+          };
+          send("\u200B");
+          const heartbeat = setInterval(() => send("\u200B"), 8_000);
+          void (async () => {
+            try {
+              const sim = await runSimChatExchange({
+                chatId,
+                userId: user.id,
+                speakerCharacterId: owned.character.id,
+                speakerName: owned.character.name,
+                mode,
+                message,
+                inputMode: body.value.inputMode,
+              });
+              if (sim.ok) {
+                for await (const delta of pacedTextReveal(sim.prose)) {
+                  if (!clientOpen) break;
+                  send(delta);
+                }
+              } else {
+                await db()
+                  .update(characterChats)
+                  .set({
+                    lastReplyFailure: {
+                      code: "unknown",
+                      detail: `successor turn: ${sim.message}`,
+                      model: "",
+                      at: new Date().toISOString(),
+                    },
+                  })
+                  .where(eq(characterChats.id, chatId));
               }
-            } else {
+            } catch (err) {
               await db()
                 .update(characterChats)
                 .set({
                   lastReplyFailure: {
                     code: "unknown",
-                    detail: `successor turn: ${sim.message}`,
+                    detail: `successor turn crashed: ${err instanceof Error ? err.message : String(err)}`,
                     model: "",
                     at: new Date().toISOString(),
                   },
                 })
-                .where(eq(characterChats.id, chatId));
-            }
-          } catch (err) {
-            await db()
-              .update(characterChats)
-              .set({
-                lastReplyFailure: {
-                  code: "unknown",
-                  detail: `successor turn crashed: ${err instanceof Error ? err.message : String(err)}`,
-                  model: "",
-                  at: new Date().toISOString(),
-                },
-              })
-              .where(eq(characterChats.id, chatId))
-              .catch(() => undefined);
-          } finally {
-            clearInterval(heartbeat);
-            releaseSimLock();
-            if (clientOpen) {
-              try {
-                controller.close();
-              } catch {
-                // already closed by a client disconnect
+                .where(eq(characterChats.id, chatId))
+                .catch(() => undefined);
+            } finally {
+              clearInterval(heartbeat);
+              releaseSimLock();
+              if (clientOpen) {
+                try {
+                  controller.close();
+                } catch {
+                  // already closed by a client disconnect
+                }
               }
             }
-          }
-        })();
+          })();
+        },
+        cancel() {
+          // The exchange owns persistence, not the socket; runSimChatExchange
+          // continues and the reply reconciles from the transcript on reload.
+          clientOpen = false;
+        },
+      });
+      return new Response(stream, {
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+          "cache-control": "no-cache, no-transform",
+          "x-accel-buffering": "no",
+        },
+      });
+    }
+
+    // Legacy pipeline (unreachable for sim-routed chats — the fork above returns).
+    const result = await submitChatMessage({
+      chatId,
+      memoryGroupId: owned.participant.memoryGroupId,
+      character: { id: owned.character.id, name: owned.character.name, profile: owned.character.profile },
+      // The full roster (multi-character-chat.plan.md): length 1 keeps the 1-on-1
+      // path byte-identical; more flips the pipeline to the ensemble frame.
+      roster: owned.roster.map((m) => ({
+        characterId: m.characterId,
+        memoryGroupId: m.memoryGroupId,
+        name: m.character.name,
+        profile: m.character.profile,
+      })),
+      kind: body.value.kind,
+      content: body.value.content,
+      inputMode: body.value.inputMode,
+      // The rerun target (kind "rerun"): the player line to re-send from. The pipeline
+      // snips only its successors and reuses the line itself — nothing is deleted here.
+      targetMessageId: body.value.messageId,
+      // Player-attached photos (chat-image-input.plan.md) — send only.
+      attachmentIds: body.value.attachmentIds,
+      // A headless POST without a model must agree with the UI (spec §9): default to
+      // the character's own narrator pick, not MODEL_DEFAULTS.narrative.
+      model: body.value.model ?? resolveChatModelId(owned.character.chatModel),
+      cue: body.value.cue,
+      initiative: body.value.initiative,
+      // Tapped action chip (chat-action-beats.plan.md) — the engine builds its
+      // register-aware cue and applies the paired deterministic effect pre-narration.
+      action: body.value.action,
+      // "Auto at big moments" (slice 9): the engine signals, this route queues — a scene
+      // render anchored to the exchange's reply, deduped against live renders.
+      onBigMoment: ({ assistantMessageId }) => {
+        void queueChatScene({ userId: user.id, chatId, character: owned.character, anchorMessageId: assistantMessageId });
       },
-      cancel() {
-        // The exchange owns persistence, not the socket; runSimChatExchange
-        // continues and the reply reconciles from the transcript on reload.
-        clientOpen = false;
+      // The reply sent a selfie (chat-selfies.plan.md): queue the subject's-own-camera
+      // render anchored to it — same dedupe, always the identity-locked route. The
+      // engine names the SENDER (followups ruling 12): in a group the addressed
+      // member sends it, so the render uses their identity, not always the primary's.
+      onSelfie: ({ assistantMessageId, characterId: senderId }) => {
+        const sender = owned.roster.find((m) => m.characterId === senderId)?.character ?? owned.character;
+        void queueChatScene({
+          userId: user.id,
+          chatId,
+          character: sender,
+          anchorMessageId: assistantMessageId,
+          flavor: "selfie",
+        });
+      },
+      // R4 shadow (engine.rollout.plan.md): after a plain send settles on a
+      // `successor_shadow` chat, the comparison leg runs detached — the runner
+      // re-reads authority and no-ops for every other lane, so this stays one
+      // cheap read per settled exchange.
+      onSettled: ({ assistantMessageId, content }) => {
+        if (body.value.kind !== "send" || content.length === 0) return;
+        void runShadowChatExchange({ chatId, userId: user.id, assistantMessageId, content });
       },
     });
-    return new Response(stream, {
+    if (!result.ok) return jsonError(result.code, result.message, result.code === "chat_busy" ? 409 : 400);
+
+    return drainingStreamResponse({
+      gen: result.stream,
+      encode: (delta) => delta,
       headers: {
         "content-type": "text/plain; charset=utf-8",
         "cache-control": "no-cache, no-transform",
         "x-accel-buffering": "no",
       },
     });
-  }
-
-  // Legacy pipeline (unreachable for sim-routed chats — the fork above returns).
-  const result = await submitChatMessage({
-    chatId,
-    memoryGroupId: owned.participant.memoryGroupId,
-    character: { id: owned.character.id, name: owned.character.name, profile: owned.character.profile },
-    // The full roster (multi-character-chat.plan.md): length 1 keeps the 1-on-1
-    // path byte-identical; more flips the pipeline to the ensemble frame.
-    roster: owned.roster.map((m) => ({
-      characterId: m.characterId,
-      memoryGroupId: m.memoryGroupId,
-      name: m.character.name,
-      profile: m.character.profile,
-    })),
-    kind: body.value.kind,
-    content: body.value.content,
-    inputMode: body.value.inputMode,
-    // The rerun target (kind "rerun"): the player line to re-send from. The pipeline
-    // snips only its successors and reuses the line itself — nothing is deleted here.
-    targetMessageId: body.value.messageId,
-    // Player-attached photos (chat-image-input.plan.md) — send only.
-    attachmentIds: body.value.attachmentIds,
-    // A headless POST without a model must agree with the UI (spec §9): default to
-    // the character's own narrator pick, not MODEL_DEFAULTS.narrative.
-    model: body.value.model ?? resolveChatModelId(owned.character.chatModel),
-    cue: body.value.cue,
-    initiative: body.value.initiative,
-    // Tapped action chip (chat-action-beats.plan.md) — the engine builds its
-    // register-aware cue and applies the paired deterministic effect pre-narration.
-    action: body.value.action,
-    // "Auto at big moments" (slice 9): the engine signals, this route queues — a scene
-    // render anchored to the exchange's reply, deduped against live renders.
-    onBigMoment: ({ assistantMessageId }) => {
-      void queueChatScene({ userId: user.id, chatId, character: owned.character, anchorMessageId: assistantMessageId });
-    },
-    // The reply sent a selfie (chat-selfies.plan.md): queue the subject's-own-camera
-    // render anchored to it — same dedupe, always the identity-locked route. The
-    // engine names the SENDER (followups ruling 12): in a group the addressed
-    // member sends it, so the render uses their identity, not always the primary's.
-    onSelfie: ({ assistantMessageId, characterId: senderId }) => {
-      const sender = owned.roster.find((m) => m.characterId === senderId)?.character ?? owned.character;
-      void queueChatScene({
-        userId: user.id,
-        chatId,
-        character: sender,
-        anchorMessageId: assistantMessageId,
-        flavor: "selfie",
-      });
-    },
-    // R4 shadow (engine.rollout.plan.md): after a plain send settles on a
-    // `successor_shadow` chat, the comparison leg runs detached — the runner
-    // re-reads authority and no-ops for every other lane, so this stays one
-    // cheap read per settled exchange.
-    onSettled: ({ assistantMessageId, content }) => {
-      if (body.value.kind !== "send" || content.length === 0) return;
-      void runShadowChatExchange({ chatId, userId: user.id, assistantMessageId, content });
-    },
-  });
-  if (!result.ok) return jsonError(result.code, result.message, result.code === "chat_busy" ? 409 : 400);
-
-  return drainingStreamResponse({
-    gen: result.stream,
-    encode: (delta) => delta,
-    headers: {
-      "content-type": "text/plain; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
-      "x-accel-buffering": "no",
-    },
-  });
   },
   { limit: "chat" },
 );
