@@ -17,6 +17,7 @@ import {
   jsonError,
   jsonOk,
   MESSAGE_CONTENT_MAX,
+  pacedTextReveal,
   readBody,
   userRateLimitRejection,
   withUser,
@@ -317,24 +318,29 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     if (simLock === null) {
       return jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);
     }
-    // Stream shape matters more than content here: the successor turn takes
-    // 30-60s of model time with nothing to say, and fly-proxy cuts a response
-    // that has sent zero bytes for ~60s (the "reply only appears on refresh"
-    // symptom — it had persisted server-side). First byte goes out
-    // immediately and an invisible zero-width-space heartbeat every 8s keeps
-    // the pipe warm; the prose lands as one chunk; a failure records the
-    // ordinary lastReplyFailure so the client's existing popup explains it.
+    // The successor turn can spend 30–60s resolving world state, recalling,
+    // generating, and auditing before prose is safe to show. Send a first byte
+    // immediately and an invisible zero-width-space heartbeat every 8s so
+    // fly-proxy keeps the response alive. Once the full narrator result passes
+    // the §23 audit, reveal that APPROVED prose in lightly paced chunks instead
+    // of dropping it into the UI as one blob. Raw provider tokens stay hidden:
+    // an attempt may still be rejected and retried before presentation.
     const encoder = new TextEncoder();
+    let clientOpen = true;
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(encoder.encode("\u200B"));
-        const heartbeat = setInterval(() => {
+        const send = (text: string): void => {
+          if (!clientOpen) return;
           try {
-            controller.enqueue(encoder.encode("\u200B"));
+            controller.enqueue(encoder.encode(text));
           } catch {
-            clearInterval(heartbeat);
+            // A disconnected client is only a display failure. Keep the world
+            // turn running so its audited reply still persists server-side.
+            clientOpen = false;
           }
-        }, 8_000);
+        };
+        send("\u200B");
+        const heartbeat = setInterval(() => send("\u200B"), 8_000);
         void (async () => {
           try {
             const sim = await runSimChatExchange({
@@ -347,7 +353,10 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
               inputMode: body.value.inputMode,
             });
             if (sim.ok) {
-              controller.enqueue(encoder.encode(sim.prose));
+              for await (const delta of pacedTextReveal(sim.prose)) {
+                if (!clientOpen) break;
+                send(delta);
+              }
             } else {
               await db()
                 .update(characterChats)
@@ -377,13 +386,20 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
           } finally {
             clearInterval(heartbeat);
             releaseSimLock();
-            try {
-              controller.close();
-            } catch {
-              // already closed by a client disconnect
+            if (clientOpen) {
+              try {
+                controller.close();
+              } catch {
+                // already closed by a client disconnect
+              }
             }
           }
         })();
+      },
+      cancel() {
+        // The exchange owns persistence, not the socket; runSimChatExchange
+        // continues and the reply reconciles from the transcript on reload.
+        clientOpen = false;
       },
     });
     return new Response(stream, {
