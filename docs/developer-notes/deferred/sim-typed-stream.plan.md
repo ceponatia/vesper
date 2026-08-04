@@ -6,11 +6,13 @@ before building)
 
 ## What
 
-The sim fork of the send route streams a zero-width-space first byte + an
-8-second ZWSP heartbeat (to survive fly-proxy's ~60s idle cutoff —
-`app/api/chats/[chatId]/route.ts:298-315`), performs the entire turn, then
-emits the prose as one chunk (`:318-328`). Structured successor failures are
-flattened on the way out: `runSimChatExchange` returns a closed code union
+The sim fork of the send route sends a zero-width-space first byte + an
+8-second ZWSP heartbeat (to survive fly-proxy's ~60s idle cutoff) while it
+performs the turn and audits the narrator result. Since 2026-08-04, accepted
+prose is revealed in small paced chunks instead of one final blob. The
+transport still has no typed progress or warnings, does not expose raw provider
+tokens before the audit, and flattens structured successor failures on the way
+out: `runSimChatExchange` returns a closed code union
 (`not_sim_enabled | sim_open_failed | render_withheld | nothing_to_retake |
 world_catching_up`, `sim-exchange.ts:551-554`) but the route writes
 `lastReplyFailure.code = "unknown"` (`route.ts:330-354`) because the
@@ -18,11 +20,23 @@ world_catching_up`, `sim-exchange.ts:551-554`) but the route writes
 (`contracts/turns/chat-reply-failure.ts:33,39` — `.catch("unknown")`), and
 `model: ""` loses attribution. (MED · M)
 
+## Partial closure — approved-prose reveal (2026-08-04)
+
+World-chat replies now grow incrementally in the existing bubble once the
+successor narrator's full result has passed its safety and consistency audit.
+This closes the visibly-one-blob problem without leaking a hidden failed
+attempt or weakening the retry/audit rules.
+
+It does **not** promote or complete F21: the user still receives only invisible
+heartbeats during world resolution, recall, generation, and audit; failures are
+still flattened; and there are no named progress or world-event frames. Those
+remaining product problems are the typed-stream work described below.
+
 ## Why it matters
 
-The player stares at an inert composer for the whole world-resolve + recall +
-render pipeline, cancellation has no seam to hook (D18), retry can't be
-targeted, and every distinct failure — world catching up, render withheld,
+The player still sees an inert composer until an audited telling is ready
+(the approved prose now reveals progressively after that point), cancellation
+has no seam to hook (D18), retry can't be targeted, and every distinct failure — world catching up, render withheld,
 scene refusal — collapses to the same generic error UI.
 
 ## Sketch
@@ -45,8 +59,10 @@ scene refusal — collapses to the same generic error UI.
   a ReadableStream — ND-JSON is the smaller change).
 - Does the heartbeat stay as a comment frame, or does phase traffic make it
   redundant?
-- Can the narrator render actually stream deltas through the §23 audit loop,
-  or is `delta` all-at-once until the auditor learns to run incrementally?
+- Can raw narrator tokens ever stream safely through the §23 audit loop? The
+  approved-prose reveal now ships after the audit, but true provider-token
+  streaming would need an incremental audit or a product ruling that replaces
+  the hidden retry; neither is part of this stub yet.
 
 ## Slices
 
