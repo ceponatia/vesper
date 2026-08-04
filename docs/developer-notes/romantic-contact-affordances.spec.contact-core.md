@@ -133,27 +133,45 @@ control. A target's voluntary adjustment or reaction needs its own behavior/
 agency decision before commitment.
 
 
-`InteractionPolicyRead` is a result from the lane's existing permission/
-consent owner. It is not calculated from attraction, arousal, relationship
-score, narrative framing, touch welcomeness, or the physical action's
-feasibility.
+`InteractionPolicyRead` is supplied by the lane's permission/consent owner.
+For continuation item 5, the
+[directional permission specification](romantic-contact-affordances.spec.permission.md)
+defines when that read is required, what exact scope it may contain, and how it
+is restored. The contact core never derives a grant from attraction, arousal,
+relationship score, narrative framing, touch welcomeness, or physical
+feasibility. A future relationship decline may cause the permission owner to
+commit a revocation event; it does not make the contact resolver calculate
+consent from a relationship label.
 
 For interpersonal contact:
 
 - the actor-control decision must cover the initiating movement;
-- target permission uses the lane's applicable interaction policy;
+- target permission uses the lane's applicable interaction policy, including
+  exact direction and scope;
+- romantic contact aimed at an NPC requires a grant from that NPC to the actor;
+- NPC-to-NPC contact requires the corresponding directional grant even when the
+  reverse direction is already allowed;
+- when the target is the player, the permission owner does not pre-calculate a
+  standing grant before an NPC acts; the player retains sole authority over
+  their reaction, and the narrator cannot commit acceptance or reciprocation;
 - a voluntary target adjustment/reaction must be committed by the target's
   behavior authority;
 - missing required control or permission rejects commitment.
 
 For romantic/intimate actions in addition:
 
-- `allowed` must be explicit and scope-compatible;
-- withdrawal or contradiction rejects the action;
-- missing/invalid policy fails closed;
+- `allowed` must be explicit, directional, and exact-scope compatible;
+- `romantic_touch` never implies kissing, intimate touch, undressing, nudity
+  exposure, or sex;
+- withdrawal or contradiction rejects the action and ends any active contact
+  that depended on the lapsed grant;
+- missing/invalid policy fails closed where the permission specification
+  requires a grant;
 - legacy chat's intimacy signal may gate prompting but is not automatically a
-  consent grant;
-- successor `consent_covered` resolution remains authoritative where present.
+  permission grant;
+- successor `consent_covered` resolution remains authoritative where present,
+  but parity cannot be claimed until direction, scope, chronology, revocation,
+  and rollback behavior match.
 
 ## Access result
 
@@ -324,9 +342,18 @@ current truth.
 - an unchanged sustained contact keeps its id without a duplicate start event;
 - player-authored NPC movement fails without an actor-control decision;
 - a voluntary target adjustment requires target behavior authority;
-- ordinary interpersonal contact applies its permission rule;
-- permission missing or withdrawn rejects intimate contact;
-- legacy intimacy framing does not become a consent grant;
+- ordinary permission-neutral contact remains permission-neutral;
+- player-to-NPC romantic contact requires the NPC's directional grant;
+- one NPC's romantic contact toward another requires the target NPC's
+  directional grant, regardless of the reverse grant;
+- NPC-to-player contact does not pre-authorize or narrate the player's reaction;
+- a grant for another scope cannot authorize `romantic_touch`, and
+  `romantic_touch` cannot authorize a future intimate scope;
+- a later grant cannot authorize an earlier same-reply action;
+- permission missing or withdrawn rejects contact where a grant is required;
+- permission withdrawal ends a dependent live contact as
+  `policy_withdrawn`;
+- legacy intimacy framing does not become a permission grant;
 - direct skin action fails while a material layer remains;
 - material can transmit touch without granting direct access;
 - visual access does not grant tactile or gustatory access;
@@ -345,7 +372,9 @@ current truth.
 - retake produces the same contact/effect/cue fingerprints;
 - malformed adapter data degrades with a diagnostic rather than throwing.
 
-Open questions are centralized in the
+The settled permission-owner decisions and tests live in the
+[permission spec](romantic-contact-affordances.spec.permission.md). Remaining
+product questions stay in the
 [plain-English plan](romantic-contact-affordances.plan.md#open-questions).
 
 ## As built — slice 1
@@ -366,19 +395,28 @@ permission (legacy) as unowned in both lanes, so every one of them arrives as an
 
 ### File map
 
-| File | Responsibility |
-| --- | --- |
-| `identity.ts` | `ContactId`, `ContactEventRef`, `ContactEntityId`; the order-independent pair key and `deriveContactId`. |
-| `surfaces.ts` | Body and object surface refs over `bodyLocationRegistry`; surface/pair keys; participant extraction. |
-| `material.ts` | `ContactMaterialLayerRead`, `ContactMaterialTransmissionRead`, `composeContactMaterial`. |
-| `decisions.ts` | Action kinds → policy scopes; actor control, target agency, and permission; the implicit-adjustment policy; requirement and rejection vocabularies. |
-| `types.ts` | Bands, intent, context, access result, the four-status resolution, `CommittedContactRead`, `EndedContactRecord`, the lifecycle commit union. |
-| `resolve.ts` | `resolveContactAttempt` — the whole gate. |
-| `lifecycle.ts` | `commitContactResolution`, `endContact`, `endAllContacts`, the active projection and its reads. |
-| `state.ts` | `committedContactReadSchema`, `parseContactLifecycleState` — the versioned shape and its healing. |
-| `diagnostics.ts` | The ten codes slice 1 emits. |
-| `test-support.ts` | `probe*` fixture builders. Deliberately **not** in the barrel. |
-| `*.test.ts` | 5 files / 92 cases: resolve, lifecycle, material, state, neutrality. |
+- **File: `identity.ts`**
+  - **Responsibility:** `ContactId`, `ContactEventRef`, `ContactEntityId`; the order-independent pair key and `deriveContactId`.
+- **File: `surfaces.ts`**
+  - **Responsibility:** Body and object surface refs over `bodyLocationRegistry`; surface/pair keys; participant extraction.
+- **File: `material.ts`**
+  - **Responsibility:** `ContactMaterialLayerRead`, `ContactMaterialTransmissionRead`, `composeContactMaterial`.
+- **File: `decisions.ts`**
+  - **Responsibility:** Action kinds → policy scopes; actor control, target agency, and permission; the implicit-adjustment policy; requirement and rejection vocabularies.
+- **File: `types.ts`**
+  - **Responsibility:** Bands, intent, context, access result, the four-status resolution, `CommittedContactRead`, `EndedContactRecord`, the lifecycle commit union.
+- **File: `resolve.ts`**
+  - **Responsibility:** `resolveContactAttempt` — the whole gate.
+- **File: `lifecycle.ts`**
+  - **Responsibility:** `commitContactResolution`, `endContact`, `endAllContacts`, the active projection and its reads.
+- **File: `state.ts`**
+  - **Responsibility:** `committedContactReadSchema`, `parseContactLifecycleState` — the versioned shape and its healing.
+- **File: `diagnostics.ts`**
+  - **Responsibility:** The ten codes slice 1 emits.
+- **File: `test-support.ts`**
+  - **Responsibility:** `probe*` fixture builders. Deliberately **not** in the barrel.
+- **File: `*.test.ts`**
+  - **Responsibility:** 5 files / 92 cases: resolve, lifecycle, material, state, neutrality.
 
 ### Public API
 
@@ -399,22 +437,48 @@ slice 3A; `contactActionOutcomeStatus` replaces it).
 
 ### Deltas from the draft above — this section is the authority
 
-| Draft | As built | Why |
-| --- | --- | --- |
-| `ContactResolution` has three statuses | **Four**: `committable`, `explicit_transition_required`, `rejected`, `unresolved` | The narrator seam already exists and its `PhysicalActionStatus` carries `unresolved`. An unanswerable owner is not a rejection: a rejection is a story fact the narrator must resolve, while `unresolved` produces silence. `partially_committed` is deliberately **not** modelled — no producer exists until the foot slice needs per-locus commitment. *(Slice 3A superseded the translation: `CONTACT_RESOLUTION_ACTION_STATUS` mapped `committable → committed` directly and is **gone** — see [As built — slice 3A](#as-built--slice-3a-authority-and-persistence-hardening).)* |
-| `EventId`, `CharacterId`, `EntityId`, `StoryTimestamp` | `ContactEventRef`, `AffordanceSubjectId`, `ContactEntityId`, `AffordanceStoryTime` | The successor lane's branded `EventId` is a simulation id legacy chat cannot mint; binding to it would fork the core. Subject ids and story time already exist in `affordances/core` and are reused unchanged. |
-| `MaterialLayerRead`, `MaterialTransmissionRead`, `MinimalPoseAdjustment`, `ActionRequirement` | `Contact`-prefixed | These names go through `export *` in `affordances/index.ts`; unprefixed generic nouns in a shared barrel are a collision waiting to happen. |
-| `wardrobe: PairWardrobeRead` | `material: AdapterRead<ContactMaterialRead>` | The core has no idea whether a layer is a garment, a blanket, or a table, and the neutrality test forbids it learning. Same reason `remove_garment` → `remove_material_layer` and `contact_wardrobe_unavailable` → `contact.material_unavailable`. |
-| `pose`, `environment`, `bodyStateCut` on the action context | Dropped | Pose folds into `geometry` (one unowned read is honest; two are ceremony). Environment and body state are FRAME inputs for the observation stage — nothing about whether a contact *may* happen reads them. |
-| `ContactAccessMode` includes `implicit_adjustment` | Removed from the vocabulary | It is orthogonal to what lies between the surfaces. One enum carrying both would make a hand-through-fabric contact report itself as adjusted rather than filtered. Adjustments ride `implicitAdjustments`. `unresolved` was added for the unreadable case. |
-| `pressure` and `contactArea` required on `CommittedContactRead` | **Optional** | The repo's oldest degraded-read law: unknown is not a convenient default. A contact whose pressure nobody stated is not a `trace` press, and a pressure-dependent observation must fall silent rather than describe the lightest thing that could be true. |
-| `ContactLifecycleCommit` has three cases | **Four** — `contact_continued` added | The draft described the no-write case in prose. Making it a case is what lets "an unchanged sustained contact keeps its id without a duplicate start event" be asserted rather than inferred from the absence of an event. The continue path also returns the *same state reference*. |
-| Committable resolution carries `materialBetween` and `implicitAdjustments` inline | Nested in `access: ContactAccessResult` | The access result already carries both; two copies invite divergence. |
-| Diagnostic codes `contact_action_context_invalid`, … | Dotted `contact.*` | Matches `affordance.input.unavailable` and `guidance.disclosure.leak`. Only the ten codes slice 1 actually emits exist; a constant nobody pushes is a promise the surface cannot keep. |
-| — | `ContactId` is **derived**, not minted | `pairKey + start event ref`. No counter, no clock: a retake replaying the same attempt against the same cut must reproduce the identical id or the capture fingerprints diverge. |
-| — | The pair key is **order-independent** | "The player's hand on her arch" and "her arch against his hand" are one touch. Keying by acting direction would let a role swap open a second contact on the same surfaces and both would then report pressure. Orientation is preserved on `source`/`target` and is never patched. |
-| The lifecycle `contentKey` fingerprints `materialBetween` by `layerId` | **(errata, 2026-07-30)** It fingerprints each layer's CONTENT — `layerId`, `order`, and the six transmission/visibility fields — after a canonical `sortContactMaterialLayers` | A `layerId` is the wardrobe's own instance id and it survives the garment changing underneath it: a sock soaking through keeps its id while its permeability, moisture transmission, and shape transmission all move. The id-only key took the `contact_continued` path for exactly that case, so the projection kept the dry snapshot and every observation downstream described a material that no longer existed. Two deliberate exclusions: **array position is not content** (the canonical order is total and `order` is itself fingerprinted, so a layer that genuinely moved in the stack is a change while an adapter returning the same layers in a different array order is not — otherwise a re-read of an unchanged cut would write an update event for a presentation detail); and **`evidence` is not content** (it is provenance, and a ref that varies per read would emit `contact_updated` every exchange for a contact nothing happened to — the mirror image of the bug being fixed). `implicitAdjustments` stay keyed by `id`: an accepted adjustment is minted by `classifyContactAdjustment` from one proposal and carries no magnitude that could drift. |
-| — | `phase: "active"` vs `phase: "ended"` as separate types | "An ended contact cannot enter a current frame" becomes a compile error rather than a rule. Likewise a non-committable resolution has no `intent`, so it cannot be passed to `commitContactResolution` at all. |
+- **Draft: `ContactResolution` has three statuses**
+  - **As built:** **Four**: `committable`, `explicit_transition_required`, `rejected`, `unresolved`
+  - **Why:** The narrator seam already exists and its `PhysicalActionStatus` carries `unresolved`. An unanswerable owner is not a rejection: a rejection is a story fact the narrator must resolve, while `unresolved` produces silence. `partially_committed` is deliberately **not** modelled — no producer exists until the foot slice needs per-locus commitment. *(Slice 3A superseded the translation: `CONTACT_RESOLUTION_ACTION_STATUS` mapped `committable → committed` directly and is **gone** — see [As built — slice 3A](#as-built--slice-3a-authority-and-persistence-hardening).)*
+- **Draft: `EventId`, `CharacterId`, `EntityId`, `StoryTimestamp`**
+  - **As built:** `ContactEventRef`, `AffordanceSubjectId`, `ContactEntityId`, `AffordanceStoryTime`
+  - **Why:** The successor lane's branded `EventId` is a simulation id legacy chat cannot mint; binding to it would fork the core. Subject ids and story time already exist in `affordances/core` and are reused unchanged.
+- **Draft: `MaterialLayerRead`, `MaterialTransmissionRead`, `MinimalPoseAdjustment`, `ActionRequirement`**
+  - **As built:** `Contact`-prefixed
+  - **Why:** These names go through `export *` in `affordances/index.ts`; unprefixed generic nouns in a shared barrel are a collision waiting to happen.
+- **Draft: `wardrobe: PairWardrobeRead`**
+  - **As built:** `material: AdapterRead<ContactMaterialRead>`
+  - **Why:** The core has no idea whether a layer is a garment, a blanket, or a table, and the neutrality test forbids it learning. Same reason `remove_garment` → `remove_material_layer` and `contact_wardrobe_unavailable` → `contact.material_unavailable`.
+- **Draft: `pose`, `environment`, `bodyStateCut` on the action context**
+  - **As built:** Dropped
+  - **Why:** Pose folds into `geometry` (one unowned read is honest; two are ceremony). Environment and body state are FRAME inputs for the observation stage — nothing about whether a contact *may* happen reads them.
+- **Draft: `ContactAccessMode` includes `implicit_adjustment`**
+  - **As built:** Removed from the vocabulary
+  - **Why:** It is orthogonal to what lies between the surfaces. One enum carrying both would make a hand-through-fabric contact report itself as adjusted rather than filtered. Adjustments ride `implicitAdjustments`. `unresolved` was added for the unreadable case.
+- **Draft: `pressure` and `contactArea` required on `CommittedContactRead`**
+  - **As built:** **Optional**
+  - **Why:** The repo's oldest degraded-read law: unknown is not a convenient default. A contact whose pressure nobody stated is not a `trace` press, and a pressure-dependent observation must fall silent rather than describe the lightest thing that could be true.
+- **Draft: `ContactLifecycleCommit` has three cases**
+  - **As built:** **Four** — `contact_continued` added
+  - **Why:** The draft described the no-write case in prose. Making it a case is what lets "an unchanged sustained contact keeps its id without a duplicate start event" be asserted rather than inferred from the absence of an event. The continue path also returns the *same state reference*.
+- **Draft: Committable resolution carries `materialBetween` and `implicitAdjustments` inline**
+  - **As built:** Nested in `access: ContactAccessResult`
+  - **Why:** The access result already carries both; two copies invite divergence.
+- **Draft: Diagnostic codes `contact_action_context_invalid`, …**
+  - **As built:** Dotted `contact.*`
+  - **Why:** Matches `affordance.input.unavailable` and `guidance.disclosure.leak`. Only the ten codes slice 1 actually emits exist; a constant nobody pushes is a promise the surface cannot keep.
+- **Draft: —**
+  - **As built:** `ContactId` is **derived**, not minted
+  - **Why:** `pairKey + start event ref`. No counter, no clock: a retake replaying the same attempt against the same cut must reproduce the identical id or the capture fingerprints diverge.
+- **Draft: —**
+  - **As built:** The pair key is **order-independent**
+  - **Why:** "The player's hand on her arch" and "her arch against his hand" are one touch. Keying by acting direction would let a role swap open a second contact on the same surfaces and both would then report pressure. Orientation is preserved on `source`/`target` and is never patched.
+- **Draft: The lifecycle `contentKey` fingerprints `materialBetween` by `layerId`**
+  - **As built:** **(errata, 2026-07-30)** It fingerprints each layer's CONTENT — `layerId`, `order`, and the six transmission/visibility fields — after a canonical `sortContactMaterialLayers`
+  - **Why:** A `layerId` is the wardrobe's own instance id and it survives the garment changing underneath it: a sock soaking through keeps its id while its permeability, moisture transmission, and shape transmission all move. The id-only key took the `contact_continued` path for exactly that case, so the projection kept the dry snapshot and every observation downstream described a material that no longer existed. Two deliberate exclusions: **array position is not content** (the canonical order is total and `order` is itself fingerprinted, so a layer that genuinely moved in the stack is a change while an adapter returning the same layers in a different array order is not — otherwise a re-read of an unchanged cut would write an update event for a presentation detail); and **`evidence` is not content** (it is provenance, and a ref that varies per read would emit `contact_updated` every exchange for a contact nothing happened to — the mirror image of the bug being fixed). `implicitAdjustments` stay keyed by `id`: an accepted adjustment is minted by `classifyContactAdjustment` from one proposal and carries no magnitude that could drift.
+- **Draft: —**
+  - **As built:** `phase: "active"` vs `phase: "ended"` as separate types
+  - **Why:** "An ended contact cannot enter a current frame" becomes a compile error rather than a rule. Likewise a non-committable resolution has no `intent`, so it cannot be passed to `commitContactResolution` at all.
 
 ### Rulings — confirmed by the owner 2026-07-30
 
@@ -546,14 +610,18 @@ surviving row then passes cross-field checks, and a row that fails one is
 dropped exactly like a row that failed its schema (an absent contact means *no
 contact*, which can never buy a claim):
 
-| Checked on read | Failure |
-| --- | --- |
-| `pairKey` recomputed from `source`/`target` | `pair_key_mismatch` |
-| `contactId` re-derived from pair + start event (via `contactIdMatchesDerivation`, the non-throwing half of `deriveContactId` — a boundary check must return an answer, not raise) | `contact_id_not_derived` |
-| `source.subjectId === actorId` | `source_is_not_the_actor` |
-| `actorControl.actorId === actorId`, status `allowed` | `actor_control_names_another_subject` / `actor_control_did_not_allow` |
-| `lastUpdatedAt >= startedAt` | `last_updated_precedes_start` |
-| permission `allowed` and naming the action's scope, when the kind needs it | `permission_does_not_allow` / `permission_scope_missing` |
+- **Checked on read: `pairKey` recomputed from `source`/`target`**
+  - **Failure:** `pair_key_mismatch`
+- **Checked on read: `contactId` re-derived from pair + start event (via `contactIdMatchesDerivation`, the non-throwing half of `deriveContactId` — a boundary check must return an answer, not raise)**
+  - **Failure:** `contact_id_not_derived`
+- **Checked on read: `source.subjectId === actorId`**
+  - **Failure:** `source_is_not_the_actor`
+- **Checked on read: `actorControl.actorId === actorId`, status `allowed`**
+  - **Failure:** `actor_control_names_another_subject` / `actor_control_did_not_allow`
+- **Checked on read: `lastUpdatedAt >= startedAt`**
+  - **Failure:** `last_updated_precedes_start`
+- **Checked on read: permission `allowed` and naming the action's scope, when the kind needs it**
+  - **Failure:** `permission_does_not_allow` / `permission_scope_missing`
 
 `transmission` is the one field **recomputed rather than rejected**
 (`CONTACT_STATE_RECOMPUTED`, `warn`): it is derived from `materialBetween`, and
@@ -579,16 +647,22 @@ halves.
 
 ### File and API deltas
 
-| Change | Callers must know |
-| --- | --- |
-| `ContactActionContext.targetAgency` → **`targetAgencies: readonly ContactTargetAgencyDecision[]`** | Wrap the single decision in a list. |
-| `ContactTargetAgencyDecision.targetId` optional → **required** | Name the body the decision is about. |
-| `CommittedContactUpdate` → **`CommittedContactSnapshot`**; `contact_updated.patch` → **`.snapshot`** | Full replacement, `null` for cleared optionals. |
-| `ContactCommitOutcome` gains **`ended: readonly ContactEndedCommit[]`** (additive) | Persist `contactCommitEvents(outcome)`, ends first. |
-| **`CONTACT_RESOLUTION_ACTION_STATUS` removed** | Use `contactActionOutcomeStatus`. |
-| New: `outcome.ts`, `applyContactCommit`, `replayContactCommits`, `contactCommitEvents`, `endUnauthorizedContacts`, `contactIdMatchesDerivation` | — |
-| `contactIdSchema` max 1024 → **4096** | A legal id composed from two verbose subject ids already crossed the old bound, which made `deriveContactId` a throw on the commit path. |
-| New diagnostics: `contact.authorization_lapsed`, `contact.state_recomputed`, `contact.commit_unacknowledged`; `contact.lifecycle_invalid` now also `warn` for absorbed contradictions | — |
+- **Change: `ContactActionContext.targetAgency` → **`targetAgencies: readonly ContactTargetAgencyDecision[]`****
+  - **Callers must know:** Wrap the single decision in a list.
+- **Change: `ContactTargetAgencyDecision.targetId` optional → **required****
+  - **Callers must know:** Name the body the decision is about.
+- **Change: `CommittedContactUpdate` → **`CommittedContactSnapshot`**; `contact_updated.patch` → **`.snapshot`****
+  - **Callers must know:** Full replacement, `null` for cleared optionals.
+- **Change: `ContactCommitOutcome` gains **`ended: readonly ContactEndedCommit[]`** (additive)**
+  - **Callers must know:** Persist `contactCommitEvents(outcome)`, ends first.
+- **Change: **`CONTACT_RESOLUTION_ACTION_STATUS` removed****
+  - **Callers must know:** Use `contactActionOutcomeStatus`.
+- **Change: New: `outcome.ts`, `applyContactCommit`, `replayContactCommits`, `contactCommitEvents`, `endUnauthorizedContacts`, `contactIdMatchesDerivation`**
+  - **Callers must know:** —
+- **Change: `contactIdSchema` max 1024 → **4096****
+  - **Callers must know:** A legal id composed from two verbose subject ids already crossed the old bound, which made `deriveContactId` a throw on the commit path.
+- **Change: New diagnostics: `contact.authorization_lapsed`, `contact.state_recomputed`, `contact.commit_unacknowledged`; `contact.lifecycle_invalid` now also `warn` for absorbed contradictions**
+  - **Callers must know:** —
 
 Tests: 6 files / 139 cases in `contact/` (was 5 / 92 at slice 1), including
 every regression the review asked for — actor/source mismatch, wrong-target
@@ -642,12 +716,18 @@ about that contact, so replay sees a contact that ended before it was last
 touched. Every end now checks the contact it is about to end (equality is fine —
 a same-minute release is ordinary):
 
-| Path | Ruling | Why not the alternative |
-| --- | --- | --- |
-| `endContact` | No-op, `warn`, state unchanged, no commit | Silently succeeding makes a back-dated end indistinguishable from a real one on replay. A later end at a current story time still closes it. |
-| `endAllContacts` (scene exit at an older time) | **Per contact**: the stale ones stay ALIVE with a `warn`, the rest end normally; the returned state is no longer unconditionally empty | Refusing the whole request would throw away the ends of every contact the exit legitimately covers; ending the newer one anyway would back-date it. A caller really leaving the scene re-issues at the current time or ends the survivors by id. |
-| `endUnauthorizedContacts` (sweep at an older time) | Same: the newer contact survives the sweep, `warn` | A sweep is a read of what is true NOW, so an older one is an out-of-order write — and a lapsed authorization does not un-lapse, so the next sweep ends it at a time that is actually current. |
-| Capacity eviction | **Refuses the new start** (see 13) | The core cannot mint an end at the victim's own later time without inventing a story minute nobody asserted, and cannot end it at the incoming time without back-dating. |
+- **Path: `endContact`**
+  - **Ruling:** No-op, `warn`, state unchanged, no commit
+  - **Why not the alternative:** Silently succeeding makes a back-dated end indistinguishable from a real one on replay. A later end at a current story time still closes it.
+- **Path: `endAllContacts` (scene exit at an older time)**
+  - **Ruling:** **Per contact**: the stale ones stay ALIVE with a `warn`, the rest end normally; the returned state is no longer unconditionally empty
+  - **Why not the alternative:** Refusing the whole request would throw away the ends of every contact the exit legitimately covers; ending the newer one anyway would back-date it. A caller really leaving the scene re-issues at the current time or ends the survivors by id.
+- **Path: `endUnauthorizedContacts` (sweep at an older time)**
+  - **Ruling:** Same: the newer contact survives the sweep, `warn`
+  - **Why not the alternative:** A sweep is a read of what is true NOW, so an older one is an out-of-order write — and a lapsed authorization does not un-lapse, so the next sweep ends it at a time that is actually current.
+- **Path: Capacity eviction**
+  - **Ruling:** **Refuses the new start** (see 13)
+  - **Why not the alternative:** The core cannot mint an end at the victim's own later time without inventing a story minute nobody asserted, and cannot end it at the incoming time without back-dating.
 
 **13. A commit that cannot be made honestly is REFUSED, and a refusal is not a
 contact.** `ContactCommitOutcome` is now a **union** rather than a record:
@@ -707,18 +787,46 @@ silence. Guidance *mandates* that the narrator resolve a `rejected` outcome, so
 a silent adapter had a character written declining something nobody had asked
 her about. The line is now drawn by **who spoke**, not by how bad the news is:
 
-| Outcome | Reason | Narration | Diagnostic |
-| --- | --- | --- | --- |
-| `rejected` | `actor_control_denied` | The refusal is played | none |
-| `rejected` | `target_agency_denied` | The refusal is played | none |
-| `rejected` | `permission_denied` / `permission_withdrawn` | The refusal is played | none |
-| `rejected` | `permission_scope_missing` — an answered grant that does not cover *this* action is an answer about this action | The refusal is played | `contact.consent_required` (`warn`; a permission UI wants it) |
-| `rejected` | `out_of_reach` | The refusal is played | none |
-| `unresolved` | `actor_control_unresolved` | **Silence** | `contact.actor_control_unavailable` (`warn`) |
-| `unresolved` | `target_agency_unresolved` — missing, `unresolved`, or `not_required` while an adjustment moves that body | **Silence** | `contact.target_agency_unavailable` (`warn`) |
-| `unresolved` | `permission_unresolved` — `unresolved` or `not_required` | **Silence** | `contact.policy_unavailable` (`warn`) |
-| `unresolved` | `action_invalid` | **Silence** | `contact.action_context_invalid` (`error`) |
-| `unresolved` | `geometry_unavailable` / `support_unavailable` / `material_unavailable` | **Silence** | the matching `contact.*_unavailable` (`warn`) |
+- **Outcome: `rejected`**
+  - **Reason:** `actor_control_denied`
+  - **Narration:** The refusal is played
+  - **Diagnostic:** none
+- **Outcome: `rejected`**
+  - **Reason:** `target_agency_denied`
+  - **Narration:** The refusal is played
+  - **Diagnostic:** none
+- **Outcome: `rejected`**
+  - **Reason:** `permission_denied` / `permission_withdrawn`
+  - **Narration:** The refusal is played
+  - **Diagnostic:** none
+- **Outcome: `rejected`**
+  - **Reason:** `permission_scope_missing` — an answered grant that does not cover *this* action is an answer about this action
+  - **Narration:** The refusal is played
+  - **Diagnostic:** `contact.consent_required` (`warn`; a permission UI wants it)
+- **Outcome: `rejected`**
+  - **Reason:** `out_of_reach`
+  - **Narration:** The refusal is played
+  - **Diagnostic:** none
+- **Outcome: `unresolved`**
+  - **Reason:** `actor_control_unresolved`
+  - **Narration:** **Silence**
+  - **Diagnostic:** `contact.actor_control_unavailable` (`warn`)
+- **Outcome: `unresolved`**
+  - **Reason:** `target_agency_unresolved` — missing, `unresolved`, or `not_required` while an adjustment moves that body
+  - **Narration:** **Silence**
+  - **Diagnostic:** `contact.target_agency_unavailable` (`warn`)
+- **Outcome: `unresolved`**
+  - **Reason:** `permission_unresolved` — `unresolved` or `not_required`
+  - **Narration:** **Silence**
+  - **Diagnostic:** `contact.policy_unavailable` (`warn`)
+- **Outcome: `unresolved`**
+  - **Reason:** `action_invalid`
+  - **Narration:** **Silence**
+  - **Diagnostic:** `contact.action_context_invalid` (`error`)
+- **Outcome: `unresolved`**
+  - **Reason:** `geometry_unavailable` / `support_unavailable` / `material_unavailable`
+  - **Narration:** **Silence**
+  - **Diagnostic:** the matching `contact.*_unavailable` (`warn`)
 
 The three `*_unresolved` reasons moved from `contactRejectionReasons` to
 `contactUnresolvedReasons` in `decisions.ts`; the diagnostics they already
@@ -742,18 +850,26 @@ own contradicting table.
 
 ### File and API deltas
 
-| Change | Callers must know |
-| --- | --- |
-| `CommittableContactResolution` and `CommittedContactRead` gain **`targetAgencies: readonly ContactTargetAgencyDecision[]`** (required; in `committedContactReadSchema`) | Produced by the resolver and carried by the fold; construct a committed read only through `commitContactResolution`. |
-| `commitContactResolution` returns a **union**: `{ status: "committed", … } \| { status: "refused", … }` | Narrow on `status` (or `isCommittedContactOutcome`) before reading `contact` / `commit` / `ended`. `state` and `contactCommitEvents` work on both. |
-| New: `contactCommitRefusalReasons`, `ContactCommitRefusalReason`, `CommittedContactOutcome`, `isCommittedContactOutcome` | — |
-| `endAllContacts` gains **`sink?`** and no longer always returns the empty projection | Contacts newer than the exit survive it; read the returned state rather than assuming it is empty. |
-| `ContactPersistenceAcknowledgment.persisted` gains **`eventRef`** and **`actionId`** | Stamp the acknowledgment with this action's own event and action id. |
-| `contactActionOutcomeStatus` gains **`expected?: ContactCommitExpectation`** | Build it with `contactCommitExpectation({ outcome, eventRef, actionId })`. Omitting it is `unresolved` + `error`. |
-| New: `contactCommitExpectation`, `ContactCommitExpectation`, `contactAcknowledgmentMismatches`, `ContactAcknowledgmentMismatch` | — |
-| Reason codes moved from `contactRejectionReasons` to `contactUnresolvedReasons`: `actor_control_unresolved`, `target_agency_unresolved`, `permission_unresolved` | A `switch` over either vocabulary must move the case. Nothing in the narration seam changes shape — the resolution's `status` does. |
-| New diagnostic: `contact.commit_acknowledgment_mismatch` (`error`) | — |
-| New stored-state failures: `duplicate_agency_decision`, `agency_does_not_cover_adjustment` | — |
+- **Change: `CommittableContactResolution` and `CommittedContactRead` gain **`targetAgencies: readonly ContactTargetAgencyDecision[]`** (required; in `committedContactReadSchema`)**
+  - **Callers must know:** Produced by the resolver and carried by the fold; construct a committed read only through `commitContactResolution`.
+- **Change: `commitContactResolution` returns a **union**: `{ status: "committed", … } \| { status: "refused", … }`**
+  - **Callers must know:** Narrow on `status` (or `isCommittedContactOutcome`) before reading `contact` / `commit` / `ended`. `state` and `contactCommitEvents` work on both.
+- **Change: New: `contactCommitRefusalReasons`, `ContactCommitRefusalReason`, `CommittedContactOutcome`, `isCommittedContactOutcome`**
+  - **Callers must know:** —
+- **Change: `endAllContacts` gains **`sink?`** and no longer always returns the empty projection**
+  - **Callers must know:** Contacts newer than the exit survive it; read the returned state rather than assuming it is empty.
+- **Change: `ContactPersistenceAcknowledgment.persisted` gains **`eventRef`** and **`actionId`****
+  - **Callers must know:** Stamp the acknowledgment with this action's own event and action id.
+- **Change: `contactActionOutcomeStatus` gains **`expected?: ContactCommitExpectation`****
+  - **Callers must know:** Build it with `contactCommitExpectation({ outcome, eventRef, actionId })`. Omitting it is `unresolved` + `error`.
+- **Change: New: `contactCommitExpectation`, `ContactCommitExpectation`, `contactAcknowledgmentMismatches`, `ContactAcknowledgmentMismatch`**
+  - **Callers must know:** —
+- **Change: Reason codes moved from `contactRejectionReasons` to `contactUnresolvedReasons`: `actor_control_unresolved`, `target_agency_unresolved`, `permission_unresolved`**
+  - **Callers must know:** A `switch` over either vocabulary must move the case. Nothing in the narration seam changes shape — the resolution's `status` does.
+- **Change: New diagnostic: `contact.commit_acknowledgment_mismatch` (`error`)**
+  - **Callers must know:** —
+- **Change: New stored-state failures: `duplicate_agency_decision`, `agency_does_not_cover_adjustment`**
+  - **Callers must know:** —
 
 Tests: 6 files / **167** cases in `contact/` (was 6 / 139 at slice 3A) — the
 consulted agencies carried onto the resolution and into start identity and
