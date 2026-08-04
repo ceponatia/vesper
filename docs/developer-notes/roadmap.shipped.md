@@ -5,6 +5,20 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **NPC actor-control authority increments built (dark)** —
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
+  [actor-control spec](romantic-contact-affordances.spec.actor-control.md) —
+  2026-08-04 — delivery steps 4–6 of the reply-scene decision leg: the
+  authority executor (presence integration, chronologically ordered walk,
+  composite departures at phrase grain), monotonic approach/depart band
+  helpers, arbitrary-actor contact starts with two-sided material composition
+  and the same-reply wardrobe-chronology veto, and the gesture-only
+  `modulateContactGesture` lifecycle operation for updates. All dark:
+  `CHAT_NPC_SCENE_DECISIONS` default off, staged per kind by
+  `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS`; the shadow measurement window,
+  its review, and the owner cost ruling still gate enablement — the plan's
+  item 4 keeps that remainder.
+
 - **Participant-declaration residue removed (romantic-contact item 3)** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) —
   2026-08-04 — the contact core's deliberately-kept eligibility seam deleted
