@@ -16,11 +16,16 @@ import {
 } from "./material";
 import type {
   CommittableContactResolution,
+  CommittedContactMotionRead,
   CommittedContactRead,
   CommittedContactSnapshot,
+  ContactContinuedCommit,
   ContactEndReason,
   ContactEndedCommit,
   ContactLifecycleCommit,
+  ContactMotionIntent,
+  ContactPressureBand,
+  ContactUpdatedCommit,
   EndedContactRecord,
 } from "./types";
 
@@ -47,6 +52,14 @@ import type {
  * - **end** — removes the contact from the projection and hands back an
  *   `EndedContactRecord`, whose `phase: "ended"` makes it unusable as a current
  *   contact.
+ *
+ * `modulateContactGesture` is a FIFTH entry point and deliberately not a fifth
+ * transition: it reaches the update and continue cases above by contact id,
+ * carrying nothing but a pressure and a motion. It exists because an actor whose
+ * gesture changed under a hand that never moved has no new attempt to resolve —
+ * re-resolving one would re-read geometry, support, material, and permission at
+ * a later cut and could silently rewrite what the touch lands through, or end
+ * the contact outright. See its own comment for the full argument.
  *
  * ## Three laws this file is built around
  *
@@ -175,22 +188,32 @@ interface ContactStamp {
   readonly storyTime: AffordanceStoryTime;
 }
 
+/**
+ * One asserted motion as the projection stores it, or `null` for a motion nobody
+ * stated. The path tokens are COPIED: the intent's array belongs to its caller,
+ * and the committed read is frozen.
+ *
+ * `evidence` is empty rather than inherited because motion evidence is the
+ * ATTEMPT's provenance and the snapshot's own `evidence` already carries the
+ * resolution's — duplicating it here would grow the stored blob by a copy of
+ * something it is standing next to.
+ */
+function motionSnapshot(intent: ContactMotionIntent | null): CommittedContactMotionRead | null {
+  if (intent === null) return null;
+  return {
+    band: intent.band,
+    ...(intent.pathDetailIds === undefined ? {} : { pathDetailIds: [...intent.pathDetailIds] }),
+    evidence: [],
+  };
+}
+
 /** The mutable half, as one resolution asserts it. */
 function snapshotFromResolution(resolution: CommittableContactResolution): CommittedContactSnapshot {
   const { intent, access } = resolution;
   return {
     pressure: intent.requestedPressure ?? null,
     contactArea: intent.requestedArea ?? null,
-    motion:
-      intent.requestedMotion === undefined
-        ? null
-        : {
-            band: intent.requestedMotion.band,
-            ...(intent.requestedMotion.pathDetailIds === undefined
-              ? {}
-              : { pathDetailIds: [...intent.requestedMotion.pathDetailIds] }),
-            evidence: [],
-          },
+    motion: motionSnapshot(intent.requestedMotion ?? null),
     materialBetween: access.materialBetween,
     transmission: access.transmission,
     implicitAdjustments: access.implicitAdjustments,
@@ -448,18 +471,28 @@ function endedCommit(
   };
 }
 
+/**
+ * The no-write commit: this contact is still exactly what it was.
+ *
+ * Built in one place because THREE callers produce it — an unchanged assertion,
+ * a stale one, and an unchanged gesture modulation — and a `contact_continued`
+ * that carried a different story time or a rebuilt contact from one of them
+ * would replay identically (the fold ignores it) while reading differently in
+ * the ledger, which is the worst kind of divergence to debug.
+ */
+function continuedCommit(
+  contact: CommittedContactRead,
+  storyTime: AffordanceStoryTime,
+): ContactContinuedCommit {
+  return { kind: "contact_continued", contactId: contact.contactId, storyTime, contact };
+}
+
 function continued(
   state: ContactLifecycleState,
   contact: CommittedContactRead,
   storyTime: AffordanceStoryTime,
 ): ContactCommitOutcome {
-  return {
-    status: "committed",
-    state,
-    commit: { kind: "contact_continued", contactId: contact.contactId, storyTime, contact },
-    contact,
-    ended: [],
-  };
+  return { status: "committed", state, commit: continuedCommit(contact, storyTime), contact, ended: [] };
 }
 
 /**
@@ -488,6 +521,35 @@ function staleEnd(
 }
 
 /**
+ * Is this assertion older than the contact it lands on?
+ *
+ * Reports as it answers, like `staleEnd` beside it, because every caller does
+ * the same thing with a `true`: leave the projection exactly as it is and
+ * CONTINUE the contact. `about` carries whatever identifies the assertion to a
+ * reader (its action kind, or the operation that made it) so one shared law can
+ * still file a diagnostic that names its own caller.
+ */
+function staleAgainstProjection(
+  existing: CommittedContactRead,
+  storyTime: AffordanceStoryTime,
+  about: Record<string, unknown>,
+  sink?: DiagnosticSink,
+): boolean {
+  if (storyTime >= existing.lastUpdatedAt) return false;
+  sink?.push(
+    diag("warn", CONTACT_LIFECYCLE_INVALID, "a contact assertion older than the projection was not applied", {
+      context: {
+        contactId: existing.contactId,
+        asserted: storyTime,
+        lastUpdatedAt: existing.lastUpdatedAt,
+        ...about,
+      },
+    }),
+  );
+  return true;
+}
+
+/**
  * An assertion older than the contact it lands on, or `undefined` when it is
  * current enough to act on.
  *
@@ -504,18 +566,44 @@ function staleAssertion(
   existing: CommittedContactRead,
   stamp: ContactStamp,
 ): ContactCommitOutcome | undefined {
-  if (stamp.storyTime >= existing.lastUpdatedAt) return undefined;
-  request.sink?.push(
-    diag("warn", CONTACT_LIFECYCLE_INVALID, "a contact assertion older than the projection was not applied", {
-      context: {
-        contactId: existing.contactId,
-        asserted: stamp.storyTime,
-        lastUpdatedAt: existing.lastUpdatedAt,
-        assertedKind: request.resolution.intent.actionKind,
-      },
-    }),
-  );
-  return continued(request.state, existing, stamp.storyTime);
+  const assertedKind = request.resolution.intent.actionKind;
+  return staleAgainstProjection(existing, stamp.storyTime, { assertedKind }, request.sink)
+    ? continued(request.state, existing, stamp.storyTime)
+    : undefined;
+}
+
+/**
+ * Lay a new snapshot over a live contact: the replaced projection, the durable
+ * commit, and the frozen read, in one step.
+ *
+ * The ONE place an update is constructed. Both producers — a full resolution
+ * asserting the same pair, and a gesture-only modulation naming the contact by
+ * id — go through it, so "an update keeps the whole start identity" is enforced
+ * by `withSnapshot` once instead of by two call sites that happen to agree.
+ */
+function updatedInPlace(
+  state: ContactLifecycleState,
+  existing: CommittedContactRead,
+  snapshot: CommittedContactSnapshot,
+  stamp: ContactStamp,
+): {
+  readonly state: ContactLifecycleState;
+  readonly commit: ContactUpdatedCommit;
+  readonly contact: CommittedContactRead;
+} {
+  const contact = deepFreeze(withSnapshot(existing, snapshot, stamp));
+  return {
+    state: withContacts(state.contacts.map((entry) => (entry.contactId === existing.contactId ? contact : entry))),
+    commit: {
+      kind: "contact_updated",
+      contactId: contact.contactId,
+      eventRef: stamp.eventRef,
+      snapshot,
+      storyTime: stamp.storyTime,
+      contact,
+    },
+    contact,
+  };
 }
 
 /** An assertion on a pair that already carries a contact of the same action kind. */
@@ -528,24 +616,7 @@ function updateExisting(
   if (contentKey(snapshot) === contentKey(snapshotOfContact(existing))) {
     return continued(request.state, existing, stamp.storyTime);
   }
-
-  const contact = deepFreeze(withSnapshot(existing, snapshot, stamp));
-  return {
-    status: "committed",
-    state: withContacts(
-      request.state.contacts.map((entry) => (entry.contactId === existing.contactId ? contact : entry)),
-    ),
-    commit: {
-      kind: "contact_updated",
-      contactId: contact.contactId,
-      eventRef: stamp.eventRef,
-      snapshot,
-      storyTime: stamp.storyTime,
-      contact,
-    },
-    contact,
-    ended: [],
-  };
+  return { status: "committed", ...updatedInPlace(request.state, existing, snapshot, stamp), ended: [] };
 }
 
 /**
@@ -644,6 +715,144 @@ export function commitContactResolution(request: ContactCommitRequest): ContactC
     contact,
     ended,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Gesture-only modulation
+// ---------------------------------------------------------------------------
+
+export interface ContactGestureModulationRequest {
+  readonly state: ContactLifecycleState;
+  /** The DURABLE id. A modulation never searches by pair, and never by orientation. */
+  readonly contactId: ContactId;
+  /**
+   * The gesture's pressure and motion, stated IN FULL — `null` is "this gesture
+   * states none", not "leave whatever was there".
+   *
+   * Nullable rather than optional for the same reason `CommittedContactSnapshot`
+   * is: a partial patch cannot express removal, so a hand that went from tapping
+   * to simply resting would keep a `tapping` band nobody is asserting any more.
+   */
+  readonly pressure: ContactPressureBand | null;
+  readonly motion: ContactMotionIntent | null;
+  readonly eventRef: ContactEventRef;
+  readonly storyTime: AffordanceStoryTime;
+  readonly sink?: DiagnosticSink;
+}
+
+/** Why a modulation wrote nothing while the contact went on existing. */
+export const contactGestureContinuedReasons = ["gesture_unchanged", "stale_assertion"] as const;
+export type ContactGestureContinuedReason = (typeof contactGestureContinuedReasons)[number];
+
+/**
+ * What a gesture-only modulation did. THREE cases, and the discriminant carries
+ * the difference a caller has to act on:
+ *
+ * - `committed` — the gesture changed, and there is a durable `contact_updated`
+ *   commit plus the new read;
+ * - `continued` — the contact is untouched, on purpose, and `reason` says which
+ *   law was quiet (nothing changed, or the assertion was older than the
+ *   projection). The state is returned by REFERENCE, unchanged;
+ * - `absent` — nothing active carries that id. Not an error value the caller can
+ *   accidentally read a contact off: there is no `contact` field at all, which
+ *   is the same device the commit union uses for a refusal.
+ *
+ * There is no `refused` and no `ended`. Capacity, eviction, and the
+ * framing-change door belong to `commitContactResolution`; a modulation cannot
+ * reach any of them, because the contact it names is already in the projection
+ * and stays there.
+ */
+export type ContactGestureModulationOutcome =
+  | {
+      readonly status: "committed";
+      readonly state: ContactLifecycleState;
+      readonly commit: ContactUpdatedCommit;
+      readonly contact: CommittedContactRead;
+    }
+  | {
+      readonly status: "continued";
+      /** Returned unchanged, by reference — a continue writes nothing. */
+      readonly state: ContactLifecycleState;
+      readonly commit: ContactContinuedCommit;
+      readonly contact: CommittedContactRead;
+      readonly reason: ContactGestureContinuedReason;
+    }
+  | { readonly status: "absent"; readonly state: ContactLifecycleState };
+
+/**
+ * Change a live contact's GESTURE and nothing else
+ * (romantic-contact-affordances.spec.actor-control.md §"Resolution laws →
+ * Contact update": "add a gesture-only lifecycle operation … it must preserve
+ * contact ID, actor, action kind, source, target, area, material-between,
+ * transmission, implicit adjustments, and start authorization byte-for-byte.
+ * Re-resolving a full contact attempt is forbidden for updates").
+ *
+ * ## Why an update may not go back through the resolver
+ *
+ * `commitContactResolution` takes a resolution, and a resolution is the answer
+ * to a fresh ATTEMPT: geometry, support, material, control, eligibility, and
+ * permission, all read at whatever cut the caller happens to hold. Routing "she
+ * squeezes the hand she is already holding" through it would re-read every one
+ * of those at a LATER cut and let any of them rewrite the contact — a garment
+ * layer the post-settle wardrobe reports would replace the material the touch
+ * actually landed through, and an intent whose action kind or surfaces drifted
+ * by a character would end this contact and start another one with a new id and
+ * a new cue history. None of that is what "her grip tightened" means.
+ *
+ * So the operation carries a pressure and a motion, and physically cannot carry
+ * anything else. `withSnapshot` lays them over the contact's OWN identity and
+ * its own untouched material, which is what makes byte-for-byte preservation a
+ * property of the construction rather than of a list somebody maintains.
+ *
+ * ## The three quiet answers
+ *
+ * An unchanged gesture is `contact_continued` with no row (`contentKey` decides,
+ * so "unchanged" means exactly what it means everywhere else in this file). An
+ * assertion older than the contact is ABSORBED under law 3 — the same warn, the
+ * same continue, `lastUpdatedAt` untouched. An id nothing active carries is
+ * `absent` with an `error` diagnostic, because a caller that got here is
+ * modulating something it never checked was there; the projection is left alone
+ * either way.
+ */
+export function modulateContactGesture(
+  request: ContactGestureModulationRequest,
+): ContactGestureModulationOutcome {
+  const existing = activeContact(request.state, request.contactId);
+  if (existing === undefined) {
+    request.sink?.push(
+      diag("error", CONTACT_LIFECYCLE_INVALID, "gesture modulation named a contact that is not active", {
+        context: { contactId: request.contactId },
+      }),
+    );
+    return { status: "absent", state: request.state };
+  }
+
+  const quiet = (reason: ContactGestureContinuedReason): ContactGestureModulationOutcome => ({
+    status: "continued",
+    state: request.state,
+    commit: continuedCommit(existing, request.storyTime),
+    contact: existing,
+    reason,
+  });
+
+  // Law 3 first, exactly as `commitContactResolution` checks it first: whether
+  // the gesture differs says nothing about which of the two writes is later.
+  if (staleAgainstProjection(existing, request.storyTime, { modulation: "gesture" }, request.sink)) {
+    return quiet("stale_assertion");
+  }
+
+  // Everything except pressure and motion is carried over from the projection
+  // itself — not rebuilt, not re-read.
+  const held = snapshotOfContact(existing);
+  const snapshot: CommittedContactSnapshot = {
+    ...held,
+    pressure: request.pressure,
+    motion: motionSnapshot(request.motion),
+  };
+  if (contentKey(snapshot) === contentKey(held)) return quiet("gesture_unchanged");
+
+  const stamp: ContactStamp = { eventRef: request.eventRef, storyTime: request.storyTime };
+  return { status: "committed", ...updatedInPlace(request.state, existing, snapshot, stamp) };
 }
 
 // ---------------------------------------------------------------------------
@@ -937,3 +1146,4 @@ export function replayContactCommits(request: {
 export function recomposeContactTransmission(contact: CommittedContactRead): ContactMaterialTransmissionRead {
   return composeContactMaterial(contact.materialBetween);
 }
+
