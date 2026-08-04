@@ -87,6 +87,9 @@ export const agentFailureSchema = z.object({
   timeoutMs: z.number().int().nonnegative().catch(0),
   /** How long the (last completed) call actually took, when one completed. */
   latencyMs: z.number().int().nonnegative().catch(0),
+  /** The effective admin reasoning experiment at call time (old rows heal to off). */
+  reasoningProfile: z.string().catch("off").default("off"),
+  reasoningEnabled: z.boolean().catch(false).default(false),
   /** HTTP status, when the provider gave one. */
   httpStatus: z.number().int().catch(0),
   /** What the provider or parser actually said — truncated. */
@@ -104,6 +107,7 @@ const LEG_LABELS: Record<string, string> = {
   "chat_state.pulse": "Reaction pulse",
   chat_summary: "Recap editor",
   chat_scene_sketch: "Location artist",
+  chat_meanwhile: "Meanwhile pass",
   chat_vision: "Photo reader",
   intake: "Intake (session)",
   "agent.simulant": "Simulant (session)",
@@ -250,6 +254,9 @@ export const agentRunSchema = z.object({
   maxOutputTokens: z.number().int().nonnegative().catch(0),
   /** How long the model call actually took — the diagnostic that separates slow from dead. */
   latencyMs: z.number().int().nonnegative().catch(0),
+  /** The effective admin reasoning experiment at call time (old rows heal to off). */
+  reasoningProfile: z.string().catch("off").default("off"),
+  reasoningEnabled: z.boolean().catch(false).default(false),
   /** One line of what the leg produced ("3 facts · 1 episode · 2 queries"); "" = nothing changed. */
   summary: z.string().catch(""),
   /** The actual content behind the summary — the click-to-open detail (empty on old rows). */

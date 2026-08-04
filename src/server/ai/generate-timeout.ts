@@ -55,6 +55,8 @@ export async function withGenerateTimeout<T>(
         modelId: telemetry?.modelId,
         promptChars: telemetry?.promptChars,
         maxOutputTokens: telemetry?.maxOutputTokens,
+        reasoningProfile: telemetry?.reasoningProfile,
+        reasoningEnabled: telemetry?.reasoningEnabled,
         detail: `no response within ${timeoutMs}ms`,
       });
       resolve({ value: null, degraded: true });
@@ -75,6 +77,8 @@ export async function withGenerateTimeout<T>(
             modelId: telemetry.modelId,
             promptChars: telemetry.promptChars,
             maxOutputTokens: telemetry.maxOutputTokens,
+            reasoningProfile: telemetry.reasoningProfile,
+            reasoningEnabled: telemetry.reasoningEnabled,
             provider: r.provider,
             latencyMs: r.latencyMs,
             summary: described?.summary ?? "",

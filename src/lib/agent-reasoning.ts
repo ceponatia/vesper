@@ -86,7 +86,7 @@ export const AGENT_REASONING_MAX_OUTPUT_TOKENS = 32_768;
 /** Reasoning has a much longer time-to-first-usable-JSON tail than extraction-only calls. */
 export const AGENT_REASONING_TIMEOUT_MULTIPLIER = 4;
 export const AGENT_REASONING_MIN_TIMEOUT_MS = 20_000;
-export const AGENT_REASONING_MAX_TIMEOUT_MS = 60_000;
+export const AGENT_REASONING_MAX_TIMEOUT_MS = 120_000;
 
 export interface AgentReasoningPlan {
   profileId: AgentReasoningProfileId;

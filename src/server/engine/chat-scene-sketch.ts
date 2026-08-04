@@ -11,9 +11,10 @@ import {
   withPlaceSketch,
   type ChatSceneSketch,
 } from "@/contracts";
+import { agentReasoningPlan, resolveAgentReasoningProfile } from "@/lib/agent-reasoning";
 import { calendarStartSchema } from "@/lib/clock";
 import { parseOr, parseOrNull } from "@/lib/parse";
-import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
+import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import { characterChatMessages, characterChats, db, hasLiveChatJob } from "../db";
 import { log } from "../log";
 import { CHAT_SCENE_SKETCH_MAX_OUTPUT_TOKENS, CHAT_SCENE_SKETCH_TIMEOUT_MS } from "./constants";
@@ -80,6 +81,7 @@ export async function runChatSceneSketch(input: z.infer<typeof sketchJobPayloadS
       premise: characterChats.premise,
       clockMinutes: characterChats.clockMinutes,
       calendarStart: characterChats.calendarStart,
+      agentReasoningProfile: characterChats.agentReasoningProfile,
     })
     .from(characterChats)
     .where(eq(characterChats.id, input.chatId))
@@ -104,6 +106,21 @@ export async function runChatSceneSketch(input: z.infer<typeof sketchJobPayloadS
   const recentNarration = recent.map((r) => r.content).reverse();
 
   const controller = new AbortController();
+  const modelId = agentModelId();
+  const reasoning = agentReasoningPlan({
+    profileId: resolveAgentReasoningProfile(row.agentReasoningProfile),
+    leg: "scene_sketch",
+    maxOutputTokens: CHAT_SCENE_SKETCH_MAX_OUTPUT_TOKENS,
+    timeoutMs: CHAT_SCENE_SKETCH_TIMEOUT_MS,
+  });
+  const telemetry: Partial<AgentTelemetry> = {
+    legId: "chat_scene_sketch",
+    chatId: input.chatId,
+    modelId,
+    maxOutputTokens: reasoning.maxOutputTokens,
+    reasoningProfile: reasoning.profileId,
+    reasoningEnabled: reasoning.enabled,
+  };
   const work = generateChecked<ChatSceneSketch>({
     schema: chatSceneSketchSchema,
     system: CHAT_SCENE_SKETCH_SYSTEM,
@@ -120,13 +137,14 @@ export async function runChatSceneSketch(input: z.infer<typeof sketchJobPayloadS
       characterName: input.characterName,
       recentNarration,
     }),
-    modelId: agentModelId(),
+    modelId,
     temperature: 0,
-    maxOutputTokens: CHAT_SCENE_SKETCH_MAX_OUTPUT_TOKENS,
+    maxOutputTokens: reasoning.maxOutputTokens,
     code: "chat_scene_sketch.generate",
     fallback: degradedChatSceneSketch,
     signal: controller.signal,
-    disableReasoning: true,
+    disableReasoning: !reasoning.enabled,
+    providerOptions: reasoning.providerOptions,
     lowLatencyRouting: true,
     repair: false,
     degradeSeverity: "warn",
@@ -134,8 +152,10 @@ export async function runChatSceneSketch(input: z.infer<typeof sketchJobPayloadS
   const { value, degraded } = await withGenerateTimeout(
     work,
     controller,
-    CHAT_SCENE_SKETCH_TIMEOUT_MS,
+    reasoning.timeoutMs,
     "chat_scene_sketch.timeout",
+    undefined,
+    telemetry,
   );
   const sketch = degraded || !value ? "" : value.sketch;
   if (!sketch) return;

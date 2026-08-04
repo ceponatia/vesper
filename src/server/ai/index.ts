@@ -3,6 +3,7 @@ export * from "./narrator-artifacts";
 export * from "./narrator-repeats";
 export * from "./narrator-speaker-tags";
 export * from "./agent-failures";
+export * from "./agent-reasoning";
 export * from "./generate-checked";
 export * from "./generate-timeout";
 export * from "./embeddings";

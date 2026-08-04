@@ -19,9 +19,10 @@ import {
   type FactDraft,
   type MeanwhileDevelopment,
 } from "@/contracts";
+import { agentReasoningPlan } from "@/lib/agent-reasoning";
 import { formatElapsed } from "@/lib/clock";
 import { parseOr, parseOrNull } from "@/lib/parse";
-import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
+import { agentModelId, generateChecked, isDemoMode, loadChatAgentReasoningProfile, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import { characterChats, characterChatState, characters, chatParticipants, db, hasLiveChatJob } from "../db";
 import { addFacts, chatScope, type FactDraftInput } from "../memory";
 import { resolveChatPersona } from "../players";
@@ -160,6 +161,22 @@ export async function runChatMeanwhile(input: z.infer<typeof meanwhilePayloadSch
   )} (${formatElapsed(Math.max(1, input.clockMinutes - input.prevPassAtMinutes))})`;
 
   const controller = new AbortController();
+  const modelId = agentModelId();
+  const reasoningProfile = await loadChatAgentReasoningProfile(input.chatId);
+  const reasoning = agentReasoningPlan({
+    profileId: reasoningProfile,
+    leg: "meanwhile",
+    maxOutputTokens: CHAT_MEANWHILE_MAX_OUTPUT_TOKENS,
+    timeoutMs: CHAT_MEANWHILE_TIMEOUT_MS,
+  });
+  const telemetry: Partial<AgentTelemetry> = {
+    legId: "chat_meanwhile",
+    chatId: input.chatId,
+    modelId,
+    maxOutputTokens: reasoning.maxOutputTokens,
+    reasoningProfile: reasoning.profileId,
+    reasoningEnabled: reasoning.enabled,
+  };
   const work = generateChecked<ChatMeanwhile>({
     schema: chatMeanwhileSchema,
     system: CHAT_MEANWHILE_SYSTEM,
@@ -182,17 +199,25 @@ export async function runChatMeanwhile(input: z.infer<typeof meanwhilePayloadSch
       cast: castLines,
       openPlans: eligiblePlans.map((p) => `"${p.what}" — ${planOthersLabel(p, player.name) || p.participants.join(", ")}`),
     }),
-    modelId: agentModelId(),
+    modelId,
     temperature: 0,
-    maxOutputTokens: CHAT_MEANWHILE_MAX_OUTPUT_TOKENS,
+    maxOutputTokens: reasoning.maxOutputTokens,
     code: "chat_meanwhile.generate",
     fallback: degradedChatMeanwhile,
     signal: controller.signal,
-    disableReasoning: true,
+    disableReasoning: !reasoning.enabled,
+    providerOptions: reasoning.providerOptions,
     repair: false,
     degradeSeverity: "warn",
   });
-  const { value, degraded } = await withGenerateTimeout(work, controller, CHAT_MEANWHILE_TIMEOUT_MS, "chat_meanwhile.timeout");
+  const { value, degraded } = await withGenerateTimeout(
+    work,
+    controller,
+    reasoning.timeoutMs,
+    "chat_meanwhile.timeout",
+    undefined,
+    telemetry,
+  );
   const result = degraded || !value ? degradedChatMeanwhile() : value;
 
   // ---- Deterministic folds ----------------------------------------------------

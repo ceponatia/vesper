@@ -59,8 +59,8 @@ export function ChatInspectorAgentHealth({ chatId }: { chatId: string }) {
       if (!q) return true;
       const hay =
         item.kind === "run"
-          ? `${agentLegLabel(item.legId)} ${item.run.summary} ${item.run.modelId} ${item.run.provider ?? ""}`
-          : `${agentLegLabel(item.legId)} ${item.failure.detail} ${item.failure.cause} ${item.failure.modelId} ${item.failure.provider ?? ""}`;
+          ? `${agentLegLabel(item.legId)} ${item.run.summary} ${item.run.modelId} ${item.run.provider ?? ""} ${item.run.reasoningProfile}`
+          : `${agentLegLabel(item.legId)} ${item.failure.detail} ${item.failure.cause} ${item.failure.modelId} ${item.failure.provider ?? ""} ${item.failure.reasoningProfile}`;
       return hay.toLowerCase().includes(q);
     });
   }, [feed, legFilter, query]);
@@ -215,7 +215,11 @@ function RunLatencyList({ title, rows }: { title: string; rows: AgentRunStatRow[
 /** One successful run: leg · latency · what it did · model. Click opens the detail lightbox. */
 function RunRow({ run, onSelect }: { run: AgentRunRow; onSelect: () => void }) {
   const when = run.at ? run.at.slice(0, 16).replace("T", " ") : "unknown time";
-  const facts = [run.provider ? `via ${run.provider}` : "", run.modelId].filter(Boolean);
+  const facts = [
+    run.reasoningEnabled ? `reasoning: ${run.reasoningProfile}` : "reasoning: off",
+    run.provider ? `via ${run.provider}` : "",
+    run.modelId,
+  ].filter(Boolean);
   return (
     <li>
       <button
@@ -326,6 +330,7 @@ function failureFacts(failure: AgentFailureRow): string[] {
     failure.latencyMs ? `took ${failure.latencyMs}ms` : "",
     failure.promptChars ? `prompt ${Math.round(failure.promptChars / 100) / 10}k chars` : "",
     failure.maxOutputTokens ? `cap ${failure.maxOutputTokens} tok` : "",
+    failure.reasoningEnabled ? `reasoning: ${failure.reasoningProfile}` : "reasoning: off",
     failure.provider ? `via ${failure.provider}` : "",
     failure.modelId,
   ].filter(Boolean);
@@ -346,6 +351,7 @@ function AgentItemDialog({ item, onClose }: { item: FeedItem; onClose: () => voi
           ["Latency", formatMs(item.run.latencyMs)],
           ["Model", item.run.modelId || "—"],
           ["Provider", item.run.provider || "—"],
+          ["Reasoning", item.run.reasoningEnabled ? item.run.reasoningProfile : "off"],
           ["Prompt", item.run.promptChars ? `${Math.round(item.run.promptChars / 100) / 10}k chars` : "—"],
           ["Output cap", item.run.maxOutputTokens ? `${item.run.maxOutputTokens} tok` : "—"],
           ["When", when],
@@ -355,6 +361,7 @@ function AgentItemDialog({ item, onClose }: { item: FeedItem; onClose: () => voi
           ["Kind", KIND_LABELS[item.failure.kind]],
           ["Cause", causeLabel(agentFailureCauseSchema.parse(item.failure.cause))],
           ["Model", item.failure.modelId || "—"],
+          ["Reasoning", item.failure.reasoningEnabled ? item.failure.reasoningProfile : "off"],
           ["When", when],
           ["Exchange", item.failure.messageId || "—"],
         ];

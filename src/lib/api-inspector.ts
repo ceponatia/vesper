@@ -265,6 +265,8 @@ export const agentFailureRowSchema = z.object({
   timeoutMs: z.number().catch(0),
   latencyMs: z.number().catch(0),
   detail: textOr(""),
+  reasoningProfile: textOr("off"),
+  reasoningEnabled: z.boolean().catch(false),
   at: textOr(""),
 });
 export type AgentFailureRow = z.infer<typeof agentFailureRowSchema>;
@@ -292,6 +294,8 @@ export const agentRunRowSchema = z.object({
   latencyMs: z.number().catch(0),
   summary: textOr(""),
   details: arrayOf(agentRunDetailRowSchema),
+  reasoningProfile: textOr("off"),
+  reasoningEnabled: z.boolean().catch(false),
   at: textOr(""),
 });
 export type AgentRunRow = z.infer<typeof agentRunRowSchema>;

@@ -235,6 +235,8 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
     latencyMs,
     promptChars: opts.system.length + opts.prompt.length,
     maxOutputTokens: opts.maxOutputTokens ?? 4096,
+    reasoningProfile: opts.telemetry?.reasoningProfile,
+    reasoningEnabled: opts.telemetry?.reasoningEnabled,
     detail: providerClassification?.detail ?? firstError,
   });
   return { ...degrade(opts, repair ? "validation failed twice" : "validation failed"), provider, latencyMs };
