@@ -209,6 +209,7 @@ export async function runChatMeanwhile(input: z.infer<typeof meanwhilePayloadSch
     providerOptions: reasoning.providerOptions,
     repair: false,
     degradeSeverity: "warn",
+    telemetry,
   });
   const { value, degraded } = await withGenerateTimeout(
     work,
