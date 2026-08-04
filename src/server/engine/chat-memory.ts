@@ -20,7 +20,8 @@ import {
 } from "@/contracts";
 import type { Milestone } from "@/contracts/relationships/history";
 import type { AgentRunDescription, AgentRunDetailSection } from "@/contracts/turns/agent-failure";
-import { agentModelId, embedText, generateChecked, isDemoMode, toVectorLiteral, withGenerateTimeout, type AgentTelemetry } from "../ai";
+import { agentReasoningPlan, type AgentReasoningProfileId } from "@/lib/agent-reasoning";
+import { agentModelId, embedText, generateChecked, isDemoMode, loadChatAgentReasoningProfile, toVectorLiteral, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import type { DbWriter } from "../db";
 import {
   addFacts,
@@ -239,6 +240,7 @@ async function runExtractorLeg<T>(args: {
   maxOutputTokens: number;
   timeoutMs: number;
   code: string;
+  reasoningProfile: AgentReasoningProfileId;
   /** Which conversation/exchange this leg is running for — so a failure is diagnosable. */
   trace?: AgentLegTrace;
   /** Summary + detail of what a successful run produced — the inspector's activity log. */
@@ -249,6 +251,12 @@ async function runExtractorLeg<T>(args: {
   const system = buildChatExtractorSystem(args.legId, args.ctx);
   const prompt = buildChatExtractorPrompt(args.legId, args.ctx);
   const modelId = agentModelId();
+  const reasoning = agentReasoningPlan({
+    profileId: args.reasoningProfile,
+    leg: args.legId,
+    maxOutputTokens: args.maxOutputTokens,
+    timeoutMs: args.timeoutMs,
+  });
   // Failure telemetry (contracts/turns/agent-failure.ts): the leg's identity plus the two
   // signals that explain a timeout — how big its sheet actually was, and what it was
   // allowed to emit. A leg that times out on every exchange now shows up in the
@@ -259,7 +267,9 @@ async function runExtractorLeg<T>(args: {
     messageId: args.trace?.messageId,
     modelId,
     promptChars: system.length + prompt.length,
-    maxOutputTokens: args.maxOutputTokens,
+    maxOutputTokens: reasoning.maxOutputTokens,
+    reasoningProfile: reasoning.profileId,
+    reasoningEnabled: reasoning.enabled,
   };
   const work = generateChecked<T>({
     schema: args.schema,
@@ -267,12 +277,13 @@ async function runExtractorLeg<T>(args: {
     prompt,
     modelId,
     temperature: 0,
-    maxOutputTokens: args.maxOutputTokens,
+    maxOutputTokens: reasoning.maxOutputTokens,
     code: `${args.code}.extract`,
     sink: args.sink,
     fallback: args.fallback,
     signal: controller.signal,
-    disableReasoning: true,
+    disableReasoning: !reasoning.enabled,
+    providerOptions: reasoning.providerOptions,
     lowLatencyRouting: true,
     repair: false,
     degradeSeverity: "warn",
@@ -282,7 +293,7 @@ async function runExtractorLeg<T>(args: {
   const { value, degraded } = await withGenerateTimeout(
     work,
     controller,
-    args.timeoutMs,
+    reasoning.timeoutMs,
     `${args.code}.timeout`,
     args.sink,
     telemetry,
@@ -431,10 +442,12 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
 
   const ctx: ChatExtractorContext = { ...input };
   const empty = degradedChatArchivist();
+  const reasoningProfile = await loadChatAgentReasoningProfile(input.trace?.chatId);
 
   const [memory, continuity, character] = await Promise.all([
     runExtractorLeg<ChatMemoryScribe>({
       legId: "memory",
+      reasoningProfile,
       ctx,
       schema: chatMemoryScribeSchema,
       fallback: () => ({ episodeSummary: empty.episodeSummary, facts: empty.facts, memoryQueries: empty.memoryQueries }),
@@ -447,6 +460,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
     }),
     runExtractorLeg<ChatContinuity>({
       legId: "continuity",
+      reasoningProfile,
       ctx,
       schema: chatContinuitySchema,
       fallback: () => ({
@@ -469,6 +483,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
     }),
     runExtractorLeg<ChatCharacterNotes>({
       legId: "character",
+      reasoningProfile,
       ctx,
       schema: chatCharacterNotesSchema,
       fallback: () => ({
@@ -513,8 +528,10 @@ export async function runChatMemoryScribe(input: ChatExtractionInput): Promise<{
     return { value: null, degraded: true };
   }
   const empty = degradedChatArchivist();
+  const reasoningProfile = await loadChatAgentReasoningProfile(input.trace?.chatId);
   const { value, degraded } = await runExtractorLeg<ChatMemoryScribe>({
     legId: "memory",
+    reasoningProfile,
     ctx: { ...input },
     schema: chatMemoryScribeSchema,
     fallback: () => ({ episodeSummary: empty.episodeSummary, facts: empty.facts, memoryQueries: empty.memoryQueries }),
@@ -558,8 +575,10 @@ export async function runChatPersonalNotes(
     return { value: null, degraded: true };
   }
 
+  const reasoningProfile = await loadChatAgentReasoningProfile(input.trace?.chatId);
   return runExtractorLeg<ChatPersonalNotes>({
     legId: "personal",
+    reasoningProfile,
     ctx: {
       characterName: input.characterName,
       playerName: input.playerName,

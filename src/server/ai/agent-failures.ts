@@ -42,6 +42,10 @@ export interface AgentTelemetry {
   maxOutputTokens?: number;
   /** The watchdog budget (timeouts only). */
   timeoutMs?: number;
+  /** Admin-selected per-chat experiment profile at call time. */
+  reasoningProfile?: string;
+  /** Whether this leg actually received a reasoning configuration. */
+  reasoningEnabled?: boolean;
 }
 
 export interface RecordAgentFailureInput extends AgentTelemetry {
@@ -84,6 +88,8 @@ export function buildAgentFailure(input: RecordAgentFailureInput): AgentFailure 
     latencyMs: input.latencyMs ?? 0,
     httpStatus: input.httpStatus ?? 0,
     detail,
+    reasoningProfile: input.reasoningProfile ?? "off",
+    reasoningEnabled: input.reasoningEnabled ?? false,
     at: (input.at ?? new Date()).toISOString(),
   });
 }
@@ -136,6 +142,8 @@ export function buildAgentRun(input: RecordAgentRunInput): AgentRun {
     latencyMs: input.latencyMs ?? 0,
     summary: (input.summary ?? "").slice(0, SUMMARY_CAP),
     details: capDetails(input.details ?? []),
+    reasoningProfile: input.reasoningProfile ?? "off",
+    reasoningEnabled: input.reasoningEnabled ?? false,
     at: (input.at ?? new Date()).toISOString(),
   });
 }

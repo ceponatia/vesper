@@ -1,0 +1,1 @@
+ALTER TABLE "character_chats" ADD COLUMN "agent_reasoning_profile" text DEFAULT 'off' NOT NULL;
