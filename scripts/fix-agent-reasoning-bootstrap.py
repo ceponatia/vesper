@@ -66,6 +66,34 @@ replace_once(
 )
 ''',
     ),
+    (
+        '''replace_once(
+    "src/server/engine/chat-scene-sketch.ts",
+    "    maxOutputTokens: CHAT_SCENE_SKETCH_MAX_OUTPUT_TOKENS,\\n",
+    "    maxOutputTokens: reasoning.maxOutputTokens,\\n",
+)
+''',
+        '''replace_once(
+    "src/server/engine/chat-scene-sketch.ts",
+    "    temperature: 0,\\n    maxOutputTokens: CHAT_SCENE_SKETCH_MAX_OUTPUT_TOKENS,\\n",
+    "    temperature: 0,\\n    maxOutputTokens: reasoning.maxOutputTokens,\\n",
+)
+''',
+    ),
+    (
+        '''replace_once(
+    "src/server/engine/chat-meanwhile.ts",
+    "    maxOutputTokens: CHAT_MEANWHILE_MAX_OUTPUT_TOKENS,\\n",
+    "    maxOutputTokens: reasoning.maxOutputTokens,\\n",
+)
+''',
+        '''replace_once(
+    "src/server/engine/chat-meanwhile.ts",
+    "    temperature: 0,\\n    maxOutputTokens: CHAT_MEANWHILE_MAX_OUTPUT_TOKENS,\\n",
+    "    temperature: 0,\\n    maxOutputTokens: reasoning.maxOutputTokens,\\n",
+)
+''',
+    ),
 ]
 
 for old, new in replacements:
