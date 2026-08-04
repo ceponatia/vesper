@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -9,18 +8,21 @@ import {
   canonicalNpcSceneDigestString,
   diag,
   emptySceneState,
-  normalizeTypographicQuotes,
+  garmentActorForCharacter,
   npcSceneNarrationSentences,
+  GARMENT_PLAYER_ACTOR,
   NPC_SCENE_PLAYER_REF,
   parseNpcSceneDecisionOutput,
   parseSceneState,
   planNpcSceneChronology,
   type AffordanceSubjectId,
+  type CharacterProfile,
   type ContactEventRef,
   type ContactLifecycleCommit,
   type DiagnosticSink,
   type NpcRef,
   type NpcSceneCandidate,
+  type NpcSceneChronologyPlan,
   type NpcSceneDecisionParse,
   type NpcSceneDigest,
   type NpcSceneDigestHandles,
@@ -30,26 +32,35 @@ import {
   type NpcSceneSlot,
   type NpcSceneTier2Entry,
   type ParticipantRef,
+  type PersonaProfile,
   type SceneState,
 } from "@/contracts";
 import type { AgentRunDescription } from "@/contracts/turns/agent-failure";
+import { parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import { characterChatMessages, characterChats, characterChatState, db } from "../db";
 import { log } from "../log";
-import { CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact-adapter";
+import {
+  chatContactMaterialAtCut,
+  CHAT_CONTACT_PLAYER_SUBJECT,
+  type ChatContactMaterialSource,
+} from "./chat-contact-adapter";
 import {
   applyChatNpcContactEnding,
   chatReplyContactEventRef,
   detectChatNpcContactEnding,
+  type ChatNpcContactEnding,
   type ChatNpcEndingCharacter,
 } from "./chat-contact-reply";
-import { locateChatNpcEndingSentenceSpan } from "./chat-contact-reply-offsets";
+import { locateChatNpcEndingActionSpan } from "./chat-contact-reply-offsets";
 import {
   chatNpcDigestHash,
   chatNpcReplyHash,
   chatNpcSceneHash,
   loadChatNpcSceneDecision,
   recordChatNpcSceneDecision,
+  NPC_SCENE_DECISION_MAX_CONTACT_ROWS,
+  NPC_SCENE_DECISION_MAX_ROWS_PER_ACTION,
   NPC_SCENE_DECISION_PAYLOAD_VERSION,
   NPC_SCENE_DECISION_PERSISTENCE_CONFLICT,
   type ChatNpcSceneDecisionEnvelope,
@@ -59,6 +70,19 @@ import {
   type NpcSceneDecisionPayload,
   type NpcSceneDecisionStatus,
 } from "./chat-npc-scene-envelope";
+import {
+  executeNpcSceneDecision,
+  npcSceneCandidateSlot,
+  npcSceneCandidateSummary,
+  npcSceneFloorDetail,
+  npcSceneQuoteHash,
+  recordNpcSceneDrop,
+  NPC_SCENE_DECISION_DETAIL_MAX,
+  type NpcSceneExecutionMember,
+  type NpcSceneMaterialCut,
+} from "./chat-npc-scene-execute";
+import { loadChatScenario } from "./chat-state";
+import { resolveChatWardrobe, resolvePlayerWardrobe, playerWornIds } from "./chat-wardrobe";
 import {
   CHAT_NPC_SCENE_DECISION_MAX_OUTPUT_TOKENS,
   CHAT_NPC_SCENE_DECISION_TIMEOUT_MS,
@@ -98,20 +122,32 @@ import {
  * 2. **`finishChatNpcSceneDecision`** — at the settle tail (and on the opening
  *    branch before it returns), the exchange's LAST scene writer. It reloads
  *    everything FRESH — the assistant row and exact reply bytes, the scene
- *    column and story minute, every roster member's persisted presence —
- *    never reusing the pipeline's stale `scenario` variable, awaits the
- *    classifier, parses slots independently, runs the four admission gates and
- *    the chronology planner, and records ONE durable envelope through the
- *    guarded transaction. The frozen floor's ending detection runs here too
- *    (under `CHAT_CONTACT_ACTIONS`, exactly as it ships today) and its commits
- *    ride the SAME transaction, so the ended projection and its decision
- *    record land atomically.
+ *    column and story minute, every roster member's persisted presence, and
+ *    (only when an admitted contact start will read it) the settled garment
+ *    store with per-actor coverage — never reusing the pipeline's stale
+ *    `scenario` variable, awaits the classifier, parses slots independently,
+ *    runs the four admission gates and the chronology planner, and records ONE
+ *    durable envelope through the guarded transaction. The frozen floor's ending
+ *    detection runs here too (under `CHAT_CONTACT_ACTIONS`, exactly as it ships
+ *    today) and its commits ride the SAME transaction, so the ended projection
+ *    and its decision record land atomically.
+ *
+ *    The one thing it CANNOT reload is what the settle itself did: the caller
+ *    hands that in as a `ChatNpcSceneSettleReport` (today, which bodies had their
+ *    wardrobe rewritten during this reply — the contact start's chronology veto).
  *
  * **Shadow evaluation is DRY.** An admitted tier-2 candidate is recorded as
  * admitted-but-not-executed (`resolution: "unresolved"`, detail names shadow);
  * no movement commits, no contact starts/updates, no presence-driven endings.
- * The authority increments (spec delivery steps 4–6) replace exactly that dry
- * step — nothing else in this module is provisional.
+ *
+ * **Authority EXECUTES the same admitted plan** (spec delivery steps 4–6;
+ * `chat-npc-scene-execute.ts`). Everything up to and including the chronology
+ * plan is SHARED — `admitNpcSceneDecision` is the one implementation of the four
+ * gates, presence precedence, and the planner, so a shadow measurement and an
+ * authority run can never disagree about what was admitted. Only the last step
+ * forks: shadow records the plan dry, authority hands it to the executor, whose
+ * presence endings, floor endings, movement commits, and contact start/update
+ * rows all ride the SAME guarded transaction as the envelope.
  *
  * Every failure is fenced (docs/resilience.md): the leg degrades to "no
  * envelope this exchange" (or a `degraded` tombstone when one is persistable)
@@ -127,9 +163,6 @@ const CLASSIFY_LEG_ID = "npc_scene_decision.classify";
 
 /** The envelope-level degradation code (spec §"Diagnostics"). */
 export const NPC_SCENE_DECISION_DEGRADED = "npc_scene_decision.degraded";
-
-/** Bounded detail strings inside the payload (mirrors the envelope module's own cap). */
-const DETAIL_MAX = 200;
 
 // ---------------------------------------------------------------------------
 // Mode
@@ -377,19 +410,15 @@ function launchNpcSceneClassifier(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Dry evaluation (pure)
+// Admission and planning (pure, SHARED by both modes)
 // ---------------------------------------------------------------------------
-
-function sha256Hex(material: string): string {
-  return createHash("sha256").update(material).digest("hex");
-}
 
 /** The frozen floor's half of an evaluation, as the pure evaluator consumes it. */
 export interface NpcSceneFloorInput {
   readonly reason: "withdrawn" | "separated";
   /** The ending NPC as a digest ref, when the subject id mapped; `null` never composites. */
   readonly subjectRef: NpcRef | null;
-  /** The located sentence span, or `null` when the replay could not pin one (the entry then stays unordered). */
+  /** The located action-phrase span, or `null` when the replay could not pin one (the entry then stays unordered). */
   readonly span: NpcSceneReplySpan | null;
   /** The ledger rows the floor's commits produce (whole-commit-list sequences, `contact_continued` skipped). */
   readonly rows: readonly { readonly eventRef: string; readonly sequence: number }[];
@@ -428,76 +457,77 @@ function candidateParticipantRefs(candidate: NpcSceneCandidate): readonly Partic
   }
 }
 
-/** One bounded inspector line per candidate ("approach npc_0 → player (touching)"). */
-function candidateSummary(candidate: NpcSceneCandidate): string {
-  switch (candidate.kind) {
-    case "approach":
-      return `approach ${candidate.actorRef} → ${candidate.counterpartRef} (${candidate.band}${
-        candidate.facing === "toward" ? ", facing toward" : ""
-      })`;
-    case "depart":
-      return `depart ${candidate.actorRef} ← ${candidate.counterpartRef} (${candidate.band})`;
-    case "start":
-      return `start ${candidate.actorRef} → ${candidate.targetRef} ${candidate.gesture} ${candidate.targetLocationId}`;
-    case "update":
-      return `update ${candidate.actorRef} ${candidate.contactRef} ${candidate.gesture}`;
-  }
-}
-
-/** Movement or contact, as the payload's action/drop vocabulary names a candidate. */
-function candidateSlot(candidate: NpcSceneCandidate): "movement" | "contact" {
-  return candidate.kind === "approach" || candidate.kind === "depart" ? "movement" : "contact";
-}
-
-/** The floor's payload action. `committed` truthfully — the rows ride the same transaction as this payload. */
+/**
+ * The floor's payload action. `committed` truthfully — the rows ride the same
+ * transaction as this payload. The row-reference list respects the payload's
+ * per-action cap (an over-cap list would degrade the whole payload on read —
+ * see `NPC_SCENE_DECISION_MAX_ROWS_PER_ACTION`); the ledger rows themselves
+ * are all written regardless, and the detail says when the list was sliced.
+ */
 function floorPayloadAction(floor: NpcSceneFloorInput, span: NpcSceneReplySpan, composite: boolean): NpcSceneDecisionAction {
-  const detail = [
-    floor.committed ? "" : "no_covered_contact",
-    floor.span === null ? "span_unlocated" : "",
-    composite ? "composite_departure" : "",
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .slice(0, DETAIL_MAX);
+  const truncated = floor.rows.length > NPC_SCENE_DECISION_MAX_ROWS_PER_ACTION;
   return {
     kind: "floor_ending",
     span,
     quoteHash: "",
     summary: `ending: ${floor.reason}${floor.subjectRef === null ? "" : ` by ${floor.subjectRef}`}`,
     resolution: floor.committed ? "committed" : "unresolved",
-    detail,
-    contactRows: floor.rows.map((row) => ({ ...row })),
+    detail: [
+      npcSceneFloorDetail({ committed: floor.committed, spanUnlocated: floor.span === null, composite }),
+      truncated ? "rows_truncated" : "",
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .slice(0, NPC_SCENE_DECISION_DETAIL_MAX),
+    contactRows: floor.rows.slice(0, NPC_SCENE_DECISION_MAX_ROWS_PER_ACTION).map((row) => ({ ...row })),
   };
 }
 
+/** What admission and planning produced — everything both modes agree on. */
+export interface NpcSceneDecisionAdmission {
+  readonly slots: NpcSceneDecisionPayload["slots"];
+  readonly drops: readonly NpcSceneDecisionDrop[];
+  /** The normalized ordered plan: shadow records it dry, authority executes it. */
+  readonly plan: NpcSceneChronologyPlan;
+}
+
+export interface NpcSceneDecisionAdmissionInput {
+  /** The COMPLETED assistant reply, exactly as persisted. */
+  readonly reply: string;
+  readonly digest: NpcSceneDigest;
+  /** POST-settle-present roster refs — presence precedence; the player is implicitly present. */
+  readonly presentNpcRefs: readonly NpcRef[];
+  /** The slot-independent parse; `malformed_envelope` never reaches here. */
+  readonly parse: NpcSceneDecisionParse;
+  /** The floor's ORDERING half only — `null` when there is no ending, or none that could be located. */
+  readonly floor: NpcSceneFloorEntry | null;
+  readonly sink?: DiagnosticSink;
+}
+
 /**
- * Evaluate one reply's parsed slots against the post-settle cut — PURE, and in
- * shadow terms: the four admission gates, the presence precedence, and the
- * chronology planner all run for real, but an admitted tier-2 candidate is
- * recorded as ADMITTED, NOT COMMITTED (`resolution: "unresolved"`, detail
- * naming the shadow dry run). The scene never changes from a tier-2 candidate
- * here; only the floor's half carries `committed` truth, because its rows ride
- * the same transaction that stores this payload.
+ * Admit one reply's parsed slots and plan their chronology — PURE, and the ONE
+ * implementation both modes run.
  *
- * Every drop files its spec diagnostic (`npc_scene_decision.<reason>`) beside
- * the bounded payload record, so the shadow-gate tallies exist in both the
- * durable envelope and the exchange's diagnostic stream.
+ * The four evidence gates, presence precedence over classifier output, and the
+ * chronological planner all live here precisely because shadow's measurement is
+ * only evidence about authority if authority admits exactly what shadow
+ * admitted. Every drop files its spec diagnostic
+ * (`npc_scene_decision.<reason>`) beside the bounded payload record, so the
+ * tallies exist in both the durable envelope and the exchange's diagnostic
+ * stream — under the same reason codes in either mode.
+ *
+ * What it deliberately does NOT do is decide anything about the world: it
+ * neither applies the floor's fold nor resolves a candidate. The caller's mode
+ * owns that.
  */
-export function evaluateNpcSceneDecision(input: NpcSceneDecisionEvaluationInput): NpcSceneDecisionEvaluation {
+export function admitNpcSceneDecision(input: NpcSceneDecisionAdmissionInput): NpcSceneDecisionAdmission {
   const drops: NpcSceneDecisionDrop[] = [];
   const present = new Set<ParticipantRef>([NPC_SCENE_PLAYER_REF, ...input.presentNpcRefs]);
   const context = { reply: input.reply, digest: input.digest, eligibleNpcRefs: input.presentNpcRefs };
   const tier2: NpcSceneTier2Entry[] = [];
-  const quoteHashes = new Map<NpcSceneTier2Entry, string>();
 
   const pushDrop = (drop: NpcSceneDecisionDrop, severity: "info" | "warn"): void => {
-    drops.push(drop);
-    input.sink?.push(
-      diag(severity, `npc_scene_decision.${drop.reason}`, `${drop.candidate} candidate dropped: ${drop.reason}`, {
-        path: "npc_scene_decision",
-        context: { candidate: drop.candidate, ...(drop.field ? { field: drop.field } : {}), ...(drop.detail ? { detail: drop.detail } : {}) },
-      }),
-    );
+    recordNpcSceneDrop(drops, drop, severity, input.sink);
   };
 
   /** One raw slot through malformed-trace → admission gates → presence precedence. */
@@ -514,7 +544,7 @@ export function evaluateNpcSceneDecision(input: NpcSceneDecisionEvaluationInput)
             candidate: slotName,
             reason: "slot_malformed",
             field: "",
-            detail: (slot.issues[0] ?? "").slice(0, DETAIL_MAX),
+            detail: (slot.issues[0] ?? "").slice(0, NPC_SCENE_DECISION_DETAIL_MAX),
           },
           "warn",
         );
@@ -528,7 +558,7 @@ export function evaluateNpcSceneDecision(input: NpcSceneDecisionEvaluationInput)
               candidate: slotName,
               reason: admission.drop.reason,
               field: admission.drop.field ?? "",
-              detail: candidateSummary(candidate).slice(0, DETAIL_MAX),
+              detail: npcSceneCandidateSummary(candidate).slice(0, NPC_SCENE_DECISION_DETAIL_MAX),
             },
             "info",
           );
@@ -544,15 +574,13 @@ export function evaluateNpcSceneDecision(input: NpcSceneDecisionEvaluationInput)
               candidate: slotName,
               reason: "presence_conflict",
               field: "",
-              detail: away.join(",").slice(0, DETAIL_MAX),
+              detail: away.join(",").slice(0, NPC_SCENE_DECISION_DETAIL_MAX),
             },
             "warn",
           );
           return "parsed";
         }
-        const entry: NpcSceneTier2Entry = { candidate, span: admission.actionSpan };
-        tier2.push(entry);
-        quoteHashes.set(entry, sha256Hex(normalizeTypographicQuotes(candidate.evidence).trim()));
+        tier2.push({ candidate, span: admission.actionSpan });
         return "parsed";
       }
     }
@@ -568,31 +596,59 @@ export function evaluateNpcSceneDecision(input: NpcSceneDecisionEvaluationInput)
 
   // Chronology: the reply's own written order is the execution order; what
   // cannot be totally ordered drops (tier 2 only — the floor always survives).
-  const floorEntry: NpcSceneFloorEntry | null =
-    input.floor !== null && input.floor.span !== null
-      ? { reason: input.floor.reason, subjectRef: input.floor.subjectRef, span: input.floor.span }
-      : null;
-  const plan = planNpcSceneChronology({ floor: floorEntry, tier2 });
+  const plan = planNpcSceneChronology({ floor: input.floor, tier2 });
   for (const dropped of plan.dropped) {
     pushDrop(
       {
-        candidate: candidateSlot(dropped.entry.candidate),
+        candidate: npcSceneCandidateSlot(dropped.entry.candidate),
         reason: "chronology_ambiguous",
         field: "",
-        detail: candidateSummary(dropped.entry.candidate).slice(0, DETAIL_MAX),
+        detail: npcSceneCandidateSummary(dropped.entry.candidate).slice(0, NPC_SCENE_DECISION_DETAIL_MAX),
       },
       "info",
     );
   }
 
+  return { slots, drops, plan };
+}
+
+/** The floor's ORDERING half, as the planner takes it. `null` ⇒ nothing to order. */
+function floorOrderingEntry(floor: NpcSceneFloorInput | null): NpcSceneFloorEntry | null {
+  return floor !== null && floor.span !== null
+    ? { reason: floor.reason, subjectRef: floor.subjectRef, span: floor.span }
+    : null;
+}
+
+// ---------------------------------------------------------------------------
+// Dry evaluation (SHADOW)
+// ---------------------------------------------------------------------------
+
+/**
+ * Evaluate one reply for SHADOW: admit and plan for real, then record the plan
+ * DRY — an admitted tier-2 candidate becomes ADMITTED, NOT COMMITTED
+ * (`resolution: "unresolved"`, detail naming the shadow dry run). The scene
+ * never changes from a tier-2 candidate here; only the floor's half carries
+ * `committed` truth, because its rows ride the same transaction that stores
+ * this payload.
+ */
+export function evaluateNpcSceneDecision(input: NpcSceneDecisionEvaluationInput): NpcSceneDecisionEvaluation {
+  const admission = admitNpcSceneDecision({
+    reply: input.reply,
+    digest: input.digest,
+    presentNpcRefs: input.presentNpcRefs,
+    parse: input.parse,
+    floor: floorOrderingEntry(input.floor),
+    ...(input.sink === undefined ? {} : { sink: input.sink }),
+  });
+
   // The normalized ordered action list — what the durable envelope records.
   const actions: NpcSceneDecisionAction[] = [];
   const pushTier2 = (entry: NpcSceneTier2Entry, composite: boolean): void => {
     actions.push({
-      kind: candidateSlot(entry.candidate),
+      kind: npcSceneCandidateSlot(entry.candidate),
       span: entry.span,
-      quoteHash: quoteHashes.get(entry) ?? "",
-      summary: candidateSummary(entry.candidate),
+      quoteHash: npcSceneQuoteHash(entry.candidate.evidence),
+      summary: npcSceneCandidateSummary(entry.candidate),
       // ADMITTED, NOT COMMITTED: shadow grants no authority, so the resolver
       // never ran — "unresolved" is the resolver's silence, and the detail
       // names WHOSE silence it was so a later reader cannot mistake this for
@@ -603,7 +659,7 @@ export function evaluateNpcSceneDecision(input: NpcSceneDecisionEvaluationInput)
     });
   };
   const floor = input.floor;
-  for (const action of plan.actions) {
+  for (const action of admission.plan.actions) {
     switch (action.source) {
       case "floor":
         if (floor !== null) actions.push(floorPayloadAction(floor, action.floor.span, false));
@@ -617,16 +673,14 @@ export function evaluateNpcSceneDecision(input: NpcSceneDecisionEvaluationInput)
         break;
     }
   }
-  // A floor whose sentence span could not be located never entered the planner
+  // A floor whose action span could not be located never entered the planner
   // (it cannot be ordered), but its ends still committed — record it LAST,
   // spanning the whole reply, with the detail naming why it is unordered.
-  if (input.floor !== null && input.floor.span === null) {
-    actions.push(
-      floorPayloadAction(input.floor, { start: 0, end: Math.max(1, input.reply.length) }, false),
-    );
+  if (floor !== null && floor.span === null) {
+    actions.push(floorPayloadAction(floor, { start: 0, end: Math.max(1, input.reply.length) }, false));
   }
 
-  return { slots, actions, drops };
+  return { slots: admission.slots, actions, drops: admission.drops };
 }
 
 // ---------------------------------------------------------------------------
@@ -639,6 +693,16 @@ export interface ChatNpcSceneRosterMemberInput {
   readonly name: string;
   readonly aliases: readonly string[];
   readonly presence: NpcSceneDigestPresence;
+  /**
+   * The character sheet, carried for the POST-settle wardrobe resolve a contact
+   * start's material read needs (`resolveChatWardrobe`).
+   *
+   * IDENTITY, not state: a profile is authored library data that a settle cannot
+   * change, so carrying it across the two halves is not the stale-`scenario`
+   * mistake the finish half exists to avoid. Everything that CAN move — presence,
+   * the worn list, the free-text look, the garment store — is reloaded fresh.
+   */
+  readonly profile: CharacterProfile;
 }
 
 export interface BeginChatNpcSceneDecisionInput {
@@ -647,7 +711,15 @@ export interface BeginChatNpcSceneDecisionInput {
   /** The persisted reply bytes — settle's `full`, exactly as inserted/updated. */
   readonly reply: string;
   readonly mode: NpcSceneDecisionMode;
+  /** The chat owner — whose wardrobe/library the post-settle garment resolve loads from. */
+  readonly ownerId: string;
   readonly roster: readonly ChatNpcSceneRosterMemberInput[];
+  /**
+   * The player's persona sheet, when the chat has one — the wardrobe pool the
+   * player's own worn ids resolve against. Absent (the bare account-name rung) ⇒
+   * the player has no modelled clothes, and a start targeting them reads bare.
+   */
+  readonly playerPersona?: PersonaProfile;
   /** The PRE-settle scene — the digest's source cut (the scene as the player leg left it). */
   readonly scene: SceneState;
   readonly sink?: DiagnosticSink;
@@ -670,15 +742,38 @@ export type ChatNpcSceneDecisionHandle =
       readonly chatId: string;
       readonly assistantMessageId: string;
       readonly mode: NpcSceneDecisionMode;
+      readonly ownerId: string;
       readonly reply: string;
       readonly digest: NpcSceneDigest;
       readonly handles: NpcSceneDigestHandles;
       readonly digestHash: string;
       readonly roster: readonly LiveRosterMember[];
+      readonly playerPersona?: PersonaProfile;
       readonly triggered: boolean;
       readonly classifier: Promise<NpcSceneClassifierResult> | null;
       readonly sink?: DiagnosticSink;
     };
+
+/**
+ * What the SETTLE knew and the post-settle reload cannot recover — handed to the
+ * finish half as the exchange's own report on itself.
+ *
+ * One field so far, and it is a signal only the writer has: which bodies had
+ * their wardrobe authoritatively rewritten during this reply. The post-settle
+ * store shows the FINAL clothes and says nothing about when they changed, so the
+ * settle closure (which member outfit folds, the primary/player outfit folds, and
+ * the ensemble garment reconcile ran) is the only place that answer exists.
+ * The opening branch passes an empty set: an opening beat has no player act, no
+ * archivist, and therefore no wardrobe write at all.
+ */
+export interface ChatNpcSceneSettleReport {
+  readonly wardrobeChanged: ReadonlySet<AffordanceSubjectId>;
+}
+
+/** The settle report for a branch that wrote no wardrobe — the opening beat's. */
+export function emptyChatNpcSceneSettleReport(): ChatNpcSceneSettleReport {
+  return { wardrobeChanged: new Set<AffordanceSubjectId>() };
+}
 
 /**
  * The pre-settle half: reuse check → digest assembly → trigger → (maybe)
@@ -771,11 +866,13 @@ export async function beginChatNpcSceneDecision(
     chatId: input.chatId,
     assistantMessageId: input.assistantMessageId,
     mode: input.mode,
+    ownerId: input.ownerId,
     reply: input.reply,
     digest: build.digest,
     handles: build.handles,
     digestHash,
     roster,
+    ...(input.playerPersona === undefined ? {} : { playerPersona: input.playerPersona }),
     triggered,
     classifier,
     ...(input.sink === undefined ? {} : { sink: input.sink }),
@@ -792,14 +889,150 @@ function contactRowRefsFor(
   );
 }
 
+// ---------------------------------------------------------------------------
+// The POST-settle garment cut (contact starts only)
+// ---------------------------------------------------------------------------
+
+/**
+ * The per-member state columns a wardrobe resolve needs, narrowed defensively.
+ *
+ * A row this schema cannot read is DROPPED rather than defaulted, and that is
+ * the whole reason it is narrowed here at all: the empty default ("nothing worn,
+ * nothing described") is what the three-way material law reads as BARE SKIN, and
+ * a body whose row would not parse has not earned that claim. Dropping it leaves
+ * the subject out of the cut, which the executor reads as `unavailable` — silence.
+ */
+const npcSceneWardrobeRowSchema = z.object({
+  wornItemIds: z.array(z.string()),
+  outfit: z.string(),
+  outfitExposed: z.boolean(),
+});
+
+/**
+ * Every body's material answer at the POST-settle garment cut — the read a
+ * contact start's two-sided material composes (actor-control spec
+ * §"Authoritative post-settle cut": "current garment store and per-actor
+ * coverage"; §"Resolution laws → Contact start": "the read uses the reloaded
+ * post-settle garment cut, never the pre-settle scenario").
+ *
+ * Reloaded, not carried. `finalizeChatState`, the per-member settle, and the
+ * ensemble garment reconcile all rewrite the wardrobe AFTER the digest was cut,
+ * so the pipeline's `scenario` variable describes clothes that may no longer be
+ * on anybody. This runs the SAME derivation the player leg runs pre-prompt
+ * (`chatContactMaterialAtCut`) against the scenario as it stands now.
+ *
+ * **Only called when an admitted start actually needs it.** The derivation costs
+ * a scenario load, a state read, and one wardrobe resolve per body; the
+ * overwhelming majority of replies propose no contact at all, and a map nobody
+ * reads is pure latency inside the exchange lock. An empty map is not a fallback
+ * — it is the correct value when no start exists to consult it.
+ *
+ * The PLAYER is always in the map: they are the usual target of "she takes your
+ * hand", and their wardrobe obeys the identical three-way law (modelled /
+ * dressed-but-unmodellable / genuinely bare).
+ */
+async function loadNpcSceneMaterialCut(
+  handle: Extract<ChatNpcSceneDecisionHandle, { kind: "live" }>,
+): Promise<NpcSceneMaterialCut> {
+  const sink = handle.sink;
+  const material = new Map<AffordanceSubjectId, ChatContactMaterialSource>();
+  const scenario = await loadChatScenario(handle.chatId, sink);
+  if (scenario === null) return material;
+
+  const characterIds = handle.roster.map((member) => member.characterId);
+  const stateRows =
+    characterIds.length > 0
+      ? await db()
+          .select({
+            characterId: characterChatState.characterId,
+            wornItemIds: characterChatState.wornItemIds,
+            outfit: characterChatState.outfit,
+            outfitExposed: characterChatState.outfitExposed,
+          })
+          .from(characterChatState)
+          .where(
+            and(eq(characterChatState.chatId, handle.chatId), inArray(characterChatState.characterId, characterIds)),
+          )
+      : [];
+  const stateById = new Map(stateRows.map((row) => [row.characterId, row]));
+
+  for (const member of handle.roster) {
+    const row = stateById.get(member.characterId);
+    // A roster member with no persisted state row has no wardrobe this cut can
+    // speak for. Leaving them OUT of the map is the honest answer: the executor
+    // reads an absent key as `unavailable`, and a start naming them falls silent
+    // rather than resolving against an invented empty wardrobe.
+    if (row === undefined) continue;
+    const wardrobeState = parseOrNull(npcSceneWardrobeRowSchema, row, sink, "character_chat_state.wardrobe");
+    if (wardrobeState === null) continue;
+    const actorId = garmentActorForCharacter(member.characterId);
+    const resolved = await resolveChatWardrobe(
+      { ...wardrobeState, garments: scenario.garments, garmentActorId: actorId },
+      handle.ownerId,
+      member.profile,
+      sink,
+    );
+    material.set(
+      member.subjectId,
+      chatContactMaterialAtCut({
+        store: scenario.garments,
+        actorId,
+        ...(resolved.worn === undefined ? {} : { worn: resolved.worn }),
+        visibility: resolved.partVisibility,
+        environment: scenario.environment,
+        clockMinutes: scenario.clockMinutes,
+        freeTextOutfit: wardrobeState.outfit,
+        wornItemIds: wardrobeState.wornItemIds,
+        ...(sink === undefined ? {} : { sink }),
+      }).material,
+    );
+  }
+
+  const playerWardrobe = await resolvePlayerWardrobe(
+    scenario.playerState,
+    handle.ownerId,
+    handle.playerPersona,
+    sink,
+    scenario.garments,
+  );
+  material.set(
+    CHAT_CONTACT_PLAYER_SUBJECT,
+    chatContactMaterialAtCut({
+      store: scenario.garments,
+      actorId: GARMENT_PLAYER_ACTOR,
+      ...(playerWardrobe.worn === undefined ? {} : { worn: playerWardrobe.worn }),
+      visibility: playerWardrobe.partVisibility,
+      environment: scenario.environment,
+      clockMinutes: scenario.clockMinutes,
+      freeTextOutfit: scenario.playerState.overlay,
+      wornItemIds: playerWornIds(scenario.playerState, handle.playerPersona),
+      ...(sink === undefined ? {} : { sink }),
+    }).material,
+  );
+  return material;
+}
+
+/** Does this plan hold a contact START — the only action that consults the garment cut? */
+function planNeedsMaterialCut(plan: NpcSceneChronologyPlan): boolean {
+  return plan.actions.some(
+    (action) => action.source === "tier2" && action.entry.candidate.kind === "start",
+  );
+}
+
 /**
  * The post-settle half. Fenced whole: any throw degrades to "no envelope this
  * exchange" with a log line, never a failed reply.
+ *
+ * `settle` is the exchange's report on its own writes — the wardrobe-change veto
+ * set, which no reload can recover (see `ChatNpcSceneSettleReport`).
  */
-export async function finishChatNpcSceneDecision(handle: ChatNpcSceneDecisionHandle): Promise<void> {
+export async function finishChatNpcSceneDecision(
+  handle: ChatNpcSceneDecisionHandle,
+  settle: ChatNpcSceneSettleReport,
+): Promise<void> {
   if (handle.kind === "noop") return;
   try {
-    await finishLive(handle);
+    await finishLive(handle, settle);
   } catch (error) {
     log.error("engine.chat", "npc scene decision leg failed", {
       chatId: handle.chatId,
@@ -809,7 +1042,10 @@ export async function finishChatNpcSceneDecision(handle: ChatNpcSceneDecisionHan
   }
 }
 
-async function finishLive(handle: Extract<ChatNpcSceneDecisionHandle, { kind: "live" }>): Promise<void> {
+async function finishLive(
+  handle: Extract<ChatNpcSceneDecisionHandle, { kind: "live" }>,
+  settle: ChatNpcSceneSettleReport,
+): Promise<void> {
   const sink = handle.sink;
 
   // --- The authoritative post-settle cut: reload FRESH ----------------------
@@ -885,13 +1121,23 @@ async function finishLive(handle: Extract<ChatNpcSceneDecisionHandle, { kind: "l
   });
 
   // --- The frozen floor keeps its authority ---------------------------------
-  // Detection and the fold run exactly as the legacy reply-side block runs
-  // them today, gated on CHAT_CONTACT_ACTIONS alone: the floor ships under
-  // that flag, and a shadow flag must never grant (or revoke) contact
-  // authority. Its commits ride the decision envelope's guarded transaction
-  // below instead of `appendChatContactEventsWithScene`, so the ended
-  // projection and the decision record land atomically.
+  // Detection runs exactly as the legacy reply-side block runs it today, gated
+  // on CHAT_CONTACT_ACTIONS alone: the floor ships under that flag, and a
+  // shadow flag must never grant (or revoke) contact authority. Its commits
+  // ride the decision envelope's guarded transaction below instead of
+  // `appendChatContactEventsWithScene`, so the ended projection and the decision
+  // record land atomically.
+  //
+  // The FOLD is where the modes part. In shadow (and floor-only) mode it happens
+  // right here, against the base scene, exactly as at HEAD. In authority mode it
+  // is deferred to the executor, which applies it at the ending's CHRONOLOGICAL
+  // position — that deferral is the whole reason the composite departure can
+  // read a distance from the scene before the contact that licensed it ends.
+  const authority = handle.mode === "authority" && chatContactActionsEnabled();
   const eventRef = chatReplyContactEventRef(handle.assistantMessageId);
+  let ending: ChatNpcContactEnding | null = null;
+  let floorSpan: NpcSceneReplySpan | null = null;
+  let floorSubjectRef: NpcRef | null = null;
   let floorInput: NpcSceneFloorInput | null = null;
   let commits: readonly ContactLifecycleCommit[] = [];
   let nextScene = baseScene;
@@ -901,26 +1147,31 @@ async function finishLive(handle: Extract<ChatNpcSceneDecisionHandle, { kind: "l
       name: member.name,
       aliases: member.aliases,
     }));
-    const ending = detectChatNpcContactEnding({ reply: handle.reply, characters });
+    ending = detectChatNpcContactEnding({ reply: handle.reply, characters });
     if (ending !== null) {
-      const ended = applyChatNpcContactEnding({
-        scene: baseScene,
-        ending,
-        eventRef,
-        storyTime: storyMinute,
-        ...(sink === undefined ? {} : { sink }),
-      });
-      commits = ended.commits;
-      if (commits.length > 0) nextScene = ended.scene;
-      const span = locateChatNpcEndingSentenceSpan({ reply: handle.reply, characters, ending });
+      if (!authority) {
+        const ended = applyChatNpcContactEnding({
+          scene: baseScene,
+          ending,
+          eventRef,
+          storyTime: storyMinute,
+          ...(sink === undefined ? {} : { sink }),
+        });
+        commits = ended.commits;
+        if (commits.length > 0) nextScene = ended.scene;
+      }
+      floorSpan = locateChatNpcEndingActionSpan({ reply: handle.reply, characters, ending });
       const subjectRef = handle.handles.refBySubjectId.get(ending.subjectId);
-      floorInput = {
-        reason: ending.reason,
-        subjectRef: subjectRef !== undefined && subjectRef !== NPC_SCENE_PLAYER_REF ? subjectRef : null,
-        span,
-        rows: contactRowRefsFor(commits, eventRef),
-        committed: commits.length > 0,
-      };
+      floorSubjectRef = subjectRef !== undefined && subjectRef !== NPC_SCENE_PLAYER_REF ? subjectRef : null;
+      if (!authority) {
+        floorInput = {
+          reason: ending.reason,
+          subjectRef: floorSubjectRef,
+          span: floorSpan,
+          rows: contactRowRefsFor(commits, eventRef),
+          committed: commits.length > 0,
+        };
+      }
     }
   }
 
@@ -973,21 +1224,93 @@ async function finishLive(handle: Extract<ChatNpcSceneDecisionHandle, { kind: "l
     }
   }
 
-  const evaluation = evaluateNpcSceneDecision({
-    reply: handle.reply,
-    digest: handle.digest,
-    presentNpcRefs,
-    parse,
-    floor: floorInput,
-    ...(sink === undefined ? {} : { sink }),
-  });
+  // --- Evaluate: dry in shadow, EXECUTED in authority -----------------------
+  // Admission and planning are shared; only the last step forks. In authority
+  // mode the executor owns presence integration, the ordered walk, and every
+  // commit, and its final scene becomes the CAS's `next` — so the presence
+  // endings, the floor's endings, and the tier-2 movement are one atomic write
+  // with the envelope that explains them.
+  let slots: NpcSceneDecisionPayload["slots"];
+  let actions: readonly NpcSceneDecisionAction[];
+  let drops: readonly NpcSceneDecisionDrop[];
+  if (authority) {
+    const admission = admitNpcSceneDecision({
+      reply: handle.reply,
+      digest: handle.digest,
+      presentNpcRefs,
+      parse,
+      floor:
+        ending === null || floorSpan === null
+          ? null
+          : { reason: ending.reason, subjectRef: floorSubjectRef, span: floorSpan },
+      ...(sink === undefined ? {} : { sink }),
+    });
+    // EVERY roster member, with the post-settle answer — the away ones are the
+    // whole point: presence precedence ends their contacts before any proposal
+    // resolves, and a member the roster never listed cannot be rescued at all.
+    const presentIds = new Set(presentMembers.map((member) => member.characterId));
+    const roster: NpcSceneExecutionMember[] = handle.roster.map((member) => ({
+      subjectId: member.subjectId,
+      present: presentIds.has(member.characterId),
+    }));
+    // The POST-settle garment cut, loaded only when an admitted start will read
+    // it. Fenced separately from the leg's outer catch: a wardrobe this cut could
+    // not load must cost the start its material (silence), never the movement
+    // authority and the envelope beside it.
+    let material: NpcSceneMaterialCut = new Map();
+    if (planNeedsMaterialCut(admission.plan)) {
+      try {
+        material = await loadNpcSceneMaterialCut(handle);
+      } catch (error) {
+        log.error("engine.chat", "npc scene decision material cut failed", {
+          chatId: handle.chatId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    const execution = executeNpcSceneDecision({
+      reply: handle.reply,
+      scene: baseScene,
+      plan: admission.plan,
+      floor: ending === null ? null : { ending, subjectRef: floorSubjectRef, span: floorSpan },
+      roster,
+      handles: handle.handles,
+      eventRef,
+      storyMinute,
+      material,
+      wardrobeChanged: settle.wardrobeChanged,
+      ...(sink === undefined ? {} : { sink }),
+    });
+    slots = admission.slots;
+    actions = execution.actions;
+    drops = [...admission.drops, ...execution.drops];
+    commits = execution.commits;
+    nextScene = execution.scene;
+  } else {
+    const evaluation = evaluateNpcSceneDecision({
+      reply: handle.reply,
+      digest: handle.digest,
+      presentNpcRefs,
+      parse,
+      floor: floorInput,
+      ...(sink === undefined ? {} : { sink }),
+    });
+    slots = evaluation.slots;
+    actions = evaluation.actions;
+    drops = evaluation.drops;
+  }
 
   const payload: NpcSceneDecisionPayload = {
     version: NPC_SCENE_DECISION_PAYLOAD_VERSION,
-    slots: evaluation.slots,
-    actions: [...evaluation.actions],
-    drops: [...evaluation.drops],
-    contactRows: floorInput === null ? [] : floorInput.rows.map((row) => ({ ...row })),
+    slots,
+    actions: [...actions],
+    drops: [...drops],
+    // Every ledger row this decision writes, in row order — the presence
+    // endings' rows included, because they ride the same event ref and the same
+    // transaction as the floor's. Sliced to the payload's cap: an over-cap list
+    // would degrade the whole payload on read, and the ledger rows themselves
+    // are the authoritative record either way.
+    contactRows: contactRowRefsFor(commits, eventRef).slice(0, NPC_SCENE_DECISION_MAX_CONTACT_ROWS),
     telemetry,
   };
   const envelope: ChatNpcSceneDecisionEnvelope = {
