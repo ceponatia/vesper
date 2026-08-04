@@ -4,7 +4,6 @@ import { adapterInvalid, adapterSupported, adapterUnavailable, affordanceSubject
 import {
   CONTACT_ACTION_INVALID,
   CONTACT_ACTOR_CONTROL_UNAVAILABLE,
-  CONTACT_ELIGIBILITY_UNAVAILABLE,
   CONTACT_GEOMETRY_UNAVAILABLE,
   CONTACT_MATERIAL_UNAVAILABLE,
   CONTACT_PERMISSION_SCOPE_MISSING,
@@ -24,7 +23,6 @@ import {
   probeAttempt,
   probeBodySurface,
   probeControl,
-  probeEligibility,
   probeGeometry,
   probeLayer,
   probePolicy,
@@ -62,12 +60,11 @@ describe("contact attempt resolution", () => {
       expect(resolution.access.transmission.layerIds).toEqual(["sock"]);
     });
 
-    it("carries the three decisions onto the committable resolution", () => {
+    it("carries the decisions onto the committable resolution", () => {
       const resolution = run({ intent: { actionKind: "romantic" }, context: { policy: probePolicy("allowed") } });
       expect(resolution.status).toBe("committable");
       if (resolution.status !== "committable") return;
       expect(resolution.actorControl.status).toBe("allowed");
-      expect(resolution.participantEligibility.status).toBe("eligible");
       expect(resolution.policy.status).toBe("allowed");
     });
 
@@ -293,40 +290,6 @@ describe("contact attempt resolution", () => {
   });
 
   describe("who may be touched", () => {
-    it("rejects a participant the product ruled ineligible", () => {
-      const resolution = run({
-        intent: { actionKind: "romantic" },
-        context: { participantEligibility: probeEligibility("ineligible") },
-      });
-      expect(resolution).toMatchObject({ status: "rejected", reason: "participant_ineligible" });
-    });
-
-    it("falls silent on unresolved eligibility rather than guessing or refusing", () => {
-      const sink = new DiagnosticCollector();
-      const resolution = run(
-        { intent: { actionKind: "romantic" }, context: { participantEligibility: probeEligibility("unresolved") } },
-        sink,
-      );
-      expect(resolution).toMatchObject({ status: "unresolved", reason: "participant_eligibility_unresolved" });
-      expect(codes(sink)).toEqual([CONTACT_ELIGIBILITY_UNAVAILABLE]);
-    });
-
-    it("falls silent on an eligibility answer that covers only one participant", () => {
-      const resolution = run({
-        intent: { actionKind: "romantic" },
-        context: { participantEligibility: probeEligibility("eligible", [PROBE_ACTOR]) },
-      });
-      expect(resolution).toMatchObject({ status: "unresolved", reason: "participant_eligibility_unresolved" });
-    });
-
-    it("does not demand eligibility for ordinary affectionate contact", () => {
-      const resolution = run({
-        intent: { actionKind: "affectionate" },
-        context: { participantEligibility: probeEligibility("unresolved", []) },
-      });
-      expect(resolution.status).toBe("committable");
-    });
-
     it.each([
       ["denied", "permission_denied"],
       ["withdrawn", "permission_withdrawn"],
@@ -363,13 +326,13 @@ describe("contact attempt resolution", () => {
       expect(resolution.status).toBe("committable");
     });
 
-    it("needs neither permission nor eligibility to touch an object", () => {
+    it("needs no permission to touch an object", () => {
       const resolution = run({
         intent: {
           actionKind: "romantic",
           target: { kind: "object", entityId: contactEntityId("wall_1"), surfaceId: "surface" },
         },
-        context: { policy: probePolicy("unresolved"), participantEligibility: probeEligibility("unresolved", []) },
+        context: { policy: probePolicy("unresolved") },
       });
       expect(resolution.status).toBe("committable");
     });
@@ -380,7 +343,7 @@ describe("contact attempt resolution", () => {
           actionKind: "intimate",
           target: probeBodySurface(PROBE_ACTOR, "feet", "arch"),
         },
-        context: { policy: probePolicy("denied"), participantEligibility: probeEligibility("ineligible") },
+        context: { policy: probePolicy("denied") },
       });
       expect(resolution.status).toBe("committable");
     });
@@ -543,7 +506,6 @@ describe("contact attempt resolution", () => {
       for (const reason of [
         "actor_control_unresolved",
         "target_agency_unresolved",
-        "participant_eligibility_unresolved",
         "permission_unresolved",
       ] as const) {
         expect(contactUnresolvedReasons).toContain(reason);
@@ -552,12 +514,11 @@ describe("contact attempt resolution", () => {
 
     it("keeps every answered refusal in the rejection vocabulary", () => {
       // The mirror law: a denial, a withdrawal, a grant that does not cover
-      // this, an ineligible participant, and an unreachable surface are all
-      // ANSWERS, and silence would throw away a beat the fiction owns.
+      // this, and an unreachable surface are all ANSWERS, and silence would
+      // throw away a beat the fiction owns.
       for (const reason of [
         "actor_control_denied",
         "target_agency_denied",
-        "participant_ineligible",
         "permission_denied",
         "permission_withdrawn",
         "permission_scope_missing",
@@ -570,7 +531,6 @@ describe("contact attempt resolution", () => {
     it("emits a diagnostic for every unresolved authority and none for a refusal", () => {
       const silent: Parameters<typeof run>[0][] = [
         { context: { actorControl: probeControl("denied") } },
-        { intent: { actionKind: "romantic" }, context: { participantEligibility: probeEligibility("ineligible") } },
         { intent: { actionKind: "romantic" }, context: { policy: probePolicy("denied") } },
         { context: { geometry: adapterSupported(probeGeometry("out_of_reach")) } },
       ];
@@ -582,7 +542,6 @@ describe("contact attempt resolution", () => {
 
       const reported: Parameters<typeof run>[0][] = [
         { context: { actorControl: probeControl("unresolved") } },
-        { intent: { actionKind: "romantic" }, context: { participantEligibility: probeEligibility("unresolved") } },
         { intent: { actionKind: "romantic" }, context: { policy: probePolicy("unresolved") } },
         {
           context: {

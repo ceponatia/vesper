@@ -1259,13 +1259,11 @@ export interface ChatContactAttemptInput {
 /**
  * Resolve one detected act against the scene.
  *
- * Two of the four permissions are stated `not_required`, and that is honest
- * rather than convenient: affectionate contact needs neither an adult
- * eligibility pass nor an interaction-permission grant (owner ruling, 2026-07-30
- * — `contactActionRequiresAdultEligibility` / `contactActionRequiresPermission`),
- * so the resolver never consults either read. They ride the committed record
- * anyway, where they say exactly what happened: nobody was asked, because for
- * this action kind nobody had to be.
+ * The permission read is stated `not_required`, and that is honest rather than
+ * convenient: affectionate contact needs no interaction-permission grant (owner
+ * ruling, 2026-07-30 — `contactActionRequiresPermission`), so the resolver never
+ * consults it. It rides the committed record anyway, where it says exactly what
+ * happened: nobody was asked, because for this action kind nobody had to be.
  *
  * `targetAgencies` is empty because the act moves ONE body — the player's hand.
  * Nothing is proposed on the other person's side, so there is no movement of
@@ -1315,11 +1313,6 @@ export function resolveChatContactAttempt(input: ChatContactAttemptInput): Conta
   const context: ContactActionContext = {
     actorControl: chatActorControl(scene, act.actorSubject),
     targetAgencies: [],
-    participantEligibility: {
-      status: "not_required",
-      participantIds: [act.actorSubject, act.targetSubject],
-      evidence: [affordanceEvidence("adapter", "chat.contact.eligibility", "affectionate_not_gated")],
-    },
     policy: {
       status: "not_required",
       scopes: [],

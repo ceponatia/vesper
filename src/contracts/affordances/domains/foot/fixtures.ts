@@ -117,9 +117,9 @@ export interface FootContactFixtureInput {
 /**
  * A palm on a foot, resolved and committed through the real contact gate.
  *
- * The action kind is `affectionate` by default: it needs no adult-eligibility
- * proof and no permission owner, both of which legacy chat cannot produce. That
- * is the ruled starting point, not a stand-in — the owner ruled 2026-07-30
+ * The action kind is `affectionate` by default: it needs no permission owner,
+ * which legacy chat cannot produce. That is the ruled starting point, not a
+ * stand-in — the owner ruled 2026-07-30
  * (romantic-contact-affordances.audit.md §"Owner decisions needed" 1) that
  * romantic contact is NEVER relabeled to make a trial commit, and that a
  * genuinely affectionate case is the right first integration. A fixture asking
@@ -154,11 +154,6 @@ export function committedFootContact(input: FootContactFixtureInput): CommittedC
     context: {
       actorControl: { status: "allowed", actorId: FOOT_FIXTURE_ACTOR, evidence: [] },
       targetAgencies: [],
-      participantEligibility: {
-        status: "eligible",
-        participantIds: [FOOT_FIXTURE_ACTOR, FOOT_FIXTURE_SUBJECT],
-        evidence: [],
-      },
       policy: { status: "allowed", scopes: ["affectionate_touch"], evidence: [] },
       geometry: adapterSupported({ reach: "in_contact", evidence: [] }),
       sourceSupport: adapterSupported({ mobility: "free", supportRole: "free", evidence: [] }),

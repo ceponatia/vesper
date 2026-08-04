@@ -3,12 +3,10 @@ import { deepFreeze, mergeAffordanceEvidence, type AffordanceStoryTime } from ".
 import { CONTACT_AUTHORIZATION_LAPSED, CONTACT_LIFECYCLE_INVALID } from "./diagnostics";
 import {
   CONTACT_ACTION_SCOPE,
-  contactActionRequiresAdultEligibility,
   contactActionRequiresPermission,
   type ContactInteractionPolicyRead,
-  type ContactParticipantEligibilityRead,
 } from "./decisions";
-import { contactPairKey, contactParticipantIds, isInterpersonalContact } from "./surfaces";
+import { contactPairKey, isInterpersonalContact } from "./surfaces";
 import { deriveContactId, type ContactEventRef, type ContactId } from "./identity";
 import {
   composeContactMaterial,
@@ -54,7 +52,7 @@ import type {
  *
  * 1. **Start identity is immutable.** `contactId`, `pairKey`, `startedAt`,
  *    `startedByEventRef`, `actorId`, `actionKind`, `source`, `target`, and the
- *    four authorization records belong to the contact that BEGAN. The pair key is
+ *    three authorization records belong to the contact that BEGAN. The pair key is
  *    order-independent, so the same touch can legitimately be re-asserted from
  *    the other side — and taking the new assertion's orientation would silently
  *    rewrite who was touching whom for every observation downstream. An
@@ -168,7 +166,6 @@ type ContactStartIdentity = Pick<
   | "target"
   | "actorControl"
   | "targetAgencies"
-  | "participantEligibility"
   | "policy"
 >;
 
@@ -244,7 +241,6 @@ function withSnapshot(
     implicitAdjustments: snapshot.implicitAdjustments,
     actorControl: identity.actorControl,
     targetAgencies: identity.targetAgencies,
-    participantEligibility: identity.participantEligibility,
     policy: identity.policy,
     evidence: snapshot.evidence,
   };
@@ -268,7 +264,6 @@ function startIdentity(input: {
     target: intent.target,
     actorControl: input.resolution.actorControl,
     targetAgencies: input.resolution.targetAgencies,
-    participantEligibility: input.resolution.participantEligibility,
     policy: input.resolution.policy,
   };
 }
@@ -761,7 +756,6 @@ export function endAllContacts(request: {
  */
 export interface ContactAuthorizationRead {
   readonly contactId: ContactId;
-  readonly participantEligibility: ContactParticipantEligibilityRead;
   readonly policy: ContactInteractionPolicyRead;
 }
 
@@ -779,32 +773,22 @@ export interface ContactAuthorizationSweepRequest {
  *
  * `policy_withdrawn` is reserved for a permission owner that ANSWERED and said
  * no — denied, withdrawn, or no longer covering the action's scope. Everything
- * else that fails closed (nobody answered, eligibility lapsed or stopped
- * covering a participant) is `state_invalidated`: the contact is over either
- * way, and the two reasons keep "she withdrew it" distinguishable from "we could
- * not ask" in the durable record.
+ * else that fails closed (nobody answered at all, or the answer that came back
+ * was unresolved) is `state_invalidated`: the contact is over either way, and
+ * the two reasons keep "she withdrew it" distinguishable from "we could not ask"
+ * in the durable record.
  */
 function authorizationLapse(
   contact: CommittedContactRead,
   read: ContactAuthorizationRead | undefined,
 ): ContactEndReason | undefined {
   if (!isInterpersonalContact(contact.source, contact.target)) return undefined;
-  const needsPermission = contactActionRequiresPermission(contact.actionKind);
-  const needsEligibility = contactActionRequiresAdultEligibility(contact.actionKind);
-  if (!needsPermission && !needsEligibility) return undefined;
+  if (!contactActionRequiresPermission(contact.actionKind)) return undefined;
   if (read === undefined) return "state_invalidated";
 
-  if (needsPermission) {
-    if (read.policy.status === "denied" || read.policy.status === "withdrawn") return "policy_withdrawn";
-    if (read.policy.status !== "allowed") return "state_invalidated";
-    if (!read.policy.scopes.includes(CONTACT_ACTION_SCOPE[contact.actionKind])) return "policy_withdrawn";
-  }
-
-  if (needsEligibility) {
-    const participants = contactParticipantIds(contact.source, contact.target);
-    const covered = participants.every((id) => read.participantEligibility.participantIds.includes(id));
-    if (read.participantEligibility.status !== "eligible" || !covered) return "state_invalidated";
-  }
+  if (read.policy.status === "denied" || read.policy.status === "withdrawn") return "policy_withdrawn";
+  if (read.policy.status !== "allowed") return "state_invalidated";
+  if (!read.policy.scopes.includes(CONTACT_ACTION_SCOPE[contact.actionKind])) return "policy_withdrawn";
   return undefined;
 }
 
@@ -814,10 +798,10 @@ function authorizationLapse(
  * The owner's ruling, in one function: withdrawal of an applicable permission
  * must END or BLOCK the affected contact. `resolveContactAttempt` is the BLOCK
  * half — a withdrawn grant never produces a committable resolution — and this is
- * the END half, for contacts that are already live. Contacts whose kind needs
- * neither permission nor eligibility (incidental, casual, affectionate touch;
- * self-contact; contact with an object) are untouched, exactly as the resolver
- * never demanded a grant for them in the first place.
+ * the END half, for contacts that are already live. Contacts whose kind needs no
+ * permission (incidental, casual, affectionate touch; self-contact; contact with
+ * an object) are untouched, exactly as the resolver never demanded a grant for
+ * them in the first place.
  *
  * **A sweep older than a contact leaves it alive** (law 4, same ruling as
  * `endAllContacts`). The sweep is a read of what is true NOW, so a sweep stamped

@@ -986,7 +986,6 @@ function contactAttempt(
     actorControl: { status: "allowed", actorId: PROBE_PLAYER, evidence: [] },
     // Nothing but the actor moves, so no target's own authority is engaged.
     targetAgencies: [],
-    participantEligibility: { status: "not_required", participantIds: [], evidence: [] },
     policy: { status: "not_required", scopes: [], evidence: [] },
     geometry: sceneGeometryRead({ state, source, target }),
     sourceSupport: sceneSupportRead(state, source),
