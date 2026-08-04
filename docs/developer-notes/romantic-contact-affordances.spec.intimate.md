@@ -8,23 +8,9 @@ Status: technical companion to
 
 This domain applies the
 [shared contact core](romantic-contact-affordances.spec.contact-core.md) to
-adult intimate contact. It handles only anatomy present in the character's body
-configuration and only after the lane's authoritative adult-eligibility,
+consent-gated intimate contact. It handles only anatomy present in the
+character's body configuration and only after the lane's authoritative
 actor-control, consent, exposure, and point-of-view checks.
-
-The existing `isMinorAge` fence is mandatory but not sufficient as a positive
-adult proof: it rejects known numeric minors while unknown, nonnumeric,
-fantasy-scaled, and player ages need an explicit eligibility answer. **The
-owner ruled 2026-07-30** (recorded in the
-[audit](romantic-contact-affordances.audit.md#owner-decisions-needed)): an
-explicit `adult | minor | unresolved` declaration, independent of
-numeric/display age, with every participant positively `adult`. **That
-declaration was rolled back 2026-08-03**
-([rollback note](finished/adult-eligibility.plan.md) — scope creep, and
-species-scaled ages make a flat human 18 the wrong adult test), so what
-provides the positive proof is an open owner question again. This domain
-remains unshippable until a re-planned eligibility source answers it for
-every participant.
 
 The domain calculates physical and sensory observations. It never decides or
 infers desire, consent, attraction, pleasure, orgasm, withdrawal, resistance,
@@ -125,7 +111,6 @@ interface IntimateAccessRead {
   materialBetween: readonly GarmentLayerRead[];
   contactPath: ContactPathRead;
   visualPath: PerceptionPathRead;
-  participantEligibilityRef: ParticipantEligibilityDecisionRef;
   policyDecisionRef: PolicyDecisionRef;
   evidence: readonly AffordanceEvidence[];
 }
@@ -138,11 +123,10 @@ Rules:
 - sheer visibility does not imply tactile access;
 - displacement applies to the garment part and body locus actually affected;
 - internal access requires a compatible explicit action, aligned path,
-  committed exposure, adult-eligibility pass, and policy pass;
+  committed exposure, and policy pass;
 - a general intimate-scene signal is not sufficient evidence for specific
   contact or access;
-- missing eligibility, clothing, path, or policy evidence degrades toward
-  blocked.
+- missing clothing, path, or policy evidence degrades toward blocked.
 
 ## Phenomena
 
@@ -295,7 +279,7 @@ Validates that the action semantics match the physical frame:
 - external versus internal destination is correct;
 - motion direction/path remains compatible;
 - required support and free movement exist;
-- actor control and adult eligibility cover every participant;
+- actor control covers the initiating participant;
 - consent/policy scope covers the action.
 
 It yields a resolver constraint or diagnostic, not a prompt claim about a
@@ -322,7 +306,7 @@ at most one relevant sensory cue, not a catalog.
 2. Same garment, sheer but not displaced: visual allowance may change; direct
    tactile access does not.
 3. Garment explicitly displaced after policy pass: direct external contact
-   becomes eligible only at the exposed locus and after adult eligibility.
+   becomes possible only at the exposed locus.
 4. Direct contact with dry current state: pressure/texture may resolve; glide
    must not become slippery.
 5. Same contact after authoritative product/lubrication state: the calibrated
@@ -341,8 +325,6 @@ at most one relevant sensory cue, not a catalog.
 ## Leak-prevention and property tests
 
 - absent/body-config-disabled region cannot be targeted or narrated;
-- a known minor always fails intimate access;
-- unresolved adult eligibility for any participant fails intimate access;
 - universal sensitive regions still require exposure/policy gates;
 - intimate scene signal without committed contact produces no contact cue;
 - high arousal without physiology-owned surface state produces no wetness or
