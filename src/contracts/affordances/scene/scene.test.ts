@@ -33,6 +33,8 @@ import {
   emptySceneState,
   sceneParticipant,
   sceneStateOf,
+  withoutAllScenePairRelations,
+  withoutScenePairRelations,
   withSceneContacts,
   withSceneParticipant,
   withSceneProximity,
@@ -1083,3 +1085,71 @@ describe("purity", () => {
     expect(JSON.stringify(forwards)).toBe(JSON.stringify(backwards));
   });
 });
+
+describe("leaving the room", () => {
+  it("drops both directions of a departing body's distance and orientation", () => {
+    const before = probeScene();
+    expect(before.proximity).toHaveLength(1);
+    expect(before.facing).toHaveLength(2);
+
+    const after = withoutScenePairRelations(before, PROBE_NPC);
+    // A distance is a claim about two bodies in one room; the body left, so the
+    // claim is not stale, it is about nothing. Both the pair's band and BOTH
+    // directions of facing go — including the player's orientation toward a
+    // person who is no longer there to be faced.
+    expect(after.proximity).toEqual([]);
+    expect(after.facing).toEqual([]);
+  });
+
+  it("keeps the participant itself — control, posture and support are facts about one body", () => {
+    const after = withoutScenePairRelations(probeScene(), PROBE_NPC);
+    const npc = sceneParticipant(after, PROBE_NPC);
+    expect(npc).toBeDefined();
+    expect(npc?.control?.value).toBe("npc_controlled");
+    expect(npc?.posture).toBeDefined();
+  });
+
+  it("leaves unrelated pairs alone", () => {
+    const third = affordanceSubjectId("scene_probe_third");
+    const state = withSceneProximity(withSceneParticipant(probeScene(), probeParticipant(third)), {
+      subjectId: PROBE_PLAYER,
+      otherId: third,
+      band: probeFact("near"),
+    });
+    const after = withoutScenePairRelations(state, PROBE_NPC);
+    expect(after.proximity).toEqual([{ subjectId: PROBE_PLAYER, otherId: third, band: probeFact("near") }]);
+  });
+
+  it("returns the same state by reference when the body had no relations", () => {
+    const state = probeScene({ proximity: null, facing: null });
+    expect(withoutScenePairRelations(state, PROBE_NPC)).toBe(state);
+  });
+
+  it("clears every pair when the whole chat changes place or skips time", () => {
+    const after = withoutAllScenePairRelations(probeScene());
+    expect(after.proximity).toEqual([]);
+    expect(after.facing).toEqual([]);
+    // The bodies stay placed; only what was true BETWEEN them goes.
+    expect(after.participants).toHaveLength(2);
+    expect(after.supports).toHaveLength(1);
+  });
+
+  it("clears a relation naming a body the roster no longer carries", () => {
+    // The case a loop over current participants would miss — and the one that
+    // matters most, because a stale distance to somebody nobody lists is the
+    // hardest to notice.
+    const ghost = affordanceSubjectId("scene_probe_ghost");
+    const state = withSceneProximity(probeScene(), {
+      subjectId: PROBE_PLAYER,
+      otherId: ghost,
+      band: probeFact("touching"),
+    });
+    expect(withoutAllScenePairRelations(state).proximity).toEqual([]);
+  });
+
+  it("returns the same state by reference when there is nothing to clear", () => {
+    const state = probeScene({ proximity: null, facing: null });
+    expect(withoutAllScenePairRelations(state)).toBe(state);
+  });
+});
+
