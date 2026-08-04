@@ -20,6 +20,7 @@ import {
   pacedTextReveal,
   readBody,
   userRateLimitRejection,
+  withOwnedChat,
   withUser,
 } from "@/server/api";
 import { characterChats, characterChatMessages, characterChatState, db } from "@/server/db";
@@ -265,13 +266,13 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
 });
 
 /** POST /api/chats/:chatId — submit one exchange and stream the reply as plain text. */
-export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
+export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof loadOwnedChat>>>>(
+  (user, params) => loadOwnedChat(params.chatId, user.id),
+  async (user, owned, req: NextRequest, ctx) => {
   const { chatId } = await ctx.params;
   const body = await readBody(req, sendBodySchema);
   if (!body.ok) return body.response;
 
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
   if (owned.chat.archivedAt) return jsonError("chat_archived", "this conversation is archived; restore it to continue", 409);
 
   // Re-running a turn the caller already has is the cheapest thing to spam and
@@ -479,7 +480,9 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
       "x-accel-buffering": "no",
     },
   });
-}, { limit: "chat" });
+  },
+  { limit: "chat" },
+);
 
 /** PATCH /api/chats/:chatId — rename, archive, or restore. */
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
