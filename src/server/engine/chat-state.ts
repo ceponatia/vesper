@@ -2129,6 +2129,22 @@ export async function finalizeChatState(input: {
   selfieSend: boolean;
   /** The archivist's confirmed presence transitions (ensemble only; [] otherwise). `where` = an away departure's destination phrase. */
   presenceChanges: readonly { name: string; presence: "present" | "away"; where?: string }[];
+  /**
+   * Did this exchange's folds actually rewrite the PRIMARY character's / the
+   * PLAYER's worn list? Reported because only the writer knows: the store carries
+   * the final clothes and nothing about when they changed, and the reply-scene
+   * contact leg refuses to date a touch against a wardrobe that moved during the
+   * same reply (actor-control spec §"Resolution laws → Contact start").
+   *
+   * The comparison is the PROJECTION's, not the proposal's — the same rule the
+   * ensemble members' `memberWornChanges` uses — so the free-text outfit fold,
+   * the typed garment operations, and the lazy materialization that first models
+   * an actor all report alike. Materialization reporting a change is a
+   * conservative false positive by design: it costs one reply's contact start on
+   * the exchange that first models a wardrobe, and the alternative is a material
+   * claim nobody can date.
+   */
+  wardrobeChanged: { character: boolean; player: boolean };
 }> {
   // Character-fidelity slices 7-10: arm the archivist's voice reads (voiceExemplar /
   // characterSlip) with a compact voice reference, and its trait-shift proposals with the
@@ -2756,16 +2772,45 @@ export async function finalizeChatState(input: {
   // the enqueue and the key are independent gates. Both are wired now, off the same
   // fingerprint (worn instance set + structural bands + wetness from `wet` up +
   // deposit/damage presence). A damp→dry drift moves neither.
-  const lookChanged = chatGarmentLookChanged({
+  // Per-actor rather than one combined call, because the wardrobe-chronology
+  // veto below needs to know WHOSE look moved — the image refresh only needs
+  // "anyone's".
+  const characterLookChanged = chatGarmentLookChanged({
     before: input.scenario.garments,
     after: garmentStore,
-    actorIds: [garmentActorForCharacter(input.characterId), GARMENT_PLAYER_ACTOR],
+    actorIds: [garmentActorForCharacter(input.characterId)],
     atMinutes: input.scenario.clockMinutes,
   });
+  const playerLookChanged = chatGarmentLookChanged({
+    before: input.scenario.garments,
+    after: garmentStore,
+    actorIds: [GARMENT_PLAYER_ACTOR],
+    atMinutes: input.scenario.clockMinutes,
+  });
+  const lookChanged = characterLookChanged || playerLookChanged;
   if (outfitChanged || lookChanged || (archivist.value?.attributeChanges.length ?? 0) > 0) {
     void enqueueChatLookImage({ chatId: input.chatId, characterId: input.characterId });
   }
-  return { bigMoment, selfieSend: selfieKind !== null, presenceChanges };
+  return {
+    bigMoment,
+    selfieSend: selfieKind !== null,
+    presenceChanges,
+    // Two signals OR-ed per body, because they see different change vectors: the
+    // worn-id comparison catches set changes on a wardrobe the look key cannot
+    // see (an actor with no garment instances — the lazy-materialization and
+    // legacy paths), while the look key catches STATE changes that move no id at
+    // all — a soaked blouse, a displaced hem, a damage mark — which shift the
+    // coverage a contact's material read would compose. Either one is a wardrobe
+    // this reply authoritatively moved, and a same-reply contact start must not
+    // date its material against it (actor-control spec §"Resolution laws →
+    // Contact start").
+    wardrobeChanged: {
+      character: wornItemIds.join(",") !== input.driftedState.wornItemIds.join(",") || characterLookChanged,
+      player:
+        playerState.wornItemIds.join(",") !== input.scenario.playerState.wornItemIds.join(",") ||
+        playerLookChanged,
+    },
+  };
 }
 
 /**
