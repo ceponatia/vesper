@@ -27,9 +27,6 @@ avatar/scene image pipelines all consume it.
 type CharacterProfile = {
   bio: string; personality: string; voice?: string;
   age: string;                                // real/chronological age, free text — narrator-facing (formatAge); ≠ the visual identity.apparent_age attribute
-  adultEligibilityDeclaration: "adult" | "minor" | "unresolved";
-                                              // authored gate input, independent of `age`; default/catch "unresolved" (no migration).
-                                              // Never rendered into a prompt, never forge-generated. See contracts/eligibility + adult-eligibility.spec.md
   speciesId: string;                          // registry id ("human" / "succubus" / "faerie" / …)
   heritageId?: string;                        // optional heritage within the species (overlay); absent ⇒ bare species
   bodyPlanId: string;                         // registry id ("humanoid" seeded)
@@ -65,10 +62,6 @@ The player as a library entity (`contracts/players/persona-profile.ts`, persona-
 *you* are in a chat, with a body and a wardrobe but no personality/disposition/schedule (the narrator
 never writes the player's lines). Carries bio, voice, `intimacy` (inverted semantics — what the player
 *responds to*), species/heritage/bodyPlan, `intimateRegions`, `bodyFeatures`, `attributes`, and `outfits`.
-It also carries `adultEligibilityDeclaration` — the same schema the character profile holds, kept despite
-the narrow-pick rule because it is a gate input rather than narrator guidance, and the player is the second
-participant in every scene. `personaToCharacterProfile` copies it **explicitly**; the character schema's
-default would otherwise demote a declared-adult persona to `unresolved`.
 `PlayerPersona` is the prompt-facing projection every consumer reads through `resolveChatPersona`
 ([../auth.md](../auth.md)); it has no library `title` field.
 

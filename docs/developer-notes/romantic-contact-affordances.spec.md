@@ -76,7 +76,7 @@ the item-1.2 repairs, and production enablement. These labels are exclusive:
 | Capability | Status | Note |
 | --- | --- | --- |
 | Foot registry defaults + existing-body backfill | **registered in production** | Baselines are stored; the 2026-07-30 backfill completed and was idempotent |
-| Adult-eligibility declaration + resolver | **registered in production** | Stored and authored; declared minors arm the prompt fence |
+| Adult-eligibility declaration + resolver | **future design** | Shipped 2026-07-30, **rolled back 2026-08-03** ([rollback note](finished/adult-eligibility.plan.md)) — the eligibility source for romantic/intimate contact is an open owner question again |
 | Contact core (resolution, lifecycle, identity) | **registered in production** | The character-chat affectionate path resolves and commits through `src/contracts/affordances/contact/` |
 | Scene/body-relations owner | **registered in production** | Character chat seeds/reads proximity, facing, control, support, and active-contact projection |
 | Player affectionate-contact adapter | **registered in production** | Deterministic player movement/touch path, current-cut target coverage, resolver, guidance, and persistence |
@@ -98,7 +98,7 @@ not a statement of current wiring.
 | Capability | Character chat now | Successor chat | Consequence |
 | --- | --- | --- | --- |
 | Actor control and NPC agency | Player movement/touch is typed; NPC prose can deterministically end contact. General NPC movement/start/update is not authoritative yet. | Command/deliberation authority is stronger, but no regional contact adapter exists. | Item 3 must prove an explicit NPC actor per decision; prose alone never commits a voluntary action. |
-| Adult eligibility | Character declarations and resolver are live; affectionate touch is permission/eligibility-neutral. | Shares profile rules; no contact-specific adapter. | Romantic/intimate work still requires positive eligibility for every participant. |
+| Adult eligibility | The 2026-07-30 declaration + resolver were rolled back 2026-08-03; only the numeric `isMinorAge` fence remains, and affectionate touch is permission/eligibility-neutral. | Shares profile rules; no contact-specific adapter. | Romantic/intimate work still requires positive eligibility for every participant — its source needs re-planning. |
 | Consent/permission | Intimate-scene/touch-welcomeness signals are not grants. | Consent ledger is fail-closed. | Never label the chat signals equivalent to successor consent; wait for `romantic_touch`. |
 | Pose, reach, support, and proximity | Minimal scene owner and reach reads are live; seat/posture vocabulary remains incomplete. | No body-region pose/support owner. | Keep NPC posture/support outside item 3; unresolved geometry stays silence/constraint. |
 | Active body-surface contact | Affectionate contact has typed lifecycle, durable rows, and a retake-safe projection. | No regional contact lifecycle. | Character chat remains the first proof; successor parity is separate. |

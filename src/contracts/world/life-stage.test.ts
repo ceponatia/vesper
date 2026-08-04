@@ -33,19 +33,12 @@ describe("life-stage registry (character-fidelity.plan.md slices 1–2)", () => 
     expect(lifeStageForAge("65")?.id).toBe("elder");
   });
 
-  it("parses bare numerals and the whitelisted 'years' spellings — everything else degrades to no band", () => {
+  it("parses only bare human-scaled numerals — everything else degrades to no band", () => {
     expect(lifeStageForAge(" 15 ")?.id).toBe("teen"); // whitespace-tolerant like formatAge
-    // The tight whitelist (owner instruction 2026-07-30): "N years" / "N years old".
-    expect(lifeStageForAge("15 years")?.id).toBe("teen");
-    expect(lifeStageForAge("15 years old")?.id).toBe("teen");
-    expect(lifeStageForAge("17 Years Old")?.id).toBe("teen"); // case-insensitive
-    expect(lifeStageForAge("34 years")?.id).toBe("adult");
     expect(lifeStageForAge("")).toBeUndefined();
     expect(lifeStageForAge("ancient")).toBeUndefined();
-    expect(lifeStageForAge("seventeen")).toBeUndefined(); // word numbers stay unparsed
-    expect(lifeStageForAge("312 years")).toBeUndefined(); // fantasy-scaled, unit or not
-    expect(lifeStageForAge("15 winters")).toBeUndefined(); // only the "years" unit
-    expect(lifeStageForAge("about 15 years")).toBeUndefined(); // no surrounding prose
+    expect(lifeStageForAge("312 years")).toBeUndefined();
+    expect(lifeStageForAge("15 years old")).toBeUndefined();
     expect(lifeStageForAge("-5")).toBeUndefined();
     expect(lifeStageForAge(String(LIFE_STAGE_MAX_HUMAN_YEARS + 1))).toBeUndefined(); // fantasy-scaled
   });
@@ -67,10 +60,7 @@ describe("life-stage registry (character-fidelity.plan.md slices 1–2)", () => 
     ).toBe(true);
     expect(isMinorAge("9")).toBe(true);
     expect(isMinorAge("17")).toBe(true);
-    expect(isMinorAge("17 years")).toBe(true);
-    expect(isMinorAge("17 years old")).toBe(true);
     expect(isMinorAge("18")).toBe(false);
-    expect(isMinorAge("18 years old")).toBe(false);
     expect(isMinorAge("ancient")).toBe(false);
     expect(isMinorAge("")).toBe(false);
   });

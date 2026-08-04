@@ -70,11 +70,15 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   scene→contact referential integrity, unavailable authority now `unresolved`
   (never narrated as refusal), and character publishing gained a confirmation
   with the fuller disclosure (images duplicated; unpublish recalls nothing).
-  All prerequisites are **done and archived**: the slice-2
+  Prerequisites: the slice-2
   [hardening pass / follow-ups](finished/romantic-contact-affordances.followups.md)
-  (complete 2026-07-31), the
-  [adult declaration](finished/adult-eligibility.plan.md) (shipped 2026-07-30),
-  and the pre-slice-3 foot facts + registration hardening (2026-07-30). Foot
+  (complete 2026-07-31) and the pre-slice-3 foot facts + registration
+  hardening (2026-07-30) are **done and archived**. The
+  [adult declaration](finished/adult-eligibility.plan.md) (shipped 2026-07-30)
+  was **rolled back 2026-08-03** (owner: scope creep — species-relative ages
+  mean a flat human 18 is the wrong adult test), so the positive
+  adult-eligibility source the romantic slice-3 items assumed no longer
+  exists and needs re-planning before those items proceed. Foot
   registry defaults, the Neon backfill, and deployment are **complete**, so
   production registration is no longer gated on corrections or data migration —
   only on reaching its place in the wiring order.

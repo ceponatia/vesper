@@ -146,18 +146,3 @@ describe("forgeCharacterFill (keyless demo path)", () => {
     expect(a).toEqual(b);
   });
 });
-
-describe("the authoring model never sees the adult-eligibility declaration", () => {
-  it("renderSheetConcept omits it entirely — it cannot be inferred from what it never read", () => {
-    const draft = draftWith((d) => {
-      d.name = "Mira";
-      d.profile.adultEligibilityDeclaration = "adult";
-      d.profile.bio = "Keeps the lighthouse.";
-      d.profile.age = "34";
-    });
-    const concept = renderSheetConcept(draft);
-    expect(concept).toContain("Bio: Keeps the lighthouse.");
-    expect(concept).not.toContain("adultEligibilityDeclaration");
-    expect(concept).not.toMatch(/eligib/iu);
-  });
-});

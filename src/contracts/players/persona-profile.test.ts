@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { characterProfileSchema, emptyCharacterProfile } from "../world/profile";
+import { emptyCharacterProfile } from "../world/profile";
 import { emptyPersonaProfile, personaProfileSchema, personaToCharacterProfile } from "./persona-profile";
 
 describe("personaProfileSchema", () => {
@@ -44,17 +44,6 @@ describe("personaProfileSchema", () => {
     expect(parsed.intimateRegions).toEqual(["penis"]);
   });
 
-  it("reads every stored persona as unresolved until someone declares (no backfill)", () => {
-    expect(emptyPersonaProfile().adultEligibilityDeclaration).toBe("unresolved");
-    // A row written before the field existed, and a row corrupted since.
-    expect(personaProfileSchema.parse({ bio: "written in 2026-07" }).adultEligibilityDeclaration).toBe("unresolved");
-    expect(personaProfileSchema.parse({ adultEligibilityDeclaration: "ADULT" }).adultEligibilityDeclaration).toBe(
-      "unresolved",
-    );
-    expect(personaProfileSchema.parse({ adultEligibilityDeclaration: "adult" }).adultEligibilityDeclaration).toBe(
-      "adult",
-    );
-  });
 });
 
 describe("personaToCharacterProfile (the one adapter)", () => {
@@ -93,16 +82,6 @@ describe("personaToCharacterProfile (the one adapter)", () => {
     expect(profile.voiceAnchors).toEqual(blank.voiceAnchors);
     expect(profile.microExemplars).toEqual(blank.microExemplars);
     expect(profile.playerRelationship).toEqual(blank.playerRelationship);
-  });
-
-  it("copies the adult-eligibility declaration explicitly — the default would silently demote it", () => {
-    const declared = personaProfileSchema.parse({ ...persona, adultEligibilityDeclaration: "adult" });
-    // What a DROPPED copy would produce: the character schema's own fail-closed default.
-    expect(characterProfileSchema.parse({ bio: declared.bio }).adultEligibilityDeclaration).toBe("unresolved");
-    // What the adapter must produce instead.
-    expect(personaToCharacterProfile(declared).adultEligibilityDeclaration).toBe("adult");
-    expect(personaToCharacterProfile(personaProfileSchema.parse({ adultEligibilityDeclaration: "minor" })).adultEligibilityDeclaration).toBe("minor");
-    expect(personaToCharacterProfile(persona).adultEligibilityDeclaration).toBe("unresolved");
   });
 
   it("produces a profile the character-shaped consumers can parse (no missing defaults)", () => {
