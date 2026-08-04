@@ -49,16 +49,20 @@ view threshold, branch-linked, and actor-mapped — the GET envelope's
 `chat.simRouted` flag), the POST fork resolves authority **once, before kind
 dispatch**: every operation has successor semantics or is refused, and the legacy
 pipeline (`submitChatMessage`) is unreachable for it (presentation-charter.plan.md
-§4; engine.spec.operations.md §39 rulings 18-19). The successor turn streams in the
-same plain-text/heartbeat shape as a legacy reply and the client's post-exchange
-transcript refetch reconciles the persisted rows.
+§4; engine.spec.operations.md §39 rulings 18-19). The successor response keeps the existing plain-text transport. It sends
+invisible heartbeats while world resolution, generation, and the full-cut audit
+run; after the audit accepts one telling, that approved prose is revealed in
+small paced chunks so the reply grows in the bubble instead of arriving as one
+blob. This is deliberately post-audit streaming, not raw provider-token
+streaming: a rejected hidden attempt must never leak before its correction.
+The client's post-exchange transcript refetch reconciles the persisted rows.
 
 | POST kind | Sim behavior | Response |
 | --------- | ------------ | -------- |
-| `send` | `runSimChatExchange` — land the player line, run input admission, advance the span, render a fresh cut, persist a new reply | heartbeat stream, prose |
-| `continue` | Real turn with **no player utterance** (ruling 19): no user row, no admission, span still advances (time moves), render omits the player-turn block | heartbeat stream, prose |
-| `open` | As `continue`, plus `simOpening` on the reply's `meta` (the opening-directive flag a later prompt slice reads) | heartbeat stream, prose |
-| `regenerate` / `rerun` | **Re-render the SAME committed cut** (ruling 18): resolve the cut id from the last reply's `meta.cutId` (fallback `latestCutIdForEngagement`), re-render fresh prose, replace the reply row in place (content + browsable `takes` + meta). NO time advance, NO admission, NO new rows | heartbeat stream, prose |
+| `send` | `runSimChatExchange` — land the player line, run input admission, advance the span, render a fresh cut, persist a new reply | heartbeat while resolving/auditing, then paced approved-prose chunks |
+| `continue` | Real turn with **no player utterance** (ruling 19): no user row, no admission, span still advances (time moves), render omits the player-turn block | heartbeat while resolving/auditing, then paced approved-prose chunks |
+| `open` | As `continue`, plus `simOpening` on the reply's `meta` (the opening-directive flag a later prompt slice reads) | heartbeat while resolving/auditing, then paced approved-prose chunks |
+| `regenerate` / `rerun` | **Re-render the SAME committed cut** (ruling 18): resolve the cut id from the last reply's `meta.cutId` (fallback `latestCutIdForEngagement`), re-render fresh prose, replace the reply row in place (content + browsable `takes` + meta). NO time advance, NO admission, NO new rows | heartbeat while resolving/auditing, then paced approved-prose chunks |
 | `action_beat`, or any kind with `action` set | **Refused** — legacy action chips have no successor semantics yet | 409 `sim_unsupported_operation` |
 | any kind with `attachmentIds` | **Refused** — vision reads aren't wired to the sim lane yet | 409 `sim_unsupported_operation` |
 
