@@ -249,7 +249,7 @@ affordance domain has no hidden aftermark timer.
 
 ### `foot.surface_transfer`
 
-Calculates transfer eligibility from contact, motion, pressure, permeability,
+Calculates whether transfer is possible from contact, motion, pressure, permeability,
 and source residue. It proposes an effect with source amount and target locus.
 Only a committed effect event makes the resulting residue observable.
 
