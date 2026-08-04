@@ -391,6 +391,21 @@ export interface ResolvedPlayerWardrobe {
   overlay: string;
   /** Per-row occlusion, same shape and same source as the character's (slice 6). */
   partVisibility: Record<string, WornVisibility>;
+  /**
+   * The coverage rows this resolve was computed from — the character twin's
+   * field, and the same three-valued contract (see `ResolvedChatWardrobe.worn`).
+   *
+   * `undefined` means the wardrobe could not be READ: an unauthored persona, a
+   * transient item-load failure, or an overlay-only look nobody modelled. `[]`
+   * means it was read and this body is wearing nothing — the seeded-then-emptied
+   * case the exposure branch below already treats as stripped.
+   *
+   * Added for the reply-scene contact leg (actor-control spec §"Resolution laws
+   * → Contact start": "the PLAYER can be the target — their wardrobe follows the
+   * same law"). Until an NPC could touch the player, nothing ever asked what lay
+   * over the player's own surfaces, so this side of the wardrobe had no consumer.
+   */
+  worn?: readonly WornItemInput[];
 }
 
 /**
@@ -451,6 +466,10 @@ export async function resolvePlayerWardrobe(
       wornItemIds: [],
       overlay,
       partVisibility: {},
+      // Only a body this resolve PROVED is wearing nothing gets an empty read;
+      // an unauthored persona or a failed item load stays unknown, so a contact
+      // material read through it falls silent rather than claiming bare skin.
+      ...(strippedAfterSeeding ? { worn: [] as readonly WornItemInput[] } : {}),
     };
   }
   const worn = toWornInputs(items);
@@ -462,5 +481,6 @@ export async function resolvePlayerWardrobe(
     wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
     overlay,
     partVisibility: partVisibilityOf(worn),
+    worn,
   };
 }

@@ -11,8 +11,15 @@ adversarial fixtures, the durable decision envelope with the guarded CAS
 transaction (migration 0094), and the shadow leg behind
 `CHAT_NPC_SCENE_DECISION_SHADOW` (default off; with both new flags off the
 lane is byte-identical to before). The shadow flag has **not** been enabled —
-the measurement window, its review, and the cost ruling remain, and the
-authority increments (4–6) are unbuilt by design.
+the measurement window, its review, and the cost ruling remain.
+
+**Delivery steps 4–6 are built (2026-08-04)**, behind
+`CHAT_NPC_SCENE_DECISIONS` (default off) and staged by
+`CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS`: increment 1 (movement),
+increment 2 (contact starts), and increment 3 (contact updates) all execute in
+`chat-npc-scene-execute.ts`. Building authority ahead of the shadow review is
+deliberate — the flags keep it dark — but **enabling** either flag still waits
+on the measured cost/latency envelope and the owner ruling.
 
 ## Scope and boundary
 
@@ -205,11 +212,51 @@ Presence has precedence over classifier output:
 
 1. A participant confirmed `away` cannot act or be a target. Every active
    contact involving them ends deterministically as `separated` before tier-2
-   proposals resolve.
+   proposals resolve, and their proximity and facing facts are dropped with
+   those contacts (see the continuous-co-presence ruling below).
 2. A participant confirmed `present` is seeded into the scene before movement
    or contact resolution; a newly arrived roster member may then act.
 3. A participant absent from the post-settle roster cannot be rescued by a
    name, pre-settle presence, or model output.
+
+### Pair relations require continuous co-presence (owner ruling, 2026-08-04)
+
+Proximity and facing are valid **only during continuous co-presence in the same
+scene**. The rule is lane-neutral and applies to the shipped player lane as well
+as this leg, because the alternative is internally contradictory: the same
+discontinuities already end the active contacts, and keeping the distance while
+ending the touch asserts both that the hand came off and that the two bodies are
+still within reach, with nothing having moved.
+
+Clear the affected pairwise relations when:
+
+- a participant becomes `away` — only the relations that participant is party to;
+- the current place changes — all pairwise relations;
+- an explicit story-clock skip occurs — all pairwise relations.
+
+Do **not** clear them for the ordinary per-turn clock tick: minutes passing
+inside one continuous scene is what a conversation is, and clearing on it would
+leave reach permanently unknown.
+
+Cleared proximity becomes **unknown** — never `distant` or any other invented
+value, so it reads exactly like a pair nobody ever placed. **Returning does not
+restore the old distance**; explicit movement or placement evidence must
+establish a new one.
+
+Implementation: `withoutScenePairRelations` / `withoutAllScenePairRelations`
+(scene contracts) behind one lane-neutral decision helper,
+`chatSceneAfterDiscontinuity`. The player leg applies it pre-prompt beside the
+skip/place-change contact sweep, reading the away half from the cut every touch
+that exchange resolves against; this leg applies the away half again at its own
+post-settle cut, so an NPC-authored touch never sees a departure the pre-prompt
+pass could not have known about yet.
+
+**Posture, support, and control are deliberately outside this repair, and it
+asserts nothing about whether they survive a departure.** They raise the same
+question — a support relation can anchor to furniture, or to another body, in
+the room just left — but answering it is a scene-model decision this narrow fix
+does not make, and the earlier draft's claim that they are simply "facts about
+one body" was too strong to stand as a permanent rule.
 
 The common reply-scene leg runs for every persisted nonempty assistant reply:
 initial openings, initiative reopeners, ordinary turns, continue beats, action
@@ -266,6 +313,34 @@ during this same reply, the start is dropped as
 existed at the contact's action offset. A later chronology design may lift this
 conservative rule; increment 2 does not guess.
 
+As built (2026-08-04):
+
+- `chatContactMaterialBetween` composes a list of sides — `source` first, then
+  `target` — renumbering `order` across them into one continuous stack and
+  prefixing each `layerId` with its side, so two `hands` reads (a glove and the
+  hand it lands on) can never collapse into one layer. Any side that is
+  `unavailable` makes the whole read unavailable.
+- The player leg stays ONE-SIDED (target only) through the same composer. It has
+  never modelled the player's own hand into coverage, and reading that side would
+  turn every touch by an unmodellable player into silence — a behavior change to
+  shipped authority that this work has no business making.
+- `chatActorControl` takes the control fact the origin requires
+  (`player_controlled` for a typed line, `npc_controlled` for a reply-scene
+  candidate); missing fact ⇒ `unresolved`, wrong fact ⇒ `denied`, for both.
+- The post-settle garment cut is derived by `chatContactMaterialAtCut`, the same
+  fenced derivation the pre-prompt player leg runs — two cuts, one derivation.
+  It is loaded ONLY when the chronology plan holds an admitted start; every other
+  reply pays nothing for it.
+- The wardrobe-change veto set is reported BY the settle rather than inferred
+  from the store: the ensemble members' worn-list folds, plus
+  `finalizeChatState`'s `wardrobeChanged` for the primary and the player. The
+  primary/player signal trips on worn-**set** changes and also on garment
+  **state** changes that move the per-actor look key (soak, displacement,
+  damage) — either moves the coverage a material read would compose, and a
+  final wardrobe cannot date either kind of change to the touch. It reaches
+  the finish half as `ChatNpcSceneSettleReport`; the opening branch passes an
+  empty set, because an opening beat writes no wardrobe at all.
+
 ### Contact update
 
 `contactRef` must still resolve to exactly one active contact whose immutable
@@ -286,6 +361,34 @@ adjustments, and start authorization byte-for-byte. Re-resolving a full contact
 attempt is forbidden for updates. An unchanged gesture produces the existing
 `contact_continued` no-row result.
 
+As built (2026-08-04):
+
+- `modulateContactGesture` (contact lifecycle contracts) is that operation and
+  the only path an NPC update may take. It carries a pressure, a motion, an
+  event ref, and a story minute, and physically cannot carry anything else: the
+  new snapshot is the projection's own snapshot with those two fields replaced,
+  laid back over the contact's identity by the same `withSnapshot` constructor a
+  resolution-driven update uses. It can neither start nor end anything — there
+  is no capacity path, no eviction, and no framing-change door.
+- Its outcome is a three-case union: `committed` (a `contact_updated` commit),
+  `continued` (a no-row `contact_continued`, with `reason` distinguishing
+  `gesture_unchanged` from `stale_assertion`), and `absent` (no active contact
+  under that id — no `contact` field at all, so a caller cannot read one off it).
+  Sameness is decided by the lifecycle's existing `contentKey`, and a story time
+  older than the contact is absorbed under law 3 exactly like a stale assertion.
+- The executor resolves `contactRef` through the digest handles to a durable id
+  (a handle map that cannot translate it records `ref_unresolved`, like an
+  unresolvable subject ref), then re-checks the contact in the EVOLVING scene:
+  present and active, `actorId` is the candidate NPC, source is that NPC's
+  `hands`, action kind is `affectionate`. Any mismatch is a `contact_conflict`
+  DROP whose `field` names what disagreed — never a promotion to a start.
+  A contact this same walk already ended (an away member's separation, the
+  frozen floor) therefore drops rather than resurrecting.
+- An update needs no wardrobe read at all, so `planNeedsMaterialCut` is
+  unchanged and the wardrobe-chronology veto stays start-only: preserving
+  `materialBetween` byte-for-byte is exactly what makes an update safe against a
+  post-settle garment cut a start would have to be vetoed over.
+
 ## Chronology and folding
 
 The fixed floor→movement→contact order is removed. Every admitted floor result
@@ -304,6 +407,16 @@ one composite departure: compute the allowable wider proximity from the scene
 **before that action's contact ends**, fold `separated` endings, then apply the
 prevalidated proximity intent. This preserves an active contact as closeness
 evidence without running the ending twice.
+
+As built (2026-08-04): every ordering span — the floor's included — is the
+exact **action phrase**, not its containing sentence. The floor's offsets come
+from replaying its own frozen patterns inside the located sentence
+(`locateChatNpcEndingActionSpan`), so an ending orders beside the other
+actions written in the same sentence ("Wren steps back, then rests her hand on
+your shoulder" orders the ending before the start) instead of swallowing them
+as ambiguous. The composite matches on phrase **overlap** by the same body —
+the same written action matched at two boundaries — rather than exact span
+equality, which the two matchers' differing anchor widths would never satisfy.
 
 The normalized ordered actions—not schema slot order—are what the durable
 envelope records.
@@ -379,6 +492,16 @@ Flags use the repository's literal `on` convention:
   behaves normally.
 - `CHAT_NPC_SCENE_DECISIONS=on` enables authority after the shadow gate and is
   effective only with `CHAT_CONTACT_ACTIONS=on`. Authority wins if both are on.
+- `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS` stages the increment order without
+  new booleans: a comma-separated subset of `movement,start,update` naming which
+  kinds authority may actually EXECUTE. Unset or blank means all three; unknown
+  tokens are ignored; a nonblank value naming no known kind grants nothing. It
+  gates execution only — classification, the four admission gates, presence
+  precedence, chronology planning, and the envelope's recorded `mode` are
+  identical either way, so an out-of-scope candidate is still admitted, ordered,
+  and recorded with `authority_scope_excluded` as its resolution detail. That is
+  what keeps the shadow-to-authority measurement continuous across a rollout
+  step.
 
 Before movement authority is enabled, shadow results must report trigger fire
 rate/misses, candidate acceptance and drop reasons, false positives/negatives on

@@ -329,6 +329,71 @@ export function withSceneFacing(state: SceneState, relation: SceneFacingRelation
 }
 
 /**
+ * PAIR RELATIONS ARE VALID ONLY DURING CONTINUOUS CO-PRESENCE (owner ruling,
+ * 2026-08-04).
+ *
+ * A proximity band and a facing direction are claims about two bodies sharing
+ * one place at one time. Three discontinuities break that continuity — a
+ * participant becoming `away`, the place changing, and an explicit story-clock
+ * skip — and each of them already ends the active contacts for the same
+ * reason. Keeping the distance while ending the touch is internally
+ * contradictory: it says the hand is no longer resting there AND that the two
+ * bodies are still within arm's reach of each other, with nothing having moved.
+ *
+ * Cleared means UNKNOWN, never a substituted band. A pair whose relation was
+ * dropped reads exactly like a pair nobody ever placed: `proximity_unknown`,
+ * and every attempt through it resolves `unresolved` — silence. Inventing
+ * `distant` on a departure would be this module deciding how far away the
+ * kitchen is.
+ *
+ * Returning does not restore anything. Re-entry re-establishes a distance only
+ * through explicit movement or placement evidence, which is the same bar a
+ * first placement has to clear.
+ *
+ * These two functions are the only REMOVALS this module offers, and the split
+ * is the ruling's own: one member leaving clears only the relations that member
+ * is party to (`withoutScenePairRelations`), while a whole-chat discontinuity —
+ * the place changed, hours passed — clears every pair
+ * (`withoutAllScenePairRelations`).
+ *
+ * **Posture, support, and control are deliberately left alone here, and this
+ * module makes no claim that they SHOULD survive a departure.** They plainly
+ * raise the same question — a support relation can anchor to furniture, or to
+ * another body, in the room that was just left — but answering it is a scene-
+ * model decision this narrow repair does not make. Leaving them untouched keeps
+ * the repair to the facts whose staleness is demonstrably wrong, rather than
+ * establishing a rule nobody has ruled on.
+ *
+ * Pure and total: a scene with nothing to drop comes back by reference, so a
+ * caller can apply either unconditionally without churning the projection.
+ */
+export function withoutScenePairRelations(state: SceneState, subjectId: AffordanceSubjectId): SceneState {
+  const proximity = state.proximity.filter(
+    (relation) => relation.subjectId !== subjectId && relation.otherId !== subjectId,
+  );
+  const facing = state.facing.filter(
+    (relation) => relation.subjectId !== subjectId && relation.towardId !== subjectId,
+  );
+  if (proximity.length === state.proximity.length && facing.length === state.facing.length) return state;
+  return sceneStateOf({ ...partsOf(state), proximity, facing });
+}
+
+/**
+ * Drop EVERY pair relation in the scene — the whole-chat discontinuity: the
+ * place changed, or the clock skipped (see `withoutScenePairRelations` for the
+ * ruling this implements).
+ *
+ * Not a loop over participants, because the relations that matter most are
+ * exactly the ones a participant list might miss: a row naming a body the
+ * current roster no longer carries is still a stale distance, and after the
+ * room changed there is no pair left whose band survived.
+ */
+export function withoutAllScenePairRelations(state: SceneState): SceneState {
+  if (state.proximity.length === 0 && state.facing.length === 0) return state;
+  return sceneStateOf({ ...partsOf(state), proximity: [], facing: [] });
+}
+
+/**
  * Swap in a contact projection the contact core produced.
  *
  * The one door between the two modules' state. This module never constructs,

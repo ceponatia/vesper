@@ -428,3 +428,18 @@ export type ContactLifecycleCommit =
 
 /** The one commit kind that removes a contact from the projection. */
 export type ContactEndedCommit = Extract<ContactLifecycleCommit, { kind: "contact_ended" }>;
+
+/**
+ * The two commits that leave a live contact's IDENTITY alone — it changed, or it
+ * did not.
+ *
+ * Named because the gesture-only lifecycle operation
+ * (`modulateContactGesture`) can produce nothing else, and saying so in its
+ * return type is what makes "an update never starts and never ends anything" a
+ * compile error rather than a rule somebody has to remember
+ * (romantic-contact-affordances.spec.actor-control.md §"Resolution laws →
+ * Contact update").
+ */
+export type ContactUpdatedCommit = Extract<ContactLifecycleCommit, { kind: "contact_updated" }>;
+export type ContactContinuedCommit = Extract<ContactLifecycleCommit, { kind: "contact_continued" }>;
+

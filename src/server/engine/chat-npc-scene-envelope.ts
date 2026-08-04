@@ -133,9 +133,18 @@ export type NpcSceneDecisionDropReason = (typeof npcSceneDecisionDropReasons)[nu
 
 /**
  * Where an admitted, ordered action came from: the frozen deterministic ending
- * floor, a tier-2 movement proposal, or a tier-2 contact proposal.
+ * floor, a tier-2 movement proposal, a tier-2 contact proposal, or the
+ * PRESENCE PRECEDENCE fold that ends an away participant's contacts before any
+ * tier-2 proposal resolves (spec §"Authoritative post-settle cut" 1).
+ *
+ * `presence_ending` is its own kind rather than a `floor_ending` with a detail,
+ * because the floor is a prose EXTRACTOR and this is not: nothing was read, a
+ * roster row said the body left, and an inspector reading "floor_ending" for it
+ * would be looking for a sentence that never existed. It is authority-mode only
+ * — shadow grants no presence-driven authority — so no shadow envelope carries
+ * one, and widening the enum leaves every stored payload parsing as before.
  */
-export const npcSceneDecisionActionKinds = ["floor_ending", "movement", "contact"] as const;
+export const npcSceneDecisionActionKinds = ["floor_ending", "presence_ending", "movement", "contact"] as const;
 export type NpcSceneDecisionActionKind = (typeof npcSceneDecisionActionKinds)[number];
 
 /**
@@ -160,10 +169,28 @@ const MODEL_MAX = 120;
 const EVENT_REF_MAX = 200;
 const MAX_ACTIONS = 24;
 const MAX_DROPS = 24;
-const MAX_CONTACT_ROWS = 24;
-const MAX_ROWS_PER_ACTION = 8;
-/** Byte cap on one action's carried commit/intent blob (serialized). */
-const COMMITTED_BLOB_MAX_BYTES = 4_096;
+/**
+ * List caps a WRITER must respect, exported for the same reason the blob cap
+ * is: the payload is inserted without a runtime parse, so an over-cap list
+ * would sail into the column and then fail `parseNpcSceneDecisionPayload` on
+ * every later read — degrading the WHOLE payload to empty. A writer with more
+ * rows than fit slices the reference list and says so in the action's detail;
+ * the ledger rows themselves are the authoritative record either way.
+ */
+export const NPC_SCENE_DECISION_MAX_CONTACT_ROWS = 24;
+export const NPC_SCENE_DECISION_MAX_ROWS_PER_ACTION = 8;
+const MAX_CONTACT_ROWS = NPC_SCENE_DECISION_MAX_CONTACT_ROWS;
+const MAX_ROWS_PER_ACTION = NPC_SCENE_DECISION_MAX_ROWS_PER_ACTION;
+/**
+ * Byte cap on one action's carried commit/intent blob (serialized).
+ *
+ * Exported because the WRITER has to respect it too: the payload is inserted
+ * without a runtime parse, so an oversized blob would sail into the column and
+ * then fail `parseNpcSceneDecisionPayload` on every later read — degrading the
+ * WHOLE payload to empty. A writer that cannot fit its provenance drops the
+ * blob and says so in the detail instead.
+ */
+export const NPC_SCENE_DECISION_COMMITTED_BLOB_MAX_BYTES = 4_096;
 
 /** sha256 hex, or "" when the field genuinely has nothing to fingerprint. */
 const hashOrEmptySchema = z.string().regex(/^(?:[0-9a-f]{64})?$/);
@@ -197,8 +224,11 @@ const committedBlobSchema = z.unknown().superRefine((value, ctx) => {
     ctx.addIssue({ code: "custom", message: "committed blob is not serializable" });
     return;
   }
-  if (serialized !== undefined && serialized.length > COMMITTED_BLOB_MAX_BYTES) {
-    ctx.addIssue({ code: "custom", message: `committed blob exceeds ${COMMITTED_BLOB_MAX_BYTES} bytes` });
+  if (serialized !== undefined && serialized.length > NPC_SCENE_DECISION_COMMITTED_BLOB_MAX_BYTES) {
+    ctx.addIssue({
+      code: "custom",
+      message: `committed blob exceeds ${NPC_SCENE_DECISION_COMMITTED_BLOB_MAX_BYTES} bytes`,
+    });
   }
 });
 
