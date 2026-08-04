@@ -110,6 +110,33 @@ describe("composite departure", () => {
     expect(composite.depart).toBe(departing);
   });
 
+  it("composites OVERLAPPING phrases — the production span shapes", () => {
+    // The floor's phrase includes its subject token ("Wren steps away" ⇒
+    // [30, 45)) while the verifier's phrase anchors its own lexicon ("steps
+    // away" ⇒ [34, 44)). The same written action at two boundaries must
+    // composite, not drop — equality would leave every real floor+depart pair
+    // uncomposited and the distance would never widen when the floor fires.
+    const floor = floorEntry(span(30, 45));
+    const departing = departEntry(span(34, 44));
+    const plan = planNpcSceneChronology({ floor, tier2: [departing] });
+    expect(plan.dropped).toHaveLength(0);
+    expect(plan.actions.map((action) => action.source)).toEqual(["composite_departure"]);
+    const composite = plan.actions[0];
+    if (composite?.source !== "composite_departure") throw new Error("expected composite");
+    expect(composite.depart).toBe(departing);
+  });
+
+  it("orders 'steps back, then rests her hand on your shoulder' as ending before start", () => {
+    // Phrase-grain floor spans are what keep a one-sentence "ending, then
+    // action" reply alive: the ending's phrase [0, 15) and the start's phrase
+    // [21, 52) are disjoint, so both survive and order by offset. A
+    // sentence-grain floor span would have swallowed the start as ambiguous.
+    const floor = floorEntry(span(0, 15));
+    const plan = planNpcSceneChronology({ floor, tier2: [startEntry(span(21, 52))] });
+    expect(plan.dropped).toHaveLength(0);
+    expect(plan.actions.map((action) => action.source)).toEqual(["floor", "tier2"]);
+  });
+
   it("composites when the floor's subject could not be mapped to a ref", () => {
     const floor: NpcSceneFloorEntry = { reason: "separated", subjectRef: null, span: span(10, 25) };
     const plan = planNpcSceneChronology({ floor, tier2: [departEntry(span(10, 25))] });
