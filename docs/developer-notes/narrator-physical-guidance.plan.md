@@ -388,7 +388,7 @@ constraint-only turn contains no instruction to mention a body detail.
   guidance vocabulary only, reserved for a future domain that needs per-locus
   commitment, and the contact adapter never emits it.
 - Keep pose, support, material-between, clothing access, actor control,
-  permission, consent, and adult eligibility in their authoritative owners.
+  permission, and consent in their authoritative owners.
 - Narrator guidance may explain the observable result but cannot turn a
   rejected or unresolved attempt into contact.
 - Use the foot domain as the proving case before intimate regions.
