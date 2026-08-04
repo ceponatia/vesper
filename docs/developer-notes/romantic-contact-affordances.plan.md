@@ -2,15 +2,16 @@
 
 Status: active.
 
-**Next:** item 3, remove the rolled-back participant-declaration system
-completely before continuing actor-control authority work.
+**Next:** item 4, enable and review the NPC scene-decision shadow measurement
+before any authority increment.
 
 Shipped foundation: slices 0–2 landed 2026-07-30; slices 3A and 3A.1 plus the
 affectionate-contact technical MVP and its repairs landed 2026-07-31; the
 internal trial passed 2026-08-01; and production enablement completed
 2026-08-02 with `CHAT_CONTACT_ACTIONS` and `CHAT_PHYSICAL_CONSTRAINTS` set to
 `on`. Actor-control delivery steps 1–3 also landed 2026-08-02, but the shadow
-measurement and authority increments remain.
+measurement and authority increments remain. The participant-declaration
+residue was removed 2026-08-04 (item 3).
 
 Detailed shipped evidence lives in the
 [truth-source audit](romantic-contact-affordances.audit.md),
@@ -300,27 +301,23 @@ coding agent can see the next task immediately.
   The required repairs and targeted reruns passed. Production enablement
   completed 2026-08-02; both contact flags are live. The remaining watch item is
   the NPC-ending producer’s first organic production occurrence.
+- **Item 3 — participant-declaration removal — shipped 2026-08-04:** The
+  rollback of the adult-eligibility feature (2026-08-03) had deliberately kept
+  the contact core’s eligibility seam; this item deleted it end to end — the
+  adult-eligibility action gate, the participant-eligibility read, both reason
+  vocabulary members, the diagnostic, and every fixture, test, helper, and
+  adapter path — with no replacement field or gate. Contacts persisted by older
+  builds still parse, pinned by a regression test, and an idempotent data
+  cleanup (migration 0095) strips the obsolete declaration key from every
+  character and persona profile, with a production zero-stored-keys check after
+  deploy.
 
 These entries are historical gates, not work remaining in the continuation
 queue.
 
 ### Remaining continuation order
 
-#### 3. Remove the rolled-back participant-declaration system completely — next
-
-Delete both editor dropdowns and their form state. Remove the associated
-profile-schema, public-profile, API-validation, resolver, adapter, blocker,
-deep-link, diagnostic, contact-core, fixture, test, and export paths, plus any
-feature-specific helper left without another caller.
-
-The old values lived inside JSONB rather than a dedicated column, so ship an
-idempotent data cleanup that removes the obsolete key from every character and
-persona profile. Verify that a repository-wide residue search finds no runtime
-reference and a production query finds zero stored keys. Do not replace the
-declaration with another field or gate here; broader moderation is separate
-pre-launch work outside this plan.
-
-#### 4. Finish actor control through the live lane — partially built
+#### 4. Finish actor control through the live lane — next, partially built
 
 The deterministic NPC contact-ending producer shipped with item 1 and remains
 the frozen ending floor. The pure decision foundation, durable

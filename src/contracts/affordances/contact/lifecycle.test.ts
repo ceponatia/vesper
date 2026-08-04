@@ -31,7 +31,6 @@ import {
   probeAgency,
   probeAttempt,
   probeBodySurface,
-  probeEligibility,
   probeLayer,
   probePolicy,
 } from "./test-support";
@@ -91,7 +90,7 @@ function committableWithAgency(intent: Partial<ContactActionIntent> = {}): Commi
 function romantic(intent: Partial<ContactActionIntent> = {}): CommittableContactResolution {
   const attempt = probeAttempt({
     intent: { actionKind: "romantic", ...intent },
-    context: { policy: probePolicy("allowed", "romantic"), participantEligibility: probeEligibility("eligible") },
+    context: { policy: probePolicy("allowed", "romantic") },
   });
   const resolution = resolveContactAttempt(attempt);
   if (resolution.status !== "committable") throw new Error(`fixture did not commit: ${resolution.status}`);
@@ -127,7 +126,6 @@ describe("contact lifecycle", () => {
     it("carries the decisions that allowed it to exist", () => {
       const { contact } = start();
       expect(contact.actorControl.status).toBe("allowed");
-      expect(contact.participantEligibility.status).toBe("eligible");
       expect(contact.policy.status).toBe("allowed");
       expect(contact.targetAgencies).toEqual([]);
     });
@@ -797,7 +795,7 @@ describe("contact lifecycle", () => {
     /** Re-check one live contact against a fresh answer — or against silence. */
     function sweep(
       live: CommittedContactOutcome,
-      current?: { policy?: ReturnType<typeof probePolicy>; eligibility?: ReturnType<typeof probeEligibility> },
+      current?: { policy?: ReturnType<typeof probePolicy> },
       sink?: DiagnosticCollector,
       storyTime = 300,
     ) {
@@ -809,7 +807,6 @@ describe("contact lifecycle", () => {
             : [
                 {
                   contactId: live.contact.contactId,
-                  participantEligibility: current.eligibility ?? probeEligibility("eligible"),
                   policy: current.policy ?? probePolicy("allowed", "romantic"),
                 },
               ],
@@ -839,11 +836,6 @@ describe("contact lifecycle", () => {
       const swept = sweep(liveRomantic());
       expect(swept.commits.map((commit) => commit.reason)).toEqual(["state_invalidated"]);
       expect(swept.state.contacts).toEqual([]);
-    });
-
-    it("ends it when eligibility stops covering a participant", () => {
-      const swept = sweep(liveRomantic(), { eligibility: probeEligibility("eligible", [PROBE_ACTOR]) });
-      expect(swept.commits.map((commit) => commit.reason)).toEqual(["state_invalidated"]);
     });
 
     it("leaves a contact whose kind never needed a grant alone", () => {

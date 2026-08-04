@@ -325,11 +325,10 @@ describe("partial profiles — each axis gates only its own surfaces", () => {
 describe("the slice-1 gate still governs what may be observed", () => {
   it("refuses a romantically-framed foot contact in a lane with no permission owner", () => {
     // The fixture's policy grant covers `affectionate_touch` only. Romantic
-    // contact needs a permission owner and positive adult eligibility for every
-    // participant (owner ruling, 2026-07-30) and legacy chat can produce
-    // neither, so the attempt is rejected by the gate and no committed contact
-    // exists to observe. Relabeling it to make the trial commit is exactly what
-    // the same ruling forbids.
+    // contact needs a permission owner (owner ruling, 2026-07-30) and legacy
+    // chat has none, so the attempt is rejected by the gate and no committed
+    // contact exists to observe. Relabeling it to make the trial commit is
+    // exactly what the same ruling forbids.
     expect(() => committedFootContact({ detail: "arch", locationId: "foot_arch", actionKind: "romantic" })).toThrow(
       /did not commit/u,
     );

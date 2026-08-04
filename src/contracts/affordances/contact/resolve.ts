@@ -8,7 +8,6 @@ import {
 import {
   CONTACT_ACTION_INVALID,
   CONTACT_ACTOR_CONTROL_UNAVAILABLE,
-  CONTACT_ELIGIBILITY_UNAVAILABLE,
   CONTACT_GEOMETRY_UNAVAILABLE,
   CONTACT_MATERIAL_UNAVAILABLE,
   CONTACT_PERMISSION_SCOPE_MISSING,
@@ -19,7 +18,6 @@ import {
 import {
   CONTACT_ACTION_SCOPE,
   classifyContactAdjustment,
-  contactActionRequiresAdultEligibility,
   contactActionRequiresPermission,
   type ContactActionRequirement,
   type ContactAdjustmentBlockCode,
@@ -69,10 +67,10 @@ import type {
  *    the action proposes to move. This runs before permission because "the
  *    player wrote the NPC's movement" is not a question about consent; it is a
  *    question about whose story it is.
- * 3. **Who may be touched.** Adult eligibility, then interaction permission.
- *    Before geometry, deliberately: a refusal here must not depend on whether an
- *    unowned pose read happened to be available, or the same denied attempt
- *    would report differently on two lanes.
+ * 3. **Who may be touched.** Interaction permission. Before geometry,
+ *    deliberately: a refusal here must not depend on whether an unowned pose
+ *    read happened to be available, or the same denied attempt would report
+ *    differently on two lanes.
  * 4. **Whether it can physically happen.** Reach, then support, then material.
  *
  * ## Rejected, unresolved, and transition-required
@@ -89,13 +87,13 @@ import type {
  *
  * The line between them is who spoke, not how bad the news is
  * (**corrected 2026-07-31 by the owner**). Unresolved actor control, a missing
- * or `unresolved` agency answer, unresolved-or-uncovered eligibility, and an
- * unanswered permission all used to return `rejected`, so a narrator obliged to
- * resolve a refusal invented one — a character was written declining something
- * nobody had asked her about, because an adapter was silent. All four now return
- * `unresolved` with the diagnostics they already emitted: the gap surfaces
- * through the diagnostics channel and the debug UI, which is where a missing
- * owner belongs, and never through the fiction.
+ * or `unresolved` agency answer, and an unanswered permission all used to return
+ * `rejected`, so a narrator obliged to resolve a refusal invented one — a
+ * character was written declining something nobody had asked her about, because
+ * an adapter was silent. All three now return `unresolved` with the diagnostics
+ * they already emitted: the gap surfaces through the diagnostics channel and the
+ * debug UI, which is where a missing owner belongs, and never through the
+ * fiction.
  *
  * **Explicit transition required** means the attempt is legal but the scene has
  * to do something visible first. That is the plan's central anti-cheat: the
@@ -309,23 +307,6 @@ export function resolveContactAttempt(request: ContactResolveRequest): ContactRe
   // --- 3. Who may be touched --------------------------------------------
   const interpersonal = isInterpersonalContact(intent.source, intent.target);
 
-  if (interpersonal && contactActionRequiresAdultEligibility(intent.actionKind)) {
-    evidence.push(context.participantEligibility.evidence);
-    const covered = participants.every((id) => context.participantEligibility.participantIds.includes(id));
-    if (context.participantEligibility.status === "ineligible") {
-      return reject("participant_ineligible", evidence);
-    }
-    if (context.participantEligibility.status !== "eligible" || !covered) {
-      return unresolved("participant_eligibility_unresolved", evidence, {
-        sink,
-        code: CONTACT_ELIGIBILITY_UNAVAILABLE,
-        message: covered
-          ? "adult eligibility is unresolved for this contact"
-          : "adult eligibility does not cover every participant",
-      });
-    }
-  }
-
   if (interpersonal && contactActionRequiresPermission(intent.actionKind)) {
     evidence.push(context.policy.evidence);
     switch (context.policy.status) {
@@ -465,7 +446,6 @@ export function resolveContactAttempt(request: ContactResolveRequest): ContactRe
     },
     actorControl: context.actorControl,
     targetAgencies: consultedAgencies,
-    participantEligibility: context.participantEligibility,
     policy: context.policy,
     evidence: merged,
   };

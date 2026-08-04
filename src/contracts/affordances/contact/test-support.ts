@@ -10,7 +10,6 @@ import type {
   ContactActionKind,
   ContactAdjustmentProposal,
   ContactInteractionPolicyRead,
-  ContactParticipantEligibilityRead,
   ContactActorControlDecision,
   ContactTargetAgencyDecision,
 } from "./decisions";
@@ -36,9 +35,9 @@ import type {
  * default nobody chose to become a physical claim.
  *
  * Every builder's default is the PERMISSIVE-but-explicit case: control allowed,
- * eligibility eligible, permission granted for the action's own scope, in
- * contact, free support, nothing in between. A test that wants a refusal states
- * the one field it is testing, so each case reads as exactly its own hypothesis.
+ * permission granted for the action's own scope, in contact, free support,
+ * nothing in between. A test that wants a refusal states the one field it is
+ * testing, so each case reads as exactly its own hypothesis.
  */
 
 export const PROBE_ACTOR = affordanceSubjectId("probe_actor");
@@ -78,13 +77,6 @@ export function probeAgency(
   targetId: AffordanceSubjectId = PROBE_TARGET,
 ): ContactTargetAgencyDecision {
   return { status, targetId, evidence: [affordanceEvidence("adapter", `probe.agency.${targetId}`, status)] };
-}
-
-export function probeEligibility(
-  status: ContactParticipantEligibilityRead["status"] = "eligible",
-  participantIds: readonly AffordanceSubjectId[] = [PROBE_ACTOR, PROBE_TARGET],
-): ContactParticipantEligibilityRead {
-  return { status, participantIds, evidence: [] };
 }
 
 export function probePolicy(
@@ -158,7 +150,6 @@ export function probeContext(overrides: Partial<ContactActionContext> = {}): Con
   return {
     actorControl: probeControl(),
     targetAgencies: [],
-    participantEligibility: probeEligibility(),
     policy: probePolicy(),
     geometry: adapterSupported(probeGeometry()),
     sourceSupport: adapterSupported(probeSupport()),

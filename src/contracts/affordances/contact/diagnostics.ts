@@ -30,9 +30,6 @@ export const CONTACT_ACTOR_CONTROL_UNAVAILABLE = "contact.actor_control_unavaila
 /** No behaviour authority could answer for the target's own movement. `warn`. */
 export const CONTACT_TARGET_AGENCY_UNAVAILABLE = "contact.target_agency_unavailable";
 
-/** Adult eligibility is missing, or does not cover every participant. `warn`. */
-export const CONTACT_ELIGIBILITY_UNAVAILABLE = "contact.participant_eligibility_unavailable";
-
 /** The permission owner could not answer. `warn`. */
 export const CONTACT_PERMISSION_UNAVAILABLE = "contact.policy_unavailable";
 

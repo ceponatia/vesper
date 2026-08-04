@@ -50,29 +50,6 @@ export const CONTACT_ACTION_SCOPE: Readonly<Record<ContactActionKind, ContactPol
 };
 
 /**
- * Which kinds need an explicit adult-eligibility pass for every participant.
- *
- * **Settled law** (owner, 2026-07-30 — romantic-contact-affordances.audit.md
- * §"Owner decisions needed" 1). Every participant, the player persona included,
- * must be POSITIVELY adult for `romantic` and `intimate` contact; an unknown,
- * non-numeric, or fantasy-scaled age reads `unresolved` and therefore fails
- * closed. The ordinary social kinds are not gated: gating them would fail every
- * fixture without making any character safer. Romantically- or fetish-framed
- * foot play is `romantic` and is never relabeled to make a trial commit.
- */
-export function contactActionRequiresAdultEligibility(kind: ContactActionKind): boolean {
-  switch (kind) {
-    case "romantic":
-    case "intimate":
-      return true;
-    case "incidental":
-    case "casual":
-    case "affectionate":
-      return false;
-  }
-}
-
-/**
  * Which kinds need an interaction-permission grant.
  *
  * **Settled law** (owner, 2026-07-30 — romantic-contact-affordances.audit.md
@@ -139,34 +116,6 @@ export type ContactAgencyStatus = z.infer<typeof contactAgencyStatusSchema>;
 export interface ContactTargetAgencyDecision {
   readonly status: ContactAgencyStatus;
   readonly targetId: AffordanceSubjectId;
-  readonly evidence: readonly AffordanceEvidence[];
-}
-
-// ---------------------------------------------------------------------------
-// Participant eligibility
-// ---------------------------------------------------------------------------
-
-export const contactEligibilityStatuses = ["eligible", "ineligible", "unresolved", "not_required"] as const;
-export const contactEligibilityStatusSchema = z.enum(contactEligibilityStatuses);
-export type ContactEligibilityStatus = z.infer<typeof contactEligibilityStatusSchema>;
-
-/**
- * The product life-stage/adult ruling for every participant.
- *
- * `participantIds` is not decoration: the resolver checks that the decision
- * actually COVERS both ends of the contact, so a lane that answered about one
- * character cannot have its answer spent on the other. A known minor is always
- * `ineligible`; unknown, non-numeric, fantasy-scaled, and player ages are
- * `unresolved`, which fails the romantic/intimate gate closed — **ruled by the
- * owner 2026-07-30** (audit §"Owner decisions needed" 1). The ruling adds an
- * explicit `adult | minor | unresolved` declaration, independent of display age,
- * that a lane adapter maps into this read; existing records default to
- * `unresolved`, and the repo-wide `isMinorAge` fail-open fallback is
- * deliberately unchanged.
- */
-export interface ContactParticipantEligibilityRead {
-  readonly status: ContactEligibilityStatus;
-  readonly participantIds: readonly AffordanceSubjectId[];
   readonly evidence: readonly AffordanceEvidence[];
 }
 
@@ -319,20 +268,18 @@ export interface ContactActionRequirement {
  * `rejected` resolution obliges the narrator to resolve it — she pulls back, he
  * cannot reach — so a reason may only live here when somebody actually said no:
  * a control owner that denied, a body's authority that refused to move, a
- * participant the product ruled ineligible, a permission owner that denied or
- * withdrew, a reach read that placed the surfaces apart. Scope-not-covered
- * belongs here too: a grant that exists and does not name this action is an
- * answer about this action, not a silence.
+ * permission owner that denied or withdrew, a reach read that placed the
+ * surfaces apart. Scope-not-covered belongs here too: a grant that exists and
+ * does not name this action is an answer about this action, not a silence.
  *
- * **Correction, 2026-07-31 (owner).** The four `*_unresolved` reasons used to
- * live here, so "we could not read the owner" reached the narrator as a refusal
- * and got narrated as one — the resolver's own comments said it should produce
+ * **Correction, 2026-07-31 (owner).** The `*_unresolved` reasons used to live
+ * here, so "we could not read the owner" reached the narrator as a refusal and
+ * got narrated as one — the resolver's own comments said it should produce
  * silence. They moved to `contactUnresolvedReasons` below.
  */
 export const contactRejectionReasons = [
   "actor_control_denied",
   "target_agency_denied",
-  "participant_ineligible",
   "permission_denied",
   "permission_withdrawn",
   "permission_scope_missing",
@@ -356,7 +303,6 @@ export const contactUnresolvedReasons = [
   "action_invalid",
   "actor_control_unresolved",
   "target_agency_unresolved",
-  "participant_eligibility_unresolved",
   "permission_unresolved",
   "geometry_unavailable",
   "support_unavailable",
