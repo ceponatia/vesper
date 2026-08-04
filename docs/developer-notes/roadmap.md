@@ -122,8 +122,9 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   flags-off behavior byte-identical).
   Only after that gate does authority roll out movement → starts → updates;
   the owner accepts measured cost/latency before movement is enabled. Then:
-  the `romantic_touch` permission owner (**spec before implementation**;
-  eight design rulings needed) → the romantic proof.
+  implement the owner-ruled
+  [`romantic_touch` permission spec](romantic-contact-affordances.spec.permission.md)
+  (rulings settled 2026-08-04) → the romantic proof.
   **Still parked (reaffirmed by the verdict)**: additional foot granularity,
   slice 4's marks/material transfer, intimate physiology, successor parity,
   channel-aware foot narration, and further generalized contact
