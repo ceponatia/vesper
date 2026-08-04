@@ -441,9 +441,8 @@ describe("attempt resolution", () => {
     if (resolution.status !== "committable") return;
     expect(resolution.access.mode).toBe("direct");
     expect(resolution.intent.requestedPressure).toBe("light");
-    // Permission-neutral by ruling: neither read was consulted, and both say so.
+    // Permission-neutral by ruling: the read was never consulted, and says so.
     expect(resolution.policy.status).toBe("not_required");
-    expect(resolution.participantEligibility.status).toBe("not_required");
     expect(resolution.targetAgencies).toEqual([]);
   });
 
@@ -908,11 +907,6 @@ function herHandOnMe(
     context: {
       actorControl: { status: "allowed", actorId: WREN, evidence: [affordanceEvidence("adapter", "probe")] },
       targetAgencies: [],
-      participantEligibility: {
-        status: "not_required",
-        participantIds: [WREN, CHAT_CONTACT_PLAYER_SUBJECT],
-        evidence: [],
-      },
       policy: { status: "not_required", scopes: [], evidence: [] },
       geometry: sceneGeometryRead({ state: turned, source, target }),
       sourceSupport: sceneSupportRead(turned, source),

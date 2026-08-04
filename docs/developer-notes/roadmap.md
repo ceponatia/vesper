@@ -72,11 +72,11 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   Prerequisites: the slice-2
   [hardening pass / follow-ups](finished/romantic-contact-affordances.followups.md)
   (complete 2026-07-31) and the pre-slice-3 foot facts + registration
-  hardening (2026-07-30) are **done and archived**. Before more authority work,
-  continuation item 3 removes the rolled-back participant-declaration feature
-  end to end, including an idempotent sweep of obsolete keys still stored in
-  character/persona JSONB and production verification that none remain.
-  Broader moderation is separate pre-launch work outside this plan. Foot
+  hardening (2026-07-30) are **done and archived**.
+  **Item 3 — participant-declaration residue removal — shipped 2026-08-04**:
+  the contact core's kept eligibility seam deleted end to end with no
+  replacement gate, plus the idempotent stored-key sweep (migration 0095);
+  broader moderation stays separate pre-launch work outside this plan. Foot
   registry defaults, the Neon backfill, and deployment are **complete**, so
   production registration is no longer gated on corrections or data migration —
   only on reaching its place in the wiring order.
@@ -109,8 +109,8 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   enablement completed 2026-08-02** (PRs #26/#27 merged, main deployed, both
   flags set to the literal `on`, verified in-machine; standing watch: the
   NPC-ending producer's first organic occurrence).
-  **Next: remove the rolled-back participant-declaration feature completely.**
-  After that cleanup, actor control continues through the live lane under the
+  **Next: enable and review the NPC scene-decision shadow measurement
+  (item 4).** Actor control continues through the live lane under the
   [revised spec](romantic-contact-affordances.spec.actor-control.md). The
   deterministic ending floor stays frozen; the general case begins
   with pure evidence/chronology fixtures, a durable per-reply decision envelope

@@ -6,7 +6,6 @@ import type {
   ContactActorControlDecision,
   ContactInteractionPolicyRead,
   ContactMinimalPoseAdjustment,
-  ContactParticipantEligibilityRead,
   ContactRejectionReason,
   ContactTargetAgencyDecision,
   ContactUnresolvedReason,
@@ -166,7 +165,6 @@ export interface ContactActionContext {
    * Empty is the ordinary case — nothing but the actor moves.
    */
   readonly targetAgencies: readonly ContactTargetAgencyDecision[];
-  readonly participantEligibility: ContactParticipantEligibilityRead;
   readonly policy: ContactInteractionPolicyRead;
   readonly geometry: AdapterRead<ContactGeometryRead>;
   readonly sourceSupport: AdapterRead<ContactSupportRead>;
@@ -254,7 +252,6 @@ export type ContactResolution =
        * not prove, later and out of context, that the movement was authorized.
        */
       readonly targetAgencies: readonly ContactTargetAgencyDecision[];
-      readonly participantEligibility: ContactParticipantEligibilityRead;
       readonly policy: ContactInteractionPolicyRead;
       readonly evidence: readonly AffordanceEvidence[];
     }
@@ -298,9 +295,9 @@ export function isCommittableContactResolution(
  * observation must fall silent rather than describe the lightest thing that
  * could be true.
  *
- * The four authorization records are carried rather than dropped so the
+ * The three authorization records are carried rather than dropped so the
  * committed record can prove, later and out of context, WHY it was allowed to
- * exist. All four are START IDENTITY like the orientation beside them: they
+ * exist. All three are START IDENTITY like the orientation beside them: they
  * justify the contact that began, and a later assertion — possibly from the
  * other side — cannot rewrite them. Authorization that changes AFTER a contact
  * is live is not an update; it ends the contact (`endUnauthorizedContacts`) or
@@ -334,12 +331,11 @@ export interface CommittedContactRead {
   readonly actorControl: ContactActorControlDecision;
   /**
    * The consulted agency decisions, one per non-actor body `implicitAdjustments`
-   * moved. Authorization evidence exactly like the three reads beside it, and
+   * moved. Authorization evidence exactly like the two reads beside it, and
    * checked as such on read: a stored contact whose adjustments moved somebody
    * no `allowed` decision names is dropped (`state.ts`).
    */
   readonly targetAgencies: readonly ContactTargetAgencyDecision[];
-  readonly participantEligibility: ContactParticipantEligibilityRead;
   readonly policy: ContactInteractionPolicyRead;
   readonly evidence: readonly AffordanceEvidence[];
 }

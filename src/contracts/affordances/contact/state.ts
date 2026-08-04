@@ -6,12 +6,10 @@ import { CONTACT_LIFECYCLE_INVALID, CONTACT_STATE_RECOMPUTED } from "./diagnosti
 import {
   CONTACT_ACTION_SCOPE,
   contactActionKindSchema,
-  contactActionRequiresAdultEligibility,
   contactActionRequiresPermission,
   contactAdjustmentKindSchema,
   contactAgencyStatusSchema,
   contactControlStatusSchema,
-  contactEligibilityStatusSchema,
   contactPolicyScopeSchema,
   contactPolicyStatusSchema,
 } from "./decisions";
@@ -24,7 +22,6 @@ import {
 } from "./material";
 import {
   contactPairKey,
-  contactParticipantIds,
   contactSurfaceRefSchema,
   contactBodySurfaceRefSchema,
   isInterpersonalContact,
@@ -102,12 +99,6 @@ const targetAgencySchema = z.object({
   evidence: evidenceListSchema,
 });
 
-const eligibilitySchema = z.object({
-  status: contactEligibilityStatusSchema,
-  participantIds: z.array(affordanceSubjectIdSchema).max(8).readonly(),
-  evidence: evidenceListSchema,
-});
-
 const policySchema = z.object({
   status: contactPolicyStatusSchema,
   scopes: z.array(contactPolicyScopeSchema).max(8).readonly(),
@@ -167,7 +158,6 @@ export const committedContactReadSchema: z.ZodType<CommittedContactRead> = z.obj
   implicitAdjustments: z.array(minimalAdjustmentSchema).max(8).readonly(),
   actorControl: actorControlSchema,
   targetAgencies: z.array(targetAgencySchema).max(8).readonly(),
-  participantEligibility: eligibilitySchema,
   policy: policySchema,
   evidence: evidenceListSchema,
 });
@@ -257,12 +247,6 @@ function storedContactProblem(contact: CommittedContactRead): string | undefined
   if (contact.lastUpdatedAt < contact.startedAt) return "last_updated_precedes_start";
 
   if (!isInterpersonalContact(contact.source, contact.target)) return undefined;
-  const participants = contactParticipantIds(contact.source, contact.target);
-
-  if (contactActionRequiresAdultEligibility(contact.actionKind)) {
-    const covered = participants.every((id) => contact.participantEligibility.participantIds.includes(id));
-    if (contact.participantEligibility.status !== "eligible" || !covered) return "eligibility_does_not_cover";
-  }
   if (contactActionRequiresPermission(contact.actionKind)) {
     if (contact.policy.status !== "allowed") return "permission_does_not_allow";
     if (!contact.policy.scopes.includes(CONTACT_ACTION_SCOPE[contact.actionKind])) return "permission_scope_missing";

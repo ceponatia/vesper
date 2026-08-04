@@ -5,12 +5,12 @@ import { commitContactResolution, emptyContactLifecycleState, type ContactLifecy
 import { resolveContactAttempt } from "./resolve";
 import { parseContactLifecycleState } from "./state";
 import {
+  PROBE_ACTOR,
   PROBE_EVENT,
   PROBE_TARGET,
   probeAdjustment,
   probeAgency,
   probeAttempt,
-  probeEligibility,
   probeLayer,
   probePolicy,
 } from "./test-support";
@@ -29,7 +29,6 @@ function seededRomanticState(): ContactLifecycleState {
       intent: { actionKind: "romantic" },
       context: {
         policy: probePolicy("allowed", "romantic"),
-        participantEligibility: probeEligibility("eligible"),
         material: adapterSupported({ layers: [probeLayer("layer_one")], evidence: [] }),
       },
     }),
@@ -75,6 +74,24 @@ describe("stored contact state", () => {
     const state = seededState();
     const parsed = parseContactLifecycleState(JSON.parse(JSON.stringify(state)));
     expect(parsed).toEqual(state);
+  });
+
+  it("reads a row carrying a field this build no longer knows", () => {
+    // Contacts written by an older release sit in the durable ledger and in
+    // every captured scene snapshot, carrying keys nothing asks for any more. A
+    // field the schema does not name is dropped on read; it is not a reason to
+    // lose the contact, and it is not a diagnostic.
+    const sink = new DiagnosticCollector();
+    const state = seededRomanticState();
+    const raw = tampered(state, (contact) => {
+      contact.participantEligibility = {
+        status: "eligible",
+        participantIds: [PROBE_ACTOR, PROBE_TARGET],
+        evidence: [],
+      };
+    });
+    expect(parseContactLifecycleState(raw, sink)).toEqual(state);
+    expect(sink.items).toEqual([]);
   });
 
   it("degrades a blob it cannot read at all to nothing touching", () => {
@@ -187,19 +204,6 @@ describe("stored contact state", () => {
     });
 
     const authorizationTamperings: readonly [string, StoredContactMutation][] = [
-      [
-        "eligibility that stopped covering a participant",
-        (contact) => {
-          const eligibility = contact.participantEligibility as { participantIds: string[] };
-          eligibility.participantIds = [eligibility.participantIds[0] ?? ""];
-        },
-      ],
-      [
-        "eligibility that is no longer eligible",
-        (contact) => {
-          (contact.participantEligibility as Record<string, unknown>).status = "unresolved";
-        },
-      ],
       [
         "permission for a scope this action never had",
         (contact) => {
