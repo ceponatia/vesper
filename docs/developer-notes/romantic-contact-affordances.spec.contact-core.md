@@ -408,7 +408,7 @@ permission (legacy) as unowned in both lanes, so every one of them arrives as an
 - **File: `resolve.ts`**
   - **Responsibility:** `resolveContactAttempt` — the whole gate.
 - **File: `lifecycle.ts`**
-  - **Responsibility:** `commitContactResolution`, `endContact`, `endAllContacts`, the active projection and its reads.
+  - **Responsibility:** `commitContactResolution`, `modulateContactGesture`, `endContact`, `endAllContacts`, the active projection and its reads.
 - **File: `state.ts`**
   - **Responsibility:** `committedContactReadSchema`, `parseContactLifecycleState` — the versioned shape and its healing.
 - **File: `diagnostics.ts`**
@@ -424,6 +424,11 @@ permission (legacy) as unowned in both lanes, so every one of them arrives as an
 `commitContactResolution({ state, resolution, eventRef, sink? }) → ContactCommitOutcome`
 (a **union** since slice 3A.1 — see
 [As built — slice 3A.1](#as-built--slice-3a1-boundary-corrections)) ·
+`modulateContactGesture({ state, contactId, pressure, motion, eventRef, storyTime, sink? })
+→ ContactGestureModulationOutcome` (the gesture-only update the NPC reply-scene
+leg commits through — see
+[romantic-contact-affordances.spec.actor-control.md](romantic-contact-affordances.spec.actor-control.md)
+§"Resolution laws → Contact update") ·
 `endContact({ state, contactId, reason, storyTime, eventRef, sink? })` ·
 `endAllContacts({ state, reason, storyTime, eventRef, sink? })` ·
 `activeContact` / `activeContactForPair` / `activeContactsOf` ·
