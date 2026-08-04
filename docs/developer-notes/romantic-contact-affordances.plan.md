@@ -9,9 +9,12 @@ Shipped foundation: slices 0–2 landed 2026-07-30; slices 3A and 3A.1 plus the
 affectionate-contact technical MVP and its repairs landed 2026-07-31; the
 internal trial passed 2026-08-01; and production enablement completed
 2026-08-02 with `CHAT_CONTACT_ACTIONS` and `CHAT_PHYSICAL_CONSTRAINTS` set to
-`on`. Actor-control delivery steps 1–3 also landed 2026-08-02, but the shadow
-measurement and authority increments remain. The participant-declaration
-residue was removed 2026-08-04 (item 3).
+`on`. The participant-declaration residue was removed 2026-08-04 (item 3).
+Actor-control delivery steps 1–3 landed 2026-08-02, and the three authority
+increments — an NPC moving, starting an affectionate hand touch, and changing
+the gesture of one she is already making — landed 2026-08-04 behind a
+default-off flag. What remains is the shadow measurement window, the owner's
+ruling on the measured cost and latency, and then turning any of it on.
 
 Detailed shipped evidence lives in the
 [truth-source audit](romantic-contact-affordances.audit.md),
@@ -317,17 +320,23 @@ queue.
 
 ### Remaining continuation order
 
-#### 4. Finish actor control through the live lane — next, partially built
+#### 4. Finish actor control through the live lane — built 2026-08-04 (dark); measurement and rollout remain
 
 The deterministic NPC contact-ending producer shipped with item 1 and remains
 the frozen ending floor. The pure decision foundation, durable
 assistant-message envelope, guarded atomic save, and one-call-per-reply shadow
 leg shipped 2026-08-02 behind `CHAT_NPC_SCENE_DECISION_SHADOW`, default off.
+The three authority increments — an NPC moving relative to one person,
+starting one affectionate hand touch, and changing the gesture of a touch she
+is already making — were built 2026-08-04, all dark behind the default-off
+authority flag, with a staging control that can enable them one kind at a
+time without further code changes.
 
-Next, enable and review the shadow measurement. Authority remains blocked until
-accuracy, fire rate, p50/p95/p99 added latency, timeout rate, and cost are
-acceptable. If approved, roll out authority in this order: movement, contact
-starts, then contact updates. The
+What remains is operational, not construction. Enable and review the shadow
+measurement. Authority remains blocked until accuracy, fire rate, p50/p95/p99
+added latency, timeout rate, and cost are acceptable. If approved, roll out
+authority in this order: movement, contact starts, then contact updates —
+each step a one-value staging change. The
 [actor-control spec](romantic-contact-affordances.spec.actor-control.md) owns the
 detailed evidence rules, chronology, retries, persistence, and rollout gates.
 
@@ -402,7 +411,7 @@ These items were parked by owner ruling 2026-07-31 and remained parked after the
 
 ## Open questions
 
-Four product decisions are already settled and should not be reopened by an
+Five product decisions are already settled and should not be reopened by an
 implementation agent:
 
 - **Actor control:** Player input commits only player-controlled movement. NPC
@@ -417,6 +426,15 @@ implementation agent:
 - **Regional condition ownership:** Body-surface state owns skin moisture,
   products, and residue. Garment state owns wet footwear and other garment
   conditions. Contact combines those facts but does not own them.
+- **How close two people are only counts while they are together** (settled
+  2026-08-04, applies to both lanes): the game forgets how far apart two
+  characters were standing when one of them leaves, when the scene moves to a
+  new place, or when the story clock skips ahead — the same moments that
+  already end whatever they were touching. It does not forget on an ordinary
+  turn. Forgetting means the distance is simply unknown again, not "far away",
+  and coming back does not restore it: somebody has to walk over. Detail in the
+  [actor-control spec](romantic-contact-affordances.spec.actor-control.md)
+  §"Pair relations require continuous co-presence".
 
 ### General questions still open
 

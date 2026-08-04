@@ -790,11 +790,14 @@ describe.runIf(ready)("the leg ends contacts as well as starting them", () => {
 
     const scene = await storedScene(chat.chatId);
     expect(activeContactsOf(scene.contacts)).toEqual([]);
-    // Nothing was started and no distance was invented: walking up to her furniture
-    // is neither an approach to her nor a departure from her, so the `close` the
-    // real approach stated is exactly what still stands.
+    // Nothing was started: walking up to her furniture is neither an approach to
+    // her nor a departure from her.
     expect(all.filter((entry) => entry.kind === "contact_started")).toHaveLength(1);
-    expect(sceneProximityFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe("close");
+    // The place CHANGED, so the distance goes with the contact (owner ruling
+    // 2026-08-04). Keeping the old `close` while ending the touch on the grounds
+    // that she is no longer here is the contradiction the ruling closes — and it
+    // is cleared to UNKNOWN, never to an invented `distant`.
+    expect(sceneProximityFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, target())).toBeUndefined();
   });
 
   it("a pending time skip ends EVERY contact, reason `separated`, on the exchange that sees it", async () => {
@@ -824,7 +827,34 @@ describe.runIf(ready)("the leg ends contacts as well as starting them", () => {
     // The end is stamped at the POST-skip clock, which is what makes it later than
     // the contact it ends rather than a time-travelling sweep the core would absorb.
     expect(row.storyMinute).toBeGreaterThan(started.storyMinute);
-    expect(activeContactsOf((await storedScene(chat.chatId)).contacts)).toEqual([]);
+    const skippedScene = await storedScene(chat.chatId);
+    expect(activeContactsOf(skippedScene.contacts)).toEqual([]);
+    // Hours passed, so the distance is as gone as the touch (owner ruling
+    // 2026-08-04) — unknown, and it stays unknown until somebody moves.
+    expect(sceneProximityFact(skippedScene, CHAT_CONTACT_PLAYER_SUBJECT, target())).toBeUndefined();
+
+    // Re-entry restores nothing: an ordinary next turn ticks the clock without
+    // re-establishing a band, because only explicit movement may state one.
+    expect((await say(chat, NEUTRAL)).length).toBeGreaterThan(0);
+    expect(
+      sceneProximityFact(await storedScene(chat.chatId), CHAT_CONTACT_PLAYER_SUBJECT, target()),
+    ).toBeUndefined();
+  });
+
+  it("an ordinary clock tick is NOT a discontinuity — the distance survives an unremarkable turn", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const { chat } = await touchedChat();
+    expect(sceneProximityFact(await storedScene(chat.chatId), CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe(
+      "close",
+    );
+
+    // Minutes pass inside one continuous scene, which is what a conversation IS.
+    // Clearing on this would make reach permanently unknown and silence every
+    // touch that did not re-walk the room first.
+    expect((await say(chat, NEUTRAL)).length).toBeGreaterThan(0);
+    const scene = await storedScene(chat.chatId);
+    expect(sceneProximityFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe("close");
+    expect(activeContactsOf(scene.contacts)).toHaveLength(1);
   });
 
   it("leaving the scene ends every contact, reason `scene_changed`", async () => {
@@ -844,11 +874,38 @@ describe.runIf(ready)("the leg ends contacts as well as starting them", () => {
     expect(row.guardMessageId).toBe(leaveGuardId);
     expect(row.eventRef).toBe(`contact:${leaveGuardId}`);
     expect(row.payload).toMatchObject({ kind: "contact_ended", reason: "scene_changed" });
-    expect(activeContactsOf((await storedScene(chat.chatId)).contacts)).toEqual([]);
+    const movedScene = await storedScene(chat.chatId);
+    expect(activeContactsOf(movedScene.contacts)).toEqual([]);
+    // The room changed, so every pair's distance did too (owner ruling 2026-08-04).
+    expect(sceneProximityFact(movedScene, CHAT_CONTACT_PLAYER_SUBJECT, target())).toBeUndefined();
 
     // The scene memory really did move — the end and the place switch read the same signal.
     const scenario = await loadChatScenario(chat.chatId);
     expect(scenario?.sceneMemory.current).toBeTruthy();
+  });
+
+  it("a retake rewinds the clearing with the rest of the exchange", async () => {
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const { chat } = await touchedChat();
+    expect(sceneProximityFact(await storedScene(chat.chatId), CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe(
+      "close",
+    );
+
+    // The exchange that leaves the room clears the band along with the contact.
+    expect((await say(chat, LEAVE)).length).toBeGreaterThan(0);
+    const leaveGuardId = await playerLineId(chat.chatId, LEAVE);
+    expect(
+      sceneProximityFact(await storedScene(chat.chatId), CHAT_CONTACT_PLAYER_SUBJECT, target()),
+    ).toBeUndefined();
+
+    // Another take of that exchange, on a line that leaves nowhere. The clearing
+    // rides `pre_exchange_scenario` like every other scene change, so a discarded
+    // take does not leave the distance permanently forgotten.
+    await rewriteLine(leaveGuardId, NEUTRAL);
+    expect((await retake(chat)).length).toBeGreaterThan(0);
+    const restored = await storedScene(chat.chatId);
+    expect(sceneProximityFact(restored, CHAT_CONTACT_PLAYER_SUBJECT, target())?.value).toBe("close");
+    expect(activeContactsOf(restored.contacts)).toHaveLength(1);
   });
 });
 

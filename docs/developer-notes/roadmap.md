@@ -120,6 +120,13 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   inspector trace; shadow leg behind `CHAT_NPC_SCENE_DECISION_SHADOW`,
   default off — not yet enabled, so the measurement window has not started;
   flags-off behavior byte-identical).
+  **Authority increments (steps 4–6) built 2026-08-04, dark** — the executor
+  (presence integration, chronological walk, composite departures), monotonic
+  approach/depart band helpers, arbitrary-actor contact starts with two-sided
+  material and the same-reply wardrobe-chronology veto, and the gesture-only
+  `modulateContactGesture` lifecycle operation for updates — all behind
+  `CHAT_NPC_SCENE_DECISIONS` (default off), staged one kind at a time by
+  `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS`.
   Only after that gate does authority roll out movement → starts → updates;
   the owner accepts measured cost/latency before movement is enabled. Then:
   implement the owner-ruled
@@ -345,3 +352,4 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 ## Shipped (historical record)
 
 Moved to its own file to keep this index short — see **[roadmap.shipped.md](roadmap.shipped.md)** (newest-first).
+

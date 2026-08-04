@@ -87,7 +87,7 @@ function outcome(input: {
   resultCodes: readonly string[];
 }): PhysicalActionOutcome {
   return buildActionOutcome({
-    actionId: "contact:msg_1#character_wren:shoulders",
+    actionId: "contact:msg_1#player:character_wren:shoulders",
     status: input.status,
     resultCodes: input.resultCodes,
     disclosure: "consistency_only",

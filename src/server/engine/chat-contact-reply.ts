@@ -225,6 +225,46 @@ function subjectAlternation(characters: readonly ChatNpcEndingCharacter[]): stri
  * tries `separated` first only within a sentence's own match order; across the
  * reply, sentence order decides.
  */
+/** The per-reason ending regexes for one roster — subject alternation prepended. */
+function endingPatterns(characters: readonly ChatNpcEndingCharacter[]): {
+  readonly withdrawn: readonly RegExp[];
+  readonly separated: readonly RegExp[];
+} {
+  const subjects = subjectAlternation(characters);
+  const compile = (patterns: readonly string[]): readonly RegExp[] =>
+    patterns.map((pattern) => new RegExp(`\\b(${subjects})\\s+${SUBJECT_GAP}${pattern}`, "iu"));
+  return { withdrawn: compile(WITHDRAW_PATTERNS), separated: compile(SEPARATE_PATTERNS) };
+}
+
+/**
+ * WHERE one sentence states the given ending: the matched phrase's offsets
+ * within that sentence, subject token included, or `null` when the sentence
+ * does not state it.
+ *
+ * The chronology planner orders every action by its exact source phrase, and
+ * the floor's result "gains source offsets for ordering" without its language
+ * growing (actor-control spec §"Authority model") — so this runs the SAME
+ * compiled patterns detection runs, on a sentence detection already matched,
+ * and reports the match range instead of the verdict. Offsets are relative to
+ * the sentence string handed in; quote normalization is one-to-one on length,
+ * so they hold against the raw sentence too.
+ */
+export function chatNpcEndingPhraseInSentence(input: {
+  readonly sentence: string;
+  readonly characters: readonly ChatNpcEndingCharacter[];
+  readonly reason: ChatNpcEndingReason;
+}): { readonly from: number; readonly to: number } | null {
+  const text = normalizeQuotes(input.sentence);
+  const patterns = endingPatterns(input.characters)[input.reason];
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (match === null) continue;
+    if (resolveEndingSubject(match[1] ?? "", input.characters) === null) continue;
+    return { from: match.index, to: match.index + match[0].length };
+  }
+  return null;
+}
+
 export function detectChatNpcContactEnding(input: {
   /** The COMPLETED assistant reply, exactly as persisted. */
   readonly reply: string;
@@ -235,13 +275,7 @@ export function detectChatNpcContactEnding(input: {
   const text = normalizeQuotes(input.reply).trim();
   if (text.length === 0) return null;
 
-  const subjects = subjectAlternation(input.characters);
-  const withdraw = WITHDRAW_PATTERNS.map(
-    (pattern) => new RegExp(`\\b(${subjects})\\s+${SUBJECT_GAP}${pattern}`, "iu"),
-  );
-  const separate = SEPARATE_PATTERNS.map(
-    (pattern) => new RegExp(`\\b(${subjects})\\s+${SUBJECT_GAP}${pattern}`, "iu"),
-  );
+  const { withdrawn: withdraw, separated: separate } = endingPatterns(input.characters);
 
   for (const span of parseMessageSpans(text)) {
     // Narration only: dialogue ("Don't pull away"), thoughts, comms, OOC, and
