@@ -86,6 +86,21 @@ export function probePolicy(
   return { status, scopes: [CONTACT_ACTION_SCOPE[kind]], evidence: [] };
 }
 
+/**
+ * The ruled player-target exception, as a policy read: `not_required` WITH the
+ * explicit basis, and deliberately no scopes — there is no player grant to name
+ * one, and the gate must pass without demanding one.
+ */
+export function probePlayerTargetPolicy(): ContactInteractionPolicyRead {
+  return {
+    status: "not_required",
+    notRequiredBasis: "player_target",
+    notRequiredTargetId: PROBE_TARGET,
+    scopes: [],
+    evidence: [],
+  };
+}
+
 export function probeGeometry(reach: ContactReach = "in_contact"): ContactGeometryRead {
   return { reach, evidence: [affordanceEvidence("state", "probe.reach", reach)] };
 }

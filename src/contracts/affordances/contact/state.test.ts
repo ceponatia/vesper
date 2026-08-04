@@ -12,6 +12,7 @@ import {
   probeAgency,
   probeAttempt,
   probeLayer,
+  probePlayerTargetPolicy,
   probePolicy,
 } from "./test-support";
 import { adapterSupported } from "../core";
@@ -31,6 +32,22 @@ function seededRomanticState(): ContactLifecycleState {
         policy: probePolicy("allowed", "romantic"),
         material: adapterSupported({ layers: [probeLayer("layer_one")], evidence: [] }),
       },
+    }),
+  );
+  if (resolution.status !== "committable") throw new Error("fixture did not commit");
+  return commitContactResolution({ state: emptyContactLifecycleState(), resolution, eventRef: PROBE_EVENT }).state;
+}
+
+/**
+ * A romantic contact committed on the ruled player-target exception — the
+ * TARGET is the player, so the policy is `not_required` + `player_target` with
+ * no scopes, and no grant exists anywhere.
+ */
+function seededPlayerTargetState(): ContactLifecycleState {
+  const resolution = resolveContactAttempt(
+    probeAttempt({
+      intent: { actionKind: "romantic" },
+      context: { policy: probePlayerTargetPolicy() },
     }),
   );
   if (resolution.status !== "committable") throw new Error("fixture did not commit");
@@ -84,11 +101,7 @@ describe("stored contact state", () => {
     const sink = new DiagnosticCollector();
     const state = seededRomanticState();
     const raw = tampered(state, (contact) => {
-      contact.participantEligibility = {
-        status: "eligible",
-        participantIds: [PROBE_ACTOR, PROBE_TARGET],
-        evidence: [],
-      };
+      contact.retiredField = { obsolete: true };
     });
     expect(parseContactLifecycleState(raw, sink)).toEqual(state);
     expect(sink.items).toEqual([]);
@@ -221,6 +234,44 @@ describe("stored contact state", () => {
     it.each(authorizationTamperings)("drops a stored romantic contact carrying %s", (_label, mutate) => {
       const sink = new DiagnosticCollector();
       expect(parseContactLifecycleState(tampered(seededRomanticState(), mutate), sink).contacts).toEqual([]);
+      expect(codes(sink)).toEqual([CONTACT_LIFECYCLE_INVALID]);
+    });
+
+    it("keeps a stored romantic contact born of the player-target exception", () => {
+      // The resolver committed it with `not_required` + the explicit basis and
+      // NO scopes (the ruled exception carries no player grant) — so the stored
+      // form must survive the read exactly as committed.
+      const state = seededPlayerTargetState();
+      const sink = new DiagnosticCollector();
+      const parsed = parseContactLifecycleState(JSON.parse(JSON.stringify(state)), sink);
+      expect(parsed).toEqual(state);
+      expect(parsed.contacts[0]?.policy).toMatchObject({
+        status: "not_required",
+        notRequiredBasis: "player_target",
+        notRequiredTargetId: PROBE_TARGET,
+        scopes: [],
+      });
+      expect(codes(sink)).toEqual([]);
+    });
+
+    it("drops a permission-requiring contact whose not_required carries no basis", () => {
+      // Strip the basis and the same row becomes a contact no gate ever
+      // allowed: bare `not_required` on a romantic kind is an owner that was
+      // never consulted, not an exception.
+      const sink = new DiagnosticCollector();
+      const raw = tampered(seededPlayerTargetState(), (contact) => {
+        delete (contact.policy as Record<string, unknown>).notRequiredBasis;
+      });
+      expect(parseContactLifecycleState(raw, sink).contacts).toEqual([]);
+      expect(codes(sink)).toEqual([CONTACT_LIFECYCLE_INVALID]);
+    });
+
+    it("drops a player-target basis that names a different target", () => {
+      const sink = new DiagnosticCollector();
+      const raw = tampered(seededPlayerTargetState(), (contact) => {
+        (contact.policy as Record<string, unknown>).notRequiredTargetId = "some_other_subject";
+      });
+      expect(parseContactLifecycleState(raw, sink).contacts).toEqual([]);
       expect(codes(sink)).toEqual([CONTACT_LIFECYCLE_INVALID]);
     });
 

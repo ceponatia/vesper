@@ -7,12 +7,14 @@ import {
   type PhysicalActionOutcome,
   type PhysicalNarrationConstraint,
   type PhysicalPremiseCorrection,
+  type PhysicalStateTransition,
 } from "@/contracts";
 import {
   chatContactPhrase,
   type ChatContactPhraseKind,
   type ChatContactReachPremise,
 } from "./chat-contact-adapter";
+import { CHAT_CONTACT_DOMAIN_ID, CHAT_CONTACT_ENDED_CODE } from "./chat-permission-guidance";
 
 /**
  * PROMPT PROJECTION for narrator physical guidance
@@ -55,12 +57,22 @@ import {
  * hair as loose" are about different things, and the narrator has to be told which
  * governs.
  *
- * Three tiers render today. **Action outcomes** arrived with the affectionate contact
- * proof (romantic-contact-affordances.plan.md §"Continuation order" 1) and lead the
- * block, which is the compiler's own order rather than this file's: whether the touch
- * the player just wrote actually happened outranks any standing truth about the body.
- * State transitions (slice 4) still have a contract and a selection tier with no
- * producer in this lane, and therefore no wording here.
+ * All four tiers render today. **Action outcomes** arrived with the affectionate
+ * contact proof (romantic-contact-affordances.plan.md §"Continuation order" 1) and
+ * lead the block, which is the compiler's own order rather than this file's: whether
+ * the touch the player just wrote actually happened outranks any standing truth about
+ * the body. **State transitions** gained their first producer with the permission
+ * owner's revocation handoff (romantic-contact-affordances.spec.permission.md
+ * §"Revocation during active contact" step 4, `chat-permission-guidance.ts`): a
+ * contact the state already ENDED that the prose has not yet shown ending. Each such
+ * candidate is a binding stop — it states the observable change only (never the
+ * standing record, the withdrawal, or any developer control behind it), forbids
+ * continuing or resuming the touch, is phrased to stay correct when the prior reply's
+ * prose already showed the stop, and leaves the player's reaction alone. One line per
+ * candidate, always: an ensemble reply can end contact on several pairs at once, and
+ * merging them into a sentence about everyone present would end contacts nothing
+ * ended, so a multi-pair revocation ships one line per pair (the tier's budget covers
+ * a whole exchange's worth for exactly that reason).
  *
  * The outcome lines obey the same four rules, and rule 1 is the one worth spelling out
  * for them. A COMMITTED outcome is the only positive statement this block ever makes,
@@ -93,6 +105,14 @@ export interface ChatPhysicalGuidanceRenderInput {
    * PROSE from inventing the landing the state refused to record.
    */
   readonly reachPremise?: ChatContactReachPremise;
+  /**
+   * Display names for transition participants, keyed by subject id — the
+   * roster's names plus the player entry ("player" → "the player"). Presentation
+   * only, supplied by the pipeline when stop transitions are in play; a
+   * transition whose participants this map cannot name renders the generic stop
+   * line rather than a sentence with a hole in it.
+   */
+  readonly subjectNames?: Readonly<Record<string, string>>;
   /** Leak diagnostics land here; the block is dropped either way. */
   readonly sink?: DiagnosticSink;
 }
@@ -289,6 +309,56 @@ function reachPremiseLine(premise: ChatContactReachPremise): string {
 }
 
 /**
+ * The one wording every stop line ends on. Three obligations in one sentence,
+ * each traceable to the spec's narrator-instruction constraints (§"Revocation
+ * during active contact"): the continuation ban ("do not write it as
+ * continuing…"), the idempotent portrayal instruction ("if the stop has not
+ * already been shown…" — still correct when the prior reply's prose showed it),
+ * and the authorship fence (the player's response is never decided here). The
+ * NPC's own reaction is explicitly licensed and never scripted.
+ */
+const STOP_LINE_CLOSING =
+  "That contact is over now — do not write it as continuing, resuming, or still in progress. " +
+  "If the stop has not already been shown, portray it naturally (an in-character reaction is fine); " +
+  "do not decide how the player responds.";
+
+/**
+ * One revocation stop transition (`chat-permission-guidance.ts`) as a binding line.
+ *
+ * OBSERVABLE CHANGE ONLY: the line names who is no longer touching what and
+ * what the narration must do about it. It never mentions why — no standing
+ * record, no withdrawal, no developer control, no mechanic vocabulary — because
+ * the candidate carries no cause (`causeCodes` is empty by law) and this file
+ * adds no semantic the compiler did not select.
+ *
+ * Degrades toward the instruction, not away from it: an unnamed participant or
+ * an unwordable locus costs precision, never the stop itself. A transition from
+ * any OTHER producer (a different domain, or codes this lane does not own)
+ * renders nothing — wording it here would invent a semantic for a candidate
+ * this file cannot understand.
+ */
+function transitionLine(transition: PhysicalStateTransition, input: ChatPhysicalGuidanceRenderInput): string {
+  if (transition.domainId !== CHAT_CONTACT_DOMAIN_ID) return "";
+  if (!transition.afterCodes.includes(CHAT_CONTACT_ENDED_CODE)) return "";
+  const [actorId, targetId] = transition.subjectIds;
+  const actorName = actorId === undefined ? undefined : input.subjectNames?.[String(actorId)];
+  const targetName = targetId === undefined ? undefined : input.subjectNames?.[String(targetId)];
+  if (actorName === undefined || targetName === undefined) {
+    return `- Ended contact: a touch that was underway has ended. ${STOP_LINE_CLOSING}`;
+  }
+  const locusPhrases = transition.locusIds.flatMap((locusId) => {
+    const phrase = chatContactPhrase(`contact.locus.${locusId}`);
+    return phrase === undefined ? [] : [phrase.phrase];
+  });
+  // One wordable surface names it; several (or none) fall back to the person —
+  // "no longer touching Wren" is still the whole instruction.
+  const [onlyLocus] = locusPhrases;
+  const surface =
+    locusPhrases.length === 1 && onlyLocus !== undefined ? `${targetName}'s ${onlyLocus}` : targetName;
+  return `- Ended contact: ${actorName} is no longer touching ${surface}. ${STOP_LINE_CLOSING}`;
+}
+
+/**
  * "a, b, or c" — the prohibition register, so a list reads as one forbidden idea.
  *
  * The `or` is skipped when the final phrase already carries one: a display phrase may
@@ -331,6 +401,9 @@ export function renderChatPhysicalGuidance(input: ChatPhysicalGuidanceRenderInpu
     ...(input.reachPremise === undefined ? [] : [reachPremiseLine(input.reachPremise)]),
     ...input.guidance.corrections.map((correction) => correctionLine(correction, input)),
     ...input.guidance.constraints.map((constraint) => constraintLine(constraint, input.possessive)),
+    // The transition tier renders last — the compiler's order, not a ranking
+    // this file invented. Today's only producer is the revocation stop.
+    ...input.guidance.transitions.map((transition) => transitionLine(transition, input)),
   ].filter((line) => line.length > 0);
 }
 

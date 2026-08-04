@@ -128,15 +128,38 @@ export const contactPolicyStatusSchema = z.enum(contactPolicyStatuses);
 export type ContactPolicyStatus = z.infer<typeof contactPolicyStatusSchema>;
 
 /**
+ * Why a `not_required` answer is allowed to PASS the permission gate.
+ *
+ * `not_required` alone is not a pass — an owner that answers "I was not asked"
+ * about an action that requires asking is silence, and the resolver reads it as
+ * `unresolved`. The one exception is ruled (owner, 2026-08-04 —
+ * romantic-contact-affordances.spec.permission.md §"Direction and participant
+ * rules"): a contact whose GRANTING TARGET is the player needs no standing
+ * player grant, because the player writes their own next reaction. A basis is a
+ * closed vocabulary rather than a boolean so a future second exception is a data
+ * edit, not a schema change.
+ */
+export const contactPolicyNotRequiredBases = ["player_target"] as const;
+export const contactPolicyNotRequiredBasisSchema = z.enum(contactPolicyNotRequiredBases);
+export type ContactPolicyNotRequiredBasis = z.infer<typeof contactPolicyNotRequiredBasisSchema>;
+
+/**
  * The lane's permission owner's answer, with the scopes it covers.
  *
  * Scope membership is checked EXACTLY: the core never widens a grant, because
  * "permission for the more intimate thing implies permission for the less
  * intimate thing" is a product ruling and not an obvious one. A lane that
  * believes a broader grant subsumes a narrower one lists both scopes.
+ *
+ * `notRequiredBasis` is meaningful only beside `status: "not_required"`.
+ * `notRequiredTargetId` names the participant the basis applies to, so a stored
+ * or tampered answer cannot relabel an NPC target as the player. Both fields
+ * must be present and match the attempted target before the exception passes.
  */
 export interface ContactInteractionPolicyRead {
   readonly status: ContactPolicyStatus;
+  readonly notRequiredBasis?: ContactPolicyNotRequiredBasis;
+  readonly notRequiredTargetId?: AffordanceSubjectId;
   readonly scopes: readonly ContactPolicyScope[];
   readonly evidence: readonly AffordanceEvidence[];
 }

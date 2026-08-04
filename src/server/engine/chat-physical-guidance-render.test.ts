@@ -20,7 +20,9 @@ import {
   type PhysicalActionStatus,
   type PhysicalNarrationConstraint,
   type PhysicalPremiseCorrection,
+  type PhysicalStateTransition,
 } from "@/contracts";
+import { CHAT_CONTACT_DOMAIN_ID, CHAT_CONTACT_ENDED_CODE } from "./chat-permission-guidance";
 import {
   chatPhysicalGuidanceBlock,
   renderChatPhysicalGuidance,
@@ -98,14 +100,56 @@ function guidanceOf(input: {
   constraints?: readonly PhysicalNarrationConstraint[];
   corrections?: readonly PhysicalPremiseCorrection[];
   actionOutcomes?: readonly PhysicalActionOutcome[];
+  transitions?: readonly PhysicalStateTransition[];
 }): NarratorPhysicalGuidance {
   return {
     ...emptyNarratorPhysicalGuidance(),
     constraints: input.constraints ?? [],
     corrections: input.corrections ?? [],
     actionOutcomes: input.actionOutcomes ?? [],
+    transitions: input.transitions ?? [],
   };
 }
+
+/**
+ * One revocation stop transition, as `chat-permission-guidance.ts` produces
+ * them — the transition tier's only producer in this lane.
+ */
+function stopTransition(overrides: Partial<PhysicalStateTransition> = {}): PhysicalStateTransition {
+  const identity = "permission-stop:permission-reply:msg_reply_1:player->char_wren";
+  return {
+    id: identity,
+    subjectIds: [affordanceSubjectId("player"), affordanceSubjectId("char_wren")],
+    domainId: CHAT_CONTACT_DOMAIN_ID,
+    locusIds: ["shoulders"],
+    beforeCodes: ["contact.locus.shoulders"],
+    afterCodes: [CHAT_CONTACT_ENDED_CODE],
+    causeCodes: [],
+    relevance: "action",
+    disclosure: "positive_detail_allowed",
+    repeatKey: identity,
+    evidence: [],
+    fingerprint: guidanceFingerprint(["permission-stop", identity]),
+    ...overrides,
+  };
+}
+
+/**
+ * A SECOND pair's stop, as one ensemble reply produces when its decisions end
+ * contact on two pairs at once — the case the transition budget used to eat.
+ */
+function secondPairStopTransition(): PhysicalStateTransition {
+  const identity = "permission-stop:permission-reply:msg_reply_1:char_mira->char_wren";
+  return stopTransition({
+    id: identity,
+    subjectIds: [affordanceSubjectId("char_mira"), affordanceSubjectId("char_wren")],
+    repeatKey: identity,
+    fingerprint: guidanceFingerprint(["permission-stop", identity]),
+  });
+}
+
+/** The subject names the pipeline supplies when a stop is in play. */
+const STOP_NAMES: Readonly<Record<string, string>> = { player: "the player", char_wren: NAME };
 
 const render = (guidance: NarratorPhysicalGuidance, sink?: DiagnosticCollector) =>
   renderChatPhysicalGuidance({
@@ -539,3 +583,174 @@ describe("order, safety, and the block", () => {
     expect(PHYSICAL_GUIDANCE_PRECEDENCE).toContain("override");
   });
 });
+
+describe("the revocation stop line", () => {
+  const stopRender = (transitions: readonly PhysicalStateTransition[], names: Readonly<Record<string, string>> | null = STOP_NAMES) =>
+    renderChatPhysicalGuidance({
+      guidance: guidanceOf({ transitions }),
+      characterName: NAME,
+      possessive: POSSESSIVE,
+      ...(names === null ? {} : { subjectNames: names }),
+    });
+
+  /**
+   * The spec's narrator-instruction constraints as a word list: relationship
+   * thresholds, permission records, developer overrides, and diagnostic detail
+   * may NEVER surface (spec §"Revocation during active contact").
+   */
+  const BANNED_VOCABULARY = [
+    "permission",
+    "grant",
+    "policy",
+    "override",
+    "overridden",
+    "revoke",
+    "revoked",
+    "revocation",
+    "threshold",
+    "withdraw",
+    "withdrawn",
+    "developer",
+    "ledger",
+    "record",
+    "diagnostic",
+    "standing",
+    "invalidated",
+  ];
+
+  it("names the pair and the surface, and binds the stop", () => {
+    const lines = stopRender([stopTransition()]);
+    expect(lines).toEqual([
+      "- Ended contact: the player is no longer touching Wren's shoulder. " +
+        "That contact is over now — do not write it as continuing, resuming, or still in progress. " +
+        "If the stop has not already been shown, portray it naturally (an in-character reaction is fine); " +
+        "do not decide how the player responds.",
+    ]);
+  });
+
+  it("explicitly forbids continuing or resuming the invalidated contact", () => {
+    // The spec fixture "narrator output cannot continue invalidated contact":
+    // the instruction half is this line; the behavioral half is prompt-level.
+    const line = stopRender([stopTransition()])[0] ?? "";
+    expect(line).toContain("do not write it as continuing, resuming, or still in progress");
+  });
+
+  it("is phrased to stay correct when the prior reply already showed the stop", () => {
+    const line = stopRender([stopTransition()])[0] ?? "";
+    expect(line).toContain("If the stop has not already been shown");
+    // And it never claims the stop is new information or scripts the moment.
+    expect(line.toLowerCase()).not.toMatch(/just now|suddenly|for the first time/u);
+  });
+
+  it("never exposes policy internals — the banned vocabulary stays out", () => {
+    const named = stopRender([stopTransition()]).join(" ").toLowerCase();
+    const generic = stopRender([stopTransition()], null).join(" ").toLowerCase();
+    const multiLocus = stopRender([stopTransition({ locusIds: ["shoulders", "hair"] })]).join(" ").toLowerCase();
+    for (const banned of BANNED_VOCABULARY) {
+      expect(named, banned).not.toContain(banned);
+      expect(generic, banned).not.toContain(banned);
+      expect(multiLocus, banned).not.toContain(banned);
+    }
+  });
+
+  it("does not author the player's reaction and does not script the NPC's", () => {
+    const line = stopRender([stopTransition()])[0] ?? "";
+    expect(line).toContain("do not decide how the player responds");
+    // The NPC's reaction is licensed, never specified.
+    expect(line).toContain("an in-character reaction is fine");
+    expect(line.toLowerCase()).not.toMatch(/she pulls|he pulls|flinch|recoil/u);
+  });
+
+  it("degrades to the generic stop when the participants cannot be named", () => {
+    // No name map at all, and a map missing one side, both keep the instruction.
+    for (const lines of [
+      stopRender([stopTransition()], null),
+      stopRender([stopTransition()], { player: "the player" }),
+      stopRender([stopTransition({ subjectIds: [] })]),
+    ]) {
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain("- Ended contact: a touch that was underway has ended.");
+      expect(lines[0]).toContain("do not write it as continuing");
+    }
+  });
+
+  it("falls back to the person alone for several loci, or an unwordable one", () => {
+    const [several] = stopRender([stopTransition({ locusIds: ["shoulders", "hair"] })]);
+    expect(several).toContain("is no longer touching Wren.");
+    const [unwordable] = stopRender([stopTransition({ locusIds: ["feet"] })]);
+    expect(unwordable).toContain("is no longer touching Wren.");
+  });
+
+  it("renders nothing for a transition from a domain this lane does not word", () => {
+    expect(stopRender([stopTransition({ domainId: "hair" })])).toEqual([]);
+    expect(stopRender([stopTransition({ afterCodes: ["hair.dried"] })])).toEqual([]);
+  });
+
+  it("renders after every other tier — the compiler's order", () => {
+    const lines = render(
+      guidanceOf({
+        constraints: [constraint({ prohibited: [HAIR_CLAIM_MOTION_FREE_FLOW] })],
+        transitions: [stopTransition()],
+      }),
+    );
+    expect(lines[0]).toContain("Binding constraint");
+    // Without the names map the stop still ships, generically.
+    expect(lines[1]).toContain("Ended contact");
+  });
+
+  it("survives the shared gate and budget — a multi-pair revocation loses no stop", () => {
+    // The ensemble case: one reply's decisions end contact on two pairs. Both
+    // are binding, and the producer's emission window closes with the next
+    // reply, so a pair the budget dropped would never be told to anyone
+    // (chat-permission-guidance.ts §"Budget interaction").
+    const sink = new DiagnosticCollector();
+    const compiled = compileNarratorPhysicalGuidance({
+      transitions: [stopTransition(), secondPairStopTransition()],
+      sink,
+    });
+    expect(compiled.transitions).toHaveLength(2);
+    expect(sink.items).toEqual([]);
+    const lines = renderChatPhysicalGuidance({
+      guidance: compiled,
+      characterName: NAME,
+      possessive: POSSESSIVE,
+      subjectNames: { ...STOP_NAMES, char_mira: "Mira" },
+    });
+    // Two candidates, two lines — the renderer stays one line per candidate, and
+    // each names its OWN pair rather than merging them into a claim about
+    // everybody (which would end contacts nothing ended). Order inside the tier
+    // is a fingerprint tie-break between two equally binding stops, so it is
+    // deliberately not asserted.
+    expect(lines).toHaveLength(2);
+    for (const actor of ["the player", "Mira"]) {
+      expect(lines).toContain(
+        `- Ended contact: ${actor} is no longer touching Wren's shoulder. ` +
+          "That contact is over now — do not write it as continuing, resuming, or still in progress. " +
+          "If the stop has not already been shown, portray it naturally (an in-character reaction is fine); " +
+          "do not decide how the player responds.",
+      );
+    }
+    // The safety sweep holds for every line of a multi-pair block, not just one.
+    const joined = lines.join(" ").toLowerCase();
+    for (const banned of BANNED_VOCABULARY) expect(joined, banned).not.toContain(banned);
+  });
+
+  it("drops the block when a stop transition's disclosure was tampered post-compile", () => {
+    const sink = new DiagnosticCollector();
+    const tampered = {
+      ...stopTransition(),
+      disclosure: "resolver_only",
+    } as unknown as PhysicalStateTransition;
+    expect(stopRender([tampered], STOP_NAMES)).toEqual([]);
+    const renderedWithSink = renderChatPhysicalGuidance({
+      guidance: guidanceOf({ transitions: [tampered] }),
+      characterName: NAME,
+      possessive: POSSESSIVE,
+      subjectNames: STOP_NAMES,
+      sink,
+    });
+    expect(renderedWithSink).toEqual([]);
+    expect(sink.items.some((item) => item.code === GUIDANCE_DISCLOSURE_LEAK)).toBe(true);
+  });
+});
+

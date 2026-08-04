@@ -673,6 +673,13 @@
       "when": 1785856575702,
       "tag": "0095_strip-adult-eligibility-declaration",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1785858131809,
+      "tag": "0096_curved_avengers",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { characterChats, characters, chatParticipants, db } from "@/server/db";
-import { keyedLockBusy } from "@/server/engine";
+import { chatExchangeLockKey, keyedLockBusy } from "@/server/engine";
 import { jsonError } from "@/server/api";
 
 /**
@@ -158,7 +158,7 @@ export async function resolveChatMemoryGroupId(
  * exchange's own `chat_busy` code so the client handles both the same way.
  */
 export function chatBusyResponse(chatId: string): ReturnType<typeof jsonError> | null {
-  return keyedLockBusy(`chat_exchange:${chatId}`)
+  return keyedLockBusy(chatExchangeLockKey(chatId))
     ? jsonError("chat_busy", "a reply is still streaming; wait for it to finish before changing the scene", 409)
     : null;
 }

@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { PgColumn, PgTable, PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { affordanceSubjectId, type RomanticPermissionEvent } from "@/contracts";
 import { newId } from "@/lib/ids";
 import {
   findViewable,
@@ -13,13 +14,19 @@ import {
   toPublicLocation,
   toPublicSocialCard,
 } from "@/server/api";
-import { deleteChat } from "@/server/engine";
+import {
+  appendChatPermissionEventsWithInvalidation,
+  chatPermissionReplyEventRef,
+  deleteChat,
+  listChatPermissionEvents,
+} from "@/server/engine";
 import { deleteOwnedImage, promoteVariant } from "@/server/images";
 import {
   characterChatMessages,
   characterChats,
   characters,
   chatParticipants,
+  chatPermissionEvents,
   db,
   images,
   items,
@@ -581,6 +588,56 @@ describe.skipIf(!ready)("authorization matrix — child resources", () => {
       .select({ id: characterChatMessages.id })
       .from(characterChatMessages)
       .where(and(eq(characterChatMessages.id, fixture.chatMessage), eq(characterChatMessages.chatId, fixture.otherChat)));
+    expect(underWrongChat).toEqual([]);
+  });
+
+  it("B cannot reach A's chat permission events: the owner-admin chat gate blocks, and the ledger is chat-scoped", async () => {
+    // The romantic_touch developer-override route — GET/POST
+    // /api/admin/self/chat-permissions/[chatId], wrapped in
+    // withOwnerAdminOwnedChat — gates BOTH verbs on this same loadOwnedChat
+    // resolve, so an admin role alone buys nothing without ownership; a foreign
+    // chat id and a nonexistent one are the same hidden 404. Route-level
+    // owner-ok/adversary-404 coverage for both verbs lives in
+    // src/app/api/admin/chat-permissions/chat-permissions.int.test.ts.
+    expect(await loadOwnedChat(fixture.chat, ownerB)).toBeNull();
+    expect(await loadOwnedChat(fixture.chat, ownerA)).not.toBeNull();
+
+    // Permission events carry no ownerId — like messages, ownership is
+    // established ONCE by the chat gate, and every ledger read/write is then
+    // chat-scoped. Seed one grant through the real append seam the route uses.
+    const event: RomanticPermissionEvent = {
+      eventId: "authz_permission_grant",
+      branchId: fixture.chat,
+      permittedActorId: affordanceSubjectId("player"),
+      grantingTargetId: affordanceSubjectId("authz_permission_target"),
+      scope: "romantic_touch",
+      kind: "granted",
+      sourceKind: "npc_decision",
+      storyTime: 0,
+      orderInSource: 0,
+    };
+    const recorded = await appendChatPermissionEventsWithInvalidation({
+      chatId: fixture.chat,
+      guardMessageId: fixture.chatMessage,
+      eventRef: chatPermissionReplyEventRef(fixture.chatMessage),
+      storyMinute: 0,
+      events: [event],
+    });
+    expect(recorded.status).toBe("recorded");
+    expect(await listChatPermissionEvents(fixture.chat)).toHaveLength(1);
+  });
+
+  it("a valid permission-event id under the wrong parent chat resolves to nothing", async () => {
+    const [row] = await db()
+      .select({ id: chatPermissionEvents.id })
+      .from(chatPermissionEvents)
+      .where(eq(chatPermissionEvents.chatId, fixture.chat))
+      .limit(1);
+    expect(row).toBeTruthy();
+    const underWrongChat = await db()
+      .select({ id: chatPermissionEvents.id })
+      .from(chatPermissionEvents)
+      .where(and(eq(chatPermissionEvents.id, row!.id), eq(chatPermissionEvents.chatId, fixture.otherChat)));
     expect(underWrongChat).toEqual([]);
   });
 });
