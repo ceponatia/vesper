@@ -148,6 +148,7 @@ export async function runChatSceneSketch(input: z.infer<typeof sketchJobPayloadS
     lowLatencyRouting: true,
     repair: false,
     degradeSeverity: "warn",
+    telemetry,
   });
   const { value, degraded } = await withGenerateTimeout(
     work,
