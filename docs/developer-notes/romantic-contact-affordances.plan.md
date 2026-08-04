@@ -9,10 +9,8 @@ ran 2026-07-31 and PASSED (owner verdict 2026-08-01)** — continuation items
 3–6 are un-gated in their existing sequence; the parked list stays parked.
 **Enablement is LIVE (2026-08-02): both flags set to the literal `on` on the
 Fly deploy** after the verdict's conditions merged (PRs #26/#27).
-**Next: item 3, actor control through the live lane —
-[spec revised 2026-08-02 after pre-implementation review](romantic-contact-affordances.spec.actor-control.md).
-Pure/durability foundations and a measured shadow pass now precede any new
-authority.**)
+**Next: item 3, remove the rolled-back participant-declaration system
+completely before continuing actor-control authority work.**)
 
 Slices 0–2: the truth-source audit is published, the lane-neutral contact
 lifecycle is built as pure contracts, and the foot domain proof is in
@@ -21,26 +19,17 @@ profile inheritance, condition distribution, footwear filtering, and the
 pressure/texture/glide/articulation/nail phenomena — fixture-driven, not
 production-wired; contact warmth and scent recorded deferred).
 
-Two of the three ruled prerequisites are **done**: the slice-2
+The two ruled prerequisites are **done**: the slice-2
 [hardening pass](finished/romantic-contact-affordances.followups.md) ✅ and the
 **pre-slice-3 foot-facts + registration hardening** ✅ (2026-07-30 — persisted
-foot baselines with a backfill, partial foot profiles, the optional-invalid
-dependency law). The third, the
-[adult declaration](finished/adult-eligibility.plan.md), shipped 2026-07-30 but
-was **rolled back 2026-08-03** (owner ruling: scope creep, and species-scaled
-ages make a flat human 18 the wrong adult test) — see the rollback note atop
-its plan. **This plan's eligibility-dependent items need reanalysis**: the
-positive adult-eligibility source that continuation items 5–6 and the romantic
-gate assumed no longer exists, and what replaces it (if anything) is an owner
-decision, not something this document can assume. The follow-ups list is
-**complete and archived** —
+foot baselines with a backfill, partial foot profiles, and the optional-invalid
+dependency law). The follow-ups list is **complete and archived** —
 [record](finished/romantic-contact-affordances.followups.md). Foot registry
 defaults, the Neon backfill, and deployment are all complete, so the
 production-registration gate now waits only on slice-3 wiring order.
 
 Remaining: the slice-3 continuation order below, then slice 4. Intimate work
-waits for the foot proof and authoritative adult-eligibility, consent,
-exposure, and physiology. The plan follows
+waits for the foot proof and authoritative consent, exposure, and physiology. The plan follows
 [body-attribute affordances](body-attribute-affordances.plan.md)
 and the shared projection contract in
 [constraint-first narrator physical guidance](narrator-physical-guidance.plan.md);
@@ -106,11 +95,10 @@ promotion:
 
 | Area | Current position |
 | --- | --- |
-| Legacy romantic chat | It has structured clothing and coverage, retake snapshots, a minor fence, and a turn-level sensory allowance. It does not have authoritative fine pose, distance, support, body-surface contact, per-sense exposure, or a consent ledger. Its intimate-scene signal and touch-welcomeness reaction are not consent grants. |
+| Legacy romantic chat | It has structured clothing and coverage, retake snapshots, and a turn-level sensory allowance. It does not have authoritative fine pose, distance, support, body-surface contact, per-sense exposure, or a consent ledger. Its intimate-scene signal and touch-welcomeness reaction are not consent grants. |
 | Successor chat | It has world location, event cuts, observations, and a fail-closed consent ledger. It still lacks the regional pose, articulation, support, and active body-surface contact required here. Its structured clothing adapter is also unfinished. |
 | Body surfaces | Stable anatomy and appearance attributes exist. Shared regional moisture, products, body residue, pressure marks, and contact temperature do not yet have complete owners. |
 | Physiology | The general physiology plan is still deferred. Erection, swelling, lubrication, vascular change, sweat, and temperature cannot be inferred merely because the scene is intimate. |
-| Adult eligibility | Known numeric minors are fenced from intimate prompt surfaces. Unknown, nonnumeric, and fantasy-scaled ages do not yet provide an explicit adult-eligibility proof for every participant. |
 
 Slice 0 turned every missing source into one of three recorded outcomes: build
 the minimal owner in this plan, depend on a named prerequisite, or omit the
@@ -199,7 +187,7 @@ The first trial should cover:
 
 ## Candidate intimate-region observations
 
-The second trial should support adult, consent-gated scenes across the anatomy a
+The second trial should support consent-gated scenes across the anatomy a
 character actually has. It should cover external genitals, breasts and nipples,
 the perineum, and anal contact where those regions are relevant.
 
@@ -228,19 +216,13 @@ It gives us a test catalog without committing to simulate every case at once.
   A player describing an NPC's voluntary movement does not make that movement
   committed truth. This applies to every contact, including ordinary ones.
 - **Permission is scoped, not universal** (owner ruling, 2026-07-30). Only
-  **romantic and intimate** contact requires the applicable permission scope
-  and — for those kinds — positive adult eligibility for every participant.
+  **romantic and intimate** contact requires the applicable permission scope.
   Ordinary incidental and affectionate social touch is **permission-neutral**:
   it is the everyday contact the lane already narrates, and requiring a grant
   the lane cannot produce would gate ordinary behaviour behind machinery that
   does not exist. Foot play framed as romantic or fetish attention is
   `romantic` and needs the scope — it is never relabeled `affectionate` to let
   a trial commit.
-- Adult intimate contact must pass the authoritative consent and policy check
-  before a committed contact exists. Known minors are always ineligible.
-  Intimate rollout remains blocked until every participant—including
-  unknown/fantasy-age characters and the player persona—has an authoritative
-  adult-eligibility ruling. Missing or uncertain permission fails safely.
 - Possibility is not actuality. Reachable, sensitive, compressible, or capable
   of becoming wet does not mean touched, aroused, compressed, or wet.
 - Clothing changes require real wardrobe actions. The contact layer cannot
@@ -295,31 +277,28 @@ decision.
 Inventory what chat and successor chats already know about pose, reach,
 clothing, body surfaces, physiology, consent, perception, and turn capture.
 Publish the capability matrix. Resolve or explicitly defer gaps before
-treating any field as authoritative. The slice must also settle adult
-eligibility, actor control, and the permission rule used for the first foot
-trial.
+treating any field as authoritative. The slice must also settle actor control and the permission rule used for the
+first foot trial.
 
 **As built.** The matrix is
 [romantic-contact-affordances.audit.md](romantic-contact-affordances.audit.md),
 with a file and line behind every claim. The short version: clothing state,
 effective coverage, and the legacy retake boundary are trustworthy; body
-surfaces, adult eligibility, successor consent, successor perception, and the
-foot sub-region registry are usable but too narrow; and pose, reach, support,
+surfaces, successor consent, successor perception, and the foot sub-region
+registry are usable but too narrow; and pose, reach, support,
 material-between, tactile perception, legacy actor control, legacy permission,
 and the contact lifecycle itself have **no owner in either lane**. Two
 consequences the later slices inherit: contact warmth cannot join the foot
 milestone (no temperature read exists anywhere), and the foot topology needs
 three loci — arch, ball, and toenails — that the body registry does not have.
 
-The three product questions this slice was told to settle turned out to have no
+The two product questions this slice was told to settle turned out to have no
 ruling anywhere in the repo. Each got a RECOMMENDED default implemented in
-slice 1 and was flagged, unresolved, at the top of the audit: how adult
-eligibility is proven when the existing fence fails open and the player persona
-has no age at all; what proves actor control in a lane whose only mechanism is
-prompt text pointing the other way; and which action kinds need a permission
-owner when legacy chat has no consent grant of any kind. **All three were ruled
-by the owner on 2026-07-30** — the rulings are recorded inline in the audit and
-summarized under Open questions below.
+slice 1 and was flagged, unresolved, at the top of the audit: what proves actor
+control in a lane whose only mechanism is prompt text pointing the other way,
+and which action kinds need a permission owner when legacy chat has no consent
+grant of any kind. **Both were ruled by the owner on 2026-07-30** — the rulings
+are recorded inline in the audit and summarized under Open questions below.
 
 ### Slice 1 — shared contact foundation · shipped 2026-07-30
 
@@ -406,13 +385,10 @@ live lane; it makes the contracts strong enough to be wired.
    [scene spec](romantic-contact-affordances.spec.scene.md).
 5. **Final foot side/unsided regressions** — the last residuals from the
    slice-2 hardening list.
-6. **The four carried-forward corrections** from the review: the required
-   access discriminator on the eligibility entity descriptor (replacing an
-   optional `foreign?` flag whose omission resembled ownership), the
-   non-owner blocker-routing regression, the clone-policy **disclosure on
-   publish** (owner ruling — full-profile duplication stays, the author is
-   told at the control; see docs/auth.md §"Publishing and cloning"), and this
-   documentation pass.
+6. **The two remaining carried-forward corrections** from the review: the
+   clone-policy **disclosure on publish** (owner ruling — full-profile
+   duplication stays, the author is told at the control; see docs/auth.md
+   §"Publishing and cloning") and this documentation pass.
 
 #### Slice 3A.1 — boundary corrections · shipped 2026-07-31
 
@@ -525,7 +501,7 @@ on immobilized limbs.
      own typed wording (out-of-reach stays a refusal, material stays
      material).
    - **The minimal NPC-authored contact-ending producer** — the first bounded
-     deliverable of item 3 (actor control through the live lane). After the
+     deliverable of item 4 (actor control through the live lane). After the
      assistant reply settles, conservative whole-sentence detection over the
      reply's narration (negation/hedge/question/dialogue/romantic vetoes;
      pronouns resolve only for a sole NPC; ensembles need an unambiguous
@@ -594,7 +570,20 @@ on immobilized limbs.
    literal `on` (verified in-machine). Standing watch item: the NPC-ending
    producer's first organic production occurrence (per the verdict).
 
-3. **Actor control through the live lane** (un-gated by the 2026-08-01
+3. **Remove the rolled-back participant-declaration system completely.**
+   Delete both editor dropdowns and their form state; remove the associated
+   profile-schema, public-profile, API-validation, resolver, adapter, blocker,
+   deep-link, diagnostic, contact-core, fixture, test, and export paths; and
+   remove any feature-specific helper that is left with no other caller.
+   Because the old values lived inside JSONB rather than a dedicated column,
+   ship an idempotent data cleanup that removes the obsolete key from every
+   character and persona profile instead of relying on schemas to ignore it.
+   Verify a repository-wide residue search finds no runtime reference and a
+   production query finds zero stored keys. Do not replace the declaration
+   with another field or gate here: broader moderation is separate pre-launch
+   work outside this plan.
+
+4. **Actor control through the live lane** (un-gated by the 2026-08-01
    verdict, but gated by its own foundation + shadow review) — its first bounded
    deliverable, the deterministic NPC contact-ending producer, landed in item
    1.2 and remains the frozen ending floor.
@@ -625,18 +614,12 @@ on immobilized limbs.
    `CHAT_NPC_SCENE_DECISION_SHADOW`, default off. The shadow flag has not
    been enabled; the measurement window, its review, and the standing-cost
    ruling remain before any authority increment starts.
-4. **The explicit `romantic_touch` permission owner — spec before
+5. **The explicit `romantic_touch` permission owner — spec before
    implementation** (un-gated by the 2026-08-01 verdict). Its design decisions need owner
    rulings first; they are listed in Open questions below.
-5. **Eligibility + blocker-link UI wiring** — **blocked since 2026-08-03**:
-   the adapter and blocker links this item was to wire were removed with the
-   [adult declaration rollback](finished/adult-eligibility.plan.md). Needs a
-   re-planned eligibility source (an owner decision) before it can be
-   re-scoped.
-6. **The genuinely romantic proof** (still sequenced after 4 and 5) —
-   previously gated on the adult declaration resolving every participant;
-   **blocked since the 2026-08-03 rollback** on the same re-planned
-   eligibility source as item 5.
+6. **The genuinely romantic proof** (still sequenced after actor control and
+   the permission owner) — run a permission-gated live case without widening
+   the contact system's authority or inferring consent from scene framing.
 
 **Parked (owner ruling 2026-07-31; reaffirmed by the 2026-08-01 PASS verdict
 — the broader parked list remains parked)** — deliberate
@@ -677,11 +660,10 @@ branches neither duplicate material nor leave half an effect.
 
 ### Slice 5 — intimate access and contact
 
-Reuse the proven contact foundation for adult intimate regions. Start with
+Reuse the proven contact foundation for intimate regions. Start with
 effective exposure, material-between, contact pressure, clothing contour,
-friction, and current surface moisture. This slice cannot start until adult
-eligibility, consent scope, actor control, exposure, and point-of-view gates are
-authoritative for the selected lane.
+friction, and current surface moisture. This slice cannot start until consent scope, actor control, exposure, and
+point-of-view gates are authoritative for the selected lane.
 
 ### Slice 6 — live physiology and aftermath
 
@@ -700,7 +682,7 @@ as one unit if desired.
 
 ## How we would judge the trial
 
-Use a small, repeatable set of adult romantic-chat scenes rather than relying
+Use a small, repeatable set of romantic-chat scenes rather than relying
 only on free-form play. Each scene should be run with the feature off and on.
 Review:
 
@@ -708,7 +690,6 @@ Review:
 - clothing and exposure contradictions;
 - stale contacts that continue after they ended;
 - unauthorized or player-puppeted NPC movement;
-- minor or unresolved adult-eligibility leakage;
 - invented arousal, consent, movement, or reactions;
 - useful sensory specificity;
 - repetition across sustained contact;
@@ -736,21 +717,14 @@ regressing those measures.
 
 ## Open questions
 
-**Five questions were ruled by the owner on 2026-07-30** (after the slice-2 QA
+**Four questions were ruled by the owner on 2026-07-30** (after the slice-2 QA
 report) and have left this list; each ruling is recorded in its detail doc.
 The first table now lists every remaining general question, including the
 measured item-3 cost gate; the second lists the eight `romantic_touch`
 permission-owner decisions from the 2026-07-31 review.
 
-The five already ruled:
+The four already ruled:
 
-- adult eligibility — an explicit `adult | minor | unresolved` declaration,
-  positive-adult required for romantic/intimate, fantasy and missing ages stay
-  unresolved, the repo-wide fail-open age fallback untouched
-  ([audit](romantic-contact-affordances.audit.md#owner-decisions-needed)).
-  **Superseded 2026-08-03: the declaration was rolled back** (scope creep;
-  species-scaled ages make a flat human 18 the wrong adult test), so the
-  eligibility source for romantic/intimate contact is an open question again;
 - actor control — player input commits only player-controlled movement; NPC
   movement originates NPC/narrator/simulation-side; narrator mode never
   bypasses target agency or consent (same audit section);
@@ -775,15 +749,14 @@ later blocking slice is not urgent, but it is not settled either.
 
 | Question | Owner | Required decision | Blocking slice | Status |
 | --- | --- | --- | --- | --- |
-| **What replaces the rolled-back adult-eligibility declaration?** ([rollback note](finished/adult-eligibility.plan.md)) | Owner | The 2026-07-30 `adult \| minor \| unresolved` declaration + numeric-18 check were rolled back 2026-08-03 (species-scaled ages make a flat human 18 the wrong adult test). What positive eligibility proof, if any, gates romantic/intimate contact — and how it accounts for non-human ages | Slice 3, items 5–6 | **Reopened by the rollback** — needs owner ruling |
 | **How detailed should foot regions be?** ([foot spec](romantic-contact-affordances.spec.foot.md)) | Product | Whether the shipped sixteen-surface map is the right granularity, or should shrink | Parked (owner ruling 2026-07-31) | **Parked** with the rest of the foot track until the MVP trial succeeds |
 | **Which intimate changes are ready to consume?** ([intimate spec](romantic-contact-affordances.spec.intimate.md)) | Physiology plan | Which of erection, swelling, lubrication, flushing have authoritative reads | Slice 6 | Blocked on the deferred physiology plan |
 | **What is the minimum intimate consent scope?** ([intimate spec](romantic-contact-affordances.spec.intimate.md)) | Owner | The floor for intimate contact, and whether the two lanes may claim parity | Slice 5 | Needs owner ruling |
 | **Do marks ride the ruled body-surface store, and what are the transaction mechanics?** ([effects companion](romantic-contact-affordances.spec.effects.md)) | Engineering + owner | Whether pressure marks join the ruled store; the atomic/idempotent/branch-safe commit design | Slice 4 | Open |
 | **How should scent and taste be phrased?** ([foot spec](romantic-contact-affordances.spec.foot.md); [intimate spec](romantic-contact-affordances.spec.intimate.md)) | Owner | Vocabulary that stays grounded without repetitive value judgments | Slice 5 (scent already deferred out of slice 2) | Open |
 | **What must retakes capture beyond the contact projection?** ([contact-core spec](romantic-contact-affordances.spec.contact-core.md)) | Engineering | Whether effects, perception, selected cues, and repetition history need their own capture | Settled per slice as each ships | Open, incremental |
-| **Is the NPC decision read's measured cost/latency acceptable?** ([actor-control spec](romantic-contact-affordances.spec.actor-control.md)) | Owner | One trigger-gated call per qualifying assistant reply, launched beside settlement but still inside the exchange lock; review shadow fire rate, p50/p95/p99 added latency, timeout rate, and cost per 100 replies | Item 3, movement authority | Foundation + shadow may proceed; owner ruling required before authority is enabled |
-| **When do NPC posture/support changes join the permitted set?** ([actor-control spec](romantic-contact-affordances.spec.actor-control.md)) | Owner | "She sits beside you" needs support surfaces beyond `ground` (a seat vocabulary at minimum); deferred out of increments 1–3, owner may pull it forward as increment 4 with a named surface design | Item 3, post-increment 3 | Deferred by the spec; ruling only needed to pull it forward |
+| **Is the NPC decision read's measured cost/latency acceptable?** ([actor-control spec](romantic-contact-affordances.spec.actor-control.md)) | Owner | One trigger-gated call per qualifying assistant reply, launched beside settlement but still inside the exchange lock; review shadow fire rate, p50/p95/p99 added latency, timeout rate, and cost per 100 replies | Item 4, movement authority | Foundation + shadow may proceed; owner ruling required before authority is enabled |
+| **When do NPC posture/support changes join the permitted set?** ([actor-control spec](romantic-contact-affordances.spec.actor-control.md)) | Owner | "She sits beside you" needs support surfaces beyond `ground` (a seat vocabulary at minimum); deferred out of increments 1–3, owner may pull it forward as increment 4 with a named surface design | Item 4, post-increment 3 | Deferred by the spec; ruling only needed to pull it forward |
 
 ### `romantic_touch` permission-owner design
 
@@ -795,26 +768,26 @@ what the stored grant means. Every row is **"needs owner ruling before the
 
 | Question | Owner | Required decision | Blocking slice | Status |
 | --- | --- | --- | --- | --- |
-| **Directional or bilateral?** | Owner | Whether a grant runs one way (A may touch B) or establishes mutual permission | Slice 3, step 3 | Needs owner ruling — spec before implementation |
-| **Persistent, scene-local, or action-local?** | Owner | The lifetime of a grant: does it survive the scene, the chat, or only the action it was given for | Slice 3, step 3 | Needs owner ruling — spec before implementation |
-| **Exact scope semantics and implication rules** | Owner | Whether a scope implies narrower ones, or each is independent. **Exact-scope membership is the standing default** — a grant covers the named scope only — unless broader implication rules are explicitly ruled | Slice 3, step 3 | Needs owner ruling — spec before implementation; default stands until then |
-| **Grant / deny / withdraw mechanics** | Owner | How each is expressed, whether deny is distinct from absence, and whether withdrawal is a separate act | Slice 3, step 3 | Needs owner ruling — spec before implementation |
-| **NPC versus player authorship** | Owner | Who may author a grant for an NPC, and whether narrator mode may (the actor-control ruling says narrator mode never bypasses consent — this asks whether it may *create* one) | Slice 3, step 3 | Needs owner ruling — spec before implementation |
-| **Retake and branch behavior** | Owner | Whether a grant is captured in the retake snapshot, and what a branch inherits | Slice 3, step 3 | Needs owner ruling — spec before implementation |
-| **Provenance and effective time** | Owner | What a grant records about who gave it and when it takes effect | Slice 3, step 3 | Needs owner ruling — spec before implementation |
-| **Effect of withdrawal on an active romantic contact** | Owner | Whether withdrawal ends a committed contact immediately, requires an explicit transition, or applies only to new attempts | Slice 3, step 3 | Floor already implemented (owner review, 2026-07-31): the contract ends a live contact whose permission lapses and blocks the next attempt. Open: whether the permission owner's spec keeps immediate end or adds an explicit transition beat |
+| **Directional or bilateral?** | Owner | Whether a grant runs one way (A may touch B) or establishes mutual permission | Slice 3, item 5 | Needs owner ruling — spec before implementation |
+| **Persistent, scene-local, or action-local?** | Owner | The lifetime of a grant: does it survive the scene, the chat, or only the action it was given for | Slice 3, item 5 | Needs owner ruling — spec before implementation |
+| **Exact scope semantics and implication rules** | Owner | Whether a scope implies narrower ones, or each is independent. **Exact-scope membership is the standing default** — a grant covers the named scope only — unless broader implication rules are explicitly ruled | Slice 3, item 5 | Needs owner ruling — spec before implementation; default stands until then |
+| **Grant / deny / withdraw mechanics** | Owner | How each is expressed, whether deny is distinct from absence, and whether withdrawal is a separate act | Slice 3, item 5 | Needs owner ruling — spec before implementation |
+| **NPC versus player authorship** | Owner | Who may author a grant for an NPC, and whether narrator mode may (the actor-control ruling says narrator mode never bypasses consent — this asks whether it may *create* one) | Slice 3, item 5 | Needs owner ruling — spec before implementation |
+| **Retake and branch behavior** | Owner | Whether a grant is captured in the retake snapshot, and what a branch inherits | Slice 3, item 5 | Needs owner ruling — spec before implementation |
+| **Provenance and effective time** | Owner | What a grant records about who gave it and when it takes effect | Slice 3, item 5 | Needs owner ruling — spec before implementation |
+| **Effect of withdrawal on an active romantic contact** | Owner | Whether withdrawal ends a committed contact immediately, requires an explicit transition, or applies only to new attempts | Slice 3, item 5 | Floor already implemented (owner review, 2026-07-31): the contract ends a live contact whose permission lapses and blocks the next attempt. Open: whether the permission owner's spec keeps immediate end or adds an explicit transition beat |
 
 ## Technical companions
 
 - [Truth-source audit](romantic-contact-affordances.audit.md) — the
-  promotion-time lane evidence and the three owner rulings it produced
+  promotion-time lane evidence and the two owner rulings it produced
 - [Technical index and ownership map](romantic-contact-affordances.spec.md)
 - [Shared contact and action contracts](romantic-contact-affordances.spec.contact-core.md)
 - [Observations, effects, and presentation](romantic-contact-affordances.spec.effects.md)
 - [Scene and body-relations owner](romantic-contact-affordances.spec.scene.md) —
   the minimal scene owner added in slice 3A
 - [NPC actor control through the live lane](romantic-contact-affordances.spec.actor-control.md) —
-  item 3's stable actor/contact references, field-by-field evidence proof,
+  item 4's stable actor/contact references, field-by-field evidence proof,
   chronology, post-settle cut, durable envelope/CAS, shadow gate, and three
   authority increments (revised 2026-08-02 after pre-implementation review)
 - [Foot-contact domain](romantic-contact-affordances.spec.foot.md)
