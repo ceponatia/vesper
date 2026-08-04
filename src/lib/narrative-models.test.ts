@@ -9,7 +9,11 @@ import {
 describe("NARRATIVE_MODELS", () => {
   it("every entry is an OpenRouter slug (vendor/model) with a label", () => {
     for (const option of NARRATIVE_MODELS) {
-      expect(option.id).toMatch(/^[a-z0-9-]+\/[a-z0-9.-]+$/);
+      // The optional leading `~` is OpenRouter's marker for a **floating alias**
+      // that redirects to the newest release in a family (e.g.
+      // `~deepseek/deepseek-v4-flash-latest`). It is part of the slug — the
+      // tilde-less form 404s — so the shape guard has to admit it.
+      expect(option.id).toMatch(/^~?[a-z0-9-]+\/[a-z0-9.-]+$/);
       expect(option.label.length).toBeGreaterThan(0);
     }
   });
