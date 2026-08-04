@@ -656,7 +656,7 @@ describe("compile", () => {
 describe("action outcomes", () => {
   const contactOutcome = (status: PhysicalActionStatus, disclosure: GuidanceDisclosure = "consistency_only") =>
     buildActionOutcome({
-      actionId: "contact:msg_1#character_wren:shoulders",
+      actionId: "contact:msg_1#player:character_wren:shoulders",
       status,
       resultCodes: ["contact.locus.shoulders", "contact.gesture.rest"],
       disclosure,
