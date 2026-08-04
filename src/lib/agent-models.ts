@@ -19,7 +19,7 @@ export interface AgentModelOption {
 }
 
 export const AGENT_MODELS: readonly AgentModelOption[] = [
-  { id: "deepseek/deepseek-v4-flash", label: "DeepSeek 4 Flash" },
+  { id: "~deepseek/deepseek-v4-flash-latest", label: "DeepSeek 4 Flash" },
   { id: "z-ai/glm-5.2", label: "GLM 5.2" },
 ];
 
@@ -35,5 +35,12 @@ export const AGENT_MODELS: readonly AgentModelOption[] = [
  * stays curated above as a selectable option; the narrator default is untouched
  * (Aion — narrative-models.ts). Replaced the retired `openrouter/owl-alpha` stealth
  * slug, which returned "No endpoints found" once the alpha model was pulled.
+ *
+ * The id is OpenRouter's **floating alias** for the family (owner ask, 2026-08-04) —
+ * the `~` prefix is part of the slug and required (`deepseek/deepseek-v4-flash-latest`
+ * without it 404s). It always redirects to the newest V4 Flash release, so a new
+ * snapshot needs no code change; the trade is that the exact weights can shift under
+ * us (the dated `deepseek/deepseek-v4-flash-<mmdd>` slugs are the pin-it escape hatch
+ * if a release ever regresses the agents' structured-JSON reliability).
  */
-export const DEFAULT_AGENT_MODEL_ID = "deepseek/deepseek-v4-flash";
+export const DEFAULT_AGENT_MODEL_ID = "~deepseek/deepseek-v4-flash-latest";
