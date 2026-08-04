@@ -334,12 +334,19 @@ starts, then contact updates. The
 [actor-control spec](romantic-contact-affordances.spec.actor-control.md) owns the
 detailed evidence rules, chronology, retries, persistence, and rollout gates.
 
-#### 5. Specify and implement the explicit `romantic_touch` permission owner
+#### 5. Implement the explicit `romantic_touch` permission owner — owner-ruled, spec ready
 
-Obtain the owner rulings listed under
-[`romantic_touch` permission-owner design](#romantic_touch-permission-owner-design),
-write the specification, then implement it. Do not infer a permission grant from
-scene framing, relationship state, or the existing intimate-scene signals.
+The product rulings were settled 2026-08-04 and are summarized under
+[`romantic_touch` permission-owner rulings](#romantic_touch-permission-owner-rulings).
+Implement the
+[permission-owner specification](romantic-contact-affordances.spec.permission.md)
+before the romantic proof.
+
+The MVP is deliberately narrow: one exact, directional `romantic_touch` scope
+for romantic contact aimed at an NPC. It must not imply kissing, intimate
+touch, undressing, nudity exposure, or sex. Include test/development controls
+for changing permission and relationship values through the developer menus;
+chat prompts must never act as administrative overrides.
 
 #### 6. Run the genuinely romantic proof
 
@@ -433,14 +440,6 @@ Determine which of erection, swelling, lubrication, and flushing have
 authoritative live reads. This remains blocked on the deferred physiology plan;
 contact must not create substitutes.
 
-#### What is the minimum intimate permission scope?
-
-**Owner:** Product. **Blocks:** slice 5.
-
-Set the permission floor for intimate contact and decide when the legacy and
-successor lanes may claim parity. See the
-[intimate spec](romantic-contact-affordances.spec.intimate.md).
-
 #### Do marks use the body-surface store, and how are they committed?
 
 **Owner:** Product for ownership; engineering for mechanics. **Blocks:** parked
@@ -484,35 +483,89 @@ least a typed seat vocabulary. The actor-control spec excludes this from
 increments 1–3; pull it forward only as a named increment 4 with a surface
 design.
 
-### `romantic_touch` permission-owner design
+### `romantic_touch` permission-owner rulings
 
-All eight decisions below require owner rulings before item 5 can be specified
-or implemented.
+These decisions were settled by the owner on 2026-08-04. They are no longer
+open questions for an implementation agent.
 
-1. **Directional or bilateral?** Decide whether a grant runs one way—A may
-   touch B—or creates mutual permission.
-2. **Persistent, scene-local, or action-local?** Decide whether a grant lasts
-   for one action, one scene, the chat or story branch, or another defined
-   boundary.
-3. **What are the scope implication rules?** Decide whether any scope implies
-   another. Exact-scope membership remains the default unless explicitly
-   changed: a grant covers only its named scope.
-4. **How do grant, denial, and withdrawal work?** Define acceptable evidence,
-   whether denial differs from absence, and whether withdrawal is a separate
-   act.
-5. **Who may author permission for an NPC or player?** Define the NPC/player
-   authorship boundary and whether narrator mode may create a grant. Narrator
-   mode may never bypass permission.
-6. **What happens on retake and branch?** Define what the retake snapshot
-   captures and what permission state a new branch inherits.
-7. **What provenance is stored, and when does a grant take effect?** Record who
-   granted what to whom, its source and scope, and its effective position in the
-   committed chronology.
-8. **What does withdrawal do to active contact?** Decide whether it ends a
-   committed contact immediately, requires an explicit transition, or affects
-   only new attempts. The current contract floor ends live contact when its
-   permission lapses and blocks the next attempt; the new owner must either
-   preserve that rule or explicitly replace it.
+1. **Permission is directional when an NPC is the target.** If Alex may touch
+   Mara romantically, that says nothing about whether Mara may touch Alex.
+   NPC-to-NPC permission therefore needs a separate grant in each direction.
+
+   The player is the deliberate exception. Vesper does not need to calculate a
+   standing grant before an NPC tries to touch the player, because the player
+   writes their own reaction. The NPC still needs authority over its own action,
+   and the narrator must not decide that the player accepts, reciprocates, or
+   enjoys it.
+
+2. **A grant belongs to one story branch.** It persists across scenes in that
+   branch until it is withdrawn or automatically revoked. It never leaks into
+   an unrelated chat, a character copy, or a sibling branch.
+
+   When authoritative relationship-state transitions exist, a sufficiently
+   large decline may revoke a grant. For example, a fall from `cherished` to
+   `cold` may revoke Alex's permission to touch Mara. A relationship increase
+   must never create or silently restore permission; a new grant is required.
+   Exact thresholds remain future relationship-system work.
+
+3. **Scopes do not imply one another.** The MVP stores only the exact
+   `romantic_touch` scope. It does not silently include kissing, intimate
+   anatomy, undressing another participant, exposing oneself to them, or sex.
+
+4. **Grant, denial, absence, and withdrawal are different facts.** A production
+   grant may come from explicit NPC dialogue or unambiguous NPC-authored conduct
+   that directly offers the contact. Do not infer it from attraction, arousal,
+   relationship label, lack of resistance, or scene tone. A denial of one
+   attempt does not necessarily erase a standing grant; wording such as “not
+   now” normally rejects the present attempt, while “do not touch me like that
+   anymore” withdraws the standing grant.
+
+   The first implementation must be tested against adversarial and natural
+   dialogue because simple consent detection is expected to need refinement.
+   Use a grounded structured decision, not a broad keyword detector.
+
+5. **Nobody may author permission for somebody else.** Player input and
+   player-authored narrator mode cannot create, alter, or withdraw an NPC's
+   permission. An NPC grant must originate from NPC-side assistant output or
+   the simulation.
+
+   Tests need a deliberate override, so authorized development/test users may
+   change permission and relationship values through the developer menus. That
+   is a structured, auditable control path; chat text is never an admin command
+   and must not activate the override.
+
+6. **Retakes and branches restore permission with the story state.** Retaking
+   an assistant reply restores the permission state from before that reply and
+   removes any grant, denial, or withdrawal created by the discarded reply. A
+   branch inherits the state at its fork point, and later changes stay local to
+   that branch.
+
+7. **Permission never works retroactively.** Every permission change records
+   who changed what for whom, the exact scope, its source message or event, its
+   story/branch identity, and its effective position in committed chronology.
+   A grant may authorize a clearly later action in the same committed reply,
+   but never an earlier action. Retake cleanup from ruling 6 prevents a
+   discarded reply's permission from leaking backward; ordered provenance
+   covers the separate same-reply case.
+
+8. **Revocation ends permission-dependent active contact.** The permission
+   change and the contact ending are committed in order. The contact is no
+   longer active once permission lapses. If the prose has not already shown the
+   stop or separation, the next narrator input receives a high-priority,
+   binding state-change or action-outcome instruction so the response handles
+   it naturally rather than silently continuing the contact.
+
+9. **The long-term model is a permission matrix, not one romance score.**
+   `cherished` or `smitten` describes how an NPC feels; it does not by itself
+   establish readiness for kissing, nudity, intimate touch, undressing, or sex.
+   Future work should add exact directional scopes and per-scope relationship
+   revocation thresholds. The current MVP must stay simple without claiming
+   those future scopes are covered.
+
+The
+[permission-owner specification](romantic-contact-affordances.spec.permission.md)
+owns the technical event, projection, ordering, override, rollback, and test
+requirements.
 
 ## Technical companions
 
@@ -520,6 +573,9 @@ or implemented.
   promotion-time lane evidence and the two owner rulings it produced
 - [Technical index and ownership map](romantic-contact-affordances.spec.md)
 - [Shared contact and action contracts](romantic-contact-affordances.spec.contact-core.md)
+- [Directional permission owner](romantic-contact-affordances.spec.permission.md) —
+  item 5's branch-local grant ledger, exact scope, chronology, revocation,
+  developer override, and rollback rules
 - [Observations, effects, and presentation](romantic-contact-affordances.spec.effects.md)
 - [Scene and body-relations owner](romantic-contact-affordances.spec.scene.md) —
   the minimal scene owner added in slice 3A
