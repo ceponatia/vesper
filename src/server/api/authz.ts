@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import type { CurrentUser } from "@/server/auth";
 import { recordSupportAccessAudit } from "./support";
-import { jsonError, type RouteContext, withUser } from "./respond";
+import { jsonError, type RouteContext, type RouteOptions, withUser } from "./respond";
 
 export const OWNER_ADMIN_API_PREFIX = "/api/admin/self";
 export const SUPPORT_ADMIN_API_PREFIX = "/api/admin/support";
@@ -53,21 +53,23 @@ export function withAuthorizedResource<P, R>(
   label: string,
   resolve: ResourceResolver<P, R>,
   handler: AuthorizedHandler<P, R>,
+  options: RouteOptions = {},
 ): (req: NextRequest, ctx: RouteContext<P>) => Promise<Response> {
   return withUser<P>(async (user, req, ctx) => {
     const params = await ctx.params;
     const resource = await resolve(user, params, req);
     if (resource === null) return jsonError("not_found", `${label} not found`, 404);
     return handler(user, resource, req, ctx);
-  });
+  }, options);
 }
 
 /** Typed convenience wrapper for routes rooted at /api/chats/[chatId]. */
 export function withOwnedChat<P extends { chatId: string }, R>(
   resolve: ResourceResolver<P, R>,
   handler: AuthorizedHandler<P, R>,
+  options: RouteOptions = {},
 ): (req: NextRequest, ctx: RouteContext<P>) => Promise<Response> {
-  return withAuthorizedResource("chat", resolve, handler);
+  return withAuthorizedResource("chat", resolve, handler, options);
 }
 
 /** Typed convenience wrapper for owned library entities. */
