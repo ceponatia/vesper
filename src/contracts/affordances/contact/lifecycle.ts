@@ -995,9 +995,19 @@ function authorizationLapse(
   if (!contactActionRequiresPermission(contact.actionKind)) return undefined;
   if (read === undefined) return "state_invalidated";
 
-  if (read.policy.status === "denied" || read.policy.status === "withdrawn") return "policy_withdrawn";
-  if (read.policy.status !== "allowed") return "state_invalidated";
-  if (!read.policy.scopes.includes(CONTACT_ACTION_SCOPE[contact.actionKind])) return "policy_withdrawn";
+  // A player-target contact never depended on a standing grant. The basis and
+  // named target must both match the stored contact; a bare or misdirected
+  // `not_required` answer still fails closed.
+  const playerTarget =
+    read.policy.status === "not_required" &&
+    read.policy.notRequiredBasis === "player_target" &&
+    contact.target.kind === "body" &&
+    read.policy.notRequiredTargetId === contact.target.subjectId;
+  if (!playerTarget) {
+    if (read.policy.status === "denied" || read.policy.status === "withdrawn") return "policy_withdrawn";
+    if (read.policy.status !== "allowed") return "state_invalidated";
+    if (!read.policy.scopes.includes(CONTACT_ACTION_SCOPE[contact.actionKind])) return "policy_withdrawn";
+  }
   return undefined;
 }
 

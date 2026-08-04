@@ -14,7 +14,9 @@ Actor-control delivery steps 1–3 landed 2026-08-02, and the three authority
 increments — an NPC moving, starting an affectionate hand touch, and changing
 the gesture of one she is already making — landed 2026-08-04 behind a
 default-off flag. What remains is the shadow measurement window, the owner's
-ruling on the measured cost and latency, and then turning any of it on.
+ruling on the measured cost and latency, and then turning any of it on. The
+item-5 `romantic_touch` permission owner was built 2026-08-04 behind
+`CHAT_ROMANTIC_PERMISSION` (off) — see item 5 below.
 
 Detailed shipped evidence lives in the
 [truth-source audit](romantic-contact-affordances.audit.md),
@@ -304,16 +306,11 @@ coding agent can see the next task immediately.
   The required repairs and targeted reruns passed. Production enablement
   completed 2026-08-02; both contact flags are live. The remaining watch item is
   the NPC-ending producer’s first organic production occurrence.
-- **Item 3 — participant-declaration removal — shipped 2026-08-04:** The
-  rollback of the adult-eligibility feature (2026-08-03) had deliberately kept
-  the contact core’s eligibility seam; this item deleted it end to end — the
-  adult-eligibility action gate, the participant-eligibility read, both reason
-  vocabulary members, the diagnostic, and every fixture, test, helper, and
-  adapter path — with no replacement field or gate. Contacts persisted by older
-  builds still parse, pinned by a regression test, and an idempotent data
-  cleanup (migration 0095) strips the obsolete declaration key from every
-  character and persona profile, with a production zero-stored-keys check after
-  deploy.
+- **Item 3 — retired declaration cleanup — shipped 2026-08-04:** The abandoned
+  declaration system and its contact-core seam were removed end to end, with no
+  replacement field or gate. Contacts persisted by older builds still parse,
+  pinned by a regression test, and migration 0095 removed stored profile
+  residue. Detailed proof lives in the finished follow-up record and migration.
 
 These entries are historical gates, not work remaining in the continuation
 queue.
@@ -340,19 +337,26 @@ each step a one-value staging change. The
 [actor-control spec](romantic-contact-affordances.spec.actor-control.md) owns the
 detailed evidence rules, chronology, retries, persistence, and rollout gates.
 
-#### 5. Implement the explicit `romantic_touch` permission owner — owner-ruled, spec ready
+#### 5. Implement the explicit `romantic_touch` permission owner — built 2026-08-04, awaiting enablement
 
 The product rulings were settled 2026-08-04 and are summarized under
 [`romantic_touch` permission-owner rulings](#romantic_touch-permission-owner-rulings).
-Implement the
+The
 [permission-owner specification](romantic-contact-affordances.spec.permission.md)
-before the romantic proof.
+was implemented the same day (see its §As built): the branch-local directional
+grant ledger and standing-grant projection, the resolver's exact-scope read with
+the player-target exception, the conservative NPC-side grant/denial/withdrawal
+decision, the audited developer-menu override, revocation ending dependent
+contact atomically, and the next-reply stop instruction. Everything is behind
+`CHAT_ROMANTIC_PERMISSION` (off; the developer override has its own capability
+flag), so production behavior is unchanged until the owner enables it for the
+item-6 proof. Relationship-based revocation remains reserved, per ruling 2.
 
-The MVP is deliberately narrow: one exact, directional `romantic_touch` scope
-for romantic contact aimed at an NPC. It must not imply kissing, intimate
-touch, undressing, nudity exposure, or sex. Include test/development controls
-for changing permission and relationship values through the developer menus;
-chat prompts must never act as administrative overrides.
+The MVP stayed deliberately narrow: one exact, directional `romantic_touch`
+scope for romantic contact aimed at an NPC, implying no kissing, intimate
+touch, undressing, nudity exposure, or sex. Test/development permission
+changes go through the developer menu's structured, audited path only; chat
+prompts never act as administrative overrides.
 
 #### 6. Run the genuinely romantic proof
 

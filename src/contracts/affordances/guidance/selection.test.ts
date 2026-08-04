@@ -100,11 +100,13 @@ describe("ordering", () => {
     expect(guidance.actionOutcomes.slice(2).some((outcome) => outcome.narratorMustResolve)).toBe(false);
   });
 
-  it("prefers an action-relevant transition over an attended one", () => {
+  it("ranks an action-relevant transition ahead of an attended one", () => {
     const guidance = select({
       transitions: [probeTransition({ id: "attended", relevance: "attention" }), probeTransition({ id: "acted" })],
     });
-    expect(guidance.transitions.map((transition) => transition.id)).toEqual(["acted"]);
+    // Both fit — the budget covers what one exchange can lawfully produce — so
+    // this asserts the ORDER, which is what decides the loser once it does not.
+    expect(guidance.transitions.map((transition) => transition.id)).toEqual(["acted", "attended"]);
   });
 });
 
@@ -134,14 +136,31 @@ describe("budgets", () => {
     expect(collector.items[0]?.context).toMatchObject({ kind: "correction" });
   });
 
-  it("keeps one transition", () => {
+  it("carries a whole exchange's worth of transitions without a drop", () => {
+    // The lawful maximum one exchange can produce. Every transition in this tier
+    // is a binding stop today, so a drop here is a required instruction lost —
+    // the producer's emission window closes on the next reply, so nothing
+    // dropped is ever rendered later.
     const collector = new DiagnosticCollector();
-    const guidance = select(
-      { transitions: [probeTransition({ id: "one" }), probeTransition({ id: "two" })] },
-      collector,
+    const transitions = Array.from({ length: GUIDANCE_MAX_TRANSITIONS }, (_, index) =>
+      probeTransition({ id: `t_${index}` }),
     );
+    const guidance = select({ transitions }, collector);
     expect(guidance.transitions).toHaveLength(GUIDANCE_MAX_TRANSITIONS);
-    expect(collector.items[0]?.context).toMatchObject({ kind: "transition" });
+    expect(collector.items).toEqual([]);
+  });
+
+  it("still budgets past the lawful maximum, and says so", () => {
+    const collector = new DiagnosticCollector();
+    const transitions = Array.from({ length: GUIDANCE_MAX_TRANSITIONS + 1 }, (_, index) =>
+      probeTransition({ id: `t_${index}` }),
+    );
+    const guidance = select({ transitions }, collector);
+    expect(guidance.transitions).toHaveLength(GUIDANCE_MAX_TRANSITIONS);
+    expect(collector.items[0]).toMatchObject({
+      code: GUIDANCE_SELECTION_OVER_BUDGET,
+      context: { kind: "transition", max: GUIDANCE_MAX_TRANSITIONS },
+    });
   });
 
   it("never drops an action outcome, however many arrive", () => {

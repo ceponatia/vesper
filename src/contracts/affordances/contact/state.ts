@@ -10,6 +10,7 @@ import {
   contactAdjustmentKindSchema,
   contactAgencyStatusSchema,
   contactControlStatusSchema,
+  contactPolicyNotRequiredBasisSchema,
   contactPolicyScopeSchema,
   contactPolicyStatusSchema,
 } from "./decisions";
@@ -101,6 +102,8 @@ const targetAgencySchema = z.object({
 
 const policySchema = z.object({
   status: contactPolicyStatusSchema,
+  notRequiredBasis: contactPolicyNotRequiredBasisSchema.optional(),
+  notRequiredTargetId: affordanceSubjectIdSchema.optional(),
   scopes: z.array(contactPolicyScopeSchema).max(8).readonly(),
   evidence: evidenceListSchema,
 });
@@ -248,8 +251,18 @@ function storedContactProblem(contact: CommittedContactRead): string | undefined
 
   if (!isInterpersonalContact(contact.source, contact.target)) return undefined;
   if (contactActionRequiresPermission(contact.actionKind)) {
-    if (contact.policy.status !== "allowed") return "permission_does_not_allow";
-    if (!contact.policy.scopes.includes(CONTACT_ACTION_SCOPE[contact.actionKind])) return "permission_scope_missing";
+    // The ruled player-target exception carries no scope: a stored contact whose
+    // policy says `not_required` FOR THAT REASON is exactly what the resolver
+    // committed. A bare `not_required` remains a contact no gate ever allowed.
+    const playerTarget =
+      contact.policy.status === "not_required" &&
+      contact.policy.notRequiredBasis === "player_target" &&
+      contact.target.kind === "body" &&
+      contact.policy.notRequiredTargetId === contact.target.subjectId;
+    if (!playerTarget) {
+      if (contact.policy.status !== "allowed") return "permission_does_not_allow";
+      if (!contact.policy.scopes.includes(CONTACT_ACTION_SCOPE[contact.actionKind])) return "permission_scope_missing";
+    }
   }
   return undefined;
 }

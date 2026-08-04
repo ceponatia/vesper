@@ -309,30 +309,43 @@ export function resolveContactAttempt(request: ContactResolveRequest): ContactRe
 
   if (interpersonal && contactActionRequiresPermission(intent.actionKind)) {
     evidence.push(context.policy.evidence);
-    switch (context.policy.status) {
-      case "denied":
-        return reject("permission_denied", evidence);
-      case "withdrawn":
-        return reject("permission_withdrawn", evidence);
-      case "unresolved":
-      case "not_required":
-        return unresolved("permission_unresolved", evidence, {
-          sink,
-          code: CONTACT_PERMISSION_UNAVAILABLE,
-          message: "no permission owner answered for this interpersonal contact",
-        });
-      case "allowed":
-        break;
-    }
-    if (!context.policy.scopes.includes(CONTACT_ACTION_SCOPE[intent.actionKind])) {
-      sink?.push(
-        diag(
-          "warn",
-          CONTACT_PERMISSION_SCOPE_MISSING,
-          `permission does not cover ${CONTACT_ACTION_SCOPE[intent.actionKind]}`,
-        ),
-      );
-      return reject("permission_scope_missing", evidence);
+    // The ruled player-target exception (owner, 2026-08-04 — spec.permission.md
+    // §"Resolver adapter"): a target who IS the player grants nothing in advance,
+    // because the player writes their own next reaction. Only the EXPLICIT basis
+    // passes — a bare `not_required` on a permission-requiring action is still an
+    // owner that was never consulted, and falls through to `unresolved` below.
+    // No scope is demanded either: there is no player grant to name one.
+    const playerTargetException =
+      context.policy.status === "not_required" &&
+      context.policy.notRequiredBasis === "player_target" &&
+      intent.target.kind === "body" &&
+      context.policy.notRequiredTargetId === intent.target.subjectId;
+    if (!playerTargetException) {
+      switch (context.policy.status) {
+        case "denied":
+          return reject("permission_denied", evidence);
+        case "withdrawn":
+          return reject("permission_withdrawn", evidence);
+        case "unresolved":
+        case "not_required":
+          return unresolved("permission_unresolved", evidence, {
+            sink,
+            code: CONTACT_PERMISSION_UNAVAILABLE,
+            message: "no permission owner answered for this interpersonal contact",
+          });
+        case "allowed":
+          break;
+      }
+      if (!context.policy.scopes.includes(CONTACT_ACTION_SCOPE[intent.actionKind])) {
+        sink?.push(
+          diag(
+            "warn",
+            CONTACT_PERMISSION_SCOPE_MISSING,
+            `permission does not cover ${CONTACT_ACTION_SCOPE[intent.actionKind]}`,
+          ),
+        );
+        return reject("permission_scope_missing", evidence);
+      }
     }
   }
 

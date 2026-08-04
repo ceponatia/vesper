@@ -13,6 +13,7 @@ import {
   CHAT_GESTURE_CONTACT,
   commitContactResolution,
   contactActionOutcomeStatus,
+  contactActionRequiresPermission,
   contactCommitExpectation,
   contactEventRef,
   contactParticipantIds,
@@ -51,12 +52,14 @@ import {
   type CommittedContactRead,
   type ContactActionContext,
   type ContactActionIntent,
+  type ContactActionKind,
   type ContactActorControlDecision,
   type ContactBodySurfaceRef,
   type ContactCommitOutcome,
   type ContactEndedCommit,
   type ContactEndReason,
   type ContactEventRef,
+  type ContactInteractionPolicyRead,
   type ContactMaterialLayerRead,
   type ContactMaterialRead,
   type ContactPersistenceAcknowledgment,
@@ -1610,6 +1613,28 @@ export function chatActorControl(input: {
   return { status: control.value === input.requires ? "allowed" : "denied", actorId, evidence };
 }
 
+/**
+ * One attempt's identity, as the lane's permission owner needs it: who is
+ * attempting, whose permission the attempt needs, how intimate it is, and which
+ * attempt it is (denials are per-attempt).
+ */
+export interface ChatContactPolicyAttempt {
+  readonly permittedActorId: AffordanceSubjectId;
+  readonly grantingTargetId: AffordanceSubjectId;
+  readonly actionKind: ContactActionKind;
+  readonly actionId: string;
+}
+
+/**
+ * The lane's REAL permission read, closed over the exchange's folded projection
+ * (`CHAT_ROMANTIC_PERMISSION` — romantic-contact-affordances.spec.permission.md
+ * §"Resolver adapter"). Supplied by the pipeline ONLY when the flag is on;
+ * consulted ONLY for action kinds that require a grant. Absent, or for
+ * permission-neutral kinds, the resolver keeps the historical stub verbatim —
+ * which is also the whole flag-off story.
+ */
+export type ChatContactPolicySource = (attempt: ChatContactPolicyAttempt) => ContactInteractionPolicyRead;
+
 export interface ChatContactAttemptInput {
   readonly scene: SceneState;
   readonly act: ChatContactAct;
@@ -1625,6 +1650,8 @@ export interface ChatContactAttemptInput {
   /** The control fact this act's origin requires — `chatActorControl`'s question. */
   readonly control: ChatContactControlRequirement;
   readonly storyTime: AffordanceStoryTime;
+  /** The permission owner's read, when the flag wired one. See `ChatContactPolicySource`. */
+  readonly permissionPolicy?: ChatContactPolicySource;
   readonly sink?: DiagnosticSink;
 }
 
@@ -1645,6 +1672,13 @@ export interface ChatContactAttemptInput {
  * start": "target agencies stay empty because only the NPC's own hand moves"),
  * which is why one resolver serves both legs.
  */
+
+/**
+ * A permission-requiring kind is the exception when the pipeline wires a real
+ * `permissionPolicy` source: the exact directional owner answer replaces the
+ * neutral stub. Permission-neutral kinds and flag-off attempts keep the stub.
+ */
+
 /**
  * One admitted NPC `start` candidate as an act — the reply-scene leg's builder,
  * and the counterpart of `detectChatAffectionateTouch` on the player leg
@@ -1717,14 +1751,23 @@ export function resolveChatContactAttempt(input: ChatContactAttemptInput): Conta
     ...(gesture.motion === undefined ? {} : { requestedMotion: { band: gesture.motion } }),
     storyTime: input.storyTime,
   };
+  const policy: ContactInteractionPolicyRead =
+    input.permissionPolicy !== undefined && contactActionRequiresPermission(act.actionKind)
+      ? input.permissionPolicy({
+          permittedActorId: act.actorSubject,
+          grantingTargetId: act.targetSubject,
+          actionKind: act.actionKind,
+          actionId: act.actionId,
+        })
+      : {
+          status: "not_required",
+          scopes: [],
+          evidence: [affordanceEvidence("adapter", "chat.contact.policy", "affectionate_permission_neutral")],
+        };
   const context: ContactActionContext = {
     actorControl: chatActorControl({ scene, actorId: act.actorSubject, requires: input.control }),
     targetAgencies: [],
-    policy: {
-      status: "not_required",
-      scopes: [],
-      evidence: [affordanceEvidence("adapter", "chat.contact.policy", "affectionate_permission_neutral")],
-    },
+    policy,
     geometry: sceneGeometryRead({
       state: scene,
       source,
@@ -1748,6 +1791,8 @@ export interface ChatContactTurnInput extends ChatContactDetectionInput {
   readonly scene: SceneState;
   readonly eventRef: ContactEventRef;
   readonly storyTime: AffordanceStoryTime;
+  /** The permission owner's read, when the flag wired one. See `ChatContactPolicySource`. */
+  readonly permissionPolicy?: ChatContactPolicySource;
   readonly sink?: DiagnosticSink;
 }
 
@@ -1894,6 +1939,7 @@ export function planChatContactTurn(input: ChatContactTurnInput): ChatContactTur
     ]),
     control: "player_controlled",
     storyTime: input.storyTime,
+    ...(input.permissionPolicy === undefined ? {} : { permissionPolicy: input.permissionPolicy }),
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });
   if (resolution.status !== "committable") return { scene, act, resolution, commit: null, ended };

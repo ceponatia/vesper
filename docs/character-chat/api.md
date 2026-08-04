@@ -27,7 +27,14 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | `POST /api/chats/:chatId/milestones` | "mark this moment": append a `player_marked` milestone on a message (label defaults to a line excerpt) |
 | `POST /api/chats/:chatId/summary/rebuild` | `rebuildChatSummary` — reset + re-fold the rolling summary from the full transcript under the summary lock (heavy-write rate limited) |
 | `GET /api/chats/:chatId/export?format=md\|json&memory=1` | transcript export — title, scenario, story-so-far, transcript, opt-in memory appendix |
+| `GET/POST /api/admin/chat-permissions/:chatId` | the `romantic_touch` permission dev surface ([pipeline.md](pipeline.md) §Physical legs; **admin-role-gated + owner-scoped**, `withOwnerAdminOwnedChat`, requested through the `/self/` mirror with its own parity test): GET the directional standing-grant projection + a bounded recent-event list (readable regardless of flags) · POST one developer override `{permittedActorId, grantingTargetId, operation: grant\|withdraw}` — **additionally gated by `CHAT_ROMANTIC_PERMISSION_DEV_OVERRIDE`** (hidden 404 when off), target must be a roster NPC (never the player), 409 `chat_busy`/`chat_archived`, appends a `developer_overridden` ledger event through the same atomic invalidation path production events use (a withdraw ends dependent contact in the same transaction) and records a `romantic_permission_developer_override` audit event with the operator. It **holds** the `chat_exchange:<chatId>` lock across the write (bounded wait, then the same 409 `chat_busy`) rather than only probing it, and the sweep's scene write is a CAS — a racing exchange scene write refuses the whole call as 409 `scene_conflict` with nothing committed. UI: the conversation menu's admin-only "Permissions (dev)" panel (`chat-permissions-panel.tsx`); chat text is never an override |
 | `/api/admin/chat-inspector/:chatId[/…]` | memory inspector family (spec §6.1; **admin-role-gated — 404 for non-admins**, so it works on the deployed build; owner-scoped): overview (all facts incl. superseded/retracted — each labeled with its `channel`: `perceived`/`private`/`ooc`, the RAG visibility fence, [memory.md](../memory.md) §Fact channel — plus episodes + summary) · facts create/PATCH (pin/retract/restore, re-embed-on-edit) · episodes PATCH/DELETE + `score?q=` · summary PATCH · prompt preview (`previewChatPrompt` — "what reaches the narrator"; it re-derives the flag-gated legs from the stored cut so the bytes match a live turn's, contact leg included, and it OBEYS every flag because it is showing prompt bytes) · **affordance preview** (`previewChatAffordances` — the staged read: source inputs → structural profile → mechanics → observations or suppression reason → perception filtering → selected cue, per domain; READ-ONLY, computes on demand and stores nothing, and reports the `CHAT_AFFORDANCE_CUES` flag rather than obeying it) · **physical-guidance preview** (`previewChatPhysicalGuidance` — the constraint/premise staircase: input authority → committed state and per-owner availability → relevance → candidates with their disclosure, now including the **contact leg's resolved act** → what the gate and the budget kept → the rendered instruction; same READ-ONLY shape, reports `CHAT_PHYSICAL_CONSTRAINTS` **and** `CHAT_CONTACT_ACTIONS` rather than obeying either, and stores nothing — guidance is never persisted, and the contact leg's plan runs while its ledger append and scene fold deliberately do not, see [pipeline.md](pipeline.md) §Physical legs) |
+
+Assistant replies that authored an NPC permission event are state-authoritative.
+The transcript-only PATCH/DELETE routes return 409
+`message_has_permission_authority` for those rows: editing or snipping prose may
+not rewrite NPC agency. A state-aware regenerate/rerun path performs the explicit
+permission and contact rollback instead.
 
 **The `/self/` mirror.** The handlers live at `/api/admin/chat-inspector/:chatId/…`
 but the inspector client (`src/lib/api-inspector.ts`) requests every panel through
@@ -96,12 +103,21 @@ carries no callback line) ·
 you can't quite make out"; a non-degraded later retake retries) ·
 `chat_state.memory.write_failed` · `chat_state.attribute.unknown` /
 `.inherent_change_rejected` · `chat_summary.fold` / `.degraded` / `.empty` · `chat_state.snapshot.missing` ·
-`chat_memory.reconciled` — plus route
-errors `chat_busy` (409), `chat_archived` (409), `invalid_rerun_target` (400),
+`chat_memory.reconciled` ·
+the `romantic_touch` permission owner's `chat_permission.scene.stale` (a racing scene
+write refused the whole append — nothing committed),
+`chat_permission.rollback.failed` (**error** — a retake exhausted the discarded-take
+permission prune retries, so the retake is refused before a replacement reply can commit),
+`chat_permission.stop_guidance.unreadable` (an unreadable contact-ending payload degrades
+to a generic stop line rather than silence) and `.stop_guidance.over_bound` (more pending
+stops than the transition budget; the generic line is cut before any named pair) — plus route
+errors `chat_busy` (409), `chat_archived` (409),
+`message_has_permission_authority` (409; a transcript-only edit/delete tried to rewrite
+an NPC permission source), `scene_conflict` (409; the permission
+override lost a scene CAS — retry), `invalid_rerun_target` (400),
 `rerun_requires_branch` (400; an older line cannot be safely rewritten through a
 one-exchange state snapshot), `sim_unsupported_operation` (409; an attachment or
 legacy action chip on a sim-routed chat — see §Sim-routed dispatch),
 `scene_busy` (409), `rate_limited` (429), `not_found` (404). A failed `queueChatScene` (auto or manual) log-warns
 (`chat_scene` scope) and returns null — never a failed exchange. Degradation tests
 assert the fallback **and** the code ([testing.md](../testing.md)).
-

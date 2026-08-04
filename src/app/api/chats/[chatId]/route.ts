@@ -26,6 +26,7 @@ import {
 import { characterChats, characterChatMessages, characterChatState, db } from "@/server/db";
 import {
   CHAT_LOCK_LABEL_REPLY,
+  chatExchangeLockKey,
   deleteChat,
   isSimRoutedAuthority,
   readChatEngineAuthority,
@@ -315,7 +316,7 @@ export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof 
       });
       // The same per-chat exchange lock the legacy pipeline takes — one reply
       // in flight per conversation regardless of lane or kind.
-      const simLock = tryKeyedLock(`chat_exchange:${chatId}`, () => simLockGate, CHAT_LOCK_LABEL_REPLY);
+      const simLock = tryKeyedLock(chatExchangeLockKey(chatId), () => simLockGate, CHAT_LOCK_LABEL_REPLY);
       if (simLock === null) {
         return jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);
       }

@@ -902,6 +902,96 @@ export const chatContactEvents = pgTable(
 );
 
 /**
+ * The chat lane's DURABLE ROMANTIC-PERMISSION LEDGER
+ * (romantic-contact-affordances.spec.permission.md §"Events and active
+ * projection"; owner rulings settled 2026-08-04): every `RomanticPermissionEvent`
+ * a producer committed — a future NPC-side grant/denial/withdrawal decision, or
+ * an audited developer override — stamped with the exchange that produced it.
+ *
+ * The branch is the CHAT (`branchId == character_chats.id`, ruled): character
+ * chat has no separate branch entity, so branch-local means chat-scoped rows
+ * behind a cascade FK. There is deliberately NO stored projection column — the
+ * active projection (current standing grants) is a pure fold over these rows,
+ * computed on read (`foldRomanticPermissionProjection`), so a retake that
+ * prunes rows restores the projection by construction.
+ *
+ * ## Retakes
+ *
+ * `guard_message_id` is the exchange guard (`promptMessageId ?? assistantMessageId`)
+ * — the same key `chat_contact_events` and both rollback anchors take, so the
+ * whole exchange rolls back to one boundary. "Another take" DELETES this
+ * guard's rows (`deleteChatPermissionEventsForGuard`) beside the contact
+ * ledger's prune, unconditionally, so a discarded reply's grant, denial, or
+ * withdrawal cannot survive into the replacement take. The FK CASCADES, so a
+ * hard-deleted message takes its permission provenance with it.
+ *
+ * NULLABLE, unlike the contact ledger's guard, for exactly one case: a
+ * developer override recorded while the chat has no messages yet has no
+ * exchange to hang on, and refusing it would make an empty chat untestable.
+ * Production NPC events always set it.
+ *
+ * ## Why the idempotency key is (chat, event ref, sequence)
+ *
+ * One producer call can commit several events at once (both directions of a
+ * mutual grant, a denial beside a withdrawal), all sharing one event ref —
+ * `permission-reply:<assistantMessageId>` for NPC-decision events,
+ * `permission-override:<eventId>` for developer overrides (namespaces disjoint
+ * from the contact ledger's `contact:`/`contact-reply:`). `sequence` is the
+ * event's index within that call's list, re-derived identically by a retry, so
+ * a replayed write conflicts harmlessly instead of duplicating the ledger —
+ * and the conflict is then VERIFIED against the stored row's content, exactly
+ * as the contact append does.
+ *
+ * `payload` is the serialized `RomanticPermissionEvent`, carried verbatim: this
+ * table records what happened, it does not interpret it
+ * (`chat-permission-events.ts` hands the blob back as `unknown` and leaves the
+ * shape to the permission contracts' own parser). The typed columns beside it
+ * (`kind`, `source_kind`, the direction pair, `scope`) are queryable copies for
+ * the verified-conflict judgment and the dev inspector, never a second truth.
+ */
+export const chatPermissionEvents = pgTable(
+  "chat_permission_events",
+  {
+    id: id(),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => characterChats.id, { onDelete: "cascade" }),
+    /** The exchange guard — the retake key. Null ONLY for pre-message developer overrides. */
+    guardMessageId: text("guard_message_id").references(() => characterChatMessages.id, { onDelete: "cascade" }),
+    /** The producer call's ref (`permission-reply:…` / `permission-override:…`). */
+    eventRef: text("event_ref").notNull(),
+    /** This event's index within that call's event list — the second half of the idempotency key. */
+    sequence: integer("sequence").notNull(),
+    /** The `RomanticPermissionEventKind` discriminant. */
+    kind: text("kind", {
+      enum: ["granted", "attempt_denied", "withdrawn", "relationship_revoked", "developer_overridden"],
+    }).notNull(),
+    /** Which authority produced it. `relationship_transition` is reserved — no producer yet. */
+    sourceKind: text("source_kind", {
+      enum: ["npc_decision", "relationship_transition", "developer_override"],
+    }).notNull(),
+    /** Who may attempt the contact (the directional key's first half). */
+    permittedActorId: text("permitted_actor_id").notNull(),
+    /** Whose authoritative side authored the event (the directional key's second half). */
+    grantingTargetId: text("granting_target_id").notNull(),
+    /** The exact scope. Always `romantic_touch` today; stored as the string it is. */
+    scope: text("scope").notNull(),
+    /** The story-clock minute the event landed on (`ChatScenario.clockMinutes`). */
+    storyMinute: integer("story_minute").notNull(),
+    /** The serialized `RomanticPermissionEvent`. Never interpreted here. */
+    payload: jsonb("payload").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("chat_permission_events_event_sequence_unique").on(t.chatId, t.eventRef, t.sequence),
+    // The retake delete's index — one exchange's rows, by the guard it hangs on.
+    index("chat_permission_events_chat_guard_idx").on(t.chatId, t.guardMessageId),
+    // The reader's order (createdAt, then sequence within one event).
+    index("chat_permission_events_chat_created_idx").on(t.chatId, t.createdAt),
+  ],
+);
+
+/**
  * The NPC reply-scene DECISION ENVELOPE — one row per persisted assistant
  * message that ran the reply-scene leg
  * (romantic-contact-affordances.spec.actor-control.md §"Durable decision

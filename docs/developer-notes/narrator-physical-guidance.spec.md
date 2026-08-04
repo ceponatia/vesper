@@ -247,7 +247,7 @@ array order in `NarratorPhysicalGuidance` **is** the prompt order.
 | 1 | `actionOutcomes` | `narratorMustResolve` first, then fingerprint | none — never dropped |
 | 2 | `corrections` | fingerprint only (the plan ranks them as one group) | `GUIDANCE_MAX_CORRECTIONS = 2` |
 | 3 | `constraints` | `mandatory` → `high` → `normal`, then fingerprint | `GUIDANCE_MAX_CONSTRAINTS = 3` |
-| 4 | `transitions` | `action` → `attention` → `none`, then fingerprint | `GUIDANCE_MAX_TRANSITIONS = 1` |
+| 4 | `transitions` | `action` → `attention` → `none`, then fingerprint | `GUIDANCE_MAX_TRANSITIONS = 4` |
 
 - Every tier ends in a **fingerprint tie-break**, so the same candidates produce
   the same guidance in any input order, in any process, on a retake.

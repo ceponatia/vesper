@@ -23,7 +23,23 @@ interface LockEntry {
 const locks = new Map<string, LockEntry>();
 
 /**
- * Holder labels for the shared `chat_exchange:<chatId>` key — a busy 409 reads the
+ * The one spelling of the per-chat exchange key. EVERY writer on a chat's turn
+ * state serializes on it: `submitChatMessage`, the sim-routed dispatch, the busy
+ * probe behind a 409, and the permission developer override.
+ *
+ * It lives here, beside the labels and for the same reason, because the failure
+ * mode of a second copy is silent: a lane that spells the prefix even slightly
+ * differently takes a DIFFERENT lock, serializes against nobody, and looks
+ * completely normal — no type error, no failing test, just two writers in the
+ * same chat. There is nothing to assert against, so the only defense is that
+ * the string exists once.
+ */
+export function chatExchangeLockKey(chatId: string): string {
+  return `chat_exchange:${chatId}`;
+}
+
+/**
+ * Holder labels for the shared {@link chatExchangeLockKey} — a busy 409 reads the
  * current holder's label (via {@link keyedLockHolderLabel}) to name its cause.
  * Live here (the lock's server home) so both the reply lanes and the app-layer sim
  * routes share one source of truth without an app→server label import.

@@ -58,7 +58,10 @@ owner's `SceneState`: posture, coarse proximity/facing, support, and the housed
 active-contact projection; chat-wide because proximity is a fact about a pair; parsed by
 the scene module's own total `parseSceneState`, absent ⇒ empty scene; the durable
 provenance is the `chat_contact_events` ledger — the projection is its replayable cache,
-gated by `CHAT_CONTACT_ACTIONS`), `supporting_cast` (recurring named side characters — see
+gated by `CHAT_CONTACT_ACTIONS`; its sibling `chat_permission_events` ledger (migration
+0096, `CHAT_ROMANTIC_PERMISSION`) carries the directional `romantic_touch` grants with NO
+stored projection at all — the standing-grant state is folded on read from the
+guard-pruned rows, see [pipeline.md](pipeline.md) §Physical legs), `supporting_cast` (recurring named side characters — see
 [supporting-cast.md](supporting-cast.md) §Supporting cast), `plans` (tracked commitments
 that come due on the story clock — see §Plans & promises), the time model (`clock_minutes` — **one** story timeline
 for the whole roster, D3/D8; away members skip meter decay, never fork the clock;

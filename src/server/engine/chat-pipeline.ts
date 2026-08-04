@@ -5,8 +5,10 @@ import {
   characterProfileSchema,
   chatActionIdSchema,
   commitRecognitionMention,
+  compileNarratorPhysicalGuidance,
   contactCommitEvents,
   currentScenePlace,
+  derivePermissionPolicyRead,
   derivePlanSalience,
   DiagnosticCollector,
   diag,
@@ -34,6 +36,7 @@ import {
   type DiagnosticSink,
   type EffectiveCoverageRead,
   type PhysicalActionOutcome,
+  type PhysicalStateTransition,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
@@ -64,9 +67,10 @@ import {
   chatContactMaterialAtCut,
   chatContactReachPremise,
   chatSceneAfterDiscontinuity,
+  CHAT_CONTACT_PLAYER_SUBJECT,
   endAllChatContacts,
   planChatContactTurn,
-  CHAT_CONTACT_PLAYER_SUBJECT,
+  type ChatContactPolicySource,
   type ChatContactReachPremise,
   type ChatContactRosterMember,
 } from "./chat-contact-adapter";
@@ -76,12 +80,20 @@ import {
   deleteChatContactEventsForGuard,
 } from "./chat-contact-events";
 import {
+  CHAT_PERMISSION_ROLLBACK_FAILED,
+  deleteChatPermissionEventsForGuards,
+  foldChatPermissionProjection,
+  listChatPermissionEvents,
+} from "./chat-permission-events";
+import {
   beginChatNpcSceneDecision,
   chatNpcSceneDecisionMode,
   emptyChatNpcSceneSettleReport,
   finishChatNpcSceneDecision,
   type ChatNpcSceneDecisionHandle,
 } from "./chat-npc-scene-decision";
+import { runChatRomanticPermissionDecision } from "./chat-permission-decision";
+import { loadChatPermissionStopTransitions } from "./chat-permission-guidance";
 import { deleteChatNpcSceneDecision } from "./chat-npc-scene-envelope";
 import {
   applyChatNpcContactEnding,
@@ -165,7 +177,7 @@ import {
   CHAT_STREAM_FIRST_TOKEN_MS,
   CHAT_STREAM_OVERALL_MS,
 } from "./constants";
-import { acquireKeyedLockWithin, CHAT_LOCK_LABEL_REPLY, tryKeyedLock } from "./keyed-lock";
+import { acquireKeyedLockWithin, CHAT_LOCK_LABEL_REPLY, chatExchangeLockKey, tryKeyedLock } from "./keyed-lock";
 import {
   buildCharacterChatPromptParts,
   buildCharacterChatSystemPrompt,
@@ -186,6 +198,7 @@ import {
   chatPhysicalConstraintsEnabled,
   chatPromptLayout,
   chatRecognitionCuesEnabled,
+  chatRomanticPermissionEnabled,
   narrationShapeId,
 } from "./prompts/constants";
 
@@ -521,7 +534,7 @@ export async function* withStreamTimeouts(
 export async function submitChatMessage(input: SubmitChatMessageInput): Promise<SubmitChatMessageResult> {
   const { chatId, memoryGroupId, kind } = input;
   const { id: characterId, name: characterName } = input.character;
-  const lockKey = `chat_exchange:${chatId}`;
+  const lockKey = chatExchangeLockKey(chatId);
 
   let releaseChatLock!: () => void;
   const chatLockGate = new Promise<void>((resolve) => {
@@ -808,9 +821,41 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // very key the next take writes — which the append's verification would then
       // read as a real divergence. A chat that never recorded a contact deletes zero.
       //
-      // Fenced whole: a ledger that could not be pruned must not cost the exchange.
-      // The projection is authoritative for narration, the events are the durable
-      // record, and a stale row is a diagnostic rather than a failed reply.
+      // Contact-ledger cleanup below remains best-effort, but permission cleanup
+      // cannot be: a stranded discarded grant would authorize later turns. The
+      // permission prune therefore retries and refuses this retake if it still
+      // cannot commit.
+      // The discarded take's PERMISSION rows go with its contact rows
+      // (romantic-contact-affordances.spec.permission.md §"Retakes and
+      // branches"): the projection is a fold over these rows, so pruning them
+      // IS the restoration — a discarded reply's grant, denial, or withdrawal
+      // must not survive into the replacement take. UNCONDITIONAL like every
+      // prune in this block, and for the same reason: hygiene of state that
+      // already exists, never gated on the flag that produces new events.
+      //
+      // A stranded discarded grant can become authority again on a later turn.
+      // Remove both possible guards in ONE SQL statement and refuse the retake
+      // if it cannot commit; no replacement reply may land over permission
+      // state that still belongs to the take it replaced.
+      try {
+        await deleteChatPermissionEventsForGuards(
+          chatId,
+          assistantMessageId === exchangeGuardMessageId
+            ? [exchangeGuardMessageId]
+            : [exchangeGuardMessageId, assistantMessageId],
+        );
+      } catch (error) {
+        log.error("engine.chat", "chat permission ledger rollback failed", { error: describeError(error) });
+        sink.push(
+          diag(
+            "error",
+            CHAT_PERMISSION_ROLLBACK_FAILED,
+            "discarded take's permission rows could not be removed; the retake is refused",
+            { path: "chat.permission.rollback", context: { chatId } },
+          ),
+        );
+        throw error;
+      }
       try {
         await deleteChatContactEventsForGuard(chatId, exchangeGuardMessageId);
         // The discarded take's REPLY-SIDE rows — the NPC-authored endings — hang
@@ -1355,6 +1400,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // Fenced whole (docs/resilience.md): any failure degrades to no contact, no write,
     // and no outcome — which is the flag-off path — and never costs the exchange.
     let contactActionOutcomes: readonly PhysicalActionOutcome[] = [];
+    let currentContactAttempt: { readonly actionId: string; readonly contactId?: string } | undefined;
     let contactReachPremise: ChatContactReachPremise | null = null;
     // The current-cut coverage reads the contact leg derived, keyed by garment
     // actor. Threaded into the finalizer's `affordanceCoverage` so settlement
@@ -1497,6 +1543,33 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           ],
         });
 
+        // --- The permission owner's read (`CHAT_ROMANTIC_PERMISSION`, OFF) -----
+        // Flag ON only: the chat's permission ledger is loaded ONCE per exchange
+        // and folded into the active projection, and the plan's resolver derives
+        // the REAL policy read for any attempt whose kind requires a grant
+        // (spec.permission.md §"Resolver adapter"). For a player attempt every
+        // committed ledger event is chronologically effective — they all precede
+        // the new attempt — so no cutoff is passed; the pure comparator exists
+        // for same-reply ordering and is exercised in its own unit tests. Flag
+        // OFF (or a permission-neutral kind) keeps the historical stub verbatim
+        // inside the adapter, so today's bytes are untouched.
+        let permissionPolicy: ChatContactPolicySource | undefined;
+        if (chatRomanticPermissionEnabled()) {
+          const permissionProjection = foldChatPermissionProjection(
+            await listChatPermissionEvents(chatId, sink),
+            sink,
+          );
+          permissionPolicy = (attempt) =>
+            derivePermissionPolicyRead({
+              projection: permissionProjection,
+              permittedActorId: attempt.permittedActorId,
+              grantingTargetId: attempt.grantingTargetId,
+              actionKind: attempt.actionKind,
+              playerSubjectId: CHAT_CONTACT_PLAYER_SUBJECT,
+              attemptActionId: attempt.actionId,
+            });
+        }
+
         // The plan runs on the POST-hook scene: a touch this turn is resolved against a
         // world the skip or the room change has already emptied.
         const planned = planChatContactTurn({
@@ -1508,12 +1581,19 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           characters: contactRoster,
           eventRef,
           storyTime: storyMinute,
+          ...(permissionPolicy === undefined ? {} : { permissionPolicy }),
           sink,
         });
 
         const { act, resolution } = planned;
         const commit = planned.commit;
         const committed = commit !== null && commit.status === "committed" ? commit : null;
+        if (act !== null) {
+          currentContactAttempt = {
+            actionId: act.actionId,
+            ...(committed === null ? {} : { contactId: committed.contact.contactId }),
+          };
+        }
         // The S3 presentation constraint: a concrete act whose reach the scene
         // could not establish stays `unresolved` — no row, no fold, no
         // acknowledgment — but the guidance block (when `CHAT_PHYSICAL_CONSTRAINTS`
@@ -1590,6 +1670,35 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       }
     }
 
+    // --- Pending revocation stop (permission spec §"Revocation during active
+    // contact" step 4, `chat-permission-guidance.ts`) -------------------------
+    // A withdrawal that ended contact lands AFTER the reply it was read from
+    // (the decision leg runs at settle) or between exchanges (an override), so
+    // THIS reply is the "next narrator cut" that must portray the stop.
+    //
+    // Permission authority composes with the contact lane, never with the
+    // optional general-constraints experiment. A pending stop therefore uses
+    // the shared compiler/renderer even when `CHAT_PHYSICAL_CONSTRAINTS` is
+    // off. With no pending stop, that flag still owns every ordinary physical
+    // guidance byte. The stop read is binding: if it fails, the exchange fails
+    // before producing a reply rather than consuming the only delivery window.
+    let permissionStopTransitions: readonly PhysicalStateTransition[] = [];
+    if (chatRomanticPermissionEnabled()) {
+      try {
+        permissionStopTransitions = await loadChatPermissionStopTransitions({
+          chatId,
+          // The current exchange's assistant row — fresh (matches nothing) or
+          // the regenerate's reused row, whose content is being replaced and so
+          // must not count as having narrated the stop.
+          assistantMessageId,
+          sink,
+        });
+      } catch (error) {
+        log.error("engine.chat", "chat permission stop guidance failed", { error: describeError(error) });
+        throw error;
+      }
+    }
+
     // --- Narrator physical guidance (slice 2, `CHAT_PHYSICAL_CONSTRAINTS`, OFF) ---
     // Constraints from the committed cut above, plus the high-confidence false
     // premises in THIS message. Fenced whole for the same reason every optional read
@@ -1598,41 +1707,63 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     //
     // Nothing is persisted: the selection is recomputable from the same cut and the
     // same message, so the existing rollback anchors already make a retake reproduce
-    // it (plan §"State and retakes").
+    // it (plan §"State and retakes") — and the stop transitions above are a fold
+    // over durable rows the retake prunes, so they reproduce with everything else.
     let physicalGuidanceLines: readonly string[] = [];
-    if (physicalConstraintsEnabled && affordanceRead) {
+    if ((physicalConstraintsEnabled && affordanceRead !== null) || permissionStopTransitions.length > 0) {
       try {
+        // General constraints take the full affordance path only under their
+        // own flag. A mandatory stop with that experiment off takes the
+        // transition-only arm through the same compiler and renderer.
+        const guidance = physicalConstraintsEnabled && affordanceRead
+          ? buildChatPhysicalGuidance({
+              read: affordanceRead.read,
+              perception: affordanceRead.request.perception,
+              committed: affordanceRead.committed,
+              subjectId: characterId,
+              characterName,
+              playerName: player.name,
+              // The raw current message — the span parser reads its own markup. An
+              // opening/continue beat has no player line, so nothing is premise-checked.
+              message: playerContent,
+              narratorInput,
+              // The turn's sense-targeted beat, already detected above: one of the four
+              // relevance signals that decide whether a true fence is worth its bytes.
+              sensoryFocus: primarySensoryFocus ?? null,
+              // This turn's resolved contact, when the contact flag produced one. A
+              // conditional spread, so a contact-flag-off turn compiles the exact bytes
+              // it compiled before the leg existed.
+              ...(contactActionOutcomes.length > 0 ? { actionOutcomes: contactActionOutcomes } : {}),
+              // The pending revocation stops — the transition tier's producer. Same
+              // conditional-spread discipline: absent, the compile is byte-identical.
+              ...(permissionStopTransitions.length > 0 ? { transitions: permissionStopTransitions } : {}),
+              sink,
+            })
+          : compileNarratorPhysicalGuidance({ transitions: permissionStopTransitions, sink });
         physicalGuidanceLines = renderChatPhysicalGuidance({
-          guidance: buildChatPhysicalGuidance({
-            read: affordanceRead.read,
-            perception: affordanceRead.request.perception,
-            committed: affordanceRead.committed,
-            subjectId: characterId,
-            characterName,
-            playerName: player.name,
-            // The raw current message — the span parser reads its own markup. An
-            // opening/continue beat has no player line, so nothing is premise-checked.
-            message: playerContent,
-            narratorInput,
-            // The turn's sense-targeted beat, already detected above: one of the four
-            // relevance signals that decide whether a true fence is worth its bytes.
-            sensoryFocus: primarySensoryFocus ?? null,
-            // This turn's resolved contact, when the contact flag produced one. A
-            // conditional spread, so a contact-flag-off turn compiles the exact bytes
-            // it compiled before the leg existed.
-            ...(contactActionOutcomes.length > 0 ? { actionOutcomes: contactActionOutcomes } : {}),
-            sink,
-          }),
+          guidance,
           characterName,
           possessive: `${characterName}'s`,
           // The unestablished-reach premise (S3): presentation only, and owned by
           // THIS flag — the underlying attempt stays `unresolved` either way, and
           // with the flag off these bytes do not exist.
-          ...(contactReachPremise === null ? {} : { reachPremise: contactReachPremise }),
+          ...(physicalConstraintsEnabled && contactReachPremise !== null ? { reachPremise: contactReachPremise } : {}),
+          // The stop line's display names: the roster plus the reserved player
+          // subject. Presentation only, and only when a stop is in play.
+          ...(permissionStopTransitions.length > 0
+            ? {
+                subjectNames: {
+                  [String(CHAT_CONTACT_PLAYER_SUBJECT)]: "the player",
+                  [characterId]: characterName,
+                  ...Object.fromEntries(others.map((member) => [member.characterId, member.name] as const)),
+                },
+              }
+            : {}),
           sink,
         });
       } catch (error) {
         log.error("engine.chat", "chat physical guidance failed", { error: describeError(error) });
+        if (permissionStopTransitions.length > 0) throw error;
       }
     }
     /**
@@ -1986,12 +2117,31 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // this return touches the column). Internally fenced; a noop handle
         // (existing envelope) returns immediately, and flags-off leaves the
         // handle null so this line is unreached.
-        // An opening beat writes no wardrobe at all (no player act, no archivist,
-        // no garment reconcile), so its settle report is empty by construction —
-        // never a defaulted one.
+        // An opening beat writes no wardrobe at all, so its settle report is
+        // explicitly empty rather than defaulted.
         if (npcSceneDecision !== null) {
           await finishChatNpcSceneDecision(npcSceneDecision, emptyChatNpcSceneSettleReport());
         }
+        // The romantic-permission decision leg (permission spec step 3) runs
+        // strictly AFTER the beat's last scene writer above: it never writes
+        // the scene itself, and its append's withdrawal sweep must read the
+        // settled column. Flag-gated and trigger-gated internally; fenced
+        // whole — a failure is diagnostics and zero events, never a failed
+        // opening beat.
+        await runChatRomanticPermissionDecision({
+          chatId,
+          assistantMessageId,
+          reply: full,
+          roster: [
+            { characterId, name: characterName, aliases: profile.aliases },
+            ...others.map((member) => ({
+              characterId: member.characterId,
+              name: member.name,
+              aliases: member.profile.aliases,
+            })),
+          ],
+          sink,
+        });
         return;
       }
 
@@ -2375,6 +2525,36 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             log.error("engine.chat", "chat reply-side contact ending failed", { error: describeError(error) });
           }
         }
+        // --- Romantic-permission decision leg (permission spec step 3) --------
+        // Strictly AFTER the exchange's last scene writer (whichever block above
+        // ran): the leg never writes the scene column, and its atomic append's
+        // withdrawal sweep reads the settled scene fresh inside
+        // `appendChatPermissionEventsWithInvalidation` — so running here keeps
+        // it clear of the scene CAS. Flag-gated and trigger-gated internally;
+        // fenced whole (docs/resilience.md) — any failure is diagnostics and
+        // zero permission events, never a failed reply.
+        await runChatRomanticPermissionDecision({
+          chatId,
+          assistantMessageId,
+          reply: full,
+          roster: [
+            { characterId, name: characterName, aliases: profile.aliases },
+            ...others.map((member) => ({
+              characterId: member.characterId,
+              name: member.name,
+              aliases: member.profile.aliases,
+            })),
+          ],
+          ...(currentContactAttempt === undefined
+            ? {}
+            : {
+                currentAttemptActionId: currentContactAttempt.actionId,
+                ...(currentContactAttempt.contactId === undefined
+                  ? {}
+                  : { currentAttemptContactId: currentContactAttempt.contactId }),
+              }),
+          sink,
+        });
         // Selfie first (more specific than a big-moment scene — the shared
         // one-live-render-per-chat dedupe keeps only whichever queues first).
         if (finalized.selfieSend) {
