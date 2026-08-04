@@ -93,12 +93,12 @@ those concerns easier to separate.
 The first implementation cannot treat narrator prose as physical truth. At
 promotion:
 
-| Area | Current position |
-| --- | --- |
+| Area                 | Current position                                                                                                                                                                                                                                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Legacy romantic chat | It has structured clothing and coverage, retake snapshots, and a turn-level sensory allowance. It does not have authoritative fine pose, distance, support, body-surface contact, per-sense exposure, or a consent ledger. Its intimate-scene signal and touch-welcomeness reaction are not consent grants. |
-| Successor chat | It has world location, event cuts, observations, and a fail-closed consent ledger. It still lacks the regional pose, articulation, support, and active body-surface contact required here. Its structured clothing adapter is also unfinished. |
-| Body surfaces | Stable anatomy and appearance attributes exist. Shared regional moisture, products, body residue, pressure marks, and contact temperature do not yet have complete owners. |
-| Physiology | The general physiology plan is still deferred. Erection, swelling, lubrication, vascular change, sweat, and temperature cannot be inferred merely because the scene is intimate. |
+| Successor chat       | It has world location, event cuts, observations, and a fail-closed consent ledger. It still lacks the regional pose, articulation, support, and active body-surface contact required here. Its structured clothing adapter is also unfinished.                                                              |
+| Body surfaces        | Stable anatomy and appearance attributes exist. Shared regional moisture, products, body residue, pressure marks, and contact temperature do not yet have complete owners.                                                                                                                                  |
+| Physiology           | The general physiology plan is still deferred. Erection, swelling, lubrication, vascular change, sweat, and temperature cannot be inferred merely because the scene is intimate.                                                                                                                            |
 
 Slice 0 turned every missing source into one of three recorded outcomes: build
 the minimal owner in this plan, depend on a named prerequisite, or omit the
@@ -172,18 +172,18 @@ worth mentioning again. An unchanged held contact should usually stay silent.
 
 The first trial should cover:
 
-| Observation | What it contributes |
-| --- | --- |
-| Contact pressure and area | Distinguishes a light toe trace, narrow heel contact, and a broad sole press. |
-| Regional texture | Allows an arch, ball, heel, toe pad, nail, and top of foot to feel different without authoring each as a separate character description. |
-| Glide and drag | Combines current sliding motion with the known substance, fabric, skin texture, and pressure. Water, sweat, lotion, and oil do not share one “more moisture means less friction” rule. |
-| Foot and toe position | Describes a position that already exists, including footwear restrictions, without turning touch into an invented emotional toe curl. |
-| Nail contact | Distinguishes a nail trace or edge from soft toe contact; a scratch still requires a recorded event. |
-| Footwear filtering | Blocks bare-skin claims and reports what flexible fabric or rigid footwear can actually transmit. |
-| Pressure marks | Surfaces real sock, strap, or shoe marks after removal; does not create them merely because footwear was worn. |
-| Surface transfer | Tracks lotion, water, dirt, or other residue only after a real transfer is recorded. |
-| Contact warmth | Reports relative warmth or coolness during touch from current body and environment state. |
-| Close scent | Uses current exposure, sweat, products, cleanliness, distance, and airflow rather than a permanent foot label. |
+| Observation               | What it contributes                                                                                                                                                                    |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Contact pressure and area | Distinguishes a light toe trace, narrow heel contact, and a broad sole press.                                                                                                          |
+| Regional texture          | Allows an arch, ball, heel, toe pad, nail, and top of foot to feel different without authoring each as a separate character description.                                               |
+| Glide and drag            | Combines current sliding motion with the known substance, fabric, skin texture, and pressure. Water, sweat, lotion, and oil do not share one “more moisture means less friction” rule. |
+| Foot and toe position     | Describes a position that already exists, including footwear restrictions, without turning touch into an invented emotional toe curl.                                                  |
+| Nail contact              | Distinguishes a nail trace or edge from soft toe contact; a scratch still requires a recorded event.                                                                                   |
+| Footwear filtering        | Blocks bare-skin claims and reports what flexible fabric or rigid footwear can actually transmit.                                                                                      |
+| Pressure marks            | Surfaces real sock, strap, or shoe marks after removal; does not create them merely because footwear was worn.                                                                         |
+| Surface transfer          | Tracks lotion, water, dirt, or other residue only after a real transfer is recorded.                                                                                                   |
+| Contact warmth            | Reports relative warmth or coolness during touch from current body and environment state.                                                                                              |
+| Close scent               | Uses current exposure, sweat, products, cleanliness, distance, and airflow rather than a permanent foot label.                                                                         |
 
 ## Candidate intimate-region observations
 
@@ -191,18 +191,18 @@ The second trial should support consent-gated scenes across the anatomy a
 character actually has. It should cover external genitals, breasts and nipples,
 the perineum, and anal contact where those regions are relevant.
 
-| Observation | What it contributes |
-| --- | --- |
-| Effective access and exposure | Distinguishes covered, visible through sheer fabric, touch through fabric, directly exposed, and internally accessible where appropriate. |
-| Contact location, pressure, and area | Grounds which surfaces are touching and whether the contact is light, narrow, broad, still, or moving. |
-| Clothing contour and compression | Describes shape or movement transmitted through a garment without claiming direct anatomical access. |
-| Current surface moisture | Uses authoritative lubrication, sweat, water, or products; never treats an intimate scene as automatically wet. |
-| Friction and glide | Combines motion, pressure, material layers, and current moisture into a grounded contact response. |
-| Soft-tissue response | Describes compression, displacement, rebound, or support when current contact and anatomy justify it. |
-| Live arousal-related shape | Uses recorded physiology such as erection, swelling, nipple erection, or vascular change; never guesses arousal from genre or contact alone. |
-| Fluid or product transfer | Reports transfer only after a contact event records it on the receiving body or garment surface. |
-| Visible aftermath | Surfaces real dampness, impressions, displacement, residue, or flushing after the state owner records it. |
-| Action alignment | Checks that the named action, body parts, path, clothing, and current pose agree before offering sensory detail. |
+| Observation                          | What it contributes                                                                                                                          |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Effective access and exposure        | Distinguishes covered, visible through sheer fabric, touch through fabric, directly exposed, and internally accessible where appropriate.    |
+| Contact location, pressure, and area | Grounds which surfaces are touching and whether the contact is light, narrow, broad, still, or moving.                                       |
+| Clothing contour and compression     | Describes shape or movement transmitted through a garment without claiming direct anatomical access.                                         |
+| Current surface moisture             | Uses authoritative lubrication, sweat, water, or products; never treats an intimate scene as automatically wet.                              |
+| Friction and glide                   | Combines motion, pressure, material layers, and current moisture into a grounded contact response.                                           |
+| Soft-tissue response                 | Describes compression, displacement, rebound, or support when current contact and anatomy justify it.                                        |
+| Live arousal-related shape           | Uses recorded physiology such as erection, swelling, nipple erection, or vascular change; never guesses arousal from genre or contact alone. |
+| Fluid or product transfer            | Reports transfer only after a contact event records it on the receiving body or garment surface.                                             |
+| Visible aftermath                    | Surfaces real dampness, impressions, displacement, residue, or flushing after the state owner records it.                                    |
+| Action alignment                     | Checks that the named action, body parts, path, clothing, and current pose agree before offering sensory detail.                             |
 
 The feature list is intentionally wider than the first implementation slice.
 It gives us a test catalog without committing to simulate every case at once.
@@ -475,7 +475,6 @@ on immobilized limbs.
    **Item 1.2 — pre-enablement repairs (owner-scoped follow-up; landed
    2026-07-31).** The trial's three bounded gaps, fixed at their sources
    before any enablement:
-
    - **The coverage settle race is closed at its source.** The contact leg now
      derives every present roster member's effective coverage from the CURRENT
      exchange's resolved wardrobe before contact resolution — reusing the
@@ -536,6 +535,7 @@ on immobilized limbs.
    on. The one thing the preview assumes rather than observes is that the
    durable write it did not perform would have succeeded — without that, every
    contact would preview as silence, which is the blind spot it exists to close.
+
 2. **The internal trial — the gate for everything below (owner-ruled
    2026-07-31).** Enablement is the flag architecture as built: set
    `CHAT_CONTACT_ACTIONS` + `CHAT_PHYSICAL_CONSTRAINTS` globally on the Fly
@@ -614,6 +614,7 @@ on immobilized limbs.
    `CHAT_NPC_SCENE_DECISION_SHADOW`, default off. The shadow flag has not
    been enabled; the measurement window, its review, and the standing-cost
    ruling remain before any authority increment starts.
+
 5. **The explicit `romantic_touch` permission owner — spec before
    implementation** (un-gated by the 2026-08-01 verdict). Its design decisions need owner
    rulings first; they are listed in Open questions below.
@@ -747,6 +748,7 @@ Each row links to the detail doc that holds the evidence. "Blocking" names the
 slice that cannot finish until the question is answered — a question with a
 later blocking slice is not urgent, but it is not settled either.
 
+<<<<<<< HEAD
 | Question | Owner | Required decision | Blocking slice | Status |
 | --- | --- | --- | --- | --- |
 | **How detailed should foot regions be?** ([foot spec](romantic-contact-affordances.spec.foot.md)) | Product | Whether the shipped sixteen-surface map is the right granularity, or should shrink | Parked (owner ruling 2026-07-31) | **Parked** with the rest of the foot track until the MVP trial succeeds |
@@ -766,13 +768,14 @@ below are design decisions, not implementation details, and each one changes
 what the stored grant means. Every row is **"needs owner ruling before the
 `romantic_touch` owner is implemented — spec before implementation."**
 
+<<<<<<< HEAD
 | Question | Owner | Required decision | Blocking slice | Status |
 | --- | --- | --- | --- | --- |
 | **Directional or bilateral?** | Owner | Whether a grant runs one way (A may touch B) or establishes mutual permission | Slice 3, item 5 | Needs owner ruling — spec before implementation |
 | **Persistent, scene-local, or action-local?** | Owner | The lifetime of a grant: does it survive the scene, the chat, or only the action it was given for | Slice 3, item 5 | Needs owner ruling — spec before implementation |
 | **Exact scope semantics and implication rules** | Owner | Whether a scope implies narrower ones, or each is independent. **Exact-scope membership is the standing default** — a grant covers the named scope only — unless broader implication rules are explicitly ruled | Slice 3, item 5 | Needs owner ruling — spec before implementation; default stands until then |
 | **Grant / deny / withdraw mechanics** | Owner | How each is expressed, whether deny is distinct from absence, and whether withdrawal is a separate act | Slice 3, item 5 | Needs owner ruling — spec before implementation |
-| **NPC versus player authorship** | Owner | Who may author a grant for an NPC, and whether narrator mode may (the actor-control ruling says narrator mode never bypasses consent — this asks whether it may *create* one) | Slice 3, item 5 | Needs owner ruling — spec before implementation |
+| **NPC versus player authorship** | Owner | Who may author a grant for an NPC, and whether narrator mode may (the actor-control ruling says narrator mode never bypasses consent — this asks whether it may _create_ one) | Slice 3, item 5 | Needs owner ruling — spec before implementation |
 | **Retake and branch behavior** | Owner | Whether a grant is captured in the retake snapshot, and what a branch inherits | Slice 3, item 5 | Needs owner ruling — spec before implementation |
 | **Provenance and effective time** | Owner | What a grant records about who gave it and when it takes effect | Slice 3, item 5 | Needs owner ruling — spec before implementation |
 | **Effect of withdrawal on an active romantic contact** | Owner | Whether withdrawal ends a committed contact immediately, requires an explicit transition, or applies only to new attempts | Slice 3, item 5 | Floor already implemented (owner review, 2026-07-31): the contract ends a live contact whose permission lapses and blocks the next attempt. Open: whether the permission owner's spec keeps immediate end or adds an explicit transition beat |
