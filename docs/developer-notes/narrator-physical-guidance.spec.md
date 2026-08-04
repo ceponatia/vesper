@@ -357,7 +357,7 @@ at the end of this document — that section is the authority where the two diff
 - **One call per attempted action:** `buildActionOutcome({ actionId, status,
   resultCodes, disclosure, narratorMustResolve?, evidence? })`. The resolver
   keeps every authority it already owns (pose, support, material-between,
-  clothing access, actor control, permission, consent, adult eligibility); this
+  clothing access, actor control, permission, consent); this
   seam only stamps the identity.
 - **The mandate is a floor, not a default.** `rejected`,
   `explicit_transition_required`, and `partially_committed` resolve
