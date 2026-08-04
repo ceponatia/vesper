@@ -139,11 +139,12 @@ import { lifeStageForAge, lifeStageThirdPersonLine } from "@/contracts/world/lif
 import { evaluateActReaction } from "@/contracts/personality/act-reaction";
 import { attributeRegistry } from "@/contracts/attributes";
 import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } from "@/contracts/attributes/value";
+import { agentReasoningPlan } from "@/lib/agent-reasoning";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { calendarStartSchema, minuteOfDay, type CalendarStart } from "@/lib/clock";
 import { newId } from "@/lib/ids";
 import type { AgentRunDescription, AgentRunDetailSection } from "@/contracts/turns/agent-failure";
-import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout, type AgentTelemetry } from "../ai";
+import { agentModelId, generateChecked, isDemoMode, loadChatAgentReasoningProfile, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import { characterChatMessages, characterChats, characterChatState, db } from "../db";
 import { healOutfitMarker, loadChatWardrobe, playerWornIds, wardrobeDescriptors } from "./chat-wardrobe";
 import { chatGarmentLookChanged, garmentProjectionOr, syncGarmentsForExchange } from "./chat-garments";
@@ -1696,15 +1697,22 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     exchange: input.exchange,
   });
   const modelId = agentModelId();
-  // Failure telemetry (contracts/turns/agent-failure.ts) — a pulse that times out every
-  // exchange freezes the whole relationship curve silently; now it lands in the tally.
+  const reasoningProfile = await loadChatAgentReasoningProfile(input.trace?.chatId);
+  const reasoning = agentReasoningPlan({
+    profileId: reasoningProfile,
+    leg: "pulse",
+    maxOutputTokens: CHAT_PULSE_MAX_OUTPUT_TOKENS,
+    timeoutMs: CHAT_PULSE_TIMEOUT_MS,
+  });
   const telemetry: Partial<AgentTelemetry> = {
     legId: "chat_state.pulse",
     chatId: input.trace?.chatId,
     messageId: input.trace?.messageId,
     modelId,
     promptChars: CHAT_PULSE_SYSTEM.length + prompt.length,
-    maxOutputTokens: CHAT_PULSE_MAX_OUTPUT_TOKENS,
+    maxOutputTokens: reasoning.maxOutputTokens,
+    reasoningProfile: reasoning.profileId,
+    reasoningEnabled: reasoning.enabled,
   };
   const work = generateChecked<ChatPulse>({
     schema: chatPulseSchema,
@@ -1712,12 +1720,13 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     prompt,
     modelId,
     temperature: 0,
-    maxOutputTokens: CHAT_PULSE_MAX_OUTPUT_TOKENS,
+    maxOutputTokens: reasoning.maxOutputTokens,
     code: "chat_state.pulse",
     sink,
     fallback: degradedChatPulse,
     signal: controller.signal,
-    disableReasoning: true,
+    disableReasoning: !reasoning.enabled,
+    providerOptions: reasoning.providerOptions,
     lowLatencyRouting: true,
     repair: false,
     degradeSeverity: "warn",
@@ -1727,7 +1736,7 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
   const { value, degraded } = await withGenerateTimeout(
     work,
     controller,
-    CHAT_PULSE_TIMEOUT_MS,
+    reasoning.timeoutMs,
     "chat_state.pulse.timeout",
     sink,
     telemetry,

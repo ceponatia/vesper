@@ -265,6 +265,15 @@ export const characterChats = pgTable(
     activeSocialCards: jsonb("active_social_cards").notNull().default([]),
     sceneAuto: text("scene_auto").notNull().default("off"),
     sceneModel: text("scene_model").notNull().default("reference"),
+    /**
+     * Admin-only structured-agent reasoning experiment. This is operational
+     * configuration, not story state: retakes and state rollback never change it.
+     */
+    agentReasoningProfile: text("agent_reasoning_profile", {
+      enum: ["off", "continuity", "synthesis", "broad_post_turn"],
+    })
+      .notNull()
+      .default("off"),
     /** ChatSceneMemory — the shared imagined setting. */
     sceneMemory: jsonb("scene_memory").notNull().default({}),
     /**
