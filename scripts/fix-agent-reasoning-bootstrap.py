@@ -67,44 +67,14 @@ replace_once(
 ''',
     ),
     (
-        '''replace_once(
-    "src/server/engine/chat-state.ts",
-    "  const modelId = agentModelId();\\n  const telemetry: Partial<AgentTelemetry> = {\\n",
-    '''  const modelId = agentModelId();
-  const reasoningProfile = await loadChatAgentReasoningProfile(input.trace?.chatId);
-  const reasoning = agentReasoningPlan({
-    profileId: reasoningProfile,
-    leg: "pulse",
-    maxOutputTokens: CHAT_PULSE_MAX_OUTPUT_TOKENS,
-    timeoutMs: CHAT_PULSE_TIMEOUT_MS,
-  });
-  const telemetry: Partial<AgentTelemetry> = {
-''',
-)
-''',
-        '''replace_once(
-    "src/server/engine/chat-state.ts",
-    "  const modelId = agentModelId();\\n  // Failure telemetry (contracts/turns/agent-failure.ts) — a pulse that times out every\\n  // exchange freezes the whole relationship curve silently; now it lands in the tally.\\n  const telemetry: Partial<AgentTelemetry> = {\\n",
-    '''  const modelId = agentModelId();
-  const reasoningProfile = await loadChatAgentReasoningProfile(input.trace?.chatId);
-  const reasoning = agentReasoningPlan({
-    profileId: reasoningProfile,
-    leg: "pulse",
-    maxOutputTokens: CHAT_PULSE_MAX_OUTPUT_TOKENS,
-    timeoutMs: CHAT_PULSE_TIMEOUT_MS,
-  });
-  // Failure telemetry (contracts/turns/agent-failure.ts) — a pulse that times out every
-  // exchange freezes the whole relationship curve silently; now it lands in the tally.
-  const telemetry: Partial<AgentTelemetry> = {
-''',
-)
-''',
+        '    "  const modelId = agentModelId();\\\\n  const telemetry: Partial<AgentTelemetry> = {\\\\n",\n',
+        '    "  const modelId = agentModelId();\\\\n  // Failure telemetry (contracts/turns/agent-failure.ts) — a pulse that times out every\\\\n  // exchange freezes the whole relationship curve silently; now it lands in the tally.\\\\n  const telemetry: Partial<AgentTelemetry> = {\\\\n",\n',
     ),
 ]
 
 for old, new in replacements:
     if text.count(old) != 1:
-        raise RuntimeError(f"expected bootstrap compatibility block exactly once: {old[:80]!r}")
+        raise RuntimeError(f"expected bootstrap compatibility block exactly once: {old[:100]!r}")
     text = text.replace(old, new, 1)
 
 path.write_text(text)
