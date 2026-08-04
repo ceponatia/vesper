@@ -128,10 +128,12 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   `CHAT_NPC_SCENE_DECISIONS` (default off), staged one kind at a time by
   `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS`.
   Only after that gate does authority roll out movement → starts → updates;
-  the owner accepts measured cost/latency before movement is enabled. Then:
-  implement the owner-ruled
-  [`romantic_touch` permission spec](romantic-contact-affordances.spec.permission.md)
-  (rulings settled 2026-08-04) → the romantic proof.
+  the owner accepts measured cost/latency before movement is enabled.
+  **The [`romantic_touch` permission owner](romantic-contact-affordances.spec.permission.md)
+  (item 5) was built out of order 2026-08-04** — directional branch-local
+  ledger, NPC-side consent decision, audited dev-override menu, revocation
+  stop handoff — behind `CHAT_ROMANTIC_PERMISSION` (off); enablement rides
+  the item-6 romantic proof, which still follows actor-control authority.
   **Still parked (reaffirmed by the verdict)**: additional foot granularity,
   slice 4's marks/material transfer, intimate physiology, successor parity,
   channel-aware foot narration, and further generalized contact
@@ -352,4 +354,5 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 ## Shipped (historical record)
 
 Moved to its own file to keep this index short — see **[roadmap.shipped.md](roadmap.shipped.md)** (newest-first).
+
 

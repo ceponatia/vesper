@@ -8,6 +8,7 @@
  */
 export * from "./core";
 export * from "./contact";
+export * from "./permission";
 export * from "./scene";
 export * from "./domains/hair";
 export * from "./domains/garment";

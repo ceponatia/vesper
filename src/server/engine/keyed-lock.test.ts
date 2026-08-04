@@ -1,7 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { acquireKeyedLockWithin, keyedLockBusy, tryKeyedLock, withKeyedLock } from "./keyed-lock";
+import {
+  acquireKeyedLockWithin,
+  chatExchangeLockKey,
+  keyedLockBusy,
+  tryKeyedLock,
+  withKeyedLock,
+} from "./keyed-lock";
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+
+describe("chatExchangeLockKey", () => {
+  // Pinned rather than derived: every writer on a chat's turn state — the
+  // pipeline, the sim routes, the busy probe, the permission override — must
+  // land on this exact string, and the failure mode of one of them drifting is
+  // silent (a different key serializes against nobody). The lane tests hold the
+  // literal for the same reason; if this format ever changes on purpose, they
+  // are the list of callers to revisit.
+  it("is the one exact per-chat key every writer serializes on", () => {
+    expect(chatExchangeLockKey("chat-123")).toBe("chat_exchange:chat-123");
+  });
+
+  it("keys distinct chats apart", () => {
+    expect(chatExchangeLockKey("a")).not.toBe(chatExchangeLockKey("b"));
+  });
+});
 
 describe("withKeyedLock", () => {
   it("serializes concurrent work on the same key, FIFO", async () => {

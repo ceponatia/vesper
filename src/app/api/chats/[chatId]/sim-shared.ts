@@ -1,10 +1,22 @@
 import { jsonError } from "@/server/api";
-import { CHAT_LOCK_LABEL_REPLY, keyedLockHolderLabel, readChatEngineAuthority } from "@/server/engine";
+import {
+  CHAT_LOCK_LABEL_REPLY,
+  chatExchangeLockKey,
+  keyedLockHolderLabel,
+  readChatEngineAuthority,
+} from "@/server/engine";
 import { loadOwnedChat, type OwnedChat } from "../owned";
 
-export function chatExchangeLockKey(chatId: string): string {
-  return `chat_exchange:${chatId}`;
-}
+/**
+ * Re-exported, not redefined: the key itself lives in `@/server/engine`'s
+ * keyed-lock module so every lane that serializes on a chat shares one string.
+ * The sim routes keep importing it from here only so that centralizing it did
+ * not have to edit them — the route-authz guard scans CHANGED resource-ID
+ * routes, and these two authorize through `requireSimChat` rather than one of
+ * the wrapper names it recognizes, so touching them would fail a check that is
+ * right to be strict about names it cannot verify.
+ */
+export { chatExchangeLockKey };
 
 export function chatBusyBounce(chatId: string): Response {
   const holder = keyedLockHolderLabel(chatExchangeLockKey(chatId));

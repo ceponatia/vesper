@@ -126,6 +126,19 @@ export const CHAT_NPC_SCENE_DECISION_TIMEOUT_MS = 8_000;
 /** Output cap for the decision call: two bounded proposals + JSON scaffolding, evidence ≤480 chars each. */
 export const CHAT_NPC_SCENE_DECISION_MAX_OUTPUT_TOKENS = 600;
 /**
+ * The NPC romantic-permission decision classifier (romantic-contact-affordances
+ * .spec.permission.md §"Grant, denial, absence, and withdrawal";
+ * implementation-order step 3): at most ONE structured call per qualifying
+ * committed assistant reply, run at the settle tail AFTER the exchange's last
+ * scene writer. Same budget philosophy as the reply-scene decision above — a
+ * dedicated 8s cap, never the pulse's temporary diagnostic ceiling: the call
+ * holds the exchange lock, and a trip degrades to a diagnostic and ZERO
+ * permission events (the fail-closed direction for a permission owner).
+ */
+export const CHAT_ROMANTIC_PERMISSION_DECISION_TIMEOUT_MS = 8_000;
+/** Output cap: up to four bounded decisions + JSON scaffolding, evidence ≤480 chars each. */
+export const CHAT_ROMANTIC_PERMISSION_DECISION_MAX_OUTPUT_TOKENS = 400;
+/**
  * The background location-sketch agent (chat-scene-fidelity.plan.md slice 2b) runs as a
  * DETACHED job — nothing waits on it — so it affords a roomier timeout than the post-flush
  * legs. A miss just leaves the place unsketched; the absent-sketch trigger re-fires.

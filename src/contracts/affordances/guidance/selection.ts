@@ -31,8 +31,30 @@ import {
 export const GUIDANCE_MAX_CORRECTIONS = 2;
 /** At most three scoped consistency constraints reach one prompt. */
 export const GUIDANCE_MAX_CONSTRAINTS = 3;
-/** At most one state transition, and only when that experiment is enabled. */
-export const GUIDANCE_MAX_TRANSITIONS = 1;
+/**
+ * At most four state transitions.
+ *
+ * This one is a LAWFUL MAXIMUM, not an attention estimate, and the difference is
+ * why it is not 1. The tier's only producer today is the revocation stop
+ * (`chat-permission-guidance.ts`), whose line the permission spec makes
+ * MANDATORY — and one ensemble reply can lawfully end contact on several
+ * participant pairs at once (the reply-scene decision cap is four). A budget of
+ * one dropped every pair but the first, and the producer's emission window
+ * closes as soon as the next reply persists: the dropped pairs were therefore
+ * never rendered on ANY reply, which is a required instruction lost rather than
+ * deferred. So the budget has to cover what one exchange can legitimately
+ * produce, and the producer bounds its own emission to this same number so the
+ * two can never disagree about what fits.
+ *
+ * A future producer of OPTIONAL descriptive transitions (the parked
+ * `CHAT_PHYSICAL_TRANSITIONS` experiment) may NOT simply share this headroom.
+ * The tier has no priority concept — `PhysicalStateTransition` carries
+ * `relevance`, not `mandatory` — so optional detail would compete with a binding
+ * stop on relevance and then on a fingerprint tie-break, and could win. Giving
+ * transitions a priority rank is design work that experiment owes; it is
+ * deliberately not assumed here.
+ */
+export const GUIDANCE_MAX_TRANSITIONS = 4;
 // Generic descriptive opportunities have NO constant on purpose: the plan parks
 // them ("zero generic opportunities", §Architecture 6). A budget of 0 would
 // invite someone to raise it; an absent concept has to be designed first.
@@ -114,7 +136,9 @@ export function selectNarratorGuidance(input: {
       GUIDANCE_MAX_CONSTRAINTS,
       record,
     ),
-    // Tier 4 — at most one changed-state detail.
+    // Tier 4 — the changed-state details, up to what one exchange can lawfully
+    // produce. Every one of them is a binding stop today, so this budget exists
+    // to bound the block, not to choose between them.
     transitions: capped(
       "transition",
       ranked(candidates.transitions, (transition) => TRANSITION_RELEVANCE_RANK[transition.relevance]),

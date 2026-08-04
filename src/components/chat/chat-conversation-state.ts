@@ -75,6 +75,8 @@ export interface PerChatState {
   rememberText: string;
   rememberBusy: boolean;
   relationshipOpen: boolean;
+  /** Admin-only romantic_touch permission override panel (chat-permissions-panel.tsx). */
+  permissionsOpen: boolean;
   scenesOpen: boolean;
   portraitOpen: boolean;
   // Reopen affordances (pickup strip, "has something to say").
@@ -126,6 +128,7 @@ export const PER_CHAT_DEFAULTS: PerChatState = {
   rememberText: "",
   rememberBusy: false,
   relationshipOpen: false,
+  permissionsOpen: false,
   scenesOpen: false,
   portraitOpen: false,
   pickupDismissed: false,

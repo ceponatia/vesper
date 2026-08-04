@@ -210,3 +210,37 @@ export const chatContactTargetNounAlternation: string = Object.keys(chatContactT
   .sort((left, right) => right.length - left.length || (left < right ? -1 : 1))
   .map((noun) => noun.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
   .join("|");
+
+// ---------------------------------------------------------------------------
+// Romantic-permission trigger vocabulary
+// (romantic-contact-affordances.spec.permission.md §"Grant, denial, absence,
+// and withdrawal"; implementation-order step 3 — ADDITIONS only, the regexes
+// above are other consumers' contracts and stay untouched)
+// ---------------------------------------------------------------------------
+
+/**
+ * Permission-SHAPED language: phrasings that grant, deny, or withdraw
+ * (`"you can"`, `"go ahead"`, `"not now"`, `"never again"`, `"hands off"`…).
+ *
+ * This is TRIGGER vocabulary, not authority: it decides whether the romantic
+ * permission decision leg spends its one classifier call on a reply, so it is
+ * deliberately broad and sloppy — a false fire costs one cheap structured call,
+ * a miss just leaves permission absent (the fail-closed direction). Nothing
+ * downstream may treat a match as a grant; the structured decision plus the
+ * deterministic validator own that (`romantic-permission-decision.ts`).
+ */
+export const CHAT_ROMANTIC_PERMISSION_CUE_RE =
+  /\b(?:you\s+(?:can|may|could|are\s+(?:allowed|welcome))|go\s+ahead|feel\s+free|it'?s\s+(?:okay|alright|all\s+right|fine)|i\s+(?:don'?t|won'?t)\s+mind|i\s+(?:want|would\s+like)\s+you\s+to|permission|permitted|allow(?:s|ed|ing)?|let(?:s|ting)?\s+(?:you|him|her|them|me)|invit(?:e|es|ed|ing)|welcome\s+to|touch\s+me|hold\s+me|not\s+(?:now|tonight|yet|here|again|like\s+th(?:is|at))|no\s+more|never\s+(?:again|touch)|any\s?more|hands\s+off|off\s+(?:of\s+)?me|stop(?:s|ped|ping)?|that'?s\s+enough|enough\s+of\s+that|don'?t\s+(?:touch|hold|ever)|may\s+not|can'?t\s+(?:touch|keep)|refus\w*|forbid\w*|withdraw\w*|revok\w*|take[sn]?\s+(?:it\s+)?back)\b/iu;
+
+/**
+ * Neutral touch context the ROMANTIC regexes above cannot carry ("touch",
+ * "hold", "hand" — ordinary words the affectionate lane deliberately excludes
+ * from its veto vocabulary). The trigger requires one of these — or a
+ * `CHAT_CONTACT_ROMANTIC_VERB_RE` / `CHAT_CONTACT_ROMANTIC_TARGET_RE` hit —
+ * NEAR a permission cue, so "she stops at the door" alone never fires. Note
+ * `\b` keeps `romantic_touch` (an identifier, e.g. chat text aping a developer
+ * command) from matching: `_` is a word character, so no boundary precedes
+ * "touch" there.
+ */
+export const CHAT_ROMANTIC_PERMISSION_TOUCH_RE =
+  /\b(?:touch(?:es|ed|ing)?|hold(?:s|ing)?|held|hands?|fingers?|palms?|skin|closer?|contact)\b/iu;

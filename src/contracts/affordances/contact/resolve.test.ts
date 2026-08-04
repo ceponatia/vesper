@@ -25,6 +25,7 @@ import {
   probeControl,
   probeGeometry,
   probeLayer,
+  probePlayerTargetPolicy,
   probePolicy,
   probeSupport,
 } from "./test-support";
@@ -310,6 +311,46 @@ describe("contact attempt resolution", () => {
         expect(codes(sink)).toEqual([CONTACT_PERMISSION_UNAVAILABLE]);
       },
     );
+
+    it("passes a romantic attempt on the explicit player-target basis, with no grant at all", () => {
+      // The ruled exception (owner, 2026-08-04): a target who IS the player
+      // pre-grants nothing — the player writes their own reaction. The read
+      // carries NO scopes, and the gate demands none of a player target.
+      const sink = new DiagnosticCollector();
+      const resolution = run(
+        { intent: { actionKind: "romantic" }, context: { policy: probePlayerTargetPolicy() } },
+        sink,
+      );
+      expect(resolution.status).toBe("committable");
+      if (resolution.status !== "committable") return;
+      expect(resolution.policy).toMatchObject({
+        status: "not_required",
+        notRequiredBasis: "player_target",
+        notRequiredTargetId: PROBE_TARGET,
+      });
+      expect(codes(sink)).toEqual([]);
+    });
+
+    it("fails closed when the player-target basis names another target", () => {
+      const sink = new DiagnosticCollector();
+      const resolution = run(
+        {
+          intent: { actionKind: "romantic" },
+          context: { policy: { ...probePlayerTargetPolicy(), notRequiredTargetId: PROBE_ACTOR } },
+        },
+        sink,
+      );
+      expect(resolution).toMatchObject({ status: "unresolved", reason: "permission_unresolved" });
+      expect(codes(sink)).toEqual([CONTACT_PERMISSION_UNAVAILABLE]);
+    });
+
+    it("demands no scope of a player target even for an intimate kind", () => {
+      const resolution = run({
+        intent: { actionKind: "intimate" },
+        context: { policy: probePlayerTargetPolicy() },
+      });
+      expect(resolution.status).toBe("committable");
+    });
 
     it("never widens a grant to a scope it does not name", () => {
       const sink = new DiagnosticCollector();
