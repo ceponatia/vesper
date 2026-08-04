@@ -23,6 +23,7 @@ import {
   teeSink,
   unseenMilestoneReason,
   withSceneContacts,
+  type AffordanceSubjectId,
   type ChatActionId,
   type ChatReplyFailure,
   type ChatReplyFailureCode,
@@ -60,10 +61,12 @@ import {
   chatContactAcknowledgment,
   chatContactActionOutcome,
   chatContactEventRef,
-  chatContactMaterialSource,
+  chatContactMaterialAtCut,
   chatContactReachPremise,
+  chatSceneAfterDiscontinuity,
   endAllChatContacts,
   planChatContactTurn,
+  CHAT_CONTACT_PLAYER_SUBJECT,
   type ChatContactReachPremise,
   type ChatContactRosterMember,
 } from "./chat-contact-adapter";
@@ -75,6 +78,7 @@ import {
 import {
   beginChatNpcSceneDecision,
   chatNpcSceneDecisionMode,
+  emptyChatNpcSceneSettleReport,
   finishChatNpcSceneDecision,
   type ChatNpcSceneDecisionHandle,
 } from "./chat-npc-scene-decision";
@@ -85,7 +89,6 @@ import {
   detectChatNpcContactEnding,
   type ChatNpcEndingCharacter,
 } from "./chat-contact-reply";
-import { chatGarmentCoverageForCut } from "./chat-garment-affordances";
 import { buildChatPhysicalGuidance, buildChatPhysicalGuidanceStages } from "./chat-physical-guidance";
 import { renderChatPhysicalGuidance } from "./chat-physical-guidance-render";
 import { buildChatPhysicalGuidancePreview, type PhysicalGuidancePreview } from "./chat-physical-guidance-preview";
@@ -1375,33 +1378,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // — no cue selection, no prompt bytes). A derivation failure degrades to
         // `unavailable` for that body — silence with a diagnostic, never a stale
         // capture and never bare skin.
-        const currentCoverageOf = (
-          actorId: string,
-          resolved: ResolvedChatWardrobe,
-          fromRead: EffectiveCoverageRead | null,
-        ): EffectiveCoverageRead | null => {
-          if (fromRead !== null) return fromRead;
-          try {
-            return chatGarmentCoverageForCut({
-              store: scenario.garments,
-              actorId,
-              ...(resolved.worn === undefined ? {} : { worn: resolved.worn }),
-              visibility: resolved.partVisibility,
-              environment: scenario.environment,
-              clockMinutes: scenario.clockMinutes,
-            });
-          } catch (error) {
-            sink.push(
-              diag(
-                "warn",
-                "chat_contact.coverage.derive_failed",
-                "current-cut coverage derivation failed; this body's material reads unavailable",
-                { path: "chat_contact", context: { actorId, error: describeError(error) } },
-              ),
-            );
-            return null;
-          }
-        };
+        //
+        // The derivation itself is `chatContactMaterialAtCut`, shared with the
+        // reply-scene decision leg's POST-settle cut: two different cuts, one
+        // derivation, so neither leg can acquire a different answer to "is this
+        // body dressed in something nobody modelled".
+        //
         // PRESENT members only: an away character is not a body in the room, and the
         // seeded scene must never place one. Each carries their OWN material answer —
         // the current-cut coverage, the worn ids and the free-text look together, so
@@ -1428,23 +1410,26 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         const coverageCaptures: Record<string, EffectiveCoverageRead> = {};
         const contactRoster: ChatContactRosterMember[] = presentMembers.map((member) => {
           const actorId = garmentActorForCharacter(member.characterId);
-          const coverage = currentCoverageOf(
+          const captured =
+            member.characterId === characterId && affordanceRead !== null ? affordanceRead.coverage : null;
+          const { coverage, material } = chatContactMaterialAtCut({
+            store: scenario.garments,
             actorId,
-            member.wardrobe,
-            member.characterId === characterId && affordanceRead !== null ? affordanceRead.coverage : null,
-          );
+            ...(member.wardrobe.worn === undefined ? {} : { worn: member.wardrobe.worn }),
+            visibility: member.wardrobe.partVisibility,
+            environment: scenario.environment,
+            clockMinutes: scenario.clockMinutes,
+            captured,
+            freeTextOutfit: member.state.outfit,
+            wornItemIds: member.state.wornItemIds,
+            sink,
+          });
           if (coverage !== null) coverageCaptures[actorId] = coverage;
           return {
             subjectId: affordanceSubjectId(member.characterId),
             name: member.name,
             aliases: member.aliases,
-            material: chatContactMaterialSource({
-              coverage,
-              store: scenario.garments,
-              actorId,
-              freeTextOutfit: member.state.outfit,
-              wornItemIds: member.state.wornItemIds,
-            }),
+            material,
           };
         });
         contactCoverageCaptures = coverageCaptures;
@@ -1482,6 +1467,35 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           endedScene = ended.scene;
           endedCommits.push(...ended.commits);
         }
+        // --- The same discontinuities clear the pair relations -----------------
+        // Owner ruling 2026-08-04: proximity and facing are valid only during
+        // CONTINUOUS CO-PRESENCE in one place. Ending the contacts above while
+        // keeping the distance is internally contradictory — it says the hand
+        // came off AND that the two bodies are still within reach, with nothing
+        // having moved. So the skip and the place change clear every pair, and a
+        // member this cut says is offstage takes their own relations with them.
+        //
+        // Cleared is UNKNOWN, never a substituted band, and returning restores
+        // nothing: a new distance needs explicit movement or placement evidence,
+        // the same bar a first placement clears. The ordinary per-turn clock tick
+        // is NOT a discontinuity — minutes passing inside one scene is what a
+        // conversation is, and clearing on it would make reach permanently
+        // unknown.
+        //
+        // The away half reads the PRE-prompt cut (last exchange's confirmed
+        // presence), which is the cut every touch this exchange resolves
+        // against. The reply-scene decision leg does its own post-settle pass for
+        // the same rule, so an NPC-authored touch never sees a departure this
+        // block could not have known about yet.
+        endedScene = chatSceneAfterDiscontinuity(endedScene, {
+          wholeScene: endReasons.length > 0,
+          awaySubjects: [
+            ...(driftedState.presence === "present" ? [] : [affordanceSubjectId(characterId)]),
+            ...others
+              .filter((member) => member.state.presence !== "present")
+              .map((member) => affordanceSubjectId(member.characterId)),
+          ],
+        });
 
         // The plan runs on the POST-hook scene: a touch this turn is resolved against a
         // world the skip or the room change has already emptied.
@@ -1914,17 +1928,29 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             assistantMessageId,
             reply: full,
             mode: npcSceneMode,
+            ownerId: owner,
             // Stable roster order — the primary first, then the others exactly as
             // the roster handed them in; the order IS the `npc_N` ref assignment.
+            // Each carries its PROFILE, which the post-settle wardrobe resolve a
+            // contact start's material read needs — authored identity a settle
+            // cannot move, unlike everything else the finish half reloads.
             roster: [
-              { characterId, name: characterName, aliases: profile.aliases, presence: driftedState.presence },
+              {
+                characterId,
+                name: characterName,
+                aliases: profile.aliases,
+                presence: driftedState.presence,
+                profile,
+              },
               ...others.map((member) => ({
                 characterId: member.characterId,
                 name: member.name,
                 aliases: member.profile.aliases,
                 presence: member.state.presence,
+                profile: member.profile,
               })),
             ],
+            ...(player.profile === undefined ? {} : { playerPersona: player.profile }),
             scene: scenario.scene,
             sink,
           });
@@ -1960,7 +1986,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // this return touches the column). Internally fenced; a noop handle
         // (existing envelope) returns immediately, and flags-off leaves the
         // handle null so this line is unreached.
-        if (npcSceneDecision !== null) await finishChatNpcSceneDecision(npcSceneDecision);
+        // An opening beat writes no wardrobe at all (no player act, no archivist,
+        // no garment reconcile), so its settle report is empty by construction —
+        // never a defaulted one.
+        if (npcSceneDecision !== null) {
+          await finishChatNpcSceneDecision(npcSceneDecision, emptyChatNpcSceneSettleReport());
+        }
         return;
       }
 
@@ -2102,6 +2133,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // sequential pass (the store is one jsonb field; concurrent
         // read-modify-writes of it would lose updates).
         const memberWornChanges: ChatGarmentWardrobeChange[] = [];
+        // Whose wardrobe this exchange AUTHORITATIVELY rewrote — the reply-scene
+        // leg's contact-start chronology veto (actor-control spec §"Resolution
+        // laws → Contact start"). Collected from the settle's own writers because
+        // they are the only place the answer exists: the post-settle garment store
+        // shows the FINAL clothes and cannot say when they changed, and a final
+        // wardrobe does not prove which layers a touch mid-reply landed through.
+        // The primary's and the player's folds join it from `finalized` below.
+        const wardrobeChanged = new Set<AffordanceSubjectId>();
         // Who is on stage — computed ONCE for the whole settle, because every
         // member's whole-look evidence gate reads the same scene shape: with more
         // than one character present, a bare pronoun cannot pick a wardrobe owner
@@ -2182,6 +2221,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                 preWornItemIds: member.state.wornItemIds,
                 wornItemIds: memberState.wornItemIds,
               });
+              wardrobeChanged.add(affordanceSubjectId(member.characterId));
             }
             const guardMessageId = promptMessageId ?? assistantMessageId;
             await saveChatState({
@@ -2265,7 +2305,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // With both new flags off the handle is null and the legacy block runs
         // byte-identically — flag-off behavior is indistinguishable from HEAD.
         if (npcSceneDecision !== null) {
-          await finishChatNpcSceneDecision(npcSceneDecision);
+          // The primary's and the player's folds join the members' — every
+          // authoritative wardrobe write of this exchange, in one veto set. The
+          // reconcile above only MATERIALIZES what these folds decided, so its
+          // own pass adds nothing new to report.
+          if (finalized.wardrobeChanged.character) wardrobeChanged.add(affordanceSubjectId(characterId));
+          if (finalized.wardrobeChanged.player) wardrobeChanged.add(CHAT_CONTACT_PLAYER_SUBJECT);
+          await finishChatNpcSceneDecision(npcSceneDecision, { wardrobeChanged });
         } else if (chatContactActionsEnabled()) {
           // --- Reply-side NPC contact ending (chat-contact-reply.ts) ----------
           // The legacy block: the ends and the projection land in one verified
@@ -3025,13 +3071,16 @@ function previewChatContactOutcomes(input: {
     // would re-open the settle race the live leg closed, and explain a silence
     // the turn no longer produces.
     const actorId = garmentActorForCharacter(input.character.id);
-    const coverage = chatGarmentCoverageForCut({
+    const { material } = chatContactMaterialAtCut({
       store: cut.scenario.garments,
       actorId,
       ...(cut.wardrobe.worn === undefined ? {} : { worn: cut.wardrobe.worn }),
       visibility: cut.wardrobe.partVisibility,
       environment: cut.scenario.environment,
       clockMinutes: cut.scenario.clockMinutes,
+      freeTextOutfit: cut.state.outfit,
+      wornItemIds: cut.state.wornItemIds,
+      sink: input.sink,
     });
     // PRESENT only, exactly as the live roster is built: an away character is not a
     // body in the room, and an empty roster resolves no target at all.
@@ -3042,13 +3091,7 @@ function previewChatContactOutcomes(input: {
               subjectId: affordanceSubjectId(input.character.id),
               name: input.character.name,
               aliases: cut.profile.aliases,
-              material: chatContactMaterialSource({
-                coverage,
-                store: cut.scenario.garments,
-                actorId,
-                freeTextOutfit: cut.state.outfit,
-                wornItemIds: cut.state.wornItemIds,
-              }),
+              material,
             },
           ]
         : [];
