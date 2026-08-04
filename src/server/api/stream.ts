@@ -55,3 +55,63 @@ export function drainingStreamResponse<T>(opts: {
 
   return new Response(stream, { status: 200, headers: opts.headers });
 }
+
+
+const DEFAULT_REVEAL_CHUNK_CHARS = 18;
+const DEFAULT_REVEAL_DELAY_MS = 20;
+
+export interface PacedTextRevealOptions {
+  /** Approximate chunk size; whitespace-delimited tokens are never split. */
+  targetChunkChars?: number;
+  /** Pause before each chunk after the first. */
+  delayMs?: number;
+  /** Injectable timer seam for tests. */
+  wait?: (delayMs: number) => Promise<void>;
+}
+
+function waitFor(delayMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
+
+/**
+ * Reveal already-approved prose incrementally while preserving its bytes exactly.
+ *
+ * This is intentionally a presentation seam, not a provider-token stream: callers
+ * can finish trust-boundary validation before yielding any text, then avoid dropping
+ * the entire approved reply into the UI as one blob. The first chunk is immediate;
+ * later chunks are lightly paced so browsers paint between reads.
+ */
+export async function* pacedTextReveal(
+  text: string,
+  options: PacedTextRevealOptions = {},
+): AsyncGenerator<string, void, unknown> {
+  const targetChunkChars = options.targetChunkChars ?? DEFAULT_REVEAL_CHUNK_CHARS;
+  const delayMs = options.delayMs ?? DEFAULT_REVEAL_DELAY_MS;
+  if (!Number.isSafeInteger(targetChunkChars) || targetChunkChars < 1) {
+    throw new RangeError("targetChunkChars must be a positive safe integer");
+  }
+  if (!Number.isSafeInteger(delayMs) || delayMs < 0) {
+    throw new RangeError("delayMs must be a non-negative safe integer");
+  }
+
+  const wait = options.wait ?? waitFor;
+  const parts = text.match(/\s+|\S+/g) ?? [];
+  let chunk = "";
+  let emitted = false;
+
+  const reveal = async function* (): AsyncGenerator<string, void, unknown> {
+    if (emitted && delayMs > 0) await wait(delayMs);
+    emitted = true;
+    yield chunk;
+    chunk = "";
+  };
+
+  for (const part of parts) {
+    chunk += part;
+    if (chunk.length < targetChunkChars) continue;
+    yield* reveal();
+  }
+  if (chunk.length > 0) yield* reveal();
+}
