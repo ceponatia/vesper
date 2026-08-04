@@ -3,7 +3,7 @@ import { DiagnosticCollector } from "../../diagnostics";
 import { adapterSupported, toUnitInterval } from "../core";
 import type { ContactMaterialLayerRead } from "./material";
 import { CONTACT_AUTHORIZATION_LAPSED, CONTACT_LIFECYCLE_INVALID } from "./diagnostics";
-import { contactEventRef } from "./identity";
+import { contactEventRef, type ContactId } from "./identity";
 import {
   activeContact,
   activeContactForPair,
@@ -14,15 +14,24 @@ import {
   endAllContacts,
   endContact,
   endUnauthorizedContacts,
+  modulateContactGesture,
   recomposeContactTransmission,
   replayContactCommits,
   type CommittedContactOutcome,
   type ContactCommitOutcome,
+  type ContactGestureModulationOutcome,
   type ContactLifecycleState,
 } from "./lifecycle";
 import { resolveContactAttempt } from "./resolve";
 import { contactPairKey } from "./surfaces";
-import type { CommittableContactResolution, ContactActionIntent, ContactLifecycleCommit } from "./types";
+import type {
+  CommittableContactResolution,
+  CommittedContactRead,
+  ContactActionIntent,
+  ContactLifecycleCommit,
+  ContactMotionIntent,
+  ContactPressureBand,
+} from "./types";
 import {
   PROBE_ACTOR,
   PROBE_EVENT,
@@ -429,6 +438,221 @@ describe("contact lifecycle", () => {
         eventRef: contactEventRef("second_event"),
       });
       expect(second.state.contacts).toHaveLength(2);
+    });
+  });
+
+  describe("gesture-only modulation", () => {
+    const GESTURE_EVENT = contactEventRef("gesture_event");
+
+    /**
+     * A live contact carrying every field a gesture-only modulation must leave
+     * alone: a stated area, a real material layer, and an adjustment that moved
+     * the target's body with the agency proof that allowed it.
+     */
+    function heldTouch(): CommittedContactOutcome {
+      const attempt = probeAttempt({
+        intent: {
+          requestedPressure: "light",
+          requestedArea: "broad",
+          requestedMotion: { band: "tapping", pathDetailIds: ["arch"] },
+        },
+        context: {
+          material: adapterSupported({ layers: [probeLayer("sock")], evidence: [] }),
+          adjustments: [probeAdjustment({ subjectId: PROBE_TARGET })],
+          targetAgencies: [probeAgency("allowed")],
+        },
+      });
+      const resolution = resolveContactAttempt(attempt);
+      if (resolution.status !== "committable") throw new Error(`fixture did not commit: ${resolution.status}`);
+      return mustCommit({ state: emptyContactLifecycleState(), resolution, eventRef: PROBE_EVENT });
+    }
+
+    /** One modulation, defaulting to a squeeze (firmer, and no longer tapping). */
+    function modulate(input: {
+      state: ContactLifecycleState;
+      contactId: ContactId;
+      pressure?: ContactPressureBand | null;
+      motion?: ContactMotionIntent | null;
+      storyTime?: number;
+      sink?: DiagnosticCollector;
+    }): ContactGestureModulationOutcome {
+      return modulateContactGesture({
+        state: input.state,
+        contactId: input.contactId,
+        pressure: input.pressure === undefined ? "moderate" : input.pressure,
+        motion: input.motion ?? null,
+        eventRef: GESTURE_EVENT,
+        storyTime: input.storyTime ?? 140,
+        ...(input.sink === undefined ? {} : { sink: input.sink }),
+      });
+    }
+
+    /** Modulate, narrowed to the branch that actually wrote an update. */
+    function mustModulate(input: Parameters<typeof modulate>[0]) {
+      const outcome = modulate(input);
+      if (outcome.status !== "committed") throw new Error(`fixture did not modulate: ${outcome.status}`);
+      return outcome;
+    }
+
+    it("changes pressure and motion and NOTHING else, field for field", () => {
+      const first = heldTouch();
+      const changed = mustModulate({ state: first.state, contactId: first.contact.contactId });
+
+      expect(changed.commit.kind).toBe("contact_updated");
+      expect(changed.contact.pressure).toBe("moderate");
+      expect(changed.contact.motion).toBeUndefined();
+      expect(changed.contact.lastUpdatedAt).toBe(140);
+      expect(changed.contact.lastUpdatedByEventRef).toBe(GESTURE_EVENT);
+
+      // Everything else, byte for byte — as ONE comparison over the whole read
+      // with only the four fields a modulation may move blanked out, so a field
+      // added to `CommittedContactRead` later has to be classified deliberately
+      // instead of silently escaping this assertion.
+      const exceptTheGesture = (contact: CommittedContactRead) => ({
+        ...contact,
+        pressure: null,
+        motion: null,
+        lastUpdatedAt: 0,
+        lastUpdatedByEventRef: "",
+      });
+      expect(exceptTheGesture(changed.contact)).toEqual(exceptTheGesture(first.contact));
+      // ...and the three the spec calls out by name, asserted where a reader of
+      // this file will look for them.
+      expect(changed.contact.contactArea).toBe("broad");
+      expect(changed.contact.materialBetween).toEqual(first.contact.materialBetween);
+      expect(changed.contact.transmission).toEqual(first.contact.transmission);
+      expect(changed.contact.implicitAdjustments).toEqual(first.contact.implicitAdjustments);
+      expect(changed.contact.actorControl).toEqual(first.contact.actorControl);
+      expect(changed.contact.targetAgencies).toEqual(first.contact.targetAgencies);
+      expect(changed.contact.startedByEventRef).toBe(first.contact.startedByEventRef);
+      expect(changed.contact.contactId).toBe(first.contact.contactId);
+    });
+
+    it("commits a pressure-only change, and a motion-only change", () => {
+      const first = heldTouch();
+      const firmer = mustModulate({
+        state: first.state,
+        contactId: first.contact.contactId,
+        pressure: "firm",
+        motion: { band: "tapping", pathDetailIds: ["arch"] },
+      });
+      expect(firmer.contact.pressure).toBe("firm");
+      expect(firmer.contact.motion?.band).toBe("tapping");
+
+      const slid = mustModulate({
+        state: first.state,
+        contactId: first.contact.contactId,
+        pressure: "light",
+        motion: { band: "sliding", pathDetailIds: ["arch"] },
+      });
+      expect(slid.contact.pressure).toBe("light");
+      expect(slid.contact.motion?.band).toBe("sliding");
+      expect(slid.contact.motion?.pathDetailIds).toEqual(["arch"]);
+    });
+
+    it("writes nothing at all for the gesture the contact already holds", () => {
+      const first = heldTouch();
+      const same = modulate({
+        state: first.state,
+        contactId: first.contact.contactId,
+        pressure: "light",
+        motion: { band: "tapping", pathDetailIds: ["arch"] },
+      });
+      expect(same.status).toBe("continued");
+      if (same.status !== "continued") return;
+      expect(same.reason).toBe("gesture_unchanged");
+      expect(same.commit.kind).toBe("contact_continued");
+      // The SAME state reference: ten quiet exchanges under one held hand are one
+      // start and nine no-ops, exactly as a re-asserted resolution is.
+      expect(same.state).toBe(first.state);
+      expect(same.contact).toBe(first.contact);
+    });
+
+    it("counts a path that changed under an unchanged band as a change", () => {
+      // `contentKey` compares the band AND the path tokens, and order is identity
+      // — a slide from arch to heel is not the slide back.
+      const first = heldTouch();
+      const rerouted = mustModulate({
+        state: first.state,
+        contactId: first.contact.contactId,
+        pressure: "light",
+        motion: { band: "tapping", pathDetailIds: ["heel_pad"] },
+      });
+      expect(rerouted.contact.motion?.pathDetailIds).toEqual(["heel_pad"]);
+    });
+
+    it("absorbs a modulation older than the projection instead of winding time back", () => {
+      const sink = new DiagnosticCollector();
+      const first = heldTouch();
+      const stale = modulate({
+        state: first.state,
+        contactId: first.contact.contactId,
+        pressure: "firm",
+        storyTime: first.contact.lastUpdatedAt - 1,
+        sink,
+      });
+      expect(stale.status).toBe("continued");
+      if (stale.status !== "continued") return;
+      expect(stale.reason).toBe("stale_assertion");
+      expect(stale.state).toBe(first.state);
+      expect(stale.contact.pressure).toBe("light");
+      expect(stale.contact.lastUpdatedAt).toBe(first.contact.lastUpdatedAt);
+      expect(sink.items.map((item) => item.code)).toEqual([CONTACT_LIFECYCLE_INVALID]);
+      expect(sink.items[0]?.severity).toBe("warn");
+    });
+
+    it("answers `absent` for an id nothing active carries, and changes nothing", () => {
+      const sink = new DiagnosticCollector();
+      const first = heldTouch();
+      const ended = endContact({
+        state: first.state,
+        contactId: first.contact.contactId,
+        reason: "separated",
+        storyTime: 140,
+        eventRef: contactEventRef("end_event"),
+      });
+      const outcome = modulate({ state: ended.state, contactId: first.contact.contactId, sink });
+      expect(outcome.status).toBe("absent");
+      // No `contact` field on this branch at all — a caller cannot read a
+      // modulated contact off a modulation that never happened.
+      expect(outcome).toEqual({ status: "absent", state: ended.state });
+      expect(ended.state.contacts).toEqual([]);
+      expect(sink.items.map((item) => item.severity)).toEqual(["error"]);
+    });
+
+    it("never ends, starts, or evicts anything — one contact in, the same one out", () => {
+      const first = heldTouch();
+      const other = probeAttempt({ intent: { source: probeBodySurface(PROBE_ACTOR, "lips") } });
+      const otherResolution = resolveContactAttempt(other);
+      if (otherResolution.status !== "committable") throw new Error("fixture did not commit");
+      const both = mustCommit({
+        state: first.state,
+        resolution: otherResolution,
+        eventRef: contactEventRef("other_event"),
+      });
+      const changed = mustModulate({ state: both.state, contactId: first.contact.contactId });
+      expect(changed.state.contacts).toHaveLength(2);
+      // The bystander is untouched, by reference: nothing about a gesture can
+      // reach a contact the modulation did not name.
+      expect(changed.state.contacts.find((entry) => entry.contactId !== first.contact.contactId)).toBe(
+        both.contact,
+      );
+    });
+
+    it("freezes the modulated read", () => {
+      const first = heldTouch();
+      const changed = mustModulate({ state: first.state, contactId: first.contact.contactId });
+      expect(Object.isFrozen(changed.contact)).toBe(true);
+      expect(() => {
+        (changed.contact as { pressure: string }).pressure = "firm";
+      }).toThrow();
+    });
+
+    it("replays through the ordinary fold — a modulation is just an update event", () => {
+      const first = heldTouch();
+      const changed = mustModulate({ state: first.state, contactId: first.contact.contactId });
+      const commits: readonly ContactLifecycleCommit[] = [...contactCommitEvents(first), changed.commit];
+      expect(replayContactCommits({ commits })).toEqual(changed.state);
     });
   });
 
@@ -870,3 +1094,4 @@ describe("contact lifecycle", () => {
     });
   });
 });
+
