@@ -21,7 +21,7 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   // docs/getting-started.md §Environment "Tool-model candidate").
   { id: "aion-labs/aion-3.0", label: "Aion 3.0" },
   { id: "aion-labs/aion-3.0-mini", label: "Aion 3.0 Mini" },
-  { id: "deepseek/deepseek-v4-flash", label: "DeepSeek 4 Flash" },
+  { id: "~deepseek/deepseek-v4-flash-latest", label: "DeepSeek 4 Flash" },
   { id: "z-ai/glm-5.2", label: "GLM 5.2" },
   { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash" },
   // Owner ask, 2026-07-21 (engine.rollout.plan.md ruling 4's side note).
