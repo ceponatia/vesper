@@ -41,6 +41,7 @@ import {
   probeAttempt,
   probeBodySurface,
   probeLayer,
+  probePlayerTargetPolicy,
   probePolicy,
 } from "./test-support";
 
@@ -1075,6 +1076,32 @@ describe("contact lifecycle", () => {
       const swept = sweep(liveRomantic(), {});
       expect(swept.commits).toEqual([]);
       expect(swept.state.contacts).toHaveLength(1);
+    });
+
+    it("keeps a player-target romantic contact alive with no grant anywhere", () => {
+      // The ruled exception, on the sweep side: a contact whose granting target
+      // is the player never depended on a standing grant, so no withdrawal can
+      // lapse it — the current read keeps saying `not_required`/`player_target`
+      // and the contact stands.
+      const sink = new DiagnosticCollector();
+      const swept = sweep(liveRomantic(), { policy: probePlayerTargetPolicy() }, sink);
+      expect(swept.commits).toEqual([]);
+      expect(swept.state.contacts).toHaveLength(1);
+      expect(sink.items).toEqual([]);
+    });
+
+    it("ends a player-target exception that names another target", () => {
+      const swept = sweep(liveRomantic(), {
+        policy: { ...probePlayerTargetPolicy(), notRequiredTargetId: PROBE_ACTOR },
+      });
+      expect(swept.commits.map((commit) => commit.reason)).toEqual(["state_invalidated"]);
+      expect(swept.state.contacts).toEqual([]);
+    });
+
+    it("fails closed on a bare not_required answer — the basis is load-bearing", () => {
+      const swept = sweep(liveRomantic(), { policy: probePolicy("not_required", "romantic") });
+      expect(swept.commits.map((commit) => commit.reason)).toEqual(["state_invalidated"]);
+      expect(swept.state.contacts).toEqual([]);
     });
 
     it("leaves a contact newer than the sweep alive rather than back-dating its end", () => {

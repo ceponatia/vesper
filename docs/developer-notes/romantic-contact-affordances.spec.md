@@ -4,7 +4,8 @@ Status: companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
 (promoted 2026-07-28; affectionate contact is live in character chat;
 continuation item 4 was revised 2026-08-02 and still requires its shadow gate;
-item 5's permission-owner rulings and technical design were settled 2026-08-04)
+item 5's permission-owner rulings were settled and its implementation built,
+flag-off, 2026-08-04)
 
 This is the coding-agent entry point. The plan owns the product intent,
 reader-facing rollout, success criteria, and all open questions. These specs
@@ -106,8 +107,11 @@ the item-1.2 repairs, production enablement, and the permission-owner ruling. Th
   - **Status:** **future design**
   - **Note:** No chat `touch` channel; blocks positive tactile output
 - **Capability: `romantic_touch` permission owner**
-  - **Status:** **future design**
-  - **Note:** Owner-ruled and specified 2026-08-04; implementation remains
+  - **Status:** **implemented contract**
+  - **Note:** Built and lane-wired 2026-08-04 behind `CHAT_ROMANTIC_PERMISSION`
+    (off — no production turn reaches it yet); enablement rides the item-6
+    romantic proof. As-built record: the
+    [permission spec](romantic-contact-affordances.spec.permission.md) §As built
 - **Capability: Positive texture/glide output**
   - **Status:** **future design**
   - **Note:** Still blocked on perception, path/cross-locus detail, and per-side footwear friction
@@ -123,7 +127,7 @@ not a statement of current wiring.
   - **Successor chat:** Command/deliberation authority is stronger, but no regional contact adapter exists.
   - **Consequence:** Item 4 must prove an explicit NPC actor per decision; prose alone never commits a voluntary action.
 - **Capability: Consent/permission**
-  - **Character chat now:** Intimate-scene/touch-welcomeness signals are not grants. The directional owner is specified but not implemented.
+  - **Character chat now:** Intimate-scene/touch-welcomeness signals are not grants. The directional owner is implemented behind `CHAT_ROMANTIC_PERMISSION` (off).
   - **Successor chat:** Consent ledger is fail-closed.
   - **Consequence:** Implement the lane adapter from the permission spec; do not claim parity until both lanes enforce the same scope, direction, chronology, revocation, and rollback laws.
 - **Capability: Pose, reach, support, and proximity**

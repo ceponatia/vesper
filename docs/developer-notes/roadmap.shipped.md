@@ -5,6 +5,16 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Romantic contact — `romantic_touch` permission owner (item 5)** —
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
+  [permission spec](romantic-contact-affordances.spec.permission.md) §As built —
+  2026-08-04 — the directional branch-local grant ledger (`chat_permission_events`,
+  fold-on-read projection), the resolver's exact-scope read with the
+  player-target exception, the conservative NPC-side grant/denial/withdrawal
+  decision, the audited developer-override menu, atomic revocation of dependent
+  contact, and the next-reply stop instruction — all behind
+  `CHAT_ROMANTIC_PERMISSION` (off) pending the item-6 romantic proof.
+
 - **NPC actor-control authority increments built (dark)** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
   [actor-control spec](romantic-contact-affordances.spec.actor-control.md) —

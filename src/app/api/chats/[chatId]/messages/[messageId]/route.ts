@@ -2,9 +2,11 @@ import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { CHAT_CAPABILITY_UNAVAILABLE_CODE } from "@/contracts";
-import { jsonError, jsonOk, MESSAGE_CONTENT_MAX, readBody, withUser } from "@/server/api";
+import { jsonError, jsonOk, MESSAGE_CONTENT_MAX, readBody, withOwnedChat } from "@/server/api";
 import { characterChatMessages, db } from "@/server/db";
 import {
+  CHAT_PERMISSION_SOURCE_MESSAGE_IMMUTABLE,
+  chatMessageHasNpcPermissionAuthority,
   isSimRoutedAuthority,
   readChatEngineAuthority,
   reconcileMessageMemory,
@@ -15,6 +17,9 @@ import { resolveChatPersona } from "@/server/players";
 import { loadOwnedChat } from "../../../owned";
 
 type Params = { chatId: string; messageId: string };
+type OwnedChat = NonNullable<Awaited<ReturnType<typeof loadOwnedChat>>>;
+
+const ownedChat = (user: { id: string }, params: Params) => loadOwnedChat(params.chatId, user.id);
 
 /**
  * Per-message edits on a conversation transcript (docs/character-chat/api.md). PATCH
@@ -36,16 +41,27 @@ const editBodySchema = z.object({
 });
 
 /** PATCH /api/chats/:chatId/messages/:messageId — overwrite one message's text. */
-export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
+export const PATCH = withOwnedChat<Params, OwnedChat>(ownedChat, async (user, _owned, req: NextRequest, ctx) => {
   const { chatId, messageId } = await ctx.params;
   const body = await readBody(req, editBodySchema);
   if (!body.ok) return body.response;
+  // Re-check immediately beside the write as well as at the route wrapper. The
+  // mutation guardrail deliberately requires owner evidence in this handler's
+  // own control flow; this also closes an ownership-change race between wrapper
+  // resolution and mutation.
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
   if (isSimRoutedAuthority(await readChatEngineAuthority(chatId))) {
     return jsonError(
       CHAT_CAPABILITY_UNAVAILABLE_CODE,
       "World-engine chat history can't be edited because its transcript reflects committed world events.",
+      409,
+    );
+  }
+  if (await chatMessageHasNpcPermissionAuthority(chatId, messageId)) {
+    return jsonError(
+      CHAT_PERMISSION_SOURCE_MESSAGE_IMMUTABLE,
+      "This reply contains an NPC permission decision. Transcript edits cannot rewrite NPC agency; use a state-aware retake instead.",
       409,
     );
   }
@@ -74,13 +90,21 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
 });
 
 /** DELETE /api/chats/:chatId/messages/:messageId — remove a single message. */
-export const DELETE = withUser<Params>(async (user, _req, ctx) => {
+export const DELETE = withOwnedChat<Params, OwnedChat>(ownedChat, async (user, _owned, _req, ctx) => {
   const { chatId, messageId } = await ctx.params;
-  if (!(await loadOwnedChat(chatId, user.id))) return jsonError("not_found", "chat not found", 404);
+  const owned = await loadOwnedChat(chatId, user.id);
+  if (!owned) return jsonError("not_found", "chat not found", 404);
   if (isSimRoutedAuthority(await readChatEngineAuthority(chatId))) {
     return jsonError(
       CHAT_CAPABILITY_UNAVAILABLE_CODE,
       "World-engine chat history can't be deleted because its transcript reflects committed world events.",
+      409,
+    );
+  }
+  if (await chatMessageHasNpcPermissionAuthority(chatId, messageId)) {
+    return jsonError(
+      CHAT_PERMISSION_SOURCE_MESSAGE_IMMUTABLE,
+      "This reply contains an NPC permission decision. Transcript deletion cannot rewrite NPC agency; use a state-aware retake instead.",
       409,
     );
   }

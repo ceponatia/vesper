@@ -10,6 +10,8 @@ import {
   CHAT_CONTACT_SOURCE_LOCATION,
   CHAT_CONTACT_TARGET_LOCATION,
   CHAT_GESTURE_CONTACT,
+  CHAT_ROMANTIC_PERMISSION_CUE_RE,
+  CHAT_ROMANTIC_PERMISSION_TOUCH_RE,
 } from "./chat-contact-vocabulary";
 
 /**
@@ -94,5 +96,47 @@ describe("quote normalization", () => {
     const normalized = normalizeTypographicQuotes(raw);
     expect(normalized).toBe("\"Don't pull away,\" she says.");
     expect(normalized.length).toBe(raw.length);
+  });
+});
+
+describe("the romantic-permission trigger vocabulary (additions — permission spec step 3)", () => {
+  it("matches grant-, denial-, and withdrawal-shaped cues", () => {
+    for (const sentence of [
+      "You can touch me",
+      "You may, if you like",
+      "Go ahead",
+      "Feel free",
+      "It's okay",
+      "I want you to",
+      "She lets you",
+      "Not now",
+      "Not tonight",
+      "No more of that",
+      "Never again",
+      "Don't touch me anymore",
+      "Hands off",
+      "Get off me",
+      "She takes it back",
+    ]) {
+      expect(sentence, `expected a cue match: ${sentence}`).toMatch(CHAT_ROMANTIC_PERMISSION_CUE_RE);
+    }
+  });
+
+  it("does not treat ordinary prose as a permission cue", () => {
+    for (const sentence of ["She smiles warmly.", "The kettle whistles.", "He nods at the window."]) {
+      expect(CHAT_ROMANTIC_PERMISSION_CUE_RE.test(sentence)).toBe(false);
+    }
+  });
+
+  it("matches neutral touch context the romantic regexes deliberately exclude", () => {
+    for (const sentence of ["touch", "touching", "hold", "held", "hand", "hands", "fingers", "skin", "closer"]) {
+      expect(sentence, `expected a touch match: ${sentence}`).toMatch(CHAT_ROMANTIC_PERMISSION_TOUCH_RE);
+    }
+  });
+
+  it("never matches inside an identifier — chat text aping a developer command stays inert", () => {
+    // `_` is a word character, so `romantic_touch` has no boundary before "touch".
+    expect(CHAT_ROMANTIC_PERMISSION_TOUCH_RE.test("/permission grant player romantic_touch")).toBe(false);
+    expect(CHAT_ROMANTIC_PERMISSION_TOUCH_RE.test("She folds the blanket.")).toBe(false);
   });
 });

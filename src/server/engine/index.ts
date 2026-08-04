@@ -31,6 +31,11 @@ export * from "./chat-physical-guidance-render";
 export * from "./chat-physical-guidance-preview";
 export * from "./chat-recognition-adapter";
 export * from "./chat-contact-events";
+export * from "./chat-permission-events";
+// The lane's player subject id — the one chat-contact-adapter value the
+// permission override route (src/app/api/admin/chat-permissions) needs; the
+// adapter itself stays out of the barrel (its detector surface is pipeline-internal).
+export { CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact-adapter";
 export * from "./chat-npc-scene-envelope";
 export * from "./visual-memory-store";
 export * from "./chat-wardrobe";
@@ -57,6 +62,7 @@ export {
   type NarrationShapeId,
   chatGarmentCuesEnabled,
   chatPhysicalConstraintsEnabled,
+  chatRomanticPermissionDevOverrideEnabled,
   narrationShapeId,
   readDevNarrationShape,
   setDevNarrationShape,

@@ -42,6 +42,7 @@ import { usePrivacyMode } from "@/components/hooks/use-privacy-mode";
 import { AvatarPanel } from "@/components/avatar";
 import { fileToAttachmentDataUrl } from "@/components/chat/attachment-file";
 import { PER_CHAT_DEFAULTS, type PerChatState } from "@/components/chat/chat-conversation-state";
+import { ChatPermissionsPanel } from "@/components/chat/chat-permissions-panel";
 import { ChatPickupStrip } from "@/components/chat/chat-pickup-strip";
 import { ChatRelationshipPanel } from "@/components/chat/chat-relationship-panel";
 import { ChatRelationshipsEditor } from "@/components/chat/chat-relationships-editor";
@@ -221,6 +222,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const [rememberBusy, setRememberBusy] = useState(PER_CHAT_DEFAULTS.rememberBusy);
   // The Relationship panel (spec §7) + the reopen pickup strip / time skips (spec §8.1).
   const [relationshipOpen, setRelationshipOpen] = useState(PER_CHAT_DEFAULTS.relationshipOpen);
+  // Admin-only romantic_touch permission override panel
+  // (romantic-contact-affordances.spec.permission.md §"Authorship and developer controls").
+  const [permissionsOpen, setPermissionsOpen] = useState(PER_CHAT_DEFAULTS.permissionsOpen);
   const [pickupDismissed, setPickupDismissed] = useState(PER_CHAT_DEFAULTS.pickupDismissed);
   const [skipBusy, setSkipBusy] = useState(PER_CHAT_DEFAULTS.skipBusy);
   // "Has something to say" (spec §8.4): a marker tap arrives as ?say=1 — surfaced as a
@@ -303,6 +307,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       rememberText: () => setRememberText(atRest.rememberText),
       rememberBusy: () => setRememberBusy(atRest.rememberBusy),
       relationshipOpen: () => setRelationshipOpen(atRest.relationshipOpen),
+      permissionsOpen: () => setPermissionsOpen(atRest.permissionsOpen),
       scenesOpen: () => setScenesOpen(atRest.scenesOpen),
       portraitOpen: () => setPortraitOpen(atRest.portraitOpen),
       pickupDismissed: () => setPickupDismissed(atRest.pickupDismissed),
@@ -1112,6 +1117,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             menuAction(() => window.open(`/chat/${chatId}/inspector`, "_blank", "noopener,noreferrer"))
           : undefined
       }
+      onPermissions={isAdmin ? menuAction(() => setPermissionsOpen(true)) : undefined}
       onRoster={menuAction(() => setRosterOpen(true))}
       privacyMode={privacyMode}
       onTogglePrivacy={() => setPrivacyMode(!privacyMode)}
@@ -1961,6 +1967,15 @@ export function ChatConversation({ chatId }: { chatId: string }) {
 
       <ChatRelationshipPanel chatId={chatId} who={who} open={relationshipOpen} onClose={() => setRelationshipOpen(false)} />
 
+      {/* Admin-only: the romantic_touch permission override panel — its menu item only
+          mounts for admins, and the endpoint re-checks the role server-side. */}
+      <ChatPermissionsPanel
+        open={permissionsOpen}
+        onClose={() => setPermissionsOpen(false)}
+        chatId={chatId}
+        roster={roster.map((member) => ({ characterId: member.characterId, name: member.name }))}
+      />
+
       {/* One lightbox serves every portrait affordance (header / standing / reply avatars). */}
       <ImageLightbox
         imageId={portraitOpen ? (character?.avatarImageId ?? null) : null}
@@ -1990,6 +2005,7 @@ function ConversationMenu({
   onArchiveToggle,
   onDelete,
   onInspector,
+  onPermissions,
   onRoster,
   privacyMode,
   onTogglePrivacy,
@@ -2011,6 +2027,9 @@ function ConversationMenu({
   onDelete: () => void;
   /** Admin-only (spec §6.1): navigate to the dev memory inspector. Absent ⇒ item hidden. */
   onInspector?: () => void;
+  /** Admin-only (romantic-contact-affordances.spec.permission.md §"Authorship and
+   *  developer controls"): the romantic_touch permission override panel. Absent ⇒ hidden. */
+  onPermissions?: () => void;
   /** The roster panel (multi-character-chat.plan.md): add/remove members, presence toggles. */
   onRoster: () => void;
   /** Privacy mode (mobile-ux.plan.md ruling 4): the phone-menu path to the same
@@ -2048,6 +2067,7 @@ function ConversationMenu({
         {privacyMode ? "Privacy mode: On" : "Privacy mode: Off"}
       </MenuItem>
       {onInspector ? <MenuItem onClick={onInspector}>Inspector</MenuItem> : null}
+      {onPermissions ? <MenuItem onClick={onPermissions}>Permissions (dev)</MenuItem> : null}
       {!archived ? (
         <div className="flex flex-col gap-1 px-2 py-1.5">
           <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Let time pass</span>

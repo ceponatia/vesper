@@ -2,8 +2,11 @@
 
 Status: technical companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md),
-continuation item 5. Product behavior was owner-ruled 2026-08-04; implementation
-has not shipped.
+continuation item 5. Product behavior was owner-ruled 2026-08-04 and the owner
+was implemented the same day behind `CHAT_ROMANTIC_PERMISSION` (default off;
+the developer override has its own `CHAT_ROMANTIC_PERMISSION_DEV_OVERRIDE`
+capability). §As built records the implementation decisions; enablement waits
+for the plan's item-6 romantic proof.
 
 ## Scope
 
@@ -148,6 +151,8 @@ interface RomanticPermissionEvent {
   sourceKind: "npc_decision" | "relationship_transition" | "developer_override";
   sourceMessageId?: string;
   sourceEventId?: string;
+  attemptActionId?: string;
+  attemptContactId?: string;
   storyTime: number;
   orderInSource: number;
 }
@@ -313,3 +318,100 @@ Revocation and narration:
 Successor parity remains separate. It may be claimed only after the successor
 lane enforces the same direction, scope, chronology, revocation, developer
 separation, and rollback laws.
+
+## As built (2026-08-04)
+
+Implementation decisions recorded at build time; everything above remains the
+requirement set.
+
+- **The chat is the branch.** Character chat has no separate branch entity, so
+  `branchId` is `character_chats.id`, and branch-locality is chat-scoped rows
+  with cascade FKs. Fork inheritance needs no mechanism in this lane.
+- **Ledger, no stored projection.** `chat_permission_events` (migration 0096)
+  copies the contact ledger's identity: unique `(chat_id, event_ref, sequence)`
+  for idempotency, `guard_message_id` for retake pruning (nullable only for an
+  override recorded before any message exists). The active projection is a pure
+  fold over the pruned rows (`src/contracts/affordances/permission/`), so
+  retake/branch restoration IS the existing prune — pruning is unconditional at
+  every site the contact ledger prunes. Event-ref namespaces:
+  `permission-reply:<assistantMessageId>` (NPC decisions, guard = the assistant
+  row) and `permission-override:<eventId>` (developer overrides, guard = the
+  chat's newest message).
+- **One atomic entry point.** `appendChatPermissionEventsWithInvalidation`
+  commits permission rows, the withdrawal sweep's `policy_withdrawn`
+  contact-ended rows, the swept scene, and the operator audit event in one
+  transaction; a mixed state cannot commit.
+- **Both producers are serialized against the exchange.** The NPC leg inherits
+  the per-chat `chat_exchange:<chatId>` lock by running inside the settle tail;
+  the developer override *acquires* that lock (bounded wait, then the same
+  `chat_busy` 409 it answers when the fast-path probe finds a live stream)
+  rather than merely probing it, because a probe leaves a window in which an
+  exchange finalizer can rewrite the scene from its own earlier read and
+  resurrect the contacts the sweep just ended. Underneath both, the sweep's
+  scene write is a compare-and-swap against the raw column value it read — the
+  database's own answer for any future producer that forgets the lock. A
+  collision refuses the whole call as `stale_scene` (surfaced by the endpoint
+  as 409 `scene_conflict`) with nothing committed. The CAS base is the raw
+  value, not the parsed state, so a repaired-on-read scene cannot look changed.
+- **Player-target exception on the read.** `ContactInteractionPolicyRead` gained
+  `notRequiredBasis?: "player_target"` plus `notRequiredTargetId`; the resolver
+  accepts `not_required` only when both the basis and named subject match the
+  attempted target. A bare or misdirected `not_required` remains `unresolved`.
+- **Overrides use the spec's `developer_overridden` kind** with
+  `operation: "grant" | "withdraw"` in the typed payload; the endpoint is
+  `/api/admin/chat-permissions/:chatId` (owner-admin + ownership + capability
+  flag), audited as `romantic_permission_developer_override`.
+- **NPC decision is a single-phase settle-tail leg** (one trigger-gated
+  classifier call per reply max, assistant text only), with a deterministic
+  validator: verbatim evidence grounding with absolute offsets, NPC attribution
+  (including the adjacent narration line, so a reply that hands the words back
+  to the player — "that was what you had said" — cannot ground a grant),
+  conditional/negation/question/restraint vetoes for grants, player-as-target
+  and self-grant drops, and dedupe per direction. A `withdrawn` may take back
+  either a standing grant or an offer made **earlier in the same reply**: a
+  reply that allows the touch and then retracts it must not leave a standing
+  grant, so only the withdrawal is emitted (emitting both would end
+  not-standing too, but a chronology cutoff falling between the two offsets
+  would read the retracted offer as effective). A two-half begin/finish split
+  is a noted future optimization.
+- **The stop instruction rides the guidance transition tier** (its first
+  producer): `policy_withdrawn` endings that no assistant reply has yet
+  followed emit one mandatory, idempotently-phrased line each through the
+  constraints block. Every pending pair emits — the tier budget was raised from
+  1 to 4, the lawful maximum one exchange can produce, because an ensemble
+  reply can end contact on several pairs at once and a line dropped inside the
+  one-reply window is lost permanently. Past that bound the producer trims and
+  files a `warn` (`chat_permission.stop_guidance.over_bound`), cutting the
+  degraded generic line before any named pair.
+- **Retake semantics of overrides:** an override guarded by the newest
+  assistant message is pruned when that reply is regenerated — the rollback
+  boundary restores the pre-exchange scenario, which predates the override, so
+  keeping its rows would expose exactly the mixed state the transaction rule
+  forbids. An operator re-applies the override if it is still wanted.
+- **Chronology:** the pure comparator (storyTime, commit order, orderInSource,
+  evidence offset; ties are `ambiguous` and fail closed) is exercised by the
+  fold's `effectiveBefore` cutoff. A player attempt treats every committed
+  ledger event as effective, since all of them precede it.
+- **Permission authority is independent of general physical guidance.**
+  `CHAT_ROMANTIC_PERMISSION` composes with `CHAT_CONTACT_ACTIONS`, not
+  `CHAT_PHYSICAL_CONSTRAINTS`. A pending mandatory stop still goes through the
+  one shared guidance compiler and renderer when the general experiment is off;
+  a stop read, compile, or render failure aborts the exchange before a reply can
+  consume the one-reply delivery window.
+- **Retake pruning fails closed across later turns.** Both possible permission
+  guards are removed in one idempotent statement with bounded retries. If all
+  retries fail, the retake is refused before a replacement reply commits; stale
+  permission can therefore never become authoritative on a later turn.
+- **Attempt denials are action-local.** The settle leg binds `attempt_denied` to
+  the exchange's player contact action and, when it committed, the resulting
+  contact. The invalidation sweep re-derives policy against that contact id,
+  ending only the denied attempt while the
+  standing grant remains available for a later action. A denial with no current
+  attempt is dropped rather than stored as dead authority.
+- **Transcript edits cannot rewrite NPC agency.** An assistant reply that
+  authored an NPC permission event returns 409 from the transcript-only edit and
+  delete routes. Regenerate/rerun remains the state-aware rollback path and
+  prunes permission and contact rows before replacing the take.
+- **Exactness is pinned.** Fixtures prove a one-direction withdrawal leaves an
+  unrelated direction and contact active, the player-target basis names the
+  actual target, and the stop-row read covers the contact lifecycle maximum.

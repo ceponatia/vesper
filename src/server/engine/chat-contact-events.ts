@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ContactEventRef, ContactLifecycleCommit, DiagnosticSink, SceneState } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
 import { characterChats, chatContactEvents, db, type Db } from "../db";
+import { insertVerifiedLedgerRows, ledgerMismatches, type LedgerKey } from "./ledger-verify";
 
 /**
  * THE CHAT LANE'S DURABLE CONTACT LEDGER (romantic-contact-affordances — the
@@ -185,10 +186,7 @@ export function chatContactEventRowsFor(input: AppendChatContactEventsInput): Ch
 // ---------------------------------------------------------------------------
 
 /** One ledger row's identity, as a mismatch report names it. */
-export interface ChatContactLedgerKey {
-  readonly eventRef: string;
-  readonly sequence: number;
-}
+export type ChatContactLedgerKey = LedgerKey;
 
 /**
  * What the append did.
@@ -279,7 +277,9 @@ export function chatContactRowMatches(
 
 /**
  * The attempted rows whose key is held by a DIFFERENT record, in sequence order.
- * PURE — the whole judgment, extracted so it is testable without a database.
+ * PURE. The judgment itself is the shared `ledgerMismatches` (`ledger-verify.ts`
+ * — one algorithm for both chat ledgers); this binding supplies the contact
+ * ledger's own row comparison.
  *
  * An attempted row with no stored counterpart is not a mismatch: it did not
  * conflict, so there is nothing that could disagree with it. (Inside the
@@ -291,14 +291,7 @@ export function chatContactLedgerMismatches(
   attempted: readonly ChatContactEventInsert[],
   stored: readonly ChatContactEventStoredRow[],
 ): readonly ChatContactLedgerKey[] {
-  const bySequence = new Map(stored.map((row) => [row.sequence, row]));
-  return attempted
-    .flatMap((row) => {
-      const existing = bySequence.get(row.sequence);
-      if (existing === undefined || chatContactRowMatches(row, existing)) return [];
-      return [{ eventRef: row.eventRef, sequence: row.sequence }];
-    })
-    .sort((left, right) => left.sequence - right.sequence);
+  return ledgerMismatches(attempted, stored, chatContactRowMatches);
 }
 
 /** The transaction handle a `db().transaction` callback receives — the surface both contact-writing transactions share. */
@@ -330,38 +323,35 @@ export async function insertVerifiedChatContactRows(
     readonly rows: readonly ChatContactEventInsert[];
   },
 ): Promise<{ inserted: number; mismatched: readonly ChatContactLedgerKey[] }> {
-  if (input.rows.length === 0) return { inserted: 0, mismatched: [] };
-  const landed = await tx
-    .insert(chatContactEvents)
-    .values([...input.rows])
-    .onConflictDoNothing({
-      target: [chatContactEvents.chatId, chatContactEvents.eventRef, chatContactEvents.sequence],
-    })
-    .returning({ sequence: chatContactEvents.sequence });
-  const inserted = landed.length;
-  if (inserted === input.rows.length) return { inserted, mismatched: [] };
-  const landedSequences = new Set(landed.map((row) => row.sequence));
-  const conflicted = input.rows.filter((row) => !landedSequences.has(row.sequence));
-  const stored = await tx
-    .select({
-      sequence: chatContactEvents.sequence,
-      kind: chatContactEvents.kind,
-      contactId: chatContactEvents.contactId,
-      storyMinute: chatContactEvents.storyMinute,
-      payload: chatContactEvents.payload,
-    })
-    .from(chatContactEvents)
-    .where(
-      and(
-        eq(chatContactEvents.chatId, input.chatId),
-        eq(chatContactEvents.eventRef, input.eventRef),
-        inArray(
-          chatContactEvents.sequence,
-          conflicted.map((row) => row.sequence),
+  return insertVerifiedLedgerRows({
+    rows: input.rows,
+    insert: (rows) =>
+      tx
+        .insert(chatContactEvents)
+        .values([...rows])
+        .onConflictDoNothing({
+          target: [chatContactEvents.chatId, chatContactEvents.eventRef, chatContactEvents.sequence],
+        })
+        .returning({ sequence: chatContactEvents.sequence }),
+    loadStored: (sequences) =>
+      tx
+        .select({
+          sequence: chatContactEvents.sequence,
+          kind: chatContactEvents.kind,
+          contactId: chatContactEvents.contactId,
+          storyMinute: chatContactEvents.storyMinute,
+          payload: chatContactEvents.payload,
+        })
+        .from(chatContactEvents)
+        .where(
+          and(
+            eq(chatContactEvents.chatId, input.chatId),
+            eq(chatContactEvents.eventRef, input.eventRef),
+            inArray(chatContactEvents.sequence, [...sequences]),
+          ),
         ),
-      ),
-    );
-  return { inserted, mismatched: chatContactLedgerMismatches(conflicted, stored) };
+    matches: chatContactRowMatches,
+  });
 }
 
 /**

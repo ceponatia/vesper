@@ -188,7 +188,46 @@ exchange:
    outcome above reaches the narrator only when this flag is on as well: with it off,
    contact still commits and still persists, and the prompt is byte-identical.
 
-   **Both legs are re-derived by the dev previews, read-only** (`previewChatPrompt` and
+   **The `romantic_touch` permission owner** (`CHAT_ROMANTIC_PERMISSION`, composed over
+   `CHAT_CONTACT_ACTIONS` but independent of the optional general-constraints experiment —
+   [romantic-contact-affordances.spec.permission.md](../developer-notes/romantic-contact-affordances.spec.permission.md),
+   plan item 5, built 2026-08-04). Four pieces, all flag-off byte-identical. (1) The
+   **policy read**: the chat's `chat_permission_events` ledger (migration 0096 — the
+   contact ledger's sibling: idempotent on `(chat, event ref, sequence)`, guard-pruned
+   on retake, chat-scoped because the chat IS the story branch) is listed once per
+   exchange and folded into the standing-grant projection — there is no stored
+   projection column, the fold over the pruned rows is the restoration — and
+   `derivePermissionPolicyRead` answers for any attempt whose kind requires a grant:
+   exact directional `romantic_touch` grant → allowed; withdrawn → withdrawn; absent →
+   unresolved (silence); a player target → the ruled not-required exception (the player
+   writes their own reaction; no grant is manufactured). Permission-neutral kinds keep
+   the historical stub verbatim. (2) The **NPC-side decision**
+   (`engine/chat-permission-decision.ts`): at settle, strictly after the beat's last
+   scene writer, a trigger-gated single classifier call over the committed assistant
+   reply ONLY — never player text — parsed by a closed per-digest contract and then
+   deterministically validated (evidence must ground verbatim in an admissible span
+   attributed to the granting NPC; conditionals, negations, questions, restraint
+   framing, player echo, and player-as-target all drop with typed reasons; `withdrawn`
+   needs a standing grant). Survivors append as `granted` / `attempt_denied` /
+   `withdrawn` events under `permission-reply:<assistantMessageId>`. An
+   `attempt_denied` event is bound to the exchange's current contact action; it ends only
+   that action's active contact and leaves the standing grant intact. (3) A standing
+   **withdrawal ends dependent contact atomically**
+   (`appendChatPermissionEventsWithInvalidation`: permission rows + `policy_withdrawn`
+   contact-ended rows + swept scene, one transaction — never a mixed state). (4) The
+   **next narrator cut gets the stop** (`engine/chat-permission-guidance.ts`): endings
+   no assistant reply has yet followed emit a mandatory transition line through the
+   shared constraints compiler/renderer even when `CHAT_PHYSICAL_CONSTRAINTS` is off —
+   named, idempotent, continuation-forbidding, never mechanics vocabulary, never the
+   player's reaction. A stop-build failure aborts before a reply consumes the delivery
+   window. Retake prunes both possible permission guards atomically with bounded retries;
+   exhausted retries refuse the retake. The audited developer override (grant/withdraw per
+   direction from the conversation menu, admin-only) is [api.md](api.md)'s
+   `/api/admin/chat-permissions/:chatId`; chat text is never an override. The contact
+   preview keeps the permission-neutral stub deliberately (no detector can currently
+   produce a permission-requiring act, so preview/live parity holds).
+
+   **The contact and guidance legs are re-derived by the dev previews, read-only** (`previewChatPrompt` and
    `previewChatPhysicalGuidance`, [api.md](api.md) §API surface). Guidance is pure, so a
    preview is simply a second evaluation. The contact leg is not — a live turn appends to
    `chat_contact_events` and advances the scene projection — so `previewChatContactOutcomes`

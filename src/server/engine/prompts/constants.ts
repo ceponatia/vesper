@@ -318,6 +318,33 @@ export function chatNpcSceneAuthorityKinds(): ReadonlySet<NpcSceneAuthorityKind>
 }
 
 /**
+ * The ROMANTIC-PERMISSION OWNER switch — default-off and effective only with
+ * the contact lane. Permission state is authoritative independently of the
+ * optional general physical-guidance experiment. A pending mandatory stop is
+ * compiled and rendered through that experiment's single shared prompt door
+ * even when `CHAT_PHYSICAL_CONSTRAINTS` is off; failures abort the exchange
+ * before a reply can consume the stop's one delivery window.
+ *
+ * OFF keeps the neutral policy stub and performs no permission reads or NPC
+ * decision work. ON folds the branch-local ledger and supplies exact,
+ * directional `romantic_touch` policy reads. Retake pruning is unconditional
+ * because it removes authority belonging to a discarded take.
+ */
+export function chatRomanticPermissionEnabled(): boolean {
+  return process.env.CHAT_ROMANTIC_PERMISSION === "on" && chatContactActionsEnabled();
+}
+
+/**
+ * The developer-override capability is deliberately independent of the runtime
+ * permission flag so fixtures can be seeded first. It is still admin-only,
+ * audited, and unreachable from chat text. Any resulting mandatory stop is
+ * consumed by the runtime owner on the next enabled exchange.
+ */
+export function chatRomanticPermissionDevOverrideEnabled(): boolean {
+  return process.env.CHAT_ROMANTIC_PERMISSION_DEV_OVERRIDE === "on";
+}
+
+/**
  * The RECOGNIZABLE-FEATURES switch (body-attribute-affordances.plan.md slice 7) —
  * experimental, default-off, the third of the same shape as `CHAT_GARMENT_CUES`
  * and `CHAT_AFFORDANCE_CUES` above, and for the same reason: slice 7 is a trial,

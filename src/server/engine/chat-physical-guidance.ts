@@ -31,6 +31,7 @@ import {
   type PhysicalActionOutcome,
   type PhysicalNarrationConstraint,
   type PhysicalPremiseCorrection,
+  type PhysicalStateTransition,
 } from "@/contracts";
 import { parseMessageSpans, type MessageSpanKind } from "@/lib/message-spans";
 import type { ChatCommittedHairState } from "./chat-affordances";
@@ -814,6 +815,18 @@ export interface ChatPhysicalGuidanceInput extends ChatPremiseDetectionInput {
    * unchanged either way.
    */
   readonly actionOutcomes?: readonly PhysicalActionOutcome[];
+  /**
+   * Pending revocation stop transitions (`chat-permission-guidance.ts`) — the
+   * transition tier's first producer in this lane.
+   *
+   * Passed THROUGH exactly like the action outcomes: the permission seam owns
+   * the emission rule (which endings no reply has followed) and the candidate
+   * shape; this file only compiles them with everything else. Absent when the
+   * permission flag is off or nothing is pending, which keeps the compile
+   * byte-identical to the pre-feature build (`normalizeGuidanceCandidates`
+   * treats a missing list and an empty one the same).
+   */
+  readonly transitions?: readonly PhysicalStateTransition[];
 }
 
 /**
@@ -837,6 +850,8 @@ export interface ChatPhysicalGuidanceStages {
    * existed and did not survive the gate is invisible from the result alone.
    */
   readonly candidateActionOutcomes: readonly PhysicalActionOutcome[];
+  /** The stop transitions handed in — candidates before the gate, like the outcomes. */
+  readonly candidateTransitions: readonly PhysicalStateTransition[];
   /** Why the constraint tier was admitted or withheld this turn — the inspector's stage 3a. */
   readonly relevance: ChatGuidanceRelevance;
   readonly guidance: NarratorPhysicalGuidance;
@@ -858,6 +873,7 @@ export interface ChatPhysicalGuidanceStages {
  */
 export function buildChatPhysicalGuidanceStages(input: ChatPhysicalGuidanceInput): ChatPhysicalGuidanceStages {
   const candidateActionOutcomes = input.actionOutcomes ?? [];
+  const candidateTransitions = input.transitions ?? [];
   const candidateCorrections = detectHairPremises(input);
   const relevance = chatGuidanceRelevance({
     detection: input,
@@ -895,11 +911,17 @@ export function buildChatPhysicalGuidanceStages(input: ChatPhysicalGuidanceInput
     }
   }
 
-  if (candidateConstraints.length === 0 && candidateCorrections.length === 0 && candidateActionOutcomes.length === 0) {
+  if (
+    candidateConstraints.length === 0 &&
+    candidateCorrections.length === 0 &&
+    candidateActionOutcomes.length === 0 &&
+    candidateTransitions.length === 0
+  ) {
     return {
       candidateConstraints,
       candidateCorrections,
       candidateActionOutcomes,
+      candidateTransitions,
       relevance,
       guidance: emptyNarratorPhysicalGuidance(),
     };
@@ -909,14 +931,17 @@ export function buildChatPhysicalGuidanceStages(input: ChatPhysicalGuidanceInput
     candidateConstraints,
     candidateCorrections,
     candidateActionOutcomes,
+    candidateTransitions,
     relevance,
-    // An empty outcome list compiles identically to no list at all
-    // (`normalizeGuidanceCandidates`), so a contact-flag-off turn is byte-identical
-    // to the pre-feature build without a second branch here to get wrong.
+    // An empty outcome or transition list compiles identically to no list at all
+    // (`normalizeGuidanceCandidates`), so a contact- or permission-flag-off turn
+    // is byte-identical to the pre-feature build without a second branch here to
+    // get wrong.
     guidance: compileNarratorPhysicalGuidance({
       constraints: candidateConstraints,
       corrections: candidateCorrections,
       actionOutcomes: candidateActionOutcomes,
+      transitions: candidateTransitions,
       ...(input.sink === undefined ? {} : { sink: input.sink }),
     }),
   };
