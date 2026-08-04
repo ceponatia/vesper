@@ -23,7 +23,6 @@ export function AgentReasoningSelect({ chatId }: { chatId: string }) {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     void apiGet(responseSchema, pathFor(chatId)).then((result) => {
       if (!active) return;
       setLoading(false);
