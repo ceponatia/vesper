@@ -1,26 +1,34 @@
 import type { ImageModel } from "@/contracts";
 
 /**
- * Conservative negative steering that is safe for either realistic or stylized
- * renders. Task/style-specific negatives belong to image model profiles; this
- * temporary shared bank deliberately avoids "cartoon", "painting", "multiple
- * people", or framing terms that would conflict with legitimate prompts.
+ * The only negative block safe without task, style, subject-count, or morphology
+ * context. Anatomy terms can contradict authored missing digits, prosthetics, or
+ * non-human appendages, so they stay out of this universal fallback.
  */
-export const STYLE_NEUTRAL_QUALITY_NEGATIVE =
-  "extra limbs, extra arms, extra legs, malformed limbs, disconnected limbs, extra fingers, missing fingers, fused fingers, mutated hands, poorly drawn hands, bad anatomy, disfigured, text, watermark, signature, logo, blurry, low resolution";
+export const STATIC_PRODUCTION_NEGATIVE = "text, watermark, signature, logo, blurry, low resolution";
+
+/**
+ * Compact anatomy steering for the reviewed community portrait pipelines where
+ * the owner actually observed deformities. Avoids "missing fingers" and generic
+ * "extra limbs", both of which can be legitimate authored morphology.
+ */
+export const COMMUNITY_ANATOMY_NEGATIVE =
+  "duplicated limbs, disconnected limbs, malformed hands, extra fingers, fused fingers, text, watermark, signature, logo, blurry, low resolution";
 
 /** Juggernaut's creator recommends beginning with little or no negative prompt. */
 export const JUGGERNAUT_MINIMAL_NEGATIVE =
-  "extra limbs, malformed hands, extra fingers, fused fingers, text, watermark, logo";
+  "duplicated limbs, malformed hands, extra fingers, fused fingers, text, watermark, logo";
 
 const LEGACY_PORTRAIT_IDENTITY_LOCK =
   "Generate a new image of the exact same person shown in the reference image. Preserve face, hair color and style, skin tone, body proportions, and apparent age.";
 
+/** Kept no longer than the legacy lock so the edit path's fitted prompt stays fitted. */
 export const QWEN_SINGLE_REFERENCE_IDENTITY_LOCK =
-  "Image 1 is the canonical identity reference. Generate a new image of the exact same person shown in image 1. Preserve their facial features, hair color and style, skin tone, body proportions, and apparent age. Change only what the rest of this instruction explicitly requests.";
+  "Image 1 is the identity reference. Preserve the exact face, hair, skin tone, body proportions, and apparent age. Change only what this instruction requests.";
 
+/** Kept no longer than the legacy lock so the edit path's fitted prompt stays fitted. */
 export const QWEN_MULTI_REFERENCE_IDENTITY_LOCK =
-  "Treat the numbered reference images as authoritative for the people, place, style, and objects assigned to them below. Preserve every referenced person's exact facial identity, hair, skin tone, build, and apparent age. Change only what the rest of this instruction explicitly requests.";
+  "Use numbered references as assigned below. Preserve each person's exact face, hair, skin tone, build, and age; change only what this instruction requests.";
 
 /**
  * The registry's raw probe defaults describe what a provider accepts, not the
@@ -35,7 +43,7 @@ export const QWEN_MULTI_REFERENCE_IDENTITY_LOCK =
  */
 const REVIEWED_QUALITY_INPUTS: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   "qwen/qwen-image-2512": {
-    negative_prompt: STYLE_NEUTRAL_QUALITY_NEGATIVE,
+    negative_prompt: STATIC_PRODUCTION_NEGATIVE,
   },
   "qwen/qwen-image-edit-2511": {
     // This model currently serves only identity-critical variants/scenes. Its
@@ -43,7 +51,7 @@ const REVIEWED_QUALITY_INPUTS: Readonly<Record<string, Readonly<Record<string, u
     go_fast: false,
   },
   "stability-ai/stable-diffusion-3.5-large": {
-    negative_prompt: STYLE_NEUTRAL_QUALITY_NEGATIVE,
+    negative_prompt: STATIC_PRODUCTION_NEGATIVE,
   },
   "lucataco/juggernaut-xl-v9": {
     // Normal Juggernaut v9 is a full-step SDXL checkpoint. The Replicate cog's
@@ -57,12 +65,12 @@ const REVIEWED_QUALITY_INPUTS: Readonly<Record<string, Readonly<Record<string, u
     negative_prompt: JUGGERNAUT_MINIMAL_NEGATIVE,
   },
   "nsfw-api/pony-realism-v2.3": {
-    negative_prompt: `${STYLE_NEUTRAL_QUALITY_NEGATIVE}, score_1, score_2, score_3`,
+    negative_prompt: `${COMMUNITY_ANATOMY_NEGATIVE}, score_1, score_2, score_3`,
   },
   "nsfw-api/realvis-hyper-lora": {
     width: 768,
     height: 1024,
-    negative_prompt: STYLE_NEUTRAL_QUALITY_NEGATIVE,
+    negative_prompt: COMMUNITY_ANATOMY_NEGATIVE,
   },
 };
 
