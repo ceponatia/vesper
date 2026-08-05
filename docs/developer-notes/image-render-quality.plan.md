@@ -49,10 +49,14 @@ family-wide guess.
 
 **Negative prompts are not free quality.** Long boilerplate negatives can fight a
 checkpoint's training and can conflict with legitimate stylized, multi-person,
-or close-framed images. Juggernaut's creator specifically recommends beginning
-with little or no negative prompt. Vesper therefore starts with compact,
-problem-shaped negatives and composes stronger blocks only when task and style
-are known.
+or close-framed images. They can also contradict authored morphology: “missing
+fingers” is wrong for most people but may be a character's recognisable landmark,
+and “extra limbs” may be correct for a non-human species. Juggernaut's creator
+specifically recommends beginning with little or no negative prompt. Vesper
+therefore starts with production-only static steering where morphology is unknown
+and uses compact anatomy blocks only on reviewed community portrait pipelines.
+Stronger blocks wait until task, style, subject count, visible anatomy, and
+morphology are known.
 
 **Pony Realism and RealVis Hyper LoRA are candidates, not proven winners.** Their
 InstantID/HyperLoRA machinery makes them worth testing for identity retention,
@@ -157,16 +161,25 @@ If Qwen Edit later gains non-identity tasks such as text repair, the single
 runtime override must be replaced by task profiles so those jobs may choose a
 fast profile independently.
 
-### Static negatives stay style-neutral
+### Static negatives are production-only unless a model is explicitly reviewed
 
-The first hardening slice does **not** put photorealism or single-subject
-negatives into shared model rows. Static steering contains only anatomy and
-production defects that are wrong in either realistic or stylized work.
+The first hardening slice does **not** put a universal anatomy wall,
+photorealism block, or single-subject block into shared model rows.
 
-Photoreal blocks, Pony score/rating conventions, single-subject blocks, hand
-emphasis, and framing-specific terms are composed only when the profile layer
-knows the task, style, subject count, and visible anatomy. This resolves the
-stylized-portrait mismatch instead of accepting a temporary regression.
+Where morphology is unknown, static steering is limited to production defects:
+text, watermark, signature, logo, blur, and low resolution. It cannot erase an
+authored missing digit, prosthetic, unusual appendage count, or stylized medium.
+
+The reviewed community portrait pipelines receive smaller model-specific anatomy
+blocks because those are the models where deformities were reported. Even there,
+the block avoids generic “missing fingers” and “extra limbs”; it targets duplicated
+or disconnected limbs and malformed/fused/extra fingers. Juggernaut receives the
+smallest version because its creator warns against heavy negatives.
+
+Photoreal blocks, full anatomy blocks, Pony score/rating conventions,
+single-subject blocks, hand emphasis, and framing-specific terms are composed only
+when the profile layer knows the task, style, subject count, visible anatomy, and
+intended morphology.
 
 ## First hardening slice in this change
 
@@ -177,12 +190,14 @@ first code slice is deliberately small and centralized.
 `renderWithModel`, the one seam every lane already crosses. It currently:
 
 - turns Qwen Image Edit fast mode off;
-- gives Qwen Image 2512, SD 3.5, Pony, and RealVis conservative negative
-  steering;
-- gives Juggernaut the full-step settings above and a smaller negative;
+- gives Qwen Image 2512 and SD 3.5 only production-defect negative steering;
+- gives Pony and RealVis compact, morphology-safer community anatomy steering,
+  with Pony's low-score negatives;
+- gives Juggernaut the full-step settings above and its smallest negative;
 - pins RealVis to its native 768×1024 3:4 size;
 - rewrites the existing provider-neutral identity lock into Qwen's numbered-image
-  dialect, with separate single-reference and multi-reference wording.
+  dialect, with compact single-reference and multi-reference wording that does
+  not expand the already-fitted edit prompt.
 
 Pinned community slugs are matched without their version suffix. Unknown models
 remain byte-identical and receive no guessed inputs.
@@ -232,8 +247,9 @@ and places identity, subject count, morphology, pose, and clothing first.
 Named negative blocks are composed from context rather than stored as one giant
 string:
 
-- anatomy: extra or malformed limbs, hands, and fingers;
 - production: text, watermark, signature, logo, blur, and low resolution;
+- anatomy: duplicated/disconnected/malformed anatomy, conditioned on intended
+  morphology and visible body parts;
 - photoreal: synthetic media and plastic-skin terms, realistic style only;
 - single-subject: duplicate people/faces, portrait and single-person variant
   only;
@@ -243,7 +259,9 @@ string:
 
 The linter rejects direct positive/negative collisions. A stylized prompt cannot
 also forbid illustration; a multi-person scene cannot forbid multiple people; a
-close-up cannot forbid cropping in general.
+close-up cannot forbid cropping in general; a character with an authored missing
+finger cannot receive “missing fingers” as a negative; a multi-limbed species
+cannot receive “extra limbs.”
 
 ### Delta-first edit instructions
 
@@ -384,17 +402,17 @@ model.
 ## Delivery slices
 
 1. **Immediate hardening — implemented here.** Apply reviewed exact-slug quality
-   overrides at the shared render seam, use style-neutral negatives, correct
-   Juggernaut's fast defaults, pin RealVis dimensions, and translate Qwen's
-   identity lock into numbered-reference instructions. Unit-test the policy and
-   keep unknown models unchanged.
+   overrides at the shared render seam, use morphology-safe static negatives,
+   correct Juggernaut's fast defaults, pin RealVis dimensions, and translate
+   Qwen's identity lock into compact numbered-reference instructions. Unit-test
+   the policy and keep unknown models unchanged.
 2. **Shared render intent and profile controls.** Complete capabilities slice 2/4
    so lanes resolve task profiles, common controls, timeout, seeds, and ordered
    semantic prompt segments. Move the transitional exact-slug inputs into
    profiles.
 3. **Dynamic dialects and negatives.** Compile prose/SDXL/Pony prompts from
    segments, measure effective prompt budgets per pinned version, and compose
-   task/style/subject-aware negative blocks with conflict linting.
+   task/style/subject/morphology-aware negative blocks with conflict linting.
 4. **Identity packs.** Generate and persist face crops, crop provenance, quality
    metrics, source hashes, invalidation, lazy backfill, and manual-review tools.
 5. **Qwen fidelity trials.** A/B canonical portrait alone, portrait plus face
@@ -419,12 +437,13 @@ cross-model fallback.
 
 ## Success criteria
 
-- Qwen identity-critical renders use numbered, delta-first identity instructions
-  and quality mode unless a task profile explicitly says otherwise.
+- Qwen identity-critical renders use compact numbered, delta-first identity
+  instructions and quality mode unless a task profile explicitly says otherwise.
 - Juggernaut no longer runs its normal checkpoint at 5 steps/CFG 2 or wastes a
   square render before portrait cropping.
 - Every negative input is known to exist on the selected pinned model, and static
-  negatives never conflict with realistic/stylized style or subject count.
+  negatives cannot contradict style, subject count, authored landmarks, or
+  intended morphology.
 - Unknown/admin-added models remain unchanged until reviewed.
 - Identity references meet measurable quality requirements and can be traced to
   their canonical source.
