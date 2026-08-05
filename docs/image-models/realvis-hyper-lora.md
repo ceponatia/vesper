@@ -69,19 +69,21 @@ behavior before tuning these values one at a time.
 
 ## Negative prompt policy
 
-The wrapper has a long quality-boilerplate default. Supplying any
-`negative_prompt` replaces it. Vesper sends the reproducible production-only
-block:
+The wrapper has a long generic quality/anatomy/style default. Omitting the field
+would silently activate that boilerplate even though the shared render seam does
+not know intended style, text, blur, morphology, or authored absences.
 
-```text
-text, watermark, signature, logo, blurry, low resolution
+Vesper therefore sends:
+
+```json
+{
+  "negative_prompt": ""
+}
 ```
 
-No anatomy term is sent until a profile can see intended morphology and authored
-absences. Generic terms such as `missing fingers` or `extra limbs` can contradict
-an authored missing digit, prosthetic, or non-human appendage count. A later
-morphology-aware trial can add conflict-checked anatomy steering and compare it
-against this baseline.
+`buildRegistryModelInput` preserves the empty string, so this neutralizes the
+remote default. A later identity-repair profile may compose conflict-checked
+terms from the actual visual intent and compare them against the empty baseline.
 
 ## Safety input
 
@@ -92,7 +94,7 @@ publishes no safety toggle for Vesper to map.
 
 - `prompt` — string, required.
 - `reference_image` — URI string, required.
-- `negative_prompt` — string with a long provider default; Vesper overrides it.
+- `negative_prompt` — string with a long provider default; Vesper clears it.
 - `width` — integer, default 768, range 64–1536.
 - `height` — integer, default 1024, range 64–1536.
 - `steps` — integer, default 30, range 1–150.
@@ -116,7 +118,7 @@ takes the first result and normalizes it to WebP on write.
 ```json
 {
   "prompt": "<built prompt>",
-  "negative_prompt": "text, watermark, signature, logo, blurry, low resolution",
+  "negative_prompt": "",
   "reference_image": "<single identity url>",
   "width": 768,
   "height": 1024
