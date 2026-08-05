@@ -5,7 +5,6 @@ import {
   preparePromptForImageModel,
   QWEN_MULTI_REFERENCE_IDENTITY_LOCK,
   QWEN_SINGLE_REFERENCE_IDENTITY_LOCK,
-  STATIC_PRODUCTION_NEGATIVE,
   withReviewedImageQuality,
 } from "./quality-presets";
 
@@ -36,6 +35,18 @@ describe("withReviewedImageQuality", () => {
     expect(withReviewedImageQuality(input)).toBe(input);
   });
 
+  it("does not add guessed negatives to models whose defaults are already empty", () => {
+    for (const slug of [
+      "qwen/qwen-image-2512",
+      "stability-ai/stable-diffusion-3.5-large",
+      "nsfw-api/pony-realism-v2.3:version",
+    ]) {
+      const input = model(slug, { output_quality: 95 });
+      expect(withReviewedImageQuality(input)).toBe(input);
+      expect(input.extraInput).not.toHaveProperty("negative_prompt");
+    }
+  });
+
   it("turns off Qwen Edit's speed preset even when the probed row says true", () => {
     const input = model("qwen/qwen-image-edit-2511", { output_quality: 95, go_fast: true });
     const prepared = withReviewedImageQuality(input);
@@ -44,7 +55,7 @@ describe("withReviewedImageQuality", () => {
     expect(input.extraInput.go_fast).toBe(true); // the registry record is never mutated
   });
 
-  it("uses the full-step Juggernaut v9 settings on a pinned row", () => {
+  it("uses full-step Juggernaut settings and clears its media-biased negative default", () => {
     const prepared = withReviewedImageQuality(
       model("lucataco/juggernaut-xl-v9:bea09c", {
         num_inference_steps: 5,
@@ -58,29 +69,24 @@ describe("withReviewedImageQuality", () => {
       scheduler: "KarrasDPM",
       width: 832,
       height: 1216,
-      negative_prompt: STATIC_PRODUCTION_NEGATIVE,
+      negative_prompt: "",
       apply_watermark: false,
     });
   });
 
-  it("uses only production steering while morphology is unknown", () => {
-    for (const slug of [
-      "qwen/qwen-image-2512",
-      "stability-ai/stable-diffusion-3.5-large",
-      "lucataco/juggernaut-xl-v9:version",
-      "nsfw-api/realvis-hyper-lora:version",
-    ]) {
-      expect(withReviewedImageQuality(model(slug)).extraInput.negative_prompt).toBe(STATIC_PRODUCTION_NEGATIVE);
-    }
-    expect(STATIC_PRODUCTION_NEGATIVE).not.toMatch(
-      /cartoon|anime|painting|illustration|multiple people|finger|limb|arm|leg|anatomy|disfigured|mutated/i,
+  it("pins RealVis dimensions and clears its generic negative boilerplate", () => {
+    const prepared = withReviewedImageQuality(
+      model("nsfw-api/realvis-hyper-lora:version", {
+        width: 512,
+        height: 512,
+        negative_prompt: "bad anatomy, extra limbs, text",
+      }),
     );
-  });
-
-  it("adds Pony's low-score negatives without introducing anatomy terms", () => {
-    const negative = withReviewedImageQuality(model("nsfw-api/pony-realism-v2.3:version")).extraInput
-      .negative_prompt;
-    expect(negative).toBe(`${STATIC_PRODUCTION_NEGATIVE}, score_1, score_2, score_3`);
+    expect(prepared.extraInput).toMatchObject({
+      width: 768,
+      height: 1024,
+      negative_prompt: "",
+    });
   });
 });
 
