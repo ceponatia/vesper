@@ -3,21 +3,9 @@ import type { ImageModel } from "@/contracts";
 /**
  * The only negative block safe without task, style, subject-count, or morphology
  * context. Anatomy terms can contradict authored missing digits, prosthetics, or
- * non-human appendages, so they stay out of this universal fallback.
+ * non-human appendages, so they wait for profile-aware composition.
  */
 export const STATIC_PRODUCTION_NEGATIVE = "text, watermark, signature, logo, blurry, low resolution";
-
-/**
- * Compact anatomy steering for the reviewed community portrait pipelines where
- * the owner actually observed deformities. Avoids "missing fingers" and generic
- * "extra limbs", both of which can be legitimate authored morphology.
- */
-export const COMMUNITY_ANATOMY_NEGATIVE =
-  "duplicated limbs, disconnected limbs, malformed hands, extra fingers, fused fingers, text, watermark, signature, logo, blurry, low resolution";
-
-/** Juggernaut's creator recommends beginning with little or no negative prompt. */
-export const JUGGERNAUT_MINIMAL_NEGATIVE =
-  "duplicated limbs, malformed hands, extra fingers, fused fingers, text, watermark, logo";
 
 const LEGACY_PORTRAIT_IDENTITY_LOCK =
   "Generate a new image of the exact same person shown in the reference image. Preserve face, hair color and style, skin tone, body proportions, and apparent age.";
@@ -62,15 +50,15 @@ const REVIEWED_QUALITY_INPUTS: Readonly<Record<string, Readonly<Record<string, u
     scheduler: "KarrasDPM",
     width: 832,
     height: 1216,
-    negative_prompt: JUGGERNAUT_MINIMAL_NEGATIVE,
+    negative_prompt: STATIC_PRODUCTION_NEGATIVE,
   },
   "nsfw-api/pony-realism-v2.3": {
-    negative_prompt: `${COMMUNITY_ANATOMY_NEGATIVE}, score_1, score_2, score_3`,
+    negative_prompt: `${STATIC_PRODUCTION_NEGATIVE}, score_1, score_2, score_3`,
   },
   "nsfw-api/realvis-hyper-lora": {
     width: 768,
     height: 1024,
-    negative_prompt: COMMUNITY_ANATOMY_NEGATIVE,
+    negative_prompt: STATIC_PRODUCTION_NEGATIVE,
   },
 };
 
