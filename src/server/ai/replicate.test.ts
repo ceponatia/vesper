@@ -12,13 +12,33 @@ beforeEach(() => {
   process.env.REPLICATE_API_TOKEN = "test-token";
   delete process.env.REPLICATE_IMAGE_MODEL;
   delete process.env.REPLICATE_IMAGE_EDIT_MODEL;
+  delete process.env.REPLICATE_PREDICTION_TIMEOUT_MS;
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  delete process.env.REPLICATE_PREDICTION_TIMEOUT_MS;
   if (originalToken === undefined) delete process.env.REPLICATE_API_TOKEN;
   else process.env.REPLICATE_API_TOKEN = originalToken;
 });
+
+/** Capture the prediction POST for one succeeded-immediately generation. */
+async function predictionRequest(): Promise<RequestInit | undefined> {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url.includes("/predictions")) {
+        return Response.json({ id: "pred-1", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+      }
+      return new Response(Buffer.from("image-bytes"), { status: 200 });
+    }),
+  );
+  await replicateGenerateImage({ prompt: "portrait" });
+  return calls[0]?.init;
+}
 
 describe("Replicate image client", () => {
   it("fails clearly when the token is absent", async () => {
@@ -60,6 +80,7 @@ describe("Replicate image client", () => {
       Authorization: "Bearer test-token",
       "Content-Type": "application/json",
       Prefer: "wait=60",
+      "Cancel-After": "300s",
     });
     const body = JSON.parse(String(prediction?.init?.body)) as { input: Record<string, unknown> };
     expect(body.input).toMatchObject({
@@ -115,6 +136,19 @@ describe("Replicate image client", () => {
     expect(result.ok).toBe(true);
     expect(result.image?.toString()).toBe("edited-image");
     expect(calls.filter((call) => call.method === "DELETE")).toHaveLength(2);
+  });
+
+  it("sends the configured prediction deadline as Replicate's Cancel-After", async () => {
+    process.env.REPLICATE_PREDICTION_TIMEOUT_MS = "900000";
+    expect(await predictionRequest()).toMatchObject({ headers: { "Cancel-After": "900s" } });
+  });
+
+  it("clamps an out-of-range deadline before it reaches the header", async () => {
+    process.env.REPLICATE_PREDICTION_TIMEOUT_MS = "9999999999";
+    expect(await predictionRequest()).toMatchObject({ headers: { "Cancel-After": "1800s" } });
+
+    process.env.REPLICATE_PREDICTION_TIMEOUT_MS = "not-a-number";
+    expect(await predictionRequest()).toMatchObject({ headers: { "Cancel-After": "300s" } });
   });
 
   it("unwraps bytes and preserves provider error text", () => {

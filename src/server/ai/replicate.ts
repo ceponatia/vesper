@@ -114,6 +114,10 @@ interface ReplicateFile {
 type UploadResult = { ok: true; file: ReplicateFile } | { ok: false; error: string };
 
 async function runReplicateImageModel(model: string, input: Record<string, unknown>): Promise<ReplicateImageResult> {
+  // One parse for both deadlines: the provider-side `Cancel-After` and this
+  // client's poll cutoff must agree, or raising the env var only lengthens the
+  // polling while Replicate still kills the prediction at the old bound.
+  const timeoutMs = predictionTimeoutMs();
   let prediction: ReplicatePrediction;
   try {
     const response = await replicateApiFetch(modelPredictionPath(model), {
@@ -121,7 +125,7 @@ async function runReplicateImageModel(model: string, input: Record<string, unkno
       headers: {
         "Content-Type": "application/json",
         Prefer: "wait=60",
-        "Cancel-After": "5m",
+        "Cancel-After": cancelAfterHeader(timeoutMs),
       },
       body: JSON.stringify({ input }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -132,7 +136,7 @@ async function runReplicateImageModel(model: string, input: Record<string, unkno
     return { ok: false, error: errorText(err) };
   }
 
-  const deadline = Date.now() + predictionTimeoutMs();
+  const deadline = Date.now() + timeoutMs;
   while (!isTerminal(prediction.status) && outputUrl(prediction.output) === null) {
     if (Date.now() >= deadline) {
       await cancelPrediction(prediction.id);
@@ -262,6 +266,15 @@ function predictionError(error: unknown): string {
 function predictionTimeoutMs(): number {
   const parsed = Number(process.env.REPLICATE_PREDICTION_TIMEOUT_MS);
   return Number.isFinite(parsed) && parsed >= 30_000 ? Math.min(parsed, 30 * 60_000) : DEFAULT_PREDICTION_TIMEOUT_MS;
+}
+
+/**
+ * Replicate's prediction deadline header: an integer of seconds (or a
+ * unit-suffixed duration), valid from 5s to 24h. `predictionTimeoutMs()` is
+ * already clamped to 30s–30m, so the derived value is always in range.
+ */
+function cancelAfterHeader(timeoutMs: number): string {
+  return `${Math.round(timeoutMs / 1_000)}s`;
 }
 
 async function replicateApiFetch(path: string, init: RequestInit): Promise<Response> {

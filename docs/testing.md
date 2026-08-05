@@ -1,6 +1,6 @@
 # Testing
 
-Vitest 4, one root config (`vitest.config.ts`) including `src/**/*.test.ts` and `scripts/**/*.test.ts`. The global setup file `src/test/setup.ts` forces demo mode for every test: it sets `AI_FAKE=1` and deletes `OPENROUTER_API_KEY` / `VENICE_API_KEY`, so no test can hit a real provider. `pnpm test` runs everything that needs no network; DB-backed suites need the dev Postgres up.
+Vitest 4, one root config (`vitest.config.ts`) including `src/**/*.test.ts` and `scripts/**/*.test.ts`. The global setup file `src/test/setup.ts` forces demo mode for every test: it sets `AI_FAKE=1` and deletes `OPENROUTER_API_KEY` / `VENICE_API_KEY` / `REPLICATE_API_TOKEN`, so no test can hit a real provider. `pnpm test` runs everything that needs no network; DB-backed suites need the dev Postgres up.
 
 ## Layers
 
