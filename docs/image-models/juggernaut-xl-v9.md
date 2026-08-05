@@ -1,6 +1,7 @@
 # Juggernaut XL v9
 
 **Slug:** `lucataco/juggernaut-xl-v9`
+**Registered as:** `lucataco/juggernaut-xl-v9:bea09cf018e513cef0841719559ea86d2299e05448633ac8fe270b5d5cd6777e`
 **Probed:** 2026-08-05, version `bea09cf018e513cef0841719559ea86d2299e05448633ac8fe270b5d5cd6777e`
 
 > Juggernaut XL v9
@@ -10,6 +11,14 @@ lineage matters here: these community fine-tunes are trained far less
 conservatively than the newer editor architectures, and they ship with a safety
 checker that is a wrapper component rather than a vendor-side gate. Offered for
 portraits only — it has no reference input at all.
+
+## Community model — pinned by version
+
+`is_official` is false for this model, so Replicate's bare-slug predictions
+endpoint 404s on it. Its registry row is pinned to the version above and runs
+through `POST /predictions`, which is the only endpoint that will take it. The
+trade is that the row no longer follows new releases: re-add it to move to a
+newer version.
 
 ## Capabilities
 

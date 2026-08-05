@@ -46,12 +46,40 @@ export const POST = withOwnerAdmin(async (_user, req: NextRequest) => {
   if (!probed.ok) return jsonError("image_model.probe_failed", probed.error, 400);
   const probe = probed.probe;
 
+  // A COMMUNITY model can only be run by version id: the bare-slug endpoint
+  // (`/models/{owner}/{name}/predictions`) is official-models-only and 404s for
+  // everything else. So pin it here rather than storing a row that saves
+  // cleanly and then fails every render. Official models keep the bare slug and
+  // go on tracking whatever Replicate publishes.
+  const alreadyPinned = slug.includes(":");
+  if (!probe.isOfficial && !alreadyPinned && !probe.versionId) {
+    return jsonError(
+      "image_model.unrunnable",
+      `${slug} is a community model with no published version, so it cannot be run`,
+      400,
+    );
+  }
+  const storedSlug = !probe.isOfficial && !alreadyPinned ? `${slug}:${probe.versionId ?? ""}` : slug;
+
+  // Re-check under the pinned name: the caller typed a bare slug, so the check
+  // above could not have seen the row this add would collide with. Versions are
+  // stable per model, so adding the same community model twice lands on the
+  // same pinned slug and is caught here rather than at the unique index.
+  if (storedSlug !== slug) {
+    const [pinned] = await db()
+      .select({ id: imageModels.id })
+      .from(imageModels)
+      .where(eq(imageModels.slug, storedSlug))
+      .limit(1);
+    if (pinned) return jsonError("image_model.duplicate", `${storedSlug} is already in the registry`, 409);
+  }
+
   // A model that cannot edit can never serve the scene or variant surfaces, so
   // ticking those is silently a no-op rather than an error — the same rule the
   // pickers apply when listing.
   const row = {
     id: newId(),
-    slug,
+    slug: storedSlug,
     label: body.value.label?.trim() || probe.label,
     canGenerate: probe.canGenerate,
     canEdit: probe.canEdit,

@@ -151,6 +151,35 @@ describe("probeReplicateModel", () => {
     expect(result.probe.extraInput).toEqual({});
   });
 
+  it("reports whether the model is official, defaulting to community", async () => {
+    // This decides HOW the model can be run: the bare-slug predictions endpoint
+    // is official-only, so a community model's row must be pinned to a version
+    // or every render 404s. A missing field is treated as community, because
+    // pinning an official model still runs while the reverse does not.
+    stubFetch(() => ({
+      name: "flux-dev",
+      is_official: true,
+      latest_version: { id: "v-official", openapi_schema: openapi({ properties: { prompt: { type: "string" } } }) },
+    }));
+    const official = await probeReplicateModel("black-forest-labs/flux-dev");
+    expect(official.ok && official.probe.isOfficial).toBe(true);
+
+    stubFetch(() => ({
+      name: "juggernaut-xl-v9",
+      is_official: false,
+      latest_version: { id: "v-community", openapi_schema: openapi({ properties: { prompt: { type: "string" } } }) },
+    }));
+    const community = await probeReplicateModel("lucataco/juggernaut-xl-v9");
+    expect(community.ok && community.probe.isOfficial).toBe(false);
+
+    stubFetch(() => ({
+      name: "mystery",
+      latest_version: { id: "v-unknown", openapi_schema: openapi({ properties: { prompt: { type: "string" } } }) },
+    }));
+    const absent = await probeReplicateModel("acme/mystery");
+    expect(absent.ok && absent.probe.isOfficial).toBe(false);
+  });
+
   it("registers a model whose description is null", async () => {
     // Replicate sends `"description": null` for a model with no blurb. Rejecting
     // the record over it refused two otherwise-fine models

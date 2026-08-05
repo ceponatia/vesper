@@ -27,6 +27,10 @@ over with one shared mapping:
 - Output is an array of URIs on nine of ten models, and a bare URI string on the
   remaining one.
 - One model watermarks by default (`apply_watermark`), which the probe pins off.
+- **Community models can only be run by version id.** The bare-slug endpoint is
+  official-models-only, so a community model's registry row is auto-pinned to
+  `owner/name:version` when it is added. That is why the three community models
+  below carry a version in their stored slug and the official ones do not.
 - **No model declares `maxItems` on its array reference input.** Reference caps
   are stated in prose in the field description, so they are recorded here and
   stored per row — they cannot be read from the schema.
