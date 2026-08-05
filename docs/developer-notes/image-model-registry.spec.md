@@ -148,6 +148,31 @@ provider ids collapse to `demo` plus the registry: routing asks the record what
 it can do rather than switching on a hardcoded provider id. `venice_*` ids and
 `src/server/ai/venice.ts` are deleted outright, along with `VENICE_*` env.
 
+## Official vs community models (added 2026-08-05, post-ship)
+
+`POST /models/{owner}/{name}/predictions` — the endpoint `replicatePredictionTarget`
+uses for a bare slug — is **official models only**. A community model posted
+there returns a bare 404 that says nothing about why. Three rows registered
+cleanly and then 404'd on every render because of it
+(`lucataco/juggernaut-xl-v9`, `nsfw-api/pony-realism-v2.3`,
+`nsfw-api/realvis-hyper-lora`).
+
+The model record exposes `is_official`, so the probe reads it and the add route
+**auto-pins a community model** to the probed version id, storing
+`owner/name:version`. Pinned slugs post to `/predictions` with the version,
+which is the only endpoint that runs them.
+
+- Official models keep the bare slug and go on tracking `latest_version`.
+- `is_official` missing ⇒ treated as **community**. Running a pinned version
+  works for official models too (verified against `black-forest-labs/flux-dev`),
+  so a wrong "community" guess costs only latest-tracking, while a wrong
+  "official" guess costs every render.
+- A community model with no `latest_version` is rejected at save
+  (`image_model.unrunnable`) — there is no way to run it.
+- The duplicate check runs twice: once on what the caller typed, once on the
+  pinned slug, since the first check cannot see a row it is about to collide
+  with.
+
 ## Reference transport (added 2026-08-05, post-ship)
 
 Step 1 above — "upload each reference as a private Replicate file" — is not

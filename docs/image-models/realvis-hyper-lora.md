@@ -1,6 +1,7 @@
 # RealVis Hyper LoRA
 
 **Slug:** `nsfw-api/realvis-hyper-lora`
+**Registered as:** `nsfw-api/realvis-hyper-lora:9b1951176565c8f810f28ed140787a81c8f49b49e2d40d0a135d9491b95782bd`
 **Probed:** 2026-08-05, version `9b1951176565c8f810f28ed140787a81c8f49b49e2d40d0a135d9491b95782bd`
 
 The model page carries no description. From its schema it is a **HyperLoRA +
@@ -11,6 +12,14 @@ Run on Replicate's own GPUs.
 Two things make it unusual in this set: its reference field is named
 `reference_image` (every other model uses `image`, `image_input`, or `images`),
 and its default width/height are already exactly Vesper's 3:4.
+
+## Community model — pinned by version
+
+`is_official` is false for this model, so Replicate's bare-slug predictions
+endpoint 404s on it. Its registry row is pinned to the version above and runs
+through `POST /predictions`, which is the only endpoint that will take it. The
+trade is that the row no longer follows new releases: re-add it to move to a
+newer version.
 
 ## Capabilities
 

@@ -1,6 +1,7 @@
 # Pony Realism v2.3
 
 **Slug:** `nsfw-api/pony-realism-v2.3`
+**Registered as:** `nsfw-api/pony-realism-v2.3:7d1b41807ba3094e6d88e8eeeeb97425514bbbac00fc1aabc935612942a9cd7f`
 **Probed:** 2026-08-05, version `7d1b41807ba3094e6d88e8eeeeb97425514bbbac00fc1aabc935612942a9cd7f`
 
 The model page carries no description. From its schema it is an **InstantID +
@@ -13,6 +14,14 @@ Note the slug: `pony-realism-v2.3` with a dot. `nsfw-api/pony-realism-v23` and
 
 Low run count (212 at probe time), so treat reliability as unproven relative to
 the Qwen defaults.
+
+## Community model — pinned by version
+
+`is_official` is false for this model, so Replicate's bare-slug predictions
+endpoint 404s on it. Its registry row is pinned to the version above and runs
+through `POST /predictions`, which is the only endpoint that will take it. The
+trade is that the row no longer follows new releases: re-add it to move to a
+newer version.
 
 ## Capabilities
 
