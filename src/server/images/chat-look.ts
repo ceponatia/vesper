@@ -3,16 +3,10 @@ import type { AttributeValue } from "@/contracts/attributes/value";
 import type { RegionExposure } from "@/contracts/items/visibility";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { fnv1aHex } from "@/lib/hash";
-import {
-  hasVenice,
-  isDemoMode,
-  unwrapVeniceImage,
-  veniceEditImage,
-  veniceGenerateImage,
-  veniceSceneImageModelId,
-} from "../ai";
+import { hasReplicate, isDemoMode } from "../ai";
 import { db, images } from "../db";
 import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
+import { renderWithModel, resolveSurfaceModel } from "./models";
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts";
 
 /**
@@ -148,7 +142,11 @@ export interface RenderChatLookInput {
  * differences from the avatar/entity shape, both deliberate.
  */
 export async function renderChatLookImage(input: RenderChatLookInput): Promise<string | null> {
-  if (isDemoMode() || !hasVenice()) return null;
+  if (isDemoMode() || !hasReplicate()) return null;
+  // The look anchor is an identity edit of the avatar, so it rides the same
+  // surface as the scene picker rather than having a control of its own.
+  const model = await resolveSurfaceModel("scene", null, input.sink);
+  if (!model) return null;
   const prompt = buildChatLookPrompt({ outfit: input.outfit, outfitExposed: input.outfitExposed, ageAnchor: input.ageAnchor });
   const { imageId, status } = await runImagePipeline({
     asset: {
@@ -158,12 +156,13 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
       entityId: input.characterId,
       chatId: input.chatId,
       prompt,
-      meta: { lookKey: input.lookKey },
+      meta: { lookKey: input.lookKey, model: `replicate/${model.slug}` },
     },
-    produce: async () => ({
-      ok: true,
-      image: unwrapVeniceImage(await veniceEditImage({ prompt, reference: input.avatar }), "venice edit failed"),
-    }),
+    produce: async () => {
+      const edit = await renderWithModel({ model, prompt, references: [input.avatar] }, input.sink);
+      if (!edit.ok || !edit.image) throw new Error(edit.error ?? `${model.slug} returned no image`);
+      return { ok: true, image: edit.image };
+    },
     // Keep-latest (ruled): the superseded looks go with their files.
     onReady: async (asset) => {
       await purgeImagesWhere(and(eq(images.chatId, input.chatId), eq(images.kind, "chat_look"), ne(images.id, asset.id)));
@@ -196,7 +195,11 @@ export function buildChatPlacePrompt(input: { placeName: string; sketch: string 
  * on the next render there. Never throws.
  */
 export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise<string | null> {
-  if (isDemoMode() || !hasVenice() || !input.sketch.trim()) return null;
+  if (isDemoMode() || !hasReplicate() || !input.sketch.trim()) return null;
+  // A place shot is text-to-image with no subject to preserve, so it takes the
+  // portrait surface's default the way the item/location lanes do.
+  const model = await resolveSurfaceModel("portrait", null, input.sink);
+  if (!model) return null;
   const prompt = buildChatPlacePrompt(input);
   const { imageId, status } = await runImagePipeline({
     asset: {
@@ -204,12 +207,14 @@ export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise
       kind: "chat_place",
       chatId: input.chatId,
       prompt,
-      meta: { placeName: input.placeName, model: `venice/${veniceSceneImageModelId()}` },
+      meta: { placeName: input.placeName, model: `replicate/${model.slug}` },
     },
-    produce: async () => ({
-      ok: true,
-      image: unwrapVeniceImage(await veniceGenerateImage({ prompt, aspectRatio: "3:2" }), "venice generate failed"),
-    }),
+    produce: async () => {
+      // 3:2 landscape — an establishing shot, not a portrait.
+      const shot = await renderWithModel({ model, prompt, targetRatio: 3 / 2 }, input.sink);
+      if (!shot.ok || !shot.image) throw new Error(shot.error ?? `${model.slug} returned no image`);
+      return { ok: true, image: shot.image };
+    },
     failureDiagnostic: { code: "images.chat_place.failed" },
     sink: input.sink,
   });

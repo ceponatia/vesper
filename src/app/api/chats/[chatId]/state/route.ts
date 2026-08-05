@@ -8,7 +8,6 @@ import {
   CHAT_PREMISE_MAX_CHARS,
   chatDrivesSchema,
   chatPlansSchema,
-  chatSceneModels,
   DiagnosticCollector,
   effectiveTraitValue,
   emptyCharacterProfile,
@@ -22,7 +21,7 @@ import {
 } from "@/contracts";
 import { calendarStartSchema } from "@/lib/clock";
 import { parseOr } from "@/lib/parse";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
 import {
   chatFeelingStateSchema,
   chatStateSnapshot,
@@ -92,8 +91,13 @@ const editBodySchema = z.object({
   attributeOverlays: z.array(attributeValueSchema).optional(),
   /** Auto scene-generation mode (slice 9): "off" | "milestones" (the scenario modal's toggle). */
   sceneAuto: z.enum(["off", "milestones"]).optional(),
-  /** Scene-image model pick (the scene strip's save-on-select dropdown). */
-  sceneModel: z.enum(chatSceneModels).optional(),
+  /**
+   * Scene-image model pick (the scene strip's save-on-select dropdown). A
+   * registry model id, free text rather than an enum: the model list is data
+   * now, so an enum here would mean redeploying the API to accept a model the
+   * admin page just added. Unknown ids degrade to the scene default at render.
+   */
+  sceneModel: z.string().trim().max(64).optional(),
   /** Memory-callback ring (memory-callbacks.plan.md) — inspector-grade reset/edit. */
   callbackHistory: z.array(z.object({ ref: z.string().max(80), atClockMinutes: z.number() })).max(20).optional(),
   /** Emotional weather (emotional-weather.plan.md) — inspector-grade set/clear. */
@@ -136,102 +140,104 @@ function targetMember(owned: OwnedChat, req: NextRequest): { characterId: string
   return member ? { characterId: member.characterId, profile: member.character.profile } : null;
 }
 
-export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  const { chatId } = await ctx.params;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
-  const target = targetMember(owned, req);
-  if (!target) return jsonError("not_found", "that character is not in this conversation", 404);
+export const GET = withOwnedChat<Params, OwnedChat>(
+  (user, params) => loadOwnedChat(params.chatId, user.id),
+  async (user, owned, req: NextRequest, ctx) => {
+    const { chatId } = await ctx.params;
+    const target = targetMember(owned, req);
+    if (!target) return jsonError("not_found", "that character is not in this conversation", 404);
 
-  const sink = new DiagnosticCollector();
-  const profile = parseOr(characterProfileSchema, target.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
-  const stored = await loadChatState(chatId, target.characterId, sink);
-  // resolveSeededOutfit: the seeded outfit is an item-id marker (and pre-fix rows
-  // persisted those ids) — the character sheet must show the garment phrase.
-  const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
-  const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
-  const drifted = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
-  // R5 slices 4+7: a sim-routed chat's meters come from the ruling-15 body
-  // substrate and its regard/familiarity from the §21 relationship ledger —
-  // the mood chip, pips, and disposition bands then all DERIVE from world
-  // truth, since the snapshot computes from whatever state it is handed.
-  const isPrimaryTarget = target.characterId === owned.participant.characterId;
-  const [simMeters, simRelationship] = isPrimaryTarget
-    ? await Promise.all([readSimChatMeters(chatId), readSimChatRelationship(chatId)])
-    : [null, null];
-  const state = {
-    ...drifted,
-    ...(simMeters === null ? {} : { meters: { ...drifted.meters, ...simMeters } }),
-    ...(simRelationship === null ? {} : { regard: simRelationship.regard, familiarity: simRelationship.familiarity }),
-  };
-  // Rendered garment phrase for the read-only strip chip (chat-wardrobe-parity): the structured
-  // worn items resolved through the shared seam, else the free-text overlay.
-  const wardrobe = await resolveChatWardrobe(
-    { ...state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(target.characterId) },
-    user.id,
-    profile,
-    sink,
-  );
-  // R5 slice 5: a routed chat's outfit chip reads the mirror's WORN items.
-  const simOutfit = target.characterId === owned.participant.characterId ? await readSimChatOutfit(chatId) : null;
-  return jsonOk({
-    ...chatStateSnapshot(state, scenario, { ...snapshotOpts(profile), persisted: stored !== null }),
-    outfitLabel: simOutfit ?? wardrobe.garments,
-    // The presentation graph for this member's worn garments (slice 3): the
-    // controls the sheet offers plus the coverage they currently produce.
-    garments: garmentReadoutsFor(
-      scenario.garments,
-      garmentActorForCharacter(target.characterId),
-      scenario.clockMinutes,
-    ),
-    garmentDiagnostics: [],
-    // Sim-routed chats show the WORLD clock, not the legacy scenario clock
-    // (R3 slice 4 + R5 calendar, ruling 17) — null for legacy chats.
-    simClock: await readSimChatClock(chatId),
-  });
-});
+    const sink = new DiagnosticCollector();
+    const profile = parseOr(characterProfileSchema, target.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
+    const stored = await loadChatState(chatId, target.characterId, sink);
+    // resolveSeededOutfit: the seeded outfit is an item-id marker (and pre-fix rows
+    // persisted those ids) — the character sheet must show the garment phrase.
+    const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
+    const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
+    const drifted = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
+    // R5 slices 4+7: a sim-routed chat's meters come from the ruling-15 body
+    // substrate and its regard/familiarity from the §21 relationship ledger —
+    // the mood chip, pips, and disposition bands then all DERIVE from world
+    // truth, since the snapshot computes from whatever state it is handed.
+    const isPrimaryTarget = target.characterId === owned.participant.characterId;
+    const [simMeters, simRelationship] = isPrimaryTarget
+      ? await Promise.all([readSimChatMeters(chatId), readSimChatRelationship(chatId)])
+      : [null, null];
+    const state = {
+      ...drifted,
+      ...(simMeters === null ? {} : { meters: { ...drifted.meters, ...simMeters } }),
+      ...(simRelationship === null ? {} : { regard: simRelationship.regard, familiarity: simRelationship.familiarity }),
+    };
+    // Rendered garment phrase for the read-only strip chip (chat-wardrobe-parity): the structured
+    // worn items resolved through the shared seam, else the free-text overlay.
+    const wardrobe = await resolveChatWardrobe(
+      { ...state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(target.characterId) },
+      user.id,
+      profile,
+      sink,
+    );
+    // R5 slice 5: a routed chat's outfit chip reads the mirror's WORN items.
+    const simOutfit = target.characterId === owned.participant.characterId ? await readSimChatOutfit(chatId) : null;
+    return jsonOk({
+      ...chatStateSnapshot(state, scenario, { ...snapshotOpts(profile), persisted: stored !== null }),
+      outfitLabel: simOutfit ?? wardrobe.garments,
+      // The presentation graph for this member's worn garments (slice 3): the
+      // controls the sheet offers plus the coverage they currently produce.
+      garments: garmentReadoutsFor(
+        scenario.garments,
+        garmentActorForCharacter(target.characterId),
+        scenario.clockMinutes,
+      ),
+      garmentDiagnostics: [],
+      // Sim-routed chats show the WORLD clock, not the legacy scenario clock
+      // (R3 slice 4 + R5 calendar, ruling 17) — null for legacy chats.
+      simClock: await readSimChatClock(chatId),
+    });
+  },
+);
 
-export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  const { chatId } = await ctx.params;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
-  const target = targetMember(owned, req);
-  if (!target) return jsonError("not_found", "that character is not in this conversation", 404);
-  const busy = chatBusyResponse(chatId);
-  if (busy) return busy;
+export const PATCH = withOwnedChat<Params, OwnedChat>(
+  (user, params) => loadOwnedChat(params.chatId, user.id),
+  async (user, owned, req: NextRequest, ctx) => {
+    const { chatId } = await ctx.params;
+    const target = targetMember(owned, req);
+    if (!target) return jsonError("not_found", "that character is not in this conversation", 404);
+    const busy = chatBusyResponse(chatId);
+    if (busy) return busy;
 
-  const body = await readBody(req, editBodySchema);
-  if (!body.ok) return body.response;
+    const body = await readBody(req, editBodySchema);
+    if (!body.ok) return body.response;
 
-  const profile = parseOr(characterProfileSchema, target.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
-  // Garment operations degrade rather than fail (docs/resilience.md): a rejected
-  // one is a stable-code diagnostic, collected here and handed back so the sheet
-  // can say WHY it did not take instead of silently discarding it.
-  const editSink = new DiagnosticCollector();
-  const { state, scenario } = await editChatState({
-    chatId,
-    characterId: target.characterId,
-    ownerId: user.id,
-    profile,
-    patch: body.value,
-    sink: editSink,
-  });
-  const wardrobe = await resolveChatWardrobe(
-    { ...state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(target.characterId) },
-    user.id,
-    profile,
-  );
-  return jsonOk({
-    ...chatStateSnapshot(state, scenario, snapshotOpts(profile)),
-    outfitLabel: wardrobe.garments,
-    garments: garmentReadoutsFor(
-      scenario.garments,
-      garmentActorForCharacter(target.characterId),
-      scenario.clockMinutes,
-    ),
-    garmentDiagnostics: editSink.items
-      .filter((d) => d.code.startsWith("garment_op."))
-      .map((d) => ({ code: d.code, message: d.message })),
-    simClock: await readSimChatClock(chatId),
-  });
-});
+    const profile = parseOr(characterProfileSchema, target.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+    // Garment operations degrade rather than fail (docs/resilience.md): a rejected
+    // one is a stable-code diagnostic, collected here and handed back so the sheet
+    // can say WHY it did not take instead of silently discarding it.
+    const editSink = new DiagnosticCollector();
+    const { state, scenario } = await editChatState({
+      chatId,
+      characterId: target.characterId,
+      ownerId: user.id,
+      profile,
+      patch: body.value,
+      sink: editSink,
+    });
+    const wardrobe = await resolveChatWardrobe(
+      { ...state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(target.characterId) },
+      user.id,
+      profile,
+    );
+    return jsonOk({
+      ...chatStateSnapshot(state, scenario, snapshotOpts(profile)),
+      outfitLabel: wardrobe.garments,
+      garments: garmentReadoutsFor(
+        scenario.garments,
+        garmentActorForCharacter(target.characterId),
+        scenario.clockMinutes,
+      ),
+      garmentDiagnostics: editSink.items
+        .filter((d) => d.code.startsWith("garment_op."))
+        .map((d) => ({ code: d.code, message: d.message })),
+      simClock: await readSimChatClock(chatId),
+    });
+  },
+);

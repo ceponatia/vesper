@@ -22,6 +22,18 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
+- **Image model registry — swappable Replicate models, managed from the app** —
+  [image-model-registry.plan.md](image-model-registry.plan.md) ·
+  [spec](image-model-registry.spec.md) (active; started 2026-08-05 at owner
+  request, ahead of the queue). Removes Venice entirely and moves the image-model
+  list into the database, managed from a new admin-only page in settings: paste a
+  Replicate model path, tick the surfaces it should appear in, save. Seeds six
+  models (both Qwen models, Seedream 4.5 and 5 Lite, SD 3.5 Large, Wan 2.7 Image
+  Pro), each self-describing via a save-time capability probe so pickers only
+  offer models that can do the job. Adds the missing New Variant model picker and
+  the reference-capacity scaffold. Folds in three scene-picker bugs found while
+  diagnosing an owner-reported false "generation in progress" error. Per-model
+  API reference lives in [docs/image-models/](../image-models/).
 - **Constraint-first narrator physical guidance — constraints, premise correction,
   and resolved action outcomes** —
   [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md)

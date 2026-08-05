@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { hasVenice, veniceEditImage, veniceEditModelId } from "../../../src/server/ai";
+import { evalEdit, evalEditModel, evalGenerate, evalGenerateModel, hasImageProvider } from "./model";
 
 /**
  * Reference-sheet test, single-character variant (scene-images.spec.md §6): merge
@@ -56,7 +56,7 @@ async function labeledPanel(file: string, label: string): Promise<Buffer> {
 }
 
 async function main(): Promise<void> {
-  if (!hasVenice()) throw new Error("VENICE_API_KEY not set");
+  if (!hasImageProvider()) throw new Error("REPLICATE_API_TOKEN not set");
   const args = parseArgs(process.argv.slice(2));
   await fs.mkdir(args.out, { recursive: true });
 
@@ -80,9 +80,9 @@ async function main(): Promise<void> {
   ].join(" ");
 
   console.log(`reference sheet → ${path.join(args.out, "sheet.webp")}`);
-  console.log(`model: ${veniceEditModelId()}\nprompt: ${prompt}\n`);
+  console.log(`model: ${evalEditModel().slug}\nprompt: ${prompt}\n`);
 
-  const result = await veniceEditImage({ prompt, reference: sheet });
+  const result = await evalEdit(prompt, [sheet]);
   if (!result.ok || !result.image) {
     console.error(`edit failed: ${result.error ?? "no image"}`);
     process.exit(1);

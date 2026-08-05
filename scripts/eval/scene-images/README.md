@@ -36,7 +36,8 @@ EVAL_OUT=/tmp/eval pnpm tsx scripts/eval/scene-images/run.ts
 ## Notes
 
 - Routing is exercised offline (no keys) — eyeball that the matrix routes as
-  expected (anchored → `venice_edit → venice_generate`; no-avatar → `venice_generate`;
-  multi mode with ≥2 anchors → `venice_multi_edit → venice_edit → venice_generate`).
+  expected (anchored → `edit`; no-avatar → `generate` when the model can run bare;
+  multi mode with ≥2 anchors → `multi_edit → edit`). The rungs name reference
+  tiers on ONE model, not a hop between providers.
 - The Qwen reference-sheet spike has its own script under `scripts/spikes/`
   (the Flux-multiref spike was dropped with the Flux removal — scene-images.plan.md).

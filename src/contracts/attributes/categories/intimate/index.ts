@@ -9,7 +9,7 @@ import { testiclesGroup } from "./testicles";
  * one subfolder (Decision 11) so the whole set is easy to find and to withhold
  * from moderation-prone routes (the scene composer runs on a moderation-prone
  * tool model, so its appearance summaries keep `allowIntimate: false`; image
- * generation is now uncensored Venice/Qwen end-to-end). Gated per character by
+ * generation is now uncensored end-to-end). Gated per character by
  * the body-config; see species/realize.ts.
  */
 export const intimateGroups: readonly AttributeGroup[] = [breastsGroup, vulvaGroup, penisGroup, testiclesGroup];

@@ -1,24 +1,12 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, items } from "../db";
-import {
-  isDemoMode,
-  replicateGenerateImage,
-  replicateImageModelId,
-  unwrapReplicateImage,
-  unwrapVeniceImage,
-  veniceGenerateImage,
-  veniceT2IModelId,
-} from "../ai";
+import { isDemoMode } from "../ai";
 import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
 import { parseOr } from "@/lib/parse";
-import {
-  DEFAULT_AVATAR_IMAGE_MODEL,
-  isReplicateAvatarImageModel,
-  outfitItems,
-  type AvatarImageModel,
-} from "@/contracts";
+import { outfitItems, type ImageModel } from "@/contracts";
+import { renderWithModel, resolveSurfaceModel } from "./models";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { resolveGarmentVisibility } from "@/contracts/items/visibility";
@@ -39,26 +27,24 @@ export interface GenerateAvatarInput {
   characterId: string;
   userId: string;
   style?: AvatarStyle;
-  /** Provider-backed text-to-image model key from the portrait studio. */
-  model?: AvatarImageModel;
+  /** Registry model id from the portrait studio; absent uses the surface default. */
+  modelId?: string;
   sink?: DiagnosticSink;
 }
 
-/** Stored on the image row for provider/model auditability. */
-function avatarModelLabel(model: AvatarImageModel): string {
-  return isReplicateAvatarImageModel(model)
-    ? `replicate/${replicateImageModelId()}`
-    : `venice/${veniceT2IModelId(model)}`;
-}
-
 /**
- * Avatar pipeline: registry prompt → selected provider text-to-image (3:4), or
- * monogram in demo mode, through the shared reserve/save/fail lifecycle.
+ * Avatar pipeline: registry prompt → the picked registry model's text-to-image
+ * (3:4), or monogram in demo mode, through the shared reserve/save/fail
+ * lifecycle.
+ *
+ * The model is resolved BEFORE the pipeline reserves a row so the row's meta can
+ * record which model produced it. A pick that is no longer offered degrades to
+ * the portrait default rather than failing (owner ruling 5).
  */
 export async function generateAvatar(input: GenerateAvatarInput): Promise<string> {
   const style = input.style ?? "realistic";
-  const model = input.model ?? DEFAULT_AVATAR_IMAGE_MODEL;
   const demo = isDemoMode();
+  const model = demo ? null : await resolveSurfaceModel("portrait", input.modelId, input.sink);
   const [character] = await db().select().from(characters).where(eq(characters.id, input.characterId)).limit(1);
   const profile = parseOr(
     characterProfileSchema,
@@ -77,12 +63,17 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
       entityKind: "character",
       entityId: input.characterId,
       prompt,
-      meta: { style, model: demo ? "demo" : avatarModelLabel(model), demo },
+      meta: { style, model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`, demo },
     },
-    failedPrecondition: character ? null : `character ${input.characterId} not found`,
+    failedPrecondition: character
+      ? demo || model
+        ? null
+        : "no image model is registered for portraits"
+      : `character ${input.characterId} not found`,
     produce: async () => ({
       ok: true,
-      image: demo ? monogramSvg(character?.name ?? "") : await generateAvatarBuffer(prompt, model),
+      image:
+        demo || !model ? monogramSvg(character?.name ?? "") : await generateAvatarBuffer(prompt, model, input.sink),
     }),
     onReady: async (asset) => {
       await db().update(characters).set({ avatarImageId: asset.id }).where(eq(characters.id, input.characterId));
@@ -200,13 +191,10 @@ export async function defaultOutfitPhrase(
   return wardrobeOutfitText(await loadDefaultWardrobe(ownerId, itemIds, sink));
 }
 
-async function generateAvatarBuffer(prompt: string, model: AvatarImageModel): Promise<Buffer> {
-  if (isReplicateAvatarImageModel(model)) {
-    const result = await replicateGenerateImage({ prompt, aspectRatio: "3:4" });
-    return unwrapReplicateImage(result, "replicate generate returned no image");
-  }
-  const result = await veniceGenerateImage({ prompt, aspectRatio: "3:4", model: veniceT2IModelId(model) });
-  return unwrapVeniceImage(result, "venice generate returned no image");
+async function generateAvatarBuffer(prompt: string, model: ImageModel, sink?: DiagnosticSink): Promise<Buffer> {
+  const result = await renderWithModel({ model, prompt }, sink);
+  if (!result.ok || !result.image) throw new Error(result.error ?? `${model.slug} returned no image`);
+  return result.image;
 }
 
 const AVATAR_BATCH_SIZE = 5;

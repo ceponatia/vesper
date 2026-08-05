@@ -128,6 +128,20 @@ export function SettingsPage() {
           )}
         </section>
       )}
+
+      {/* Admin tools. The page itself re-checks and the API is role-gated, so
+          hiding the link is tidiness rather than access control. */}
+      {me.data?.role === "admin" ? (
+        <section className="mt-6 rounded-card border border-ink-600 bg-ink-850 p-5">
+          <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Admin</h2>
+          <p className="mt-2 text-sm text-paper-400">
+            <Link href="/settings/image-models" className="underline underline-offset-4">
+              Image models
+            </Link>{" "}
+            — which Replicate models the portrait studio and scene generator can use.
+          </p>
+        </section>
+      ) : null}
     </PageContainer>
   );
 }

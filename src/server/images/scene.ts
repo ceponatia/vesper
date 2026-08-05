@@ -1,24 +1,21 @@
 import { eq } from "drizzle-orm";
 import { db, imageReferences, images } from "../db";
 import {
-  executeImageProvider,
+  attemptReferenceCount,
+  classifyImageFailure,
   generateChecked,
   isDemoMode,
-  replicateEditModelId,
-  replicateImageModelId,
-  routeSceneProviders,
+  routeSceneAttempts,
   toolModelId,
-  veniceEditModelId,
-  veniceMultiEditModelId,
-  veniceSceneImageModelId,
   type ImageProviderFailure,
-  type ImageProviderId,
   type ProviderRenderResult,
+  type SceneAttemptId,
   type SceneRenderRequest,
 } from "../ai";
+import { renderWithModel } from "./models";
 import { log } from "@/server/log";
 import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
-import type { ChatSceneProvider } from "@/contracts/images/image-models";
+import type { ImageModel } from "@/contracts";
 import type { SceneVisualReference } from "@/contracts/images/scene-reference";
 import type { SceneGenState, SceneReferenceMode } from "@/contracts/state/scene-gen";
 import { imageMeta, runImagePipeline, type ImageEntityKind } from "./assets";
@@ -96,8 +93,8 @@ export interface RenderResolvedSceneInput {
   referenceBuffers: Map<string, Buffer>;
   linkage: SceneAssetLinkage;
   mode?: SceneReferenceMode;
-  /** Explicit stored provider choice; absent preserves the Venice default. */
-  provider?: ChatSceneProvider;
+  /** The resolved registry model for this render; null when none is registered. */
+  model?: ImageModel | null;
   framing?: "pov" | "selfie";
   flavor?: string;
   logResult: (imageId: string, status: string, startedMs: number) => void;
@@ -105,10 +102,11 @@ export interface RenderResolvedSceneInput {
 }
 
 /**
- * Shared provider-chain core for scene renders. The selected provider family is
- * fixed for the whole attempt: Replicate failures do not silently fall into
- * Venice (or vice versa), and a referenced edit never degrades to an unrelated
- * text-to-image person.
+ * Shared attempt-chain core for scene renders. ONE model runs the whole chain —
+ * the chain is its degradation ladder (multi-reference → single-reference →
+ * bare prompt), not a hop between vendors. A referenced edit never degrades to
+ * an unrelated text-to-image person, and a failure on the chosen model stays
+ * visible rather than being papered over by a different one.
  */
 export async function renderResolvedScene(input: RenderResolvedSceneInput): Promise<string> {
   const demo = isDemoMode();
@@ -116,13 +114,9 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   const mode = input.mode ?? "single";
   const collected = new DiagnosticCollector();
   const sink: DiagnosticSink = input.sink ? teeSink(input.sink, collected) : collected;
-  const request: SceneRenderRequest = {
-    references,
-    demo,
-    mode,
-    ...(input.provider ? { provider: input.provider } : {}),
-  };
-  const chain = routeSceneProviders(request);
+  const model = input.model ?? null;
+  const request: SceneRenderRequest = { references, demo, mode, model };
+  const chain = routeSceneAttempts(request);
 
   const imageRefs = references.filter((reference) => Boolean(reference.imageId));
   const orderedBuffers = imageRefs.flatMap((reference) => {
@@ -155,32 +149,30 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         })
       : editPrompt;
 
-  const promptFor = (id: ImageProviderId): string =>
-    isMultiEditProvider(id) ? multiPrompt : isSingleEditProvider(id) ? editPrompt : textPrompt;
-  const modelFor = (id: ImageProviderId): string => {
-    switch (id) {
-      case "demo":
-        return "demo";
-      case "venice_multi_edit":
-        return `venice/${veniceMultiEditModelId()}`;
-      case "venice_edit":
-        return `venice/${veniceEditModelId()}`;
-      case "venice_generate":
-        return `venice/${veniceSceneImageModelId()}`;
-      case "replicate_edit":
-      case "replicate_multi_edit":
-        return `replicate/${replicateEditModelId()}`;
-      case "replicate_generate":
-        return `replicate/${replicateImageModelId()}`;
-    }
-  };
+  const promptFor = (id: SceneAttemptId): string =>
+    id === "multi_edit" ? multiPrompt : id === "edit" ? editPrompt : textPrompt;
+  /** Stored on the image row for provider/model auditability. */
+  const modelFor = (id: SceneAttemptId): string => (id === "demo" || !model ? "demo" : `replicate/${model.slug}`);
 
-  const primary = chain[0] ?? "venice_generate";
+  // An empty chain means the resolved model cannot serve this render at all
+  // (edit-only, no usable reference). Reserve nothing and fail the row with a
+  // message naming the model, rather than silently rendering something else.
+  const primary = chain[0];
+  if (!primary) {
+    sink.push(
+      diag("error", "images.scene_render.no_attempt", "the selected image model cannot render this scene", {
+        context: { model: model?.slug ?? null, references: references.length },
+      }),
+    );
+  }
+
   const ctx: SceneAttemptContext = {
     promptFor,
     primaryBuffer,
     multiBuffers,
     focalName: plan.focal?.name ?? "Scene",
+    model,
+    sink,
   };
 
   try {
@@ -192,13 +184,13 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         entityId: linkage.entityId,
         chatId: linkage.chatId,
         anchorMessageId: linkage.anchorMessageId,
-        prompt: promptFor(primary),
+        prompt: primary ? promptFor(primary) : textPrompt,
         sourceImageId: anchorRef?.imageId,
         meta: {
           demo,
           focalName: plan.focal?.name ?? null,
           referenceName: anchorRef?.name ?? null,
-          model: modelFor(primary),
+          model: primary ? modelFor(primary) : "none",
           ...(input.flavor ? { flavor: input.flavor } : {}),
         },
       },
@@ -206,8 +198,8 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       produce: async (asset) => {
         const outcome = await executeSceneChain(chain, (id) => runSceneProvider(id, ctx), sink);
         if (!outcome) return { ok: false, error: sceneFailureMessage(collected.items) };
-        if (outcome.providerId !== primary) {
-          await correctProviderMeta(asset.id, promptFor(outcome.providerId), modelFor(outcome.providerId));
+        if (outcome.attemptId !== primary) {
+          await correctProviderMeta(asset.id, promptFor(outcome.attemptId), modelFor(outcome.attemptId));
         }
         return { ok: true, image: outcome.image };
       },
@@ -221,32 +213,26 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   }
 }
 
-function isSingleEditProvider(id: ImageProviderId): boolean {
-  return id === "venice_edit" || id === "replicate_edit";
-}
-
-function isMultiEditProvider(id: ImageProviderId): boolean {
-  return id === "venice_multi_edit" || id === "replicate_multi_edit";
-}
-
 interface SceneAttemptContext {
-  promptFor: (id: ImageProviderId) => string;
+  promptFor: (id: SceneAttemptId) => string;
   primaryBuffer: Buffer | null;
   multiBuffers: Buffer[];
   focalName: string;
+  model: ImageModel | null;
+  sink?: DiagnosticSink;
 }
 
 export interface SceneRenderOutcome {
-  providerId: ImageProviderId;
+  attemptId: SceneAttemptId;
   image: Buffer;
 }
 
 const MAX_TRANSIENT_RETRIES = 1;
 
-/** Walk the ordered provider chain with one same-provider transient retry. */
+/** Walk the ordered attempt chain with one same-attempt transient retry. */
 export async function executeSceneChain(
-  chain: ImageProviderId[],
-  run: (id: ImageProviderId) => Promise<ProviderRenderResult>,
+  chain: SceneAttemptId[],
+  run: (id: SceneAttemptId) => Promise<ProviderRenderResult>,
   sink?: DiagnosticSink,
 ): Promise<SceneRenderOutcome | null> {
   let sawTransient = false;
@@ -258,7 +244,7 @@ export async function executeSceneChain(
     let failure: ImageProviderFailure | undefined;
     for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
       const result = await run(id);
-      if (result.ok && result.image) return { providerId: id, image: result.image };
+      if (result.ok && result.image) return { attemptId: id, image: result.image };
       failure = result.failure ?? { reason: "other", message: "provider returned no image" };
       if (failure.reason === "transient" && attempt < MAX_TRANSIENT_RETRIES) {
         sink?.push(
@@ -297,13 +283,31 @@ export async function executeSceneChain(
   return null;
 }
 
-async function runSceneProvider(id: ImageProviderId, ctx: SceneAttemptContext): Promise<ProviderRenderResult> {
+/**
+ * Run one rung of the chain. The reference count comes from the model's own
+ * capacity (`attemptReferenceCount`) rather than a fixed slice, so a
+ * single-reference model on a `multi_edit` rung sends one image instead of
+ * handing the provider three and having two silently dropped.
+ */
+async function runSceneProvider(id: SceneAttemptId, ctx: SceneAttemptContext): Promise<ProviderRenderResult> {
   if (id === "demo") return { ok: true, image: monogramSvg(ctx.focalName || "Scene") };
-  return executeImageProvider(id, {
-    prompt: ctx.promptFor(id),
-    reference: isSingleEditProvider(id) ? (ctx.primaryBuffer ?? undefined) : undefined,
-    references: isMultiEditProvider(id) ? ctx.multiBuffers : undefined,
-  });
+  if (!ctx.model) return { ok: false, failure: { reason: "other", message: "no image model is registered" } };
+
+  const wanted = attemptReferenceCount(id, ctx.model);
+  const references =
+    id === "multi_edit"
+      ? ctx.multiBuffers.slice(0, wanted)
+      : id === "edit" && ctx.primaryBuffer
+        ? [ctx.primaryBuffer]
+        : [];
+
+  const result = await renderWithModel(
+    { model: ctx.model, prompt: ctx.promptFor(id), references },
+    ctx.sink,
+  );
+  if (result.ok && result.image) return { ok: true, image: result.image };
+  const message = result.error ?? `${ctx.model.slug} returned no image`;
+  return { ok: false, failure: { reason: classifyImageFailure(message), message } };
 }
 
 async function recordImageReferences(

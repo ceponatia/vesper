@@ -1,7 +1,7 @@
 import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { hasVenice, veniceEditImage } from "../../../src/server/ai";
+import { evalEdit, evalEditModel, evalGenerate, evalGenerateModel, hasImageProvider } from "./model";
 import {
   buildSceneRenderPrompt,
   resolveScenePlan,
@@ -135,7 +135,7 @@ function footrubVariants(): Record<string, string> {
 }
 
 async function main(): Promise<void> {
-  if (!hasVenice()) throw new Error("VENICE_API_KEY not set — cannot generate");
+  if (!hasImageProvider()) throw new Error("REPLICATE_API_TOKEN not set — cannot generate");
   const reference = await fs.readFile(ANCHOR);
   await fs.mkdir(OUT, { recursive: true });
 
@@ -149,7 +149,7 @@ async function main(): Promise<void> {
     }
     console.log(`\n=== ${BEAT} / ${variant} prompt ===\n${prompt}\n`);
     for (let run = 1; run <= RUNS_PER_VARIANT; run++) {
-      const result = await veniceEditImage({ prompt, reference });
+      const result = await evalEdit(prompt, [reference]);
       if (!result.ok || !result.image) {
         console.error(`${variant} run ${run} FAILED: ${result.error ?? "no image"}`);
         continue;

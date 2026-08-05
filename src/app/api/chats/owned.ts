@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { characterChats, characters, chatParticipants, db } from "@/server/db";
-import { chatExchangeLockKey, keyedLockBusy } from "@/server/engine";
+import { CHAT_LOCK_LABEL_WORLD, chatExchangeLockKey, keyedLockBusy, keyedLockHolderLabel } from "@/server/engine";
 import { jsonError } from "@/server/api";
 
 /**
@@ -158,7 +158,15 @@ export async function resolveChatMemoryGroupId(
  * exchange's own `chat_busy` code so the client handles both the same way.
  */
 export function chatBusyResponse(chatId: string): ReturnType<typeof jsonError> | null {
-  return keyedLockBusy(chatExchangeLockKey(chatId))
-    ? jsonError("chat_busy", "a reply is still streaming; wait for it to finish before changing the scene", 409)
-    : null;
+  const key = chatExchangeLockKey(chatId);
+  if (!keyedLockBusy(key)) return null;
+  // Name the ACTUAL holder, the way `chatBusyBounce` already does for the sim
+  // routes. This used to always blame a streaming reply, which was wrong
+  // whenever a world command held the lock — and its "before changing the
+  // scene" wording read as image generation on the scene strip's model picker,
+  // which is how the owner's 2026-08-05 report came in as a phantom
+  // "generation in progress" (image-model-registry.spec.md).
+  return keyedLockHolderLabel(key) === CHAT_LOCK_LABEL_WORLD
+    ? jsonError("chat_busy", "the world is catching up on this chat; try again in a moment", 409)
+    : jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);
 }

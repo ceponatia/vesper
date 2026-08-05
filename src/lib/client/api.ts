@@ -5,10 +5,12 @@ import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
 import { WORLD_BEAT_KINDS } from "@/lib/simulation/world-beat";
 import {
   activeConditionSchema,
+  imageModelSchema,
+  imageModelsForSurface,
+  type ImageModel,
+  type ImageModelSurface,
   type ActiveCondition,
   ambientSchema as ambientBaseSchema,
-  avatarImageModels,
-  avatarImageModelLabels,
   attributeValueSchema,
   type AttributeValue,
   type ChatActionId,
@@ -22,10 +24,7 @@ import {
   relationshipTextureSchema,
   type RelationshipTexture,
   type ChatSkipAmount,
-  DEFAULT_AVATAR_IMAGE_MODEL,
-  type AvatarImageModel,
   type ChatPlayerState,
-  type ChatSceneModel,
   characterProfileSchema,
   chatPlayerStateSchema,
   garmentBehaviors,
@@ -513,7 +512,8 @@ export const chatStateSnapshotSchema = z.object({
   // Auto scene-generation mode (slice 9): "off" | "milestones" (the scenario modal's toggle).
   sceneAuto: z.string().catch("off"),
   // Scene-image model pick (the scene strip's save-on-select dropdown).
-  sceneModel: z.string().catch("reference"),
+  // Registry model id; an unknown/legacy value degrades to the scene default at render.
+  sceneModel: z.string().catch(""),
   // Recurring named side characters (chat-supporting-cast.plan.md) — the Supporting Cast panel's data.
   supportingCast: supportingCastSchema.catch([]),
   // Tracked plans & promises (chat-plans-promises.plan.md) — the Plans panel's data.
@@ -556,7 +556,8 @@ export interface ChatStateEdit {
   surfacedCues?: Record<string, string>;
   attributeOverlays?: AttributeValue[];
   sceneAuto?: "off" | "milestones";
-  sceneModel?: ChatSceneModel;
+  /** Registry model id from the scene picker. */
+  sceneModel?: string;
   /** Recurring named side characters (chat-supporting-cast.plan.md) — whole-list replacement. */
   supportingCast?: SupportingCastMember[];
   /** Tracked plans & promises (chat-plans-promises.plan.md) — whole-list replacement. */
@@ -746,10 +747,39 @@ export type ImageRecord = z.infer<typeof imageRecordSchema>;
 export const portraitVariantKinds = ["pose", "outfit", "expression", "setting"] as const;
 export type PortraitVariantKind = (typeof portraitVariantKinds)[number];
 
-// The avatar image-model registry (keys + labels) is a pure contract so client
-// and server agree on the key set; re-exported here for component imports.
-export { avatarImageModels, avatarImageModelLabels, DEFAULT_AVATAR_IMAGE_MODEL };
-export type { AvatarImageModel };
+// The image-model registry is DATA now (image-model-registry.plan.md) — the
+// pickers fetch it rather than importing a key union. The record contract is
+// pure, so it is re-exported here for component imports.
+export { imageModelSchema, imageModelsForSurface, type ImageModel, type ImageModelSurface };
+
+export const imageModelsApi = {
+  /** The models one picker may offer; omit `surface` for the whole registry. */
+  list: (surface?: ImageModelSurface) =>
+    apiGet(
+      listOf(imageModelSchema, "models"),
+      surface ? `/api/image-models?surface=${surface}` : "/api/image-models",
+    ),
+};
+
+/** Admin-only registry management (`/api/admin/self` — 404s for non-admins). */
+export const adminImageModelsApi = {
+  list: () => apiGet(listOf(imageModelSchema, "models"), "/api/admin/self/image-models"),
+  create: (body: { slug: string; label?: string; surfaces?: ImageModelSurface[]; maxReferences?: number }) =>
+    apiPost(z.object({ model: imageModelSchema }), "/api/admin/self/image-models", body),
+  update: (
+    modelId: string,
+    body: {
+      label?: string;
+      maxReferences?: number;
+      forPortrait?: boolean;
+      forVariant?: boolean;
+      forScene?: boolean;
+      sort?: number;
+      reprobe?: boolean;
+    },
+  ) => apiPatch(z.object({ model: imageModelSchema }), `/api/admin/self/image-models/${modelId}`, body),
+  remove: (modelId: string) => apiDelete(`/api/admin/self/image-models/${modelId}`),
+};
 
 // ---------------------------------------------------------------------------
 // Forge drafts (client mirror of server/authoring/drafts.ts — components may
@@ -857,13 +887,13 @@ export const charactersApi = {
       `/api/characters/${id}/attributes/from-portrait`,
       { draft },
     ),
-  generateAvatar: (id: string, body: { model?: AvatarImageModel } = {}) =>
+  generateAvatar: (id: string, body: { modelId?: string } = {}) =>
     apiPost(z.unknown(), `/api/characters/${id}/avatar`, body),
   uploadAvatar: (id: string, image: string) =>
     apiPost(z.object({ avatarImageId: idSchema }), `/api/characters/${id}/avatar/upload`, { image }),
   portraits: (id: string) =>
     apiGet(listOf(imageRecordSchema, "portraits", "images"), `/api/characters/${id}/portraits`),
-  createPortrait: (id: string, body: { kind: PortraitVariantKind; instruction: string }) =>
+  createPortrait: (id: string, body: { kind: PortraitVariantKind; instruction: string; modelId?: string }) =>
     apiPost(z.unknown(), `/api/characters/${id}/portraits`, body),
   promotePortrait: (id: string, imageId: string) =>
     apiPost(z.unknown(), `/api/characters/${id}/portraits/${imageId}/promote`, {}),
@@ -1610,6 +1640,8 @@ export const meSchema = z.object({
   accountName: textOr(""),
   /** Which persona new chats start as; null ⇒ none picked (chats fall back to the account name). */
   defaultPersonaId: optionalId,
+  /** The account's own role — lets admin-only settings pages explain themselves, never a gate. */
+  role: z.string().catch("user"),
 });
 export type Me = z.infer<typeof meSchema>;
 

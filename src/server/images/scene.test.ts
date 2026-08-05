@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { sceneGenStateSchema } from "@/contracts/state/scene-gen";
-import type { ImageProviderId, ProviderRenderResult } from "../ai";
+import type { ProviderRenderResult, SceneAttemptId } from "../ai";
 import { composeSceneSpec, executeSceneChain, shouldGenerateScene } from "./scene";
 
 describe("shouldGenerateScene", () => {
@@ -103,17 +103,17 @@ const failResult = (
   failure: { reason, message },
 });
 
-describe("executeSceneChain (fallback ladder + reason-keyed retry, spec §8.3)", () => {
+describe("executeSceneChain (degradation ladder + reason-keyed retry, spec §8.3)", () => {
   it("a content rejection never retries — it falls straight to the next rung with a diagnostic", async () => {
     const sink = new DiagnosticCollector();
-    const calls: ImageProviderId[] = [];
-    const run = async (id: ImageProviderId): Promise<ProviderRenderResult> => {
+    const calls: SceneAttemptId[] = [];
+    const run = async (id: SceneAttemptId): Promise<ProviderRenderResult> => {
       calls.push(id);
-      return id === "venice_edit" ? failResult("content_rejection", "Sexual Content") : okResult();
+      return id === "edit" ? failResult("content_rejection", "Sexual Content") : okResult();
     };
-    const outcome = await executeSceneChain(["venice_edit", "venice_generate"], run, sink);
-    expect(outcome?.providerId).toBe("venice_generate");
-    expect(calls).toEqual(["venice_edit", "venice_generate"]); // venice tried exactly once (no retry)
+    const outcome = await executeSceneChain(["edit", "generate"], run, sink);
+    expect(outcome?.attemptId).toBe("generate");
+    expect(calls).toEqual(["edit", "generate"]); // the edit rung tried exactly once (no retry)
     expect(
       sink.items.some((d) => d.code === "images.scene_render.provider_fallback" && d.context?.reason === "content_rejection"),
     ).toBe(true);
@@ -121,39 +121,40 @@ describe("executeSceneChain (fallback ladder + reason-keyed retry, spec §8.3)",
 
   it("a transient failure retries once on the same provider before succeeding", async () => {
     const sink = new DiagnosticCollector();
-    let veniceCalls = 0;
-    const run = async (id: ImageProviderId): Promise<ProviderRenderResult> => {
-      if (id !== "venice_edit") return okResult();
-      veniceCalls += 1;
-      return veniceCalls === 1 ? failResult("transient", "ETIMEDOUT") : okResult();
+    let editCalls = 0;
+    const run = async (id: SceneAttemptId): Promise<ProviderRenderResult> => {
+      if (id !== "edit") return okResult();
+      editCalls += 1;
+      return editCalls === 1 ? failResult("transient", "ETIMEDOUT") : okResult();
     };
-    const outcome = await executeSceneChain(["venice_edit", "venice_generate"], run, sink);
-    expect(outcome?.providerId).toBe("venice_edit");
-    expect(veniceCalls).toBe(2);
+    const outcome = await executeSceneChain(["edit", "generate"], run, sink);
+    expect(outcome?.attemptId).toBe("edit");
+    expect(editCalls).toBe(2);
     expect(sink.items.some((d) => d.code === "images.scene_render.retry")).toBe(true);
   });
 
   it("every rung failing transiently returns null and warns of a possible outage", async () => {
     const sink = new DiagnosticCollector();
-    const outcome = await executeSceneChain(["venice_edit", "venice_generate"], async () => failResult("transient"), sink);
+    const outcome = await executeSceneChain(["edit", "generate"], async () => failResult("transient"), sink);
     expect(outcome).toBeNull();
     expect(sink.items.some((d) => d.code === "images.scene_render.service_outage" && d.severity === "warn")).toBe(true);
   });
 
   it("non-transient failures across the chain return null with an all_failed diagnostic, not an outage warning", async () => {
     const sink = new DiagnosticCollector();
-    const outcome = await executeSceneChain(["venice_edit", "venice_generate"], async () => failResult("content_rejection"), sink);
+    const outcome = await executeSceneChain(["edit", "generate"], async () => failResult("content_rejection"), sink);
     expect(outcome).toBeNull();
     expect(sink.items.some((d) => d.code === "images.scene_render.service_outage")).toBe(false);
     expect(sink.items.some((d) => d.code === "images.scene_render.all_failed" && d.severity === "warn")).toBe(true);
   });
 
   it("a single-rung identity-locked edit that content-rejects is never silent — it pushes all_failed with the cause", async () => {
-    // Fail-visible character-chat path: routeSceneProviders has already dropped the
-    // text-to-image rung, so a rejected edit has no fallback hop to log; the
-    // terminal diagnostic is the only record of WHY the character image failed.
+    // Fail-visible character-chat path: routeSceneAttempts has already dropped
+    // the bare-prompt rung (the model is edit-only, or a reference exists), so a
+    // rejected edit has no fallback hop to log; the terminal diagnostic is the
+    // only record of WHY the character image failed.
     const sink = new DiagnosticCollector();
-    const outcome = await executeSceneChain(["venice_edit"], async () => failResult("content_rejection", "Sexual Content"), sink);
+    const outcome = await executeSceneChain(["edit"], async () => failResult("content_rejection", "Sexual Content"), sink);
     expect(outcome).toBeNull();
     const terminal = sink.items.find((d) => d.code === "images.scene_render.all_failed");
     expect(terminal?.message).toContain("Sexual Content");
