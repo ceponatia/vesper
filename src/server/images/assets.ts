@@ -246,7 +246,7 @@ export interface ImagePipelineResult {
  *   avatar/entity/variants reserve the row BEFORE they know the character or
  *   entity is missing, then fail it with no event log and no diagnostic. Lanes
  *   whose precondition is cheaper than a row (the chat look/place anchors: demo
- *   mode, no Venice key) return before calling in at all — the shell supports
+ *   mode, no provider key) return before calling in at all — the shell supports
  *   both orderings because it never moves the reserve relative to a lane's own
  *   checks.
  * - **`afterReserve`** — work that belongs to the row rather than to the
@@ -254,7 +254,7 @@ export interface ImagePipelineResult {
  *   `image_references` rows.
  * - **`produce`** — the provider call. Bytes, or a structured failure for a
  *   provider that reports one instead of throwing (the scene chain exhausting
- *   every rung; a Venice edit returning `ok: false`). Whatever it throws is
+ *   every rung; a reference edit returning `ok: false`). Whatever it throws is
  *   caught here and `describeProviderError` writes the row's failure text, so no
  *   lane repeats that.
  * - **`onReady`** — the pointer writes that are only correct once the file

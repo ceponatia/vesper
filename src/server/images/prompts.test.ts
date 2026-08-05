@@ -41,7 +41,7 @@ import {
   SCENE_POV_RULE,
   SELFIE_FRAMING,
   sceneSpecSchema,
-  VENICE_RENDER_PROMPT_LIMIT,
+  EDIT_RENDER_PROMPT_LIMIT,
   visibleAvatarOutfit,
   wardrobeOutfitSummary,
   type SceneComposerContext,
@@ -876,7 +876,7 @@ describe("buildSceneRenderPrompt — intimate detail is route-gated", () => {
   });
 });
 
-describe("buildSceneRenderPrompt — multi-reference (Venice /image/multi-edit)", () => {
+describe("buildSceneRenderPrompt — multi-reference", () => {
   const plan = {
     ...emptySceneRenderPlan(),
     focal: { name: "Mira", action: "leaning close", outfitSummary: "red dress", appearance: "Hair color: red" },
@@ -887,7 +887,7 @@ describe("buildSceneRenderPrompt — multi-reference (Venice /image/multi-edit)"
     setting: "a rain-streaked library",
   };
 
-  it("identity-locks every referenced person, enumerates the references, and stays under the Venice limit", () => {
+  it("identity-locks every referenced person, enumerates the references, and stays under the render limit", () => {
     const prompt = buildSceneRenderPrompt(plan, {
       multiReferences: [
         { name: "Mira", kind: "character" },
@@ -903,7 +903,7 @@ describe("buildSceneRenderPrompt — multi-reference (Venice /image/multi-edit)"
     // name → action → outfit on each person's line; assert order, not separators.
     expect(prompt).toMatch(/Mira\b.*leaning close.*red dress/);
     expect(prompt).toMatch(/Sayed\b.*beside her.*wool coat/);
-    expect(prompt.length).toBeLessThanOrEqual(VENICE_RENDER_PROMPT_LIMIT);
+    expect(prompt.length).toBeLessThanOrEqual(EDIT_RENDER_PROMPT_LIMIT);
   });
 
   it("describes a character with no reference image (beyond the 3-ref cap) from text instead", () => {
@@ -1161,7 +1161,7 @@ describe("buildSceneRenderPrompt", () => {
     expect(prompt).not.toContain("casual everyday clothing");
   });
 
-  // Venice's edit endpoint hard-rejects >1500 chars (followups.phase3.md §6).
+  // The reference-edit budget is 1500 chars (followups.phase3.md §6).
   const richOutfit =
     "A light-wash denim skirt with artfully placed rips and frayed edges (faded blue denim); stylish edgy platform boots in a bright contrasting color (thick sole, sturdy); quirky tights with a whimsical polka-dot pattern (vibrant pink and yellow); a cozy oversized rainbow-striped sweater (soft, slightly fuzzy)";
   const bigPlan = {
@@ -1175,16 +1175,16 @@ describe("buildSceneRenderPrompt", () => {
     setting: "Enid's side of the dorm room, a vibrant explosion of color and clutter with fairy lights, plush toys, and rainbow-hued clothes; Wednesday's side is a stark gothic sanctuary",
   };
 
-  it("keeps the Venice edit prompt within the 1500-char limit, preserving the lock + POV", () => {
+  it("keeps the reference-edit prompt within the 1500-char limit, preserving the lock + POV", () => {
     const prompt = buildSceneRenderPrompt(bigPlan, { referenceName: "Enid" });
-    expect(prompt.length).toBeLessThanOrEqual(VENICE_RENDER_PROMPT_LIMIT);
+    expect(prompt.length).toBeLessThanOrEqual(EDIT_RENDER_PROMPT_LIMIT);
     expect(prompt.startsWith(PORTRAIT_IDENTITY_LOCK)).toBe(true);
     expect(prompt).toContain(SCENE_POV_RULE);
     expect(prompt).toContain("Wearing:");
     expect(prompt).toContain("add no garment that is not listed");
   });
 
-  it("does not budget the text-to-image path (Venice t2i has no such cap)", () => {
+  it("does not budget the text-to-image path (no such cap there)", () => {
     const prompt = buildSceneRenderPrompt(bigPlan); // no referenceName → t2i
     expect(prompt).toContain(richOutfit); // full, untruncated outfit detail
   });
@@ -1305,8 +1305,8 @@ describe("buildSceneRenderPrompt with viewer parts", () => {
     expect(prompt).toContain("Exactly one person is fully in frame: Mira.");
   });
 
-  // The framing rule is never-dropped tier: budgetVenicePrompt shrinks outfit/setting text
-  // to fit Venice's 1500-char cap, and must not eat the thing that stops a second person
+  // The framing rule is never-dropped tier: budgetRenderPrompt shrinks outfit/setting text
+  // to fit the 1500-char budget, and must not eat the thing that stops a second person
   // appearing.
   it("keeps the embodied rule intact even when the prompt is budgeted down", () => {
     const fat = {
@@ -1318,7 +1318,7 @@ describe("buildSceneRenderPrompt with viewer parts", () => {
       referenceName: "Mira",
       viewerParts: [viewerBodyPartById("forearms")!],
     });
-    expect(prompt.length).toBeLessThanOrEqual(VENICE_RENDER_PROMPT_LIMIT);
+    expect(prompt.length).toBeLessThanOrEqual(EDIT_RENDER_PROMPT_LIMIT);
     expect(prompt).toContain("the viewer's own forearms");
     expect(prompt).toContain("Exactly one person is fully in frame: Mira.");
   });

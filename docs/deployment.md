@@ -93,7 +93,6 @@ primary_region = 'iad'
      BETTER_AUTH_SECRET="$(openssl rand -base64 32)" \
      BETTER_AUTH_URL="https://vesper.fly.dev" \
      OPENROUTER_API_KEY="..." \
-     VENICE_API_KEY="..." \
      DATA_ROOT="/app/data" \
      DEV_PASSWORD="..." \
      -a vesper

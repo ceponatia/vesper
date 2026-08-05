@@ -54,7 +54,7 @@ export interface ViewerBodyPart {
 
 /**
  * Stated whenever the viewer has ANY body in frame: the facts that make the limbs read as
- * one consistent person rather than a stock hand. Deliberately tiny — this rides the Venice
+ * one consistent person rather than a stock hand. Deliberately tiny — this rides the
  * prompt budget alongside everything else.
  */
 export const VIEWER_SKIN_ATTRIBUTE_IDS = ["skin.tone", "build.frame"] as const;
@@ -113,7 +113,7 @@ export interface ResolveViewerPartsArgs {
   proposed: readonly string[];
   /** The PLAYER's coverage, computed from their worn items (persona-library slice 8). */
   exposure?: RegionExposure;
-  /** Does the render route permit intimate detail? (Uncensored Venice edit: yes; the t2i fallback: no.) */
+  /** Does the render route permit intimate detail? (Uncensored reference edit: yes; the bare-prompt fallback: no.) */
   allowIntimate?: boolean;
 }
 

@@ -25,7 +25,7 @@ import type { CharacterProfile } from "@/contracts/world/profile";
 /**
  * Intimate-anatomy attributes are withheld from image prompts unless the caller
  * sets `allowIntimate` (body-model spec Decision 3). Image generation is now
- * uncensored Venice/Qwen end-to-end, so avatar generation always sets it; the
+ * uncensored end-to-end, so avatar generation always sets it; the
  * gate remains off for the moderation-prone scene composer's appearance summary.
  */
 /**
@@ -467,7 +467,7 @@ function formatGarment(item: { name: string; description?: string; appearance?: 
 }
 
 // ---------------------------------------------------------------------------
-// Portrait variants (Venice reference edit)
+// Portrait variants (reference edit)
 // ---------------------------------------------------------------------------
 
 /** Ported from the old app's portrait-regen prompt builder (docs/images.md). */
@@ -815,7 +815,7 @@ export function characterAppearanceSummary(
  * Identity-critical attributes for the reference-anchored render (chat-scene-fidelity.plan.md
  * slice 3): the features an identity-locked edit drifts on ever so slightly — facial identity
  * plus skin and hair. Deliberately a whitelist (a full appearance dump would fight the
- * reference image and blow the Venice prompt budget).
+ * reference image and blow the prompt budget).
  */
 const IDENTITY_ANCHOR_ATTRIBUTE_IDS = [
   "skin.tone",
@@ -831,7 +831,7 @@ const IDENTITY_ANCHOR_ATTRIBUTE_IDS = [
   "face.freckles",
 ] as const;
 
-/** Char cap on the identity-anchor phrase — it must never crowd the 1500-char Venice budget. */
+/** Char cap on the identity-anchor phrase — it must never crowd the 1500-char render budget. */
 const IDENTITY_ANCHOR_CHARS = 180;
 
 /**
@@ -936,7 +936,7 @@ export function apparentAgeAnchor(name: string, attributes: ReadonlyArray<Attrib
   return `${subject} is ${phrase.replaceAll("{pos}", possessive)}${tail}.`;
 }
 
-/** Budget for the viewer's body line — it competes with everything else for Venice's 1500. */
+/** Budget for the viewer's body line — it competes with everything else for the 1500. */
 const VIEWER_BODY_CHARS = 200;
 
 /**
@@ -1108,7 +1108,7 @@ export function sceneRevealAppearance(
     if (intimate !== opts.intimate) continue;
     if (realizedBody && !realizedBody.isAttributeApplicable(def)) continue;
     // The SFW half describes only the lower body — the portrait already covers
-    // the face/upper body, so re-stating it wastes the (tight) Venice budget.
+    // the face/upper body, so re-stating it wastes the (tight) prompt budget.
     if (!intimate && !LOWER_BODY_CATEGORIES.has(def.category)) continue;
     if (!revealSurfaces(def, exposure, intimate)) continue;
     const formatted = formatAttribute(def, value.value);
@@ -1607,12 +1607,12 @@ export interface SceneRenderOptions {
    * `allowIntimate`, which is why the gate lives in the builder and not the caller.
    */
   viewerParts?: readonly ViewerBodyPart[];
-  /** Name of the character the reference image identity-locks (Venice single edit); omit for text-to-image. */
+  /** Name of the character the reference image identity-locks (single-reference edit); omit for text-to-image. */
   referenceName?: string;
-  /** Uncensored route (Venice/Qwen): emit exposed intimate-anatomy detail (Decision 3). Off for the moderated text-to-image fallback. */
+  /** Uncensored route: emit exposed intimate-anatomy detail (Decision 3). Off for the moderated text-to-image fallback. */
   allowIntimate?: boolean;
   /**
-   * Multi-reference edit (Venice `/image/multi-edit`, spec §5): the ordered
+   * Multi-reference edit (spec §5): the ordered
    * reference images fed to the provider — the present characters' avatars plus
    * the location image — so the prompt can map each image to who/what it depicts.
    * When set, builds the multi-reference composition prompt (every listed
@@ -1629,20 +1629,26 @@ export interface SceneMultiReference {
 }
 
 /**
- * Venice's image-edit endpoints (single + multi) hard-reject prompts over this
- * many characters (`Prompt exceeds 1500 character limit`). Venice text-to-image
- * is far roomier, so the budget only applies on the reference-edit paths.
- * Untruncated garment descriptions (followups.phase3.md §1) dominate the length, so a rich outfit
- * or several NPCs blows the cap — buildSceneRenderPrompt shrinks the variable
- * fields to fit (followups.phase3.md §6).
+ * Prompt-length budget for the reference-edit paths. Originally Venice's hard
+ * limit (`Prompt exceeds 1500 character limit`); Venice is gone as of
+ * 2026-08-05, and the Replicate models we run advertise far roomier caps —
+ * Seedream accepts 4000 characters, though it recommends staying under 600.
+ *
+ * The number is KEPT at Venice's old value deliberately. It is now a
+ * self-imposed quality bound rather than a provider constraint: 1500 is well
+ * inside every current model's limit, and shorter prompts demonstrably steer
+ * these models better than exhaustive ones. Untruncated garment descriptions
+ * (followups.phase3.md §1) dominate the length, so a rich outfit or several
+ * NPCs blows the budget — buildSceneRenderPrompt shrinks the variable fields to
+ * fit (followups.phase3.md §6).
  */
-export const VENICE_RENDER_PROMPT_LIMIT = 1500;
+export const EDIT_RENDER_PROMPT_LIMIT = 1500;
 
 /**
  * The viewer's parts for THIS prompt: the plan's registry-clamped proposal, intersected
  * with the player's coverage and **this rung's** `allowIntimate`. It runs per-prompt rather
- * than once at plan time because the ladder's rungs disagree — the uncensored Venice edit
- * permits intimate detail, the text-to-image fallback does not — exactly as
+ * than once at plan time because the ladder's rungs disagree — the uncensored reference edit
+ * permits intimate detail, the bare-prompt fallback does not — exactly as
  * `intimateAppearance` already works. `opts.viewerParts` is a test/eval override.
  */
 function viewerPartsFor(plan: SceneRenderPlan, opts: SceneRenderOptions): readonly ViewerBodyPart[] {
@@ -1668,13 +1674,13 @@ function framingFor(plan: SceneRenderPlan, opts: SceneRenderOptions, subjects: r
 }
 
 /**
- * Final render instruction. Venice is single-reference edit, so at most ONE
+ * Final render instruction. The single-reference rung anchors on at most ONE
  * character is identity-locked (`referenceName`); every other featured
  * character — including the focal one when the reference fell back to another
  * present NPC — is described textually from state-derived appearance/outfit.
  *
- * On the Venice path (`referenceName` set) the prompt is budgeted to
- * VENICE_RENDER_PROMPT_LIMIT: the outfit and setting text are progressively
+ * On the edit path (`referenceName` set) the prompt is budgeted to
+ * EDIT_RENDER_PROMPT_LIMIT: the outfit and setting text are progressively
  * excerpted until it fits, with a hard clamp as a final safety net. Identity
  * lock, POV rule, pose, bare-region phrasing and the clothing-authority clause
  * are never dropped — only the verbose, lower-priority description text shrinks.
@@ -1683,7 +1689,7 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
   const featured = [...(plan.focal ? [plan.focal] : []), ...plan.others];
 
   if (opts.multiReferences && opts.multiReferences.length > 0) {
-    return budgetVenicePrompt((outfitCap, settingCap) => assembleMulti(plan, featured, opts, outfitCap, settingCap));
+    return budgetRenderPrompt((outfitCap, settingCap) => assembleMulti(plan, featured, opts, outfitCap, settingCap));
   }
 
   const refIndex = opts.referenceName
@@ -1737,9 +1743,9 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
     return pieces.join(" ");
   };
 
-  // Text-to-image is unbudgeted; the Venice edit path shrinks to the char cap.
+  // Text-to-image is unbudgeted; the reference-edit path shrinks to the char cap.
   if (!opts.referenceName) return assemble(Infinity, Infinity);
-  return budgetVenicePrompt(assemble);
+  return budgetRenderPrompt(assemble);
 }
 
 /** Per-call excerpt helper: `Infinity` cap ⇒ pass text through whole. */
@@ -1771,8 +1777,8 @@ function appendSceneTail(
   pieces.push("High quality, no text, no watermark.");
 }
 
-/** Venice edit/multi-edit prompts hard-cap at 1500 chars — shrink outfit/setting text until it fits. */
-function budgetVenicePrompt(assemble: (outfitCap: number, settingCap: number) => string): string {
+/** Reference-edit prompts are budgeted to 1500 chars — shrink outfit/setting text until it fits. */
+function budgetRenderPrompt(assemble: (outfitCap: number, settingCap: number) => string): string {
   const caps: ReadonlyArray<[number, number]> = [
     [Infinity, Infinity],
     [360, 220],
@@ -1783,18 +1789,18 @@ function budgetVenicePrompt(assemble: (outfitCap: number, settingCap: number) =>
   let prompt = "";
   for (const [outfitCap, settingCap] of caps) {
     prompt = assemble(outfitCap, settingCap);
-    if (prompt.length <= VENICE_RENDER_PROMPT_LIMIT) return prompt;
+    if (prompt.length <= EDIT_RENDER_PROMPT_LIMIT) return prompt;
   }
-  return clampToLimit(prompt, VENICE_RENDER_PROMPT_LIMIT);
+  return clampToLimit(prompt, EDIT_RENDER_PROMPT_LIMIT);
 }
 
 /**
- * Multi-reference composition prompt for Venice `/image/multi-edit` (spec §5):
+ * Multi-reference composition prompt for the multi-reference edit rung (spec §5):
  * every reference image is enumerated and its subject identity-locked, then each
  * featured character's pose/outfit/exposure is stated. Characters WITHOUT a
  * reference image (e.g. a third character beyond the 3-ref cap) fall back to a
  * textual face/appearance description so they still appear. Budgeted to the
- * Venice limit like the single-edit path.
+ * prompt budget like the single-edit path.
  */
 function assembleMulti(
   plan: SceneRenderPlan,

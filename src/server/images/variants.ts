@@ -22,7 +22,7 @@ export interface GenerateVariantInput {
 }
 
 /**
- * Portrait-variant pipeline (docs/images.md): single-reference Venice edit of
+ * Portrait-variant pipeline (docs/images.md): single-reference registry edit of
  * the canonical avatar, identity-locked + age-anchored (owner ruling 2026-07-29 —
  * "preserve apparent age" alone preserves the model's over-read and each
  * generation drifts older). Always re-rolls from the canonical portrait — never
@@ -30,7 +30,7 @@ export interface GenerateVariantInput {
  * save-or-fail → log shell (`runImagePipeline`); failures mark the row failed
  * and return its id.
  *
- * Venice reports an edit failure as `ok: false` rather than throwing, so this
+ * The render seam reports an edit failure as `ok: false` rather than throwing, so this
  * lane's generation failure is a RETURNED failure and pushes its own
  * `images.variant.generate_failed` (the ruled normalization). Its two
  * precondition misses — no character, no ready reference avatar — stay
@@ -92,7 +92,7 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
     // which carry `durationMs` here where avatar/entity's thrown line does not.
     onSettled: ({ imageId: id, status, startedMs }) => void logVariant(id, input, status, startedMs),
     onThrown: ({ imageId: id, startedMs }) => void logVariant(id, input, "failed", startedMs),
-    // The RETURNED Venice failure pushes this code inside produce (above); the
+    // The RETURNED render failure pushes this code inside produce (above); the
     // shell covers the thrown path, which nothing in this lane reaches today.
     // The two paths are exclusive, so the diagnostic can never double-fire.
     failureDiagnostic: { code: "images.variant.generate_failed", context: { characterId: input.characterId } },

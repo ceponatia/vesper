@@ -18,7 +18,7 @@ export const MODEL_DEFAULTS = {
   tool: DEFAULT_AGENT_MODEL_ID,
   embedding: "openai/text-embedding-3-small",
   // Image UNDERSTANDING (portrait → attributes, character-sheet-forge.plan.md)
-  // — the first vision-input capability; distinct from the Venice image
+  // — the first vision-input capability; distinct from the Replicate image
   // GENERATION stack. Qwen3-VL 235B instruct: strong closed-vocabulary visual
   // extraction, cheap ($0.20/M prompt), no mandatory reasoning tokens.
   vision: "qwen/qwen3-vl-235b-a22b-instruct",
