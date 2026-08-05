@@ -4,6 +4,8 @@ import {
   executeImageProvider,
   generateChecked,
   isDemoMode,
+  replicateEditModelId,
+  replicateImageModelId,
   routeSceneProviders,
   toolModelId,
   veniceEditModelId,
@@ -16,6 +18,7 @@ import {
 } from "../ai";
 import { log } from "@/server/log";
 import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
+import type { ChatSceneProvider } from "@/contracts/images/image-models";
 import type { SceneVisualReference } from "@/contracts/images/scene-reference";
 import type { SceneGenState, SceneReferenceMode } from "@/contracts/state/scene-gen";
 import { imageMeta, runImagePipeline, type ImageEntityKind } from "./assets";
@@ -34,21 +37,12 @@ import {
 
 export type SceneComposeInput = SceneComposerContext & { sink?: DiagnosticSink };
 
-/**
- * Scene composer (docs/images.md step 1): the tool model picks the focal
- * character (and any others in frame) from the present-NPC roster + recent
- * narration, then resolveScenePlan clamps every name to that roster and
- * forces every outfit from occlusion-filtered wardrobe state — prose lies,
- * and absent characters never appear. An empty roster composes a
- * location-only shot, which is a legitimate output, not an error.
- */
+/** Compose a validated render plan from the current scene context. */
 export async function composeSceneSpec(input: SceneComposeInput): Promise<SceneRenderPlan> {
   const { sink, ...context } = input;
   const fallback = (): SceneSpec => heuristicSceneSpec(context);
   const { value } = await generateChecked({
     schema: sceneSpecSchema,
-    // The embodied rules are the chat lane's opt-in; the session lane never sets it and
-    // gets the byte-identical disembodied prompt (scene-pov-embodiment.plan.md §Lane scope).
     system: sceneComposerSystem(context.embodiedViewer === true),
     prompt: buildSceneComposerPrompt(context),
     modelId: toolModelId(),
@@ -59,17 +53,19 @@ export async function composeSceneSpec(input: SceneComposeInput): Promise<SceneR
   return resolveScenePlan(value ?? fallback(), context, sink);
 }
 
-/** Deterministic spec (demo mode / degraded fallback): heuristic focal, everyone else present in frame. */
 function heuristicSceneSpec(context: SceneComposerContext): SceneSpec {
   const focalName = heuristicFocalName(context.present, context.recentNarration ?? []);
-  const focal = context.present.find((c) => c.name === focalName);
+  const focal = context.present.find((character) => character.name === focalName);
   return sceneSpecSchema.parse({
     focalCharacter: focalName,
     pose: focal ? focal.posture || "standing naturally, relaxed" : "",
     activity: focal?.activity ?? "",
     others: context.present
-      .filter((c) => c.name !== focalName)
-      .map((c) => ({ name: c.name, action: [c.posture, c.activity].filter(Boolean).join("; ") })),
+      .filter((character) => character.name !== focalName)
+      .map((character) => ({
+        name: character.name,
+        action: [character.posture, character.activity].filter(Boolean).join("; "),
+      })),
     setting: [context.locationName, context.locationDescription].filter(Boolean).join(" — ").slice(0, 300),
     lighting: heuristicLighting(context.timeOfDay),
   });
@@ -86,96 +82,61 @@ function heuristicLighting(timeOfDay: string | undefined): string {
   return (timeOfDay && TIME_OF_DAY_LIGHTING[timeOfDay]) || "soft natural light";
 }
 
-/** Where a rendered scene image is filed: a library-entity (character-chat) scene. */
 export interface SceneAssetLinkage {
   ownerId: string;
-  /** Library-entity scenes (character chat) set these. */
   entityKind?: ImageEntityKind;
   entityId?: string;
-  /** Chat scenes also carry their conversation + anchor message (slice 9 inline moments). */
   chatId?: string;
   anchorMessageId?: string;
 }
 
 export interface RenderResolvedSceneInput {
   plan: SceneRenderPlan;
-  /** Every reference the scene features; those carrying an `imageId` are identity anchors. */
   references: SceneVisualReference[];
-  /** Reference asset bytes keyed by `imageId` (for the edit providers); empty ⇒ text-to-image. */
   referenceBuffers: Map<string, Buffer>;
   linkage: SceneAssetLinkage;
-  /** Reference mode (the session toggle); `multi` prepends the Venice multi-edit rung. */
   mode?: SceneReferenceMode;
-  /**
-   * Shot framing (chat-selfies.plan.md): "selfie" swaps the player-POV rule for
-   * the subject's-own-camera framing block on every route. Absent ⇒ player POV.
-   */
+  /** Explicit stored provider choice; absent preserves the Venice default. */
+  provider?: ChatSceneProvider;
   framing?: "pov" | "selfie";
-  /** Asset flavor stamped on `meta.flavor` (e.g. "selfie") — distinguishes render treatments downstream. */
   flavor?: string;
-  /** Where to log the outcome (a character event). */
   logResult: (imageId: string, status: string, startedMs: number) => void;
   sink?: DiagnosticSink;
 }
 
 /**
- * The provider-chain core shared by every scene render (docs/images.md step 2),
- * decoupled from where the references came from and where the asset is filed
- * (`linkage`). The character-chat path (`renderCharacterSceneImage`,
- * images/character-scene.ts) resolves its own references/anchor, then hands off here.
- *
- * The provider router picks an ordered fallback chain run with the reason-keyed
- * retry policy (spec §8.3): transient → retry once, content rejection → next rung
- * — Venice multi-edit (mode `multi`) → single-reference edit; text-to-image runs
- * ONLY when no reference image exists (owner ruling 2026-07-29 — a failed edit
- * fails visibly, never a different-looking t2i person). Every reference is
- * persisted to `image_references`. Failures mark the row failed and return its
- * id — callers are never blocked by image work.
- *
- * The reserve → generate → save-or-fail → log skeleton is the shared shell's
- * (`runImagePipeline`): the reference rows ride its `afterReserve` hook, the
- * chain + the fallback rung's prompt/model correction ride its `produce`, and
- * `logResult` rides its settled/thrown hooks. Only the diagnostic collector's
- * drain stays here, wrapping the call the way its `finally` always did.
+ * Shared provider-chain core for scene renders. The selected provider family is
+ * fixed for the whole attempt: Replicate failures do not silently fall into
+ * Venice (or vice versa), and a referenced edit never degrades to an unrelated
+ * text-to-image person.
  */
 export async function renderResolvedScene(input: RenderResolvedSceneInput): Promise<string> {
   const demo = isDemoMode();
   const { plan, references, linkage } = input;
   const mode = input.mode ?? "single";
-  // Scene-render diagnostics — above all the provider fallback that records WHY
-  // an identity-locked edit dropped to text-to-image (Venice rejecting an
-  // explicit prompt, a transient outage) — were black-holed: no caller threads a
-  // sink, so a scene image silently losing its reference likeness left no trace.
-  // Tee every diagnostic into a collector and drain it to the server log below.
   const collected = new DiagnosticCollector();
   const sink: DiagnosticSink = input.sink ? teeSink(input.sink, collected) : collected;
-  // Fail-visible by construction: with any reference image present the router
-  // returns edit rungs only, so a failed edit fails the image (a "failed" tile +
-  // the ever-present Generate button = retry) rather than silently painting a
-  // different-looking text-to-image person.
-  const request: SceneRenderRequest = { references, demo, mode };
+  const request: SceneRenderRequest = {
+    references,
+    demo,
+    mode,
+    ...(input.provider ? { provider: input.provider } : {}),
+  };
   const chain = routeSceneProviders(request);
 
-  // The image-bearing references, in send order (focal char, other chars,
-  // location). The first is the single-edit anchor; the first ≤3 (with their
-  // buffers) are the multi-edit reference set.
-  const imageRefs = references.filter((r) => Boolean(r.imageId));
-  const orderedBuffers = imageRefs.flatMap((r) => {
-    const buffer = r.imageId ? input.referenceBuffers.get(r.imageId) : undefined;
+  const imageRefs = references.filter((reference) => Boolean(reference.imageId));
+  const orderedBuffers = imageRefs.flatMap((reference) => {
+    const buffer = reference.imageId ? input.referenceBuffers.get(reference.imageId) : undefined;
     return buffer ? [buffer] : [];
   });
   const primaryBuffer = orderedBuffers[0] ?? null;
   const multiBuffers = orderedBuffers.slice(0, 3);
 
-  // The uncensored edit paths get identity-lock + (exposure-gated) intimate
-  // anatomy; the text-to-image fallback gets neither. `allowForIntimate` defaults
-  // permissive today; the deferred uploaded-avatar guard (spec §3) flips it for
-  // uploaded provenance, and every reference-edit prompt below respects it.
   const anchorRef = imageRefs[0];
   const allowIntimate = anchorRef?.allowForIntimate ?? false;
-  // Multi-edit identity-locks several people at once, so ALL of its featured
-  // character refs must clear the intimate gate, not just the primary.
-  const multiAllowIntimate = imageRefs.filter((r) => r.kind === "character").every((r) => r.allowForIntimate);
+  const multiAllowIntimate = imageRefs
+    .filter((reference) => reference.kind === "character")
+    .every((reference) => reference.allowForIntimate);
 
   const framing = input.framing;
   const textPrompt = buildSceneRenderPrompt(plan, { framing });
@@ -186,20 +147,33 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     multiBuffers.length >= 2
       ? buildSceneRenderPrompt(plan, {
           allowIntimate: multiAllowIntimate,
-          multiReferences: imageRefs.slice(0, 3).map((r) => ({ name: r.name ?? "", kind: r.kind })),
+          multiReferences: imageRefs.slice(0, 3).map((reference) => ({
+            name: reference.name ?? "",
+            kind: reference.kind,
+          })),
           framing,
         })
       : editPrompt;
+
   const promptFor = (id: ImageProviderId): string =>
-    id === "venice_multi_edit" ? multiPrompt : id === "venice_edit" ? editPrompt : textPrompt;
-  const modelFor = (id: ImageProviderId): string =>
-    id === "demo"
-      ? "demo"
-      : id === "venice_multi_edit"
-        ? `venice/${veniceMultiEditModelId()}`
-        : id === "venice_edit"
-          ? `venice/${veniceEditModelId()}`
-          : `venice/${veniceSceneImageModelId()}`;
+    isMultiEditProvider(id) ? multiPrompt : isSingleEditProvider(id) ? editPrompt : textPrompt;
+  const modelFor = (id: ImageProviderId): string => {
+    switch (id) {
+      case "demo":
+        return "demo";
+      case "venice_multi_edit":
+        return `venice/${veniceMultiEditModelId()}`;
+      case "venice_edit":
+        return `venice/${veniceEditModelId()}`;
+      case "venice_generate":
+        return `venice/${veniceSceneImageModelId()}`;
+      case "replicate_edit":
+      case "replicate_multi_edit":
+        return `replicate/${replicateEditModelId()}`;
+      case "replicate_generate":
+        return `replicate/${replicateImageModelId()}`;
+    }
+  };
 
   const primary = chain[0] ?? "venice_generate";
   const ctx: SceneAttemptContext = {
@@ -208,6 +182,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     multiBuffers,
     focalName: plan.focal?.name ?? "Scene",
   };
+
   try {
     const { imageId } = await runImagePipeline({
       asset: {
@@ -227,16 +202,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           ...(input.flavor ? { flavor: input.flavor } : {}),
         },
       },
-      // Belongs to the row, not to the generation — so it stays off the clock.
       afterReserve: (asset) => recordImageReferences(asset.id, references, sink),
       produce: async (asset) => {
         const outcome = await executeSceneChain(chain, (id) => runSceneProvider(id, ctx), sink);
-        // Surface the real upstream cause on the row so the failed tile explains
-        // why (e.g. a Venice edit content-rejection), not a generic placeholder.
-        // The chain reports exhaustion rather than throwing, so this is a
-        // returned failure; its diagnostics are already in the collector.
         if (!outcome) return { ok: false, error: sceneFailureMessage(collected.items) };
-        // A fallback rung won — correct the recorded prompt + model to what ran.
         if (outcome.providerId !== primary) {
           await correctProviderMeta(asset.id, promptFor(outcome.providerId), modelFor(outcome.providerId));
         }
@@ -248,19 +217,21 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     });
     return imageId;
   } finally {
-    // The one scene-specific step that does NOT ride a hook: this lane owns a
-    // diagnostic COLLECTOR (the provider chain's fallback record), and draining
-    // it must cover the whole call — including a throw out of the pipeline
-    // itself — exactly as this `finally` did before the shell existed.
     drainSceneDiagnostics(collected.items, plan.focal?.name ?? null);
   }
 }
 
+function isSingleEditProvider(id: ImageProviderId): boolean {
+  return id === "venice_edit" || id === "replicate_edit";
+}
+
+function isMultiEditProvider(id: ImageProviderId): boolean {
+  return id === "venice_multi_edit" || id === "replicate_multi_edit";
+}
+
 interface SceneAttemptContext {
   promptFor: (id: ImageProviderId) => string;
-  /** Single-edit identity anchor (the first image-bearing reference). */
   primaryBuffer: Buffer | null;
-  /** Ordered ≤3 reference buffers for the multi-edit rung. */
   multiBuffers: Buffer[];
   focalName: string;
 }
@@ -270,16 +241,9 @@ export interface SceneRenderOutcome {
   image: Buffer;
 }
 
-/** One transient retry on the same provider before falling to the next rung. */
 const MAX_TRANSIENT_RETRIES = 1;
 
-/**
- * Walk the provider fallback chain with the reason-keyed retry policy (spec
- * §8.3): a transient failure retries once on the same provider; a content
- * rejection (or anything else) drops straight to the next rung with an info
- * diagnostic. When every rung failed transiently, warn of a possible outage.
- * The provider runner is injected so the policy is unit-testable in isolation.
- */
+/** Walk the ordered provider chain with one same-provider transient retry. */
 export async function executeSceneChain(
   chain: ImageProviderId[],
   run: (id: ImageProviderId) => Promise<ProviderRenderResult>,
@@ -317,9 +281,6 @@ export async function executeSceneChain(
       );
     }
   }
-  // Terminal diagnostic so a wholly-failed chain is never silent — in particular
-  // a single-rung identity-locked edit (character chat) that content-rejects has
-  // no fallback hop to log, yet is exactly the failure the user needs to see.
   if (lastFailure) {
     const outage = sawTransient && !sawNonTransient;
     sink?.push(
@@ -336,17 +297,15 @@ export async function executeSceneChain(
   return null;
 }
 
-/** Dispatch one rung: the demo monogram lives in this (images) layer; AI-backed providers run through the gateway. */
 async function runSceneProvider(id: ImageProviderId, ctx: SceneAttemptContext): Promise<ProviderRenderResult> {
   if (id === "demo") return { ok: true, image: monogramSvg(ctx.focalName || "Scene") };
   return executeImageProvider(id, {
     prompt: ctx.promptFor(id),
-    reference: id === "venice_edit" ? (ctx.primaryBuffer ?? undefined) : undefined,
-    references: id === "venice_multi_edit" ? ctx.multiBuffers : undefined,
+    reference: isSingleEditProvider(id) ? (ctx.primaryBuffer ?? undefined) : undefined,
+    references: isMultiEditProvider(id) ? ctx.multiBuffers : undefined,
   });
 }
 
-/** Persist the scene's references to the join table (spec §4). Never throws — a write failure degrades to a diagnostic. */
 async function recordImageReferences(
   sceneImageId: string,
   references: readonly SceneVisualReference[],
@@ -357,14 +316,14 @@ async function recordImageReferences(
     await db()
       .insert(imageReferences)
       .values(
-        references.map((r) => ({
+        references.map((reference) => ({
           sceneImageId,
-          kind: r.kind,
-          entityId: r.entityId ?? null,
-          role: r.role ?? null,
-          source: r.source ?? null,
-          imageId: r.imageId ?? null,
-          name: r.name ?? "",
+          kind: reference.kind,
+          entityId: reference.entityId ?? null,
+          role: reference.role ?? null,
+          source: reference.source ?? null,
+          imageId: reference.imageId ?? null,
+          name: reference.name ?? "",
         })),
       );
   } catch (err) {
@@ -374,7 +333,6 @@ async function recordImageReferences(
   }
 }
 
-/** Correct the recorded prompt + model when a fallback rung (not the primary) produced the image. */
 async function correctProviderMeta(assetId: string, prompt: string, model: string): Promise<void> {
   const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, assetId)).limit(1);
   await db()
@@ -383,37 +341,28 @@ async function correctProviderMeta(assetId: string, prompt: string, model: strin
     .where(eq(images.id, assetId));
 }
 
-/** The user-facing reason a whole render chain failed, drawn from the terminal diagnostic the chain pushed. */
 function sceneFailureMessage(items: readonly Diagnostic[]): string {
   const terminal = [...items]
     .reverse()
-    .find((d) => d.code === "images.scene_render.all_failed" || d.code === "images.scene_render.service_outage");
+    .find((diagnostic) =>
+      diagnostic.code === "images.scene_render.all_failed" || diagnostic.code === "images.scene_render.service_outage",
+    );
   return terminal?.message ?? "all scene image providers failed";
 }
 
-/**
- * Surface scene-render diagnostics to the server log. Otherwise silent: the
- * load-bearing one is `images.scene_render.provider_fallback`, which records WHY
- * an identity-locked edit dropped to text-to-image (e.g. the Venice edit
- * endpoint rejecting an explicit prompt, or a transient outage) — the cause of a
- * scene image that no longer resembles its reference avatar. The success path
- * pushes nothing, so this stays quiet unless a fallback or failure occurred.
- */
 function drainSceneDiagnostics(items: readonly Diagnostic[], focalName: string | null): void {
-  for (const d of items) {
-    const data = { code: d.code, ...(focalName ? { focal: focalName } : {}), ...(d.context ? { context: d.context } : {}) };
-    if (d.severity === "error") log.error("images.scene_render", d.message, data);
-    else if (d.severity === "warn") log.warn("images.scene_render", d.message, data);
-    else log.info("images.scene_render", d.message, data);
+  for (const diagnostic of items) {
+    const data = {
+      code: diagnostic.code,
+      ...(focalName ? { focal: focalName } : {}),
+      ...(diagnostic.context ? { context: diagnostic.context } : {}),
+    };
+    if (diagnostic.severity === "error") log.error("images.scene_render", diagnostic.message, data);
+    else if (diagnostic.severity === "warn") log.warn("images.scene_render", diagnostic.message, data);
+    else log.info("images.scene_render", diagnostic.message, data);
   }
 }
 
-/**
- * Pure trigger helper (docs/images.md §Scene images): periodic every
- * `interval` turns, or on the director's imageMoment flag. `interval` 0
- * disables automatic generation entirely (manual requests bypass this);
- * an in-flight generation is never stacked.
- */
 export function shouldGenerateScene(scene: SceneGenState, turnNumber: number, directorWorthIt: boolean): boolean {
   if (scene.interval <= 0) return false;
   if (scene.status === "generating") return false;
