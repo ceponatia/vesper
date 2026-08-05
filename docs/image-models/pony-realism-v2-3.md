@@ -3,7 +3,7 @@
 **Slug:** `nsfw-api/pony-realism-v2.3`
 **Registered as:** `nsfw-api/pony-realism-v2.3:7d1b41807ba3094e6d88e8eeeeb97425514bbbac00fc1aabc935612942a9cd7f`
 **Probed:** 2026-08-05, version `7d1b41807ba3094e6d88e8eeeeb97425514bbbac00fc1aabc935612942a9cd7f`
-**Quality ruling:** experimental identity-specialist candidate
+**Quality ruling:** experimental identity-specialist candidate; no transitional runtime override
 
 The model page carries no descriptive README. Its schema exposes an InstantID /
 IP-Adapter / ControlNet pipeline over a Pony Realism checkpoint: one image
@@ -62,28 +62,21 @@ texture, or prompt adherence. Tune one control at a time on the fixed matrix. Th
 first trial holds provider defaults and tests references/prompt policy before
 changing these scales.
 
-## Quality policy before profiles are wired
+## Prompt and negative ruling
 
-The provider's `negative_prompt` defaults empty. The shared render seam sends:
+The provider's `negative_prompt` default is empty. The transitional render policy
+leaves the model byte-identical and does not add score tags or generic anatomy
+terms.
 
-```text
-text, watermark, signature, logo, blurry, low resolution, score_1, score_2,
-score_3
-```
+Pony conventions such as `score_9`, `score_8_up`, `source_photo`, rating tags, or
+negative `score_1`–`score_3` consume prompt context and can vary by checkpoint.
+The sparse model page provides no evidence that this exact pinned wrapper benefits
+from a particular convention. Those terms are therefore fixed-matrix trial arms,
+not hardcoded runtime assumptions.
 
-The production terms are safe without character context. The three low-score
-terms are Pony quality conventions rather than anatomy claims.
-
-No anatomy negative is sent yet. Generic terms such as `missing fingers` or
-`extra limbs` can contradict an authored missing digit or non-human appendage
-count. Anatomy steering belongs to a morphology-aware `pony_tag` profile with a
-conflict linter.
-
-Positive score/source/rating conventions are also not hardcoded. They consume
-prompt context and may vary by checkpoint, so they remain trial-controlled.
-
-Steps, guidance, scheduler, identity scales, and ControlNet strengths remain at
-provider defaults until trialed.
+Anatomy negatives also wait for intended morphology and authored absences. A
+non-human appendage count or missing digit cannot be safely evaluated at the
+context-free seam.
 
 ## Inputs
 
@@ -119,7 +112,6 @@ takes the first result in ordinary lanes.
 ```json
 {
   "prompt": "<built prompt>",
-  "negative_prompt": "text, watermark, signature, logo, blurry, low resolution, score_1, score_2, score_3",
   "image": "<single identity url>",
   "output_format": "webp",
   "output_quality": 95,
@@ -128,8 +120,8 @@ takes the first result in ordinary lanes.
 }
 ```
 
-No shape key is sent. The result is normalized to the lane target after download.
-`pose_image` is not sent by the current generic path.
+No shape or `negative_prompt` key is added. The result is normalized to the lane
+target after download. `pose_image` is not sent by the current generic path.
 
 ## Trial and production gate
 
@@ -138,6 +130,7 @@ Pony remains admin/experimental until a single-person identity trial measures:
 - face likeness versus Qwen Edit;
 - pose, clothing, body, setting, and lighting drift;
 - anatomy relative to the character's intended morphology;
+- the value of candidate Pony score/source/rating conventions;
 - latency and cost;
 - failure/reliability rate.
 
