@@ -16,7 +16,7 @@ export const QWEN_SINGLE_REFERENCE_IDENTITY_LOCK =
 
 /** Kept no longer than the legacy lock so the edit path's fitted prompt stays fitted. */
 export const QWEN_MULTI_REFERENCE_IDENTITY_LOCK =
-  "Use numbered references as assigned below. Preserve each person's exact face, hair, skin tone, build, and age; change only what this instruction requests.";
+  "Use numbered references as assigned below. Preserve each person's exact face, hair, skin tone, build, and apparent age; change only requested details.";
 
 /**
  * The registry's raw probe defaults describe what a provider accepts, not the
