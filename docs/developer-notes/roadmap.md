@@ -43,8 +43,15 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   **profiles** beneath each model, one normalized render intent shared by every
   image lane, role-aware references, recorded seeds and resolved settings, safe
   version promotion, a curated Qwen LoRA, and a separate coherent-image-set
-  workflow. Nine slices; slice 1 (capability vocabulary + profiles, behavior
-  preserving) leads.
+  workflow. Nine slices. **Slice 1 — capability vocabulary and profiles — shipped
+  2026-08-05** ([history](roadmap.shipped.md)): reviewed capability fields, the
+  `image_model_profiles` table, migration 0100's 17 seeded profiles, and the pure
+  eligibility + resolver — all dormant and behavior-preserving, with no lane
+  calling it yet. **Remaining: slice 2** (shared render intent — the first caller,
+  which must route the existing lanes through `renderImageIntent` while producing
+  today's payloads), then role-aware references and transport, common controls and
+  reproducibility, version promotion, the Qwen LoRA library, model-specific
+  profiles, image sets, and future visual controls.
 - **Constraint-first narrator physical guidance — constraints, premise correction,
   and resolved action outcomes** —
   [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md)
