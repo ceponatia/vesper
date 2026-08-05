@@ -2,6 +2,11 @@
 
 Status: active (started 2026-08-05)
 
+Content/tuning companion:
+[image-render-quality.plan.md](image-render-quality.plan.md) — per-model prompt
+dialects, negative-prompt banks, face-fidelity work, and trial protocol ride on
+this plan's profile/control machinery (its first slices run ahead of it).
+
 Technical companion: [image-model-capabilities.spec.md](image-model-capabilities.spec.md)
 
 This is a follow-up to the shipped

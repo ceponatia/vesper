@@ -190,6 +190,19 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   events 30d / jobs 7d, prod telemetry ids+counts only, account deletion
   parked → deferred.plan.md.
 
+- **Image render quality — per-model prompts, negative steering, and face
+  fidelity** — [image-render-quality.plan.md](image-render-quality.plan.md) ·
+  [spec](image-render-quality.spec.md) (draft; brainstormed 2026-08-05 from
+  the owner's report that Qwen Edit drifts faces and the SDXL-lineage
+  community models produce deformities). The content/tuning companion to the
+  active capabilities plan above: per-model prompt dialects (prose vs. token-budgeted
+  SDXL/Pony tag prompts), curated anatomy/production negative-prompt banks on
+  every model that takes one (day one via `extraInput`, no code), reviewed
+  sampler settings, a Qwen Edit face-fidelity pass (face-crop reference,
+  indexed identity binding, fast-mode-off), an explicit InstantID "fix the
+  face" re-render, native 3:4 for width/height models, and best-of-N
+  portraits. Slices 1–3 are independent of the capabilities machinery.
+
 **Successor world engine (`engine.plan.md`) — foundation AND rollout COMPLETE.**
 All committed gates (0–6) closed 2026-07-16 → 2026-07-21, and the migration &
 rollout plan (R0–R6) shipped 2026-07-21/22 — the engine is the live world
