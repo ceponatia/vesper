@@ -1,12 +1,5 @@
 import type { ImageModel } from "@/contracts";
 
-/**
- * The only negative block safe without task, style, subject-count, or morphology
- * context. Anatomy terms can contradict authored missing digits, prosthetics, or
- * non-human appendages, so they wait for profile-aware composition.
- */
-export const STATIC_PRODUCTION_NEGATIVE = "text, watermark, signature, logo, blurry, low resolution";
-
 const LEGACY_PORTRAIT_IDENTITY_LOCK =
   "Generate a new image of the exact same person shown in the reference image. Preserve face, hair color and style, skin tone, body proportions, and apparent age.";
 
@@ -21,8 +14,14 @@ export const QWEN_MULTI_REFERENCE_IDENTITY_LOCK =
 /**
  * The registry's raw probe defaults describe what a provider accepts, not the
  * reviewed settings Vesper wants. Until task profiles reach the render path,
- * this small built-in policy corrects the known harmful defaults at the one
- * shared render seam.
+ * this small built-in policy corrects only settings that are safe without task,
+ * style, subject-count, or morphology context.
+ *
+ * There is deliberately no universal negative block here. Text, logos, blur,
+ * low-resolution media, unusual appendages, and absent body parts can all be
+ * intentional. The two reviewed community wrappers with non-empty provider
+ * defaults are explicitly cleared so those hidden defaults cannot contradict
+ * Vesper's authored state. Contextual negatives belong to task profiles.
  *
  * Exact provider slugs are intentional. We never send a guessed field to an
  * operator-added model, and pinned community slugs are normalized before the
@@ -30,16 +29,10 @@ export const QWEN_MULTI_REFERENCE_IDENTITY_LOCK =
  * image-model-capabilities slice 2/4 is live.
  */
 const REVIEWED_QUALITY_INPUTS: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
-  "qwen/qwen-image-2512": {
-    negative_prompt: STATIC_PRODUCTION_NEGATIVE,
-  },
   "qwen/qwen-image-edit-2511": {
     // This model currently serves only identity-critical variants/scenes. Its
     // provider default optimizes speed on the surface where fidelity matters.
     go_fast: false,
-  },
-  "stability-ai/stable-diffusion-3.5-large": {
-    negative_prompt: STATIC_PRODUCTION_NEGATIVE,
   },
   "lucataco/juggernaut-xl-v9": {
     // Normal Juggernaut v9 is a full-step SDXL checkpoint. The Replicate cog's
@@ -50,15 +43,16 @@ const REVIEWED_QUALITY_INPUTS: Readonly<Record<string, Readonly<Record<string, u
     scheduler: "KarrasDPM",
     width: 832,
     height: 1216,
-    negative_prompt: STATIC_PRODUCTION_NEGATIVE,
-  },
-  "nsfw-api/pony-realism-v2.3": {
-    negative_prompt: `${STATIC_PRODUCTION_NEGATIVE}, score_1, score_2, score_3`,
+    // The wrapper's default forbids several rendering media. Start from the
+    // checkpoint creator's recommended little/no-negative baseline instead.
+    negative_prompt: "",
   },
   "nsfw-api/realvis-hyper-lora": {
     width: 768,
     height: 1024,
-    negative_prompt: STATIC_PRODUCTION_NEGATIVE,
+    // Replaces the wrapper's long generic anatomy/style boilerplate. A later
+    // profile may add conflict-checked terms using the actual visual intent.
+    negative_prompt: "",
   },
 };
 
