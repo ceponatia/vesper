@@ -69,44 +69,49 @@ reviewed policy exists. For a reviewed slug it returns a shallow copy:
 
 The original record is never mutated.
 
-### Static production negative
+### No universal negative block
 
-The only universal block safe without task, style, expected subject count,
-visible-body, authored-landmark, or morphology context is:
+The shared render seam does not know:
 
-```text
-text, watermark, signature, logo, blurry, low resolution
-```
+- task or surface;
+- whether text, logos, signatures, blur, or pixel-art resolution are intentional;
+- expected subject count;
+- intended morphology, authored absences, prosthetics, or species appendages;
+- which body parts are visible;
+- realistic versus stylized media.
 
-It deliberately contains no anatomy terms. “Missing fingers” can contradict an
-authored missing digit; “extra limbs” can contradict a non-human appendage count;
-“disfigured” or “mutated” can erase intentional landmarks or species morphology.
-The universal block also avoids media/style, subject-count, framing, sexual, and
-rating terms.
+It therefore adds no negative content. Every plausible generic term can conflict
+with a legitimate Vesper render. A storefront may require text; a garment may
+carry a logo; motion blur may be intentional; a missing digit may be canonical;
+a non-human character may correctly have additional limbs.
 
-Anatomy steering is not applied at the shared seam, including on the reviewed
-community models. Those terms require the structured render intent and conflict
-linter described below.
+For a reviewed model whose provider default is already empty, the transitional
+policy leaves the row untouched. For a reviewed wrapper with a non-empty default
+that can contradict Vesper's authored state, the policy explicitly sends
+`negative_prompt: ""`. `buildRegistryModelInput` preserves empty-string
+`extraInput` values, so this clears the remote default instead of omitting the
+field and accidentally restoring it.
 
 ### Effective values by model
 
 **Qwen Image 2512**
 
-- add the static production negative;
-- leave generation speed, steps, and guidance unchanged.
+- no runtime override in this slice;
+- provider negative default is already empty;
+- generation speed, steps, and guidance remain unchanged.
 
 **Qwen Image Edit 2511**
 
 - force `go_fast: false`;
-- send no negative prompt because the schema has no such input.
+- no negative-prompt input exists.
 
 All current uses are identity-critical. If text repair or another non-identity
 task begins using it, task profiles must replace this global override.
 
 **Stable Diffusion 3.5 Large**
 
-- add the static production negative;
-- leave sampler/guidance unchanged until a fixed trial says otherwise.
+- no runtime override in this slice;
+- no negative content is invented without task/style context.
 
 **Juggernaut XL v9**
 
@@ -115,12 +120,11 @@ task begins using it, task profiles must replace this global override.
 - `scheduler: "KarrasDPM"`;
 - `width: 832`;
 - `height: 1216`;
-- static production negative only.
+- `negative_prompt: ""` to clear the wrapper's media-biased default.
 
 Normal v9 is not the Lightning model. The creator's published quality guidance
-supports a full-step starting point and warns against large negative walls. The
-fixed matrix may tune the sampler and numeric values; it does not revisit the
-checkpoint identity.
+supports a full-step starting point and recommends beginning with little or no
+negative prompt.
 
 The registry has no generic width/height aspect mode. These dimensions travel
 through `extraInput`; `chooseAspect` returns no provider shape and
@@ -130,16 +134,18 @@ square render's width.
 
 **Pony Realism v2.3**
 
-- static production negative;
-- append `score_1, score_2, score_3` as low-quality negative tags;
-- leave identity scales, pose strength, steps, and guidance at provider defaults
-  until the trial isolates them.
+- no runtime override in this slice;
+- provider negative default is already empty;
+- score/source/rating tags, identity scales, pose strength, steps, and guidance
+  remain trial-controlled.
 
 **RealVis Hyper LoRA**
 
-- static production negative;
-- pin `width: 768`, `height: 1024` rather than relying on a remote default;
-- leave HyperLoRA/InstantID strengths at provider defaults until trialed.
+- `width: 768`;
+- `height: 1024`;
+- `negative_prompt: ""` to clear the wrapper's long generic anatomy/style
+  boilerplate;
+- HyperLoRA/InstantID strengths remain at provider defaults until trialed.
 
 ## Qwen numbered-reference prompt preparation
 
@@ -191,11 +197,11 @@ zero references is not rewritten. Every non-Qwen prompt remains byte-identical.
 
 - pinned community slugs resolve to their base path;
 - unknown models return the same object and inputs;
+- Qwen Image 2512, SD 3.5, and Pony receive no guessed negative or other runtime
+  override;
 - Qwen Edit's stored `go_fast: true` is overridden without mutating the row;
-- Juggernaut receives the reviewed full-step settings;
-- every static negative is production-only and contains no anatomy, style,
-  framing, or subject-count assumptions;
-- Pony adds only its low-score negative tags;
+- Juggernaut receives the reviewed full-step settings and an empty negative;
+- RealVis receives native 3:4 dimensions and an empty negative;
 - single- and multi-reference Qwen locks are selected correctly and do not grow
   the fitted prompt;
 - custom/no-reference/non-Qwen prompts are not changed.
@@ -305,20 +311,15 @@ Compression:
 ### `pony_tag`
 
 Start from `sdxl_tag`, then add model-version-tested score/source/rating
-conventions. The initial candidate positive lead is:
-
-```text
-score_9, score_8_up, score_7_up
-```
-
-Realistic profiles may test `source_photo, realistic`. Rating tags are route
-policy and may never be inferred from the checkpoint name. Every tag consumes
-context and stays only if the fixed matrix demonstrates value for the pinned
-version.
+conventions. Candidate positive and negative score tags are trial inputs, not
+hardcoded assumptions. Realistic profiles may also test `source_photo,
+realistic`. Rating tags are route policy and may never be inferred from the
+checkpoint name. Every tag consumes context and stays only if the fixed matrix
+demonstrates value for the pinned version.
 
 ## Dynamic negative composition
 
-Once profiles are live, static reviewed negatives move into named blocks:
+Once profiles are live, negative blocks are selected from structured context:
 
 ```ts
 export type NegativeBlock =
@@ -326,7 +327,7 @@ export type NegativeBlock =
   | "anatomy"
   | "photoreal"
   | "single_subject"
-  | "pony_low_score"
+  | "pony_quality"
   | "visible_hands";
 ```
 
@@ -335,6 +336,7 @@ The composer receives:
 - task;
 - style;
 - expected subject count;
+- whether text/graphic marks and blur are intentional;
 - framing;
 - visible body parts;
 - intended morphology and authored landmarks/absences;
@@ -343,13 +345,13 @@ The composer receives:
 
 Rules:
 
-- `production` is the universal candidate on models with a supported negative
-  binding;
+- `production` may forbid generated text, watermarking, or blur only when those
+  qualities are not requested;
 - `anatomy` is composed only after removing terms that match intended morphology,
   absent body parts, prosthetics, or species appendages;
 - `photoreal` only for realistic styles;
 - `single_subject` only when exactly one full person is expected;
-- `pony_low_score` only for a tested Pony dialect;
+- `pony_quality` only for a tested pinned Pony version;
 - `visible_hands` only when hands are intentionally visible and important;
 - no block may contain a normalized phrase that conflicts with a mandatory
   positive segment.
@@ -358,9 +360,9 @@ A conflict produces a diagnostic and removes the negative term; it does not fail
 a player render.
 
 For models with no `negative_prompt` binding, the composer returns no provider
-field. It does not append “no extra limbs” to the positive prompt by default,
-because naming an unwanted object can summon it and the scene prompt already has
-specific positive ownership rules.
+field. It does not append unwanted concepts to the positive prompt by default,
+because naming an object can summon it and the scene prompt already has specific
+positive ownership rules.
 
 ## Delta-first edit contract
 
@@ -603,9 +605,9 @@ export interface ImageQualityFinding {
   code:
     | "face_count_mismatch"
     | "identity_similarity_low"
-    | "severe_blur"
+    | "severe_unintended_blur"
     | "blank_or_black"
-    | "text_or_watermark"
+    | "unintended_text_or_watermark"
     | "duplicate_body_suspected"
     | "large_post_crop";
   severity: "info" | "warn" | "error";
@@ -614,9 +616,10 @@ export interface ImageQualityFinding {
 }
 ```
 
-An error may prevent an image becoming the canonical portrait, but it does not
-silently re-run another model. The UI can offer retry-same-seed, new variation,
-or explicit repair.
+A text/blur finding requires the render intent to say that text/blur was not
+requested. An error may prevent an image becoming the canonical portrait, but it
+does not silently re-run another model. The UI can offer retry-same-seed, new
+variation, or explicit repair.
 
 The first inexpensive deterministic checks are output dimensions, blank/black
 content, and post-crop fraction. Face/identity/anatomy models are added only when
@@ -667,7 +670,9 @@ Corpus:
 - 3–4 stable characters;
 - at least one human and one non-human morphology;
 - one character with an authored distinctive absence, prosthetic, or unusual
-  appendage count so negative-conflict behavior is exercised;
+  appendage count;
+- at least one prompt requiring visible text/logo and one intentional blur or
+  low-resolution style case;
 - one heavily authored and one sparse profile;
 - realistic and stylized portrait cases;
 - clear frontal identity and at least one difficult hair/skin/age case;
@@ -686,6 +691,7 @@ Owner grades each pair for:
 
 - identity likeness;
 - anatomy/hands relative to intended morphology;
+- requested text/style preservation;
 - requested edit correctness;
 - unchanged-detail preservation;
 - composition/pose/wardrobe/setting drift;
@@ -730,15 +736,14 @@ and delta-first wording.
 - pinned slug matching is deterministic;
 - current Qwen identity prompts become numbered without growing fitted edit
   prompts or changing non-Qwen text;
-- every static negative contains production defects only, apart from tested Pony
-  low-score tags;
-- anatomy negatives are not sent until intended morphology and authored absences
-  are available for conflict checking;
+- the context-free seam adds no negative content;
+- reviewed non-empty provider negatives are explicitly cleared rather than
+  silently inherited;
+- dynamic negatives are not sent until text/style/subject/morphology conflicts
+  can be evaluated;
 - Juggernaut runs full-step at native portrait dimensions rather than its cog's
   fast square defaults;
 - effective controls are testable and eventually recorded in provenance;
-- dynamic prompt/negative compilers consume semantic segments and reject
-  morphology/style/subject conflicts;
 - identity packs are source-hashed, quality-gated, and invalidated correctly;
 - repair remains explicit, single-character-first, and non-destructive;
 - cost, latency, and model-license gates are enforced before a quality feature
@@ -749,7 +754,8 @@ and delta-first wording.
 No owner ruling is pending. The implementation still needs evidence for:
 
 - the best Juggernaut sampler/CFG within the full-step band;
-- whether morphology-aware anatomy blocks outperform production-only steering;
+- which contextual negative blocks improve quality without erasing intended
+  text, style, or morphology;
 - Qwen quality-mode and face-crop gains measured independently;
 - detector/crop quality thresholds;
 - whether Pony/RealVis improve identity without unacceptable full-frame drift;
