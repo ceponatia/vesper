@@ -10,7 +10,8 @@
 ```bash
 cd vesper
 pnpm install
-cp .env.example .env        # add OPENROUTER_API_KEY (and VENICE_API_KEY for image editing)
+cp .env.example .env        # add OPENROUTER_API_KEY (+ VENICE_API_KEY, and REPLICATE_API_TOKEN
+                            #   only if you want the `*` picker options — see Environment)
 docker compose up -d postgres
 pnpm db:create              # verifies vesper_dev + pgvector extension
 pnpm db:migrate
@@ -32,7 +33,7 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 > code (`lib/narrative-models.ts`) or per-character in the UI; the post-turn agent
 > models (`lib/agent-models.ts`), the scene-composer/tool model, and the embedding
 > model default purely in code (`server/ai/provider.ts` `MODEL_DEFAULTS`).
-> Only the Venice **image** models below remain env-overridable.
+> Only the **image** models below — Venice and Replicate — remain env-overridable.
 
 > **Tool-model candidate — `aion-labs/aion-3.0`.** Added to the narrator list
 > (`lib/narrative-models.ts`) as **Aion 3.0**, it is notable beyond its narrator
@@ -49,12 +50,17 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 | Var | Default | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://vesper:vesper_dev_password@localhost:5435/vesper_dev` | App database |
-| `OPENROUTER_API_KEY` | — | All text models + embeddings (image gen is Venice/Qwen end-to-end — see the Venice vars) |
-| `VENICE_API_KEY` | — | Reference image editing |
+| `OPENROUTER_API_KEY` | — | All text models + embeddings (image gen is Venice/Qwen by default — see the Venice + Replicate vars) |
+| `VENICE_API_KEY` | — | Reference image editing — **the default image provider**; every unstarred picker option routes here |
 | `VENICE_IMAGE_MODEL` | `qwen-image-2` | Venice uncensored text-to-image (avatars, entity images, scene t2i fallback) |
 | `VENICE_IMAGE_EDIT_MODEL` | `qwen-image-2-edit` | Single-reference editing (portrait variants + scene images) |
 | `VENICE_MULTI_EDIT_MODEL` | `qwen-image-2-edit` | Multi-reference editing (`/image/multi-edit`, ≤3 refs; shares the single-edit model since 2026-07-29 — `qwen-edit-uncensored` drifted identity) |
 | `VENICE_SAFE_MODE` | `false` | Venice content filter toggle |
+| `REPLICATE_API_TOKEN` | — | Opt-in second image provider — needed **only** for the `*`-marked picker options ([images.md](images.md) §Providers). Absent ⇒ a `*` pick fails the row visibly; Venice picks are unaffected |
+| `REPLICATE_IMAGE_MODEL` | `qwen/qwen-image-2512` | Replicate text-to-image (`* Qwen Image 2512`, avatars) |
+| `REPLICATE_IMAGE_EDIT_MODEL` | `qwen/qwen-image-edit-2511` | Replicate reference editing (`* Qwen Image Edit 2511`, chat scenes; 1–3 refs) |
+| `REPLICATE_PREDICTION_TIMEOUT_MS` | `300000` (5m) | Prediction deadline — clamped to 30s–30m, sent as Replicate's `Cancel-After` **and** used as this client's poll cutoff, so both expire together |
+| `REPLICATE_SAFE_MODE` | `false` | Replicate safety-checker toggle (mirrors `VENICE_SAFE_MODE`) |
 | `BETTER_AUTH_SECRET` | — | **Required.** Signs sessions/cookies ([auth.md](auth.md)); `openssl rand -base64 32` |
 | `BETTER_AUTH_URL` | `http://localhost:3200` | App origin (OAuth callbacks + CSRF origin check) |
 | `GOOGLE_/GITHUB_/DISCORD_CLIENT_ID`+`_SECRET` | — | OAuth providers — a provider is enabled only when **both** are set; absent ⇒ off |

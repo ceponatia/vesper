@@ -5,6 +5,15 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Replicate Qwen image providers (opt-in, `*`-marked)** —
+  [images.md](../images.md) §Providers — 2026-08-05 — a first-class Replicate
+  client (official-model predictions, private reference uploads, one parsed
+  deadline driving both `Cancel-After` and the poll cutoff) behind two starred
+  picker entries: `* Qwen Image 2512` for avatars, `* Qwen Image Edit 2511` for
+  chat scenes. Venice stays the default on every lane; a starred route never
+  falls across to Venice or to unrelated text-to-image output, and the winning
+  `replicate/…` id lands on `images.meta.model`.
+
 - **Romantic contact — `romantic_touch` permission owner (item 5)** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
   [permission spec](romantic-contact-affordances.spec.permission.md) §As built —
