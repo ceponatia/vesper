@@ -120,11 +120,15 @@ export async function renderWithModel(
 ): Promise<RenderWithModelResult> {
   const targetRatio = input.targetRatio ?? IMAGE_TARGET_ASPECT;
   const aspect = chooseAspect(input.model, targetRatio);
-  const result = await runRegistryImageModel(input.model, {
-    prompt: input.prompt,
-    ...(input.references ? { references: input.references } : {}),
-    aspect: aspect.value,
-  });
+  const result = await runRegistryImageModel(
+    input.model,
+    {
+      prompt: input.prompt,
+      ...(input.references ? { references: input.references } : {}),
+      aspect: aspect.value,
+    },
+    sink,
+  );
   if (!result.ok || !result.image) {
     return { ok: false, error: result.error ?? `${input.model.slug} returned no image` };
   }

@@ -7,8 +7,10 @@ import {
   activeConditionSchema,
   imageModelSchema,
   imageModelsForSurface,
+  imageReferenceTransports,
   type ImageModel,
   type ImageModelSurface,
+  type ImageReferenceTransport,
   type ActiveCondition,
   ambientSchema as ambientBaseSchema,
   attributeValueSchema,
@@ -750,7 +752,14 @@ export type PortraitVariantKind = (typeof portraitVariantKinds)[number];
 // The image-model registry is DATA now (image-model-registry.plan.md) — the
 // pickers fetch it rather than importing a key union. The record contract is
 // pure, so it is re-exported here for component imports.
-export { imageModelSchema, imageModelsForSurface, type ImageModel, type ImageModelSurface };
+export {
+  imageModelSchema,
+  imageModelsForSurface,
+  imageReferenceTransports,
+  type ImageModel,
+  type ImageModelSurface,
+  type ImageReferenceTransport,
+};
 
 export const imageModelsApi = {
   /** The models one picker may offer; omit `surface` for the whole registry. */
@@ -771,6 +780,7 @@ export const adminImageModelsApi = {
     body: {
       label?: string;
       maxReferences?: number;
+      referenceTransport?: ImageReferenceTransport;
       forPortrait?: boolean;
       forVariant?: boolean;
       forScene?: boolean;

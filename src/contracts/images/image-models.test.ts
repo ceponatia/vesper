@@ -3,6 +3,7 @@ import {
   chooseAspect,
   fitReferences,
   imageModelOffersSurface,
+  imageModelSchema,
   imageModelsForSurface,
   parseAspectValue,
   referenceCapacity,
@@ -18,6 +19,7 @@ const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
   canEdit: true,
   referenceField: "image",
   referenceArity: "array",
+  referenceTransport: "file",
   maxReferences: 3,
   aspectMode: "aspect_ratio",
   supportedAspects: ["1:1", "3:4", "16:9"],
@@ -29,6 +31,22 @@ const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
   builtin: true,
   sort: 10,
   ...overrides,
+});
+
+describe("imageModelSchema", () => {
+  it("defaults the reference transport to an uploaded file", () => {
+    // The column arrived after the seeded rows (drizzle/0099); a payload that
+    // predates it must parse to the transport every model but Wan wants rather
+    // than failing the picker.
+    const { referenceTransport } = imageModelSchema.parse({
+      id: "m1",
+      slug: "qwen/qwen-image-2512",
+      label: "Qwen Image 2512",
+      canGenerate: true,
+      canEdit: true,
+    });
+    expect(referenceTransport).toBe("file");
+  });
 });
 
 describe("parseAspectValue", () => {
