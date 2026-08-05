@@ -65,6 +65,8 @@ const modelResponseSchema = z
     name: z.string().nullish(),
     owner: z.string().nullish(),
     description: z.string().nullish(),
+    /** Replicate's own marker for a first-party/partner model. See `isOfficial`. */
+    is_official: z.boolean().nullish(),
     latest_version: z
       .object({
         id: z.string().optional(),
@@ -82,8 +84,27 @@ const modelResponseSchema = z
       .optional(),
   });
 
+/**
+ * Whether Replicate lists this model as official, which decides HOW it can be
+ * run — not merely how it is labelled.
+ *
+ * `POST /models/{owner}/{name}/predictions`, the endpoint a bare slug uses, is
+ * **official models only**. A community model posted there returns 404 with no
+ * hint as to why (owner report 2026-08-05: `lucataco/juggernaut-xl-v9`,
+ * `nsfw-api/pony-realism-v2.3` and `nsfw-api/realvis-hyper-lora` all registered
+ * cleanly and then 404'd on every render). Community models must go through
+ * `POST /predictions` with a version id, which is what a pinned
+ * `owner/name:version` slug does.
+ *
+ * Defaults to FALSE when the field is missing. The asymmetry is deliberate:
+ * running a pinned version works for official models too (verified), so a wrong
+ * "community" guess costs only the ability to track latest, while a wrong
+ * "official" guess costs every render on that model.
+ */
 export interface ReplicateModelProbe {
   slug: string;
+  /** False ⇒ the model can only be run by version id, so its row must be pinned. */
+  isOfficial: boolean;
   label: string;
   versionId: string | null;
   canGenerate: boolean;
@@ -147,6 +168,9 @@ export async function probeReplicateModel(slug: string): Promise<ProbeResult> {
   // under `latest_version`, a version record carries it at the top level.
   let schemas: Record<string, unknown>;
   let versionId: string | null;
+  // A version record carries no `is_official`, but an already-pinned slug runs
+  // through the version endpoint regardless, so the distinction cannot bite.
+  let isOfficial = true;
   if (pinnedVersion) {
     const parsed = versionResponseSchema.safeParse(raw);
     if (!parsed.success) return { ok: false, error: `Replicate returned an unreadable version record for ${slug}` };
@@ -157,6 +181,7 @@ export async function probeReplicateModel(slug: string): Promise<ProbeResult> {
     if (!parsed.success) return { ok: false, error: `Replicate returned an unreadable model record for ${slug}` };
     schemas = parsed.data.latest_version?.openapi_schema?.components?.schemas ?? {};
     versionId = parsed.data.latest_version?.id ?? null;
+    isOfficial = parsed.data.is_official === true;
   }
   const input = schemas.Input;
   const inputShape = z
@@ -182,6 +207,7 @@ export async function probeReplicateModel(slug: string): Promise<ProbeResult> {
     ok: true,
     probe: {
       slug,
+      isOfficial,
       label: defaultLabel(name),
       versionId,
       canEdit: reference !== null,
