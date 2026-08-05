@@ -2,18 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  avatarImageModels,
-  avatarImageModelLabels,
   charactersApi,
-  DEFAULT_AVATAR_IMAGE_MODEL,
+  imageModelsApi,
   portraitVariantKinds,
+
   type ImageRecord,
-  type AvatarImageModel,
   type PortraitVariantKind,
 } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { AvatarUploadDialog } from "./avatar-upload-dialog";
+import { ImageModelSelect, pickedId } from "./image-model-select";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
@@ -46,15 +45,26 @@ function portraitKindLabel(image: ImageRecord): string {
 }
 
 /**
- * Avatar + Venice variant studio (docs/images.md): generate the canonical
- * avatar from attributes, accumulate kind+instruction variants, promote any
- * variant to canonical. Pending rows poll until ready/failed.
+ * Avatar + variant studio (docs/images.md): generate the canonical avatar from
+ * attributes, accumulate kind+instruction variants, promote any variant to
+ * canonical. Pending rows poll until ready/failed.
+ *
+ * TWO model pickers, reading different slices of the registry
+ * (image-model-registry.plan.md). Making an avatar from nothing needs a model
+ * that can work from a prompt alone; editing one into a variant needs a model
+ * that takes a reference. Before the registry only one provider model could
+ * edit, so the variant section had no choice to offer and silently used it.
  */
 export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChanged }: PortraitStudioProps) {
   const portraits = useAsyncData(() => charactersApi.portraits(characterId), [characterId]);
   const toast = useToast();
   const [kind, setKind] = useState<PortraitVariantKind>("pose");
-  const [avatarModel, setAvatarModel] = useState<AvatarImageModel>(DEFAULT_AVATAR_IMAGE_MODEL);
+  // Both pickers default to the first model their surface offers, which is the
+  // registry's stored sort order — the seeded defaults sort first.
+  const portraitModels = useAsyncData(() => imageModelsApi.list("portrait"), []);
+  const variantModels = useAsyncData(() => imageModelsApi.list("variant"), []);
+  const [avatarModelId, setAvatarModelId] = useState<string>("");
+  const [variantModelId, setVariantModelId] = useState<string>("");
   const [instruction, setInstruction] = useState("");
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
   const [submittingVariant, setSubmittingVariant] = useState(false);
@@ -109,7 +119,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   const generateAvatar = async () => {
     genBaselineRef.current = (portraits.data ?? []).find((img) => img.kind === "avatar")?.id ?? null;
     setGeneratingAvatar(true);
-    const result = await charactersApi.generateAvatar(characterId, { model: avatarModel });
+    const result = await charactersApi.generateAvatar(characterId, { modelId: pickedId(avatarModelId, portraitModels.data) });
     if (result.ok) {
       toast.push({ title: "Avatar queued", description: "Built from this character's attributes." });
     } else {
@@ -122,7 +132,11 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   const submitVariant = async () => {
     if (!instruction.trim()) return;
     setSubmittingVariant(true);
-    const result = await charactersApi.createPortrait(characterId, { kind, instruction: instruction.trim() });
+    const result = await charactersApi.createPortrait(characterId, {
+      kind,
+      instruction: instruction.trim(),
+      modelId: pickedId(variantModelId, variantModels.data),
+    });
     setSubmittingVariant(false);
     if (result.ok) {
       setInstruction("");
@@ -186,15 +200,15 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
           <p className="text-sm text-paper-400">
             Generated from this character&apos;s attributes — the registry phrasing is the prompt.
           </p>
-          <Field label="Model" className="w-44">
+          <Field label="Model" className="w-56">
             {(id) => (
-              <Select id={id} value={avatarModel} onChange={(e) => setAvatarModel(e.target.value as AvatarImageModel)}>
-                {avatarImageModels.map((m) => (
-                  <option key={m} value={m}>
-                    {avatarImageModelLabels[m]}
-                  </option>
-                ))}
-              </Select>
+              <ImageModelSelect
+                id={id}
+                models={portraitModels.data}
+                value={avatarModelId}
+                onChange={setAvatarModelId}
+                emptyHint="No text-to-image model is registered."
+              />
             )}
           </Field>
           <div className="flex flex-wrap gap-2">
@@ -233,6 +247,20 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
                   </option>
                 ))}
               </Select>
+            )}
+          </Field>
+          {/* Edit-capable models only — a variant is a reference edit of the
+              canonical portrait, so a text-to-image model would paint a
+              different-looking person (owner ruling 2026-07-29). */}
+          <Field label="Model" className="w-56">
+            {(id) => (
+              <ImageModelSelect
+                id={id}
+                models={variantModels.data}
+                value={variantModelId}
+                onChange={setVariantModelId}
+                emptyHint="No reference-editing model is registered."
+              />
             )}
           </Field>
           <Field label="Instruction" className="min-w-64 flex-1">

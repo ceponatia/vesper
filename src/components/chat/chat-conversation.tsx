@@ -16,9 +16,7 @@ import {
   CHAT_SKIP_MINUTES,
   chatCapabilitiesForLane,
   formatChatMoment,
-  parseChatSceneModel,
   type ChatActionId,
-  type ChatSceneModel,
   type ChatSkipAmount,
 } from "@/contracts";
 import {
@@ -953,15 +951,32 @@ export function ChatConversation({ chatId }: { chatId: string }) {
    * pick above. The PATCH returns the fresh snapshot, which replaces the local state
    * (a superseded pick never writes back).
    */
-  const saveSceneModel = (model: ChatSceneModel) => {
-    setChatState((current) => (current ? { ...current, sceneModel: model } : current));
+  const saveSceneModel = (modelId: string) => {
+    const previous = chatState?.sceneModel ?? "";
+    setChatState((current) => (current ? { ...current, sceneModel: modelId } : current));
     const gen = ++sceneModelGenRef.current;
     sceneModelChainRef.current = sceneModelChainRef.current.then(async () => {
       if (gen !== sceneModelGenRef.current) return; // a newer pick superseded this one
-      const result = await chatsApi.editState(chatId, { sceneModel: model });
+      const result = await chatsApi.editState(chatId, { sceneModel: modelId });
       if (gen !== sceneModelGenRef.current) return;
-      if (result.ok) setChatState(result.data);
-      else toast.push({ title: "Couldn't save the scene model", description: result.error.message, tone: "error" });
+      if (result.ok) {
+        setChatState(result.data);
+        return;
+      }
+      // Put the dropdown back. Without this the picker keeps showing a model the
+      // server never stored, and the next render silently uses the OLD one —
+      // `queueChatScene` reads the model from the database, not from the client.
+      // Guarded by the same generation counter as the save, so a newer pick that
+      // landed while this one failed is never clobbered.
+      setChatState((current) => (current ? { ...current, sceneModel: previous } : current));
+      toast.push({
+        title: "Couldn't save the scene model",
+        description:
+          result.error.code === "chat_busy"
+            ? "The conversation is busy — try again in a moment."
+            : result.error.message,
+        tone: "error",
+      });
     });
   };
 
@@ -1393,8 +1408,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 scenes={sceneList}
                 rendering={sceneRendering}
                 onRefresh={() => scenes.reload({ silent: true })}
-                sceneModel={parseChatSceneModel(chatState?.sceneModel)}
+                sceneModel={chatState?.sceneModel ?? ""}
                 onSceneModelChange={saveSceneModel}
+                sending={sending}
               />
             </div>
           ) : null}

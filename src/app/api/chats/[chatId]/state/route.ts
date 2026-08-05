@@ -8,7 +8,6 @@ import {
   CHAT_PREMISE_MAX_CHARS,
   chatDrivesSchema,
   chatPlansSchema,
-  chatSceneModels,
   DiagnosticCollector,
   effectiveTraitValue,
   emptyCharacterProfile,
@@ -92,8 +91,13 @@ const editBodySchema = z.object({
   attributeOverlays: z.array(attributeValueSchema).optional(),
   /** Auto scene-generation mode (slice 9): "off" | "milestones" (the scenario modal's toggle). */
   sceneAuto: z.enum(["off", "milestones"]).optional(),
-  /** Scene-image model pick (the scene strip's save-on-select dropdown). */
-  sceneModel: z.enum(chatSceneModels).optional(),
+  /**
+   * Scene-image model pick (the scene strip's save-on-select dropdown). A
+   * registry model id, free text rather than an enum: the model list is data
+   * now, so an enum here would mean redeploying the API to accept a model the
+   * admin page just added. Unknown ids degrade to the scene default at render.
+   */
+  sceneModel: z.string().trim().max(64).optional(),
   /** Memory-callback ring (memory-callbacks.plan.md) — inspector-grade reset/edit. */
   callbackHistory: z.array(z.object({ ref: z.string().max(80), atClockMinutes: z.number() })).max(20).optional(),
   /** Emotional weather (emotional-weather.plan.md) — inspector-grade set/clear. */

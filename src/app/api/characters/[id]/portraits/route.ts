@@ -10,6 +10,8 @@ type Params = { id: string };
 const portraitBodySchema = z.object({
   kind: z.enum(["pose", "outfit", "expression", "setting"]),
   instruction: z.string().trim().min(1).max(1000),
+  /** Registry model id from the New Variant picker; unknown ids fall back downstream. */
+  modelId: z.string().trim().max(64).optional(),
 });
 
 /** All images linked to the character (avatar + variants), newest first. */
@@ -20,9 +22,10 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
 });
 
 /**
- * Identity-locked Venice reference edit of the canonical avatar, as a
+ * Identity-locked reference edit of the canonical avatar, as a
  * `portrait_variant` job (docs/images.md). Poll the character's portraits for
- * the new row's status.
+ * the new row's status. The model comes from the New Variant picker, which
+ * lists only edit-capable registry models.
  */
 export const POST = withUser<Params>(
   async (user, req: NextRequest, ctx) => {
@@ -37,13 +40,14 @@ export const POST = withUser<Params>(
     const job = await startJob({
       type: "portrait_variant",
       ownerId: user.id,
-      payload: { characterId: id, kind: body.value.kind },
+      payload: { characterId: id, kind: body.value.kind, modelId: body.value.modelId },
       run: async () => ({
         imageId: await generateVariant({
           characterId: id,
           userId: user.id,
           kind: body.value.kind,
           instruction: body.value.instruction,
+          ...(body.value.modelId ? { modelId: body.value.modelId } : {}),
         }),
       }),
     });
