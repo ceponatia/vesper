@@ -5,6 +5,21 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Image model capabilities — slice 1: capability vocabulary and profiles** —
+  [image-model-capabilities.plan.md](image-model-capabilities.plan.md) ·
+  [spec](image-model-capabilities.spec.md) §"Slice 1 implementation rulings" —
+  2026-08-05 — the reviewed capability fields no schema can supply (`editKind`,
+  `identityPreservation`, `operatorWarning`, never overwritten by a re-probe) plus
+  `probedVersionId` and a reserved `advancedCapabilities`; the
+  `image_model_profiles` table with one enabled default per task enforced by a
+  partial unique index; migration 0100 seeding 17 built-in profiles and rating the
+  six seeded models; and a pure eligibility + five-step resolver in which
+  identity-critical tasks refuse a `weak` rating or an `img2img` mechanism while
+  `unknown` stays permissive. Ships **dormant and behavior-preserving** — no lane
+  calls it, and the integration test asserts every anchor task still resolves to
+  the model its lane renders with today. Slices 2–9 remain queued in
+  [roadmap.md](roadmap.md) under Active.
+
 - **Replicate Qwen image providers (opt-in, `*`-marked)** —
   [images.md](../images.md) §Providers — 2026-08-05 — a first-class Replicate
   client (official-model predictions, private reference uploads, one parsed
