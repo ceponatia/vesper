@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { imageReferenceTransportSchema } from "@/contracts";
+import { imageEditKindSchema, imageIdentityPreservationSchema, imageReferenceTransportSchema } from "@/contracts";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { db, imageModels } from "@/server/db";
 import { probeReplicateModel } from "@/server/ai";
@@ -28,12 +28,50 @@ const patchSchema = z.object({
    * can resolve an uploaded file URL. Re-probing therefore leaves it alone.
    */
   referenceTransport: imageReferenceTransportSchema.optional(),
+  /**
+   * Owner-set, never probed — the same standing rule as `referenceTransport`, for a
+   * harder reason: `canEdit` is true for anything with an image input, so only a
+   * human who has looked at output can say whether this model follows an edit
+   * instruction or repaints from noise. A re-probe must never overwrite this.
+   */
+  editKind: imageEditKindSchema.optional(),
+  /**
+   * Owner-set, never probed: whether a face survives a render is a judgment from
+   * looking at images, and no Replicate schema contains it. This rating gates the
+   * identity-critical tasks (`variant`, `scene`, `chat_look`), so a probe silently
+   * resetting it to `unknown` would quietly re-enable a model for scene work that a
+   * reviewer had ruled out.
+   */
+  identityPreservation: imageIdentityPreservationSchema.optional(),
+  /**
+   * Owner-written operator copy, never probed. Nullable rather than merely optional
+   * so a warning can be CLEARED: omitting the key means "leave it alone", and
+   * without an explicit `null` there would be no way to retract a caveat once the
+   * upstream problem it describes is fixed. A blank string is the same intent as
+   * `null` (an emptied textarea), so it normalizes rather than storing `''`, which
+   * would read as "warned with nothing to say".
+   */
+  operatorWarning: z
+    .union([
+      z
+        .string()
+        .trim()
+        .max(500)
+        .transform((text) => text || null),
+      z.null(),
+    ])
+    .optional(),
   forPortrait: z.boolean().optional(),
   forVariant: z.boolean().optional(),
   forScene: z.boolean().optional(),
   sort: z.number().int().min(0).max(9999).optional(),
   /** Re-read the model's schema from Replicate and refresh the capability columns. */
   reprobe: z.boolean().optional(),
+  // `advancedCapabilities` is deliberately NOT settable here, and deliberately not
+  // in `probedFields` below either. The probe does not derive control bindings until
+  // a later slice, so it would write `{}` over whatever is stored — and once these
+  // rows carry hand-curated bindings, a re-probe that blanked them would be a
+  // regression that only shows up as a control silently vanishing from a payload.
 });
 
 export const PATCH = withOwnerAdmin<Params>(async (_user, req: NextRequest, ctx) => {
@@ -45,8 +83,9 @@ export const PATCH = withOwnerAdmin<Params>(async (_user, req: NextRequest, ctx)
   if (!body.ok) return body.response;
   const { reprobe, ...fields } = body.value;
 
-  // Re-probing refreshes what the model CAN do; the surface toggles and the
-  // hand-set reference cap are the owner's and are never overwritten by it.
+  // Re-probing refreshes what the model CAN do; the surface toggles, the hand-set
+  // reference cap, and the three reviewed judgments above are the owner's and are
+  // never overwritten by it.
   let probedFields = {};
   if (reprobe) {
     const probed = await probeReplicateModel(existing.slug);
@@ -60,6 +99,11 @@ export const PATCH = withOwnerAdmin<Params>(async (_user, req: NextRequest, ctx)
       supportedAspects: probed.probe.supportedAspects,
       outputFormat: probed.probe.outputFormat,
       extraInput: probed.probe.extraInput,
+      // Which version the fields above were read FROM. Recorded with them or not at
+      // all: stored capabilities whose version is unknown cannot be checked against
+      // a pinned `owner/name:version` slug later, which is how a control keeps being
+      // sent to a field that moved between versions.
+      probedVersionId: probed.probe.versionId,
     };
   }
 

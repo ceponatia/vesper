@@ -1,5 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import sharp from "sharp";
+import type { output as ZodOutput, ZodType } from "zod";
 import {
   chooseAspect,
   imageModelSchema,
@@ -22,22 +23,61 @@ import { runRegistryImageModel } from "../ai";
  * into the database when Venice was removed on 2026-08-05.
  */
 
+/**
+ * What a skipped registry row reports: its diagnostic code, the operator-facing
+ * message, and the table name (which doubles as the diagnostic `path`). Passed in
+ * rather than derived, because a caller naming its own table is the one thing
+ * `parseRegistryRows` cannot know and the one thing that makes the diagnostic
+ * actionable.
+ */
+export interface RegistryRowDiagnostic {
+  code: string;
+  message: string;
+  path: string;
+}
+
+/**
+ * Parse the rows of one registry table, dropping a row that fails rather than the
+ * whole list (docs/resilience.md §1). A bad admin edit, or a column written by a
+ * newer deploy, must not empty a picker — and the row that failed has to be
+ * nameable, hence the id in the context.
+ *
+ * Shared by `loadImageModels` and `loadImageModelProfiles` instead of written
+ * twice. The rule is identical in both (per-row `safeParse`, warn with the row id,
+ * keep going), and a resilience rule that gets copy-pasted is one that eventually
+ * diverges in whichever copy nobody edits. It also happens to be exactly the shape
+ * `pnpm jscpd` fails a PR over.
+ *
+ * `rows` is typed only for the `id` it reports on, so any registry table whose
+ * primary key is a text id can use it without a cast.
+ */
+export function parseRegistryRows<TSchema extends ZodType>(
+  rows: readonly { readonly id: string }[],
+  schema: TSchema,
+  invalid: RegistryRowDiagnostic,
+  sink?: DiagnosticSink,
+): ZodOutput<TSchema>[] {
+  return rows.flatMap((row) => {
+    const parsed = schema.safeParse(row);
+    if (parsed.success) return [parsed.data];
+    sink?.push(diag("warn", invalid.code, invalid.message, { path: invalid.path, context: { id: row.id } }));
+    return [];
+  });
+}
+
 /** Every registered model, sort-ordered. Rows are parsed at the trust boundary. */
 export async function loadImageModels(sink?: DiagnosticSink): Promise<ImageModel[]> {
   const rows = await db().select().from(imageModels).orderBy(asc(imageModels.sort));
-  return rows.flatMap((row) => {
-    const parsed = imageModelSchema.safeParse(row);
-    if (parsed.success) return [parsed.data];
-    // One malformed row must not empty the picker (docs/resilience.md §1): drop
-    // it individually and say which, so a bad admin edit is visible but survivable.
-    sink?.push(
-      diag("warn", "image_model.row_invalid", "an image_models row failed to parse and was skipped", {
-        path: "image_models",
-        context: { id: typeof row.id === "string" ? row.id : "unknown" },
-      }),
-    );
-    return [];
-  });
+  return parseRegistryRows(
+    rows,
+    imageModelSchema,
+    {
+      code: "image_model.row_invalid",
+      message: "an image_models row failed to parse and was skipped",
+      path: "image_models",
+    },
+    sink,
+  );
 }
 
 /** One model by id, unparsed rows dropped. Used by the admin update/delete routes. */

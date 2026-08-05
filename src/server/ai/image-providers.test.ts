@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ImageModel, SceneVisualReference } from "@/contracts";
+import { emptyImageModelAdvancedCapabilities, type ImageModel, type SceneVisualReference } from "@/contracts";
 import { apiError } from "@/server/test-support";
 import { attemptReferenceCount, classifyImageFailure, isBillingFailure, routeSceneAttempts } from "./image-providers";
 
@@ -24,6 +24,13 @@ const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
   supportedAspects: ["1:1", "3:4", "16:9"],
   outputFormat: "webp",
   extraInput: {},
+  // Scene routing reads mechanical capability only; these are the reviewed
+  // ratings the seeded row carries.
+  probedVersionId: null,
+  editKind: "instruction_edit",
+  identityPreservation: "strong",
+  operatorWarning: null,
+  advancedCapabilities: emptyImageModelAdvancedCapabilities(),
   forPortrait: false,
   forVariant: true,
   forScene: true,

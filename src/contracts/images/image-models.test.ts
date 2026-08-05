@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { emptyImageModelAdvancedCapabilities } from "./image-model-capabilities";
 import {
   chooseAspect,
   fitReferences,
@@ -25,6 +26,13 @@ const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
   supportedAspects: ["1:1", "3:4", "16:9"],
   outputFormat: "webp",
   extraInput: {},
+  // The reviewed ratings this slug actually carries: its optional `image` +
+  // `strength` input is conventional repainting, not identity-preserving editing.
+  probedVersionId: null,
+  editKind: "img2img",
+  identityPreservation: "weak",
+  operatorWarning: null,
+  advancedCapabilities: emptyImageModelAdvancedCapabilities(),
   forPortrait: true,
   forVariant: true,
   forScene: true,
@@ -34,18 +42,40 @@ const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
 });
 
 describe("imageModelSchema", () => {
+  // A stored row as it reads back before any of the later columns existed.
+  const priorRow = {
+    id: "m1",
+    slug: "qwen/qwen-image-2512",
+    label: "Qwen Image 2512",
+    canGenerate: true,
+    canEdit: true,
+  };
+
   it("defaults the reference transport to an uploaded file", () => {
     // The column arrived after the seeded rows (drizzle/0099); a payload that
     // predates it must parse to the transport every model but Wan wants rather
     // than failing the picker.
-    const { referenceTransport } = imageModelSchema.parse({
-      id: "m1",
-      slug: "qwen/qwen-image-2512",
-      label: "Qwen Image 2512",
-      canGenerate: true,
-      canEdit: true,
-    });
-    expect(referenceTransport).toBe("file");
+    expect(imageModelSchema.parse(priorRow).referenceTransport).toBe("file");
+  });
+
+  it("leaves a row that predates the capability columns unreviewed and inert", () => {
+    // `unknown` ratings are permissive and an empty capability set sends no
+    // optional control, so such a row behaves exactly as it does today.
+    const parsed = imageModelSchema.parse(priorRow);
+    expect(parsed.probedVersionId).toBeNull();
+    expect(parsed.editKind).toBe("unknown");
+    expect(parsed.identityPreservation).toBe("unknown");
+    expect(parsed.operatorWarning).toBeNull();
+    expect(parsed.advancedCapabilities).toEqual(emptyImageModelAdvancedCapabilities());
+  });
+
+  it("gives each parsed row its own advanced-capability object", () => {
+    // The default is a thunk: zod passes a default value through without cloning,
+    // so a shared literal would let a probe writing one model's known fields
+    // rewrite every other model's.
+    const first = imageModelSchema.parse(priorRow);
+    first.advancedCapabilities.knownInputFields.push("prompt");
+    expect(imageModelSchema.parse(priorRow).advancedCapabilities.knownInputFields).toEqual([]);
   });
 });
 

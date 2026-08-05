@@ -21,6 +21,38 @@ the character's face has to survive.
 - **Aspect handling:** `aspect_ratio` enum includes `3:4`. Send `"3:4"`.
 - **Output:** array of URIs. WebP available.
 
+## Reviewed capability
+
+Reviewed by hand, never probed, and never overwritten by a re-probe:
+
+- **Edit kind:** `img2img`. The optional `image` + `strength` pair is conventional
+  strength-based repainting, not identity-preserving editing.
+- **Identity preservation:** `weak`. At the default `strength: 0.8` the source is
+  substantially repainted, so the subject can come back as a different person.
+- **Operator warning:** none.
+
+The ratings cost nothing today: this row is offered on portrait surfaces only. They
+matter if that changes — a `weak`/`img2img` model is refused outright for the
+identity-critical tasks (`variant`, `scene`, `chat_look`), so a scene profile added
+to this row would not resolve. A deliberate remix profile on a non-identity task is
+the intended use of its `strength` input.
+
+## Seeded profiles
+
+Four, all `generate` with the `text_to_image_description` prompt strategy, an empty
+reference policy, empty control defaults, and no timeout override. Each is its
+task's **global default** and reproduces what its lane resolves today:
+
+- `portrait-standard` (Portrait Standard) — task `portrait`.
+- `item-standard` (Item Standard) — task `item`.
+- `location-standard` (Location Standard) — task `location`.
+- `chat-place-standard` (Chat Place Standard) — task `chat_place`.
+
+`item`, `location` and `chat_place` have no picker of their own: those lanes resolve
+the portrait surface's default today, which is why their profiles are seeded here
+and on no other model. **Nothing calls the profile layer yet** — the fast/balanced/
+quality and remix profiles the plan describes are later work.
+
 ## Reference-image caveat
 
 When `image` is supplied the model states: *"The aspect ratio of your output

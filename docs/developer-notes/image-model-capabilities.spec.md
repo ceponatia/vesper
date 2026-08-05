@@ -829,6 +829,69 @@ directly to a lane-specific Replicate call.
 Add multi-output persistence and UI separately. Existing single-image functions
 continue to call the one-output wrapper.
 
+## Slice 1 implementation rulings (2026-08-05)
+
+Slice 1 shipped Slice A above plus Slice B's **pure** resolver only: the reviewed
+capability fields, `image_model_profiles`, 17 built-in profiles, and
+`resolveImageProfile`. Slice B's rewiring of `resolveSurfaceModel` did **not**
+happen — no caller was touched, no lane resolves a profile, and no rendered image
+changed. The rulings below were made while writing that code; each one is what kept
+the migration payload-neutral, and none should be re-litigated without a reason.
+
+- **Resolver step 2 falls back to the stored model's first eligible profile.** When
+  the stored value is a model id or slug, resolution prefers that model's own
+  `isDefault` profile for the task and otherwise takes its first offered profile in
+  sort order. `isDefault` is globally unique per task, so most models carry none;
+  without that second half a stored `sceneModel` of Seedream 4.5 would fall through
+  to step 3 and render on Qwen Image Edit — a different model for an existing chat,
+  which slice 1 forbids. Step 3's global default remains the fallback only when the
+  stored value names no offered profile at all.
+- **The seeded scene policy has an empty `requiredRoles`.** §"Reference policy"
+  describes the default scene policy as identity, then location, then style or
+  object; the seeded rows keep that `roleOrder`/`allowedRoles` but require nothing.
+  The scene ladder's `generate` rung legitimately runs with zero references, so a
+  required `identity` role would make a valid rung unrenderable. Requiring identity
+  is a slice-3 decision, taken with role-aware selection.
+- **`scene` profiles are seeded with `instruction_edit`, not
+  `multi_reference_compose`** — including on Seedream 4.5, Seedream 5 Lite and Wan
+  2.7, which genuinely compose. The scene lane still chooses multi-versus-single
+  reference mode at render time (`routeSceneAttempts`) and each rung has its own
+  prompt builder, so naming the composing strategy on the profile would assert a
+  prompt change nothing asked for. Slice 2 threads strategy selection through the
+  shared intent; that is where a scene profile's strategy becomes multi-reference.
+- **Identity-critical tasks reject rather than warn.** §"Profile task eligibility"
+  left this as "reject or visibly warn". `profileEligibility` rejects:
+  `identityPreservation: "weak"` yields `identity_too_weak`, `editKind: "img2img"`
+  yields `img2img_identity_task`, and either drops the profile from the offered set.
+  Nothing regressed, because the two `weak`/`img2img` rows (Qwen Image 2512, Stable
+  Diffusion 3.5 Large) are portrait-only and carry no identity-critical profile. The
+  owner override for a deliberate remix profile on an identity task is not
+  implemented and is not needed until someone wants one.
+- **`advancedCapabilities` ships `{}` on every row, and `probedVersionId` null.** The
+  probe is unchanged in slice 1, so it derives no control aliases and records no
+  version. The contract therefore makes `{}` a valid, inert value — every branch
+  optional or defaulted — with each default written as a **thunk**, because zod hands
+  a `.default()` value straight through without cloning and one shared `[]` would let
+  a future probe's push rewrite every row's allowlist at once. Empty
+  `knownInputFields` must be read as **fail-closed** for `providerOverrides`
+  validation, never as "no restrictions"; that rejects nothing today only because all
+  17 seeded profiles carry `providerOverrides = {}`.
+- **`updatedAt` is a column only.** `image_models.updated_at`, and the profile
+  table's `created_at`/`updated_at`, exist in the schema but are absent from
+  `imageModelSchema` and `imageModelProfileSchema`. Those records cross to the client
+  as JSON, and a timestamp forces a date-serialization decision (`Date` versus ISO
+  string versus epoch millis) that no consumer needs yet. The admin model card
+  (§"Admin UI") is the first surface that will — §"Extensions to `image_models`"
+  wants the timestamp "when showing capability and version changes" — so the
+  version-promotion slice should make the call.
+- **Anchor tasks are seeded on one model each.** `item`, `location` and `chat_place`
+  resolve `resolveSurfaceModel("portrait", null)` today, and `chat_look` resolves
+  `resolveSurfaceModel("scene", null)`; those four profiles are therefore seeded only
+  on the model each lane resolves right now — Qwen Image 2512 and Qwen Image Edit
+  2511 respectively — and are their tasks' global defaults. Seeding them across every
+  capable model would have made rows eligible for work no picker has ever offered
+  them.
+
 ## Observability and reproducibility
 
 Every completed or failed provider attempt records, in image metadata or a

@@ -21,6 +21,37 @@ reasonable proxy for reliability.
 - **Aspect handling:** `aspect_ratio` enum includes `3:4`. Send `"3:4"`.
 - **Output:** array of URIs.
 
+## Reviewed capability
+
+Reviewed by hand, never probed, and never overwritten by a re-probe:
+
+- **Edit kind:** `multi_reference_compose` — it composes from a reference list
+  rather than repainting one source at a strength.
+- **Identity preservation:** `moderate`. Composition is the right mechanism for
+  keeping a person, but unlike [Seedream 5 Lite](seedream-5-lite.md) this model has
+  no live trial holding a face across a scene change. `moderate` passes the
+  identity-critical screen, so its variant and scene profiles stay eligible.
+- **Operator warning:** none.
+
+## Seeded profiles
+
+Three, none of them a default — this model is an alternative, not a Vesper default
+— all with empty control defaults and no timeout override:
+
+- `portrait-standard` (Portrait Standard) — task `portrait`, `generate`,
+  `text_to_image_description`, no references.
+- `variant-standard` (Variant Standard) — task `variant`, `edit`,
+  `instruction_edit`, `identity` required and `style` allowed.
+- `scene-standard` (Scene Standard) — task `scene`, `edit`, `instruction_edit`,
+  identity → location → style → object with nothing required.
+
+The scene profile deliberately carries `instruction_edit` rather than
+`multi_reference_compose` even though this model composes: the scene lane still
+picks multi-vs-single reference mode at render time, and changing the strategy here
+would have changed a payload. Slice 2 threads the strategy through. **Nothing calls
+the profile layer yet** — the ensemble, 4K location and coherent-set profiles the
+plan describes are later work.
+
 ## No output format control
 
 This model declares **no `output_format` input**. Whatever it returns is what

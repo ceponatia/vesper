@@ -1,4 +1,4 @@
-import type { ImageModel } from "../../../src/contracts";
+import { emptyImageModelAdvancedCapabilities, type ImageModel } from "../../../src/contracts";
 import { runRegistryImageModel, type ReplicateImageResult } from "../../../src/server/ai";
 
 /**
@@ -23,6 +23,11 @@ const BASE = {
   supportedAspects: ["1:1", "16:9", "9:16", "4:3", "3:4"],
   outputFormat: "webp",
   extraInput: { output_quality: 95, go_fast: true, disable_safety_checker: true },
+  // The eval scripts never read the reviewed capability fields — they call the
+  // provider directly — but the record shape requires them.
+  probedVersionId: null,
+  operatorWarning: null,
+  advancedCapabilities: emptyImageModelAdvancedCapabilities(),
   forPortrait: true,
   forVariant: true,
   forScene: true,
@@ -40,6 +45,8 @@ export function evalEditModel(): ImageModel {
     referenceField: "image",
     referenceArity: "array",
     maxReferences: 3,
+    editKind: "instruction_edit",
+    identityPreservation: "strong",
   };
 }
 
@@ -52,6 +59,8 @@ export function evalGenerateModel(): ImageModel {
     referenceField: "image",
     referenceArity: "single",
     maxReferences: 1,
+    editKind: "img2img",
+    identityPreservation: "weak",
   };
 }
 
