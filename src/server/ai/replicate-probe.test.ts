@@ -151,6 +151,34 @@ describe("probeReplicateModel", () => {
     expect(result.probe.extraInput).toEqual({});
   });
 
+  it("registers a model whose description is null", async () => {
+    // Replicate sends `"description": null` for a model with no blurb. Rejecting
+    // the record over it refused two otherwise-fine models
+    // (`nsfw-api/pony-realism-v2.3`, `nsfw-api/realvis-hyper-lora`).
+    stubFetch(() => ({
+      name: "realvis-hyper-lora",
+      owner: "nsfw-api",
+      description: null,
+      latest_version: {
+        id: "v1",
+        openapi_schema: openapi({
+          properties: {
+            prompt: { type: "string" },
+            reference_image: { type: "string", format: "uri", description: null },
+          },
+          required: ["prompt", "reference_image"],
+        }),
+      },
+    }));
+
+    const result = await probeReplicateModel("nsfw-api/realvis-hyper-lora");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The reference field is found by the fallback branch, not the priority list.
+    expect(result.probe.referenceField).toBe("reference_image");
+    expect(result.probe.canGenerate).toBe(false);
+  });
+
   it("switches off a watermark the model would otherwise apply", async () => {
     // Juggernaut XL v9 defaults `apply_watermark` to true, which would mark
     // every image Vesper renders on it.
