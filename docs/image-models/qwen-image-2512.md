@@ -48,19 +48,21 @@ calls the profile layer yet.
 
 ## Quality policy before profiles are wired
 
-The provider exposes `negative_prompt` with an effectively empty default. The
-shared render seam adds Vesper's style-neutral anatomy/production negative:
+The provider exposes `negative_prompt` with an effectively empty default. Without
+task or morphology context, the shared render seam adds only production-defect
+steering:
 
 ```text
-extra limbs, extra arms, extra legs, malformed limbs, disconnected limbs,
-extra fingers, missing fingers, fused fingers, mutated hands, poorly drawn
-hands, bad anatomy, disfigured, text, watermark, signature, logo, blurry,
-low resolution
+text, watermark, signature, logo, blurry, low resolution
 ```
 
-The block intentionally does not forbid illustration/cartoon media, multiple
-people, or close framing. Those terms need task and style context and belong in
-profiles once they reach the render path.
+The static block intentionally has no anatomy terms. Vesper may author missing
+digits, prosthetics, or non-human appendage counts that generic terms such as
+`missing fingers` or `extra limbs` would erase. Anatomy steering waits for a
+profile that can compare the negative block with intended morphology.
+
+The block also does not forbid illustration/cartoon media, multiple people, or
+close framing.
 
 `go_fast` remains `true` for new text-to-image generation. Qwen Edit, not this
 model, receives the identity-quality fast-mode override.
@@ -69,8 +71,8 @@ model, receives the identity-quality fast-mode override.
 
 When `image` is supplied the output follows the reference image's aspect. An
 `aspect_ratio` sent alongside the reference may therefore be advisory. Stored
-Vesper references are normally already normalized, but a future remix workflow
-must validate the source shape.
+Vesper references are normally normalized, but a future remix workflow must
+validate the source shape.
 
 `strength` defaults to `0.8`; the provider describes `1.0` as full destruction of
 source information. The default substantially repaints the reference.
@@ -102,7 +104,7 @@ takes the first result.
 ```json
 {
   "prompt": "<built prompt>",
-  "negative_prompt": "extra limbs, extra arms, extra legs, malformed limbs, disconnected limbs, extra fingers, missing fingers, fused fingers, mutated hands, poorly drawn hands, bad anatomy, disfigured, text, watermark, signature, logo, blurry, low resolution",
+  "negative_prompt": "text, watermark, signature, logo, blurry, low resolution",
   "aspect_ratio": "3:4",
   "output_format": "webp",
   "output_quality": 95,
