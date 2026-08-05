@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import { imageModelSchema, type ImageModel } from "@/contracts";
 import {
   baseImageModelSlug,
-  COMMUNITY_ANATOMY_NEGATIVE,
-  JUGGERNAUT_MINIMAL_NEGATIVE,
   preparePromptForImageModel,
   QWEN_MULTI_REFERENCE_IDENTITY_LOCK,
   QWEN_SINGLE_REFERENCE_IDENTITY_LOCK,
@@ -60,31 +58,29 @@ describe("withReviewedImageQuality", () => {
       scheduler: "KarrasDPM",
       width: 832,
       height: 1216,
-      negative_prompt: JUGGERNAUT_MINIMAL_NEGATIVE,
+      negative_prompt: STATIC_PRODUCTION_NEGATIVE,
       apply_watermark: false,
     });
   });
 
-  it("uses only production steering where morphology is unknown", () => {
-    for (const slug of ["qwen/qwen-image-2512", "stability-ai/stable-diffusion-3.5-large"]) {
+  it("uses only production steering while morphology is unknown", () => {
+    for (const slug of [
+      "qwen/qwen-image-2512",
+      "stability-ai/stable-diffusion-3.5-large",
+      "lucataco/juggernaut-xl-v9:version",
+      "nsfw-api/realvis-hyper-lora:version",
+    ]) {
       expect(withReviewedImageQuality(model(slug)).extraInput.negative_prompt).toBe(STATIC_PRODUCTION_NEGATIVE);
     }
     expect(STATIC_PRODUCTION_NEGATIVE).not.toMatch(
-      /cartoon|anime|painting|illustration|multiple people|missing fingers|extra limbs|extra arms|extra legs|disfigured|mutated/i,
+      /cartoon|anime|painting|illustration|multiple people|finger|limb|arm|leg|anatomy|disfigured|mutated/i,
     );
   });
 
-  it("uses compact anatomy steering only on reviewed community portrait pipelines", () => {
-    expect(withReviewedImageQuality(model("nsfw-api/realvis-hyper-lora:version")).extraInput.negative_prompt).toBe(
-      COMMUNITY_ANATOMY_NEGATIVE,
-    );
-    expect(COMMUNITY_ANATOMY_NEGATIVE).not.toMatch(/missing fingers|extra limbs|extra arms|extra legs|disfigured|mutated/i);
-  });
-
-  it("adds Pony's low-score negatives without changing the compact anatomy bank", () => {
+  it("adds Pony's low-score negatives without introducing anatomy terms", () => {
     const negative = withReviewedImageQuality(model("nsfw-api/pony-realism-v2.3:version")).extraInput
       .negative_prompt;
-    expect(negative).toBe(`${COMMUNITY_ANATOMY_NEGATIVE}, score_1, score_2, score_3`);
+    expect(negative).toBe(`${STATIC_PRODUCTION_NEGATIVE}, score_1, score_2, score_3`);
   });
 });
 
