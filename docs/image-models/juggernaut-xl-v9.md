@@ -41,7 +41,8 @@ starting point is:
 - `height: 1216`;
 - `num_inference_steps: 35`;
 - `guidance_scale: 5`;
-- `scheduler: "KarrasDPM"`.
+- `scheduler: "KarrasDPM"`;
+- `negative_prompt: ""`.
 
 These values are applied by `src/server/images/quality-presets.ts` at the shared
 render seam. They overlay the probed row because provider defaults describe what
@@ -67,22 +68,21 @@ endpoint's native portrait size.
 
 ## Negative prompt policy
 
-Juggernaut's creator recommends starting with little or no negative prompt; large
-negative walls can reduce quality. More importantly, the shared render seam does
-not know the character's intended morphology.
-
-Current static negative:
+The wrapper's default negative is:
 
 ```text
-text, watermark, signature, logo, blurry, low resolution
+CGI, Unreal, Airbrushed, Digital
 ```
 
-No anatomy term is sent yet. Generic terms such as `missing fingers` or `extra
-limbs` can contradict an authored missing digit, prosthetic, or non-human
-appendage count. The first immediate anatomy improvement comes from replacing the
-5-step square fast preset with a full-step portrait render. A later
-morphology-aware profile trial can add anatomy steering safely and compare it
-against this production-only baseline.
+That hidden default makes assumptions about rendering media and conflicts with
+the creator's recommendation to begin with little or no negative prompt. Vesper
+therefore sends an explicit empty string. `buildRegistryModelInput` preserves the
+empty value, so the provider cannot silently restore its default.
+
+No anatomy or production terms are added at this context-free seam. Printed
+clothing, graphic marks, unusual morphology, or authored absences can all make a
+generic block wrong. A later portrait profile may add conflict-checked terms and
+compare them against the empty baseline.
 
 ## The watermark default
 
@@ -118,7 +118,7 @@ The prompt varies by lane; the effective control portion is:
   "num_inference_steps": 35,
   "guidance_scale": 5,
   "scheduler": "KarrasDPM",
-  "negative_prompt": "text, watermark, signature, logo, blurry, low resolution",
+  "negative_prompt": "",
   "apply_watermark": false,
   "disable_safety_checker": true
 }
