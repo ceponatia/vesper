@@ -1,11 +1,24 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, items } from "../db";
-import { isDemoMode, unwrapVeniceImage, veniceGenerateImage, veniceT2IModelId } from "../ai";
+import {
+  isDemoMode,
+  replicateGenerateImage,
+  replicateImageModelId,
+  unwrapReplicateImage,
+  unwrapVeniceImage,
+  veniceGenerateImage,
+  veniceT2IModelId,
+} from "../ai";
 import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
 import { parseOr } from "@/lib/parse";
-import { DEFAULT_AVATAR_IMAGE_MODEL, outfitItems, type AvatarImageModel } from "@/contracts";
+import {
+  DEFAULT_AVATAR_IMAGE_MODEL,
+  isReplicateAvatarImageModel,
+  outfitItems,
+  type AvatarImageModel,
+} from "@/contracts";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { resolveGarmentVisibility } from "@/contracts/items/visibility";
@@ -26,22 +39,21 @@ export interface GenerateAvatarInput {
   characterId: string;
   userId: string;
   style?: AvatarStyle;
-  /** Venice text-to-image model key (scene-images.spec.md §5); defaults to Qwen. */
+  /** Provider-backed text-to-image model key from the portrait studio. */
   model?: AvatarImageModel;
   sink?: DiagnosticSink;
 }
 
-/** Stored on the image row's meta for auditability (mirrors the variant label). */
+/** Stored on the image row for provider/model auditability. */
 function avatarModelLabel(model: AvatarImageModel): string {
-  return `venice/${veniceT2IModelId(model)}`;
+  return isReplicateAvatarImageModel(model)
+    ? `replicate/${replicateImageModelId()}`
+    : `venice/${veniceT2IModelId(model)}`;
 }
 
 /**
- * Avatar pipeline (docs/images.md): registry prompt → Venice/Qwen uncensored
- * text-to-image (3:4), monogram in demo mode, run through the shared
- * reserve → generate → save-or-fail → log shell (`runImagePipeline`).
- * Generation failure marks the row failed and returns its id — callers poll the
- * row, never catch.
+ * Avatar pipeline: registry prompt → selected provider text-to-image (3:4), or
+ * monogram in demo mode, through the shared reserve/save/fail lifecycle.
  */
 export async function generateAvatar(input: GenerateAvatarInput): Promise<string> {
   const style = input.style ?? "realistic";
@@ -55,11 +67,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
     input.sink,
     "characters.profile",
   );
-  // The avatar wears the DEFAULT preset (outfits[0] — ux-improvements slice 8).
   const wardrobe = character ? await loadDefaultWardrobe(input.userId, outfitItems(profile), input.sink) : [];
-  // The portrait studio never renders intimate anatomy: buildAvatarPrompt drops
-  // intimate categories unconditionally (plus all below-waist attributes via the
-  // waist-up framing cut) — intimate detail is scene-render-only.
   const prompt = character ? buildAvatarPrompt(character.name, profile, style, wardrobe) : "";
 
   const { imageId } = await runImagePipeline({
@@ -71,10 +79,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
       prompt,
       meta: { style, model: demo ? "demo" : avatarModelLabel(model), demo },
     },
-    // The row is on record even for a character that vanished between the lookup
-    // and now — failed, with no event and no diagnostic (nothing was attempted).
     failedPrecondition: character ? null : `character ${input.characterId} not found`,
-    // Only reached when the character loaded, so the name fallback never fires.
     produce: async () => ({
       ok: true,
       image: demo ? monogramSvg(character?.name ?? "") : await generateAvatarBuffer(prompt, model),
@@ -112,21 +117,11 @@ const outfitExtrasSchema = z.object({
   opacity: z.enum(["opaque", "sheer"]).catch("opaque"),
   sensory: z.object({ appearance: z.string().optional() }).optional().catch(undefined),
   subtype: z.string().optional().catch(undefined),
-  /** Never prompt-bearing — carried for the garment store's part template (slice 2). */
   category: z.string().optional().catch(undefined),
-  /** Never prompt-bearing — a material-inference input for the garment store. */
   tags: z.array(z.string()).catch([]),
 });
 
-/**
- * The character's default outfit as RAW wardrobe items (library items in
- * profile order, carrying coverage/layer/opacity). buildAvatarPrompt does the
- * occlusion + waist-up filtering and derives region exposure from this same
- * coverage, so all the avatar's clothing logic lives in one place rather than
- * being split across loader and prompt builder. A failed lookup degrades to no
- * wardrobe with a warn diagnostic (`images.avatar.outfit_load_failed`); the
- * avatar still generates. Exported for the degradation test.
- */
+/** Load the character's default outfit as raw coverage-bearing wardrobe items. */
 export async function loadDefaultWardrobe(
   ownerId: string,
   itemIds: readonly string[],
@@ -139,14 +134,11 @@ export async function loadDefaultWardrobe(
       .from(items)
       .where(and(eq(items.ownerId, ownerId), inArray(items.id, [...itemIds])));
     const byId = new Map(rows.map((row) => [row.id, row]));
-    const wardrobe = itemIds.flatMap((id) => {
+    return itemIds.flatMap((id) => {
       const row = byId.get(id);
       if (!row) return [];
       const parsed = outfitExtrasSchema.safeParse(row.definition ?? {});
       const extras = parsed.success ? parsed.data : outfitExtrasSchema.parse({});
-      // The item description lives on the ROW column — the definition jsonb never
-      // carries one (itemExtrasSchema picks it out), so reading it there silently
-      // made every garment phrase name-only (found verifying the chat outfit seed).
       const description = row.description?.trim() ?? "";
       return [
         {
@@ -163,30 +155,23 @@ export async function loadDefaultWardrobe(
         },
       ];
     });
-    return wardrobe;
   } catch (err) {
     sink?.push(
       diag("warn", "images.avatar.outfit_load_failed", "default outfit lookup failed — avatar prompt degrades to attributes only", {
         path: "items",
-        context: { itemIds: [...itemIds], error: err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300) },
+        context: {
+          itemIds: [...itemIds],
+          error: err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300),
+        },
       }),
     );
-    return []; // degraded: attributes-only prompt
+    return [];
   }
 }
 
-/**
- * One readable phrase for a default outfit (pure): occlusion-filtered like every
- * other wardrobe surface — hidden layers omitted, sheer-covered pieces a vague
- * hint — with each visible garment phrased description-primary, subtype-led,
- * sensory appearance in parens (the shared `formatGarment` via
- * `wardrobeOutfitSummary`). Exported for the chat scenario seed and its test.
- */
+/** Render the occlusion-filtered default outfit as one readable prompt phrase. */
 export function wardrobeOutfitText(wardrobe: ReadonlyArray<AvatarWardrobeItem>): string {
   if (wardrobe.length === 0) return "";
-  // Per-GARMENT visibility (slice 3): a presentation-aware wardrobe hands the
-  // resolver one row per covering part, so the phrase rolls the part views back
-  // up by garment id rather than looking one up by position.
   const byGarment = resolveGarmentVisibility(toWornInputs(wardrobe));
   const worn = wardrobe.flatMap((item, index): SceneWornItem[] => {
     const visibility = byGarment.get(wardrobeGarmentKey(item, index));
@@ -205,12 +190,7 @@ export function wardrobeOutfitText(wardrobe: ReadonlyArray<AvatarWardrobeItem>):
   return wardrobeOutfitSummary(worn);
 }
 
-/**
- * The character-form default outfit (item ids) as the readable phrase the chat
- * scenario seeds its Starting Outfit with (owner report 2026-07-11: the seed
- * used to join the raw ids, which the narrator rightly ignored). A failed
- * lookup degrades to "" — composer inference — never ids.
- */
+/** Resolve default outfit item ids to the readable phrase used by chat seeding. */
 export async function defaultOutfitPhrase(
   ownerId: string,
   itemIds: readonly string[],
@@ -221,20 +201,17 @@ export async function defaultOutfitPhrase(
 }
 
 async function generateAvatarBuffer(prompt: string, model: AvatarImageModel): Promise<Buffer> {
-  // Venice uncensored text-to-image (3:4 portrait). A missing key / API error
-  // throws here and the caller marks the row failed with the message.
+  if (isReplicateAvatarImageModel(model)) {
+    const result = await replicateGenerateImage({ prompt, aspectRatio: "3:4" });
+    return unwrapReplicateImage(result, "replicate generate returned no image");
+  }
   const result = await veniceGenerateImage({ prompt, aspectRatio: "3:4", model: veniceT2IModelId(model) });
   return unwrapVeniceImage(result, "venice generate returned no image");
 }
 
-/** Concurrency for batched avatar generation — matches the entity-image batch. */
 const AVATAR_BATCH_SIZE = 5;
 
-/**
- * Generate avatars for many characters in parallel batches of AVATAR_BATCH_SIZE
- * (new-world auto-generation, followups.phase3.md §4). One failure never aborts
- * the batch. Run inside a background job; returns how many completed.
- */
+/** Generate avatars in bounded parallel batches; one failure never aborts the batch. */
 export async function generateAvatarsBatch(
   characterIds: readonly string[],
   userId: string,
