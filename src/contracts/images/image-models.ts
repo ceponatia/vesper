@@ -23,7 +23,7 @@ export type AvatarImageModel = (typeof avatarImageModels)[number];
  * The default text-to-image pick — Venice Chroma (photoreal, owner ruling
  * 2026-07-10). Adding Replicate is opt-in and does not move production defaults.
  */
-export const DEFAULT_AVATAR_IMAGE_MODEL: AvatarImageModel = "chroma";
+export const DEFAULT_AVATAR_IMAGE_MODEL = "chroma" satisfies AvatarImageModel;
 
 /** Display labels for the image-model picker. `*` means Replicate, not Venice. */
 export const avatarImageModelLabels: Record<AvatarImageModel, string> = {
@@ -47,7 +47,7 @@ export function isReplicateAvatarImageModel(model: AvatarImageModel): model is R
 export const chatSceneModels = ["reference", "replicate_reference"] as const;
 export type ChatSceneModel = (typeof chatSceneModels)[number];
 
-export const DEFAULT_CHAT_SCENE_MODEL: ChatSceneModel = "reference";
+export const DEFAULT_CHAT_SCENE_MODEL = "reference" satisfies ChatSceneModel;
 
 /** Picker labels — `*` means the request runs through Replicate, not Venice. */
 export const chatSceneModelLabels: Record<ChatSceneModel, string> = {
