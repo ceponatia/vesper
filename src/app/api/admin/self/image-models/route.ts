@@ -93,6 +93,10 @@ export const POST = withOwnerAdmin(async (_user, req: NextRequest) => {
     supportedAspects: probe.supportedAspects,
     outputFormat: probe.outputFormat,
     extraInput: probe.extraInput,
+    // The version the capability fields above were read from. Stored with them, not
+    // merely returned: a row whose capabilities have no known version cannot later be
+    // diffed against a candidate version, which is the whole basis of safe promotion.
+    probedVersionId: probe.versionId,
     forPortrait: surfaces.includes("portrait"),
     forVariant: surfaces.includes("variant"),
     forScene: surfaces.includes("scene"),

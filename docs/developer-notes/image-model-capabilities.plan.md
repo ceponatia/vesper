@@ -1,6 +1,6 @@
 # Image model capabilities — profiles, shared controls, and richer workflows
 
-Status: proposed (2026-08-05)
+Status: active (started 2026-08-05)
 
 Technical companion: [image-model-capabilities.spec.md](image-model-capabilities.spec.md)
 

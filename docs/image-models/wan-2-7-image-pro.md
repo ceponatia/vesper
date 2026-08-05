@@ -27,10 +27,9 @@ This is not a missing input — the payload matches the schema exactly. Reproduc
 against the live model on 2026-08-05 with one reference, holding everything else
 constant:
 
-| reference form | result |
-| --- | --- |
-| `https://api.replicate.com/v1/files/<id>.webp` | `Invalid image format ''` |
-| `data:image/webp;base64,…` | accepted; reaches the upstream model |
+- `https://api.replicate.com/v1/files/<id>.webp` — fails with
+  `Invalid image format ''`.
+- `data:image/webp;base64,…` — accepted; reaches the upstream model.
 
 Note the upload URL *does* end in `.webp` — the extension is lost somewhere
 between Replicate's file store and the model container, so no amount of naming
@@ -78,6 +77,43 @@ APIs.
   images, jpg/png/bmp/webp"*.
 - **Aspect handling:** `size` with an explicit pixel pair. Send `"1536*2048"`.
 - **Output:** array of URIs.
+
+## Reviewed capability
+
+Reviewed by hand, never probed, and never overwritten by a re-probe:
+
+- **Edit kind:** `multi_reference_compose` — a genuine reference list (up to 9),
+  not strength-based repainting.
+- **Identity preservation:** `unknown`, and deliberately so: moderation refuses
+  ordinary character references before there is an output to judge, so nobody can
+  yet say whether a face survives. `unknown` is permissive, so its variant and scene
+  profiles remain eligible — a rating nobody has written must not disable a model
+  that works today.
+- **Operator warning:** *"Upstream moderation cannot be disabled and has refused
+  ordinary character references."* The first and only use of `operator_warning`;
+  it is destined for the admin model card and the model pickers, and **no surface
+  renders it yet**. It is a caveat, not a failure class — a refused render still
+  surfaces as `content_rejection` and fails the row rather than hopping to another
+  model.
+
+## Seeded profiles
+
+Three, none of them a default, all with empty control defaults and no timeout
+override:
+
+- `portrait-standard` (Portrait Standard) — task `portrait`, `generate`,
+  `text_to_image_description`, no references.
+- `variant-standard` (Variant Standard) — task `variant`, `edit`,
+  `instruction_edit`, `identity` required and `style` allowed.
+- `scene-standard` (Scene Standard) — task `scene`, `edit`, `instruction_edit`,
+  identity → location → style → object with nothing required.
+
+The seeded profiles carry **no** `provider_overrides` and no separate
+generate-versus-edit settings: today both paths share one payload shape, and the
+`reference_transport = 'data_url'` fact stays on the model row where the transport
+layer already reads it. **Nothing calls the profile layer yet** — the split
+thinking-mode generation, 4K, and coherent-image-set profiles the plan describes are
+later work, and no profile will ever claim to bypass moderation.
 
 ## Behaviour that changes when references are present
 

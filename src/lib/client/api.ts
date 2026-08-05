@@ -8,6 +8,8 @@ import {
   imageModelSchema,
   imageModelsForSurface,
   imageReferenceTransports,
+  type ImageEditKind,
+  type ImageIdentityPreservation,
   type ImageModel,
   type ImageModelSurface,
   type ImageReferenceTransport,
@@ -781,6 +783,11 @@ export const adminImageModelsApi = {
       label?: string;
       maxReferences?: number;
       referenceTransport?: ImageReferenceTransport;
+      /** Reviewed judgments a re-probe never overwrites (see the PATCH route). */
+      editKind?: ImageEditKind;
+      identityPreservation?: ImageIdentityPreservation;
+      /** `null` clears the caveat; omit the key to leave it as it is. */
+      operatorWarning?: string | null;
       forPortrait?: boolean;
       forVariant?: boolean;
       forScene?: boolean;

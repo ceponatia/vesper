@@ -34,6 +34,116 @@ a form error. The one thing the probe cannot derive is `maxReferences` — no mo
 declares `maxItems` on its array input, the caps are stated in prose — so it is
 stored per row and editable on the settings page.
 
+**Two kinds of capability live on a row, and only one of them is probed.**
+Everything above is read from the schema. The facts that decide whether a model
+*should* do a job cannot be: `canEdit` is true for anything with an image input,
+which lumps `qwen/qwen-image-edit-2511` (follows an instruction and keeps the
+face) in with `stability-ai/stable-diffusion-3.5-large` (strength repainting that
+hands back a plausible stranger). Three **reviewed** columns carry that human
+judgment — `editKind` (`none` · `instruction_edit` · `multi_reference_compose` ·
+`img2img` · `unknown`), `identityPreservation` (`strong` · `moderate` · `weak` ·
+`unknown`), and `operatorWarning` (free text bound for the admin card and the
+pickers, though no surface renders it yet; Wan 2.7's un-disableable moderation is
+the first and only value) — and **a re-probe
+must never overwrite them**, because no schema can tell you whether a face
+survived. `unknown` is the column default and is deliberately **permissive**: an
+operator-added experimental row keeps behaving exactly as it does today instead
+of being locked out by a rating nobody has written. Per-model ratings are written
+up in [image-models/](image-models/README.md); the row is the runtime truth. Two
+further columns are probe-owned and **nothing writes them yet**:
+`probedVersionId` (the exact version the stored bindings were read from — for a
+pinned `owner/name:version` slug it must equal the pin) and
+`advancedCapabilities` (optional control bindings — seed, guidance, steps, edit
+strength, output count, thinking mode, LoRA … — plus extra image inputs, output
+arity, and the `knownInputFields` allowlist a profile's raw overrides are
+validated against). `advancedCapabilities` is `{}` on every row, and empty means
+"send no optional control", which is exactly what every lane does today.
+`updated_at` is a **column with no contract field**: the record crosses to the
+client as JSON, so adding a timestamp forces a date-serialization decision no
+consumer needs until the admin version card shows "capabilities changed at".
+
+**Beneath a model sit task profiles — "how to use this model for one job."**
+`image_model_profiles` (contract `contracts/images/image-model-profiles.ts`) is
+the extension point one permanent `extraInput` bag could never be: the same
+Seedream row is an everyday 2K scene model in one place and a slow 4K location
+model in another. A profile carries `task` (`portrait` · `variant` · `scene` ·
+`item` · `location` · `chat_look` · `chat_place` · `text_repair` ·
+`example_transform` · `image_set`), `operation` (`generate`/`edit`),
+`promptStrategy` (an enum resolved through a code registry — never prompt logic
+stored in the database), a `referencePolicy` (allowed roles, required roles, role
+order, optional per-role caps, drawn from the `identity`/`location`/`style`/
+`object`/… role vocabulary), `controlDefaults` (the normalized control names plus
+a seed **policy** — `random`/`reuse_source`/`caller`, because a stored numeric
+seed is a pin, not a default), `providerOverrides`, `timeoutMs` (null, or
+30s–15min), `enabled`/`isDefault`/`builtin`, and `sort`. `(imageModelId, key)` is
+unique, at most **one enabled default per task globally** (a partial unique
+index), and profiles cascade-delete with their model. A profile may *narrow* a
+model; it can never claim a capability the model does not expose.
+
+**The profile layer is dormant.** Slice 1 of
+[developer-notes/image-model-capabilities.plan.md](developer-notes/image-model-capabilities.plan.md)
+added the table, the reviewed columns, the pure resolver, and 17 built-in
+profiles each equivalent to what its lane resolves today — but **no lane calls
+it**: every render still resolves through `resolveSurfaceModel` and the stored
+model-id picks described below, and no rendered image changed. The seeded set, by
+model:
+
+- `qwen/qwen-image-2512` — `portrait-standard`, `item-standard`,
+  `location-standard`, `chat-place-standard`; all `generate` /
+  `text_to_image_description`, and **each is its task's global default**.
+- `qwen/qwen-image-edit-2511` — `variant-standard`, `scene-standard`,
+  `chat-look-standard`; all `edit` / `instruction_edit`, and **each is its task's
+  global default**.
+- `bytedance/seedream-4.5`, `bytedance/seedream-5-lite`, and
+  `wan-video/wan-2.7-image-pro` — `portrait-standard`, `variant-standard`,
+  `scene-standard`. Alternatives; no defaults.
+- `stability-ai/stable-diffusion-3.5-large` — `portrait-standard` only, matching
+  the row's portrait-only toggles.
+
+The four anchor tasks with no picker of their own (`item`, `location` and
+`chat_place` borrow the portrait surface's default today; `chat_look` borrows the
+scene surface's) are seeded **only on the model that lane resolves today**, so
+nothing new became eligible. The seeded policies are likewise today's behavior:
+generate tasks allow no references at all; `variant` and `chat_look` require
+`identity` and allow `style`; `scene` orders identity → location → style → object
+and **requires nothing**, because the scene ladder's bare-prompt rung legitimately
+runs with zero references. `scene` profiles carry the `instruction_edit` strategy
+even on the multi-reference models — the lane still decides multi-vs-single at
+render time, and changing that here would have changed a payload.
+
+**Profile resolution is a five-step degrade** (`resolveImageProfile`), because the
+stored value may be a profile id, a model id, a model slug, or a dead value from
+before any of this existed: (1) a profile id among the offered candidates; (2) a
+model id or slug → that model's **own** default profile, else its first offered
+profile in sort order; (3) the task's global default profile; (4) the first
+offered profile in sort order; (5) null, which a caller reports as
+`image_profile.none_offered` once one exists. Step 2's second half is
+load-bearing: `isDefault` is
+globally unique per task, so most models carry none, and without that fallback a
+stored Seedream scene pick would silently jump to Qwen Edit — a render change.
+"Offered" is one shared candidate set (`imageProfileCandidates`, which pickers
+read too, so a picker can never show an option resolution would refuse): right
+task, `enabled`, model present and parsed, the task's **legacy surface toggle**
+still on where the task has one (`forPortrait`/`forVariant`/`forScene` gate
+`portrait`/`variant`/`scene`; the anchor and new tasks never had a toggle and use
+enabled profiles directly), and the profile eligible for its model. Every step
+reads that same list, so an ineligible or disabled stored pick degrades instead of
+failing. A malformed profile payload degrades to `[]` rather than throwing
+(`imageModelProfileListSchema`, docs/resilience.md §1); the server loader that
+parses rows one at a time — skipping a bad row with `image_profile.row_invalid` —
+arrives with the first caller.
+
+**Eligibility composes the mechanical and the reviewed** (`profileEligibility` →
+`operation_unsupported` | `edit_kind_none` | `identity_too_weak` |
+`img2img_identity_task`): a `generate` profile needs `canGenerate`; an `edit`
+profile needs `canEdit` **and** an `editKind` other than `none`; and the
+identity-critical tasks — `variant`, `scene`, `chat_look` — additionally refuse
+`identityPreservation: "weak"` and `editKind: "img2img"`, because `canEdit` alone
+was never evidence that a face survives. `portrait` is deliberately not
+identity-critical: it *creates* the reference every other task preserves. An
+img2img model stays usable through a deliberate remix profile on a non-identity
+task, and `unknown` passes every semantic check.
+
 **Shape is negotiated per render, not fixed per model.** A lane asks for a ratio
 (3:4 everywhere except items at 1:1 and locations at 3:2); `chooseAspect` picks
 the closest entry in `supportedAspects`, preferring the largest exact match; and

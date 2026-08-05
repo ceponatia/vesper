@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ImageModel } from "@/contracts";
+import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@/contracts";
 import {
   buildRegistryModelInput,
   referenceDataUrl,
@@ -39,6 +39,13 @@ const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
   supportedAspects: ["1:1", "3:4"],
   outputFormat: "webp",
   extraInput: {},
+  // Reviewed capabilities play no part in payload construction; these are the
+  // ratings this slug carries so the fixture stays honest.
+  probedVersionId: null,
+  editKind: "img2img",
+  identityPreservation: "weak",
+  operatorWarning: null,
+  advancedCapabilities: emptyImageModelAdvancedCapabilities(),
   forPortrait: true,
   forVariant: false,
   forScene: false,

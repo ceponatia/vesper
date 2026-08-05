@@ -32,6 +32,11 @@ import type { HouseholdStockAccessPolicy, RestockFunding } from "@/contracts/sim
 import type { RelationshipLedgerPayload } from "@/contracts/simulation/social";
 import {
   imageAspectModes,
+  imageEditKinds,
+  imageIdentityPreservationRatings,
+  imageProfileOperations,
+  imageProfileTasks,
+  imagePromptStrategies,
   imageReferenceArities,
   imageReferenceTransports,
   sceneReferenceSources,
@@ -1414,14 +1419,134 @@ export const imageModels = pgTable(
     outputFormat: text("output_format"),
     /** Per-model payload constants (e.g. `max_images: 1`). */
     extraInput: jsonb("extra_input").notNull().default({}),
+    /**
+     * The Replicate version whose schema produced the mechanical columns above.
+     * Null on every row seeded or probed before this column existed. Exists so the
+     * admin card can say a pinned `owner/name:version` slug no longer matches the
+     * version the stored bindings were read from — the way a control silently
+     * starts being sent to a field that moved between versions.
+     */
+    probedVersionId: text("probed_version_id"),
+    /**
+     * REVIEWED, never probed: what this model's "editing" actually does.
+     * `canEdit` is true for anything with an image input, which lumps
+     * `qwen/qwen-image-edit-2511` (follows an instruction, keeps the face) in with
+     * `stability-ai/stable-diffusion-3.5-large` (strength repainting that can hand
+     * back a different person). A re-probe must never overwrite these two ratings —
+     * a schema cannot tell you whether a face survived.
+     */
+    editKind: text("edit_kind", { enum: imageEditKinds }).notNull().default("unknown"),
+    /** REVIEWED: how well a face survives a render. Gates identity-critical tasks. */
+    identityPreservation: text("identity_preservation", { enum: imageIdentityPreservationRatings })
+      .notNull()
+      .default("unknown"),
+    /**
+     * Operator-facing caveat shown on the admin card and in pickers, not a failure
+     * class. Wan 2.7 is what forced it: its upstream moderation cannot be disabled
+     * and has refused ordinary character references, which an operator needs told
+     * before choosing the model rather than after a rejected render.
+     */
+    operatorWarning: text("operator_warning"),
+    /**
+     * `ImageModelAdvancedCapabilities` (contracts/images/image-model-capabilities.ts):
+     * probed optional control bindings, extra image inputs, output arity, and the
+     * known-input-field allowlist for a profile's `providerOverrides`.
+     *
+     * `{}` on every row today — the probe does not derive control aliases yet — and
+     * the contract parses `{}` into an inert set where no optional control is sent,
+     * which is exactly what every lane does now.
+     */
+    advancedCapabilities: jsonb("advanced_capabilities").notNull().default({}),
     forPortrait: boolean("for_portrait").notNull().default(false),
     forVariant: boolean("for_variant").notNull().default(false),
     forScene: boolean("for_scene").notNull().default(false),
     builtin: boolean("builtin").notNull().default(false),
     sort: integer("sort").notNull().default(0),
     createdAt: createdAt(),
+    /**
+     * Column only — deliberately absent from `imageModelSchema`. The record crosses
+     * to the client as JSON, so carrying a timestamp forces a date-serialization
+     * decision (Date vs ISO string vs epoch) that no consumer needs until the admin
+     * version card has to show when a model was last probed.
+     */
+    updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("image_models_slug_idx").on(t.slug)],
+);
+
+/**
+ * Per-task profiles beneath a model row (image-model-capabilities.spec.md
+ * §`image_model_profiles`). A model row says what Replicate will ACCEPT; a profile
+ * says how Vesper should USE it for one job. The same Seedream row is an everyday
+ * 2K scene model on one surface and a slow 4K location model on another, and one
+ * permanent `extraInput` bag on the parent cannot express that difference — which
+ * is the entire reason this table exists rather than more columns up there.
+ *
+ * A profile may NARROW its model (fewer reference roles, a tighter timeout, fixed
+ * controls) but never claim a capability the model lacks. That is enforced in code
+ * at resolution time (`profileEligibility`), not by a constraint here, so a
+ * reviewed rating downgrade on the parent takes its profiles out of service
+ * without a migration.
+ *
+ * Seeded with 17 rows by migration 0100, each describing what its lane already
+ * does; like model rows they are ordinary rows (`builtin` marks them for display,
+ * it does not gate deletion). The enum columns reuse the contract vocabularies so
+ * column and parser cannot drift.
+ */
+export const imageModelProfiles = pgTable(
+  "image_model_profiles",
+  {
+    id: id(),
+    imageModelId: text("image_model_id")
+      .notNull()
+      .references(() => imageModels.id, { onDelete: "cascade" }),
+    /** Stable machine key, unique within the model (`scene-standard`). Not displayed. */
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    task: text("task", { enum: imageProfileTasks }).notNull(),
+    /** Whether the run starts from text or from an existing image. Checked against
+     * the parent's `canGenerate`/`canEdit`. */
+    operation: text("operation", { enum: imageProfileOperations }).notNull(),
+    /** An enum resolved through a code registry, never free text: a profile row must
+     * not be able to introduce prompt logic no test has seen. */
+    promptStrategy: text("prompt_strategy", { enum: imagePromptStrategies }).notNull(),
+    /** `ImageReferencePolicy` — allowed/required roles and the priority order
+     * capacity trimming works down. `{}` parses to the inert empty policy. */
+    referencePolicy: jsonb("reference_policy").notNull().default({}),
+    /** `ImageControlDefaults` — the normalized controls minus `seed` (a stored seed
+     * is a pin, not a default), plus a seed policy. */
+    controlDefaults: jsonb("control_defaults").notNull().default({}),
+    /** Raw provider keys merged last, validated against the model's probed
+     * `knownInputFields`. An escape hatch, not a second configuration system. */
+    providerOverrides: jsonb("provider_overrides").notNull().default({}),
+    /** Null means "use the env/default prediction budget", which all 17 seeded rows
+     * do. A 4K set profile is the case that will want its own. */
+    timeoutMs: integer("timeout_ms"),
+    enabled: boolean("enabled").notNull().default(true),
+    isDefault: boolean("is_default").notNull().default(false),
+    builtin: boolean("builtin").notNull().default(false),
+    sort: integer("sort").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // The composite unique's LEADING column doubles as the per-model lookup index,
+    // so no separate `image_model_profiles_model_idx` is needed (the house ruling
+    // recorded on `personas`).
+    uniqueIndex("image_model_profiles_model_key_unique").on(t.imageModelId, t.key),
+    // At most one GLOBAL default per task. A partial unique index is that guarantee
+    // at the storage layer — the same device as `sim_time_jobs_one_active_per_branch`,
+    // and bare column names inside sql`` for the same reason: the predicate is
+    // written into the index definition, where a bound parameter cannot go.
+    uniqueIndex("image_model_profiles_default_per_task").on(t.task).where(sql`is_default and enabled`),
+    // 30s–15min, mirroring the contract's bounds. A profile timeout below the
+    // shortest real render is a guaranteed failure, and one above the platform's
+    // own ceiling is a lie the operator would only discover from a stuck job.
+    check(
+      "image_model_profiles_timeout_bounds",
+      sql`${t.timeoutMs} is null or (${t.timeoutMs} >= 30000 AND ${t.timeoutMs} <= 900000)`,
+    ),
+  ],
 );
 
 export const jobs = pgTable(

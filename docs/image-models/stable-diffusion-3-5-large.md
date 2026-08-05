@@ -46,6 +46,35 @@ reference is supplied.
 - **Aspect handling:** crop. Send `aspect_ratio: "4:5"`, centre-crop to 3:4.
 - **Output:** a single URI **string**. WebP available.
 
+## Reviewed capability
+
+Reviewed by hand, never probed, and never overwritten by a re-probe:
+
+- **Edit kind:** `img2img`. `image` + `prompt_strength` is strength-based
+  repainting, as described above.
+- **Identity preservation:** `weak` — the "painted a different-looking person"
+  failure mode behind the 2026-07-29 owner ruling.
+- **Operator warning:** none.
+
+Because the row is portrait-only, the `weak` rating costs nothing today. What the
+ratings add is a written rule where there was only an observation: a `weak`/`img2img`
+model is refused for the identity-critical tasks (`variant`, `scene`, `chat_look`),
+so a scene or variant profile cannot be added to this row without changing the
+ratings first. Until the profile layer has a caller, the `for_scene`/`for_variant`
+toggles are still what actually keeps it out of the scene generator and New Variant.
+
+## Seeded profiles
+
+One:
+
+- `portrait-standard` (Portrait Standard) — task `portrait`, `generate`,
+  `text_to_image_description`, no references, empty control defaults, no timeout
+  override. **Not** a global default (Qwen Image 2512 holds that).
+
+No scene, variant or chat-look profile is seeded, per the plan. **Nothing calls the
+profile layer yet** — the curated CFG/negative-prompt/seed portrait profiles the
+plan describes are later work.
+
 ## Inputs
 
 - `prompt` — string. **Required.**
