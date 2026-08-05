@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { imageModelSchema, type ImageModel } from "@/contracts";
+import { buildRegistryModelInput } from "../ai/replicate";
 import {
   baseImageModelSlug,
   preparePromptForImageModel,
@@ -72,6 +73,7 @@ describe("withReviewedImageQuality", () => {
       negative_prompt: "",
       apply_watermark: false,
     });
+    expect(buildRegistryModelInput(prepared, "portrait", [], null).negative_prompt).toBe("");
   });
 
   it("pins RealVis dimensions and clears its generic negative boilerplate", () => {
@@ -87,6 +89,7 @@ describe("withReviewedImageQuality", () => {
       height: 1024,
       negative_prompt: "",
     });
+    expect(buildRegistryModelInput(prepared, "portrait", [], null).negative_prompt).toBe("");
   });
 });
 
