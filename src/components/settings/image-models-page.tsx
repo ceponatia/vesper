@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { adminImageModelsApi, meApi, type ImageModel, type ImageModelSurface } from "@/lib/client/api";
+import {
+  adminImageModelsApi,
+  imageReferenceTransports,
+  meApi,
+  type ImageModel,
+  type ImageModelSurface,
+  type ImageReferenceTransport,
+} from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
@@ -9,6 +16,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
@@ -233,6 +241,7 @@ function ModelRow({
             shape: {model.aspectMode} · {model.supportedAspects.length} option
             {model.supportedAspects.length === 1 ? "" : "s"}
             {model.outputFormat ? ` · ${model.outputFormat}` : ""}
+            {model.referenceTransport === "data_url" ? " · inlined references" : ""}
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -282,7 +291,28 @@ function ModelRow({
             {surface.label}
           </label>
         ))}
-        <label className="ml-auto flex items-center gap-2 text-[11px] text-paper-500">
+        <label
+          className="ml-auto flex items-center gap-2 text-[11px] text-paper-500"
+          // Not probeable: only running the model tells you whether its wrapper
+          // can resolve an uploaded file URL. Wan 2.7 cannot — it reads the
+          // extension off whatever it is handed and rejects the upload URL.
+          title="How reference images are sent. Upload is right for nearly every model; inline when the model rejects uploaded file URLs."
+        >
+          references sent as
+          <Select
+            value={model.referenceTransport}
+            disabled={busy || !model.canEdit}
+            onChange={(e) => onPatch({ referenceTransport: e.target.value as ImageReferenceTransport })}
+            className="h-7 w-36 text-xs"
+          >
+            {imageReferenceTransports.map((transport) => (
+              <option key={transport} value={transport}>
+                {transport === "file" ? "upload" : "inline data URI"}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="flex items-center gap-2 text-[11px] text-paper-500">
           max references
           <Input
             type="number"

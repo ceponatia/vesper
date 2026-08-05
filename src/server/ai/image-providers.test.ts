@@ -18,6 +18,7 @@ const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
   canEdit: true,
   referenceField: "image",
   referenceArity: "array",
+  referenceTransport: "file",
   maxReferences: 3,
   aspectMode: "aspect_ratio",
   supportedAspects: ["1:1", "3:4", "16:9"],

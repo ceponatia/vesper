@@ -36,6 +36,30 @@ export const imageReferenceArities = ["single", "array"] as const;
 export const imageReferenceAritySchema = z.enum(imageReferenceArities);
 export type ImageReferenceArity = (typeof imageReferenceArities)[number];
 
+/**
+ * How reference bytes REACH the model — the third thing a Replicate schema
+ * cannot tell you (after the field name and its arity).
+ *
+ * `file` uploads to Replicate's files API and sends the resulting URL. That is
+ * the default and what every model in the seeded set wants, because it keeps
+ * the prediction payload small.
+ *
+ * `data_url` inlines the bytes as `data:image/webp;base64,…`. Wan 2.7 needs it:
+ * its wrapper proxies Alibaba's async API and validates the file extension of
+ * whatever it receives, and a Replicate-hosted file URL arrives at the model
+ * container with no extension — `ValueError: Invalid image format ''` (owner
+ * report 2026-08-05, reproduced against the live model). Inlined bytes carry
+ * their type in the URI itself, so the wrapper sees `.webp` and proceeds.
+ *
+ * Stored per row rather than inferred: nothing in the OpenAPI schema
+ * distinguishes a wrapper that resolves URLs itself from one that does not, so
+ * this is a fact learned by running the model and recorded like any other
+ * registry column.
+ */
+export const imageReferenceTransports = ["file", "data_url"] as const;
+export const imageReferenceTransportSchema = z.enum(imageReferenceTransports);
+export type ImageReferenceTransport = (typeof imageReferenceTransports)[number];
+
 /** The surfaces a model can be offered on. */
 export const imageModelSurfaces = ["portrait", "variant", "scene"] as const;
 export const imageModelSurfaceSchema = z.enum(imageModelSurfaces);
@@ -56,6 +80,8 @@ export const imageModelSchema = z.object({
   /** The input key references are written to (`image` / `image_input` / `images`). */
   referenceField: z.string().default("image"),
   referenceArity: imageReferenceAritySchema.default("array"),
+  /** How the bytes travel: an uploaded file URL, or an inlined data URI. */
+  referenceTransport: imageReferenceTransportSchema.default("file"),
   /**
    * How many references the model accepts. NOT derivable: no model in the
    * seeded set declares `maxItems` on its array input — the caps are stated in

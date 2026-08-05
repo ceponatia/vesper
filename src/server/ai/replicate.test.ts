@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImageModel } from "@/contracts";
 import {
   buildRegistryModelInput,
+  referenceDataUrl,
   replicatePredictionTarget,
   runRegistryImageModel,
   unwrapReplicateImage,
+  withinDataUrlBudget,
 } from "./replicate";
 
 const originalToken = process.env.REPLICATE_API_TOKEN;
@@ -31,6 +33,7 @@ const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
   canEdit: true,
   referenceField: "image",
   referenceArity: "single",
+  referenceTransport: "file",
   maxReferences: 1,
   aspectMode: "aspect_ratio",
   supportedAspects: ["1:1", "3:4"],
@@ -135,6 +138,26 @@ describe("buildRegistryModelInput", () => {
       "3:4",
     );
     expect(input).toMatchObject({ size: "2K", max_images: 1, sequential_image_generation: "disabled" });
+  });
+});
+
+describe("inline reference transport", () => {
+  it("stamps the stored webp media type into the URI", () => {
+    expect(referenceDataUrl(Buffer.from("bytes"))).toBe(`data:image/webp;base64,${Buffer.from("bytes").toString("base64")}`);
+  });
+
+  it("keeps the references that fit the byte budget, in order", () => {
+    const small = Buffer.alloc(1_000);
+    const huge = Buffer.alloc(7 * 1024 * 1024);
+    expect(withinDataUrlBudget([small, small])).toHaveLength(2);
+    expect(withinDataUrlBudget([small, huge, small])).toEqual([small]);
+  });
+
+  it("keeps the anchor reference even when it alone exceeds the budget", () => {
+    // Dropping every reference would render a stranger rather than the
+    // character; let the provider be the one to refuse an oversized request.
+    const huge = Buffer.alloc(7 * 1024 * 1024);
+    expect(withinDataUrlBudget([huge])).toEqual([huge]);
   });
 });
 
@@ -257,6 +280,49 @@ describe("runRegistryImageModel", () => {
     expect(result.ok).toBe(true);
     expect(result.image?.toString()).toBe("edited-image");
     expect(calls.filter((call) => call.method === "DELETE")).toHaveLength(2);
+  });
+
+  it("inlines references as data URIs for a data_url model, uploading nothing", async () => {
+    // Wan 2.7 reads the file extension off whatever it is handed and rejects
+    // Replicate's own upload URLs, which reach the model container without one
+    // (`Invalid image format ''`). A data URI carries the type inline.
+    const calls: Array<{ url: string; method: string }> = [];
+    let sent: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        calls.push({ url, method });
+        if (url.includes("/models/wan-video/wan-2.7-image-pro/predictions")) {
+          const body = JSON.parse(String(init?.body)) as { input: { images: string[] } };
+          sent = body.input.images;
+          return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+        }
+        if (url === "https://replicate.delivery/o.webp") return new Response(Buffer.from("wan-image"), { status: 200 });
+        throw new Error(`unexpected fetch: ${method} ${url}`);
+      }),
+    );
+
+    const result = await runRegistryImageModel(
+      model({
+        slug: "wan-video/wan-2.7-image-pro",
+        referenceField: "images",
+        referenceArity: "array",
+        referenceTransport: "data_url",
+        maxReferences: 9,
+      }),
+      { prompt: "a scene", references: [Buffer.from("one"), Buffer.from("two")] },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(sent).toEqual([
+      `data:image/webp;base64,${Buffer.from("one").toString("base64")}`,
+      `data:image/webp;base64,${Buffer.from("two").toString("base64")}`,
+    ]);
+    // No upload means no orphaned file to clean up either.
+    expect(calls.some((call) => call.url.endsWith("/v1/files"))).toBe(false);
+    expect(calls.some((call) => call.method === "DELETE")).toBe(false);
   });
 
   it("uploads only as many references as the model accepts", async () => {

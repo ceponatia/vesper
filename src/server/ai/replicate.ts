@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { fitReferences, type ImageModel } from "@/contracts";
+import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 
 const REPLICATE_BASE = "https://api.replicate.com/v1";
 const DEFAULT_PREDICTION_TIMEOUT_MS = 5 * 60_000;
@@ -86,10 +87,37 @@ export function buildRegistryModelInput(
 }
 
 /**
- * Run one registry model. Reference buffers are uploaded as private,
- * short-lived Replicate files because Vesper's stored images are not publicly
- * addressable and can exceed the data-URL recommendation; the uploads are
- * deleted best-effort as soon as the prediction settles.
+ * Bytes-to-URI conversion for the `data_url` transport. Every stored Vesper
+ * image is webp (`writeWebpAtomic`), so the media type is a constant rather
+ * than something to sniff.
+ */
+export function referenceDataUrl(buffer: Buffer): string {
+  return `data:image/webp;base64,${buffer.toString("base64")}`;
+}
+
+/**
+ * Total raw reference bytes allowed to travel inline. Base64 inflates by ~4/3,
+ * so 6 MB of buffers is an ~8 MB request body — comfortably above the largest
+ * render Vesper makes (3 references of ~200 KB) and far below anything an API
+ * gateway would refuse. References past the budget are dropped rather than
+ * failing the render: fewer references costs fidelity, a rejected request costs
+ * the image (docs/resilience.md §2).
+ */
+const DATA_URL_BUDGET_BYTES = 6 * 1024 * 1024;
+
+/**
+ * Run one registry model.
+ *
+ * Reference bytes travel one of two ways, per the model's stored
+ * `referenceTransport`:
+ *
+ * - `file` (default) uploads them as private, short-lived Replicate files,
+ *   because Vesper's stored images are not publicly addressable and can exceed
+ *   the data-URL recommendation; the uploads are deleted best-effort as soon as
+ *   the prediction settles.
+ * - `data_url` inlines them. Wan 2.7 rejects the uploaded-file URL outright
+ *   (`Invalid image format ''` — see `imageReferenceTransports`), so for that
+ *   model "smaller payload" is not a trade worth having.
  *
  * References are trimmed through `fitReferences` rather than a fixed cap, so a
  * single-reference model stops being handed three and silently ignoring two.
@@ -97,11 +125,28 @@ export function buildRegistryModelInput(
 export async function runRegistryImageModel(
   model: ImageModel,
   request: RegistryModelRequest,
+  sink?: DiagnosticSink,
 ): Promise<ReplicateImageResult> {
   if (!hasReplicate()) return { ok: false, error: "REPLICATE_API_TOKEN not configured" };
   const references = fitReferences(model, request.references ?? []);
   if (references.length === 0 && !model.canGenerate) {
     return { ok: false, error: `${model.slug} requires at least one reference image` };
+  }
+
+  if (model.referenceTransport === "data_url") {
+    const inlined = withinDataUrlBudget(references);
+    if (inlined.length < references.length) {
+      sink?.push(
+        diag("warn", "image_model.references_trimmed", "dropped references that did not fit the inline byte budget", {
+          path: "image_models",
+          context: { slug: model.slug, sent: inlined.length, requested: references.length },
+        }),
+      );
+    }
+    return await runReplicateImageModel(
+      model.slug,
+      buildRegistryModelInput(model, request.prompt, inlined.map(referenceDataUrl), request.aspect),
+    );
   }
 
   const uploads: ReplicateFile[] = [];
@@ -118,6 +163,21 @@ export async function runRegistryImageModel(
   } finally {
     await Promise.allSettled(uploads.map((file) => deleteReplicateFile(file.id)));
   }
+}
+
+/** The leading references that fit {@link DATA_URL_BUDGET_BYTES}; order is preserved. */
+export function withinDataUrlBudget(references: readonly Buffer[]): Buffer[] {
+  const kept: Buffer[] = [];
+  let total = 0;
+  for (const reference of references) {
+    total += reference.byteLength;
+    if (total > DATA_URL_BUDGET_BYTES) break;
+    kept.push(reference);
+  }
+  // The anchor reference is the identity one; sending none would render a
+  // stranger. Keep it even if it alone blows the budget and let the provider
+  // be the one to refuse.
+  return kept.length === 0 && references[0] ? [references[0]] : kept;
 }
 
 export function unwrapReplicateImage(result: ReplicateImageResult, fallback: string): Buffer {
