@@ -294,6 +294,11 @@ function deriveExtraInput(properties: Record<string, unknown>): Record<string, u
   if ("disable_safety_checker" in properties) extra.disable_safety_checker = true;
   if ("output_quality" in properties) extra.output_quality = 95;
   if ("go_fast" in properties) extra.go_fast = true;
+  // Juggernaut XL v9 defaults `apply_watermark` to TRUE, stamping a provenance
+  // mark into every output. Same category as the group-generation pins below: a
+  // model default that silently degrades the image, switched off wherever the
+  // input exists.
+  if ("apply_watermark" in properties) extra.apply_watermark = false;
   // Group/sequential generation defaults differ per model and would return an
   // image SET rather than one image; pin them off wherever they exist.
   if ("max_images" in properties) extra.max_images = 1;
