@@ -64,19 +64,22 @@ these scales.
 
 ## Quality policy before profiles are wired
 
-The provider's `negative_prompt` defaults empty. The shared render seam supplies:
+The provider's `negative_prompt` defaults empty. This reviewed community portrait
+pipeline receives the compact anatomy/production block:
 
 ```text
-extra limbs, extra arms, extra legs, malformed limbs, disconnected limbs,
-extra fingers, missing fingers, fused fingers, mutated hands, poorly drawn
-hands, bad anatomy, disfigured, text, watermark, signature, logo, blurry,
-low resolution, score_1, score_2, score_3
+duplicated limbs, disconnected limbs, malformed hands, extra fingers, fused
+fingers, text, watermark, signature, logo, blurry, low resolution, score_1,
+score_2, score_3
 ```
 
-The anatomy/production portion is style-neutral. The three low-score tags are the
-only Pony-specific static addition. Positive score/source/rating conventions are
-not yet hardcoded; they belong to a tested `pony_tag` profile because they consume
-prompt context and may vary by checkpoint.
+The block avoids generic `missing fingers` and `extra limbs`, which can contradict
+an authored missing digit or non-human appendage count. It still must move to a
+morphology-aware profile before Pony becomes a normal production surface.
+
+The three low-score tags are the only Pony-specific static addition. Positive
+score/source/rating conventions are not hardcoded; they belong to a tested
+`pony_tag` profile because they consume prompt context and may vary by checkpoint.
 
 Steps, guidance, scheduler, identity scales, and ControlNet strengths remain at
 provider defaults until trialed.
@@ -115,7 +118,7 @@ takes the first result in ordinary lanes.
 ```json
 {
   "prompt": "<built prompt>",
-  "negative_prompt": "extra limbs, extra arms, extra legs, malformed limbs, disconnected limbs, extra fingers, missing fingers, fused fingers, mutated hands, poorly drawn hands, bad anatomy, disfigured, text, watermark, signature, logo, blurry, low resolution, score_1, score_2, score_3",
+  "negative_prompt": "duplicated limbs, disconnected limbs, malformed hands, extra fingers, fused fingers, text, watermark, signature, logo, blurry, low resolution, score_1, score_2, score_3",
   "image": "<single identity url>",
   "output_format": "webp",
   "output_quality": 95,
@@ -133,7 +136,7 @@ Pony remains admin/experimental until a single-person identity trial measures:
 
 - face likeness versus Qwen Edit;
 - pose, clothing, body, setting, and lighting drift;
-- anatomy and seam quality;
+- anatomy relative to the character's intended morphology;
 - latency and cost;
 - failure/reliability rate.
 
