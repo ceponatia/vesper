@@ -171,7 +171,7 @@ Multi-reference replacement:
 
 ```text
 Use numbered references as assigned below. Preserve each person's exact face,
-hair, skin tone, build, and age; change only what this instruction requests.
+hair, skin tone, build, and apparent age; change only requested details.
 ```
 
 Both replacements are no longer than the legacy lock. The scene/variant edit
