@@ -146,18 +146,25 @@ describe("inline reference transport", () => {
     expect(referenceDataUrl(Buffer.from("bytes"))).toBe(`data:image/webp;base64,${Buffer.from("bytes").toString("base64")}`);
   });
 
+  // These assert by identity (`toBe`) rather than value: a deep-equality check
+  // over a multi-megabyte buffer walks it byte by byte and blows the 5s budget.
   it("keeps the references that fit the byte budget, in order", () => {
     const small = Buffer.alloc(1_000);
     const huge = Buffer.alloc(7 * 1024 * 1024);
     expect(withinDataUrlBudget([small, small])).toHaveLength(2);
-    expect(withinDataUrlBudget([small, huge, small])).toEqual([small]);
+
+    const trimmed = withinDataUrlBudget([small, huge, small]);
+    expect(trimmed).toHaveLength(1);
+    expect(trimmed[0]).toBe(small);
   });
 
   it("keeps the anchor reference even when it alone exceeds the budget", () => {
     // Dropping every reference would render a stranger rather than the
     // character; let the provider be the one to refuse an oversized request.
     const huge = Buffer.alloc(7 * 1024 * 1024);
-    expect(withinDataUrlBudget([huge])).toEqual([huge]);
+    const kept = withinDataUrlBudget([huge]);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toBe(huge);
   });
 });
 

@@ -16,6 +16,9 @@ import { runRegistryImageModel, type ReplicateImageResult } from "../../../src/s
 const BASE = {
   canGenerate: true,
   canEdit: true,
+  // Both eval models are Qwen, which resolves uploaded file URLs fine; only Wan
+  // needs the inline transport.
+  referenceTransport: "file",
   aspectMode: "aspect_ratio",
   supportedAspects: ["1:1", "16:9", "9:16", "4:3", "3:4"],
   outputFormat: "webp",
