@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { imageModelSchema, type ImageModel } from "@/contracts";
 import {
   baseImageModelSlug,
+  COMMUNITY_ANATOMY_NEGATIVE,
   JUGGERNAUT_MINIMAL_NEGATIVE,
   preparePromptForImageModel,
   QWEN_MULTI_REFERENCE_IDENTITY_LOCK,
   QWEN_SINGLE_REFERENCE_IDENTITY_LOCK,
-  STYLE_NEUTRAL_QUALITY_NEGATIVE,
+  STATIC_PRODUCTION_NEGATIVE,
   withReviewedImageQuality,
 } from "./quality-presets";
 
@@ -64,21 +65,26 @@ describe("withReviewedImageQuality", () => {
     });
   });
 
-  it("uses a style-neutral negative bank on mixed-style models", () => {
-    for (const slug of [
-      "qwen/qwen-image-2512",
-      "stability-ai/stable-diffusion-3.5-large",
-      "nsfw-api/realvis-hyper-lora:version",
-    ]) {
-      expect(withReviewedImageQuality(model(slug)).extraInput.negative_prompt).toBe(STYLE_NEUTRAL_QUALITY_NEGATIVE);
+  it("uses only production steering where morphology is unknown", () => {
+    for (const slug of ["qwen/qwen-image-2512", "stability-ai/stable-diffusion-3.5-large"]) {
+      expect(withReviewedImageQuality(model(slug)).extraInput.negative_prompt).toBe(STATIC_PRODUCTION_NEGATIVE);
     }
-    expect(STYLE_NEUTRAL_QUALITY_NEGATIVE).not.toMatch(/cartoon|anime|painting|illustration|multiple people/i);
+    expect(STATIC_PRODUCTION_NEGATIVE).not.toMatch(
+      /cartoon|anime|painting|illustration|multiple people|missing fingers|extra limbs|extra arms|extra legs|disfigured|mutated/i,
+    );
   });
 
-  it("adds Pony's low-score negatives without changing the shared bank", () => {
+  it("uses compact anatomy steering only on reviewed community portrait pipelines", () => {
+    expect(withReviewedImageQuality(model("nsfw-api/realvis-hyper-lora:version")).extraInput.negative_prompt).toBe(
+      COMMUNITY_ANATOMY_NEGATIVE,
+    );
+    expect(COMMUNITY_ANATOMY_NEGATIVE).not.toMatch(/missing fingers|extra limbs|extra arms|extra legs|disfigured|mutated/i);
+  });
+
+  it("adds Pony's low-score negatives without changing the compact anatomy bank", () => {
     const negative = withReviewedImageQuality(model("nsfw-api/pony-realism-v2.3:version")).extraInput
       .negative_prompt;
-    expect(negative).toBe(`${STYLE_NEUTRAL_QUALITY_NEGATIVE}, score_1, score_2, score_3`);
+    expect(negative).toBe(`${COMMUNITY_ANATOMY_NEGATIVE}, score_1, score_2, score_3`);
   });
 });
 
@@ -89,16 +95,15 @@ describe("preparePromptForImageModel", () => {
     expect(prepared).toContain(QWEN_SINGLE_REFERENCE_IDENTITY_LOCK);
     expect(prepared).not.toContain(LEGACY_LOCK);
     expect(prepared).toContain("Change the pose: standing by the window.");
+    expect(prepared.length).toBeLessThanOrEqual(prompt.length);
   });
 
   it("uses a role-aware numbered lock when Qwen receives several references", () => {
-    const prepared = preparePromptForImageModel(
-      model("qwen/qwen-image-edit-2511"),
-      `${LEGACY_LOCK} 3 reference images provided — image 1 is Mira; image 2 is Jo; image 3 is the cafe.`,
-      3,
-    );
+    const prompt = `${LEGACY_LOCK} 3 reference images provided — image 1 is Mira; image 2 is Jo; image 3 is the cafe.`;
+    const prepared = preparePromptForImageModel(model("qwen/qwen-image-edit-2511"), prompt, 3);
     expect(prepared).toContain(QWEN_MULTI_REFERENCE_IDENTITY_LOCK);
     expect(prepared).toContain("image 1 is Mira");
+    expect(prepared.length).toBeLessThanOrEqual(prompt.length);
   });
 
   it("does not rewrite another model or an unreferenced/custom Qwen prompt", () => {
