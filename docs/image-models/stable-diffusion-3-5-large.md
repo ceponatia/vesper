@@ -69,18 +69,20 @@ Nothing calls the profile layer yet.
 
 ## Quality policy before profiles are wired
 
-The provider exposes `negative_prompt`. The shared render seam adds the same
-style-neutral anatomy/production negative used by Qwen Image 2512 and RealVis:
+The provider exposes `negative_prompt`. Without task or morphology context, the
+shared render seam adds only production-defect steering:
 
 ```text
-extra limbs, extra arms, extra legs, malformed limbs, disconnected limbs,
-extra fingers, missing fingers, fused fingers, mutated hands, poorly drawn
-hands, bad anatomy, disfigured, text, watermark, signature, logo, blurry,
-low resolution
+text, watermark, signature, logo, blurry, low resolution
 ```
 
-The block avoids style and subject-count terms. CFG remains at the provider
-reviewed default of 5 until a fixed trial demonstrates a better setting.
+The static block omits anatomy terms because Vesper can intentionally author
+missing digits, prosthetics, or non-human appendage counts. Dynamic profile
+composition will add anatomy terms only after comparing them with intended
+morphology and visible body parts.
+
+CFG remains at the provider reviewed default of 5 until a fixed trial demonstrates
+a better setting.
 
 ## Inputs
 
@@ -104,7 +106,7 @@ There is no `disable_safety_checker` and no `output_quality` field.
 ```json
 {
   "prompt": "<built prompt>",
-  "negative_prompt": "extra limbs, extra arms, extra legs, malformed limbs, disconnected limbs, extra fingers, missing fingers, fused fingers, mutated hands, poorly drawn hands, bad anatomy, disfigured, text, watermark, signature, logo, blurry, low resolution",
+  "negative_prompt": "text, watermark, signature, logo, blurry, low resolution",
   "aspect_ratio": "4:5",
   "output_format": "webp"
 }
