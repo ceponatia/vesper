@@ -25,15 +25,19 @@ const PROBE_TIMEOUT_MS = 20_000;
 /** Field names checked first, in order, so a model with several image-ish inputs resolves deterministically. */
 const PREFERRED_REFERENCE_FIELDS = ["image", "image_input", "images"] as const;
 
+// Every string here is `nullish` for the same reason as the model record below:
+// a null is Replicate saying "no value", and a rejected property parse would
+// silently cost a reference field (the model would look like it cannot edit)
+// rather than raising anything.
 const propertySchema = z
   .object({
-    type: z.string().optional(),
-    format: z.string().optional(),
-    description: z.string().optional(),
+    type: z.string().nullish(),
+    format: z.string().nullish(),
+    description: z.string().nullish(),
     default: z.unknown().optional(),
-    maxItems: z.number().optional(),
-    items: z.object({ type: z.string().optional(), format: z.string().optional() }).optional(),
-    allOf: z.array(z.object({ $ref: z.string().optional() })).optional(),
+    maxItems: z.number().nullish(),
+    items: z.object({ type: z.string().nullish(), format: z.string().nullish() }).nullish(),
+    allOf: z.array(z.object({ $ref: z.string().nullish() })).nullish(),
   });
 
 const openapiSchema = z.object({
@@ -52,9 +56,15 @@ const versionResponseSchema = z.object({
 
 const modelResponseSchema = z
   .object({
-    name: z.string().optional(),
-    owner: z.string().optional(),
-    description: z.string().optional(),
+    // `nullish`, not `optional`: Replicate sends `"description": null` for a
+    // model whose page has no blurb, and an absent field and a null one must
+    // both be tolerated. Requiring a string here rejected the whole record and
+    // refused the save — the opposite of this module's rule that only an
+    // unreadable INPUT SCHEMA is worth failing on (owner report 2026-08-05:
+    // `nsfw-api/pony-realism-v2.3` and `nsfw-api/realvis-hyper-lora`).
+    name: z.string().nullish(),
+    owner: z.string().nullish(),
+    description: z.string().nullish(),
     latest_version: z
       .object({
         id: z.string().optional(),
@@ -205,7 +215,7 @@ function referenceArityOf(value: unknown): { arity: ImageReferenceArity; descrip
   const description = p.description ?? "";
   if (p.type === "string" && p.format === "uri") return { arity: "single", description };
   if (p.type === "array" && p.items?.type === "string" && p.items.format === "uri") {
-    return { arity: "array", description, ...(p.maxItems === undefined ? {} : { maxItems: p.maxItems }) };
+    return { arity: "array", description, ...(p.maxItems == null ? {} : { maxItems: p.maxItems }) };
   }
   return null;
 }
