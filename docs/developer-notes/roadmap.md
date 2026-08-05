@@ -190,18 +190,29 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   events 30d / jobs 7d, prod telemetry ids+counts only, account deletion
   parked → deferred.plan.md.
 
+- **Image identity packs — durable canonical and face-detail references** —
+  [image-identity-packs.plan.md](image-identity-packs.plan.md) ·
+  [spec](image-identity-packs.spec.md) (next; planned 2026-08-05 and extracted
+  from the image-render-quality plan so reference preparation has one owner).
+  Compiles the current canonical portrait into an owner-scoped, revisioned,
+  hidden identity pack with a face-detail crop, source hash, crop/detector
+  provenance, intrinsic quality measurements, profile-aware pre-spend
+  eligibility, lazy backfill, manual correction, and explicit copy/delete
+  behavior. Seven slices. It lands before the render-quality plan's controlled
+  face-reference trial and future repair work; no persisted face embeddings in
+  v1.
+
 - **Image render quality — per-model prompts, negative steering, and face
   fidelity** — [image-render-quality.plan.md](image-render-quality.plan.md) ·
   [spec](image-render-quality.spec.md) (draft; brainstormed 2026-08-05 from
   the owner's report that Qwen Edit drifts faces and the SDXL-lineage
   community models produce deformities). The content/tuning companion to the
-  active capabilities plan above: per-model prompt dialects (prose vs. token-budgeted
-  SDXL/Pony tag prompts), curated anatomy/production negative-prompt banks on
-  every model that takes one (day one via `extraInput`, no code), reviewed
-  sampler settings, a Qwen Edit face-fidelity pass (face-crop reference,
-  indexed identity binding, fast-mode-off), an explicit InstantID "fix the
-  face" re-render, native 3:4 for width/height models, and best-of-N
-  portraits. Slices 1–3 are independent of the capabilities machinery.
+  active capabilities plan above: per-model prompt dialects, context-aware
+  negative steering, reviewed sampler settings, numbered delta-first edit
+  contracts, model-native dimensions, best-of-N portraits, face-reference
+  trials, guarded repair, provenance, and advisory output QA. Durable source
+  hashing, face-crop derivation, quality eligibility, and manual correction now
+  live in the independent identity-pack plan directly above.
 
 **Successor world engine (`engine.plan.md`) — foundation AND rollout COMPLETE.**
 All committed gates (0–6) closed 2026-07-16 → 2026-07-21, and the migration &
@@ -397,5 +408,4 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 ## Shipped (historical record)
 
 Moved to its own file to keep this index short — see **[roadmap.shipped.md](roadmap.shipped.md)** (newest-first).
-
 
