@@ -33,8 +33,7 @@ that improves every current lane without wiring the dormant profile rows halfway
 
 ### Why the policy is runtime rather than a data migration
 
-A migration that writes `image_models.extra_input` would improve current rows but
-would be fragile:
+A migration that writes `image_models.extra_input` would be fragile:
 
 - re-probing a model replaces `extraInput` with values derived from its provider
   schema;
@@ -72,8 +71,8 @@ The original record is never mutated.
 
 ### Static production negative
 
-The only universal block safe without task, style, subject-count, visible-body,
-or morphology context is:
+The only universal block safe without task, style, expected subject count,
+visible-body, authored-landmark, or morphology context is:
 
 ```text
 text, watermark, signature, logo, blurry, low resolution
@@ -82,28 +81,18 @@ text, watermark, signature, logo, blurry, low resolution
 It deliberately contains no anatomy terms. “Missing fingers” can contradict an
 authored missing digit; “extra limbs” can contradict a non-human appendage count;
 “disfigured” or “mutated” can erase intentional landmarks or species morphology.
-The universal fallback also avoids media/style, subject-count, framing, sexual,
-and rating terms.
+The universal block also avoids media/style, subject-count, framing, sexual, and
+rating terms.
 
-### Compact community anatomy negative
-
-The reviewed community portrait pipelines where the owner observed deformities
-receive a smaller block:
-
-```text
-duplicated limbs, disconnected limbs, malformed hands, extra fingers, fused
-fingers, text, watermark, signature, logo, blurry, low resolution
-```
-
-It avoids generic `missing fingers` and `extra limbs`. This is still transitional
-and must be replaced by a morphology-aware profile block. It is not automatically
-applied to unknown models.
+Anatomy steering is not applied at the shared seam, including on the reviewed
+community models. Those terms require the structured render intent and conflict
+linter described below.
 
 ### Effective values by model
 
 **Qwen Image 2512**
 
-- add only the static production negative;
+- add the static production negative;
 - leave generation speed, steps, and guidance unchanged.
 
 **Qwen Image Edit 2511**
@@ -116,7 +105,7 @@ task begins using it, task profiles must replace this global override.
 
 **Stable Diffusion 3.5 Large**
 
-- add only the static production negative;
+- add the static production negative;
 - leave sampler/guidance unchanged until a fixed trial says otherwise.
 
 **Juggernaut XL v9**
@@ -126,13 +115,12 @@ task begins using it, task profiles must replace this global override.
 - `scheduler: "KarrasDPM"`;
 - `width: 832`;
 - `height: 1216`;
-- minimal negative:
-  `duplicated limbs, malformed hands, extra fingers, fused fingers, text, watermark, logo`.
+- static production negative only.
 
 Normal v9 is not the Lightning model. The creator's published quality guidance
 supports a full-step starting point and warns against large negative walls. The
-fixed matrix compares the compact negative with an empty negative and may tune the
-sampler; it does not revisit the checkpoint identity.
+fixed matrix may tune the sampler and numeric values; it does not revisit the
+checkpoint identity.
 
 The registry has no generic width/height aspect mode. These dimensions travel
 through `extraInput`; `chooseAspect` returns no provider shape and
@@ -142,14 +130,14 @@ square render's width.
 
 **Pony Realism v2.3**
 
-- compact community anatomy negative;
-- append `score_1, score_2, score_3` as low-quality negatives;
+- static production negative;
+- append `score_1, score_2, score_3` as low-quality negative tags;
 - leave identity scales, pose strength, steps, and guidance at provider defaults
   until the trial isolates them.
 
 **RealVis Hyper LoRA**
 
-- compact community anatomy negative;
+- static production negative;
 - pin `width: 768`, `height: 1024` rather than relying on a remote default;
 - leave HyperLoRA/InstantID strengths at provider defaults until trialed.
 
@@ -205,11 +193,9 @@ zero references is not rewritten. Every non-Qwen prompt remains byte-identical.
 - unknown models return the same object and inputs;
 - Qwen Edit's stored `go_fast: true` is overridden without mutating the row;
 - Juggernaut receives the reviewed full-step settings;
-- Qwen Image and SD 3.5 receive production-only steering;
-- the universal block has no style, subject-count, or anatomy/morphology terms;
-- RealVis/Pony use the compact community block, which excludes generic missing
-  fingers/extra limbs;
-- Pony adds only its low-score negatives;
+- every static negative is production-only and contains no anatomy, style,
+  framing, or subject-count assumptions;
+- Pony adds only its low-score negative tags;
 - single- and multi-reference Qwen locks are selected correctly and do not grow
   the fitted prompt;
 - custom/no-reference/non-Qwen prompts are not changed.
@@ -246,6 +232,7 @@ render intent should expose ordered segments similar to:
 export type ImagePromptSegmentKind =
   | "operation"
   | "identity"
+  | "morphology"
   | "age"
   | "framing"
   | "pose"
@@ -269,8 +256,8 @@ export interface ImagePromptSegment {
 ```
 
 `source` is diagnostic provenance such as `character.attributes`,
-`garment.presentation`, `scene_plan.pose`, or `location.description`; it does not
-reach the provider.
+`body.morphology`, `garment.presentation`, `scene_plan.pose`, or
+`location.description`; it does not reach the provider.
 
 Prompt fitting removes or compresses the lowest-priority optional segments first.
 It never truncates through the middle of a mandatory sentence. Identity, age
@@ -487,19 +474,19 @@ not spend a render unit on a reference known to be unusable.
 
 ## Reference selection and capacity
 
-Role priority for identity-critical work:
+Required roles are selected before optional roles. Within a single-character
+identity-critical request, the preferred order is:
 
-1. required canonical identity;
+1. canonical identity;
 2. face-detail crop for that identity;
-3. additional required character identities;
-4. required location/pose control for the selected profile;
-5. optional location;
-6. optional style;
-7. optional object.
+3. required location or pose control;
+4. optional location;
+5. optional style;
+6. optional object.
 
-Required references are selected before optional references. If the model cannot
-fit all required roles, the profile is ineligible; it must not silently discard
-one person's identity.
+For multi-character requests, all required canonical identities outrank face
+crops and optional context. If the model cannot fit all required identities, the
+profile is ineligible; it must not silently discard one person's identity.
 
 Qwen Edit's cap of three means a single-character scene may use identity portrait
 + face crop + location. A two-character scene generally uses the two identities
@@ -567,7 +554,7 @@ Output:
 
 Trial arms:
 
-1. no repair baseline;
+1. no-repair baseline;
 2. Qwen Edit with canonical portrait + face crop;
 3. Pony identity input + source image as `pose_image`;
 4. RealVis identity input + scene description;
@@ -596,7 +583,7 @@ Policy:
 - admin trial cell: ≤4 units;
 - player portrait best-of-N: N=2 initially;
 - no automatic scene best-of-N;
-- absolute configurable cents cap must also pass.
+- an absolute configurable cents cap must also pass.
 
 Operational promotion gates:
 
@@ -679,8 +666,8 @@ Corpus:
 
 - 3–4 stable characters;
 - at least one human and one non-human morphology;
-- one character with an authored distinctive absence/prosthetic/landmark so
-  negative-conflict behavior is exercised;
+- one character with an authored distinctive absence, prosthetic, or unusual
+  appendage count so negative-conflict behavior is exercised;
 - one heavily authored and one sparse profile;
 - realistic and stylized portrait cases;
 - clear frontal identity and at least one difficult hair/skin/age case;
@@ -743,9 +730,10 @@ and delta-first wording.
 - pinned slug matching is deterministic;
 - current Qwen identity prompts become numbered without growing fitted edit
   prompts or changing non-Qwen text;
-- universal static negatives contain production defects only;
-- community anatomy steering cannot directly forbid authored missing digits or
-  non-human appendage counts;
+- every static negative contains production defects only, apart from tested Pony
+  low-score tags;
+- anatomy negatives are not sent until intended morphology and authored absences
+  are available for conflict checking;
 - Juggernaut runs full-step at native portrait dimensions rather than its cog's
   fast square defaults;
 - effective controls are testable and eventually recorded in provenance;
@@ -760,9 +748,9 @@ and delta-first wording.
 
 No owner ruling is pending. The implementation still needs evidence for:
 
-- Juggernaut minimal negative versus empty negative;
-- `KarrasDPM` versus compatible high-quality samplers;
-- Qwen quality mode and face-crop gains measured independently;
+- the best Juggernaut sampler/CFG within the full-step band;
+- whether morphology-aware anatomy blocks outperform production-only steering;
+- Qwen quality-mode and face-crop gains measured independently;
 - detector/crop quality thresholds;
 - whether Pony/RealVis improve identity without unacceptable full-frame drift;
 - which advisory QA scores correlate strongly enough with owner review to gate
