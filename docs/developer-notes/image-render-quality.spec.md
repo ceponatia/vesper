@@ -36,17 +36,17 @@ that improves every current lane without wiring the dormant profile rows halfway
 A migration that writes `image_models.extra_input` would improve current rows but
 would be fragile:
 
-- re-probing a model replaces `extraInput` with the values derived from its
-  provider schema;
-- the provider's defaults are not necessarily Vesper's reviewed quality defaults;
-- community models may have been added through the admin UI after the migration;
+- re-probing a model replaces `extraInput` with values derived from its provider
+  schema;
+- provider defaults are not necessarily Vesper's reviewed quality defaults;
+- community models may be added through the admin UI after the migration;
 - the profile system that should eventually own these controls is not yet called
   by the render path.
 
-The runtime policy therefore matches exact reviewed provider slugs, strips a
-community model's `:version` suffix for matching, and overlays its settings after
-the row's `extraInput`. An unknown/admin-added model remains unchanged and never
-receives a guessed field.
+The runtime policy matches exact reviewed provider slugs, strips a community
+model's `:version` suffix for matching, and overlays its settings after the row's
+`extraInput`. An unknown/admin-added model remains unchanged and never receives a
+guessed field.
 
 This overlay is transitional. When shared render intent and common controls reach
 `renderWithModel`, the effective values move to task profiles and the exact-slug
@@ -56,7 +56,7 @@ map is deleted. Until then, diagnostics and future provenance must report the
 ## Transitional reviewed settings
 
 `withReviewedImageQuality(model)` returns the original model object when no
-reviewed policy exists. For a reviewed slug it returns a shallow copy with:
+reviewed policy exists. For a reviewed slug it returns a shallow copy:
 
 ```ts
 {
@@ -70,44 +70,53 @@ reviewed policy exists. For a reviewed slug it returns a shallow copy with:
 
 The original record is never mutated.
 
-### Shared style-neutral negative
+### Static production negative
+
+The only universal block safe without task, style, subject-count, visible-body,
+or morphology context is:
 
 ```text
-extra limbs, extra arms, extra legs, malformed limbs, disconnected limbs,
-extra fingers, missing fingers, fused fingers, mutated hands, poorly drawn
-hands, bad anatomy, disfigured, text, watermark, signature, logo, blurry,
-low resolution
+text, watermark, signature, logo, blurry, low resolution
 ```
 
-This deliberately omits:
+It deliberately contains no anatomy terms. “Missing fingers” can contradict an
+authored missing digit; “extra limbs” can contradict a non-human appendage count;
+“disfigured” or “mutated” can erase intentional landmarks or species morphology.
+The universal fallback also avoids media/style, subject-count, framing, sexual,
+and rating terms.
 
-- `anime`, `cartoon`, `painting`, or `illustration`, because stylized portraits
-  legitimately request them;
-- `multiple people`, `duplicate person`, or `second face`, because the shared
-  seam does not know the task's subject count;
-- `cropped`, `out of frame`, or body-part framing terms, because close-ups and
-  embodied POV may legitimately crop a body;
-- sexual/rating terms, which belong to a route- and model-aware profile.
+### Compact community anatomy negative
+
+The reviewed community portrait pipelines where the owner observed deformities
+receive a smaller block:
+
+```text
+duplicated limbs, disconnected limbs, malformed hands, extra fingers, fused
+fingers, text, watermark, signature, logo, blurry, low resolution
+```
+
+It avoids generic `missing fingers` and `extra limbs`. This is still transitional
+and must be replaced by a morphology-aware profile block. It is not automatically
+applied to unknown models.
 
 ### Effective values by model
 
 **Qwen Image 2512**
 
-- add the shared style-neutral negative;
-- leave its current generation speed and guidance defaults unchanged.
+- add only the static production negative;
+- leave generation speed, steps, and guidance unchanged.
 
 **Qwen Image Edit 2511**
 
 - force `go_fast: false`;
-- do not send a negative prompt because the schema has no such input.
+- send no negative prompt because the schema has no such input.
 
-All current uses of this model are identity-critical. If text repair or another
-non-identity task begins using it, this global override must be replaced by a
-quality edit profile and a fast task-specific profile.
+All current uses are identity-critical. If text repair or another non-identity
+task begins using it, task profiles must replace this global override.
 
 **Stable Diffusion 3.5 Large**
 
-- add the shared style-neutral negative;
+- add only the static production negative;
 - leave sampler/guidance unchanged until a fixed trial says otherwise.
 
 **Juggernaut XL v9**
@@ -118,31 +127,30 @@ quality edit profile and a fast task-specific profile.
 - `width: 832`;
 - `height: 1216`;
 - minimal negative:
-  `extra limbs, malformed hands, extra fingers, fused fingers, text, watermark, logo`.
+  `duplicated limbs, malformed hands, extra fingers, fused fingers, text, watermark, logo`.
 
-The normal v9 checkpoint is not the Lightning model. The model creator's
-published quality settings support a full-step starting point. The compact
-negative honors the creator's warning that large negative walls can reduce
-quality. The fixed matrix still tests an empty negative against this minimal one.
+Normal v9 is not the Lightning model. The creator's published quality guidance
+supports a full-step starting point and warns against large negative walls. The
+fixed matrix compares the compact negative with an empty negative and may tune the
+sampler; it does not revisit the checkpoint identity.
 
-The registry currently has no generic width/height aspect mode. These two
-provider inputs travel through `extraInput`; `chooseAspect` returns no provider
-shape and `cropToTargetAspect` normalizes the returned 832×1216 image. At 3:4 the
-crop removes a modest strip from top and bottom rather than throwing away a
-quarter of a square render's width.
+The registry has no generic width/height aspect mode. These dimensions travel
+through `extraInput`; `chooseAspect` returns no provider shape and
+`cropToTargetAspect` normalizes the returned 832×1216 image. At 3:4 the crop
+removes a modest strip from top and bottom rather than discarding a quarter of a
+square render's width.
 
 **Pony Realism v2.3**
 
-- shared style-neutral negative;
+- compact community anatomy negative;
 - append `score_1, score_2, score_3` as low-quality negatives;
 - leave identity scales, pose strength, steps, and guidance at provider defaults
-  until the identity trial isolates them.
+  until the trial isolates them.
 
 **RealVis Hyper LoRA**
 
-- shared style-neutral negative;
-- explicitly pin `width: 768`, `height: 1024` instead of relying on a provider
-  default that happens to be 3:4;
+- compact community anatomy negative;
+- pin `width: 768`, `height: 1024` rather than relying on a remote default;
 - leave HyperLoRA/InstantID strengths at provider defaults until trialed.
 
 ## Qwen numbered-reference prompt preparation
@@ -155,10 +163,10 @@ Preserve face, hair color and style, skin tone, body proportions, and apparent
 age.
 ```
 
-Qwen Image Edit's multi-image instructions work better when the caller identifies
-images by number and states what changes versus what remains fixed. Rather than
-changing the generic prompt for every model, `preparePromptForImageModel` replaces
-that exact legacy sentence only when:
+Qwen Image Edit's multi-image guidance works better when the caller identifies
+images by number and states what changes versus remains fixed. Rather than change
+the generic prompt for every model, `preparePromptForImageModel` replaces that
+exact legacy sentence only when:
 
 - the selected base slug is `qwen/qwen-image-edit-2511`;
 - at least one reference is actually being sent;
@@ -167,40 +175,43 @@ that exact legacy sentence only when:
 Single-reference replacement:
 
 ```text
-Image 1 is the canonical identity reference. Generate a new image of the exact
-same person shown in image 1. Preserve their facial features, hair color and
-style, skin tone, body proportions, and apparent age. Change only what the rest
-of this instruction explicitly requests.
+Image 1 is the identity reference. Preserve the exact face, hair, skin tone,
+body proportions, and apparent age. Change only what this instruction requests.
 ```
 
 Multi-reference replacement:
 
 ```text
-Treat the numbered reference images as authoritative for the people, place,
-style, and objects assigned to them below. Preserve every referenced person's
-exact facial identity, hair, skin tone, build, and apparent age. Change only what
-the rest of this instruction explicitly requests.
+Use numbered references as assigned below. Preserve each person's exact face,
+hair, skin tone, build, and age; change only what this instruction requests.
 ```
 
-The multi-reference scene builder already enumerates its references later in the
-prompt. The replacement establishes how Qwen should interpret that list without
+Both replacements are no longer than the legacy lock. The scene/variant edit
+prompt is fitted before `renderWithModel`; model-specific preparation must not
+re-expand it beyond that fitted budget.
+
+The multi-reference scene builder already enumerates its references later in send
+order. The replacement establishes how Qwen should interpret that list without
 inventing a second ordering system.
 
-A custom Qwen prompt that does not contain the legacy lock is not rewritten. A
-Qwen run with zero references is not rewritten. Every non-Qwen prompt remains
-byte-identical.
+A custom Qwen prompt without the legacy lock is not rewritten. A Qwen run with
+zero references is not rewritten. Every non-Qwen prompt remains byte-identical.
 
 ## Tests for the first slice
 
 `quality-presets.test.ts` pins these properties:
 
 - pinned community slugs resolve to their base path;
-- unknown models return the same object and same inputs;
+- unknown models return the same object and inputs;
 - Qwen Edit's stored `go_fast: true` is overridden without mutating the row;
 - Juggernaut receives the reviewed full-step settings;
-- the shared negative contains no realistic/stylized or subject-count conflict;
+- Qwen Image and SD 3.5 receive production-only steering;
+- the universal block has no style, subject-count, or anatomy/morphology terms;
+- RealVis/Pony use the compact community block, which excludes generic missing
+  fingers/extra limbs;
 - Pony adds only its low-score negatives;
-- single- and multi-reference Qwen locks are selected correctly;
+- single- and multi-reference Qwen locks are selected correctly and do not grow
+  the fitted prompt;
 - custom/no-reference/non-Qwen prompts are not changed.
 
 The existing `models.ts` crop tests continue to own output normalization. Future
@@ -210,9 +221,9 @@ migration.
 
 ## Effective prompt context: measured, not guessed
 
-SDXL's CLIP text encoders have 77-position contexts, but the Replicate wrapper
-may truncate, chunk, or preprocess longer text. `promptDialect` therefore cannot
-be justified by a universal “75 tokens and the rest disappears” rule.
+SDXL's CLIP text encoders have 77-position contexts, but a Replicate wrapper may
+truncate, chunk, or preprocess longer text. `promptDialect` cannot be justified
+by a universal “75 tokens and the rest disappears” rule.
 
 For each pinned version used by `sdxl_tag` or `pony_tag`, the promotion trial
 records an effective-context result:
@@ -228,8 +239,8 @@ measured limit, compilers order load-bearing content first.
 
 ## Structured prompt segments
 
-A robust dialect compiler consumes semantics, not a finished paragraph. The
-shared render intent should expose ordered segments similar to:
+A robust dialect compiler consumes semantics, not a finished paragraph. Shared
+render intent should expose ordered segments similar to:
 
 ```ts
 export type ImagePromptSegmentKind =
@@ -263,14 +274,14 @@ reach the provider.
 
 Prompt fitting removes or compresses the lowest-priority optional segments first.
 It never truncates through the middle of a mandatory sentence. Identity, age
-safety anchors, person count, current clothing/exposure authority, and the edit
-delta remain mandatory.
+safety anchors, person count, intended morphology, current clothing/exposure
+authority, and the edit delta remain mandatory.
 
 ## Dialect behavior
 
 ### `prose`
 
-The initial output is today's prose, modulo an explicitly selected model-specific
+Initial output is today's prose, modulo an explicitly selected model-specific
 instruction such as Qwen's numbered identity lock. Golden tests protect all
 unaffected models.
 
@@ -296,12 +307,12 @@ Order:
 
 Compression:
 
-- drop metadata labels that do not add visual meaning;
+- drop metadata labels that add no visual meaning;
 - retain values and distinctive landmarks;
 - reduce wardrobe to visible garment, dominant colour/material, and critical
   presentation state;
 - cap setting to the few features that define the location;
-- omit non-visible traits rather than encoding them as prose;
+- omit non-visible traits rather than encode them as prose;
 - do not emit a tag solely because it exists on the character sheet.
 
 ### `pony_tag`
@@ -324,8 +335,8 @@ Once profiles are live, static reviewed negatives move into named blocks:
 
 ```ts
 export type NegativeBlock =
-  | "anatomy"
   | "production"
+  | "anatomy"
   | "photoreal"
   | "single_subject"
   | "pony_low_score"
@@ -339,19 +350,22 @@ The composer receives:
 - expected subject count;
 - framing;
 - visible body parts;
+- intended morphology and authored landmarks/absences;
 - dialect/model version;
 - positive segments.
 
 Rules:
 
-- `anatomy` and `production` are default candidates on models with a supported
-  negative binding;
+- `production` is the universal candidate on models with a supported negative
+  binding;
+- `anatomy` is composed only after removing terms that match intended morphology,
+  absent body parts, prosthetics, or species appendages;
 - `photoreal` only for realistic styles;
 - `single_subject` only when exactly one full person is expected;
 - `pony_low_score` only for a tested Pony dialect;
 - `visible_hands` only when hands are intentionally visible and important;
-- no block may contain a normalized phrase that directly conflicts with a
-  mandatory positive segment.
+- no block may contain a normalized phrase that conflicts with a mandatory
+  positive segment.
 
 A conflict produces a diagnostic and removes the negative term; it does not fail
 a player render.
@@ -363,7 +377,7 @@ specific positive ownership rules.
 
 ## Delta-first edit contract
 
-Instruction-edit profiles should compile a single explicit operation block:
+Instruction-edit profiles should compile one explicit operation block:
 
 ```text
 References:
@@ -389,7 +403,8 @@ When text and reference disagree:
 
 - apparent-age anchor is text-authoritative, preserving the existing owner
   ruling against age drift;
-- current wardrobe/exposure state is text/state-authoritative;
+- current wardrobe/exposure state and intended morphology are text/state
+  authoritative;
 - canonical face and immutable identity are reference-authoritative;
 - location reference is authoritative for stable geometry unless the scene plan
   explicitly changes it.
@@ -440,13 +455,13 @@ portrait.
 - existing characters create packs lazily on first identity-critical use;
 - an admin batch prepares the fixed trial corpus;
 - render-time heuristic crop is a temporary degraded fallback and must not be
-  persisted as though it were detector-confirmed.
+  persisted as detector-confirmed.
 
 ### Initial heuristic
 
 For a Vesper-authored waist-up 3:4 portrait, crop an upper-centre region with
-padding around hairline, ears, and jaw. The exact box is trial-tuned. It is safer
-to include some shoulders than to clip the chin or hairline, because identity
+padding around hairline, ears, and jaw. The exact box is trial-tuned. Including
+some shoulders is safer than clipping the chin or hairline because identity
 editors use those boundaries.
 
 A detector replaces the heuristic only when:
@@ -461,7 +476,7 @@ A detector replaces the heuristic only when:
 Production defaults require:
 
 - one selected identity;
-- accepted pack or an explicit admin override;
+- accepted pack or explicit admin override;
 - reviewed minimum face dimensions at the provider's effective input size;
 - blur/occlusion below threshold when those metrics are available;
 - no stale source hash.
@@ -483,14 +498,14 @@ Role priority for identity-critical work:
 7. optional object.
 
 Required references are selected before optional references. If the model cannot
-fit all required roles, the profile is ineligible for that request; it must not
-silently discard one person's identity.
+fit all required roles, the profile is ineligible; it must not silently discard
+one person's identity.
 
-Qwen Edit's current cap of three means a single-character scene may use identity
-portrait + face crop + location. A two-character scene generally uses the two
-identities plus location and cannot also include both face crops. The trial must
-measure whether a face crop is more valuable than the location reference in each
-case; the role policy may vary by profile but remains deterministic.
+Qwen Edit's cap of three means a single-character scene may use identity portrait
++ face crop + location. A two-character scene generally uses the two identities
+plus location and cannot also include both face crops. The trial measures whether
+a face crop is more valuable than the location reference in each case; the role
+policy may vary by profile but remains deterministic.
 
 ## Visual-state compiler
 
@@ -612,7 +627,7 @@ export interface ImageQualityFinding {
 }
 ```
 
-An error may prevent the image becoming the canonical portrait, but it does not
+An error may prevent an image becoming the canonical portrait, but it does not
 silently re-run another model. The UI can offer retry-same-seed, new variation,
 or explicit repair.
 
@@ -664,6 +679,8 @@ Corpus:
 
 - 3–4 stable characters;
 - at least one human and one non-human morphology;
+- one character with an authored distinctive absence/prosthetic/landmark so
+  negative-conflict behavior is exercised;
 - one heavily authored and one sparse profile;
 - realistic and stylized portrait cases;
 - clear frontal identity and at least one difficult hair/skin/age case;
@@ -681,14 +698,14 @@ Controls:
 Owner grades each pair for:
 
 - identity likeness;
-- anatomy/hands;
+- anatomy/hands relative to intended morphology;
 - requested edit correctness;
 - unchanged-detail preservation;
 - composition/pose/wardrobe/setting drift;
 - overall preference.
 
 A tuning change lands only with its report and model-doc update. A model-version
-promotion reruns the cells affected by changed capabilities or controls.
+promotion reruns cells affected by changed capabilities or controls.
 
 ## Model-license gate
 
@@ -696,9 +713,8 @@ Before a community model becomes a production default or paid feature, record:
 
 - model/checkpoint and wrapper version;
 - license/terms source and review date;
-- whether server-side hosted inference and the intended commercial use are
-  permitted;
-- any attribution, distribution, or output restrictions;
+- whether server-side hosted inference and intended commercial use are permitted;
+- attribution, distribution, or output restrictions;
 - reviewer and next review trigger.
 
 Replicate availability is not evidence that every intended Vesper use is
@@ -717,21 +733,24 @@ When profiles reach the render path:
 
 Prompt rewriting also moves from exact string replacement to the Qwen
 `instruction_edit` compiler once it consumes structured segments. The temporary
-replacement remains until the final Qwen profiles produce the same numbered and
-delta-first wording.
+replacement remains until final Qwen profiles produce the same compact numbered
+and delta-first wording.
 
 ## Acceptance criteria
 
 - reviewed settings affect every current lane through one seam;
 - unknown models receive no added provider fields;
 - pinned slug matching is deterministic;
-- current Qwen identity prompts become numbered without changing non-Qwen text;
-- static negatives are style- and subject-count-neutral;
+- current Qwen identity prompts become numbered without growing fitted edit
+  prompts or changing non-Qwen text;
+- universal static negatives contain production defects only;
+- community anatomy steering cannot directly forbid authored missing digits or
+  non-human appendage counts;
 - Juggernaut runs full-step at native portrait dimensions rather than its cog's
   fast square defaults;
 - effective controls are testable and eventually recorded in provenance;
 - dynamic prompt/negative compilers consume semantic segments and reject
-  conflicts;
+  morphology/style/subject conflicts;
 - identity packs are source-hashed, quality-gated, and invalidated correctly;
 - repair remains explicit, single-character-first, and non-destructive;
 - cost, latency, and model-license gates are enforced before a quality feature
@@ -742,7 +761,7 @@ delta-first wording.
 No owner ruling is pending. The implementation still needs evidence for:
 
 - Juggernaut minimal negative versus empty negative;
-- `KarrasDPM` versus the cog's other compatible high-quality samplers;
+- `KarrasDPM` versus compatible high-quality samplers;
 - Qwen quality mode and face-crop gains measured independently;
 - detector/crop quality thresholds;
 - whether Pony/RealVis improve identity without unacceptable full-frame drift;
