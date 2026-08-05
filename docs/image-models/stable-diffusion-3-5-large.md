@@ -2,7 +2,7 @@
 
 **Slug:** `stability-ai/stable-diffusion-3.5-large`
 **Probed:** 2026-08-05, version `2fdf9488b53c1e0fd3aef7b477def1c00d1856a38466733711f9c769942598f5`
-**Quality ruling:** 2026-08-05
+**Quality ruling:** no transitional runtime override
 
 > A text-to-image model that generates high-resolution images with fine details.
 > It supports varied artistic styles and diverse outputs.
@@ -67,22 +67,15 @@ toggle is changed later.
 
 Nothing calls the profile layer yet.
 
-## Quality policy before profiles are wired
+## Negative-prompt ruling
 
-The provider exposes `negative_prompt`. Without task or morphology context, the
-shared render seam adds only production-defect steering:
+The transitional render policy adds no `negative_prompt` field. Even on a
+portrait surface, a generic cleanup block can conflict with requested printed
+clothing, logos, blur, pixel-art media, unusual anatomy, or authored absences.
 
-```text
-text, watermark, signature, logo, blurry, low resolution
-```
-
-The static block omits anatomy terms because Vesper can intentionally author
-missing digits, prosthetics, or non-human appendage counts. Dynamic profile
-composition will add anatomy terms only after comparing them with intended
-morphology and visible body parts.
-
-CFG remains at the provider reviewed default of 5 until a fixed trial demonstrates
-a better setting.
+A future portrait profile may compose negative terms from style, visible anatomy,
+subject count, and positive prompt segments. Until that context reaches the
+render seam, Stable Diffusion 3.5 Large remains byte-identical there.
 
 ## Inputs
 
@@ -106,11 +99,10 @@ There is no `disable_safety_checker` and no `output_quality` field.
 ```json
 {
   "prompt": "<built prompt>",
-  "negative_prompt": "text, watermark, signature, logo, blurry, low resolution",
   "aspect_ratio": "4:5",
   "output_format": "webp"
 }
 ```
 
-The returned 4:5 image is centre-cropped to 3:4 after download. The negative is
-supplied by `src/server/images/quality-presets.ts` until task profiles own it.
+The returned 4:5 image is centre-cropped to 3:4 after download. No
+`negative_prompt` key is added by `quality-presets.ts`.
