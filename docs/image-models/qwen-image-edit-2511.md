@@ -82,7 +82,7 @@ With several references:
 
 ```text
 Use numbered references as assigned below. Preserve each person's exact face,
-hair, skin tone, build, and age; change only what this instruction requests.
+hair, skin tone, build, and apparent age; change only requested details.
 ```
 
 The scene prompt already enumerates references later in send order. The quality
@@ -93,9 +93,9 @@ Both replacements are no longer than the generic sentence they replace. The edit
 builder has already fitted its prompt before model selection, so provider-specific
 preparation cannot silently re-expand it beyond the fitted budget.
 
-The existing apparent-age sentence remains text-authoritative when it follows
-the identity lock. This preserves the owner ruling that age text must correct an
-age-ambiguous reference rather than inherit drift from it.
+The apparent-age requirement remains text-authoritative. This preserves the owner
+ruling that age text must correct an age-ambiguous reference rather than inherit
+drift from it.
 
 ## Seeded profiles
 
