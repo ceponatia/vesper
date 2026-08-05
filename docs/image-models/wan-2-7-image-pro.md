@@ -7,7 +7,50 @@
 > output, thinking mode, text-to-image, multi-image editing, and image set
 > generation.
 
-A multi-reference alternative for scenes. Not a Vesper default.
+A multi-reference alternative for scenes. Not a Vesper default. Two things make
+it unlike every other model in the set: it will not accept Replicate's own
+uploaded-file URLs (see below), and its upstream moderation cannot be turned
+off.
+
+## References must be inlined, not uploaded
+
+Wan is the reason the registry has a `reference_transport` column. Its wrapper
+proxies Alibaba's async API and validates the **file extension** of whatever it
+is handed; a Replicate files-API URL arrives at the model container without one,
+and the prediction fails:
+
+```
+ValueError: Invalid image format ''. Supported formats: .bmp, .jpeg, .jpg, .png, .webp
+```
+
+This is not a missing input — the payload matches the schema exactly. Reproduced
+against the live model on 2026-08-05 with one reference, holding everything else
+constant:
+
+| reference form | result |
+| --- | --- |
+| `https://api.replicate.com/v1/files/<id>.webp` | `Invalid image format ''` |
+| `data:image/webp;base64,…` | accepted; reaches the upstream model |
+
+Note the upload URL *does* end in `.webp` — the extension is lost somewhere
+between Replicate's file store and the model container, so no amount of naming
+the upload fixes it. Vesper therefore stores `reference_transport = 'data_url'`
+for this row and inlines the bytes (`server/ai/replicate.ts`). Every other model
+in the set resolves the upload URL fine and keeps the smaller payload.
+
+## Moderation cannot be disabled
+
+There is no `disable_safety_checker` input, and the upstream API moderates both
+prompt and reference images:
+
+```
+ContentModerationError: Content flagged for: sexual
+```
+
+That was a benign prompt with an ordinary Vesper character reference. Expect this
+model to refuse a substantial share of scene renders regardless of prompt
+wording; the failure surfaces as a `content_rejection` and the render fails
+rather than falling to another model (one model runs the whole chain).
 
 ## No aspect ratio input at all
 
@@ -75,9 +118,13 @@ first entry.
 ```json
 {
   "prompt": "<built prompt>",
-  "images": ["<url 1>", "<url 2>"],
+  "images": ["data:image/webp;base64,<bytes 1>", "data:image/webp;base64,<bytes 2>"],
   "size": "1536*2048",
   "num_outputs": 1,
   "image_set_mode": false
 }
 ```
+
+The `images` entries are inlined data URIs rather than uploaded-file URLs — see
+"References must be inlined" above. This is the only model in the set that is
+sent references this way.

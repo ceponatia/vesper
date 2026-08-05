@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { imageReferenceTransportSchema } from "@/contracts";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { db, imageModels } from "@/server/db";
 import { probeReplicateModel } from "@/server/ai";
@@ -22,6 +23,11 @@ type Params = { modelId: string };
 const patchSchema = z.object({
   label: z.string().trim().min(1).max(120).optional(),
   maxReferences: z.number().int().min(0).max(64).optional(),
+  /**
+   * Owner-set, never probed: no Replicate schema says whether a model's wrapper
+   * can resolve an uploaded file URL. Re-probing therefore leaves it alone.
+   */
+  referenceTransport: imageReferenceTransportSchema.optional(),
   forPortrait: z.boolean().optional(),
   forVariant: z.boolean().optional(),
   forScene: z.boolean().optional(),

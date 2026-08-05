@@ -57,6 +57,9 @@ export const POST = withOwnerAdmin(async (_user, req: NextRequest) => {
     canEdit: probe.canEdit,
     referenceField: probe.referenceField,
     referenceArity: probe.referenceArity,
+    // Uploaded file URLs are what all but one model wants; a wrapper that
+    // cannot resolve them is found by running it, and switched on the row.
+    referenceTransport: "file" as const,
     maxReferences: body.value.maxReferences ?? probe.maxReferences,
     aspectMode: probe.aspectMode,
     supportedAspects: probe.supportedAspects,

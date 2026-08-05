@@ -70,9 +70,11 @@ Full API details for each live in [docs/image-models/](../image-models/).
 - **Stable Diffusion 3.5 Large** — text-to-image. Its reference input is
   strength-based repainting rather than identity-preserving editing, so it is
   offered for portraits, not scenes.
-- **Wan 2.7 Image Pro** — takes a list of references.
+- **Wan 2.7 Image Pro** — takes a list of references. The awkward one: it will
+  not accept Replicate's own uploaded-file URLs, and its upstream moderation
+  cannot be switched off (see the third rough edge below).
 
-## Two rough edges we absorb
+## Three rough edges we absorb
 
 **Not every model can produce Vesper's shape.** Every image in the app is 3:4.
 Most of these models offer 3:4 directly. Stable Diffusion 3.5 Large does not —
@@ -87,6 +89,20 @@ list of references do not say how long that list may be. So the limit is a
 number stored against each model and editable on the settings page, seeded from
 what we know, rather than something the app can discover. The scaffold that
 answers "how many references does this model support?" reads that stored number.
+
+**One model refuses the way we send reference images.** Every model is handed
+its references as a link to a file we upload to Replicate; Wan 2.7 rejects that
+outright, because it reads the image type off the end of the filename and the
+link it receives has none — the render fails with "invalid image format" before
+the model does any work (owner report 2026-08-05). So how the bytes are sent
+becomes a per-model setting, like the reference limit: upload a link, or paste
+the image straight into the request. Only Wan needs the second. Whether a model
+needs it cannot be read from its API — it is found by running the model — so the
+setting is remembered on the row and never overwritten by re-probing.
+
+Wan has a second problem that this does not fix: it moderates prompts and
+reference images upstream, with no way to turn that off, and refused an ordinary
+character reference during testing. It works now, but expect it to say no often.
 
 ## Also in this change: three scene-picker bugs
 

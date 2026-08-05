@@ -72,6 +72,8 @@ New table `image_models`, owned by `src/server/db/schema.ts`.
 - `canEdit` — boolean. True when the model has a reference input field.
 - `referenceField` — the input key references are written to.
 - `referenceArity` — `"single"` or `"array"`.
+- `referenceTransport` — `"file"` (default) or `"data_url"`. How the bytes
+  travel; see "Reference transport" below. Owner-set, never probed.
 - `maxReferences` — integer. The stored cap (ruling: not derivable).
 - `aspectMode` — `"aspect_ratio"`, `"size"`, or `"crop"`. How 3:4 is obtained.
 - `aspectValue` — the literal value sent (`"3:4"`, `"1536*2048"`, `"4:5"`).
@@ -145,6 +147,44 @@ it costs a player-visible image instead of a form error.
 provider ids collapse to `demo` plus the registry: routing asks the record what
 it can do rather than switching on a hardcoded provider id. `venice_*` ids and
 `src/server/ai/venice.ts` are deleted outright, along with `VENICE_*` env.
+
+## Reference transport (added 2026-08-05, post-ship)
+
+Step 1 above — "upload each reference as a private Replicate file" — is not
+universal. Wan 2.7's wrapper proxies Alibaba's async API and validates the file
+**extension** of what it receives; a Replicate files-API URL reaches the model
+container without one, and the prediction dies before it starts:
+
+```
+ValueError: Invalid image format ''. Supported formats: .bmp, .jpeg, .jpg, .png, .webp
+```
+
+So the transport joins the field name and the arity as a third thing a schema
+cannot tell you, stored per row:
+
+- `file` — upload, send the URL, delete in `finally`. The default, and what every
+  seeded model but Wan wants: it keeps the prediction payload small.
+- `data_url` — inline the bytes as `data:image/webp;base64,…`. No upload, so
+  nothing to clean up. Every stored Vesper image is webp, so the media type is a
+  constant rather than something to sniff.
+
+Inlining is bounded by `DATA_URL_BUDGET_BYTES` (6 MB of raw buffers ≈ 8 MB of
+base64 — far above the 3 references × ~200 KB a real render sends). References
+past the budget are dropped with an `image_model.references_trimmed` diagnostic
+rather than failing the render, except that the anchor reference is always kept:
+sending none would render a stranger, so the provider gets to be the one that
+refuses.
+
+**Not probeable.** Nothing in an OpenAPI schema distinguishes a wrapper that
+resolves URLs itself from one that does not, so `reprobe` never touches this
+column and new rows start at `file`. It is a fact learned by running the model,
+recorded like the reference cap.
+
+**Wan's other problem is not fixable here:** it has no `disable_safety_checker`
+and its upstream moderates prompt *and* reference images
+(`ContentModerationError: Content flagged for: sexual` on a benign prompt with an
+ordinary character reference). The transport fix makes the model run; it does not
+make it agreeable.
 
 ## Reference-capacity scaffold
 

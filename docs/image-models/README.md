@@ -27,6 +27,10 @@ over with one shared mapping:
 - **No model declares `maxItems` on its array reference input.** Reference caps
   are stated in prose in the field description, so they are recorded here and
   stored per row — they cannot be read from the schema.
+- **One model rejects Replicate's own uploaded-file URLs.** Wan 2.7 reads the
+  file extension off what it is handed, and an upload arrives without one, so
+  its references must be inlined as `data:` URIs (`reference_transport` on the
+  row). Nothing in a schema reveals this; it is learned by running the model.
 
 ## The models
 

@@ -30,7 +30,13 @@ import type { ContainerAccessPolicy, ItemConsumptionEffect, ItemLocus } from "@/
 import { simulationTriggerKinds, type SimulationTrigger } from "@/contracts/simulation/scheduler";
 import type { HouseholdStockAccessPolicy, RestockFunding } from "@/contracts/simulation/households";
 import type { RelationshipLedgerPayload } from "@/contracts/simulation/social";
-import { imageAspectModes, imageReferenceArities, sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
+import {
+  imageAspectModes,
+  imageReferenceArities,
+  imageReferenceTransports,
+  sceneReferenceSources,
+  sceneVisualReferenceKinds,
+} from "@/contracts";
 import { principalKinds } from "@/contracts/simulation/envelopes";
 import { itemGoneBases } from "@/contracts/simulation/materials";
 import { itemMaterialFeedEventKinds } from "@/contracts/simulation/outbox";
@@ -1387,6 +1393,14 @@ export const imageModels = pgTable(
      */
     referenceField: text("reference_field").notNull().default("image"),
     referenceArity: text("reference_arity", { enum: imageReferenceArities }).notNull().default("array"),
+    /**
+     * How reference bytes reach the model: an uploaded file URL (`file`, the
+     * default every model but Wan wants) or an inlined `data:` URI. Not
+     * derivable from the schema — see the contract's `imageReferenceTransports`.
+     */
+    referenceTransport: text("reference_transport", { enum: imageReferenceTransports })
+      .notNull()
+      .default("file"),
     maxReferences: integer("max_references").notNull().default(1),
     aspectMode: text("aspect_mode", { enum: imageAspectModes }).notNull().default("aspect_ratio"),
     /**
