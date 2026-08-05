@@ -36,6 +36,20 @@ const propertySchema = z
     allOf: z.array(z.object({ $ref: z.string().optional() })).optional(),
   });
 
+const openapiSchema = z.object({
+  components: z
+    .object({
+      schemas: z.record(z.string(), z.unknown()).optional(),
+    })
+    .optional(),
+});
+
+/** `GET /models/{owner}/{name}/versions/{id}` — the schema sits at the top level. */
+const versionResponseSchema = z.object({
+  id: z.string().optional(),
+  openapi_schema: openapiSchema.nullable().optional(),
+});
+
 const modelResponseSchema = z
   .object({
     name: z.string().optional(),
@@ -81,30 +95,59 @@ export async function probeReplicateModel(slug: string): Promise<ProbeResult> {
   const token = process.env.REPLICATE_API_TOKEN;
   if (!token) return { ok: false, error: "REPLICATE_API_TOKEN not configured" };
 
-  const parts = slug.split(":")[0]?.split("/") ?? [];
+  const [path, pinnedVersion, ...rest] = slug.split(":");
+  const parts = path?.split("/") ?? [];
   const [owner, name] = parts;
-  if (!owner || !name || parts.length !== 2) {
+  if (!owner || !name || parts.length !== 2 || rest.length > 0) {
     return { ok: false, error: `"${slug}" is not a Replicate model path — expected owner/name` };
   }
 
+  // A PINNED slug must be probed at its OWN version, not at `latest_version`.
+  // Rendering posts the pinned version id, so probing latest would store
+  // capability columns describing a different schema — the exact drift pinning
+  // exists to prevent, and it would surface as every render failing on invalid
+  // inputs while the save looked fine.
+  const modelPath = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+  const url = pinnedVersion
+    ? `${REPLICATE_BASE}/models/${modelPath}/versions/${encodeURIComponent(pinnedVersion)}`
+    : `${REPLICATE_BASE}/models/${modelPath}`;
+
   let raw: unknown;
   try {
-    const response = await fetch(`${REPLICATE_BASE}/models/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+    const response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
-    if (response.status === 404) return { ok: false, error: `Replicate has no model called ${owner}/${name}` };
-    if (!response.ok) return { ok: false, error: `Replicate returned ${response.status} for ${owner}/${name}` };
+    if (response.status === 404) {
+      return {
+        ok: false,
+        error: pinnedVersion
+          ? `Replicate has no version ${pinnedVersion} of ${owner}/${name}`
+          : `Replicate has no model called ${owner}/${name}`,
+      };
+    }
+    if (!response.ok) return { ok: false, error: `Replicate returned ${response.status} for ${slug}` };
     raw = await response.json();
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 
-  const parsed = modelResponseSchema.safeParse(raw);
-  if (!parsed.success) return { ok: false, error: `Replicate returned an unreadable model record for ${slug}` };
-
-  const schemas = parsed.data.latest_version?.openapi_schema?.components?.schemas ?? {};
+  // The two endpoints nest the schema differently: a model record carries it
+  // under `latest_version`, a version record carries it at the top level.
+  let schemas: Record<string, unknown>;
+  let versionId: string | null;
+  if (pinnedVersion) {
+    const parsed = versionResponseSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false, error: `Replicate returned an unreadable version record for ${slug}` };
+    schemas = parsed.data.openapi_schema?.components?.schemas ?? {};
+    versionId = pinnedVersion;
+  } else {
+    const parsed = modelResponseSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false, error: `Replicate returned an unreadable model record for ${slug}` };
+    schemas = parsed.data.latest_version?.openapi_schema?.components?.schemas ?? {};
+    versionId = parsed.data.latest_version?.id ?? null;
+  }
   const input = schemas.Input;
   const inputShape = z
     .object({
@@ -130,7 +173,7 @@ export async function probeReplicateModel(slug: string): Promise<ProbeResult> {
     probe: {
       slug,
       label: defaultLabel(name),
-      versionId: parsed.data.latest_version?.id ?? null,
+      versionId,
       canEdit: reference !== null,
       // A model whose reference input is REQUIRED cannot make an image from a
       // prompt alone — this is what keeps qwen-image-edit-2511 out of the

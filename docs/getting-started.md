@@ -10,8 +10,8 @@
 ```bash
 cd vesper
 pnpm install
-cp .env.example .env        # add OPENROUTER_API_KEY (+ REPLICATE_API_TOKEN
-                            #   only if you want the `*` picker options — see Environment)
+cp .env.example .env        # add OPENROUTER_API_KEY and REPLICATE_API_TOKEN
+                            #   (both required for a non-demo install — see Environment)
 docker compose up -d postgres
 pnpm db:create              # verifies vesper_dev + pgvector extension
 pnpm db:migrate
@@ -50,10 +50,8 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 | Var | Default | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://vesper:vesper_dev_password@localhost:5435/vesper_dev` | App database |
-| `OPENROUTER_API_KEY` | — | All text models + embeddings (image gen is Venice/Qwen by default — see the Venice + Replicate vars) |
-| `REPLICATE_API_TOKEN` | — | Opt-in second image provider — needed **only** for the `*`-marked picker options ([images.md](images.md) §Providers). Absent ⇒ a `*` pick fails the row visibly; Venice picks are unaffected |
-| `REPLICATE_IMAGE_MODEL` | `qwen/qwen-image-2512` | Replicate text-to-image (`* Qwen Image 2512`, avatars) |
-| `REPLICATE_IMAGE_EDIT_MODEL` | `qwen/qwen-image-edit-2511` | Replicate reference editing (`* Qwen Image Edit 2511`, chat scenes; 1–3 refs) |
+| `OPENROUTER_API_KEY` | — | All text models + embeddings. Leave unset to run in demo mode (deterministic narrative, placeholder images) |
+| `REPLICATE_API_TOKEN` | — | **The image backend.** Every image — avatars, portrait variants, chat scenes, item/location shots — renders through Replicate ([images.md](images.md) §Providers). Absent outside demo mode ⇒ every render fails the row with `REPLICATE_API_TOKEN not configured` |
 | `REPLICATE_PREDICTION_TIMEOUT_MS` | `300000` (5m) | Prediction deadline — clamped to 30s–30m, sent as Replicate's `Cancel-After` **and** used as this client's poll cutoff, so both expire together |
 | `REPLICATE_SAFE_MODE` | `false` | Replicate safety-checker toggle; only sent to models whose schema declares the input |
 | `BETTER_AUTH_SECRET` | — | **Required.** Signs sessions/cookies ([auth.md](auth.md)); `openssl rand -base64 32` |

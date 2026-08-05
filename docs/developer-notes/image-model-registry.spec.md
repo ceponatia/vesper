@@ -106,6 +106,16 @@ disagree is simply not offered — no error, no diagnostic.
 - `outputFormat` — `"webp"` when the enum offers it, else the first enum value,
   else null.
 
+**A pinned slug is probed at its own version.** `owner/name:version` reads
+`GET /models/{owner}/{name}/versions/{version}` (whose `openapi_schema` sits at
+the top level) rather than the model record's `latest_version` (where it is
+nested). Probing latest for a pinned row would store capability columns
+describing a schema the render path never posts — the exact drift pinning exists
+to prevent, and it would surface as every render failing on invalid inputs while
+the save looked fine. Observed real: the version endpoint for
+`qwen/qwen-image-edit-2511` reports `lora_scale` / `lora_weights` that the model
+record's `latest_version` does not.
+
 The probe runs on create and on an explicit re-probe from the settings page. It
 is a trust boundary: the response is parsed through a zod schema with `parseOr`,
 and a probe that cannot find a prompt input fails the save with
