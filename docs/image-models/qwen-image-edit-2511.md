@@ -74,24 +74,24 @@ The existing Vesper builders still emit a provider-neutral identity sentence, so
 With one reference:
 
 ```text
-Image 1 is the canonical identity reference. Generate a new image of the exact
-same person shown in image 1. Preserve their facial features, hair color and
-style, skin tone, body proportions, and apparent age. Change only what the rest
-of this instruction explicitly requests.
+Image 1 is the identity reference. Preserve the exact face, hair, skin tone,
+body proportions, and apparent age. Change only what this instruction requests.
 ```
 
 With several references:
 
 ```text
-Treat the numbered reference images as authoritative for the people, place,
-style, and objects assigned to them below. Preserve every referenced person's
-exact facial identity, hair, skin tone, build, and apparent age. Change only what
-the rest of this instruction explicitly requests.
+Use numbered references as assigned below. Preserve each person's exact face,
+hair, skin tone, build, and age; change only what this instruction requests.
 ```
 
-The scene prompt already enumerates the references later in send order. The
-quality seam supplies the interpretation contract without changing non-Qwen
-prompts or custom Qwen instructions that do not contain the legacy lock.
+The scene prompt already enumerates references later in send order. The quality
+seam supplies the interpretation contract without changing non-Qwen prompts or
+custom Qwen instructions that do not contain the legacy lock.
+
+Both replacements are no longer than the generic sentence they replace. The edit
+builder has already fitted its prompt before model selection, so provider-specific
+preparation cannot silently re-expand it beyond the fitted budget.
 
 The existing apparent-age sentence remains text-authoritative when it follows
 the identity lock. This preserves the owner ruling that age text must correct an
@@ -174,7 +174,7 @@ takes the first result.
 
 ```json
 {
-  "prompt": "<numbered edit instruction>",
+  "prompt": "<compact numbered edit instruction>",
   "image": ["<url 1>", "<url 2>"],
   "aspect_ratio": "3:4",
   "output_format": "webp",
