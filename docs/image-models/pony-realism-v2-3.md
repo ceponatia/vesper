@@ -3,106 +3,120 @@
 **Slug:** `nsfw-api/pony-realism-v2.3`
 **Registered as:** `nsfw-api/pony-realism-v2.3:7d1b41807ba3094e6d88e8eeeeb97425514bbbac00fc1aabc935612942a9cd7f`
 **Probed:** 2026-08-05, version `7d1b41807ba3094e6d88e8eeeeb97425514bbbac00fc1aabc935612942a9cd7f`
+**Quality ruling:** experimental identity-specialist candidate
 
-The model page carries no description. From its schema it is an **InstantID +
-IP-Adapter + ControlNet identity pipeline** over a Pony Realism SDXL checkpoint:
-you give it a face, a prompt, and optionally a pose reference, and it renders a
-new image of that person. Run on Replicate's own GPUs.
+The model page carries no descriptive README. Its schema exposes an InstantID /
+IP-Adapter / ControlNet pipeline over a Pony Realism checkpoint: one image
+supplies a face, and an optional second field supplies a pose.
 
-Note the slug: `pony-realism-v2.3` with a dot. `nsfw-api/pony-realism-v23` and
-`nsfw-api/pony-realism` both 404.
+That architecture makes it worth testing for character identity. It does not make
+it proven. The model had a low run count when reviewed and has no Vesper trial
+verdict, so it must not be described as automatically better than Qwen Edit.
 
-Low run count (212 at probe time), so treat reliability as unproven relative to
-the Qwen defaults.
+Note the slug includes a dot: `pony-realism-v2.3`.
 
 ## Community model — pinned by version
 
-`is_official` is false for this model, so Replicate's bare-slug predictions
-endpoint 404s on it. Its registry row is pinned to the version above and runs
-through `POST /predictions`, which is the only endpoint that will take it. The
-trade is that the row no longer follows new releases: re-add it to move to a
-newer version.
+`is_official` is false. The row is pinned to the version above and runs through
+Replicate's versioned predictions endpoint. A new version requires a new probe,
+semantic review, fixed-matrix trial, and license/terms review.
 
 ## Capabilities
 
-- **Generate without a reference:** **no.** `image` is required, so this model
-  can never serve the new-portrait surface.
-- **Edit from a reference:** yes, and identity-preserving by construction —
-  IdentityNet/InstantID is what the pipeline is built around.
-- **Reference field:** `image` — a single URI, described as *"Input face image"*.
-- **Reference cap:** 1. (A second URI input exists — `pose_image` — but it is a
-  different role, not a second identity slot. See below.)
-- **Aspect handling:** none. No `aspect_ratio`, no `size`, not even
-  `width`/`height`; the output shape follows the pipeline's own defaults, so
-  Vesper crops after download.
+- **Generate without a reference:** no; `image` is required.
+- **Identity-guided render:** yes, via an input face and identity controls.
+- **Reference field:** `image`, one URI described as the input face.
+- **Additional visual field:** `pose_image`, a distinct optional URI role.
+- **Aspect handling:** no aspect, size, width, or height input; normalize after
+  download.
 - **Output:** array of URIs.
 
-## The second image input is a pose, not a reference
+## Face and pose are separate roles
 
-`pose_image` is *"(Optional) reference pose image"* — it feeds the OpenPose
-ControlNet (`enable_pose_controlnet`, default `true`) to dictate the subject's
-posture, while `image` supplies the face. Vesper's render path sends one
-reference to one field today, so `pose_image` goes unused.
+`image` supplies identity. `pose_image` feeds an OpenPose ControlNet when
+`enable_pose_controlnet` is true. They are not interchangeable references and
+must not be represented as two anonymous slots.
 
-It is a genuinely interesting seam for the scene lane: the scene composer already
-produces an explicit pose, and a posed source image would be a stronger signal
-than words. That belongs in the "expand the per-model schema" work, not in the
-prompt + reference pass.
+The current generic adapter sends only the registered identity field, so
+`pose_image` is unused. The identity-repair trial depends on role-aware reference
+bindings from the capabilities plan:
 
-## Identity and detail knobs
+- identity pack face crop → `image`;
+- source scene output → `pose_image`;
+- prompt → the scene's compact Pony dialect;
+- explicit single-character guard.
 
-Two scales control the tension every identity pipeline has between "looks like
-them" and "looks good":
+Until that binding exists, Pony is not a normal scene option and no route should
+bypass the shared adapter with a permanent special-case payload.
 
-- `controlnet_conditioning_scale` — default `0.8`, *"IdentityNet strength (for
-  fidelity)"*. Higher holds the face; too high flattens everything else.
-- `ip_adapter_scale` — default `0.8`, *"image adapter strength (for detail)"*.
+## Identity/detail controls
 
-Left at their defaults for now. If renders come back looking like a generic
-person rather than the character, this pair is the first thing to raise.
+- `controlnet_conditioning_scale`, default `0.8`, is described as IdentityNet
+  fidelity strength;
+- `ip_adapter_scale`, default `0.8`, controls image-adapter detail;
+- `pose_strength`, default `0.4`, controls pose influence when pose ControlNet is
+  active.
+
+Higher identity settings may improve likeness but can flatten expression, texture,
+or prompt adherence. Tune one control at a time on the fixed matrix. The first
+trial holds provider defaults and tests references/prompt policy before changing
+these scales.
+
+## Quality policy before profiles are wired
+
+The provider's `negative_prompt` defaults empty. The shared render seam supplies:
+
+```text
+extra limbs, extra arms, extra legs, malformed limbs, disconnected limbs,
+extra fingers, missing fingers, fused fingers, mutated hands, poorly drawn
+hands, bad anatomy, disfigured, text, watermark, signature, logo, blurry,
+low resolution, score_1, score_2, score_3
+```
+
+The anatomy/production portion is style-neutral. The three low-score tags are the
+only Pony-specific static addition. Positive score/source/rating conventions are
+not yet hardcoded; they belong to a tested `pony_tag` profile because they consume
+prompt context and may vary by checkpoint.
+
+Steps, guidance, scheduler, identity scales, and ControlNet strengths remain at
+provider defaults until trialed.
 
 ## Inputs
 
-- `image` — URI string. **Required.** The face.
-- `pose_image` — URI string, optional.
-- `prompt` — string, default `"a person"`.
-- `negative_prompt` — string, default `""`.
-- `face_detection_input_width` / `face_detection_input_height` — integer, default
-  `640`, range 640–4096.
-- `scheduler` — enum, default `"EulerDiscreteScheduler"`. Values:
-  `DEISMultistepScheduler`, `HeunDiscreteScheduler`, `EulerDiscreteScheduler`,
-  `DPMSolverMultistepScheduler`, `DPMSolverMultistepScheduler-Karras`,
-  `DPMSolverMultistepScheduler-Karras-SDE`.
-- `num_inference_steps` — integer, default `30`, range 1–500.
-- `guidance_scale` — number, default `7.5`, range 1–50.
-- `ip_adapter_scale` — number, default `0.8`, range 0–1.5.
-- `controlnet_conditioning_scale` — number, default `0.8`, range 0–1.5.
-- `enable_pose_controlnet` — boolean, default `true`; `pose_strength` number,
-  default `0.4`.
-- `enable_canny_controlnet` — boolean, default `false`; `canny_strength` number,
-  default `0.3`.
-- `enable_depth_controlnet` — boolean, default `false`; `depth_strength` number,
-  default `0.5`.
-- `enable_lcm` — boolean, default `false`; with `lcm_num_inference_steps`
-  (default `5`) and `lcm_guidance_scale` (default `1.5`). Faster, lower quality.
-- `enhance_nonface_region` — boolean, default `true`.
-- `output_format` — enum, default `"webp"`. Values: `webp`, `jpg`, `png`.
-- `output_quality` — integer, default `80`, range 0–100.
-- `num_outputs` — integer, default `1`, range 1–8.
+- `image` — URI string, required identity face.
+- `pose_image` — optional URI string.
+- `prompt` — string, provider-default `a person`.
+- `negative_prompt` — string, provider-default empty.
+- `face_detection_input_width` / `face_detection_input_height` — integer,
+  default 640, range 640–4096.
+- `scheduler` — enum, provider-default `EulerDiscreteScheduler`; includes DEIS,
+  Heun, Euler, and DPM Solver/Karras variants.
+- `num_inference_steps` — integer, default 30.
+- `guidance_scale` — number, default 7.5.
+- `ip_adapter_scale` — number, default 0.8, range 0–1.5.
+- `controlnet_conditioning_scale` — number, default 0.8, range 0–1.5.
+- `enable_pose_controlnet` — boolean, default true; `pose_strength` default 0.4.
+- optional canny and depth ControlNets with their strength controls.
+- optional LCM acceleration, disabled by default.
+- `enhance_nonface_region` — boolean, default true.
+- `output_format` — enum, default WebP.
+- `output_quality` — integer, provider-default 80; Vesper's probe pins 95.
+- `num_outputs` — integer, default 1, range 1–8.
 - `seed` — integer.
-- `disable_safety_checker` — boolean, default `false`.
+- `disable_safety_checker` — boolean, default false.
 
 ## Output
 
-`{"type": "array", "items": {"type": "string", "format": "uri"}}` — take the
-first entry.
+`{"type": "array", "items": {"type": "string", "format": "uri"}}` — Vesper
+takes the first result in ordinary lanes.
 
-## Vesper payload
+## Effective current Vesper payload
 
 ```json
 {
   "prompt": "<built prompt>",
-  "image": "<single url>",
+  "negative_prompt": "extra limbs, extra arms, extra legs, malformed limbs, disconnected limbs, extra fingers, missing fingers, fused fingers, mutated hands, poorly drawn hands, bad anatomy, disfigured, text, watermark, signature, logo, blurry, low resolution, score_1, score_2, score_3",
+  "image": "<single identity url>",
   "output_format": "webp",
   "output_quality": 95,
   "num_outputs": 1,
@@ -110,5 +124,18 @@ first entry.
 }
 ```
 
-No shape key is sent — the model has no aspect input — so whatever it returns is
-centre-cropped to 3:4 after download.
+No shape key is sent. The result is normalized to the lane target after download.
+`pose_image` is not sent by the current generic path.
+
+## Trial and production gate
+
+Pony remains admin/experimental until a single-person identity trial measures:
+
+- face likeness versus Qwen Edit;
+- pose, clothing, body, setting, and lighting drift;
+- anatomy and seam quality;
+- latency and cost;
+- failure/reliability rate.
+
+It also requires a recorded review of the checkpoint/wrapper license and intended
+hosted product use before becoming a production default or paid feature path.
