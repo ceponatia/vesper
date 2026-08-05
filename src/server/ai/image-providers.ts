@@ -1,29 +1,23 @@
-import type { SceneReferenceMode, SceneVisualReference } from "@/contracts";
+import type { ChatSceneProvider, SceneReferenceMode, SceneVisualReference } from "@/contracts";
 import { describeProviderError } from "./errors";
+import { replicateEditImage, replicateGenerateImage } from "./replicate";
 import { veniceEditImage, veniceGenerateImage, veniceMultiEditImage, veniceSceneImageModelId } from "./venice";
 
 /**
- * Provider-capability seam for scene rendering (scene-images.spec.md §4). The
- * capability table is a typed code registry — not a DB table — because every
- * provider is tied to an SDK call in this directory (the `@openrouter`-only
- * boundary), so the data belongs next to the code and can't drift from it.
- *
- * After the 2026-06-19 Flux removal the stack is **Venice/Qwen end-to-end**
- * (OpenRouter left the image stack). The ladder is, by reference mode:
- * - `single` (default): single-reference edit (`venice_edit`) only.
- * - `multi`: multi-reference edit (`venice_multi_edit`, Venice `/image/multi-edit`,
- *   ≤3 uncensored refs) → `venice_edit`.
- * Text-to-image (`venice_generate`) runs ONLY when no reference image exists at
- * all (owner ruling 2026-07-29): it cannot honor a reference, so a failed edit
- * must fail visibly rather than silently painting a different-looking person —
- * what used to be the opt-in `requireReferenceIdentity` flag is now the only
- * behavior. Reference-capable providers are the intended additions here (e.g.
- * self-hosted ComfyUI for >3 refs, spec §7): a new `IMAGE_PROVIDERS` entry + one
- * router clause + a render branch, never a `scene.ts` rewrite.
+ * Provider-capability seam for scene rendering (scene-images.spec.md §4).
+ * Provider/model names stay at this infrastructure boundary; domain callers ask
+ * for a stored provider family plus reference mode and get an ordered chain.
  */
-export const imageProviderIds = ["demo", "venice_edit", "venice_multi_edit", "venice_generate"] as const;
+export const imageProviderIds = [
+  "demo",
+  "venice_edit",
+  "venice_multi_edit",
+  "venice_generate",
+  "replicate_edit",
+  "replicate_multi_edit",
+  "replicate_generate",
+] as const;
 export type ImageProviderId = (typeof imageProviderIds)[number];
-/** The AI-backed providers (everything but the images-layer demo monogram). */
 export type AiImageProviderId = Exclude<ImageProviderId, "demo">;
 
 export type ImagePolicyMode = "uncensored" | "moderated" | "none";
@@ -35,12 +29,21 @@ export interface ImageProviderCaps {
   supportsLocationReference: boolean;
   supportsMask: boolean;
   supportsAdultFictionalNudity: boolean;
-  /** Never true — uploaded real-person likenesses are off the NSFW path by policy (§3). */
+  /** Never true — uploaded real-person likenesses are off the NSFW path by policy. */
   supportsUploadedRealPeopleInNsfw: false;
   maxPromptChars: number;
   aspectRatios: readonly string[];
   policyMode: ImagePolicyMode;
 }
+
+const commonEditCaps = {
+  supportsMask: false,
+  supportsAdultFictionalNudity: true,
+  supportsUploadedRealPeopleInNsfw: false,
+  maxPromptChars: 1_500,
+  aspectRatios: ["3:4"],
+  policyMode: "uncensored",
+} as const;
 
 export const IMAGE_PROVIDERS = {
   demo: {
@@ -55,26 +58,16 @@ export const IMAGE_PROVIDERS = {
     policyMode: "none",
   },
   venice_edit: {
+    ...commonEditCaps,
     maxReferenceImages: 1,
     supportsReferenceRoles: false,
     supportsLocationReference: false,
-    supportsMask: false,
-    supportsAdultFictionalNudity: true,
-    supportsUploadedRealPeopleInNsfw: false,
-    maxPromptChars: 1500,
-    aspectRatios: ["3:4"],
-    policyMode: "uncensored",
   },
   venice_multi_edit: {
+    ...commonEditCaps,
     maxReferenceImages: 3,
     supportsReferenceRoles: true,
     supportsLocationReference: true,
-    supportsMask: false,
-    supportsAdultFictionalNudity: true,
-    supportsUploadedRealPeopleInNsfw: false,
-    maxPromptChars: 1500,
-    aspectRatios: ["3:4"],
-    policyMode: "uncensored",
   },
   venice_generate: {
     maxReferenceImages: 0,
@@ -83,7 +76,30 @@ export const IMAGE_PROVIDERS = {
     supportsMask: false,
     supportsAdultFictionalNudity: true,
     supportsUploadedRealPeopleInNsfw: false,
-    maxPromptChars: 4000,
+    maxPromptChars: 4_000,
+    aspectRatios: ["3:4"],
+    policyMode: "uncensored",
+  },
+  replicate_edit: {
+    ...commonEditCaps,
+    maxReferenceImages: 1,
+    supportsReferenceRoles: false,
+    supportsLocationReference: false,
+  },
+  replicate_multi_edit: {
+    ...commonEditCaps,
+    maxReferenceImages: 3,
+    supportsReferenceRoles: true,
+    supportsLocationReference: true,
+  },
+  replicate_generate: {
+    maxReferenceImages: 0,
+    supportsReferenceRoles: false,
+    supportsLocationReference: false,
+    supportsMask: false,
+    supportsAdultFictionalNudity: true,
+    supportsUploadedRealPeopleInNsfw: false,
+    maxPromptChars: 4_000,
     aspectRatios: ["3:4"],
     policyMode: "uncensored",
   },
@@ -91,49 +107,41 @@ export const IMAGE_PROVIDERS = {
 
 // --- Routing -------------------------------------------------------------
 
-/** Computable from data the pipeline already produces (spec §4). */
 export interface SceneRenderRequest {
-  /** Every reference the scene featured; those with an `imageId` can anchor an edit. */
   references: SceneVisualReference[];
-  /** Demo mode (no keys) — only the monogram provider runs. */
   demo: boolean;
-  /**
-   * Reference mode (the session toggle, scene-images.plan.md): `multi` puts the
-   * Venice `/image/multi-edit` rung ahead of single-edit; `single`/unset keeps
-   * the single-anchor chain.
-   */
   mode?: SceneReferenceMode;
+  /** Stored chat/model choice; absent preserves the pre-Replicate Venice default. */
+  provider?: ChatSceneProvider;
 }
 
 /**
- * The ordered provider fallback chain for a scene (spec §8.3). Pure — selected
- * from the request against the capability registry.
- *
- * With ≥1 reference image the chain is **edit rungs only** (owner ruling
- * 2026-07-29, formerly the opt-in `requireReferenceIdentity` flag): text-to-image
- * cannot honor a reference, so a failed edit fails the image visibly (a "failed"
- * tile + retry) instead of silently painting a *different-looking* person.
- * Text-to-image is the sole rung only when NO reference image exists.
- *
- * `mode: "multi"` prepends `venice_multi_edit` — but only when ≥2 reference
- * images exist (with one image it would just be a single edit). With fewer, the
- * chain degrades to the single-edit rung, so the toggle never blocks a render.
+ * With a usable identity reference, only edit rungs are returned. A selected
+ * provider never silently falls across to the other provider or to unrelated
+ * text-to-image output: failures remain visible and retryable.
  */
 export function routeSceneProviders(request: SceneRenderRequest): ImageProviderId[] {
   if (request.demo) return ["demo"];
-  const referenceImages = request.references.filter((r) => Boolean(r.imageId)).length;
-  const ordered: ImageProviderId[] = request.mode === "multi" ? ["venice_multi_edit", "venice_edit"] : ["venice_edit"];
+  const referenceImages = request.references.filter((reference) => Boolean(reference.imageId)).length;
+  const provider = request.provider ?? "venice";
+  const ordered: ImageProviderId[] =
+    provider === "replicate"
+      ? request.mode === "multi"
+        ? ["replicate_multi_edit", "replicate_edit"]
+        : ["replicate_edit"]
+      : request.mode === "multi"
+        ? ["venice_multi_edit", "venice_edit"]
+        : ["venice_edit"];
   const chain = ordered.filter((id) => providerCanAttempt(id, referenceImages));
-  // No usable reference anchor ⇒ text-to-image is the only path (and the chain
-  // is never empty).
-  return chain.length > 0 ? chain : ["venice_generate"];
+  if (chain.length > 0) return chain;
+  return [provider === "replicate" ? "replicate_generate" : "venice_generate"];
 }
 
 function providerCanAttempt(id: ImageProviderId, referenceImages: number): boolean {
   const caps = IMAGE_PROVIDERS[id];
-  if (caps.maxReferenceImages === 0) return true; // text-to-image ignores references
-  if (caps.maxReferenceImages >= 2) return referenceImages >= 2; // multi-ref needs ≥2 anchors
-  return referenceImages >= 1; // single-reference edit needs one anchor image
+  if (caps.maxReferenceImages === 0) return true;
+  if (caps.maxReferenceImages >= 2) return referenceImages >= 2;
+  return referenceImages >= 1;
 }
 
 // --- Failure classification + execution ----------------------------------
@@ -155,11 +163,6 @@ const CONTENT_REJECTION = /moderation|sexual content|nsfw|safe[_ ]?mode|content 
 const TRANSIENT =
   /timeout|timed out|abort|econn|etimedout|enotfound|socket hang up|network|fetch failed|rate limit|too many requests|\b(429|500|502|503|504)\b|temporarily/;
 
-/**
- * Map a failure to a retry class (spec §8.3): a content rejection must NOT retry
- * (it only fails again — fall down the ladder); a transient error may retry.
- * Reuses `describeProviderError` to recover any real upstream message.
- */
 export function classifyImageFailure(err: unknown): ImageFailureReason {
   const message = describeProviderError(err).toLowerCase();
   if (CONTENT_REJECTION.test(message)) return "content_rejection";
@@ -169,17 +172,11 @@ export function classifyImageFailure(err: unknown): ImageFailureReason {
 
 export interface ImageRenderInput {
   prompt: string;
-  /** Single-reference edit (`venice_edit`): the lone identity anchor. */
   reference?: Buffer;
-  /** Multi-reference edit (`venice_multi_edit`): 1–3 ordered references (first = base). */
   references?: Buffer[];
 }
 
-/**
- * Run one AI-backed provider. Never throws — classifies any failure so the
- * executor can decide retry-vs-fallback. The demo monogram is rendered in the
- * images layer (it has no SDK call and would create an import cycle here).
- */
+/** Run one AI-backed provider and classify its never-throws result. */
 export async function executeImageProvider(id: AiImageProviderId, input: ImageRenderInput): Promise<ProviderRenderResult> {
   switch (id) {
     case "venice_edit":
@@ -188,37 +185,64 @@ export async function executeImageProvider(id: AiImageProviderId, input: ImageRe
       return renderVeniceMultiEdit(input);
     case "venice_generate":
       return renderVeniceGenerate(input);
+    case "replicate_edit":
+      return renderReplicateEdit(input, false);
+    case "replicate_multi_edit":
+      return renderReplicateEdit(input, true);
+    case "replicate_generate":
+      return renderReplicateGenerate(input);
   }
 }
 
 async function renderVeniceEdit(input: ImageRenderInput): Promise<ProviderRenderResult> {
-  if (!input.reference) {
-    return { ok: false, failure: { reason: "other", message: "venice_edit requires a reference image" } };
-  }
-  const edit = await veniceEditImage({ prompt: input.prompt, reference: input.reference });
-  return fromVenice(edit, "venice edit returned no image");
+  if (!input.reference) return missingReference("venice_edit", false);
+  return fromProvider(
+    await veniceEditImage({ prompt: input.prompt, reference: input.reference }),
+    "venice edit returned no image",
+  );
 }
 
 async function renderVeniceMultiEdit(input: ImageRenderInput): Promise<ProviderRenderResult> {
   const references = input.references ?? [];
-  if (references.length < 2) {
-    return { ok: false, failure: { reason: "other", message: "venice_multi_edit requires at least two reference images" } };
-  }
-  const edit = await veniceMultiEditImage({ prompt: input.prompt, references });
-  return fromVenice(edit, "venice multi-edit returned no image");
+  if (references.length < 2) return missingReference("venice_multi_edit", true);
+  return fromProvider(await veniceMultiEditImage({ prompt: input.prompt, references }), "venice multi-edit returned no image");
 }
 
 async function renderVeniceGenerate(input: ImageRenderInput): Promise<ProviderRenderResult> {
-  // The scene t2i default (Chroma) — resolved through the shared key registry so this
-  // call and scene.ts's meta.model label can never disagree. This rung only runs
-  // when no reference image exists (the chat strip's t2i style-swap pick is gone).
-  const generated = await veniceGenerateImage({ prompt: input.prompt, aspectRatio: "3:4", model: veniceSceneImageModelId() });
-  return fromVenice(generated, "venice generate returned no image");
+  return fromProvider(
+    await veniceGenerateImage({ prompt: input.prompt, aspectRatio: "3:4", model: veniceSceneImageModelId() }),
+    "venice generate returned no image",
+  );
 }
 
-/** Shape a Venice never-throws result into a classified provider result. */
-function fromVenice(result: { ok: boolean; image?: Buffer; error?: string }, noImageMessage: string): ProviderRenderResult {
+async function renderReplicateEdit(input: ImageRenderInput, multi: boolean): Promise<ProviderRenderResult> {
+  const references = multi ? (input.references ?? []) : input.reference ? [input.reference] : [];
+  if (references.length < (multi ? 2 : 1)) return missingReference(multi ? "replicate_multi_edit" : "replicate_edit", multi);
+  return fromProvider(
+    await replicateEditImage({ prompt: input.prompt, references, aspectRatio: "3:4" }),
+    "replicate edit returned no image",
+  );
+}
+
+async function renderReplicateGenerate(input: ImageRenderInput): Promise<ProviderRenderResult> {
+  return fromProvider(
+    await replicateGenerateImage({ prompt: input.prompt, aspectRatio: "3:4" }),
+    "replicate generate returned no image",
+  );
+}
+
+function missingReference(id: ImageProviderId, multi: boolean): ProviderRenderResult {
+  return {
+    ok: false,
+    failure: { reason: "other", message: `${id} requires at least ${multi ? "two reference images" : "one reference image"}` },
+  };
+}
+
+function fromProvider(
+  result: { ok: boolean; image?: Buffer; error?: string },
+  noImageMessage: string,
+): ProviderRenderResult {
   if (result.ok && result.image) return { ok: true, image: result.image };
-  const message = result.error ?? noImageMessage;
+  const message = result.error || noImageMessage;
   return { ok: false, failure: { reason: classifyImageFailure(message), message } };
 }

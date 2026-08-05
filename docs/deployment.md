@@ -98,6 +98,13 @@ primary_region = 'iad'
      DEV_PASSWORD="..." \
      -a vesper
    ```
+   `REPLICATE_API_TOKEN` is **optional** and set separately — only the `*`-marked
+   image-model picks route through Replicate ([images.md](images.md) §Providers),
+   and without it those picks fail the image row while every Venice pick keeps
+   working:
+   ```
+   fly secrets set REPLICATE_API_TOKEN="..." -a vesper
+   ```
 4. **Seed the dev/admin credential** once Postgres is migrated:
    ```
    fly ssh console -a vesper -C "pnpm db:seed"

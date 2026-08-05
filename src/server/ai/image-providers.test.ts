@@ -14,40 +14,44 @@ describe("routeSceneProviders", () => {
     expect(routeSceneProviders({ references: [], demo: true })).toEqual(["demo"]);
   });
 
-  it("single mode: a reference image anchors the uncensored edit ONLY — no text-to-image fallback (fail-visible)", () => {
+  it("defaults to a fail-visible Venice edit when a reference exists", () => {
     const refs = [charRef({ entityId: "c1", name: "Mira", imageId: "img1", source: "generated" })];
     expect(routeSceneProviders({ references: refs, demo: false })).toEqual(["venice_edit"]);
   });
 
-  it("featured-but-textual characters (no image) skip the edit provider — text-to-image only", () => {
+  it("routes an explicit Replicate selection to Replicate Edit only", () => {
+    const refs = [charRef({ entityId: "c1", name: "Mira", imageId: "img1", source: "generated" })];
+    expect(routeSceneProviders({ references: refs, demo: false, provider: "replicate" })).toEqual(["replicate_edit"]);
+  });
+
+  it("uses the selected provider's text-to-image model when no reference exists", () => {
     const refs = [charRef({ entityId: "c1", name: "Mira" })];
     expect(routeSceneProviders({ references: refs, demo: false })).toEqual(["venice_generate"]);
+    expect(routeSceneProviders({ references: refs, demo: false, provider: "replicate" })).toEqual(["replicate_generate"]);
   });
 
-  it("no references at all still has a valid last rung", () => {
-    expect(routeSceneProviders({ references: [], demo: false })).toEqual(["venice_generate"]);
-  });
-
-  it("multi mode with ≥2 reference images prepends the Venice multi-edit rung — still no text-to-image", () => {
-    const refs = [
+  it("prepends each provider's multi-edit rung only when at least two images exist", () => {
+    const twoRefs = [
       charRef({ entityId: "c1", name: "Mira", imageId: "img1", source: "generated" }),
       charRef({ entityId: "c2", name: "Sayed", imageId: "img2", source: "generated" }),
     ];
-    expect(routeSceneProviders({ references: refs, demo: false, mode: "multi" })).toEqual(["venice_multi_edit", "venice_edit"]);
+    expect(routeSceneProviders({ references: twoRefs, demo: false, mode: "multi" })).toEqual([
+      "venice_multi_edit",
+      "venice_edit",
+    ]);
+    expect(routeSceneProviders({ references: twoRefs, demo: false, mode: "multi", provider: "replicate" })).toEqual([
+      "replicate_multi_edit",
+      "replicate_edit",
+    ]);
+
+    const oneRef = [twoRefs[0]!];
+    expect(routeSceneProviders({ references: oneRef, demo: false, mode: "multi", provider: "replicate" })).toEqual([
+      "replicate_edit",
+    ]);
   });
 
-  it("multi mode with only ONE reference image degrades to the single-edit rung (multi needs ≥2)", () => {
-    const refs = [charRef({ entityId: "c1", name: "Mira", imageId: "img1", source: "generated" })];
-    expect(routeSceneProviders({ references: refs, demo: false, mode: "multi" })).toEqual(["venice_edit"]);
-  });
-
-  it("multi mode with no reference images falls to text-to-image only", () => {
-    const refs = [charRef({ entityId: "c1", name: "Mira" })];
-    expect(routeSceneProviders({ references: refs, demo: false, mode: "multi" })).toEqual(["venice_generate"]);
-  });
-
-  it("demo mode ignores the reference mode — only the monogram runs", () => {
-    expect(routeSceneProviders({ references: [], demo: true, mode: "multi" })).toEqual(["demo"]);
+  it("demo mode ignores provider and reference mode", () => {
+    expect(routeSceneProviders({ references: [], demo: true, mode: "multi", provider: "replicate" })).toEqual(["demo"]);
   });
 
   it("the registry never allows uploaded real people on an NSFW path", () => {
@@ -58,7 +62,7 @@ describe("routeSceneProviders", () => {
 });
 
 describe("classifyImageFailure", () => {
-  it("classifies upstream moderation (recovered from a 200-after-stream body) as a content rejection", () => {
+  it("classifies upstream moderation as a content rejection", () => {
     const body = JSON.stringify({
       error: {
         message: "Provider returned error",
@@ -68,18 +72,20 @@ describe("classifyImageFailure", () => {
     expect(classifyImageFailure(apiError(body))).toBe("content_rejection");
   });
 
-  it("classifies a Venice safe-mode / NSFW rejection string as a content rejection (no retry)", () => {
+  it("classifies provider content-policy strings as content rejections", () => {
     expect(classifyImageFailure("venice 400: request blocked by content policy")).toBe("content_rejection");
+    expect(classifyImageFailure("replicate failed: NSFW content flagged")).toBe("content_rejection");
   });
 
-  it("classifies timeouts and 5xx/429 as transient (retryable)", () => {
+  it("classifies timeouts and 5xx/429 as transient", () => {
     expect(classifyImageFailure("fetch failed: ETIMEDOUT")).toBe("transient");
-    expect(classifyImageFailure("venice 503: service unavailable")).toBe("transient");
+    expect(classifyImageFailure("replicate 503: service unavailable")).toBe("transient");
     expect(classifyImageFailure("Too Many Requests")).toBe("transient");
   });
 
-  it("treats a missing-key / unknown failure as other (no retry, fall down the ladder)", () => {
+  it("treats missing keys and unknown failures as other", () => {
     expect(classifyImageFailure("VENICE_API_KEY not configured")).toBe("other");
-    expect(classifyImageFailure("venice returned no image")).toBe("other");
+    expect(classifyImageFailure("REPLICATE_API_TOKEN not configured")).toBe("other");
+    expect(classifyImageFailure("replicate returned no image")).toBe("other");
   });
 });
