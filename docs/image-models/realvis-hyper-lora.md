@@ -44,7 +44,7 @@ field name is therefore essential; a hardcoded generic `image` key would fail.
 The provider defaults to 768×1024, but relying on a remote default would let a
 future wrapper update change Vesper's shape silently.
 
-`src/server/images/quality-presets.ts` now sends:
+`src/server/images/quality-presets.ts` sends:
 
 ```json
 {
@@ -70,18 +70,17 @@ behavior before tuning these values one at a time.
 ## Negative prompt policy
 
 The wrapper has a long quality-boilerplate default. Supplying any
-`negative_prompt` replaces it. Vesper uses the shared, shorter style-neutral
-anatomy/production block:
+`negative_prompt` replaces it. Vesper uses the reviewed community block:
 
 ```text
-extra limbs, extra arms, extra legs, malformed limbs, disconnected limbs,
-extra fingers, missing fingers, fused fingers, mutated hands, poorly drawn
-hands, bad anatomy, disfigured, text, watermark, signature, logo, blurry,
-low resolution
+duplicated limbs, disconnected limbs, malformed hands, extra fingers, fused
+fingers, text, watermark, signature, logo, blurry, low resolution
 ```
 
-This avoids style and subject-count conflicts and makes the effective prompt
-reproducible instead of inheriting opaque provider boilerplate.
+It avoids generic `missing fingers` and `extra limbs`, which can contradict an
+authored missing digit or non-human appendage count. It is still transitional and
+must move to a morphology-aware profile before RealVis becomes a normal production
+surface.
 
 ## Safety input
 
@@ -116,7 +115,7 @@ takes the first result and normalizes it to WebP on write.
 ```json
 {
   "prompt": "<built prompt>",
-  "negative_prompt": "extra limbs, extra arms, extra legs, malformed limbs, disconnected limbs, extra fingers, missing fingers, fused fingers, mutated hands, poorly drawn hands, bad anatomy, disfigured, text, watermark, signature, logo, blurry, low resolution",
+  "negative_prompt": "duplicated limbs, disconnected limbs, malformed hands, extra fingers, fused fingers, text, watermark, signature, logo, blurry, low resolution",
   "reference_image": "<single identity url>",
   "width": 768,
   "height": 1024
