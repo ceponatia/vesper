@@ -151,6 +151,29 @@ describe("probeReplicateModel", () => {
     expect(result.probe.extraInput).toEqual({});
   });
 
+  it("switches off a watermark the model would otherwise apply", async () => {
+    // Juggernaut XL v9 defaults `apply_watermark` to true, which would mark
+    // every image Vesper renders on it.
+    stubFetch(() => ({
+      name: "juggernaut-xl-v9",
+      latest_version: {
+        id: "v1",
+        openapi_schema: openapi({
+          properties: {
+            prompt: { type: "string" },
+            apply_watermark: { type: "boolean", default: true },
+            disable_safety_checker: { type: "boolean", default: false },
+          },
+        }),
+      },
+    }));
+
+    const result = await probeReplicateModel("lucataco/juggernaut-xl-v9");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.probe.extraInput).toEqual({ apply_watermark: false, disable_safety_checker: true });
+  });
+
   describe("pinned versions", () => {
     const versionSchema = openapi({
       properties: { prompt: { type: "string" }, image_input: uriArray("up to 4 images") },

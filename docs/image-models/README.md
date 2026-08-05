@@ -17,13 +17,16 @@ the difference between a model we understand and one we merely call.
 Replicate's schemas disagree with each other in ways that cannot be papered
 over with one shared mapping:
 
-- The reference input is called `image` on some models, `image_input` on others,
-  `images` on another.
+- The reference input is called `image` on most models, `image_input` on two,
+  `images` on another, and `reference_image` on one.
 - On some models that field is a single URI; on others it is an array.
 - Some models expose `aspect_ratio` and offer `3:4`. One offers `aspect_ratio`
-  without `3:4`. One has no `aspect_ratio` at all and is driven by `size`.
-- Output is an array of URIs on five of six models, and a bare URI string on the
-  sixth.
+  without `3:4`. One has no `aspect_ratio` at all and is driven by `size`. Three
+  have no aspect input whatsoever and are sized by `width`/`height` integers the
+  registry does not send yet — those renders are cropped to shape instead.
+- Output is an array of URIs on nine of ten models, and a bare URI string on the
+  remaining one.
+- One model watermarks by default (`apply_watermark`), which the probe pins off.
 - **No model declares `maxItems` on its array reference input.** Reference caps
   are stated in prose in the field description, so they are recorded here and
   stored per row — they cannot be read from the schema.
@@ -42,6 +45,29 @@ over with one shared mapping:
 | [Seedream 5 Lite](seedream-5-lite.md) | `bytedance/seedream-5-lite` | yes | yes | 14 |
 | [Stable Diffusion 3.5 Large](stable-diffusion-3-5-large.md) | `stability-ai/stable-diffusion-3.5-large` | yes | yes (img2img) | 1 |
 | [Wan 2.7 Image Pro](wan-2-7-image-pro.md) | `wan-video/wan-2.7-image-pro` | yes | yes | 9 |
+| [FLUX.1 dev](flux-dev.md) | `black-forest-labs/flux-dev` | yes | yes (img2img) | 1 |
+| [Juggernaut XL v9](juggernaut-xl-v9.md) | `lucataco/juggernaut-xl-v9` | yes | no | 0 |
+| [Pony Realism v2.3](pony-realism-v2-3.md) | `nsfw-api/pony-realism-v2.3` | no | yes | 1 |
+| [RealVis Hyper LoRA](realvis-hyper-lora.md) | `nsfw-api/realvis-hyper-lora` | no | yes | 1 |
+
+## Moderation, by hosting model
+
+Which models will refuse a render is not a property of the prompt — it follows
+from how Replicate runs them:
+
+- **Open weights on Replicate's GPUs** — the NSFW classifier is a component in
+  the cog wrapper and `disable_safety_checker` removes it. Both Qwen models,
+  FLUX dev, and Juggernaut XL v9 work this way; the two `nsfw-api` pipelines ship
+  with no checker at all.
+- **Vendor-API proxies** — moderation runs on the vendor's servers before
+  Replicate sees a result, so no input can reach it. Wan 2.7 and Seedream 5 Lite
+  refuse this way (`ContentModerationError`, and Wan's `Async prediction failed`
+  prefix is the giveaway of a proxied call). Seedream 4.5 is the exception that
+  proves the rule: BytePlus exposes a relaxation, so it takes the flag.
+
+The flag only removes the classifier. What a model was *trained* to draw is a
+separate ceiling, and the reason the SDXL-lineage fine-tunes here behave
+differently from FLUX and Qwen at identical settings.
 
 "Generate" means the model can run with no reference image. "Edit" means it has
 a reference input at all — it does not promise identity preservation, which is a
