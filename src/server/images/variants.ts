@@ -2,7 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { characterProfileSchema, emptyCharacterProfile, resolveAttributes } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { characters, db, images } from "../db";
-import { isDemoMode, veniceEditImage, veniceEditModelId } from "../ai";
+import { isDemoMode } from "../ai";
+import { renderWithModel, resolveSurfaceModel } from "./models";
 import { logEvent } from "../events";
 import { log } from "@/server/log";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
@@ -15,6 +16,8 @@ export interface GenerateVariantInput {
   userId: string;
   kind: VariantKind;
   instruction: string;
+  /** Registry model id from the New Variant picker; absent uses the surface default. */
+  modelId?: string;
   sink?: DiagnosticSink;
 }
 
@@ -35,6 +38,10 @@ export interface GenerateVariantInput {
  */
 export async function generateVariant(input: GenerateVariantInput): Promise<string> {
   const demo = isDemoMode();
+  // The New Variant section now has its OWN model picker (image-model-registry):
+  // before the registry, only one provider model could edit, so this lane had no
+  // choice to make and silently used it.
+  const model = demo ? null : await resolveSurfaceModel("variant", input.modelId, input.sink);
   const [character] = await db().select().from(characters).where(eq(characters.id, input.characterId)).limit(1);
   const profile = parseOr(
     characterProfileSchema,
@@ -58,7 +65,7 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       meta: {
         variantKind: input.kind,
         demo,
-        model: demo ? "demo" : `venice/${veniceEditModelId()}`,
+        model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`,
       },
     },
     // The row is on record for a missing character too — failed, unlogged.
@@ -66,11 +73,12 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
     produce: async (asset) => {
       // Only reached once the character loaded, so the name fallback never fires.
       if (demo) return { ok: true, image: monogramSvg(`${character?.name ?? ""} ${input.kind}`) };
-      // A precondition this lane can't satisfy, not a generation that failed: no diagnostic.
+      // Preconditions this lane can't satisfy, not generations that failed: no diagnostic.
       if (!reference) return { ok: false, error: "no ready canonical avatar to use as reference" };
-      const edit = await veniceEditImage({ prompt, reference: reference.buffer });
+      if (!model) return { ok: false, error: "no image model is registered for portrait variants" };
+      const edit = await renderWithModel({ model, prompt, references: [reference.buffer] }, input.sink);
       if (!edit.ok || !edit.image) {
-        const error = edit.error ?? "venice edit returned no image";
+        const error = edit.error ?? `${model.slug} returned no image`;
         input.sink?.push(
           diag("warn", "images.variant.generate_failed", error.slice(0, 300), {
             context: { characterId: input.characterId, imageId: asset.id },

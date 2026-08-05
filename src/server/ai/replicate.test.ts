@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ImageModel } from "@/contracts";
 import {
-  replicateEditImage,
-  replicateGenerateImage,
-  replicateImageModelId,
+  buildRegistryModelInput,
+  replicatePredictionTarget,
+  runRegistryImageModel,
   unwrapReplicateImage,
 } from "./replicate";
 
@@ -10,16 +11,37 @@ const originalToken = process.env.REPLICATE_API_TOKEN;
 
 beforeEach(() => {
   process.env.REPLICATE_API_TOKEN = "test-token";
-  delete process.env.REPLICATE_IMAGE_MODEL;
-  delete process.env.REPLICATE_IMAGE_EDIT_MODEL;
   delete process.env.REPLICATE_PREDICTION_TIMEOUT_MS;
+  delete process.env.REPLICATE_SAFE_MODE;
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.REPLICATE_PREDICTION_TIMEOUT_MS;
+  delete process.env.REPLICATE_SAFE_MODE;
   if (originalToken === undefined) delete process.env.REPLICATE_API_TOKEN;
   else process.env.REPLICATE_API_TOKEN = originalToken;
+});
+
+const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
+  id: "m1",
+  slug: "qwen/qwen-image-2512",
+  label: "Qwen Image 2512",
+  canGenerate: true,
+  canEdit: true,
+  referenceField: "image",
+  referenceArity: "single",
+  maxReferences: 1,
+  aspectMode: "aspect_ratio",
+  supportedAspects: ["1:1", "3:4"],
+  outputFormat: "webp",
+  extraInput: {},
+  forPortrait: true,
+  forVariant: false,
+  forScene: false,
+  builtin: true,
+  sort: 10,
+  ...overrides,
 });
 
 /** Capture the prediction POST for one succeeded-immediately generation. */
@@ -36,20 +58,125 @@ async function predictionRequest(): Promise<RequestInit | undefined> {
       return new Response(Buffer.from("image-bytes"), { status: 200 });
     }),
   );
-  await replicateGenerateImage({ prompt: "portrait" });
+  await runRegistryImageModel(model(), { prompt: "portrait", aspect: "3:4" });
   return calls[0]?.init;
 }
 
-describe("Replicate image client", () => {
+describe("buildRegistryModelInput", () => {
+  it("omits the reference key entirely when there are no references", () => {
+    // An absent key and an empty array are not the same to every backend, and a
+    // model whose reference input is optional should see the former.
+    const input = buildRegistryModelInput(model(), "a portrait", [], "3:4");
+    expect("image" in input).toBe(false);
+    expect(input).toMatchObject({ prompt: "a portrait", aspect_ratio: "3:4", output_format: "webp" });
+  });
+
+  it("writes a single-arity reference as a bare string and an array-arity one as a list", () => {
+    const single = buildRegistryModelInput(model(), "p", ["u1"], "3:4");
+    expect(single.image).toBe("u1");
+
+    // Same field NAME, different arity — the two Qwen models really do differ here.
+    const array = buildRegistryModelInput(
+      model({ slug: "qwen/qwen-image-edit-2511", referenceArity: "array", maxReferences: 3 }),
+      "p",
+      ["u1", "u2"],
+      "3:4",
+    );
+    expect(array.image).toEqual(["u1", "u2"]);
+  });
+
+  it("honours each model's own reference field name", () => {
+    expect(buildRegistryModelInput(model({ referenceField: "image_input", referenceArity: "array" }), "p", ["u"], null))
+      .toHaveProperty("image_input", ["u"]);
+    expect(buildRegistryModelInput(model({ referenceField: "images", referenceArity: "array" }), "p", ["u"], null))
+      .toHaveProperty("images", ["u"]);
+  });
+
+  it("writes the shape to `size` for a size-mode model and `aspect_ratio` otherwise", () => {
+    const sized = buildRegistryModelInput(model({ aspectMode: "size" }), "p", [], "1536*2048");
+    expect(sized).toMatchObject({ size: "1536*2048" });
+    expect("aspect_ratio" in sized).toBe(false);
+
+    const ratio = buildRegistryModelInput(model(), "p", [], "3:4");
+    expect(ratio).toMatchObject({ aspect_ratio: "3:4" });
+    expect("size" in ratio).toBe(false);
+  });
+
+  it("omits the aspect key when no shape was chosen", () => {
+    const input = buildRegistryModelInput(model(), "p", [], null);
+    expect("aspect_ratio" in input).toBe(false);
+    expect("size" in input).toBe(false);
+  });
+
+  it("omits output_format for a model that has no such input", () => {
+    expect("output_format" in buildRegistryModelInput(model({ outputFormat: null }), "p", [], "3:4")).toBe(false);
+  });
+
+  it("overrides the value of a declared safety toggle but never introduces the key", () => {
+    // Replicate rejects unknown inputs, so a model without the field must not
+    // receive it — this is why the key lives in extraInput rather than being
+    // added unconditionally.
+    const withToggle = buildRegistryModelInput(model({ extraInput: { disable_safety_checker: true } }), "p", [], null);
+    expect(withToggle.disable_safety_checker).toBe(true);
+
+    process.env.REPLICATE_SAFE_MODE = "true";
+    const safe = buildRegistryModelInput(model({ extraInput: { disable_safety_checker: true } }), "p", [], null);
+    expect(safe.disable_safety_checker).toBe(false);
+
+    const without = buildRegistryModelInput(model({ extraInput: {} }), "p", [], null);
+    expect("disable_safety_checker" in without).toBe(false);
+  });
+
+  it("passes other per-model constants through untouched", () => {
+    const input = buildRegistryModelInput(
+      model({ extraInput: { size: "2K", max_images: 1, sequential_image_generation: "disabled" } }),
+      "p",
+      [],
+      "3:4",
+    );
+    expect(input).toMatchObject({ size: "2K", max_images: 1, sequential_image_generation: "disabled" });
+  });
+});
+
+describe("replicatePredictionTarget", () => {
+  it("routes a bare slug to the model's own prediction endpoint", () => {
+    expect(replicatePredictionTarget("qwen/qwen-image-2512")).toEqual({
+      path: "/models/qwen/qwen-image-2512/predictions",
+    });
+  });
+
+  it("routes a pinned slug to /predictions carrying the version", () => {
+    expect(replicatePredictionTarget("qwen/qwen-image-2512:abc123")).toEqual({
+      path: "/predictions",
+      version: "abc123",
+    });
+  });
+
+  it("rejects malformed slugs", () => {
+    expect(() => replicatePredictionTarget("qwen")).toThrow(/invalid Replicate model id/);
+    expect(() => replicatePredictionTarget("a/b/c")).toThrow(/invalid Replicate model id/);
+    expect(() => replicatePredictionTarget("a/b:c:d")).toThrow(/invalid Replicate model id/);
+  });
+});
+
+describe("runRegistryImageModel", () => {
   it("fails clearly when the token is absent", async () => {
     delete process.env.REPLICATE_API_TOKEN;
-    expect(await replicateGenerateImage({ prompt: "portrait" })).toEqual({
+    expect(await runRegistryImageModel(model(), { prompt: "portrait" })).toEqual({
       ok: false,
       error: "REPLICATE_API_TOKEN not configured",
     });
   });
 
-  it("submits an official-model prediction and downloads its output", async () => {
+  it("refuses to run an edit-only model with no reference", async () => {
+    const editOnly = model({ slug: "qwen/qwen-image-edit-2511", canGenerate: false });
+    expect(await runRegistryImageModel(editOnly, { prompt: "portrait" })).toEqual({
+      ok: false,
+      error: "qwen/qwen-image-edit-2511 requires at least one reference image",
+    });
+  });
+
+  it("submits a model prediction and downloads its output", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     vi.stubGlobal(
       "fetch",
@@ -70,10 +197,9 @@ describe("Replicate image client", () => {
       }),
     );
 
-    const result = await replicateGenerateImage({ prompt: "a portrait", aspectRatio: "3:4" });
+    const result = await runRegistryImageModel(model(), { prompt: "a portrait", aspect: "3:4" });
     expect(result.ok).toBe(true);
     expect(result.image?.toString()).toBe("image-bytes");
-    expect(replicateImageModelId()).toBe("qwen/qwen-image-2512");
 
     const prediction = calls[0];
     expect(prediction?.init?.headers).toMatchObject({
@@ -83,15 +209,10 @@ describe("Replicate image client", () => {
       "Cancel-After": "300s",
     });
     const body = JSON.parse(String(prediction?.init?.body)) as { input: Record<string, unknown> };
-    expect(body.input).toMatchObject({
-      prompt: "a portrait",
-      aspect_ratio: "3:4",
-      output_format: "webp",
-      disable_safety_checker: true,
-    });
+    expect(body.input).toMatchObject({ prompt: "a portrait", aspect_ratio: "3:4", output_format: "webp" });
   });
 
-  it("uploads references, runs Edit 2511, downloads output, and removes temporary files", async () => {
+  it("uploads references, runs the model, downloads output, and removes temporary files", async () => {
     const calls: Array<{ url: string; method: string }> = [];
     let uploadNumber = 0;
     vi.stubGlobal(
@@ -129,13 +250,41 @@ describe("Replicate image client", () => {
       }),
     );
 
-    const result = await replicateEditImage({
-      prompt: "keep both people recognizable",
-      references: [Buffer.from("one"), Buffer.from("two")],
-    });
+    const result = await runRegistryImageModel(
+      model({ slug: "qwen/qwen-image-edit-2511", referenceArity: "array", maxReferences: 3 }),
+      { prompt: "keep both people recognizable", references: [Buffer.from("one"), Buffer.from("two")] },
+    );
     expect(result.ok).toBe(true);
     expect(result.image?.toString()).toBe("edited-image");
     expect(calls.filter((call) => call.method === "DELETE")).toHaveLength(2);
+  });
+
+  it("uploads only as many references as the model accepts", async () => {
+    // A single-reference model handed three used to receive all three and
+    // silently ignore two; `fitReferences` trims before the upload cost.
+    let uploads = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url.endsWith("/v1/files") && method === "POST") {
+          uploads += 1;
+          return Response.json({ id: `f${uploads}`, urls: { get: `https://api.replicate.com/v1/files/f${uploads}` } });
+        }
+        if (url.includes("/predictions")) {
+          return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+        }
+        if (url.includes("/v1/files/")) return new Response(null, { status: 204 });
+        return new Response(Buffer.from("bytes"), { status: 200 });
+      }),
+    );
+
+    await runRegistryImageModel(model({ referenceArity: "single", maxReferences: 1 }), {
+      prompt: "p",
+      references: [Buffer.from("a"), Buffer.from("b"), Buffer.from("c")],
+    });
+    expect(uploads).toBe(1);
   });
 
   it("sends the configured prediction deadline as Replicate's Cancel-After", async () => {

@@ -30,7 +30,7 @@ import type { ContainerAccessPolicy, ItemConsumptionEffect, ItemLocus } from "@/
 import { simulationTriggerKinds, type SimulationTrigger } from "@/contracts/simulation/scheduler";
 import type { HouseholdStockAccessPolicy, RestockFunding } from "@/contracts/simulation/households";
 import type { RelationshipLedgerPayload } from "@/contracts/simulation/social";
-import { sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
+import { imageAspectModes, imageReferenceArities, sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
 import { principalKinds } from "@/contracts/simulation/envelopes";
 import { itemGoneBases } from "@/contracts/simulation/materials";
 import { itemMaterialFeedEventKinds } from "@/contracts/simulation/outbox";
@@ -1352,6 +1352,62 @@ export const imageReferences = pgTable(
     index("image_references_scene_idx").on(t.sceneImageId),
     index("image_references_entity_idx").on(t.kind, t.entityId),
   ],
+);
+
+/**
+ * The image-model registry (image-model-registry.spec.md). Which Replicate
+ * models the app can run is DATA, not a code union: rows here are managed from
+ * the admin page at `/settings/image-models`, and the portrait/variant/scene
+ * pickers read them. Seeded with six models by migration; seeded rows are
+ * ordinary rows (owner ruling 4 — `builtin` marks them for display, it does not
+ * gate deletion).
+ *
+ * The capability columns are filled by a save-time probe of Replicate's model
+ * schema, EXCEPT `maxReferences`: no model declares `maxItems` on its array
+ * reference input, so the cap is stored and hand-editable rather than derived.
+ *
+ * The enum-typed columns reuse the contract vocabularies (`imageAspectModes`,
+ * `imageReferenceArities`) so the column and the parser can never drift.
+ */
+export const imageModels = pgTable(
+  "image_models",
+  {
+    id: id(),
+    /** Replicate model path, optionally `owner/name:version`. */
+    slug: text("slug").notNull(),
+    label: text("label").notNull(),
+    /** Can run with no reference (its reference input is not in `required`). */
+    canGenerate: boolean("can_generate").notNull().default(true),
+    /** Has a reference input at all — says nothing about identity preservation. */
+    canEdit: boolean("can_edit").notNull().default(false),
+    /**
+     * The input key references are written to. Differs per model (`image` /
+     * `image_input` / `images`) and cannot be assumed from the model family:
+     * both Qwen models call it `image` with different arities.
+     */
+    referenceField: text("reference_field").notNull().default("image"),
+    referenceArity: text("reference_arity", { enum: imageReferenceArities }).notNull().default("array"),
+    maxReferences: integer("max_references").notNull().default(1),
+    aspectMode: text("aspect_mode", { enum: imageAspectModes }).notNull().default("aspect_ratio"),
+    /**
+     * Every shape the model offers, verbatim from its schema enum. The render
+     * path picks the closest to what a lane wants and crops the rest, so one
+     * mechanism serves the 3:4 lanes, Stable Diffusion 3.5 Large (which has no
+     * 3:4), and the 1:1 / 3:2 entity lanes alike.
+     */
+    supportedAspects: jsonb("supported_aspects").notNull().default([]),
+    /** Null when the model has no such input (Seedream 4.5, Wan 2.7). */
+    outputFormat: text("output_format"),
+    /** Per-model payload constants (e.g. `max_images: 1`). */
+    extraInput: jsonb("extra_input").notNull().default({}),
+    forPortrait: boolean("for_portrait").notNull().default(false),
+    forVariant: boolean("for_variant").notNull().default(false),
+    forScene: boolean("for_scene").notNull().default(false),
+    builtin: boolean("builtin").notNull().default(false),
+    sort: integer("sort").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("image_models_slug_idx").on(t.slug)],
 );
 
 export const jobs = pgTable(
