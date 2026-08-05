@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { hasVenice, veniceEditImage, veniceEditModelId } from "../../../src/server/ai";
+import { evalEdit, evalEditModel, evalGenerate, evalGenerateModel, hasImageProvider } from "./model";
 
 /**
  * Two follow-up reference-sheet experiments for qwen-image-2-edit
@@ -24,8 +24,8 @@ const NAME = "Mira";
 const OUT = "docs/scene-image-eval/refsheet";
 
 async function runEdit(label: string, reference: Buffer, prompt: string): Promise<void> {
-  console.log(`\n[${label}] model ${veniceEditModelId()}\nprompt: ${prompt}`);
-  const result = await veniceEditImage({ prompt, reference });
+  console.log(`\n[${label}] model ${evalEditModel().slug}\nprompt: ${prompt}`);
+  const result = await evalEdit(prompt, [reference]);
   if (!result.ok || !result.image) {
     console.error(`  [${label}] failed: ${result.error ?? "no image"}`);
     return;
@@ -73,7 +73,7 @@ async function compositeIntoScene(): Promise<Buffer> {
 }
 
 async function main(): Promise<void> {
-  if (!hasVenice()) throw new Error("VENICE_API_KEY not set");
+  if (!hasImageProvider()) throw new Error("REPLICATE_API_TOKEN not set");
   await fs.mkdir(OUT, { recursive: true });
 
   const board = await seamlessBoard();

@@ -105,6 +105,12 @@ const ALLOW_LIST: readonly { file: string; table: string; reason: string }[] = [
     reason:
       "world id is derived from the owner-checked chat (characterChats.ownerId = user.id) via its engine authority's branch, so the row is reached only through an owner-verified parent",
   },
+  {
+    file: "src/app/api/admin/self/image-models/[modelId]/route.ts",
+    table: "imageModels",
+    reason:
+      "admin-gated operator config: withOwnerAdmin 404s unless user.role === 'admin' AND the path is under /api/admin/self; the image-model registry is app-wide deployment configuration with no owner column, not user-owned content",
+  },
 ];
 
 /** A drizzle mutation: `.update(table)` / `.delete(table)` with a bare table identifier. */

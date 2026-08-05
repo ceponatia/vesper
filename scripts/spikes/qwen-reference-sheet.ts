@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { veniceEditImage } from "../../src/server/ai";
+import { evalEdit } from "../eval/scene-images/model";
 import { SCENE_POV_RULE } from "../../src/server/images";
 
 /**
@@ -115,9 +115,9 @@ async function main(): Promise<void> {
   console.log(`reference sheet → ${sheetPath}`);
   console.log(`prompt: ${prompt}\n`);
 
-  const result = await veniceEditImage({ prompt, reference: sheet });
+  const result = await evalEdit(prompt, [sheet]);
   if (!result.ok || !result.image) {
-    console.error(`venice edit failed: ${result.error ?? "no image"}`);
+    console.error(`replicate edit failed: ${result.error ?? "no image"}`);
     process.exit(1);
   }
   const outPath = path.join(args.out, "output.webp");

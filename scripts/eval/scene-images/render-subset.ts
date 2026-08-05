@@ -2,13 +2,13 @@ import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { hasVenice, veniceEditImage, veniceEditModelId, veniceGenerateImage, veniceImageModelId } from "../../../src/server/ai";
+import { evalEdit, evalEditModel, evalGenerate, evalGenerateModel, hasImageProvider } from "./model";
 import { buildSceneRenderPrompt } from "../../../src/server/images";
 import { EVAL_FIXTURES } from "./fixtures";
 
 /**
  * Manual review render (NOT a test gate): generate a representative subset of the
- * eval fixtures through the REAL scene flow against the live Venice models
+ * eval fixtures through the REAL scene flow against the live Replicate models
  * (`qwen-image-2` text-to-image for the identity portrait + the location-only
  * scene; `qwen-image-2-edit` for each anchored scene edit). Outputs to
  * docs/scene-image-eval/ for human review. Needs VENICE_API_KEY (+ safe_mode off
@@ -46,7 +46,7 @@ interface RenderedFixture {
 }
 
 async function main(): Promise<void> {
-  if (!hasVenice()) throw new Error("VENICE_API_KEY not set — cannot generate");
+  if (!hasImageProvider()) throw new Error("REPLICATE_API_TOKEN not set — cannot generate");
   await fs.mkdir(path.join(OUT, "portraits"), { recursive: true });
 
   const fixtures = SUBSET.map((n) => EVAL_FIXTURES.find((f) => f.name === n)).filter((f) => f !== undefined);
@@ -59,8 +59,8 @@ async function main(): Promise<void> {
   }
   const portraits = new Map<string, Buffer>();
   for (const name of anchorNames) {
-    console.log(`portrait (${veniceImageModelId()}): ${name}…`);
-    const gen = await veniceGenerateImage({ prompt: portraitPrompt(name), aspectRatio: "3:4" });
+    console.log(`portrait (${evalGenerateModel().slug}): ${name}…`);
+    const gen = await evalGenerate(portraitPrompt(name));
     if (!gen.ok || !gen.image) {
       console.error(`  portrait failed for ${name}: ${gen.error ?? "no image"}`);
       continue;
@@ -89,23 +89,23 @@ async function main(): Promise<void> {
         console.error(`  skip ${fx.name}: no portrait for anchor ${anchorName}`);
         continue;
       }
-      console.log(`scene (${veniceEditModelId()}): ${fx.name} (anchor ${anchorName})…`);
-      const edit = await veniceEditImage({ prompt: editPrompt, reference: portrait });
+      console.log(`scene (${evalEditModel().slug}): ${fx.name} (anchor ${anchorName})…`);
+      const edit = await evalEdit(editPrompt, [portrait]);
       if (!edit.ok || !edit.image) {
         console.error(`  edit failed for ${fx.name}: ${edit.error ?? "no image"}`);
         continue;
       }
       await fs.writeFile(path.join(OUT, file), await toWebp(edit.image));
-      rendered.push({ name: fx.name, model: veniceEditModelId(), path: file, anchor: anchorName, prompt: editPrompt });
+      rendered.push({ name: fx.name, model: evalEditModel().slug, path: file, anchor: anchorName, prompt: editPrompt });
     } else {
-      console.log(`scene (${veniceImageModelId()} t2i): ${fx.name}…`);
-      const gen = await veniceGenerateImage({ prompt: textPrompt, aspectRatio: "3:4" });
+      console.log(`scene (${evalGenerateModel().slug} t2i): ${fx.name}…`);
+      const gen = await evalGenerate(textPrompt);
       if (!gen.ok || !gen.image) {
         console.error(`  t2i failed for ${fx.name}: ${gen.error ?? "no image"}`);
         continue;
       }
       await fs.writeFile(path.join(OUT, file), await toWebp(gen.image));
-      rendered.push({ name: fx.name, model: veniceImageModelId(), path: file, prompt: textPrompt });
+      rendered.push({ name: fx.name, model: evalGenerateModel().slug, path: file, prompt: textPrompt });
     }
   }
 
@@ -117,7 +117,7 @@ async function writeIndex(rendered: RenderedFixture[], portraitNames: string[]):
   const lines: string[] = [
     "# Scene-image eval — manual review",
     "",
-    `Generated through the real scene flow against the live Venice models (\`${veniceImageModelId()}\` + \`${veniceEditModelId()}\`).`,
+    `Generated through the real scene flow against the live Replicate models (\`${evalGenerateModel().slug}\` + \`${evalEditModel().slug}\`).`,
     "A representative subset of `scripts/eval/scene-images/fixtures.ts`. Regenerate with `pnpm tsx scripts/eval/scene-images/render-subset.ts`.",
     "",
     "## Identity portraits (qwen-image-2 text-to-image — reused as the edit anchor)",

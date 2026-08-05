@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { generateVariant } from "@/server/images";
-import { imageRenderRejection, jobCapRejection, jsonError, jsonOk, readBody, startJob, withUser } from "@/server/api";
+import { imageRenderRejection, jobCapRejection, jsonOk, readBody, startJob, withAuthorizedResource } from "@/server/api";
 import { findOwnedCharacter } from "../owned";
 import { listOwnedPortraits } from "./owned";
 
@@ -14,12 +14,25 @@ const portraitBodySchema = z.object({
   modelId: z.string().trim().max(64).optional(),
 });
 
+/**
+ * Owner-scoped resolver shared by both handlers. `withAuthorizedResource`
+ * collapses "not yours" and "does not exist" to one 404 — the shape
+ * `pnpm lint:authz` requires of every resource-ID route.
+ */
+const ownedCharacter = async (user: { id: string }, params: Params) =>
+  (await findOwnedCharacter(params.id, user.id)) ?? null;
+
+type OwnedCharacter = NonNullable<Awaited<ReturnType<typeof findOwnedCharacter>>>;
+
 /** All images linked to the character (avatar + variants), newest first. */
-export const GET = withUser<Params>(async (user, _req, ctx) => {
-  const { id } = await ctx.params;
-  if (!(await findOwnedCharacter(id, user.id))) return jsonError("not_found", "character not found", 404);
-  return jsonOk({ portraits: await listOwnedPortraits(user.id, id) });
-});
+export const GET = withAuthorizedResource<Params, OwnedCharacter>(
+  "character",
+  ownedCharacter,
+  async (user, _character, _req, ctx) => {
+    const { id } = await ctx.params;
+    return jsonOk({ portraits: await listOwnedPortraits(user.id, id) });
+  },
+);
 
 /**
  * Identity-locked reference edit of the canonical avatar, as a
@@ -27,12 +40,13 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
  * the new row's status. The model comes from the New Variant picker, which
  * lists only edit-capable registry models.
  */
-export const POST = withUser<Params>(
-  async (user, req: NextRequest, ctx) => {
+export const POST = withAuthorizedResource<Params, OwnedCharacter>(
+  "character",
+  ownedCharacter,
+  async (user, _character, req: NextRequest, ctx) => {
     const { id } = await ctx.params;
     const body = await readBody(req, portraitBodySchema);
     if (!body.ok) return body.response;
-    if (!(await findOwnedCharacter(id, user.id))) return jsonError("not_found", "character not found", 404);
 
     const blocked = await imageRenderRejection(user, req);
     if (blocked) return blocked;
