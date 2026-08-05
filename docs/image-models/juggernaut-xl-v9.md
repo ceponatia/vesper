@@ -13,47 +13,42 @@ normal variants or identity-critical scenes.
 
 ## Community model — pinned by version
 
-`is_official` is false for this model, so Replicate's bare-slug predictions
-endpoint 404s on it. Its registry row is pinned to the version above and runs
-through `POST /predictions`, which is the endpoint that accepts community model
-versions.
-
-The row does not follow future releases. A different version must be probed and
-trialed before activation.
+`is_official` is false, so the row is pinned to the version above and runs
+through Replicate's versioned predictions endpoint. It does not follow future
+releases. A different version must be probed, semantically reviewed, trialed, and
+license-reviewed before activation.
 
 ## Capabilities
 
-- **Generate without a reference:** yes. Nothing is required: `prompt` itself has
-  a default, so an empty payload still renders.
-- **Edit from a reference:** no. There is no URI input of any kind.
+- **Generate without a reference:** yes. Nothing is formally required because
+  `prompt` has a provider default.
+- **Edit from a reference:** no. There is no URI input.
 - **Aspect handling:** free `width` and `height` integers rather than an aspect
   enum.
 - **Output:** array of URIs; Vesper takes the first result.
 
 ## Normal v9, not Lightning
 
-The endpoint's schema defaults to 5 inference steps and guidance 2, but the
+The endpoint schema defaults to 5 inference steps and guidance 2, but the
 checkpoint is normal Juggernaut XL v9. The separately published Lightning build
 is a different model.
 
-The model creator's v9 guidance uses full-step SDXL settings and recommends a
-portrait bucket of 832×1216, roughly 30–40 steps, and moderate CFG. Vesper's
-reviewed starting point is therefore:
+The creator's v9 guidance uses full-step SDXL settings and recommends a portrait
+bucket of 832×1216, roughly 30–40 steps, and moderate CFG. Vesper's reviewed
+starting point is:
 
 - `width: 832`;
 - `height: 1216`;
 - `num_inference_steps: 35`;
 - `guidance_scale: 5`;
-- `scheduler: "KarrasDPM"`;
-- a short, issue-specific negative prompt.
+- `scheduler: "KarrasDPM"`.
 
 These values are applied by `src/server/images/quality-presets.ts` at the shared
 render seam. They overlay the probed row because provider defaults describe what
 the cog will do, not the quality policy Vesper wants.
 
-The fixed quality trial still compares the short negative against an empty
-negative and may tune the sampler. It does not revisit whether this is a
-Lightning checkpoint.
+The fixed trial may tune the sampler and numeric values. It does not revisit
+whether this is a Lightning checkpoint.
 
 ## Shape behavior
 
@@ -66,54 +61,54 @@ For Vesper's 3:4 portrait output, 832×1216 is slightly taller than target and
 requires a modest top/bottom crop. This is a substantial improvement over the
 old behavior: 1024×1024 followed by discarding about a quarter of the width.
 
-The capabilities plan should eventually model explicit width/height dimensions
-and focal-aware cropping as profile controls. Until then, the exact-slug quality
-policy owns this endpoint's native portrait size.
+The capabilities plan should eventually model explicit dimensions and focal-aware
+cropping as profile controls. Until then, the exact-slug quality policy owns this
+endpoint's native portrait size.
 
 ## Negative prompt policy
 
-Juggernaut's creator recommends starting with little or no negative prompt;
-large generic negative walls can reduce image quality. Vesper does not send a
-large universal anatomy bank to this model.
+Juggernaut's creator recommends starting with little or no negative prompt; large
+negative walls can reduce quality. More importantly, the shared render seam does
+not know the character's intended morphology.
 
-Current compact negative:
+Current static negative:
 
 ```text
-duplicated limbs, malformed hands, extra fingers, fused fingers, text,
-watermark, logo
+text, watermark, signature, logo, blurry, low resolution
 ```
 
-It avoids generic `missing fingers` and `extra limbs`, which can contradict an
-authored missing digit or non-human appendage count. The fixed trial includes an
-empty-negative arm and grades anatomy relative to the intended morphology.
+No anatomy term is sent yet. Generic terms such as `missing fingers` or `extra
+limbs` can contradict an authored missing digit, prosthetic, or non-human
+appendage count. The first immediate anatomy improvement comes from replacing the
+5-step square fast preset with a full-step portrait render. A later
+morphology-aware profile trial can add anatomy steering safely and compare it
+against this production-only baseline.
 
 ## The watermark default
 
-`apply_watermark` defaults to `true` on this model. The capability probe pins it
-to `false`, and the reviewed quality policy leaves that setting intact.
+`apply_watermark` defaults to `true`. The capability probe pins it to `false`, and
+the reviewed quality policy preserves that override.
 
 ## Inputs
 
-- `prompt` — string. Defaults to a stock portrait description, so it is not
-  formally required.
+- `prompt` — string; provider supplies a stock default.
 - `negative_prompt` — string, provider default
   `"CGI, Unreal, Airbrushed, Digital"`.
-- `width` / `height` — integer, both provider-default `1024`.
-- `num_outputs` — integer, default `1`, range 1–4.
-- `scheduler` — enum, default `"DPM++SDE"`. Values: `DDIM`,
-  `DPMSolverMultistep`, `HeunDiscrete`, `KarrasDPM`,
-  `K_EULER_ANCESTRAL`, `K_EULER`, `PNDM`, `DPM++SDE`.
-- `num_inference_steps` — integer, provider-default `5`, range 1–100.
-- `guidance_scale` — number, provider-default `2`, range 1–20.
+- `width` / `height` — integer, both provider-default 1024.
+- `num_outputs` — integer, default 1, range 1–4.
+- `scheduler` — enum, default `DPM++SDE`; includes `KarrasDPM` and other common
+  schedulers.
+- `num_inference_steps` — integer, provider-default 5, range 1–100.
+- `guidance_scale` — number, provider-default 2, range 1–20.
 - `seed` — integer.
-- `apply_watermark` — boolean, provider-default `true`; pinned off by Vesper.
-- `disable_safety_checker` — boolean, provider-default `false`.
+- `apply_watermark` — boolean, provider-default true; pinned off by Vesper.
+- `disable_safety_checker` — boolean, provider-default false.
 
 There is no `output_format` field and no aspect enum.
 
 ## Effective Vesper payload
 
-The exact prompt varies by lane; the effective control portion is:
+The prompt varies by lane; the effective control portion is:
 
 ```json
 {
@@ -123,7 +118,7 @@ The exact prompt varies by lane; the effective control portion is:
   "num_inference_steps": 35,
   "guidance_scale": 5,
   "scheduler": "KarrasDPM",
-  "negative_prompt": "duplicated limbs, malformed hands, extra fingers, fused fingers, text, watermark, logo",
+  "negative_prompt": "text, watermark, signature, logo, blurry, low resolution",
   "apply_watermark": false,
   "disable_safety_checker": true
 }
@@ -135,15 +130,15 @@ The image is downloaded and normalized to the requested Vesper aspect.
 
 This is a community checkpoint. Before making it a production default, paid
 feature dependency, or other server-side commercial path, record a current
-review of both the checkpoint license and the intended hosted/API use. The fact
-that Replicate can run the model is not itself permission for every product use.
+review of the checkpoint license and the intended hosted/API use. Replicate
+availability is not itself permission for every product use.
 
-Until that review and the fixed quality trial pass, Juggernaut remains a
-reviewed experimental portrait option rather than a production-default claim.
+Until that review and the fixed quality trial pass, Juggernaut remains a reviewed
+experimental portrait option rather than a production-default claim.
 
 ## Related model possibility
 
 `asiryan/juggernaut-xl-v7` is an older family member that exposes image,
 mask/inpainting, strength, and LoRA inputs. It also differs in safety inputs and
-would need its own version probe, semantic rating, license review, and identity
-trial. It should not be treated as a drop-in scene-capable version of this row.
+needs its own version probe, semantic rating, license review, and identity trial.
+It is not a drop-in scene-capable version of this row.
