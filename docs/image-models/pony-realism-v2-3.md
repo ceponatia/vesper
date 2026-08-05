@@ -41,7 +41,7 @@ The current generic adapter sends only the registered identity field, so
 `pose_image` is unused. The identity-repair trial depends on role-aware reference
 bindings from the capabilities plan:
 
-- identity pack face crop → `image`;
+- identity-pack face crop → `image`;
 - source scene output → `pose_image`;
 - prompt → the scene's compact Pony dialect;
 - explicit single-character guard.
@@ -57,29 +57,30 @@ bypass the shared adapter with a permanent special-case payload.
 - `pose_strength`, default `0.4`, controls pose influence when pose ControlNet is
   active.
 
-Higher identity settings may improve likeness but can flatten expression, texture,
-or prompt adherence. Tune one control at a time on the fixed matrix. The first
-trial holds provider defaults and tests references/prompt policy before changing
-these scales.
+Higher identity settings may improve likeness but can flatten expression,
+texture, or prompt adherence. Tune one control at a time on the fixed matrix. The
+first trial holds provider defaults and tests references/prompt policy before
+changing these scales.
 
 ## Quality policy before profiles are wired
 
-The provider's `negative_prompt` defaults empty. This reviewed community portrait
-pipeline receives the compact anatomy/production block:
+The provider's `negative_prompt` defaults empty. The shared render seam sends:
 
 ```text
-duplicated limbs, disconnected limbs, malformed hands, extra fingers, fused
-fingers, text, watermark, signature, logo, blurry, low resolution, score_1,
-score_2, score_3
+text, watermark, signature, logo, blurry, low resolution, score_1, score_2,
+score_3
 ```
 
-The block avoids generic `missing fingers` and `extra limbs`, which can contradict
-an authored missing digit or non-human appendage count. It still must move to a
-morphology-aware profile before Pony becomes a normal production surface.
+The production terms are safe without character context. The three low-score
+terms are Pony quality conventions rather than anatomy claims.
 
-The three low-score tags are the only Pony-specific static addition. Positive
-score/source/rating conventions are not hardcoded; they belong to a tested
-`pony_tag` profile because they consume prompt context and may vary by checkpoint.
+No anatomy negative is sent yet. Generic terms such as `missing fingers` or
+`extra limbs` can contradict an authored missing digit or non-human appendage
+count. Anatomy steering belongs to a morphology-aware `pony_tag` profile with a
+conflict linter.
+
+Positive score/source/rating conventions are also not hardcoded. They consume
+prompt context and may vary by checkpoint, so they remain trial-controlled.
 
 Steps, guidance, scheduler, identity scales, and ControlNet strengths remain at
 provider defaults until trialed.
@@ -118,7 +119,7 @@ takes the first result in ordinary lanes.
 ```json
 {
   "prompt": "<built prompt>",
-  "negative_prompt": "duplicated limbs, disconnected limbs, malformed hands, extra fingers, fused fingers, text, watermark, signature, logo, blurry, low resolution, score_1, score_2, score_3",
+  "negative_prompt": "text, watermark, signature, logo, blurry, low resolution, score_1, score_2, score_3",
   "image": "<single identity url>",
   "output_format": "webp",
   "output_quality": 95,
