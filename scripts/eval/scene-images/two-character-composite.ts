@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { hasVenice, veniceEditImage, veniceEditModelId, veniceGenerateImage } from "../../../src/server/ai";
+import { evalEdit, evalEditModel, evalGenerate, evalGenerateModel, hasImageProvider } from "./model";
 
 /**
  * Two-character composite-into-scene test (scene-images.spec.md §6 follow-up):
@@ -51,14 +51,14 @@ async function placeFigure(cutout: Buffer, targetH: number, left: number): Promi
 }
 
 async function main(): Promise<void> {
-  if (!hasVenice()) throw new Error("VENICE_API_KEY not set");
+  if (!hasImageProvider()) throw new Error("REPLICATE_API_TOKEN not set");
   await fs.mkdir(OUT, { recursive: true });
 
   // 1) generate each character on green and matte them out.
   const cutouts: Buffer[] = [];
   for (const character of CHARACTERS) {
     console.log(`generate-on-green (${character.name})…`);
-    const gen = await veniceGenerateImage({ prompt: characterPrompt(character.prompt), aspectRatio: "3:4" });
+    const gen = await evalGenerate(characterPrompt(character.prompt));
     if (!gen.ok || !gen.image) {
       console.error(`  failed for ${character.name}: ${gen.error ?? "no image"}`);
       return;
@@ -92,8 +92,8 @@ async function main(): Promise<void> {
     "Integrate them naturally and photorealistically: relight both to match the environment, blend their edges seamlessly so there are no cutout borders, correct their scale and perspective so they are standing together in the space, and keep BOTH faces, hair and clothing exactly.",
     "Single natural photograph. Shot from the viewer's own eyes; none of the viewer's body is visible (no hands, no camera in frame).",
   ].join(" ");
-  console.log(`\nharmonize (${veniceEditModelId()})…\nprompt: ${prompt}`);
-  const result = await veniceEditImage({ prompt, reference: composite });
+  console.log(`\nharmonize (${evalEditModel().slug})…\nprompt: ${prompt}`);
+  const result = await evalEdit(prompt, [composite]);
   if (!result.ok || !result.image) {
     console.error(`  harmonize failed: ${result.error ?? "no image"}`);
     return;

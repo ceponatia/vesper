@@ -2,14 +2,14 @@ import { and, eq } from "drizzle-orm";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
-import { chatSceneProvider, parseChatSceneModel } from "@/contracts/images/image-models";
+import { resolveSurfaceModel } from "./models";
 import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
 import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { SceneReferenceSource } from "@/contracts/images/scene-reference";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { diag } from "@/contracts/diagnostics";
-import { classifyImageFailure, hasReplicate, hasVenice, isDemoMode } from "../ai";
+import { classifyImageFailure, hasReplicate, isDemoMode } from "../ai";
 import { db, images } from "../db";
 import { logEvent } from "../events";
 import { deleteOwnedImage, imageMeta, readImageBytes } from "./assets";
@@ -51,7 +51,7 @@ export interface RenderCharacterSceneInput {
   flavor?: "selfie";
   lookKey?: string;
   place?: { name: string; imageId: string };
-  /** Persisted chat scene-model key; unknown/absent values preserve Venice. */
+  /** Persisted registry model id; unknown/absent values fall back to the scene default. */
   sceneModel?: string;
   sink?: DiagnosticSink;
 }
@@ -184,10 +184,11 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   });
   const plan = await composeSceneSpec({ ...context, sink: input.sink });
 
-  const selectedModel = parseChatSceneModel(input.sceneModel);
-  const provider = chatSceneProvider(selectedModel);
-  const providerConfigured = provider === "replicate" ? hasReplicate() : hasVenice();
-  const referenceRoute = !isDemoMode() && providerConfigured;
+  // The chat's stored scene-model pick, resolved against the registry. A pick
+  // that no longer exists degrades to the scene default (owner ruling 5) — the
+  // legacy Venice keys on pre-registry rows land here and are simply replaced.
+  const model = isDemoMode() ? null : await resolveSurfaceModel("scene", input.sceneModel, input.sink);
+  const referenceRoute = !isDemoMode() && hasReplicate() && model !== null && model.canEdit;
   const look = referenceRoute && input.chatId && input.lookKey ? await latestChatLook(input.chatId, input.lookKey) : null;
   const anchor = look
     ? { imageId: look.imageId, buffer: look.buffer, source: "generated" as SceneReferenceSource }
@@ -228,7 +229,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
       ],
       referenceBuffers,
       mode: placeRef ? "multi" : "single",
-      provider,
+      model,
       framing: selfie ? "selfie" : undefined,
       flavor: input.flavor,
       linkage: {

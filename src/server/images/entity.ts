@@ -1,10 +1,12 @@
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db, images, items, locations } from "../db";
-import { isDemoMode, unwrapVeniceImage, veniceGenerateImage, veniceImageModelId } from "../ai";
+import { isDemoMode } from "../ai";
 import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
+import { parseAspectValue, type ImageModel } from "@/contracts";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { purgeImagesWhere, runImagePipeline } from "./assets";
+import { renderWithModel, resolveSurfaceModel } from "./models";
 import { monogramSvg } from "./monogram";
 import { buildItemImagePrompt, buildLocationImagePrompt } from "./prompts";
 
@@ -32,6 +34,9 @@ const ASPECT: Record<EntityImageKind, `${number}:${number}`> = { item: "1:1", lo
  */
 export async function generateEntityImage(input: GenerateEntityImageInput): Promise<string> {
   const demo = isDemoMode();
+  // Entity images have no picker of their own — they take the portrait surface's
+  // default, which is the app's general-purpose text-to-image model.
+  const model = demo ? null : await resolveSurfaceModel("portrait", null, input.sink);
   const loaded =
     input.entityKind === "item"
       ? await loadItemPrompt(input.entityId, input.userId)
@@ -45,14 +50,21 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
       entityKind: input.entityKind,
       entityId: input.entityId,
       prompt,
-      meta: { model: demo ? "demo" : `venice/${veniceImageModelId()}`, demo },
+      meta: { model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`, demo },
     },
     // A missing entity still leaves a failed row behind — no event, no diagnostic.
-    failedPrecondition: loaded ? null : `${input.entityKind} ${input.entityId} not found`,
+    failedPrecondition: loaded
+      ? demo || model
+        ? null
+        : "no image model is registered for entity images"
+      : `${input.entityKind} ${input.entityId} not found`,
     // Only reached once the entity loaded, so the name fallback never fires.
     produce: async () => ({
       ok: true,
-      image: demo ? monogramSvg(loaded?.name ?? "") : await generateEntityBuffer(prompt, ASPECT[input.entityKind]),
+      image:
+        demo || !model
+          ? monogramSvg(loaded?.name ?? "")
+          : await generateEntityBuffer(model, prompt, ASPECT[input.entityKind], input.sink),
     }),
     onReady: async (asset) => {
       await setEntityImage(input.entityKind, input.entityId, input.userId, asset.id);
@@ -143,12 +155,23 @@ async function reclaimOldImages(kind: EntityImageKind, id: string, ownerId: stri
   );
 }
 
-async function generateEntityBuffer(prompt: string, aspectRatio: `${number}:${number}`): Promise<Buffer> {
-  // Venice/Qwen text-to-image (Flux removal — scene-images.plan.md). Item and
-  // location shots are SFW (product/establishing), but the backend is Venice
-  // now; a missing key / API error throws and the caller marks the row failed.
-  const result = await veniceGenerateImage({ prompt, aspectRatio });
-  return unwrapVeniceImage(result, "venice generate returned no image");
+/**
+ * Item and location shots are SFW (product / establishing) and are the one lane
+ * that does NOT want 3:4 — items are square, locations landscape. The registry
+ * serves them through the same shape negotiation as everything else: the ratio
+ * is requested, the closest offered shape is used, and any remainder is cropped.
+ * A missing key / API error throws and the caller marks the row failed.
+ */
+async function generateEntityBuffer(
+  model: ImageModel,
+  prompt: string,
+  aspectRatio: `${number}:${number}`,
+  sink?: DiagnosticSink,
+): Promise<Buffer> {
+  const targetRatio = parseAspectValue(aspectRatio) ?? 1;
+  const result = await renderWithModel({ model, prompt, targetRatio }, sink);
+  if (!result.ok || !result.image) throw new Error(result.error ?? `${model.slug} returned no image`);
+  return result.image;
 }
 
 /** How many entity images generate concurrently in a batch (user spec). */

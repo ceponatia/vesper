@@ -1,9 +1,10 @@
 import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { routeSceneProviders } from "../../../src/server/ai";
+import { routeSceneAttempts } from "../../../src/server/ai";
 import { buildSceneRenderPrompt } from "../../../src/server/images";
 import { EVAL_FIXTURES } from "./fixtures";
+import { evalEditModel } from "./model";
 
 /**
  * Scene-image eval harness runner (scene-images.spec.md §9). OFFLINE: for each
@@ -22,7 +23,7 @@ interface ManifestEntry {
   name: string;
   category: string;
   chain: string[];
-  primaryProvider: string;
+  primaryAttempt: string;
   uploadedAnchor: boolean;
   prompts: { edit?: string; text: string };
 }
@@ -35,7 +36,7 @@ async function main(): Promise<void> {
   await fs.mkdir(OUT, { recursive: true });
 
   const manifest: ManifestEntry[] = EVAL_FIXTURES.map((fx) => {
-    const chain = routeSceneProviders({ references: fx.references, demo: false });
+    const chain = routeSceneAttempts({ references: fx.references, demo: false, model: evalEditModel() });
     const anchor = fx.references.find((r) => Boolean(r.imageId));
     const textPrompt = buildSceneRenderPrompt(fx.plan, {});
     const editPrompt = anchor
@@ -45,7 +46,7 @@ async function main(): Promise<void> {
       name: fx.name,
       category: fx.category,
       chain,
-      primaryProvider: chain[0] ?? "venice_generate",
+      primaryAttempt: chain[0] ?? "generate",
       uploadedAnchor: Boolean(fx.uploadedAnchor),
       prompts: { edit: editPrompt, text: textPrompt },
     };
@@ -67,7 +68,7 @@ async function main(): Promise<void> {
     "notes",
   ];
   const rows = manifest.map((m) =>
-    [m.name, m.category, m.primaryProvider, "", "", "", "", "", "", m.uploadedAnchor ? "MUST_BE_NO" : "", ""]
+    [m.name, m.category, m.primaryAttempt, "", "", "", "", "", "", m.uploadedAnchor ? "MUST_BE_NO" : "", ""]
       .map(csvCell)
       .join(","),
   );

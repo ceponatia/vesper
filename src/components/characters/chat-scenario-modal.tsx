@@ -4,16 +4,14 @@ import { useState } from "react";
 import {
   CHAT_PREMISE_MAX_CHARS,
   chatGameTime,
-  chatSceneModelLabels,
-  chatSceneModels,
   formatChatTime,
-  parseChatSceneModel,
   type SocialReactionCard,
 } from "@/contracts";
 import { MONTHS } from "@/lib/clock";
-import { chatPresetsApi, chatsApi, personasApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
+import { chatPresetsApi, chatsApi, imageModelsApi, personasApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { CalendarStartDialog } from "@/components/chat/calendar-start-dialog";
+import { ImageModelSelect } from "./image-model-select";
 import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -108,7 +106,8 @@ function ScenarioForm({
   const toast = useToast();
   const [premise, setPremise] = useState(snapshot.premise);
   const [sceneAuto, setSceneAuto] = useState(snapshot.sceneAuto === "milestones");
-  const [sceneModel, setSceneModel] = useState(parseChatSceneModel(snapshot.sceneModel));
+  const sceneModels = useAsyncData(() => imageModelsApi.list("scene"), []);
+  const [sceneModel, setSceneModel] = useState(snapshot.sceneModel ?? "");
   const [cards, setCards] = useState<SocialReactionCard[]>([...snapshot.activeSocialCards]);
   const [personaId, setPersonaId] = useState(snapshot.playerState.personaId);
   const [saving, setSaving] = useState(false);
@@ -205,7 +204,7 @@ function ScenarioForm({
     if (premise !== snapshot.premise) patch.premise = premise;
     const sceneAutoMode = sceneAuto ? "milestones" : "off";
     if (sceneAutoMode !== snapshot.sceneAuto) patch.sceneAuto = sceneAutoMode;
-    if (sceneModel !== parseChatSceneModel(snapshot.sceneModel)) patch.sceneModel = sceneModel;
+    if (sceneModel !== (snapshot.sceneModel ?? "")) patch.sceneModel = sceneModel;
     if (JSON.stringify(cards) !== JSON.stringify(snapshot.activeSocialCards)) patch.activeSocialCards = cards;
     // Switching persona RESETS the wardrobe rather than carrying it over: the worn list
     // and overlay describe the person who was wearing them. A blank list re-seeds from
@@ -321,13 +320,12 @@ function ScenarioForm({
           A relationship-stage change or a strong reaction paints the moment into the transcript on its own.
           Generation otherwise stays yours to trigger.
         </span>
-        <Select value={sceneModel} onChange={(e) => setSceneModel(parseChatSceneModel(e.target.value))} aria-label="Scene image model">
-          {chatSceneModels.map((model) => (
-            <option key={model} value={model}>
-              {chatSceneModelLabels[model]}
-            </option>
-          ))}
-        </Select>
+        <ImageModelSelect
+          models={sceneModels.data}
+          value={sceneModel}
+          onChange={setSceneModel}
+          emptyHint="No reference-editing model is registered."
+        />
         <span className="text-[11px] text-paper-600">
           Outfits and exposure moved to each character&rsquo;s sheet — tap a name in the roster.
         </span>

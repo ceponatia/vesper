@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { chatSceneModelLabels, chatSceneModels, parseChatSceneModel, type ChatSceneModel } from "@/contracts";
-import { chatsApi, galleryApi, type ImageRecord } from "@/lib/client/api";
+import { chatsApi, galleryApi, imageModelsApi, type ImageRecord } from "@/lib/client/api";
+import { useAsyncData } from "@/components/hooks/use-async";
+import { ImageModelSelect } from "./image-model-select";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
-import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
@@ -34,6 +34,7 @@ export function SceneStrip({
   onRefresh,
   sceneModel,
   onSceneModelChange,
+  sending,
 }: {
   chatId: string;
   name: string;
@@ -44,12 +45,21 @@ export function SceneStrip({
   rendering: boolean;
   /** Silent refetch of the shared list (after queueing). */
   onRefresh: () => void;
-  /** The chat's scene-model pick ("reference" = identity-locked avatar edit). */
-  sceneModel: ChatSceneModel;
+  /** The chat's stored scene-model pick (a registry model id). */
+  sceneModel: string;
   /** Save-on-select (no save button) — the page persists via the state PATCH. */
-  onSceneModelChange: (model: ChatSceneModel) => void;
+  onSceneModelChange: (modelId: string) => void;
+  /**
+   * True while a reply is streaming. The model save goes through the chat-state
+   * PATCH, which 409s for the whole exchange (`chatBusyResponse`), so the
+   * control is disabled rather than left clickable and guaranteed to fail —
+   * the bug behind the owner's 2026-08-05 report of a false "still in progress"
+   * error (image-model-registry.spec.md §"Scene-picker busy bugs").
+   */
+  sending: boolean;
 }) {
   const toast = useToast();
+  const sceneModels = useAsyncData(() => imageModelsApi.list("scene"), []);
   const [generating, setGenerating] = useState(false);
   const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
@@ -106,23 +116,23 @@ export function SceneStrip({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-end gap-2">
-        {/* Hot-swap model pick (owner request 2026-07-11): saves on select via the
-            state PATCH — no save button. Reference-capable models only (owner
-            ruling 2026-07-29) — the t2i style swaps painted a different-looking
-            person; the picker seam stays for reference models to come. */}
-        <Select
-          aria-label="Scene image model"
+        {/* Hot-swap model pick (owner request 2026-07-11): saves on select via
+            the state PATCH — no save button. The list is the registry filtered
+            to edit-capable models (owner ruling 2026-07-29): a text-to-image
+            model would paint a different-looking person. */}
+        <ImageModelSelect
+          models={sceneModels.data}
           value={sceneModel}
-          onChange={(e) => onSceneModelChange(parseChatSceneModel(e.target.value))}
-          title="Which image model paints the next scene. Every option keeps her exact look from the avatar reference."
-          className="h-8 w-52 text-xs"
-        >
-          {chatSceneModels.map((model) => (
-            <option key={model} value={model}>
-              {chatSceneModelLabels[model]}
-            </option>
-          ))}
-        </Select>
+          onChange={onSceneModelChange}
+          disabled={sending}
+          title={
+            sending
+              ? "Wait for the reply to finish — the conversation is locked while it streams"
+              : "Which image model paints the next scene. Every option keeps her exact look from the avatar reference."
+          }
+          className="h-8 w-56 text-xs"
+          emptyHint="No reference-editing model is registered."
+        />
         <Button
           size="sm"
           onClick={generate}

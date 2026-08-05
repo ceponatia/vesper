@@ -334,11 +334,11 @@ describe.skipIf(!ready)("demo-mode pipelines (AI_FAKE=1)", () => {
 });
 
 /**
- * Run one lane out of demo mode, so its Venice call is actually attempted.
+ * Run one lane out of demo mode, so its provider call is actually attempted.
  * `src/test/setup.ts` deletes VENICE_API_KEY, so the attempt reports "not
  * configured" without a network hop — which is exactly the two generation
  * failures the ruled normalization added a diagnostic to: the avatar lane's
- * throws (through `unwrapVeniceImage`), the variant lane's `ok: false`.
+ * throws, the variant lane's `ok: false`.
  */
 async function outsideDemoMode<T>(run: () => Promise<T>): Promise<T> {
   const fake = process.env.AI_FAKE;

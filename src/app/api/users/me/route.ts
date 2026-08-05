@@ -20,14 +20,23 @@ const userPatchSchema = z.object({
   defaultPersonaId: z.string().nullable(),
 });
 
-/** GET /api/users/me — the default-persona pick + account name (the form's fallback). */
+/**
+ * GET /api/users/me — the default-persona pick + account name (the form's
+ * fallback), plus the account's own role so admin-only settings pages can show
+ * an explanation instead of a wall of 404s. The role is NOT a gate: every
+ * admin surface is enforced server-side under `/api/admin/self`.
+ */
 export const GET = withUser(async (user) => {
   const [row] = await db()
-    .select({ name: users.name, defaultPersonaId: users.defaultPersonaId })
+    .select({ name: users.name, defaultPersonaId: users.defaultPersonaId, role: users.role })
     .from(users)
     .where(eq(users.id, user.id))
     .limit(1);
-  return jsonOk({ accountName: row?.name ?? user.name, defaultPersonaId: row?.defaultPersonaId ?? null });
+  return jsonOk({
+    accountName: row?.name ?? user.name,
+    defaultPersonaId: row?.defaultPersonaId ?? null,
+    role: row?.role ?? user.role,
+  });
 });
 
 /** PATCH /api/users/me — set (or clear) the default persona. */

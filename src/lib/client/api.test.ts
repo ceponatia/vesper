@@ -65,12 +65,12 @@ describe("imageRecordSchema", () => {
       status: "failed",
       prompt: "portrait prompt",
       meta: {
-        model: "venice/qwen-image",
+        model: "replicate/qwen/qwen-image-2512",
         error: "The operation was aborted due to timeout",
         variantKind: "pose",
       },
     });
-    expect(parsed.meta.model).toBe("venice/qwen-image");
+    expect(parsed.meta.model).toBe("replicate/qwen/qwen-image-2512");
     expect(parsed.meta.error).toBe("The operation was aborted due to timeout");
     expect(parsed.meta.variantKind).toBe("pose");
   });

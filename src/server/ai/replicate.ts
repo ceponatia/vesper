@@ -1,25 +1,27 @@
 import { z } from "zod";
+import { fitReferences, type ImageModel } from "@/contracts";
 
 const REPLICATE_BASE = "https://api.replicate.com/v1";
 const DEFAULT_PREDICTION_TIMEOUT_MS = 5 * 60_000;
 const POLL_INTERVAL_MS = 1_500;
 const REQUEST_TIMEOUT_MS = 75_000;
 const OUTPUT_TIMEOUT_MS = 60_000;
-const MAX_REFERENCES = 3;
 
 export const REPLICATE_DEFAULT_IMAGE_MODEL = "qwen/qwen-image-2512";
 export const REPLICATE_DEFAULT_EDIT_MODEL = "qwen/qwen-image-edit-2511";
 
-export function replicateImageModelId(): string {
-  return process.env.REPLICATE_IMAGE_MODEL || REPLICATE_DEFAULT_IMAGE_MODEL;
-}
-
-export function replicateEditModelId(): string {
-  return process.env.REPLICATE_IMAGE_EDIT_MODEL || REPLICATE_DEFAULT_EDIT_MODEL;
-}
-
 export function hasReplicate(): boolean {
   return Boolean(process.env.REPLICATE_API_TOKEN);
+}
+
+/**
+ * Whether generated images bypass the provider's safety checker. Inverted from
+ * the env flag so the safe default reads the same way it does everywhere else.
+ * Only ever applied to models whose schema HAS the input (see
+ * `buildRegistryModelInput`).
+ */
+function disableSafetyChecker(): boolean {
+  return process.env.REPLICATE_SAFE_MODE !== "true";
 }
 
 export interface ReplicateImageResult {
@@ -29,41 +31,78 @@ export interface ReplicateImageResult {
   predictionId?: string;
 }
 
-export interface ReplicateGenerateRequest {
+export interface RegistryModelRequest {
   prompt: string;
-  aspectRatio?: string;
-}
-
-/** Qwen Image 2512 text-to-image through Replicate's official model endpoint. */
-export async function replicateGenerateImage(request: ReplicateGenerateRequest): Promise<ReplicateImageResult> {
-  if (!hasReplicate()) return { ok: false, error: "REPLICATE_API_TOKEN not configured" };
-  return runReplicateImageModel(replicateImageModelId(), {
-    prompt: request.prompt,
-    aspect_ratio: request.aspectRatio ?? "3:4",
-    output_format: "webp",
-    output_quality: 95,
-    go_fast: true,
-    disable_safety_checker: process.env.REPLICATE_SAFE_MODE !== "true",
-  });
-}
-
-export interface ReplicateEditRequest {
-  prompt: string;
-  /** One to three ordered identity/location references. */
-  references: Buffer[];
-  aspectRatio?: string;
+  /** Ordered identity/location references; trimmed to what the model accepts. */
+  references?: Buffer[];
+  /**
+   * The shape to request, already negotiated against the model's offerings by
+   * `chooseAspect`. Null omits the aspect key entirely, letting the model use
+   * its own default.
+   */
+  aspect?: string | null;
 }
 
 /**
- * Qwen Image Edit 2511 through Replicate. Reference buffers are uploaded as
- * private, short-lived Replicate files because Vesper's stored images are not
- * publicly addressable and can exceed the data-URL recommendation. The uploads
- * are deleted best-effort as soon as the prediction settles.
+ * Build one model's prediction input (PURE — the unit-testable half of the
+ * render path). Every difference between the models we run lives here rather
+ * than in a per-model branch:
+ *
+ * - The reference key differs (`image` / `image_input` / `images`) and so does
+ *   its arity — both Qwen models call it `image`, one a string and one an array.
+ *   The key is OMITTED entirely when there are no references, because a model
+ *   whose reference input is optional treats an empty array differently from an
+ *   absent one on some backends.
+ * - Shape is written to `aspect_ratio` on most models and to `size` on Wan,
+ *   which has no aspect input at all. The VALUE is chosen upstream by
+ *   `chooseAspect` against what the model offers; null omits the key so the
+ *   model falls back to its own default.
+ * - `output_format` is omitted where the model has no such input.
+ * - `extraInput` carries per-model constants. `disable_safety_checker` is only
+ *   ever present when the model's schema actually declares it — Replicate
+ *   rejects unknown inputs — so its VALUE is overridden from the env here, but
+ *   the key is never introduced.
  */
-export async function replicateEditImage(request: ReplicateEditRequest): Promise<ReplicateImageResult> {
+export function buildRegistryModelInput(
+  model: ImageModel,
+  prompt: string,
+  referenceUrls: readonly string[],
+  aspect?: string | null,
+): Record<string, unknown> {
+  const input: Record<string, unknown> = { prompt };
+
+  if (referenceUrls.length > 0) {
+    input[model.referenceField] = model.referenceArity === "single" ? referenceUrls[0] : [...referenceUrls];
+  }
+
+  if (aspect) input[model.aspectMode === "size" ? "size" : "aspect_ratio"] = aspect;
+
+  if (model.outputFormat) input.output_format = model.outputFormat;
+
+  for (const [key, value] of Object.entries(model.extraInput)) {
+    input[key] = key === "disable_safety_checker" ? disableSafetyChecker() : value;
+  }
+  return input;
+}
+
+/**
+ * Run one registry model. Reference buffers are uploaded as private,
+ * short-lived Replicate files because Vesper's stored images are not publicly
+ * addressable and can exceed the data-URL recommendation; the uploads are
+ * deleted best-effort as soon as the prediction settles.
+ *
+ * References are trimmed through `fitReferences` rather than a fixed cap, so a
+ * single-reference model stops being handed three and silently ignoring two.
+ */
+export async function runRegistryImageModel(
+  model: ImageModel,
+  request: RegistryModelRequest,
+): Promise<ReplicateImageResult> {
   if (!hasReplicate()) return { ok: false, error: "REPLICATE_API_TOKEN not configured" };
-  const references = request.references.slice(0, MAX_REFERENCES);
-  if (references.length === 0) return { ok: false, error: "replicate edit requires at least one reference image" };
+  const references = fitReferences(model, request.references ?? []);
+  if (references.length === 0 && !model.canGenerate) {
+    return { ok: false, error: `${model.slug} requires at least one reference image` };
+  }
 
   const uploads: ReplicateFile[] = [];
   try {
@@ -72,16 +111,10 @@ export async function replicateEditImage(request: ReplicateEditRequest): Promise
       if (!upload.ok) return { ok: false, error: upload.error };
       uploads.push(upload.file);
     }
-
-    return await runReplicateImageModel(replicateEditModelId(), {
-      prompt: request.prompt,
-      image: uploads.map((file) => file.url),
-      aspect_ratio: request.aspectRatio ?? "3:4",
-      output_format: "webp",
-      output_quality: 95,
-      go_fast: true,
-      disable_safety_checker: process.env.REPLICATE_SAFE_MODE !== "true",
-    });
+    return await runReplicateImageModel(
+      model.slug,
+      buildRegistryModelInput(model, request.prompt, uploads.map((file) => file.url), request.aspect),
+    );
   } finally {
     await Promise.allSettled(uploads.map((file) => deleteReplicateFile(file.id)));
   }
@@ -120,14 +153,18 @@ async function runReplicateImageModel(model: string, input: Record<string, unkno
   const timeoutMs = predictionTimeoutMs();
   let prediction: ReplicatePrediction;
   try {
-    const response = await replicateApiFetch(modelPredictionPath(model), {
+    // A pinned `owner/name:version` posts to the version-agnostic
+    // `/predictions` endpoint carrying the version id; a bare `owner/name`
+    // posts to the model's own endpoint and takes whatever `latest_version` is.
+    const target = replicatePredictionTarget(model);
+    const response = await replicateApiFetch(target.path, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Prefer: "wait=60",
         "Cancel-After": cancelAfterHeader(timeoutMs),
       },
-      body: JSON.stringify({ input }),
+      body: JSON.stringify(target.version ? { version: target.version, input } : { input }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) return { ok: false, error: await responseError(response) };
@@ -230,10 +267,23 @@ function allowedOutputHost(hostname: string): boolean {
   return hostname === "replicate.delivery" || hostname.endsWith(".replicate.delivery") || hostname === "api.replicate.com";
 }
 
-function modelPredictionPath(model: string): string {
-  const [owner, name, extra] = model.split("/");
+/**
+ * Resolve a registry slug to the endpoint that runs it. Two forms are accepted:
+ * `owner/name` (runs whatever Replicate currently calls `latest_version`) and
+ * `owner/name:version` (pinned — posts the version id to `/predictions`, which
+ * is the only endpoint that accepts one).
+ *
+ * Pinning matters more here than it looks: Replicate can change a model's input
+ * schema underneath a bare slug, which is exactly the failure the registry's
+ * stored capability columns would not notice.
+ */
+export function replicatePredictionTarget(model: string): { path: string; version?: string } {
+  const [path, version, ...rest] = model.split(":");
+  if (rest.length > 0) throw new Error(`invalid Replicate model id: ${model}`);
+  const [owner, name, extra] = (path ?? "").split("/");
   if (!owner || !name || extra) throw new Error(`invalid Replicate model id: ${model}`);
-  return `/models/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/predictions`;
+  if (version) return { path: "/predictions", version };
+  return { path: `/models/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/predictions` };
 }
 
 function parsePrediction(raw: unknown): ReplicatePrediction {

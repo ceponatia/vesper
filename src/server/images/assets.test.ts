@@ -226,7 +226,7 @@ describe("runImagePipeline", () => {
   });
 
   it("a produce that reports a failure fails the row and settles — the lane owns any diagnostic there", async () => {
-    // The scene chain and the Venice edit report failure rather than throwing;
+    // The scene chain and the reference edit report failure rather than throwing;
     // the shell must not mistake that for a thrown provider error, and must not
     // record the thrown path's diagnostic for a lane's own precondition miss.
     const { client, updates } = fakePipelineDb();
@@ -297,7 +297,7 @@ describe("runImagePipeline", () => {
       },
       produce: () => {
         order.push("produce");
-        return Promise.reject(new Error("venice edit failed"));
+        return Promise.reject(new Error("replicate edit failed"));
       },
       failureDiagnostic: { code: "images.chat_look.failed" },
       sink,
