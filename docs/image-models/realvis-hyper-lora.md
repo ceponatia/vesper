@@ -70,17 +70,18 @@ behavior before tuning these values one at a time.
 ## Negative prompt policy
 
 The wrapper has a long quality-boilerplate default. Supplying any
-`negative_prompt` replaces it. Vesper uses the reviewed community block:
+`negative_prompt` replaces it. Vesper sends the reproducible production-only
+block:
 
 ```text
-duplicated limbs, disconnected limbs, malformed hands, extra fingers, fused
-fingers, text, watermark, signature, logo, blurry, low resolution
+text, watermark, signature, logo, blurry, low resolution
 ```
 
-It avoids generic `missing fingers` and `extra limbs`, which can contradict an
-authored missing digit or non-human appendage count. It is still transitional and
-must move to a morphology-aware profile before RealVis becomes a normal production
-surface.
+No anatomy term is sent until a profile can see intended morphology and authored
+absences. Generic terms such as `missing fingers` or `extra limbs` can contradict
+an authored missing digit, prosthetic, or non-human appendage count. A later
+morphology-aware trial can add conflict-checked anatomy steering and compare it
+against this baseline.
 
 ## Safety input
 
@@ -115,7 +116,7 @@ takes the first result and normalizes it to WebP on write.
 ```json
 {
   "prompt": "<built prompt>",
-  "negative_prompt": "duplicated limbs, disconnected limbs, malformed hands, extra fingers, fused fingers, text, watermark, signature, logo, blurry, low resolution",
+  "negative_prompt": "text, watermark, signature, logo, blurry, low resolution",
   "reference_image": "<single identity url>",
   "width": 768,
   "height": 1024
