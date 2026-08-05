@@ -1,6 +1,6 @@
-# Image render quality — model-native prompts, negative steering, and faces that survive
+# Image render quality — model-native prompts, reference quality, and faces that survive
 
-Status: active (rulings settled 2026-08-05; first hardening slice implemented)
+Status: active (owner rulings settled 2026-08-05; first hardening slice implemented)
 
 Technical companion: [image-render-quality.spec.md](image-render-quality.spec.md)
 
@@ -12,22 +12,22 @@ Sibling plans:
   shared controls, role-aware references, version promotion, seeds, and
   multi-output machinery;
 - this plan owns the quality policy that rides on those systems: what each model
-  is told, what it is told not to draw, how references are prepared, and how a
-  render is judged.
+  is told, how references are prepared, which controls are quality defaults, and
+  how a render is judged.
 
 ## The problem
 
 Vesper now has models from several unrelated families behind one generic image
-adapter. They accept the same broad concepts — prompt, references, shape — but
-are not interchangeable.
+adapter. They accept the same broad concepts — prompt, references, and shape —
+but they are not interchangeable.
 
 The owner reported two visible failures after the registry expanded:
 
 - Qwen Image Edit often returns a recognisably similar person rather than the
   character's exact face;
-- SDXL-lineage and identity-specialist community models more often produce
-  malformed hands, extra limbs, weak anatomy, or framing that looks malformed
-  after Vesper crops it.
+- SDXL-lineage and identity-specialist community models more often produce weak
+  anatomy, malformed hands, or framing that looks malformed after Vesper crops
+  it.
 
 The current pipeline contributes to both. Provider defaults are treated as
 quality defaults, every model receives the same provider-neutral prose, negative
@@ -49,14 +49,13 @@ family-wide guess.
 
 **Negative prompts are not free quality.** Long boilerplate negatives can fight a
 checkpoint's training and can conflict with legitimate stylized, multi-person,
-or close-framed images. They can also contradict authored morphology: “missing
-fingers” is wrong for most people but may be a character's recognisable landmark,
-and “extra limbs” may be correct for a non-human species. Juggernaut's creator
-specifically recommends beginning with little or no negative prompt. Vesper
-therefore starts with production-only static steering where morphology is unknown
-and uses compact anatomy blocks only on reviewed community portrait pipelines.
-Stronger blocks wait until task, style, subject count, visible anatomy, and
-morphology are known.
+or close-framed images. More importantly, anatomy negatives require knowledge of
+intended morphology. “Missing fingers” may describe a character's recognisable
+landmark; “extra limbs” may be correct for a non-human species. The shared render
+seam has no character or task context, so its static negative is limited to
+production defects. Anatomy steering waits for profile-aware composition that can
+see authored absences, prosthetics, species morphology, visible body parts, and
+subject count.
 
 **Pony Realism and RealVis Hyper LoRA are candidates, not proven winners.** Their
 InstantID/HyperLoRA machinery makes them worth testing for identity retention,
@@ -86,13 +85,13 @@ Vesper's reviewed starting configuration is:
 - 35 inference steps;
 - guidance scale 5;
 - the wrapper's `KarrasDPM` scheduler;
-- a short anatomy/production negative rather than a large generic negative wall.
+- only the production-defect negative that is safe without morphology context.
 
 Vesper still normalizes the result to the lane's requested ratio. For a 3:4
 portrait, 832×1216 requires a modest top/bottom crop, but it preserves far more
 portrait detail than rendering 1024×1024 and discarding a quarter of the width.
-The fixed trial matrix may tune these values, but the Lightning-versus-base
-question is closed.
+The fixed trial matrix may tune the sampler and numeric values, but the
+Lightning-versus-base question is closed.
 
 ### Face crops are derived assets
 
@@ -103,20 +102,19 @@ The pack begins with:
 
 - the canonical portrait;
 - a tight face crop;
-- crop coordinates, source image id, detector/heuristic version, confidence, and
-  generation timestamp;
-- basic reference-quality measurements such as face pixel area, blur, occlusion,
-  and detected face count.
+- crop coordinates, source image id and content hash, detector/heuristic version,
+  confidence, and generation timestamp;
+- reference-quality measurements such as face pixel area, blur, occlusion, and
+  detected face count.
 
 Existing portraits are backfilled lazily when first needed, with an admin batch
 available for trial preparation. Render-time cropping is only a degraded fallback
 when the derived asset is missing or stale.
 
 The first implementation may use a deterministic upper-centre portrait crop,
-but it should store a confidence of `heuristic` rather than pretending it found a
-face. A real detector may replace that crop only when its confidence clears a
-reviewed threshold. Derived assets are invalidated when their source portrait
-changes.
+but it stores `heuristic` as its method rather than pretending it found a face. A
+real detector may replace that crop only when its confidence clears a reviewed
+threshold. Derived assets are invalidated when their source portrait changes.
 
 ### Face repair proves out on the admin/dev surface first
 
@@ -126,8 +124,9 @@ multi-person images.
 
 Promotion to the player UI requires the fixed trial matrix to show a material
 identity improvement without unacceptable drift in pose, clothing, body,
-lighting, or setting. It remains an explicit action that creates a new image and
-keeps the original. It is never a silent fallback after another model fails.
+lighting, camera, or setting. It remains an explicit action that creates a new
+image and keeps the original. It is never a silent fallback after another model
+fails.
 
 ### Cost is governed by render units and a price guard
 
@@ -161,25 +160,24 @@ If Qwen Edit later gains non-identity tasks such as text repair, the single
 runtime override must be replaced by task profiles so those jobs may choose a
 fast profile independently.
 
-### Static negatives are production-only unless a model is explicitly reviewed
+### Static negatives are production-only until morphology is known
 
-The first hardening slice does **not** put a universal anatomy wall,
-photorealism block, or single-subject block into shared model rows.
+The shared render seam does not know the task, style, expected subject count,
+visible body parts, authored landmarks, or species morphology. Its static
+negative therefore contains only:
 
-Where morphology is unknown, static steering is limited to production defects:
-text, watermark, signature, logo, blur, and low resolution. It cannot erase an
-authored missing digit, prosthetic, unusual appendage count, or stylized medium.
+```text
+text, watermark, signature, logo, blurry, low resolution
+```
 
-The reviewed community portrait pipelines receive smaller model-specific anatomy
-blocks because those are the models where deformities were reported. Even there,
-the block avoids generic “missing fingers” and “extra limbs”; it targets duplicated
-or disconnected limbs and malformed/fused/extra fingers. Juggernaut receives the
-smallest version because its creator warns against heavy negatives.
+Pony additionally receives its low-score tags (`score_1`, `score_2`, `score_3`),
+which are quality conventions rather than anatomy claims.
 
-Photoreal blocks, full anatomy blocks, Pony score/rating conventions,
-single-subject blocks, hand emphasis, and framing-specific terms are composed only
-when the profile layer knows the task, style, subject count, visible anatomy, and
-intended morphology.
+Photoreal blocks, anatomy blocks, single-subject blocks, hand emphasis, framing
+terms, and positive Pony score/source/rating conventions are composed only when
+the profile layer knows enough context to avoid contradictions. This resolves the
+stylized-portrait mismatch and the more serious risk of erasing intentional body
+features.
 
 ## First hardening slice in this change
 
@@ -190,14 +188,12 @@ first code slice is deliberately small and centralized.
 `renderWithModel`, the one seam every lane already crosses. It currently:
 
 - turns Qwen Image Edit fast mode off;
-- gives Qwen Image 2512 and SD 3.5 only production-defect negative steering;
-- gives Pony and RealVis compact, morphology-safer community anatomy steering,
-  with Pony's low-score negatives;
-- gives Juggernaut the full-step settings above and its smallest negative;
+- sends the production-defect negative to every reviewed model that accepts one;
+- appends Pony's low-score negative tags without adding anatomy assumptions;
+- gives Juggernaut the full-step settings above;
 - pins RealVis to its native 768×1024 3:4 size;
-- rewrites the existing provider-neutral identity lock into Qwen's numbered-image
-  dialect, with compact single-reference and multi-reference wording that does
-  not expand the already-fitted edit prompt.
+- rewrites the existing provider-neutral identity lock into compact Qwen
+  numbered-image wording that does not expand the already-fitted edit prompt.
 
 Pinned community slugs are matched without their version suffix. Unknown models
 remain byte-identical and receive no guessed inputs.
@@ -215,7 +211,7 @@ Prompt dialects should not attempt to reverse-engineer a finished paragraph.
 Every lane should first produce ordered semantic segments:
 
 - mandatory operation and identity/change contract;
-- subject identities and age anchors;
+- subject identities, intended morphology, and age anchors;
 - visible current state and pose;
 - authoritative clothing and exposure;
 - setting and location references;
@@ -242,20 +238,20 @@ uses a sentinel near the tail and a fixed seed to determine whether the wrapper
 retains or loses late instructions. Until measured, the compiler is conservative
 and places identity, subject count, morphology, pose, and clothing first.
 
-### Negative steering is compositional
+### Negative steering is compositional and morphology-aware
 
 Named negative blocks are composed from context rather than stored as one giant
 string:
 
 - production: text, watermark, signature, logo, blur, and low resolution;
-- anatomy: duplicated/disconnected/malformed anatomy, conditioned on intended
-  morphology and visible body parts;
-- photoreal: synthetic media and plastic-skin terms, realistic style only;
+- anatomy: duplicated, disconnected, or malformed anatomy after subtracting
+  intended morphology and authored absences;
+- photoreal: synthetic-media and plastic-skin terms, realistic style only;
 - single-subject: duplicate people/faces, portrait and single-person variant
   only;
-- Pony low-score tags, Pony dialect only;
-- task-local blocks such as visible-hands steering only when hands actually
-  matter in frame.
+- Pony low-score tags, tested Pony dialect only;
+- task-local blocks such as visible-hand steering only when hands matter in
+  frame.
 
 The linter rejects direct positive/negative collisions. A stylized prompt cannot
 also forbid illustration; a multi-person scene cannot forbid multiple people; a
@@ -274,8 +270,8 @@ Instruction editors receive an explicit change contract:
 
 “Change the outfit” is weaker than “change only the outfit to the listed
 wardrobe; preserve the exact face, hair, body, pose, camera, lighting, and
-background.” The compiler should state that delta once, not scatter contradictory
-preserve clauses through the prompt.
+background.” The compiler states that delta once rather than scattering
+contradictory preserve clauses through the prompt.
 
 ## Identity packs and reference quality
 
@@ -294,18 +290,10 @@ A failed score does not silently replace the reference. The UI explains the
 problem and offers a new canonical portrait or a reviewed manual crop. Admin
 trials may override with a recorded warning.
 
-Reference ordering is deterministic:
-
-1. canonical identity portrait;
-2. face-detail crop for the same identity;
-3. additional character identities;
-4. location;
-5. pose/control image;
-6. style;
-7. object.
-
-A selected profile may change role capacity, but it may never evict a required
-identity reference in favour of an optional style image.
+Reference selection is deterministic. Required identities are selected before
+optional face-detail, location, style, or object references. A profile may never
+eject a required identity in favour of an optional style image. If all required
+roles do not fit the model's cap, the profile is ineligible for that request.
 
 ## Visual state and attention
 
@@ -345,7 +333,7 @@ Until a suitable regional editor is registered, the admin trial compares:
 - Qwen Edit with canonical portrait plus face crop;
 - Pony Realism with the identity crop and rendered scene as pose control;
 - RealVis Hyper LoRA with the identity crop;
-- no repair baseline.
+- no-repair baseline.
 
 Full-frame specialist outputs are judged on composition drift as well as face
 likeness. A better face with a changed outfit or body is a failure, not a partial
@@ -380,11 +368,12 @@ Every render comparison needs enough provenance to reproduce what happened:
 - source and final dimensions, including post-crop bounds;
 - warnings, moderation result, and advisory QA findings.
 
-The fixed trial matrix remains 3–4 characters spanning human/non-human,
-heavy/sparse authoring, and realistic/stylized appearances across the affected
-portrait, variant, and scene tasks. Pairwise owner review grades identity,
-anatomy, composition fidelity, and overall preference. New model versions do not
-replace an active version until the relevant regression cells pass.
+The fixed trial matrix uses 3–4 characters spanning human/non-human,
+heavy/sparse authoring, realistic/stylized appearances, and at least one
+intentional absence, prosthetic, or unusual appendage count. Pairwise owner
+review grades identity, anatomy relative to intended morphology, edit fidelity,
+composition drift, and overall preference. New model versions do not replace an
+active version until the relevant regression cells pass.
 
 ## Community-model license gate
 
@@ -394,15 +383,13 @@ server-side production dependency, the operator records a review of its current
 model license and hosting/deployment terms. The gate is version/date stamped and
 must be revisited when a model or license changes.
 
-This is especially important for community SDXL checkpoints whose model cards may
-allow local experimentation while restricting commercial hosted APIs. The app
-must not infer production permission from the fact that Replicate can execute a
-model.
+The app must not infer production permission from the fact that Replicate can
+execute a model.
 
 ## Delivery slices
 
 1. **Immediate hardening — implemented here.** Apply reviewed exact-slug quality
-   overrides at the shared render seam, use morphology-safe static negatives,
+   overrides at the shared render seam, use production-only static negatives,
    correct Juggernaut's fast defaults, pin RealVis dimensions, and translate
    Qwen's identity lock into compact numbered-reference instructions. Unit-test
    the policy and keep unknown models unchanged.
@@ -441,9 +428,11 @@ cross-model fallback.
   instructions and quality mode unless a task profile explicitly says otherwise.
 - Juggernaut no longer runs its normal checkpoint at 5 steps/CFG 2 or wastes a
   square render before portrait cropping.
-- Every negative input is known to exist on the selected pinned model, and static
-  negatives cannot contradict style, subject count, authored landmarks, or
-  intended morphology.
+- Every negative input is known to exist on the selected pinned model, and the
+  shared static negative contains no anatomy, style, framing, or subject-count
+  assumptions.
+- Dynamic anatomy negatives are morphology-aware and conflict-checked before
+  they are sent.
 - Unknown/admin-added models remain unchanged until reviewed.
 - Identity references meet measurable quality requirements and can be traced to
   their canonical source.
@@ -461,9 +450,10 @@ cross-model fallback.
 The owner decisions are settled. These are trial questions, not blockers to
 beginning implementation:
 
-- whether Juggernaut's compact negative improves anatomy or should be reduced to
-  an empty/default negative;
-- whether `KarrasDPM` is the best wrapper sampler for Vesper's portrait prompts;
+- which Juggernaut sampler and CFG within the full-step band best fit Vesper's
+  prompts;
+- whether a morphology-aware anatomy block improves Juggernaut/Pony/RealVis over
+  production-only steering;
 - how much Qwen's face crop and fast-mode change improve identity independently;
 - the minimum useful face-pixel and blur thresholds for the identity pack;
 - whether Pony or RealVis can improve identity without composition drift;
