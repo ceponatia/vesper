@@ -13,6 +13,7 @@ import {
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { db, imageModels } from "../db";
 import { runRegistryImageModel } from "../ai";
+import { preparePromptForImageModel, withReviewedImageQuality } from "./quality-presets";
 
 /**
  * The image-model registry's server seam (image-model-registry.spec.md).
@@ -145,11 +146,17 @@ export interface RenderWithModelResult {
 /**
  * Run one model and hand back a buffer in the shape the lane asked for.
  *
- * This wrapper exists for the shape negotiation. A lane says what ratio it
- * wants; `chooseAspect` finds the closest thing the model offers; anything
- * short of exact is centre-cropped here. That is what lets Stable Diffusion 3.5
- * Large (no 3:4 in its enum) serve a portrait, and the same code serve the item
- * lane's 1:1, without either caller knowing which models need help.
+ * The model first crosses the reviewed-quality seam. That seam corrects known
+ * harmful provider defaults and rewrites the provider-neutral identity lock into
+ * Qwen Edit's numbered-reference dialect without teaching every lane about model
+ * slugs. It is intentionally small and will be replaced by task profiles once
+ * those profiles actually reach this path.
+ *
+ * This wrapper also owns shape negotiation. A lane says what ratio it wants;
+ * `chooseAspect` finds the closest thing the model offers; anything short of
+ * exact is centre-cropped here. That is what lets Stable Diffusion 3.5 Large (no
+ * 3:4 in its enum) serve a portrait, and the same code serve the item lane's 1:1,
+ * without either caller knowing which models need help.
  *
  * A crop failure is not fatal — the uncropped image beats no image — so it
  * degrades with a diagnostic.
@@ -159,18 +166,20 @@ export async function renderWithModel(
   sink?: DiagnosticSink,
 ): Promise<RenderWithModelResult> {
   const targetRatio = input.targetRatio ?? IMAGE_TARGET_ASPECT;
-  const aspect = chooseAspect(input.model, targetRatio);
+  const model = withReviewedImageQuality(input.model);
+  const prompt = preparePromptForImageModel(model, input.prompt, input.references?.length ?? 0);
+  const aspect = chooseAspect(model, targetRatio);
   const result = await runRegistryImageModel(
-    input.model,
+    model,
     {
-      prompt: input.prompt,
+      prompt,
       ...(input.references ? { references: input.references } : {}),
       aspect: aspect.value,
     },
     sink,
   );
   if (!result.ok || !result.image) {
-    return { ok: false, error: result.error ?? `${input.model.slug} returned no image` };
+    return { ok: false, error: result.error ?? `${model.slug} returned no image` };
   }
   // Crop when the model had no exact shape, and also when it offered none at
   // all — in that case it used its own default, which is unlikely to match.
@@ -181,7 +190,7 @@ export async function renderWithModel(
     sink?.push(
       diag("warn", "image_model.crop_failed", "could not crop the render to the requested shape", {
         path: "image_models",
-        context: { slug: input.model.slug, targetRatio, error: error instanceof Error ? error.message : String(error) },
+        context: { slug: model.slug, targetRatio, error: error instanceof Error ? error.message : String(error) },
       }),
     );
     return { ok: true, image: result.image };
