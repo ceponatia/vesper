@@ -32,6 +32,39 @@ cannot.
 - **Aspect handling:** `aspect_ratio` enum includes `3:4`. Send `"3:4"`.
 - **Output:** array of URIs. WebP available.
 
+## Reviewed capability
+
+Reviewed by hand, never probed, and never overwritten by a re-probe:
+
+- **Edit kind:** `instruction_edit`. It takes an instruction plus the source image
+  and changes what it was told to change — the behaviour the identity lock is
+  written against.
+- **Identity preservation:** `strong`. This is the model the app's
+  identity-preserving paths are built around.
+- **Operator warning:** none.
+
+## Seeded profiles
+
+Three, all `operation: edit` with the `instruction_edit` prompt strategy, empty
+control defaults and no timeout override. Each is its task's **global default**,
+matching what the lanes resolve today:
+
+- `variant-standard` (Variant Standard) — task `variant`. Reference policy requires
+  `identity` and allows `style`.
+- `scene-standard` (Scene Standard) — task `scene`. Orders identity → location →
+  style → object and **requires nothing**: the scene ladder's bare-prompt rung
+  legitimately runs with zero references, so requiring identity would break it.
+- `chat-look-standard` (Chat Look Standard) — task `chat_look`. Same
+  identity-required policy as the variant profile. The chat-look lane has no picker
+  and resolves the scene surface's default today, which is why this profile is
+  seeded here and on no other model.
+
+No `generate` profile is seeded and none could be: `canGenerate` is false, so a
+generate profile on this row is ineligible by rule. **Nothing calls the profile
+layer yet** — the text-repair and LoRA house-style profiles the plan describes are
+later work, and the row's `advanced_capabilities` is still `{}`, so no LoRA binding
+is recorded for anything to select.
+
 ## Inputs
 
 - `prompt` — string. **Required.** Described as *"Text instruction on how to edit

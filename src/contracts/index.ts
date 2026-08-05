@@ -50,6 +50,8 @@ export * from "./items/garment-observation";
 export * from "./facts/taxonomy";
 export * from "./images/scene-reference";
 export * from "./images/image-models";
+export * from "./images/image-model-capabilities";
+export * from "./images/image-model-profiles";
 export * from "./images/viewer-body";
 export * from "./players/persona-profile";
 export * from "./players/chat-player-state";

@@ -32,6 +32,38 @@ this is an opt-in pick.
 - **Aspect handling:** `aspect_ratio` enum includes `3:4`. Send `"3:4"`.
 - **Output:** array of URIs.
 
+## Reviewed capability
+
+Reviewed by hand, never probed, and never overwritten by a re-probe:
+
+- **Edit kind:** `multi_reference_compose` — a genuine reference list, not
+  strength-based repainting.
+- **Identity preservation:** `strong`, and it is the one rating in the set with
+  direct evidence: the 2026-08-05 trial above held face and hair across a scene
+  change.
+- **Operator warning:** none. Note this is not a moderation clearance — the model
+  has no `disable_safety_checker` input and the trial ran a clothed, non-explicit
+  prompt, so the reach of its moderation is still untested.
+
+## Seeded profiles
+
+Three, none of them a default — this is the slow, opt-in quality pick — all with
+empty control defaults and no timeout override (its ~40–60s latency still fits the
+global prediction budget; a per-profile `timeout_ms` is available if a 3K profile
+later needs one):
+
+- `portrait-standard` (Portrait Standard) — task `portrait`, `generate`,
+  `text_to_image_description`, no references.
+- `variant-standard` (Variant Standard) — task `variant`, `edit`,
+  `instruction_edit`, `identity` required and `style` allowed.
+- `scene-standard` (Scene Standard) — task `scene`, `edit`, `instruction_edit`,
+  identity → location → style → object with nothing required.
+
+The scene profile carries `instruction_edit` rather than `multi_reference_compose`
+for the same reason as [Seedream 4.5](seedream-4-5.md): the lane still chooses the
+reference mode at render time. **Nothing calls the profile layer yet** — the 3K,
+example-transformation and coherent-set profiles the plan describes are later work.
+
 ## No WebP
 
 `output_format` offers only `png` and `jpeg` — this is the one model in the set

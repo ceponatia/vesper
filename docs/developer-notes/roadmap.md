@@ -34,6 +34,17 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   the reference-capacity scaffold. Folds in three scene-picker bugs found while
   diagnosing an owner-reported false "generation in progress" error. Per-model
   API reference lives in [docs/image-models/](../image-models/).
+- **Image model capabilities — profiles, shared controls, and richer workflows** —
+  [image-model-capabilities.plan.md](image-model-capabilities.plan.md) ·
+  [spec](image-model-capabilities.spec.md) (active; started 2026-08-05, directly
+  behind the registry it extends). The registry made image models data; this makes
+  them *usable well*. Adds reviewed semantic capabilities (edit kind, identity
+  preservation, operator warning) beside the probed mechanical ones, task-specific
+  **profiles** beneath each model, one normalized render intent shared by every
+  image lane, role-aware references, recorded seeds and resolved settings, safe
+  version promotion, a curated Qwen LoRA, and a separate coherent-image-set
+  workflow. Nine slices; slice 1 (capability vocabulary + profiles, behavior
+  preserving) leads.
 - **Constraint-first narrator physical guidance — constraints, premise correction,
   and resolved action outcomes** —
   [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md)

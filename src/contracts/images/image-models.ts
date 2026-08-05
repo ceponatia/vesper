@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  emptyImageModelAdvancedCapabilities,
+  imageEditKindSchema,
+  imageIdentityPreservationSchema,
+  imageModelAdvancedCapabilitiesSchema,
+} from "./image-model-capabilities";
 
 /**
  * The image-model registry's vocabulary (image-model-registry.spec.md).
@@ -101,12 +107,49 @@ export const imageModelSchema = z.object({
   outputFormat: z.string().nullable().default(null),
   /** Per-model constants merged into the payload (e.g. `max_images: 1`). */
   extraInput: z.record(z.string(), z.unknown()).default({}),
+  /**
+   * The exact Replicate version whose schema produced the stored mechanical
+   * capabilities. Null on every row probed before the column existed, and on a
+   * bare-slug experimental row. For a pinned `owner/name:version` slug this must
+   * equal the pinned version — a mismatch means the stored bindings describe a
+   * version the app is no longer calling, which is how a control silently starts
+   * being sent to a field that moved.
+   */
+  probedVersionId: z.string().nullable().default(null),
+  /**
+   * REVIEWED, never probed: what this model's editing actually does. `canEdit` is
+   * true for anything with an image input, so this is the field that keeps an
+   * instruction editor apart from strength-based repainting (see
+   * `./image-model-capabilities`). `unknown` is the default and stays permissive.
+   */
+  editKind: imageEditKindSchema.default("unknown"),
+  /** REVIEWED: how well a face survives a render. Gates identity-critical tasks. */
+  identityPreservation: imageIdentityPreservationSchema.default("unknown"),
+  /**
+   * Operator-facing caveat shown on the admin card and in pickers — not a failure
+   * class. Wan 2.7 is the first use: its upstream moderation cannot be disabled and
+   * has refused ordinary character references, which an operator needs told before
+   * choosing it, not after a rejected render.
+   */
+  operatorWarning: z.string().nullable().default(null),
+  /**
+   * Version-specific probed extras: optional control bindings, extra image inputs,
+   * output arity, the known-field allowlist. `{}` on every seeded row today — the
+   * probe does not derive control aliases until the later slices — and an empty set
+   * means no optional control is sent, which is exactly current behavior.
+   */
+  advancedCapabilities: imageModelAdvancedCapabilitiesSchema.default(() => emptyImageModelAdvancedCapabilities()),
   forPortrait: z.boolean().default(false),
   forVariant: z.boolean().default(false),
   forScene: z.boolean().default(false),
   /** Marks a seeded row for display. Does NOT gate deletion (owner ruling 4). */
   builtin: z.boolean().default(false),
   sort: z.number().int().default(0),
+  // `updated_at` is a COLUMN ONLY, deliberately not a field here. This record
+  // crosses to the client as JSON, and adding a timestamp forces a
+  // date-serialization decision (Date vs ISO string vs epoch) that no consumer
+  // needs yet. The admin version card is the first surface that will show
+  // "capabilities changed at", so it is what should make that call.
 });
 export type ImageModel = z.infer<typeof imageModelSchema>;
 
