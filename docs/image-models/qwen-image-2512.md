@@ -2,7 +2,7 @@
 
 **Slug:** `qwen/qwen-image-2512`
 **Probed:** 2026-08-05, version `47c060e80055269a615f9636df2d51fd50239dc439f5ecde465a7d513a0abda6`
-**Quality ruling:** 2026-08-05
+**Quality ruling:** no transitional runtime override
 
 > Qwen Image 2512 is an improved version of Qwen Image with more realistic human
 > generation, finer textures, and stronger text rendering.
@@ -46,33 +46,27 @@ Four dormant `generate` profiles use the `text_to_image_description` strategy:
 They reproduce current model selection but do not yet provide controls. Nothing
 calls the profile layer yet.
 
-## Quality policy before profiles are wired
+## Negative-prompt ruling
 
-The provider exposes `negative_prompt` with an effectively empty default. Without
-task or morphology context, the shared render seam adds only production-defect
-steering:
+The provider's `negative_prompt` default is empty. The transitional shared render
+seam leaves it empty and does not invent a generic block.
 
-```text
-text, watermark, signature, logo, blurry, low resolution
-```
+This model serves portraits, items, locations, and chat-place images. Terms that
+look like universal cleanup are not actually universal here: signs and clothing
+may require text or logos, motion blur may be requested, and low-resolution media
+may be an intentional style. Anatomy terms also require the character's intended
+morphology.
 
-The static block intentionally has no anatomy terms. Vesper may author missing
-digits, prosthetics, or non-human appendage counts that generic terms such as
-`missing fingers` or `extra limbs` would erase. Anatomy steering waits for a
-profile that can compare the negative block with intended morphology.
-
-The block also does not forbid illustration/cartoon media, multiple people, or
-close framing.
-
-`go_fast` remains `true` for new text-to-image generation. Qwen Edit, not this
-model, receives the identity-quality fast-mode override.
+Task/style/morphology-aware profiles may add conflict-checked negative steering
+later. Until then, Qwen Image 2512 remains byte-identical at the quality-policy
+seam.
 
 ## Reference-image caveat
 
 When `image` is supplied the output follows the reference image's aspect. An
 `aspect_ratio` sent alongside the reference may therefore be advisory. Stored
-Vesper references are normally normalized, but a future remix workflow must
-validate the source shape.
+Vesper references are normally already normalized, but a future remix workflow
+must validate the source shape.
 
 `strength` defaults to `0.8`; the provider describes `1.0` as full destruction of
 source information. The default substantially repaints the reference.
@@ -104,7 +98,6 @@ takes the first result.
 ```json
 {
   "prompt": "<built prompt>",
-  "negative_prompt": "text, watermark, signature, logo, blurry, low resolution",
   "aspect_ratio": "3:4",
   "output_format": "webp",
   "output_quality": 95,
@@ -113,5 +106,5 @@ takes the first result.
 }
 ```
 
-With a reference, add `"image": "<single url>"`. The negative is supplied by
-`src/server/images/quality-presets.ts` until task profiles own it.
+With a reference, add `"image": "<single url>"`. No `negative_prompt` key is
+added by `quality-presets.ts`.
