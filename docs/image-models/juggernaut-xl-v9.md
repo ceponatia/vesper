@@ -73,19 +73,19 @@ policy owns this endpoint's native portrait size.
 ## Negative prompt policy
 
 Juggernaut's creator recommends starting with little or no negative prompt;
-large generic negative walls can reduce image quality. Vesper does not send the
-shared long anatomy bank to this model.
+large generic negative walls can reduce image quality. Vesper does not send a
+large universal anatomy bank to this model.
 
 Current compact negative:
 
 ```text
-extra limbs, malformed hands, extra fingers, fused fingers, text, watermark,
-logo
+duplicated limbs, malformed hands, extra fingers, fused fingers, text,
+watermark, logo
 ```
 
-It targets the owner's reported failures without forbidding stylized media,
-multiple people, or valid close framing. The fixed trial includes an empty
-negative arm.
+It avoids generic `missing fingers` and `extra limbs`, which can contradict an
+authored missing digit or non-human appendage count. The fixed trial includes an
+empty-negative arm and grades anatomy relative to the intended morphology.
 
 ## The watermark default
 
@@ -123,7 +123,7 @@ The exact prompt varies by lane; the effective control portion is:
   "num_inference_steps": 35,
   "guidance_scale": 5,
   "scheduler": "KarrasDPM",
-  "negative_prompt": "extra limbs, malformed hands, extra fingers, fused fingers, text, watermark, logo",
+  "negative_prompt": "duplicated limbs, malformed hands, extra fingers, fused fingers, text, watermark, logo",
   "apply_watermark": false,
   "disable_safety_checker": true
 }
