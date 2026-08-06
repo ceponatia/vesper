@@ -7,11 +7,12 @@ import { WORLD_BEAT_KINDS } from "@/lib/simulation/world-beat";
 import {
   activeConditionSchema,
   identityPackAdminRevisionSchema,
-  identityPackSummarySchema,
+  identityPackResponseSchema,
   imageIdentityPackFailureCodeSchema,
   type ImageIdentityPackFailureCode,
   type IdentityPackAdminOverrideRequest,
   type IdentityPackAdminRevision,
+  type IdentityPackBlockedWire,
   type IdentityPackManualCropRequest,
   type IdentityPackNormalizedCropWire,
   type IdentityPackSummaryWire,
@@ -938,10 +939,12 @@ export const charactersApi = {
 // Identity packs (image-identity-packs.spec.lifecycle.md §User routes)
 // ---------------------------------------------------------------------------
 
-/** Every pack route answers with the same owner-safe summary, so it is parsed once. */
-const identityPackSummaryResponseSchema = z.object({ summary: identityPackSummarySchema });
-
-export type { IdentityPackAdminRevision, IdentityPackNormalizedCropWire, IdentityPackSummaryWire };
+export type {
+  IdentityPackAdminRevision,
+  IdentityPackBlockedWire,
+  IdentityPackNormalizedCropWire,
+  IdentityPackSummaryWire,
+};
 
 /**
  * The optimistic-concurrency triple every pack WRITE carries
@@ -963,7 +966,7 @@ export type IdentityPackWriteGuard = Pick<
  */
 export function identityPackConflictSummary(error: ApiError): IdentityPackSummaryWire | null {
   if (error.status !== 409) return null;
-  return parseOrNull(identityPackSummaryResponseSchema, error.body)?.summary ?? null;
+  return parseOrNull(identityPackResponseSchema, error.body)?.summary ?? null;
 }
 
 const identityPackRejectionSchema = z.object({ failureCode: imageIdentityPackFailureCodeSchema });
@@ -980,18 +983,23 @@ export function identityPackRejectionCode(error: ApiError): ImageIdentityPackFai
   return parseOrNull(identityPackRejectionSchema, error.body)?.failureCode ?? null;
 }
 
+/**
+ * Every pack route answers with the same body, so it is parsed once
+ * (contracts §`identityPackResponseSchema`). `blocked` is present only on a
+ * write whose refusal never reached a revision — the summary cannot report that
+ * one, because there is nothing new in the row to report.
+ */
 export const identityPacksApi = {
-  get: (characterId: string) =>
-    apiGet(identityPackSummaryResponseSchema, `/api/characters/${characterId}/identity-pack`),
+  get: (characterId: string) => apiGet(identityPackResponseSchema, `/api/characters/${characterId}/identity-pack`),
   /** Prepare (or re-prepare) the pack — the none/failed/stale path. Idempotent server-side. */
   ensure: (characterId: string) =>
-    apiPost(identityPackSummaryResponseSchema, `/api/characters/${characterId}/identity-pack/ensure`, {}),
+    apiPost(identityPackResponseSchema, `/api/characters/${characterId}/identity-pack/ensure`, {}),
   /** Save an owner correction. 409 ⇒ stale editor (see `identityPackConflictSummary`), 422 ⇒ measured refusal. */
   manualCrop: (characterId: string, body: IdentityPackManualCropRequest) =>
-    apiPost(identityPackSummaryResponseSchema, `/api/characters/${characterId}/identity-pack/manual-crop`, body),
+    apiPost(identityPackResponseSchema, `/api/characters/${characterId}/identity-pack/manual-crop`, body),
   /** Drop the manual crop and re-derive automatically (a new revision, not an undo). */
   resetAutomatic: (characterId: string) =>
-    apiPost(identityPackSummaryResponseSchema, `/api/characters/${characterId}/identity-pack/reset-automatic`, {}),
+    apiPost(identityPackResponseSchema, `/api/characters/${characterId}/identity-pack/reset-automatic`, {}),
 };
 
 /** Admin-only pack inspection (`/api/admin/self` — 404s for non-admins). */
@@ -1004,7 +1012,7 @@ export const adminIdentityPacksApi = {
     ),
   /** Reviewed override: a non-empty reason is required; omitting `crop` keeps the current coordinates. */
   override: (packId: string, body: IdentityPackAdminOverrideRequest) =>
-    apiPost(identityPackSummaryResponseSchema, `/api/admin/self/identity-packs/${packId}/override`, body),
+    apiPost(identityPackResponseSchema, `/api/admin/self/identity-packs/${packId}/override`, body),
 };
 
 // ---------------------------------------------------------------------------

@@ -28,7 +28,13 @@ export interface IdentityReferencePanelProps {
  * rather than growing an error card about a subsystem the owner never asked for.
  */
 export function IdentityReferencePanel({ characterId, name, avatarImageId }: IdentityReferencePanelProps) {
-  const pack = useAsyncData(() => identityPacksApi.get(characterId), [characterId]);
+  // Keyed on the canonical portrait as well as the character: generating,
+  // uploading or promoting a new portrait replaces the bytes every pack field
+  // describes, and a summary read against the OLD ones would leave this block
+  // claiming "ready" and hand the dialog a crop framed on a portrait that is no
+  // longer on screen. The hook's generation counter still drops the superseded
+  // response, so a fast second promotion cannot land out of order.
+  const pack = useAsyncData(() => identityPacksApi.get(characterId), [characterId, avatarImageId]);
   const [open, setOpen] = useState(false);
 
   if (pack.loading || pack.error) return null;

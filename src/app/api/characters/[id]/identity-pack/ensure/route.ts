@@ -24,14 +24,20 @@ import {
  * client into error handling for the one case it most needs to render properly.
  * `ensureIdentityPack` is idempotent, so a second click coalesces rather than
  * deriving twice.
+ *
+ * The service's result is passed to the responder rather than discarded,
+ * because a failure that happens BEFORE a revision is persisted never reaches
+ * the summary: the re-read still shows the previous pack (or `none`), so
+ * without the `blocked` field the owner clicks Prepare and is answered with
+ * silence.
  */
 export const POST = withAuthorizedResource<IdentityPackParams, OwnedCharacter>(
   "character",
   ownedCharacter,
   async (user, _character, _req, ctx) => {
     const { id } = await ctx.params;
-    await ensureIdentityPack({ ownerId: user.id, characterId: id, purpose: "identity_render" });
-    return identityPackSummaryResponse(id, user.id);
+    const result = await ensureIdentityPack({ ownerId: user.id, characterId: id, purpose: "identity_render" });
+    return identityPackSummaryResponse(id, user.id, result);
   },
   // The closest reviewed bucket for a lane that decodes and re-encodes an image
   // on the request path. It spends no provider budget, so it is deliberately not

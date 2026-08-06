@@ -519,6 +519,40 @@ export const identityPackSummarySchema = z.object({
 export type IdentityPackSummaryWire = z.infer<typeof identityPackSummarySchema>;
 
 /**
+ * A write that never reached a revision, reported alongside the summary
+ * (spec.lifecycle.md §"User routes").
+ *
+ * `ensure` and `reset-automatic` answer 200 whatever happens — an unusable pack
+ * is product feedback, not a server error — and they answer with the summary
+ * read back afterwards. But a refusal that lands BEFORE anything is persisted
+ * (no canonical portrait, a source still generating, unreadable bytes, another
+ * derivation holding the character past the wait window) leaves no trace in that
+ * summary at all: it still describes the previous pack, or `none`, and the owner
+ * is told nothing they can act on. This is that outcome, in the same stable
+ * vocabulary every other refusal uses.
+ */
+export const identityPackBlockedSchema = z.object({
+  code: imageIdentityPackFailureCodeSchema,
+  /** Whether asking again could change the answer — the service's own retry ruling, not a guess. */
+  retryable: z.boolean(),
+});
+export type IdentityPackBlockedWire = z.infer<typeof identityPackBlockedSchema>;
+
+/**
+ * The body every identity-pack route sends.
+ *
+ * `blocked` is OPTIONAL and absent on success, so the plain `{ summary }` shape
+ * the GET and the correction routes have always sent stays exactly valid: a
+ * client that never looks at the field keeps working, and one that does gets the
+ * actionable code instead of a silently unchanged panel.
+ */
+export const identityPackResponseSchema = z.object({
+  summary: identityPackSummarySchema,
+  blocked: identityPackBlockedSchema.optional().catch(undefined),
+});
+export type IdentityPackResponseWire = z.infer<typeof identityPackResponseSchema>;
+
+/**
  * A rectangle as the crop editor draws it: fractions of the source, never
  * pixels. The `space` tag is not decoration — `{ left: 0.25 }` and
  * `{ left: 25 }` are both legal rectangles in their own space, and inferring

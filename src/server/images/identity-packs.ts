@@ -304,6 +304,94 @@ function isFailureCode(value: string): value is ImageIdentityPackFailureCode {
 }
 
 /* ------------------------------------------------------------------------ *
+ * Read-time policy projection                                               *
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The warning codes that record HOW a revision was authored rather than what a
+ * threshold measured. A guessed rectangle stays a guessed rectangle and a waived
+ * check stays waived whatever today's numbers say, so a re-judgment PRESERVES
+ * these and RECOMPUTES everything else — every other code in the vocabulary is a
+ * verdict `evaluateIdentityPackIntrinsic` derives from the stored measurements
+ * (`mild_blur`, `partial_occlusion`, the two padding warnings), or a profile-time
+ * observation (`small_effective_face`) that no stored row is entitled to assert.
+ */
+const PROVENANCE_WARNING_CODES: readonly ImageIdentityPackWarningCode[] = ["heuristic_crop", "manual_admin_override"];
+
+export interface IdentityPackPolicyProjection {
+  /** The revision as the policy in force sees it. Verdict fields only — no measurement is rewritten. */
+  pack: ImageIdentityPackV1;
+  /** The first blocker today's thresholds find in measurements an older policy accepted. */
+  blockedBy: ImageIdentityPackFailureCode | null;
+}
+
+/**
+ * Re-judge a stored revision under the CURRENT policy
+ * (`.spec.derivation.md` §"Intrinsic quality measurement": `quality.accepted` is
+ * not persisted as eternal truth; `.spec.data.md` §"Schema-version behavior": a
+ * policy change re-evaluates existing packs).
+ *
+ * A projection, never a repair. The row keeps the status and warnings it was
+ * finalized with, because a revision is a historical claim about what one policy
+ * version decided and the admin history exists to show exactly that. What changes
+ * is what READERS are told: the ensure result, the owner summary and the render
+ * seam all pass through here, so a policy bump can never leave one of them
+ * quoting a verdict the other two have dropped.
+ *
+ * Only a `ready` revision is projected. The opposite direction — a loosened
+ * policy that would now accept a stored `unusable` one — is deliberately not a
+ * projection: a refused revision has no crop bytes to hand anybody, so the only
+ * honest way to accept it is to derive it again.
+ *
+ * The comparison is against the version this build STAMPS, not against the
+ * policy object in force, so the test seam's scripted thresholds re-judge
+ * `policy_v1` rows instead of declaring every row foreign to themselves.
+ */
+export function projectIdentityPackPolicy(
+  pack: ImageIdentityPackV1,
+  sink?: DiagnosticSink,
+): IdentityPackPolicyProjection {
+  if (pack.status !== "ready" || pack.derivation.policyVersion === IDENTITY_PACK_POLICY_VERSION) {
+    return { pack, blockedBy: null };
+  }
+
+  const policy = intrinsicPolicy();
+  const evaluation = evaluateIdentityPackIntrinsic(
+    {
+      method: pack.derivation.method,
+      crop: pack.faceDetail.crop,
+      quality: pack.quality,
+      adminOverride: pack.warningCodes.includes("manual_admin_override"),
+    },
+    policy,
+  );
+  const warningCodes = [
+    ...new Set([
+      ...pack.warningCodes.filter((code) => PROVENANCE_WARNING_CODES.includes(code)),
+      ...evaluation.warnings,
+    ]),
+  ];
+  // The projected contract names the policy that actually produced its verdict:
+  // render provenance copies this field verbatim, and carrying the row's older
+  // version beside recomputed warnings would misattribute the judgment. The row
+  // itself still reports its own version to admin history.
+  const derivation = { ...pack.derivation, policyVersion: policy.version };
+
+  const blockedBy = evaluation.blockers[0] ?? null;
+  if (blockedBy === null) return { pack: { ...pack, derivation, warningCodes }, blockedBy: null };
+
+  sink?.push(
+    diag(
+      "warn",
+      `images.identity_pack.${blockedBy}`,
+      `policy ${policy.version} refuses a revision ${pack.derivation.policyVersion} accepted`,
+      { context: { characterId: pack.characterId, packId: pack.id, revision: pack.revision, blockers: evaluation.blockers } },
+    ),
+  );
+  return { pack: { ...pack, derivation, warningCodes, status: "unusable", failureCode: blockedBy }, blockedBy };
+}
+
+/* ------------------------------------------------------------------------ *
  * Retry policy                                                              *
  * ------------------------------------------------------------------------ */
 
@@ -623,8 +711,22 @@ async function answerFromCurrent(
   sink: DiagnosticSink | undefined,
 ): Promise<EnsureIdentityPackResult | null> {
   switch (row.status) {
-    case "ready":
-      return { status: "ready", pack, warnings: pack.warningCodes };
+    case "ready": {
+      // The stored verdict is not the answer — the CURRENT policy's reading of
+      // the stored measurements is. A revision judged under an older policy can
+      // be refused here without its row being touched, and the refusal is
+      // terminal: nothing about this source or this crop will change it.
+      const projected = projectIdentityPackPolicy(pack, sink);
+      if (projected.blockedBy === null) {
+        return { status: "ready", pack: projected.pack, warnings: projected.pack.warningCodes };
+      }
+      return {
+        status: "blocked",
+        pack: projected.pack,
+        code: projected.blockedBy,
+        retryable: isRetryableIdentityPackFailure(projected.blockedBy),
+      };
+    }
     case "pending": {
       // We hold the in-process key, so this reservation belongs to another
       // process. Only the database can arbitrate; do not race it — UNLESS it is
@@ -1332,7 +1434,10 @@ export async function getIdentityPackForOwner(
     };
   }
 
-  const pack = packRowToContract(row, sink);
+  // Same projection the ensure path applies, for the same reason: an owner whose
+  // reference stopped qualifying under a new policy must be told so by the status
+  // view too, or the panel says "ready" about a pack no render will accept.
+  const pack = projectIdentityPackPolicy(packRowToContract(row, sink), sink).pack;
   const failureCode = pack.failureCode;
   return {
     pack,
