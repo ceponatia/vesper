@@ -19,9 +19,12 @@ derivation provenance, quality measurements, and profile-aware eligibility.
 3. [Lifecycle and authorization](image-identity-packs.spec.lifecycle.md) — creation
    triggers, lazy backfill, staleness, copy/publish isolation, deletion, cleanup,
    privacy, routes, and admin operations.
-4. [Render integration and trials](image-identity-packs.spec.integration.md) —
-   reference roles, profile capacity, shared render intent, provenance, rollout,
-   fixed comparison cells, and promotion gates.
+4. [Render integration](image-identity-packs.spec.integration.md) — reference
+   roles, profile capacity, shared render intent, provenance, rollout, and
+   consumer tests.
+5. [Trial and promotion](image-identity-packs.spec.trial.md) — fixed comparison
+   cells, corpus, blinded review, threshold calibration, and profile/version
+   verdicts.
 
 ## Sibling ownership
 
