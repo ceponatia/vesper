@@ -38,7 +38,8 @@ Flow:
 2. Read and hash the source bytes.
 3. Return the current ready revision when source hash and derivation version match.
 4. Return the matching current unusable revision when no retry condition changed.
-5. Coalesce with an existing matching `pending` revision.
+5. Coalesce with an existing matching `pending` revision — join it, never open a
+   second one beside it.
 6. Otherwise create a new current `pending` revision and mark the previous current
    revision stale or superseded as appropriate.
 7. Derive outside the promotion transaction.
@@ -54,6 +55,84 @@ constraint remains the cross-process authority.
 An identity render waits only for bounded local derivation. It does not call an
 image provider while a pack is unresolved. A background caller may return after
 reserving work, but status inspection must expose `pending` explicitly.
+
+### Cross-process coalescing (as built 2026-08-06)
+
+An in-process lock on one Fly machine proves nothing about another, so step 5's
+decision is made where it can be trusted: inside `reservePendingRevision`'s
+advisory-lock transaction, on the one read of the current row that no concurrent
+writer can move underneath it. A pre-reserve read of the current row catches the
+common case more cheaply, but only the in-transaction decision can see a
+reservation that was inserted after that read — which is exactly the interleaving
+that used to produce two derivations of one portrait.
+
+Three cases for a current `pending` row:
+
+- **A live matching reservation** — same character, same source image id, same
+  source content hash, same schema and derivation versions, and younger than
+  `JOB_STALE_MS` (the same fifteen minutes the job dedupe and the cleanup sweep
+  presume a process dead by) — is NOT retired. Reservation returns an `in_flight`
+  result naming that row.
+- **A reservation past that bound** belonged to a process that is gone. Retired
+  `stale`; reservation proceeds.
+- **A reservation for a different source or different versions** describes a
+  portrait the character no longer has. Retired `stale`; reservation proceeds. The
+  loser's own finalize compare-and-set refuses its write and `abandonRevision`
+  hard-deletes its crop, which is the correct outcome there and stays.
+
+Retiring a live matching reservation is the defect this replaces. It is a legal
+write and the one-current index does not catch it: the loser then fails its
+finalize compare-and-set, its freshly encoded crop is deleted, and two machines
+have run one character's detector and two `sharp` passes to produce one rectangle.
+
+**Joining.** A caller told `in_flight` holds no DATABASE transaction while it
+waits — a transaction held open across somebody else's detector run would trade a
+duplicate crop for a held row lock, which is worse. It does still hold the
+in-process character key, which is why the join has its own five-second budget
+rather than sharing the 30-second acquisition window: every second a join waits
+is a second other local callers of the same character queue behind it, and five
+seconds already covers any real derivation. It polls the character's current row
+every 250ms until the reservation settles (the same row is no longer `pending`,
+or something replaced it, or no current row remains). It then answers through
+the ordinary current-revision path — `answerFromCurrent` and
+`projectIdentityPackPolicy` — so a joined answer and a first-hand one cannot
+disagree about a verdict.
+
+- `identity_render` and `admin_trial` join: somebody is waiting for the answer.
+- `background` does not. It returns `blocked` / `derivation_failed` / retryable
+  with the `pending_conflict` diagnostic, promptly, and without starting a
+  duplicate derivation on the way there. Its caller — the preparation job — treats
+  that as a stop rather than something to poll: a live reservation for the
+  character's canonical pointer means another process is already producing the
+  answer (spec.lifecycle.md §"Convergence"). The job converges on the pointer, not
+  on any particular reservation.
+- A caller that forced a new revision (reset-to-automatic, an admin regenerate)
+  waits but does not answer from what settled: the revision it waited for is
+  precisely what it was asked to replace. Waiting is still right — not clobbering a
+  live derivation is the whole point. A forced caller whose join TIMES OUT is the
+  one exception to "never retire a live matching reservation": it re-enters with
+  leave to reclaim the reservation, because an explicit human act to regenerate is
+  the operator's escape hatch from a wedged row, and without it a reservation
+  orphaned by a deploy would dead-end the reset button until the fifteen-minute
+  staleness bound elapsed. A remote derivation slower than the join budget can
+  lose to it; its finalize compare-and-set refuses the write and its crop is
+  cleaned, exactly as when the source moves on. That leave is bound to the row it
+  waited on, by id, and covers no other: two forced callers can time out on the
+  same wedged reservation, and the second one — arriving to find the first's
+  brand-new reservation standing there — joins it or is told busy like anybody
+  else, because clobbering it is the very failure the wait exists to prevent.
+
+**Bounded, never a loop.** If what settled does not answer the caller — retired,
+replaced, or itself settled into another reservation — the caller re-enters the
+normal flow exactly once. A second consecutive `in_flight` degrades to `blocked` /
+`derivation_failed` / retryable with the same `pending_conflict` diagnostic. Two
+passes, never more.
+
+`saveManualIdentityCrop` shares the reservation path and therefore the ruling: a
+live reservation returns the existing `busy` conflict, which the editor already
+handles as "reload and retry". It never retires one. A save that happens a second
+later costs nobody anything; deleting a crop somebody is mid-way through producing
+does.
 
 ## Detector contract
 
@@ -215,6 +294,14 @@ policy bump. Two rulings the section above leaves open:
   everything else is a verdict recomputed from the stored measurements. The
   projected contract also carries the policy version that produced the verdict,
   since render provenance copies that field verbatim.
+- **A revision with no source is refused ahead of any threshold.** A `ready` or
+  `pending` revision whose `source.imageId` is null is projected as `unusable`
+  with `source_missing` and a warn diagnostic. It sits in this function rather
+  than in each caller precisely because all three seams pass through here: the
+  deletion paths retire such a row before the source row goes, and this is what
+  makes that ordering a convenience rather than the only defence
+  (spec.lifecycle.md §"Source deletion"). Still a projection — the row is not
+  rewritten from a read path.
 
 Only `ready` revisions are projected. A LOOSENED policy cannot promote a stored
 `unusable` one — a refused revision has no crop bytes to hand anybody — so that
@@ -284,7 +371,9 @@ The server:
 8. atomically promotes it and supersedes the previous revision.
 
 A stale editor save returns a conflict and reloads the current source; it never
-applies old coordinates to new bytes.
+applies old coordinates to new bytes. A save that meets another process's live
+reservation returns the same shape of conflict (`busy`) rather than retiring it —
+see §"Cross-process coalescing".
 
 Character-owner corrections may not bypass hard source, bounds, or minimum-geometry
 checks. A user crop that is still intrinsically unusable is rejected with the
@@ -328,7 +417,11 @@ clock — so no metadata blob and no second scheduler exist (60s doubling to a
 one-hour ceiling, five attempts per set of source bytes). `EnsureIdentityPackResult`
 stays the two-variant `ready` | `blocked` union: derivation is bounded local work
 that every caller waits out, and `pending` — a revision reserved by another
-process — is surfaced by the summary read rather than by this result.
+process — is surfaced by the summary read rather than by this result. A waiting
+caller that meets one of those reservations is not handed it either; it joins the
+reservation and answers from what that derivation settles on (§"Cross-process
+coalescing"). Joining is not an attempt: it opens no revision, so it neither
+consumes the retry budget nor advances the backoff clock.
 
 ## Derivation diagnostics
 
@@ -370,7 +463,19 @@ Server integration tests cover:
 
 - row-before-file crop creation;
 - canonical portrait success when pack generation fails;
-- concurrent `ensure` coalescing;
+- concurrent `ensure` coalescing, in-process (the keyed lock) and across
+  processes. The cross-process cases drive contenders through
+  `deriveIdentityPackWithoutProcessLockForTesting`, a narrow test-only entry that
+  skips the in-process key and nothing else — without it a `Promise.all` is
+  serialized before it reaches the database and proves only that the lock works.
+  Pinned: two contenders over identical bytes produce one `detect()` call, one
+  settled revision, one crop and no duplicate; a `background` contender is refused
+  promptly without a second `detect()`; a reservation met inside the reserve
+  transaction (a forced re-derivation) is waited out rather than retired; a
+  forced re-derivation whose join times out reclaims the wedged reservation and
+  the displaced holder loses its finalize, while a replacement reservation that
+  took the wedged row's place is refused rather than reclaimed; a reservation
+  older than `JOB_STALE_MS` is retired and re-derived;
 - source change during derivation;
 - finalization-race cleanup;
 - detector, heuristic, and manual methods;

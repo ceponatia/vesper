@@ -102,7 +102,9 @@ import { identityFaceDetector } from "./identity-pack-detector";
  * so it runs synchronously for every caller. `EnsureIdentityPackResult` therefore
  * has no `pending` arm; the state exists in the table (a reserved revision from
  * another process) and is surfaced by {@link getIdentityPackForOwner}, which is
- * what a status view reads.
+ * what a status view reads. A waiting caller that meets one of those reservations
+ * does not receive it either: it joins the reservation and answers from what that
+ * derivation settles on, because the whole contract here is "you get an answer".
  */
 
 export type IdentityPackRow = typeof imageIdentityPacks.$inferSelect;
@@ -346,11 +348,35 @@ export interface IdentityPackPolicyProjection {
  * The comparison is against the version this build STAMPS, not against the
  * policy object in force, so the test seam's scripted thresholds re-judge
  * `policy_v1` rows instead of declaring every row foreign to themselves.
+ *
+ * **A revision with no source is refused here, ahead of any threshold.** The
+ * source foreign key sets null, so a deleted portrait can leave a row still
+ * reading `current`/`ready` that describes bytes nobody can produce
+ * (spec.lifecycle.md §"Source deletion"). The delete paths retire such a row
+ * before the delete lands, and this is what makes that ordering a convenience
+ * rather than the only line of defence: because every read seam passes through
+ * here, no reader can surface a sourceless pack as ready however the row got
+ * that way — a bypassing writer, a restored dump, a hand-run statement. It stays
+ * a PROJECTION like everything else in this function: the row is not repaired
+ * from a read path, and `cleanupIdentityPackRevisions` is what eventually retires
+ * it for real.
  */
 export function projectIdentityPackPolicy(
   pack: ImageIdentityPackV1,
   sink?: DiagnosticSink,
 ): IdentityPackPolicyProjection {
+  if (pack.source.imageId === null && (pack.status === "ready" || pack.status === "pending")) {
+    sink?.push(
+      diag("warn", "images.identity_pack.source_missing", "the revision's canonical source row is gone", {
+        context: { characterId: pack.characterId, packId: pack.id, revision: pack.revision },
+      }),
+    );
+    return {
+      pack: { ...pack, status: "unusable", failureCode: "source_missing" },
+      blockedBy: "source_missing",
+    };
+  }
+
   if (pack.status !== "ready" || pack.derivation.policyVersion === IDENTITY_PACK_POLICY_VERSION) {
     return { pack, blockedBy: null };
   }
@@ -479,6 +505,30 @@ const LOCK_TIMEOUT_MS = 30_000;
 /** Poll interval while queueing behind the holder; derivation is seconds, not minutes. */
 const LOCK_POLL_MS = 50;
 
+/**
+ * Poll interval while waiting on ANOTHER PROCESS's reservation.
+ *
+ * Five times the in-process figure on purpose: that one polls a `Map`, this one
+ * polls Postgres. A join is expected to last as long as somebody else's detector
+ * and two sharp passes — seconds — so a quarter-second granularity costs a
+ * waiting render nothing perceptible and costs the database a couple of dozen
+ * indexed single-row reads instead of six hundred.
+ */
+const RESERVATION_POLL_MS = 250;
+
+/**
+ * How long a joining caller waits for another process's reservation to settle.
+ *
+ * Deliberately its OWN budget, well under {@link LOCK_TIMEOUT_MS}: the join runs
+ * inside the in-process keyed lock, so every second spent here is a second other
+ * local callers of the same character queue behind. Derivation is bounded local
+ * work of seconds — a detector pass and two sharp passes — so five covers a slow
+ * machine with room to spare, and a reservation that outlives it is either
+ * wedged or pathological, which the caller reports (or, for a forced
+ * re-derivation, reclaims) rather than waits out.
+ */
+export const RESERVATION_JOIN_MS = 5_000;
+
 interface ResolvedSource {
   imageRow: ImageRow;
   buffer: Buffer;
@@ -497,11 +547,15 @@ type ResolveSourceResult = { ok: true; source: ResolvedSource } | { ok: false; c
  * 1–2. Resolve the character from the OWNER (never from a pack or image id — a
  *      client-supplied pack id is a concurrency guard, not authorization), then
  *      read and hash the canonical portrait's stored bytes.
- * 3–5. Serialize on the character key, then answer from the current revision
+ * 3–4. Serialize on the character key, then answer from the current revision
  *      when it already covers these bytes and versions: a ready pack is
  *      returned as-is, a terminal refusal is returned WITHOUT a new attempt, and
  *      a retryable one waits out its backoff. This is what stops an unusable
  *      portrait from re-deriving on every render.
+ * 5.   Coalesce with another process's live reservation for the same bytes rather
+ *      than opening a second one: a waiting caller polls it to completion and
+ *      answers from its result, a background caller declines promptly. Neither
+ *      retires it, and neither starts the same derivation twice.
  * 6–7. Otherwise reserve a new current `pending` revision in a compare-and-set
  *      transaction that retires the previous one, then derive OUTSIDE that
  *      transaction — a detector and two sharp passes have no business holding a
@@ -525,6 +579,15 @@ interface DerivationOptions {
    * exactly what the current-revision check exists to prevent.
    */
   forceNewRevision: boolean;
+  /**
+   * Skip the in-process keyed lock. Set ONLY by
+   * {@link deriveIdentityPackWithoutProcessLockForTesting}, whose comment explains
+   * why a single test process cannot otherwise reach the cross-process paths at
+   * all. It bypasses an optimization, never a correctness guard — everything below
+   * it (the advisory lock, both compare-and-set halves, the partial unique index)
+   * is exactly what production runs.
+   */
+  withoutProcessLock?: boolean;
 }
 
 async function runDerivation(input: EnsureIdentityPackInput, opts: DerivationOptions): Promise<EnsureIdentityPackResult> {
@@ -534,6 +597,8 @@ async function runDerivation(input: EnsureIdentityPackInput, opts: DerivationOpt
     if (!resolved.ok) {
       return { status: "blocked", pack: null, code: resolved.code, retryable: isRetryableIdentityPackFailure(resolved.code) };
     }
+
+    if (opts.withoutProcessLock === true) return await derivePackUnderLock(input, resolved.source, opts);
 
     const acquired = await acquireKeyedLockWithin(
       identityPackLockKey(characterId),
@@ -559,6 +624,32 @@ async function runDerivation(input: EnsureIdentityPackInput, opts: DerivationOpt
     });
     return { status: "blocked", pack: null, code: "derivation_failed", retryable: true };
   }
+}
+
+/**
+ * Test-only: {@link ensureIdentityPack} with the in-process keyed lock skipped.
+ * Production never calls it.
+ *
+ * The seam exists because the lock is what makes the cross-process guarantees
+ * untestable from one process. Every concurrent `ensureIdentityPack` in a suite is
+ * serialized on the character key before it reaches the database, so a
+ * `Promise.all` over them proves the lock works and says exactly nothing about what
+ * two Fly machines do to one character's current row. This entry is the second
+ * machine.
+ *
+ * Deliberately the WHOLE per-character flow — answer-or-reserve, derive, finalize —
+ * rather than a handle on the reservation transaction. A test that could reserve
+ * without deriving could manufacture states the service itself can never reach, and
+ * would then be pinning fiction; this one can only produce sequences a real second
+ * process could produce. Nothing below it is weakened: the advisory lock inside
+ * both promotion transactions, the re-hash before finalize, and the partial unique
+ * index on `current` are the guards that actually hold the invariant, and all three
+ * still run.
+ */
+export async function deriveIdentityPackWithoutProcessLockForTesting(
+  input: EnsureIdentityPackInput,
+): Promise<EnsureIdentityPackResult> {
+  return runDerivation(input, { forceNewRevision: false, withoutProcessLock: true });
 }
 
 /**
@@ -635,12 +726,58 @@ async function decodeDimensions(buffer: Buffer): Promise<SourceDimensions | null
  * the partial unique index on `current` and the compare-and-set inside both
  * transactions — because an in-process lock on one Fly machine proves nothing
  * about another.
+ *
+ * Which is why a pass can end in something that is neither an answer nor a
+ * mandate to derive: ANOTHER machine's live reservation for these exact bytes.
+ * Racing it means two detector runs, two crops, two revisions, and one of the two
+ * losing its finalize compare-and-set and having its crop deleted — all to produce
+ * a rectangle the other process was already producing. So the caller joins it
+ * instead: it waits outside every transaction and answers from whatever that
+ * reservation settles on.
+ *
+ * At most two passes. If the re-entry meets a live reservation AGAIN, this
+ * character's current row is churning faster than a waiter can join it, and a
+ * bounded refusal the caller can retry beats a loop that might not terminate.
  */
 async function derivePackUnderLock(
   input: EnsureIdentityPackInput,
   source: ResolvedSource,
   opts: DerivationOptions,
 ): Promise<EnsureIdentityPackResult> {
+  const first = await derivationPass(input, source, opts, null);
+  if (first.kind === "result") return first.result;
+
+  const joined = await joinInFlightReservation(first.row, input, source, opts);
+  if (joined.kind === "result") return joined.result;
+
+  const second = await derivationPass(input, source, opts, joined.reclaimPackId);
+  if (second.kind === "result") return second.result;
+  return pendingConflictResult(second.row, input, "a second reservation took this character while the first was joined");
+}
+
+type PassOutcome =
+  | { kind: "result"; result: EnsureIdentityPackResult }
+  /** Someone else's live reservation for these bytes — join it, do not derive. */
+  | { kind: "in_flight"; row: IdentityPackRow };
+
+/**
+ * One trip through the flow: answer from the current revision if it settles this
+ * caller, otherwise reserve, derive and finalize.
+ *
+ * The `in_flight` outcome is discovered in two places, and both matter. The
+ * pre-reserve read of the current row is the cheap one, and it catches the common
+ * case for free. The reserve transaction's own refusal to retire a live
+ * reservation is the CORRECT one: it is the only read of the current row taken
+ * under the advisory lock, so it is the only one that can see a reservation
+ * inserted after the read above it — which is exactly the interleaving that used
+ * to produce two derivations of one portrait.
+ */
+async function derivationPass(
+  input: EnsureIdentityPackInput,
+  source: ResolvedSource,
+  opts: DerivationOptions,
+  reclaimPackId: string | null,
+): Promise<PassOutcome> {
   const { ownerId, characterId, sink } = input;
   const current = opts.forceNewRevision ? undefined : await currentPackRow(characterId);
 
@@ -651,23 +788,28 @@ async function derivePackUnderLock(
     // fall through and derive a clean revision.
     if (pack.status === current.status) {
       const settled = await answerFromCurrent(current, pack, sink);
-      if (settled) return settled;
+      if (settled.kind === "answer") return { kind: "result", result: settled.result };
+      if (settled.kind === "in_flight") return { kind: "in_flight", row: settled.row };
     }
   }
 
-  const reserved = await reservePendingRevision({ ownerId, characterId, source, sink });
+  const reserved = await reservePendingRevision({ ownerId, characterId, source, sink, reclaimPackId });
   if (!reserved.ok) {
+    if (reserved.kind === "in_flight") return { kind: "in_flight", row: reserved.row };
     return {
-      status: "blocked",
-      pack: null,
-      code: reserved.code,
-      retryable: isRetryableIdentityPackFailure(reserved.code),
+      kind: "result",
+      result: {
+        status: "blocked",
+        pack: null,
+        code: reserved.code,
+        retryable: isRetryableIdentityPackFailure(reserved.code),
+      },
     };
   }
 
   const patch = await deriveRevision({ ownerId, characterId, packId: reserved.row.id, source, sink });
   if (!mayFinalizeReservation(patch, { characterId, packId: reserved.row.id }, sink)) {
-    return { status: "blocked", pack: null, code: "derivation_failed", retryable: false };
+    return { kind: "result", result: { status: "blocked", pack: null, code: "derivation_failed", retryable: false } };
   }
 
   const finalized = await finalizeRevision({ packId: reserved.row.id, characterId, ownerId, source, patch });
@@ -678,13 +820,165 @@ async function derivePackUnderLock(
         context: { characterId, packId: reserved.row.id, sourceImageId: source.imageRow.id },
       }),
     );
-    return { status: "blocked", pack: null, code: "source_changed", retryable: true };
+    return { kind: "result", result: { status: "blocked", pack: null, code: "source_changed", retryable: true } };
   }
 
   const pack = packRowToContract(finalized, sink);
-  if (patch.status === "ready") return { status: "ready", pack, warnings: patch.warningCodes };
+  if (patch.status === "ready") return { kind: "result", result: { status: "ready", pack, warnings: patch.warningCodes } };
   const code = patch.failureCode ?? "derivation_failed";
-  return { status: "blocked", pack, code, retryable: isRetryableIdentityPackFailure(code) };
+  return { kind: "result", result: { status: "blocked", pack, code, retryable: isRetryableIdentityPackFailure(code) } };
+}
+
+type JoinOutcome =
+  | { kind: "result"; result: EnsureIdentityPackResult }
+  /**
+   * Take the flow again. `reclaimPackId` is leave to retire ONE named reservation
+   * — the row this caller actually waited out — and `null` is no leave at all.
+   */
+  | { kind: "reenter"; reclaimPackId: string | null };
+
+/**
+ * Wait out another process's reservation for these exact bytes, then answer from
+ * what it settled on.
+ *
+ * The ONE implementation of "join an in-flight reservation", reached from both
+ * ways one is discovered — the pre-reserve read and the reservation transaction's
+ * own decision. Two entrances, one behavior, because a waiting render and a
+ * reservation refused inside the advisory lock are the same situation observed a
+ * few milliseconds apart, and two copies of this policy would eventually disagree
+ * about how long a caller waits or what it is told when it gives up.
+ *
+ * `background` does not wait, by ruling rather than by accident: its caller is a
+ * queued job with nobody in front of it, and blocking a job slot for the length of
+ * somebody else's derivation buys nothing that the next pass does not get for
+ * free. It gets the refusal it always got — and, the part that is new, it does not
+ * start a duplicate derivation on the way to it. (Making the background job
+ * converge onto the reservation's result is separate work.)
+ *
+ * The wait holds no DATABASE transaction. It is a poll of the current row,
+ * because a transaction held open across another machine's detector run would
+ * trade a duplicate crop for a held row lock, which is the worse of the two
+ * failures by a wide margin. It DOES hold the in-process character key for its
+ * duration — local callers of the same character queue behind a join — which is
+ * why the join budget is a fraction of the acquisition window rather than equal
+ * to it.
+ *
+ * A join that times out means the reservation outlived a bound generous enough
+ * for any real derivation. An ordinary caller reports it and retries later; a
+ * caller that FORCED a new revision (reset-to-automatic, an admin regenerate)
+ * re-enters with leave to reclaim the reservation instead. That is the one
+ * deliberate exception to "never retire a live matching reservation": an
+ * explicit human act to regenerate is the operator's escape hatch from a wedged
+ * row, and without it a reservation orphaned by a deploy would dead-end the
+ * reset button until the fifteen-minute staleness bound elapsed. A remote
+ * derivation slower than the join budget can lose to it; its finalize
+ * compare-and-set refuses the write and its crop is cleaned, exactly as when the
+ * source moves on.
+ *
+ * That leave names the joined row and only it, never "whatever is current when I
+ * get back". Two forced callers can wait out the SAME wedged reservation and time
+ * out together; once the first has replaced it, the second is looking at a live
+ * reservation a process opened seconds ago, not at the wedged row it waited for.
+ * Retiring that one would be the exact clobber this whole wait exists to prevent,
+ * so a replacement is joined or reported busy like any other.
+ */
+async function joinInFlightReservation(
+  row: IdentityPackRow,
+  input: EnsureIdentityPackInput,
+  source: ResolvedSource,
+  opts: DerivationOptions,
+): Promise<JoinOutcome> {
+  if (!waitsForReservation(input.purpose)) {
+    const message = "another process holds a pending revision for this source";
+    return { kind: "result", result: pendingConflictResult(row, input, message) };
+  }
+
+  const settled = await awaitReservationSettled(row, input.characterId);
+  if (!settled.ok) {
+    if (opts.forceNewRevision) return { kind: "reenter", reclaimPackId: row.id };
+    const message = "the in-flight reservation did not settle within the wait window";
+    return { kind: "result", result: pendingConflictResult(row, input, message) };
+  }
+
+  // A caller that demanded a NEW revision (reset-to-automatic, an admin
+  // regenerate) still had to wait — clobbering a live derivation is the whole
+  // thing this change exists to stop — but the revision that derivation produced
+  // is precisely what it was asked to replace, so it re-enters rather than
+  // answering from it.
+  const observed = settled.row;
+  if (!opts.forceNewRevision && observed && coversSource(observed, source)) {
+    const pack = packRowToContract(observed, input.sink);
+    if (pack.status === observed.status) {
+      const answer = await answerFromCurrent(observed, pack, input.sink);
+      // Anything other than a settled answer — including a row that settled into
+      // yet another reservation — falls to the single re-entry below.
+      if (answer.kind === "answer") return { kind: "result", result: answer.result };
+    }
+  }
+  // A settled join carries no leave: the row it waited on is gone, and whatever
+  // stands in its place is either an answer (above) or somebody else's live work.
+  return { kind: "reenter", reclaimPackId: null };
+}
+
+/**
+ * Whether this caller waits out another process's reservation or declines
+ * promptly. A person is on the other end of the two waiting purposes; a job row is
+ * on the other end of the third.
+ */
+function waitsForReservation(purpose: EnsureIdentityPackInput["purpose"]): boolean {
+  switch (purpose) {
+    case "identity_render":
+    case "admin_trial":
+      return true;
+    case "background":
+      return false;
+  }
+}
+
+type ReservationSettlement = { ok: true; row: IdentityPackRow | undefined } | { ok: false };
+
+/**
+ * Poll until `row` is no longer this character's pending reservation — it
+ * finalized in place (`pending` → ready/unusable/failed, the same row id), or
+ * something retired and replaced it, or the character has no current revision at
+ * all. `{ ok: false }` means the window elapsed first.
+ *
+ * The bound is {@link RESERVATION_JOIN_MS} — see that constant for why it must
+ * stay well under the in-process acquisition window rather than sharing it.
+ */
+async function awaitReservationSettled(row: IdentityPackRow, characterId: string): Promise<ReservationSettlement> {
+  const deadline = Date.now() + RESERVATION_JOIN_MS;
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, RESERVATION_POLL_MS));
+    const observed = await currentPackRow(characterId);
+    if (observed === undefined || observed.id !== row.id || observed.status !== "pending") {
+      return { ok: true, row: observed };
+    }
+    if (Date.now() >= deadline) return { ok: false };
+  }
+}
+
+/**
+ * What a caller is told when it will not, or can no longer, wait out another
+ * process's reservation.
+ *
+ * `derivation_failed` + retryable rather than a code about the source, because
+ * nothing is wrong with the source: the answer exists or is about to, one commit
+ * away, and the very next request reads it. The diagnostic is the stable
+ * `pending_conflict` the spec names, and it carries the reservation's identity so
+ * an operator can see WHICH revision the caller was queued behind.
+ */
+function pendingConflictResult(
+  row: IdentityPackRow,
+  input: EnsureIdentityPackInput,
+  message: string,
+): EnsureIdentityPackResult {
+  input.sink?.push(
+    diag("warn", "images.identity_pack.pending_conflict", message, {
+      context: { characterId: row.characterId, packId: row.id, revision: row.revision, purpose: input.purpose },
+    }),
+  );
+  return { status: "blocked", pack: packRowToContract(row, input.sink), code: "derivation_failed", retryable: true };
 }
 
 /** Whether a revision was derived from exactly these bytes under these versions. */
@@ -698,7 +992,24 @@ function coversSource(row: IdentityPackRow, source: ResolvedSource): boolean {
 }
 
 /**
- * The answer already on record, or `null` when a fresh attempt is warranted.
+ * What the current revision can tell this caller.
+ *
+ * Three outcomes rather than "an answer or null", because "another process is
+ * deriving these exact bytes right now" is neither. It is not an answer — there is
+ * nothing yet to return — and it is not grounds to derive, which would duplicate
+ * the work and race for the same current row. Naming it makes the caller confront
+ * it; folding it into either neighbour is how it got mishandled before.
+ */
+type CurrentAnswer =
+  | { kind: "answer"; result: EnsureIdentityPackResult }
+  /** A live reservation belonging to another process. Join it; never race it. */
+  | { kind: "in_flight"; row: IdentityPackRow }
+  /** Nothing on record settles this caller. Reserve and derive. */
+  | { kind: "derive" };
+
+/**
+ * The answer already on record, someone else's live reservation, or a mandate to
+ * derive.
  *
  * The `unusable`/`failed` arm is the no-retry-condition rule: nothing about the
  * input changed, so a terminal code is returned unchanged and a retryable one
@@ -709,7 +1020,7 @@ async function answerFromCurrent(
   row: IdentityPackRow,
   pack: ImageIdentityPackV1,
   sink: DiagnosticSink | undefined,
-): Promise<EnsureIdentityPackResult | null> {
+): Promise<CurrentAnswer> {
   switch (row.status) {
     case "ready": {
       // The stored verdict is not the answer — the CURRENT policy's reading of
@@ -718,49 +1029,64 @@ async function answerFromCurrent(
       // terminal: nothing about this source or this crop will change it.
       const projected = projectIdentityPackPolicy(pack, sink);
       if (projected.blockedBy === null) {
-        return { status: "ready", pack: projected.pack, warnings: projected.pack.warningCodes };
+        return { kind: "answer", result: { status: "ready", pack: projected.pack, warnings: projected.pack.warningCodes } };
       }
       return {
-        status: "blocked",
-        pack: projected.pack,
-        code: projected.blockedBy,
-        retryable: isRetryableIdentityPackFailure(projected.blockedBy),
+        kind: "answer",
+        result: {
+          status: "blocked",
+          pack: projected.pack,
+          code: projected.blockedBy,
+          retryable: isRetryableIdentityPackFailure(projected.blockedBy),
+        },
       };
     }
-    case "pending": {
-      // We hold the in-process key, so this reservation belongs to another
-      // process. Only the database can arbitrate; do not race it — UNLESS it is
-      // older than the job staleness bound, in which case its process is gone
-      // (a deploy replaces the machine mid-derivation) and honouring it forever
-      // would wedge this character's pack permanently. Same constant and same
-      // reasoning as the job dedupe: one duplicate derivation after 15 minutes
-      // costs far less than a feature that never works again.
-      if (Date.now() - row.createdAt.getTime() < JOB_STALE_MS) {
-        sink?.push(
-          diag("warn", "images.identity_pack.pending_conflict", "another process holds a pending revision for this source", {
-            context: { characterId: row.characterId, packId: row.id, revision: row.revision },
-          }),
-        );
-        return { status: "blocked", pack, code: "derivation_failed", retryable: true };
-      }
-      return null;
-    }
+    case "pending":
+      // The caller holds the in-process key, so this reservation belongs to
+      // another process. Only the database can arbitrate; do not race it — UNLESS
+      // it is older than the job staleness bound, in which case its process is
+      // gone (a deploy replaces the machine mid-derivation) and honouring it
+      // forever would wedge this character's pack permanently.
+      return isLiveReservation(row) ? { kind: "in_flight", row } : { kind: "derive" };
     case "unusable":
     case "failed": {
+      const blocked = (retryable: boolean, code: ImageIdentityPackFailureCode): CurrentAnswer => ({
+        kind: "answer",
+        result: { status: "blocked", pack, code, retryable },
+      });
       const code = pack.failureCode ?? "derivation_failed";
-      if (!isRetryableIdentityPackFailure(code)) return { status: "blocked", pack, code, retryable: false };
+      if (!isRetryableIdentityPackFailure(code)) return blocked(false, code);
       const attempts = await previousAttemptCount(row.characterId, row.sourceContentHash);
-      if (attempts >= MAX_RETRY_ATTEMPTS) return { status: "blocked", pack, code, retryable: false };
+      if (attempts >= MAX_RETRY_ATTEMPTS) return blocked(false, code);
       const waited = Date.now() - row.updatedAt.getTime();
-      if (waited < retryBackoffMs(attempts)) return { status: "blocked", pack, code, retryable: true };
-      return null;
+      if (waited < retryBackoffMs(attempts)) return blocked(true, code);
+      return { kind: "derive" };
     }
     case "stale":
     case "superseded":
       // Terminal statuses cannot legally be current; fall through so the reserve
       // step reports the inconsistency rather than papering over it.
-      return null;
+      return { kind: "derive" };
   }
+}
+
+/**
+ * Whether a `pending` row is a reservation somebody is still working on, or a
+ * headstone left by a process that died mid-derivation (a deploy replaces the
+ * machine; nothing reclaims the row it was holding).
+ *
+ * The bound is {@link JOB_STALE_MS} — the job dedupe's constant, and the one
+ * `retireAbandonedReservations` already sweeps by in SQL — deliberately rather than
+ * an identity-pack number of its own. A reservation IS a job another process is
+ * running. This predicate exists so the two decisions that must agree share one
+ * expression: the pre-reserve read and the reserve transaction. If they drifted
+ * from each other, or from the sweep's bound, a caller would settle in to wait out
+ * a row somebody else had already retired. Same trade the job dedupe accepts: one
+ * duplicate derivation after fifteen minutes costs far less than a character whose
+ * pack can never be derived again.
+ */
+function isLiveReservation(row: IdentityPackRow): boolean {
+  return Date.now() - row.createdAt.getTime() < JOB_STALE_MS;
 }
 
 async function currentPackRow(characterId: string): Promise<IdentityPackRow | undefined> {
@@ -807,13 +1133,26 @@ async function lockAndVerifySource(
 
 type ReserveResult =
   | { ok: true; row: IdentityPackRow }
-  | { ok: false; code: Extract<ImageIdentityPackFailureCode, "source_changed" | "derivation_failed"> };
+  /**
+   * A live reservation for these exact bytes, left standing for the process that
+   * owns it. Not a failure — the work is happening, just not here.
+   */
+  | { ok: false; kind: "in_flight"; row: IdentityPackRow }
+  | { ok: false; kind: "refused"; code: Extract<ImageIdentityPackFailureCode, "source_changed" | "derivation_failed"> };
 
 interface ReserveInput {
   ownerId: string;
   characterId: string;
   source: ResolvedSource;
   sink: DiagnosticSink | undefined;
+  /**
+   * License to retire even a LIVE matching reservation — the ONE row it names,
+   * and no other. Only a forced re-derivation that has already waited out the
+   * join window sets it, to the id of the row it waited on; see
+   * {@link joinInFlightReservation} for why that exception exists at all, and why
+   * a reservation that replaced that row is deliberately not covered by it.
+   */
+  reclaimPackId?: string | null;
 }
 
 /**
@@ -831,6 +1170,16 @@ interface ReserveInput {
  * becomes `superseded` (we chose to redo it). An illegal transition means the
  * current row is already terminal, which is corruption — it is reported and the
  * write is refused rather than repaired, so the sweep can still see it.
+ *
+ * One current row is NOT retired: a live `pending` reservation for these exact
+ * bytes. This is the only place that decision can correctly be made — it is the
+ * one read of the current row taken under the advisory lock, so it sees
+ * reservations inserted after any pre-check the caller ran — and getting it wrong
+ * is expensive in a way the index cannot catch. Retiring one is a perfectly legal
+ * write: the loser then loses its finalize compare-and-set, `abandonRevision`
+ * deletes the crop it just encoded, and two machines have run one character's
+ * detector twice to produce one rectangle. So the reservation stands and the
+ * caller joins it.
  */
 async function reservePendingRevision(input: ReserveInput): Promise<ReserveResult> {
   const { ownerId, characterId, source, sink } = input;
@@ -841,7 +1190,7 @@ async function reservePendingRevision(input: ReserveInput): Promise<ReserveResul
           context: { characterId, sourceImageId: source.imageRow.id },
         }),
       );
-      return { ok: false, code: "source_changed" };
+      return { ok: false, kind: "refused", code: "source_changed" };
     }
 
     const [current] = await tx
@@ -850,6 +1199,25 @@ async function reservePendingRevision(input: ReserveInput): Promise<ReserveResul
       .where(and(eq(imageIdentityPacks.characterId, characterId), eq(imageIdentityPacks.current, true)))
       .limit(1);
     if (current) {
+      // Someone else's live claim on these exact bytes: leave it alone (see the
+      // comment above). Everything else is fair game — a reservation past the
+      // staleness bound belongs to a process that is gone, and a reservation for
+      // DIFFERENT bytes describes a portrait the character no longer has.
+      // `reclaimPackId` is the one exception: a forced re-derivation that already
+      // waited out the join window may retire the live claim it waited on,
+      // because the alternative is a reset button that dead-ends on a wedged
+      // reservation until the staleness bound elapses. It licenses THAT row and
+      // nothing else — a reservation standing here in its place was opened by a
+      // process that is deriving right now, and is joined like any other.
+      if (current.status === "pending" && coversSource(current, source) && isLiveReservation(current)) {
+        if (input.reclaimPackId !== current.id) return { ok: false, kind: "in_flight", row: current };
+        sink?.push(
+          diag("warn", "images.identity_pack.pending_conflict", "a forced re-derivation reclaimed an unsettled reservation", {
+            context: { characterId, packId: current.id, revision: current.revision },
+          }),
+        );
+      }
+
       // `superseded` means "we chose to redo a finished claim"; a revision that
       // never finished has no claim to supersede, and `pending -> superseded` is
       // not a legal transition — an abandoned reservation goes `stale` like any
@@ -862,7 +1230,7 @@ async function reservePendingRevision(input: ReserveInput): Promise<ReserveResul
             context: { characterId, packId: current.id, revision: current.revision },
           }),
         );
-        return { ok: false, code: "derivation_failed" };
+        return { ok: false, kind: "refused", code: "derivation_failed" };
       }
       await tx
         .update(imageIdentityPacks)
@@ -891,7 +1259,7 @@ async function reservePendingRevision(input: ReserveInput): Promise<ReserveResul
         policyVersion: IDENTITY_PACK_POLICY_VERSION,
       })
       .returning();
-    if (!inserted) return { ok: false, code: "derivation_failed" };
+    if (!inserted) return { ok: false, kind: "refused", code: "derivation_failed" };
     return { ok: true, row: inserted };
   });
 }
@@ -1446,6 +1814,11 @@ export async function getIdentityPackForOwner(
     stale:
       row.status === "stale" ||
       row.status === "superseded" ||
+      // A revision that LOST its source describes no canonical portrait at all,
+      // and the id comparison below cannot say so on its own: with the character's
+      // pointer cleared by the same delete, null equals null and the summary would
+      // report a fresh pack over bytes that are gone.
+      row.sourceImageId === null ||
       row.sourceImageId !== character.avatarImageId ||
       row.schemaVersion !== IDENTITY_PACK_SCHEMA_VERSION ||
       row.derivationVersion !== IDENTITY_PACK_DERIVATION_VERSION,
@@ -1791,6 +2164,22 @@ async function saveManualCropUnderLock(
 
   const reserved = await reservePendingRevision({ ownerId, characterId, source, sink });
   if (!reserved.ok) {
+    if (reserved.kind === "in_flight") {
+      // A live reservation appeared between the read at the top of this function
+      // and the advisory lock — another machine is deriving this character now.
+      // `busy` is the whole answer: the editor's contract for every conflict is
+      // "reload and retry", and a manual save is emphatically not entitled to the
+      // one thing the automatic path refuses itself, which is to retire a
+      // reservation somebody is mid-way through and delete the crop it produced.
+      // A save that happens a second later costs nobody anything. The reload
+      // target is the reservation itself, because that is what is current NOW.
+      sink?.push(
+        diag("warn", "images.identity_pack.pending_conflict", "a live reservation holds this character; the save must retry", {
+          context: { characterId, packId: reserved.row.id, revision: reserved.row.revision },
+        }),
+      );
+      return manualConflict("busy", reserved.row, source);
+    }
     return reserved.code === "source_changed"
       ? manualConflict("source_changed", current, source)
       : { status: "blocked", code: reserved.code, retryable: isRetryableIdentityPackFailure(reserved.code) };
@@ -2034,6 +2423,13 @@ export async function resetIdentityPackToAutomatic(input: ResetIdentityPackInput
  * is marked stale before the dedupe runs, so a character never keeps a `ready`
  * pack for a portrait it no longer has (see {@link prepareIdentityPackJob}).
  *
+ * Being deduped away is not being dropped. A trigger suppressed by the live job
+ * is answered by that job, which re-reads the canonical pointer once its
+ * derivation settles and derives again if the pointer moved (see
+ * {@link convergeIdentityPackPreparation}) — so the caller's contract is "the
+ * character will have a pack for whatever portrait it ends up pointing at", not
+ * "this particular click got a derivation".
+ *
  * The job row is inserted here rather than through `startJob` for an
  * architectural reason, not a preference: `@/server/api` re-exports `clone.ts`,
  * which imports `@/server/images`, so calling into that barrel from this module
@@ -2073,7 +2469,9 @@ async function prepareIdentityPackJob(characterId: string, ownerId: string): Pro
 
   // One live derivation per character: clicking through three portraits in a row
   // must not start three. The staleness bound inside the helper keeps a job
-  // orphaned by a deploy from wedging this character forever.
+  // orphaned by a deploy from wedging this character forever. Suppression is only
+  // safe because the live job CONVERGES — it re-reads the pointer after its own
+  // derivation settles — so a click swallowed here is still served by it.
   if (await hasLiveCharacterJob("identity_pack", characterId)) return;
 
   const [job] = await db()
@@ -2089,24 +2487,262 @@ async function prepareIdentityPackJob(characterId: string, ownerId: string): Pro
     .returning({ id: jobs.id });
   if (!job) return;
 
+  const passes: PreparationPass[] = [];
   try {
-    const result = await ensureIdentityPack({ ownerId, characterId, purpose: "background" });
+    const convergence = await convergeIdentityPackPreparation(characterId, ownerId, passes);
     await db()
       .update(jobs)
       .set({
         status: "done",
-        payload: {
-          characterId,
-          outcome: result.status,
-          ...(result.status === "blocked" ? { code: result.code, retryable: result.retryable } : {}),
-        },
+        payload: preparationPayload(characterId, passes, convergence),
         finishedAt: new Date(),
       })
       .where(eq(jobs.id, job.id));
   } catch (err) {
+    // NO recheck from here, deliberately. `ensureIdentityPack` contains its own
+    // failures and returns `blocked` rather than throwing, so reaching this catch
+    // means a database round trip failed — and every read the recheck would make
+    // is another one of those. Converging on top of a sick database turns a
+    // contained best-effort job into a hot loop against it. The row is marked
+    // `failed`, which is the honest record, and the character is covered by the
+    // next canonical-portrait trigger or the first identity render's lazy ensure.
     const message = errorMessage(err).slice(0, 500);
     log.warn("images", "identity_pack job failed", { characterId, error: message });
-    await db().update(jobs).set({ status: "failed", error: message, finishedAt: new Date() }).where(eq(jobs.id, job.id));
+    await db()
+      .update(jobs)
+      .set({
+        status: "failed",
+        error: message,
+        payload: preparationPayload(characterId, passes, "threw"),
+        finishedAt: new Date(),
+      })
+      .where(eq(jobs.id, job.id));
+  }
+}
+
+/**
+ * Test-only: the job {@link queueIdentityPackPreparation} fires, as an awaitable
+ * promise. Production never calls it.
+ *
+ * The seam exists because the production entry is `void`-and-swallow by contract —
+ * that is the containment guarantee, and it must not change — which leaves a test
+ * with nothing to await. Polling the jobs table for a terminal status instead would
+ * make every assertion about the settled state a race against the job's own last
+ * write. This is the same function the production entry calls, with only the
+ * `void`/`catch` wrapper removed, so nothing about the behavior under test is
+ * test-shaped: the invalidation, the dedupe, the job row and the convergence loop
+ * are all exactly what a portrait promotion runs.
+ */
+export function runIdentityPackPreparationForTesting(characterId: string, ownerId: string): Promise<void> {
+  return prepareIdentityPackJob(characterId, ownerId);
+}
+
+/**
+ * Passes one preparation job will make before it stops chasing the pointer.
+ *
+ * Three, and the number counts "times the canonical pointer moved out from under
+ * a settling derivation", not clicks: every pass re-reads the LATEST pointer, so
+ * a burst of portrait changes collapses into one pass against the final one
+ * rather than queueing a pass each. Converging on the latest source is the goal;
+ * deriving every intermediate portrait somebody scrolled past is not, and would
+ * be a worse use of the same detector runs.
+ *
+ * Two is the ordinary worst case — derive A, lose the finalize to B's promotion,
+ * derive B — and the third is slack for one more change landing inside the second
+ * pass. Past that the character is being repointed faster than a derivation
+ * completes, and a job that keeps chasing is an unbounded background loop nobody
+ * asked for. It stops with a diagnostic; the next trigger's job, or the first
+ * identity render's lazy ensure, picks the character up.
+ *
+ * Exported because it is part of what the job row reports: `passes` is bounded by
+ * it, so a reader of the payload — an operator or the test that pins the bound —
+ * needs the number rather than a copy of it that can drift.
+ */
+export const MAX_IDENTITY_PACK_PREPARATION_PASSES = 3;
+
+/** What one pass aimed at and what came back — the job payload's audit trail. */
+interface PreparationPass {
+  /** The canonical pointer as of the top of this pass; null if the character had none. */
+  sourceImageId: string | null;
+  outcome: EnsureIdentityPackResult["status"];
+  code?: ImageIdentityPackFailureCode;
+  retryable?: boolean;
+}
+
+/**
+ * Why the job stopped passing.
+ *
+ * `stalled` and `unconverged` are different failures and an operator needs to tell
+ * them apart: `stalled` means one source refused to yield a pack (the `code` field
+ * says which way), `unconverged` means the character was being repointed faster
+ * than it could be derived. The first is about a portrait, the second about a user.
+ */
+type PreparationConvergence = "converged" | "in_flight" | "stalled" | "unconverged" | "threw";
+
+/**
+ * Derive until the current revision describes the character's CURRENT canonical
+ * portrait, bounded by {@link MAX_IDENTITY_PACK_PREPARATION_PASSES}.
+ *
+ * The race this exists for: portrait A's job is deriving when portrait B is
+ * promoted. B's trigger invalidates A's pack (correctly) and is then deduped away
+ * by A's live job (also correctly — one derivation per character is the whole
+ * point of the dedupe). A's derivation then loses its finalize compare-and-set,
+ * because the character no longer names A. Without this loop nothing would ever
+ * prepare B: the job that COULD have is the one that just suppressed B's trigger,
+ * and it was about to exit. The character sat with no ready pack until somebody
+ * pressed Ensure or an identity render backfilled it lazily.
+ *
+ * So the settle-and-recheck belongs here rather than in a second job. A job per
+ * click is exactly what the dedupe refuses, and re-queueing from inside a job is
+ * that with extra steps.
+ *
+ * `passes` is filled in place so the caller's catch can still report how far the
+ * job got when a database call throws mid-flight.
+ */
+async function convergeIdentityPackPreparation(
+  characterId: string,
+  ownerId: string,
+  passes: PreparationPass[],
+): Promise<PreparationConvergence> {
+  let target = await canonicalSourceId(characterId, ownerId);
+  for (let pass = 1; ; pass += 1) {
+    const result = await ensureIdentityPack({ ownerId, characterId, purpose: "background" });
+    passes.push({
+      sourceImageId: target,
+      outcome: result.status,
+      ...(result.status === "blocked" ? { code: result.code, retryable: result.retryable } : {}),
+    });
+
+    const check = await preparationConvergence(characterId, ownerId);
+    if (check.kind !== "unconverged") return check.kind;
+
+    // A pass is only ever repeated because the POINTER MOVED. If it still names
+    // what this pass just targeted, the pass ran against exactly these inputs and
+    // left no revision covering them — an unreadable or not-yet-ready source, most
+    // often — and running it again is the same call with the same arguments.
+    // Retrying THAT is the retry policy's job, on a backoff clock, from the next
+    // trigger; it is not a tight loop's job.
+    if (check.sourceImageId === target) return "stalled";
+
+    if (pass >= MAX_IDENTITY_PACK_PREPARATION_PASSES) {
+      log.warn("images", "identity pack preparation stopped short of the latest portrait", {
+        characterId,
+        passes: pass,
+        sourceImageId: check.sourceImageId,
+      });
+      return "unconverged";
+    }
+    target = check.sourceImageId;
+  }
+}
+
+type ConvergenceCheck =
+  /** The current revision answers for the canonical pointer, or there is no pointer. */
+  | { kind: "converged" }
+  /** Another process is deriving the canonical pointer right now. Not ours to chase. */
+  | { kind: "in_flight" }
+  /** Nothing on record covers the canonical pointer; another pass is warranted. */
+  | { kind: "unconverged"; sourceImageId: string };
+
+/**
+ * Whether the current revision covers the character's canonical pointer AS OF NOW
+ * — re-read, never carried over from the top of the pass, because the pointer
+ * moving is the entire condition being tested.
+ *
+ * `in_flight` is a stop, not a retry. A live `pending` revision for the right
+ * source cannot be this job's own — its ensure already settled — so another
+ * process owns that derivation, and a `background` ensure declines those promptly
+ * by ruling (§"Cross-process coalescing"). Passing again would earn the same
+ * refusal on a timer, which is polling another machine's work from a job slot: the
+ * one thing the background purpose exists not to do. That process's own
+ * settle-and-recheck, or the next trigger, converges.
+ *
+ * A pointer of null is `converged` rather than a failure: a character with no
+ * canonical portrait has nothing to converge ON, and another pass would only
+ * re-earn `source_missing`.
+ */
+async function preparationConvergence(characterId: string, ownerId: string): Promise<ConvergenceCheck> {
+  const sourceImageId = await canonicalSourceId(characterId, ownerId);
+  if (sourceImageId === null) return { kind: "converged" };
+
+  const current = await currentPackRow(characterId);
+  if (current === undefined || current.sourceImageId !== sourceImageId) return { kind: "unconverged", sourceImageId };
+  if (current.status === "pending") {
+    // Past the staleness bound the reservation's process is gone, so the row
+    // carries no answer and nobody is producing one — the same reading
+    // `answerFromCurrent` takes of it.
+    return isLiveReservation(current) ? { kind: "in_flight" } : { kind: "unconverged", sourceImageId };
+  }
+  return { kind: "converged" };
+}
+
+/**
+ * The character's canonical pointer, read through the OWNER like every other pack
+ * operation (spec.lifecycle.md §"Authorization root"). A character that vanished
+ * or changed hands mid-job reads as no pointer, which ends the loop rather than
+ * letting a detached job keep working on somebody else's row.
+ */
+async function canonicalSourceId(characterId: string, ownerId: string): Promise<string | null> {
+  const [character] = await db()
+    .select({ avatarImageId: characters.avatarImageId })
+    .from(characters)
+    .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
+    .limit(1);
+  return character?.avatarImageId ?? null;
+}
+
+/**
+ * What the finished job row says it did.
+ *
+ * `outcome`/`code`/`retryable` describe the LAST pass and keep the shape earlier
+ * rows had, so an operator reading the table does not have to know which build
+ * wrote a row. Everything the convergence loop added is additive: `passes` names
+ * the source image each pass targeted — the only way to see that a job derived B
+ * after A was promoted away from under it — and `convergence` says why it stopped.
+ *
+ * This IS the diagnostic surface for background preparation. The job takes no
+ * `DiagnosticSink`, because a sink belongs to a request and nobody is making one
+ * here; the row is what an operator reads instead, so the stable code goes in it
+ * beside the log line — which is why the verdict-to-code mapping lives in exactly
+ * this one place rather than at each `return`.
+ */
+function preparationPayload(
+  characterId: string,
+  passes: PreparationPass[],
+  convergence: PreparationConvergence,
+): Record<string, unknown> {
+  const last = passes.at(-1);
+  const diagnostic = preparationDiagnostic(convergence);
+  return {
+    characterId,
+    ...(last ? { outcome: last.outcome, ...(last.code ? { code: last.code, retryable: last.retryable } : {}) } : {}),
+    passes,
+    convergence,
+    ...(diagnostic ? { diagnostic } : {}),
+  };
+}
+
+/**
+ * The stable diagnostic code for a verdict that needs one.
+ *
+ * `threw` gets none: the job row's `error` column already carries what happened,
+ * and inventing a pack-shaped code for a database failure would file it under the
+ * wrong thing entirely. `stalled` gets none either, for the opposite reason — the
+ * pass's own `code` is already the actionable answer, and a second code beside it
+ * would only compete with it.
+ */
+function preparationDiagnostic(convergence: PreparationConvergence): string | null {
+  switch (convergence) {
+    case "converged":
+    case "stalled":
+    case "threw":
+      return null;
+    case "in_flight":
+      return "images.identity_pack.pending_conflict";
+    case "unconverged":
+      // The pointer kept moving; that IS the reason, and it is the code the
+      // lifecycle spec already names for a source that changed underneath a pack.
+      return "images.identity_pack.source_changed";
   }
 }
 
@@ -2224,6 +2860,8 @@ export interface CleanupIdentityPackOptions {
 export interface IdentityPackCleanupResult {
   /** Reservations abandoned by a dead process, retired so they stop blocking. */
   pendingRetired: number;
+  /** Current revisions whose source row is gone — retired so their crop can age out. */
+  sourcelessRetired: number;
   cropsDeleted: number;
   /** Crops no pack row named at all — a derivation that died between write and finalize. */
   orphanCropsDeleted: number;
@@ -2234,18 +2872,24 @@ export interface IdentityPackCleanupResult {
 /**
  * Bounded, idempotent removal of hidden crop bytes nothing can use.
  *
- * Three passes, each a different way a crop outlives its purpose:
+ * Four passes, each a different way a crop outlives its purpose:
  *
  * 1. **Stale reservations.** A `pending` revision older than the job staleness
  *    bound belonged to a process that is gone (a deploy replaced the machine
  *    mid-derivation). It is retired so the character's next reservation is not
  *    refused by a row nothing will ever finalize — the same 15-minute reasoning
  *    `answerFromCurrent` applies when it declines to honour one.
- * 2. **Retired revisions past the window.** Superseded, stale, unusable and failed
+ * 2. **Sourceless current revisions.** A current row whose `source_image_id` went
+ *    null describes bytes nobody can produce. The delete paths retire these
+ *    before the row goes; this pass is what reclaims one that arrived by another
+ *    route, and it is the ONLY thing that can — pass 3 takes retired rows only, and
+ *    pass 4 takes crops no pack names, so a current row would shield its hidden
+ *    crop from both indefinitely.
+ * 3. **Retired revisions past the window.** Superseded, stale, unusable and failed
  *    revisions give up their crop row and file; the PACK row stays, because the
  *    metadata is the audit trail and contains no image content or URL. The current
  *    revision and its crop are never touched, whatever their age.
- * 3. **Orphan crops.** A hidden row no pack row names, older than the window. The
+ * 4. **Orphan crops.** A hidden row no pack row names, older than the window. The
  *    image sweep cannot see these — the file matches its row, so nothing looks
  *    wrong from either side; only the pack table knows nobody claims it.
  *
@@ -2262,6 +2906,7 @@ export async function cleanupIdentityPackRevisions(
   const cutoff = new Date(now.getTime() - retentionMs);
   const result: IdentityPackCleanupResult = {
     pendingRetired: 0,
+    sourcelessRetired: 0,
     cropsDeleted: 0,
     orphanCropsDeleted: 0,
     cropsAlreadyGone: 0,
@@ -2269,6 +2914,7 @@ export async function cleanupIdentityPackRevisions(
 
   try {
     result.pendingRetired = await retireAbandonedReservations(now);
+    result.sourcelessRetired = await retireSourcelessCurrentPacks(limit, opts.sink);
 
     const retired = await db()
       .select({ id: imageIdentityPacks.id, cropImageId: imageIdentityPacks.faceCropImageId })
@@ -2320,6 +2966,59 @@ async function retireAbandonedReservations(now: Date): Promise<number> {
       ),
     )
     .returning({ id: imageIdentityPacks.id });
+  return retired.length;
+}
+
+/**
+ * Retire current revisions whose source row is gone (`source_image_id` null through
+ * the set-null foreign key), so the crop they still name can age out of the
+ * retention window like any other retired revision.
+ *
+ * Bounded by a select-then-update rather than a single statement, because the
+ * cleanup limit is a promise about how much work one pass does and an unbounded
+ * `UPDATE … WHERE current` cannot keep it.
+ *
+ * Retiring is the whole action: the crop bytes stay for the diagnostic window,
+ * exactly as they do for a superseded revision, and the pack row survives as the
+ * audit record of what this character's face reference used to be.
+ */
+async function retireSourcelessCurrentPacks(limit: number, sink: DiagnosticSink | undefined): Promise<number> {
+  const sourceless = await db()
+    .select({ id: imageIdentityPacks.id })
+    .from(imageIdentityPacks)
+    .where(
+      and(
+        eq(imageIdentityPacks.current, true),
+        isNull(imageIdentityPacks.sourceImageId),
+        inArray(imageIdentityPacks.status, [...INVALIDATABLE_STATUSES]),
+      ),
+    )
+    .limit(limit);
+  if (sourceless.length === 0) return 0;
+
+  const retired = await db()
+    .update(imageIdentityPacks)
+    .set({ current: false, status: "stale" })
+    .where(
+      and(
+        inArray(imageIdentityPacks.id, sourceless.map((row) => row.id)),
+        eq(imageIdentityPacks.current, true),
+        isNull(imageIdentityPacks.sourceImageId),
+        inArray(imageIdentityPacks.status, [...INVALIDATABLE_STATUSES]),
+      ),
+    )
+    .returning({ id: imageIdentityPacks.id, characterId: imageIdentityPacks.characterId });
+  if (retired.length === 0) return 0;
+
+  sink?.push(
+    diag("warn", "images.identity_pack.source_missing", `${retired.length} current revision(s) lost their source image`, {
+      context: { packIds: retired.slice(0, 10).map((row) => row.id) },
+    }),
+  );
+  log.warn("images", "identity packs retired for a vanished source", {
+    packs: retired.length,
+    characters: new Set(retired.map((row) => row.characterId)).size,
+  });
   return retired.length;
 }
 
@@ -2705,6 +3404,7 @@ async function identityPackSweepPass(now: Date): Promise<Record<string, number>>
       identityPackCurrentConflict: findings.currentConflict,
       identityPackHiddenAssetExposed: findings.hiddenAssetExposed,
       identityPackPendingRetired: cleanup.pendingRetired,
+      identityPackSourcelessRetired: cleanup.sourcelessRetired,
       identityPackCropsDeleted: cleanup.cropsDeleted,
       identityPackOrphanCropsDeleted: cleanup.orphanCropsDeleted,
     };

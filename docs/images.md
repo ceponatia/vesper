@@ -250,20 +250,49 @@ bytes to hand anybody, so that direction is a re-derivation.
 ready/unusable revision → coalesce behind a **keyed single flight** (`identity_pack:<characterId>`, also the advisory
 lock inside both transactions) → else reserve a `pending` revision, derive **outside** the transaction, and finalize by
 **compare-and-set** on the same source pointer and hash; a derivation that loses that race goes stale and its crop is
-deleted at once. Retry backoff is **derived from the revision rows** (their count is the attempt number, the newest
+deleted at once. The keyed lock only covers one process, so **another machine's live reservation is joined, not
+raced**: the reserve transaction — the one current-row read taken under the advisory lock — leaves a `pending` row
+standing when it matches this source and is younger than the 15-minute staleness bound, and the caller polls the row
+(no database transaction held — the in-process character key is, which is why the join gets its own 5s budget — 250ms
+granularity) until it settles, then answers through the same projection any other reader uses. Waiting purposes
+(`identity_render`, `admin_trial`) join; `background` declines promptly with `pending_conflict` rather than starting
+duplicate work; a manual crop save gets the editor's `busy` conflict. One re-entry at most — a second consecutive
+in-flight degrades to a retryable `derivation_failed` — with one exception: a FORCED re-derivation (reset-to-automatic,
+admin regenerate) whose join timed out re-enters with leave to reclaim the wedged reservation, the operator's escape
+hatch the staleness bound is otherwise 15 minutes away from providing — leave bound to the joined row **by id**, so a
+replacement reservation standing in its place is joined or refused, never clobbered. Retiring a live
+reservation instead is a legal write the one-current index cannot catch, and costs two detector runs, two crops, and a
+deleted crop for the loser. Retry backoff is **derived from the revision rows** (their count is the attempt number, the newest
 row's timestamp the clock — 60s doubling to an hour, five attempts per set of source bytes), so no second scheduler
 exists, and expected failure is a value — `blocked` with an actionable code — not an exception. Preparation is queued
 fire-and-forget after avatar generation, variant promotion and library clone as an `identity_pack` job (local lane, one
-live per character); a pack failure never fails the portrait.
+live per character); a pack failure never fails the portrait. **That live job converges, which is what makes the dedupe
+safe**: once its `ensure` settles it re-reads the character's canonical pointer and derives again when the current
+revision doesn't cover it — otherwise promoting portrait B mid-derivation left B prepared by nobody (B's trigger
+correctly invalidated A's pack and was correctly suppressed by A's job; A's derivation then correctly lost its finalize).
+A pass is only repeated because the pointer MOVED (a recheck naming the source that pass just targeted means the same
+call with the same arguments, so it stops and leaves the retry to the backoff clock); bounded at 3 passes, each
+re-reading the LATEST pointer so a burst of portrait changes collapses onto the final one; another process's live
+reservation for that pointer stops the loop rather than being polled from a job slot; a throw doesn't recheck (it means
+the database is failing, and every recheck read is another one of those). Past the bound it stops with `source_changed`
+and leaves the character to the next trigger or a lazy ensure. The job payload records the source each pass targeted,
+the last outcome, and why it stopped — a detached job has no diagnostic sink, so the row is it.
 
-**Lifecycle.** A changed source makes the pack stale (read-time hash verification is the backstop), and
-`clearEntityImagePointers` invalidates packs naming a cleared image through a **maintenance registration hook**
-(`registerIdentityPackMaintenance` — a registry rather than an import, because `assets.ts` importing the pack service
-would close a cycle). The same hook gives the 6-hourly `image_sweep` its identity pass: bounded idempotent cleanup of
+**Lifecycle.** A changed source makes the pack stale (read-time hash verification is the backstop), and a deleted one
+invalidates the pack through a **maintenance registration hook** (`registerIdentityPackMaintenance` — a registry rather
+than an import, because `assets.ts` importing the pack service would close a cycle). **Ordering is load-bearing:
+`purgeImagesWhere` fires that hook BEFORE the rows go**, because `source_image_id` is a `set null` FK and a pack is
+findable by source id only while that id exists — invalidate afterwards and the character keeps a `current`, `ready`
+revision over bytes that are gone. Every purge-based delete inherits it; the portrait studio's own `DELETE` repeats it
+around its hand-written delete, and `clearEntityImagePointers` still runs the hook for ids whose row survived a kind
+guard. Three defences, not one: that ordering, the FK, and `projectIdentityPackPolicy` refusing any `ready`/`pending`
+revision whose source id is null (`source_missing`, and the owner summary calls it stale) so no reader can surface one
+however it arose. The same hook gives the 6-hourly `image_sweep` its identity pass: bounded idempotent cleanup of
 retired revisions' crops after a **7-day diagnostic window** (pack metadata survives as the audit trail, the current
 revision is never touched, `pending` rows abandoned by a dead process are retired at the 15-minute job-staleness bound,
-and orphan crops go too), plus consistency **findings** counted into the sweep job's payload rather than silently
-repaired. Hidden crops are hard-deleted with the character (`deleteCharacterIdentityAssets`, guarded by kind *and*
+a `current` row that lost its source is retired so its crop can age out at all, and orphan crops go too), plus
+consistency **findings** counted into the sweep job's payload rather than silently repaired. Hidden crops are
+hard-deleted with the character (`deleteCharacterIdentityAssets`, guarded by kind *and*
 entity, which keeps them dying with it once data-lifecycle retires `deleteEntityImages`). Copy and publish stay
 isolated: a clone carries no crop, and the destination derives its own pack from its own copied portrait.
 
