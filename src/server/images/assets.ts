@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { and, eq, gt, inArray, type SQL } from "drizzle-orm";
+import { and, eq, gt, inArray, notInArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, images, items, jobs, locations, reclaimOrphanedJobs } from "../db";
 import { describeProviderError } from "../ai";
@@ -393,6 +393,26 @@ function kindGuard(opts: { kind?: ImageKind; kinds?: readonly ImageKind[] }) {
 export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as const satisfies readonly ImageKind[];
 
 /**
+ * Kinds that are INTERNAL render inputs, never user-visible assets
+ * (image-identity-packs.spec.data.md §Hidden image asset). Their owner may read
+ * one — the crop editor has to display it — but they must be absent from every
+ * listing, copy and cross-owner read:
+ *
+ * - the character read's portrait strip (`api/characters/[id]/route.ts` GET);
+ * - `cloneEntityImages` — a copied or published character DERIVES its own pack
+ *   rather than inheriting the origin's hidden bytes (spec.lifecycle.md §Copy);
+ * - the public file-serving widening in `api/images/[id]/file/route.ts`, so a
+ *   hidden crop of a PUBLIC character still stops at its owner.
+ *
+ * Surfaces that filter by a POSITIVE kind list — the Gallery tabs, the chat asset
+ * queries, and the portrait studio's `PORTRAIT_STUDIO_KINDS` (which backs the
+ * studio's GET/DELETE/promote) — exclude these by construction and need nothing
+ * from here. A new surface subtracts them with this list rather than repeating
+ * the literal.
+ */
+export const HIDDEN_IMAGE_KINDS = ["identity_face_crop"] as const satisfies readonly ImageKind[];
+
+/**
  * Null out the soft pointers entity rows keep at deleted image ids — a
  * gallery-deleted portrait leaves its character avatar-less (the portrait
  * studio's own rule), a deleted entity render leaves its location/item
@@ -508,6 +528,12 @@ export async function chatAttachmentPaths(chatId: string, imageIds: readonly str
  * source can never strip the copy's art. `sourceImageId` records provenance.
  * Returns old→new image-id map so callers can remap avatar/cover references.
  * An image that fails to copy is skipped (degraded, never throws).
+ *
+ * `HIDDEN_IMAGE_KINDS` never travels: an identity face crop is derived state, and
+ * the destination character derives its OWN pack from its own copied portrait
+ * once that row is ready (image-identity-packs.spec.lifecycle.md §Copy and
+ * publish). Cloning one would hand the destination a crop whose pack row — the
+ * only authority for whether it may be used at all — did not come with it.
  */
 export async function cloneEntityImages(
   entityKind: ImageEntityKind,
@@ -525,6 +551,7 @@ export async function cloneEntityImages(
         eq(images.entityKind, entityKind),
         eq(images.entityId, srcEntityId),
         eq(images.status, "ready"),
+        notInArray(images.kind, [...HIDDEN_IMAGE_KINDS]),
       ),
     );
   const idMap = new Map<string, string>();

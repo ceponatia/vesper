@@ -4,6 +4,7 @@ import {
   characters,
   chatScenarioPresets,
   db,
+  imageIdentityPacks,
   images,
   items,
   jobs,
@@ -81,6 +82,10 @@ export async function seedTestUsers(prefix: string, count: number): Promise<Seed
  *      nothing to fight over (`character_chat_messages.speaker_character_id` is
  *      `SET NULL`).
  *   3. `chatScenarioPresets` alongside them — owner-scoped with no inbound FK.
+ *      `imageIdentityPacks` joins this step: it has NO owner column (it is owned
+ *      transitively through its character) so it is deleted by a character
+ *      subquery, and although `character_id` cascades, the explicit line keeps the
+ *      teardown readable as the full list of tables a suite can leave rows in.
  *   4. Library tables (`personas`, `socialCards`, `items`, `locationLinks`,
  *      `locations`). Links are deleted explicitly even though `locations`
  *      cascades them: `location_links.owner_id` is its own column, so a link
@@ -103,6 +108,14 @@ export async function purgeOwnerRows(ownerIds: string[]): Promise<void> {
   await db().delete(images).where(inArray(images.ownerId, owners));
   await db().delete(characterChats).where(inArray(characterChats.ownerId, owners));
   await db().delete(chatScenarioPresets).where(inArray(chatScenarioPresets.ownerId, owners));
+  await db()
+    .delete(imageIdentityPacks)
+    .where(
+      inArray(
+        imageIdentityPacks.characterId,
+        db().select({ id: characters.id }).from(characters).where(inArray(characters.ownerId, owners)),
+      ),
+    );
   await db().delete(characters).where(inArray(characters.ownerId, owners));
   await db().delete(personas).where(inArray(personas.ownerId, owners));
   await db().delete(socialCards).where(inArray(socialCards.ownerId, owners));
