@@ -55,10 +55,9 @@ const OWNER_CROP = { space: "normalized" as const, left: 0, top: 0, width: 1, he
 
 let temp: TempDataRoot | undefined;
 let userId = "";
-let characterId = "";
 
-const packPath = (suffix = "") => `/api/characters/${characterId}/identity-pack${suffix}`;
-const params = () => routeCtx({ id: characterId });
+const packPath = (characterId: string, suffix = "") => `/api/characters/${characterId}/identity-pack${suffix}`;
+const ctxFor = (characterId: string) => routeCtx({ id: characterId });
 
 beforeAll(async () => {
   if (!ready) return;
@@ -66,24 +65,6 @@ beforeAll(async () => {
   const user = await seedTestUser("identity-pack-routes-int", { name: "Identity Routes Int", role: "admin" });
   bindAuthUser(authState, user);
   userId = user.id;
-
-  const [character] = await db()
-    .insert(characters)
-    .values({ ownerId: userId, name: "Route Subject", profile: { bio: "identity pack route subject" } })
-    .returning({ id: characters.id });
-  if (!character) throw new Error("failed to create the test character");
-  characterId = character.id;
-
-  const asset = await createImageAsset({
-    ownerId: userId,
-    kind: "avatar",
-    entityKind: "character",
-    entityId: characterId,
-    prompt: "portrait",
-  });
-  const saved = await saveOwnedImageBuffer(asset.id, userId, await testPngBuffer(PORTRAIT_WIDTH, PORTRAIT_HEIGHT));
-  if (saved?.status !== "ready") throw new Error("failed to store the test portrait");
-  await db().update(characters).set({ avatarImageId: saved.id }).where(eq(characters.id, characterId));
 });
 
 afterAll(async () => {
@@ -92,22 +73,72 @@ afterAll(async () => {
   await endTestPool();
 });
 
-async function readSummary(): Promise<IdentityPackSummaryWire> {
-  const res = await packGet(apiRequest(packPath()), params());
+/**
+ * A character with its own stored 3:4 portrait.
+ *
+ * Every case seeds one rather than sharing a single subject: these routes mutate
+ * the pack they read, so a shared character would make each case's starting state
+ * the previous case's ending state — an order the file does not state and the
+ * runner does not promise, and a first failure that reports as three.
+ */
+async function seedSubject(name: string): Promise<string> {
+  const [character] = await db()
+    .insert(characters)
+    .values({ ownerId: userId, name, profile: { bio: "identity pack route subject" } })
+    .returning({ id: characters.id });
+  if (!character) throw new Error("failed to create the test character");
+
+  const asset = await createImageAsset({
+    ownerId: userId,
+    kind: "avatar",
+    entityKind: "character",
+    entityId: character.id,
+    prompt: "portrait",
+  });
+  const saved = await saveOwnedImageBuffer(asset.id, userId, await testPngBuffer(PORTRAIT_WIDTH, PORTRAIT_HEIGHT));
+  if (saved?.status !== "ready") throw new Error("failed to store the test portrait");
+  await db().update(characters).set({ avatarImageId: saved.id }).where(eq(characters.id, character.id));
+  return character.id;
+}
+
+async function readSummary(characterId: string): Promise<IdentityPackSummaryWire> {
+  const res = await packGet(apiRequest(packPath(characterId)), ctxFor(characterId));
+  return (await expectJson<{ summary: IdentityPackSummaryWire }>(res, 200)).summary;
+}
+
+/** Prepare the automatic pack a correction case starts from. */
+async function ensurePack(characterId: string): Promise<IdentityPackSummaryWire> {
+  const res = await packEnsure(apiRequest(packPath(characterId, "/ensure"), { body: {} }), ctxFor(characterId));
   return (await expectJson<{ summary: IdentityPackSummaryWire }>(res, 200)).summary;
 }
 
 /** The optimistic-concurrency triple a write must echo back, taken from a summary. */
-function guardOf(summary: IdentityPackSummaryWire): { packId: string; revision: number; sourceContentHash: string } {
+interface WriteGuard {
+  packId: string;
+  revision: number;
+  sourceContentHash: string;
+}
+
+function guardOf(summary: IdentityPackSummaryWire): WriteGuard {
   if (summary.packId === null || summary.revision === null || summary.sourceContentHash === null) {
     throw new Error("expected a prepared pack to carry a write guard");
   }
   return { packId: summary.packId, revision: summary.revision, sourceContentHash: summary.sourceContentHash };
 }
 
+/** The owner crop under one guard, unparsed so a caller can assert the 409 replay too. */
+function saveOwnerCrop(characterId: string, guard: WriteGuard): Promise<Response> {
+  return packManualCrop(
+    apiRequest(packPath(characterId, "/manual-crop"), { body: { ...guard, crop: OWNER_CROP } }),
+    ctxFor(characterId),
+  );
+}
+
 describe.skipIf(!ready)("identity-pack owner routes", () => {
   it("reports no pack, prepares one on request, and reads back the same revision", async () => {
-    const before = await readSummary();
+    const characterId = await seedSubject("Prepare Subject");
+
+    const before = await readSummary(characterId);
     // "none" is a state, not a failure: nobody has asked for a pack yet, and the
     // status view has to be able to say exactly that.
     expect(before.status).toBe("none");
@@ -115,33 +146,31 @@ describe.skipIf(!ready)("identity-pack owner routes", () => {
     expect(before.failureCode).toBeNull();
     expect(before.crop).toBeNull();
 
-    const ensured = await expectJson<{ summary: IdentityPackSummaryWire }>(
-      await packEnsure(apiRequest(packPath("/ensure"), { body: {} }), params()),
-      200,
-    );
-    expect(ensured.summary.status).toBe("ready");
-    expect(ensured.summary.current).toBe(true);
-    expect(ensured.summary.stale).toBe(false);
-    expect(ensured.summary.revision).toBe(1);
+    const ensured = await ensurePack(characterId);
+    expect(ensured.status).toBe("ready");
+    expect(ensured.current).toBe(true);
+    expect(ensured.stale).toBe(false);
+    expect(ensured.revision).toBe(1);
     // The shipped detector finds nothing, so a portrait-shaped source falls to
     // the deterministic heuristic — usable, and never silently so.
-    expect(ensured.summary.method).toBe("heuristic");
-    expect(ensured.summary.warningCodes).toContain("heuristic_crop");
-    expect(ensured.summary.crop).not.toBeNull();
-    expect(ensured.summary.cropImageId).not.toBeNull();
-    expect(ensured.summary.source).toMatchObject({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT });
-    expect(ensured.summary.sourceContentHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(ensured.method).toBe("heuristic");
+    expect(ensured.warningCodes).toContain("heuristic_crop");
+    expect(ensured.crop).not.toBeNull();
+    expect(ensured.cropImageId).not.toBeNull();
+    expect(ensured.source).toMatchObject({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT });
+    expect(ensured.sourceContentHash).toMatch(/^[0-9a-f]{64}$/);
 
-    const after = await readSummary();
-    expect(after.packId).toBe(ensured.summary.packId);
+    const after = await readSummary(characterId);
+    expect(after.packId).toBe(ensured.packId);
     expect(after.status).toBe("ready");
   });
 
   it("saves an owner crop as a manual revision, then refuses the stale editor with a reloadable 409", async () => {
-    const guard = guardOf(await readSummary());
+    const characterId = await seedSubject("Manual Crop Subject");
+    const guard = guardOf(await ensurePack(characterId));
 
     const saved = await expectJson<{ summary: IdentityPackSummaryWire }>(
-      await packManualCrop(apiRequest(packPath("/manual-crop"), { body: { ...guard, crop: OWNER_CROP } }), params()),
+      await saveOwnerCrop(characterId, guard),
       200,
     );
     expect(saved.summary.method).toBe("manual");
@@ -153,14 +182,10 @@ describe.skipIf(!ready)("identity-pack owner routes", () => {
 
     // Replaying the FIRST guard is exactly what a second browser tab does. It must
     // not apply coordinates to a revision the user never saw.
-    const stale = await packManualCrop(
-      apiRequest(packPath("/manual-crop"), { body: { ...guard, crop: OWNER_CROP } }),
-      params(),
-    );
     const conflict = await expectJson<{
       error: { code: string; message: string };
       summary: IdentityPackSummaryWire | null;
-    }>(stale, 409);
+    }>(await saveOwnerCrop(characterId, guard), 409);
     expect(conflict.error.code).toBe("stale_pack");
     // The conflict carries what to reload TO — a second GET would race the same
     // source the save just lost.
@@ -169,11 +194,16 @@ describe.skipIf(!ready)("identity-pack owner routes", () => {
   });
 
   it("resets to automatic as a new revision rather than resurrecting the old one", async () => {
-    const manual = await readSummary();
+    const characterId = await seedSubject("Reset Subject");
+    await expectJson<{ summary: IdentityPackSummaryWire }>(
+      await saveOwnerCrop(characterId, guardOf(await ensurePack(characterId))),
+      200,
+    );
+    const manual = await readSummary(characterId);
     expect(manual.method).toBe("manual");
 
     const reset = await expectJson<{ summary: IdentityPackSummaryWire }>(
-      await packResetAutomatic(apiRequest(packPath("/reset-automatic"), { body: {} }), params()),
+      await packResetAutomatic(apiRequest(packPath(characterId, "/reset-automatic"), { body: {} }), ctxFor(characterId)),
       200,
     );
     expect(reset.summary.method).toBe("heuristic");
@@ -185,11 +215,12 @@ describe.skipIf(!ready)("identity-pack owner routes", () => {
   });
 
   it("hides another owner's character behind the same 404 a nonexistent one gets", async () => {
+    const characterId = await seedSubject("Private Subject");
     const intruder = await seedTestUser("identity-pack-routes-int-intruder");
     const mine = authState.user;
     bindAuthUser(authState, intruder);
     try {
-      const res = await packGet(apiRequest(packPath()), params());
+      const res = await packGet(apiRequest(packPath(characterId)), ctxFor(characterId));
       expect(res.status).toBe(404);
       const body = await expectJson<{ error: { code: string } }>(res);
       // "character not found" — never "this character's pack is not yours", which

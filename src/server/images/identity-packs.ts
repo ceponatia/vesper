@@ -50,7 +50,7 @@ import {
   INTRINSIC_POLICY_V1,
   PROFILE_POLICY_DEFAULTS_V1,
 } from "@/lib/images/identity-pack-policy";
-import { characters, db, hasLiveCharacterJob, imageIdentityPacks, images, JOB_STALE_MS, jobs } from "../db";
+import { characters, db, hasLiveCharacterJob, imageIdentityPacks, images, JOB_STALE_MS, jobs, type Db } from "../db";
 import { log } from "@/server/log";
 // Direct module path, NOT the `@/server/engine` barrel: that barrel re-exports
 // `chat-pipeline.ts`, which imports `@/server/images` — so importing it here
@@ -578,15 +578,7 @@ async function derivePackUnderLock(
   }
 
   const patch = await deriveRevision({ ownerId, characterId, packId: reserved.row.id, source, sink });
-  if (!isAllowedIdentityPackTransition("pending", patch.status)) {
-    // Unreachable by construction (every patch status is a legal successor of
-    // `pending`); if it ever fires, the state machine changed under this code and
-    // the write must not happen.
-    sink?.push(
-      diag("error", "images.identity_pack.pending_conflict", `illegal transition pending -> ${patch.status}`, {
-        context: { characterId, packId: reserved.row.id },
-      }),
-    );
+  if (!mayFinalizeReservation(patch, { characterId, packId: reserved.row.id }, sink)) {
     return { status: "blocked", pack: null, code: "derivation_failed", retryable: false };
   }
 
@@ -682,6 +674,35 @@ async function currentPackRow(characterId: string): Promise<IdentityPackRow | un
  * Promotion                                                                 *
  * ------------------------------------------------------------------------ */
 
+/** The transaction handle both promotion transactions run on (`SimTx`'s precedent). */
+type PackTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/**
+ * Take the per-character advisory lock, then re-read whether the character still
+ * names this source image. `true` means the compare-and-set may proceed.
+ *
+ * One copy, deliberately, because the reserve and the finalize are two halves of
+ * the SAME compare-and-set: if they ever drifted on what "still ours" means — a
+ * different lock key, an owner predicate on one side only — the guard would still
+ * look present at both ends while protecting nothing, and the symptom would be a
+ * crop promoted from bytes nobody checked.
+ *
+ * The lock comes first: at READ COMMITTED the read only means anything once no
+ * other transaction can move the pointer underneath it.
+ */
+async function lockAndVerifySource(
+  tx: PackTx,
+  input: { characterId: string; ownerId: string; source: ResolvedSource },
+): Promise<boolean> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${identityPackLockKey(input.characterId)}, 0))`);
+  const [character] = await tx
+    .select({ avatarImageId: characters.avatarImageId })
+    .from(characters)
+    .where(and(eq(characters.id, input.characterId), eq(characters.ownerId, input.ownerId)))
+    .limit(1);
+  return character !== undefined && character.avatarImageId === input.source.imageRow.id;
+}
+
 type ReserveResult =
   | { ok: true; row: IdentityPackRow }
   | { ok: false; code: Extract<ImageIdentityPackFailureCode, "source_changed" | "derivation_failed"> };
@@ -712,14 +733,7 @@ interface ReserveInput {
 async function reservePendingRevision(input: ReserveInput): Promise<ReserveResult> {
   const { ownerId, characterId, source, sink } = input;
   return db().transaction(async (tx): Promise<ReserveResult> => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${identityPackLockKey(characterId)}, 0))`);
-
-    const [character] = await tx
-      .select({ avatarImageId: characters.avatarImageId })
-      .from(characters)
-      .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
-      .limit(1);
-    if (!character || character.avatarImageId !== source.imageRow.id) {
+    if (!(await lockAndVerifySource(tx, { characterId, ownerId, source }))) {
       sink?.push(
         diag("warn", "images.identity_pack.source_changed", "the canonical portrait moved before this revision was reserved", {
           context: { characterId, sourceImageId: source.imageRow.id },
@@ -780,6 +794,28 @@ async function reservePendingRevision(input: ReserveInput): Promise<ReserveResul
   });
 }
 
+/**
+ * Whether a finished derivation may be written onto its `pending` reservation.
+ *
+ * Unreachable by construction — every patch status is a legal successor of
+ * `pending` — and asserted anyway, by BOTH promotion paths, because the thing it
+ * guards is a state machine that lives in the contracts module: if a future
+ * version narrows the legal successors, the write must stop rather than quietly
+ * put a revision into a status nothing downstream expects. One copy so the
+ * automatic and manual paths cannot answer that question differently.
+ */
+function mayFinalizeReservation(
+  patch: RevisionPatch,
+  context: { characterId: string; packId: string },
+  sink: DiagnosticSink | undefined,
+): boolean {
+  if (isAllowedIdentityPackTransition("pending", patch.status)) return true;
+  sink?.push(
+    diag("error", "images.identity_pack.pending_conflict", `illegal transition pending -> ${patch.status}`, { context }),
+  );
+  return false;
+}
+
 interface FinalizeInput {
   packId: string;
   characterId: string;
@@ -804,13 +840,7 @@ async function finalizeRevision(input: FinalizeInput): Promise<IdentityPackRow |
   if (!fresh || sourceContentHashOf(fresh) !== source.contentHash) return null;
 
   return db().transaction(async (tx): Promise<IdentityPackRow | null> => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${identityPackLockKey(characterId)}, 0))`);
-    const [character] = await tx
-      .select({ avatarImageId: characters.avatarImageId })
-      .from(characters)
-      .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
-      .limit(1);
-    if (!character || character.avatarImageId !== source.imageRow.id) return null;
+    if (!(await lockAndVerifySource(tx, { characterId, ownerId, source }))) return null;
 
     const [updated] = await tx
       .update(imageIdentityPacks)
@@ -1689,6 +1719,10 @@ async function saveManualCropUnderLock(
       }
     : refusedRevision("crop_write_failed", stored.message, { method: "manual", crop, quality, review });
 
+  if (!mayFinalizeReservation(patch, { characterId, packId: reserved.row.id }, sink)) {
+    return { status: "blocked", code: "derivation_failed", retryable: false };
+  }
+
   const finalized = await finalizeRevision({ packId: reserved.row.id, characterId, ownerId, source, patch });
   if (!finalized) {
     await abandonRevision(reserved.row.id, ownerId, patch.faceCropImageId);
@@ -1891,6 +1925,10 @@ export async function resetIdentityPackToAutomatic(input: ResetIdentityPackInput
  * good portrait. The ordering it completes is `source row ready → canonical
  * pointer committed → preparation requested`.
  *
+ * It also owns the invalidation half of the assignment: the previous current pack
+ * is marked stale before the dedupe runs, so a character never keeps a `ready`
+ * pack for a portrait it no longer has (see {@link prepareIdentityPackJob}).
+ *
  * The job row is inserted here rather than through `startJob` for an
  * architectural reason, not a preference: `@/server/api` re-exports `clone.ts`,
  * which imports `@/server/images`, so calling into that barrel from this module
@@ -1910,6 +1948,24 @@ export function queueIdentityPackPreparation(characterId: string, ownerId: strin
 }
 
 async function prepareIdentityPackJob(characterId: string, ownerId: string): Promise<void> {
+  // Invalidate BEFORE the dedupe, always (spec.lifecycle.md §"Source assignment":
+  // the assignment path marks any previous current pack stale before or while
+  // requesting the new derivation). Order is the whole point: promoting portrait B
+  // while portrait A's job is still live gets this call deduped away, and without
+  // the invalidation A's `ready` pack would stay current forever — pointing at a
+  // portrait the character no longer has, with nothing in the UI offering to
+  // re-prepare it and no later `ensureIdentityPack` re-deriving it.
+  try {
+    await invalidateIdentityPackForSource({ characterIds: [characterId] });
+  } catch (err) {
+    // Contained: a failed invalidation must not stop the derivation being queued.
+    // Read-time hash verification still refuses a crop whose bytes moved.
+    log.warn("images", "identity pack invalidation before enqueue failed", {
+      characterId,
+      error: errorMessage(err).slice(0, 300),
+    });
+  }
+
   // One live derivation per character: clicking through three portraits in a row
   // must not start three. The staleness bound inside the helper keeps a job
   // orphaned by a deploy from wedging this character forever.
