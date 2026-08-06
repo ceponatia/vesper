@@ -97,8 +97,13 @@ const WEBP_QUALITY = 90;
  * 6300×6300 dwarfs any legitimate avatar/scene image), fail on any decode
  * error, and never expand animation frames. This rasterizes every stored
  * buffer, so it protects all decode paths regardless of their own input checks.
+ *
+ * Exported so the identity-pack derivation's own `sharp` calls (extract, resize,
+ * raw decode) run under the SAME limits as storage rather than a second copy of
+ * the numbers that could drift — it re-decodes an already-stored portrait, which
+ * is trusted only to the extent this guard makes it so.
  */
-const SHARP_DECODE_LIMITS = { limitInputPixels: 40_000_000, failOn: "error", animated: false } as const;
+export const SHARP_DECODE_LIMITS = { limitInputPixels: 40_000_000, failOn: "error", animated: false } as const;
 
 /**
  * Atomic write protocol: convert to webp, write `<name>.pending.webp`, fsync,

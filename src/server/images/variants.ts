@@ -7,7 +7,8 @@ import { renderWithModel, resolveSurfaceModel } from "./models";
 import { logEvent } from "../events";
 import { log } from "@/server/log";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { readImageBytes, runImagePipeline, type ImageRow } from "./assets";
+import { HIDDEN_IMAGE_KINDS, readImageBytes, runImagePipeline, type ImageKind, type ImageRow } from "./assets";
+import { queueIdentityPackPreparation } from "./identity-packs";
 import { monogramSvg } from "./monogram";
 import { apparentAgeAnchor, buildVariantInstruction, type VariantKind } from "./prompts";
 
@@ -124,6 +125,9 @@ export interface PromoteVariantResult {
   error?: string;
 }
 
+/** Widened once so the membership test reads a plain `ImageKind`, not the literal tuple. */
+const hiddenKinds: readonly ImageKind[] = HIDDEN_IMAGE_KINDS;
+
 /**
  * Promotes a ready variant (or avatar) to the character's canonical avatar.
  *
@@ -150,6 +154,14 @@ export async function promoteVariant(characterId: string, imageId: string, owner
     .where(and(eq(images.id, imageId), eq(images.ownerId, ownerId)))
     .limit(1);
   if (!image) return denyPromotion("images.promote.image_denied", "image not found", characterId, imageId, ownerId);
+  // A hidden derived asset is an internal render INPUT, never a portrait. An
+  // identity face crop passes every other check here — it is owned, ready, and
+  // pointed at this character — so without this guard the owner's own crop could
+  // be promoted to their canonical avatar, which would then derive the next pack
+  // from a crop of a crop (image-identity-packs.spec.data.md §"Hidden image asset").
+  if (hiddenKinds.includes(image.kind)) {
+    return denyPromotion("images.promote.hidden_kind", "image is not a promotable portrait", characterId, imageId, ownerId);
+  }
   // Not an authorization miss — an owned image that simply isn't paintable yet.
   if (image.status !== "ready") return { ok: false, error: `image status is ${image.status}` };
   if (image.entityKind !== "character" || image.entityId !== characterId) {
@@ -162,6 +174,11 @@ export async function promoteVariant(characterId: string, imageId: string, owner
     .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
     .returning({ id: characters.id });
   if (updated.length === 0) return { ok: false, error: "character not found" };
+  // The canonical pointer is committed; prepare the identity pack for the new
+  // source, best-effort. This is the trigger for BOTH the studio's promote and
+  // the avatar upload, which promotes through here rather than writing the
+  // pointer itself — so neither needs its own call.
+  queueIdentityPackPreparation(characterId, ownerId);
   return { ok: true };
 }
 
