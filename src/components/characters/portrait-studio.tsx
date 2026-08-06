@@ -12,6 +12,7 @@ import {
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { AvatarUploadDialog } from "./avatar-upload-dialog";
+import { IdentityReferencePanel } from "./identity-reference-panel";
 import { ImageModelSelect, pickedId } from "./image-model-select";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
@@ -234,6 +235,10 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
           </p>
         </div>
       ) : null}
+
+      {/* The face crop derived FROM the canonical portrait — sits with it, above the
+          variant machinery it has nothing to do with (image-identity-packs.plan.md). */}
+      <IdentityReferencePanel characterId={characterId} name={name} avatarImageId={avatarImageId} />
 
       <div className="flex flex-col gap-3">
         <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">New variant</h3>
