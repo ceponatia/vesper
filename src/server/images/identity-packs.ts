@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import sharp from "sharp";
-import { and, count, eq, inArray, isNotNull, isNull, lt, max, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, isNull, lt, max, or, sql } from "drizzle-orm";
 import { z, type ZodType } from "zod";
 import {
   imageIdentityPackQualitySchema,
@@ -10,7 +10,9 @@ import {
   type DetectedFaceCandidate,
   type EnsureIdentityPackInput,
   type EnsureIdentityPackResult,
+  type IdentityPackAdminRevision,
   type IdentityPackIntrinsicPolicy,
+  type IdentityPackSummaryWire,
   type ImageIdentityCropMethod,
   type ImageIdentityPackFailureCode,
   type ImageIdentityPackQuality,
@@ -1262,6 +1264,8 @@ export interface IdentityPackSummary {
   failureCode: ImageIdentityPackFailureCode | null;
   retryable: boolean;
   warnings: ImageIdentityPackWarningCode[];
+  /** When the current revision last changed, so a poller can tell "still running" from "stuck". */
+  updatedAt: string | null;
 }
 
 /**
@@ -1294,6 +1298,7 @@ export async function getIdentityPackForOwner(
       failureCode: null,
       retryable: false,
       warnings: [],
+      updatedAt: null,
     };
   }
 
@@ -1313,6 +1318,149 @@ export async function getIdentityPackForOwner(
     failureCode,
     retryable: failureCode === null ? false : isRetryableIdentityPackFailure(failureCode),
     warnings: pack.warningCodes,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * The summary as a route sends it (contracts §`identityPackSummarySchema`).
+ *
+ * A projection and nothing more — no query, no policy, no second opinion about
+ * status — so the shape the crop editor parses cannot drift from the shape
+ * {@link getIdentityPackForOwner} computed. Two facts it deliberately does NOT
+ * carry across: `pack.quality` (raw measurements are the admin surface's
+ * business, and the editor acts on warning codes) and `retryable` (a stable
+ * failure code already says whether asking again could help, and shipping both
+ * invites a client that trusts the boolean over the code).
+ *
+ * With no revision at all the source names the character's CURRENT canonical
+ * portrait with null dimensions — there is no measured source yet. With a
+ * revision, every source field comes from that revision, so `crop`, `source`,
+ * and `sourceContentHash` describe one set of bytes even when the character has
+ * since moved on (which `stale` is what reports).
+ */
+export function identityPackSummaryToWire(summary: IdentityPackSummary): IdentityPackSummaryWire {
+  const pack = summary.pack;
+  if (pack === null) {
+    return {
+      packId: null,
+      status: "none",
+      revision: null,
+      current: false,
+      stale: false,
+      method: null,
+      source: { imageId: summary.sourceImageId, width: null, height: null },
+      crop: null,
+      cropImageId: null,
+      warningCodes: [],
+      failureCode: null,
+      sourceContentHash: null,
+      updatedAt: null,
+    };
+  }
+  return {
+    packId: pack.id,
+    status: pack.status,
+    revision: pack.revision,
+    current: summary.current,
+    stale: summary.stale,
+    method: pack.derivation.method,
+    source: { imageId: pack.source.imageId, width: pack.source.width, height: pack.source.height },
+    crop: pack.faceDetail.crop,
+    cropImageId: pack.faceDetail.imageId,
+    warningCodes: pack.warningCodes,
+    failureCode: pack.failureCode,
+    sourceContentHash: pack.source.contentHash,
+    updatedAt: summary.updatedAt,
+  };
+}
+
+/* ------------------------------------------------------------------------ *
+ * Admin history                                                             *
+ * ------------------------------------------------------------------------ */
+
+/** Revisions returned by one history read. A character accumulates them slowly; this is a guard, not a page. */
+const IDENTITY_PACK_HISTORY_LIMIT = 50;
+
+export interface IdentityPackHistory {
+  /** The revision that was addressed — the caller's `packId`, echoed so a response stands alone. */
+  packId: string;
+  characterId: string;
+  /** The CHARACTER's owner, which is the authorization root every caller must check against itself. */
+  ownerId: string;
+  /** Newest revision first. */
+  revisions: IdentityPackAdminRevision[];
+}
+
+/**
+ * Every revision of the character behind one pack id, for admin inspection
+ * (spec.lifecycle.md §"Admin routes").
+ *
+ * Addressed by pack id but resolved through the CHARACTER, and it returns the
+ * owner rather than deciding anything with it: authorization is the route's job,
+ * and a service that quietly filtered by a caller id would make "not yours" and
+ * "does not exist" two different code paths — which is exactly how one of them
+ * eventually answers differently and confirms a hidden pack exists.
+ *
+ * History is metadata only: geometry, versions, stable codes, review actors. No
+ * bytes and no URLs cross this boundary even for an admin (spec.lifecycle.md
+ * §"Privacy boundary"), and a malformed jsonb column degrades to `null` with a
+ * diagnostic rather than failing the whole read.
+ */
+export async function getIdentityPackHistoryForAdmin(
+  packId: string,
+  sink?: DiagnosticSink,
+): Promise<IdentityPackHistory | null> {
+  const [addressed] = await db()
+    .select({ characterId: imageIdentityPacks.characterId, ownerId: characters.ownerId })
+    .from(imageIdentityPacks)
+    .innerJoin(characters, eq(characters.id, imageIdentityPacks.characterId))
+    .where(eq(imageIdentityPacks.id, packId))
+    .limit(1);
+  if (!addressed) return null;
+
+  const rows = await db()
+    .select()
+    .from(imageIdentityPacks)
+    .where(eq(imageIdentityPacks.characterId, addressed.characterId))
+    .orderBy(desc(imageIdentityPacks.revision))
+    .limit(IDENTITY_PACK_HISTORY_LIMIT);
+
+  return {
+    packId,
+    characterId: addressed.characterId,
+    ownerId: addressed.ownerId,
+    revisions: rows.map((row) => packRowToAdminRevision(row, sink)),
+  };
+}
+
+/**
+ * One stored row as an admin revision. `readJsonColumn` rather than a bare
+ * `parseOr` for the crop: a revision that never had a rectangle (a refusal) and
+ * one whose rectangle is unreadable are different findings, and only the second
+ * deserves a diagnostic.
+ */
+function packRowToAdminRevision(row: IdentityPackRow, sink: DiagnosticSink | undefined): IdentityPackAdminRevision {
+  return {
+    revision: row.revision,
+    status: row.status,
+    current: row.current,
+    method: row.method,
+    derivationVersion: row.derivationVersion,
+    policyVersion: row.policyVersion,
+    detectorVersion: row.detectorVersion,
+    confidence: row.confidence,
+    warningCodes: parseOr(warningCodeListSchema, row.warningCodes, [], sink, "image_identity_packs.warning_codes_json"),
+    failureCode: readFailureCode(row.failureCode),
+    failureMessage: row.failureMessage,
+    crop: readJsonColumn(sourcePixelCropSchema, row.crop, sink, "image_identity_packs.crop_json").value,
+    cropImageId: row.faceCropImageId,
+    sourceImageId: row.sourceImageId,
+    sourceContentHash: row.sourceContentHash,
+    reviewedByUserId: row.reviewedByUserId,
+    reviewReason: row.reviewReason,
+    reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
+    createdAt: row.createdAt.toISOString(),
   };
 }
 
