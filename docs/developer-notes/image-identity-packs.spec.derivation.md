@@ -116,7 +116,11 @@ disagree about a verdict.
   orphaned by a deploy would dead-end the reset button until the fifteen-minute
   staleness bound elapsed. A remote derivation slower than the join budget can
   lose to it; its finalize compare-and-set refuses the write and its crop is
-  cleaned, exactly as when the source moves on.
+  cleaned, exactly as when the source moves on. That leave is bound to the row it
+  waited on, by id, and covers no other: two forced callers can time out on the
+  same wedged reservation, and the second one — arriving to find the first's
+  brand-new reservation standing there — joins it or is told busy like anybody
+  else, because clobbering it is the very failure the wait exists to prevent.
 
 **Bounded, never a loop.** If what settled does not answer the caller — retired,
 replaced, or itself settled into another reservation — the caller re-enters the
@@ -469,8 +473,9 @@ Server integration tests cover:
   promptly without a second `detect()`; a reservation met inside the reserve
   transaction (a forced re-derivation) is waited out rather than retired; a
   forced re-derivation whose join times out reclaims the wedged reservation and
-  the displaced holder loses its finalize; a reservation older than
-  `JOB_STALE_MS` is retired and re-derived;
+  the displaced holder loses its finalize, while a replacement reservation that
+  took the wedged row's place is refused rather than reclaimed; a reservation
+  older than `JOB_STALE_MS` is retired and re-derived;
 - source change during derivation;
 - finalization-race cleanup;
 - detector, heuristic, and manual methods;

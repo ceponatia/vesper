@@ -259,7 +259,8 @@ granularity) until it settles, then answers through the same projection any othe
 duplicate work; a manual crop save gets the editor's `busy` conflict. One re-entry at most — a second consecutive
 in-flight degrades to a retryable `derivation_failed` — with one exception: a FORCED re-derivation (reset-to-automatic,
 admin regenerate) whose join timed out re-enters with leave to reclaim the wedged reservation, the operator's escape
-hatch the staleness bound is otherwise 15 minutes away from providing. Retiring a live
+hatch the staleness bound is otherwise 15 minutes away from providing — leave bound to the joined row **by id**, so a
+replacement reservation standing in its place is joined or refused, never clobbered. Retiring a live
 reservation instead is a legal write the one-current index cannot catch, and costs two detector runs, two crops, and a
 deleted crop for the loser. Retry backoff is **derived from the revision rows** (their count is the attempt number, the newest
 row's timestamp the clock — 60s doubling to an hour, five attempts per set of source bytes), so no second scheduler

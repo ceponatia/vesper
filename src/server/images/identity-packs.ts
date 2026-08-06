@@ -527,7 +527,7 @@ const RESERVATION_POLL_MS = 250;
  * wedged or pathological, which the caller reports (or, for a forced
  * re-derivation, reclaims) rather than waits out.
  */
-const RESERVATION_JOIN_MS = 5_000;
+export const RESERVATION_JOIN_MS = 5_000;
 
 interface ResolvedSource {
   imageRow: ImageRow;
@@ -744,13 +744,13 @@ async function derivePackUnderLock(
   source: ResolvedSource,
   opts: DerivationOptions,
 ): Promise<EnsureIdentityPackResult> {
-  const first = await derivationPass(input, source, opts, false);
+  const first = await derivationPass(input, source, opts, null);
   if (first.kind === "result") return first.result;
 
   const joined = await joinInFlightReservation(first.row, input, source, opts);
   if (joined.kind === "result") return joined.result;
 
-  const second = await derivationPass(input, source, opts, joined.reclaimInFlight);
+  const second = await derivationPass(input, source, opts, joined.reclaimPackId);
   if (second.kind === "result") return second.result;
   return pendingConflictResult(second.row, input, "a second reservation took this character while the first was joined");
 }
@@ -776,7 +776,7 @@ async function derivationPass(
   input: EnsureIdentityPackInput,
   source: ResolvedSource,
   opts: DerivationOptions,
-  reclaimInFlight: boolean,
+  reclaimPackId: string | null,
 ): Promise<PassOutcome> {
   const { ownerId, characterId, sink } = input;
   const current = opts.forceNewRevision ? undefined : await currentPackRow(characterId);
@@ -793,7 +793,7 @@ async function derivationPass(
     }
   }
 
-  const reserved = await reservePendingRevision({ ownerId, characterId, source, sink, reclaimInFlight });
+  const reserved = await reservePendingRevision({ ownerId, characterId, source, sink, reclaimPackId });
   if (!reserved.ok) {
     if (reserved.kind === "in_flight") return { kind: "in_flight", row: reserved.row };
     return {
@@ -831,8 +831,11 @@ async function derivationPass(
 
 type JoinOutcome =
   | { kind: "result"; result: EnsureIdentityPackResult }
-  /** Take the flow again; `reclaimInFlight` licenses retiring a reservation that outlived the join. */
-  | { kind: "reenter"; reclaimInFlight: boolean };
+  /**
+   * Take the flow again. `reclaimPackId` is leave to retire ONE named reservation
+   * — the row this caller actually waited out — and `null` is no leave at all.
+   */
+  | { kind: "reenter"; reclaimPackId: string | null };
 
 /**
  * Wait out another process's reservation for these exact bytes, then answer from
@@ -871,6 +874,13 @@ type JoinOutcome =
  * derivation slower than the join budget can lose to it; its finalize
  * compare-and-set refuses the write and its crop is cleaned, exactly as when the
  * source moves on.
+ *
+ * That leave names the joined row and only it, never "whatever is current when I
+ * get back". Two forced callers can wait out the SAME wedged reservation and time
+ * out together; once the first has replaced it, the second is looking at a live
+ * reservation a process opened seconds ago, not at the wedged row it waited for.
+ * Retiring that one would be the exact clobber this whole wait exists to prevent,
+ * so a replacement is joined or reported busy like any other.
  */
 async function joinInFlightReservation(
   row: IdentityPackRow,
@@ -885,7 +895,7 @@ async function joinInFlightReservation(
 
   const settled = await awaitReservationSettled(row, input.characterId);
   if (!settled.ok) {
-    if (opts.forceNewRevision) return { kind: "reenter", reclaimInFlight: true };
+    if (opts.forceNewRevision) return { kind: "reenter", reclaimPackId: row.id };
     const message = "the in-flight reservation did not settle within the wait window";
     return { kind: "result", result: pendingConflictResult(row, input, message) };
   }
@@ -905,7 +915,9 @@ async function joinInFlightReservation(
       if (answer.kind === "answer") return { kind: "result", result: answer.result };
     }
   }
-  return { kind: "reenter", reclaimInFlight: false };
+  // A settled join carries no leave: the row it waited on is gone, and whatever
+  // stands in its place is either an answer (above) or somebody else's live work.
+  return { kind: "reenter", reclaimPackId: null };
 }
 
 /**
@@ -1134,11 +1146,13 @@ interface ReserveInput {
   source: ResolvedSource;
   sink: DiagnosticSink | undefined;
   /**
-   * License to retire even a LIVE matching reservation. Only a forced
-   * re-derivation that has already waited out the join window sets it — see
-   * {@link joinInFlightReservation} for why that exception exists at all.
+   * License to retire even a LIVE matching reservation — the ONE row it names,
+   * and no other. Only a forced re-derivation that has already waited out the
+   * join window sets it, to the id of the row it waited on; see
+   * {@link joinInFlightReservation} for why that exception exists at all, and why
+   * a reservation that replaced that row is deliberately not covered by it.
    */
-  reclaimInFlight?: boolean;
+  reclaimPackId?: string | null;
 }
 
 /**
@@ -1189,12 +1203,14 @@ async function reservePendingRevision(input: ReserveInput): Promise<ReserveResul
       // comment above). Everything else is fair game — a reservation past the
       // staleness bound belongs to a process that is gone, and a reservation for
       // DIFFERENT bytes describes a portrait the character no longer has.
-      // `reclaimInFlight` is the one exception: a forced re-derivation that
-      // already waited out the join window may retire even a live claim, because
-      // the alternative is a reset button that dead-ends on a wedged reservation
-      // until the staleness bound elapses.
+      // `reclaimPackId` is the one exception: a forced re-derivation that already
+      // waited out the join window may retire the live claim it waited on,
+      // because the alternative is a reset button that dead-ends on a wedged
+      // reservation until the staleness bound elapses. It licenses THAT row and
+      // nothing else — a reservation standing here in its place was opened by a
+      // process that is deriving right now, and is joined like any other.
       if (current.status === "pending" && coversSource(current, source) && isLiveReservation(current)) {
-        if (input.reclaimInFlight !== true) return { ok: false, kind: "in_flight", row: current };
+        if (input.reclaimPackId !== current.id) return { ok: false, kind: "in_flight", row: current };
         sink?.push(
           diag("warn", "images.identity_pack.pending_conflict", "a forced re-derivation reclaimed an unsettled reservation", {
             context: { characterId, packId: current.id, revision: current.revision },

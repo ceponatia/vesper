@@ -28,8 +28,10 @@ import {
   ensureIdentityPack,
   getIdentityPackForOwner,
   IDENTITY_PACK_REVISION_RETENTION_MS,
+  identityPackLockKey,
   MAX_IDENTITY_PACK_PREPARATION_PASSES,
   packRowToContract,
+  RESERVATION_JOIN_MS,
   resetIdentityPackToAutomatic,
   runIdentityPackPreparationForTesting,
   setIdentityIntrinsicPolicyForTesting,
@@ -631,6 +633,16 @@ describe.skipIf(!ready)("cross-process reservation coalescing", () => {
    */
   const JOIN_PROBE_MS = 600;
 
+  /**
+   * How long the reclaim-binding case below waits before stalling the character's
+   * advisory lock, so "the reset is already inside its join" is a fact rather than
+   * a hope on a loaded runner. Generous against a reset's start-up — two reads, a
+   * file hash and a decode — and still far short of the five-second join budget it
+   * has to land inside, because a stall that arrived FIRST would be joined as the
+   * reservation rather than replacing one.
+   */
+  const JOIN_ENTERED_MS = 2_000;
+
   it("joins another process's live reservation instead of deriving the same crop twice", async () => {
     const subject = await seedSubject("Cross-Process Subject");
     const gate = gatedDetector();
@@ -823,6 +835,116 @@ describe.skipIf(!ready)("cross-process reservation coalescing", () => {
     expect(rows[1]?.current).toBe(true);
     expect(calls).toBe(2);
     expect(await cropRows(subject.characterId)).toHaveLength(1);
+  }, 20_000);
+
+  it("refuses to reclaim a reservation that replaced the one it joined", async () => {
+    const subject = await seedSubject("Replaced Reservation Subject");
+    const gate = gatedDetector();
+    setIdentityFaceDetectorForTesting(gate.detector);
+
+    // A wedged reservation again — live by the staleness bound, never going to
+    // finalize — so the reset below must spend the whole join budget on it and
+    // come back holding leave to reclaim it.
+    const holder = deriveIdentityPackWithoutProcessLockForTesting({
+      ownerId: userId,
+      characterId: subject.characterId,
+      purpose: "identity_render",
+    });
+    const wedged = await waitForReservation(subject.characterId);
+
+    const sink = new DiagnosticCollector();
+    const reset = resetIdentityPackToAutomatic({
+      ownerId: userId,
+      characterId: subject.characterId,
+      actorUserId: userId,
+      sink,
+    });
+    // Long enough to be sure the reset is inside its join poll: the replacement
+    // below has to land while it is waiting on THIS reservation, not before it
+    // ever met one — a reset that joined the replacement instead would be
+    // licensed to reclaim it, and would prove nothing.
+    await sleep(JOIN_ENTERED_MS);
+    expect(await hasSettled(reset)).toBe(false);
+
+    // A third process retires the wedged reservation and opens its own, and is
+    // still deriving when the reset comes back — the interleaving the reclaim
+    // leave must not cover. Both halves run under the SERVICE's advisory lock,
+    // held past the join deadline, which is what makes the ordering a fact
+    // rather than a 250ms coin flip: the reset's poll cannot see an uncommitted
+    // replacement, so it times out on the wedged row exactly as it would have
+    // anyway, and its re-entry then blocks here until the replacement is
+    // committed, live and current.
+    const replacementId = await db().transaction(async (tx): Promise<string> => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${identityPackLockKey(subject.characterId)}, 0))`,
+      );
+      // Retire first: the partial unique index allows exactly one current row.
+      await tx
+        .update(imageIdentityPacks)
+        .set({ current: false, status: "stale" })
+        .where(eq(imageIdentityPacks.id, wedged.id));
+      // Copied off the wedged row rather than rebuilt from the fixture, so the
+      // replacement provably MATCHES this source — same image, hash and versions
+      // — which is the only kind of live reservation the reclaim leave could
+      // have been mistaken for.
+      const [replacement] = await tx
+        .insert(imageIdentityPacks)
+        .values({
+          characterId: wedged.characterId,
+          revision: wedged.revision + 1,
+          current: true,
+          status: "pending",
+          sourceImageId: wedged.sourceImageId,
+          sourceContentHash: wedged.sourceContentHash,
+          sourceWidth: wedged.sourceWidth,
+          sourceHeight: wedged.sourceHeight,
+          schemaVersion: wedged.schemaVersion,
+          derivationVersion: wedged.derivationVersion,
+          policyVersion: wedged.policyVersion,
+        })
+        .returning({ id: imageIdentityPacks.id });
+      if (!replacement) throw new Error("failed to insert the replacement reservation");
+      // Held past the reset's join deadline — which started before this stall did
+      // — so its re-entry queues here and reads the replacement as current.
+      await sleep(RESERVATION_JOIN_MS + 1_500);
+      return replacement.id;
+    });
+
+    // Released BEFORE the reset is awaited, deliberately: a reset that wrongly
+    // reclaimed the replacement would derive through this same gate, so leaving
+    // it shut would turn a wrong answer into a deadlock instead of the failed
+    // assertions below. The wedged holder resumes here too and loses its
+    // finalize, as it must — its reservation stopped being current the moment
+    // the third process retired it.
+    gate.release();
+    const [held, redone] = await Promise.all([holder, reset]);
+
+    // Leave for the row it joined is not leave for whatever is current when it
+    // returns: the replacement is somebody else's live work, so the reset is
+    // told busy instead of taking it.
+    expect(redone.status).toBe("blocked");
+    expect(sink.items.map((d) => d.code)).toContain("images.identity_pack.pending_conflict");
+    // And it started no derivation on the way to that refusal — the wedged
+    // holder's is still the only `detect()` this character has seen.
+    expect(gate.calls()).toBe(1);
+    if (redone.status !== "blocked") return;
+    expect(redone.code).toBe("derivation_failed");
+    expect(redone.retryable).toBe(true);
+
+    const rows = await packRows(subject.characterId);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.id).toBe(wedged.id);
+    expect(rows[0]?.status).toBe("stale");
+    expect(rows[0]?.current).toBe(false);
+    // Untouched: still current, still pending, still the replacement's to finish.
+    expect(rows[1]?.id).toBe(replacementId);
+    expect(rows[1]?.status).toBe("pending");
+    expect(rows[1]?.current).toBe(true);
+    // The displaced holder's crop is cleaned rather than left pointing nowhere.
+    expect(await cropRows(subject.characterId)).toHaveLength(0);
+    expect(held.status).toBe("blocked");
+    if (held.status !== "blocked") return;
+    expect(held.code).toBe("source_changed");
   }, 20_000);
 
   it("retires a reservation past the staleness bound and derives again", async () => {
