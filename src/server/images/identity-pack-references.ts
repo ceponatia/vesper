@@ -1,6 +1,7 @@
 import type {
   EvaluateIdentityPackResult,
   IdentityPackProfilePolicy,
+  IdentityPackPurpose,
   IdentityReferenceCandidate,
   IdentityReferenceProvenance,
   IdentityReferenceRole,
@@ -62,6 +63,13 @@ export interface EvaluateIdentityPackForProfileInput {
    * uploading a 1024px file is not evidence the model sees 1024px.
    */
   effectiveReferenceSize?: { widthPx: number; heightPx: number } | null;
+  /**
+   * The audit label for the pack ensure this evaluation performs — behaviorally
+   * identical either way. Defaults to `identity_render` (the render seam);
+   * the trial surface passes `admin_trial` so its ensures are labeled as trial
+   * activity, not render activity.
+   */
+  purpose?: IdentityPackPurpose;
   sink?: DiagnosticSink;
 }
 
@@ -82,7 +90,7 @@ export async function evaluateIdentityPackForProfile(
   input: EvaluateIdentityPackForProfileInput,
 ): Promise<EvaluateIdentityPackResult> {
   const { ownerId, characterId, sink } = input;
-  const ensured = await ensureIdentityPack({ ownerId, characterId, purpose: "identity_render", sink });
+  const ensured = await ensureIdentityPack({ ownerId, characterId, purpose: input.purpose ?? "identity_render", sink });
   if (ensured.status !== "ready") {
     // A pack failure is product feedback ("use a clearer portrait", "crop it
     // yourself"), not a provider error — and it arrives before any spend.

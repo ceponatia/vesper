@@ -211,8 +211,9 @@ the stored normalized WebP bytes**, so bytes that merely *look* the same are a d
 in `image_identity_packs` (migration 0101, `images/identity-packs.ts`): a partial unique index enforces one `current`
 row per character, and each revision carries its status (`pending`/`ready`/`unusable`/`failed`/`stale`/`superseded`),
 crop method (`detector`/`heuristic`/`manual`), geometry, measurements, warning codes and review actor. The **pack row,
-not the crop's `images.meta`, is the authority** for which crop is current. Slices 1–5 are shipped; the fixed reference
-trial and production close-out remain.
+not the crop's `images.meta`, is the authority** for which crop is current. Slices 1–4 and 5A (pack-side evaluation)
+are shipped; 5B — render-lane consumption — waits on the capabilities shared render intent; the trial harness below is
+built (dark), and the paid trial run and production close-out remain.
 
 **The crop is a hidden asset.** `kind: "identity_face_crop"` is written through the normal row-before-file WebP path,
 then subtracted from every user surface by `HIDDEN_IMAGE_KINDS` (`images/assets.ts`): the character detail response's
@@ -321,6 +322,24 @@ and refuses **before** provider reservation. Consumers gate on `IMAGE_IDENTITY_P
 measure), and **nothing calls it in production**: the consumer is the shared render intent of
 [image-model-capabilities.plan.md](developer-notes/image-model-capabilities.plan.md) slice 2. Until it lands every lane
 still anchors on the library avatar exactly as described above.
+
+**The fixed-trial harness exists; the trial has not run.** Admin-only infrastructure for the reference trial of
+[the trial spec](developer-notes/image-identity-packs.spec.trial.md): three tables (migration 0102 —
+`image_identity_pack_trial_runs`/`_cells`/`_grades`, verdicts a validated jsonb array on the run), a service
+(`images/identity-pack-trial.ts`), owner-admin routes under `/api/admin/self/identity-packs/trial`, and a Settings →
+Identity trials page. A run expands characters × profiles × strategies × six checked-in prompt fixtures (two per
+identity-critical task) into at most 96 cells, resolves each through `ensureIdentityPack` (purpose `admin_trial`) +
+`evaluateIdentityPackForProfile`, and **refuses — never trims** — blocked packs, over-capacity reference sets, and
+detector-method cells (no detector exists in v1). Execution is bounded (1–20 renders per click, single-flight per run;
+the daily budget + storage backpressure are charged inside the run lock for exactly the cells the pass picked, through
+a route-supplied guard, so a refused or empty pass is never billed); each cell re-verifies its pinned fixture, model
+version, pack revision and controls hash before rendering, refusing on drift; outputs land as the hidden kind
+`identity_trial_output` — in `HIDDEN_IMAGE_KINDS` beside the face crop, owner-viewable for review, deleted with the run
+and swept with the character. Review is blinded pairwise (left/right from sha256 parity of run + pair id, persisted on
+the grade row; grades stored unblinded), aggregated per profile/strategy pair, and closed by a recorded verdict with
+actor, reason and policy version. All of it runs with `IMAGE_IDENTITY_PACK_REFERENCES` still off — the flag gates
+render-lane consumption, not the trial — and stays dark until the owner builds the corpus characters and spends the
+renders. Detail lives in the spec's Implementation section, not here.
 
 **A new warning or failure code requires copy.** The server reasons about stable codes only;
 `components/characters/identity-pack-copy.ts` is the single exhaustive code → English map, so adding a code without

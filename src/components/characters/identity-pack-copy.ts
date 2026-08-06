@@ -1,7 +1,14 @@
 import type {
   IdentityPackSummaryStatus,
+  IdentityReferenceStrategy,
   ImageIdentityPackFailureCode,
+  ImageIdentityPackTrialRefusalCode,
   ImageIdentityPackWarningCode,
+  TrialCellCounts,
+  TrialCellStatus,
+  TrialGradeDimension,
+  TrialRunStatus,
+  TrialVerdictValue,
 } from "@/contracts";
 import type { TagTone } from "@/components/ui/tag";
 
@@ -125,4 +132,130 @@ export function identityPackSummaryChip(
 /** The hint for a summary, on the same staleness-outranks-status rule as the chip. */
 export function identityPackSummaryHint(status: IdentityPackSummaryStatus, stale: boolean): string {
   return identityPackStatusHint(stale ? "stale" : status);
+}
+
+/**
+ * Plain copy for every way the trial surface says no
+ * (image-identity-packs.spec.trial.md; `imageIdentityPackTrialRefusalCodes`).
+ * Same exhaustive-switch rule as the failure copy above: a new refusal code
+ * without copy is a compile error, never a raw identifier on screen.
+ */
+export function identityPackTrialRefusalCopy(code: ImageIdentityPackTrialRefusalCode): string {
+  switch (code) {
+    case "unknown_corpus":
+      return "No checked-in trial corpus has that name. Paste character ids instead, or use a corpus that exists.";
+    case "too_many_cells":
+      return "This configuration expands past the 96-cell ceiling for one run. Trim characters, profiles, strategies, or fixtures.";
+    case "pack_blocked":
+      return "This character has no usable identity reference. Prepare its identity pack, then plan a new run.";
+    case "profile_ineligible":
+      return "This profile can't run the cell — it isn't an enabled registry profile, or the references the strategy needs aren't available.";
+    case "capacity_exceeded":
+      return "The strategy sends more reference images than this model accepts. Pick a fewer-reference strategy or a roomier model.";
+    case "detector_unavailable":
+      return "Detector-derived cells can't run until a reviewed face detector ships. They're recorded refused, never faked.";
+    case "fixture_unknown":
+      return "That prompt fixture isn't checked in. Pick fixtures from the list.";
+    case "budget_refused":
+      return "The daily render budget refused this pass. It resets at midnight UTC.";
+    case "provider_failed":
+      return "The image provider failed on this cell. The failure is part of the run's record — a rerun is a new run.";
+    case "cell_conflict":
+      return "Something this cell pinned moved since planning — the pack, the model version, or the fixture text. Plan a new run.";
+    case "grade_conflict":
+      return "This pair already has a grade. Duplicates are refused rather than averaged; the next pair is loaded.";
+    case "verdict_unknown_combo":
+      return "No cell in this run tested that profile and strategy combination. A verdict can only rule on what the run actually ran.";
+    case "run_locked":
+      return "Another execution pass is still running for this run. Let it finish, then refresh.";
+  }
+}
+
+/** A run's lifecycle position as a chip. */
+export function trialRunStatusChip(status: TrialRunStatus): { label: string; tone: TagTone } {
+  switch (status) {
+    case "draft":
+      return { label: "draft", tone: "default" };
+    case "running":
+      return { label: "running", tone: "accent" };
+    case "review":
+      return { label: "in review", tone: "accent" };
+    case "complete":
+      return { label: "complete", tone: "ok" };
+  }
+}
+
+/** One cell's outcome as a chip. `refused` is an expected outcome, not a failure. */
+export function trialCellStatusChip(status: TrialCellStatus): { label: string; tone: TagTone } {
+  switch (status) {
+    case "planned":
+      return { label: "planned", tone: "default" };
+    case "rendered":
+      return { label: "rendered", tone: "ok" };
+    case "failed":
+      return { label: "failed", tone: "danger" };
+    case "refused":
+      return { label: "refused", tone: "accent" };
+  }
+}
+
+/** The strategy vocabulary in English (contracts `identityReferenceStrategies`). */
+export function identityReferenceStrategyLabel(strategy: IdentityReferenceStrategy): string {
+  switch (strategy) {
+    case "canonical_only":
+      return "Canonical only";
+    case "face_detail_only":
+      return "Face detail only";
+    case "canonical_then_face_detail":
+      return "Canonical, then face detail";
+    case "face_detail_then_canonical":
+      return "Face detail, then canonical";
+  }
+}
+
+/** The eleven review dimensions in English (spec.trial.md §"Review procedure"). */
+export function trialGradeDimensionLabel(dimension: TrialGradeDimension): string {
+  switch (dimension) {
+    case "identity_likeness":
+      return "Identity likeness";
+    case "distinctive_landmarks":
+      return "Distinctive landmarks";
+    case "hair":
+      return "Hair";
+    case "apparent_age":
+      return "Apparent age";
+    case "edit_fidelity":
+      return "Edit fidelity";
+    case "body_morphology":
+      return "Body morphology";
+    case "wardrobe_exposure":
+      return "Wardrobe & exposure";
+    case "pose_camera":
+      return "Pose & camera";
+    case "lighting_setting":
+      return "Lighting & setting";
+    case "anatomy":
+      return "Anatomy";
+    case "overall_preference":
+      return "Overall preference";
+  }
+}
+
+/** The progress numbers every trial-run surface shows, as one line. */
+export function trialCountsLine(counts: TrialCellCounts): string {
+  return `${counts.planned} planned · ${counts.rendered} rendered · ${counts.failed} failed · ${counts.refused} refused`;
+}
+
+/** The verdict vocabulary in English (spec.trial.md §"Version promotion"). */
+export function trialVerdictLabel(verdict: TrialVerdictValue): string {
+  switch (verdict) {
+    case "promoted":
+      return "Promoted";
+    case "retained_current":
+      return "Retained current";
+    case "experimental_admin_only":
+      return "Experimental (admin only)";
+    case "rejected":
+      return "Rejected";
+  }
 }

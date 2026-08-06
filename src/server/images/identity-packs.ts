@@ -179,7 +179,7 @@ function intrinsicPolicy(): IdentityPackIntrinsicPolicy {
 
 const warningCodeListSchema = z.array(imageIdentityPackWarningCodeSchema);
 
-interface JsonColumn<T> {
+export interface JsonColumn<T> {
   value: T | null;
   /** The column held something, and it did not parse. Distinct from a stored null. */
   malformed: boolean;
@@ -190,8 +190,12 @@ interface JsonColumn<T> {
  * "stored garbage" apart. `parseOr` alone cannot: both would fall back to the
  * same value, and a pack whose crop rectangle is unreadable is a very different
  * thing from a pack that legitimately never had one.
+ *
+ * Exported for the trial service (`./identity-pack-trial.ts`), whose cell and
+ * grade jsonb columns follow exactly this rule — a second copy of the
+ * stored-null/stored-garbage distinction is how the two readers drift.
  */
-function readJsonColumn<T>(schema: ZodType<T>, raw: unknown, sink: DiagnosticSink | undefined, path: string): JsonColumn<T> {
+export function readJsonColumn<T>(schema: ZodType<T>, raw: unknown, sink: DiagnosticSink | undefined, path: string): JsonColumn<T> {
   if (raw === null || raw === undefined) return { value: null, malformed: false };
   const parsed = parseOrNull(schema, raw, sink, path);
   return parsed === null ? { value: null, malformed: true } : { value: parsed, malformed: false };
@@ -3311,8 +3315,8 @@ export async function findIdentityPackInconsistencies(
     currentConflict: 0,
     hiddenAssetExposed: 0,
   };
-  // Widened deliberately: `HIDDEN_IMAGE_KINDS` is a one-member tuple, so
-  // `.includes()` on it would only accept that literal and reject the join's
+  // Widened deliberately: `HIDDEN_IMAGE_KINDS` is a literal tuple, so
+  // `.includes()` on it would only accept those literals and reject the join's
   // `ImageKind` — which is the exact value this needs to test.
   const hiddenKinds: readonly ImageKind[] = HIDDEN_IMAGE_KINDS;
 

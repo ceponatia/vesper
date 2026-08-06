@@ -140,6 +140,12 @@ export function SettingsPage() {
             </Link>{" "}
             — which Replicate models the portrait studio and scene generator can use.
           </p>
+          <p className="mt-2 text-sm text-paper-400">
+            <Link href="/settings/identity-trials" className="underline underline-offset-4">
+              Identity trials
+            </Link>{" "}
+            — blinded A/B runs comparing identity-reference strategies before one is promoted.
+          </p>
         </section>
       ) : null}
     </PageContainer>

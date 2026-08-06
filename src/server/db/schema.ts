@@ -1296,10 +1296,17 @@ export const images = pgTable(
     // shot. Chat-keyed, Gallery-hidden (kind-filtered queries), hard-deleted with the chat.
     // `identity_face_crop` (image-identity-packs.spec.data.md): the hidden face crop an
     // identity pack derives from the character's canonical portrait — an internal render
-    // input, never a user-visible asset. It is the one kind that must be excluded from
-    // EVERY listing, clone and cross-owner read; `HIDDEN_IMAGE_KINDS` in
-    // `src/server/images/assets.ts` names those surfaces.
-    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place", "identity_face_crop"] }).notNull(),
+    // input, never a user-visible asset. It must be excluded from EVERY listing, clone
+    // and cross-owner read; `HIDDEN_IMAGE_KINDS` in `src/server/images/assets.ts` names
+    // those surfaces.
+    // `identity_trial_output` (image-identity-packs.spec.trial.md): a render produced by
+    // an admin identity-pack trial cell — operational evidence, never a Gallery asset.
+    // Hidden like the face crop (same `HIDDEN_IMAGE_KINDS` surfaces); its owner still
+    // reads it through the file route, which is how the blinded review UI displays it.
+    // Swept when its trial run is deleted, AND with its character —
+    // `deleteCharacterIdentityAssets` purges every hidden kind by entity on character
+    // delete, this one included.
+    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place", "identity_face_crop", "identity_trial_output"] }).notNull(),
     entityKind: text("entity_kind", { enum: ["character", "location", "item", "world"] }),
     entityId: text("entity_id"),
     /**
@@ -1661,6 +1668,120 @@ export const imageIdentityPacks = pgTable(
       t.derivationVersion,
       t.revision,
     ),
+  ],
+);
+
+/**
+ * An admin identity-reference trial run (image-identity-packs.spec.trial.md) —
+ * one bounded, owner-scoped comparison of reference strategies across a fixed
+ * character/profile/fixture grid. The validated create-request is snapshotted
+ * into `config_json` so a later registry or profile edit can never change what
+ * a finished run claims it tested. Verdicts live on the run row as a validated
+ * jsonb array rather than a fourth table: they are small, run-scoped, and only
+ * ever read alongside the run.
+ */
+export const imageIdentityPackTrialRuns = pgTable(
+  "image_identity_pack_trial_runs",
+  {
+    id: id(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    status: text("status", { enum: ["draft", "running", "review", "complete"] }).notNull().default("draft"),
+    /** The validated create-run request snapshot (contracts/images/identity-pack-trial.ts). */
+    configJson: jsonb("config_json").notNull(),
+    /** Validated array of trial verdicts — one per (profile, strategy) slot, upserted. */
+    verdictsJson: jsonb("verdicts_json").notNull().default([]),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("image_identity_pack_trial_runs_owner_idx").on(t.ownerId)],
+);
+
+/**
+ * One cell of a trial run's grid — a single (character, profile, strategy,
+ * prompt fixture) render attempt. The spec-time identity lives in `spec_json`
+ * and the execution outcome in `result_json` (null until executed); both are
+ * contract-validated jsonb, read back through the `readJsonColumn` pattern.
+ * The output image is a `set null` safety net like the pack's crop pointer —
+ * a deleted output makes the cell unreviewable, not invalid.
+ */
+export const imageIdentityPackTrialCells = pgTable(
+  "image_identity_pack_trial_cells",
+  {
+    id: id(),
+    runId: text("run_id").notNull(),
+    /** Deterministic `characterId:profileId:strategy:fixtureId` plan key. */
+    cellKey: text("cell_key").notNull(),
+    status: text("status", { enum: ["planned", "rendered", "failed", "refused"] }).notNull().default("planned"),
+    specJson: jsonb("spec_json").notNull(),
+    resultJson: jsonb("result_json"),
+    outputImageId: text("output_image_id").references(() => images.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // Named short: drizzle's auto-generated FK name would exceed Postgres's
+    // 63-char identifier cap (both table names are long), and a silently
+    // truncated constraint name is a drift trap for later migrations.
+    foreignKey({
+      name: "image_identity_pack_trial_cells_run_fk",
+      columns: [t.runId],
+      foreignColumns: [imageIdentityPackTrialRuns.id],
+    }).onDelete("cascade"),
+    // The composite unique's LEADING column doubles as the per-run lookup index
+    // (the house ruling recorded on `personas`).
+    uniqueIndex("image_identity_pack_trial_cells_run_cell_key_unique").on(t.runId, t.cellKey),
+  ],
+);
+
+/**
+ * A submitted blinded pair grade — insert-once under unique `(run_id, pair_id)`,
+ * so a double submission fails loudly (`grade_conflict`) instead of averaging.
+ * `left_is_a` persists the blind left/right↔A/B mapping the reviewer actually
+ * saw; unblinding happens only in aggregation. The reviewer FK carries no
+ * cascade for the same reason as `image_identity_packs.reviewed_by_user_id`:
+ * an audit trail that erases itself when the reviewer's account goes is not one.
+ */
+export const imageIdentityPackTrialGrades = pgTable(
+  "image_identity_pack_trial_grades",
+  {
+    id: id(),
+    runId: text("run_id").notNull(),
+    /** Deterministic sorted-cell-id pair key (lib/images/identity-pack-trial.ts). */
+    pairId: text("pair_id").notNull(),
+    cellAId: text("cell_a_id").notNull(),
+    cellBId: text("cell_b_id").notNull(),
+    leftIsA: boolean("left_is_a").notNull(),
+    gradesJson: jsonb("grades_json").notNull(),
+    reviewedByUserId: text("reviewed_by_user_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // Named short — see the cells table: the auto-generated names would exceed
+    // Postgres's 63-char identifier cap.
+    foreignKey({
+      name: "image_identity_pack_trial_grades_run_fk",
+      columns: [t.runId],
+      foreignColumns: [imageIdentityPackTrialRuns.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "image_identity_pack_trial_grades_cell_a_fk",
+      columns: [t.cellAId],
+      foreignColumns: [imageIdentityPackTrialCells.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "image_identity_pack_trial_grades_cell_b_fk",
+      columns: [t.cellBId],
+      foreignColumns: [imageIdentityPackTrialCells.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "image_identity_pack_trial_grades_reviewer_fk",
+      columns: [t.reviewedByUserId],
+      foreignColumns: [users.id],
+    }),
+    uniqueIndex("image_identity_pack_trial_grades_run_pair_unique").on(t.runId, t.pairId),
   ],
 );
 

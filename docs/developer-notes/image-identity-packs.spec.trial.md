@@ -253,3 +253,115 @@ The trial slice is complete when:
 - intrinsic/profile thresholds have an evidence-backed policy version;
 - repeat cells confirm the selected strategy;
 - the identity-pack plan and active model profiles record the promoted choices.
+
+## Implementation (built 2026-08-06)
+
+The harness above is implemented; no paid cell has run and no verdict exists.
+This section records what shipped and the deliberate v1 limitations.
+
+### Storage and code
+
+- Tables (migration 0102): `image_identity_pack_trial_runs` (config snapshot,
+  status, verdicts as a validated jsonb array on the run row),
+  `image_identity_pack_trial_cells` (spec + result jsonb, unique per run/cell
+  key, FK to the output image), `image_identity_pack_trial_grades` (one per
+  run/pair, persisted blind mapping, grader).
+- Contracts in `src/contracts/images/identity-pack-trial.ts`; pure expansion,
+  pairing, and aggregation in `src/lib/images/identity-pack-trial.ts`
+  (including the six checked-in prompt fixtures — two per identity-critical
+  task: `variant`, `scene`, `chat_look`); service in
+  `src/server/images/identity-pack-trial.ts`; admin UI at Settings → Identity
+  trials.
+- Routes, all owner-admin, under `/api/admin/self/identity-packs/trial`:
+  create/list at the root, then per run `GET` detail, `POST execute`,
+  `GET`/`POST review` (next blinded pair / submit grade), `GET summary`,
+  `POST verdict`, and `DELETE` (removes the run and its output images).
+
+### Cell resolution and execution
+
+- A run expands characters × profiles × strategies × fixtures into at most 96
+  cells. Each cell resolves via `ensureIdentityPack` (purpose `admin_trial`)
+  plus `evaluateIdentityPackForProfile` with the cell's strategy, pins model
+  slug, probed version, and profile, and records prompt and resolved-controls
+  hashes. Blocked packs, reference counts over the model's capacity, and
+  detector-method cells are **refused, never trimmed**.
+- Cell statuses: `planned` → `rendered` | `failed` | `refused`. REFUSALS carry
+  stable codes in the `images.identity_pack.trial.*` family (`unknown_corpus`,
+  `too_many_cells`, `pack_blocked`, `profile_ineligible`, `capacity_exceeded`,
+  `detector_unavailable`, `fixture_unknown`, `budget_refused`,
+  `provider_failed`, `cell_conflict`, `grade_conflict`,
+  `verdict_unknown_combo`, `run_locked`), mapped to English through the
+  identity-pack copy map. Cell FAILURES carry the render failure classifier's
+  codes instead (`content_rejection` / `transient` / `other`) plus
+  `references_trimmed` — a cell whose render succeeded but whose reference set
+  was trimmed in transport (the `data_url` inline-byte budget) after the
+  plan-time capacity check passed; it settles `failed` with its output image
+  kept for audit, and failed cells never enter pairing.
+- Execution is a bounded admin action: 1–20 renders per click, single-flight
+  per run (a concurrent execute refuses with `run_locked`). The daily image
+  budget and storage backpressure are charged **inside the run lock**, for
+  exactly the planned cells the pass picked — a pass refused `run_locked` or
+  finding nothing to run is never billed, and a pass that picks zero cells
+  never charges. Charged slots are a reservation: a cell that then conflicts
+  or fails mid-batch does not refund its unit. The route supplies the charge
+  function (it owns the request and its 429/503 envelopes); the service
+  decides when and for how many. Before rendering, each cell re-verifies its
+  pinned world — fixture prompt hash, model version, pack
+  id/revision/source hash, AND the resolved model/profile controls hash — and
+  refuses `cell_conflict` on any drift. A throw inside one cell settles that
+  cell `failed` (`other`) and the batch continues; it never aborts the pass or
+  leaves the cell `planned` to be re-rendered (double provider spend). Outputs
+  go through the normal row-before-file image pipeline under the hidden kind
+  `identity_trial_output` — in `HIDDEN_IMAGE_KINDS`, so excluded from the
+  gallery, character copies, and public serving, but owner-viewable for review
+  — and are deleted with the run and swept on character deletion.
+- Run status lifecycle: `draft` → `running` → `review` → `complete`. A run is
+  complete when every rendered profile/strategy combination has a recorded
+  verdict. A run created with zero plannable cells (every cell refused) is
+  born in `review` rather than `draft`: nothing will ever run, and `review`
+  keeps it an honest, deletable record instead of a wedged draft.
+
+### Blinding, grading, and verdicts
+
+- Pairs differ only in identity strategy within (character, fixture, profile).
+  Left/right order is derived deterministically from the sha256 parity of
+  run id + pair id — stable across requests without storage — and the mapping
+  actually used is persisted on the grade row at submission.
+- The reviewer grades the 11 review dimensions on the −2..+2 anchored ordinal
+  scale, plus per-side catastrophic defects and free-form notes. Grades are
+  stored unblinded, in canonical strategy space.
+- Summary aggregates per profile/strategy pair: per-dimension means with
+  sample counts, win/tie/loss on overall preference, and catastrophic counts.
+  It also reports every rendered (profile, strategy) combination — the verdict
+  slots — separately from the comparisons, because a strategy whose every
+  counterpart cell failed has no pair and appears in no comparison, yet still
+  needs a ruling for the run to complete.
+  Verdicts are recorded per (profile, strategy) using this spec's vocabulary —
+  `promoted` / `retained_current` / `experimental_admin_only` / `rejected`
+  (snake_case in code) — with actor, reason, and policy version. A verdict
+  must name a combination some cell of the run actually carries (any status);
+  anything else refuses `verdict_unknown_combo` rather than recording a
+  ruling nothing can surface.
+- Blinding is **procedural, not cryptographic**, for the review surface only:
+  the review screen withholds strategy fields, but the run-detail cells view
+  exposes each cell's strategy and output image id, so an owner-reviewer can
+  unblind themselves out-of-band. That is inherent to owner-as-reviewer — the
+  discipline is following the procedure, not an enforcement boundary.
+
+### Recorded v1 limitations
+
+- **No seed transport.** The registry's models declare no seed input; seed
+  plumbing belongs to the image-model-capabilities plan. Cells record
+  `requestedSeed: null`, and paired runs rely on temporal proximity per this
+  spec's "provider that cannot reproduce a seed" clause.
+- **No cost field beyond latency.** No render-unit system exists; spend is
+  bounded by the daily image budget counters only.
+- **Detector-vs-heuristic cells are unbuildable** until a detector is chosen
+  (an owner privacy decision) — they refuse with `detector_unavailable`
+  rather than faking a method.
+- **`IMAGE_IDENTITY_PACK_REFERENCES` stays off and untouched.** The
+  integration spec explicitly allows packs to be created, inspected, and
+  trialed while the flag is off; the trial does not gate on it.
+- **`IDENTITY_PACK_TRIAL_CORPORA` remains empty.** Runs accept explicit
+  character ids; a named corpus can be registered once the owner builds the
+  corpus characters.

@@ -2,8 +2,9 @@
 
 Status: active (slices 1–4 and 5A — pack-side evaluation — shipped 2026-08-06;
 slice 5B — render-lane consumption — waits on the image-model-capabilities
-shared render intent; slices 6–7 — fixed trial and production close-out —
-remain)
+shared render intent; slice 6 — fixed trial — infrastructure built 2026-08-06,
+but the paid corpus run, threshold calibration, detector decision, and verdict
+remain owner actions; slice 7 — production close-out — remains)
 
 Technical companion: [image-identity-packs.spec.md](image-identity-packs.spec.md)
 
@@ -346,6 +347,27 @@ composition drift, failure rate, provider latency, and effective reference size.
 Promote only strategies that materially improve identity without unacceptable
 regressions. Record the thresholds and policy version used for the verdict.
 
+Built 2026-08-06 — the trial infrastructure, dark. An admin now has a
+Settings → Identity trials page where they can define a run over their own
+characters, chosen model profiles, reference strategies, and a small fixed set
+of checked-in prompts; execute it in small bounded batches that charge the
+normal daily image budget before any provider money is spent; review the
+finished outputs blind, in pairs that differ only in reference strategy,
+grading the review dimensions and catastrophic defects without knowing which
+strategy made which image; see the aggregated results per profile and strategy
+pair; and record the verdict for each. Trial outputs are hidden operational
+images — never in the gallery, never copied or published, viewable only by
+their owner for review — and are deleted with the run. A run that would need a
+face detector, more references than the model accepts, or a blocked pack
+refuses those cells up front with an explanation instead of quietly trimming
+them.
+
+The trial itself has not run. No corpus characters exist yet, no paid renders
+have happened, no thresholds are calibrated, no detector is chosen, and no
+verdict is recorded — those are owner actions on top of this harness.
+Reference sending stays off throughout: the integration rules deliberately
+allow packs to be trialed while it is off.
+
 ### Slice 7 — production close-out
 
 Turn advisory measurements into the reviewed production gate, wire provenance and
@@ -400,7 +422,10 @@ artifacts, and deleted with the character.
   asset the user never sees should consume user-visible quota is an owner
   decision (flagged in PR #57's review and deliberately left unchanged since):
   either subtract the hidden kinds from the quota or record the current behavior
-  as intended. Behavior stays as it is until ruled.
+  as intended. The slice-6 trial outputs (`identity_trial_output`, another
+  hidden kind the user never sees in the gallery) are in the same boat: they
+  count toward quota today and should follow whatever ruling the face crops
+  get. Behavior stays as it is until ruled.
 
 Detector library choice, crop expansion ratios, blur/occlusion thresholds, and
 profile-specific minimum effective face size are implementation/trial decisions

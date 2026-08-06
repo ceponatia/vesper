@@ -16,6 +16,19 @@ import {
   type IdentityPackManualCropRequest,
   type IdentityPackNormalizedCropWire,
   type IdentityPackSummaryWire,
+  imageIdentityPackTrialRefusalCodeSchema,
+  imageIdentityPackTrialReviewPairSchema,
+  imageIdentityPackTrialRunDetailSchema,
+  imageIdentityPackTrialRunSummarySchema,
+  imageIdentityPackTrialSummarySchema,
+  trialCellCountsSchema,
+  trialRunStatusSchema,
+  trialVerdictSchema,
+  type IdentityReferenceStrategy,
+  type ImageIdentityPackTrialCreateRequest,
+  type ImageIdentityPackTrialGradeRequest,
+  type ImageIdentityPackTrialRefusalCode,
+  type TrialVerdictValue,
   imageModelSchema,
   imageModelsForSurface,
   imageReferenceTransports,
@@ -1002,6 +1015,36 @@ export const identityPacksApi = {
     apiPost(identityPackResponseSchema, `/api/characters/${characterId}/identity-pack/reset-automatic`, {}),
 };
 
+/**
+ * The trial refusal behind a 400, when the error's code belongs to the trial
+ * vocabulary (`imageIdentityPackTrialRefusalCodes`). Trial routes answer
+ * refusals in the standard error envelope with the stable code as `error.code`;
+ * this narrows it so the UI can hand the code to its copy map instead of
+ * echoing an identifier. Null for any other failure — surface those verbatim.
+ */
+export function identityPackTrialRefusal(
+  error: ApiError,
+): { code: ImageIdentityPackTrialRefusalCode; message: string } | null {
+  if (error.status !== 400) return null;
+  const code = parseOrNull(imageIdentityPackTrialRefusalCodeSchema, error.code);
+  return code === null ? null : { code, message: error.message };
+}
+
+/** One settled cell from an execute pass; `skipped` means another writer got there first. */
+const trialExecutedCellSchema = z.object({
+  cellId: idSchema,
+  cellKey: z.string(),
+  status: z.enum(["rendered", "failed", "refused", "skipped"]),
+});
+
+const trialExecuteResponseSchema = z.object({
+  executed: arrayOf(trialExecutedCellSchema),
+  remainingPlanned: z.number().int().min(0).catch(0),
+  runStatus: trialRunStatusSchema,
+});
+
+const TRIAL_API_ROOT = "/api/admin/self/identity-packs/trial";
+
 /** Admin-only pack inspection (`/api/admin/self` — 404s for non-admins). */
 export const adminIdentityPacksApi = {
   /** Revision history, newest first. A row that fails the contract is dropped, not fatal. */
@@ -1013,6 +1056,40 @@ export const adminIdentityPacksApi = {
   /** Reviewed override: a non-empty reason is required; omitting `crop` keeps the current coordinates. */
   override: (packId: string, body: IdentityPackAdminOverrideRequest) =>
     apiPost(identityPackResponseSchema, `/api/admin/self/identity-packs/${packId}/override`, body),
+  /**
+   * The fixed identity-reference trial harness
+   * (image-identity-packs.spec.trial.md): plan a run, execute it a few renders
+   * at a time, review blinded pairs, aggregate, record verdicts. Refusals come
+   * back as 400s whose code `identityPackTrialRefusal` recognizes.
+   */
+  trial: {
+    create: (body: ImageIdentityPackTrialCreateRequest) =>
+      apiPost(z.object({ runId: idSchema, counts: trialCellCountsSchema }), TRIAL_API_ROOT, body),
+    list: () => apiGet(listOf(imageIdentityPackTrialRunSummarySchema, "runs"), TRIAL_API_ROOT),
+    detail: (runId: string) => apiGet(imageIdentityPackTrialRunDetailSchema, `${TRIAL_API_ROOT}/${runId}`),
+    execute: (runId: string, maxRenders?: number) =>
+      apiPost(
+        trialExecuteResponseSchema,
+        `${TRIAL_API_ROOT}/${runId}/execute`,
+        maxRenders === undefined ? {} : { maxRenders },
+      ),
+    /** `pair: null` means every reviewable pair has a grade — a state, not an error. */
+    nextPair: (runId: string) =>
+      apiGet(z.object({ pair: imageIdentityPackTrialReviewPairSchema.nullable() }), `${TRIAL_API_ROOT}/${runId}/review`),
+    grade: (runId: string, body: ImageIdentityPackTrialGradeRequest) =>
+      apiPost(z.object({ recorded: z.boolean() }), `${TRIAL_API_ROOT}/${runId}/review`, body),
+    summary: (runId: string) => apiGet(imageIdentityPackTrialSummarySchema, `${TRIAL_API_ROOT}/${runId}/summary`),
+    verdict: (
+      runId: string,
+      body: { profileId: string; identityStrategy: IdentityReferenceStrategy; verdict: TrialVerdictValue; reason: string },
+    ) =>
+      apiPost(
+        z.object({ runStatus: trialRunStatusSchema, verdicts: arrayOf(trialVerdictSchema) }),
+        `${TRIAL_API_ROOT}/${runId}/verdict`,
+        body,
+      ),
+    remove: (runId: string) => apiDelete(`${TRIAL_API_ROOT}/${runId}`),
+  },
 };
 
 // ---------------------------------------------------------------------------
