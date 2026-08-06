@@ -5,7 +5,7 @@ import type { IdentityPackSummaryStatus } from "@/contracts";
 import { identityPacksApi } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { IdentityCropDialog } from "./identity-crop-dialog";
-import { identityPackStatusChip, identityPackStatusHint } from "./identity-pack-copy";
+import { identityPackSummaryChip, identityPackSummaryHint } from "./identity-pack-copy";
 import { Button } from "@/components/ui/button";
 import { Tag } from "@/components/ui/tag";
 
@@ -35,14 +35,18 @@ export function IdentityReferencePanel({ characterId, name, avatarImageId }: Ide
 
   const summary = pack.data?.summary ?? null;
   const status: IdentityPackSummaryStatus = summary?.status ?? "none";
-  const chip = identityPackStatusChip(status);
+  // The wire's `stale` boolean, not a stale STATUS: a retired revision is never the
+  // current one the summary reports, so the flag is the only thing that can tell the
+  // owner their reference no longer describes the portrait on screen.
+  const stale = summary?.stale === true;
+  const chip = identityPackSummaryChip(status, stale);
 
   return (
     <div className="flex flex-col gap-3">
       <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Identity reference</h3>
       <div className="flex flex-wrap items-center gap-3 rounded-card border border-ink-600 bg-ink-950/40 px-3 py-2">
         <Tag tone={chip.tone}>{chip.label}</Tag>
-        <span className="min-w-0 text-xs text-paper-500">{identityPackStatusHint(status)}</span>
+        <span className="min-w-0 text-xs text-paper-500">{identityPackSummaryHint(status, stale)}</span>
         <Button
           size="sm"
           className="ml-auto"

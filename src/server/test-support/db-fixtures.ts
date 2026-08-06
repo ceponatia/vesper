@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { inArray, or } from "drizzle-orm";
 import {
   characterChats,
   characters,
@@ -86,6 +86,10 @@ export async function seedTestUsers(prefix: string, count: number): Promise<Seed
  *      transitively through its character) so it is deleted by a character
  *      subquery, and although `character_id` cascades, the explicit line keeps the
  *      teardown readable as the full list of tables a suite can leave rows in.
+ *      `reviewed_by_user_id` is OR-ed in for the same reason `locationLinks` is
+ *      explicit: that FK has no cascade (an audit trail must not erase itself), so
+ *      a pack an admin suite REVIEWED on another owner's character would survive
+ *      the subquery and then block the `users` delete outright.
  *   4. Library tables (`personas`, `socialCards`, `items`, `locationLinks`,
  *      `locations`). Links are deleted explicitly even though `locations`
  *      cascades them: `location_links.owner_id` is its own column, so a link
@@ -111,9 +115,12 @@ export async function purgeOwnerRows(ownerIds: string[]): Promise<void> {
   await db()
     .delete(imageIdentityPacks)
     .where(
-      inArray(
-        imageIdentityPacks.characterId,
-        db().select({ id: characters.id }).from(characters).where(inArray(characters.ownerId, owners)),
+      or(
+        inArray(
+          imageIdentityPacks.characterId,
+          db().select({ id: characters.id }).from(characters).where(inArray(characters.ownerId, owners)),
+        ),
+        inArray(imageIdentityPacks.reviewedByUserId, owners),
       ),
     );
   await db().delete(characters).where(inArray(characters.ownerId, owners));

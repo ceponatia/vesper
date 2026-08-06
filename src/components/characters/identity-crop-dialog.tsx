@@ -33,7 +33,7 @@ import {
   type IdentitySquareSelection,
 } from "@/lib/images/identity-crop-view";
 import type { SourceDimensions } from "@/lib/images/identity-pack-crop";
-import { identityPackCodeCopy, identityPackStatusChip } from "./identity-pack-copy";
+import { identityPackCodeCopy, identityPackSummaryChip } from "./identity-pack-copy";
 import { IdentityPackInspector } from "./identity-pack-inspector";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
@@ -149,12 +149,32 @@ export function IdentityCropDialog({
   }
 
   const status: IdentityPackSummaryStatus = summary?.status ?? "none";
-  const sourceImageId = summary?.source.imageId ?? avatarImageId;
+  // Staleness is the separate boolean, never a status: a retired revision loses
+  // `current` in the same write that marks it stale, and the summary reads only the
+  // current row — so `status` here is one of none|pending|ready|unusable|failed.
+  const stale = summary?.stale === true;
+  const packSourceImageId = summary?.source.imageId ?? null;
+  // A stale pack's source is no longer canonical, so the editor frames the
+  // character's CURRENT portrait: re-preparing against bytes the renders have
+  // already moved off would only produce another stale crop.
+  const sourceImageId = stale ? (avatarImageId ?? packSourceImageId) : (packSourceImageId ?? avatarImageId);
   const natural = loaded && loaded.imageId === sourceImageId ? { width: loaded.width, height: loaded.height } : null;
+  // The pack's recorded dimensions describe the pack's source; they are the editor's
+  // geometry only while that is what is on screen (a stale pack shows another image).
   const source: SourceDimensions | null =
-    summary?.source.width && summary.source.height
+    packSourceImageId === sourceImageId && summary?.source.width && summary.source.height
       ? { width: summary.source.width, height: summary.source.height }
       : natural;
+
+  // One flaky `/file` response must not brand an image permanently unreadable: the
+  // verdict is dropped whenever the dialog reopens or the source changes, so the
+  // decode below gets a clean attempt. Render-adjusted, never a setState in an effect.
+  const decodeKey = `${open ? "open" : "closed"}|${sourceImageId ?? "none"}`;
+  const [prevDecodeKey, setPrevDecodeKey] = useState(decodeKey);
+  if (decodeKey !== prevDecodeKey) {
+    setPrevDecodeKey(decodeKey);
+    setLoadFailedFor(null);
+  }
 
   // Decode the source once per id so the geometry has real dimensions even before a
   // pack exists (a "none" summary names no source size). setState happens in the
@@ -210,16 +230,29 @@ export function IdentityCropDialog({
     };
   }, []);
 
+  // Every installed summary bumps this, so a re-read can tell that its answer is
+  // now older than what is on screen.
+  const writeSeqRef = useRef(0);
+
   const applySummary = (next: IdentityPackSummaryWire) => {
+    writeSeqRef.current += 1;
     setSummary(next);
     refreshRef.current();
   };
 
   const reread = async (trigger: "manual" | "background") => {
+    // The background re-read must never undo a write: its GET can still be in
+    // flight when a save lands, and installing that older summary would put the
+    // revision the owner just replaced back on screen. The counter is the guard
+    // that holds — a timer's captured `busy` can be a render behind, so that check
+    // only saves the request.
+    if (trigger === "background" && busy !== null) return;
+    const seq = writeSeqRef.current;
     if (trigger === "manual") setBusy("refresh");
     const result = await identityPacksApi.get(characterId);
     if (!activeRef.current) return;
     if (trigger === "manual") setBusy(null);
+    if (trigger === "background" && writeSeqRef.current !== seq) return;
     if (result.ok) applySummary(result.data.summary);
     else if (trigger === "manual") setNotice({ tone: "error", text: result.error.message });
   };
@@ -359,8 +392,12 @@ export function IdentityCropDialog({
     else setNotice({ tone: "error", text: writeErrorCopy(result.error) });
   };
 
-  const chip = identityPackStatusChip(status);
-  const canPrepare = status === "none" || status === "failed" || status === "stale" || status === "unusable";
+  const chip = identityPackSummaryChip(status, stale);
+  // `stale` rather than a `stale` STATUS: the status arm is unreachable from a
+  // summary, and a pack whose portrait moved on is exactly the one that needs the
+  // action offered.
+  const canPrepare = stale || status === "none" || status === "failed" || status === "unusable";
+  const prepareLabel = stale ? "Re-prepare" : status === "none" ? "Prepare reference" : "Try again";
   const sourceUnreadable = loadFailedFor !== null && loadFailedFor === sourceImageId;
   // Codes come off the wire; a code this build has no copy for is DROPPED rather
   // than printed raw — a bare identifier on screen tells the owner nothing.
@@ -394,7 +431,7 @@ export function IdentityCropDialog({
           <Tag tone={chip.tone}>{chip.label}</Tag>
           {summary?.method ? <span>{summary.method} crop</span> : null}
           {summary?.revision !== null && summary?.revision !== undefined ? <span>· revision {summary.revision}</span> : null}
-          {summary?.stale ? <span className="text-accent-300">· the portrait moved on</span> : null}
+          {stale ? <span className="text-accent-300">· the portrait moved on</span> : null}
           {summary && !summary.current && summary.packId ? <span>· not the current revision</span> : null}
           {status === "pending" ? (
             <Button size="sm" variant="quiet" busy={busy === "refresh"} onClick={() => void reread("manual")}>
@@ -524,7 +561,7 @@ export function IdentityCropDialog({
                   disabled={busy !== null || !sourceImageId}
                   onClick={() => void runPackWrite("ensure", () => identityPacksApi.ensure(characterId))}
                 >
-                  {status === "none" ? "Prepare reference" : "Try again"}
+                  {prepareLabel}
                 </Button>
               ) : null}
               {summary?.method === "manual" ? (

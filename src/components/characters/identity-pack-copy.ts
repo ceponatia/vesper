@@ -102,3 +102,27 @@ export function identityPackStatusHint(status: IdentityPackSummaryStatus): strin
       return "Not prepared yet.";
   }
 }
+
+/**
+ * Chip and hint for a SUMMARY, where staleness is a separate boolean rather than
+ * a status.
+ *
+ * A summary only ever reports the CURRENT revision, and every writer that retires
+ * one clears `current` in the same statement that marks it `stale`/`superseded` —
+ * so those two arms above are reachable from a stored row (admin history) but
+ * never from a summary. `summary.stale` is how a summary says the portrait moved
+ * on, and it outranks the row's own status: a crop derived from a portrait the
+ * character no longer has is not "ready" for anything, and a chip that still says
+ * "ready" is the one thing this surface must not tell the owner.
+ */
+export function identityPackSummaryChip(
+  status: IdentityPackSummaryStatus,
+  stale: boolean,
+): { label: string; tone: TagTone } {
+  return identityPackStatusChip(stale ? "stale" : status);
+}
+
+/** The hint for a summary, on the same staleness-outranks-status rule as the chip. */
+export function identityPackSummaryHint(status: IdentityPackSummaryStatus, stale: boolean): string {
+  return identityPackStatusHint(stale ? "stale" : status);
+}
