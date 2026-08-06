@@ -12,6 +12,7 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { resolveGarmentVisibility } from "@/contracts/items/visibility";
 import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { runImagePipeline } from "./assets";
+import { queueIdentityPackPreparation } from "./identity-packs";
 import { monogramSvg } from "./monogram";
 import {
   buildAvatarPrompt,
@@ -77,6 +78,11 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
     }),
     onReady: async (asset) => {
       await db().update(characters).set({ avatarImageId: asset.id }).where(eq(characters.id, input.characterId));
+      // Strictly AFTER the canonical pointer commits, and strictly best-effort:
+      // identity-pack preparation must never fail or delay a valid portrait
+      // (image-identity-packs.spec.lifecycle.md §"Creation after a canonical
+      // portrait"). Returns void, so nothing here can reject.
+      queueIdentityPackPreparation(input.characterId, input.userId);
     },
     onSettled: ({ imageId: id, status, startedMs }) =>
       void logEvent("image.avatar", {

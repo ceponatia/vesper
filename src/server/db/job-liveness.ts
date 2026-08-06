@@ -37,11 +37,6 @@ export const JOB_STALE_MS = 15 * 60_000;
 export type JobType = (typeof jobs.$inferSelect)["type"];
 
 /**
- * Whether a non-stale `queued`/`running` job of `type` exists for `chatId`.
- * Callers use it both as the enqueue dedupe and (for the scene lane) as the
- * client's "still rendering" flag, so the same staleness rule governs both.
- */
-/**
  * Fail every `queued`/`running` row older than {@link JOB_STALE_MS} — the rows whose
  * process is gone. Nothing re-drives this table (a `queued` row is kicked in-process the
  * moment it is inserted, and only that process ever settles it), so a row past the bound
@@ -70,8 +65,41 @@ export async function reclaimOrphanedJobs(now: Date = new Date()): Promise<numbe
   return reclaimed.length;
 }
 
-export async function hasLiveChatJob(type: JobType, chatId: string): Promise<boolean> {
-  const [live] = await db()
+/**
+ * Whether a non-stale `queued`/`running` job of `type` exists for `chatId`.
+ * Callers use it both as the enqueue dedupe and (for the scene lane) as the
+ * client's "still rendering" flag, so the same staleness rule governs both.
+ */
+export function hasLiveChatJob(type: JobType, chatId: string): Promise<boolean> {
+  return hasLiveJobForSubject(type, "chatId", chatId);
+}
+
+/**
+ * The same dedupe keyed on a CHARACTER — identity-pack preparation is queued from
+ * every canonical-portrait write (generate, upload/promote, clone), and a user
+ * clicking through three portraits in a row must not start three derivations of
+ * the same face (image-identity-packs.spec.lifecycle.md §"Creation after a
+ * canonical portrait").
+ *
+ * Same staleness bound, for the same reason: a deploy that kills a derivation
+ * mid-flight must not wedge that character's pack forever.
+ */
+export function hasLiveCharacterJob(type: JobType, characterId: string): Promise<boolean> {
+  return hasLiveJobForSubject(type, "characterId", characterId);
+}
+
+/** The payload id fields a one-live-per-subject dedupe may key on. */
+type LiveJobSubject = "chatId" | "characterId";
+
+/**
+ * The shared query behind both dedupes. The payload key is interpolated with
+ * `sql.raw` because `jsonb ->> $1` is ambiguous to Postgres (the operator is
+ * overloaded on `text` and `integer`, so an untyped bind parameter fails to
+ * resolve); the value can only ever be a member of the closed union above, so
+ * nothing user-supplied reaches the statement text.
+ */
+function hasLiveJobForSubject(type: JobType, subject: LiveJobSubject, id: string): Promise<boolean> {
+  return db()
     .select({ id: jobs.id })
     .from(jobs)
     .where(
@@ -79,9 +107,9 @@ export async function hasLiveChatJob(type: JobType, chatId: string): Promise<boo
         eq(jobs.type, type),
         inArray(jobs.status, ["queued", "running"]),
         gt(jobs.createdAt, new Date(Date.now() - JOB_STALE_MS)),
-        sql`${jobs.payload} ->> 'chatId' = ${chatId}`,
+        sql`${jobs.payload} ->> ${sql.raw(`'${subject}'`)} = ${id}`,
       ),
     )
-    .limit(1);
-  return live !== undefined;
+    .limit(1)
+    .then((rows) => rows.length > 0);
 }

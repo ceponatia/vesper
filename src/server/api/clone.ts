@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { cloneEntityImages } from "@/server/images";
+import { cloneEntityImages, queueIdentityPackPreparation } from "@/server/images";
 import { characters, db, items, locations, socialCards } from "@/server/db";
 import { queueEmbedRefresh } from "./library";
 import { findViewable, type ShareableKind } from "./visibility";
@@ -51,7 +51,14 @@ export async function cloneToLibrary(kind: ShareableKind, srcId: string, userId:
       if (!copy) return { ok: false, code: "not_found" };
       const imageMap = await cloneEntityImages("character", src.id, src.ownerId, copy.id, userId);
       const newAvatar = src.avatarImageId ? imageMap.get(src.avatarImageId) : undefined;
-      if (newAvatar) await db().update(characters).set({ avatarImageId: newAvatar }).where(eq(characters.id, copy.id));
+      if (newAvatar) {
+        await db().update(characters).set({ avatarImageId: newAvatar }).where(eq(characters.id, copy.id));
+        // The copy derives its OWN pack from its own copied portrait: pack rows
+        // and hidden crops never cross an owner boundary, and origin review
+        // actors, overrides and trial status do not transfer
+        // (image-identity-packs.spec.lifecycle.md §"Copy and publish behavior").
+        queueIdentityPackPreparation(copy.id, userId);
+      }
       queueEmbedRefresh("character", copy.id);
       return { ok: true, id: copy.id };
     }
