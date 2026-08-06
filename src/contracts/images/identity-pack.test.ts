@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { parseOr } from "@/lib/parse";
 import { DiagnosticCollector } from "../diagnostics";
 import {
+  identityPackAdminOverrideRequestSchema,
+  identityPackBatchRequestSchema,
+  identityPackManualCropRequestSchema,
+  identityPackSummarySchema,
   identityReferenceProvenanceListSchema,
   identityReferenceProvenanceSchema,
   identityReferenceRoles,
@@ -354,5 +358,160 @@ describe("reference vocabulary", () => {
       "canonical_then_face_detail",
       "face_detail_then_canonical",
     ]);
+  });
+});
+
+/**
+ * The wire contracts the routes and the crop editor exchange. These are trust
+ * boundaries in the literal sense — everything here arrives from a browser — so
+ * the cases below are the ones where accepting the input would do damage rather
+ * than merely be untidy.
+ */
+function manualCropFixture(): Record<string, unknown> {
+  return {
+    packId: "pack_1",
+    revision: 3,
+    sourceContentHash: "a".repeat(64),
+    crop: { space: "normalized", left: 0, top: 0.05, width: 1, height: 0.75 },
+  };
+}
+
+describe("identity pack summary wire", () => {
+  function summaryFixture(): Record<string, unknown> {
+    return {
+      packId: "pack_1",
+      status: "ready",
+      revision: 2,
+      current: true,
+      stale: false,
+      method: "manual",
+      source: { imageId: "img_src", width: 384, height: 512 },
+      crop: { left: 0, top: 0, width: 384, height: 384 },
+      cropImageId: "img_crop",
+      warningCodes: ["heuristic_crop"],
+      failureCode: null,
+      sourceContentHash: "a".repeat(64),
+      updatedAt: "2026-08-05T00:00:00.000Z",
+    };
+  }
+
+  it("carries a prepared pack unchanged", () => {
+    expect(identityPackSummarySchema.parse(summaryFixture())).toMatchObject({ status: "ready", revision: 2 });
+  });
+
+  it("admits the empty state the stored vocabulary has no room for", () => {
+    const parsed = identityPackSummarySchema.safeParse({
+      ...summaryFixture(),
+      packId: null,
+      status: "none",
+      revision: null,
+      current: false,
+      method: null,
+      source: { imageId: "img_src", width: null, height: null },
+      crop: null,
+      cropImageId: null,
+      warningCodes: [],
+      sourceContentHash: null,
+      updatedAt: null,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("exposes pending explicitly rather than folding it into a failure", () => {
+    const parsed = identityPackSummarySchema.safeParse({ ...summaryFixture(), status: "pending" });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects a status outside the vocabulary", () => {
+    expect(identityPackSummarySchema.safeParse({ ...summaryFixture(), status: "almost" }).success).toBe(false);
+  });
+});
+
+describe("manual crop request", () => {
+  it("accepts a normalized rectangle with the concurrency guard", () => {
+    const parsed = identityPackManualCropRequestSchema.safeParse(manualCropFixture());
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects coordinates outside the unit square", () => {
+    // 1.4 of the source is not a rectangle anybody framed; resolving it to
+    // pixels would clamp silently and store a crop the user never saw.
+    for (const crop of [
+      { space: "normalized", left: 1.4, top: 0, width: 0.5, height: 0.5 },
+      { space: "normalized", left: 0, top: -0.1, width: 0.5, height: 0.5 },
+      { space: "normalized", left: 0, top: 0, width: 1.2, height: 0.5 },
+    ]) {
+      expect(identityPackManualCropRequestSchema.safeParse({ ...manualCropFixture(), crop }).success).toBe(false);
+    }
+  });
+
+  it("rejects a zero-area rectangle — a malformed crop, not a small one", () => {
+    const crop = { space: "normalized", left: 0.5, top: 0.5, width: 0, height: 0.4 };
+    expect(identityPackManualCropRequestSchema.safeParse({ ...manualCropFixture(), crop }).success).toBe(false);
+  });
+
+  it("requires the whole guard, so a client cannot save without saying what it opened", () => {
+    for (const missing of ["packId", "revision", "sourceContentHash"]) {
+      const body = manualCropFixture();
+      delete body[missing];
+      expect(identityPackManualCropRequestSchema.safeParse(body).success, missing).toBe(false);
+    }
+  });
+
+  it("keeps the untagged pixel space out — magnitude is not a reliable tell", () => {
+    const crop = { space: "source_pixels", left: 0, top: 0, width: 384, height: 384 };
+    expect(identityPackManualCropRequestSchema.safeParse({ ...manualCropFixture(), crop }).success).toBe(false);
+  });
+});
+
+describe("admin override request", () => {
+  function overrideFixture(): Record<string, unknown> {
+    return { packId: "pack_1", revision: 3, sourceContentHash: "a".repeat(64), reason: "support ticket 41" };
+  }
+
+  it("accepts a reason with no crop — the re-approval case", () => {
+    const parsed = identityPackAdminOverrideRequestSchema.safeParse(overrideFixture());
+    expect(parsed.success).toBe(true);
+  });
+
+  it("refuses an empty or whitespace-only reason", () => {
+    // The override's whole value is the audit row it leaves; a blank reason is
+    // indistinguishable from a mistake six months later.
+    for (const reason of ["", "   ", undefined]) {
+      expect(identityPackAdminOverrideRequestSchema.safeParse({ ...overrideFixture(), reason }).success).toBe(false);
+    }
+  });
+
+  it("validates a submitted crop the same way an owner's is validated", () => {
+    const crop = { space: "normalized", left: 0, top: 0, width: 1.5, height: 0.5 };
+    expect(identityPackAdminOverrideRequestSchema.safeParse({ ...overrideFixture(), crop }).success).toBe(false);
+  });
+});
+
+describe("admin batch request", () => {
+  it("defaults to a dry run when the caller omits the flag", () => {
+    const parsed = identityPackBatchRequestSchema.parse({ characterIds: ["char_1"] });
+    expect(parsed.dryRun).toBe(true);
+  });
+
+  it("requires exactly one selector", () => {
+    // Both would make "which characters did this run against?" unanswerable from
+    // the report; neither would run an empty batch that reports success.
+    expect(identityPackBatchRequestSchema.safeParse({ characterIds: ["char_1"], corpusId: "trial_a" }).success).toBe(
+      false,
+    );
+    expect(identityPackBatchRequestSchema.safeParse({ dryRun: false }).success).toBe(false);
+    expect(identityPackBatchRequestSchema.safeParse({ corpusId: "trial_a", dryRun: false }).success).toBe(true);
+  });
+
+  it("refuses an oversized selection rather than truncating it", () => {
+    const ids = Array.from({ length: 201 }, (_, index) => `char_${index}`);
+    expect(identityPackBatchRequestSchema.safeParse({ characterIds: ids }).success).toBe(false);
+    expect(identityPackBatchRequestSchema.safeParse({ characterIds: ids.slice(0, 200) }).success).toBe(true);
+  });
+
+  it("rejects an empty id list and a fractional concurrency", () => {
+    expect(identityPackBatchRequestSchema.safeParse({ characterIds: [] }).success).toBe(false);
+    expect(identityPackBatchRequestSchema.safeParse({ characterIds: ["char_1"], concurrency: 2.5 }).success).toBe(false);
   });
 });

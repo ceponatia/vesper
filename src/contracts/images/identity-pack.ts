@@ -464,3 +464,176 @@ export type IdentityReferenceProvenance = z.infer<typeof identityReferenceProven
 export const identityReferenceProvenanceListSchema = z
   .array(identityReferenceProvenanceSchema)
   .catch((): IdentityReferenceProvenance[] => []);
+
+/**
+ * A pack's lifecycle position as a STATUS VIEW sees it, which needs one arm the
+ * stored vocabulary cannot have: `"none"`, for a character that has no revision
+ * at all. That is an ordinary state (nobody has asked yet), not a failure, and
+ * folding it into `unusable` would tell an owner their portrait was rejected
+ * when nothing has looked at it.
+ */
+export const identityPackSummaryStatuses = [...imageIdentityPackStatuses, "none"] as const;
+export const identityPackSummaryStatusSchema = z.enum(identityPackSummaryStatuses);
+export type IdentityPackSummaryStatus = (typeof identityPackSummaryStatuses)[number];
+
+/**
+ * The owner-safe pack view behind `GET /api/characters/:id/identity-pack`
+ * (spec.lifecycle.md §"User routes").
+ *
+ * Ids, geometry, and stable codes only — no bytes, no URLs, and no detector
+ * internals the crop editor does not need (spec.lifecycle.md §"Privacy
+ * boundary"). The hidden crop is named by id so it can be fetched through the
+ * authorized image route; nothing here is a URL that could be pasted elsewhere.
+ *
+ * `pending` reaches the client explicitly rather than being flattened into "not
+ * ready": derivation reserved by another process is a real state, and a view
+ * that cannot say so leaves an owner staring at a spinner with no answer
+ * (spec.derivation.md §"`ensureIdentityPack`").
+ *
+ * `crop`, `source`, and `sourceContentHash` always describe the SAME bytes: the
+ * editor frames a rectangle against the source it was told about and sends that
+ * hash back, so a source that moved underneath it is a conflict rather than a
+ * crop applied to a portrait the user never saw.
+ */
+export const identityPackSummarySchema = z.object({
+  /** Null with `status: "none"`; otherwise the current revision's row id, which a write echoes back as its concurrency guard. */
+  packId: z.string().min(1).nullable(),
+  status: identityPackSummaryStatusSchema,
+  revision: z.number().int().min(1).nullable(),
+  current: z.boolean(),
+  /** The revision no longer describes the character's canonical source; re-prepare before cropping. */
+  stale: z.boolean(),
+  method: imageIdentityCropMethodSchema.nullable(),
+  source: z.object({
+    imageId: z.string().min(1).nullable(),
+    width: z.number().int().min(1).nullable(),
+    height: z.number().int().min(1).nullable(),
+  }),
+  crop: sourcePixelCropSchema.nullable(),
+  cropImageId: z.string().min(1).nullable(),
+  warningCodes: z.array(imageIdentityPackWarningCodeSchema),
+  failureCode: imageIdentityPackFailureCodeSchema.nullable(),
+  sourceContentHash: z.string().min(1).nullable(),
+  updatedAt: z.string().min(1).nullable(),
+});
+export type IdentityPackSummaryWire = z.infer<typeof identityPackSummarySchema>;
+
+/**
+ * A rectangle as the crop editor draws it: fractions of the source, never
+ * pixels. The `space` tag is not decoration — `{ left: 0.25 }` and
+ * `{ left: 25 }` are both legal rectangles in their own space, and inferring
+ * which one a client meant from the magnitude of its numbers would be a coin
+ * flip that silently crops the wrong part of somebody's face. The server
+ * resolves these to integer source pixels and persists THOSE.
+ *
+ * The sides are strictly positive: a zero-area rectangle is a malformed crop,
+ * the same rule `sourcePixelCropSchema` applies one space down.
+ */
+export const identityPackNormalizedCropSchema = z.object({
+  space: z.literal("normalized"),
+  left: z.number().min(0).max(1),
+  top: z.number().min(0).max(1),
+  width: z.number().gt(0).max(1),
+  height: z.number().gt(0).max(1),
+});
+export type IdentityPackNormalizedCropWire = z.infer<typeof identityPackNormalizedCropSchema>;
+
+/**
+ * A character owner's crop save (spec.derivation.md §"Manual crop revisions").
+ *
+ * `packId`, `revision`, and `sourceContentHash` are the editor's concurrency
+ * guard, NEVER its authorization: the route re-authorizes from the character in
+ * the URL, and these three only answer "is this still the thing I opened?". A
+ * mismatch is a reload, not a save.
+ */
+export const identityPackManualCropRequestSchema = z.object({
+  packId: z.string().min(1),
+  revision: z.number().int().min(1),
+  sourceContentHash: z.string().min(1),
+  crop: identityPackNormalizedCropSchema,
+  /** Optional note recorded on the revision. An owner correction needs no justification; an admin override does. */
+  reason: z.string().trim().max(500).optional(),
+});
+export type IdentityPackManualCropRequest = z.infer<typeof identityPackManualCropRequestSchema>;
+
+/**
+ * One revision as the admin history surface reports it
+ * (spec.lifecycle.md §"Admin routes").
+ *
+ * Deliberately ids, versions, geometry, codes and review actors — the evidence
+ * chain behind "why does this character's face look like that" — and deliberately
+ * no image bytes and no URLs, which is the privacy boundary a bulk admin payload
+ * is most likely to breach.
+ */
+export const identityPackAdminRevisionSchema = z.object({
+  revision: z.number().int().min(1),
+  status: imageIdentityPackStatusSchema,
+  current: z.boolean(),
+  method: imageIdentityCropMethodSchema.nullable(),
+  derivationVersion: z.string().min(1),
+  policyVersion: z.string().min(1),
+  detectorVersion: z.string().min(1).nullable(),
+  confidence: z.number().nullable(),
+  warningCodes: z.array(imageIdentityPackWarningCodeSchema),
+  failureCode: imageIdentityPackFailureCodeSchema.nullable(),
+  failureMessage: z.string().nullable(),
+  crop: sourcePixelCropSchema.nullable(),
+  cropImageId: z.string().min(1).nullable(),
+  sourceImageId: z.string().min(1).nullable(),
+  sourceContentHash: z.string().min(1),
+  reviewedByUserId: z.string().min(1).nullable(),
+  reviewReason: z.string().nullable(),
+  reviewedAt: z.string().min(1).nullable(),
+  createdAt: z.string().min(1),
+});
+export type IdentityPackAdminRevision = z.infer<typeof identityPackAdminRevisionSchema>;
+
+/**
+ * A recorded admin override (spec.lifecycle.md §"Admin routes").
+ *
+ * The reason is required and non-empty because the override's whole value is the
+ * audit row it leaves: a waived threshold with no stated reason is
+ * indistinguishable from a mistake six months later.
+ *
+ * An absent `crop` means "re-approve the coordinates already on the current
+ * revision" — the support case where the framing is right and only a reviewed
+ * quality threshold is in the way. It never means "any crop will do": ownership,
+ * missing bytes, geometry, and a stale hash stay hard checks whoever asks.
+ */
+export const identityPackAdminOverrideRequestSchema = z.object({
+  packId: z.string().min(1),
+  revision: z.number().int().min(1),
+  sourceContentHash: z.string().min(1),
+  reason: z.string().trim().min(1).max(500),
+  crop: identityPackNormalizedCropSchema.optional(),
+});
+export type IdentityPackAdminOverrideRequest = z.infer<typeof identityPackAdminOverrideRequestSchema>;
+
+/**
+ * A bounded admin preparation batch (spec.lifecycle.md §"Lazy backfill").
+ *
+ * Exactly one selector: explicit ids or a checked-in trial corpus. Accepting
+ * both would make "which characters did this actually run against?" a question
+ * the report could not answer, and accepting neither would run an empty batch
+ * that reports success. `dryRun` defaults to TRUE — the safe answer for an
+ * omitted field on a surface whose other mode does real work over up to 200
+ * characters.
+ *
+ * `concurrency` is bounded here only to reject absurd input; the service clamps
+ * it to its own reviewed ceiling, because parallelism is a fact about the
+ * machine serving renders rather than about the request.
+ */
+export const identityPackBatchRequestSchema = z
+  .object({
+    characterIds: z.array(z.string().min(1)).min(1).max(200).optional(),
+    corpusId: z.string().trim().min(1).max(120).optional(),
+    dryRun: z.boolean().default(true),
+    /** Re-derive even a current ready pack, for a derivation change under the same version. */
+    regenerate: z.boolean().optional(),
+    concurrency: z.number().int().min(1).max(16).optional(),
+  })
+  .refine((value) => (value.characterIds === undefined) !== (value.corpusId === undefined), {
+    message: "supply exactly one of characterIds or corpusId",
+    path: ["characterIds"],
+  });
+export type IdentityPackBatchRequest = z.infer<typeof identityPackBatchRequestSchema>;
