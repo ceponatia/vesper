@@ -2,98 +2,99 @@
 
 **Slug:** `stability-ai/stable-diffusion-3.5-large`
 **Probed:** 2026-08-05, version `2fdf9488b53c1e0fd3aef7b477def1c00d1856a38466733711f9c769942598f5`
+**Quality ruling:** no transitional runtime override
 
 > A text-to-image model that generates high-resolution images with fine details.
-> It supports various artistic styles and produces diverse outputs from the same
-> prompt, thanks to Query-Key Normalization.
+> It supports varied artistic styles and diverse outputs.
 
-Offered in the **portrait studio only**. It is the awkward member of the set:
-two of its properties disagree with assumptions the rest of the app makes.
+Offered in the portrait studio only. Two provider details differ from the common
+path: it has no 3:4 enum value, and it returns one URI string rather than an array.
+The shared adapter handles both.
 
-## Two things that make this model special-cased
+## Shape fallback
 
-**It cannot produce 3:4.** Its `aspect_ratio` enum is `16:9 1:1 21:9 2:3 3:2 4:5
-5:4 9:16 9:21` — no `3:4`. Owner ruling 2026-08-05: render at **`4:5`** and
-centre-crop to 3:4. `4:5` is 0.80 against the target 0.75, losing about 6.25% of
-the width; the alternative `2:3` is 0.667 and would lose about 11.1% of the
-height. This is the only model in the set that needs the crop path.
+Its `aspect_ratio` enum is `16:9`, `1:1`, `21:9`, `2:3`, `3:2`, `4:5`, `5:4`,
+`9:16`, `9:21` — no `3:4`.
 
-**It returns a bare string, not an array.** Every other model's output schema is
-an array of URIs; this one is `{"type": "string", "format": "uri"}`. The shared
-`outputUrl` helper already accepts both shapes, so nothing special is needed —
-but a future refactor that assumes arrays would break here first.
+Owner ruling 2026-08-05: request `4:5` and centre-crop to 3:4. `4:5` is closer to
+the target than `2:3` and loses a smaller fraction of the frame. The generic
+`chooseAspect` logic owns this; the model adapter has no SD-specific branch.
+
+Other free-dimension models may also pass through post-crop after reviewed native
+sizes are applied, so this is no longer described as the only model that uses the
+crop path.
+
+## Output shape
+
+The output schema is `{"type": "string", "format": "uri"}` rather than an
+array. The shared `outputUrl` helper accepts both forms.
 
 ## Not an identity-preserving editor
 
-Its `image` input is classic strength-based image-to-image: a single URI plus
-`prompt_strength`, defaulting to `0.85`, documented as *"1.0 corresponds to full
-destruction of information"*. At that strength the subject is substantially
-repainted. This is exactly the failure mode behind the owner ruling of
-2026-07-29 that kept text-to-image style swaps out of the scene picker — they
-"painted a different-looking person". So while the model is technically
-edit-capable, it is **not** enabled for the scene generator or New Variant.
+Its optional `image` input is classic strength-based image-to-image with
+`prompt_strength`, provider-default `0.85`. The provider describes `1.0` as full
+destruction of source information. At the default, a person may be substantially
+repainted.
 
-The schema also notes `aspect_ratio` *"is ignored if you are using an input
-image"*, which means the crop path is the only way to control shape when a
-reference is supplied.
+It therefore remains unavailable for normal variants, chat-look, and scenes even
+though the schema makes it technically edit-capable.
+
+The provider also ignores `aspect_ratio` when an input image is supplied, so a
+future deliberate remix path must normalize after generation.
 
 ## Capabilities
 
-- **Generate without a reference:** yes. Required input is `prompt` only.
-- **Edit from a reference:** technically yes, image-to-image only.
-- **Reference field:** `image` — a single URI string.
+- **Generate without a reference:** yes.
+- **Edit from a reference:** technically yes, conventional img2img only.
+- **Reference field:** `image`, one URI.
 - **Reference cap:** 1.
-- **Aspect handling:** crop. Send `aspect_ratio: "4:5"`, centre-crop to 3:4.
-- **Output:** a single URI **string**. WebP available.
+- **Aspect handling:** request `4:5`, crop to 3:4 for portrait output.
+- **Output:** one URI string; WebP available.
 
 ## Reviewed capability
 
-Reviewed by hand, never probed, and never overwritten by a re-probe:
-
-- **Edit kind:** `img2img`. `image` + `prompt_strength` is strength-based
-  repainting, as described above.
-- **Identity preservation:** `weak` — the "painted a different-looking person"
-  failure mode behind the 2026-07-29 owner ruling.
+- **Edit kind:** `img2img`;
+- **Identity preservation:** `weak`;
 - **Operator warning:** none.
 
-Because the row is portrait-only, the `weak` rating costs nothing today. What the
-ratings add is a written rule where there was only an observation: a `weak`/`img2img`
-model is refused for the identity-critical tasks (`variant`, `scene`, `chat_look`),
-so a scene or variant profile cannot be added to this row without changing the
-ratings first. Until the profile layer has a caller, the `for_scene`/`for_variant`
-toggles are still what actually keeps it out of the scene generator and New Variant.
+The semantic rating makes identity-critical profiles ineligible even if a surface
+toggle is changed later.
 
-## Seeded profiles
+## Seeded profile
 
-One:
+- `portrait-standard` — `generate`, `text_to_image_description`, no references,
+  empty controls, not the global default.
 
-- `portrait-standard` (Portrait Standard) — task `portrait`, `generate`,
-  `text_to_image_description`, no references, empty control defaults, no timeout
-  override. **Not** a global default (Qwen Image 2512 holds that).
+Nothing calls the profile layer yet.
 
-No scene, variant or chat-look profile is seeded, per the plan. **Nothing calls the
-profile layer yet** — the curated CFG/negative-prompt/seed portrait profiles the
-plan describes are later work.
+## Negative-prompt ruling
+
+The transitional render policy adds no `negative_prompt` field. Even on a
+portrait surface, a generic cleanup block can conflict with requested printed
+clothing, logos, blur, pixel-art media, unusual anatomy, or authored absences.
+
+A future portrait profile may compose negative terms from style, visible anatomy,
+subject count, and positive prompt segments. Until that context reaches the
+render seam, Stable Diffusion 3.5 Large remains byte-identical there.
 
 ## Inputs
 
-- `prompt` — string. **Required.**
-- `image` — string, URI. Optional. Image-to-image source.
+- `prompt` — string, required.
+- `image` — optional URI string.
 - `prompt_strength` — number, default `0.85`, range 0–1.
-- `aspect_ratio` — enum, default `"1:1"`. Values: `16:9`, `1:1`, `21:9`, `2:3`,
-  `3:2`, `4:5`, `5:4`, `9:16`, `9:21`.
-- `cfg` — number, default `5`, range 1–10. Guidance scale.
+- `aspect_ratio` — enum, provider-default `1:1`; no 3:4.
+- `cfg` — number, default `5`, range 1–10.
 - `negative_prompt` — string.
-- `output_format` — enum, default `"webp"`. Values: `webp`, `jpg`, `png`.
+- `output_format` — enum, default `webp`.
 - `seed` — integer.
 
-There is **no `disable_safety_checker`** and no `output_quality`.
+There is no `disable_safety_checker` and no `output_quality` field.
 
 ## Output
 
-`{"type": "string", "format": "uri"}` — a single URL, not a list.
+`{"type": "string", "format": "uri"}`.
 
-## Vesper payload
+## Effective Vesper payload
 
 ```json
 {
@@ -103,4 +104,5 @@ There is **no `disable_safety_checker`** and no `output_quality`.
 }
 ```
 
-The returned 4:5 image is centre-cropped to 3:4 after download.
+The returned 4:5 image is centre-cropped to 3:4 after download. No
+`negative_prompt` key is added by `quality-presets.ts`.

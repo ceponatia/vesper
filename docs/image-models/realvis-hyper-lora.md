@@ -3,108 +3,138 @@
 **Slug:** `nsfw-api/realvis-hyper-lora`
 **Registered as:** `nsfw-api/realvis-hyper-lora:9b1951176565c8f810f28ed140787a81c8f49b49e2d40d0a135d9491b95782bd`
 **Probed:** 2026-08-05, version `9b1951176565c8f810f28ed140787a81c8f49b49e2d40d0a135d9491b95782bd`
+**Quality ruling:** experimental identity-specialist candidate
 
-The model page carries no description. From its schema it is a **HyperLoRA +
-InstantID identity pipeline** over a RealVisXL checkpoint: a face reference plus
-a prompt, with two separate weights controlling how hard the identity is pushed.
-Run on Replicate's own GPUs.
+The model page carries no descriptive README. Its schema exposes a HyperLoRA +
+InstantID pipeline over a RealVisXL checkpoint: a face reference plus a prompt,
+with separate identity weights.
 
-Two things make it unusual in this set: its reference field is named
-`reference_image` (every other model uses `image`, `image_input`, or `images`),
-and its default width/height are already exactly Vesper's 3:4.
+That makes it useful as a face-repair comparison arm, not a proven production
+winner. It has no pose/control image field, so a full-frame re-render may improve
+a face while changing body, clothing, camera, lighting, or setting.
+
+Its reference field is named `reference_image`, unlike the registry's usual
+`image`, `image_input`, or `images` names. Its provider defaults are 768×1024,
+exactly Vesper's 3:4 target.
 
 ## Community model — pinned by version
 
-`is_official` is false for this model, so Replicate's bare-slug predictions
-endpoint 404s on it. Its registry row is pinned to the version above and runs
-through `POST /predictions`, which is the only endpoint that will take it. The
-trade is that the row no longer follows new releases: re-add it to move to a
-newer version.
+`is_official` is false. The row is pinned to the version above and runs through
+Replicate's versioned predictions endpoint. A new version requires a new probe,
+semantic review, fixed-matrix trial, and license/terms review.
 
 ## Capabilities
 
-- **Generate without a reference:** **no.** `prompt` *and* `reference_image` are
-  both required, so it never serves the new-portrait surface.
-- **Edit from a reference:** yes, identity-preserving by construction.
-- **Reference field:** `reference_image` — a single URI, *"Reference image
-  containing the face/identity you want to preserve in the generation."*
+- **Generate without a reference:** no; `prompt` and `reference_image` are
+  required.
+- **Identity-guided render:** yes, through HyperLoRA/InstantID weights.
+- **Reference field:** `reference_image`, one URI containing the identity face.
 - **Reference cap:** 1.
-- **Aspect handling:** none in the registry's terms — `width`/`height` integers,
-  defaulting to `768`×`1024`.
+- **Aspect handling:** free `width`/`height` integers.
 - **Output:** array of URIs.
 
-## The reference field name is the odd one
+## Reference-field probing
 
-The capability probe searches `image`, `image_input`, `images` in that fixed
-order and then falls back to *any* URI-typed property, which is how
-`reference_image` is found. Worth knowing when reading a stored row: this is the
-one model where `reference_field` is not one of the three usual names, and it is
-the fallback branch — not the priority list — that resolved it.
+The capability probe checks the common image names first and then falls back to
+any URI-typed input. `reference_image` is found by that fallback. The stored
+field name is therefore essential; a hardcoded generic `image` key would fail.
 
-## Its defaults are already 3:4
+## Explicit native dimensions
 
-`width` 768 × `height` 1024 is exactly 0.75, Vesper's target ratio. So even
-though no shape key is sent (the registry has no width/height aspect mode yet),
-the model renders at the right shape and `cropToTargetAspect` returns the buffer
-untouched — it only crops when the ratio is actually off.
+The provider defaults to 768×1024, but relying on a remote default would let a
+future wrapper update change Vesper's shape silently.
 
-That is luck rather than design: any future default change on the model's side
-would start costing a crop silently. When the registry learns width/height, this
-row should pin them explicitly.
+`src/server/images/quality-presets.ts` sends:
 
-## No safety checker input, and none needed
+```json
+{
+  "width": 768,
+  "height": 1024
+}
+```
 
-There is **no `disable_safety_checker`** — and unlike
-[Wan 2.7](wan-2-7-image-pro.md) or [Seedream 5 Lite](seedream-5-lite.md), that
-absence is not a vendor gate. Those two proxy an external API that moderates
-server-side; this one runs open weights on Replicate with no checker in the
-wrapper to begin with, so there is nothing to disable.
+The generic registry still has no free width/height aspect mode. The values ride
+through the reviewed runtime policy, and `cropToTargetAspect` verifies the output
+ratio. At 768×1024 the buffer returns unchanged.
 
-## Identity weights
+## Identity/detail controls
 
-- `hyperlora_weight` — default `0.5`, range 0–1. *"Weight of the HyperLoRA
-  identity effect."*
-- `instantid_weight` — default `0.5`, range 0–1. *"Weight of the InstantID
-  effect."*
-- `facedetail_strength` — default `0.35`, range 0–1.
+- `hyperlora_weight` — default 0.5, range 0–1;
+- `instantid_weight` — default 0.5, range 0–1;
+- `facedetail_strength` — default 0.35, range 0–1.
 
-Both identity weights sit at half strength by default. If early renders drift off
-the character's face, these are the knobs — the first per-model schema this row
-will want.
+Raising identity weights may improve likeness but increase prompt/composition
+tradeoffs. The first trial holds defaults and tests reference quality/prompt
+behavior before tuning these values one at a time.
+
+## Negative prompt policy
+
+The wrapper has a long generic quality/anatomy/style default. Omitting the field
+would silently activate that boilerplate even though the shared render seam does
+not know intended style, text, blur, morphology, or authored absences.
+
+Vesper therefore sends:
+
+```json
+{
+  "negative_prompt": ""
+}
+```
+
+`buildRegistryModelInput` preserves the empty string, so this neutralizes the
+remote default. A later identity-repair profile may compose conflict-checked
+terms from the actual visual intent and compare them against the empty baseline.
+
+## Safety input
+
+There is no `disable_safety_checker`. Unlike vendor-proxied models, this wrapper
+publishes no safety toggle for Vesper to map.
 
 ## Inputs
 
-- `prompt` — string. **Required.**
-- `reference_image` — URI string. **Required.**
-- `negative_prompt` — string, with a long quality-boilerplate default
-  (`"lowres, bad anatomy, bad hands, text, error, …"`).
-- `width` — integer, default `768`, range 64–1536.
-- `height` — integer, default `1024`, range 64–1536.
-- `steps` — integer, default `30`, range 1–150.
-- `cfg` — number, default `7`, range 1–20.
-- `sampler_name` — enum, default `"dpmpp_2m"`. Values: `euler`,
-  `euler_ancestral`, `heun`, `dpmpp_2s_ancestral`, `dpmpp_2m`, `dpmpp_2m_sde`,
-  `dpmpp_sde`, `uni_pc`.
-- `scheduler` — enum, default `"karras"`. Values: `normal`, `karras`.
-- `seed` — integer, default `0` (*"0 = random"*).
-- `hyperlora_weight` / `instantid_weight` / `facedetail_strength` — see above.
+- `prompt` — string, required.
+- `reference_image` — URI string, required.
+- `negative_prompt` — string with a long provider default; Vesper clears it.
+- `width` — integer, default 768, range 64–1536.
+- `height` — integer, default 1024, range 64–1536.
+- `steps` — integer, default 30, range 1–150.
+- `cfg` — number, default 7, range 1–20.
+- `sampler_name` — enum, default `dpmpp_2m`; includes Euler, Heun, and DPM++
+  variants.
+- `scheduler` — enum, default `karras`.
+- `seed` — integer, provider-default 0 meaning random.
+- `hyperlora_weight`, `instantid_weight`, `facedetail_strength` — identity/detail
+  controls above.
 
-There is **no `output_format`**, no `num_outputs`, and no safety input.
+There is no `output_format`, `num_outputs`, pose input, or safety input.
 
 ## Output
 
-`{"type": "array", "items": {"type": "string", "format": "uri"}}` — take the
-first entry.
+`{"type": "array", "items": {"type": "string", "format": "uri"}}` — Vesper
+takes the first result and normalizes it to WebP on write.
 
-## Vesper payload
+## Effective current Vesper payload
 
 ```json
 {
   "prompt": "<built prompt>",
-  "reference_image": "<single url>"
+  "negative_prompt": "",
+  "reference_image": "<single identity url>",
+  "width": 768,
+  "height": 1024
 }
 ```
 
-The leanest payload in the set: nothing in this model's schema matches the
-constants `deriveExtraInput` pins, so the row's `extra_input` is empty. Output is
-converted to WebP on write like everything else.
+These reviewed additions are applied at `renderWithModel` until task profiles own
+them.
+
+## Trial and production gate
+
+RealVis is an admin comparison arm for single-character face repair. The trial
+must grade identity improvement and full-frame drift against Qwen and Pony. It
+should not be promoted merely because the face looks closer if pose, body,
+wardrobe, setting, or lighting change.
+
+The model also requires a recorded review of its checkpoint/wrapper license and
+intended hosted product use before becoming a production default or paid feature
+path.

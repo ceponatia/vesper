@@ -1,280 +1,763 @@
 # Image render quality — technical spec
 
 Plan: [image-render-quality.plan.md](image-render-quality.plan.md)
-Machinery this rides on: [image-model-capabilities.spec.md](image-model-capabilities.spec.md)
-(profiles, control mapping, prompt fitting, multi-output). Provider facts per
-model: [docs/image-models/](../image-models/).
 
-This spec holds the content and tuning detail: dialect definitions, the
-negative-prompt banks, per-model settings, the face-fidelity changes, and the
-trial protocol. Contracts that already exist in the capabilities spec are
-referenced, not restated.
+Machinery this rides on:
+[image-model-capabilities.spec.md](image-model-capabilities.spec.md) (profiles,
+control mapping, role-aware references, prompt fitting, seeds, and multi-output).
+Provider schemas and reviewed notes:
+[docs/image-models/](../image-models/).
 
-## Current state (2026-08-05, for orientation)
+This spec defines the content and quality layer: transitional reviewed settings,
+prompt-dialect behavior, negative composition, identity-pack contracts, repair
+rules, provenance, and the trial protocol. It does not duplicate the capabilities
+spec's provider-neutral request and profile schemas.
 
-- Every lane builds one prose prompt (`src/server/images/prompts.ts`) and hands
-  it verbatim to `renderWithModel` → `runRegistryImageModel`. No per-model
-  shaping exists anywhere.
-- `buildRegistryModelInput` merges the row's `extraInput` into the payload
-  last, so a static `negative_prompt` seeded into `extraInput` **ships today
-  with zero code changes** — that is slice 1's whole mechanism.
-- The edit-path prompt budget is 1,500 chars; text-to-image is unbounded.
-- Negative-prompt support across the registry:
-  - has `negative_prompt`: Qwen Image 2512, SD 3.5 Large, Juggernaut XL v9,
-    Pony Realism v2.3, RealVis Hyper LoRA;
-  - lacks it: Qwen Image Edit 2511, FLUX dev, Seedream 4.5, Seedream 5 Lite,
-    Wan 2.7. For these, positive phrasing and sampler settings are the only
-    levers.
+## Current implementation after the first hardening slice
 
-## Prompt dialects (slice 2)
+Every image lane still builds its existing prompt and resolves an `ImageModel`.
+All lanes then cross:
 
-### The dialect axis
-
-Add `promptDialect` to the `image_models` row (and schema in
-`contracts/images/image-models.ts`):
-
-```ts
-export const imagePromptDialects = ["prose", "sdxl_tag", "pony_tag"] as const;
+```text
+renderWithModel
+  -> withReviewedImageQuality
+  -> preparePromptForImageModel
+  -> chooseAspect
+  -> runRegistryImageModel
+  -> cropToTargetAspect when needed
 ```
 
-Default `prose`. Seeded values: `sdxl_tag` for `lucataco/juggernaut-xl-v9` and
-`nsfw-api/realvis-hyper-lora`; `pony_tag` for `nsfw-api/pony-realism-v2.3`;
-`prose` for everything else (both Qwens, FLUX, both Seedreams, Wan, SD 3.5 —
-SD 3.5's T5 encoder reads prose fine and its CLIP branch degrades gracefully).
+The two new functions live in
+`src/server/images/quality-presets.ts`. This is intentionally the narrowest seam
+that improves every current lane without wiring the dormant profile rows halfway.
 
-This is orthogonal to the capabilities spec's `promptStrategy` (which encodes
-the *task shape*: description vs. edit instruction vs. multi-reference
-compose). Strategy picks the segments; dialect renders them. A profile
-resolves both; before profiles exist, dialect resolves from the model row
-alone.
+### Why the policy is runtime rather than a data migration
 
-### Compilation
+A migration that writes `image_models.extra_input` would be fragile:
 
-The compilers are pure functions in `src/server/images/prompt-dialects.ts`
-(or folded into `prompts.ts` if small), consuming the segment structure the
-capabilities spec already defines for prompt fitting (mandatory instruction →
-identity/age anchors → scene facts → wardrobe/exposure → location/lighting →
-style/quality → atmosphere).
+- re-probing a model replaces `extraInput` with values derived from its provider
+  schema;
+- provider defaults are not necessarily Vesper's reviewed quality defaults;
+- community models may be added through the admin UI after the migration;
+- the profile system that should eventually own these controls is not yet called
+  by the render path.
 
-**`prose`** — identity: exactly today's output. Golden tests pin this.
+The runtime policy matches exact reviewed provider slugs, strips a community
+model's `:version` suffix for matching, and overlays its settings after the row's
+`extraInput`. An unknown/admin-added model remains unchanged and never receives a
+guessed field.
 
-**`sdxl_tag`** —
+This overlay is transitional. When shared render intent and common controls reach
+`renderWithModel`, the effective values move to task profiles and the exact-slug
+map is deleted. Until then, diagnostics and future provenance must report the
+**resolved payload values**, not assume the database row is the effective run.
 
-- Token budget: assume a hard 75-token CLIP window and no chunking (diffusers
-  cogs truncate; nothing in these models' READMEs claims otherwise). Budget
-  ~270 characters as the 75-token proxy, validated once against a real
-  tokenizer count in tests. **No emphasis syntax** — `(word:1.2)` weighting is
-  an A1111/Comfy front-end feature; a diffusers cog reads it as literal
-  parentheses. Plain comma-separated tags only.
-- Ordering: quality lead → subject phrase → identity-critical features → pose /
-  action → wardrobe (compressed) → setting fragment → lighting. The tail is
-  the first thing truncation eats, so nothing load-bearing goes after
-  wardrobe.
-- Quality lead (realistic style): `photo, photorealistic, raw photo, detailed
-  skin`. Stylized style swaps in `illustration, painterly, clean lineart`.
-- Compression rules: attribute values keep their value words and drop bucket
-  nouns ("Bust:" etc.); wardrobe compresses to garment names + dominant
-  colour/material, dropping parenthetical appearance notes; setting compresses
-  to a ≤6-word fragment; mood folds into lighting or drops.
+## Transitional reviewed settings
 
-**`pony_tag`** — `sdxl_tag` plus the Pony-lineage conventions, stated as
-starting hypotheses to be trialed, not gospel:
+`withReviewedImageQuality(model)` returns the original model object when no
+reviewed policy exists. For a reviewed slug it returns a shallow copy:
 
-- Prepend score tags: `score_9, score_8_up, score_7_up`.
-- Add a source/rating steer: `source_photo, realistic` for Vesper's realistic
-  renders; on the uncensored route optionally `rating_explicit`, on the plain
-  route `rating_safe`. Whether the rating tags help or hurt this particular
-  merge is a trial question — Pony Realism is a realism merge and may respond
-  more to `realistic` than to rating tags.
-- Score tags cost ~10 tokens of the 75; the budget math must include them.
+```ts
+{
+  ...model,
+  extraInput: {
+    ...model.extraInput,
+    ...reviewedOverrides,
+  },
+}
+```
 
-### Where dialects apply
+The original record is never mutated.
 
-All lanes that reach `renderWithModel` resolve the dialect from the model they
-resolved: avatar generation, portrait variants, scene renders, entity lanes,
-chat-look/chat-place. In practice today's tag-dialect models are
-portrait/variant/edit surfaces only; the scene multi-reference path stays
-prose because no tag-dialect model is scene-eligible (`forScene` off for all
-three).
+### No universal negative block
 
-## Negative-prompt banks (slices 1 → 2+)
+The shared render seam does not know:
 
-### Blocks
+- task or surface;
+- whether text, logos, signatures, blur, or pixel-art resolution are intentional;
+- expected subject count;
+- intended morphology, authored absences, prosthetics, or species appendages;
+- which body parts are visible;
+- realistic versus stylized media.
 
-Composable named blocks, stored in code (`prompt-dialects.ts` or a sibling),
-composed per model × task × style:
+It therefore adds no negative content. Every plausible generic term can conflict
+with a legitimate Vesper render. A storefront may require text; a garment may
+carry a logo; motion blur may be intentional; a missing digit may be canonical;
+a non-human character may correctly have additional limbs.
 
-- **anatomy** (always, all negative-capable models):
-  `deformed, distorted, disfigured, bad anatomy, wrong anatomy, malformed
-  limbs, extra limbs, missing limbs, floating limbs, disconnected limbs, extra
-  arms, extra legs, extra fingers, missing fingers, fused fingers, too many
-  fingers, mutated hands, poorly drawn hands, poorly drawn face, mutation,
-  long neck, cloned face, cross-eyed`
-- **photoreal** (realistic style only):
-  `cgi, 3d render, airbrushed, plastic skin, waxy skin, doll, anime, cartoon,
-  illustration, painting, sketch` — must NOT be sent for the stylized avatar
-  style, which *wants* illustration.
-- **production** (always):
-  `text, watermark, signature, logo, username, jpeg artifacts, lowres, blurry,
-  out of frame, cropped head`
-- **single-subject** (portrait/variant tasks only):
-  `multiple people, two people, duplicate, twins, second face` — must NOT be
-  sent on multi-character scene renders.
-- **pony-negative** (pony_tag models, alongside the blocks above):
-  `score_1, score_2, score_3` (the lineage's low-quality tags).
+For a reviewed model whose provider default is already empty, the transitional
+policy leaves the row untouched. For a reviewed wrapper with a non-empty default
+that can contradict Vesper's authored state, the policy explicitly sends
+`negative_prompt: ""`. `buildRegistryModelInput` preserves empty-string
+`extraInput` values, so this clears the remote default instead of omitting the
+field and accidentally restoring it.
 
-RealVis's schema default negative is long boilerplate of similar intent; our
-composed block **replaces** it (sending any `negative_prompt` overrides the
-default).
+### Effective values by model
 
-### Delivery in two stages
+**Qwen Image 2512**
 
-- **Slice 1 (data only):** one static composed string per model row via
-  `extraInput.negative_prompt`, set from the admin page. Static means it
-  cannot vary by task or style — compose for the row's dominant surface
-  (Juggernaut/Pony/RealVis are portrait-ish surfaces today, so anatomy +
-  photoreal + production + single-subject), and accept the stylized-style
-  mismatch until slice 2 (plan open question).
-- **Slice 2+:** negative composition moves into the dialect compiler / profile
-  `controlDefaults.negativePrompt` (capabilities spec), varying by task and
-  style; the static `extraInput` seeds are then removed so there is exactly
-  one source.
+- no runtime override in this slice;
+- provider negative default is already empty;
+- generation speed, steps, and guidance remain unchanged.
 
-### Interactions to respect
+**Qwen Image Edit 2511**
 
-- Negative prompts act through classifier-free guidance: at Juggernaut's
-  default guidance 2 they are nearly inert. Slice 1 must pair the Juggernaut
-  negative with its sampler fix (below) or it will look like negatives don't
-  work.
-- Never emit a key the schema lacks — the existing `extraInput` merge already
-  satisfies this for slice 1 (admins edit per-row); the slice-2 mapper uses
-  the capabilities probe's binding, same as every other control.
+- force `go_fast: false`;
+- no negative-prompt input exists.
 
-## Per-model settings (slice 1, verified by trial)
+All current uses are identity-critical. If text repair or another non-identity
+task begins using it, task profiles must replace this global override.
 
-- **Juggernaut XL v9** — the load-bearing unknown: are the 5-step /
-  guidance-2 defaults a Lightning-tuned checkpoint's correct settings, or just
-  a fast preset on a base checkpoint? Trial ladder, same seed & prompt per
-  rung: (a) 5/2 baseline; (b) 8/2.5; (c) 12/3; (d) 30/7 with `DPM++SDE` →
-  `DPMSolverMultistep`-Karras if available. If (d) overbakes (fried contrast =
-  Lightning), settle in the (b)–(c) band; if (d) is clean, it wins. Record the
-  ruling in `docs/image-models/juggernaut-xl-v9.md`.
-- **RealVis Hyper LoRA** — "Hyper" implies Hyper-SD-style distillation, yet
-  its defaults are 30 steps / cfg 7 — internally inconsistent; trial both a
-  low-step (6–10, cfg 1.5–2.5) and the default band. Pin `width: 832, height:
-  1216` (or keep 768×1024) explicitly rather than relying on lucky defaults.
-  `facedetail_strength` 0.35 default; try 0.5 if faces render soft.
-- **Pony Realism v2.3** — defaults are already sane (30 steps, cfg 7.5, Euler).
-  Add negatives + score tags first; only then touch
-  `ip_adapter_scale`/`controlnet_conditioning_scale` (raise toward 1.0 if the
-  face isn't held, per its doc).
-- **SD 3.5 Large** — cfg 5 default is fine; add the negative bank; nothing
-  else.
-- **Qwen Image 2512** — add the negative bank (its `negative_prompt` default
-  is `" "`); `guidance` 4 default stands.
-- **FLUX dev** — no negative input. If FLUX portraits show anatomy issues,
-  the levers are `num_inference_steps` 28→40 and `guidance` 3→3.5; but the
-  doc's expectation is that FLUX rarely needs it.
-- **Qwen Image Edit 2511** — no sampler knobs at all beyond `go_fast`; see
-  face fidelity below.
+**Stable Diffusion 3.5 Large**
 
-## Qwen Edit face fidelity (slice 3)
+- no runtime override in this slice;
+- no negative content is invented without task/style context.
 
-Three independent changes, A/B'd separately on the trial matrix (the
-age-anchor precedent: one measured change at a time):
+**Juggernaut XL v9**
 
-1. **Face-crop reference.** The scene/variant reference list gains a tight
-   face crop of the canonical portrait as a *second* reference (subject
-   portrait first, face crop second, location third — displacing the "spare"
-   slot within the model's cap of 3). Recommended source: crop at portrait
-   save time via sharp (upper-centre heuristic first — portraits are
-   waist-up, facing camera, so a fixed crop of the top ~45% centre ~70% will
-   land the face without a detection dependency; a real detector is an
-   upgrade, not a prerequisite), stored as a derived image kind alongside the
-   avatar, backfilled once for existing casts. Render-time cropping is the
-   fallback if the derived-asset route is ruled too heavy.
-2. **Indexed identity binding.** `PORTRAIT_IDENTITY_LOCK` and the scene edit
-   prompt bind identity by image number, matching how Qwen Edit's own docs
-   phrase multi-image instructions: "The person in image 1 (and their face in
-   close-up in image 2) is the subject — render the exact same face,
-   unchanged." The multi-reference composition path already enumerates
-   references; the single-reference path gains the same numbering.
-3. **Quality mode.** `go_fast: false` on identity-critical renders. Before
-   profiles exist this can only be per-row (`extraInput.go_fast: false` on the
-   edit model — applies to all its renders); with profiles it becomes the
-   scene/variant default with a fast opt-out. Measure both fidelity and the
-   latency cost.
+- `num_inference_steps: 35`;
+- `guidance_scale: 5`;
+- `scheduler: "KarrasDPM"`;
+- `width: 832`;
+- `height: 1216`;
+- `negative_prompt: ""` to clear the wrapper's media-biased default.
 
-## Identity re-render (slice 4)
+Normal v9 is not the Lightning model. The creator's published quality guidance
+supports a full-step starting point and recommends beginning with little or no
+negative prompt.
 
-An explicit action — "fix the face" — on a rendered scene/variant image, plus
-(if trials justify) an opt-in identity-locked scene profile. Never a silent
-fallback (standing owner rule; same reason a refused Wan render doesn't hop
-models).
+The registry has no generic width/height aspect mode. These dimensions travel
+through `extraInput`; `chooseAspect` returns no provider shape and
+`cropToTargetAspect` normalizes the returned 832×1216 image. At 3:4 the crop
+removes a modest strip from top and bottom rather than discarding a quarter of a
+square render's width.
 
-- **Pipeline (Pony Realism):** `image` = canonical portrait face (or the
-  slice-3 face crop), `pose_image` = the just-rendered scene output,
-  `enable_pose_controlnet: true` — InstantID re-renders the person while the
-  pose ControlNet holds the composition. Prompt: the scene's tag-dialect
-  compilation (Pony is `pony_tag`), plus the negative bank *without*
-  single-subject when the scene has multiple people — though v1 should refuse
-  multi-person scenes outright: InstantID binds one face.
-- **Pipeline (RealVis):** `reference_image` = face, prompt describes the
-  scene; no pose input, so composition drifts more — Pony is the primary,
-  RealVis the comparison arm.
-- **Knob tuning:** Pony `controlnet_conditioning_scale` (identity fidelity)
-  and `ip_adapter_scale` up from 0.8 toward 1.0–1.2 if the face isn't held;
-  RealVis `hyperlora_weight`/`instantid_weight` up from 0.5. Record ruled
-  values in the model docs.
-- **Wiring:** needs references-with-roles (identity vs. pose) — the
-  capabilities spec's role-aware reference selection. If slice 4 lands first,
-  a narrow interim: the action's server route builds the two-slot payload
-  directly against the pinned row, bypassing generic reference fitting; fold
-  into the shared path when capabilities slice 3 ships.
-- **Provenance:** the re-rendered image is a *new* image row whose meta records
-  `sourceImageId` and the identity model — the original is kept.
+**Pony Realism v2.3**
 
-## Native shapes for width/height models (slice 5)
+- no runtime override in this slice;
+- provider negative default is already empty;
+- score/source/rating tags, identity scales, pose strength, steps, and guidance
+  remain trial-controlled.
 
-The capabilities spec's dimension negotiation already plans custom
-width/height. The narrow pull-forward, if built before that spec: a third
-`aspectMode: "width_height"` whose `supportedAspects` carries `"832x1216"`
--style entries, mapped to `width`/`height` integer inputs. Serves Juggernaut —
-no SDXL training bucket is exactly 3:4, so trial the two that bracket it,
-896×1152 (≈0.78, crops width) and 832×1216 (≈0.68, crops height), and keep the
-one that degrades less — and pins RealVis's shape as intent instead of luck.
-If the capabilities plan starts first, this slice dissolves into it.
+**RealVis Hyper LoRA**
 
-## Best-of-N and seeds (slice 6)
+- `width: 768`;
+- `height: 1024`;
+- `negative_prompt: ""` to clear the wrapper's long generic anatomy/style
+  boilerplate;
+- HyperLoRA/InstantID strengths remain at provider defaults until trialed.
 
-Rides entirely on capabilities machinery (multi-output normalization, seed
-recording, image sets). This plan's content: portrait generation on models
-with cheap `num_outputs` (FLUX 1–4, Juggernaut 1–4, Pony 1–8) offers "render
-3, keep one"; the picker stores the chosen seed so "another like this"
-re-sends it. No scene-path involvement.
+## Qwen numbered-reference prompt preparation
 
-## Trial protocol (all slices)
+The existing builders use this provider-neutral sentence:
 
-- Fixed matrix, stored under `docs/developer-notes/images/` as
-  `render-quality.<slice>.trial.md` (stakeholder-summary style per folder
-  rules): 3–4 characters spanning the difficulty axes (human/non-human,
-  authored heavy/sparse, realistic/stylized) × the affected tasks.
-- Same seed where the model supports one; otherwise 2–3 renders per cell to
-  see variance.
-- Owner grades likeness / anatomy / overall on each cell, before vs. after.
-  No automated face-similarity scoring in v1 (a possible later addition; not
-  worth the dependency to start).
-- Every settled value lands in the relevant `docs/image-models/<model>.md`
-  and the registry row, in the same change as the trial report.
+```text
+Generate a new image of the exact same person shown in the reference image.
+Preserve face, hair color and style, skin tone, body proportions, and apparent
+age.
+```
 
-## Rulings needed (mirrors plan §Open questions)
+Qwen Image Edit's multi-image guidance works better when the caller identifies
+images by number and states what changes versus remains fixed. Rather than change
+the generic prompt for every model, `preparePromptForImageModel` replaces that
+exact legacy sentence only when:
 
-1. Juggernaut Lightning-vs-base → trial rung (a)–(d) above decides; owner
-   accepts the latency of the winner.
-2. Face crop: derived-asset-at-save (recommended) vs. render-time crop.
-3. "Fix the face": admin-first (recommended) vs. player-visible on day one.
-4. Cost multipliers for best-of-N and re-render.
-5. Quality-vs-speed default on identity surfaces.
-6. Slice-1 static negatives on stylized-capable models: accept photoreal-block
-   mismatch briefly (recommended — stylized use of those three models is rare)
-   or omit the photoreal block from shared rows until slice 2.
+- the selected base slug is `qwen/qwen-image-edit-2511`;
+- at least one reference is actually being sent;
+- the prompt contains the known legacy lock.
+
+Single-reference replacement:
+
+```text
+Image 1 is the identity reference. Preserve the exact face, hair, skin tone,
+body proportions, and apparent age. Change only what this instruction requests.
+```
+
+Multi-reference replacement:
+
+```text
+Use numbered references as assigned below. Preserve each person's exact face,
+hair, skin tone, build, and apparent age; change only requested details.
+```
+
+Both replacements are no longer than the legacy lock. The scene/variant edit
+prompt is fitted before `renderWithModel`; model-specific preparation must not
+re-expand it beyond that fitted budget.
+
+The multi-reference scene builder already enumerates its references later in send
+order. The replacement establishes how Qwen should interpret that list without
+inventing a second ordering system.
+
+A custom Qwen prompt without the legacy lock is not rewritten. A Qwen run with
+zero references is not rewritten. Every non-Qwen prompt remains byte-identical.
+
+## Tests for the first slice
+
+`quality-presets.test.ts` pins these properties:
+
+- pinned community slugs resolve to their base path;
+- unknown models return the same object and inputs;
+- Qwen Image 2512, SD 3.5, and Pony receive no guessed negative or other runtime
+  override;
+- Qwen Edit's stored `go_fast: true` is overridden without mutating the row;
+- Juggernaut receives the reviewed full-step settings and an empty negative;
+- RealVis receives native 3:4 dimensions and an empty negative;
+- single- and multi-reference Qwen locks are selected correctly and do not grow
+  the fitted prompt;
+- custom/no-reference/non-Qwen prompts are not changed.
+
+The existing `models.ts` crop tests continue to own output normalization. Future
+shared-render-intent tests should assert the final provider payload, including
+profile controls, so the transitional and profile paths cannot diverge during
+migration.
+
+## Effective prompt context: measured, not guessed
+
+SDXL's CLIP text encoders have 77-position contexts, but a Replicate wrapper may
+truncate, chunk, or preprocess longer text. `promptDialect` cannot be justified
+by a universal “75 tokens and the rest disappears” rule.
+
+For each pinned version used by `sdxl_tag` or `pony_tag`, the promotion trial
+records an effective-context result:
+
+1. create a fixed prompt with a conspicuous visual sentinel near the end;
+2. render the same seed with that sentinel moved progressively earlier;
+3. compare whether the requested feature appears consistently;
+4. record the last reliable segment/token position as an operational budget;
+5. repeat when the pinned model version changes.
+
+The budget is advisory rather than a provider schema fact. Regardless of the
+measured limit, compilers order load-bearing content first.
+
+## Structured prompt segments
+
+A robust dialect compiler consumes semantics, not a finished paragraph. Shared
+render intent should expose ordered segments similar to:
+
+```ts
+export type ImagePromptSegmentKind =
+  | "operation"
+  | "identity"
+  | "morphology"
+  | "age"
+  | "framing"
+  | "pose"
+  | "current_state"
+  | "wardrobe"
+  | "exposure"
+  | "setting"
+  | "lighting"
+  | "atmosphere"
+  | "style"
+  | "quality";
+
+export interface ImagePromptSegment {
+  kind: ImagePromptSegmentKind;
+  text: string;
+  tagText?: string;
+  mandatory: boolean;
+  priority: number;
+  source?: string;
+}
+```
+
+`source` is diagnostic provenance such as `character.attributes`,
+`body.morphology`, `garment.presentation`, `scene_plan.pose`, or
+`location.description`; it does not reach the provider.
+
+Prompt fitting removes or compresses the lowest-priority optional segments first.
+It never truncates through the middle of a mandatory sentence. Identity, age
+safety anchors, person count, intended morphology, current clothing/exposure
+authority, and the edit delta remain mandatory.
+
+## Dialect behavior
+
+### `prose`
+
+Initial output is today's prose, modulo an explicitly selected model-specific
+instruction such as Qwen's numbered identity lock. Golden tests protect all
+unaffected models.
+
+Likely users: Qwen, Seedream, Wan, FLUX, and SD 3.5. A trial may move a model to a
+different dialect without changing the task strategy.
+
+### `sdxl_tag`
+
+The compiler emits compact, comma-separated visual concepts. It does not use
+A1111/Comfy weighting syntax such as `(word:1.2)` unless the exact provider
+wrapper documents support; plain Diffusers may treat that syntax literally.
+
+Order:
+
+1. rendering medium/quality lead;
+2. subject count and subject descriptor;
+3. identity-critical morphology and landmarks;
+4. pose/action and visible body parts;
+5. authoritative clothing and current state;
+6. setting fragment;
+7. lighting;
+8. optional atmosphere.
+
+Compression:
+
+- drop metadata labels that add no visual meaning;
+- retain values and distinctive landmarks;
+- reduce wardrobe to visible garment, dominant colour/material, and critical
+  presentation state;
+- cap setting to the few features that define the location;
+- omit non-visible traits rather than encode them as prose;
+- do not emit a tag solely because it exists on the character sheet.
+
+### `pony_tag`
+
+Start from `sdxl_tag`, then add model-version-tested score/source/rating
+conventions. Candidate positive and negative score tags are trial inputs, not
+hardcoded assumptions. Realistic profiles may also test `source_photo,
+realistic`. Rating tags are route policy and may never be inferred from the
+checkpoint name. Every tag consumes context and stays only if the fixed matrix
+demonstrates value for the pinned version.
+
+## Dynamic negative composition
+
+Once profiles are live, negative blocks are selected from structured context:
+
+```ts
+export type NegativeBlock =
+  | "production"
+  | "anatomy"
+  | "photoreal"
+  | "single_subject"
+  | "pony_quality"
+  | "visible_hands";
+```
+
+The composer receives:
+
+- task;
+- style;
+- expected subject count;
+- whether text/graphic marks and blur are intentional;
+- framing;
+- visible body parts;
+- intended morphology and authored landmarks/absences;
+- dialect/model version;
+- positive segments.
+
+Rules:
+
+- `production` may forbid generated text, watermarking, or blur only when those
+  qualities are not requested;
+- `anatomy` is composed only after removing terms that match intended morphology,
+  absent body parts, prosthetics, or species appendages;
+- `photoreal` only for realistic styles;
+- `single_subject` only when exactly one full person is expected;
+- `pony_quality` only for a tested pinned Pony version;
+- `visible_hands` only when hands are intentionally visible and important;
+- no block may contain a normalized phrase that conflicts with a mandatory
+  positive segment.
+
+A conflict produces a diagnostic and removes the negative term; it does not fail
+a player render.
+
+For models with no `negative_prompt` binding, the composer returns no provider
+field. It does not append unwanted concepts to the positive prompt by default,
+because naming an object can summon it and the scene prompt already has specific
+positive ownership rules.
+
+## Delta-first edit contract
+
+Instruction-edit profiles should compile one explicit operation block:
+
+```text
+References:
+- image 1: canonical identity for Mira
+- image 2: close face detail for Mira
+- image 3: the cafe interior
+
+Change:
+- place Mira in the listed pose and authoritative wardrobe in the cafe
+
+Keep unchanged:
+- Mira's exact facial structure, hair, skin tone, body proportions, and apparent
+  age
+- the visual identity of the cafe where the prompt does not request a change
+```
+
+Provider wording may be prose rather than literal headings, but the semantic
+contract is fixed. A reference role never depends only on array position in
+application code; role-aware selection from the capabilities spec produces the
+ordered list and the prompt describes that resolved order.
+
+When text and reference disagree:
+
+- apparent-age anchor is text-authoritative, preserving the existing owner
+  ruling against age drift;
+- current wardrobe/exposure state and intended morphology are text/state
+  authoritative;
+- canonical face and immutable identity are reference-authoritative;
+- location reference is authoritative for stable geometry unless the scene plan
+  explicitly changes it.
+
+## Identity pack contract
+
+A canonical portrait compiles to a derived identity pack:
+
+```ts
+export interface ImageIdentityPack {
+  version: 1;
+  characterId: string;
+  sourceImageId: string;
+  sourceContentHash: string;
+  faceCropImageId: string;
+  faceCrop: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    method: "detector" | "heuristic" | "manual";
+    detectorVersion?: string;
+    confidence?: number;
+  };
+  quality: {
+    detectedFaces: number | null;
+    faceWidthPx: number;
+    faceHeightPx: number;
+    blurScore: number | null;
+    occlusionScore: number | null;
+    accepted: boolean;
+    warnings: string[];
+  };
+  createdAt: string;
+}
+```
+
+Coordinates are source-pixel coordinates after EXIF orientation is normalized.
+The derived crop is encoded with stripped metadata and a stable colour profile.
+The pack is stale when `sourceContentHash` no longer matches the canonical
+portrait.
+
+### Creation and backfill
+
+- generate the pack after a new canonical portrait becomes ready;
+- a pack failure does not fail portrait save; it records a warning and disables
+  the face-detail reference until corrected;
+- existing characters create packs lazily on first identity-critical use;
+- an admin batch prepares the fixed trial corpus;
+- render-time heuristic crop is a temporary degraded fallback and must not be
+  persisted as detector-confirmed.
+
+### Initial heuristic
+
+For a Vesper-authored waist-up 3:4 portrait, crop an upper-centre region with
+padding around hairline, ears, and jaw. The exact box is trial-tuned. Including
+some shoulders is safer than clipping the chin or hairline because identity
+editors use those boundaries.
+
+A detector replaces the heuristic only when:
+
+- exactly one suitable face is found;
+- confidence clears the reviewed threshold;
+- the expanded box remains mostly within the image;
+- the crop clears minimum dimensions after normalization.
+
+### Reference-quality gate
+
+Production defaults require:
+
+- one selected identity;
+- accepted pack or explicit admin override;
+- reviewed minimum face dimensions at the provider's effective input size;
+- blur/occlusion below threshold when those metrics are available;
+- no stale source hash.
+
+The player receives an actionable error such as “the saved portrait is too small
+or obscured to hold the face; choose a clearer canonical portrait.” Vesper does
+not spend a render unit on a reference known to be unusable.
+
+## Reference selection and capacity
+
+Required roles are selected before optional roles. Within a single-character
+identity-critical request, the preferred order is:
+
+1. canonical identity;
+2. face-detail crop for that identity;
+3. required location or pose control;
+4. optional location;
+5. optional style;
+6. optional object.
+
+For multi-character requests, all required canonical identities outrank face
+crops and optional context. If the model cannot fit all required identities, the
+profile is ineligible; it must not silently discard one person's identity.
+
+Qwen Edit's cap of three means a single-character scene may use identity portrait
++ face crop + location. A two-character scene generally uses the two identities
+plus location and cannot also include both face crops. The trial measures whether
+a face crop is more valuable than the location reference in each case; the role
+policy may vary by profile but remains deterministic.
+
+## Visual-state compiler
+
+The image request should eventually read a shared visual contract rather than a
+flat character description.
+
+```ts
+export interface VisualStateFeature {
+  id: string;
+  phrase: string;
+  layer: "identity" | "presentation" | "current_state";
+  visibility: number;
+  salience: number;
+  changedAtTurn?: number;
+  bodyRegion?: string;
+  occluded?: boolean;
+  sources: string[];
+}
+```
+
+The attention pass scores features from:
+
+- distance and framing;
+- lighting;
+- view angle;
+- motion;
+- garment occlusion;
+- uniqueness/recognition value;
+- change from the familiar baseline;
+- relevance to the current action.
+
+Only visible, high-priority features become prompt segments. Identity landmarks
+remain available to the identity pack and prompt compiler, while transient state
+such as damp hair, a rolled sleeve, smudged makeup, dirt, or trembling hands can
+outrank static low-salience facts in a scene.
+
+Garment state is object/part based: coverage, layer, opacity, fastened/open,
+rolled, displaced, draped, wetness, damage, and dirt. This extends the existing
+clothing-state graph rather than inventing a second wardrobe truth.
+
+## Face-repair trial contract
+
+The first action is admin/dev only and single-character only.
+
+Input:
+
+- source rendered image id;
+- selected character id;
+- accepted identity pack;
+- chosen repair profile;
+- optional manual face region when the detector cannot identify the target.
+
+Output:
+
+- a new image row; never overwrite the source;
+- meta containing source image id, identity pack version, crop/mask, model,
+  resolved settings, and trial arm;
+- a comparison link to the original.
+
+Trial arms:
+
+1. no-repair baseline;
+2. Qwen Edit with canonical portrait + face crop;
+3. Pony identity input + source image as `pose_image`;
+4. RealVis identity input + scene description;
+5. regional masked editor when a suitable registered model exists.
+
+Refuse in v1 when:
+
+- more than one full person appears or is expected;
+- the selected face cannot be localized reliably;
+- the source/identity pack is stale or missing;
+- the profile would exceed the repair render-unit/cents ceiling.
+
+Evaluation measures identity improvement **and** drift in pose, clothing, body,
+setting, lighting, and camera. Regional repair is preferred when it achieves
+similar identity with less drift.
+
+## Cost and latency guards
+
+A profile records `renderUnits` as stable relative work. Runtime pricing metadata
+supplies an estimated cents value when available.
+
+Policy:
+
+- ordinary automatic action: ≤1 unit;
+- explicit player quality/repair action: ≤2 units;
+- admin trial cell: ≤4 units;
+- player portrait best-of-N: N=2 initially;
+- no automatic scene best-of-N;
+- an absolute configurable cents cap must also pass.
+
+Operational promotion gates:
+
+- identity-critical variants/chat-look: quality mode by default;
+- routine scenes: quality profile becomes default only when p95 end-to-end
+  latency is ≤45 seconds and failure/refusal rate does not regress;
+- explicit repair may use a higher timeout but must show progress and settle
+  within the profile's bounded timeout;
+- latency is measured from production events, not a hand-maintained model label.
+
+## Advisory output QA
+
+Initial checks return findings, not an automatic model switch:
+
+```ts
+export interface ImageQualityFinding {
+  code:
+    | "face_count_mismatch"
+    | "identity_similarity_low"
+    | "severe_unintended_blur"
+    | "blank_or_black"
+    | "unintended_text_or_watermark"
+    | "duplicate_body_suspected"
+    | "large_post_crop";
+  severity: "info" | "warn" | "error";
+  confidence?: number;
+  context?: Record<string, unknown>;
+}
+```
+
+A text/blur finding requires the render intent to say that text/blur was not
+requested. An error may prevent an image becoming the canonical portrait, but it
+does not silently re-run another model. The UI can offer retry-same-seed, new
+variation, or explicit repair.
+
+The first inexpensive deterministic checks are output dimensions, blank/black
+content, and post-crop fraction. Face/identity/anatomy models are added only when
+their false-positive rate is measured on Vesper's corpus.
+
+## Render provenance
+
+At minimum record:
+
+```ts
+export interface ImageRenderProvenance {
+  modelSlug: string;
+  modelVersion: string | null;
+  profileId: string | null;
+  promptDialect: string;
+  promptHash: string;
+  negativePromptHash?: string;
+  controls: Record<string, unknown>;
+  seed?: number;
+  references: Array<{
+    role: string;
+    imageId: string;
+    identityPackVersion?: number;
+    crop?: { left: number; top: number; width: number; height: number };
+  }>;
+  providerDurationMs?: number;
+  totalDurationMs: number;
+  renderUnits: number;
+  estimatedCostCents?: number;
+  sourceDimensions?: { width: number; height: number };
+  finalDimensions: { width: number; height: number };
+  crop?: { left: number; top: number; width: number; height: number };
+  warnings: string[];
+}
+```
+
+Sensitive full prompts need not be duplicated into analytics events; durable
+image metadata may retain the authorized prompt while events carry hashes and
+selected controls.
+
+## Fixed trial matrix
+
+Store each report under `docs/developer-notes/images/` as
+`render-quality.<slice>.trial.md`.
+
+Corpus:
+
+- 3–4 stable characters;
+- at least one human and one non-human morphology;
+- one character with an authored distinctive absence, prosthetic, or unusual
+  appendage count;
+- at least one prompt requiring visible text/logo and one intentional blur or
+  low-resolution style case;
+- one heavily authored and one sparse profile;
+- realistic and stylized portrait cases;
+- clear frontal identity and at least one difficult hair/skin/age case;
+- portrait, one-change variant, single-character scene, and multi-reference
+  scene where relevant.
+
+Controls:
+
+- same seed where supported;
+- otherwise at least three outputs per arm;
+- one variable changed per A/B;
+- same canonical source and identity pack version;
+- record provider version and final payload.
+
+Owner grades each pair for:
+
+- identity likeness;
+- anatomy/hands relative to intended morphology;
+- requested text/style preservation;
+- requested edit correctness;
+- unchanged-detail preservation;
+- composition/pose/wardrobe/setting drift;
+- overall preference.
+
+A tuning change lands only with its report and model-doc update. A model-version
+promotion reruns cells affected by changed capabilities or controls.
+
+## Model-license gate
+
+Before a community model becomes a production default or paid feature, record:
+
+- model/checkpoint and wrapper version;
+- license/terms source and review date;
+- whether server-side hosted inference and intended commercial use are permitted;
+- attribution, distribution, or output restrictions;
+- reviewer and next review trigger.
+
+Replicate availability is not evidence that every intended Vesper use is
+licensed. A failed or unclear review keeps the model admin/experimental.
+
+## Migration off the transitional policy
+
+When profiles reach the render path:
+
+1. seed task-specific controls that reproduce every current effective override;
+2. add final-payload golden tests comparing old overlay versus profile result;
+3. route one task at a time through profile controls;
+4. remove that task/model's runtime override only after parity holds;
+5. expose resolved controls in provenance/admin diagnostics;
+6. delete `quality-presets.ts` when no reviewed exact-slug behavior remains.
+
+Prompt rewriting also moves from exact string replacement to the Qwen
+`instruction_edit` compiler once it consumes structured segments. The temporary
+replacement remains until final Qwen profiles produce the same compact numbered
+and delta-first wording.
+
+## Acceptance criteria
+
+- reviewed settings affect every current lane through one seam;
+- unknown models receive no added provider fields;
+- pinned slug matching is deterministic;
+- current Qwen identity prompts become numbered without growing fitted edit
+  prompts or changing non-Qwen text;
+- the context-free seam adds no negative content;
+- reviewed non-empty provider negatives are explicitly cleared rather than
+  silently inherited;
+- dynamic negatives are not sent until text/style/subject/morphology conflicts
+  can be evaluated;
+- Juggernaut runs full-step at native portrait dimensions rather than its cog's
+  fast square defaults;
+- effective controls are testable and eventually recorded in provenance;
+- identity packs are source-hashed, quality-gated, and invalidated correctly;
+- repair remains explicit, single-character-first, and non-destructive;
+- cost, latency, and model-license gates are enforced before a quality feature
+  becomes a default.
+
+## Remaining trial questions
+
+No owner ruling is pending. The implementation still needs evidence for:
+
+- the best Juggernaut sampler/CFG within the full-step band;
+- which contextual negative blocks improve quality without erasing intended
+  text, style, or morphology;
+- Qwen quality-mode and face-crop gains measured independently;
+- detector/crop quality thresholds;
+- whether Pony/RealVis improve identity without unacceptable full-frame drift;
+- which advisory QA scores correlate strongly enough with owner review to gate
+  promotion rather than merely annotate output.
