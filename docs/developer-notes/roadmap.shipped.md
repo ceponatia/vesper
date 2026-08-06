@@ -5,6 +5,25 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Image identity packs — slices 1–5: durable owner-scoped face references** —
+  [image-identity-packs.plan.md](image-identity-packs.plan.md) ·
+  [spec](image-identity-packs.spec.md) — 2026-08-06 — one current revisioned pack
+  per character derived from its canonical portrait and keyed by a SHA-256 over
+  the stored bytes: the hidden `identity_face_crop` kind that `HIDDEN_IMAGE_KINDS`
+  keeps out of the gallery, the portrait studio, character clones and public file
+  serving; versioned `derive_v1`/`policy_v1` derivation with golden-pinned crop
+  geometry behind a replaceable detector seam whose shipped adapter finds nothing
+  (heuristic-only, fails closed on non-portrait sources — library choice is a
+  trial decision); idempotent single-flight `ensureIdentityPack` with
+  compare-before-promote, row-derived retry backoff, staleness and pointer
+  invalidation, a 7-day revision sweep and hard delete with the character; owner
+  crop editor plus self-scoped admin batch/history/override routes; and
+  profile-aware evaluation returning ordered role candidates with provenance.
+  Ships **inert for renders** — `IMAGE_IDENTITY_PACK_REFERENCES` is default off
+  and every lane still anchors on the library avatar until the capabilities plan's
+  shared render intent consumes packs. Slices 6–7 (the fixed trial and production
+  close-out) remain queued in [roadmap.md](roadmap.md) under Next.
+
 - **Image model capabilities — slice 1: capability vocabulary and profiles** —
   [image-model-capabilities.plan.md](image-model-capabilities.plan.md) ·
   [spec](image-model-capabilities.spec.md) §"Slice 1 implementation rulings" —
