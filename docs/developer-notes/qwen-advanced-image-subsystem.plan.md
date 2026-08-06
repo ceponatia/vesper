@@ -36,8 +36,6 @@ job it actually supports:
 - **Qwen Image Edit Plus** is the first controlled-composition connector, using
   pose keypoints, depth maps, edge maps, and ordinary visual references;
 - **Qwen Image Edit 2511** is a candidate identity-finishing and LoRA connector;
-- a later **node-based or masked-edit connector** may use ComfyUI or another
-  verified workflow when Vesper is ready to test regional repair.
 
 This gives the prototype meaningful advanced tools immediately while keeping it
 close to a model family the application already understands.
@@ -73,20 +71,6 @@ strength.
 It does not expose dedicated mask, pose, depth, edge, or ControlNet fields. It
 should therefore be used for the capabilities it actually has: identity-aware
 editing, reference-guided refinement, and LoRA-assisted finishing.
-
-### Masks and nodes
-
-Neither of those normal Replicate endpoints currently gives Vesper a dedicated
-regional mask input or a visible node graph.
-
-Nodes are a workflow-orchestration concept associated with systems such as
-ComfyUI. A node-based workflow can prepare pose maps, depth maps, segmentation,
-masks, and multiple generation or repair stages. That is a deeper extension of
-this subsystem, not something the first Replicate connector should pretend to
-provide.
-
-True masked repair should wait for a verified endpoint or node-based workflow
-that accepts an actual mask and confines changes to the intended region.
 
 ## Goal
 
@@ -288,24 +272,6 @@ A character LoRA is additive evidence, not the canonical source of identity. The
 identity pack remains the source of truth, and a LoRA must not silently stay active
 when its training set no longer represents the current character.
 
-### Masks and regional repair
-
-True regional repair is not part of the first Replicate-only slice because the
-selected endpoints do not expose a dedicated mask input.
-
-It remains an important planned extension. The likely path is a verified masked
-editor or a node-based ComfyUI workflow that can:
-
-- receive the accepted source image;
-- receive a face, hair, hand, clothing, or object mask;
-- use the identity pack or another reference;
-- edit only the selected region;
-- preserve the rest of the image;
-- record the mask and every stage in lineage.
-
-This should not be simulated by asking an unmasked full-frame editor to "change
-only the face" and treating that instruction as a hard boundary.
-
 ## Connector model
 
 The subsystem should use separate connectors with explicit purposes rather than
@@ -332,12 +298,6 @@ calls for identity reinforcement or a LoRA.
 
 This connector is optional for each job. A controlled result may be accepted
 without a finishing pass when it is already better.
-
-### Future masked or node-based connector
-
-Uses a verified regional editor or a versioned ComfyUI-style workflow. This is the
-place for actual masks, node graphs, multiple conditioning stages, and selective
-repair.
 
 It remains behind the same subsystem boundary so the rest of Vesper does not need
 to understand node names or workflow files.
@@ -366,11 +326,6 @@ freedom in lighting, camera, and composition.
 
 Uses a reviewed style reference or LoRA and permits more visual transformation.
 The interface warns that exact identity may be weaker.
-
-### Regional Repair
-
-Reserved for the future masked connector. It must not appear merely because a
-full-frame editor accepts an instruction containing the word "only."
 
 ## Reference and control recipes
 
@@ -407,12 +362,6 @@ value.
 Use one required identity reference per character first. A remaining slot may hold
 a pose or scene control. If all required identities and the selected control do
 not fit, the workflow is ineligible rather than silently dropping a character.
-
-### Future regional-repair recipe
-
-Use the accepted image, an explicit mask, and the relevant identity or detail
-reference. This recipe does not exist until the connector enforces a real masked
-boundary.
 
 ## What the Qwen subsystem owns
 
@@ -489,7 +438,6 @@ The interface should explain when a workflow cannot run, including:
 - missing or invalid control image;
 - incompatible LoRA;
 - unavailable model version;
-- regional repair requested before a masked connector exists.
 
 It must not silently run a weaker recipe under the same label.
 
@@ -575,14 +523,6 @@ controls.
 
 A connector or mode may remain an admin tool even if another part of the subsystem
 is promoted.
-
-### Stage 8 — masked and node-based extension
-
-Evaluate a true masked editor or a versioned ComfyUI-style service for regional
-face, hair, hand, clothing, and object repair.
-
-This stage may require a separate worker or deployment, but it should still reuse
-the same image jobs, identity packs, storage, authorization, and lineage contracts.
 
 ## Trial and evidence
 
@@ -713,7 +653,6 @@ image records.
 - Build an admin-only parallel lab path in the existing dev deployment.
 - Keep all ordinary model selections and buttons unchanged during the trial.
 - Keep identity packs as source truth even when a character LoRA is available.
-- Treat true masks and node graphs as a later masked or ComfyUI connector.
 - Write a technical specification only after this product direction is reviewed
   and settled.
 
@@ -731,5 +670,3 @@ The main decisions for the next revision are:
   the preferred LoRA connector after live probing;
 - how much of the Advanced Image Lab should later remain available to ordinary
   character owners;
-- whether a future masked or ComfyUI connector should run inside the main dev
-  deployment or as a separate worker service.
