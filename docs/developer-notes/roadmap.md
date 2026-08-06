@@ -214,6 +214,20 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   hashing, face-crop derivation, quality eligibility, and manual correction now
   live in the independent identity-pack plan directly above.
 
+- **Visual state and attention — identity, presentation, current state, and what
+  the viewpoint notices** — [visual-state.plan.md](visual-state.plan.md) ·
+  [spec](visual-state.spec.md) (next; planned 2026-08-05 from the visual-state
+  proposal and the image-render-quality follow-up). Adds one lane-neutral
+  `VisualStateFeature` projection over existing appearance, anatomy, wardrobe,
+  body-condition, scene-relation, affordance, and visual-memory owners; keeps
+  identity, deliberate presentation, current effects, and body language
+  separate; evaluates observer versus camera visibility; ranks optional detail
+  without dropping mandatory image identity or morphology; and supplies
+  narrator, image, and inspector digests. Starts with a source/duplication audit
+  and compatibility adapter, then adds typed composition, current-state and
+  body-language adapters, shadow inspection, narrator and image trials, and a
+  review-first reference-image compiler.
+
 **Successor world engine (`engine.plan.md`) — foundation AND rollout COMPLETE.**
 All committed gates (0–6) closed 2026-07-16 → 2026-07-21, and the migration &
 rollout plan (R0–R6) shipped 2026-07-21/22 — the engine is the live world
@@ -408,4 +422,3 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 ## Shipped (historical record)
 
 Moved to its own file to keep this index short — see **[roadmap.shipped.md](roadmap.shipped.md)** (newest-first).
-
