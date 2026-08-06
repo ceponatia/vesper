@@ -5,7 +5,8 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
-- **Image identity packs — slices 1–5: durable owner-scoped face references** —
+- **Image identity packs — slices 1–4 and 5A: durable owner-scoped face
+  references** —
   [image-identity-packs.plan.md](image-identity-packs.plan.md) ·
   [spec](image-identity-packs.spec.md) — 2026-08-06 — one current revisioned pack
   per character derived from its canonical portrait and keyed by a SHA-256 over
@@ -21,8 +22,11 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   profile-aware evaluation returning ordered role candidates with provenance.
   Ships **inert for renders** — `IMAGE_IDENTITY_PACK_REFERENCES` is default off
   and every lane still anchors on the library avatar until the capabilities plan's
-  shared render intent consumes packs. Slices 6–7 (the fixed trial and production
-  close-out) remain queued in [roadmap.md](roadmap.md) under Next.
+  shared render intent consumes packs. Slice 5B (render-lane consumption: shared
+  render-intent transport, capacity enforcement, provider ordering, lane
+  migration, recrop removal) waits on that capabilities work; slices 6–7 (the
+  fixed trial and production close-out) remain queued in
+  [roadmap.md](roadmap.md) under Next.
 
 - **Image model capabilities — slice 1: capability vocabulary and profiles** —
   [image-model-capabilities.plan.md](image-model-capabilities.plan.md) ·
