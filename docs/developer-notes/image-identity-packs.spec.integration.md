@@ -1,10 +1,12 @@
-# Image identity packs — render integration and trial spec
+# Image identity packs — render integration spec
 
 Parent spec: [image-identity-packs.spec.md](image-identity-packs.spec.md)
 
+Trial protocol:
+[image-identity-packs.spec.trial.md](image-identity-packs.spec.trial.md)
+
 This document owns profile-aware eligibility, reference-role emission, shared
-render-intent integration, provenance, rollout, tests, and the controlled trial
-that decides whether face-detail references are promoted.
+render-intent integration, provenance, rollout, and consumer tests.
 
 ## Integration boundary
 
@@ -100,13 +102,13 @@ export type IdentityReferenceStrategy =
   | "face_detail_then_canonical";
 ```
 
-Profiles may also declare that the face-detail role is optional. Examples:
+Profiles may declare the face-detail role optional. Examples:
 
-- a one-reference editor may use `canonical_only` until a trial proves
-  `face_detail_only` performs better for that task;
+- a one-reference editor may use `canonical_only` until trial evidence proves
+  `face_detail_only` is better for that task;
 - a two-reference identity editor may use `canonical_then_face_detail`;
-- a face-repair profile may prefer `face_detail_then_canonical` if the original
-  scene image occupies a separate required role;
+- a repair profile may prefer `face_detail_then_canonical` when the original
+  scene image occupies another required role;
 - a scene generator with weak identity-reference support may remain canonical
   only.
 
@@ -118,7 +120,7 @@ number of image fields in a provider schema.
 Required character identities are resolved before optional face detail, location,
 style, object, or pose references.
 
-For an ensemble, the selection process is:
+For an ensemble:
 
 1. resolve one required canonical identity candidate for every required
    character;
@@ -136,10 +138,8 @@ request concern, not a multi-character pack record.
 ## Eligibility timing
 
 Identity-pack eligibility runs before provider reservation and after profile
-resolution, because the effective provider resize and role strategy are profile
+resolution, because effective provider resize and role strategy are profile
 facts.
-
-Ordering:
 
 ```text
 resolve character + canonical source
@@ -180,7 +180,7 @@ and field mapping.
 No image lane may:
 
 - query `identity_face_crop` images by kind;
-- recompute its own face crop;
+- recompute its own persistent face crop;
 - substitute another Gallery image when the pack is blocked;
 - reorder identity roles after profile resolution;
 - omit pack provenance from the render attempt.
@@ -191,7 +191,7 @@ permanent dual authority.
 ## Provider prompt relationship
 
 The pack role names are semantic application roles. The render-quality compiler
-translates the resolved order into provider wording, for example:
+translates resolved order into provider wording, for example:
 
 ```text
 image 1: canonical identity for Mira
@@ -199,7 +199,7 @@ image 2: close facial detail for Mira
 image 3: cafe location reference
 ```
 
-The prompt describes the final send order; it does not assume that
+The prompt describes final send order; it does not assume that
 `canonical_identity` is always image 1.
 
 When text and image state disagree:
@@ -207,11 +207,11 @@ When text and image state disagree:
 - canonical face and immutable identity remain reference-authoritative;
 - authored apparent age, current wardrobe/exposure, and intended morphology
   remain text/state-authoritative;
-- the face crop cannot override a current hairstyle or body state merely because
+- the face crop cannot override current hairstyle or body state merely because
   the source portrait is older.
 
-Those rulings belong to the delta-first edit contract. The pack only proves which
-source supplied the identity reference.
+Those rulings belong to the delta-first edit contract. The pack proves which
+source supplied identity.
 
 ## Profile-aware quality evaluation
 
@@ -267,7 +267,7 @@ is superseded.
 
 The final render record also includes model/profile/version, prompt hashes,
 ordered non-identity references, resolved controls, seed, latency, cost, crop
-bounds, moderation, and output-QA findings as defined by the sibling plans.
+bounds, moderation, and output-QA findings as defined by sibling plans.
 
 ## Rollout flag
 
@@ -282,7 +282,7 @@ IMAGE_IDENTITY_PACK_REFERENCES
 Default off. When off:
 
 - packs may be created, backfilled, inspected, and trialed;
-- current lanes preserve their existing reference behavior;
+- current lanes preserve existing reference behavior;
 - no provider payload changes because a pack exists.
 
 When on for an eligible profile:
@@ -291,64 +291,15 @@ When on for an eligible profile:
 - provenance records the selected revision;
 - profile capacity and quality gates apply.
 
-Do not create a second permanent “legacy references” preference. After trial and
+Do not create a permanent “legacy references” preference. After trial and
 rollout, remove lane-local recropping and the compatibility fallback.
-
-## Trial contract
-
-The identity-pack trial is distinct from general model tuning. It compares
-reference strategies while holding prompt, pinned model version, seed behavior,
-and quality controls fixed within each cell.
-
-Required cells for each supported identity-critical profile are:
-
-- canonical portrait only;
-- canonical portrait plus face detail when capacity permits;
-- face detail only when the profile explicitly supports it;
-- manual crop versus automatic crop for known difficult sources;
-- no-pack historical baseline where reproducible.
-
-The corpus includes:
-
-- several human faces with different framing and skin/hair contrast;
-- at least one stylized character;
-- at least one non-human but face-like character;
-- glasses, partial hair occlusion, and profile/three-quarter examples;
-- a deliberately ambiguous multi-person source to prove refusal;
-- a low-resolution source to prove the pre-spend quality gate.
-
-Each cell records:
-
-- pack id/revision and source hash;
-- crop method and coordinates;
-- intrinsic and effective measurements;
-- policy/profile/model versions;
-- final reference order;
-- provider controls and seed;
-- latency, cost, failure, moderation, and post-crop information.
-
-Pairwise owner review grades:
-
-- facial identity likeness;
-- hair and apparent-age retention;
-- edit fidelity;
-- body, pose, wardrobe, camera, lighting, and background drift;
-- anatomy relative to intended morphology;
-- overall preference.
-
-A face-detail strategy is promoted only when it materially improves identity and
-does not create an unacceptable increase in composition drift, latency, or
-failures. A sharp crop alone is not a pass.
-
-Trial thresholds and the policy version are recorded in the report. A new model
-version reruns the relevant cells before replacing an active profile strategy.
 
 ## Output QA relationship
 
 Identity packs supply reference truth and measurements. They do not own generated
 output similarity scoring.
 
-A later output-QA service may compare the generated face against the selected pack
+A later output-QA service may compare a generated face against the selected pack
 and add an advisory finding. It may not:
 
 - change the current pack;
@@ -361,15 +312,15 @@ The exact pack revision used is the comparison source so QA remains reproducible
 
 ## Face repair relationship
 
-Face repair consumes identity-pack roles like any other explicit render task.
-The repair profile may additionally require the rendered scene and a mask.
+Face repair consumes identity-pack roles like any other explicit render task. The
+repair profile may additionally require the rendered scene and a mask.
 
 The pack system does not select the mask, editor, repair strength, or output
 promotion policy. It guarantees only that the selected character identity comes
 from a current, authorized, traceable reference.
 
-Multi-person repair remains ineligible until the repair plan can bind a selected
-face region to one character without changing the others.
+Multi-person repair remains ineligible until repair can bind a selected face
+region to one character without changing the others.
 
 ## Integration diagnostics
 
@@ -406,6 +357,9 @@ Coverage includes:
 - no direct lane query for hidden crop kinds;
 - removal of lane-local recropping after rollout.
 
+The separate [trial spec](image-identity-packs.spec.trial.md) owns corpus,
+comparison cells, review procedure, threshold calibration, and promotion verdicts.
+
 ## Completion boundary
 
 Integration is complete when:
@@ -419,11 +373,6 @@ Integration is complete when:
   strategy;
 - the rollout flag and legacy recropping path are removed.
 
-The following remain separate systems:
-
-- structured visual state and attention;
-- output face-similarity QA;
-- regional face repair;
-- multi-angle identity sets;
-- user-trained LoRAs or embeddings;
-- pose, depth, and segmentation controls.
+Structured visual state, output face-similarity QA, regional face repair,
+multi-angle identity sets, LoRAs/embeddings, and pose/depth/mask controls remain
+separate systems.
