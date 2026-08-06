@@ -83,6 +83,18 @@ canonical portrait to an unreviewed third-party face-analysis service.
 Detector selection remains replaceable. The fixed corpus determines whether the
 chosen adapter is good enough; the pack contract does not depend on one library.
 
+### V1 implementation ruling (2026-08-06)
+
+The shipped adapter is `nullIdentityFaceDetector` (`version: "null_v1"`,
+`src/server/images/identity-pack-detector.ts`): a real seam whose `detect()`
+returns no observations. Automatic derivation therefore runs the labelled
+conservative heuristic only — a portrait-shaped canonical source gets the
+`heuristic_v1` crop, every other shape fails closed with `no_usable_face` — while
+the detector-crop, candidate-floor and multi-face refusal paths are exercised
+against injected detectors in tests (`setIdentityFaceDetectorForTesting`).
+Selecting a real local detector library is deferred to the trial slice (slice 6)
+and remains a privacy-reviewed decision, not a configuration flip.
+
 ## Candidate ruling
 
 - Exactly one candidate above the reviewed confidence floor may produce a
@@ -286,6 +298,15 @@ row or spin on every render request.
 Backoff state may live in the existing jobs machinery or the pack row's failure
 metadata, but the service exposes one result contract either way. The choice must
 not create two independent retry schedulers.
+
+**As built (2026-08-06):** backoff state is derived from the revision rows
+themselves — the number of revisions for these source bytes under these versions
+is the attempt count, and the newest row's `updated_at` is the last attempt's
+clock — so no metadata blob and no second scheduler exist (60s doubling to a
+one-hour ceiling, five attempts per set of source bytes). `EnsureIdentityPackResult`
+stays the two-variant `ready` | `blocked` union: derivation is bounded local work
+that every caller waits out, and `pending` — a revision reserved by another
+process — is surfaced by the summary read rather than by this result.
 
 ## Derivation diagnostics
 
