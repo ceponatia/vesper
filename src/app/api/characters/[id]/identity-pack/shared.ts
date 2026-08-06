@@ -120,15 +120,24 @@ export async function identityPackWriteFailure(
 ): Promise<Response> {
   switch (result.status) {
     case "conflict":
-      return identityPackFailure(409, "stale_pack", `the pack moved on (${result.reason}); reload and crop again`, {
-        summary: await readIdentityPackSummary(characterId, ownerId),
-        conflict: {
-          reason: result.reason,
-          currentPackId: result.currentPackId,
-          currentRevision: result.currentRevision,
-          sourceContentHash: result.sourceContentHash,
+      // `busy` is the one conflict where nothing moved — another derivation is
+      // mid-flight — so its copy says "again in a moment", not "reload".
+      return identityPackFailure(
+        409,
+        "stale_pack",
+        result.reason === "busy"
+          ? "another update to this pack is still running; try again in a moment"
+          : `the pack moved on (${result.reason}); reload and crop again`,
+        {
+          summary: await readIdentityPackSummary(characterId, ownerId),
+          conflict: {
+            reason: result.reason,
+            currentPackId: result.currentPackId,
+            currentRevision: result.currentRevision,
+            sourceContentHash: result.sourceContentHash,
+          },
         },
-      });
+      );
     case "rejected":
       return identityPackFailure(422, result.reason, result.message, {
         failureCode: result.code,
