@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { and, eq, gt, inArray, type SQL } from "drizzle-orm";
+import { and, eq, gt, inArray, notInArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, images, items, jobs, locations, reclaimOrphanedJobs } from "../db";
 import { describeProviderError } from "../ai";
@@ -97,8 +97,13 @@ const WEBP_QUALITY = 90;
  * 6300×6300 dwarfs any legitimate avatar/scene image), fail on any decode
  * error, and never expand animation frames. This rasterizes every stored
  * buffer, so it protects all decode paths regardless of their own input checks.
+ *
+ * Exported so the identity-pack derivation's own `sharp` calls (extract, resize,
+ * raw decode) run under the SAME limits as storage rather than a second copy of
+ * the numbers that could drift — it re-decodes an already-stored portrait, which
+ * is trusted only to the extent this guard makes it so.
  */
-const SHARP_DECODE_LIMITS = { limitInputPixels: 40_000_000, failOn: "error", animated: false } as const;
+export const SHARP_DECODE_LIMITS = { limitInputPixels: 40_000_000, failOn: "error", animated: false } as const;
 
 /**
  * Atomic write protocol: convert to webp, write `<name>.pending.webp`, fsync,
@@ -393,10 +398,69 @@ function kindGuard(opts: { kind?: ImageKind; kinds?: readonly ImageKind[] }) {
 export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as const satisfies readonly ImageKind[];
 
 /**
+ * Kinds that are INTERNAL render inputs, never user-visible assets
+ * (image-identity-packs.spec.data.md §Hidden image asset). Their owner may read
+ * one — the crop editor has to display it — but they must be absent from every
+ * listing, copy and cross-owner read:
+ *
+ * - the character read's portrait strip (`api/characters/[id]/route.ts` GET);
+ * - `cloneEntityImages` — a copied or published character DERIVES its own pack
+ *   rather than inheriting the origin's hidden bytes (spec.lifecycle.md §Copy);
+ * - the public file-serving widening in `api/images/[id]/file/route.ts`, so a
+ *   hidden crop of a PUBLIC character still stops at its owner.
+ *
+ * Surfaces that filter by a POSITIVE kind list — the Gallery tabs, the chat asset
+ * queries, and the portrait studio's `PORTRAIT_STUDIO_KINDS` (which backs the
+ * studio's GET/DELETE/promote) — exclude these by construction and need nothing
+ * from here. A new surface subtracts them with this list rather than repeating
+ * the literal.
+ */
+export const HIDDEN_IMAGE_KINDS = ["identity_face_crop"] as const satisfies readonly ImageKind[];
+
+/**
+ * The identity-pack lifecycle's call-back into this module
+ * (image-identity-packs.spec.lifecycle.md §"Image sweep integration").
+ *
+ * A registry rather than an import because the dependency only runs one way:
+ * `identity-packs.ts` imports this module for `createImageAsset`,
+ * `saveImageBuffer` and `purgeImagesWhere`, so an import back would close a
+ * cycle and fail `pnpm lint:cycles`. A dynamic `await import()` would not help —
+ * madge counts async imports as edges too. So the pack service registers itself
+ * on load (it is imported by `avatar.ts`, `variants.ts` and the barrel, i.e. by
+ * everything that can reach a sweep), and the two call sites below stay
+ * pack-agnostic.
+ *
+ * Both hooks must contain their own failures: pointer clearing and the
+ * scheduled sweep are maintenance, and neither may fail the delete or the render
+ * that triggered them. `sweep` returns plain counters that join the sweep job
+ * row's payload, which is why this module needs to know nothing about what they
+ * mean.
+ */
+export interface IdentityPackMaintenanceHooks {
+  /** Images whose entity pointers were just nulled — derived state naming them is now stale. */
+  invalidateForImages(imageIds: readonly string[]): Promise<void>;
+  /** Consistency findings + bounded revision cleanup, run inside the scheduled sweep. */
+  sweep(now: Date): Promise<Record<string, number>>;
+}
+
+let identityPackMaintenance: IdentityPackMaintenanceHooks | null = null;
+
+/** Called once, at `identity-packs.ts` module load. `null` restores the no-op (tests). */
+export function registerIdentityPackMaintenance(hooks: IdentityPackMaintenanceHooks | null): void {
+  identityPackMaintenance = hooks;
+}
+
+/**
  * Null out the soft pointers entity rows keep at deleted image ids — a
  * gallery-deleted portrait leaves its character avatar-less (the portrait
  * studio's own rule), a deleted entity render leaves its location/item
  * imageless — never dangling. No-op for scene ids (nothing points at scenes).
+ *
+ * Clearing a canonical portrait pointer also invalidates whatever was derived
+ * FROM it: an identity pack whose source pointer just went away must not keep
+ * serving its crop (spec.lifecycle.md §"Source deletion"). Read-time hash
+ * verification is still the backstop — this is the belt to its braces, for the
+ * paths that bypass the assignment triggers.
  */
 export async function clearEntityImagePointers(imageIds: readonly string[]): Promise<void> {
   if (imageIds.length === 0) return;
@@ -406,6 +470,7 @@ export async function clearEntityImagePointers(imageIds: readonly string[]): Pro
     db().update(locations).set({ imageId: null }).where(inArray(locations.imageId, ids)),
     db().update(items).set({ imageId: null }).where(inArray(items.imageId, ids)),
   ]);
+  await identityPackMaintenance?.invalidateForImages(ids);
 }
 
 /**
@@ -508,6 +573,12 @@ export async function chatAttachmentPaths(chatId: string, imageIds: readonly str
  * source can never strip the copy's art. `sourceImageId` records provenance.
  * Returns old→new image-id map so callers can remap avatar/cover references.
  * An image that fails to copy is skipped (degraded, never throws).
+ *
+ * `HIDDEN_IMAGE_KINDS` never travels: an identity face crop is derived state, and
+ * the destination character derives its OWN pack from its own copied portrait
+ * once that row is ready (image-identity-packs.spec.lifecycle.md §Copy and
+ * publish). Cloning one would hand the destination a crop whose pack row — the
+ * only authority for whether it may be used at all — did not come with it.
  */
 export async function cloneEntityImages(
   entityKind: ImageEntityKind,
@@ -525,6 +596,7 @@ export async function cloneEntityImages(
         eq(images.entityKind, entityKind),
         eq(images.entityId, srcEntityId),
         eq(images.status, "ready"),
+        notInArray(images.kind, [...HIDDEN_IMAGE_KINDS]),
       ),
     );
   const idMap = new Map<string, string>();
@@ -751,8 +823,17 @@ async function runScheduledSweep(now: Date): Promise<void> {
   try {
     const result = await sweepOrphans();
     const jobsReclaimed = await reclaimOrphanedJobs();
-    const summary = { ...result, jobsReclaimed };
-    if (result.orphanFilesRemoved + result.stalePendingFilesRemoved + result.rowsMarkedFailed + jobsReclaimed > 0) {
+    // Derived-asset maintenance rides the same tick: identity-pack consistency
+    // findings (flagged, never silently repaired) and the bounded retention
+    // cleanup for superseded crops. It runs AFTER `sweepOrphans` so a crop whose
+    // file vanished is already marked failed when the findings look at it.
+    const identity = (await identityPackMaintenance?.sweep(now)) ?? {};
+    const summary = { ...result, jobsReclaimed, ...identity };
+    const identityTotal = Object.values(identity).reduce((total, value) => total + value, 0);
+    if (
+      result.orphanFilesRemoved + result.stalePendingFilesRemoved + result.rowsMarkedFailed + jobsReclaimed + identityTotal >
+      0
+    ) {
       log.warn("images", "sweep reconciled orphaned rows/files", summary);
     }
     await db().update(jobs).set({ status: "done", payload: summary, finishedAt: new Date() }).where(eq(jobs.id, row.id));

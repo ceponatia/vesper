@@ -83,6 +83,18 @@ canonical portrait to an unreviewed third-party face-analysis service.
 Detector selection remains replaceable. The fixed corpus determines whether the
 chosen adapter is good enough; the pack contract does not depend on one library.
 
+### V1 implementation ruling (2026-08-06)
+
+The shipped adapter is `nullIdentityFaceDetector` (`version: "null_v1"`,
+`src/server/images/identity-pack-detector.ts`): a real seam whose `detect()`
+returns no observations. Automatic derivation therefore runs the labelled
+conservative heuristic only — a portrait-shaped canonical source gets the
+`heuristic_v1` crop, every other shape fails closed with `no_usable_face` — while
+the detector-crop, candidate-floor and multi-face refusal paths are exercised
+against injected detectors in tests (`setIdentityFaceDetectorForTesting`).
+Selecting a real local detector library is deferred to the trial slice (slice 6)
+and remains a privacy-reviewed decision, not a configuration flip.
+
 ## Candidate ruling
 
 - Exactly one candidate above the reviewed confidence floor may produce a
@@ -186,6 +198,28 @@ only with the stored algorithm version; warning thresholds belong to policy.
 measurements against the named policy version and returns current blockers and
 warnings.
 
+Implemented as `projectIdentityPackPolicy` (`server/images/identity-packs.ts`),
+one helper shared by all three read seams — `ensureIdentityPack`'s current-ready
+reuse path, `getIdentityPackForOwner`, and `evaluateIdentityPackForProfile` — so
+the ensure result, the owner summary and the render seam cannot disagree after a
+policy bump. Two rulings the section above leaves open:
+
+- **It is a projection, not a repair.** A revision stamped with an older
+  `policyVersion` is re-judged for READERS; its row keeps the status, warnings
+  and code it was finalized with, because the row is the historical claim admin
+  history exists to show. A re-judged block therefore reaches the caller as
+  `blocked` (non-retryable — only a policy or source change can move it) over a
+  row that still reads `ready`.
+- **Warnings split by origin.** `heuristic_crop` and `manual_admin_override`
+  record how the crop was AUTHORED and survive a re-judgment unchanged;
+  everything else is a verdict recomputed from the stored measurements. The
+  projected contract also carries the policy version that produced the verdict,
+  since render provenance copies that field verbatim.
+
+Only `ready` revisions are projected. A LOOSENED policy cannot promote a stored
+`unusable` one — a refused revision has no crop bytes to hand anybody — so that
+direction is a re-derivation, not a read-time verdict.
+
 ## Versioned reference policy
 
 The pure policy has intrinsic and profile layers:
@@ -286,6 +320,15 @@ row or spin on every render request.
 Backoff state may live in the existing jobs machinery or the pack row's failure
 metadata, but the service exposes one result contract either way. The choice must
 not create two independent retry schedulers.
+
+**As built (2026-08-06):** backoff state is derived from the revision rows
+themselves — the number of revisions for these source bytes under these versions
+is the attempt count, and the newest row's `updated_at` is the last attempt's
+clock — so no metadata blob and no second scheduler exist (60s doubling to a
+one-hour ceiling, five attempts per set of source bytes). `EnsureIdentityPackResult`
+stays the two-variant `ready` | `blocked` union: derivation is bounded local work
+that every caller waits out, and `pending` — a revision reserved by another
+process — is surfaced by the summary read rather than by this result.
 
 ## Derivation diagnostics
 

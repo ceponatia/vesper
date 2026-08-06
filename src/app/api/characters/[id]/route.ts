@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, notInArray } from "drizzle-orm";
 import {
   characterProfileSchema,
   emptyCharacterProfile,
@@ -7,6 +7,7 @@ import {
 import { parseOr } from "@/lib/parse";
 import { characterChats, characters, chatParticipants, db, images } from "@/server/db";
 import { deleteChat } from "@/server/engine";
+import { deleteCharacterIdentityAssets, HIDDEN_IMAGE_KINDS } from "@/server/images";
 import {
   characterPatchSchema,
   deleteEntityImages,
@@ -29,10 +30,20 @@ export const GET = withAuthorizedResource(
   async (user, params: Params) => (await findViewable("character", params.id, user.id)) ?? null,
   async (user, row) => {
     // Portraits scope to the entity owner so a public preview shows the author's art.
+    // `HIDDEN_IMAGE_KINDS` is subtracted: an identity face crop is an internal render
+    // input, and this strip is read by the character's OWNER and by every public
+    // viewer alike, so a hidden asset must never surface through it.
     const portraitRows = await db()
       .select()
       .from(images)
-      .where(and(eq(images.ownerId, row.ownerId), eq(images.entityKind, "character"), eq(images.entityId, row.id)))
+      .where(
+        and(
+          eq(images.ownerId, row.ownerId),
+          eq(images.entityKind, "character"),
+          eq(images.entityId, row.id),
+          notInArray(images.kind, [...HIDDEN_IMAGE_KINDS]),
+        ),
+      )
       .orderBy(desc(images.createdAt));
     // The strip here is a render list, so it ships the public image shape for
     // EVERY viewer (security-authz.plan.md slice 4): no client reads `path`,
@@ -108,6 +119,13 @@ export const DELETE = withAuthorizedResource(
     // library delete never breaks them and never hits a FK — no in-use guard.
     await db().delete(characters).where(and(eq(characters.id, id), eq(characters.ownerId, user.id)));
     void deleteEntityImages("character", id, user.id).catch(() => undefined);
+    // Hidden identity assets are named explicitly even though `deleteEntityImages`
+    // takes every image of this character today: the data-lifecycle plan will make
+    // Gallery-visible images SURVIVE their character, and that retention must never
+    // extend to an internal render input nobody browses
+    // (image-identity-packs.spec.lifecycle.md §"Character deletion"). The pack rows
+    // themselves cascade with the character row.
+    void deleteCharacterIdentityAssets(id, user.id).catch(() => undefined);
     return jsonOk({ ok: true });
   },
 );

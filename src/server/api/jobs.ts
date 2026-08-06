@@ -12,8 +12,9 @@ import type { ApiJobType } from "./job-types";
  * settled job is a real provider outcome, and it lives on the `@/server/api`
  * side of the boundary that forbids `@/server/ai` from importing back.
  *
- * Jobs that touch no provider (`image_sweep`) map to null and report nothing —
- * their failures say something about this app, not about an upstream.
+ * Jobs that touch no provider map to null and report nothing — their failures say
+ * something about this app, not about an upstream. That is `image_sweep` (file
+ * reconciliation) and `identity_pack` (local decode/crop/measure/write).
  */
 function providerLaneFor(type: ApiJobType): ProviderLane | null {
   switch (type) {
@@ -36,6 +37,7 @@ function providerLaneFor(type: ApiJobType): ProviderLane | null {
     case "item_classify":
       return "text";
     case "image_sweep":
+    case "identity_pack":
       return null;
   }
 }
