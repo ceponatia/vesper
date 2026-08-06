@@ -190,29 +190,32 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   events 30d / jobs 7d, prod telemetry ids+counts only, account deletion
   parked → deferred.plan.md.
 
-- **Image identity packs — remainder: the fixed reference trial, then production
-  close-out** — [image-identity-packs.plan.md](image-identity-packs.plan.md) ·
+- **Image identity packs — remainder: run the fixed reference trial, then
+  production close-out** — [image-identity-packs.plan.md](image-identity-packs.plan.md) ·
   [spec](image-identity-packs.spec.md) (active; planned 2026-08-05 and extracted
   from the image-render-quality plan so reference preparation has one owner;
   **slices 1–4 and 5A shipped 2026-08-06**, see
-  [roadmap.shipped.md](roadmap.shipped.md); slice 5B — render-lane consumption —
-  waits on the capabilities plan's shared render intent). Compiles the current canonical
+  [roadmap.shipped.md](roadmap.shipped.md); **slice 6 harness built dark
+  2026-08-06** — admin trial runner, blinded pairwise review, and verdict
+  recording, no paid cell run yet; slice 5B — render-lane consumption — waits
+  on the capabilities plan's shared render intent). Compiles the current canonical
   portrait into an owner-scoped, revisioned identity pack: the hidden
   `identity_face_crop` kind (excluded from the gallery, the portrait studio,
   clones and public file serving), SHA-256 source hashing, versioned
   `derive_v1`/`policy_v1` derivation with golden-pinned geometry, an idempotent
   single-flight `ensureIdentityPack` with compare-before-promote and row-derived
   retries, staleness and invalidation, a 7-day revision cleanup, hard delete with
-  the character,
-  owner crop-editor + admin batch/history/override routes and UI, and
-  profile-aware pre-spend evaluation returning role candidates with provenance.
-  **What remains: slice 6** — the fixed corpus trial that calibrates the
-  conservative v1 thresholds, decides whether face-detail references actually
-  improve identity, and picks the local face detector v1 deliberately ships
-  without (automatic derivation is heuristic-only until then) — **then slice 7**,
-  production close-out: turn advisory measurements into the reviewed gate, wire
-  provenance and telemetry, and remove the rollout fallbacks. Both need provider
-  spend and an owner verdict. Nothing consumes packs yet:
+  the character, owner crop-editor + admin batch/history/override routes and UI,
+  profile-aware pre-spend evaluation returning role candidates with provenance,
+  and now the slice-6 trial subsystem (runs/cells/grades tables,
+  budget-charged bounded execution, hidden `identity_trial_output` assets,
+  blinded grading, per-profile verdict slots). **What remains of slice 6 is
+  the trial itself** — the owner builds the corpus characters, runs the paid
+  cells, calibrates the conservative v1 thresholds, decides the local face
+  detector (automatic derivation is heuristic-only until then), and records
+  the verdicts — **then slice 7**, production close-out: turn advisory
+  measurements into the reviewed gate, wire provenance and telemetry, and
+  remove the rollout fallbacks. Nothing consumes packs yet:
   `IMAGE_IDENTITY_PACK_REFERENCES` is default-off and the consumer is the
   capabilities plan's shared render intent (slice 2, above). Still no persisted
   face embeddings in v1.

@@ -66,7 +66,17 @@ const routes = routeFiles(here);
 
 describe("identity-packs admin surface", () => {
   it("found the routes at all — a broken walk must not pass vacuously", () => {
-    expect(routes).toEqual(["[packId]/history", "[packId]/override", "batch"]);
+    expect(routes).toEqual([
+      "[packId]/history",
+      "[packId]/override",
+      "batch",
+      "trial",
+      "trial/[runId]",
+      "trial/[runId]/execute",
+      "trial/[runId]/review",
+      "trial/[runId]/summary",
+      "trial/[runId]/verdict",
+    ]);
   });
 
   it("lives beneath the owner-admin namespace, which is what makes the wrapper valid", () => {
