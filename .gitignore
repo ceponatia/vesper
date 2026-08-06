@@ -25,3 +25,7 @@ docs/**/*.avif
 docs/**/*.bmp
 docs/**/*.tif
 docs/**/*.tiff
+
+# Exception: training reference images are inputs, not regenerable output —
+# they must travel with the repo. Applies to every subfolder (one per subject).
+!docs/developer-notes/train-images/**
