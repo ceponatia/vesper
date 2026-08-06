@@ -198,6 +198,28 @@ only with the stored algorithm version; warning thresholds belong to policy.
 measurements against the named policy version and returns current blockers and
 warnings.
 
+Implemented as `projectIdentityPackPolicy` (`server/images/identity-packs.ts`),
+one helper shared by all three read seams — `ensureIdentityPack`'s current-ready
+reuse path, `getIdentityPackForOwner`, and `evaluateIdentityPackForProfile` — so
+the ensure result, the owner summary and the render seam cannot disagree after a
+policy bump. Two rulings the section above leaves open:
+
+- **It is a projection, not a repair.** A revision stamped with an older
+  `policyVersion` is re-judged for READERS; its row keeps the status, warnings
+  and code it was finalized with, because the row is the historical claim admin
+  history exists to show. A re-judged block therefore reaches the caller as
+  `blocked` (non-retryable — only a policy or source change can move it) over a
+  row that still reads `ready`.
+- **Warnings split by origin.** `heuristic_crop` and `manual_admin_override`
+  record how the crop was AUTHORED and survive a re-judgment unchanged;
+  everything else is a verdict recomputed from the stored measurements. The
+  projected contract also carries the policy version that produced the verdict,
+  since render provenance copies that field verbatim.
+
+Only `ready` revisions are projected. A LOOSENED policy cannot promote a stored
+`unusable` one — a refused revision has no crop bytes to hand anybody — so that
+direction is a re-derivation, not a read-time verdict.
+
 ## Versioned reference policy
 
 The pure policy has intrinsic and profile layers:

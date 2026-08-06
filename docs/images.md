@@ -235,6 +235,17 @@ number lives in `lib/images/identity-pack-policy.ts` behind `derive_v1` (bump wh
 crop moved" is always deliberate. The v1 values are conservative placeholders the trial calibrates; blur and occlusion
 thresholds are `null` — defined, not armed.
 
+**A stored verdict is not eternal truth.** Rows persist *measurements*, never `quality.accepted`, so a revision stamped
+with an older `policyVersion` is **re-judged on read** by `projectIdentityPackPolicy` (`images/identity-packs.ts`) —
+one helper shared by all three read seams (`ensureIdentityPack`'s reuse path, `getIdentityPackForOwner`,
+`evaluateIdentityPackForProfile`), so a policy bump can never leave one of them quoting a verdict the others dropped.
+It is a **projection, not a repair**: the row keeps the status and warnings it was finalized with (a revision is a
+historical claim, and admin history shows it), while readers get today's answer — blockers make the pack `unusable`
+with a non-retryable code, warnings are recomputed from the stored numbers, and the two *provenance* warnings
+(`heuristic_crop`, `manual_admin_override` — how the crop was authored, not what a threshold measured) survive
+unchanged. Only `ready` revisions are projected: a loosened policy cannot promote a refused revision, which has no crop
+bytes to hand anybody, so that direction is a re-derivation.
+
 **`ensureIdentityPack` is the one entry point**, and idempotent: authorize → hash the source → reuse a matching
 ready/unusable revision → coalesce behind a **keyed single flight** (`identity_pack:<characterId>`, also the advisory
 lock inside both transactions) → else reserve a `pending` revision, derive **outside** the transaction, and finalize by
@@ -260,8 +271,13 @@ isolated: a clone carries no crop, and the destination derives its own pack from
 `none` and `pending` are answers rather than spinners), `POST ensure`, `POST manual-crop` (409 with a fresh summary on
 a stale editor save, 422 on a measured rejection), `POST reset-automatic` (a new automatic revision, not an undo) — all
 authorized from the **character in the URL**, with a body `packId`/`revision`/`sourceContentHash` only as a concurrency
-guard. The portrait studio shows a quiet `IdentityReferencePanel` (renders nothing if the read fails) opening
-`identity-crop-dialog.tsx`: a drag/resize square over the canonical source, live preview, plain-language warnings. The
+guard. Every route answers `{ summary }`; the two write routes add an optional `blocked: { code, retryable }` when the
+refusal happened **before** a revision existed (no portrait, source still generating, unreadable bytes, single-flight
+timeout) — that outcome is invisible in the re-read summary, so without it a Prepare click answers with silence. The
+portrait studio shows a quiet `IdentityReferencePanel` (keyed on the character **and** its canonical portrait, so a new
+portrait re-reads instead of showing the previous pack's state; renders nothing if the read fails) opening
+`identity-crop-dialog.tsx`: a drag/resize square over the canonical source, live preview, plain-language warnings, and
+the `blocked` code in the owner's words when a prepare or reset refuses. The
 **self-scoped** admin lane `/api/admin/self/identity-packs` adds a bounded preparation `batch` (dry run, hard caps,
 named trial-corpus registry — empty until the trial), per-pack `history`, and a recorded `override` waiving a *reviewed
 threshold* only (ownership, bounds and stale-hash refusals stand whoever asks; the revision records actor, reason and

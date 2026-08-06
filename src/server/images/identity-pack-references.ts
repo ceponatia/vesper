@@ -15,7 +15,7 @@ import {
   evaluateIdentityProfilePolicy,
   type PixelSize,
 } from "@/lib/images/identity-pack-quality";
-import { ensureIdentityPack } from "./identity-packs";
+import { ensureIdentityPack, projectIdentityPackPolicy } from "./identity-packs";
 
 /**
  * Profile-aware identity reference evaluation — the pack system's whole surface
@@ -89,7 +89,17 @@ export async function evaluateIdentityPackForProfile(
     return ineligible(ensured.code, `images.identity_pack.${ensured.code}`, sink, characterId);
   }
 
-  const pack = ensured.pack;
+  // The third read seam re-judges the pack under the policy in force as well.
+  // `ensureIdentityPack` already projects what it returns, so this is normally a
+  // no-op — it is here so the render seam's guarantee is its own rather than an
+  // inherited property of one caller's internals, and the projection is
+  // idempotent by construction (it restamps the version it judged under).
+  const projection = projectIdentityPackPolicy(ensured.pack, sink);
+  if (projection.blockedBy !== null) {
+    return ineligible(projection.blockedBy, `images.identity_pack.${projection.blockedBy}`, sink, characterId);
+  }
+
+  const pack = projection.pack;
   const policy = input.profilePolicy ?? PROFILE_POLICY_DEFAULTS_V1;
   const effectiveReference: PixelSize | null = input.effectiveReferenceSize
     ? { width: input.effectiveReferenceSize.widthPx, height: input.effectiveReferenceSize.heightPx }

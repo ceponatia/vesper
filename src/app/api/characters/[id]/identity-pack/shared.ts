@@ -1,5 +1,9 @@
 import type { NextResponse } from "next/server";
-import type { IdentityPackNormalizedCropWire, IdentityPackSummaryWire } from "@/contracts";
+import type {
+  EnsureIdentityPackResult,
+  IdentityPackNormalizedCropWire,
+  IdentityPackSummaryWire,
+} from "@/contracts";
 import { jsonError, jsonOk } from "@/server/api";
 import {
   getIdentityPackForOwner,
@@ -48,11 +52,27 @@ export async function readIdentityPackSummary(
  * work rather than assembled from what the service returned. A save promotes a
  * new revision and a reset supersedes one, so the row is the only honest account
  * of what the client should now be looking at.
+ *
+ * `outcome` is the service's typed result, and it is passed by the two routes
+ * that DO work without necessarily leaving a revision behind. A refusal reached
+ * before anything was persisted — no canonical portrait, a source still
+ * generating, unreadable bytes, another derivation holding the lock past the
+ * wait window — is invisible in the re-read summary: it reports the previous
+ * pack, or `none`, and an owner who just clicked Prepare is shown the state they
+ * started in with no reason for it. So the body widens by one optional field
+ * (contracts §`identityPackBlockedSchema`) rather than the status changing: an
+ * unusable pack stays product feedback at 200, and `{ summary }` alone stays the
+ * exact shape for every route and every success.
  */
-export async function identityPackSummaryResponse(characterId: string, ownerId: string): Promise<Response> {
+export async function identityPackSummaryResponse(
+  characterId: string,
+  ownerId: string,
+  outcome?: EnsureIdentityPackResult,
+): Promise<Response> {
   const summary = await readIdentityPackSummary(characterId, ownerId);
   if (summary === null) return jsonError("not_found", "character not found", 404);
-  return jsonOk({ summary });
+  if (outcome?.status !== "blocked") return jsonOk({ summary });
+  return jsonOk({ summary, blocked: { code: outcome.code, retryable: outcome.retryable } });
 }
 
 /**

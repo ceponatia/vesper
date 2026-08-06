@@ -214,6 +214,37 @@ describe.skipIf(!ready)("identity-pack owner routes", () => {
     expect(reset.summary.packId).not.toBe(manual.packId);
   });
 
+  it("answers a refusal that never reached a revision with the actionable code, not silence", async () => {
+    // No canonical portrait, so preparation fails before anything is persisted —
+    // the case where the re-read summary has nothing new to say and, without the
+    // `blocked` field, an owner clicking Prepare would be answered with the same
+    // "not prepared" panel they started on.
+    const [character] = await db()
+      .insert(characters)
+      .values({ ownerId: userId, name: "Portrait-less Route Subject", profile: { bio: "no portrait" } })
+      .returning({ id: characters.id });
+    if (!character) throw new Error("failed to create the test character");
+
+    const res = await packEnsure(
+      apiRequest(packPath(character.id, "/ensure"), { body: {} }),
+      ctxFor(character.id),
+    );
+    const body = await expectJson<{
+      summary: IdentityPackSummaryWire;
+      blocked?: { code: string; retryable: boolean };
+    }>(res, 200);
+
+    // Still a 200 with a summary: an unusable pack is product feedback, not a
+    // server error, and the shape stays the one every other pack route sends.
+    expect(body.summary.status).toBe("none");
+    expect(body.blocked?.code).toBe("source_missing");
+    expect(body.blocked?.retryable).toBe(false);
+
+    // The plain read carries no such field — nothing was attempted.
+    const read = await packGet(apiRequest(packPath(character.id)), ctxFor(character.id));
+    expect(await expectJson<{ blocked?: unknown }>(read, 200)).not.toHaveProperty("blocked");
+  });
+
   it("hides another owner's character behind the same 404 a nonexistent one gets", async () => {
     const characterId = await seedSubject("Private Subject");
     const intruder = await seedTestUser("identity-pack-routes-int-intruder");

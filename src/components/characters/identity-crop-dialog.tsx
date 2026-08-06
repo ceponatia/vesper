@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   imageIdentityPackFailureCodeSchema,
   imageIdentityPackWarningCodeSchema,
+  type IdentityPackResponseWire,
   type IdentityPackSummaryStatus,
 } from "@/contracts";
 import {
@@ -379,17 +380,22 @@ export function IdentityCropDialog({
   };
 
   /** Prepare/reset share one shape: run, adopt the new summary, or explain the refusal. */
-  const runPackWrite = async (
-    kind: "ensure" | "reset",
-    call: () => Promise<ApiResult<{ summary: IdentityPackSummaryWire }>>,
-  ) => {
+  const runPackWrite = async (kind: "ensure" | "reset", call: () => Promise<ApiResult<IdentityPackResponseWire>>) => {
     setBusy(kind);
     setNotice(null);
     const result = await call();
     if (!activeRef.current) return;
     setBusy(null);
-    if (result.ok) applySummary(result.data.summary);
-    else setNotice({ tone: "error", text: writeErrorCopy(result.error) });
+    if (!result.ok) {
+      setNotice({ tone: "error", text: writeErrorCopy(result.error) });
+      return;
+    }
+    applySummary(result.data.summary);
+    // A 200 whose refusal never reached a revision: the summary is unchanged
+    // (the previous pack, or none at all), so the body's `blocked` code is the
+    // only thing that can tell the owner why nothing happened.
+    const blocked = result.data.blocked;
+    if (blocked) setNotice({ tone: "error", text: identityPackCodeCopy(blocked.code) });
   };
 
   const chip = identityPackSummaryChip(status, stale);

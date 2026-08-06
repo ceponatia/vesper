@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import type { DetectedFaceCandidate, ImageIdentityPackWarningCode } from "@/contracts";
+import { INTRINSIC_POLICY_V1 } from "@/lib/images/identity-pack-policy";
 import {
   endTestPool,
   probeIntegrationDb,
@@ -16,7 +17,13 @@ import {
 import { characters, db, imageIdentityPacks, images } from "../db";
 import { absoluteImagePath, createImageAsset, saveImageBuffer, type ImageRow } from "./assets";
 import { setIdentityFaceDetectorForTesting, type IdentityFaceDetector } from "./identity-pack-detector";
-import { ensureIdentityPack, getIdentityPackForOwner, packRowToContract, type IdentityPackRow } from "./identity-packs";
+import {
+  ensureIdentityPack,
+  getIdentityPackForOwner,
+  packRowToContract,
+  setIdentityIntrinsicPolicyForTesting,
+  type IdentityPackRow,
+} from "./identity-packs";
 
 /**
  * `ensureIdentityPack` end to end against DATABASE_URL and a sandboxed
@@ -59,9 +66,11 @@ beforeAll(async () => {
 });
 
 afterEach(() => {
-  // One suite's scripted detector must never leak into the next case — the
-  // shipped adapter finding nothing is what the heuristic cases depend on.
+  // One suite's scripted detector or policy must never leak into the next case —
+  // the shipped adapter finding nothing, and the v1 thresholds being unarmed, are
+  // what the heuristic cases depend on.
   setIdentityFaceDetectorForTesting(null);
+  setIdentityIntrinsicPolicyForTesting(null);
 });
 
 afterAll(async () => {
@@ -556,5 +565,86 @@ describe.skipIf(!ready)("pack reads", () => {
     expect(summary?.sourceImageId).toBe(subject.portrait.id);
 
     expect(await getIdentityPackForOwner(subject.characterId, `${userId}-not-me`)).toBeNull();
+  });
+});
+
+/**
+ * The read-time half of "`quality.accepted` is not persisted as eternal truth"
+ * (spec.derivation.md §"Intrinsic quality measurement", spec.data.md
+ * §"Schema-version behavior": a policy change re-evaluates existing packs).
+ *
+ * Only `policy_v1` exists today, so the branch is dormant in production and these
+ * cases fabricate the condition it exists for: a stored revision stamped with an
+ * older policy version, re-read while different thresholds are in force. Both
+ * directions of the ruling are pinned — the reader is told the CURRENT verdict,
+ * and the row keeps the historical one.
+ */
+describe.skipIf(!ready)("read-time policy projection", () => {
+  /** Derive a ready pack, then restamp its row as the work of an older policy. */
+  async function packUnderOldPolicy(name: string): Promise<{ characterId: string; packId: string }> {
+    const subject = await seedSubject(name);
+    const derived = await ensureIdentityPack({ ownerId: userId, characterId: subject.characterId, purpose: "background" });
+    if (derived.status !== "ready") throw new Error("expected a ready pack to re-judge");
+    await db()
+      .update(imageIdentityPacks)
+      .set({ policyVersion: "policy_v0" })
+      .where(eq(imageIdentityPacks.id, derived.pack.id));
+    return { characterId: subject.characterId, packId: derived.pack.id };
+  }
+
+  it("refuses a stored ready revision the current policy would block, without rewriting the row", async () => {
+    const { characterId, packId } = await packUnderOldPolicy("Re-judged Subject");
+    // A tightened minimum size — the most ordinary reason to bump a policy — and
+    // one that needs no measurement to be non-null to bite.
+    setIdentityIntrinsicPolicyForTesting({
+      ...INTRINSIC_POLICY_V1,
+      version: "policy_v2",
+      minimumCropWidthPx: 100_000,
+      minimumCropHeightPx: 100_000,
+    });
+
+    const sink = new DiagnosticCollector();
+    const reused = await ensureIdentityPack({ ownerId: userId, characterId, purpose: "identity_render", sink });
+
+    expect(reused.status).toBe("blocked");
+    if (reused.status !== "blocked") return;
+    expect(reused.code).toBe("crop_too_small");
+    // Nothing about this source or this rectangle will change the answer: only a
+    // policy or a source change can.
+    expect(reused.retryable).toBe(false);
+    expect(reused.pack?.status).toBe("unusable");
+    // The verdict names the policy that produced it, not the one the row was
+    // stamped with — render provenance copies this field verbatim.
+    expect(reused.pack?.derivation.policyVersion).toBe("policy_v2");
+    expect(sink.items.map((d) => d.code)).toContain("images.identity_pack.crop_too_small");
+
+    // The owner's status view agrees, because it is the same projection.
+    const summary = await getIdentityPackForOwner(characterId, userId);
+    expect(summary?.pack?.status).toBe("unusable");
+    expect(summary?.failureCode).toBe("crop_too_small");
+    expect(summary?.retryable).toBe(false);
+
+    // The row is a historical claim about what policy_v0 decided, and it stays one.
+    const [row] = await packRows(characterId);
+    expect(row?.id).toBe(packId);
+    expect(row?.status).toBe("ready");
+    expect(row?.current).toBe(true);
+    expect(row?.policyVersion).toBe("policy_v0");
+    expect(row?.failureCode).toBeNull();
+  });
+
+  it("re-derives warnings under the current policy while keeping how the crop was authored", async () => {
+    const { characterId } = await packUnderOldPolicy("Re-warned Subject");
+    setIdentityIntrinsicPolicyForTesting({ ...INTRINSIC_POLICY_V1, version: "policy_v2" });
+
+    const reused = await ensureIdentityPack({ ownerId: userId, characterId, purpose: "identity_render" });
+
+    expect(reused.status).toBe("ready");
+    if (reused.status !== "ready") return;
+    // `heuristic_crop` records HOW the rectangle was chosen, so it survives a
+    // re-judgment; a measured warning would be recomputed from the stored numbers.
+    expect(reused.warnings).toEqual<ImageIdentityPackWarningCode[]>(["heuristic_crop"]);
+    expect(reused.pack.derivation.policyVersion).toBe("policy_v2");
+    expect(await packRows(characterId)).toHaveLength(1);
   });
 });
