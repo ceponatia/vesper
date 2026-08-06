@@ -7,7 +7,7 @@ import {
 import { parseOr } from "@/lib/parse";
 import { characterChats, characters, chatParticipants, db, images } from "@/server/db";
 import { deleteChat } from "@/server/engine";
-import { HIDDEN_IMAGE_KINDS } from "@/server/images";
+import { deleteCharacterIdentityAssets, HIDDEN_IMAGE_KINDS } from "@/server/images";
 import {
   characterPatchSchema,
   deleteEntityImages,
@@ -119,6 +119,13 @@ export const DELETE = withAuthorizedResource(
     // library delete never breaks them and never hits a FK — no in-use guard.
     await db().delete(characters).where(and(eq(characters.id, id), eq(characters.ownerId, user.id)));
     void deleteEntityImages("character", id, user.id).catch(() => undefined);
+    // Hidden identity assets are named explicitly even though `deleteEntityImages`
+    // takes every image of this character today: the data-lifecycle plan will make
+    // Gallery-visible images SURVIVE their character, and that retention must never
+    // extend to an internal render input nobody browses
+    // (image-identity-packs.spec.lifecycle.md §"Character deletion"). The pack rows
+    // themselves cascade with the character row.
+    void deleteCharacterIdentityAssets(id, user.id).catch(() => undefined);
     return jsonOk({ ok: true });
   },
 );

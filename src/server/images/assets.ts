@@ -418,10 +418,49 @@ export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as co
 export const HIDDEN_IMAGE_KINDS = ["identity_face_crop"] as const satisfies readonly ImageKind[];
 
 /**
+ * The identity-pack lifecycle's call-back into this module
+ * (image-identity-packs.spec.lifecycle.md §"Image sweep integration").
+ *
+ * A registry rather than an import because the dependency only runs one way:
+ * `identity-packs.ts` imports this module for `createImageAsset`,
+ * `saveImageBuffer` and `purgeImagesWhere`, so an import back would close a
+ * cycle and fail `pnpm lint:cycles`. A dynamic `await import()` would not help —
+ * madge counts async imports as edges too. So the pack service registers itself
+ * on load (it is imported by `avatar.ts`, `variants.ts` and the barrel, i.e. by
+ * everything that can reach a sweep), and the two call sites below stay
+ * pack-agnostic.
+ *
+ * Both hooks must contain their own failures: pointer clearing and the
+ * scheduled sweep are maintenance, and neither may fail the delete or the render
+ * that triggered them. `sweep` returns plain counters that join the sweep job
+ * row's payload, which is why this module needs to know nothing about what they
+ * mean.
+ */
+export interface IdentityPackMaintenanceHooks {
+  /** Images whose entity pointers were just nulled — derived state naming them is now stale. */
+  invalidateForImages(imageIds: readonly string[]): Promise<void>;
+  /** Consistency findings + bounded revision cleanup, run inside the scheduled sweep. */
+  sweep(now: Date): Promise<Record<string, number>>;
+}
+
+let identityPackMaintenance: IdentityPackMaintenanceHooks | null = null;
+
+/** Called once, at `identity-packs.ts` module load. `null` restores the no-op (tests). */
+export function registerIdentityPackMaintenance(hooks: IdentityPackMaintenanceHooks | null): void {
+  identityPackMaintenance = hooks;
+}
+
+/**
  * Null out the soft pointers entity rows keep at deleted image ids — a
  * gallery-deleted portrait leaves its character avatar-less (the portrait
  * studio's own rule), a deleted entity render leaves its location/item
  * imageless — never dangling. No-op for scene ids (nothing points at scenes).
+ *
+ * Clearing a canonical portrait pointer also invalidates whatever was derived
+ * FROM it: an identity pack whose source pointer just went away must not keep
+ * serving its crop (spec.lifecycle.md §"Source deletion"). Read-time hash
+ * verification is still the backstop — this is the belt to its braces, for the
+ * paths that bypass the assignment triggers.
  */
 export async function clearEntityImagePointers(imageIds: readonly string[]): Promise<void> {
   if (imageIds.length === 0) return;
@@ -431,6 +470,7 @@ export async function clearEntityImagePointers(imageIds: readonly string[]): Pro
     db().update(locations).set({ imageId: null }).where(inArray(locations.imageId, ids)),
     db().update(items).set({ imageId: null }).where(inArray(items.imageId, ids)),
   ]);
+  await identityPackMaintenance?.invalidateForImages(ids);
 }
 
 /**
@@ -783,8 +823,17 @@ async function runScheduledSweep(now: Date): Promise<void> {
   try {
     const result = await sweepOrphans();
     const jobsReclaimed = await reclaimOrphanedJobs();
-    const summary = { ...result, jobsReclaimed };
-    if (result.orphanFilesRemoved + result.stalePendingFilesRemoved + result.rowsMarkedFailed + jobsReclaimed > 0) {
+    // Derived-asset maintenance rides the same tick: identity-pack consistency
+    // findings (flagged, never silently repaired) and the bounded retention
+    // cleanup for superseded crops. It runs AFTER `sweepOrphans` so a crop whose
+    // file vanished is already marked failed when the findings look at it.
+    const identity = (await identityPackMaintenance?.sweep(now)) ?? {};
+    const summary = { ...result, jobsReclaimed, ...identity };
+    const identityTotal = Object.values(identity).reduce((total, value) => total + value, 0);
+    if (
+      result.orphanFilesRemoved + result.stalePendingFilesRemoved + result.rowsMarkedFailed + jobsReclaimed + identityTotal >
+      0
+    ) {
       log.warn("images", "sweep reconciled orphaned rows/files", summary);
     }
     await db().update(jobs).set({ status: "done", payload: summary, finishedAt: new Date() }).where(eq(jobs.id, row.id));

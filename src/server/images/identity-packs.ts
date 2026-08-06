@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import sharp from "sharp";
-import { and, count, eq, max, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, isNull, lt, max, or, sql } from "drizzle-orm";
 import { z, type ZodType } from "zod";
 import {
   imageIdentityPackQualitySchema,
@@ -10,6 +10,7 @@ import {
   type DetectedFaceCandidate,
   type EnsureIdentityPackInput,
   type EnsureIdentityPackResult,
+  type IdentityPackIntrinsicPolicy,
   type ImageIdentityCropMethod,
   type ImageIdentityPackFailureCode,
   type ImageIdentityPackQuality,
@@ -19,13 +20,17 @@ import {
   type SourcePixelCrop,
 } from "@/contracts";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { runInBatches } from "@/lib/batches";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import {
   deriveDetectorCrop,
   heuristicCropV1,
   identityCropOutputSide,
   isHeuristicEligibleSource,
+  normalizedCropToSourcePixels,
+  squareSourcePixelCrop,
   validateIdentityCrop,
+  type NormalizedCrop,
   type SourceDimensions,
 } from "@/lib/images/identity-pack-crop";
 import {
@@ -41,6 +46,7 @@ import {
   IDENTITY_PACK_POLICY_VERSION,
   IDENTITY_PACK_SCHEMA_VERSION,
   INTRINSIC_POLICY_V1,
+  PROFILE_POLICY_DEFAULTS_V1,
 } from "@/lib/images/identity-pack-policy";
 import { characters, db, hasLiveCharacterJob, imageIdentityPacks, images, JOB_STALE_MS, jobs } from "../db";
 import { log } from "@/server/log";
@@ -55,9 +61,13 @@ import {
   createImageAsset,
   deleteOwnedImage,
   failImage,
+  HIDDEN_IMAGE_KINDS,
+  purgeImagesWhere,
   readImageBytes,
+  registerIdentityPackMaintenance,
   saveImageBuffer,
   SHARP_DECODE_LIMITS,
+  type ImageKind,
   type ImageRow,
 } from "./assets";
 import { identityFaceDetector } from "./identity-pack-detector";
@@ -136,6 +146,27 @@ export function sourceContentHashOf(buffer: Buffer): string {
  */
 export function identityPackLockKey(characterId: string): string {
   return `identity_pack:${characterId}`;
+}
+
+/** Test-only override; `null` restores `INTRINSIC_POLICY_V1`. Process-local. */
+let injectedIntrinsicPolicy: IdentityPackIntrinsicPolicy | null = null;
+
+/**
+ * Swap the intrinsic thresholds for a scripted set, the same seam shape the
+ * detector uses. Integration tests arm the blur/occlusion checks that policy_v1
+ * deliberately leaves `null` — without it, the block-and-override paths cannot
+ * be exercised at all until the trial calibrates real numbers, and an override
+ * that has never once run is not a feature anyone should ship. Production never
+ * calls it; pass `null` in teardown so one suite's policy cannot leak into the
+ * next.
+ */
+export function setIdentityIntrinsicPolicyForTesting(policy: IdentityPackIntrinsicPolicy | null): void {
+  injectedIntrinsicPolicy = policy;
+}
+
+/** The thresholds every evaluation in this module reads. */
+function intrinsicPolicy(): IdentityPackIntrinsicPolicy {
+  return injectedIntrinsicPolicy ?? INTRINSIC_POLICY_V1;
 }
 
 /* ------------------------------------------------------------------------ *
@@ -391,6 +422,22 @@ type ResolveSourceResult = { ok: true; source: ResolvedSource } | { ok: false; c
  *      crop, because a crop nothing can point at is not evidence, it is litter.
  */
 export async function ensureIdentityPack(input: EnsureIdentityPackInput): Promise<EnsureIdentityPackResult> {
+  return runDerivation(input, { forceNewRevision: false });
+}
+
+interface DerivationOptions {
+  /**
+   * Skip the "is there already an answer?" step and always open a new revision.
+   *
+   * Only two callers want this, and both are explicit human acts: reset-to-automatic
+   * (the owner discarded their manual crop) and an admin batch's `regenerate`. Every
+   * other caller must NOT set it — re-deriving an unchanged source on every request is
+   * exactly what the current-revision check exists to prevent.
+   */
+  forceNewRevision: boolean;
+}
+
+async function runDerivation(input: EnsureIdentityPackInput, opts: DerivationOptions): Promise<EnsureIdentityPackResult> {
   const { ownerId, characterId, sink } = input;
   try {
     const resolved = await resolveSource(ownerId, characterId, sink);
@@ -400,7 +447,7 @@ export async function ensureIdentityPack(input: EnsureIdentityPackInput): Promis
 
     const acquired = await acquireKeyedLockWithin(
       identityPackLockKey(characterId),
-      () => derivePackUnderLock(input, resolved.source),
+      () => derivePackUnderLock(input, resolved.source, opts),
       { timeoutMs: LOCK_TIMEOUT_MS, pollMs: LOCK_POLL_MS, label: input.purpose },
     );
     if (!acquired) {
@@ -499,9 +546,13 @@ async function decodeDimensions(buffer: Buffer): Promise<SourceDimensions | null
  * transactions — because an in-process lock on one Fly machine proves nothing
  * about another.
  */
-async function derivePackUnderLock(input: EnsureIdentityPackInput, source: ResolvedSource): Promise<EnsureIdentityPackResult> {
+async function derivePackUnderLock(
+  input: EnsureIdentityPackInput,
+  source: ResolvedSource,
+  opts: DerivationOptions,
+): Promise<EnsureIdentityPackResult> {
   const { ownerId, characterId, sink } = input;
-  const current = await currentPackRow(characterId);
+  const current = opts.forceNewRevision ? undefined : await currentPackRow(characterId);
 
   if (current && coversSource(current, source)) {
     const pack = packRowToContract(current, sink);
@@ -772,6 +823,12 @@ async function finalizeRevision(input: FinalizeInput): Promise<IdentityPackRow |
         warningCodes: patch.warningCodes,
         failureCode: patch.failureCode,
         failureMessage: patch.failureMessage,
+        // Written on every finalize, null for an automatic revision: the review
+        // columns say "a human authored or waived this", and a stale value
+        // inherited from a previous write would say it about a machine crop.
+        reviewedByUserId: patch.review?.actorUserId ?? null,
+        reviewReason: patch.review?.reason ?? null,
+        reviewedAt: patch.review ? new Date() : null,
       })
       .where(
         and(
@@ -819,6 +876,8 @@ interface RevisionPatch {
   warningCodes: ImageIdentityPackWarningCode[];
   failureCode: ImageIdentityPackFailureCode | null;
   failureMessage: string | null;
+  /** Non-null only on a human-authored revision (a manual crop or a recorded override). */
+  review: { actorUserId: string; reason: string | null } | null;
 }
 
 /** The refusals derivation itself can reach — each has a matching diagnostic code. */
@@ -850,6 +909,7 @@ function refusedRevision(
     warningCodes: [],
     failureCode: code,
     failureMessage: message.slice(0, 500),
+    review: null,
     ...over,
   };
 }
@@ -895,12 +955,9 @@ async function deriveRevision(input: DeriveInput): Promise<RevisionPatch> {
     return refusedRevision(plan.code, plan.message);
   }
 
-  const outputSide = identityCropOutputSide(plan.crop.width, IDENTITY_CROP_POLICY_V1);
-  let cropBuffer: Buffer;
-  let blurScore: number | null;
+  let encoded: EncodedCrop;
   try {
-    cropBuffer = await extractIdentityCrop(source.buffer, plan.crop, outputSide);
-    blurScore = await measureBlur(cropBuffer);
+    encoded = await encodeAndMeasureCrop(source.buffer, plan.crop);
   } catch (err) {
     const message = errorMessage(err);
     log.warn("images", "identity crop encode/measure threw; revision failed", {
@@ -914,10 +971,10 @@ async function deriveRevision(input: DeriveInput): Promise<RevisionPatch> {
     crop: plan.crop,
     detectedFaces: plan.detectedFaces,
     faceBox: plan.faceBox,
-    blurScore,
+    blurScore: encoded.blurScore,
     occlusionScore: plan.occlusionScore,
   });
-  const evaluation = evaluateIdentityPackIntrinsic({ method: plan.method, crop: plan.crop, quality }, INTRINSIC_POLICY_V1);
+  const evaluation = evaluateIdentityPackIntrinsic({ method: plan.method, crop: plan.crop, quality }, intrinsicPolicy());
   // Measurements are kept whatever the verdict — that is the point of storing
   // them rather than a boolean (`.spec.derivation.md` §"Intrinsic quality
   // measurement"): a threshold change must be able to re-judge this revision.
@@ -938,45 +995,103 @@ async function deriveRevision(input: DeriveInput): Promise<RevisionPatch> {
     return refusedRevision(code, message, measured);
   }
 
-  const asset = await createImageAsset({
+  const stored = await storeHiddenCropAsset({
     ownerId: input.ownerId,
-    kind: "identity_face_crop",
-    entityKind: "character",
-    entityId: characterId,
-    sourceImageId: source.imageRow.id,
-    meta: {
-      hidden: true,
-      identityPackId: input.packId,
-      identityRole: "face_detail",
-      sourceContentHash: source.contentHash,
-      crop: plan.crop,
-      derivationVersion: IDENTITY_PACK_DERIVATION_VERSION,
-    },
+    characterId,
+    packId: input.packId,
+    source,
+    crop: plan.crop,
+    buffer: encoded.buffer,
+    sink,
   });
-  const saved = await saveImageBuffer(asset.id, cropBuffer, sink);
-  if (saved?.status !== "ready") {
-    const message = "identity face crop could not be written";
-    await failImage(asset.id, message);
-    sink?.push(
-      diag("warn", "images.identity_pack.crop_write_failed", message, {
-        context: { characterId, packId: input.packId, imageId: asset.id },
-      }),
-    );
-    return refusedRevision("crop_write_failed", message, measured);
-  }
+  if (!stored.ok) return refusedRevision("crop_write_failed", stored.message, measured);
 
   return {
     status: "ready",
     method: plan.method,
     detectorVersion: plan.detectorVersion,
     confidence: plan.confidence,
-    faceCropImageId: asset.id,
+    faceCropImageId: stored.imageId,
     crop: plan.crop,
     quality,
     warningCodes: evaluation.warnings,
     failureCode: null,
     failureMessage: null,
+    review: null,
   };
+}
+
+interface HiddenCropAssetInput {
+  ownerId: string;
+  characterId: string;
+  packId: string;
+  source: ResolvedSource;
+  crop: SourcePixelCrop;
+  buffer: Buffer;
+  sink: DiagnosticSink | undefined;
+}
+
+/**
+ * Reserve the hidden crop row, write its file, or report the failure — the one
+ * copy of that sequence, shared by automatic derivation and the manual editor so
+ * the two can never drift on what a face-crop asset records.
+ *
+ * The meta block is the crop's provenance (spec.data.md §"Hidden image asset"),
+ * deliberately duplicating what the pack row already says: the pack row is the
+ * authority, and this is what lets an operator reading `images` alone tell a
+ * derived internal input from a user's portrait. A write failure fails the row
+ * rather than leaving a `pending` one behind — the pack must never end up ready
+ * with a missing file.
+ */
+async function storeHiddenCropAsset(
+  input: HiddenCropAssetInput,
+): Promise<{ ok: true; imageId: string } | { ok: false; message: string }> {
+  const { ownerId, characterId, packId, source, crop, sink } = input;
+  const asset = await createImageAsset({
+    ownerId,
+    kind: "identity_face_crop",
+    entityKind: "character",
+    entityId: characterId,
+    sourceImageId: source.imageRow.id,
+    meta: {
+      hidden: true,
+      identityPackId: packId,
+      identityRole: "face_detail",
+      sourceContentHash: source.contentHash,
+      crop,
+      derivationVersion: IDENTITY_PACK_DERIVATION_VERSION,
+    },
+  });
+  const saved = await saveImageBuffer(asset.id, input.buffer, sink);
+  if (saved?.status !== "ready") {
+    const message = "identity face crop could not be written";
+    await failImage(asset.id, message);
+    sink?.push(
+      diag("warn", "images.identity_pack.crop_write_failed", message, {
+        context: { characterId, packId, imageId: asset.id },
+      }),
+    );
+    return { ok: false, message };
+  }
+  return { ok: true, imageId: asset.id };
+}
+
+interface EncodedCrop {
+  buffer: Buffer;
+  blurScore: number | null;
+}
+
+/**
+ * Cut, encode and measure one rectangle. Both proposers (detector/heuristic and
+ * the manual editor) go through this, in this order, because the blur score must
+ * describe the bytes a provider will actually receive rather than the source they
+ * were cut from. Throws only on a genuine sharp failure; the callers convert that
+ * into a failed revision.
+ */
+async function encodeAndMeasureCrop(sourceBuffer: Buffer, crop: SourcePixelCrop): Promise<EncodedCrop> {
+  const outputSide = identityCropOutputSide(crop.width, IDENTITY_CROP_POLICY_V1);
+  const buffer = await extractIdentityCrop(sourceBuffer, crop, outputSide);
+  return { buffer, blurScore: await measureBlur(buffer) };
 }
 
 type CropPlan =
@@ -1014,7 +1129,7 @@ function planIdentityCrop(
   detectorVersion: string,
 ): CropPlan {
   const detectedFaces = candidates.length;
-  const selection = selectIdentityFaceCandidate(candidates, INTRINSIC_POLICY_V1);
+  const selection = selectIdentityFaceCandidate(candidates, intrinsicPolicy());
 
   if (selection.ok) {
     const derived = deriveDetectorCrop(selection.primary.box, source, IDENTITY_CROP_POLICY_V1);
@@ -1202,6 +1317,419 @@ export async function getIdentityPackForOwner(
 }
 
 /* ------------------------------------------------------------------------ *
+ * Manual correction                                                         *
+ * ------------------------------------------------------------------------ */
+
+/**
+ * How the client expressed its rectangle.
+ *
+ * Tagged rather than inferred: `{ left: 0.25, … }` and `{ left: 25, … }` are both
+ * legal rectangles in their own space, and guessing which one a client meant from
+ * the magnitude of its numbers would be a coin flip that silently crops the wrong
+ * part of somebody's face. The editor sends normalized coordinates (they survive a
+ * re-encode at another size); the server resolves and persists source pixels.
+ */
+export type ManualIdentityCropInput =
+  | { space: "normalized"; crop: NormalizedCrop }
+  | { space: "source_pixels"; crop: SourcePixelCrop };
+
+export interface SaveManualIdentityCropInput {
+  ownerId: string;
+  characterId: string;
+  /** The pack the editor was opened on — a concurrency guard, never authorization. */
+  expectedPackId: string;
+  expectedRevision: number;
+  /** The source hash the editor framed against. A mismatch is a reload, not a save. */
+  expectedSourceHash: string;
+  crop: ManualIdentityCropInput;
+  /** The signed-in user behind this revision; recorded on the row for audit. */
+  actorUserId: string;
+  reason?: string;
+  /** Ask to waive reviewed quality thresholds. Requires a reason and a permitting policy. */
+  adminOverride?: boolean;
+  sink?: DiagnosticSink;
+}
+
+/** Why the save was refused before touching anything. All three mean "reload and retry". */
+export type ManualIdentityCropConflict = "pack_changed" | "source_changed" | "busy";
+
+/**
+ * Why a crop the client CAN retry differently was refused. `invalid_geometry` and
+ * `policy_blocked` are about the rectangle; the two override reasons are about the
+ * request that tried to waive a blocker.
+ */
+export type ManualIdentityCropRejection =
+  | "invalid_geometry"
+  | "policy_blocked"
+  | "override_not_permitted"
+  | "override_reason_required";
+
+export type SaveManualIdentityCropResult =
+  | { status: "ready"; pack: ImageIdentityPackV1; warnings: ImageIdentityPackWarningCode[] }
+  | {
+      status: "conflict";
+      reason: ManualIdentityCropConflict;
+      /** What the client should reload to: the pack and bytes that are current NOW. */
+      currentPackId: string | null;
+      currentRevision: number | null;
+      sourceContentHash: string | null;
+    }
+  | {
+      status: "rejected";
+      reason: ManualIdentityCropRejection;
+      code: ImageIdentityPackFailureCode;
+      /** Every measured blocker, not just the first — the editor explains all of them. */
+      blockers: ImageIdentityPackFailureCode[];
+      message: string;
+    }
+  | { status: "blocked"; code: ImageIdentityPackFailureCode; retryable: boolean };
+
+/**
+ * Save a human-authored crop as a new `manual` revision
+ * (`.spec.derivation.md` §"Manual crop revisions").
+ *
+ * The order is the spec's, and each step exists to stop a specific way this could
+ * go wrong:
+ *
+ * 1. **Re-authorize from the character** and re-read the canonical bytes. The
+ *    client's pack id proves nothing about who may write here.
+ * 2. **Refuse a stale editor.** If the current pack, its revision, or the source
+ *    hash moved since the editor opened, the answer is a conflict carrying the
+ *    CURRENT ids — applying old coordinates to new bytes would frame a rectangle
+ *    the user never saw onto a portrait they never cropped.
+ * 3. **Validate the rectangle**, then measure the crop it actually produces.
+ *    Bounds, minimum size and squareness are hard gates: a correction may fix
+ *    framing, never bypass geometry, and an owner crop that is still intrinsically
+ *    unusable comes back with the measured reason rather than being stored.
+ * 4. **Reserve, store, promote** through the same compare-and-set path automatic
+ *    derivation uses, so the previous revision is superseded atomically and a lost
+ *    race deletes the orphaned crop instead of leaving it.
+ *
+ * A rejection touches no rows at all: the previous pack stays current and usable,
+ * which is the difference between "your crop was refused" and "your crop broke
+ * your character".
+ */
+export async function saveManualIdentityCrop(input: SaveManualIdentityCropInput): Promise<SaveManualIdentityCropResult> {
+  const { ownerId, characterId, sink } = input;
+  try {
+    const resolved = await resolveSource(ownerId, characterId, sink);
+    if (!resolved.ok) {
+      return { status: "blocked", code: resolved.code, retryable: isRetryableIdentityPackFailure(resolved.code) };
+    }
+    const source = resolved.source;
+
+    const acquired = await acquireKeyedLockWithin(
+      identityPackLockKey(characterId),
+      () => saveManualCropUnderLock(input, source),
+      { timeoutMs: LOCK_TIMEOUT_MS, pollMs: LOCK_POLL_MS, label: "manual_crop" },
+    );
+    if (!acquired) return manualConflict("busy", undefined, source);
+    return await acquired.held;
+  } catch (err) {
+    // Same containment boundary as `ensureIdentityPack`: a crop editor save must
+    // fail as a value, never as a 500 (docs/resilience.md §1).
+    log.warn("images", "manual identity crop threw", {
+      characterId,
+      ownerId,
+      error: errorMessage(err).slice(0, 300),
+    });
+    return { status: "blocked", code: "derivation_failed", retryable: true };
+  }
+}
+
+async function saveManualCropUnderLock(
+  input: SaveManualIdentityCropInput,
+  source: ResolvedSource,
+): Promise<SaveManualIdentityCropResult> {
+  const { ownerId, characterId, sink } = input;
+  const current = await currentPackRow(characterId);
+
+  if (!current || current.id !== input.expectedPackId || current.revision !== input.expectedRevision) {
+    return manualConflict("pack_changed", current, source);
+  }
+  if (
+    source.contentHash !== input.expectedSourceHash ||
+    current.sourceContentHash !== source.contentHash ||
+    current.sourceImageId !== source.imageRow.id
+  ) {
+    sink?.push(
+      diag("warn", "images.identity_pack.source_changed", "the editor's coordinates describe bytes that are no longer stored", {
+        context: { characterId, packId: current.id, revision: current.revision },
+      }),
+    );
+    return manualConflict("source_changed", current, source);
+  }
+
+  const geometry = resolveManualCrop(input.crop, source.dimensions);
+  if (!geometry.ok) {
+    return {
+      status: "rejected",
+      reason: "invalid_geometry",
+      code: geometry.code,
+      blockers: [geometry.code],
+      message: `manual crop rejected: ${geometry.reason}`,
+    };
+  }
+  const crop = geometry.crop;
+
+  let encoded: EncodedCrop;
+  try {
+    encoded = await encodeAndMeasureCrop(source.buffer, crop);
+  } catch (err) {
+    log.warn("images", "manual identity crop encode/measure threw", {
+      characterId,
+      error: errorMessage(err).slice(0, 300),
+    });
+    return { status: "blocked", code: "derivation_failed", retryable: true };
+  }
+
+  // No detector ran on a hand-drawn rectangle, so every face-derived metric is
+  // genuinely unknown — null, never 0, or a later policy version would read a
+  // measured zero-pixel face and block a crop nobody ever examined.
+  const quality = buildIdentityPackQuality({
+    crop,
+    detectedFaces: null,
+    faceBox: null,
+    blurScore: encoded.blurScore,
+    occlusionScore: null,
+  });
+  const policy = intrinsicPolicy();
+  const evaluation = evaluateIdentityPackIntrinsic({ method: "manual", crop, quality }, policy);
+  const ruling = ruleManualBlockers(evaluation.blockers, input);
+  if (!ruling.ok) return ruling.rejected;
+
+  const override = ruling.override;
+  const warningCodes =
+    override && !evaluation.warnings.includes("manual_admin_override")
+      ? [...evaluation.warnings, "manual_admin_override" as const]
+      : evaluation.warnings;
+  const trimmedReason = input.reason?.trim() ?? "";
+  const review = { actorUserId: input.actorUserId, reason: trimmedReason.length > 0 ? trimmedReason : null };
+
+  const reserved = await reservePendingRevision({ ownerId, characterId, source, sink });
+  if (!reserved.ok) {
+    return reserved.code === "source_changed"
+      ? manualConflict("source_changed", current, source)
+      : { status: "blocked", code: reserved.code, retryable: isRetryableIdentityPackFailure(reserved.code) };
+  }
+
+  const stored = await storeHiddenCropAsset({
+    ownerId,
+    characterId,
+    packId: reserved.row.id,
+    source,
+    crop,
+    buffer: encoded.buffer,
+    sink,
+  });
+  const patch: RevisionPatch = stored.ok
+    ? {
+        status: "ready",
+        method: "manual",
+        detectorVersion: null,
+        confidence: null,
+        faceCropImageId: stored.imageId,
+        crop,
+        quality,
+        warningCodes,
+        failureCode: null,
+        // The override does not change the measurements, so what it WAIVED is
+        // recorded here rather than being lost: a ready revision's failure
+        // message is the audit trail for a blocker somebody accepted.
+        failureMessage: override ? `${policy.version} blockers waived: ${override.blockers.join(", ")}` : null,
+        review,
+      }
+    : refusedRevision("crop_write_failed", stored.message, { method: "manual", crop, quality, review });
+
+  const finalized = await finalizeRevision({ packId: reserved.row.id, characterId, ownerId, source, patch });
+  if (!finalized) {
+    await abandonRevision(reserved.row.id, ownerId, patch.faceCropImageId);
+    sink?.push(
+      diag("warn", "images.identity_pack.finalize_race", "the canonical source moved while the manual crop was being stored", {
+        context: { characterId, packId: reserved.row.id },
+      }),
+    );
+    return manualConflict("source_changed", undefined, source);
+  }
+  if (patch.status !== "ready") {
+    const code = patch.failureCode ?? "derivation_failed";
+    return { status: "blocked", code, retryable: isRetryableIdentityPackFailure(code) };
+  }
+
+  if (override) {
+    sink?.push(
+      diag("warn", "images.identity_pack.manual_override", `admin override waived ${override.blockers.join(", ")}`, {
+        context: {
+          characterId,
+          packId: finalized.id,
+          revision: finalized.revision,
+          actorUserId: input.actorUserId,
+          policyVersion: policy.version,
+        },
+      }),
+    );
+  }
+  const pack = packRowToContract(finalized, sink);
+  return { status: "ready", pack, warnings: pack.warningCodes };
+}
+
+function manualConflict(
+  reason: ManualIdentityCropConflict,
+  current: IdentityPackRow | undefined,
+  source: ResolvedSource,
+): SaveManualIdentityCropResult {
+  return {
+    status: "conflict",
+    reason,
+    currentPackId: current?.id ?? null,
+    currentRevision: current?.revision ?? null,
+    sourceContentHash: source.contentHash,
+  };
+}
+
+type ResolvedManualCrop =
+  | { ok: true; crop: SourcePixelCrop }
+  | { ok: false; code: ImageIdentityPackFailureCode; reason: string };
+
+/**
+ * Client coordinates → the integer source-pixel square that will be stored.
+ *
+ * Squaring is attempted ONLY when squareness is the sole complaint. A normalized
+ * square is not a pixel square on a non-square source (0.5 of 769 and 0.5 of 1025
+ * round to sides a pixel apart), and rejecting the user's frame over that would be
+ * absurd — but silently re-centring a rectangle that was out of bounds or below
+ * the minimum would store a crop the user never framed, so those keep their own
+ * refusal and their own reason.
+ */
+function resolveManualCrop(input: ManualIdentityCropInput, source: SourceDimensions): ResolvedManualCrop {
+  const pixels = input.space === "normalized" ? normalizedCropToSourcePixels(input.crop, source) : input.crop;
+  const first = validateIdentityCrop(pixels, source, IDENTITY_CROP_POLICY_V1);
+  if (first.ok) return { ok: true, crop: pixels };
+  if (first.reason !== "not_square") return { ok: false, code: first.code, reason: first.reason };
+
+  const squared = squareSourcePixelCrop(pixels, source);
+  const second = validateIdentityCrop(squared, source, IDENTITY_CROP_POLICY_V1);
+  return second.ok ? { ok: true, crop: squared } : { ok: false, code: second.code, reason: second.reason };
+}
+
+/** What an accepted override waived, for the audit record. */
+interface ManualOverride {
+  blockers: ImageIdentityPackFailureCode[];
+}
+
+type ManualBlockerRuling =
+  | { ok: true; override: ManualOverride | null }
+  | { ok: false; rejected: Extract<SaveManualIdentityCropResult, { status: "rejected" }> };
+
+/**
+ * Whether this save may proceed despite what the policy measured.
+ *
+ * The line the spec draws: an override may waive *reviewed quality thresholds*,
+ * and nothing else. Ownership, missing bytes, geometry and a stale hash are hard
+ * checks — they are refused above this function or refused here, whoever asks and
+ * whatever reason they give, because an admin who can crop past a bounds check can
+ * store a rectangle that is not inside the image.
+ *
+ * An override with no blockers to waive is NOT recorded as one: `manual_admin_override`
+ * travels into profile evaluation, where a profile that forbids overrides refuses
+ * the pack, so stamping it on a crop that never needed it would quietly disqualify
+ * a perfectly ordinary reference.
+ */
+function ruleManualBlockers(
+  blockers: readonly ImageIdentityPackFailureCode[],
+  input: SaveManualIdentityCropInput,
+): ManualBlockerRuling {
+  const first = blockers[0];
+  if (first === undefined) return { ok: true, override: null };
+
+  const rejected = (
+    reason: ManualIdentityCropRejection,
+    code: ImageIdentityPackFailureCode,
+    message: string,
+  ): ManualBlockerRuling => ({
+    ok: false,
+    rejected: { status: "rejected", reason, code, blockers: [...blockers], message },
+  });
+
+  const hard = blockers.find((code) => !isOverridableIdentityBlocker(code));
+  if (hard !== undefined) {
+    return rejected("policy_blocked", hard, `manual crop is unusable: ${blockers.join(", ")}`);
+  }
+  if (input.adminOverride !== true) {
+    return rejected("policy_blocked", first, `manual crop is unusable: ${blockers.join(", ")}`);
+  }
+  if (!PROFILE_POLICY_DEFAULTS_V1.allowAdminOverride) {
+    return rejected("override_not_permitted", first, "the reviewed policy does not permit an admin override");
+  }
+  if ((input.reason?.trim() ?? "").length === 0) {
+    return rejected("override_reason_required", first, "an override requires a non-empty reason");
+  }
+  return { ok: true, override: { blockers: [...blockers] } };
+}
+
+/**
+ * Which blockers an admin may waive: the ones that came from a reviewed THRESHOLD
+ * rather than from the rectangle itself. Blur and occlusion verdicts report as
+ * `no_usable_face` (the vocabulary has no "too blurry" code), and they are the
+ * whole overridable set — everything else is geometry or machinery.
+ */
+function isOverridableIdentityBlocker(code: ImageIdentityPackFailureCode): boolean {
+  switch (code) {
+    case "no_usable_face":
+      return true;
+    case "source_missing":
+    case "source_not_ready":
+    case "source_unreadable":
+    case "source_changed":
+    case "ambiguous_faces":
+    case "invalid_crop":
+    case "crop_too_small":
+    case "crop_write_failed":
+    case "derivation_failed":
+      return false;
+  }
+}
+
+export interface ResetIdentityPackInput {
+  ownerId: string;
+  characterId: string;
+  /** Recorded in the diagnostic; a reset AUTHORS nothing, so it stamps no review columns. */
+  actorUserId: string;
+  sink?: DiagnosticSink;
+}
+
+/**
+ * Discard a manual crop and re-derive automatically
+ * (`.spec.derivation.md` §"Reset to automatic").
+ *
+ * It does not resurrect the detector revision that came before the manual one:
+ * that revision was produced by whatever derivation version was current THEN, and
+ * un-superseding it would hand today's renders a crop today's algorithm would not
+ * have made. Instead the CURRENT derivation runs against the CURRENT source as a
+ * new automatic revision, and the manual one becomes superseded — retained in
+ * history until normal cleanup, so "what did my crop look like?" stays answerable
+ * for the diagnostic window.
+ *
+ * The forced path is why this is not just `ensureIdentityPack`: for unchanged bytes
+ * that call would correctly return the manual revision it is being asked to replace.
+ *
+ * A reset that lands on an unusable automatic result is an honest outcome, not a
+ * bug — the owner asked to stop using their crop, and the answer is that this
+ * source cannot yield one automatically.
+ */
+export async function resetIdentityPackToAutomatic(input: ResetIdentityPackInput): Promise<EnsureIdentityPackResult> {
+  const { ownerId, characterId, sink, actorUserId } = input;
+  sink?.push(
+    diag("info", "images.identity_pack.manual_override", "manual crop reset to automatic derivation", {
+      context: { characterId, actorUserId },
+    }),
+  );
+  // `identity_render`: the caller is a person waiting for the answer, so this
+  // waits out the bounded local derivation rather than returning a reservation.
+  return runDerivation({ ownerId, characterId, purpose: "identity_render", sink }, { forceNewRevision: true });
+}
+
+/* ------------------------------------------------------------------------ *
  * Background preparation                                                    *
  * ------------------------------------------------------------------------ */
 
@@ -1272,6 +1800,632 @@ async function prepareIdentityPackJob(characterId: string, ownerId: string): Pro
     await db().update(jobs).set({ status: "failed", error: message, finishedAt: new Date() }).where(eq(jobs.id, job.id));
   }
 }
+
+/* ------------------------------------------------------------------------ *
+ * Invalidation                                                              *
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Statuses a current revision can legally leave for `stale`
+ * (`isAllowedIdentityPackTransition`). `stale`/`superseded` are terminal and can
+ * never be current, so they are not here.
+ */
+const INVALIDATABLE_STATUSES = ["pending", "ready", "unusable", "failed"] as const satisfies readonly ImageIdentityPackStatus[];
+
+export interface InvalidateIdentityPackInput {
+  /** Invalidate these characters' current packs outright. */
+  characterIds?: readonly string[];
+  /** Invalidate current packs DERIVED FROM these source images, whoever owns them. */
+  sourceImageIds?: readonly string[];
+  sink?: DiagnosticSink;
+}
+
+/**
+ * Mark current packs stale when a canonical pointer is cleared or replaced
+ * outside the assignment triggers (spec.lifecycle.md §"Source deletion").
+ *
+ * Belt to read-time verification's braces. Every read already re-hashes the source
+ * before trusting a crop — that is mandatory and stays mandatory, because rows and
+ * files change in ways no hook observes. This exists so the common cases (a gallery
+ * delete of the canonical portrait, a portrait-studio delete) are reflected
+ * IMMEDIATELY in what a status view shows, instead of a pack that looks ready right
+ * up until the next render reads bytes that are gone.
+ *
+ * `current` is cleared along with the status, not just the status: a row that is
+ * both `current` and terminal cannot be retired by the next reservation (no legal
+ * transition out of `stale`), which would wedge that character's pack permanently.
+ * Same reasoning as `abandonRevision`.
+ *
+ * `sourceImageIds` is the precise form and the one the delete paths use — a
+ * character whose OTHER portrait was deleted keeps its pack, exactly as the spec
+ * requires ("If a user deletes a non-current source image, only pack revisions
+ * derived from that image are affected").
+ */
+export async function invalidateIdentityPackForSource(input: InvalidateIdentityPackInput): Promise<number> {
+  const characterIds = [...new Set(input.characterIds ?? [])];
+  const sourceImageIds = [...new Set(input.sourceImageIds ?? [])];
+  const targets = [
+    ...(characterIds.length > 0 ? [inArray(imageIdentityPacks.characterId, characterIds)] : []),
+    ...(sourceImageIds.length > 0 ? [inArray(imageIdentityPacks.sourceImageId, sourceImageIds)] : []),
+  ];
+  const target = targets.length === 1 ? targets[0] : or(...targets);
+  // No predicate ⇒ every current pack matches. Refuse, exactly as
+  // `purgeImagesWhere` refuses an unguarded delete.
+  if (target === undefined) return 0;
+
+  const invalidated = await db()
+    .update(imageIdentityPacks)
+    .set({ current: false, status: "stale" })
+    .where(
+      and(
+        eq(imageIdentityPacks.current, true),
+        inArray(imageIdentityPacks.status, [...INVALIDATABLE_STATUSES]),
+        target,
+      ),
+    )
+    .returning({ id: imageIdentityPacks.id, characterId: imageIdentityPacks.characterId });
+
+  for (const row of invalidated) {
+    input.sink?.push(
+      diag("warn", "images.identity_pack.source_changed", "the pack's canonical source was cleared or replaced", {
+        context: { characterId: row.characterId, packId: row.id },
+      }),
+    );
+  }
+  if (invalidated.length > 0) {
+    log.warn("images", "identity packs invalidated by a source change", {
+      packs: invalidated.length,
+      characters: new Set(invalidated.map((row) => row.characterId)).size,
+    });
+  }
+  return invalidated.length;
+}
+
+/* ------------------------------------------------------------------------ *
+ * Cleanup                                                                   *
+ * ------------------------------------------------------------------------ */
+
+/**
+ * How long a retired revision keeps its hidden crop bytes
+ * (spec.lifecycle.md §"Superseded and failed revision cleanup").
+ *
+ * A week is a diagnostic window, not a retention policy: long enough that "why did
+ * my character's face change last Tuesday?" can still be answered from the actual
+ * crop, short enough that nobody is storing months of superseded faces. The spec
+ * puts the number with the image-lifecycle owner rather than in the schema, which
+ * is why it is a constant here and not a column — changing it is a code review, not
+ * a migration.
+ */
+export const IDENTITY_PACK_REVISION_RETENTION_MS = 7 * 24 * 60 * 60_000;
+
+/** Rows touched per cleanup pass. Maintenance rides a render; it never becomes one. */
+const IDENTITY_PACK_CLEANUP_LIMIT = 200;
+
+/** Statuses whose crop bytes have no future consumer once the window has elapsed. */
+const RETIRED_STATUSES = ["superseded", "stale", "unusable", "failed"] as const satisfies readonly ImageIdentityPackStatus[];
+
+export interface CleanupIdentityPackOptions {
+  /** Injected clock — the retention window is otherwise untestable without waiting a week. */
+  now?: Date;
+  retentionMs?: number;
+  limit?: number;
+  sink?: DiagnosticSink;
+}
+
+export interface IdentityPackCleanupResult {
+  /** Reservations abandoned by a dead process, retired so they stop blocking. */
+  pendingRetired: number;
+  cropsDeleted: number;
+  /** Crops no pack row named at all — a derivation that died between write and finalize. */
+  orphanCropsDeleted: number;
+  /** Already gone when cleanup got there. Idempotence, not an error. */
+  cropsAlreadyGone: number;
+}
+
+/**
+ * Bounded, idempotent removal of hidden crop bytes nothing can use.
+ *
+ * Three passes, each a different way a crop outlives its purpose:
+ *
+ * 1. **Stale reservations.** A `pending` revision older than the job staleness
+ *    bound belonged to a process that is gone (a deploy replaced the machine
+ *    mid-derivation). It is retired so the character's next reservation is not
+ *    refused by a row nothing will ever finalize — the same 15-minute reasoning
+ *    `answerFromCurrent` applies when it declines to honour one.
+ * 2. **Retired revisions past the window.** Superseded, stale, unusable and failed
+ *    revisions give up their crop row and file; the PACK row stays, because the
+ *    metadata is the audit trail and contains no image content or URL. The current
+ *    revision and its crop are never touched, whatever their age.
+ * 3. **Orphan crops.** A hidden row no pack row names, older than the window. The
+ *    image sweep cannot see these — the file matches its row, so nothing looks
+ *    wrong from either side; only the pack table knows nobody claims it.
+ *
+ * Everything here is safe to run twice: a missing file or an already-deleted row
+ * is success (`purgeImagesWhere` counts what it actually removed), and a failure
+ * degrades to a diagnostic rather than failing the sweep that called it.
+ */
+export async function cleanupIdentityPackRevisions(
+  opts: CleanupIdentityPackOptions = {},
+): Promise<IdentityPackCleanupResult> {
+  const now = opts.now ?? new Date();
+  const retentionMs = opts.retentionMs ?? IDENTITY_PACK_REVISION_RETENTION_MS;
+  const limit = Math.max(1, opts.limit ?? IDENTITY_PACK_CLEANUP_LIMIT);
+  const cutoff = new Date(now.getTime() - retentionMs);
+  const result: IdentityPackCleanupResult = {
+    pendingRetired: 0,
+    cropsDeleted: 0,
+    orphanCropsDeleted: 0,
+    cropsAlreadyGone: 0,
+  };
+
+  try {
+    result.pendingRetired = await retireAbandonedReservations(now);
+
+    const retired = await db()
+      .select({ id: imageIdentityPacks.id, cropImageId: imageIdentityPacks.faceCropImageId })
+      .from(imageIdentityPacks)
+      .where(
+        and(
+          eq(imageIdentityPacks.current, false),
+          inArray(imageIdentityPacks.status, [...RETIRED_STATUSES]),
+          isNotNull(imageIdentityPacks.faceCropImageId),
+          lt(imageIdentityPacks.updatedAt, cutoff),
+        ),
+      )
+      .limit(limit);
+    const cropIds = retired.map((row) => row.cropImageId).filter((id): id is string => id !== null);
+    if (cropIds.length > 0) {
+      // The kind guard is what keeps a corrupted pointer from deleting a user's
+      // portrait: this may only ever remove hidden crops. The pack rows' own
+      // `face_crop_image_id` goes null through the FK, so the audit row survives
+      // without claiming bytes that are gone.
+      result.cropsDeleted = await purgeImagesWhere(
+        and(inArray(images.id, cropIds), eq(images.kind, "identity_face_crop")),
+      );
+      result.cropsAlreadyGone = cropIds.length - result.cropsDeleted;
+    }
+
+    result.orphanCropsDeleted = await deleteOrphanIdentityCrops(cutoff, limit, opts.sink);
+  } catch (err) {
+    const message = errorMessage(err);
+    opts.sink?.push(diag("warn", "images.identity_pack.cleanup_failed", message.slice(0, 300)));
+    log.warn("images", "identity pack cleanup degraded", { error: message.slice(0, 300) });
+  }
+  return result;
+}
+
+/**
+ * Retire `pending` revisions whose deriving process is gone. Unbounded by design
+ * and self-limiting in practice: derivation takes seconds, so a reservation older
+ * than {@link JOB_STALE_MS} is pathological, and leaving even one in place wedges
+ * that character's pack until a human notices.
+ */
+async function retireAbandonedReservations(now: Date): Promise<number> {
+  const retired = await db()
+    .update(imageIdentityPacks)
+    .set({ current: false, status: "stale" })
+    .where(
+      and(
+        eq(imageIdentityPacks.status, "pending"),
+        lt(imageIdentityPacks.createdAt, new Date(now.getTime() - JOB_STALE_MS)),
+      ),
+    )
+    .returning({ id: imageIdentityPacks.id });
+  return retired.length;
+}
+
+/**
+ * Hidden crops no pack row names. Found by LEFT JOIN rather than `NOT IN (subquery)`
+ * on purpose — a single null in that subquery would make the whole predicate match
+ * nothing, and silently sweeping nothing forever is exactly the kind of bug that
+ * takes a year to notice.
+ */
+async function deleteOrphanIdentityCrops(cutoff: Date, limit: number, sink: DiagnosticSink | undefined): Promise<number> {
+  const orphans = await db()
+    .select({ id: images.id })
+    .from(images)
+    .leftJoin(imageIdentityPacks, eq(imageIdentityPacks.faceCropImageId, images.id))
+    .where(
+      and(eq(images.kind, "identity_face_crop"), lt(images.createdAt, cutoff), isNull(imageIdentityPacks.id)),
+    )
+    .limit(limit);
+  if (orphans.length === 0) return 0;
+
+  sink?.push(
+    diag("warn", "images.identity_pack.orphan_crop", `${orphans.length} hidden crop(s) belong to no pack revision`, {
+      context: { imageIds: orphans.slice(0, 10).map((row) => row.id) },
+    }),
+  );
+  return purgeImagesWhere(and(inArray(images.id, orphans.map((row) => row.id)), eq(images.kind, "identity_face_crop")));
+}
+
+/* ------------------------------------------------------------------------ *
+ * Bounded batch preparation                                                 *
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The named trial corpora an admin batch may address by id
+ * (spec.lifecycle.md §"Lazy backfill", spec.trial.md §"Corpus").
+ *
+ * Empty at v1, and that is the deliverable: the seam exists, resolution is typed,
+ * and an unknown id fails loudly instead of running an empty batch that reports
+ * success. The corpus itself is a set of CHARACTER ids, and character ids are
+ * per-environment cuid2s — so the entries arrive with the trial slice's fixture
+ * characters (spec.trial.md lists what they must cover: contrast, framing, a
+ * stylized subject, glasses, occlusion, a multi-person source, a low-resolution
+ * source), not as literals invented here.
+ */
+export const IDENTITY_PACK_TRIAL_CORPORA: ReadonlyMap<string, readonly string[]> = new Map();
+
+/** Hard ceiling for one batch, whatever `maxCount` asks for. There is no "rebuild everything". */
+const IDENTITY_PACK_BATCH_MAX = 200;
+
+/** Bounded parallelism: local sharp work, on the machine serving renders. */
+const IDENTITY_PACK_BATCH_MAX_CONCURRENCY = 4;
+const IDENTITY_PACK_BATCH_DEFAULT_CONCURRENCY = 2;
+
+export interface PrepareIdentityPacksBatchInput {
+  ownerId: string;
+  characterIds?: readonly string[];
+  corpusId?: string;
+  dryRun: boolean;
+  maxCount?: number;
+  concurrency?: number;
+  /** Re-derive even a current ready pack (a derivation change under the same version). */
+  regenerate?: boolean;
+  sink?: DiagnosticSink;
+}
+
+export type IdentityPackBatchOutcome =
+  | { characterId: string; outcome: "ready"; revision: number; warnings: ImageIdentityPackWarningCode[] }
+  | { characterId: string; outcome: "blocked"; code: ImageIdentityPackFailureCode; retryable: boolean }
+  /** Not this owner's, or gone. The two are deliberately indistinguishable. */
+  | { characterId: string; outcome: "not_found" }
+  | { characterId: string; outcome: "would_prepare" }
+  | { characterId: string; outcome: "up_to_date" };
+
+export interface IdentityPackBatchCounts {
+  ready: number;
+  blocked: number;
+  notFound: number;
+  wouldPrepare: number;
+  upToDate: number;
+}
+
+export type PrepareIdentityPacksBatchResult =
+  | {
+      ok: true;
+      dryRun: boolean;
+      requested: number;
+      counts: IdentityPackBatchCounts;
+      results: IdentityPackBatchOutcome[];
+    }
+  | { ok: false; code: "unknown_corpus" | "empty_selection" | "too_many"; message: string };
+
+/**
+ * Prepare a bounded set of characters' packs ahead of demand
+ * (spec.lifecycle.md §"Lazy backfill" and §"Admin routes").
+ *
+ * Existing characters are NOT migrated by eagerly processing every portrait —
+ * the first identity-critical request derives what it needs. This exists for the
+ * one case that cannot wait for demand: preparing a fixed trial corpus so the
+ * comparison cells run against packs that already exist.
+ *
+ * The refusals are the feature. An oversized request fails rather than being
+ * silently truncated (an admin who asked for 500 and got 200 would read the
+ * report as complete), an unknown corpus id fails rather than running empty, and
+ * concurrency is clamped whatever the caller sends. `dryRun` answers "what would
+ * this do?" from ids and versions alone — it never hashes bytes, so it is cheap
+ * enough to run before every real batch.
+ *
+ * Per-character outcomes are stable codes, never image bytes: this response can
+ * be logged, pasted into a trial note, and diffed against the next run.
+ */
+export async function prepareIdentityPacksBatch(
+  input: PrepareIdentityPacksBatchInput,
+): Promise<PrepareIdentityPacksBatchResult> {
+  const selection = resolveBatchSelection(input);
+  if (!selection.ok) return selection;
+
+  const characterIds = selection.characterIds;
+  const concurrency = Math.min(
+    Math.max(1, Math.floor(input.concurrency ?? IDENTITY_PACK_BATCH_DEFAULT_CONCURRENCY)),
+    IDENTITY_PACK_BATCH_MAX_CONCURRENCY,
+  );
+  const outcomes = new Map<string, IdentityPackBatchOutcome>();
+  await runInBatches(characterIds, concurrency, async (characterId) => {
+    outcomes.set(characterId, await prepareOneForBatch(input, characterId));
+  });
+
+  // `runInBatches` swallows a rejection, so an id missing from the map means its
+  // work threw. Nothing below it should — every helper contains its own failures —
+  // but the report must still account for every requested character.
+  const results = characterIds.map(
+    (characterId): IdentityPackBatchOutcome =>
+      outcomes.get(characterId) ?? { characterId, outcome: "blocked", code: "derivation_failed", retryable: true },
+  );
+  return {
+    ok: true,
+    dryRun: input.dryRun,
+    requested: characterIds.length,
+    counts: countBatchOutcomes(results),
+    results,
+  };
+}
+
+function resolveBatchSelection(
+  input: PrepareIdentityPacksBatchInput,
+): { ok: true; characterIds: string[] } | Extract<PrepareIdentityPacksBatchResult, { ok: false }> {
+  const corpus = input.corpusId === undefined ? undefined : IDENTITY_PACK_TRIAL_CORPORA.get(input.corpusId);
+  if (input.corpusId !== undefined && corpus === undefined) {
+    return { ok: false, code: "unknown_corpus", message: `no checked-in trial corpus named "${input.corpusId}"` };
+  }
+  const characterIds = [...new Set([...(input.characterIds ?? []), ...(corpus ?? [])])];
+  if (characterIds.length === 0) {
+    return { ok: false, code: "empty_selection", message: "the batch named no characters" };
+  }
+  const cap = Math.min(Math.max(1, Math.floor(input.maxCount ?? IDENTITY_PACK_BATCH_MAX)), IDENTITY_PACK_BATCH_MAX);
+  if (characterIds.length > cap) {
+    return {
+      ok: false,
+      code: "too_many",
+      message: `${characterIds.length} characters exceeds the ${cap} allowed in one batch`,
+    };
+  }
+  return { ok: true, characterIds };
+}
+
+async function prepareOneForBatch(
+  input: PrepareIdentityPacksBatchInput,
+  characterId: string,
+): Promise<IdentityPackBatchOutcome> {
+  const [character] = await db()
+    .select({ avatarImageId: characters.avatarImageId })
+    .from(characters)
+    .where(and(eq(characters.id, characterId), eq(characters.ownerId, input.ownerId)))
+    .limit(1);
+  if (!character) return { characterId, outcome: "not_found" };
+
+  if (input.dryRun) {
+    const current = await currentPackRow(characterId);
+    const upToDate =
+      input.regenerate !== true &&
+      current !== undefined &&
+      current.status === "ready" &&
+      current.sourceImageId === character.avatarImageId &&
+      current.schemaVersion === IDENTITY_PACK_SCHEMA_VERSION &&
+      current.derivationVersion === IDENTITY_PACK_DERIVATION_VERSION;
+    return { characterId, outcome: upToDate ? "up_to_date" : "would_prepare" };
+  }
+
+  const result = await runDerivation(
+    { ownerId: input.ownerId, characterId, purpose: "admin_trial", sink: input.sink },
+    { forceNewRevision: input.regenerate === true },
+  );
+  return result.status === "ready"
+    ? { characterId, outcome: "ready", revision: result.pack.revision, warnings: result.warnings }
+    : { characterId, outcome: "blocked", code: result.code, retryable: result.retryable };
+}
+
+function countBatchOutcomes(results: readonly IdentityPackBatchOutcome[]): IdentityPackBatchCounts {
+  const counts: IdentityPackBatchCounts = { ready: 0, blocked: 0, notFound: 0, wouldPrepare: 0, upToDate: 0 };
+  for (const result of results) {
+    switch (result.outcome) {
+      case "ready":
+        counts.ready += 1;
+        break;
+      case "blocked":
+        counts.blocked += 1;
+        break;
+      case "not_found":
+        counts.notFound += 1;
+        break;
+      case "would_prepare":
+        counts.wouldPrepare += 1;
+        break;
+      case "up_to_date":
+        counts.upToDate += 1;
+        break;
+    }
+  }
+  return counts;
+}
+
+/* ------------------------------------------------------------------------ *
+ * Deletion                                                                  *
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Hard-delete a character's hidden identity assets — rows and files
+ * (spec.lifecycle.md §"Character deletion").
+ *
+ * The pack ROWS cascade with the character; these image rows do not (they hang off
+ * `entity_kind`/`entity_id`, which carry no foreign key), so the delete path calls
+ * this explicitly. Today `deleteEntityImages` would take them anyway; when the
+ * data-lifecycle plan makes Gallery-visible images survive their character, this is
+ * what keeps hidden crops dying with it. The broader retention rule deliberately
+ * does not extend to internal render inputs: nobody browses a face crop.
+ *
+ * Guarded by kind AND entity, the same shape `deleteChatAssets` uses, so a wrong
+ * character id can only ever delete nothing.
+ */
+export async function deleteCharacterIdentityAssets(characterId: string, ownerId: string): Promise<number> {
+  return purgeImagesWhere(
+    and(
+      eq(images.ownerId, ownerId),
+      eq(images.entityKind, "character"),
+      eq(images.entityId, characterId),
+      inArray(images.kind, [...HIDDEN_IMAGE_KINDS]),
+    ),
+  );
+}
+
+/* ------------------------------------------------------------------------ *
+ * Sweep integration                                                         *
+ * ------------------------------------------------------------------------ */
+
+export interface IdentityPackSweepFindings {
+  /** A current ready pack whose crop row is gone, or no longer readable. */
+  missingCurrentCrop: number;
+  /** A crop that disagrees with its pack about which portrait it came from. */
+  sourceMismatch: number;
+  /** A crop filed under another user or another character than its pack. */
+  ownerMismatch: number;
+  /** Two current rows for one character — the partial unique index should forbid it. */
+  currentConflict: number;
+  /** A pack pointing at an image whose kind is publicly listable. */
+  hiddenAssetExposed: number;
+}
+
+/** Rows examined per findings pass. */
+const IDENTITY_PACK_FINDINGS_LIMIT = 500;
+
+/**
+ * Flag identity-pack inconsistencies; repair none of them
+ * (spec.lifecycle.md §"Image sweep integration").
+ *
+ * That split is deliberate. Every condition below means two sources of truth
+ * already disagree — a crop claiming one portrait while its pack claims another, a
+ * hidden asset filed under the wrong character, two current revisions where the
+ * index says there can be one. Guessing which side is right would destroy the
+ * evidence of how it happened, and the safe repair (re-derive) is something
+ * `ensureIdentityPack` does anyway the next time anyone asks. So: a warning per
+ * finding, with ids, and a human decides.
+ */
+export async function findIdentityPackInconsistencies(
+  limit = IDENTITY_PACK_FINDINGS_LIMIT,
+  sink?: DiagnosticSink,
+): Promise<IdentityPackSweepFindings> {
+  const findings: IdentityPackSweepFindings = {
+    missingCurrentCrop: 0,
+    sourceMismatch: 0,
+    ownerMismatch: 0,
+    currentConflict: 0,
+    hiddenAssetExposed: 0,
+  };
+  // Widened deliberately: `HIDDEN_IMAGE_KINDS` is a one-member tuple, so
+  // `.includes()` on it would only accept that literal and reject the join's
+  // `ImageKind` — which is the exact value this needs to test.
+  const hiddenKinds: readonly ImageKind[] = HIDDEN_IMAGE_KINDS;
+
+  const rows = await db()
+    .select({
+      packId: imageIdentityPacks.id,
+      characterId: imageIdentityPacks.characterId,
+      packSourceImageId: imageIdentityPacks.sourceImageId,
+      cropImageId: imageIdentityPacks.faceCropImageId,
+      cropRowId: images.id,
+      cropKind: images.kind,
+      cropStatus: images.status,
+      cropOwnerId: images.ownerId,
+      cropEntityId: images.entityId,
+      cropSourceImageId: images.sourceImageId,
+      characterOwnerId: characters.ownerId,
+    })
+    .from(imageIdentityPacks)
+    .innerJoin(characters, eq(characters.id, imageIdentityPacks.characterId))
+    .leftJoin(images, eq(images.id, imageIdentityPacks.faceCropImageId))
+    .where(and(eq(imageIdentityPacks.current, true), eq(imageIdentityPacks.status, "ready")))
+    .limit(limit);
+
+  for (const row of rows) {
+    const context = { packId: row.packId, characterId: row.characterId, imageId: row.cropImageId };
+    if (row.cropImageId === null || row.cropRowId === null || row.cropKind === null || row.cropStatus !== "ready") {
+      findings.missingCurrentCrop += 1;
+      flagIdentityPack(sink, "missing_current_crop", "a current ready pack has no readable crop row", context);
+      continue;
+    }
+    if (row.cropSourceImageId !== row.packSourceImageId) {
+      findings.sourceMismatch += 1;
+      flagIdentityPack(sink, "source_changed", "the crop names a different source image than its pack", context);
+    }
+    if (row.cropOwnerId !== row.characterOwnerId || row.cropEntityId !== row.characterId) {
+      findings.ownerMismatch += 1;
+      flagIdentityPack(sink, "owner_mismatch", "the crop is filed under another owner or character", context);
+    }
+    if (!hiddenKinds.includes(row.cropKind)) {
+      findings.hiddenAssetExposed += 1;
+      flagIdentityPack(sink, "hidden_asset_exposed", `a pack points at a listable image kind (${row.cropKind})`, context);
+    }
+  }
+
+  // Cheap insurance against the storage-layer invariant: the partial unique index
+  // on `current` makes this impossible, and an impossible row is precisely what an
+  // operator must hear about rather than discover through a wrong face.
+  const conflicts = await db()
+    .select({ characterId: imageIdentityPacks.characterId, rows: count() })
+    .from(imageIdentityPacks)
+    .where(eq(imageIdentityPacks.current, true))
+    .groupBy(imageIdentityPacks.characterId)
+    .having(sql`count(*) > 1`)
+    .limit(limit);
+  for (const conflict of conflicts) {
+    findings.currentConflict += 1;
+    flagIdentityPack(sink, "current_conflict", `${conflict.rows} current revisions for one character`, {
+      characterId: conflict.characterId,
+    });
+  }
+
+  return findings;
+}
+
+function flagIdentityPack(
+  sink: DiagnosticSink | undefined,
+  code: string,
+  message: string,
+  context: Record<string, unknown>,
+): void {
+  log.warn("images", `identity pack finding: ${message}`, context);
+  sink?.push(diag("warn", `images.identity_pack.${code}`, message, { context }));
+}
+
+/**
+ * The pack service's share of one scheduled image sweep: flag inconsistencies,
+ * then run the bounded retention cleanup. Contained — a degraded maintenance pass
+ * returns no counters rather than failing the sweep, which also reclaims image and
+ * job rows nothing else reclaims.
+ */
+async function identityPackSweepPass(now: Date): Promise<Record<string, number>> {
+  try {
+    const findings = await findIdentityPackInconsistencies();
+    const cleanup = await cleanupIdentityPackRevisions({ now });
+    return {
+      identityPackMissingCurrentCrop: findings.missingCurrentCrop,
+      identityPackSourceMismatch: findings.sourceMismatch,
+      identityPackOwnerMismatch: findings.ownerMismatch,
+      identityPackCurrentConflict: findings.currentConflict,
+      identityPackHiddenAssetExposed: findings.hiddenAssetExposed,
+      identityPackPendingRetired: cleanup.pendingRetired,
+      identityPackCropsDeleted: cleanup.cropsDeleted,
+      identityPackOrphanCropsDeleted: cleanup.orphanCropsDeleted,
+    };
+  } catch (err) {
+    log.warn("images", "identity pack sweep pass degraded", { error: errorMessage(err).slice(0, 300) });
+    return {};
+  }
+}
+
+/**
+ * Hand the two lifecycle call-backs to `assets.ts` at module load.
+ *
+ * This direction, and not a plain import from there, because `assets.ts` importing
+ * this module would close an import cycle (`pnpm lint:cycles`) — the registry's doc
+ * comment has the full reasoning. Registration is a side effect of loading the pack
+ * service, which every path that can reach a sweep already does (`avatar.ts`,
+ * `variants.ts`, the `@/server/images` barrel).
+ */
+registerIdentityPackMaintenance({
+  invalidateForImages: async (imageIds) => {
+    try {
+      await invalidateIdentityPackForSource({ sourceImageIds: imageIds });
+    } catch (err) {
+      // Maintenance never fails the delete that triggered it; read-time hash
+      // verification still catches whatever this pass missed.
+      log.warn("images", "identity pack invalidation failed", { error: errorMessage(err).slice(0, 300) });
+    }
+  },
+  sweep: identityPackSweepPass,
+});
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
