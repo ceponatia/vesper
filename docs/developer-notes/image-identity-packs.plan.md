@@ -1,6 +1,7 @@
 # Image identity packs — durable references that preserve a character's face
 
-Status: next (planned 2026-08-05; extracted from the image-render-quality work)
+Status: active (slices 1–5 shipped 2026-08-06; slices 6–7 — fixed trial and
+production close-out — remain)
 
 Technical companion: [image-identity-packs.spec.md](image-identity-packs.spec.md)
 
@@ -122,6 +123,13 @@ heuristic may be used only for the current canonical portrait and only when the
 source shape and metadata do not contradict the expected single-character
 portrait. The stored method remains `heuristic`; it is never promoted to
 `detector` by inference.
+
+As shipped, no face detector is chosen yet — which library to use is a trial
+decision with a privacy review attached, so the first version deliberately runs
+without one. In practice that means automatic preparation succeeds for
+portrait-shaped canonical portraits and, for anything else, asks the owner for a
+manual crop instead of guessing. The multi-face refusal above is the rule the
+moment a detector is added.
 
 ### Quality is measured in two stages
 
@@ -259,6 +267,11 @@ admin inspection without yet changing render behavior.
 The migration uses the next available migration number at implementation time;
 this plan does not reserve one while other image work is active.
 
+Shipped 2026-08-06 (migration 0101): the pack vocabulary and contracts, the
+versioned crop/quality policy, the `image_identity_packs` table with one current
+revision per character, and the hidden face-crop kind kept out of the gallery,
+the portrait studio, character copies, and public file serving.
+
 ### Slice 2 — deterministic derivation
 
 Implement normalized source hashing, crop geometry, image creation, intrinsic
@@ -267,6 +280,11 @@ conservative heuristic fallback and multi-face refusal.
 
 Create packs after new canonical portraits become ready, but keep portrait save
 successful when derivation fails.
+
+Shipped 2026-08-06: preparation now runs after a portrait is generated, a variant
+is promoted, or a character is copied, and never blocks any of them. The detector
+seam is real but the adapter shipped with it finds nothing, so automatic
+preparation is the conservative heuristic only — see the derivation ruling above.
 
 ### Slice 3 — lifecycle and lazy backfill
 
@@ -277,10 +295,20 @@ copy/publish isolation.
 Prove that concurrent requests for the same source do not create competing ready
 packs or duplicate crop files.
 
+Shipped 2026-08-06: preparation on demand, invalidation when the portrait changes
+or is cleared, single-flight coalescing with compare-before-promote, bounded
+retries, a seven-day window before old revisions are swept, hidden crops removed
+with the character, and copies that never share a pack across owners.
+
 ### Slice 4 — manual review and correction
 
 Add the character-owner crop editor, admin inspection, manual revision history,
 explicit overrides, and a bounded admin preparation batch.
+
+Shipped 2026-08-06: the portrait tab's reference panel and crop editor (with
+plain-language warnings, a stale-save reload, and reset-to-automatic), the owner
+routes behind them, and an admin-only inspector with revision history, a recorded
+override, and a bounded batch over the admin's own characters.
 
 ### Slice 5 — reference-role integration
 
@@ -290,6 +318,12 @@ whether a model uses one or both.
 
 Remove any identity-critical lane's ad hoc face recropping once it consumes the
 pack.
+
+Shipped 2026-08-06 (pack side only): a pack can be evaluated for a model profile
+and answers with the reference roles that profile may use, plus the evidence
+behind that answer. Nothing sends them yet — the flag that would allow it is off,
+and the shared render intent that carries references to providers is still being
+built in the capabilities plan. Removing lane-local recropping waits for it.
 
 ### Slice 6 — fixed identity-reference trial
 

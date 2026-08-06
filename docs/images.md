@@ -190,6 +190,7 @@ names it.
 - Serving: `GET /api/images/:id/file` (immutable cache headers — content never changes for an id). **The gate is owner-first:** you always get your own images; a cross-owner read is allowed only when the image's `entity_kind`/`entity_id` name a **public** shareable entity **owned by the same account as the image** (`isPublicEntityImage(entityKind, entityId, row.ownerId)`). The ownership half of that predicate is what makes it safe: the entity linkage is polymorphic metadata with no FK, so without it the check reads "some public row has this id" and any path that ever let a user write those columns would publish their own private asset by naming someone else's public character (security-authz.plan.md slice 3). `Cache-Control` follows the same split — `public` for public-entity images, `private` for owner-only, so a shared cache can never serve one user's asset to another.
 - Image rows returned **beside a public entity** (the character detail response's portrait strip) are projected to `{ id, kind, entityKind, entityId, createdAt }` — never `path` (storage layout) or `prompt` (prompts embed authored + chat text, which is why `deleteChat` scrubs them). The portrait studio's full rows come from the owner-strict `GET /api/characters/:id/portraits`.
 - Deleting an entity **hard-deletes** its owned `images` rows and unlinks the files immediately (best-effort `fs.unlink`, not a queued job — `deleteEntityImages`). **Every** delete path — the owned-image helpers, the chat cascades, the entity reclaim, the look anchor's keep-latest purge — runs the same `purgeImagesWhere(where)` (`images/assets.ts`): select → delete → best-effort unlink, once. The **caller** supplies the predicate and therefore owns every guard (owner id, kind, chat), and the helper adds nothing to it, so a purge can never be wider than the call site asked for; route handlers are barred from importing it (ESLint) and use the owner-scoped `deleteOwnedImage(s)` instead. Reading an asset's bytes is likewise one helper, `readImageBytes(row)` — null when the file is lost, never a throw, because the sweep below reconciles it. Only a **chat** deletion differs: it nulls `images.chat_id` (`SET NULL`) and deliberately keeps the asset (it survives in the Gallery). An idempotent `image_sweep` job reconciles rows↔files both directions, logging orphans as warnings. **It is kicked by image work, not by a timer** (`kickImageSweep`, called at the top of `runImagePipeline`): fire-and-forget, at most one pass per 6h (an in-process throttle plus a durable one — an `image_sweep` job row inside the window means someone already swept, which survives restarts and covers a second instance), and the same tick also reclaims orphaned `jobs` rows (`reclaimOrphanedJobs`). Request-driven rather than a `setInterval` for the same reason the durable time-jobs sweep is (`engine/sim-time-jobs.ts` §"the boot/next-request sweep"): a timer inside a Next server has no owner, no visibility, and silently doubles under a second instance, while a kick off work the app is already doing needs no infrastructure and runs precisely when orphans are being created. It is deliberately kicked BEFORE the generation — a render that dies mid-flight is the row a later sweep must reclaim, so the kick must not depend on reaching the end. (Until 2026-08-03 the sweep had **no caller at all**: it was written, tested and documented as periodic, but never ran, so a render killed by a deploy left a `pending` row that painted a tile forever.) **Safety rail:** if the images table has NO rows while files exist on disk, the file side is skipped entirely and logged — that reading means the database and the volume disagree (a fresh or branched database, a mis-set `DATABASE_URL`), not that every file is an orphan, and wiping the volume on it would be unrecoverable.
+- `identity_face_crop` rows are **internal derived assets, not user content**: `HIDDEN_IMAGE_KINDS` keeps them out of the portrait strip, the portrait studio's routes, the Gallery, entity cloning, and the file route's public widening, and they are hard-deleted with their character (§Identity packs below).
 - Failed generations show a "regenerate" affordance (same prompt + parameters re-queued). Chat scene renders are deduped to **one live render per chat** — `queueChatScene` short-circuits when a `queued`/`running` `chat_scene_image` job already exists for the conversation (the guard is keyed on chat + type + status, not on turn number or prompt text).
   - **"Live" is age-bounded, and that bound is load-bearing** (`hasLiveChatJob`, `server/db/job-liveness.ts` — `JOB_STALE_MS` = 15 min, the same cutoff the per-user concurrency cap uses). A job row only reaches a terminal status because the process that started it survives to write one, so a **Fly deploy replacing the machine mid-render leaves it `running` forever**. Unbounded, that wedges the feature permanently for that conversation: the dedupe keeps seeing a live job, every later request is refused, and the GET route's `rendering` flag (which reads the same predicate) never clears — a spinner that can never finish (owner report 2026-08-02, a scene render killed one second in by a deploy). The same helper backs every one-live-per-chat enqueue: scene render, scene sketch, summary fold, meanwhile pass, and the look/place mints. The orphaned row itself is reclaimed by the periodic sweep (`reclaimOrphanedJobs`, above) rather than by the dedupe, which only stops being blocked by it.
 
@@ -200,6 +201,101 @@ Prompt built from the character's resolved attributes, **grouped by body region 
 
 ### Avatar upload (user-supplied image)
 Instead of generating, the user can upload their own picture in the portrait studio. The crop dialog (`components/characters/avatar-upload-dialog.tsx`) loads the file client-side and **always** offers the 3:4 pan/zoom crop window (pure geometry in `@/lib/images/crop`) — an already-3:4 file used to skip straight to upload, but the silent instant close read as a broken dialog and reframing is wanted even at the right ratio (owner request 2026-07-29: zoom a knees-up render to waist-up; at zoom 1 a 3:4 image exactly fills the frame, so "Use image" untouched is the old fast path). Zoom runs **below cover too** (`MIN_ZOOM`, same-day request): shrinking past cover letterboxes the image inside the frame so parts a 3:4 cover-crop would cut (a wide shot's sides) stay in the portrait, with a **flat backdrop color** (picker in the dialog, neutral-grey default, previewed live as the frame's background) filling the uncovered area — mandatory at render since JPEG has no alpha. A canvas fills the backdrop then draws the whole image at its display transform (`canvasRect` — overflow clips when zoomed in, margins show when zoomed out) to a JPEG data URL. `POST /api/characters/:id/avatar/upload` decodes it, re-fits to the canonical `AVATAR_WIDTH × AVATAR_HEIGHT` (768×1024) with sharp `cover` + EXIF `rotate()` (defense in depth — the client already cropped), saves through the normal row-before-file path (`kind: "avatar"`, `meta.source: "upload"`), and **promotes it to the avatar** in one synchronous request — no model runs, so it works in demo mode and offline. The new id returns in the response; the studio refetches immediately rather than polling.
+
+### Identity packs (derived face crops)
+A character's **identity pack** records which bytes its face reference came from, how it was cropped, and what was
+measured about it ([developer-notes/image-identity-packs.plan.md](developer-notes/image-identity-packs.plan.md) ·
+[spec](developer-notes/image-identity-packs.spec.md)). One **current** pack per character, derived from that
+character's **current canonical portrait** — never a gallery image, never an old avatar — keyed by a **SHA-256 over
+the stored normalized WebP bytes**, so bytes that merely *look* the same are a different source. Revisions are **rows**
+in `image_identity_packs` (migration 0101, `images/identity-packs.ts`): a partial unique index enforces one `current`
+row per character, and each revision carries its status (`pending`/`ready`/`unusable`/`failed`/`stale`/`superseded`),
+crop method (`detector`/`heuristic`/`manual`), geometry, measurements, warning codes and review actor. The **pack row,
+not the crop's `images.meta`, is the authority** for which crop is current. Slices 1–5 are shipped; the fixed reference
+trial and production close-out remain.
+
+**The crop is a hidden asset.** `kind: "identity_face_crop"` is written through the normal row-before-file WebP path,
+then subtracted from every user surface by `HIDDEN_IMAGE_KINDS` (`images/assets.ts`): the character detail response's
+portrait strip, `cloneEntityImages`, and the public-widening branch of `GET /api/images/:id/file` (a hidden row stays
+owner-only whatever entity it names). The portrait studio's routes use a positive allow-list instead
+(`PORTRAIT_STUDIO_KINDS` = avatar + variant), so list/read/delete/promote cannot address one; the Gallery's
+`GALLERY_IMAGE_KINDS` never included it; and `promoteVariant` refuses a hidden kind outright
+(`images.promote.hidden_kind`) — a render *input* is never a portrait.
+
+**Derivation v1 is heuristic-only, deliberately.** `IdentityFaceDetector` (`images/identity-pack-detector.ts`) is a
+real seam, but the shipped adapter is `nullIdentityFaceDetector` (`"null_v1"`) and reports nothing: picking a library
+is a trial-slice decision, and any candidate must run locally (the portrait never goes to a third-party face service).
+Automatic derivation is therefore the deterministic `heuristic_v1` crop for portrait-shaped sources (height/width
+1.2–2.2, squared, top offset 0.08 of source height), carrying the `heuristic_crop` warning and never promoted to
+`detector` by inference — and it **fails closed with `no_usable_face`** on any other shape rather than guessing a
+rectangle out of a group shot. Face-box expansion, lost-padding refusal and the multi-face `ambiguous_faces` refusal
+(never the biggest or most central face) are implemented and proven against injected test detectors. Every tunable
+number lives in `lib/images/identity-pack-policy.ts` behind `derive_v1` (bump when crop **bytes** would change) and
+`policy_v1` (bump when a **threshold** re-judges stored measurements), with golden fixtures pinning the geometry so "the
+crop moved" is always deliberate. The v1 values are conservative placeholders the trial calibrates; blur and occlusion
+thresholds are `null` — defined, not armed.
+
+**A stored verdict is not eternal truth.** Rows persist *measurements*, never `quality.accepted`, so a revision stamped
+with an older `policyVersion` is **re-judged on read** by `projectIdentityPackPolicy` (`images/identity-packs.ts`) —
+one helper shared by all three read seams (`ensureIdentityPack`'s reuse path, `getIdentityPackForOwner`,
+`evaluateIdentityPackForProfile`), so a policy bump can never leave one of them quoting a verdict the others dropped.
+It is a **projection, not a repair**: the row keeps the status and warnings it was finalized with (a revision is a
+historical claim, and admin history shows it), while readers get today's answer — blockers make the pack `unusable`
+with a non-retryable code, warnings are recomputed from the stored numbers, and the two *provenance* warnings
+(`heuristic_crop`, `manual_admin_override` — how the crop was authored, not what a threshold measured) survive
+unchanged. Only `ready` revisions are projected: a loosened policy cannot promote a refused revision, which has no crop
+bytes to hand anybody, so that direction is a re-derivation.
+
+**`ensureIdentityPack` is the one entry point**, and idempotent: authorize → hash the source → reuse a matching
+ready/unusable revision → coalesce behind a **keyed single flight** (`identity_pack:<characterId>`, also the advisory
+lock inside both transactions) → else reserve a `pending` revision, derive **outside** the transaction, and finalize by
+**compare-and-set** on the same source pointer and hash; a derivation that loses that race goes stale and its crop is
+deleted at once. Retry backoff is **derived from the revision rows** (their count is the attempt number, the newest
+row's timestamp the clock — 60s doubling to an hour, five attempts per set of source bytes), so no second scheduler
+exists, and expected failure is a value — `blocked` with an actionable code — not an exception. Preparation is queued
+fire-and-forget after avatar generation, variant promotion and library clone as an `identity_pack` job (local lane, one
+live per character); a pack failure never fails the portrait.
+
+**Lifecycle.** A changed source makes the pack stale (read-time hash verification is the backstop), and
+`clearEntityImagePointers` invalidates packs naming a cleared image through a **maintenance registration hook**
+(`registerIdentityPackMaintenance` — a registry rather than an import, because `assets.ts` importing the pack service
+would close a cycle). The same hook gives the 6-hourly `image_sweep` its identity pass: bounded idempotent cleanup of
+retired revisions' crops after a **7-day diagnostic window** (pack metadata survives as the audit trail, the current
+revision is never touched, `pending` rows abandoned by a dead process are retired at the 15-minute job-staleness bound,
+and orphan crops go too), plus consistency **findings** counted into the sweep job's payload rather than silently
+repaired. Hidden crops are hard-deleted with the character (`deleteCharacterIdentityAssets`, guarded by kind *and*
+entity, which keeps them dying with it once data-lifecycle retires `deleteEntityImages`). Copy and publish stay
+isolated: a clone carries no crop, and the destination derives its own pack from its own copied portrait.
+
+**Surfaces.** Owner lane `/api/characters/:id/identity-pack` — `GET` (summary; a pure read that never derives, so
+`none` and `pending` are answers rather than spinners), `POST ensure`, `POST manual-crop` (409 with a fresh summary on
+a stale editor save, 422 on a measured rejection), `POST reset-automatic` (a new automatic revision, not an undo) — all
+authorized from the **character in the URL**, with a body `packId`/`revision`/`sourceContentHash` only as a concurrency
+guard. Every route answers `{ summary }`; the two write routes add an optional `blocked: { code, retryable }` when the
+refusal happened **before** a revision existed (no portrait, source still generating, unreadable bytes, single-flight
+timeout) — that outcome is invisible in the re-read summary, so without it a Prepare click answers with silence. The
+portrait studio shows a quiet `IdentityReferencePanel` (keyed on the character **and** its canonical portrait, so a new
+portrait re-reads instead of showing the previous pack's state; renders nothing if the read fails) opening
+`identity-crop-dialog.tsx`: a drag/resize square over the canonical source, live preview, plain-language warnings, and
+the `blocked` code in the owner's words when a prepare or reset refuses. The
+**self-scoped** admin lane `/api/admin/self/identity-packs` adds a bounded preparation `batch` (dry run, hard caps,
+named trial-corpus registry — empty until the trial), per-pack `history`, and a recorded `override` waiving a *reviewed
+threshold* only (ownership, bounds and stale-hash refusals stand whoever asks; the revision records actor, reason and
+the `manual_admin_override` warning). No route returns image bytes or URLs, admin included.
+
+**Evaluation exists; no render lane consumes it.** `images/identity-pack-references.ts`
+(`evaluateIdentityPackForProfile`) maps the current pack plus a profile's declared strategy (`canonical_only` ·
+`face_detail_only` · `canonical_then_face_detail` · `face_detail_then_canonical`) to ordered role candidates
+(`canonical_identity`, `face_detail`) carrying ids, measurements and provenance — never bytes, never a model choice —
+and refuses **before** provider reservation. Consumers gate on `IMAGE_IDENTITY_PACK_REFERENCES`
+(`imageIdentityPackReferencesEnabled()`, default off, checked by the caller so admin and trial surfaces can still
+measure), and **nothing calls it in production**: the consumer is the shared render intent of
+[image-model-capabilities.plan.md](developer-notes/image-model-capabilities.plan.md) slice 2. Until it lands every lane
+still anchors on the library avatar exactly as described above.
+
+**A new warning or failure code requires copy.** The server reasons about stable codes only;
+`components/characters/identity-pack-copy.ts` is the single exhaustive code → English map, so adding a code without
+copy is a **compile error**, not a raw identifier on someone's screen.
 
 ### Portrait variants (reference edit)
 Pose / outfit / expression / setting variants of the canonical avatar via **the New Variant picker's model** (the registry filtered to `canEdit`; default `qwen/qwen-image-edit-2511`, shared with scene images — the section gained its own picker on 2026-08-05, having previously had no choice to offer): single reference image + instruction, prefixed with the **identity lock** block (preserve face, hair, age, build — port the old `PORTRAIT_IDENTITY_LOCK` wording). Variants accumulate in the character's portrait studio; any variant can be promoted to canonical avatar. **Promotion is owner-strict inside the service** (`promoteVariant(characterId, imageId, ownerId)`): the route's `findOwnedCharacter` gate stays as defense in depth, but the service re-matches BOTH the character row and the image row on `ownerId` in the same query as the id before writing, and only then checks the `entity_kind`/`entity_id` link and `status: ready`. Ownership is never inferred from the polymorphic entity linkage — repointing an owned image at someone else's public character buys nothing (same trust boundary as the file-serving gate above; security-authz.plan.md §Follow-ups item 2). Rejections return `{ ok: false, error }` with a foreign row reported as a plain "not found" (no not-yours signal) and a `log.warn` diagnostic (`images.promote.*`). Single-reference edit only — re-roll from the canonical portrait rather than chaining edits (drift compounds).

@@ -14,9 +14,17 @@ const INTERNAL_NAMES = new Set(["saveImageBuffer", "deleteChatUploads", "deleteC
  * remaining entry is either the upload worker that minted the row it writes,
  * the route-safe owner-checking adapter, or the chat pipeline's authenticated
  * rerun / ownership-reverified delete cascade.
+ *
+ * Re-reviewed 2026-08-05 (image-identity-packs): the identity-pack service joins
+ * the "minted the row it writes" class. It does not ride `runImagePipeline` —
+ * that shell is a provider-generation sequence, and a face crop is derived
+ * locally from bytes this app already stored — so it mints the hidden crop row
+ * with `createImageAsset` and writes that exact id, having already re-authorized
+ * the character and re-verified the source hash.
  */
 const APPROVED: Readonly<Record<string, readonly string[]>> = {
   saveImageBuffer: [
+    "src/server/images/identity-packs.ts",
     "src/server/images/internal.ts",
     "src/server/images/route-safe.ts",
     "src/server/images/upload.ts",

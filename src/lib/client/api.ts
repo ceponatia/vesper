@@ -1,10 +1,21 @@
 import { z } from "zod";
 import type { CharacterSheetScope } from "@/lib/character-scopes";
 import { newId } from "@/lib/ids";
+import { parseOrNull } from "@/lib/parse";
 import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
 import { WORLD_BEAT_KINDS } from "@/lib/simulation/world-beat";
 import {
   activeConditionSchema,
+  identityPackAdminRevisionSchema,
+  identityPackResponseSchema,
+  imageIdentityPackFailureCodeSchema,
+  type ImageIdentityPackFailureCode,
+  type IdentityPackAdminOverrideRequest,
+  type IdentityPackAdminRevision,
+  type IdentityPackBlockedWire,
+  type IdentityPackManualCropRequest,
+  type IdentityPackNormalizedCropWire,
+  type IdentityPackSummaryWire,
   imageModelSchema,
   imageModelsForSurface,
   imageReferenceTransports,
@@ -83,6 +94,13 @@ export interface ApiError {
   status: number;
   code: string;
   message: string;
+  /**
+   * The raw error body, for the rare caller whose FAILURE response carries data it
+   * must act on — the identity-pack manual crop reads the fresh summary out of a
+   * 409 so a stale editor reloads from the conflict itself rather than racing a
+   * second GET. Untyped on purpose: parse it, never read fields off it.
+   */
+  body?: unknown;
 }
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError };
@@ -131,7 +149,7 @@ async function request<T>(schema: z.ZodType<T>, path: string, init?: RequestInit
   } catch {
     raw = null; // empty body (e.g. 204) is fine; schemas tolerate null
   }
-  if (!res.ok) return { ok: false, error: toApiError(res.status, raw) };
+  if (!res.ok) return { ok: false, error: { ...toApiError(res.status, raw), body: raw } };
   const parsed = schema.safeParse(raw);
   if (parsed.success) return { ok: true, data: parsed.data };
   return {
@@ -915,6 +933,86 @@ export const charactersApi = {
   promotePortrait: (id: string, imageId: string) =>
     apiPost(z.unknown(), `/api/characters/${id}/portraits/${imageId}/promote`, {}),
   deletePortrait: (id: string, imageId: string) => apiDelete(`/api/characters/${id}/portraits/${imageId}`),
+};
+
+// ---------------------------------------------------------------------------
+// Identity packs (image-identity-packs.spec.lifecycle.md §User routes)
+// ---------------------------------------------------------------------------
+
+export type {
+  IdentityPackAdminRevision,
+  IdentityPackBlockedWire,
+  IdentityPackNormalizedCropWire,
+  IdentityPackSummaryWire,
+};
+
+/**
+ * The optimistic-concurrency triple every pack WRITE carries
+ * (spec.derivation.md §"Manual crop revisions") — the fields the manual-crop and
+ * override requests share, named once so the editor can pass "the thing I opened"
+ * around as one value.
+ */
+export type IdentityPackWriteGuard = Pick<
+  IdentityPackManualCropRequest,
+  "packId" | "revision" | "sourceContentHash"
+>;
+
+/**
+ * The fresh summary a 409 carried back, or null if the body was not one.
+ *
+ * A stale save is an EXPECTED outcome — the portrait changed under an open editor —
+ * so the conflict response reloads the editor in place instead of surfacing as a
+ * failed request the user has to interpret.
+ */
+export function identityPackConflictSummary(error: ApiError): IdentityPackSummaryWire | null {
+  if (error.status !== 409) return null;
+  return parseOrNull(identityPackResponseSchema, error.body)?.summary ?? null;
+}
+
+const identityPackRejectionSchema = z.object({ failureCode: imageIdentityPackFailureCodeSchema });
+
+/**
+ * The measured failure code behind a 422, when the refusal named one.
+ *
+ * `error.code` carries the narrower rejection reason (which geometry rule broke);
+ * the body's `failureCode` is the stable vocabulary the UI has copy for, so the
+ * editor can answer "make the square bigger" instead of echoing `below_minimum`.
+ */
+export function identityPackRejectionCode(error: ApiError): ImageIdentityPackFailureCode | null {
+  if (error.status !== 422) return null;
+  return parseOrNull(identityPackRejectionSchema, error.body)?.failureCode ?? null;
+}
+
+/**
+ * Every pack route answers with the same body, so it is parsed once
+ * (contracts §`identityPackResponseSchema`). `blocked` is present only on a
+ * write whose refusal never reached a revision — the summary cannot report that
+ * one, because there is nothing new in the row to report.
+ */
+export const identityPacksApi = {
+  get: (characterId: string) => apiGet(identityPackResponseSchema, `/api/characters/${characterId}/identity-pack`),
+  /** Prepare (or re-prepare) the pack — the none/failed/stale path. Idempotent server-side. */
+  ensure: (characterId: string) =>
+    apiPost(identityPackResponseSchema, `/api/characters/${characterId}/identity-pack/ensure`, {}),
+  /** Save an owner correction. 409 ⇒ stale editor (see `identityPackConflictSummary`), 422 ⇒ measured refusal. */
+  manualCrop: (characterId: string, body: IdentityPackManualCropRequest) =>
+    apiPost(identityPackResponseSchema, `/api/characters/${characterId}/identity-pack/manual-crop`, body),
+  /** Drop the manual crop and re-derive automatically (a new revision, not an undo). */
+  resetAutomatic: (characterId: string) =>
+    apiPost(identityPackResponseSchema, `/api/characters/${characterId}/identity-pack/reset-automatic`, {}),
+};
+
+/** Admin-only pack inspection (`/api/admin/self` — 404s for non-admins). */
+export const adminIdentityPacksApi = {
+  /** Revision history, newest first. A row that fails the contract is dropped, not fatal. */
+  history: (packId: string) =>
+    apiGet(
+      z.object({ history: arrayOf(identityPackAdminRevisionSchema) }),
+      `/api/admin/self/identity-packs/${packId}/history`,
+    ),
+  /** Reviewed override: a non-empty reason is required; omitting `crop` keeps the current coordinates. */
+  override: (packId: string, body: IdentityPackAdminOverrideRequest) =>
+    apiPost(identityPackResponseSchema, `/api/admin/self/identity-packs/${packId}/override`, body),
 };
 
 // ---------------------------------------------------------------------------

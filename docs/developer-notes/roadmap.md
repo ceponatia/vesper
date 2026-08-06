@@ -190,17 +190,31 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   events 30d / jobs 7d, prod telemetry ids+counts only, account deletion
   parked → deferred.plan.md.
 
-- **Image identity packs — durable canonical and face-detail references** —
-  [image-identity-packs.plan.md](image-identity-packs.plan.md) ·
-  [spec](image-identity-packs.spec.md) (next; planned 2026-08-05 and extracted
-  from the image-render-quality plan so reference preparation has one owner).
-  Compiles the current canonical portrait into an owner-scoped, revisioned,
-  hidden identity pack with a face-detail crop, source hash, crop/detector
-  provenance, intrinsic quality measurements, profile-aware pre-spend
-  eligibility, lazy backfill, manual correction, and explicit copy/delete
-  behavior. Seven slices. It lands before the render-quality plan's controlled
-  face-reference trial and future repair work; no persisted face embeddings in
-  v1.
+- **Image identity packs — remainder: the fixed reference trial, then production
+  close-out** — [image-identity-packs.plan.md](image-identity-packs.plan.md) ·
+  [spec](image-identity-packs.spec.md) (active; planned 2026-08-05 and extracted
+  from the image-render-quality plan so reference preparation has one owner;
+  **slices 1–5 shipped 2026-08-06**, see
+  [roadmap.shipped.md](roadmap.shipped.md)). Compiles the current canonical
+  portrait into an owner-scoped, revisioned identity pack: the hidden
+  `identity_face_crop` kind (excluded from the gallery, the portrait studio,
+  clones and public file serving), SHA-256 source hashing, versioned
+  `derive_v1`/`policy_v1` derivation with golden-pinned geometry, an idempotent
+  single-flight `ensureIdentityPack` with compare-before-promote and row-derived
+  retries, staleness and invalidation, a 7-day revision cleanup, hard delete with
+  the character,
+  owner crop-editor + admin batch/history/override routes and UI, and
+  profile-aware pre-spend evaluation returning role candidates with provenance.
+  **What remains: slice 6** — the fixed corpus trial that calibrates the
+  conservative v1 thresholds, decides whether face-detail references actually
+  improve identity, and picks the local face detector v1 deliberately ships
+  without (automatic derivation is heuristic-only until then) — **then slice 7**,
+  production close-out: turn advisory measurements into the reviewed gate, wire
+  provenance and telemetry, and remove the rollout fallbacks. Both need provider
+  spend and an owner verdict. Nothing consumes packs yet:
+  `IMAGE_IDENTITY_PACK_REFERENCES` is default-off and the consumer is the
+  capabilities plan's shared render intent (slice 2, above). Still no persisted
+  face embeddings in v1.
 
 - **Image render quality — per-model prompts, negative steering, and face
   fidelity** — [image-render-quality.plan.md](image-render-quality.plan.md) ·

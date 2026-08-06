@@ -33,6 +33,8 @@ import type { RelationshipLedgerPayload } from "@/contracts/simulation/social";
 import {
   imageAspectModes,
   imageEditKinds,
+  imageIdentityCropMethods,
+  imageIdentityPackStatuses,
   imageIdentityPreservationRatings,
   imageProfileOperations,
   imageProfileTasks,
@@ -1292,7 +1294,12 @@ export const images = pgTable(
     // `chat_look` / `chat_place` (chat-scene-references.plan.md): a conversation's cached
     // render anchors — the outfit-true identity variant and the current place's establishing
     // shot. Chat-keyed, Gallery-hidden (kind-filtered queries), hard-deleted with the chat.
-    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place"] }).notNull(),
+    // `identity_face_crop` (image-identity-packs.spec.data.md): the hidden face crop an
+    // identity pack derives from the character's canonical portrait — an internal render
+    // input, never a user-visible asset. It is the one kind that must be excluded from
+    // EVERY listing, clone and cross-owner read; `HIDDEN_IMAGE_KINDS` in
+    // `src/server/images/assets.ts` names those surfaces.
+    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place", "identity_face_crop"] }).notNull(),
     entityKind: text("entity_kind", { enum: ["character", "location", "item", "world"] }),
     entityId: text("entity_id"),
     /**
@@ -1549,12 +1556,120 @@ export const imageModelProfiles = pgTable(
   ],
 );
 
+/**
+ * A character's identity pack — the face crop and measurements every later render
+ * reuses so the same person comes back (image-identity-packs.spec.data.md
+ * §Persistence model).
+ *
+ * The pack is a TABLE, not `images.meta`, because four things need relational
+ * ownership that a metadata blob cannot give: which revision is current,
+ * compare-and-set promotion under concurrency, revision history, and lifecycle
+ * cleanup. The row is authoritative; the hidden crop's `images.meta` is
+ * diagnostic provenance only and must never be used to DISCOVER the current crop.
+ *
+ * **Revisions are rows.** A detector result, a heuristic crop, a manual
+ * correction and a retry are distinct claims about the same character, so each
+ * gets its own row: corrections stay auditable, supersession is deterministic,
+ * failure evidence survives (a terminal failure is never reset in place — the
+ * retry is a NEW revision), and cleanup can tell a current asset from an obsolete
+ * one. Exactly one row per character may carry `current`, enforced below by a
+ * partial unique index rather than by application discipline. "Current" means
+ * *the authoritative state for the canonical source* — it may be `ready`,
+ * `pending`, `unusable` or `failed`.
+ *
+ * Both image pointers are `set null` safety nets, not the integrity story: a pack
+ * whose source id went null is immediately unusable (`source_missing`) and may not
+ * keep serving a crop just because the hidden file still exists. Deleting the
+ * character deletes the pack outright — this is operational data, and it does not
+ * inherit the Gallery-retention exception that keeps user-visible images.
+ */
+export const imageIdentityPacks = pgTable(
+  "image_identity_packs",
+  {
+    id: id(),
+    characterId: text("character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    /** 1-based, monotonic per character. A retry or manual fix takes the next number. */
+    revision: integer("revision").notNull(),
+    current: boolean("current").notNull().default(false),
+    status: text("status", { enum: imageIdentityPackStatuses }).notNull().default("pending"),
+    /** The canonical portrait this revision was derived from. */
+    sourceImageId: text("source_image_id").references(() => images.id, { onDelete: "set null" }),
+    /**
+     * SHA-256 over the STORED normalized webp bytes, not the upload. A byte-level
+     * change invalidates the pack even when the new portrait looks identical: the
+     * system must never claim a crop was derived from bytes it did not read.
+     */
+    sourceContentHash: text("source_content_hash").notNull(),
+    sourceWidth: integer("source_width").notNull(),
+    sourceHeight: integer("source_height").notNull(),
+    /** Serialized-contract version — changes require an upcaster or a regenerated pack. */
+    schemaVersion: integer("schema_version").notNull(),
+    /** Normalization / detector interpretation / crop geometry / encoding. A change here
+     * needs a new revision (new crop bytes). */
+    derivationVersion: text("derivation_version").notNull(),
+    /** Thresholds only. A policy change RE-EVALUATES the stored measurements; it never
+     * makes the crop bytes stale. */
+    policyVersion: text("policy_version").notNull(),
+    /** Null until a revision has actually produced a crop (a `pending` or failed row). */
+    method: text("method", { enum: imageIdentityCropMethods }),
+    detectorVersion: text("detector_version"),
+    /** Detector confidence in the chosen face, null for heuristic and manual crops. */
+    confidence: real("confidence"),
+    faceCropImageId: text("face_crop_image_id").references(() => images.id, { onDelete: "set null" }),
+    /** `SourcePixelCrop | null` (contracts/images/identity-pack.ts) — integer source pixels
+     * in the stored orientation. Clients may send normalized coordinates; the server
+     * resolves and persists source pixels. */
+    crop: jsonb("crop_json"),
+    /** `ImageIdentityPackQuality | null` — measurements only (face box, blur, occlusion,
+     * padding). No embeddings, demographics or model-written descriptions ever land here
+     * (spec.lifecycle.md §Privacy boundary). */
+    quality: jsonb("quality_json"),
+    /** `ImageIdentityPackWarningCode[]` — warnings may accompany a perfectly usable pack. */
+    warningCodes: jsonb("warning_codes_json").notNull().default([]),
+    /** An `ImageIdentityPackFailureCode` explaining a terminal `unusable`/`failed` row.
+     * Stable code; the human-readable copy is produced at the UI boundary. */
+    failureCode: text("failure_code"),
+    failureMessage: text("failure_message"),
+    /** The admin or owner behind a manual crop or recorded policy override. No cascade:
+     * an audit trail that erases itself when the reviewer's account goes is not one. */
+    reviewedByUserId: text("reviewed_by_user_id").references(() => users.id),
+    reviewReason: text("review_reason"),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // Invariant 1 — at most ONE current revision per character — held at the storage
+    // layer, so a lost promotion race fails loudly instead of leaving two "current"
+    // packs for the sweep to find. Same device as `image_model_profiles_default_per_task`,
+    // and bare column names inside sql`` for the same reason: the predicate is written
+    // into the index definition, where a bound parameter cannot go.
+    uniqueIndex("image_identity_packs_one_current_per_character").on(t.characterId).where(sql`current`),
+    // The revision sequence. Its LEADING column doubles as the per-character lookup
+    // index (the house ruling recorded on `personas`), so no separate character index.
+    uniqueIndex("image_identity_packs_character_revision_unique").on(t.characterId, t.revision),
+    // The derivation key: "is there already a revision for this character from these
+    // exact bytes under these exact versions?" — the coalescing lookup that keeps two
+    // concurrent ensure calls from deriving the same crop twice, and the diagnostic
+    // lookup behind cleanup and sweep findings.
+    index("image_identity_packs_derivation_idx").on(
+      t.characterId,
+      t.sourceContentHash,
+      t.schemaVersion,
+      t.derivationVersion,
+      t.revision,
+    ),
+  ],
+);
+
 export const jobs = pgTable(
   "jobs",
   {
     id: id(),
     type: text("type", {
-      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_meanwhile", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify"],
+      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_meanwhile", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify", "identity_pack"],
     }).notNull(),
     /**
      * Who the work is being done for (rate-limits.plan.md slice 5) — the key the
