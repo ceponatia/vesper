@@ -82,9 +82,9 @@ export async function findViewable(kind: ShareableKind, id: string, userId: stri
  *
  * This helper is deliberately KIND-BLIND — it answers a question about the
  * entity, not about the asset. Kinds that may never widen (`HIDDEN_IMAGE_KINDS`:
- * the identity face crop, which hangs off the character like any other entity
- * image) are subtracted by the caller that holds the row, `images/[id]/file`,
- * before this is consulted.
+ * the identity face crop and the identity-trial output, which hang off the
+ * character like any other entity image) are subtracted by the caller that
+ * holds the row, `images/[id]/file`, before this is consulted.
  */
 export async function isPublicEntityImage(
   entityKind: string | null,

@@ -415,10 +415,12 @@ function kindGuard(opts: { kind?: ImageKind; kinds?: readonly ImageKind[] }) {
 export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as const satisfies readonly ImageKind[];
 
 /**
- * Kinds that are INTERNAL render inputs, never user-visible assets
- * (image-identity-packs.spec.data.md §Hidden image asset). Their owner may read
- * one — the crop editor has to display it — but they must be absent from every
- * listing, copy and cross-owner read:
+ * Kinds that are INTERNAL operational assets, never user-visible ones: the
+ * identity face crop (image-identity-packs.spec.data.md §Hidden image asset)
+ * and the identity-trial render output (image-identity-packs.spec.trial.md).
+ * Their owner may read one — the crop editor and the trial review UI have to
+ * display them — but they must be absent from every listing, copy and
+ * cross-owner read:
  *
  * - the character read's portrait strip (`api/characters/[id]/route.ts` GET);
  * - `cloneEntityImages` — a copied or published character DERIVES its own pack
@@ -432,7 +434,7 @@ export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as co
  * from here. A new surface subtracts them with this list rather than repeating
  * the literal.
  */
-export const HIDDEN_IMAGE_KINDS = ["identity_face_crop"] as const satisfies readonly ImageKind[];
+export const HIDDEN_IMAGE_KINDS = ["identity_face_crop", "identity_trial_output"] as const satisfies readonly ImageKind[];
 
 /**
  * The identity-pack lifecycle's call-back into this module
