@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { eq } from "drizzle-orm";
 import { db, images } from "@/server/db";
-import { absoluteImagePath } from "@/server/images";
+import { absoluteImagePath, HIDDEN_IMAGE_KINDS } from "@/server/images";
 import { isPublicEntityImage, jsonError, withUser } from "@/server/api";
 
 type Params = { id: string };
@@ -16,13 +16,20 @@ type Params = { id: string };
  * policy, owner-only images stay `private` so a shared cache never serves one
  * user's asset to another. Content is immutable per id; missing or non-ready
  * rows are 404s (treated as not-found cross-owner).
+ *
+ * `HIDDEN_IMAGE_KINDS` is excluded from the public widening entirely: an identity
+ * face crop hangs off the character like any other entity image, so publishing
+ * that character would otherwise publish the crop with it (invariant 4 — a hidden
+ * crop never crosses an owner boundary). Its OWNER still reads it here, which is
+ * how the crop editor displays it, and the `private` cache policy follows.
  */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
   const [row] = await db().select().from(images).where(eq(images.id, id)).limit(1);
   if (!row || row.status !== "ready") return jsonError("not_found", "image not found", 404);
 
-  const entityIsPublic = await isPublicEntityImage(row.entityKind, row.entityId, row.ownerId);
+  const hidden = HIDDEN_IMAGE_KINDS.some((kind) => kind === row.kind);
+  const entityIsPublic = !hidden && (await isPublicEntityImage(row.entityKind, row.entityId, row.ownerId));
   if (row.ownerId !== user.id && !entityIsPublic) return jsonError("not_found", "image not found", 404);
 
   let buffer: Buffer;
