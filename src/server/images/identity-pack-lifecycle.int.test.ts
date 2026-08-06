@@ -1,14 +1,18 @@
 import fs from "node:fs/promises";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import sharp from "sharp";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import type { DetectedFaceCandidate, ImageIdentityPackV1 } from "@/contracts";
 import { INTRINSIC_POLICY_V1, PROFILE_POLICY_DEFAULTS_V1 } from "@/lib/images/identity-pack-policy";
 import {
+  apiRequest,
+  bindAuthUser,
   endTestPool,
+  expectJson,
   probeIntegrationDb,
   purgeOwnerRows,
+  routeCtx,
   seedTestUser,
   testPngBuffer,
   withTempDataRoot,
@@ -23,6 +27,7 @@ import {
   deleteCharacterIdentityAssets,
   ensureIdentityPack,
   getIdentityPackForOwner,
+  IDENTITY_PACK_REVISION_RETENTION_MS,
   prepareIdentityPacksBatch,
   resetIdentityPackToAutomatic,
   saveManualIdentityCrop,
@@ -31,9 +36,24 @@ import {
 } from "./identity-packs";
 
 /**
+ * The deletion cases below drive the REAL route handlers, so the mocked identity
+ * every `withUser` route reads has to exist in this file too. Nothing else here
+ * touches auth: the service functions take an owner id directly.
+ */
+const authState = vi.hoisted(() => ({
+  user: { id: "", email: "", name: "Identity Lifecycle Int", role: "admin" as const },
+}));
+
+vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
+
+import { DELETE as portraitStudioDelete } from "@/app/api/characters/[id]/portraits/[imageId]/route";
+import { DELETE as galleryDeleteOne } from "@/app/api/gallery/[id]/route";
+import { POST as galleryDeleteBulk } from "@/app/api/gallery/delete/route";
+
+/**
  * The identity-pack LIFECYCLE against a real database and a sandboxed DATA_ROOT:
- * manual correction, reset, retention cleanup, bounded batches, character
- * deletion, and profile-aware reference evaluation
+ * manual correction, reset, retention cleanup, bounded batches, canonical-source
+ * and character deletion, and profile-aware reference evaluation
  * (image-identity-packs.spec.lifecycle.md §"Lifecycle tests",
  * `.spec.derivation.md` §"Manual crop revisions",
  * `.spec.integration.md` §"Render integration tests").
@@ -41,6 +61,10 @@ import {
  * Derivation itself (coalescing, the finalization race, `parseOr` degradation)
  * is covered by `identity-packs.int.test.ts`; this suite starts from a derived
  * pack and exercises what happens to it afterwards.
+ *
+ * The source-deletion cases are the one place this file calls ROUTE handlers
+ * rather than the services beneath them, because the delete ordering they prove
+ * is a property of the routes and their helpers together (§"Source deletion").
  *
  * Two seams make otherwise untestable rules reachable: an injected clock for the
  * retention window (nobody waits a week) and an injected intrinsic policy for the
@@ -66,7 +90,9 @@ let userId = "";
 beforeAll(async () => {
   if (!ready) return;
   temp = await withTempDataRoot("vesper-identity-lifecycle-int");
-  userId = (await seedTestUser("identity-lifecycle-int")).id;
+  const user = await seedTestUser("identity-lifecycle-int");
+  bindAuthUser(authState, user);
+  userId = user.id;
 });
 
 afterEach(() => {
@@ -98,14 +124,26 @@ async function storeImage(characterId: string, kind: ImageKind, buffer: Buffer):
   return saved;
 }
 
-/** A character whose canonical pointer is written directly, so no trigger fires. */
-async function seedSubject(name: string, width = SOURCE_WIDTH, height = SOURCE_HEIGHT): Promise<Subject> {
+/**
+ * A character whose canonical pointer is written directly, so no trigger fires.
+ *
+ * `kind` exists for the Gallery cases: those routes are guarded to
+ * `GALLERY_IMAGE_KINDS`, which excludes `avatar`, so the canonical portrait a
+ * Gallery delete can actually reach is the promoted `portrait_variant` it would
+ * be in life (`promoteVariant` moves the pointer without changing the kind).
+ */
+async function seedSubject(
+  name: string,
+  width = SOURCE_WIDTH,
+  height = SOURCE_HEIGHT,
+  kind: ImageKind = "avatar",
+): Promise<Subject> {
   const [character] = await db()
     .insert(characters)
     .values({ ownerId: userId, name, profile: { bio: "lifecycle subject" } })
     .returning({ id: characters.id });
   if (!character) throw new Error("failed to create the test character");
-  const portrait = await storeImage(character.id, "avatar", await testPngBuffer(width, height));
+  const portrait = await storeImage(character.id, kind, await testPngBuffer(width, height));
   await db().update(characters).set({ avatarImageId: portrait.id }).where(eq(characters.id, character.id));
   return { characterId: character.id, portraitId: portrait.id };
 }
@@ -140,8 +178,8 @@ async function editorState(characterId: string): Promise<{ packId: string; revis
 }
 
 /** A derived, ready pack to start from. */
-async function preparedSubject(name: string): Promise<Subject> {
-  const subject = await seedSubject(name);
+async function preparedSubject(name: string, kind: ImageKind = "avatar"): Promise<Subject> {
+  const subject = await seedSubject(name, SOURCE_WIDTH, SOURCE_HEIGHT, kind);
   const result = await ensureIdentityPack({ ownerId: userId, characterId: subject.characterId, purpose: "background" });
   if (result.status !== "ready") throw new Error(`expected a ready pack, got ${result.status}`);
   return subject;
@@ -483,6 +521,175 @@ describe.skipIf(!ready)("cleanupIdentityPackRevisions", () => {
     // Cleared as well as retired: a current terminal row cannot be retired by the
     // next reservation, which would wedge this character permanently.
     expect(rows[0]?.current).toBe(false);
+  });
+});
+
+describe.skipIf(!ready)("canonical source deletion", () => {
+  /**
+   * What must hold after ANY of the three user-facing deletes takes a character's
+   * canonical portrait (spec.lifecycle.md §"Source deletion").
+   *
+   * The routes are driven rather than the helpers underneath them because the
+   * ordering rule is split across both layers — `purgeImagesWhere` owns it for the
+   * Gallery paths, the portrait studio repeats it around its own delete — and a
+   * test of the helpers alone would keep passing while a route reintroduced the
+   * bug this covers: invalidating AFTER the delete, when the set-null foreign key
+   * has already erased the only column the pack could be matched on, leaving a
+   * `current`, `ready` revision over bytes that are gone.
+   */
+  async function expectSourceRetired(subject: Subject): Promise<void> {
+    const [character] = await db()
+      .select({ avatarImageId: characters.avatarImageId })
+      .from(characters)
+      .where(eq(characters.id, subject.characterId));
+    expect(character?.avatarImageId).toBeNull();
+
+    const [portrait] = await db().select({ id: images.id }).from(images).where(eq(images.id, subject.portraitId));
+    expect(portrait).toBeUndefined();
+
+    const rows = await packRows(subject.characterId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.current).toBe(false);
+    expect(rows[0]?.status).toBe("stale");
+    // Null through the foreign key, AFTER the invalidation had already matched on it.
+    expect(rows[0]?.sourceImageId).toBeNull();
+
+    // No current revision at all, so the panel has nothing to offer and nothing
+    // to claim: not a ready pack over a source the owner no longer has.
+    const summary = await getIdentityPackForOwner(subject.characterId, userId);
+    expect(summary).not.toBeNull();
+    expect(summary?.pack).toBeNull();
+    expect(summary?.sourceImageId).toBeNull();
+
+    const sink = new DiagnosticCollector();
+    const evaluated = await evaluateIdentityPackForProfile({
+      ownerId: userId,
+      characterId: subject.characterId,
+      strategy: "canonical_then_face_detail",
+      sink,
+    });
+    expect(evaluated.eligible).toBe(false);
+    if (evaluated.eligible) return;
+    // Actionable: "this character has no portrait", not "the profile said no".
+    expect(evaluated.code).toBe("source_missing");
+    expect(sink.items.map((d) => d.code)).toContain("images.identity_pack.source_missing");
+  }
+
+  const galleryDeletePath = (imageId: string) => `/api/gallery/${imageId}`;
+
+  /** Row AND file: a retained file with no row is what the image sweep has to puzzle over. */
+  async function expectCropReclaimed(subject: Subject, crop: ImageRow): Promise<void> {
+    const reclaimed = await cleanupIdentityPackRevisions({
+      now: new Date(Date.now() + IDENTITY_PACK_REVISION_RETENTION_MS + 60_000),
+    });
+    expect(reclaimed.cropsDeleted).toBeGreaterThanOrEqual(1);
+    expect(await cropRows(subject.characterId)).toHaveLength(0);
+    await expect(fs.access(absoluteImagePath(crop))).rejects.toThrow();
+  }
+
+  it("retires the pack when the Gallery deletes the canonical portrait", async () => {
+    const subject = await preparedSubject("Gallery Delete Subject", "portrait_variant");
+
+    const res = await galleryDeleteOne(
+      apiRequest(galleryDeletePath(subject.portraitId), { method: "DELETE" }),
+      routeCtx({ id: subject.portraitId }),
+    );
+
+    expect(res.status).toBe(200);
+    await expectSourceRetired(subject);
+  });
+
+  it("retires the pack when the Gallery's bulk delete takes the canonical portrait", async () => {
+    const subject = await preparedSubject("Gallery Bulk Delete Subject", "portrait_variant");
+
+    const res = await galleryDeleteBulk(
+      apiRequest("/api/gallery/delete", { body: { ids: [subject.portraitId] } }),
+      routeCtx(),
+    );
+
+    expect((await expectJson<{ deleted: number }>(res, 200)).deleted).toBe(1);
+    await expectSourceRetired(subject);
+  });
+
+  it("retires the pack when the portrait studio deletes the canonical portrait", async () => {
+    const subject = await preparedSubject("Portrait Studio Delete Subject");
+
+    const res = await portraitStudioDelete(
+      apiRequest(`/api/characters/${subject.characterId}/portraits/${subject.portraitId}`, { method: "DELETE" }),
+      routeCtx({ id: subject.characterId, imageId: subject.portraitId }),
+    );
+
+    expect(res.status).toBe(200);
+    await expectSourceRetired(subject);
+  });
+
+  it("reclaims the orphaned hidden crop once the retention window has elapsed", async () => {
+    const subject = await preparedSubject("Reclaimed Crop Subject", "portrait_variant");
+    const [crop] = await cropRows(subject.characterId);
+    if (!crop) throw new Error("expected the prepared pack to hold a hidden crop");
+
+    const res = await galleryDeleteOne(
+      apiRequest(galleryDeletePath(subject.portraitId), { method: "DELETE" }),
+      routeCtx({ id: subject.portraitId }),
+    );
+    expect(res.status).toBe(200);
+    // Inside the window the crop is still evidence — "why did my character's face
+    // change last Tuesday?" is answerable for a week.
+    expect(await cropRows(subject.characterId)).toHaveLength(1);
+
+    await expectCropReclaimed(subject, crop);
+  });
+
+  it("degrades, retires and reclaims a revision whose source vanished behind the routes' back", async () => {
+    const subject = await preparedSubject("Bypassed Delete Subject");
+    const [crop] = await cropRows(subject.characterId);
+    if (!crop) throw new Error("expected the prepared pack to hold a hidden crop");
+
+    // Straight at the tables, the way a restored dump or a hand-run statement
+    // arrives: the portrait row goes and the soft avatar pointer is cleared, the
+    // foreign key nulls the pack's source — and nothing retires the revision, so
+    // it is left exactly as the old delete ordering used to leave it.
+    await db().update(characters).set({ avatarImageId: null }).where(eq(characters.id, subject.characterId));
+    await db().delete(images).where(eq(images.id, subject.portraitId));
+    const bypassed = await packRows(subject.characterId);
+    expect(bypassed[0]?.current).toBe(true);
+    expect(bypassed[0]?.status).toBe("ready");
+    expect(bypassed[0]?.sourceImageId).toBeNull();
+
+    // The read seam refuses it anyway: the row still says ready, no reader does.
+    const summarySink = new DiagnosticCollector();
+    const summary = await getIdentityPackForOwner(subject.characterId, userId, summarySink);
+    expect(summary?.pack?.status).toBe("unusable");
+    expect(summary?.pack?.failureCode).toBe("source_missing");
+    expect(summary?.stale).toBe(true);
+    expect(summary?.pending).toBe(false);
+    expect(summarySink.items.map((d) => d.code)).toContain("images.identity_pack.source_missing");
+    // A projection, not a repair: the stored row is untouched by the read.
+    const afterRead = await packRows(subject.characterId);
+    expect(afterRead[0]?.status).toBe("ready");
+    expect(afterRead[0]?.current).toBe(true);
+
+    const evaluated = await evaluateIdentityPackForProfile({
+      ownerId: userId,
+      characterId: subject.characterId,
+      strategy: "face_detail_only",
+    });
+    expect(evaluated.eligible).toBe(false);
+    if (evaluated.eligible) return;
+    expect(evaluated.code).toBe("source_missing");
+
+    // Cleanup is what actually retires it — the only pass that can, since the
+    // retention pass takes retired rows and the orphan pass takes unclaimed crops.
+    const cleanupSink = new DiagnosticCollector();
+    const retired = await cleanupIdentityPackRevisions({ now: new Date(), sink: cleanupSink });
+    expect(retired.sourcelessRetired).toBeGreaterThanOrEqual(1);
+    expect(cleanupSink.items.map((d) => d.code)).toContain("images.identity_pack.source_missing");
+    const settled = await packRows(subject.characterId);
+    expect(settled[0]?.current).toBe(false);
+    expect(settled[0]?.status).toBe("stale");
+
+    // Retired, the crop ages out through the ordinary window like any other.
+    await expectCropReclaimed(subject, crop);
   });
 });
 

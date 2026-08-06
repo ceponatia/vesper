@@ -347,6 +347,18 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
  * An `undefined` predicate would match the whole table, so it is refused: a
  * caller whose guards all collapsed to `undefined` deletes nothing rather than
  * everything.
+ *
+ * **Derived state is retired BEFORE the delete, never after.**
+ * `image_identity_packs.source_image_id` is a `set null` foreign key, so the
+ * moment these rows go the pack that named one of them can no longer be FOUND by
+ * source id — an invalidation sequenced after the delete matches nothing and
+ * leaves a `current`, `ready` pack with a null source
+ * (image-identity-packs.spec.lifecycle.md §"Source deletion"). Ordering is the
+ * fix; it is deliberately not a transaction, because the hook is a registry call
+ * into a module this one must not know about and threading a transaction handle
+ * through that seam would re-couple them. The FK, and the read seam's refusal to
+ * report a null-source pack as ready, cover the window between the two
+ * statements.
  */
 export async function purgeImagesWhere(where: SQL | undefined): Promise<number> {
   if (where === undefined) {
@@ -354,10 +366,15 @@ export async function purgeImagesWhere(where: SQL | undefined): Promise<number> 
     return 0;
   }
   const rows = await db()
-    .select({ id: images.id, ownerId: images.ownerId, path: images.path })
+    .select({ id: images.id, ownerId: images.ownerId, path: images.path, kind: images.kind })
     .from(images)
     .where(where);
   if (rows.length === 0) return 0;
+  // Hidden kinds are derived state themselves, never a pack's source — skipping
+  // them spares the pack service's own crop reclamation a guaranteed-no-op
+  // invalidation round trip on every cleanup pass.
+  const sources = rows.filter((row) => !HIDDEN_IMAGE_KINDS.some((kind) => kind === row.kind));
+  if (sources.length > 0) await invalidateDerivedState(sources.map((row) => row.id));
   await db().delete(images).where(where);
   await Promise.all(rows.map((row) => unlinkImageFile(row)));
   return rows.length;
@@ -437,7 +454,13 @@ export const HIDDEN_IMAGE_KINDS = ["identity_face_crop"] as const satisfies read
  * mean.
  */
 export interface IdentityPackMaintenanceHooks {
-  /** Images whose entity pointers were just nulled — derived state naming them is now stale. */
+  /**
+   * Images whose derived state is no longer valid, at the two moments that can
+   * be observed from here: rows `purgeImagesWhere` is ABOUT to delete (the last
+   * instant a pack can still be matched by its source id — see that function),
+   * and ids whose entity pointers were just nulled while the row itself
+   * survived (a kind-guarded delete skipped it).
+   */
   invalidateForImages(imageIds: readonly string[]): Promise<void>;
   /** Consistency findings + bounded revision cleanup, run inside the scheduled sweep. */
   sweep(now: Date): Promise<Record<string, number>>;
@@ -451,6 +474,23 @@ export function registerIdentityPackMaintenance(hooks: IdentityPackMaintenanceHo
 }
 
 /**
+ * The invalidation call, contained here as well as inside the hook. The
+ * registered implementation already swallows its own failures, but the delete
+ * now runs DOWNSTREAM of this call rather than before it, so "maintenance never
+ * fails the delete that triggered it" stops being a property of one
+ * implementation and becomes a property of the sequence.
+ */
+async function invalidateDerivedState(imageIds: readonly string[]): Promise<void> {
+  try {
+    await identityPackMaintenance?.invalidateForImages(imageIds);
+  } catch (err) {
+    log.warn("images", "identity pack invalidation before an image delete failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
  * Null out the soft pointers entity rows keep at deleted image ids — a
  * gallery-deleted portrait leaves its character avatar-less (the portrait
  * studio's own rule), a deleted entity render leaves its location/item
@@ -461,6 +501,13 @@ export function registerIdentityPackMaintenance(hooks: IdentityPackMaintenanceHo
  * serving its crop (spec.lifecycle.md §"Source deletion"). Read-time hash
  * verification is still the backstop — this is the belt to its braces, for the
  * paths that bypass the assignment triggers.
+ *
+ * The delete paths retire the pack in `purgeImagesWhere`, before the row goes,
+ * so for a deleted id this pass usually matches nothing. It stays because the
+ * ids a caller hands over are not always the ids that were deleted: the Gallery's
+ * bulk route passes every REQUESTED id, and one the kind guard skipped still owns
+ * its image row — so its pack is still reachable by source id and must go with
+ * the pointer.
  */
 export async function clearEntityImagePointers(imageIds: readonly string[]): Promise<void> {
   if (imageIds.length === 0) return;

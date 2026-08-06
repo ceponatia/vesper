@@ -338,6 +338,15 @@ Promotion is compare-and-set, not last-write-wins:
 5. mark the old current revision non-current and stale/superseded;
 6. promote the new revision and its crop in one transaction.
 
+Step 5 has one exception: a current `pending` revision that matches this source
+and is younger than the job staleness bound is another process's live reservation
+and is left standing, because retiring it would make the promotion above lose ITS
+race for no reason. The caller joins that reservation instead (a forced
+re-derivation that has already waited out the join window may reclaim it) — see
+[image-identity-packs.spec.derivation.md](image-identity-packs.spec.derivation.md)
+§"Cross-process coalescing". Because that decision is part of the same locked read
+as step 5, it is the only place it can be made correctly.
+
 A derivation that loses this race cannot become current. Its hidden crop is
 removed through the cleanup rules in
 [image-identity-packs.spec.lifecycle.md](image-identity-packs.spec.lifecycle.md).

@@ -1,7 +1,9 @@
 # Image identity packs — durable references that preserve a character's face
 
-Status: active (slices 1–5 shipped 2026-08-06; slices 6–7 — fixed trial and
-production close-out — remain)
+Status: active (slices 1–4 and 5A — pack-side evaluation — shipped 2026-08-06;
+slice 5B — render-lane consumption — waits on the image-model-capabilities
+shared render intent; slices 6–7 — fixed trial and production close-out —
+remain)
 
 Technical companion: [image-identity-packs.spec.md](image-identity-packs.spec.md)
 
@@ -319,11 +321,21 @@ whether a model uses one or both.
 Remove any identity-critical lane's ad hoc face recropping once it consumes the
 pack.
 
-Shipped 2026-08-06 (pack side only): a pack can be evaluated for a model profile
-and answers with the reference roles that profile may use, plus the evidence
-behind that answer. Nothing sends them yet — the flag that would allow it is off,
-and the shared render intent that carries references to providers is still being
-built in the capabilities plan. Removing lane-local recropping waits for it.
+This slice is two halves with different statuses, and only the first is done:
+
+**Slice 5A — pack-side evaluation. Shipped 2026-08-06.** A pack can be evaluated
+for a model profile and answers with the candidate reference roles that profile
+may use, profile-aware eligibility, and the provenance record behind that
+answer.
+
+**Slice 5B — render-lane consumption. Pending on the capabilities work.** The
+shared render-intent transport that carries identity references to providers,
+capacity enforcement across all references, provider ordering, lane migration,
+and the removal of lane-local recropping all wait on
+[image-model-capabilities.plan.md](image-model-capabilities.plan.md)'s shared
+render intent, which is still being built. Until it lands, no production lane
+consumes the pack — the flag that would allow sending references stays off — and
+slice 5 as originally scoped is not end-to-end complete.
 
 ### Slice 6 — fixed identity-reference trial
 
@@ -382,7 +394,14 @@ artifacts, and deleted with the character.
 
 ## Open questions
 
-No owner decision is required for v1. Detector library choice, crop expansion
-ratios, blur/occlusion thresholds, and profile-specific minimum effective face
-size are implementation/trial decisions governed by the contracts above rather
-than deferred product behavior.
+- **Do hidden identity crops count toward the user's storage quota?** Today they
+  do: the storage quota sums every stored image byte an account owns, and the
+  hidden face crop is a stored image like any other. Whether an internal derived
+  asset the user never sees should consume user-visible quota is an owner
+  decision (flagged in PR #57's review and deliberately left unchanged since):
+  either subtract the hidden kinds from the quota or record the current behavior
+  as intended. Behavior stays as it is until ruled.
+
+Detector library choice, crop expansion ratios, blur/occlusion thresholds, and
+profile-specific minimum effective face size are implementation/trial decisions
+governed by the contracts above rather than deferred product behavior.

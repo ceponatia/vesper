@@ -194,8 +194,9 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   close-out** — [image-identity-packs.plan.md](image-identity-packs.plan.md) ·
   [spec](image-identity-packs.spec.md) (active; planned 2026-08-05 and extracted
   from the image-render-quality plan so reference preparation has one owner;
-  **slices 1–5 shipped 2026-08-06**, see
-  [roadmap.shipped.md](roadmap.shipped.md)). Compiles the current canonical
+  **slices 1–4 and 5A shipped 2026-08-06**, see
+  [roadmap.shipped.md](roadmap.shipped.md); slice 5B — render-lane consumption —
+  waits on the capabilities plan's shared render intent). Compiles the current canonical
   portrait into an owner-scoped, revisioned identity pack: the hidden
   `identity_face_crop` kind (excluded from the gallery, the portrait studio,
   clones and public file serving), SHA-256 source hashing, versioned
