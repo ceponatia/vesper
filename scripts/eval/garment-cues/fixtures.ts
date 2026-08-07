@@ -84,12 +84,22 @@ function rolledShirt(): GarmentInstanceState {
   });
 }
 
-function wetShirt(level: number): GarmentInstanceState {
+/**
+ * `level` is the wetness AS READ at `atMinutes`, so the fixture states the band it
+ * means rather than a value that has to survive a drying integration first.
+ * Wetness is the one channel that moves on its own: a shirt stamped at minute 0
+ * and read at 19:00 has dried to nothing long before the digest sees it, which
+ * would make this scenario silently assert against a dry garment.
+ */
+function wetShirt(level: number, atMinutes: number): GarmentInstanceState {
   return garmentInstance({
     id: "g_shirt",
     name: "linen shirt",
     blueprint: SHIRT,
-    condition: { base: { wetness: level, cleanliness: GARMENT_UNIT_ONE, crease_load: 0, wear: 0 } },
+    condition: {
+      base: { wetness: level, cleanliness: GARMENT_UNIT_ONE, crease_load: 0, wear: 0 },
+      integratedAtMinutes: atMinutes,
+    },
   });
 }
 
@@ -184,7 +194,7 @@ export const GARMENT_NARRATOR_FIXTURES: readonly GarmentNarratorFixture[] = [
         id: "soaked",
         player: "At least your shirt stayed completely dry.",
         atMinutes: 19 * 60,
-        store: garmentStore([wetShirt(GARMENT_UNIT_ONE)]),
+        store: garmentStore([wetShirt(GARMENT_UNIT_ONE, 19 * 60)]),
         legacyOutfit: "Wren is wearing a linen shirt.",
         facts: [
           "Wren's linen shirt is soaked through.",
@@ -192,13 +202,13 @@ export const GARMENT_NARRATOR_FIXTURES: readonly GarmentNarratorFixture[] = [
           "The wetness came from the burst pipe, not rain.",
         ],
         expectedDigest: ["Wren: linen shirt", "soaked"],
-        expectedCues: ["Wren's linen shirt is wet through"],
+        expectedCues: ["Wren's linen shirt is soaked through"],
       },
       {
         id: "damp-later",
         player: "The towels are in the hall closet if you want one.",
         atMinutes: 19 * 60 + 25,
-        store: garmentStore([wetShirt(2_500)]),
+        store: garmentStore([wetShirt(2_500, 19 * 60 + 25)]),
         legacyOutfit: "Wren is wearing a linen shirt.",
         facts: ["The linen shirt is now damp, not soaked and not dry."],
         expectedDigest: ["Wren: linen shirt", "damp"],

@@ -497,8 +497,10 @@ Flags use the repository's literal `on` convention:
   effective only with `CHAT_CONTACT_ACTIONS=on`. Authority wins if both are on.
 - `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS` stages the increment order without
   new booleans: a comma-separated subset of `movement,start,update` naming which
-  kinds authority may actually EXECUTE. Unset or blank means all three; unknown
-  tokens are ignored; a nonblank value naming no known kind grants nothing. It
+  kinds authority may actually EXECUTE. Unset or blank means `movement` only —
+  the first increment — so a forgotten scope cannot skip the staged rollout, and
+  starts and updates each require an explicit widening. Unknown tokens are
+  ignored; a nonblank value naming no known kind grants nothing. It
   gates execution only — classification, the four admission gates, presence
   precedence, chronology planning, and the envelope's recorded `mode` are
   identical either way, so an out-of-scope candidate is still admitted, ordered,
