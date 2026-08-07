@@ -1,4 +1,3 @@
-import { conditionKey, type ActiveCondition } from "../conditions/condition";
 import type { PreferenceValence } from "../personality/preference";
 import { effectiveTraitValue, type TraitValue } from "../personality/traits/value";
 import type { RelationshipStage } from "../relationships/stages";
@@ -16,12 +15,12 @@ import type { AtmosphereLabel } from "./atmosphere";
  *   `social_reaction` (exists, via `moodNudge`) and `touch` (here).
  * - **Standing** influences (a state that persists) shift the mood **baseline** so
  *   drift pulls toward an influenced target without compounding every turn:
- *   `condition` and `scene_atmosphere` (here, ready for the merge to wire).
+ *   `scene_atmosphere` (here) — the consuming lane adds the shift onto its drift target.
  */
 export type MoodEvent =
   | { kind: "social_reaction"; magnitude: number; valence: PreferenceValence } // impulse — exists (moodNudge)
   | { kind: "touch"; concept: string; intimate: boolean; welcomeness: Welcomeness } // impulse
-  | { kind: "condition"; conditionId: string } // standing
+  | { kind: "condition"; conditionId: string } // deferred
   | { kind: "scene_atmosphere"; atmosphere: AtmosphereLabel } // standing
   | { kind: "story_beat"; signal: "develop" | "resolve" | "betray" } // deferred
   | { kind: "presence"; companyStage: RelationshipStage["id"] } // deferred
@@ -113,27 +112,8 @@ export function touchMoodDeltas(
 
 // ---------------------------------------------------------------------------
 // Standing influences — shift the mood baseline, NOT a per-turn delta (no compounding).
-// Pure + tested here; the merge wires them by adding the shift onto the mood drift target.
+// Pure + tested here; a consuming lane wires them by adding the shift onto its drift target.
 // ---------------------------------------------------------------------------
-
-/** Known condition labels (normalized — see `conditionKey`) → resting-mood shift. Unknown labels contribute 0. */
-export const CONDITION_MOOD_BASELINE_SHIFTS: Readonly<Record<string, number>> = {
-  tipsy: 0.05,
-  drunk: 0.03,
-  flustered: 0.02,
-  hurt: -0.1,
-  sick: -0.08,
-  exhausted: -0.05,
-  afraid: -0.08,
-  heartbroken: -0.15,
-};
-export const CONDITION_BASELINE_SHIFT_CAP = 0.2;
-
-/** Net resting-mood shift from the active conditions (matched by label), clamped. */
-export function conditionMoodBaselineShift(conditions: readonly ActiveCondition[]): number {
-  const sum = conditions.reduce((acc, c) => acc + (CONDITION_MOOD_BASELINE_SHIFTS[conditionKey(c)] ?? 0), 0);
-  return clamp(sum, -CONDITION_BASELINE_SHIFT_CAP, CONDITION_BASELINE_SHIFT_CAP);
-}
 
 /** Scene-tone → resting-mood shift (before trait damping). */
 export const ATMOSPHERE_MOOD_BASELINE_SHIFTS: Readonly<Record<AtmosphereLabel, number>> = {
