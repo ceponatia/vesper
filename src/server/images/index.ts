@@ -3,6 +3,7 @@ export * from "./identity-pack-detector";
 export * from "./identity-packs";
 export * from "./identity-pack-references";
 export * from "./identity-pack-trial";
+export * from "./identity-trial-model-versions";
 export * from "./models";
 export * from "./model-profiles";
 export * from "./render-profile";
