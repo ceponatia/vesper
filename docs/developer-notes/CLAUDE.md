@@ -3,6 +3,35 @@
 This folder contains plan and spec files for development phases. Whenever possible, keep these documents up-to-date. When we develop something that conflicts with planned work, please update the planned work to reflect what has changed.
 If a complete reanalysis and rewrite of the planned work is needed due to other changes in code, say so in the relevant document. Do not do this analysis unless asked to, but tell the user in your response that it is needed.
 
+**Before editing anything here, invoke the `vesper-docs` skill**
+(`.claude/skills/vesper-docs/`). It holds the full procedure for this folder —
+artifact ownership, the canonical-owner rule, the residue guardrail, the
+close-out sequence, and the validation checklist — plus copyable templates for
+plans, specs, trials, audits, and deferred stubs in its `templates/` folder.
+This file states the folder's local rules; the skill states how to apply them.
+
+## Every document opens with Status, and every plan with Outcome
+
+- **`Status:` on the line after the H1, in every file.** Plans use the lifecycle
+  vocabulary (**draft** / **next** / **active** / **shipped — <date>** /
+  **parked**). Everything else says what it is: `companion to <plan>`,
+  `detail for <plan>`, `reference (audit run <date>)`,
+  `closed — <verdict> <date>`.
+- **`Outcome:` on the next line, in `.plan.md` files only.** One sentence:
+  `<A player | The owner | A developer> can <do something concrete> so that
+  <observable consequence>.` It names a person, not a system; promises something
+  observable, never "more robust/reliable/polished"; and stays readable to
+  someone who has never seen this repo. Internal work gets an honest internal
+  outcome about a developer or the owner — do not invent a player benefit.
+- **Uncertainty has one home:** the owning plan's `## Open questions`. Specs,
+  audits, and trials may raise a question, but it also appears in the plan, and
+  resolving it means removing it there and recording the ruling in the detail
+  doc.
+- **No conversation in the record.** No "as discussed", "you said", "your
+  feedback", "we agreed", "let me know", no agent narration, no standing "TBD".
+  Rehome the meaning as context, a non-goal, an open question, or a dated owner
+  ruling (`Owner ruling (<date>): …`).
+
 ## Plan and spec audiences
 
 - **Plans are for regular readers, including non-technical product readers.**
