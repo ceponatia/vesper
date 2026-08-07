@@ -75,7 +75,7 @@ import { buildChatGarmentAffordance } from "./chat-garment-affordances";
  * | `wind` | `ChatScenario.environment` (extraction-owned) | supported — including "still air", which is a real answer |
  * | `events` | the wetness entry's own cause + active precipitation | supported, rain/immersion/splash ONLY |
  * | `motion` | — | **unavailable** (no body-motion owner) |
- * | `contacts` | — | **unavailable** (no typed contact owner) |
+ * | `contacts` | `contracts/affordances/scene` (owner exists; this payload does not read it) | **unavailable** (unwired, not unowned) |
  * | `contamination` | — | **unavailable** (no owner) |
  *
  * The GARMENT domain's own table lives in `chat-garment-affordances.ts`. Its one
@@ -90,12 +90,18 @@ import { buildChatGarmentAffordance } from "./chat-garment-affordances";
  * and the domain — for which wetness is structural — falls entirely silent.
  * Conservative silence, never a convenient default.
  *
- * The two `unavailable`s are the audit's rulings, not oversights, and they are
- * load-bearing: `contacts` is a REQUIRED dependency of
- * `hair.strands_adhere_to_skin`, so the core suppresses that phenomenon with
- * `affordance.input.unavailable` before its resolver can read an empty list as
- * "nothing is touching". Reach never invents contact. Likewise no impulse event
- * is ever synthesized, so `hair.sheds_droplets` stays production-silent.
+ * Neither `unavailable` is an oversight, but they have different causes now.
+ * `contamination` has no owner at all. `contacts` DOES have one — the typed scene
+ * contact state in `src/contracts/affordances/scene`, lane-wired through
+ * `chat-contact-adapter.ts` and live in production since 2026-08-02 — this payload
+ * simply does not read it yet. That is a wiring gap to close, not a ruling to defend.
+ *
+ * Until it is closed the reported status is load-bearing exactly as before:
+ * `contacts` is a REQUIRED dependency of `hair.strands_adhere_to_skin`, so the core
+ * suppresses that phenomenon with `affordance.input.unavailable` before its resolver
+ * can read an empty list as "nothing is touching". Reach never invents contact.
+ * Likewise no impulse event is ever synthesized, so `hair.sheds_droplets` stays
+ * production-silent.
  *
  * ## Why this is a pure function
  *

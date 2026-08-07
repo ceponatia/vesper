@@ -1,8 +1,11 @@
 # Recognizable features — salience and visual memory
 
-Status: detail for
+Status: **implemented, dark** — detail for
 [body-attribute-affordances.spec.recognizable-features.md](body-attribute-affordances.spec.recognizable-features.md)
-(promoted with the plan 2026-07-28)
+(promoted 2026-07-28; built in slice 7 as
+`src/contracts/affordances/recognition/salience.ts` +
+`visual-memory.ts` + `mention-policy.ts` over the `chat_visual_memory` table).
+Unreachable in production for the same exposure reason as the feature spec.
 
 ## Purpose
 

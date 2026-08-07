@@ -1,41 +1,19 @@
 # Body-attribute visual affordances
 
-Status: active — **slices 0–4, the slice 5 wiring, and slice 6 shipped
-2026-07-28; slice 7 shipped 2026-07-29** (hair vocabulary split, shared core,
-hair domain, chat-lane wetness/environment owners + adapter + retake capture,
-the `CHAT_AFFORDANCE_CUES` narrator cue path (default OFF), the garment second
-domain with chat wiring + captured effective coverage, the read-only developer
-preview, and the recognizable-feature projection + observer visual memory
-behind `CHAT_RECOGNITION_CUES`, also default OFF). **Slice 5 is closed —
-final verdict 2026-07-29**: after the first live comparison failed for lack
-of contradiction headroom, a three-round rematch campaign under a frozen
-protocol ([rematch spec](body-attribute-affordances.trial.rematch.md), $6.29)
-made the measurement valid and the cue arm failed the decision rule twice
-consecutively — cues never reduced contradictions while consistently increasing
-specificity (that this raises the number of checkable claims is a working
-hypothesis, measured explicitly by the constraint-first follow-up's
-claim-normalized instruments, not a proven law).
-**`CHAT_AFFORDANCE_CUES` parks OFF, finally**;
-what survives is the measured cue-wording fix (cause-true provenance,
-degree-accurate adjectives), the reusable audit harness, and the findings (specificity rose consistently; repetition and false-premise
-gains appeared in one valid round each but did not replicate) — full history in the
-[trial report](body-attribute-affordances.trial.md) §Rematch log. **Slice 7 is
-built but production-inert** for a comparable missing-owner reason: the chat
-lane only knows that a location is exposed when a garment covers it, so bare
-skin reads unknown and recognition correctly stays silent until a
-body-exposure owner exists. **Slice 8 closed 2026-07-29 with a follow-up
-decision**: the current production-capable observations are too narrow to
-justify a permanent scene-image consumer before the shared
-scene/body-relations owner exists; the named
-[deferred follow-up](deferred.plan.md#body-affordance-scene-image-consumer)
-keeps a small paired image trial as its promotion gate. Also remaining before
-the release contract closes: the successor-lane adapter follow-up and
-per-companion rulings. The shared foundation the
-[romantic-contact plan](romantic-contact-affordances.plan.md) consumes is
-live. The rejected positive projection's replacement is planned separately in
-[constraint-first narrator physical guidance](narrator-physical-guidance.plan.md):
-constraints, premise corrections, and resolved action outcomes ship
-independently from any later change-gated positive detail.
+Status: active — every slice is closed; one release-contract item remains.
+**Shipped:** slices 0–4 and 6 on 2026-07-28, slice 7 on 2026-07-29. **Closed
+without shipping a feature:** slice 5 (the cue trial failed its own decision
+rule, 2026-07-29) and slice 8 (image consumer ruled a named follow-up,
+2026-07-29). **Live in production:** the shared read itself — it runs on every
+chat exchange as the perception and committed-state source for
+[constraint-first narrator guidance](narrator-physical-guidance.plan.md), whose
+flag was enabled in production on 2026-08-02. **Built but dark:** the cue path
+(`CHAT_AFFORDANCE_CUES`, parked OFF by the trial's decision rule) and
+recognizable features (`CHAT_RECOGNITION_CUES`, OFF and production-inert for
+want of an exposure owner). **Remaining before this plan closes:** the
+successor-lane adapter follow-up — the per-companion rulings it was paired with
+are now recorded in §"Companion spec rulings". Follow-up work that is newly
+unblocked but not part of the release contract is listed in §"What remains".
 
 Outcome: A player can see a character's body, hair, and clothing described in a
 way that matches the rain, the outfit, and the pose already established in the
@@ -82,33 +60,40 @@ description.
 
 ## What exists today—and what does not
 
-Promotion does not make every required source fact available. The first slice
-must preserve this distinction:
+Nothing here is available just because the calculation wants it. Every source
+fact has an owner or the observation that needs it stays silent:
 
 - **Stable appearance.** Canonical attributes, body locations, body
-  configuration, and provenance already exist. Some vocabularies still mix
-  several physical ideas in one value and need cleanup before calculation.
+  configuration, and provenance exist and are trustworthy. The one vocabulary
+  that mixed several physical ideas into a single value — hair quality — was
+  split into executable axes in slice 0.
 - **Clothing.** Legacy character chat has structured garment instances,
   coverage, presentation, wetness, and local garment marks. Its narrator cues
-  are still behind a tuning flag. The successor clothing adapter and affordance
-  integration remain unfinished.
-- **Pose and contact.** Neither chat lane currently owns dependable body-region
-  pose, support, or surface-contact truth. Free-text narration and image-pose
-  text are not authoritative substitutes.
-- **Weather and force.** Current wind, precipitation, impulses, and body motion
-  are not yet available as one dependable cross-lane read. A phenomenon that
-  lacks its actual cause must remain silent.
+  are still behind a tuning flag. Nothing records whether a garment is loose or
+  fitted, and the successor clothing adapter and affordance integration remain
+  unfinished.
+- **Pose and contact.** Character chat gained a coarse owner on 2026-07-31 —
+  posture, facing, support surfaces, how far apart two bodies are, and which
+  contacts are active — built and run by the
+  [romantic-contact plan](romantic-contact-affordances.plan.md) and live in
+  production since 2026-08-02. This layer does not read it yet, fine
+  per-region pose still has no owner, and the successor lane has neither.
+  Free-text narration and image-pose text remain unacceptable substitutes.
+- **Weather and force.** Character chat owns a scene wind/precipitation read
+  and per-location body-surface wetness (slice 4). Nobody owns an impulse — a
+  shake, a stumble, an impact — in either lane, so effects that need one stay
+  silent, and the successor lane has no weather read at all.
 - **Physiology and body surfaces.** The general physiology system is still
-  deferred. There is no complete shared source yet for regional sweat,
-  piloerection, vascular changes, body-surface residue, or persistent pressure
-  marks.
+  deferred. There is no shared source for regional sweat, piloerection,
+  vascular changes, body-surface residue, or persistent pressure marks.
 - **Perception.** Successor observations provide a stronger witness/channel
-  model. Legacy chat has coverage and a turn-level sensory allowance, but no
-  full per-sense exposure or proximity model.
-- **Retakes.** Both lanes support retakes, but through different state/cut
-  mechanisms. The new read must be captured through each lane's real rollback
-  boundary.
-- **Recognition memory.** Shipped for legacy chat (slice 7): observer-specific
+  model. Legacy chat derives exposure from garment coverage plus a turn-level
+  sensory allowance, so a location no garment reaches reads unknown — there is
+  no per-sense exposure or proximity model.
+- **Retakes.** Character chat captures the read through its real rollback
+  anchors, so a retake rebuilds an identical one. The successor lane's cut
+  capture waits on its adapter.
+- **Recognition memory.** Built for legacy chat (slice 7): observer-specific
   notice and mention history, scoped to the memory group and retake-safe. It
   stays silent in production until something asserts exposure for uncovered
   skin.
@@ -117,8 +102,8 @@ A missing owner is real work or a reason to defer that phenomenon. It is never
 permission to infer state from genre, narrator prose, or what would make the
 scene prettier.
 
-The [readiness audit](body-attribute-affordances.audit.md) records the current
-lane capability matrix. The
+The [readiness audit](body-attribute-affordances.audit.md) is the dated
+baseline this list grew out of, not a current mirror of it. The
 [architecture spec](body-attribute-affordances.spec.architecture.md) owns the
 implementation boundaries.
 
@@ -212,24 +197,74 @@ The first usable release requires:
    contradictions without causing repetition;
 5. observer-specific recognizable-feature notice and mention behavior.
 
+All five shipped. Items 1–3 landed 2026-07-28, item 5 on 2026-07-29, and item 4
+ran to a measured verdict on 2026-07-29 — a trial that answers "no" satisfies
+the contract as fully as one that answers "yes".
+
 Scene-image reuse required a recorded decision after narration stabilized.
 **Resolved 2026-07-29: follow up, do not ship it in this plan.** The useful
-composition inputs are still too narrow: wet hair and garment surface state
-exist, while fit, contact, posture, support, and relative geometry do not yet
-have all of their authoritative owners. The follow-up may promote after the
-shared scene/body-relations owner exists, or earlier only for an explicitly
-scheduled, tightly scoped paired trial of the already-supported hair and
-garment observations. Either route must prove a visible gain without harming
-identity, pose, wardrobe truth, or the image prompt's limited detail budget.
-This recorded follow-up satisfies the release contract; scene-image reuse does
-not have to ship to close the plan.
+composition inputs were too narrow at the time: wet hair and garment surface
+state existed, while fit, contact, posture, support, and relative geometry did
+not yet have all of their authoritative owners. The follow-up's stated
+precondition — the shared scene/body-relations owner — has since been met
+(2026-07-31), so it is now a scheduling call rather than a blocked one; the
+narrower route, an explicitly scheduled paired trial of the already-supported
+hair and garment observations, is still open too. Either route must prove a
+visible gain without harming identity, pose, wardrobe truth, or the image
+prompt's limited detail budget. This recorded follow-up satisfies the release
+contract; scene-image reuse does not have to ship to close the plan.
 
 Appendage, soft-tissue, garment, skin, and relative-geometry specs are
 design-ready companions, not silent promises that every domain ships in the
-first release. Before this plan closes, each companion must be explicitly
-recorded as implemented, moved to a named follow-up, or parked. The active
-plan/spec family stays together; it may be archived to `finished/` only after
-the plan ships.
+first release. Each is now recorded as implemented, a named follow-up, or
+parked in §"Companion spec rulings" below. The active plan/spec family stays
+together; it may be archived to `finished/` only after the plan ships.
+
+## Companion spec rulings
+
+The release contract asks for one explicit verdict per companion. Recorded
+2026-08-07 against the code as it stands; each spec's own Status line repeats
+its verdict.
+
+| Companion             | Ruling                 | Gate on anything further        |
+| --------------------- | ---------------------- | ------------------------------- |
+| Shared architecture   | implemented            | —                               |
+| Code organization     | implemented            | —                               |
+| Hair                  | implemented            | two effects wait on wiring      |
+| Garment interaction   | implemented            | cling waits on a recorded fit   |
+| Recognizable features | implemented, dark      | nothing asserts uncovered skin  |
+| Visual-memory detail  | implemented, dark      | same exposure gap               |
+| Feature catalog       | reference vocabulary   | not a shippable unit            |
+| Skin surface          | parked                 | physiology has no owner         |
+| Soft tissue           | parked                 | support + intimate-focus owners |
+| Appendages            | parked                 | new tail axes, clearance owner  |
+| Relative geometry     | parked, near-unblocked | footwear elevation unrecorded   |
+
+"Dark" means the code ships and passes its tests but no production turn can
+reach it. "Parked" means designed and not committed — no roadmap line, no
+build. Nothing here is a promise to build later.
+
+## What remains
+
+1. **The successor-lane adapter.** The only release-contract item still open.
+   The successor engine supplies no attribute-derived appearance, no weather,
+   and no body-surface wetness, so the adapter would report every live input
+   unavailable today; that is why it was named a follow-up rather than built.
+   Gated on the successor lane gaining any of those owners.
+
+Not part of the release contract, but newly possible and worth recording so
+nobody re-derives the blocker:
+
+2. **Read the scene owner from this layer's chat adapter.** Posture, support,
+   proximity, facing, and active contacts became authoritative on 2026-07-31
+   and went live on 2026-08-02, but this layer's adapter still reports contact
+   unavailable. Wiring it is what lets hair adhesion and garment drape fire at
+   all. Gated on nothing.
+3. **Record garment fit.** One wardrobe field — loose or fitted — turns wet
+   cling on. Flagged back at the
+   [clothing plan](clothing-state-graph.plan.md) slice 8.
+4. **Own exposure for uncovered skin.** Until something says a nose is
+   visible, recognizable features cannot fire. See §"Open questions".
 
 ## Delivery outline
 
@@ -306,6 +341,8 @@ presentation cut; defer wind response and pose-dependent drape until the
 shared scene/body-relations owner exists. After this proof lands, build the
 read-only developer preview
 ([architecture spec](body-attribute-affordances.spec.architecture.md)).
+That owner arrived 2026-07-31, so the two deferred effects are now waiting on
+adapter wiring rather than on a missing owner (§"What remains" item 2).
 
 **Shipped 2026-07-28**, including the developer preview (bottom of the chat
 inspector). Honest silences that remain by design: wet cling is
@@ -380,16 +417,18 @@ motion all stay deferred per the 2026-07-28 rulings.
 **Decision complete 2026-07-29: named follow-up.** Do not add a general
 scene-image consumer in this plan. The narrator campaign proved that the shared
 reads can increase specificity, but not that more concrete claims improve
-correctness; meanwhile, the most compositionally valuable reads—pose, support,
-contact, and relative geometry—still wait on the shared scene/body-relations
-owner. A broad consumer now would mostly test wet hair and garment surface
-phrasing while spending scarce prompt space already used for identity, pose,
-wardrobe, and setting.
+correctness; at the time, the most compositionally valuable reads — pose,
+support, contact, and relative geometry — were still waiting on the shared
+scene/body-relations owner. A broad consumer then would mostly have tested wet
+hair and garment surface phrasing while spending scarce prompt space already
+used for identity, pose, wardrobe, and setting.
 
 The parked
 [body-affordance scene-image consumer](deferred.plan.md#body-affordance-scene-image-consumer)
-may promote once the relations owner exists. An owner may instead schedule an
-earlier, narrow paired trial of supported wet-hair and wet-garment
+named the relations owner as its promotion gate; that gate opened 2026-07-31,
+so promotion is now a scheduling decision and the reads it wants still have to
+be wired into this layer first (§"What remains" item 2). An owner may instead
+schedule an earlier, narrow paired trial of supported wet-hair and wet-garment
 observations. That trial compares otherwise identical reference-edit scenes
 across several rerolls and must show a clear visible improvement without new
 state, coverage, identity, pose, outfit, phantom-body-part, or prompt-truncation
@@ -420,12 +459,15 @@ contract live in the
 
 ## Dependencies and related plans
 
-- **Scene/body-relations owner (ruled 2026-07-28, not yet planned)** — the
-  shared owner for pose, support, surface level, actual contacts, and
-  impulses that most remaining domains wait on. Character chat ships it
-  first; its contact lifecycle reuses the romantic-contact plan's contact
-  core. It gets its own plan (or lands inside the romantic-contact build)
-  when scheduled — see the
+- **Scene/body-relations owner — ruled 2026-07-28, shipped 2026-07-31, live
+  2026-08-02.** The shared owner for pose, support, surface level, and actual
+  contacts that most remaining domains waited on. It landed inside the
+  [romantic-contact](romantic-contact-affordances.plan.md) build rather than
+  getting its own plan, exactly as the ruling allowed, and character chat did
+  ship it first. **This blocker is resolved** — but it is a source, not a
+  connection: this layer's own adapter does not read it yet, and one thing the
+  ruling listed, committed motion and impulse events, is still unowned, so
+  droplet shedding stays silent regardless. See the
   [architecture spec](body-attribute-affordances.spec.architecture.md)
   §"Scene/body-relations owner".
 - [Clothing state graph](clothing-state-graph.plan.md) owns garment truth and
@@ -452,7 +494,8 @@ The 2026-07-28 review settled most of what was open. Each detail doc's
   soft-tissue effects, relative geometry, and the romantic-contact plan.
   Unknown contact still means silence, and a continuity extractor may
   record established passive facts but never authorize new interpersonal
-  contact;
+  contact. **Realized 2026-07-31** inside the romantic-contact build, minus
+  the impulse half — see §"Dependencies and related plans";
 - reusing the clothing system's existing material vocabulary, with the
   first garment release scoped to wet surface behavior, wet cling where
   contact is actual, and effective opacity + final coverage captured with
@@ -511,9 +554,6 @@ fixture-tested calibration defaults, never permanent product law.
   lets damp clumping through but the ends-only motion case cannot fire in
   play — an opaque-coverage calibration ruling is needed.
   ([hair spec](body-attribute-affordances.spec.hair.md#open-questions))
-- Should a bath/pool soaking carry its own "still dripping" provenance in
-  narration, now that it correctly no longer reads as rain?
-  ([hair spec](body-attribute-affordances.spec.hair.md#open-questions))
 - Does wet darkening need per-color lightness metadata, or only a relative
   semantic tag?
   ([hair spec](body-attribute-affordances.spec.hair.md#open-questions))
@@ -535,12 +575,6 @@ fixture-tested calibration defaults, never permanent product law.
   the current priors it can never win — importance ties its threshold and
   novelty always outranks it — so the reason exists but is unreachable.
   ([visual-memory detail](body-attribute-affordances.recognizable-features.memory.md#shipped-slice-7-implementation-2026-07-29))
-- ~~Does the affordance cue path earn a rematch with a redesigned matrix?~~ —
-  **resolved 2026-07-29**: it got one, run to the frozen protocol's terminal
-  state the same day. Final verdict: two consecutive valid fails,
-  `CHAT_AFFORDANCE_CUES` parks OFF; a differently-shaped narrator aid
-  (constraint-only or change-gated cues) would be a new plan.
-  ([trial report](body-attribute-affordances.trial.md#rematch-log))
 
 ## Technical companions
 

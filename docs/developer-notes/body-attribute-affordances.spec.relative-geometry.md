@@ -1,8 +1,14 @@
 # Affordance spec draft — relative stature and body blocking
 
-Status: companion to
+Status: **parked, and closer to buildable than the other parked domains** —
+companion to
 [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-(promoted with the plan 2026-07-28)
+(promoted 2026-07-28; no code exists, and none is scheduled). Three of the
+four terms in its stature equation now have owners: `build.height` is an
+authored attribute, and posture plus support-surface height came with the
+shared scene/body-relations owner on 2026-07-31. The fourth — footwear
+elevation — has none: heels are a garment noun, and nothing records a rise
+band. Parked means designed and not committed.
 
 ## Purpose
 

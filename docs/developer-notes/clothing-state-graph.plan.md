@@ -1,35 +1,66 @@
 # Clothing state graph and condition gradients
 
-Status: active — **slices 0–6 shipped 2026-07-27** (built audit-first; every
-open question resolved, see §Open questions). Slices 0–4
-are the deterministic substrate (contracts, chat instances + migration 0090,
-presentation graph, condition gradients). Slice 5 is the grounded extraction
-lane: the archivist proposes typed operations over enumerated opaque handles
-(~200-token handle table for a 2-actor scene), introduce-mints ride R2's
-guarded template path, and the free-text name matcher survives only as an
-observable degraded bridge (`chat_garments.legacy_outfit_bridge`). Slice 6 is
-the narrator digest + ≤2-cue block **behind `CHAT_GARMENT_CUES` (env,
-default OFF)** — the tuning gate stands: contradiction/repetition/extraction
-accuracy get a live-model comparison run (owner-gated spend) before the flag
-defaults on. The OQ8 `chat_look` pre/post key-comparison trigger shipped
-unconditionally (correctness fix). **Slices 7–8 remain**: the successor
-adapter (7) and body-affordance integration (8 — coordinated with the
-companion set promoted 2026-07-28). **Recorded leftovers** from 5/6: ensemble
-members beyond the primary still mutate via the legacy bridge
-(`finalizeChatState` receives roster names, not ids — widening is a small
-pipeline change); the digest/cue scope is primary + player pending the tuning
-run; `repair` is state-tools-only (mark ids are never enumerated to the
-model); preset-by-name matching lives only on the bridge. Graduated
-2026-07-27 from the deferred parking lot, same day as parking; the slice-0
-seam map and rulings live in
-[clothing-state-graph.audit.md](clothing-state-graph.audit.md). This plan is
-the upstream wardrobe-truth prerequisite for the
-[body-attribute-affordances](body-attribute-affordances.plan.md) companion set,
-which promoted on 2026-07-28 after clothing slices 0–6 shipped.
+Status: active — slices 0–6 shipped 2026-07-27, slice 8 closed 2026-07-29; slice
+7 and one measurement remain.
 
 Outcome: A player can undo two buttons, roll one sleeve, or leave a jacket over
 a chair and have the story keep it that way for the rest of the conversation,
 so that a shirt the scene already opened is never quietly buttoned again.
+
+## What shipped
+
+Slices 0–4 are the deterministic substrate: contracts, chat instances plus
+migration 0090, the presentation graph, and condition gradients.
+
+Slice 5 is the grounded extraction lane — the archivist proposes typed
+operations over enumerated opaque handles, introduce-mints ride R2's guarded
+template path, and the free-text name matcher survives only as an observable
+degraded bridge (`chat_garments.legacy_outfit_bridge`).
+
+Slice 6 is the narrator digest and ≤2-cue block, built behind `CHAT_GARMENT_CUES`
+— an env flag still defaulting OFF and never enabled. The OQ8 `chat_look`
+pre/post key-comparison trigger shipped unconditionally as a correctness fix.
+
+## What remains
+
+- **Slice 7 — the successor adapter.** Untouched, and blocked on nothing:
+  `readSimChatOutfit` still joins `sim_items.name` into a comma list.
+- **The `CHAT_GARMENT_CUES` tuning run**, which decides whether the narrator
+  digest flips on. This is **not owner spend alone — no eval harness for it
+  exists.** The only narrator harness in the tree belongs to the closed
+  affordance-cue campaign, whose arms are `cues`/`control`. Building the
+  instrument is comparable in size to running the comparison.
+- **Widening the extraction lane past the primary** — a small pipeline change,
+  gated by one signature that does not yet carry character ids.
+
+Slice 8 needs nothing further from this plan: its affordance half shipped
+2026-07-28 from the affordance side, and its image half closed 2026-07-29 with
+the general scene-image consumer parked in
+[deferred.plan.md](deferred.plan.md#body-affordance-scene-image-consumer).
+
+## Recorded leftovers
+
+From slices 5 and 6, all still true:
+
+- Ensemble members beyond the primary mutate only through the legacy bridge. The
+  handle table enumerates the primary character and the player, and the
+  finalizer's roster carries names and presence but no character ids.
+- The digest and cue scope is primary plus player, pending the tuning run.
+- `repair` is state-tools-only, because mark ids are never enumerated to the
+  model.
+- Preset-by-name matching lives only on the bridge.
+- **Nothing records garment fit** — the one gap this plan owns and has not
+  filled, and the single change that would light up the affordance layer's
+  wet-cling read.
+
+## Origin
+
+Graduated 2026-07-27 from the deferred parking lot, the same day it was parked.
+The slice-0 seam map and rulings live in
+[clothing-state-graph.audit.md](clothing-state-graph.audit.md). This plan was the
+upstream wardrobe-truth prerequisite for the
+[body-attribute-affordances](body-attribute-affordances.plan.md) companion set,
+which promoted on 2026-07-28 once clothing slices 0–6 shipped.
 
 ## What
 
@@ -86,7 +117,14 @@ This plan is that missing upstream wardrobe/presentation owner. The affordance
 layer may derive wet cling, opacity, drape, and motion from it; it must not
 invent or persist garment state itself.
 
-## Design rulings for the draft
+## Design rulings
+
+Every ruling below was implemented in slices 1–6 and is now the app's behavior,
+not a proposal — the type sketches are kept as the record of what was decided
+and why. How the shipped system actually works is documented in the reference
+tier: [docs/contracts/items.md](../contracts/items.md) for the wardrobe
+contracts and [docs/character-chat/state.md](../character-chat/state.md) for the
+chat-lane state it rides in.
 
 ### Two graphs, not one universal property graph
 
@@ -292,7 +330,7 @@ without becoming full graph nodes.
 
 ### Condition vector, regional overrides, and marks
 
-Recommended v1 channels:
+The four v1 channels, all shipped in slice 4:
 
 | Channel       | Direction                | Dynamics                                  | Why                                  |
 | ------------- | ------------------------ | ----------------------------------------- | ------------------------------------ |
@@ -435,12 +473,20 @@ transient condition belongs primarily in per-scene prompts.
 | cue ranker          | relevance, novelty, repetition budget                                 | truth or condition                  |
 | narrator/image      | realization of selected semantic reads                                | new state                           |
 
+Fit is nobody's, and that is the gap: no owner in this table records how closely
+a garment sits against the body, so the affordance layer cannot establish
+cloth-to-skin contact and its wet-cling read stays silent in production. It
+belongs to item/wardrobe when it is added.
+
 This plan does not absorb the broader visual-attention or recognizable-feature
 memory work. It supplies garment observations to those consumers.
 
 ## Slices
 
-### Slice 0 — audit, corpus, and promotion rulings
+Slices 0–6 shipped 2026-07-27. Slice 7 has not started. Slice 8's first bullet
+landed 2026-07-28 and the rest of it is closed.
+
+### Slice 0 — audit, corpus, and promotion rulings (shipped)
 
 - Re-verify chat wardrobe, item definition, successor item-condition, cut,
   image, and garment-affordance seams.
@@ -449,7 +495,7 @@ memory work. It supplies garment observations to those consumers.
   and image agreement.
 - Resolve the open questions before schema work.
 
-### Slice 1 — blueprint/material contracts and authoring
+### Slice 1 — blueprint/material contracts and authoring (shipped)
 
 - Add graph/material registries, validators, degraded defaults, and category
   graph templates under `src/contracts/items`.
@@ -457,21 +503,21 @@ memory work. It supplies garment observations to those consumers.
   materials, fill-empty-only and human-reviewed.
 - Add an advanced graph inspector without making it mandatory.
 
-### Slice 2 — chat-scoped instances and whole-garment loci
+### Slice 2 — chat-scoped instances and whole-garment loci (shipped)
 
 - Materialize definition-backed instances for character and player.
 - Migrate preset/worn-list state without preserving a second wardrobe truth.
 - Make don/doff/hold/scene placement rollback-safe.
 - Decide and implement the guarded ad-hoc garment path.
 
-### Slice 3 — presentation graph
+### Slice 3 — presentation graph (shipped)
 
 - Add closure, roll, tuck, restore, and displacement operations.
 - Derive per-part coverage and reuse the existing visibility resolver through
   a richer input shape.
 - Add state-tool controls and graph/coverage diagnostics.
 
-### Slice 4 — gradients and local marks
+### Slice 4 — gradients and local marks (shipped)
 
 - Generalize/reuse the fixed-point item-condition kernel.
 - Ship wetness and crease load plus bridges for cleanliness/wear.
@@ -479,22 +525,28 @@ memory work. It supplies garment observations to those consumers.
   event-time integration.
 - Prove wet cotton/leather diverge through material response.
 
-### Slice 5 — grounded continuity extraction
+### Slice 5 — grounded continuity extraction (shipped)
 
 - Replace whole-description mutation with one operation field shared by
   character/player scope.
 - Enumerate exact handles; validate, clamp, and diagnose rejected operations.
 - Capture operation traces in the admin inspector.
 
-### Slice 6 — narrator, coverage, and image consumers
+### Slice 6 — narrator, coverage, and image consumers (built; not enabled)
 
-- Build the authoritative digest and bounded garment-cue block.
-- Wire effective coverage into exposure and scene-image prompts.
+- Build the authoritative digest and bounded garment-cue block. **Built**,
+  behind `CHAT_GARMENT_CUES`.
+- Wire effective coverage into exposure and scene-image prompts. **Built.**
 - Apply repeat/change gating and compare against the garment-name baseline.
+  Gating is built; the comparison has not been run.
 - Tune contradiction, repetition, concrete-detail, and extraction accuracy
-  before enabling by default.
+  before enabling by default. **Outstanding, and the reason the flag is still
+  off.** This needs a harness that does not exist: the tree's only narrator
+  comparison harness is the closed affordance-cue campaign's, pinned to arms
+  `cues` and `control`, so a garment run means building the instrument as well
+  as spending on it.
 
-### Slice 7 — successor adapter
+### Slice 7 — successor adapter (not started)
 
 - Map blueprints/snapshots onto successor items and free-text worn slots onto
   validated garment-part/slot vocabulary.
@@ -502,7 +554,7 @@ memory work. It supplies garment observations to those consumers.
 - Emit state changes through successor commands/events with fork/replay parity.
 - Upgrade `readSimChatOutfit` from a name join to the shared digest.
 
-### Slice 8 — affordance and visual-memory integration
+### Slice 8 — affordance and visual-memory integration (closed)
 
 - ~~Feed wardrobe-owned structure/current state to garment affordances.~~
   **Done 2026-07-28**, from the affordance side, as slice 6 of
@@ -520,9 +572,15 @@ memory work. It supplies garment observations to those consumers.
     against the body, so the affordance layer's wet-cling read can never
     establish contact and stays production-silent. Adding a fit field is the
     single change that would light it up.
-- Admit observations to shared visual attention/memory only after perception
-  and cut capture.
-- Evaluate scene-image reuse; do not build an image-only state model.
+- ~~Admit observations to shared visual attention/memory only after perception
+  and cut capture.~~ ~~Evaluate scene-image reuse; do not build an image-only
+  state model.~~ **Closed 2026-07-29 with a follow-up decision**: the
+  production-capable garment observations are too narrow to justify a permanent
+  scene-image consumer before the shared scene/body-relations owner exists, so
+  the general consumer is parked in
+  [deferred.plan.md](deferred.plan.md#body-affordance-scene-image-consumer)
+  behind either that owner or an explicitly scheduled narrow paired trial.
+  Nothing here waits on this plan.
 
 ## Acceptance criteria
 
@@ -553,14 +611,33 @@ memory work. It supplies garment observations to those consumers.
 
 ## Open questions
 
-_All resolved. OQ3, OQ4, OQ5, and OQ9 at promotion — see §Promotion rulings.
+Three remain, all raised by what shipped rather than by the original draft:
+
+- **Does the `CHAT_GARMENT_CUES` tuning run get an instrument, or a decision
+  without one?** The slice-6 gate names four things to tune and there is no
+  harness that can measure any of them for garments. Building one is comparable
+  in size to the run it precedes, which makes "run the comparison" a larger
+  queued item than the roadmap currently implies.
+- **Who adds garment fit, and when?** It is one field on the blueprint or the
+  instance, and it is the only thing standing between the affordance layer's
+  wet-cling read and production. Nothing schedules it.
+- **Does slice 7 still want `item-condition-v1`?** The successor adapter was
+  scoped against a successor item-condition lane that has not moved since; the
+  chat side has since grown its own store, operations, and coverage read. Confirm
+  the extension target before starting, rather than assuming the 2026-07-27 seam
+  map still describes the cheaper path.
+
+Everything from the original draft is resolved. OQ3, OQ4, OQ5, and OQ9 at
+promotion — see §Promotion rulings.
 OQ1, OQ2, OQ6, OQ7, and OQ8 in slice 0 (2026-07-27) — rulings and their full
 rationale live in [clothing-state-graph.audit.md](clothing-state-graph.audit.md)
-§Part 2, alongside the seam map's six corrections to this plan's assumptions
-(dead-not-dormant `itemInstanceStateSchema`; the name-keyed `scene` locus; the
-visibility-resolver rewrite slice 3 actually requires; the proposal-triggered
-`chat_look` refresh OQ8 must widen; the no-duplicate-worn-copies defect; the
-`outfit_exposed` bypass slice 2 must demote). One-line versions: templates bind
+§Part 2, alongside the seam map's six corrections to this plan's assumptions —
+all six acted on in slices 2–4 (`itemInstanceStateSchema` was dead, not dormant,
+and was deleted; the `scene` locus is name-keyed; slice 3 rewrote the visibility
+resolver rather than widening its input; OQ8 widened the proposal-triggered
+`chat_look` refresh into a key comparison; duplicate worn copies became
+expressible; `outfit_exposed` was demoted once a chat is seeded). One-line
+versions of the rulings: templates bind
 to the existing 15 `clothingCategories` ids (9 sparse, 6 root-only) with the
 7+unknown material registry; instances snapshot a content-hash-deduplicated
 blueprint into the chat-wide store (never a library pointer); behaviors only

@@ -21,14 +21,20 @@ import { loadImageModels, parseRegistryRows } from "./models";
  * configuration of it should this job run with" — a profile joined to its model,
  * with the ineligible combinations already removed.
  *
- * NOTHING CALLS THIS YET. Slice 1 ships the 17 seeded profiles dormant, on
- * purpose: every one of them describes what its lane resolves today, so the first
- * caller must be able to swap `resolveSurfaceModel` for `resolveImageProfileForTask`
- * and produce a byte-identical payload. That first caller is slice 2, "Shared
- * render intent" (image-model-capabilities.plan.md §"Delivery slices"), which
- * introduces the normalized request and threads the portrait, variant, scene, item,
- * location, chat-look and chat-place lanes through it. Wiring a lane here instead
- * would make slice 1 a render change, which is the one thing it must not be.
+ * NO RENDER LANE CALLS THIS YET. The one caller today is the fixed
+ * identity-reference trial (`./identity-pack-trial.ts`, since 2026-08-06), which
+ * loads the registry to resolve its own trial cells' profiles by id; the portrait,
+ * variant, scene, item, location, chat-look and chat-place lanes all still resolve
+ * through `resolveSurfaceModel`.
+ *
+ * That the render lanes stay off it is deliberate. Slice 1 ships the 17 seeded
+ * profiles dormant on the render path: every one of them describes what its lane
+ * resolves today, so the first lane caller must be able to swap `resolveSurfaceModel`
+ * for `resolveImageProfileForTask` and produce a byte-identical payload. That caller
+ * is slice 2, "Shared render intent" (image-model-capabilities.plan.md §"Delivery
+ * slices"), which introduces the normalized request and threads those lanes through
+ * it. Wiring a lane here instead would make slice 1 a render change, which is the one
+ * thing it must not be.
  *
  * The eligibility and ordering rules live in the pure contract
  * (`imageProfileCandidates`, `resolveImageProfile`) and are deliberately NOT

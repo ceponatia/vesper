@@ -335,7 +335,7 @@ another user's source or crop.
 
 ## User routes
 
-Proposed route operations are:
+The shipped route operations are:
 
 ```text
 GET  /api/characters/:characterId/identity-pack
@@ -344,8 +344,7 @@ POST /api/characters/:characterId/identity-pack/manual-crop
 POST /api/characters/:characterId/identity-pack/reset-automatic
 ```
 
-Route nesting may follow the repository's final convention, but the operations
-remain separate. A manual crop is not a generic image metadata edit.
+The operations stay separate. A manual crop is not a generic image metadata edit.
 
 The GET response includes only owner-safe information:
 
@@ -364,13 +363,20 @@ return a conflict response that instructs the client to reload.
 
 ## Admin routes
 
-Proposed operations are:
+The shipped operations are owner-admin and **self-scoped** — every character is
+resolved against the requesting admin's own id, so an admin prepares their own
+corpus and nobody else's. Cross-account preparation would be a support boundary,
+not a flag on these routes, which is why they sit under `admin/self`:
 
 ```text
-POST /api/admin/identity-packs/batch
-GET  /api/admin/identity-packs/:packId/history
-POST /api/admin/identity-packs/:packId/override
+POST /api/admin/self/identity-packs/batch
+GET  /api/admin/self/identity-packs/:packId/history
+POST /api/admin/self/identity-packs/:packId/override
 ```
+
+The slice-6 trial routes live beside them under
+`/api/admin/self/identity-packs/trial`; see
+[image-identity-packs.spec.trial.md](image-identity-packs.spec.trial.md).
 
 The batch request includes:
 

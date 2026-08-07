@@ -1,6 +1,8 @@
 # Chat reply latency — the pause between send and the first word
 
-Status: next (queued after resilience closures and the cheap hot-path tranche; repeated timing baseline required)
+Status: next (queued after resilience closures and the cheap hot-path tranche;
+repeated timing baseline required. All five findings re-verified unfixed
+2026-08-07 — but every line reference is stale, see slice 0)
 
 Outcome: A player can hit send and see the character start speaking sooner, and can send
 again the moment a reply finishes without being told a reply is still streaming.
@@ -85,9 +87,14 @@ estimate** — likeliest candidate is B13's per-fold query collapse.
 
 ## Delivery slices
 
-0. **Rebase check.** Re-locate every call site against current `main` — the audit's
-   §B line references were taken while the narrator-physical-guidance build was live
-   in the same files, so they are stale by construction. Cheap, and it gates the rest.
+0. **Rebase check.** Re-locate every call site against current `main`. The audit's
+   §B line references are stale by construction and measurably so: `chat-pipeline.ts`
+   has grown from 2,473 lines at audit time to 3,617, and `chat-state.ts` from 2,910
+   to 3,415. The findings themselves still hold — the chat row is still read by
+   `chatOwnerId` and then `loadChatScenario` in sequence before the stream opens, and
+   the persona resolver still re-selects `player_state` the caller already has — but
+   trust the finding ids and re-grep, never the line numbers. Cheap, and it gates the
+   rest.
 1. **Fewer reads before the stream opens** (B12, plus B13's parallel wardrobe
    start). Most visible slice, smallest diff — do it first.
 2. **Batched item lookups** (B13 remainder).
@@ -106,15 +113,19 @@ estimate** — likeliest candidate is B13's per-fold query collapse.
   resolution each run once per member per turn (asserted by call count, not by eye).
 - **Fast re-send.** On the Fly deploy, sending again immediately after a reply
   completes no longer returns `chat_busy` in a manual playtest.
-- Full gate green, run one command at a time.
+- **The pull request's `verify` check is green.** Validation is CI-only (root
+  `CLAUDE.md`) — push the branch and read the CI logs; never invoke a gate locally.
 
 ## Risks & coordination
 
-- **Active build in the same files.** `chat-pipeline.ts` and
-  `prompts/character-chat.ts` are being modified by the in-progress
-  [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md) work.
-  Sequence behind it, or run alongside with slice 0 as a standing rebase check —
-  don't start slices 1/4/5 while those files are mid-edit.
+- **Live builds in the same files.** `chat-pipeline.ts` and
+  `prompts/character-chat.ts` are still being modified by
+  [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md)
+  (slices 4–6 open) and by
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
+  (item 4's NPC actor control built but dark). Sequence behind them, or run
+  alongside with slice 0 as a standing rebase check — don't start slices 1/4/5
+  while those files are mid-edit.
 - **Write ordering is load-bearing.** The finalizer's tail writes are deliberately
   separate: the rollback anchors ride targeted follow-up updates so an author edit
   cannot clobber them, and each is guarded on the same prompting message so a

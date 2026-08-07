@@ -1,27 +1,32 @@
 # Romantic contact affordances — truth-source audit
 
-Status: slice 0 detail for
+Status: reference (audit run 2026-07-30) for
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(code verified 2026-07-30)
+— slice 0's baseline. **Historical: this is what the code looked like before
+this plan built anything.** Several of the gaps recorded below have since been
+filled by the plan itself. For the current picture read the
+[technical index](romantic-contact-affordances.spec.md) §"Current capability
+status"; the two owner rulings recorded here remain in force.
 
 ## Purpose
 
-Record which inputs the contact resolver may treat as authoritative **today**,
-with a file/line for every claim. This is the baseline the plan's slice 0
-demands: it stops a coding agent from satisfying a missing state contract by
-parsing narrator prose, by reading an adjacent fact as the one it needs, or by
-assigning an optimistic default.
+Record which inputs the contact resolver could treat as authoritative **on
+2026-07-30**, with a file/line for every claim. This is the baseline the plan's
+slice 0 demanded: it stops a coding agent from satisfying a missing state
+contract by parsing narrator prose, by reading an adjacent fact as the one it
+needs, or by assigning an optimistic default.
 
-Every entry below was re-read in the working tree. Where a capability is absent,
-the searches that came up empty are named, because "we could not find it" and
-"it does not exist" have to be distinguishable a release from now.
+Every entry below was re-read in the working tree on that date. Where a
+capability is absent, the searches that came up empty are named, because "we
+could not find it" and "it does not exist" have to be distinguishable a release
+from now.
 
 The body-side companion is the
-[body-affordance readiness audit](body-attribute-affordances.audit.md); the
+[body-affordance readiness audit](body-attribute-affordances.audit.md). The
 lane summary in
 [romantic-contact-affordances.spec.md](romantic-contact-affordances.spec.md)
-§"Current lane capability audit" is the same picture at promotion, without
-citations. Where they differ, this document is newer.
+§"Current lane capability audit" tracks the same ground and is kept current;
+where the two differ, that one is newer and this one is the historical baseline.
 
 ## Owner decisions needed
 

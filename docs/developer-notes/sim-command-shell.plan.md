@@ -1,6 +1,9 @@
 # Sim command-shell consolidation — one shell, one read, one fold
 
-Status: draft (sequenced after the approved near-term latency tranche; promote by domain-sized batches, not as one epic)
+Status: draft (sequenced after the approved near-term latency tranche; promote by
+domain-sized batches, not as one epic. Re-verified against `src/` 2026-08-07:
+nothing here has landed — 46 `runSimulationCommand` call sites, three inlined
+shells, five recorder reads, eleven replay folds, all unchanged)
 
 Outcome: A developer can read one description of how a simulation command runs
 instead of four, so that a fix to that path stops silently skipping the two space
@@ -36,9 +39,9 @@ recorders; the space copies run two, the scheduler copy runs none. That is benig
 only by coincidence of which event types those recorders currently look at — and
 fork replay re-folds *every* inherited event through all five, so the day a space
 or scheduler event type joins a recorder's list, a live branch and a fork of it
-disagree, surfacing only at fork time. This cleanup exists **nowhere but two code
-comments**, which by the roadmap rule is itself a bug (**F3b**); this plan is its
-materialization.
+disagree, surfacing only at fork time. Before this plan the cleanup existed
+nowhere but two code comments, which by the roadmap rule is itself a bug
+(**F3b**); this plan and its `roadmap.md` line are its materialization.
 
 **None of it is visible to the duplication gate.** jscpd's global budget and
 token floor let 46 near-identical call sites and eleven byte-identical fold loops
@@ -146,18 +149,19 @@ what the three newly-run recorders now touch.
 
 ## Success criteria
 
-- **Every slice** passes the standard gate, run as **separate commands, one at a
-  time** (never `pnpm verify`): `pnpm lint` → `pnpm lint:cycles` → `pnpm
-  typecheck` → `pnpm test` → `pnpm jscpd`. Note that jscpd will *not* certify
-  this work — F1 is why these clones survived the gate in the first place.
-- **Every slice** also passes `pnpm test:engine` (needs a local Postgres), which
-  covers the simulation store suites plus the successor route and narrator
-  integration tests.
+- **Every slice reaches a green `verify` check on its own pull request.**
+  Validation is CI-only (root `CLAUDE.md`) — never invoke a gate locally. Because
+  every slice touches the engine and database surfaces, CI's classifier will also
+  run the engine test job against Postgres, which covers the simulation store
+  suites plus the successor route and narrator integration tests. Note that jscpd
+  will *not* certify this work — F1 is why these clones survived the gate in the
+  first place.
 - **Slice 6 additionally** requires the four gate corpus suites green **before
-  and after** the change, run individually: `pnpm test:engine-e3-5`,
-  `pnpm test:engine-e4-5`, `pnpm test:engine-e5-6`, `pnpm test:engine-e6-5`.
-  Fork parity is the engine's correctness spine; a corpus regression here is a
-  stop-work, not a follow-up.
+  and after** the change. Fork parity is the engine's correctness spine, so the
+  before-run is the baseline that makes the after-run mean something; a corpus
+  regression here is a stop-work, not a follow-up. Run them by pushing the
+  pre-change tree and the post-change tree as separate CI runs rather than
+  locally.
 - **Slice 1** shows one event-window query per accepted command instead of five,
   recorder outputs unchanged on a corpus run. **Slice 2** leaves no hand-written
   projection header validator and no duplicated row mapper. **Slice 6** leaves

@@ -2,10 +2,10 @@
 
 Status: companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(promoted 2026-07-28; affectionate contact is live in character chat;
-continuation item 4 was revised 2026-08-02 and still requires its shadow gate;
-item 5's permission-owner rulings were settled and its implementation built,
-flag-off, 2026-08-04)
+(promoted 2026-07-28; verified against the working tree 2026-08-07). Affectionate
+contact is live in character chat. Item 4's actor control and item 5's permission
+owner are both fully built and both entirely dark; the item-4 shadow gate has
+never been enabled, so its measurement window has not started.
 
 This is the coding-agent entry point. The plan owns the product intent,
 reader-facing rollout, success criteria, and all open questions. These specs
@@ -70,12 +70,38 @@ The affordance read begins only after the action resolver commits contact.
 Proposed effects are not observations until their owning event has committed
 them.
 
+## Feature flags
+
+Every switch this topic owns, with the value a production turn actually sees.
+Read from `src/server/engine/prompts/constants.ts` and from the deployed Fly
+secret set on **2026-08-07**. The five boolean flags treat anything other than
+the literal `on` as off, so an unset variable is off everywhere; the sixth is a
+comma-separated scope list, not a boolean.
+
+| Flag                                      | Production  | Effect when on                                        |
+| ----------------------------------------- | ----------- | ----------------------------------------------------- |
+| `CHAT_CONTACT_ACTIONS`                    | **on**      | The contact lane: detect, resolve, commit, persist    |
+| `CHAT_PHYSICAL_CONSTRAINTS`               | **on**      | The only prompt door for contact outcomes             |
+| `CHAT_NPC_SCENE_DECISION_SHADOW`          | off (unset) | One dry classifier call per reply; no authority       |
+| `CHAT_NPC_SCENE_DECISIONS`                | off (unset) | NPC scene authority (compound with the lane flag)     |
+| `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS` | unset       | Subset of `movement,start,update`; unset = all three  |
+| `CHAT_ROMANTIC_PERMISSION`                | off (unset) | `romantic_touch` ledger (compound with the lane flag) |
+
+`CHAT_ROMANTIC_PERMISSION_DEV_OVERRIDE` is a seventh, deliberately independent
+capability gate for the admin override route; it is unset in production too.
+
+Two consequences worth stating plainly. `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS`
+being unset is **not** a safe default on its own — it grants all three kinds the
+moment `CHAT_NPC_SCENE_DECISIONS` goes on, so a staged rollout must set it before
+the authority flag, never after. And authority wins over shadow when both are on,
+so the measurement flag cannot be left on as a safety net during rollout.
+
 ## Current capability status
 
-Where each piece actually stands as of **2026-08-04**, after the internal trial,
-the item-1.2 repairs, production enablement, and the permission-owner ruling. These labels are exclusive:
+Where each piece actually stands as of **2026-08-07**. These labels are exclusive:
 
 - **implemented contract** — pure/tested code exists but no running lane calls it;
+- **lane-wired but dark** — the live pipeline calls it, behind a flag that is off;
 - **registered in production** — a real turn can reach it;
 - **future design** — not built, or blocked on a named prerequisite/ruling.
 
@@ -97,9 +123,12 @@ the item-1.2 repairs, production enablement, and the permission-owner ruling. Th
 - **Capability: NPC deterministic contact endings**
   - **Status:** **registered in production**
   - **Note:** Frozen reply-side withdrawal/departure floor; durable under `contact-reply:<assistantMessageId>`
+- **Capability: NPC reply-scene shadow measurement**
+  - **Status:** **lane-wired but dark**
+  - **Note:** Built 2026-08-02 (migration 0094 + `chat-npc-scene-decision.ts`); `CHAT_NPC_SCENE_DECISION_SHADOW` has never been switched on, so no measurement exists
 - **Capability: Broader NPC movement, starts, and updates**
-  - **Status:** **future design**
-  - **Note:** Revised [actor-control spec](romantic-contact-affordances.spec.actor-control.md): pure + durability foundations, then shadow, then three authority increments
+  - **Status:** **lane-wired but dark**
+  - **Note:** All three increments built 2026-08-04 in `chat-npc-scene-execute.ts` behind `CHAT_NPC_SCENE_DECISIONS`; blocked on the shadow measurement and the owner's cost ruling, not on code
 - **Capability: Foot domain phenomena (pressure, texture, glide, articulation, nails)**
   - **Status:** **implemented contract**
   - **Note:** Pure domain exists but remains outside the production domain set
@@ -107,8 +136,8 @@ the item-1.2 repairs, production enablement, and the permission-owner ruling. Th
   - **Status:** **future design**
   - **Note:** No chat `touch` channel; blocks positive tactile output
 - **Capability: `romantic_touch` permission owner**
-  - **Status:** **implemented contract**
-  - **Note:** Built and lane-wired 2026-08-04 behind `CHAT_ROMANTIC_PERMISSION`
+  - **Status:** **lane-wired but dark**
+  - **Note:** Built 2026-08-04 (migration 0096) behind `CHAT_ROMANTIC_PERMISSION`
     (off — no production turn reaches it yet); enablement rides the item-6
     romantic proof. As-built record: the
     [permission spec](romantic-contact-affordances.spec.permission.md) §As built
@@ -123,13 +152,13 @@ not a statement of current wiring.
 ## Current lane capability audit
 
 - **Capability: Actor control and NPC agency**
-  - **Character chat now:** Player movement/touch is typed; NPC prose can deterministically end contact. General NPC movement/start/update is not authoritative yet.
+  - **Character chat now:** Player movement/touch is typed; NPC prose can deterministically end contact. General NPC movement/start/update is built but dark, so nothing beyond the ending floor is authoritative on a live turn.
   - **Successor chat:** Command/deliberation authority is stronger, but no regional contact adapter exists.
-  - **Consequence:** Item 4 must prove an explicit NPC actor per decision; prose alone never commits a voluntary action.
+  - **Consequence:** The explicit-actor-per-decision rule is implemented and pinned; enabling it is a flag and measurement question, not a build one.
 - **Capability: Consent/permission**
-  - **Character chat now:** Intimate-scene/touch-welcomeness signals are not grants. The directional owner is implemented behind `CHAT_ROMANTIC_PERMISSION` (off).
+  - **Character chat now:** Intimate-scene/touch-welcomeness signals are not grants. The directional owner is built and lane-wired behind `CHAT_ROMANTIC_PERMISSION` (off).
   - **Successor chat:** Consent ledger is fail-closed.
-  - **Consequence:** Implement the lane adapter from the permission spec; do not claim parity until both lanes enforce the same scope, direction, chronology, revocation, and rollback laws.
+  - **Consequence:** The lane adapter exists; parity may still not be claimed until both lanes enforce the same scope, direction, chronology, revocation, and rollback laws.
 - **Capability: Pose, reach, support, and proximity**
   - **Character chat now:** Minimal scene owner and reach reads are live; seat/posture vocabulary remains incomplete.
   - **Successor chat:** No body-region pose/support owner.
@@ -139,13 +168,13 @@ not a statement of current wiring.
   - **Successor chat:** No regional contact lifecycle.
   - **Consequence:** Character chat remains the first proof; successor parity is separate.
 - **Capability: Clothing/material-between**
-  - **Character chat now:** Current player-hand path reads the target's current-cut coverage. It does not yet compose source-side gloves for arbitrary NPC actors.
+  - **Character chat now:** The live player-hand path reads the target's current-cut coverage. Two-sided material for arbitrary NPC actors is built in the dark authority executor.
   - **Successor chat:** Shared garment adapter remains pending.
-  - **Consequence:** NPC starts require two-sided material and post-settle wardrobe reads before authority.
+  - **Consequence:** Nothing further is needed for NPC starts; the same-reply wardrobe-chronology veto ships with them.
 - **Capability: Presence and reply settlement**
-  - **Character chat now:** Presence may change during fan-out; the shipped reply ending currently uses its pre-settle roster/scenario variable, and openings return early.
+  - **Character chat now:** Presence may change during fan-out. The frozen ending floor still uses its pre-settle roster variable; the dark decision leg reloads an authoritative post-settle cut and covers openings, initiative, continue, action, and partial replies.
   - **Successor chat:** Presence is engine-owned.
-  - **Consequence:** Item 4 must reload post-settle presence/scenario and run the common leg for openings/initiative/continue/action/partial replies.
+  - **Consequence:** The post-settle cut arrives with the decision leg, so enabling that leg is also what fixes the floor's pre-settle read.
 - **Capability: Body-surface moisture/residue/marks**
   - **Character chat now:** No shared regional mutation owner.
   - **Successor chat:** No shared regional mutation owner.
@@ -159,9 +188,9 @@ not a statement of current wiring.
   - **Successor chat:** Structured witness/channel observations.
   - **Consequence:** Normalize unavailable channels as unavailable, never open.
 - **Capability: Retake/idempotency**
-  - **Character chat now:** Contact rows are pruned and scenario restored, but movement/model-empty outcomes have no durable identity yet.
+  - **Character chat now:** Contact rows are pruned and scenario restored. The per-assistant-message decision envelope — including trigger-miss, degraded, and rejected tombstones — is built, and its retake prune runs unconditionally rather than behind a flag.
   - **Successor chat:** Same-cut re-render/event identity.
-  - **Consequence:** Item 4 needs an assistant-message decision envelope, including trigger miss/degraded/rejected tombstones.
+  - **Consequence:** Retake safety no longer moves when a decision flag is turned on or off mid-conversation.
 
 The body-side evidence remains in the
 [body-affordance readiness audit](body-attribute-affordances.audit.md).
@@ -310,10 +339,11 @@ Character chat now has functional seams for player-authored affectionate starts,
 contact endings, projection/ledger persistence, and retake restoration. Those
 are narrower than a complete implementation of the conceptual interface:
 
-- the current start path assumes the player's hand and reads target-side
-  material; item 4 must generalize actor control and compose both material sides;
-- the core's ordinary update re-resolves a full mutable snapshot; NPC gesture
-  updates require the narrower operation in the actor-control spec;
+- the **live** start path assumes the player's hand and reads target-side
+  material; the arbitrary-actor path that composes both material sides exists in
+  the dark authority executor, not in the enabled lane;
+- the core's ordinary update re-resolves a full mutable snapshot; the narrower
+  gesture-only operation (`modulateContactGesture`) exists and is likewise dark;
 - effects, positive contact observations, and full presentation capture remain
   future;
 - successor chats reuse pure contracts but need their own authoritative adapter,
@@ -385,20 +415,26 @@ the same physical moment and chose the same cues.
 
 ## Implementation sequence
 
-The current continuation order is:
+Steps 1, 2, and 7 are **done**; steps 4, 5, and 6 are **built but not enabled**.
+Only step 3 has no code work left and no result either — it is a switch nobody
+has flipped.
 
-1. Build the actor-control pure foundation and adversarial fixtures.
-2. Add the durable assistant-message decision envelope, guarded scene CAS, and
-   unconditional retake pruning.
-3. Run one classifier per qualifying reply in shadow and review accuracy,
-   latency, timeout rate, and cost.
-4. Enable monotonic NPC movement authority.
-5. Generalize the adapter for NPC starts with two-sided material and wardrobe
-   chronology protection.
-6. Add stable contact handles and a gesture-only update operation.
-7. Implement the owner-ruled
-   [`romantic_touch` permission spec](romantic-contact-affordances.spec.permission.md)
-   before any genuinely romantic proof.
+1. ~~Actor-control pure foundation and adversarial fixtures.~~ Built 2026-08-02.
+2. ~~Durable assistant-message decision envelope, guarded scene CAS, and
+   unconditional retake pruning.~~ Built 2026-08-02 (migration 0094).
+3. **Run one classifier per qualifying reply in shadow** and review accuracy,
+   latency, timeout rate, and cost. Nothing has run: the flag is unset in
+   production. This is the only gate between here and step 4.
+4. Enable monotonic NPC movement authority. Code built 2026-08-04; enabling means
+   setting the authority-kinds scope to `movement`, then the authority flag.
+5. NPC starts with two-sided material and wardrobe chronology protection. Code
+   built 2026-08-04; enabling means adding `start` to the scope.
+6. Stable contact handles and a gesture-only update operation. Code built
+   2026-08-04; enabling means adding `update` to the scope.
+7. ~~Implement the owner-ruled
+   [`romantic_touch` permission spec](romantic-contact-affordances.spec.permission.md).~~
+   Built 2026-08-04 (migration 0096), out of order and still dark; the plan's
+   genuinely romantic proof consumes it once steps 3–6 land.
 8. Resume parked phenomena/effects only in the plan's ruled order; generalize
    only semantics proven in more than one domain.
 

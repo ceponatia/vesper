@@ -1,8 +1,14 @@
 # Affordance spec draft — soft tissue
 
-Status: companion to
+Status: **parked** — companion to
 [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-(promoted with the plan 2026-07-28)
+(promoted 2026-07-28; no code exists, and none is scheduled). Its pose and
+contact inputs became available 2026-07-31 with the shared
+scene/body-relations owner, but two of its own prerequisites are still
+missing: wardrobe-owned support (nothing records a support garment's effect)
+and the narrative-focus/consent owner every intimate cue is gated on. Its
+`soft_tissue.impulse_motion` phenomenon additionally needs an impulse owner,
+which nothing supplies. Parked means designed and not committed.
 
 ## Purpose
 

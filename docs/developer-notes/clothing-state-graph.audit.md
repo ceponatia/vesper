@@ -1,11 +1,17 @@
 # Clothing state graph — slice 0 audit
 
-Status: complete — 2026-07-27 (detail doc for
-[clothing-state-graph.plan.md](clothing-state-graph.plan.md) §Slice 0; downstream
+Status: reference (audit run 2026-07-27) — slice 0 of
+[clothing-state-graph.plan.md](clothing-state-graph.plan.md); downstream
 companion:
-[body-attribute-affordances.spec.garment-interaction.md](body-attribute-affordances.spec.garment-interaction.md)).
-Every file:line below was re-verified against the tree at `d3e09ac4`, superseding
-the review evidence captured at parking time.
+[body-attribute-affordances.spec.garment-interaction.md](body-attribute-affordances.spec.garment-interaction.md).
+
+**Every recommendation in Part 2 was adopted, and every correction in the last
+section was acted on, in slices 1–6 (shipped 2026-07-27).** This is the record
+of the tree as it stood at `d3e09ac4` and of the decisions taken from it — the
+file:line references are frozen to that commit and have drifted since, so read
+them as evidence for a decision, never as a map of the current code. The
+fixture corpus in Part 3 is the exception worth re-reading: F22 belongs to the
+unbuilt slice 7.
 
 ---
 

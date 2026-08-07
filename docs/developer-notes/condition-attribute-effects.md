@@ -1,13 +1,19 @@
 # Condition → attribute effects: the unwired remainder
 
-Status: draft — the open remainder of an otherwise-shipped slice (re-drafted
-2026-08-02; the original 2026-06-15 analysis is mostly shipped via
+Status: draft — the open remainder of an otherwise-shipped slice, **re-verified
+against the code 2026-08-07 and still open in full**. No later work closed any
+of it. Re-drafted 2026-08-02; the original 2026-06-15 analysis mostly shipped
+via
 [finished/character-chat-state-narration.spec.md](finished/character-chat-state-narration.spec.md)
-§2 — see git history for the original text). Supplement to
-[finished/character-schema-audit.md](finished/character-schema-audit.md) findings **B2**
-and **B3**. **B2 is closed.** What remains is B3's other four source levels, the
-model-supplied effect channel, a missing rejection diagnostic, and two wiring gaps
-in the shipped slice.
+§2 (see git history for the original text). Supplement to
+[finished/character-schema-audit.md](finished/character-schema-audit.md) findings
+**B2** and **B3**. **B2 is closed.** What remains is B3's other four source
+levels, the model-supplied effect channel, a missing rejection diagnostic, and
+two wiring gaps in the shipped slice. This document has no owning plan and no
+roadmap line — the work below is queued nowhere.
+
+Line references were refreshed on 2026-08-07 and drift with every edit to the
+files named; symbol names are the durable half.
 
 ## What shipped (and how it differs from this doc's proposal)
 
@@ -26,17 +32,17 @@ cheaper than the one proposed here:
   is no drift surface, idempotency is structural, and expiry is automatic (an expired
   condition is simply absent from `state.conditions`, so its overlays cease to exist).
   `state.attributeOverlays` remains a real persisted column (parsed at
-  `engine/chat-state.ts:1097`, written at `:2955`) but carries only `narrative`
-  overlays from the archivist (`applyChatAttributeOverlays`,
-  `chat-state.ts:1536-1570`).
+  `engine/chat-state.ts:1097`, serialized by `chatStateSnapshot`) but carries only
+  `narrative` overlays from the archivist (`applyChatAttributeOverlays`,
+  `chat-state.ts:1536`).
 - **Consumers**, all reading the same helper: the chat system prompt
-  (`engine/prompts/character-chat.ts:1942`, and the multi-character member builder at
-  `:2483`), affordance reads (`engine/chat-affordances.ts:342`), the scene-image
-  prompt (`server/images/character-scene.ts:171`), and the state-tools inspector
+  (`engine/prompts/character-chat.ts:1941`, and the multi-character member builder at
+  `:2480`), affordance reads (`engine/chat-affordances.ts:342`), the scene-image
+  prompt (`server/images/character-scene.ts:93`), and the state-tools inspector
   (`components/characters/chat-state-tools.tsx:148`).
 - **Proposal B-ii (label map)** shipped as `CONDITION_CATALOG`
   (`contracts/conditions/catalog.ts:22`) with `catalogConditionForLabel` at `:38`,
-  seeded by `seedConditionEffects` (`engine/chat-state.ts:3279`) — author-supplied
+  seeded by `seedConditionEffects` (`engine/chat-state.ts:3331`) — author-supplied
   effects win; an unrecognised label passes through untouched.
 - **Proposal C (mutability gate)** shipped as `overlaySourceMayChange`
   (`contracts/attributes/value.ts:85`), applied inside the derivation at
@@ -77,9 +83,9 @@ it is a precedence unit test (`contracts/attributes/value.test.ts:80`). Four of 
 levels remain ceremony.
 
 One caveat on "unwritable": the inspector-grade state PATCH route accepts a whole
-`attributeOverlays` array (`app/api/chats/[chatId]/state/route.ts:92`) and
+`attributeOverlays` array (`app/api/chats/[chatId]/state/route.ts`) and
 `applyStatePatch` assigns it wholesale with no mutability gate
-(`engine/chat-state.ts:3139`), so a client *can* land an `item`-sourced overlay.
+(`engine/chat-state.ts:3191`), so a client *can* land an `item`-sourced overlay.
 That is a passthrough, not a producer — and it cannot be used to escalate by
 accident, because `attributeValueSchema.source` leaf-`.catch`es a malformed source
 down to `creation` rather than up (`contracts/attributes/value.ts:28`). No feature
@@ -105,19 +111,19 @@ resolution. B-i needs re-targeting, not re-deciding.
 
 Conditions in the chat lane today originate from exactly three places:
 
-| Origin                               | Site                                       | Catalog-seeded?      |
-| ------------------------------------ | ------------------------------------------ | -------------------- |
-| Catalog seed on the state-patch path | `chat-state.ts:3127`                       | — (it *is* the seed) |
-| API state PATCH (`conditions` field) | `app/api/chats/[chatId]/state/route.ts:72` | yes, via `:3127`     |
-| Hardcoded `fluster` action chip      | `chat-state.ts:3254-3261`                  | **no** (see §4b)     |
+| Origin                               | Site                                    | Catalog-seeded?      |
+| ------------------------------------ | --------------------------------------- | -------------------- |
+| Catalog seed on the state-patch path | `chat-state.ts:3179`                    | — (it *is* the seed) |
+| API state PATCH (`conditions` field) | `app/api/chats/[chatId]/state/route.ts` | yes, via `:3179`     |
+| Hardcoded `fluster` action chip      | `chat-state.ts:3304-3313`               | **no** (see §4b)     |
 
-The state-tools "add condition" UI (`chat-state-tools.tsx:158`) constructs with
+The state-tools "add condition" UI (`chat-state-tools.tsx`) constructs with
 `attributeEffects: []` but PATCHes through the route, so it inherits the seed.
 No model-facing surface can attach an attribute effect at all.
 
 The grounding requirements the original doc named — **valid id + registry value
 parse + mutability gate** — no longer need new machinery, because
-`applyChatAttributeOverlays` (`chat-state.ts:1536-1570`) already implements all
+`applyChatAttributeOverlays` (`chat-state.ts:1536`) already implements all
 three for *narrative* attribute changes, with diagnostics and a
 `MAX_CHAT_ATTRIBUTE_CHANGES` cap. B-i reduces to: give model-supplied condition
 effects the same write-boundary treatment, at the same trust level, with
@@ -138,7 +144,8 @@ if (!overlaySourceMayChange(def.mutability, "condition")) continue; // inherent 
 
 This is asymmetric with the narrative path, which emits
 `chat_state.attribute.unknown` and `chat_state.attribute.inherent_change_rejected`
-into a `DiagnosticSink` for exactly these two cases (`chat-state.ts:1544-1557`). A
+into a `DiagnosticSink` for exactly these two cases (inside
+`applyChatAttributeOverlays`). A
 condition effect that targets an inherent attribute therefore **vanishes with no
 signal anywhere** — the author sees a condition whose stated effect never appears
 and has nothing to look at.
@@ -169,9 +176,9 @@ three exists. `flushed` is the conspicuous one: the spec's own table lists it fi
 and it is the only label the app actually mints on its own (§4b).
 
 **(b) The one server-side condition minter bypasses the seed.** The `fluster` chip
-creates "Flushed" inline (`chat-state.ts:3254-3261`) with `attributeEffects: []`
-hardcoded at `:3260`, and `seedConditionEffects` is wired **only** on the
-state-patch path (`:3127`). So adding a catalog `flushed` row would still not fire
+creates "Flushed" inline (`chat-state.ts:3304-3313`) with `attributeEffects: []`
+hardcoded at `:3312`, and `seedConditionEffects` is wired **only** on the
+state-patch path (`:3179`). So adding a catalog `flushed` row would still not fire
 there. The spec is explicit that the catalog should apply *"wherever a chat
 condition is created (the `fluster`→"flushed" action and `applyChatAction`'s other
 chips in `chat-state.ts`, the pulse, and the state-tools 'add condition' path)"* —
@@ -201,8 +208,9 @@ Doing (b) without (a), or (a) without (b), changes nothing observable.
 - **The arousal-flush question has a newer owner.** The original doc's third open
   question (visible flush as a meter hint vs. a condition-with-effect) is now posed
   more generally as the "Expression mechanism" question in
-  [deferred/physiology.plan.md](deferred/physiology.plan.md):190-193 — read-time
-  composition vs. condition `attributeEffects` overlays, with the noted risk of
+  [deferred/physiology.plan.md](deferred/physiology.plan.md) §"Expression
+  mechanism" — read-time composition vs. condition `attributeEffects` overlays,
+  with the noted risk of
   double-authoring vocabulary the reads already own. Defer to that fork rather than
   re-litigating it here. §4's `flushed` row is a tactical fix to an inconsistency
   in the shipped slice, not a ruling on that question.
@@ -215,7 +223,7 @@ Scoped to the open items; the shipped slice's tests
 - **§4b wiring**: applying the `fluster` chip yields a condition whose
   `attributeEffects` are non-empty once a `flushed` catalog row exists, and the
   resulting overlay reaches the system prompt. A second application (the chip is
-  `upsertCondition`-based, `chat-state.ts:3268`) is idempotent — one condition, one
+  `upsertCondition`-based, `chat-state.ts:3320`) is idempotent — one condition, one
   overlay. Extend to any other chip that gains a condition.
 - **§4a catalog rows**: new rows are automatically covered by the existing
   known-attribute and mutable-only invariants (`catalog.test.ts:16`/`:25`); add a

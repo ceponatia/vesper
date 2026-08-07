@@ -16,8 +16,9 @@ type and scenario corpus justify them.
 
 **Sequencing (owner ruling, 2026-07-21):** Gate 7 is an optional todo AFTER the
 successor engine's migration and rollout
-([engine.rollout.plan.md](engine.rollout.plan.md)) is completed and tested. It
-may not begin before that plan's R6 exits without a new owner ruling.
+([finished/engine.rollout.plan.md](finished/engine.rollout.plan.md)) is completed
+and tested. That plan's R6 exited 2026-07-22, so the precondition is met and the
+gate is unblocked — opening it is a separate owner call.
 
 Candidates include:
 
