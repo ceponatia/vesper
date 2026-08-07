@@ -15,6 +15,9 @@ dialects, negative-prompt banks, face-fidelity work, and trial protocol ride on
 this plan's profile/control machinery (its first slices ran ahead of it).
 
 Technical companion: [image-model-capabilities.spec.md](image-model-capabilities.spec.md)
+— in progress, and the owner of slice-by-slice implementation status for this
+topic. Read its §"Implementation status" for what is built; this plan says what
+the slices are for.
 
 This is a follow-up to the shipped
 [image model registry](finished/image-model-registry.plan.md). The registry solved the

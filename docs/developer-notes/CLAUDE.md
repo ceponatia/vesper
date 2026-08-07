@@ -33,10 +33,15 @@ here as oversized on line count alone.
 ## Every document opens with Status, and every plan with Outcome
 
 - **`Status:` on the line after the H1, in every file.** Plans use the lifecycle
-  vocabulary (**draft** / **next** / **active** / **shipped — <date>** /
-  **parked**). Everything else says what it is: `companion to <plan>`,
-  `detail for <plan>`, `reference (audit run <date>)`,
+  vocabulary (**draft** / **next** / **active** / **awaiting acceptance** /
+  **shipped — <date>** / **parked**). Everything else says what it is:
+  `companion to <plan>`, `detail for <plan>`, `reference (audit run <date>)`,
   `closed — <verdict> <date>`.
+  - **shipped** means the WHOLE plan is delivered *and accepted*. A plan with one
+    slice left is still **active**, however much of it has landed.
+  - **awaiting acceptance** is the state between them: every slice built, nothing
+    left to code, and the plan waiting on the thing it named — a paid trial, an
+    owner review, a flag enable. Say which, on the Status line.
 - **`Outcome:` on the next line, in `.plan.md` files only.** One sentence:
   `<A player | The owner | A developer> can <do something concrete> so that
   <observable consequence>.` It names a person, not a system; promises something
@@ -91,29 +96,58 @@ here as oversized on line count alone.
   use headings and bullets. Any table you touch gets brought into this shape as
   part of the edit. Full rules: the `vesper-docs` skill, §"Table formatting".
 
+## The progress ladder: slice → spec → plan → shipped
+
+Every finished piece of work is recorded **one rung up**, in the same change that
+finishes it. Landed work that its governing doc does not mention is unfinished
+work, and the next agent will rebuild it or plan around a gap that no longer
+exists.
+
+- **A finished slice is recorded in its spec.** The spec owns implementation
+  status for the area it governs: what is built, what is built but unaccepted,
+  what remains, and any ruling the build settled. A plan with no spec owns its
+  own slice status until it grows one; the moment it does, that status moves.
+- **A finished spec is recorded in its plan.** The plan owns which of its specs
+  are complete — one line each, not a slice narrative. The plan still owns the
+  *delivery order*: it says which slices exist and what each makes true, while
+  the spec says whether they are built. Intent in the plan, state in the spec.
+- **A finished plan is recorded in `roadmap.shipped.md`.** One line, and only
+  when the whole plan is delivered and accepted.
+
+**Built is not accepted.** When code has landed but the plan is waiting on a
+trial verdict, an owner review, or a flag enable, say so in the governing doc and
+name what is being waited on. Never write it as shipped, and never leave it
+unwritten.
+
+**The indexes stay short.** `roadmap.md` and `roadmap.shipped.md` are indexes,
+not records. Slice histories, rulings, and build narratives belong in the spec
+and the plan; an entry in either file that grows past a sentence or two is a plan
+leaking into its index.
+
 ## Ship close-out: move shipped docs to finished/
 
 Archiving is part of shipping, not an optional afterthought — un-archived
-shipped plans are how this folder rots. When a plan's `Status:` flips to
-**shipped** (or **superseded**), the same change that does the roadmap
+shipped plans are how this folder rots. It happens once per plan, when the whole
+plan is delivered and accepted — never per slice. When a plan's `Status:` flips
+to **shipped** (or **superseded**), the same change that does the roadmap
 close-out also:
 
 - `git mv`s the `<topic>.plan.md` **and every `<topic>.*` companion** (spec,
   followups, detail docs) into `finished/` together, so their mutual relative
   links keep resolving.
-- Repoints that plan's links in `roadmap.md` **and its entry in
-  `roadmap.shipped.md`** to the `finished/…` path. Every other inbound link
-  stays on the old path per the root `CLAUDE.md` archiving rule (and don't fix
-  the moved doc's own outbound links either).
+- Removes the plan's entry from `roadmap.md` entirely, and writes its single
+  line in `roadmap.shipped.md` pointing at the `finished/…` path. Every other
+  inbound link stays on the old path per the root `CLAUDE.md` archiving rule
+  (and don't fix the moved doc's own outbound links either).
 - Trims the idea's `deferred.plan.md` entry if it graduated from the parking
   lot (a one-line tombstone at most), and updates its line in
   `deferred/CLAUDE.md`'s stub index if it started as a stub there.
 
-Two kinds of docs stay in this folder despite shipped work: plans still
-carrying queued remainder on the roadmap (an `active`/`next` plan whose early
-slices shipped), and living reference sets cited from code and live docs (the
-engine hub/spec/gate family). When in doubt: if `roadmap.md` still queues work
-under the doc, it stays; if only `roadmap.shipped.md` mentions it, it moves.
+Two kinds of docs stay in this folder despite shipped work: plans with any slice
+still queued, however much of them has landed (their progress lives in their
+spec, not in the shipped history), and living reference sets cited from code and
+live docs (the engine hub/spec/gate family). When in doubt: if `roadmap.md`
+still lists it, it stays.
 
 ## Engine gate docs (split 2026-07-21)
 
