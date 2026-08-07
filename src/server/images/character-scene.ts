@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
-import { resolveSurfaceModel } from "./models";
+import { resolveImageProfileForTask } from "./model-profiles";
 import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
 import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
@@ -184,10 +184,13 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   });
   const plan = await composeSceneSpec({ ...context, sink: input.sink });
 
-  // The chat's stored scene-model pick, resolved against the registry. A pick
-  // that no longer exists degrades to the scene default (owner ruling 5) — the
-  // legacy Venice keys on pre-registry rows land here and are simply replaced.
-  const model = isDemoMode() ? null : await resolveSurfaceModel("scene", input.sceneModel, input.sink);
+  // The chat's stored scene-model pick, resolved against the profile registry. A
+  // pick that no longer exists degrades to the scene task's default (owner ruling
+  // 5) — the legacy Venice keys on pre-registry rows land here and are simply
+  // replaced, and a stored MODEL id still resolves to that model's own scene
+  // profile rather than moving the chat onto a different model.
+  const imageProfile = isDemoMode() ? null : await resolveImageProfileForTask("scene", input.sceneModel, input.sink);
+  const model = imageProfile?.model ?? null;
   const referenceRoute = !isDemoMode() && hasReplicate() && model !== null && model.canEdit;
   const look = referenceRoute && input.chatId && input.lookKey ? await latestChatLook(input.chatId, input.lookKey) : null;
   const anchor = look
@@ -229,7 +232,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
       ],
       referenceBuffers,
       mode: placeRef ? "multi" : "single",
-      model,
+      profile: imageProfile,
       framing: selfie ? "selfie" : undefined,
       flavor: input.flavor,
       linkage: {

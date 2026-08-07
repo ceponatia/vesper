@@ -5,6 +5,7 @@ import {
   type ImageModel,
   type ImageModelProfile,
   type ImagePromptStrategy,
+  type ImageReferenceRole,
   type ImageRenderControls,
   type TrialResolvedControls,
 } from "@/contracts";
@@ -139,6 +140,29 @@ function nonBlank(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/**
+ * Which reference vocabulary a compile is speaking, and its roles in SEND order
+ * — the same order the buffers travel in.
+ *
+ * Two vocabularies exist because two different things need naming, and they must
+ * not be conflated. `identity_pack` is the trial's pair of identity references
+ * (`canonical_identity`, `face_detail`), whose whole comparison is which one
+ * comes first, so the compiled text has to say which image is which.
+ * `render_intent` is the production lanes' general role vocabulary (identity,
+ * location, style, object…), where the lane's own prompt builder ALREADY names
+ * its references — `buildSceneRenderPrompt` writes the multi-reference bindings
+ * for a scene, and Qwen Edit's multi-reference lock is applied by
+ * {@link preparePromptForImageModel} on the way out.
+ *
+ * So the vocabulary decides whether the strategy prefixes anything at all. It is
+ * a discriminated union rather than a widened role array because those two
+ * answers are genuinely different, and a single array would force the compiler
+ * to guess which naming convention a caller meant from the role names alone.
+ */
+export type PromptReferenceBinding =
+  | { vocabulary: "identity_pack"; roles: readonly IdentityReferenceRole[] }
+  | { vocabulary: "render_intent"; roles: readonly ImageReferenceRole[] };
+
 export interface CompileProfileRenderPlanInput {
   model: ImageModel;
   profile: ImageModelProfile;
@@ -146,8 +170,20 @@ export interface CompileProfileRenderPlanInput {
   basePrompt: string;
   /** The caller's negative prompt; null falls back to the profile's default. */
   baseNegativePrompt: string | null;
-  /** Reference roles in SEND order — the same order the buffers travel in. */
-  referenceRoles: readonly IdentityReferenceRole[];
+  /**
+   * Per-render controls, merged OVER the profile's stored defaults (the spec's
+   * "a later layer wins"). This is the request half of the control vocabulary:
+   * a profile says what its job normally needs, a render says what this one
+   * needs. Absent — which is every caller today — leaves the profile's defaults
+   * exactly as they were.
+   *
+   * A control here still has to survive mapping: an override for a field the
+   * active version does not expose is dropped with a reason, never guessed onto
+   * a field name that looks close.
+   */
+  controlOverrides?: ImageRenderControls;
+  /** The references this render sends, in order, and which vocabulary names them. */
+  references: PromptReferenceBinding;
 }
 
 /**
@@ -170,7 +206,16 @@ export interface ProfileRenderPlan {
    * Which of them applied survives in `resolvedControls.droppedControls`.
    */
   negativePrompt: string | null;
-  /** The aspect value `chooseAspect` will pick, or null when the model offers none. */
+  /**
+   * The aspect value `chooseAspect` picks at Vesper's DEFAULT 3:4 target, or null
+   * when the model offers none.
+   *
+   * The default is baked in because the caller this field exists for — the
+   * trial's control hash — only ever renders 3:4. `renderImageIntent` ignores it
+   * and negotiates the shape against its own target instead, since the entity and
+   * place lanes ask for 1:1 and 3:2. Read this as "the shape a 3:4 render of this
+   * profile would use", not "the shape this plan will produce".
+   */
   aspectValue: string | null;
   /** Mapped controls plus validated overrides, keyed by provider field name. */
   controlInput: Record<string, unknown>;
@@ -241,6 +286,20 @@ type StrategyPromptCompile = { ok: true; prompt: string } | { ok: false };
 function compilePromptForStrategy(
   strategy: ImagePromptStrategy,
   basePrompt: string,
+  references: PromptReferenceBinding,
+): StrategyPromptCompile {
+  switch (references.vocabulary) {
+    case "identity_pack":
+      return compileIdentityPackPrompt(strategy, basePrompt, references.roles);
+    case "render_intent":
+      return compileRenderIntentPrompt(strategy, basePrompt);
+  }
+}
+
+/** The identity-pack arm: numbered bindings for the trial's canonical/face pair. */
+function compileIdentityPackPrompt(
+  strategy: ImagePromptStrategy,
+  basePrompt: string,
   roles: readonly IdentityReferenceRole[],
 ): StrategyPromptCompile {
   switch (strategy) {
@@ -249,6 +308,39 @@ function compilePromptForStrategy(
       return { ok: true, prompt: compileIdentityReferencePrompt({ basePrompt, roles }) };
     case "multi_reference_compose":
       return { ok: true, prompt: compileIdentityReferencePrompt({ basePrompt, roles, nameEveryReference: true }) };
+    case "text_repair":
+    case "example_transform":
+    case "style_render":
+    case "coherent_set":
+      return { ok: false };
+  }
+}
+
+/**
+ * The production arm: the lane's prompt, unchanged.
+ *
+ * The two strategies every seeded profile carries add NOTHING here, and that is
+ * the correct answer rather than a gap. A production reference is already named
+ * by whoever built the prompt — the scene builder writes its own numbered
+ * multi-reference bindings, the variant and look builders write an identity lock
+ * — so prefixing a second set of bindings would rewrite renders that work today
+ * and describe the same image twice, in two conventions.
+ *
+ * `multi_reference_compose` REFUSES rather than falling through to "unchanged".
+ * Its defining semantic is that it explicitly names the purpose and order of
+ * each reference (image-model-capabilities.spec.md §"Prompt strategies"), and
+ * this vocabulary has no wording for that yet — the general-role naming arrives
+ * with the role-aware selector in slice 3. Returning the base prompt would let a
+ * profile claim the composing strategy while sending text identical to
+ * `instruction_edit`, which is the exact drift the strategy enum exists to make
+ * visible. No seeded profile selects it, so nothing refuses today.
+ */
+function compileRenderIntentPrompt(strategy: ImagePromptStrategy, basePrompt: string): StrategyPromptCompile {
+  switch (strategy) {
+    case "instruction_edit":
+    case "text_to_image_description":
+      return { ok: true, prompt: basePrompt };
+    case "multi_reference_compose":
     case "text_repair":
     case "example_transform":
     case "style_render":
@@ -279,34 +371,49 @@ function compilePromptForStrategy(
  * whose two code paths would need keeping honest forever.
  */
 export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): CompileProfileRenderPlanResult {
-  const { model, profile, basePrompt, baseNegativePrompt, referenceRoles } = input;
-  const strategyPrompt = compilePromptForStrategy(profile.promptStrategy, basePrompt, referenceRoles);
+  const { model, profile, basePrompt, baseNegativePrompt, references } = input;
+  const strategyPrompt = compilePromptForStrategy(profile.promptStrategy, basePrompt, references);
   if (!strategyPrompt.ok) {
     return { ok: false, reason: "unsupported_prompt_strategy", promptStrategy: profile.promptStrategy };
   }
   const effectiveModel = withResolvedSafetyChecker(withReviewedImageQuality(model));
-  const finalPrompt = preparePromptForImageModel(effectiveModel, strategyPrompt.prompt, referenceRoles.length);
+  const finalPrompt = preparePromptForImageModel(effectiveModel, strategyPrompt.prompt, references.roles.length);
 
   const defaults = profile.controlDefaults;
-  const negative = baseNegativePrompt ?? defaults.negativePrompt ?? null;
+  const requested = input.controlOverrides;
+  // `baseNegativePrompt` is the fixture channel and `controls.negativePrompt` the
+  // request channel; both are the CALLER's negative, and no caller sets both, so
+  // the order between them is arbitrary and only the fall-through to the
+  // profile's default is load-bearing.
+  const negative = baseNegativePrompt ?? requested?.negativePrompt ?? defaults.negativePrompt ?? null;
+  const outputCount = requested?.outputCount ?? defaults.outputCount;
 
-  // The profile's stored defaults with the resolved negative folded in.
-  // `seedPolicy` is deliberately absent: it is a POLICY, not a value to send,
-  // and no seed transport exists anywhere in the render path yet — so a
-  // seed-shaped default is recorded as a DROP below rather than quietly ignored,
-  // because "this run was not seeded" is a fact the comparison hash must carry.
+  // The profile's stored defaults with the request's overrides merged over them
+  // — the spec's "a later layer wins" between those two layers. Written as a
+  // plain member-by-member merge because an `undefined` member and an absent one
+  // are the same thing to `mapImageRenderControls`: it skips every control whose
+  // value is undefined, so nothing here reaches a payload uninvited.
+  //
+  // `seedPolicy` is deliberately absent: it is a POLICY, not a value to send, and
+  // no seed transport exists anywhere in the render path yet — so a seed-shaped
+  // default is recorded as a DROP below rather than quietly ignored, because
+  // "this run was not seeded" is a fact the comparison hash must carry. A
+  // REQUESTED numeric seed does travel to the mapper, which refuses it as
+  // `unsupported` and records that refusal, so asking for one is visible rather
+  // than silently ineffective.
   const controls: ImageRenderControls = {
-    ...(negative !== null ? { negativePrompt: negative } : {}),
-    ...(defaults.guidance !== undefined ? { guidance: defaults.guidance } : {}),
-    ...(defaults.steps !== undefined ? { steps: defaults.steps } : {}),
-    ...(defaults.editStrength !== undefined ? { editStrength: defaults.editStrength } : {}),
+    seed: requested?.seed,
+    negativePrompt: negative ?? undefined,
+    guidance: requested?.guidance ?? defaults.guidance,
+    steps: requested?.steps ?? defaults.steps,
+    editStrength: requested?.editStrength ?? defaults.editStrength,
     // `outputCount` is deliberately NOT here — see the drop recorded below.
-    ...(defaults.coherentSet !== undefined ? { coherentSet: defaults.coherentSet } : {}),
-    ...(defaults.thinkingMode !== undefined ? { thinkingMode: defaults.thinkingMode } : {}),
-    ...(defaults.resolution !== undefined ? { resolution: defaults.resolution } : {}),
-    ...(defaults.width !== undefined ? { width: defaults.width } : {}),
-    ...(defaults.height !== undefined ? { height: defaults.height } : {}),
-    ...(defaults.lora !== undefined ? { lora: defaults.lora } : {}),
+    coherentSet: requested?.coherentSet ?? defaults.coherentSet,
+    thinkingMode: requested?.thinkingMode ?? defaults.thinkingMode,
+    resolution: requested?.resolution ?? defaults.resolution,
+    width: requested?.width ?? defaults.width,
+    height: requested?.height ?? defaults.height,
+    lora: requested?.lora ?? defaults.lora,
   };
 
   const reservedFields = reservedImageInputFields(effectiveModel);
@@ -337,7 +444,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     ...sendableMapped.dropped,
     ...overrides.dropped,
   ];
-  if (defaults.outputCount !== undefined) {
+  if (outputCount !== undefined) {
     // This compile step serves the SINGLE-IMAGE path. A profile asking for four
     // outputs would be billed for four and graded on one, so the count never
     // travels — and the request is recorded as a drop rather than silently

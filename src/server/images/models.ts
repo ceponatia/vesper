@@ -1,15 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import sharp from "sharp";
 import type { output as ZodOutput, ZodType } from "zod";
-import {
-  chooseAspect,
-  imageModelSchema,
-  imageModelsForSurface,
-  resolveImageModel,
-  IMAGE_TARGET_ASPECT,
-  type ImageModel,
-  type ImageModelSurface,
-} from "@/contracts";
+import { chooseAspect, imageModelSchema, IMAGE_TARGET_ASPECT, type ImageModel } from "@/contracts";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { db, imageModels } from "../db";
 import { runRegistryImageModel } from "../ai";
@@ -18,10 +10,14 @@ import { preparePromptForImageModel, withReviewedImageQuality } from "./quality-
 /**
  * The image-model registry's server seam (image-model-registry.spec.md).
  *
- * Everything that renders an image goes through here: it loads the rows, picks
- * the one a surface should use, runs it, and normalizes the result back to
- * Vesper's 3:4 shape. Callers never name a provider or a model id — that moved
- * into the database when Venice was removed on 2026-08-05.
+ * It loads the rows, runs one model, and normalizes the result back to the shape
+ * the caller asked for. Callers never name a provider — that moved into the
+ * database when Venice was removed on 2026-08-05.
+ *
+ * WHICH model runs is no longer decided here. Choosing is the profile layer's
+ * job (`./model-profiles`), and every lane reaches this module through
+ * `renderImageIntent`, so a render is always a profile's configuration rather
+ * than a surface's default model.
  */
 
 /**
@@ -89,43 +85,6 @@ export async function loadImageModel(id: string): Promise<ImageModel | null> {
   return parsed.success ? parsed.data : null;
 }
 
-/** The models offered on one surface — what a picker lists. */
-export async function loadImageModelsForSurface(surface: ImageModelSurface): Promise<ImageModel[]> {
-  return imageModelsForSurface(await loadImageModels(), surface);
-}
-
-/**
- * Resolve a stored pick for a surface. A pick that no longer exists — a deleted
- * row, or a legacy Venice key from before the registry — degrades to the
- * surface's default rather than failing the render (owner ruling 5).
- */
-export async function resolveSurfaceModel(
-  surface: ImageModelSurface,
-  storedId: string | null | undefined,
-  sink?: DiagnosticSink,
-): Promise<ImageModel | null> {
-  const models = await loadImageModels(sink);
-  const resolved = resolveImageModel(models, surface, storedId);
-  if (!resolved) {
-    sink?.push(
-      diag("error", "image_model.none_offered", "no image model is registered for this surface", {
-        path: "image_models",
-        context: { surface },
-      }),
-    );
-    return null;
-  }
-  if (storedId && resolved.id !== storedId && resolved.slug !== storedId) {
-    sink?.push(
-      diag("warn", "image_model.pick_unavailable", "the stored image model is not offered here; using the default", {
-        path: "image_models",
-        context: { surface, storedId, used: resolved.slug },
-      }),
-    );
-  }
-  return resolved;
-}
-
 export interface RenderWithModelInput {
   model: ImageModel;
   prompt: string;
@@ -172,8 +131,9 @@ export interface RenderWithModelResult {
  * The model first crosses the reviewed-quality seam. That seam corrects known
  * harmful provider defaults and rewrites the provider-neutral identity lock into
  * Qwen Edit's numbered-reference dialect without teaching every lane about model
- * slugs. It is intentionally small and will be replaced by task profiles once
- * those profiles actually reach this path.
+ * slugs. It is intentionally small and dissolves into profile controls as those
+ * controls gain transports — the profiles now reach this path, but the controls
+ * they would carry (guidance, steps, negatives) still have no probed bindings.
  *
  * This wrapper also owns shape negotiation. A lane says what ratio it wants;
  * `chooseAspect` finds the closest thing the model offers; anything short of
@@ -184,13 +144,12 @@ export interface RenderWithModelResult {
  * A crop failure is not fatal — the uncropped image beats no image — so it
  * degrades with a diagnostic.
  *
- * `controlInput`, `timeoutMs` and `versionId` are threaded through untouched
- * for callers that resolved a profile themselves (`compileProfileRenderPlan`).
- * Every existing lane — avatar, variants, scene, chat-look, entity — passes
- * none of them, so their payload, their prediction budget and their version
- * resolution are byte-identical to before: absent fields reach
- * `runRegistryImageModel` as absent, and absent means "no overlay, env budget,
- * slug-resolved version".
+ * `controlInput`, `timeoutMs` and `versionId` are threaded through untouched for
+ * callers that compiled a profile plan (`compileProfileRenderPlan`). Absent
+ * fields reach `runRegistryImageModel` as absent, and absent means "no overlay,
+ * env budget, slug-resolved version" — which is what the production lanes still
+ * get for the last two, because `renderImageIntent` deliberately passes neither
+ * a version pin nor a forced budget. Only the identity trial pins.
  *
  * The prompt crosses `preparePromptForImageModel` here even when the caller
  * already compiled it. That is safe because the rewrite is IDEMPOTENT — it

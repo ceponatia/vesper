@@ -27,30 +27,29 @@ the requested task.
 
 ## Implementation status
 
-Everything below is design unless this table says otherwise. "Trial only" means
-the code exists and is exercised by the identity-pack fixed-trial harness, but no
-player-facing render lane calls it.
+Everything below is design unless this table says otherwise. "Every lane" means
+all seven player-facing render lanes call it on every render.
 
-| Section                             | Status                        |
-| ----------------------------------- | ----------------------------- |
-| Extensions to `image_models`        | shipped 2026-08-05 (mig 0100) |
-| Advanced capability contract        | shipped; probe fills nothing  |
-| `image_model_profiles`              | shipped 2026-08-05 (mig 0100) |
-| Profile task eligibility            | shipped 2026-08-05            |
-| Reference policy                    | contract only; no selector    |
-| Normalized controls                 | shipped 2026-08-05            |
-| `image_loras`                       | not started                   |
-| Image sets                          | not started                   |
-| Profile resolution                  | shipped 2026-08-05, dormant   |
-| Normalized render intent            | not started                   |
-| Prompt strategies                   | trial only; 3 of 7 arms       |
-| Reference preparation and transport | not started                   |
-| Control mapping                     | trial only                    |
-| Dimension negotiation               | not started                   |
-| Replicate prediction shell          | timeouts only; single-output  |
-| Version candidate and promotion     | not started                   |
-| Model-specific seeded profiles      | not started                   |
-| Admin UI                            | not started                   |
+| Section                             | Status                          |
+| ----------------------------------- | ------------------------------- |
+| Extensions to `image_models`        | shipped 2026-08-05 (mig 0100)   |
+| Advanced capability contract        | shipped; probe fills nothing    |
+| `image_model_profiles`              | shipped 2026-08-05 (mig 0100)   |
+| Profile task eligibility            | shipped 2026-08-05              |
+| Reference policy                    | roles + required; no priority   |
+| Normalized controls                 | shipped 2026-08-05              |
+| `image_loras`                       | not started                     |
+| Image sets                          | not started                     |
+| Profile resolution                  | shipped 2026-08-07, every lane  |
+| Normalized render intent            | shipped 2026-08-07              |
+| Prompt strategies                   | 3 of 7 arms; production adds no |
+| Reference preparation and transport | not started                     |
+| Control mapping                     | shipped 2026-08-07, every lane  |
+| Dimension negotiation               | not started                     |
+| Replicate prediction shell          | timeouts only; single-output    |
+| Version candidate and promotion     | not started                     |
+| Model-specific seeded profiles      | not started                     |
+| Admin UI                            | not started                     |
 
 ## Current anchors
 
@@ -73,14 +72,24 @@ The implementation is spread across these seams:
   crop normalization;
 - `src/server/images/model-profiles.ts` — profile loading and task resolution;
 - `src/server/images/render-profile.ts` — the profile compile step
-  (`compileProfileRenderPlan`) and the version-pin rule;
+  (`compileProfileRenderPlan`), the prompt-strategy dispatch over both reference
+  vocabularies, and the version-pin rule;
+- `src/contracts/images/render-intent.ts` — the intent vocabulary, the
+  required-role check, and capacity selection;
+- `src/server/images/render-intent.ts` — `planImageRender` and
+  `renderImageIntent`, the entry point every render lane calls;
 - `src/server/images/quality-presets.ts` — the reviewed-quality seam that
   rewrites a model's constants and prompt dialect at the render boundary;
 - `src/server/images/scene.ts` — scene degradation ladder and the current
-  three-reference buffer cap;
-- `src/server/images/variants.ts`, `entity.ts`, `chat-look.ts`, and the portrait
-  lane — individual callers that should eventually emit the shared render
-  intent.
+  three-reference cap, now carrying reference roles through each rung;
+- `src/server/images/variants.ts`, `entity.ts`, `chat-look.ts`, `avatar.ts` and
+  `character-scene.ts` — the lanes, each resolving its own task's profile and
+  emitting an intent.
+
+`resolveSurfaceModel`, `loadImageModelsForSurface` and the pure
+`resolveImageModel` were **deleted** with the lane migration, along with the two
+default-model slug constants they fell back to. Two resolvers answering "which
+model runs this job" is how a picker and a render come to disagree.
 
 The registry fields remain useful. In particular, `referenceField`,
 `referenceArity`, `referenceTransport`, `maxReferences`, `aspectMode`,
@@ -286,9 +295,12 @@ implemented.
 
 ### Reference policy
 
-Contract only — `imageReferencePolicySchema` exists and the seeded profiles carry
-policies, but nothing reads them: no role-aware selector exists yet, and lanes
-still pass positional buffers. Slice 3 builds the selector.
+**Half live.** `requiredRoles` is enforced — `missingRequiredReferenceRoles`
+runs before any provider work, against the references that survive capacity, so
+a variant profile whose identity anchor was trimmed away refuses rather than
+rendering a stranger. `allowedRoles`, `roleOrder` and `maxPerRole` are still
+unread: selection keeps caller order and trims to `referenceCapacity`, which is
+what every lane already did. Priority selection is slice 3.
 
 A profile's `referencePolicy` has this shape:
 
@@ -434,11 +446,12 @@ create an image set.
 
 ## Profile resolution
 
-**Shipped 2026-08-05.** The pure resolver is `resolveImageProfile` in
-`src/contracts/images/image-model-profiles.ts`; the server loader is
-`resolveImageProfileForTask` in `src/server/images/model-profiles.ts`. No
-player-facing lane calls either — the identity-pack trial harness is the only
-consumer, and every production lane still calls `resolveSurfaceModel`.
+**Shipped 2026-08-05; live on every lane 2026-08-07.** The pure resolver is
+`resolveImageProfile` in `src/contracts/images/image-model-profiles.ts`; the
+server loader is `resolveImageProfileForTask` in
+`src/server/images/model-profiles.ts`. Each of the seven lanes calls it for its
+own task before it reserves an image row, so the row's `meta.model` records what
+will actually run.
 
 The resolver receives a task and a stored selection. It applies this order:
 
@@ -458,61 +471,75 @@ model and profile independently.
 
 ## Normalized render intent
 
-Not started — neither file exists and no lane emits an intent. This is slice 2,
-and it is the gate on the identity-pack plan's render-lane slice and the
-visual-state plan.
+**Shipped 2026-08-07 (slice 2).** All seven lanes emit an intent; the gate on the
+identity-pack plan's render-lane slice and the visual-state plan is open.
 
-**What already exists and must be reused rather than re-invented.**
 `compileProfileRenderPlan` in `src/server/images/render-profile.ts` performs
-steps 5–11 of the resolution order below for a single-image render: reviewed
-quality seam, strategy-compiled prompt, model-dialect preparation, negative
-resolution, control mapping, override validation, aspect choice, and version pin.
-It returns a plan carrying the final prompt, the provider-shaped `controlInput`,
-an always-numeric `timeoutMs`, and the pinned version. `renderWithModel` accepts
-exactly those three as optional pass-throughs, so a caller that resolves a
-profile can already drive a payload end to end. `renderImageIntent` should call
-the compile step and add only what a trial has no use for: reference selection by
-policy, LoRA resolution, per-request control overrides, and image sets.
+steps 5–11 of the resolution order below and was reused rather than re-invented:
+reviewed quality seam, strategy-compiled prompt, model-dialect preparation,
+negative resolution, control mapping, override validation, aspect choice, and
+version pin. `renderImageIntent` calls it and adds what a trial has no use for —
+reference selection against capacity, the required-role gate, and per-request
+control overrides. LoRA resolution and image sets remain later slices.
 
-Create `src/contracts/images/render-intent.ts` for serializable types and
-`src/server/images/render-intent.ts` for the buffer-bearing server type.
+Serializable vocabulary lives in `src/contracts/images/render-intent.ts`; the
+buffer-bearing request and the orchestration in
+`src/server/images/render-intent.ts`.
 
 ```ts
 export interface ImageRenderIntent {
-  task: ImageProfileTask;
+  profile: ResolvedImageProfile;
   prompt: string;
   references: ImageRenderReference[];
-  target: {
-    aspectRatio: number;
-    quality: "fast" | "balanced" | "quality";
-  };
+  target: { aspectRatio: number };
   controls?: ImageRenderControls;
-  profileSelection?: string | null;
 }
 ```
+
+Three deliberate deviations from the shape this section originally specified:
+
+- **The caller supplies a resolved profile, not a `profileSelection` string.**
+  Every lane must know its model before it reserves an image row — the row's
+  `meta.model` records it, and a lane with no offered profile fails its
+  precondition instead of reserving — so resolving inside the render call would
+  mean either a second registry read on the hot path or a lane that reserves
+  before it knows what it will run. `task` left with it: the resolved profile
+  names its own task, and carrying both would let them disagree.
+- **No `quality` tier on the target.** A `"fast" | "balanced" | "quality"` field
+  would be a claim about the render that nothing in the payload honors until
+  quality profiles and the control transports exist. It joins `target` in slice
+  4, where an unset field on every existing caller is a non-breaking addition.
+- **The result is `RenderWithModelResult`, not a new `ImageRenderResult`.** The
+  renderer's own result already carries the image, the error, the prediction id
+  and the executed version. `ResolvedImageAttempt` is the observability slice's
+  record and does not exist yet; declaring the field before there is anything to
+  put in it would advertise provenance the render does not keep.
 
 The orchestration entry point is:
 
 ```ts
-renderImageIntent(
-  intent: ImageRenderIntent,
-  sink?: DiagnosticSink,
-): Promise<ImageRenderResult>
+renderImageIntent(intent: ImageRenderIntent, sink?: DiagnosticSink): Promise<RenderWithModelResult>
 ```
 
-A single-image result is:
+The image-set entry point will use the same resolution and provider adapter but
+return `Buffer[]` and persist through the image-set pipeline.
 
-```ts
-export interface ImageRenderResult {
-  ok: boolean;
-  image?: Buffer;
-  error?: string;
-  attempt?: ResolvedImageAttempt;
-}
-```
+### What production deliberately does not take from the compiled plan
 
-The image-set entry point uses the same resolution and provider adapter but
-returns `Buffer[]` and persists through the image-set pipeline.
+The compile step serves a CONTROLLED comparison first, and two of its guarantees
+would be behavior changes if production inherited them:
+
+- **The version pin.** A plan carries `versionId` because a trial cell must
+  execute one exact version. Production follows the slug's floating latest by
+  design, and since trial setup now re-probes the models it will use, a row can
+  carry a `probedVersionId` that would silently start pinning every player render
+  to whatever version a trial happened to probe. Pinning production is slice 5's
+  job, with the smoke test and activation flow that make it safe.
+- **The prediction budget.** A plan always carries a numeric `timeoutMs` so a
+  cell can hash its own deadline. All 17 seeded profiles store null, so honoring
+  the plan's number would replace `REPLICATE_PREDICTION_TIMEOUT_MS` with a
+  hardcoded five minutes on every lane. `renderImageIntent` passes the profile's
+  own budget when it declares one and otherwise leaves the environment in charge.
 
 ### Resolution order
 
@@ -541,17 +568,36 @@ returns `Buffer[]` and persists through the image-set pipeline.
 `promptStrategy` is not arbitrary code stored in the database. It is an enum
 resolved through a code registry.
 
-**Partly built, trial only.** `compilePromptForStrategy` in
+**Partly built.** `compilePromptForStrategy` in
 `src/server/images/render-profile.ts` is that registry, written as an exhaustive
 switch rather than a framework because only three arms have an implementation.
-`instruction_edit` and `text_to_image_description` compile the identity-reference
-prompt and name references only when two or more need disambiguating;
-`multi_reference_compose` names every reference from one upward. The other four
-— `text_repair`, `example_transform`, `style_render`, `coherent_set` — refuse
-with `unsupported_prompt_strategy`, because each needs a contract the identity
-vocabulary does not carry, and compiling one anyway would produce a prompt that
-is not the strategy it claims to be. An eighth strategy is a compile error there
-rather than a silent fall-through.
+An eighth strategy is a compile error there rather than a silent fall-through.
+
+It dispatches on the REFERENCE VOCABULARY first, because two different things
+need naming and conflating them would rewrite live renders:
+
+- **`identity_pack`** — the trial's `canonical_identity` / `face_detail` pair,
+  whose whole comparison is which one comes first, so the compiled text has to
+  say which image is which. `instruction_edit` and `text_to_image_description`
+  name references only when two or more need disambiguating;
+  `multi_reference_compose` names every reference from one upward.
+- **`render_intent`** — the production lanes' general role vocabulary.
+  `instruction_edit` and `text_to_image_description` add NOTHING: the lane's own
+  builder already named its references (`buildSceneRenderPrompt` writes the
+  multi-reference bindings, and Qwen Edit's multi-reference lock is applied by
+  `preparePromptForImageModel` on the way out), so a second set of bindings would
+  describe the same images twice in two conventions.
+
+`multi_reference_compose` REFUSES on the `render_intent` arm rather than falling
+through to "unchanged": its defining semantic is naming each reference, this
+vocabulary has no wording for that yet (slice 3), and returning the base prompt
+would let a profile claim the composing strategy while sending text identical to
+`instruction_edit`. No seeded profile selects it, so nothing refuses today.
+
+The other four — `text_repair`, `example_transform`, `style_render`,
+`coherent_set` — refuse on both arms, because each needs a contract neither
+vocabulary carries and compiling one anyway would produce a prompt that is not
+the strategy it claims to be.
 
 Initial strategies:
 
@@ -641,9 +687,12 @@ image bytes or signed URL query strings.
 
 ## Control mapping
 
-**Built 2026-08-06 as `src/server/ai/image-control-mapping.ts`, trial only** —
-`compileProfileRenderPlan` is its sole caller, and no production lane resolves a
-profile. Three deviations from the design below, all deliberate:
+**Built 2026-08-06 as `src/server/ai/image-control-mapping.ts`; on every lane
+since 2026-08-07.** `compileProfileRenderPlan` remains its sole caller and now
+runs on every render. It changes no payload today: all 17 seeded profiles store
+inert `{}` defaults, and the probe derives no control bindings, so every control
+a profile could carry would drop as `no_binding` anyway. Three deviations from
+the design below, all deliberate:
 
 - **Out-of-range is a drop, never a clamp.** The design says numeric values are
   clamped only where a profile explicitly allows a bounded range. No such opt-in
@@ -959,21 +1008,21 @@ are the delivery order. Slice A is done, Slice B half done, C–F untouched.
 Add fields and tables, then seed one behavior-equivalent default profile for
 each currently offered model and surface. Do not change callers.
 
-### Slice B: resolver at existing seams — pure half only
+### Slice B: resolver at existing seams — done 2026-08-07
 
-Change `resolveSurfaceModel` into or wrap it with `resolveImageProfile`. Existing
-stored model ids and slugs resolve to the equivalent profile. Continue returning
-the embedded model to old callers temporarily.
+Existing stored model ids and slugs resolve to the equivalent profile. Rather
+than wrapping `resolveSurfaceModel`, the lanes were moved onto
+`resolveImageProfileForTask` and the model-level resolver was deleted: keeping
+both would leave two answers to "which model runs this job".
 
-The resolver exists (`resolveImageProfile`, `resolveImageProfileForTask`). The
-rewiring does not: every lane still calls `resolveSurfaceModel`.
+### Slice C: shared intent behind current functions — done 2026-08-07
 
-### Slice C: shared intent behind current functions
-
-Keep public lane function signatures stable while their provider call is routed
-through `renderImageIntent`. Golden-test prompt and reference ordering. The first
-commit in this slice should produce the same payloads as current main for all six
-seeded models except for intentionally parallelized uploads and added metadata.
+Every public lane signature is unchanged; their provider call routes through
+`renderImageIntent`. Payloads are identical to the pre-migration path for all six
+seeded models — the prompt is the lane's own text (the `render_intent` prompt
+arm adds nothing), the control overlay is empty for inert `{}` defaults, the
+target ratio is the lane's own, and neither a version pin nor a forced budget is
+sent. Reference uploads are still serial; that is slice 3.
 
 ### Slice D: profile pickers and storage
 
@@ -995,13 +1044,11 @@ continue to call the one-output wrapper.
 
 Slice 1 shipped Slice A above plus Slice B's **pure** resolver only: the reviewed
 capability fields, `image_model_profiles`, 17 built-in profiles, and
-`resolveImageProfile`. Slice B's rewiring of `resolveSurfaceModel` did **not**
-happen — no caller was touched, no lane resolves a profile, and no rendered image
-changed. That remains true of every player-facing lane; the identity-pack trial
-harness became the first consumer of the profile layer on 2026-08-06, and it is
-deliberately off the render path. The rulings below were made while writing slice
-1; each one is what kept the migration payload-neutral, and none should be
-re-litigated without a reason.
+`resolveImageProfile`. No caller was touched and no rendered image changed; the
+identity-pack trial harness became the first consumer on 2026-08-06, off the
+render path, and the lanes followed with slice 2 on 2026-08-07. The rulings below
+were made while writing slice 1; each one is what kept the migration
+payload-neutral, and none should be re-litigated without a reason.
 
 - **Resolver step 2 falls back to the stored model's first eligible profile.** When
   the stored value is a model id or slug, resolution prefers that model's own
@@ -1050,12 +1097,46 @@ re-litigated without a reason.
   wants the timestamp "when showing capability and version changes" — so the
   version-promotion slice should make the call.
 - **Anchor tasks are seeded on one model each.** `item`, `location` and `chat_place`
-  resolve `resolveSurfaceModel("portrait", null)` today, and `chat_look` resolves
-  `resolveSurfaceModel("scene", null)`; those four profiles are therefore seeded only
-  on the model each lane resolves right now — Qwen Image 2512 and Qwen Image Edit
-  2511 respectively — and are their tasks' global defaults. Seeding them across every
-  capable model would have made rows eligible for work no picker has ever offered
-  them.
+  borrowed the portrait surface's model when slice 1 was written, and `chat_look`
+  the scene surface's; those four profiles are therefore seeded only on the model
+  each lane rendered with — Qwen Image 2512 and Qwen Image Edit 2511 respectively
+  — and are their tasks' global defaults. Seeding them across every capable model
+  would have made rows eligible for work no picker has ever offered them.
+
+## Slice 2 implementation rulings (2026-08-07)
+
+Slice 2 shipped Slices B and C above: the seven lanes resolve a profile and
+render through `renderImageIntent`, and the model-level resolver is gone. The
+rulings below are what kept the migration payload-neutral.
+
+- **A model offered on a surface but carrying no profile now degrades to the
+  task default.** The pickers still list models by legacy surface
+  (`GET /api/image-models?surface=…`), while resolution runs on profiles, so an
+  operator-added model with no seeded profile is listed, stored, and then
+  resolved past — to the task's default profile on a different model. It is not
+  silent: `resolveImageProfileForTask` raises `image_profile.pick_unavailable`
+  when the stored pick is not the resolved one. Closing the window is the picker
+  slice's job (Slice D), and until it lands the admin flow that adds a model
+  should be understood as adding a model no lane will use.
+- **The required-role gate is checked against the SELECTED references.** A
+  required identity anchor that capacity pushed out is exactly as absent as one
+  the lane never had; checking before the trim would let a two-reference model
+  render a variant of nobody while claiming its policy was satisfied.
+- **A scene reference's role is derived from its scene kind, not stored.**
+  `character` maps to `identity`, `location` to `location`, and `layout` to
+  `control` — a spatial control image, which is what that role reserves. The
+  scene vocabulary keeps its own names because `image_references` rows and the
+  Gallery read them.
+- **Control overrides merge over profile defaults member by member**, written as
+  a plain merge because `mapImageRenderControls` skips any control whose value is
+  `undefined` — an absent member and an undefined one are the same thing to it,
+  so nothing reaches a payload uninvited. `outputCount` is still excluded from
+  the merged set and recorded as a `single_image_path` drop, now whether the
+  profile or the request asked for it.
+- **A requested numeric seed travels to the mapper and is refused there.** It
+  drops as `unsupported` with a record, rather than being filtered out earlier,
+  so asking for a seed before slice 4 builds its transport is visible rather than
+  silently ineffective.
 
 ## Observability and reproducibility
 
@@ -1091,12 +1172,19 @@ reuse temporary Replicate file URLs.
 
 ## Failure behavior
 
-None of these diagnostic codes are emitted yet. The ones the built path uses
-instead are `image_profile.row_invalid` and `image_profile.none_offered` from the
-resolver, `image_model.reserved_field_ignored` from the payload overlay, and the
-mapper's typed drop reasons (`no_binding`, `invalid`, `unsupported`,
-`unknown_field`, `reserved`), which are recorded on the plan rather than pushed
-as diagnostics.
+Emitted today: `image_profile.row_invalid`, `image_profile.none_offered` and
+`image_profile.pick_unavailable` from the resolver;
+`image_profile.required_reference_missing`,
+`image_profile.prompt_strategy_unsupported` and `image_profile.references_trimmed`
+from the render intent; `image_model.reserved_field_ignored` from the payload
+overlay; and the mapper's typed drop reasons (`no_binding`, `invalid`,
+`unsupported`, `unknown_field`, `reserved`), which are recorded on the plan
+rather than pushed as diagnostics.
+
+`image_profile.prompt_strategy_unsupported` is not in the list below because the
+list predates the strategy dispatch. It is a refusal, warn-level, raised before
+any provider work: the profile declares a strategy this render path has no
+wording for.
 
 Configuration errors should fail before reserving provider work where the
 caller's existing lane semantics permit it, using specific diagnostics:
@@ -1147,6 +1235,10 @@ What exists today, all pure except the last:
 - `src/server/images/render-profile.test.ts` — the version-pin rule, the
   prompt-strategy dispatch, `compileProfileRenderPlan`, prompt-preparation
   idempotency, and the control hash;
+- `src/server/images/render-intent.test.ts` — prompt neutrality at one and at
+  many references, the four-plus-one refusing strategies, capacity selection and
+  its dropped list, the required-role gate (including a role capacity pushed
+  out), control merge precedence, and the null prediction budget;
 - `src/server/images/model-profiles.int.test.ts` — the seeded profile set, the
   registry's per-row resilience, and the model-deletion cascade, plus the
   assertion that every anchor task still resolves to the model its lane renders

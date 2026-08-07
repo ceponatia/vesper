@@ -6,6 +6,7 @@ export * from "./identity-pack-trial";
 export * from "./identity-trial-model-versions";
 export * from "./models";
 export * from "./model-profiles";
+export * from "./render-intent";
 export * from "./render-profile";
 export * from "./route-safe";
 export * from "./chat-look";

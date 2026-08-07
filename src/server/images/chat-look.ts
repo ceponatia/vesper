@@ -5,8 +5,10 @@ import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { fnv1aHex } from "@/lib/hash";
 import { hasReplicate, isDemoMode } from "../ai";
 import { db, images } from "../db";
+import { IMAGE_TARGET_ASPECT } from "@/contracts";
 import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
-import { renderWithModel, resolveSurfaceModel } from "./models";
+import { resolveImageProfileForTask } from "./model-profiles";
+import { renderImageIntent } from "./render-intent";
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts";
 
 /**
@@ -143,10 +145,12 @@ export interface RenderChatLookInput {
  */
 export async function renderChatLookImage(input: RenderChatLookInput): Promise<string | null> {
   if (isDemoMode() || !hasReplicate()) return null;
-  // The look anchor is an identity edit of the avatar, so it rides the same
-  // surface as the scene picker rather than having a control of its own.
-  const model = await resolveSurfaceModel("scene", null, input.sink);
-  if (!model) return null;
+  // The look anchor is an identity edit of the avatar, so its task's default
+  // profile sits on the same model the scene picker defaults to rather than
+  // having a control of its own.
+  const resolved = await resolveImageProfileForTask("chat_look", null, input.sink);
+  if (!resolved) return null;
+  const model = resolved.model;
   const prompt = buildChatLookPrompt({ outfit: input.outfit, outfitExposed: input.outfitExposed, ageAnchor: input.ageAnchor });
   const { imageId, status } = await runImagePipeline({
     asset: {
@@ -159,7 +163,18 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
       meta: { lookKey: input.lookKey, model: `replicate/${model.slug}` },
     },
     produce: async () => {
-      const edit = await renderWithModel({ model, prompt, references: [input.avatar] }, input.sink);
+      const edit = await renderImageIntent(
+        {
+          profile: resolved,
+          prompt,
+          // The avatar IS the identity the look edit must preserve, and the
+          // chat_look policy requires that role — a look rendered from anything
+          // else would dress a stranger in the tracked outfit.
+          references: [{ role: "identity", required: true, buffer: input.avatar }],
+          target: { aspectRatio: IMAGE_TARGET_ASPECT },
+        },
+        input.sink,
+      );
       if (!edit.ok || !edit.image) throw new Error(edit.error ?? `${model.slug} returned no image`);
       return { ok: true, image: edit.image };
     },
@@ -196,10 +211,12 @@ export function buildChatPlacePrompt(input: { placeName: string; sketch: string 
  */
 export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise<string | null> {
   if (isDemoMode() || !hasReplicate() || !input.sketch.trim()) return null;
-  // A place shot is text-to-image with no subject to preserve, so it takes the
-  // portrait surface's default the way the item/location lanes do.
-  const model = await resolveSurfaceModel("portrait", null, input.sink);
-  if (!model) return null;
+  // A place shot is text-to-image with no subject to preserve, so its task's
+  // default profile sits on the general-purpose model the way the item/location
+  // lanes' do.
+  const resolved = await resolveImageProfileForTask("chat_place", null, input.sink);
+  if (!resolved) return null;
+  const model = resolved.model;
   const prompt = buildChatPlacePrompt(input);
   const { imageId, status } = await runImagePipeline({
     asset: {
@@ -211,7 +228,10 @@ export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise
     },
     produce: async () => {
       // 3:2 landscape — an establishing shot, not a portrait.
-      const shot = await renderWithModel({ model, prompt, targetRatio: 3 / 2 }, input.sink);
+      const shot = await renderImageIntent(
+        { profile: resolved, prompt, references: [], target: { aspectRatio: 3 / 2 } },
+        input.sink,
+      );
       if (!shot.ok || !shot.image) throw new Error(shot.error ?? `${model.slug} returned no image`);
       return { ok: true, image: shot.image };
     },

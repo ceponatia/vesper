@@ -1137,7 +1137,7 @@ async function resolveTrialCell(
     profile,
     basePrompt: fixture.prompt,
     baseNegativePrompt: fixture.negativePrompt,
-    referenceRoles: roles,
+    references: { vocabulary: "identity_pack", roles },
   });
   if (!compiled.ok) {
     return {
@@ -2335,7 +2335,7 @@ async function executeOneTrialCell(
     profile,
     basePrompt: fixture.prompt,
     baseNegativePrompt: fixture.negativePrompt,
-    referenceRoles: spec.orderedReferenceRoles,
+    references: { vocabulary: "identity_pack", roles: spec.orderedReferenceRoles },
   });
   if (!recompiled.ok) {
     // Planning refuses an unexecutable prompt strategy outright, so a cell that

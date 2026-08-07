@@ -117,10 +117,12 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
     }
   });
 
-  // THE behavior-preservation assertion. `portrait`/`item`/`location`/`chat_place`
-  // resolve to the generator those lanes call today; `variant`/`scene`/`chat_look`
-  // resolve to the instruction editor. A null stored pick is the anchor-lane case:
-  // `item`, `location`, `chat_place` and `chat_look` have no picker at all.
+  // THE behavior-preservation assertion, and no longer a forecast: since
+  // capabilities slice 2 these seven lanes resolve through THIS function on every
+  // render. `portrait`/`item`/`location`/`chat_place` must land on the generator
+  // they used when they resolved a surface model; `variant`/`scene`/`chat_look` on
+  // the instruction editor. A null stored pick is the anchor-lane case: `item`,
+  // `location`, `chat_place` and `chat_look` have no picker at all.
   const anchorExpectations: ReadonlyArray<readonly [ImageProfileTask, string]> = [
     ["portrait", QWEN_GENERATE],
     ["item", QWEN_GENERATE],

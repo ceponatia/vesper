@@ -21,20 +21,18 @@ import { loadImageModels, parseRegistryRows } from "./models";
  * configuration of it should this job run with" — a profile joined to its model,
  * with the ineligible combinations already removed.
  *
- * NO RENDER LANE CALLS THIS YET. The one caller today is the fixed
- * identity-reference trial (`./identity-pack-trial.ts`, since 2026-08-06), which
- * loads the registry to resolve its own trial cells' profiles by id; the portrait,
- * variant, scene, item, location, chat-look and chat-place lanes all still resolve
- * through `resolveSurfaceModel`.
+ * EVERY render lane resolves here. The portrait, variant, scene, item, location,
+ * chat-look and chat-place lanes each call `resolveImageProfileForTask` for their
+ * own task and hand the result to `renderImageIntent`; the fixed
+ * identity-reference trial resolves its cells' profiles by id through the same
+ * registry. Model-level resolution no longer exists — `resolveSurfaceModel` was
+ * deleted when the lanes moved over (capabilities slice 2), because two resolvers
+ * answering "which model runs this job" is how a picker and a render come to
+ * disagree.
  *
- * That the render lanes stay off it is deliberate. Slice 1 ships the 17 seeded
- * profiles dormant on the render path: every one of them describes what its lane
- * resolves today, so the first lane caller must be able to swap `resolveSurfaceModel`
- * for `resolveImageProfileForTask` and produce a byte-identical payload. That caller
- * is slice 2, "Shared render intent" (image-model-capabilities.plan.md §"Delivery
- * slices"), which introduces the normalized request and threads those lanes through
- * it. Wiring a lane here instead would make slice 1 a render change, which is the one
- * thing it must not be.
+ * The migration was payload-neutral by construction: each of the 17 seeded
+ * profiles describes exactly what its lane already did, so swapping the resolver
+ * changed which ROW the answer came from, not what the provider received.
  *
  * The eligibility and ordering rules live in the pure contract
  * (`imageProfileCandidates`, `resolveImageProfile`) and are deliberately NOT
@@ -78,8 +76,7 @@ async function loadProfileRegistry(
 
 /**
  * Every profile a task may actually be offered, joined to its model and in sort
- * order — the profile analogue of `loadImageModelsForSurface`, and what a picker
- * lists.
+ * order — what a picker lists.
  *
  * Disabled profiles, profiles whose model row is gone or unparseable, models the
  * task's legacy surface toggle excludes, and pairs `profileEligibility` refuses are
@@ -112,8 +109,7 @@ function storedWasHonored(stored: string, resolved: ResolvedImageProfile): boole
 
 /**
  * Resolve a stored pick to the profile and model a task should run with — the
- * profile-layer counterpart to `resolveSurfaceModel`, and the entry point slice 2's
- * lanes will call.
+ * entry point every render lane calls before it reserves an image row.
  *
  * `stored` is loose by design (a profile id, a model id, a model slug, or a dead
  * value from before any of this existed). A pick that has gone invalid — deleted

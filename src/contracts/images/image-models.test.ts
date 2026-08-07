@@ -8,7 +8,6 @@ import {
   imageModelsForSurface,
   parseAspectValue,
   referenceCapacity,
-  resolveImageModel,
   type ImageModel,
 } from "./image-models";
 
@@ -173,44 +172,5 @@ describe("surface filtering", () => {
   it("lists a surface in stored sort order", () => {
     const models = [model({ id: "b", sort: 20 }), model({ id: "a", sort: 10 })];
     expect(imageModelsForSurface(models, "portrait").map((m) => m.id)).toEqual(["a", "b"]);
-  });
-});
-
-describe("resolveImageModel", () => {
-  const portrait = model({ id: "p", slug: "qwen/qwen-image-2512", forScene: false, forVariant: false });
-  const scene = model({
-    id: "s",
-    slug: "qwen/qwen-image-edit-2511",
-    canGenerate: false,
-    forPortrait: false,
-    sort: 20,
-  });
-  const models = [portrait, scene];
-
-  it("honours a stored pick by id or slug", () => {
-    expect(resolveImageModel(models, "scene", "s")?.id).toBe("s");
-    expect(resolveImageModel(models, "scene", "qwen/qwen-image-edit-2511")?.id).toBe("s");
-  });
-
-  it("degrades an unavailable pick to the surface default rather than failing", () => {
-    // "reference" is a legacy Venice key from before the registry; the owner
-    // does not migrate old chats, so it simply resolves to the default.
-    expect(resolveImageModel(models, "scene", "reference")?.id).toBe("s");
-    expect(resolveImageModel(models, "portrait", "deleted-row-id")?.id).toBe("p");
-  });
-
-  it("never returns a model the surface cannot use", () => {
-    // The portrait default is not offered on the scene surface, so asking for
-    // it there falls through to something that is.
-    expect(resolveImageModel(models, "scene", "p")?.id).toBe("s");
-  });
-
-  it("returns null when a surface has nothing to offer", () => {
-    expect(resolveImageModel([], "portrait", null)).toBeNull();
-  });
-
-  it("falls back to the first offered model when the default slug is gone", () => {
-    const other = model({ id: "x", slug: "bytedance/seedream-4.5", sort: 5 });
-    expect(resolveImageModel([other], "portrait", null)?.id).toBe("x");
   });
 });
