@@ -880,6 +880,53 @@ describe.skipIf(!ready)("personas CRUD", () => {
     expect(attributes.map((a) => a.id)).not.toContain("feet.smell");
   });
 
+  // intimate-defaulting.md §3b: a persona used to be born `intimateRegions: []` and stay
+  // there forever, so the player's own body reached every downstream consumer with no
+  // intimate anatomy. The create route now seeds it the way the character route does.
+  it("seeds the body-config at persona creation — a blank persona is born with anatomy", async () => {
+    const created = await expectJson<{
+      persona: { profile: { intimateRegions: string[]; attributes: { id: string; value: unknown }[] } };
+    }>(
+      await createPersonaRoute(
+        apiRequest("/api/personas", { body: { title: "Brian, blank", name: "Brian" } }),
+        noParams,
+      ),
+      201,
+    );
+    // The library's New button posts exactly this — no profile at all.
+    expect(created.persona.profile.attributes.find((a) => a.id === "identity.gender")?.value).toBe("female");
+    expect(created.persona.profile.intimateRegions).toEqual(["vulva", "breasts"]);
+  });
+
+  it("seeds anatomy from an authored gender, and never overwrites a supplied body-config", async () => {
+    const male = await expectJson<{ persona: { profile: { intimateRegions: string[] } } }>(
+      await createPersonaRoute(
+        apiRequest("/api/personas", {
+          body: {
+            title: "Brian, male",
+            name: "Brian",
+            profile: { attributes: [{ id: "identity.gender", value: "male", source: "manual" }] },
+          },
+        }),
+        noParams,
+      ),
+      201,
+    );
+    expect(male.persona.profile.intimateRegions).toEqual(["penis", "testicles"]);
+
+    // A caller who states the config keeps it, whatever the attributes say.
+    const authored = await expectJson<{ persona: { profile: { intimateRegions: string[] } } }>(
+      await createPersonaRoute(
+        apiRequest("/api/personas", {
+          body: { title: "Brian, authored", name: "Brian", profile: { intimateRegions: ["penis"] } },
+        }),
+        noParams,
+      ),
+      201,
+    );
+    expect(authored.persona.profile.intimateRegions).toEqual(["penis"]);
+  });
+
   it("gets and deletes a persona; a foreign id is a 404", async () => {
     const got = await getPersonaRoute(apiRequest("/api/personas/x"), routeCtx({ id: personaId }));
     expect(got.status).toBe(200);

@@ -297,9 +297,10 @@ Two open remainders are documented but not yet planned:
 [condition-attribute-effects.md](condition-attribute-effects.md) (four small
 chat-state plumbing items — a catalog row, one call, a write-boundary diagnostic,
 and a precedence ruling) and [intimate-defaulting.md](intimate-defaulting.md)
-(body-config provenance and re-derivation; its persona-seeding item is a live
-player-facing defect and is being fixed separately). Both need a home — the
-second belongs under character schema.
+(body-config provenance and re-derivation; its persona-seeding item was a live
+player-facing defect and shipped 2026-08-07 — see
+[roadmap.shipped.md](roadmap.shipped.md)). Both need a home — the second belongs
+under character schema.
 
 ## Successor world engine — foundation and rollout COMPLETE
 

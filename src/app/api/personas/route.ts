@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { materializeBodyDefaults } from "@/contracts";
+import { seedNewPersonaProfile } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
 import { db, personas } from "@/server/db";
 import {
@@ -44,14 +44,13 @@ export const GET = withUser(async (user, req: NextRequest) => {
 export const POST = withUser(async (user, req: NextRequest) => {
   const body = await readBody(req, personaCreateSchema);
   if (!body.ok) return body.response;
-  // The persona is the player's body, so it grounds the same persisted-baseline
-  // facts a character does (materializeDefault) — fill-only, against its own
-  // realized body. Without this, a fresh persona is born with attributes: []
-  // and the facts a persona-side read needs simply never exist.
-  const profile = {
-    ...body.value.profile,
-    attributes: materializeBodyDefaults(body.value.profile.attributes, body.value.profile),
-  };
+  // The persona is the player's body, so it is born the way a character is
+  // (characters/route.ts): curated core-visual defaults on a blank body, the
+  // body-config those attribute values activate, then the persisted-baseline
+  // facts against the seeded body. The body-config half is what stops a persona
+  // being born — and staying — with no intimate anatomy at all, which is audit
+  // E1 on the player's own avatar (intimate-defaulting.md §3b).
+  const profile = seedNewPersonaProfile(body.value.profile);
   try {
     const [row] = await db()
       .insert(personas)
