@@ -2,10 +2,14 @@
 
 Status: reference (audit run 2026-07-30)
 
-**Findings record, not a plan.** Plans and specs will be derived from this doc
-(likely several — see §Proposed batches at the end); when
-one is created it gets its own `<topic>.plan.md` + roadmap line and should cite
-finding ids from here. Eleven draft plans now exist; the reviewed near-term tranche is queued in `roadmap.md`, while the larger consolidations remain selective drafts.
+**Findings record, not a plan.** Plans and specs are derived from this doc — each
+gets its own `<topic>.plan.md` + roadmap line and cites finding ids from here.
+Eleven plans came out of it: one shipped and archived
+([finished/image-pipeline-consolidation.plan.md](finished/image-pipeline-consolidation.plan.md)),
+ten remain. The reviewed near-term tranche is queued in `roadmap.md`; the larger
+consolidations remain selective drafts. **What has actually landed since is
+recorded once, under §Fixed since the audit — the findings below are frozen at
+2026-07-30 and are not rewritten as they close.**
 
 **Method.** Six parallel read-only analysis agents (prior-art sweep + one per
 area: chat-lane engine, simulation engine, contracts, UI/app, server infra +
@@ -534,6 +538,43 @@ noted; deferred stubs in [deferred/CLAUDE.md](deferred/CLAUDE.md):
 
 ---
 
+## Fixed since the audit — verified against code 2026-08-07
+
+The findings above are a point-in-time record. These are the ones a re-grep of
+`src/` no longer reproduces; everything else in §A–§G was re-verified as still
+present on this date.
+
+- **C1, C2, C3, C4, C5, C10 — closed by the image-pipeline consolidation**
+  (shipped 2026-08-02,
+  [finished/image-pipeline-consolidation.plan.md](finished/image-pipeline-consolidation.plan.md)).
+  `runImagePipeline` owns the six lanes (`images/assets.ts:294`), and the shared
+  helpers exist: `imageMeta`/`readImageBytes`/`purgeImagesWhere` in
+  `images/assets.ts`, `fnv1a32`/`fnv1aHex` in `lib/hash.ts`, `runInBatches` in
+  `lib/batches.ts`. C2's Venice unwrap is moot twice over — the shipped plan
+  extracted it and the active image-model-registry work then removed Venice
+  entirely.
+- **F2 — closed, then superseded.** Commit `66ecd3b` did add `lint:authz` to the
+  root `CLAUDE.md` gate list on 2026-07-30. That list has since been deleted:
+  validation is now **CI-only** and agents never run gates locally at all, so the
+  omission this finding described cannot recur in that form. `lint:authz` runs in
+  `.github/workflows/ci.yml` under the aggregate `verify` check.
+- **C19's documentation half.** `docs/database.md` now records `travel_minutes`
+  as defaulted, unread, and reserved for the parked authored travel-duration
+  system, matching the retain ruling below. The schema column itself is
+  unannotated — that half stays with
+  [dead-export-sweep.plan.md](dead-export-sweep.plan.md).
+- **F4's `unconsumed-character-prose.md`** — archived to `finished/` on
+  2026-08-02. `docs/ui.md`'s `useDebouncedValue` claim (D8) is still wrong.
+
+**Notable non-fixes worth stating explicitly**, because their plans are old
+enough to invite the assumption: A11's five recorder reads are still five
+independent calls (`command-runner.ts:183-191`), `runSimulationCommand` still has
+exactly 46 call sites with `space-store.ts` and `scheduler-store.ts` still
+inlining their own shells (A2), `forkBranch` is still one 633-line function (A7),
+`bodyLocationRegistry.expand` still recurses per call and `forCategory` /
+`forBodyLocation` still linear-scan (E13/E14), no `ConfirmDialog` component
+exists (D5), and `.jscpd.json` still scans `src` only (F1).
+
 ## Review disposition and owner rulings — 2026-07-30
 
 The audit is accepted as a strong findings record, but the eleven plans are not
@@ -592,7 +633,8 @@ The reviewed boundary for each derived plan:
 3. Cheap hot-path tranche: A11, E13/E14, and the already-shipped F2 instruction fix.
 4. Chat pre-reply latency, after a repeated timing baseline.
 5. Sim command-shell consolidation, then the fork registry.
-6. Image-pipeline consolidation.
+6. Image-pipeline consolidation. **Done — shipped 2026-08-02, out of sequence at
+   owner request.**
 7. Client D10/D11/D12; run the D13 measurement but make bundle changes only on evidence.
 8. Library-kind registry and route factories, without write batching.
 9. `ConfirmDialog`, then a separate go/no-go on the full editor scaffold.
@@ -601,7 +643,8 @@ The reviewed boundary for each derived plan:
 
 Only steps 2–4 are queued as the near-term cleanup tranche. Steps 5–10 record
 dependency order and scope, not a promise to run a cleanup epic ahead of product
-work.
+work — and step 6 shipping ahead of step 5 is the demonstration that these are
+constraints, not a queue.
 
 ## Original plan batches (plan-derivation record)
 

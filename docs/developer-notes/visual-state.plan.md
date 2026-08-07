@@ -1,6 +1,8 @@
 # Visual state and attention
 
-Status: next — planned 2026-08-05; no implementation has started
+Status: next (planned 2026-08-05; not started — verified 2026-08-07, no
+`VisualStateFeature` contract, adapter, flag, or diagnostic exists in the
+codebase)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -16,12 +18,35 @@ Related work:
   and observer visual memory this plan extends rather than replaces;
 - [clothing state graph](clothing-state-graph.plan.md) owns garment instances,
   per-part presentation, material condition, coverage, and scene locus;
+- [romantic contact affordances](romantic-contact-affordances.plan.md) owns the
+  scene / body-relations layer this plan reads for body language;
 - [narrator physical guidance](narrator-physical-guidance.plan.md) owns binding
   constraints and premise correction;
 - [image model capabilities](image-model-capabilities.plan.md) owns the shared
   render intent that will consume visual state;
 - [image render quality](image-render-quality.plan.md) owns model-specific
   prompting, reference quality, render QA, and image trials.
+
+## What this plan waits for
+
+Slices 0–5 are unblocked. Every owner they read from already exists: canonical
+attributes and located appearance facts, realized anatomy, recognizable-feature
+priors and observer visual memory, the garment graph, body-surface wetness, and —
+since 2026-07-31 — the scene / body-relations owner that proves posture, facing,
+proximity, support, and reach. That last one was the notable gap when this plan
+was written, and it has closed.
+
+Two later slices have real prerequisites:
+
+- **Slice 8** feeds shared render intent, which does not exist yet. It waits on
+  the [capabilities plan's](image-model-capabilities.plan.md) slice 2.
+- **Slice 7** is a paid narrator trial and needs a scheduled comparison run.
+
+This plan does **not** depend on
+[image identity packs](image-identity-packs.plan.md). A pack is a stored picture
+of a face; visual state is a computed description of a person right now. They
+meet only inside a render request, where the pack supplies the reference image
+and this plan's image digest supplies the facts, and neither reads the other.
 
 ## In one sentence
 
@@ -215,10 +240,13 @@ and condition, active located conditions, and supported physical-affordance
 results. Dirt, blood, swelling, fatigue, cosmetics wear, and other effects join
 only when an authoritative owner exists.
 
-Body language begins narrowly with facts the scene/body-relations layer can
-prove: standing, seated, leaning, support, facing, gaze direction, occupied
-hands, and committed gestures. Fine joint pose and emotion-derived
-microexpressions remain unavailable.
+Body language begins narrowly with facts the scene / body-relations layer can
+prove. That layer shipped in the chat lane on 2026-07-31 and holds participant
+posture, coarse facing and proximity, support roles and surfaces, coarse surface
+height, and the reach they imply — with provenance on every fact and an explicit
+refusal to source anything from narrator prose. Occupied hands and committed
+gestures come from the contact lifecycle beside it. Fine joint pose and
+emotion-derived microexpressions remain unavailable.
 
 Visibility starts with current coverage and perception, then adds explicit
 lighting, distance, angle, motion, frame size, and occlusion inputs rather than
@@ -285,7 +313,7 @@ physiology, contamination, contact, and fit remain explicit suppressions.
 
 ### Slice 4 — body language and visibility
 
-Consume the minimal scene/body-relations owner for posture, support,
+Consume the shipped scene / body-relations owner for posture, support,
 orientation, hand occupation, gaze, and committed motion. Add observer/camera
 lighting, distance, angle, motion, frame-size, exposure, and occlusion reads.
 Include non-human and altered-anatomy fixtures before enabling image use.
@@ -313,10 +341,11 @@ grounded specificity, naturalness, and hidden-detail leakage.
 
 ### Slice 8 — image-render-intent integration
 
-Feed mandatory and optional visual facts into shared render intent. Record keys,
-fingerprints, source versions, and camera visibility in provenance. Add
-morphology/negative-steering conflict checks and paired trials across human,
-non-human, altered anatomy, realistic, and stylized characters.
+Blocked until shared render intent exists. Feed mandatory and optional visual
+facts into it, record keys, fingerprints, source versions, and camera visibility
+in provenance, and add morphology/negative-steering conflict checks plus paired
+trials across human, non-human, altered anatomy, realistic, and stylized
+characters.
 
 ### Slice 9 — reference-image compiler
 
@@ -361,7 +390,7 @@ selection, consumer input, output, latency, and owner verdict.
 
 ## Open questions
 
-No owner ruling blocks slices 0–2. These values should be calibrated by fixtures
+No owner ruling blocks slices 0–5. These values should be calibrated by fixtures
 and trials rather than guessed:
 
 - the first-release kind catalog beyond already owned appearance, garment, and

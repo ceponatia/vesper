@@ -1,17 +1,23 @@
 # Successor world engine — implementation plan
 
-Status: **fresh implementation plan, draft 2026-07-16**
+Status: **shipped — 2026-07-21** (committed scope: gates 0–6, closed 2026-07-16 →
+2026-07-21). The migration that put the engine under the live product closed 2026-07-22
+in [finished/engine.rollout.plan.md](finished/engine.rollout.plan.md). Gate 7 was never
+committed and stays optional. This family deliberately does **not** archive to
+`finished/`: it is the living reference set the running engine is cited against
+(`docs/developer-notes/CLAUDE.md` §"Ship close-out").
 
 Outcome: A player can talk to characters who keep living their own lives between scenes
 — sleeping, eating, working, travelling, and hearing news from one another — so that a
 character who is across town arrives late instead of appearing on cue, and knows only
 what they actually saw or were told.
 
-Companion to [engine.spec.md](engine.spec.md). This plan replaces neither the queued
-character-chat plans nor their owner rulings. It turns the architectural conclusions in
-[world-engine-refactor.gpt.md](world-engine-refactor.gpt.md) into a gated delivery plan.
-The spec owns normative contracts; this document owns sequence, scope, cost, experiments,
-migration, and exit criteria.
+Companion to [engine.spec.md](engine.spec.md), which owns the normative contracts. This
+document is the hub of the gate set: the goals the build was judged against, the gate
+index, the standing decisions that produced the architecture, and the budgets it still
+runs under. Each gate's own scope, build order, and shipped record lives in its
+`engine.gateN.*.md` doc. The architectural argument this plan was written from is
+[finished/world-engine-refactor.gpt.md](finished/world-engine-refactor.gpt.md).
 
 The one-line direction:
 
@@ -19,15 +25,42 @@ The one-line direction:
 > routine life and physical causality; let sparse LLM agents choose only among legal
 > alternatives; and make the narrator render a perspective-safe committed cut.
 
-## Decisions this plan makes
+## Where the engine stands
 
-1. **TypeScript stays for the first production foundation.** The present risks are
-   authority, persistence, concurrency, scheduling, and evaluation—not raw arithmetic
-   throughput. The kernel must be isolated, deterministic, benchmarked, and portable so a
-   measured hotspot can later move to Rust or WASM without moving product rules.
-2. **The successor is not an extension of the deprecated session engine.** Useful ideas
-   may be recovered, but its aggregates, movement-by-turn, narrator authority, and
-   permissive access defaults are not the target architecture.
+Gates 0–6 closed between 2026-07-16 and 2026-07-21; rollout R0–R6 (2026-07-21/22) made
+the engine the world authority for successor chats and deleted the legacy world/session
+model and its tables outright. A successor chat is born through the `/worlds` front door,
+bound 1:1 to its own simulated world, and carries its authority on the per-chat
+`engine_authority` flag. Legacy character chat remains a separate live lane.
+
+What is still open on this track:
+
+- **Gate 7** — institutions and macro simulation. Optional and never opened. Its
+  sequencing precondition (rollout R6) exited 2026-07-22, so it is unblocked, but it
+  opens only on the owner's call.
+  ([engine.gate7.institutions.md](engine.gate7.institutions.md))
+- **The live paired quality evals.** Every gate from 4 onward closed on its deterministic
+  exit corpus per the owner's 2026-07-18 exit-scope ruling; the human-scored comparison
+  was never run and rides the owner-gated spend list in
+  [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs.
+- **Product ruling 12** — route-estimate uncertainty exposure. The one ruling still open;
+  deferred to the travel work that needs it.
+- **The parked improvement backlog.** Post-rollout review findings live as draft stubs
+  under `deferred/` and graduate one at a time on the owner's go, never in bulk
+  ([deferred/CLAUDE.md](deferred/CLAUDE.md)).
+
+## Standing decisions
+
+These are the decisions the build was made under. They still govern the running engine
+unless a §39 ruling supersedes one.
+
+1. **TypeScript owns the production foundation.** The risks were authority, persistence,
+   concurrency, scheduling, and evaluation — not raw arithmetic throughput. The kernel
+   stays isolated, deterministic, benchmarked, and portable so a measured hotspot can
+   later move to Rust or WASM without moving product rules.
+2. **The engine is not an extension of the retired session model.** Useful ideas were
+   recovered, but its aggregates, movement-by-turn, narrator authority, and permissive
+   access defaults are not this architecture. That model was deleted at rollout R6.
 3. **There is no per-minute world tick.** A durable scheduler jumps between due triggers,
    integrates continuous rates analytically, and records only material outcomes.
 4. **Schedules express intent and constraints.** They never directly set an NPC's
@@ -39,15 +72,16 @@ The one-line direction:
    projections, and access rules remain deterministic.
 7. **Truth, observation, belief, memory, and prose are separate.** RAG is a perspective-
    filtered recall layer, never the source of physical truth.
-8. **One developer follows one gated path.** Work is not called parallel when an earlier
-   contract is a prerequisite. Independent current-chat fixes may ship while the
-   successor is being designed, but successor phases are sequential.
-9. **The first architecture slice is intentionally tiny.** It proves one authority and
-   one perspective invariant with an item transfer. The rich life scenario is a later
-   graduation test, not the first experiment.
-10. **Current owner rulings remain intact.** In particular, the queued rhythm body patch
-    deliberately uses window crossing and no blanket self-care restore. The successor
-    must not block that current-lane work on primitives the lane does not yet have.
+8. **Gates are sequential, not parallel.** Each gate's exit is the next gate's
+   prerequisite, so the foundation ran one gated path end to end; independent chat-lane
+   fixes shipped alongside it.
+9. **The first architecture slice was deliberately tiny.** Gate 1 proved one authority
+   and one perspective invariant with a single item transfer; the rich-life scenario came
+   much later.
+10. **Chat-lane owner rulings were carried, not overridden.** Ruling 15 made
+    `chat-meter-economy.spec.md` OQ1–OQ3 the normative semantics source for the engine's
+    own v1 body meters, so the engine expresses the chat lane's economy rather than a
+    competing one.
 
 ## Product goal
 
@@ -69,7 +103,7 @@ The engine succeeds when it makes richer roleplay possible while preserving:
 
 ## Non-goals
 
-The first production foundation will not attempt:
+The foundation does not attempt:
 
 - continuous physics, exact fluid dynamics, or a general scientific simulator;
 - an LLM process for every character, institution, room, or minute;
@@ -77,54 +111,14 @@ The first production foundation will not attempt:
 - exact simulation of every commodity and anonymous citizen;
 - natural-language text as the authoritative database;
 - a universal action ontology before real scenarios demand it;
-- simultaneous migration of every current-chat subsystem;
 - a promise that all authored worlds use the maximum simulation depth.
 
-The architecture must admit greater depth, but each world type may choose packages,
-fidelity, content rules, and population scale.
-
-## Current baseline and immediate corrections
-
-Before an architectural comparison is trustworthy, the current lane must satisfy its own
-invariants.
-
-### P0 — group retake rollback integrity
-
-The current group-chat rerun snapshot is primary-only. Non-primary members can retain
-regard, emotional state, drives, wardrobe or personal fields, relationship samples, and
-milestones from a discarded reply, after which the replacement reply settles on top.
-
-Repair this independently of the new engine:
-
-1. retain every roster member's stored pre-drift state;
-2. load each member's snapshot on regenerate or latest-turn rerun;
-3. save each member's snapshot after the guarded member save;
-4. add group regression tests covering all mutable member state;
-5. reject or branch reach-back reruns instead of presenting an in-place rollback that is
-   not real.
-
-Exit criterion: discarding a reply leaves the complete group state equal to the
-pre-reply snapshot, byte-for-byte for fields in scope.
-
-### Preserve the queued meter ruling
-
-The planned rhythm body patch is window-crossing logic. It is not a simple sibling of
-the arrival-covering rhythm outfit patch, and it does not blanket-restore missed meals or
-hygiene. Keep the current 6am-versus-8am behavior and its owner-approved semantics.
-
-The temporary inferScheduleKind helper introduces a new text-matching contract. Treat it
-as a migration adapter only:
-
-- add an explicit unknown result;
-- run it in shadow mode over the authored corpus;
-- log matched rule and confidence;
-- prohibit false-positive hard effects;
-- write typed schedule kind on all new or edited entries;
-- remove inference after migration coverage reaches the declared threshold.
+The architecture admits greater depth, but each world type may choose packages, fidelity,
+content rules, and population scale.
 
 ## Feasibility boundary
 
-### Feasible now in deterministic code
+### Deterministic in code — the foundation's shipped surface
 
 - stable world, branch, actor, place, item, activity, and event identity;
 - travel over a bounded topology with time and access constraints;
@@ -146,21 +140,21 @@ as a migration adapter only:
 - urban traffic, queues, weather effects, and institutional response;
 - thousands of off-screen actors.
 
-These should use aggregates, representative agents, bounded stochastic models, and
-event-triggered promotion to higher detail. They should not pretend to be exact.
+These use aggregates, representative agents, bounded stochastic models, and
+event-triggered promotion to higher detail. They do not pretend to be exact.
 
-### Infeasible or counterproductive as a near-term target
+### Out of scope, deliberately
 
 - one reasoning model call per NPC per turn;
 - exact simulation of every anonymous person's private life;
 - unrestricted narrator-created movement, items, injuries, or knowledge;
 - a vector store queried as though similarity established truth;
-- attempting to encode every human action before shipping one end-to-end seam;
+- encoding every human action before shipping one end-to-end seam;
 - choosing a systems language before a profiler identifies a stable hotspot.
 
-## North-star topology
+## Component authority
 
-The target consists of small services or packages with explicit authority:
+The engine is a set of packages with explicit authority:
 
 | Component                | Owns                                                    | Does not own                    |
 | ------------------------ | ------------------------------------------------------- | ------------------------------- |
@@ -177,85 +171,85 @@ The target consists of small services or packages with explicit authority:
 | Policy controller        | cheap routine NPC choices                               | bypassing validators            |
 | Deliberator              | rare choice among legal candidates                      | inventing candidates or effects |
 
-The first implementation may run these components in one process. The boundaries are
-contracts and transaction seams, not a requirement for microservices.
+These run in one process. The boundaries are contracts and transaction seams, not a
+requirement for microservices.
 
-## Delivery strategy
+## How the gates were judged
 
-Each gate has four possible outcomes:
+Each gate could exit four ways — **advance** (evidence meets the declared exit criteria),
+**revise** (the seam is valuable but the contract is wrong), **hold** (value is plausible
+but cost or latency is unacceptable), or **stop** (the architecture does not outperform a
+simpler current-lane solution). No gate was justified merely by appearing in this plan.
+Every committed gate returned **advance**.
 
-- **advance** — evidence meets the declared exit criteria;
-- **revise** — the seam is valuable but the contract is wrong;
-- **hold** — value is plausible but cost or latency is unacceptable;
-- **stop** — the architecture does not outperform a simpler current-lane solution.
-
-No later phase is justified merely because it appears in this plan.
+From Gate 4 onward the owner's 2026-07-18 exit-scope ruling governs what closing means: a
+gate's deterministic exit corpus closes it, and any live-model quality check rides the
+owner-gated spend list instead of holding the verdict.
 
 ## The gates
 
-Each gate lives in its own doc — plan detail, build order, and the shipped E-package
-histories. One line of status here; the full record is in the gate doc (and
-[roadmap.md](roadmap.md) stays the ordered index of what to build next).
+Each gate has its own doc carrying that gate's scope, build order, and shipped E-package
+history. One line of status here; [roadmap.md](roadmap.md) stays the ordered index of
+what to build next.
 
-| Gate                                                 | Doc                                                                          | Status                                   |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------- |
-| 0 — establish trustworthy evidence                   | [engine.gate0.evidence.md](engine.gate0.evidence.md)                         | closed                                   |
-| 1 — minimum authority seam                           | [engine.gate1.authority-seam.md](engine.gate1.authority-seam.md)             | closed                                   |
-| 2 — production identity, event kernel, scheduler     | [engine.gate2.kernel.md](engine.gate2.kernel.md)                             | closed — advance, 2026-07-17 (E2.1–E2.6) |
-| 3 — space, action, schedules, live-scene arbitration | [engine.gate3.space-action.md](engine.gate3.space-action.md)                 | closed — advance, 2026-07-18 (E3.1–E3.5) |
-| 4 — perception, knowledge, narration, RAG            | [engine.gate4.perception-narration.md](engine.gate4.perception-narration.md) | closed — 2026-07-19 (E4.1–E4.5)          |
-| 5 — bodies, materials, households, relationships     | [engine.gate5.bodies-materials.md](engine.gate5.bodies-materials.md)         | closed — 2026-07-20 (E5.1–E5.6)          |
-| 6 — dual LOD and autonomous background life          | [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md)                         | closed — 2026-07-21 (E6.1–E6.5)          |
-| 7 — optional institutions and macro simulation       | [engine.gate7.institutions.md](engine.gate7.institutions.md)                 | post-foundation, not committed           |
+- **Gate 0 — establish trustworthy evidence** · closed (advance) 2026-07-16 ·
+  [engine.gate0.evidence.md](engine.gate0.evidence.md)
+- **Gate 1 — minimum authority seam** · closed (advance) 2026-07-16 ·
+  [engine.gate1.authority-seam.md](engine.gate1.authority-seam.md)
+- **Gate 2 — production identity, event kernel, scheduler** · closed (advance)
+  2026-07-17, E2.1–E2.6 · [engine.gate2.kernel.md](engine.gate2.kernel.md)
+- **Gate 3 — space, action, schedules, live-scene arbitration** · closed (advance)
+  2026-07-18, E3.1–E3.5 · [engine.gate3.space-action.md](engine.gate3.space-action.md)
+- **Gate 4 — perception, knowledge, narration, RAG** · closed 2026-07-19, E4.1–E4.5 ·
+  [engine.gate4.perception-narration.md](engine.gate4.perception-narration.md)
+- **Gate 5 — bodies, materials, households, relationships** · closed 2026-07-20,
+  E5.1–E5.6 · [engine.gate5.bodies-materials.md](engine.gate5.bodies-materials.md)
+- **Gate 6 — dual LOD and autonomous background life** · closed 2026-07-21, E6.1–E6.5 ·
+  [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md)
+- **Gate 7 — optional institutions and macro simulation** · never opened; optional,
+  owner-gated · [engine.gate7.institutions.md](engine.gate7.institutions.md)
 
-## One-developer dependency order
+## Dependency order, as executed
 
-For one developer, the critical path is:
+The critical path the build actually followed:
 
-1. current invariant repair and baseline;
-2. discriminating spikes;
-3. minimum authority seam;
-4. production identity and command/event foundation;
-5. scheduler and projections;
-6. space, actions, schedules, resources, journeys, access, and live-scene arbitration;
-7. observation, knowledge, NarrativeCut, and RAG eligibility;
-8. bodies, inventories, households, relationships, and material traces;
-9. dual LOD and autonomous background behavior;
-10. optional macro packages.
+1. current invariant repair and baseline (Gate 0);
+2. discriminating spikes (Gate 0);
+3. minimum authority seam (Gate 1);
+4. production identity and command/event foundation (Gate 2);
+5. scheduler and projections (Gate 2);
+6. space, actions, schedules, resources, journeys, access, and live-scene arbitration
+   (Gate 3);
+7. observation, knowledge, NarrativeCut, and RAG eligibility (Gate 4);
+8. bodies, inventories, households, relationships, and material traces (Gate 5);
+9. dual LOD and autonomous background behavior (Gate 6);
+10. migration and rollout under the live product
+    ([finished/engine.rollout.plan.md](finished/engine.rollout.plan.md), R0–R6).
 
-Meter-economy work may land in the current chat lane after Gate 0 because its owner ruling
-is independent. It should later migrate through adapters after the relevant successor
-interfaces exist.
+Optional macro packages (Gate 7) sit after all of it and were never scheduled.
 
-## Cost envelope
+The queued chat-lane meter work was never blocked on this path, and the dependency ran
+the other way: Gate 5's ruling 15 adopted `chat-meter-economy.spec.md`'s OQ1–OQ3
+semantics as the normative source for the engine's own meters, so the engine already
+implements the economy those plans describe — in the successor lane only. The chat-lane
+plans as written name no engine contract; see [Open questions](#open-questions).
 
-These are order-of-magnitude engineering estimates, not commitments. They assume one
-developer familiar with the repository and exclude content, UI tooling, balancing,
-production polish, and broad migration.
+## What it cost
 
-| Work                                                                 | Rough effort | Confidence |
-| -------------------------------------------------------------------- | -----------: | ---------- |
-| Group-retake snapshot repair                                         | 0.5–1.5 days | Medium     |
-| Baseline transcript and performance harness                          | 1–2 days     | Medium     |
-| Each discriminating spike                                            | 0.5–1 day    | Medium     |
-| Queued current-lane meter economy                                    | 3–7 days     | Low–medium |
-| Minimum authority seam                                               | 5–10 days    | Low        |
-| Identity, kernel, scheduler, projections                             | 15–30 days   | Low        |
-| Space, action, schedule, resource, journey, access, live-scene layer | 15–35 days   | Low        |
-| Perspective ledger, NarrativeCut, and RAG eligibility                | 10–25 days   | Low        |
-| Bodies, material life, relationships, and chat migration             | 15–35 days   | Very low   |
-| Dual LOD and background autonomy                                     | 10–25 days   | Very low   |
-
-The north-star foundation remains plausibly **60–120+ focused developer-days**. Re-estimate
-after every gate. A second developer helps only after contracts stabilize; before then,
-the branch sequencer, event envelope, and projection boundaries are coordination-heavy.
+This plan estimated **60–120+ focused developer-days** for the foundation, at low
+confidence across every line. The committed gates instead closed over six calendar days
+(2026-07-16 → 2026-07-21), with the rollout taking two more (2026-07-21/22). The
+per-slice estimates that produced that range are superseded and have been removed; what
+each gate actually delivered is recorded in its gate doc.
 
 ## Quality evaluation
 
-Architecture is not the outcome. Use 12–20 paired scenarios, multiple samples per
-condition, and blinded review of baseline versus treatment.
+Architecture was not the outcome. Each gate closed on a deterministic exit corpus that
+proves its invariants; the human-scored half of the comparison — 12–20 paired scenarios,
+multiple samples per condition, blinded review of baseline versus treatment — has not
+been run and is owner-gated spend.
 
-### Human-scored dimensions
+### Human-scored dimensions — awaiting the live paired eval
 
 - voice fidelity;
 - chemistry and emotional specificity;
@@ -279,7 +273,7 @@ condition, and blinded review of baseline versus treatment.
 - invalid command and stale-version rates;
 - context size by provenance class.
 
-### Initial advancement thresholds
+### Advancement thresholds
 
 - zero deterministic perspective leaks in the fixed corpus;
 - at least 80 percent relevant enactment of must-enact beats;
@@ -289,7 +283,7 @@ condition, and blinded review of baseline versus treatment.
 - routine world progress requires no additional LLM call;
 - replay and skip-partition property tests pass for every supported domain.
 
-Thresholds should be revisited with data, but never after seeing a result solely to make
+Thresholds may be revisited with data, but never after seeing a result solely to make
 that result pass.
 
 ## Latency and model-call budget
@@ -315,48 +309,24 @@ failure behavior, and budget owner.
 
 ## Migration and rollout
 
-**Scheduled 2026-07-21** — this section's strategy is now sliced, sequenced
-delivery work in [engine.rollout.plan.md](engine.rollout.plan.md) (R0–R6;
-queued top of [roadmap.md](roadmap.md) §Next). Gate 7 is sequenced after that
-plan completes and is tested, per the same owner ruling. The strategy below
-remains the normative ground rules the rollout plan carries.
+**Complete.** The strategy this section once described became
+[finished/engine.rollout.plan.md](finished/engine.rollout.plan.md) (R0–R6, shipped
+2026-07-21/22). Its ground rules still govern the running system:
 
-### Feature flags
-
-Assign authority per world or branch, never per row by accident:
-
-- legacy_chat;
-- successor_shadow;
-- successor_authoritative;
-- successor_narrative_view;
-- successor_rag_eligibility.
-
-### Rollout sequence
-
-1. run successor calculations in shadow mode with no effects;
-2. compare events and projections to fixed fixtures;
-3. enable one internal test world;
-4. enable presentation-only use of NarrativeCut;
-5. migrate one domain at a time;
-6. stop dual writes after its invariant and rollback window close;
-7. remove obsolete adapters rather than preserving indefinite compatibility.
-
-### Retakes and history
-
-- rerender means new prose from the same committed NarrativeCut;
-- retake means fork from the pre-turn sequence and resolve a new branch;
-- reach-back edit always forks;
-- no in-place rewind may leave later events, beliefs, embeddings, or member state behind.
-
-### Rollback
-
-Rollback selects the previous authority flag or branch. Events remain immutable for
-audit. Rebuildable projections and embeddings may be dropped and regenerated. A schema
-migration must provide an event upcaster or explicitly declare the old branch frozen.
+- **Authority is assigned per world or branch by flag, never per row.** A chat carries
+  `legacy_chat`, `successor_shadow`, `successor_narrative_view`, or
+  `successor_authoritative`; recall routing rides the orthogonal
+  `successor_rag_eligibility` flag.
+- **Rollback selects the previous authority flag or branch.** Events stay immutable for
+  audit; rebuildable projections and embeddings may be dropped and regenerated. A schema
+  migration must supply an event upcaster or explicitly declare the old branch frozen.
+- **Retake and rerender semantics are the spec's** (engine.spec §29): rerender is new
+  prose from the same committed cut, a retake forks, a reach-back edit always forks, and
+  no in-place rewind may leave later events, beliefs, embeddings, or member state behind.
 
 ## TypeScript decision and exit conditions
 
-Keep the deterministic kernel in a package with:
+The deterministic kernel lives in a package with:
 
 - no database, network, clock, model, or global-random access;
 - integer story time and fixed-point values where rounding affects outcomes;
@@ -365,227 +335,90 @@ Keep the deterministic kernel in a package with:
 - property tests, replay hashes, and benchmarks;
 - serializable contracts that do not depend on TypeScript class identity.
 
-Consider Rust or WASM only when profiling repeatedly shows a stable pure workload—such
-as route search, large-population analytical integration, or spatial indexing—consuming
-a material share of the latency budget. A rewrite is not justified by expected future
-complexity alone.
+Rust or WASM comes into consideration only when profiling repeatedly shows a stable pure
+workload — route search, large-population analytical integration, spatial indexing —
+consuming a material share of the latency budget. A rewrite is not justified by expected
+future complexity alone.
 
 ## RAG decision
 
-Keep pgvector or another vector index as the final ranking stage for prose-scale recall.
-Redesign the pipeline around it:
+pgvector stays the final ranking stage for prose-scale recall, never the arbiter of
+truth: eligibility is resolved relationally — branch, viewpoint, time, validity,
+knowledge — before anything is ranked semantically, and every result carries provenance
+and an epistemic label. Transient projections are not embedded as though they were canon,
+and top-k similarity never infers witness, truth, supersedence, or current validity. Full
+pipeline contract: engine.spec §24.
 
-1. resolve branch, viewpoint, time, validity, and knowledge eligibility in relational
-   data;
-2. select eligible assertions, observations, episodes, and authored lore;
-3. rank semantically within that set;
-4. diversify and budget results;
-5. pass provenance and epistemic labels to the context compiler.
+## Risks the architecture was built against
 
-Do not embed transient projections as though they were canon, and do not use top-k
-similarity to infer witness, truth, supersedence, or current validity.
+- **Event-sourcing scope expands without player value** — gate on one cheap seam and
+  paired quality evaluation.
+- **Narration becomes mechanical** — separate must-enact facts from creative licenses;
+  score voice and chemistry.
+- **World rules create excessive refusals** — return legal alternatives and public
+  reasons, not a bare denial.
+- **The scheduler creates hidden teleports** — schedule only evaluation triggers;
+  movement requires action and journey events.
+- **Privacy rules leak causes** — separate private cause from public failure
+  presentation.
+- **LLM choice destabilizes replay** — give it legal candidates, record the selected
+  result and model metadata, keep the fallback.
+- **Projection and event schemas drift** — version payloads, upcast, rebuild in CI, hash
+  projections.
+- **Too many agents increase latency** — deterministic policy by default; sparse
+  deliberation only on measured ambiguity.
+- **Text inference becomes permanent authority** — shadow, type new data, migrate,
+  instrument, delete the adapter.
+- **A TypeScript hot path becomes slow** — benchmark first; move only pure measured
+  kernels.
+- **Retakes corrupt state** — presentation rerender is state-free; an alternative outcome
+  is a branch.
 
-## Major risks and mitigations
+## Product rulings
 
-| Risk                                              | Mitigation                                                                         |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Event-sourcing scope expands without player value | Gate on one cheap seam and paired quality evaluation                               |
-| Narration becomes mechanical                      | Separate must-enact facts from creative licenses; score voice and chemistry        |
-| World rules create excessive refusals             | Return legal alternatives and public reasons, not a bare denial                    |
-| Scheduler creates hidden teleports                | Schedule only evaluation triggers; movement requires action and journey events     |
-| Privacy rules leak causes                         | Separate private cause from public failure presentation                            |
-| LLM choice destabilizes replay                    | Give it legal candidates, record selected result and model metadata, keep fallback |
-| Projection and event schemas drift                | Version payloads, upcast, rebuild in CI, hash projections                          |
-| Too many agents increase latency                  | Deterministic policy by default; sparse deliberation only on measured ambiguity    |
-| Text inference becomes permanent authority        | Shadow, type new data, migrate, instrument, delete adapter                         |
-| TypeScript hot path becomes slow                  | Benchmark first; move only pure measured kernels                                   |
-| Retakes corrupt state                             | Presentation rerender is state-free; alternative outcome is a branch               |
+Every product ruling is recorded normatively in **engine.spec §39**
+([engine.spec.operations.md](engine.spec.operations.md)), which is their canonical owner
+and the only place their wording lives. Rulings 1–11 and 13 were resolved 2026-07-17 (the
+Gate 3 unblock pass), 14 on 2026-07-18 (Gate 4), 15–16 on 2026-07-19 (Gate 5), and 17–33
+across the rollout and the work that followed it, 2026-07-22 → 2026-07-27.
 
-## Product rulings — RESOLVED 2026-07-17
-
-All 10 blocking rulings (plus spec rulings 11 and 13, which Gate 3's sleep and shower
-scenarios also need) were **resolved by the owner on 2026-07-17**. The normative record
-with full wording lives in [engine.spec.md](engine.spec.md) §39. In brief:
-
-1. **Ordinary dialogue** → a fixed per-exchange story-time span (current ~1 min),
-   world-type versioned; explicit actions carry their own durations.
-2. **Shifts** → per-commitment firmness (`Commitment.flexibility`), not a global switch.
-3. **Transgression** → modeled explicit attempts that never auto-succeed or override
-   agency; a world type MAY disallow and reject at admission. Spatial only — intimate
-   consent stays an independent precondition.
-4. **Storyteller override** → admin principals in an explicit mode only; always audited.
-5. **Obligation disclosure** → relationship/personality-driven NPC-policy output.
-6. **Missed-obligation consequences** → deterministic rules for the first build (no model
-   call); authored tables / director are later layers.
-7. **Player concurrency** → one physical locus; at most one co-present Engagement, any
-   others remote.
-8. **Failed narration** → hidden and retryable; the committed advance is withheld from the
-   player until a render succeeds; hard state is never reverted.
-9. **Armed speech acts** → all §23.3 acts use ArmedEffect; recorded only when enacted.
-10. **First performance target** → 2–8 exact-LOD actors, hours-to-days off-screen horizon.
-11. **Waking sleepers** → remote messages queue unread by default; no wake.
-13. **Private-denial cover story** → allowed in-character; the true cause is still redacted.
-14. **Soft-canon promotion** → **resolved 2026-07-18 (the Gate 4 unblock pass):** a
-    **safe, documented auto-promotion** — repeatedly-reused soft canon auto-promotes
-    through the §23.4 checks with an audit event and a demotion path; every threshold is
-    a versioned world-type value documented for post-build tuning. Full wording in
-    [engine.spec.md](engine.spec.md) §39.
-15. **Gate 5 v1 body meters** → **resolved 2026-07-19 (the Gate 5 opening pass): full
-    chat parity** — the G5.1 substrate models the entire chat meter economy in v1
-    (bidirectional energy read over reserve + derived circadian pressure, arousal
-    regraded to body facts, intimacy pulse with climax reset + afterglow, rhythm-keyed
-    hygiene), with `chat-meter-economy.spec.md` OQ1–OQ3 as the normative semantics
-    source and meter membership staying registry data. Full wording in
-    [engine.spec.md](engine.spec.md) §39.
-16. **Interpersonal consent** → **resolved 2026-07-19: ledger-gated + policy
-    escalation** — boundaries/permissions as typed §21.3 ledger entries checked
-    fail-closed as action preconditions; uncovered escalations route to the §19.3
-    deliberator (fallback = decline) and land back as ledger entries. Full wording in
-    [engine.spec.md](engine.spec.md) §39.
-
-Still open: spec ruling 12 only (route-estimate uncertainty exposure — travel polish,
-no gate blocked on it).
-
-### Gate 3 build order
-
-Like Gate 2, Gate 3 splits into dependency-ordered targets. The IDs describe order, not
-GitHub PR numbers; each stays reviewable on its own and ships to the long-lived `engine`
-branch.
-
-1. **E3.1 — authoritative space.** Status: **shipped — 2026-07-17.** `sim_locations`,
-   `sim_zones`, `sim_links`, `sim_physical_loci`, and `sim_journeys` (migration 0058);
-   the topology and route contracts (§13); `MoveActor` resolving to journey_planned +
-   actor_departed + a durable arrival trigger atomically, with `arrive_journey`
-   re-validated at fire time through the E2.4 scheduler drain; one active locus per actor
-   per branch enforced as the primary key + shape checks; the pure `planRoute` kernel
-   (duration-cost, deterministic tie-breaks, relax-one-constraint failure diagnosis);
-   fork/replay parity for space state (mid-journey forks re-arm the arrival, post-arrival
-   forks record it completed; rebuild-from-zero matches the live hash). Delivery notes:
-   link-level access only (state open + public policy) — the six-layer zone/property
-   checks stay in E3.5; links traverse bidirectionally (one-way semantics join the
-   contract when a scenario demands them); journeys are one in-transit span on their
-   first link (per-link progression events come with E3.5 hazards); route uncertainty is
-   zero pending open ruling 12; movement emits no outbox rows until a consumer exists.
-   The `journey_delayed` / `journey_interrupted` / `journey_abandoned` event vocabulary
-   and appliers exist but no command emits them yet — E3.5's hazard/access work does.
-2. **E3.2 — typed actions, activities, and claims.** Status: **shipped — 2026-07-17.**
-   Authored `SimulationActionDefinition`s (`sim_action_definitions`) and `ActivityInstance`
-   rows (`sim_activities`, migration 0059) with the full §16.3 phase machine; body/attention
-   claims projected from activity state (§16.3 — no orphanable claim rows);
-   `start_activity` emitting the started event + durable completion trigger atomically;
-   fire-time re-validated `complete_activity` on the scheduler drain; `cancel_activity`
-   releasing claims and retiring the pending completion trigger transactionally; claim law
-   wired into movement (`MoveActor` rejects `activity_conflict` on a held body claim;
-   starting in transit is refused); co-located witness capture per the noticeability
-   profile; fork/replay parity incl. a replay retirement ledger recognizing
-   cancelled-activity triggers. Also the shared `runSimulationCommand` §11.1 transaction
-   shell (earlier stores keep their inlined copies until a dedicated cleanup). Delivery
-   notes: resource costs join with Gate 5 materials; privacy/consent preconditions join
-   with E3.5; the §16.4 graded compatibility matrix (conversation-while-cooking, walking
-   chats) joins with E3.4 engagements — in this slice every body-claiming activity is
-   stationary and blocks departure outright; `activity_interrupted`/`activity_resumed`
-   are vocabulary + appliers whose emitting path is E3.4's interruption; pause is not yet
-   a command, and a resumed activity's completion re-arm is recorded as an E3.4 design
-   note (the retired trigger's uniqueness key must version by attempt).
-3. **E3.3 — commitments and temporal pressure.** Status: **shipped — 2026-07-17.**
-   `Commitment` with the ruled `flexibility` dial and the §15.4 status machine
-   (`sim_commitments`) plus `TemporalPressure` (`sim_temporal_pressures`), migration 0060;
-   the §15.2 derivation (noticeAt/decideBy/actBy from E3.1 route + preparation + buffer)
-   captured on the creating event; a notice trigger raising pressure with
-   flexibility-derived severity, gated on knowledge availability; a deadline trigger
-   deterministically evaluating the actor's actual locus into kept / late (inbound) /
-   missed with the basis captured (ruling 6) — never moving anyone (§3.1 inv. 5);
-   fork/replay parity. Delivery notes: the knowledge source has one live member
-   (`authored`) — Gate 4's observation/assertion/belief members tighten the gate without a
-   schema change; every E3.3 commitment names a destination zone (destinationless promises
-   join with the Gate 5 social ledger); route assumptions are captured at creation —
-   recomputation on material change, `late → kept` repair on subsequent arrival,
-   acknowledgment, and the warn/negotiate/depart decision behavior are E3.4 arbiter work;
-   `accepted`/`declined`/`in_progress` statuses are machine-legal but no command drives
-   them yet (E3.4).
-4. **E3.4 — engagements and the live-scene arbiter.** Status: **shipped — 2026-07-18**
-   (slice 1 on 2026-07-17). Slice 1 (the engagement substrate): `Engagement`
-   (`sim_engagements`, migration 0061) with the §18.2 state machine; attention reserved
-   through the E3.2 claim arithmetic (full for co-present, partial for remote); one body,
-   one physical scene enforced at open (§11.3 — co-located at-loci, no second co-present);
-   presence-of-mind rule (a held full-attention claim blocks joining any channel — sleep
-   keeps the ruled no-wake default because delivery is not an engagement); conversations
-   and body-claiming activities mutually exclude; departures interrupt the mover's open
-   co-present scene atomically; fork/replay parity. Slice 2 (the deterministic turn seam):
-   `prepareEngagementTurn` runs the §18.3 spine — drain due world work through the fixed
-   turn span (ruling 1), look ahead at participant pressure through the horizon, decide
-   departures by deterministic policy (`decideDepartures` — earliest actBy per actor,
-   stay requests defer to the last moment per §15.3, player-controlled actors never
-   policy-moved), commit them as `npc_policy` move commands that interrupt the scene
-   through slice-1 machinery, and compile one immutable perspective-safe
-   `Gate3NarrativeCut` (§22 trimmed to the deterministic subset: witnessed beats only,
-   the viewpoint's OWN pressures only, forbidden teleport claims, armed effects filtered
-   to participants). Cuts are derived, not stored — a failed narrator render re-reads the
-   same cut (ruling 8; the corpus proves recompile-identity mid-journey). ArmedEffect
-   confirmation (ruling 9): `confirm_narrator_result` (system principal only) emits one
-   `speech_act_delivered` per validated enacted effect from the closed §23.3 vocabulary;
-   effects naming non-participants are dropped, replays return the cached result, id
-   reuse rejects. Slice 2 boundaries: engagements still open straight to `active`
-   (`opening` handshake and `winding_down` choreography deferred); confirm is called only
-   when ≥1 effect landed (min-1 contract — a zero-effect render records nothing);
-   persisted cut rows and the LLM deliberator join with Gate 4's narrator integration;
-   pressure acknowledgment and the resumed-activity re-arm design note remain open.
-5. **E3.5 — access, privacy, consent, and the scenario corpus.** Status: **shipped —
-   2026-07-18.** `AccessGrant` rows (`sim_access_grants`, migration 0062, with
-   `permits_trespass` on `sim_worlds`) checked fail-closed — a malformed grant row admits
-   no one (§13.1); `attempt_entry` resolves the one private last hop routes refuse
-   (§14.1: doorstep → interior by `public` | `granted` | explicit `forced` basis), with
-   witness capture at both threshold zones and the same atomic scene-interrupt as any
-   departure; forced entry requires the world's `permitsTrespass` and is refused as a
-   stated rule, never disguised physics (§14.3); denial reasons name no private cause
-   (§14.4 — redaction by omission); `storyteller_relocate_actor` is the one privileged
-   bypass (ruling 4) — storyteller principals only, audited as a distinct
-   `storyteller_relocation` event, abandoning any in-flight journey (`journey_abandoned`
-   first, arrival trigger retired). Closed the gate by running the §"Gate 3 scenario
-   corpus" (`gate3-corpus.int.test.ts`, 5 scenarios, zero model calls — gate evidence
-   2026-07-18: 2 709 pure + 351 integration tests green). The corpus caught and fixed two
-   real defects: `resolveRaisePressure` stamped `actBy = latestArrival` instead of the
-   §15.2 `latestDeparture` (now recomputed from the fire-time route, clamped forward for
-   tight windows), and the arbiter's derived move-command id stacked derived ids past the
-   256-char compact-id cap (now hash-compacted). Delivery boundaries: the interim witness
-   rule (participant / captured observer / shared location) holds until Gate 4's
-   perception engine; no command emits `journey_delayed` yet (hazards deferred); trespass
-   has no duration/noise depth yet (ruling 3's time-consuming, noisy texture joins later
-   gates); interpersonal-consent preconditions beyond privacy zones join Gate 5's social
-   layer. **Verdict: ADVANCE (owner, 2026-07-18) — Gate 3 is closed; the Gate 4 build
-   order lives in §"Gate 4" above.**
-
-E3.2 and E3.3 both consume E3.1; E3.4 consumes E3.1–E3.3; E3.5 layers access and privacy
-over all of them and runs the exit corpus.
+**Ruling 12** — route-estimate uncertainty exposure — is the only one still open.
 
 ## Graduation scenario
 
-This is deliberately late. It should exercise nearly every foundation only after each
-smaller seam has passed.
+The plan reserved one end-to-end scenario as the foundation's final proof: a named NPC
+wakes with body state and household resources, prepares for a 4pm shift, remembers a
+promise to the player, receives a message while showering, decides when and how to
+respond, protects private knowledge, dresses from owned items, leaves with enough travel
+time, encounters a delay, arrives late or on time, is witnessed by some actors but not
+others, accrues workplace and relationship consequences, and later recalls the day from
+their own perspective.
 
-A named NPC wakes with body state and household resources, prepares for a 4pm shift,
-remembers a promise to the player, receives a message while showering, decides when and
-how to respond, protects private knowledge, dresses from owned items, leaves with enough
-travel time, encounters a delay, arrives late or on time, is witnessed by some actors
-but not others, accrues workplace and relationship consequences, and later recalls the
-day from their own perspective. A rerender changes only prose; a retake creates a clean
-branch; a long skip produces the same material result as equivalent smaller skips.
+**It was never run as a single scripted arc.** Each gate closed instead on its own
+deterministic exit corpus — Gates 3 through 6 each shipped one, `gate6-corpus.int.test.ts`
+being the last — and the rollout then put the whole loop under live play, which together
+cover the same ground piecewise. Whether the arc is worth building as one regression
+fixture is an open question below.
 
-The graduation verdict must include quality, latency, model cost, replay, and invariant
-results. Merely completing the scenario is not success.
+## Definition of done
 
-## Definition of done for the foundation
+The foundation's conformance checklist is **engine.spec §40**, which owns the list. Gate
+6's close satisfied its deterministic items. Two clauses stand apart: the group-retake
+clause describes the legacy chat lane (repaired in Gate 0 G0.1 and unaffected by the
+successor lane), and "scenario quality and latency meet the gates in the companion plan"
+awaits the owner-gated live paired eval.
 
-- one authoritative command/event stream per branch;
-- deterministic replay and projection rebuild;
-- event-driven time with no global minute loop;
-- causal movement, travel, access, activity, and commitment resolution;
-- live conversations reconciled with world pressure before narration;
-- one physical locus and actor-control enforcement;
-- truth, observation, belief, memory, and presentation separation;
-- perspective filtering before semantic retrieval;
-- narrator hard-state authority removed;
-- rerender and retake semantics that cannot corrupt history;
-- bounded model-call budget with deterministic degradation;
-- measured quality no worse than the current lane on voice and chemistry;
-- documented paths to add, disable, migrate, and test a simulation package.
+## Open questions
+
+- **Ruling 12 — route-estimate uncertainty exposure.** How much of a route estimate's
+  derivation uncertainty a player or NPC sees. The §13.3 route result carries it
+  regardless; only the exposure is undecided. Detail: engine.spec §39.
+- **Whether the graduation scenario becomes a standing regression fixture.** The per-gate
+  corpora cover its ground piecewise; running it as one arc would need the live paired
+  eval to supply the quality half of a verdict.
+- **How the queued chat-lane meter plans relate to Gate 5.** The roadmap and the rollout
+  close-out both describe [chat-meter-economy.plan.md](chat-meter-economy.plan.md) and
+  [chat-body-needs.plan.md](chat-body-needs.plan.md) as porting through the Gate 5
+  contracts, but neither plan names an engine contract, and Gate 5 took its semantics
+  from the chat spec rather than the reverse. Whether those plans build in the chat lane,
+  adapt onto §25, or are superseded by the successor lane is undecided.

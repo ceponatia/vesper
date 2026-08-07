@@ -2,7 +2,10 @@
 
 Status: technical companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(promoted 2026-07-28 — in the committed foot-first scope, slices 0–4)
+(promoted 2026-07-28). The core is **live in character chat** — it resolves and
+commits every affectionate touch a player writes, from
+`src/contracts/affordances/contact/`. Slice 4's effect commits are parked; the
+[effects companion](romantic-contact-affordances.spec.effects.md) owns them.
 
 ## Boundary: attempt, resolution, commitment
 

@@ -1,17 +1,20 @@
 # Romantic contact affordances — NPC actor control through the live lane
 
 Status: technical companion to
-[romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(continuation item 4 — **revised 2026-08-02 after pre-implementation review;
-not ready for authority until the foundation and shadow gates below pass**).
-The deterministic NPC contact-ending producer shipped 2026-07-31 and remains
-the frozen floor described here.
-**Delivery steps 1–3 are built (2026-08-02):** the pure foundation with its
+[romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md),
+continuation item 4. **All six delivery steps are built; none of the new
+behavior is enabled.** Steps 1–3 landed 2026-08-02 (the pure foundation and its
 adversarial fixtures, the durable decision envelope with the guarded CAS
-transaction (migration 0094), and the shadow leg behind
-`CHAT_NPC_SCENE_DECISION_SHADOW` (default off; with both new flags off the
-lane is byte-identical to before). The shadow flag has **not** been enabled —
-the measurement window, its review, and the cost ruling remain.
+transaction — migration 0094 — and the shadow leg); steps 4–6, the three
+authority increments, landed 2026-08-04 (§As built). The deterministic NPC
+contact-ending producer shipped 2026-07-31 and remains the frozen floor
+described here — it is still the only NPC-side scene authority a live turn has.
+
+**Nothing below has been measured.** `CHAT_NPC_SCENE_DECISION_SHADOW` has never
+been switched on in any environment, so the fire rates, latencies, timeout rate,
+and costs the gate demands do not exist yet. With both new flags off the lane is
+byte-identical to the 2026-08-02 build. What remains is the measurement window,
+its review, the owner's cost ruling, and the staged authority rollout.
 
 **Delivery steps 4–6 are built (2026-08-04)**, behind
 `CHAT_NPC_SCENE_DECISIONS` (default off) and staged by
@@ -532,27 +535,31 @@ scene, contact, material, and ledger diagnostics retain their existing codes.
 
 ## Delivery order and gates
 
-No pipeline authority work starts with the old “increment 1.” The order is:
+No pipeline authority work starts with the old “increment 1.” The build order
+was, and every step of it is now complete:
 
-1. **Pure foundation and adversarial fixtures:** shared vocabularies; strict
-   dynamic-ref schema; digest/contact handles; unique grounding and full
-   congruence verifiers; action offsets and chronological planner.
-2. **Durability foundation:** decision-envelope migration and parser; guarded
-   CAS transaction; exact conflict/idempotency behavior; unconditional retake
-   prune; dev trace reader.
-3. **Shadow:** one call per reply across every included reply kind, post-settle
-   presence/wardrobe cut, no authority. Review measured quality, latency, and
-   cost before proceeding.
-4. **Increment 1—movement:** monotonic approach/depart helpers, composite
-   departure ordering, opening/presence integration.
-5. **Increment 2—starts:** arbitrary actor adapter, two-sided material, and
-   same-reply wardrobe-change veto.
-6. **Increment 3—updates:** stable contact handles and gesture-only lifecycle
-   operation.
+1. **Pure foundation and adversarial fixtures** (built 2026-08-02): shared
+   vocabularies; strict dynamic-ref schema; digest/contact handles; unique
+   grounding and full congruence verifiers; action offsets and chronological
+   planner.
+2. **Durability foundation** (built 2026-08-02): decision-envelope migration and
+   parser; guarded CAS transaction; exact conflict/idempotency behavior;
+   unconditional retake prune; dev trace reader.
+3. **Shadow** (built 2026-08-02, **never run**): one call per reply across every
+   included reply kind, post-settle presence/wardrobe cut, no authority. Review
+   measured quality, latency, and cost before proceeding.
+4. **Increment 1—movement** (built 2026-08-04, dark): monotonic approach/depart
+   helpers, composite departure ordering, opening/presence integration.
+5. **Increment 2—starts** (built 2026-08-04, dark): arbitrary actor adapter,
+   two-sided material, and same-reply wardrobe-change veto.
+6. **Increment 3—updates** (built 2026-08-04, dark): stable contact handles and
+   gesture-only lifecycle operation.
 
-Each authority increment must pin durable envelope/rows, exact retry, degraded
-tombstone, stale CAS rollback, retake prune across flag changes, shadow/flag-off
-scene identity, and the new behavior's resolver outcomes before the next starts.
+Because all three increments were built on one branch, the per-increment gate is
+enforced at **enablement**, not at merge. Each increment must pin durable
+envelope/rows, exact retry, degraded tombstone, stale CAS rollback, retake prune
+across flag changes, shadow/flag-off scene identity, and the new behavior's
+resolver outcomes before the next kind joins the authority scope.
 
 Minimum adversarial fixtures include: actor/object possessive confusion; two
 NPCs acting in one reply; evidence supporting the wrong kind/actor/target/band/
@@ -566,6 +573,54 @@ change; departure/arrival presence transitions; supporting-cast rejection;
 opening/initiative/continue/action/partial/empty replies; trigger miss, timeout,
 and all-rejected retries; assistant deletion and stale-scene CAS; retake with
 flags changed; and shadow producing zero authoritative scene difference.
+
+## As built (2026-08-04)
+
+Implementation decisions recorded at build time; everything above remains the
+requirement set.
+
+- **Shadow and authority share everything except the last step.**
+  `admitNpcSceneDecision` is the single implementation of the four admission
+  gates, presence precedence, and the chronology planner, so a shadow
+  measurement and an authority run can never disagree about what was admitted.
+  Shadow records the plan dry; authority hands the same plan to
+  `chat-npc-scene-execute.ts`. That is what keeps the measurement continuous
+  across a rollout step.
+- **The executor is pure.** No database, clock, or model call: the post-settle
+  cut goes in, a next scene plus an ordered commit list plus payload entries come
+  out. `finishChatNpcSceneDecision` is the only database toucher, and it hands
+  the whole result to one guarded transaction — presence-driven endings, the
+  frozen floor's endings, tier-2 movement, and tier-2 contact rows land
+  atomically or not at all.
+- **Presence integration runs before any proposal is read.** An `away`
+  participant cannot act or be acted on; their active contacts end `separated`
+  first, and their proximity and facing facts go with those contacts, so a
+  remembered `close` cannot satisfy a reach read after they return. A `present`
+  participant is seeded before resolution, which is what lets a roster member who
+  arrived during this very reply act in it.
+- **The walk is ordered and the scene evolves under it.** The reply's own written
+  order is the execution order, so "she steps closer, then takes your hand"
+  approaches first and the start resolves against the nearer scene. A composite
+  departure reads its wider band before the contact ends, folds the endings, then
+  applies the prevalidated proximity intent — the ending runs exactly once.
+- **Starts reuse the player's own adapter**, with actor control read from the
+  scene (`npc_controlled` required for an NPC-origin act) and material composed
+  from both wardrobes. Updates go through the gesture-only lifecycle operation
+  `modulateContactGesture` and nothing else, with the local handle re-checked
+  against the evolving scene because the digest predates settlement.
+- **An unlocatable floor ending drops every tier-2 candidate** as
+  `chronology_ambiguous` and applies alone. The floor is never the thing that
+  drops — its authority predates this leg.
+- **Payload entries record what resolved, not what was proposed:** `committed`
+  carries the real scene intent as replayable provenance (a movement leaves no
+  ledger row, only a scene fact), a helper no-op is `continued`, a refused
+  actor-control check is `refused` with its reason, and an unreadable scene is
+  `unresolved`. A committed start carries ledger references plus a compact
+  handle instead of the whole contact, since the provenance already exists.
+- **The authority-kinds scope must be set before the authority flag.** Unset or
+  blank means all three kinds, so turning `CHAT_NPC_SCENE_DECISIONS` on without
+  first narrowing the scope grants movement, starts, and updates in one step —
+  the opposite of the staged rollout this spec requires.
 
 ## Remaining product questions
 

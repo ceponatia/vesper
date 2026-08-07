@@ -1,20 +1,7 @@
 # Constraint-first narrator physical guidance
 
-Status: active — slices 0–2 shipped 2026-07-30 (proposed 2026-07-29 from the
-closed affordance-cue trial; the shared contract landed before the
-romantic-contact narrator slice, as intended). Slice 2's as-built detail is in
-[narrator-physical-guidance.spec.md](narrator-physical-guidance.spec.md) §"Slice
-2 as built". **Owner review, 2026-07-30: slices 0–1 accepted; slice 2 retained
-behind the disabled flag but not trial-ready until its corrective pass** —
-applied the same day: clause-local claim-to-locus binding with adversarial
-fixtures, constraint relevance gating (no standing prompt block on unrelated
-exchanges), provenance truth decoupled from the 60-minute cue-freshness
-window, the disclosure gate made fail-closed (allowlist, not a
-`resolver_only` denylist), and the inspector route's missing `/self/` twin
-added with a parity guard. Remaining: slice 3 (romantic-contact action
-results), slice 4 (change-gated positive detail), slice 5 (the two trials —
-after generalizing the committed summary format, see §Slice 5), slice 6
-(successor adapter).
+Status: active — slices 0–3 shipped 2026-07-30/31; slices 4–6 remain. The
+constraint path is **live in production**.
 
 Outcome: A player can misstate what a character's body is doing — calling
 braided hair loose, or reaching for someone who is too far away — and still get
@@ -27,6 +14,41 @@ Use committed physical truth primarily to prevent impossible or contradictory
 narration, correct false premises, and report resolved actions; offer a positive
 descriptive detail only when a relevant state change has independently earned
 the beat.
+
+## Where this stands
+
+**The feature is live, not an experiment.** `CHAT_PHYSICAL_CONSTRAINTS` has been
+`on` in production since 2026-08-02 — a deployed secret, set as a condition of
+the affectionate-contact enablement recorded in
+[romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md).
+Constraints, corrections and action outcomes reach live narrator prompts today.
+The *source* default is still off, so "experimental, default off" describes the
+code and not what players receive; it is not a safe summary of this feature's
+status. The accurate one is that the constraint path is live and slice 5's
+campaign has never measured it.
+
+Shipped:
+
+- **Slices 0–2 (2026-07-30)** — evidence preserved and the old cue path frozen;
+  the shared guidance contracts and compiler; the hair constraint/correction
+  proving path. The owner-review corrective pass and slice 2.1 applied the same
+  day: clause-local claim binding, constraint relevance gating, provenance truth
+  decoupled from the 60-minute cue-freshness window, the disclosure gate made an
+  allowlist, and the inspector's missing `/self/` twin.
+- **Slice 3 (2026-07-31)** — shipped through the chat lane's affectionate-contact
+  leg rather than a foot-domain resolver (see §Slice 3).
+
+Remaining:
+
+- **Slice 4** — change-gated positive detail. Gated on a design decision, not
+  code: `CHAT_PHYSICAL_TRANSITIONS` does not exist, and the transition tier now
+  carries a mandatory tenant that slice 4 cannot displace.
+- **Slice 5** — both trials unrun, and the committed trial-record format is still
+  shaped for the closed cue campaign.
+- **Slice 6** — successor adapter, not started.
+
+As-built technical detail is in
+[narrator-physical-guidance.spec.md](narrator-physical-guidance.spec.md).
 
 ## Decision
 
@@ -130,95 +152,36 @@ ids, bands, cause tags, locations, participants, and evidence.
 
 ### 2. A lane-neutral guidance compiler classifies results
 
-Add a pure compiler outside the domain-neutral affordance `core/`. It combines
+A pure compiler sits outside the domain-neutral affordance core. It combines
 eligible domain results with the current action result and turns them into
-guidance candidates:
+guidance candidates of the four kinds above — each one carrying who it is
+about, which body part it concerns, what the narrator may and may not claim,
+who is allowed to be told, the evidence behind it, and a deterministic identity
+so two runs over the same committed state produce the same guidance in the same
+order.
 
-```ts
-interface NarratorPhysicalGuidance {
-  version: 1;
-  constraints: readonly PhysicalNarrationConstraint[];
-  corrections: readonly PhysicalPremiseCorrection[];
-  actionOutcomes: readonly PhysicalActionOutcome[];
-  transitions: readonly PhysicalStateTransition[];
-  diagnostics: readonly Diagnostic[];
-}
-
-type GuidanceDisclosure =
-  | "resolver_only"
-  | "consistency_only"
-  | "positive_detail_allowed";
-
-interface PhysicalNarrationConstraint {
-  id: string;
-  subjectIds: readonly string[];
-  domainId: string;
-  locusIds: readonly string[];
-  prohibitedClaimCodes: readonly string[];
-  allowedClaimCodes: readonly string[];
-  disclosure: GuidanceDisclosure;
-  priority: "mandatory" | "high" | "normal";
-  evidence: readonly AffordanceEvidence[];
-  fingerprint: string;
-}
-
-interface PhysicalPremiseCorrection {
-  id: string;
-  source: "player_dialogue" | "ordinary_player_narration";
-  claimCode: string;
-  verdict: "contradicted" | "unsupported";
-  truthCodes: readonly string[];
-  disclosure: Exclude<GuidanceDisclosure, "resolver_only">;
-  evidence: readonly AffordanceEvidence[];
-}
-
-interface PhysicalActionOutcome {
-  actionId: string;
-  status:
-    | "committed"
-    // Generic vocabulary only — reserved for a future domain needing per-locus
-    // commitment. The CONTACT adapter never emits it (see slice 3).
-    | "partially_committed"
-    | "explicit_transition_required"
-    | "rejected"
-    | "unresolved";
-  resultCodes: readonly string[];
-  narratorMustResolve: boolean;
-  disclosure: GuidanceDisclosure;
-  evidence: readonly AffordanceEvidence[];
-}
-
-interface PhysicalStateTransition {
-  id: string;
-  subjectIds: readonly string[];
-  domainId: string;
-  locusIds: readonly string[];
-  beforeCodes: readonly string[];
-  afterCodes: readonly string[];
-  causeCodes: readonly string[];
-  relevance: "action" | "attention" | "none";
-  disclosure: "positive_detail_allowed";
-  repeatKey: string;
-  evidence: readonly AffordanceEvidence[];
-}
-```
-
-These are proposed contract shapes, not permission to turn domain semantics
-into unbounded strings. Final types should reuse existing ids, evidence,
-fixed-point helpers, and diagnostics.
+Domain semantics stay opaque ids the compiler carries rather than strings it
+reads. The contract shapes as built, and every difference between them and this
+proposal, are recorded in
+[narrator-physical-guidance.spec.md](narrator-physical-guidance.spec.md).
 
 ### 3. Input authority is resolved before premise checking
 
 The current message must first be classified using the chat lane's existing
 input modes:
 
-| Input form                                              | Treatment                                                                                                                                                               |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Character dialogue or ordinary conversational assertion | May be mistaken; eligible for high-confidence premise checking.                                                                                                         |
-| Player-controlled action intent                         | Send through the applicable action/contact resolver; the outcome, not the requested result, reaches narration.                                                          |
-| Storyteller-authoritative narration                     | Treat as a proposed authoritative event/state change, not a false premise. Until a pre-narrator commit seam exists for that fact, exclude it from automatic correction. |
-| Out-of-character direction                              | Instruction to the narrator; not physical evidence by itself.                                                                                                           |
-| Private thought                                         | Not perceived by characters and not a physical-state write.                                                                                                             |
+- **Character dialogue or an ordinary conversational assertion** — may be
+  mistaken, so it is eligible for high-confidence premise checking.
+- **A player-controlled action intent** — goes through the applicable
+  action/contact resolver, and the outcome rather than the requested result is
+  what reaches narration.
+- **Storyteller-authoritative narration** — a proposed authoritative event or
+  state change, never a false premise. Until a pre-narrator commit seam exists
+  for that fact, it is excluded from automatic correction outright.
+- **Out-of-character direction** — an instruction to the narrator, not physical
+  evidence by itself.
+- **A private thought** — not perceived by characters, and not a physical-state
+  write.
 
 This prevents a stale pre-turn read from "correcting" a legitimate,
 author-authorized state change.
@@ -298,7 +261,9 @@ Prompt budgets for the proving release:
 - all mandatory action outcomes, normally one;
 - at most two premise corrections;
 - at most three scoped consistency constraints;
-- at most one state transition when that experiment is enabled;
+- at most one *positive* state transition, when slice 4's experiment is enabled
+  — the tier itself carries a larger budget, because the permission owner's
+  mandatory stops share it and an ensemble reply can end several at once;
 - zero generic opportunities.
 
 Constraints are not output suggestions and do not need a narration cooldown.
@@ -329,6 +294,21 @@ Physical consistency for this exchange:
 The renderer owns wording, but does not smuggle in new semantics. A
 constraint-only turn contains no instruction to mention a body detail.
 
+**This block is now the only prompt door for physical instructions, and one of
+its tenants is mandatory.** The romantic-contact permission owner's revocation
+stop — "that touch has ended, do not continue or resume it" — is delivered
+through this block and nowhere else, and it has exactly one reply window: a
+stop that misses it is never shown at all. It is *not* gated on
+`CHAT_PHYSICAL_CONSTRAINTS`, because permission authority may not depend on an
+optional presentation experiment; with that flag off, a pending stop still
+compiles and renders through the same compiler and renderer, alone.
+
+Two consequences for slices 4–6. Anything that can drop, reorder, or budget the
+transition tier can silently destroy a mandatory instruction, so a change to
+selection is a change to permission behavior. And any future work that turns
+this block off wholesale — a rollback, a rename, an experiment retired — has to
+keep that arm alive.
+
 ## State and retakes
 
 - Compile guidance from the same committed cut used by the narrator.
@@ -346,7 +326,7 @@ constraint-only turn contains no instruction to mention a body detail.
 
 ## Delivery
 
-### Slice 0 — preserve the evidence and freeze the old path
+### Slice 0 — preserve the evidence and freeze the old path (shipped 2026-07-30)
 
 - Keep `CHAT_AFFORDANCE_CUES` default off and mark its renderer as a closed
   experiment.
@@ -360,45 +340,68 @@ constraint-only turn contains no instruction to mention a body detail.
 - Correctly label the previous mechanism explanation as a working hypothesis,
   not a cross-domain law.
 
-### Slice 1 — shared guidance contracts and compiler
+### Slice 1 — shared guidance contracts and compiler (shipped 2026-07-30)
 
 - Add the lane-neutral candidate, disclosure, evidence, diagnostic, selection,
   and fingerprint contracts outside the affordance domain core.
 - Map existing `AffordanceConstraint` and perception-safe observations into
   guidance candidates without changing domain calculations.
-- Add the action-outcome adapter seam the romantic-contact resolver will use.
+- Add the action-outcome adapter seam the contact resolver consumes in slice 3.
 - Prove deterministic ordering, budget enforcement, disclosure safety,
   missing-input silence, and no domain names in the shared compiler.
 
-### Slice 2 — hair constraint/correction proving path
+### Slice 2 — hair constraint/correction proving path (shipped 2026-07-30)
 
 - Implement high-confidence claim/reference detection for wetness degree,
   wetness provenance, arrangement/binding, motion, and coverage.
 - Compile only relevant hair constraints and premise corrections.
-- Add `CHAT_PHYSICAL_CONSTRAINTS`, default off, with byte-identical prompt and
-  zero new computation when disabled.
+- Add `CHAT_PHYSICAL_CONSTRAINTS` with a code default of off, a byte-identical
+  prompt, and zero new computation when disabled. (What the deployed value is
+  today is in the Status line above.)
 - Reuse the trial's cause-true and degree-accurate semantics without forcing a
   positive hair description.
 - Add read-only inspector output showing source resolution → candidate →
   disclosure → selection → rendered instruction.
 
-### Slice 3 — romantic-contact action results
+### Slice 3 — romantic-contact action results (shipped 2026-07-31)
 
-- Feed attempted contact through the shared contact resolver before the
-  narrator can describe its outcome.
-- Project the contact adapter's outcome as a mandatory action outcome. For
-  contact that is exactly four values: **committed**,
+What this slice promised, and which of it holds today:
+
+- Attempted contact goes through the shared contact resolver before the
+  narrator can describe its outcome, and the resolved result is projected as a
+  mandatory action outcome — the first tier of the block, ahead of any standing
+  truth about the body.
+- For contact that is exactly four values: **committed**,
   **explicit_transition_required**, **rejected**, **unresolved**. There is no
   romantic-contact partial result — `partially_committed` stays in the generic
   guidance vocabulary only, reserved for a future domain that needs per-locus
   commitment, and the contact adapter never emits it.
-- Keep pose, support, material-between, clothing access, actor control,
-  permission, and consent in their authoritative owners.
-- Narrator guidance may explain the observable result but cannot turn a
-  rejected or unresolved attempt into contact.
-- Use the foot domain as the proving case before intimate regions.
+- Pose, support, material-between, clothing access, actor control, permission,
+  and consent stayed in their authoritative owners.
+- Narrator guidance explains the observable result and cannot turn a rejected
+  or unresolved attempt into contact. An attempt whose reach the scene could
+  not establish gets a presentation-only premise fencing the prose from
+  inventing the landing, while the state stays unresolved.
 
-### Slice 4 — change-gated positive detail
+**The proving case changed, and the plan is the thing that was wrong.** This
+slice named the foot domain as the case to prove before intimate regions. What
+actually consumed the seam is the chat lane's affectionate-contact leg — a
+plainly affectionate hand touch to a shoulder, arm, back, hand, or head —
+delivered under
+[romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
+and accepted by its own internal trial. The foot domain exists but is not in
+the live domain set, so no foot affordance runs in production. Nothing about
+the seam depended on which body part proved it, and the substitution cost this
+plan nothing; the foot registration is that plan's sequencing decision, not a
+remaining item here.
+
+### Slice 4 — change-gated positive detail (not started)
+
+The transition tier now has a producer, but it is **not this one**: the
+permission owner's revocation handoff emits a binding "that touch has ended"
+stop through the same tier (2026-08-04). Nothing derives a positive
+change-gated detail, and `CHAT_PHYSICAL_TRANSITIONS` does not exist in the
+codebase.
 
 - Add `CHAT_PHYSICAL_TRANSITIONS`, default off and dependent on the constraint
   path.
@@ -409,7 +412,14 @@ constraint-only turn contains no instruction to mention a body detail.
 - Offer at most one detail and record a retake-safe cooldown fingerprint.
 - Do not add generic ambient opportunities in this slice.
 
-### Slice 5 — independent narrator trials and rollout rulings
+### Slice 5 — independent narrator trials and rollout rulings (not run)
+
+Neither campaign has been run. The constraint path is nonetheless live in
+production, because `CHAT_PHYSICAL_CONSTRAINTS` was turned on as a condition of
+the affectionate-contact enablement rather than on a result from this slice.
+That does not retire the campaign — it makes it a measurement of something
+players are already receiving, and it means the honest comparison arm is now
+"the flag off", not "before the feature existed".
 
 Run two separate campaigns:
 
@@ -420,15 +430,14 @@ Run two separate campaigns:
 Do not let a positive-detail result determine whether constraints ship. Do not
 combine both changes into one A/B.
 
-Before either campaign runs, generalize the committed `summary.json` format
-(review finding, 2026-07-30): its arms and audit dimensions are currently
-shaped for the closed cue trial, and physical-claim counts are optional
-because the claim-normalized instrument does not exist yet. It preserves
-headroom but cannot yet enforce a complete constraint/action-outcome trial
-record; treat that generalization as slice 5 setup work, not finished
-infrastructure.
+Before either campaign runs, generalize the committed trial-record format. Its
+arms are still the closed cue trial's two ("cues" and "control"), and
+physical-claim counts remain optional because the claim-normalized instrument
+does not exist yet. The format preserves headroom but cannot yet enforce a
+complete constraint/action-outcome trial record; that generalization is slice 5
+setup work, not finished infrastructure.
 
-### Slice 6 — successor adapter
+### Slice 6 — successor adapter (not started)
 
 - Normalize successor cut, action, observation, and contact results into the
   same guidance contracts.
@@ -521,9 +530,11 @@ all affordances.
 - Missing or invalid inputs produce conservative silence or an unsupported
   claim fence, never a guessed fact.
 - Retakes reproduce the same guidance and action result from the same cut.
-- Hair and foot-contact fixtures use the same compiler without domain logic
-  entering the shared layer.
-- Each flag has an independent measured ship/park decision.
+- Hair and contact fixtures use the same compiler without domain logic entering
+  the shared layer.
+- Each flag has an independent measured ship/park decision. **Not met for
+  `CHAT_PHYSICAL_CONSTRAINTS`**, which is live in production ahead of slice 5's
+  constraint campaign.
 
 ## Dependencies and relationship to other plans
 
@@ -531,16 +542,19 @@ all affordances.
   supplies physical observations, constraints, evidence, perception, and the
   closed trial harness. This plan replaces only its failed narrator projection.
 - [Romantic contact affordances](romantic-contact-affordances.plan.md) supplies
-  the attempted-versus-committed contact lifecycle and foot-first proving
-  domain. Its narrator slice should consume this plan's action-outcome seam.
+  the attempted-versus-committed contact lifecycle, and its affectionate-contact
+  leg is the live consumer of this plan's action-outcome seam. It also owns the
+  decision that turned `CHAT_PHYSICAL_CONSTRAINTS` on in production, and the
+  permission owner that became the transition tier's first producer.
 - The planned scene/body-relations owner supplies authoritative pose, support,
   surface level, contacts, and impulses.
 - [Clothing state graph](clothing-state-graph.plan.md) owns garment parts,
   coverage, access, material-between, and displacement.
 - Physiology and body-state owners supply live surface conditions and committed
   aftereffects.
-- Successor parity depends on the successor affordance/contact adapters, not on
-  copying chat prompt strings.
+- Successor parity (slice 6) depends on the successor affordance/contact
+  adapters, not on copying chat prompt strings. Neither adapter exists, so
+  slice 6 cannot start.
 
 ## Explicitly parked
 
@@ -555,7 +569,18 @@ all affordances.
 
 ## Open questions
 
-None required to begin slices 0–2. The recommended defaults are explicit:
-constraint-only ships independently; authoritative storyteller state changes
-are excluded until they have a pre-narrator commit seam; transitions require a
-separate trial; and generic positive opportunities remain parked.
+- **Does the constraint campaign still run, now that the flag is on?** The
+  constraint path went live on 2026-08-02 as a condition of a different plan's
+  enablement, so this plan's promise of an independent measured decision per
+  flag is currently unkept. Either the campaign runs against a flag-off arm, or
+  the promise is formally withdrawn — leaving it unsaid means the plan claims a
+  discipline the product no longer follows.
+- **Does slice 4 need its own tier, now that the tier has a producer?** The
+  permission owner's revocation stop already occupies the transition tier with
+  a mandatory, budget-bounded candidate whose loss is permanent. A
+  change-gated positive detail entering the same tier competes with it. Decide
+  whether slice 4 shares the tier under a priority rule, or gets its own.
+
+Settled and not reopened: constraint-only ships independently of positive
+detail; authoritative storyteller state changes stay excluded until they have a
+pre-narrator commit seam; generic positive opportunities remain parked.

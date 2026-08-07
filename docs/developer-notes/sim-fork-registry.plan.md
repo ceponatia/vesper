@@ -1,6 +1,8 @@
 # Fork registry & snapshot ruling — making "add a domain to a fork" a data edit
 
-Status: draft (sequenced after sim-command-shell; snapshot expansion ruled out until measured)
+Status: draft (sequenced after sim-command-shell; snapshot expansion ruled out
+until measured. Re-verified 2026-08-07: `forkBranch` is still one 633-line
+function and `branch-store.ts` is still 1,035 lines — the target is unchanged)
 
 Outcome: A developer can enrol a simulated domain in fork rebuilding with a
 one-line data edit and see a test fail if they forget one, so that a forked
@@ -106,11 +108,13 @@ causes would be misread as a regression from this work.
 
 ## Success criteria
 
-- Full gate green, run as separate sequential commands: `pnpm lint` →
-  `pnpm lint:cycles` → `pnpm typecheck` → `pnpm test` → `pnpm jscpd`.
+- **A green `verify` check on the pull request.** Validation is CI-only (root
+  `CLAUDE.md`) — never invoke a gate locally. Engine paths are touched, so CI's
+  classifier runs the Postgres-backed engine job too.
 - **The gate3/4/5/6 corpus integration suites are green before AND after.** Fork
   parity is the engine's correctness spine, so the before-run is not a formality —
-  it is the baseline that makes the after-run mean something.
+  it is the baseline that makes the after-run mean something. Capture both from
+  CI runs, not local ones.
 - Forking the same branch produces an identical child world before and after the
   change, compared by projection checksum rather than by eye.
 - Fork wall time and query count no worse than the baseline; the removed re-sorts
@@ -127,9 +131,10 @@ causes would be misread as a regression from this work.
 - **Sequencing with batch 2** is the main coordination cost — see the ordering
   note above. If the shell migration slips, this plan waits rather than working
   around it.
-- **Roadmap hygiene (F3b).** Both the shell migration and this registry currently
-  exist only as code comments with no roadmap line, which the house rules count
-  as a bug. This plan needs its roadmap line added when it is scheduled.
+- **Roadmap hygiene (F3b) — closed.** The shell migration and this registry once
+  existed only as code comments with no roadmap line, which the house rules count
+  as a bug. Both are now named in `roadmap.md`'s later-consolidation entry. The
+  rule still binds any future domain this plan adds.
 - **D19 overlap.** A future branch/fork UX build inherits the registry; keep the
   retained primitives working rather than trimming them to the current callers.
 - **Migrations.** None expected for slices 1–3. A "yes" on A16 may need one, which

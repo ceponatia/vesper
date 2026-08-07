@@ -1,10 +1,19 @@
 # Fragile intimate-anatomy defaulting — open remainder
 
-Status: draft — the open remainder of an otherwise-shipped fix (re-drafted
-2026-08-02; §3b shipped 2026-08-07; the original 2026-06-15 analysis's headline
-fix shipped same-day in `9ed4e31` + `c7d45fd` — see git history for the
-original). Supplement to
+Status: draft — the open remainder of an otherwise-shipped fix, **re-verified
+against the code 2026-08-07; §3b shipped that day, everything else stands**.
+`seedBodyConfigFromAttributes` now has three call sites, the third being the
+persona create path; `intimateRegions` still carries no provenance field on
+either body; and no `body_config` diagnostic exists anywhere in `src/`.
+Re-drafted 2026-08-02; the original 2026-06-15 analysis's headline fix shipped
+same-day in `9ed4e31` + `c7d45fd` (see git history for the original).
+Supplement to
 [character-schema-audit.md](finished/character-schema-audit.md) finding **E1**.
+The remaining work has no owning plan and no roadmap line — §1, §2 and §3a are
+queued nowhere. (§3b has a [roadmap.shipped.md](roadmap.shipped.md) entry.)
+
+Line references were refreshed on 2026-08-07 and drift with every edit to the
+files named; symbol names are the durable half.
 
 E1 was: the per-character body-config (`intimateRegions`) is seeded from
 `identity.gender` at forge time, gender was not force-filled, so a weak-signal
@@ -23,9 +32,9 @@ a character create that arrives *with* attributes is still not seeded.
 **Proposal A — `identity.gender` is `coreVisual`.** `9ed4e31` set
 `coreVisual: true` with `defaultValue: "female"`
 (`src/contracts/attributes/categories/identity.ts:33-34`; the comment there
-cites *"was audit E1"*). The three-tier fill gate is
-`src/server/authoring/character-forge.ts:1106-1107`, called from `:1004`, so
-gender is always present on a forged draft.
+cites *"was audit E1"*). The fill gate is `fillVisualDefaults`
+(`src/server/authoring/character-forge.ts:1086`, gate at `:1098`), called from
+`:1005`, so gender is always present on a forged draft.
 
 **A's blocking caveat is gone.** The original doc argued A was not a standalone
 fix because a tier-3 pick of `androgynous` still returned `[]`, so A only
@@ -46,8 +55,8 @@ special case"*), which unions activated groups across all values for both
 `intimateRegions` and `bodyFeatures`, validating ids against the body-config
 vocab. `defaultIntimateRegionsForGender` is deleted. Tests:
 `src/contracts/species/seed.test.ts`. Docs: [../contracts/body.md](../contracts/body.md)
-line 79 and [../contracts/attributes.md](../contracts/attributes.md) §attribute
-flags. The forge call site is `character-forge.ts:1024`.
+and [../contracts/attributes.md](../contracts/attributes.md) §attribute
+flags. The forge call site is `character-forge.ts:1025`.
 
 **Net.** The forge happy path is correct: gender is always filled, every value
 activates anatomy, the seed is declarative and tested. Anything the rest of this
@@ -63,18 +72,18 @@ never needed on the forge path, but §3 argues it is needed elsewhere.
 Every claim the original doc made about B is still true verbatim.
 
 - **No provenance flag.** `intimateRegions` is a bare array with a `[]` default
-  on both bodies: `src/contracts/world/profile.ts:264` and
-  `src/contracts/players/persona-profile.ts:61`. Nothing anywhere records
+  on both bodies: `src/contracts/world/profile.ts:246` and
+  `src/contracts/players/persona-profile.ts:51`. Nothing anywhere records
   whether a given value was seeded or authored.
 - **No re-seed on save.** The character PATCH
-  (`src/app/api/characters/[id]/route.ts:63-75`) merges the profile patch and
+  (`src/app/api/characters/[id]/route.ts:79`) merges the profile patch and
   runs `materializeBodyDefaults` over the merged attributes — it re-materializes
   *persisted-baseline facts*, which is a different mechanism, and never calls
   `seedBodyConfigFromAttributes`. The persona PATCH
-  (`src/app/api/personas/[id]/route.ts:46-48`) does the same and no more.
+  (`src/app/api/personas/[id]/route.ts:48`) does the same and no more.
 - **No re-seed on gender edit.** The body-config is wired as a pure manual
-  toggle in both editors: `src/components/characters/character-editor.tsx:355-356`
-  and `src/components/personas/persona-editor.tsx:224-225` both hand
+  toggle in both editors: `src/components/characters/character-editor.tsx:334-335`
+  and `src/components/personas/persona-editor.tsx:209-210` both hand
   `intimateRegions` straight to `patchProfile` with no gender dependency.
 
 **Edit-time staleness is fully intact.** Switch a character from `female` to
@@ -117,7 +126,7 @@ end state; §3b is fixed, §3a stands.
 
 ### 3a. Character creates that arrive with attributes
 
-`src/app/api/characters/route.ts:80-82` gates both registry-default seeding and
+`src/app/api/characters/route.ts:67-69` gates both registry-default seeding and
 body-config seeding on the profile being **blank**:
 
 ```ts
@@ -129,7 +138,7 @@ const seededConfig = blank ? seedBodyConfigFromAttributes(seeded) : null;
 The comment above it is explicit that this is deliberate — forge drafts, clones,
 and raw API callers are "authored data and passes through untouched." That is
 right for forge drafts, which already carry a seeded body-config from
-`character-forge.ts:1024`. It is not obviously right for a clone of a stale
+`character-forge.ts:1025`. It is not obviously right for a clone of a stale
 record, an import, or a raw API caller: a payload with `identity.gender` set and
 `intimateRegions: []` is accepted silently, and the result is
 indistinguishable from a deliberate empty (§2). The cheap fix is C's diagnostic,

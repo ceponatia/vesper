@@ -1,6 +1,7 @@
 # Resilience closures — time-box every model call, one contract per boundary
 
-Status: next (queued after the active narrator-physical-guidance files are quiet; review rulings recorded 2026-07-30)
+Status: next (top of the reviewed efficiency tranche; review rulings recorded
+2026-07-30, all five findings re-verified unfixed in code 2026-08-07)
 
 Outcome: A player can forge a character or render a scene while the model
 provider is wedged and still get an answer inside a stated time budget, so that
@@ -51,7 +52,10 @@ correctness weight; the audit's §Proposed batches has the full map.
 ## Scope
 
 Finding ids below; [the audit](codebase-efficiency.audit.md) carries the
-file-and-line detail.
+file-and-line detail. Every one was re-checked against `src/` on 2026-08-07 and
+none has been fixed: `withGenerateTimeout` still appears nowhere outside
+`src/server/engine`, no `chatMessageMetaSchema` exists, and
+`parseGarmentBlueprint` still has no production caller.
 
 - **C12** — Seven model calls outside the chat engine (character forge ×3,
   portrait attributes, item classify ×2, scene composer) have no timeout and are
@@ -132,9 +136,9 @@ other.
 
 ## Success criteria
 
-- The full gate passes, run as **separate sequential commands** (never
-  `pnpm verify`): `pnpm lint` → `pnpm lint:cycles` → `pnpm typecheck` →
-  `pnpm test` → `pnpm jscpd`.
+- **The pull request's `verify` check is green.** Validation is CI-only (root
+  `CLAUDE.md`): push the branch, open the pull request, and let the
+  classifier-scoped jobs run. Never invoke a gate locally.
 - **Every model call reachable from a request goes through the harness.** Verified
   by a census check, not by eyeball — the audit found this class of gap by
   grepping, and the same grep should come back empty afterwards.
@@ -152,10 +156,14 @@ other.
 
 ## Risks & coordination
 
-- **The active narrator-physical-guidance build.** None of this plan's files are in
-  that build's affordances area, but slices 1 and 3 touch chat-state and
-  chat-pipeline, which that build is editing. Sequence after its edits there settle,
-  or agree the diff up front.
+- **Two live builds edit the same chat-engine files.**
+  [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md)
+  (slices 0–3 shipped, 4–6 open) and
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
+  both work the affordance contracts and the chat affordance / physical-guidance
+  modules. None of this plan's files sit in that area, but slices 1 and 3 touch
+  `chat-state.ts` and `chat-pipeline.ts`, which both builds reach into. Sequence
+  after their edits there settle, or agree the diff up front.
 - **Budgets are a product decision, not a constant.** Character forge is *supposed*
   to take a long time; a chat-sized budget would break a working feature. Each site
   needs its own number from observed latency; scene render is the only tight one.

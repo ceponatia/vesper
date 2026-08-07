@@ -3,7 +3,7 @@
 Status: **ADVANCE — closed 2026-07-16.** The one-command item-transfer seam shipped and
 met every acceptance criterion below; the shipped record is
 [finished/engine/engine-gate1-item-transfer.plan.md](finished/engine/engine-gate1-item-transfer.plan.md).
-This status permits Gate 2.
+This status permitted Gate 2.
 
 Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
 gate — see the hub's gate index). Sequencing and current status live in

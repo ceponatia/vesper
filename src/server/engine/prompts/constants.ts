@@ -166,8 +166,11 @@ export function chatAffordanceCuesEnabled(): boolean {
 
 /**
  * The CONSTRAINT-FIRST NARRATOR GUIDANCE switch
- * (narrator-physical-guidance.plan.md slice 2) — experimental, default off, and the
- * REPLACEMENT for `CHAT_AFFORDANCE_CUES` above rather than a second version of it.
+ * (narrator-physical-guidance.plan.md slice 2) — ON in production since 2026-08-02
+ * (deployed Fly secret), and the REPLACEMENT for `CHAT_AFFORDANCE_CUES` above rather
+ * than a second version of it. The code default is still off, so a build with the env
+ * unset behaves as the OFF paragraph below describes — but that is no longer what the
+ * deployed app does, and anything reasoning about production should assume ON.
  *
  * Where the closed cue experiment volunteered a physical detail on every eligible
  * turn, this projects committed truth mostly as prohibitions: what the narrator must
@@ -177,12 +180,12 @@ export function chatAffordanceCuesEnabled(): boolean {
  * experiment (`CHAT_PHYSICAL_TRANSITIONS`), and the two get independent measured
  * ship/park decisions.
  *
- * OFF (the default, and anything other than `on`) is today's behavior to the byte: no
- * premise detection, no guidance compile, no block on the narrator prompt, and — since
- * the flag also decides whether the affordance read is taken at all — no adapter call
- * either unless another flag wants one. ON adds exactly one binding-tier block: at
- * most two premise corrections and three scoped consistency constraints for this
- * exchange. Env-only, no dev route.
+ * OFF (the code default, and anything other than `on`) is the pre-slice-2 behavior to
+ * the byte: no premise detection, no guidance compile, no block on the narrator prompt,
+ * and — since the flag also decides whether the affordance read is taken at all — no
+ * adapter call either unless another flag wants one. ON — what production runs — adds
+ * exactly one binding-tier block: at most two premise corrections and three scoped
+ * consistency constraints for this exchange. Env-only, no dev route.
  *
  * Note what is NOT behind it, and why that matters for interpreting a trial: the cue
  * flag still owns cue rendering AND the `character_chats.affordance_cues` write. This

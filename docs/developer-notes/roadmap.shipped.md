@@ -93,14 +93,28 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
   the model its lane renders with today. Slices 2–9 remain queued in
   [roadmap.md](roadmap.md) under Active.
 
+- **Image model registry — swappable Replicate models, managed from the app** —
+  [finished/image-model-registry.plan.md](finished/image-model-registry.plan.md) ·
+  [spec](finished/image-model-registry.spec.md) — 2026-08-05 — the model list
+  became data: an admin-only settings page adds, edits and removes rows, a
+  save-time capability probe records what each model actually accepts, and the
+  pickers offer only models that can do the job asked of them. Venice was deleted
+  outright. Three same-day corrections followed — per-model reference transport
+  (migration 0099), a probe that wrongly rejected a model with no field
+  description, and automatic version pinning for community models. Everything past
+  the smallest useful model record moved to
+  [image-model-capabilities.plan.md](image-model-capabilities.plan.md).
+
 - **Replicate Qwen image providers (opt-in, `*`-marked)** —
   [images.md](../images.md) §Providers — 2026-08-05 — a first-class Replicate
   client (official-model predictions, private reference uploads, one parsed
   deadline driving both `Cancel-After` and the poll cutoff) behind two starred
   picker entries: `* Qwen Image 2512` for avatars, `* Qwen Image Edit 2511` for
-  chat scenes. Venice stays the default on every lane; a starred route never
-  falls across to Venice or to unrelated text-to-image output, and the winning
-  `replicate/…` id lands on `images.meta.model`.
+  chat scenes. A starred route never falls across to unrelated text-to-image
+  output, and the winning `replicate/…` id lands on `images.meta.model`.
+  **Superseded the same day** by the image-model registry above, which made every
+  model a database row and removed Venice — the opt-in star and the Venice
+  fallback this entry describes no longer exist.
 
 - **Romantic contact — `romantic_touch` permission owner (item 5)** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·

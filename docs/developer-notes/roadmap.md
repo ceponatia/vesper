@@ -9,6 +9,11 @@ progress) · **shipped — <date>** · **parked**.
 
 > Order is priority, top-down. Each entry links its plan; the plan links its
 > spec/detail.
+>
+> **Entries are short on purpose.** A title, its links, a status, and a few
+> lines saying what the work is and what gates it. Build history, slice
+> narratives, and rulings belong in the plan — an entry that grows past a short
+> paragraph is a plan leaking into its index.
 
 ## To be Planned
 
@@ -18,431 +23,304 @@ they have incorporated them into the roadmap below and either created a new plan
 an existing plan that will include this work.
 
 _(Currently empty — the two character-chat ideas that were here graduated to plans on
-2026-06-30; see the top of **Next** below.)_
+2026-06-30.)_
 
 ## Active (building now)
 
-- **Image model registry — swappable Replicate models, managed from the app** —
-  [image-model-registry.plan.md](image-model-registry.plan.md) ·
-  [spec](image-model-registry.spec.md) (active; started 2026-08-05 at owner
-  request, ahead of the queue). Removes Venice entirely and moves the image-model
-  list into the database, managed from a new admin-only page in settings: paste a
-  Replicate model path, tick the surfaces it should appear in, save. Seeds six
-  models (both Qwen models, Seedream 4.5 and 5 Lite, SD 3.5 Large, Wan 2.7 Image
-  Pro), each self-describing via a save-time capability probe so pickers only
-  offer models that can do the job. Adds the missing New Variant model picker and
-  the reference-capacity scaffold. Folds in three scene-picker bugs found while
-  diagnosing an owner-reported false "generation in progress" error. Per-model
-  API reference lives in [docs/image-models/](../image-models/).
 - **Image model capabilities — profiles, shared controls, and richer workflows** —
   [image-model-capabilities.plan.md](image-model-capabilities.plan.md) ·
-  [spec](image-model-capabilities.spec.md) (active; started 2026-08-05, directly
-  behind the registry it extends). The registry made image models data; this makes
-  them *usable well*. Adds reviewed semantic capabilities (edit kind, identity
-  preservation, operator warning) beside the probed mechanical ones, task-specific
-  **profiles** beneath each model, one normalized render intent shared by every
-  image lane, role-aware references, recorded seeds and resolved settings, safe
-  version promotion, a curated Qwen LoRA, and a separate coherent-image-set
-  workflow. Nine slices. **Slice 1 — capability vocabulary and profiles — shipped
-  2026-08-05** ([history](roadmap.shipped.md)): reviewed capability fields, the
-  `image_model_profiles` table, migration 0100's 17 seeded profiles, and the pure
-  eligibility + resolver — all dormant and behavior-preserving, with no lane
-  calling it yet. **Remaining: slice 2** (shared render intent — the first caller,
-  which must route the existing lanes through `renderImageIntent` while producing
-  today's payloads), then role-aware references and transport, common controls and
-  reproducibility, version promotion, the Qwen LoRA library, model-specific
-  profiles, image sets, and future visual controls.
-- **Constraint-first narrator physical guidance — constraints, premise correction,
-  and resolved action outcomes** —
-  [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md)
-  (active; **slices 0–2 shipped 2026-07-30, owner-review corrective pass applied
-  same day** — the closed cue path is frozen, the shared guidance contracts +
-  compiler are in `contracts/affordances/guidance/`, and the hair
-  constraint/correction path ships behind `CHAT_PHYSICAL_CONSTRAINTS`, default
-  off; review verdict: slices 0–1 accepted, slice 2 safe behind the flag but
-  not paid-trial-ready until slice 5 generalizes the trial-record format.
-  Remaining: slice 3 romantic-contact action results, slice 4 change-gated
-  positive detail, slice 5 the trials, slice 6 the successor adapter). Keeps
-  the affordance calculations but replaces always-on descriptive suggestions
-  with scoped consistency constraints, high-confidence false-premise fences,
-  and mandatory resolved action outcomes. Positive state-change details get a
-  separate flag and trial; generic ambient opportunities stay parked. No extra
-  model leg. The hair proving slice leads, then the foot-contact resolver
-  consumes the shared action-outcome seam. `CHAT_AFFORDANCE_CUES` remains off.
+  [spec](image-model-capabilities.spec.md) (active). Makes image models *usable
+  well* now that the registry made them data: reviewed semantic capabilities,
+  task profiles beneath each model, one normalized render intent shared by every
+  image lane, role-aware references, recorded seeds, safe version promotion, a
+  curated LoRA library, and coherent image sets. **Slice 1 shipped 2026-08-05.**
+  **Slice 2 — the shared render intent — is the highest-leverage unblocked work
+  in the repo:** four other plans wait on it, and it is cheaper than the plan
+  was written to expect, because the profile compile step, control mapper,
+  prompt-strategy dispatch and renderer pass-throughs already landed inside the
+  identity-pack trial.
+
+- **Image identity packs — durable owner-scoped face references** —
+  [image-identity-packs.plan.md](image-identity-packs.plan.md) ·
+  [spec](image-identity-packs.spec.md) (active). Compiles each character's
+  canonical portrait into a revisioned identity pack behind a hidden image kind.
+  **Slices 1–4 and 5A shipped 2026-08-06; the slice-6 trial harness shipped
+  2026-08-06 and was hardened through 2026-08-07.** Nothing consumes packs yet —
+  `IMAGE_IDENTITY_PACK_REFERENCES` is default off. Remaining: **slice 6's trial
+  run** (owner corpus + paid cells + detector decision + thresholds), **slice 5B**
+  (render-lane consumption, waits on capabilities slice 2), then **slice 7**
+  close-out. **Before any paid cell can run, an admin must re-probe each seeded
+  model** — all six ship as bare official slugs with no pinned version, and the
+  trial deliberately refuses to plan unpinnable cells.
+
 - **Romantic contact affordances — foot-first grounded contact** —
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) ·
-  [spec index](romantic-contact-affordances.spec.md) (active; **slices 0–2
-  shipped 2026-07-30** — the truth-source audit/capability matrix, the
-  lane-neutral attempted-versus-active contact lifecycle contracts, and the
-  foot domain proof (surface map + three registry loci, profile inheritance,
-  zero-preserving condition distribution, footwear filtering,
-  pressure/texture/glide phenomena — fixture-driven, unregistered until
-  slice 3 wires it; warmth and scent recorded deferred, no owners exist);
-  promoted from deferred 2026-07-28 and sequenced directly behind the
-  narrator-guidance plan whose action-outcome seam its slice 3 consumes).
-  **Slice 3A — authority and persistence hardening — landed 2026-07-31**: the
-  owner's post-review verdict was that slice 3 was ready to begin as an opening
-  hardening/design phase, **not** ready to proceed directly into production lane
-  wiring unchanged. 3A delivered actor/source + per-participant agency binding,
-  lifecycle clearing/orientation/capacity/state cross-validation, the
-  post-persistence outcome adapter with **no partial status** (contact emits only
-  committed / explicit_transition_required / rejected / unresolved), a minimal
-  scene/body-relations owner
-  ([scene spec](romantic-contact-affordances.spec.scene.md)), the final foot
-  side/unsided regressions, plus the clone-policy disclosure on publish and
-  its documentation pass.
-  **Slice 3A.1 — boundary corrections — landed 2026-07-31** (the owner's review
-  of 3A): scene versions fail closed, target-agency proof persisted into start
-  identity, acknowledgments bound to the actual commit, stale scene/contact
-  writes and ends refused (capacity refuses the start over a time-travelling
-  end), boundary contradictions dropped rather than last-write-wins with
-  scene→contact referential integrity, unavailable authority now `unresolved`
-  (never narrated as refusal), and character publishing gained a confirmation
-  with the fuller disclosure (images duplicated; unpublish recalls nothing).
-  Prerequisites: the slice-2
-  [hardening pass / follow-ups](finished/romantic-contact-affordances.followups.md)
-  (complete 2026-07-31) and the pre-slice-3 foot facts + registration
-  hardening (2026-07-30) are **done and archived**.
-  **Item 3 — participant-declaration residue removal — shipped 2026-08-04**:
-  the contact core's kept eligibility seam deleted end to end with no
-  replacement gate, plus the idempotent stored-key sweep (migration 0095);
-  broader moderation stays separate pre-launch work outside this plan. Foot
-  registry defaults, the Neon backfill, and deployment are **complete**, so
-  production registration is no longer gated on corrections or data migration —
-  only on reaching its place in the wiring order.
-  **The affectionate-contact technical MVP — flag off — shipped 2026-07-31**
-  (the owner's accurate name for what exists: working, tested machinery with
-  no product judgment yet) behind `CHAT_CONTACT_ACTIONS` (default off):
-  durable `chat_contact_events` ledger + scene/contact projection on the
-  retake anchor (migration 0093), deterministic approach/touch detectors,
-  persist-before-prompt, and — via the item-1.1 repairs — atomic verified
-  persistence, possessive-destination guards, unknown-clothing-is-never-bare
-  material honesty, and the ending producers (release `withdrawn`, skip
-  `separated`, scene change `scene_changed`, movement away `separated`).
-  **The internal trial ran 2026-07-31**
-  ([report](romantic-contact-affordances.trial.md)), and its three bounded
-  findings were fixed by the **item-1.2 pre-enablement repairs (landed
-  2026-07-31)**: the coverage settle race closed at its source (current-cut
-  material derivation, primary and ensemble, exact captures threaded to
-  settle), the S3 reach-premise presentation constraint (typed,
-  `CHAT_PHYSICAL_CONSTRAINTS`-owned, state stays `unresolved`), and the
-  minimal NPC-authored contact-ending producer (reply-side event identity,
-  retake-safe, fail-closed — the first bounded deliverable of the
-  actor-control item). The affected trial cases (S2, S5, S3, NPC withdrawal)
-  were rerun on fresh disposable chats and the report amended with a full
-  evidence appendix.
-  **Verdict: PASS (owner, 2026-08-01)** — the affectionate tier is accepted;
-  items 3–6 un-gated in their existing sequence; the parked list stays
-  parked. Enablement was conditioned on finishing the wardrobe restatement
-  guard for partial paraphrases on both folds plus one targeted live check
-  (report §Verdict / §Post-verdict verification) — **conditions met and
-  enablement completed 2026-08-02** (PRs #26/#27 merged, main deployed, both
-  flags set to the literal `on`, verified in-machine; standing watch: the
-  NPC-ending producer's first organic occurrence).
-  **Next: enable and review the NPC scene-decision shadow measurement
-  (item 4).** Actor control continues through the live lane under the
-  [revised spec](romantic-contact-affordances.spec.actor-control.md). The
-  deterministic ending floor stays frozen; the general case begins
-  with pure evidence/chronology fixtures, a durable per-reply decision envelope
-  + guarded scene save, and one whole-reply classifier in measured shadow.
-  **Delivery steps 1–3 built 2026-08-02** (pure foundation + adversarial
-  fixtures; envelope table 0094 + guarded CAS transaction + retake prune +
-  inspector trace; shadow leg behind `CHAT_NPC_SCENE_DECISION_SHADOW`,
-  default off — not yet enabled, so the measurement window has not started;
-  flags-off behavior byte-identical).
-  **Authority increments (steps 4–6) built 2026-08-04, dark** — the executor
-  (presence integration, chronological walk, composite departures), monotonic
-  approach/depart band helpers, arbitrary-actor contact starts with two-sided
-  material and the same-reply wardrobe-chronology veto, and the gesture-only
-  `modulateContactGesture` lifecycle operation for updates — all behind
-  `CHAT_NPC_SCENE_DECISIONS` (default off), staged one kind at a time by
-  `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS`.
-  Only after that gate does authority roll out movement → starts → updates;
-  the owner accepts measured cost/latency before movement is enabled.
-  **The [`romantic_touch` permission owner](romantic-contact-affordances.spec.permission.md)
-  (item 5) was built out of order 2026-08-04** — directional branch-local
-  ledger, NPC-side consent decision, audited dev-override menu, revocation
-  stop handoff — behind `CHAT_ROMANTIC_PERMISSION` (off); enablement rides
-  the item-6 romantic proof, which still follows actor-control authority.
-  **Still parked (reaffirmed by the verdict)**: additional foot granularity,
-  slice 4's marks/material transfer, intimate physiology, successor parity,
-  channel-aware foot narration, and further generalized contact
-  abstractions. The active doc family archives together only after the plan
-  ships.
+  [spec index](romantic-contact-affordances.spec.md) (active). The affectionate
+  tier is **live in production since 2026-08-02** (`CHAT_CONTACT_ACTIONS` and
+  `CHAT_PHYSICAL_CONSTRAINTS` on) after an internal trial the owner passed on
+  2026-08-01. NPC scene-decision authority (item 4) and the `romantic_touch`
+  permission owner (item 5) are **built and dark**. **Next is a free step: enable
+  the shadow measurement.** It costs one classifier call per qualifying reply,
+  needs no code, and every later item waits on the window it opens — so starting
+  it early costs nothing and blocks nothing.
+  **Rollout hazard:** `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS` grants *all three*
+  authority kinds when unset. It must be narrowed **before**
+  `CHAT_NPC_SCENE_DECISIONS` is turned on, or the staged rollout the spec mandates
+  is skipped in one step.
 
-## Next (queued)
+- **Constraint-first narrator physical guidance** —
+  [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md) ·
+  [spec](narrator-physical-guidance.spec.md) (active). Replaces always-on
+  descriptive suggestions with scoped consistency constraints, false-premise
+  fences, and mandatory resolved action outcomes. **Slices 0–3 shipped
+  2026-07-30/31, and `CHAT_PHYSICAL_CONSTRAINTS` has been on in production since
+  2026-08-02** — this is a live feature, not a dark experiment. Remaining: slice 4
+  (change-gated positive detail — gated on a design decision, because the
+  transition tier now has a mandatory tenant it cannot displace), slice 5 (the
+  trials — gated on instrument work that does not exist), slice 6 (successor
+  adapter — gated on successor affordance/contact adapters that do not exist).
+  `CHAT_AFFORDANCE_CUES` is parked off permanently; that experiment closed.
 
-- **Data lifecycle — chat-scoped deletion, retention sweeps, intentional
-  image orphans** — [data-lifecycle.plan.md](data-lifecycle.plan.md) ·
-  [audit](data-lifecycle.audit.md) (next; planned 2026-07-29 from the live
-  Neon + Fly orphaned-data audit, placed at the top as the security/privacy
-  follow-through the owner asked to start with). Owner ruling: chat-flow data
-  carries a real `chat_id` FK and dies with its chat; **images are the one
-  deliberate exception** (rows/files survive chat *and* character deletion so
-  the Gallery keeps them). Slices: one-time purge of the audited orphans
-  (792 stale jobs, scope-less R6 memory rows, stale provisioning records…),
-  `chat_id` FK columns on `jobs`/`events`/provisioning + backfill, deletion-path
-  changes (drop `deleteEntityImages` on character delete), an in-process daily
-  retention sweep (events/jobs/expired sessions + finally wiring the phantom
-  `image_sweep`), and prod telemetry content minimization (retrieval queries
-  are stored verbatim today). All four open questions ruled 2026-07-29
-  (audit doc §Rulings): hidden chat-image kinds keep their hard-delete,
-  events 30d / jobs 7d, prod telemetry ids+counts only, account deletion
-  parked → deferred.plan.md.
+## Next (queued, in dependency order)
 
-- **Image identity packs — remainder: run the fixed reference trial, then
-  production close-out** — [image-identity-packs.plan.md](image-identity-packs.plan.md) ·
-  [spec](image-identity-packs.spec.md) (active; planned 2026-08-05 and extracted
-  from the image-render-quality plan so reference preparation has one owner;
-  **slices 1–4 and 5A shipped 2026-08-06**, see
-  [roadmap.shipped.md](roadmap.shipped.md); **slice 6 harness built dark and
-  hardened 2026-08-06** — admin trial runner, blinded pairwise review, and
-  verdict recording, then a pre-spend correctness pass: production profile
-  eligibility at planning, pinned provider versions actually executed,
-  compiled profile controls actually sent, numbered multi-reference role
-  prompts, durable cross-process cell claims (no double spend), terminal
-  settlement for malformed cells, orphan-output cleanup, normalized verdict
-  rows behind review-completeness gates, and a pack-variant axis (pinned
-  revisions + no-pack baseline) completing the required comparison matrix —
-  no paid cell run yet; slice 5B — render-lane consumption — waits
-  on the capabilities plan's shared render intent). Compiles the current canonical
-  portrait into an owner-scoped, revisioned identity pack: the hidden
-  `identity_face_crop` kind (excluded from the gallery, the portrait studio,
-  clones and public file serving), SHA-256 source hashing, versioned
-  `derive_v1`/`policy_v1` derivation with golden-pinned geometry, an idempotent
-  single-flight `ensureIdentityPack` with compare-before-promote and row-derived
-  retries, staleness and invalidation, a 7-day revision cleanup, hard delete with
-  the character, owner crop-editor + admin batch/history/override routes and UI,
-  profile-aware pre-spend evaluation returning role candidates with provenance,
-  and now the slice-6 trial subsystem (runs/cells/grades tables,
-  budget-charged bounded execution, hidden `identity_trial_output` assets,
-  blinded grading, per-profile verdict slots). **What remains of slice 6 is
-  the trial itself** — the owner builds the corpus characters, runs the paid
-  cells, calibrates the conservative v1 thresholds, decides the local face
-  detector (automatic derivation is heuristic-only until then), and records
-  the verdicts — **then slice 7**, production close-out: turn advisory
-  measurements into the reviewed gate, wire provenance and telemetry, and
-  remove the rollout fallbacks. Nothing consumes packs yet:
-  `IMAGE_IDENTITY_PACK_REFERENCES` is default-off and the consumer is the
-  capabilities plan's shared render intent (slice 2, above). Still no persisted
-  face embeddings in v1.
+**Unblocked today — nothing gates these but scheduling:** data lifecycle,
+capabilities slice 2 (above), visual state slices 0–5, the shadow-measurement
+enable (above), resilience closures, `ConfirmDialog`, clothing slice 7, and
+wiring the affordance layer to the scene owner.
 
-- **Image render quality — per-model prompts, negative steering, and face
-  fidelity** — [image-render-quality.plan.md](image-render-quality.plan.md) ·
-  [spec](image-render-quality.spec.md) (draft; brainstormed 2026-08-05 from
-  the owner's report that Qwen Edit drifts faces and the SDXL-lineage
-  community models produce deformities). The content/tuning companion to the
-  active capabilities plan above: per-model prompt dialects, context-aware
-  negative steering, reviewed sampler settings, numbered delta-first edit
-  contracts, model-native dimensions, best-of-N portraits, face-reference
-  trials, guarded repair, provenance, and advisory output QA. Durable source
-  hashing, face-crop derivation, quality eligibility, and manual correction now
-  live in the independent identity-pack plan directly above.
+- **Data lifecycle — chat-scoped deletion, retention sweeps, intentional image
+  orphans** — [data-lifecycle.plan.md](data-lifecycle.plan.md) ·
+  [audit](data-lifecycle.audit.md) (next). **Nothing gates this, and it is the
+  security/privacy follow-through the owner asked to start with.** Chat-flow data
+  gets a real `chat_id` FK and dies with its chat; images are the one deliberate
+  exception, surviving chat *and* character deletion so the Gallery keeps them.
+  Also: a one-time purge of audited orphans, retention deletions folded into the
+  periodic sweep that now exists, and prod telemetry content minimization. All
+  four open questions were ruled 2026-07-29.
 
 - **Visual state and attention — identity, presentation, current state, and what
   the viewpoint notices** — [visual-state.plan.md](visual-state.plan.md) ·
-  [spec](visual-state.spec.md) (next; planned 2026-08-05 from the visual-state
-  proposal and the image-render-quality follow-up). Adds one lane-neutral
-  `VisualStateFeature` projection over existing appearance, anatomy, wardrobe,
-  body-condition, scene-relation, affordance, and visual-memory owners; keeps
-  identity, deliberate presentation, current effects, and body language
-  separate; evaluates observer versus camera visibility; ranks optional detail
-  without dropping mandatory image identity or morphology; and supplies
-  narrator, image, and inspector digests. Starts with a source/duplication audit
-  and compatibility adapter, then adds typed composition, current-state and
-  body-language adapters, shadow inspection, narrator and image trials, and a
-  review-first reference-image compiler.
+  [spec](visual-state.spec.md) (next; not started). One lane-neutral projection
+  over existing appearance, anatomy, wardrobe, body-condition, scene-relation and
+  affordance owners, keeping identity, deliberate presentation, current effects
+  and body language separate, and supplying narrator, image and inspector digests.
+  **Slices 0–5 are unblocked** — every source owner it reads now exists. Slice 7
+  needs a paid narrator trial; slice 8 needs capabilities slice 2. It does **not**
+  depend on identity packs.
 
-**Successor world engine (`engine.plan.md`) — foundation AND rollout COMPLETE.**
-All committed gates (0–6) closed 2026-07-16 → 2026-07-21, and the migration &
-rollout plan (R0–R6) shipped 2026-07-21/22 — the engine is the live world
-authority for successor chats and **the legacy world/session model is deleted**
-(see the top of [roadmap.shipped.md](roadmap.shipped.md)). What remains on this
-track: optional Gate 7 (below,
-owner-gated), the owner-gated live eval spend (parked in
-[deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs), and the
-chat-lane meter-economy/body-needs ports through the Gate 5 contracts (queued
-below). Full plan [engine.plan.md](engine.plan.md) · contract
-[engine.spec.md](engine.spec.md). (Distinct build from the chat-lane
-[world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star
-umbrella further down.)
+- **Image render quality — per-model prompts, negative steering, and face
+  fidelity** — [image-render-quality.plan.md](image-render-quality.plan.md) ·
+  [spec](image-render-quality.spec.md) (active). The content/tuning companion to
+  the capabilities plan: per-model prompt dialects, context-aware negative
+  steering, reviewed sampler settings, delta-first edit contracts, model-native
+  dimensions, best-of-N portraits, guarded repair, and advisory output QA.
+  **Slice 1 — the reviewed quality overrides — shipped 2026-08-05 and runs in
+  every render.** Everything after it waits on capabilities slice 2, plus a paid
+  tuning trial and an owner decision on the face-repair model.
+
+- **Body-attribute visual affordances — remainder: successor adapter, and reading
+  the scene owner** —
+  [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
+  (active; slices 0–4, 6 and 7 shipped 2026-07-28/29, slices 5 and 8 closed
+  2026-07-29). The shared read runs on every production exchange. **The
+  release-contract remainder is one item: the successor-lane adapter**, gated on
+  the successor lane owning any of attribute-derived appearance, weather, or body
+  wetness. Separately and unblocked: `chat-affordances.ts` still does not read the
+  scene owner, which is the only thing keeping hair adhesion and garment cling
+  and drape silent in production. One wardrobe gap remains — nothing records
+  garment fit, and that single field is what lights up wet cling.
+
+- **Clothing state graph — remainder: slice 7, and an instrument for the tuning
+  run** — [clothing-state-graph.plan.md](clothing-state-graph.plan.md) ·
+  [audit](clothing-state-graph.audit.md) (active; slices 0–6 shipped 2026-07-27,
+  slice 8 closed 2026-07-29). **Slice 7** — mapping the contracts onto successor
+  items — is blocked on nothing. The `CHAT_GARMENT_CUES` comparison run that would
+  decide whether the narrator digest flips on **has no harness**; building the
+  instrument is comparable in size to the run, so this is not owner spend alone.
+  Also queued: widening the extraction lane to ensemble members, which needs one
+  signature to start carrying character ids.
 
 - **Codebase efficiency — correctness and measured-response tranche** —
   [audit](codebase-efficiency.audit.md) ·
   [resilience](resilience-closures.plan.md) ·
+  [confirm dialog](editor-scaffold.plan.md) ·
   [command hot path](sim-command-shell.plan.md) ·
-  [contract lookups](contracts-hygiene.plan.md) ·
-  [chat latency](chat-reply-latency.plan.md)
-  (**next after the active narrator-physical-guidance files are quiet; selectively
-  queued, not an eleven-plan cleanup epic**). Ordered: (1) resilience closures,
-  including production garment-graph validation; (2) the cheap hot-path set —
-  A11's single recorder-window read and E13/E14's immutable registry indexes
-  (F2's missing `lint:authz` instruction already landed in `66ecd3b`); then
-  (3) chat pre-reply latency after a repeated timing baseline. Each slice must
-  preserve narrator output and committed state, except the explicitly approved
-  diagnostic/degraded-validation behavior.
-
-- **Body-attribute visual affordances — remainder: image decision,
-  successor adapter, companion rulings** —
-  [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-  (**slices 0–4, slice 5 wiring, and slice 6 garment second domain +
-  developer preview shipped 2026-07-28; slice 7 recognizable features +
-  observer visual memory shipped 2026-07-29; slice 5 closed 2026-07-29** —
-  the live comparison plus a three-round rematch campaign reached the frozen
-  protocol's terminal state (two consecutive valid fails: cues never reduced
-  contradictions — the working hypothesis, to be measured explicitly in the
-  constraint-first follow-up, is that concrete cues make more checkable
-  claims), so
-  `CHAT_AFFORDANCE_CUES` **parks OFF, finally** — history in the
-  [trial report](body-attribute-affordances.trial.md) §Rematch log; see
-  [roadmap.shipped.md](roadmap.shipped.md); plan stays open until the release
-  contract closes). **Slice 8 closed 2026-07-29 with a follow-up decision**:
-  the general image consumer waits for the shared scene/body-relations owner;
-  its promotion gate is a small paired trial, parked in
-  [deferred.plan.md](deferred.plan.md#body-affordance-scene-image-consumer).
-  What remains here: the successor-lane adapter follow-up named in the
-  [audit source map](body-attribute-affordances.audit.md), and an explicit
-  implemented/follow-up/parked ruling per companion spec before the plan
-  closes. **Slice 7 ships production-inert**: chat asserts exposure only for
-  garment-covered locations and hair, so bare skin reads unknown and
-  recognition fails closed — a body-exposure owner (or an adapter overlay) is
-  the prerequisite for the trial, and the attribute priors need a calibration
-  pass behind it (plan §Open questions). The 2026-07-28 owner review settled
-  nearly every open question
-  (plan §"Rulings snapshot" — including the same-day "cues win"
-  sensory-allowance ruling), headlined by a ruled **shared
-  scene/body-relations owner** (pose · support · surface level · contacts ·
-  impulses; chat ships it first) that unblocks hair adhesion, garment
-  cling/drape, appendages, soft tissue, relative geometry, and the
-  romantic-contact plan — it needs its own plan when scheduled. Wardrobe
-  gap flagged by slice 6: nothing records garment fit (loose/fitted), which
-  is the one change that lights up wet cling in production.
-- **Clothing state graph — remainder: the `CHAT_GARMENT_CUES` tuning run, then slices
-  7–8 (successor adapter, affordance integration)** —
-  [clothing-state-graph.plan.md](clothing-state-graph.plan.md) (active; **slices 0–6
-  shipped 2026-07-27**, see [roadmap.shipped.md](roadmap.shipped.md)). What remains:
-  the owner-gated live-model comparison run that decides whether `CHAT_GARMENT_CUES`
-  (narrator digest + garment cues, env flag, default OFF) flips on — tune
-  contradiction/repetition/concrete-detail/extraction accuracy against the garment-name
-  baseline first; the small pipeline change widening the extraction lane to ensemble
-  members (they still mutate via the legacy bridge); slice 7 mapping the contracts onto
-  successor items via `item-condition-v1`; and slice 8 integrating with body affordances
-  (promoted 2026-07-28 — queued above).
-
-- **Successor world engine — Gate 7: optional institutions & macro simulation** —
-  [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft). **Explicitly
-  optional** (owner ruling 2026-07-21 — recorded in
-  [finished/engine.rollout.plan.md](finished/engine.rollout.plan.md) §After
-  completion). Its precondition — rollout R6 exited — was met 2026-07-22, so it
-  is now unblocked but still opens only on the owner's call. Admit a package
-  (employers, schools, housing, labor, markets, news, law, weather, factions…)
-  only when a world type + scenario corpus justifies it and it declares its
-  authority, LOD, laws, budget, and disable path.
+  [chat latency](chat-reply-latency.plan.md) (next). Ordered: **(1) resilience
+  closures**, including production garment-graph validation; **(2) `ConfirmDialog`
+  alone** — approved as a same-day focused fix, still unbuilt, and the
+  dismiss-mid-delete defect is live; **(3) the cheap hot-path set** — A11's single
+  recorder-window read and E13/E14's immutable registry indexes; then **(4) chat
+  pre-reply latency** after a repeated timing baseline. Each slice must preserve
+  narrator output and committed state, except the approved diagnostic and
+  degraded-validation behavior. **This tranche no longer waits on the affordance
+  builds** — none of its files are in that area, and those files will not go
+  quiet; only the contracts affordance slices (E8/E9) and the affordance-cue eval
+  runner do.
 
 - **Chat meter economy — the body on the story clock** —
   [chat-meter-economy.plan.md](chat-meter-economy.plan.md) ·
-  [spec](chat-meter-economy.spec.md) (planned 2026-07-15 from an owner report after the
-  clock change: hygiene never visibly decays, arousal never resolves after intimacy
-  completes, and flavor-only skips (D14) no longer fit a world where skips are the primary
-  time mover; **re-scoped 2026-07-16** on the owner's OQ1–OQ3 rulings and the world-model
-  deprecation license). Drift moves off exchange-counting onto the **story clock** at
-  retuned rates — which also deletes the `advance` flag, the away-freeze, and the skip's
-  meter code — plus an energy sleep model read as a **bidirectional axis** (positive = fuel
-  in the tank, negative = past wanting sleep, both poles saturating; the afternoon dip,
-  second wind, and collapse at ~40h all emerge, with no hardcoded hour), a pulse `intimacy`
-  read with a climax reset + afterglow, arousal regraded to body facts rather than a
-  talk-switch, and rhythm-driven off-screen self-care that retires D14. Carries migration
-  0052 (+ a backfill).
+  [spec](chat-meter-economy.spec.md) (next; nothing built in the chat lane).
+  Hygiene never visibly decays, arousal never resolves after intimacy completes,
+  and flavor-only skips no longer fit a world where skips are the primary time
+  mover. Drift moves off exchange-counting onto the story clock, plus a
+  bidirectional energy/sleep axis, a pulse intimacy read with climax reset and
+  afterglow, arousal regraded to body facts, and off-screen self-care.
+  **This design already shipped — in the successor engine.** Gate 5 adopted this
+  plan's spec as its normative source, so the remaining work is a port into the
+  chat lane, and whether to reuse the engine's pure modules or twin them is open.
+
 - **Chat body needs — satiation, hydration, and needs that push** —
-  [chat-body-needs.plan.md](chat-body-needs.plan.md) (draft; planned 2026-07-16 from the
-  owner's PM notes on the meter-economy plan). The three asked-for meters plus the
-  needs → initiative channel that makes them worth having, and the collapse of the
-  chat-chip / registered-action fork that currently leaves `meal` and `snack` with no
-  meter effects. **Depends on the meter economy landing first** — it is the second use of
-  that plan's clock-keyed drift, rhythm `kind`s, and read seam.
+  [chat-body-needs.plan.md](chat-body-needs.plan.md) (draft). The three asked-for
+  meters plus the needs → initiative channel that makes them worth having.
+  **Depends on the meter economy landing first** — it is the second use of that
+  plan's clock-keyed drift, rhythm kinds and read seam. Its meters are already
+  pre-authorized engine-side as registry data edits rather than schema changes.
+
+- **Successor world engine — Gate 7: optional institutions & macro simulation** —
+  [engine.gate7.institutions.md](engine.gate7.institutions.md) (draft).
+  **Explicitly optional** (owner ruling 2026-07-21). Its precondition was met
+  2026-07-22, so it is unblocked but opens only on the owner's call. Admit a
+  package (employers, schools, housing, labor, markets, news, law, weather,
+  factions…) only when a world type and scenario corpus justify it and it declares
+  its authority, LOD, laws, budget, and disable path.
+
 - **Character schema improvements — facial realism + engine-shaped contracts** —
-  [character-schema.plan.md](character-schema.plan.md) (draft; planned 2026-07-20 from an
-  owner ask; position here is provisional). Two threads: the portrait studio's hardcoded
-  beauty bias replaced by a descriptive `face.attractiveness` attribute (grotesque →
-  stunning, per-value `imageGuidance` phrases — evaluative one-worders don't steer image
-  models; descriptive vocabulary does) with the forge's identity-anchor machinery pulling
-  structural fills toward the authored band; and the template-side fields the engine
-  branch's shipped substrate can consume at migration while the chat lane uses them now —
-  typed schedule `kind`s (retiring `inferScheduleKind`), `birthday`, the reserved
-  `attraction` relationship axis, an authored `means` band, and consent-scope
-  scaffolding (rulings 15/16).
-- **World engine refactor — a simulated world under the chat lane** —
-  [world-engine-refactor.plan.md](world-engine-refactor.plan.md) (draft; written 2026-07-16
-  from an owner brainstorm ask). **An umbrella / north-star doc, not a build item** — it is
-  the `world-simulation.plan.md` that [deferred.plan.md](deferred.plan.md) §"Old World-Model
-  Plans" anticipated, re-derived as the chat successor rather than a session-model revival.
-  Nothing is built _as_ this plan; its buildable pieces promote out into their own
-  `<topic>.plan.md`, and the two entries above it are already its first two sequencing
-  steps. Sits here so it stays discoverable next to them. Thesis: **derive the world,
-  remember the people** — weather, season, daylight, ambient temperature, circadian
-  pressure, aging and sleep debt are all pure functions of the story clock, so a derived
-  world needs no tick, no storage, and (the whole point) **no new agent legs** — the
-  catalog is almost entirely deterministic code plus fields on legs that already run. Also
-  names the seams the queued plans keep circling: the salience bus (nobody owns
-  `buildInitiativeCue`'s budget), meter law by class, `SceneFrame`, and LOD as a way to
-  ration the _settle_ — which is what actually scales with roster size, not the sim.
+  [character-schema.plan.md](character-schema.plan.md) (draft; none of its items
+  exist yet). Two threads: the portrait studio's hardcoded beauty bias replaced by
+  a descriptive `face.attractiveness` attribute with per-value image guidance
+  (evaluative one-worders don't steer image models; descriptive vocabulary does),
+  and the template-side fields the engine can consume — typed schedule kinds,
+  `birthday`, the reserved `attraction` axis, an authored `means` band, and
+  consent-scope scaffolding. Owns the surviving character-forge work. Thread 1
+  carries spec-grade detail and owes a `character-schema.spec.md` split.
+
 - **Spatially controlled scene images — pose, depth, and character identity** —
-  [spatial-scene-images.plan.md](spatial-scene-images.plan.md) (draft; planned
-  2026-07-20 from the owner's exploration of procedural OpenPose/depth and
-  consistent character rendering). Chat-first, detached image pipeline: one
-  validated 3D spatial frame produces pose/depth/segmentation controls;
-  Qwen/ComfyUI establishes structure, identity packs and masked repair preserve
-  characters, and the same frame can later feed narrator reachability and motion.
-  Graduates the self-hosted ComfyUI follow-up; Gate 0 is a measured
-  workflow/license/cost spike.
-- **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
-  (draft; seven retrieval ideas under evaluation — the least-settled item here).
+  [spatial-scene-images.plan.md](spatial-scene-images.plan.md) (draft; not
+  started). Chat-first detached image pipeline: one validated 3D spatial frame
+  produces pose/depth/segmentation controls, and the same frame can later feed
+  narrator reachability and motion. **Gate 0 is a paid spike, and it asks the same
+  question as the Qwen advanced subsystem below by a different route** —
+  self-hosted ComfyUI versus a hosted control-map model. Funding both pays twice
+  for one answer; this needs an owner decision before either is scheduled.
+
+- **Qwen advanced image subsystem — controlled composition experiments** —
+  [qwen-advanced-image-subsystem.plan.md](qwen-advanced-image-subsystem.plan.md)
+  (draft; no code, and awaiting owner review). An admin-only lab that runs a Qwen
+  edit model with pose/depth/edge control maps and compares each result blind
+  against the ordinary output. **Model choice ruled 2026-08-07: build on the
+  already-seeded Qwen Image Edit 2511, and register Qwen Image Edit Plus only if
+  2511 turns out not to honour control maps** — so Stage 0 opens with a
+  one-generation probe that decides the plan's shape. **Blocked on capabilities
+  slices 2, 3 and 9**, and its LoRA stage duplicates capabilities slice 6 — that
+  stage should fold there rather than being built twice. Competes with the plan
+  above for the same experiment budget.
+
+- **RAG improvements — remainder** —
+  [RAG-improvements.plan.md](RAG-improvements.plan.md) (draft; partly shipped).
+  Per-query embeddings with rank fusion and provenance, subject supersedence, the
+  retrieval eval harness, and a measured fact-relevance floor all shipped
+  2026-07-02; centralizing lore gating is moot because lore retrieval was deleted.
+  **Three strands remain** — the presence half of the relevance floor, wiring
+  witness gating to a real viewpoint, and RAG-as-history — and all three are
+  near-worthless until multi-character conversations are the normal case, because
+  in a one-on-one the subject is trivially present and one viewpoint sees
+  everything.
+
 - **At-rest encryption — user chat content unreadable on Neon** —
-  [at-rest-encryption.plan.md](at-rest-encryption.plan.md) (draft — planned
-  2026-07-11 from an owner question; position here is provisional). App-side
-  AES-256-GCM envelopes over both lanes' transcripts, memory rows, and derived
-  sinks so Neon holds only ciphertext (key in Fly secrets); the load-bearing
-  open ruling is D1 — encrypt fact/episode embeddings and move scoped
-  similarity ranking app-side, since plaintext embeddings are invertible.
+  [at-rest-encryption.plan.md](at-rest-encryption.plan.md) (draft; zero
+  implementation). App-side AES-256-GCM envelopes over transcripts, memory rows
+  and derived sinks so Neon holds only ciphertext, with the key in Fly secrets.
+  **Gated on one owner ruling (D1)**: whether to encrypt fact and episode
+  embeddings and move scoped similarity ranking app-side, since plaintext
+  embeddings are invertible. Successor-lane scope is an open question, not settled
+  scope. Sequencing note: any future SQL-side retrieval filter should land before
+  D1(b), or be re-expressed in-process afterwards.
+
+- **World engine refactor — the unowned catalog** —
+  [world-engine-refactor.plan.md](world-engine-refactor.plan.md) (draft;
+  umbrella, not a build item). Nothing is built *as* this plan; its buildable
+  pieces promote out into their own plans. **Its architecture chapter is now
+  history** — the engine was built from it and shipped. What still earns it a live
+  slot is the catalog: roughly twenty ideas owned by no plan, of which the
+  **salience bus** and a **composed scene frame** are the only named seams still
+  unbuilt in either lane. Once those and the environment core are promoted, what
+  remains is history and this archives.
+
 - **Codebase efficiency — later consolidation sequence** —
   [audit disposition](codebase-efficiency.audit.md#review-disposition-and-owner-rulings--2026-07-30)
   · [command shell](sim-command-shell.plan.md) ·
   [fork registry](sim-fork-registry.plan.md) ·
-  [image pipeline](finished/image-pipeline-consolidation.plan.md) (shipped 2026-08-02) ·
   [client safety](client-type-safety.plan.md) ·
   [library routes](library-route-registry.plan.md) ·
   [editor scaffold](editor-scaffold.plan.md) ·
   [contracts](contracts-hygiene.plan.md) ·
   [dead exports](dead-export-sweep.plan.md) ·
-  [tooling](tooling-gates.plan.md)
-  (draft; dependency order only, **not all promoted to next**; the image
-  pipeline plan was pulled forward on owner request and **shipped 2026-08-02**).
-  After the approved near-term tranche and the feature work above: command-shell
-  consolidation → fork registry → client D10/D11/D12 → library registry/routes →
-  `ConfirmDialog`, followed by a go/no-go on the full editor scaffold → broad
-  contracts/dead-export/eval-tooling hygiene. Settled exclusions: no expanded
-  snapshots without measurements, no suggested-item write batching, no D14 client
-  cache, and no removal of `travel_minutes`. This replaces the stale 2026-07-02
-  session-side follow-on line; surviving forge work is already owned by
-  [character-schema.plan.md](character-schema.plan.md).
+  [tooling](tooling-gates.plan.md) (draft; dependency order only, **not all
+  promoted to next**). After the tranche above: command-shell consolidation → fork
+  registry (strictly after — a fork mismatch caused by the shell migration would
+  be misread as a registry regression) → client type-safety (unblocked since the
+  image pipeline shipped 2026-08-02) → library registry/routes → a go/no-go on the
+  full editor scaffold → broad contracts, dead-export and eval-tooling hygiene.
+  `ConfirmDialog` is deliberately **not** in this sequence — it is pulled forward
+  into the tranche above. The eval harness must precede widening the duplication
+  gate, or that gate goes red on its first run. Settled exclusions: no expanded
+  snapshots without measurements, no suggested-item write batching, no client
+  cache, no removal of `travel_minutes`.
+
+- **Codebase modularity — large-file splits and shared-code consolidation** —
+  [audit](codebase-modularity.audit.md) (audit run 2026-08-06; **needs a plan**).
+  Sixteen files exceed 1,500 lines, and roughly 5,000 lines of duplication sit in
+  three clusters of scaffolding around already-good abstractions. Distinct from
+  the efficiency cluster above — different question (read cost versus duplication
+  and hot paths), different risk profile, and one prerequisite it doesn't share:
+  the biggest targets are still being edited by two live builds. Two of its
+  findings are already owned elsewhere and must not be re-claimed here. Its
+  correctness-flavoured findings should not wait for a plan at all — they fold
+  into whichever plan touches each file first.
 
 ## Someday / parking lot
 
 Unpromoted ideas live in [deferred.plan.md](deferred.plan.md): the
 **successor-engine improvement backlog**
-([deferred/CLAUDE.md](deferred/CLAUDE.md) — the still-parked remainder of the
-2026-07-23/24 review batches; draft-plan stubs graduate one at a time into real
-plans/specs, on the owner's go, never in bulk),
-the **body-affordance scene-image consumer** (Slice 8's 2026-07-29 follow-up,
-after the shared scene/body-relations owner or an explicitly scheduled narrow
-paired trial),
-the relationship &
-meter timeline (UX-audit #4), the full **NPC-puppeting** system
-([npc-puppeting.deferred.md](npc-puppeting.deferred.md) — only Slice 2's deflection
-directive shipped), comms expansions, item acquisition during play, the remaining
-UX-audit deferrals (transcript export #8, scene-image pin #9, first-run tour #10,
-production-build perf pass §5), observer / god-mode POV, monorepo split (permanently
-deferred), and companion-role-as-romance-eligibility (park, don't build).
+([deferred/CLAUDE.md](deferred/CLAUDE.md) — fourteen draft stubs from the
+2026-07-23/24 review batches; they graduate one at a time on the owner's go,
+never in bulk), the **owner-gated live eval runs**, the **body-affordance
+scene-image consumer**, the relationship & meter timeline (UX-audit #4), the full
+**NPC-puppeting** system
+([npc-puppeting.deferred.md](npc-puppeting.deferred.md)), comms expansions, item
+acquisition during play, the remaining UX-audit deferrals (transcript export #8,
+scene-image pin #9, first-run tour #10, production-build perf pass §5), observer /
+god-mode POV, monorepo split (permanently deferred), and
+companion-role-as-romance-eligibility (park, don't build).
+
+Two open remainders are documented but not yet planned:
+[condition-attribute-effects.md](condition-attribute-effects.md) (four small
+chat-state plumbing items — a catalog row, one call, a write-boundary diagnostic,
+and a precedence ruling) and [intimate-defaulting.md](intimate-defaulting.md)
+(body-config provenance and re-derivation; its persona-seeding item was a live
+player-facing defect and shipped 2026-08-07 — see
+[roadmap.shipped.md](roadmap.shipped.md)). Both need a home — the second belongs
+under character schema.
+
+## Successor world engine — foundation and rollout COMPLETE
+
+All committed gates (0–6) closed 2026-07-16 → 2026-07-21, and the migration &
+rollout plan (R0–R6) shipped 2026-07-21/22 — the engine is the live world
+authority for successor chats and **the legacy world/session model is deleted**
+(see the top of [roadmap.shipped.md](roadmap.shipped.md)). What remains on this
+track: optional Gate 7 (queued above, owner-gated); the owner-gated live paired
+evals; **product ruling 12** (route-estimate uncertainty exposure — the last one
+open); and the parked improvement backlog under `deferred/`. The plan's single
+end-to-end graduation scenario was never run as one arc; each gate closed on its
+own corpus instead.
+
+The chat-lane [chat-meter-economy.plan.md](chat-meter-economy.plan.md) and
+[chat-body-needs.plan.md](chat-body-needs.plan.md) are queued above as **chat-lane
+work, not engine ports** — Gate 5 already implements that economy in the successor
+lane because ruling 15 took the chat spec as its normative source. Full plan
+[engine.plan.md](engine.plan.md) · contract [engine.spec.md](engine.spec.md).
+(Distinct from the chat-lane
+[world-engine-refactor.plan.md](world-engine-refactor.plan.md) umbrella above.)
 
 ## Shipped (historical record)
 

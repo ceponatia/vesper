@@ -1,8 +1,10 @@
 # Recognizable features — candidate catalog
 
-Status: detail for
+Status: **reference vocabulary — not a shippable unit** — detail for
 [body-attribute-affordances.spec.recognizable-features.md](body-attribute-affordances.spec.recognizable-features.md)
-(promoted with the plan 2026-07-28)
+(promoted 2026-07-28). Slice 7 drew its seeded feature kinds and its
+recognition-worthy attribute list from this catalog; the rest is a candidate
+pool for future authoring, never a checklist to implement.
 
 ## Purpose
 
