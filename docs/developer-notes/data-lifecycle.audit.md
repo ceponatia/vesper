@@ -6,8 +6,12 @@ Status: reference (audit run 2026-07-29) — detail for
 Snapshot of the live production audit that motivated the plan: every orphan class found in the
 Neon `Vesper` database (project `round-sky-30947574`) and on the Fly volume
 (`vesper_data`, mounted at `/app/data`), with provenance traced to code.
-Numbers are the 2026-07-29 counts — they will drift; the *classes* and causes
-are the durable content.
+
+**Every number below is a point-in-time observation of one database on
+2026-07-29, not current truth.** Row counts drift with every day of play, and
+one finding has since been fixed (§"Changed since this audit ran"). The
+durable content is the orphan *classes*, their code provenance, and the
+systemic causes — re-count before acting on any figure.
 
 ## Method
 
@@ -64,14 +68,15 @@ also dangle against since-deleted characters, as does `source_turn_id`
 Two `kind='avatar'` images (owner `uQgqRUmEUGS2…`, created 2026-06-28) whose
 characters were later deleted. Character delete does call
 `deleteEntityImages` (`src/server/api/library.ts`), but as a `void`-discarded
-best-effort, and the promised safety net is **phantom**: six code comments
-say "image_sweep reconciles anything missed", yet the `image_sweep` job type
-has no registered handler and `sweepOrphans()`
-(`src/server/images/assets.ts`) is only ever called from an integration
-test. Any missed cleanup is permanent. *Under the 2026-07-29 owner ruling
+best-effort, and at audit time the promised safety net was **phantom**: six
+code comments said "image_sweep reconciles anything missed", yet the
+`image_sweep` job type had no registered handler and `sweepOrphans()`
+(`src/server/images/assets.ts`) was only ever called from an integration
+test, so any missed cleanup was permanent. *Under the 2026-07-29 owner ruling
 (images survive their chat/character for the Gallery) these two rows are now
 by-design keepers, and `deleteEntityImages`-on-character-delete is itself the
-thing to remove — see the plan.*
+thing to remove — see the plan.* The phantom half was fixed 2026-08-02
+(§"Changed since this audit ran").
 
 ### 5. Stale provisioning idempotency records — 2 `ready` rows
 
@@ -133,6 +138,30 @@ plan. The four open questions it left were ruled the same day:
    future tuning corpus can be captured there if ever wanted.
 4. **Account deletion: parked** →
    [deferred.plan.md](deferred.plan.md) §"Account deletion".
+
+## Changed since this audit ran
+
+Re-verified against the code 2026-08-07. One finding is closed; the rest stand.
+
+- **The phantom `image_sweep` is real (2026-08-02).** `kickImageSweep`
+  (`src/server/images/assets.ts`) runs `sweepOrphans()` on a request-driven
+  kick from the image pipeline, guarded by a durable six-hourly `image_sweep`
+  job row, and the same tick reclaims `queued`/`running` job rows whose
+  process died. Class 4's "any missed cleanup is permanent" and systemic
+  cause 2 no longer hold; the sweep still reconciles rows against files and
+  never *deletes* finished job or event rows, so class 1's unbounded growth
+  and class 2 are untouched.
+- **Chat delete now blanks `images.prompt`** for the chat's images and the
+  participants' character-scoped scene images, so a surviving Gallery image
+  keeps its picture and loses the chat-derived text behind it. This narrows
+  what a retained image row carries; it changes nothing about the orphan
+  classes above.
+
+Everything else in this audit was re-confirmed present: no chat foreign key on
+`jobs` or `events`, loose text `chat_id` on `sim_provisioning_requests`, no
+production delete of an `events` or finished `jobs` row, no expired-session
+sweep, `deleteEntityImages` still called on character delete, and `retrieval`
+telemetry still storing queries verbatim.
 
 ## Systemic causes (what the plan fixes)
 

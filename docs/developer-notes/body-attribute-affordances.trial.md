@@ -37,12 +37,12 @@ release decisions. This flag and this trial are closed.
 
 ## Owner rulings (2026-07-28, same day)
 
-Both open items above were ruled on the day the trial ran:
+The deterministic run raised two items and both were ruled the day it ran. The
+first — whether to replace the dead model key mid-session — was answered by
+deferring the live half; it ran on a replaced key the next day, and everything
+that followed is in §Live results and §Rematch log. The second is still
+standing policy:
 
-- **Live run deferred.** The owner chose not to replace the dead key
-  mid-session; `CHAT_AFFORDANCE_CUES` stays OFF and the live half remains the
-  one open step of slice 5. When a working `OPENROUTER_API_KEY` lands in
-  `.env`, the run is `pnpm eval:affordance-cues` (see §Re-running it).
 - **The sensory-allowance collision is resolved: cues win.** A current
   physical-effect cue counts as new information, not static appearance — the
   no-appearance instruction exists to stop re-describing unchanged looks and
@@ -52,8 +52,8 @@ Both open items above were ruled on the day the trial ran:
   (`chatSensoryAllowanceLine`, `AFFORDANCE_CUE_BLOCK_HEADING`); prompts are
   byte-identical whenever the flag is off or no cue fired. Selection/ranking
   in `contracts/affordances` never reads the allowance — this is
-  prompt-projection policy only. A future live run therefore measures the
-  cues, not the collision; §Design finding below is kept as the record of why
+  prompt-projection policy only. Every live round therefore measured the cues
+  rather than the collision; §Design finding below is kept as the record of why
   the ruling was needed.
 
 ## Method

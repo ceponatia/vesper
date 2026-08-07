@@ -6,6 +6,18 @@ Eight parallel per-domain reviews of `src/` (excluding `src/test`, `src/server/t
 
 Companion to [codebase-efficiency.audit.md](codebase-efficiency.audit.md) (2026-07-30) — overlaps with its §C findings are marked `[known C#]`. That audit had no file-size analysis; the split section here is all new.
 
+**Ownership, as of 2026-08-07: mostly none.** Three of the `[known C#]` tags
+land on plans that already exist — C6/C7 on
+[library-route-registry.plan.md](library-route-registry.plan.md) and C12 on
+[resilience-closures.plan.md](resilience-closures.plan.md) — and the components
+editor-shell cluster restates D1, owned by
+[editor-scaffold.plan.md](editor-scaffold.plan.md). The `[known C8]` and
+`[known C9]` tags name findings the earlier audit filed but assigned to no
+batch, so they are unowned too. **Everything else here — all sixteen file
+splits, the engine-sim and contracts and lib scaffolding clusters, and the nine
+correctness-flavored findings — has no plan and no roadmap line.** Nothing in
+this document is committed work until it does.
+
 ## Headline
 
 - **16 files exceed 1,500 lines; every one has a concrete split proposal below.** The worst: `db/schema.ts` (3,980), `chat-pipeline.ts` (3,617 — one 2,122-line closure), `identity-packs.ts` (3,445), `chat-state.ts` (3,415).
@@ -32,18 +44,31 @@ Companion to [codebase-efficiency.audit.md](codebase-efficiency.audit.md) (2026-
 
 (Plus `body-store` 1,546 / `activity-store` 1,532 / `household-store` 1,465 / `material-store` 1,402 — mostly resolved by the leaf-module extraction in §Engine-sim R4 — and `identity-pack-trial.ts` 1,525, `lib/simulation/households.ts` 1,539.)
 
+**Line-count re-check, 2026-08-07.** Every row still stands; three files grew and
+none shrank. `db/schema.ts` 3,980 → **4,085**, `images/identity-packs.ts`
+3,445 → **3,544**, `lib/client/api.ts` 1,864 → **1,877**. The other nine are
+unchanged to the line. The two that moved most sit under the image-model registry
+and capabilities work, so treat every number here as a floor and those two as
+moving targets until that work settles.
+
 ### Top dedup clusters by net LOC
 
-| Cluster                                                    | ~LOC    | Nature                                                                                    |
-| ---------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------- |
-| Engine simulation store scaffolding (9 items, §Engine-sim) | 1,830   | `branchResolverView` ×64, command preamble ×46, `rejectedResult` ×15, cycle-driven copies |
-| Contracts envelope scaffolding (R1+R2+R6)                  | 600–750 | 49 command families + 64 events + 12 projection headers hand-typed                        |
-| `src/lib/simulation` kernel (R1–R5)                        | 700–800 | event envelope ×37, replay fold ×10, `hash.ts` copies ×18, rejection/meta types ×29       |
-| Components editor shell + primitives                       | ~500    | 5 copied editor pages (~90 lines each) + chip/segmented/list-editor                       |
-| Server-rest (memory, api, ai)                              | ~475    | library kind dispatch [known C6/C7], facts↔episodes retrieval, `errorText` ×10 [known C9] |
-| Engine root agent legs + ledgers                           | ~460    | 5 hand-rolled agent-leg scaffolds, classifier twins, roster copies                        |
-| `src/app` route bodies                                     | ~290    | entity-kind route factories, library list/detail helpers, `withOwnedChat` adoption        |
-| Images                                                     | ~130    | attribute-phrase loops (drift fix), upload merge                                          |
+- **Engine simulation store scaffolding** — ~1,830, nine items in §Engine-sim.
+  `branchResolverView` ×64, command preamble ×46, `rejectedResult` ×15, plus the
+  copies import cycles forced.
+- **Contracts envelope scaffolding** (R1+R2+R6) — 600–750. 49 command families,
+  64 events and 12 projection headers, all hand-typed.
+- **`src/lib/simulation` kernel** (R1–R5) — 700–800. Event envelope ×37, replay
+  fold ×10, `hash.ts` copies ×18, rejection/meta types ×29.
+- **Components editor shell + primitives** — ~500. Five copied editor pages
+  (~90 lines each) plus chip / segmented / list-editor.
+- **Server-rest** (memory, api, ai) — ~475. Library kind dispatch
+  `[known C6/C7]`, facts↔episodes retrieval, `errorText` ×10 `[known C9]`.
+- **Engine root agent legs + ledgers** — ~460. Five hand-rolled agent-leg
+  scaffolds, classifier twins, roster copies.
+- **`src/app` route bodies** — ~290. Entity-kind route factories, library
+  list/detail helpers, `withOwnedChat` adoption.
+- **Images** — ~130. Attribute-phrase loops (the drift fix), upload merge.
 
 ### Correctness-flavored findings (drift already happened or is one edit away)
 

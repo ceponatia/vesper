@@ -1,8 +1,14 @@
 # Affordance spec draft — morphology appendages
 
-Status: companion to
+Status: **parked** — companion to
 [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-(promoted with the plan 2026-07-28)
+(promoted 2026-07-28; no code exists, and none is scheduled). Its pose,
+support, and contact inputs became available 2026-07-31 with the shared
+scene/body-relations owner, but the ruling below requires new tail
+flexibility, prehensility, and surface axes before those properties may drive
+mechanics, and `tail.*` / `wings.*` still carry only their original authored
+axes. Space and clearance also have no owner. Parked means designed and not
+committed.
 
 ## Purpose
 
@@ -254,7 +260,8 @@ Neither is invented here, and neither deletes physical state.
 
 1. **Tail constraints**, after the pose/contact owner exists — "tail pinned
    beneath her on the chair" is a simple test of posture, contact, constraints,
-   and narration suppression.
+   and narration suppression. That owner arrived 2026-07-31, so this fixture is
+   now gated on the new tail axes rather than on posture truth.
 2. **Wing wet loading** second; it carries more material calibration and
    capability questions.
 

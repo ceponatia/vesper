@@ -1,6 +1,10 @@
 # Contracts hygiene sweep — retire the R6 leftovers, speed up the hot lookups
 
-Status: draft (E13/E14 approved for the early hot-path tranche; the broad hygiene sweep stays late)
+Status: draft (E13/E14 approved for the early hot-path tranche; the broad hygiene
+sweep stays late. Re-verified 2026-08-07: nothing has landed — `puppet.ts`,
+`authored.ts`, `rules/index.ts` and `mood/atmosphere.ts` are all still present,
+`bodyLocationRegistry.expand` still recurses on every call, and `forCategory` /
+`forBodyLocation` still linear-scan the definition list)
 
 Outcome: A developer can open `src/contracts` and find nothing that describes a
 system the app already deleted, so that adding a vocabulary item stays the
@@ -101,7 +105,8 @@ recording that the v1 judge is gone and what a future version would rebuild.
 
 ## Delivery slices
 
-Each is independently shippable; the full gate runs between them.
+Each is independently shippable, on its own pull request with its own green
+`verify` check.
 
 1. **Orphan deletion** — E1, E2, E4, E6 plus the relationships doc. Smallest
    slice, biggest legibility gain. Two things survive and must not be caught in
@@ -140,13 +145,18 @@ Each is independently shippable; the full gate runs between them.
   degradation tests still assert both the fallback and the diagnostic code.
 - The public contracts surface no longer exports test fixtures, and the shared
   affordance helpers exist once, in the domain-neutral core.
-- Full gate green (lint → lint:cycles → typecheck → test → jscpd, one at a
-  time), duplication no worse than before.
+- **A green `verify` check on each slice's pull request**, duplication no worse
+  than before. Validation is CI-only (root `CLAUDE.md`) — never invoke a gate
+  locally.
 
 ## Risks & coordination
 
-- **The affordance build owns those files right now**, so slice 6 coordinates
-  with it rather than racing it — last-in-line and skippable.
+- **Two live builds own the affordance files** —
+  [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md)
+  (slices 4–6 open) and
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
+  (item 4 built but dark, item 5 open) — so slice 6 coordinates with both rather
+  than racing them: last-in-line and skippable.
 - **"Only its own test uses it" is not always dead.** The audit's §C caveat
   applies: some helpers are built a slice ahead of their consumer. Check the git
   history and any queued plan first, and delete the test with the code rather
@@ -158,8 +168,16 @@ Each is independently shippable; the full gate runs between them.
   stays open is the worst outcome: the condition vocabulary stays split *and*
   the thing that justified folding it is gone.
 - **Every slice that removes a documented concept updates its contracts doc in
-  the same change** — and this batch needs a `## Next` roadmap line before work
-  starts.
+  the same change.** The batch is already carried on `roadmap.md`, in the
+  correctness-and-measured-response tranche for E13/E14 and in the later
+  consolidation sequence for the rest.
+- **Do not absorb the simulation contracts.** The
+  [modularity audit](codebase-modularity.audit.md) proposes a large
+  `src/contracts/simulation` scaffolding pass (one command factory, one event
+  envelope, one projection-schema factory). Its projection-schema item is the same
+  branded-vs-plain drift the efficiency audit filed as **A9**, which
+  [sim-command-shell.plan.md](sim-command-shell.plan.md) owns — this plan's §E
+  scope stops at the non-simulation contracts, and that boundary is deliberate.
 
 ## Open questions
 

@@ -6,15 +6,19 @@ This spec defines the lane-neutral visual-state projection, source boundaries,
 visibility and attention reads, consumer digests, memory integration, and
 rollout seams.
 
-It reuses rather than replaces:
+**None of it is built.** Every type, flag, and diagnostic below is a design, not
+a description of code. The modules it reuses, by contrast, are all live:
 
 - `src/contracts/appearance-features/` for truth-level appearance projection;
 - `src/contracts/affordances/recognition/` for observer-relative candidates,
-  fixed-point salience, and visual memory;
+  fixed-point salience, and visual memory — including the `ProjectedFeatureTruth`
+  record the compatibility adapter must preserve;
+- `src/contracts/affordances/scene/` for proved posture, facing, proximity,
+  support, and reach, with provenance on every fact;
 - the garment graph for garment identity, parts, presentation, coverage, and
   condition;
-- scene/body relations and physical affordances for proved posture, contact,
-  and derived effects.
+- physical affordances for derived effects.
+
 ## Invariants
 1. `VisualStateFeature` is derived, never the write target for another owner's
    fact.
@@ -31,6 +35,7 @@ It reuses rather than replaces:
 9. Projection and ranking are pure and deterministic.
 10. Reference-image extraction proposes edits and cannot directly overwrite
     canonical truth.
+
 ## Data flow
 ```text
 authoritative owners
@@ -45,6 +50,7 @@ authoritative owners
 Visual memory reads keys and fingerprints before narrator selection, then
 receives notice and optional mention updates only after a committed cut. Image
 generation never enters that write path.
+
 ## Core vocabulary
 ```ts
 export const visualStateLayers = [
@@ -60,6 +66,7 @@ export type VisualStateStability =
 ```
 `instantaneous` is for posture/action facts true only for one committed cut. It
 never earns a long-term recognition floor.
+
 ## Loci and sources
 ```ts
 export type VisualStateLocusRef =
@@ -82,6 +89,7 @@ export type VisualStateSourceRef =
 ```
 Body paths, garment parts, and relations are registry-validated committed
 identities. A free-text `other` source or locus is forbidden.
+
 ## Feature and kind contracts
 ```ts
 export interface VisualStateFeature<TValue = unknown> {
@@ -136,6 +144,7 @@ Initial kinds adapt existing truth before adding new vocabulary: appearance
 attributes and facts, anatomy, hair arrangement/wetness, garment locus and
 condition, visible items, non-item presentation, supported scene relations,
 and supported physical-affordance observations.
+
 ## Composition
 ```ts
 export type VisualStateRelationship =
@@ -154,6 +163,7 @@ occludes a shirt; water beading derives from garment material and wetness.
 Missing targets and cycles suppress the relationship with diagnostics. Covered
 identity stays in the snapshot for image anchoring while observer selection
 respects coverage.
+
 ## Snapshot
 ```ts
 export interface VisualStateSnapshot {
@@ -174,6 +184,7 @@ First-release adapter order is canonical appearance, anatomy, presentation,
 wardrobe/item state, current conditions, scene relations, then derived
 affordances. This only makes failure deterministic; properly designed kinds use
 distinct keys and typed relationships.
+
 ## Presentation owner
 Item-backed presentation stays in item and wardrobe state. A small owner is
 needed only for deliberate choices that are not items.
@@ -202,6 +213,7 @@ covers, and carried objects remain item-backed.
 
 Writes use typed operations such as apply, remove, rearrange, smudge, and
 restore. Models never patch raw JSON or numeric intensity.
+
 ## Visibility
 ```ts
 export type VisualViewpoint =
@@ -232,6 +244,7 @@ The first release keeps the existing three detail tiers. Lighting, distance,
 angle, motion, framing/pixel size, exposure, and occlusion determine the highest
 available tier. Observer mode may add inspection focus and relationship-specific
 importance.
+
 ## Attention and memory
 ```ts
 export interface VisualAttentionCandidate {
@@ -276,6 +289,7 @@ The existing `VisualMemoryState` remains authoritative:
 - camera and inspector reads never write memory.
 
 The current 96-row cap remains until trial evidence shows pressure.
+
 ## Consumer digests
 ```ts
 export interface VisualNarratorDigest {
@@ -304,6 +318,7 @@ negative-prompt conflict checker.
 
 The inspector exposes the complete source-to-selection staircase without
 changing state.
+
 ## Reference-image extraction
 ```ts
 export interface VisualContractExtraction {
@@ -328,6 +343,7 @@ The authoring UI shows a diff against canonical truth. Acceptance writes through
 the target owner's normal command path. Re-running extraction creates a new
 proposal set and preserves manual edits. Conflicting images remain review items;
 confidence alone never grants overwrite.
+
 ## Persistence and capture
 `VisualStateFeature[]` is normally recomputed, not persisted as truth.
 
@@ -341,6 +357,7 @@ builds from one engine cut and branch version.
 
 A render stores cut id, feature keys, fingerprints, source references, and final
 digest so retry can distinguish “same composition” from “new current state.”
+
 ## Diagnostics and degraded behavior
 Initial codes include kind/value/locus invalid, source unavailable, duplicate
 key, missing relationship target, relationship cycle, unknown/invalid
@@ -350,6 +367,7 @@ stale snapshot, and extraction conflict, all under `visual_state.*`.
 Malformed optional features become suppression plus warning. Missing mandatory
 identity or morphology makes an image profile ineligible rather than guessed.
 Narration degrades to silence.
+
 ## Flags
 - `CHAT_VISUAL_STATE_SHADOW` builds snapshots and diagnostics only.
 - `CHAT_VISUAL_STATE_NARRATION` adds optional detail, default off.
@@ -358,6 +376,7 @@ Narration degrades to silence.
 
 Shadow mode leaves prompts and writes byte-identical. The inspector may ignore
 flags for read-only diagnostics but displays their values.
+
 ## Tests and promotion
 Pure fixtures cover deterministic keys/fingerprints/order, every source adapter,
 composition, visibility, observer isolation, notice-versus-mention, retakes,
@@ -383,6 +402,7 @@ A showcase image cannot promote a profile.
 
 Reference extraction promotes beyond admin only after proposal precision,
 review effort, conflict behavior, and manual-edit preservation are measured.
+
 ## Implementation placement
 Pure contracts belong under `src/contracts/visual-state/` and may import
 existing pure appearance, affordance, body, and item contracts, never server

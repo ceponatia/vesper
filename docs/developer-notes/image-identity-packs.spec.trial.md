@@ -254,16 +254,19 @@ The trial slice is complete when:
 - repeat cells confirm the selected strategy;
 - the identity-pack plan and active model profiles record the promoted choices.
 
-## Implementation (built 2026-08-06; hardened for the paid trial the same day)
+## Implementation (built 2026-08-06; hardened through 2026-08-07)
 
 The harness above is implemented; no paid cell has run and no verdict exists.
-The first build (PR 60) was followed by a correctness pass before any money is
-spent, closing the gaps its review found: planning now enforces real profile
-eligibility, execution actually runs the compiled profile at a pinned provider
-version, cell claiming is durable across processes, verdicts are normalized
-rows behind review-completeness gates, and the comparison matrix can express
-every cell family this spec requires. This section records what is true now
-and the deliberate v1 limitations.
+The first build (PR 60) was followed by two pre-spend correctness rounds, closing
+the gaps their reviews found. The first: planning enforces real profile
+eligibility, execution runs the compiled profile at a pinned provider version,
+cell claiming is durable across processes, verdicts are normalized rows behind
+review-completeness gates, and the comparison matrix can express every cell
+family this spec requires. The second (PR 61 review response, 2026-08-07): the
+profile's prompt strategy is dispatched or fails closed, the durable claim
+became a queue-wide heartbeat, and the degraded-evidence override is reachable
+from the summary. This section records what is true now and the deliberate v1
+limitations.
 
 ### Storage and code
 

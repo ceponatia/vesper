@@ -1,6 +1,10 @@
 # Dead-export sweep — delete the leavings, shrink the search space
 
-Status: draft (unsafe temporary/stale files may go early; broad de-export work stays after consolidation)
+Status: draft (unsafe temporary/stale files may go early; broad de-export work
+stays after consolidation. Re-verified 2026-08-07: every named target is still
+present — the stale site description, all three scripts, `chatGarmentStoreOf`,
+`CHAT_PULSE_EVERY_N`, `submitDurableApplyBodyModifier`,
+`openCoPresentEngagementsForActor`. Only C19's documentation half is done)
 
 Outcome: A developer can ask "who calls this?" about any exported name and get a
 truthful answer, so that genuinely dead code — an entire command handler with no
@@ -60,9 +64,11 @@ sets the rules.
   branch in the app shell, stale `"session"`/`"world"` envelope probes in the
   client API helper, a stale comment.
 - **Database relic (C19)** — `location_links.travel_minutes`, written only by
-  its own default and read nowhere; disposal is OQ1.
-- **Docs**, corrected in the same change: `docs/database.md` for C19 either way
-  it is ruled, plus the doc comments the audit flagged as untrue.
+  its own default and read nowhere. The retain ruling below settles disposal;
+  what remains is annotating the column itself in `src/server/db/schema.ts`, since
+  `docs/database.md` already records the reservation.
+- **Docs**, corrected in the same change: the doc comments the audit flagged as
+  untrue.
 
 ## Non-goals
 
@@ -92,7 +98,8 @@ sets the rules.
 
 ## Delivery slices
 
-Each lands, passes the full gate, and reviews on its own.
+Each lands on its own pull request, reaches a green `verify` check, and reviews
+on its own.
 
 - **Slice 0 — the retain list.** Before deleting anything, write down what is
   deliberately callerless and comment each such export with the plan that keeps
@@ -107,7 +114,7 @@ Each lands, passes the full gate, and reviews on its own.
 - **Slice 5 — simulation lane (A17, A18, A19).** Largest and last: the A17
   ruling, the A18 deletion, then the barrel split, with the gate corpus
   integration suites green before **and** after.
-- **Slice 6 — docs and the C19 ruling.**
+- **Slice 6 — the C19 annotation and the untrue doc comments.**
 
 ## Success criteria
 
@@ -117,9 +124,9 @@ Each lands, passes the full gate, and reviews on its own.
   folder, and the engine barrel no longer re-exports simulation internals.
 - The retain-list items (guardrails 1 and 2) survive, now annotated, so the next
   reader need not re-derive their status.
-- The full gate passes at each slice boundary — lint, cycles, typecheck, unit
-  tests, jscpd, one at a time per house rule — plus the gate corpus integration
-  suites on the simulation slice.
+- **A green `verify` check at each slice boundary**, plus the gate corpus
+  integration suites on the simulation slice. Validation is CI-only (root
+  `CLAUDE.md`) — never invoke a gate locally.
 - No user-visible change other than the corrected site description.
 
 ## Risks & coordination
@@ -138,12 +145,15 @@ Each lands, passes the full gate, and reviews on its own.
 - **Guardrail 4 — sequence this batch late.** The other batches will orphan code
   of their own, so going afterwards means one pass over the same files instead
   of two. Slice 1 is the exception and can land any time.
-- **Active-work coordination.** The narrator-physical-guidance build is live over
-  the affordance contracts and the chat affordance / physical-guidance engine
-  modules; `[WIP]`-tagged audit items sit in that churn, so coordinate first and
-  expect their line references to have moved.
-- **Reversibility.** Everything is a `git revert` away except the C19 column
-  drop, which needs a migration and a deploy — hence OQ1.
+- **Active-work coordination.** Both
+  [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md) and
+  [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
+  are live over the affordance contracts and the chat affordance /
+  physical-guidance engine modules; `[WIP]`-tagged audit items sit in that churn,
+  so coordinate first and expect their line references to have moved. The audit's
+  line numbers repo-wide should be treated as stale and re-grepped by finding id.
+- **Reversibility.** Everything here is a `git revert` away — the retain ruling
+  on `travel_minutes` means no column drop, so no migration and no deploy.
 
 ## Open questions
 

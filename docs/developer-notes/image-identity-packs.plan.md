@@ -1,12 +1,8 @@
 # Image identity packs — durable references that preserve a character's face
 
-Status: active (slices 1–4 and 5A — pack-side evaluation — shipped 2026-08-06;
-slice 5B — render-lane consumption — waits on the image-model-capabilities
-shared render intent; slice 6 — fixed trial — harness implementation complete
-and hardened 2026-08-06 and ready for the real trial, but the trial evidence —
-corpus characters, paid runs, the detector decision, threshold calibration,
-the repeat subset, and verdicts — does not exist yet and remains owner
-actions; slice 7 — production close-out — remains)
+Status: active (slices 1–4 and 5A shipped 2026-08-06; slice 6's trial harness
+shipped 2026-08-06 and was hardened through 2026-08-07; slice 5B, the trial run
+itself, and slice 7 remain)
 
 Outcome: A player can recognize the same character's face in every image Vesper
 makes of them, so that a newly generated picture stops looking like a different
@@ -305,9 +301,19 @@ Prove that concurrent requests for the same source do not create competing ready
 packs or duplicate crop files.
 
 Shipped 2026-08-06: preparation on demand, invalidation when the portrait changes
-or is cleared, single-flight coalescing with compare-before-promote, bounded
-retries, a seven-day window before old revisions are swept, hidden crops removed
-with the character, and copies that never share a pack across owners.
+or is cleared, coalescing with compare-before-promote, bounded retries, a
+seven-day window before old revisions are swept, hidden crops removed with the
+character, and copies that never share a pack across owners.
+
+Repaired the same day, after the slices merged. Two machines preparing the same
+portrait now join one derivation instead of each running the crop and throwing
+one away, with an escape hatch so an explicit regenerate can still recover a
+reservation left behind by a dead process. Background preparation now follows the
+portrait: swapping portraits twice in quick succession used to leave the second
+one with no pack at all, because the job that could have prepared it was the one
+that suppressed its own trigger. And deleting the canonical portrait now retires
+the pack before the image row goes, so a character can never be left holding a
+reference to a picture that no longer exists.
 
 ### Slice 4 — manual review and correction
 
@@ -353,50 +359,44 @@ composition drift, failure rate, provider latency, and effective reference size.
 Promote only strategies that materially improve identity without unacceptable
 regressions. Record the thresholds and policy version used for the verdict.
 
-Built 2026-08-06 — the trial infrastructure, dark. An admin now has a
-Settings → Identity trials page where they can define a run over their own
-characters, chosen model profiles, reference strategies, and a small fixed set
-of checked-in prompts; execute it in small bounded batches that charge the
-normal daily image budget before any provider money is spent; review the
-finished outputs blind, in pairs that differ only in reference strategy,
-grading the review dimensions and catastrophic defects without knowing which
-strategy made which image; see the aggregated results per profile and strategy
-pair; and record the verdict for each. Trial outputs are hidden operational
-images — never in the gallery, never copied or published, viewable only by
-their owner for review — and are deleted with the run. A run that would need a
-face detector, more references than the model accepts, or a blocked pack
-refuses those cells up front with an explanation instead of quietly trimming
-them.
+**The harness shipped 2026-08-06 and was hardened through 2026-08-07. The trial
+itself has not run.** An admin has a Settings → Identity trials page where they
+can define a run over their own characters, chosen model profiles, reference
+strategies, crop revisions, and a small fixed set of checked-in prompts; execute
+it in small bounded batches that charge the normal daily image budget before any
+provider money is spent; review the finished outputs blind, in pairs that differ
+in exactly one identity variable, grading the review dimensions and catastrophic
+defects without knowing which strategy made which image; see the aggregated
+results per profile and strategy; and record the verdict for each. Trial outputs
+are hidden operational images — never in the gallery, never copied or published,
+viewable only by their owner for review — and are deleted with the run.
 
-Hardened the same day, before any money is spent — the first build could have
-produced evidence that looked controlled but was not. The trial now refuses any
-model-and-profile pairing that could not run that job in production, and it
-proves what it claims: the settings a cell records are the settings actually
-sent, the exact provider version a cell names is the version that runs, and a
-prompt with two reference images tells the model in plain numbered words which
-image is the identity and which is the face detail. Two computers can no
-longer accidentally pay for the same render; a claim on a cell now lives in
-the database, a broken cell settles once instead of being billed again on
-every click, and an output that loses its cell is cleaned up rather than
-left as an invisible stored image. Verdicts are individually stored rulings
-that cannot overwrite each other, they cannot be recorded while renders are
-still outstanding or before the blind review is finished (recording one
-early is an explicit, labeled override), and a run only counts as complete
-when both the review and the rulings are. Finally, the comparison grid can
-now express everything the trial spec asks for: canonical-only versus
-face-detail arms, two crop revisions of the same character side by side
-(manual versus automatic), and a no-pack baseline where that is genuinely
-reproducible.
+The harness refuses rather than degrades, because evidence that merely looks
+controlled is worse than none. A cell that would need a face detector, more
+references than the model accepts, a blocked pack, a model whose exact provider
+version cannot be pinned, a job the chosen profile could not run in production, a
+prompt style the identity vocabulary cannot express, or a comparison arm that
+would render identically to a shorter one, is refused up front with an
+explanation rather than quietly trimmed. What a cell records is what was sent:
+the settings, the exact provider version, and the numbered wording that tells the
+model which image is the identity and which is the face detail. Two computers
+cannot pay for the same render, a broken cell settles once instead of being
+billed again on every click, and an output that loses its cell is deleted rather
+than left as an invisible stored image. A verdict cannot be recorded while
+renders are outstanding or the blind review is unfinished — recording one anyway
+is an explicit, labeled override — and a run counts as complete only when both
+the review and the rulings are.
 
-The trial itself has not run. No corpus characters exist yet, no paid renders
-have happened, no thresholds are calibrated, no detector is chosen, and no
-verdict is recorded — those are owner actions on top of this harness. One
-small setup step is also the owner's: each image model must be re-probed once
-on the admin models page so it carries a pinned provider version — a
-controlled trial refuses to plan cells against a model whose exact version it
-cannot pin.
-Reference sending stays off throughout: the integration rules deliberately
-allow packs to be trialed while it is off.
+**What remains is the trial, and it is owner work.** No corpus characters exist
+yet, no paid renders have happened, no thresholds are calibrated, no detector is
+chosen, and no verdict is recorded. One small setup step is also the owner's:
+each image model must be re-probed once on the admin models page so it carries a
+pinned provider version, because a controlled trial refuses to plan cells against
+a model whose exact version it cannot pin.
+
+Reference sending stays off throughout: the integration rules deliberately allow
+packs to be trialed while it is off. Mechanics and recorded v1 limitations:
+[image-identity-packs.spec.trial.md](image-identity-packs.spec.trial.md).
 
 ### Slice 7 — production close-out
 

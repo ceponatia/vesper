@@ -1,8 +1,12 @@
 # Affordance spec draft — skin surface
 
-Status: companion to
+Status: **parked** — companion to
 [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-(promoted with the plan 2026-07-28)
+(promoted 2026-07-28; no code exists, and none is scheduled). It is a
+design-ready domain waiting on physiology, which is itself deferred: nothing
+owns regional sweat, vascular response, piloerection, or surface residue in
+either lane, so every phenomenon here would be permanently silent if built.
+Parked means designed and not committed — not a promise to build later.
 
 ## Purpose
 

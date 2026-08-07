@@ -1,6 +1,9 @@
 # Editor scaffold and shared UI primitives
 
-Status: draft (ConfirmDialog is approved early; the full scaffold requires a second go/no-go after the defect fix)
+Status: draft (`ConfirmDialog` was approved 2026-07-30 to ship early and ahead of
+the rest of this plan; as of 2026-08-07 it has not been built and the
+dismiss-mid-delete defect is still live. The full scaffold still requires a
+second go/no-go after that fix)
 
 Outcome: A player can press Delete and then Cancel in any library editor and have
 the dialog stay put until the delete settles, so that backing out of a deletion
@@ -43,6 +46,16 @@ state, save/clone/delete and shell halves were left in place. Two smaller
 duplications ride along because they live in the same files and idiom — the two
 wardrobe editors (**D6**) and the async loading/error shell (**D7**) — and one dead
 hook gets an adopt-or-delete ruling (**D8**).
+
+A second, independent pass reached the same conclusion:
+[codebase-modularity.audit.md](codebase-modularity.audit.md) (2026-08-06) names
+the entity-editor shell its top components-domain item, verifies the five pages'
+skeleton as identical step for step, and lists the four divergences it considers
+parameterizable — persona's 409-to-field-error mapping, the forge and staged
+pauses, and tab slots. Read it before designing the hook; it is the closest thing
+to a spec this plan has. It also records that the shell extraction should precede
+splitting the item and character editor pages, which is the same ordering as
+slice 4.
 
 ## Scope
 
@@ -135,8 +148,9 @@ Slices 1, 2, 3 and 5 are independent of each other and of slice 4.
   `useDebouncedValue` either has importers or does not exist, and `docs/ui.md`
   describes reality.
 - No behaviour change elsewhere: same tabs, same autosave timing, same
-  save-first-then-clone ordering, same foreign-public preview. Full gate passes, run
-  one command at a time.
+  save-first-then-clone ordering, same foreign-public preview.
+- **The pull request's `verify` check is green.** Validation is CI-only (root
+  `CLAUDE.md`) — never invoke a gate locally.
 
 ## Risks and coordination
 
@@ -159,10 +173,11 @@ width through the existing size prop and default to the confirmation size.
 so there is no natural moment where a reviewer notices a regression — which is what
 the one-page-at-a-time ordering and the Fly playtest are for.
 
-**Coordination.** None of these files sit in the active narrator-physical-guidance
-work, which is confined to the affordance contracts and the chat affordance /
-physical-guidance engine modules; the two do not overlap. The batch does touch files
-the client-typing and route-factory batches will also touch, so those should not run
+**Coordination.** None of these files sit in the affordance work that
+[narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md) and
+[romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) are
+still editing; the areas do not overlap. The batch does touch files the
+client-typing and route-factory batches will also touch, so those should not run
 concurrently with slice 4.
 
 ## Open questions

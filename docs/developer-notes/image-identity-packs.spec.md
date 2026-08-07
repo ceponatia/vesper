@@ -84,8 +84,11 @@ The matching plan delivers the system in seven slices:
 6. fixed identity-reference trials;
 7. production gates, provenance, telemetry, and fallback removal.
 
-The database migration takes the next available number when implementation begins;
-this documentation does not reserve one while other image migrations are active.
+[The plan](image-identity-packs.plan.md) owns which of those have shipped. Two
+facts frame everything below: migrations 0101 (packs) and 0102–0103 (trial) are
+applied, and **no production render lane consumes a pack** —
+`IMAGE_IDENTITY_PACK_REFERENCES` is default off, so the integration spec
+describes a contract the trial exercises and production does not yet use.
 
 ## Completion boundary
 
