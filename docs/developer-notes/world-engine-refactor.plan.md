@@ -601,10 +601,11 @@ All seven were ruled on by the owner in 2026-07-16. Recorded with what happened 
   behind it.
 - **OQ6 — What arbitrates the salience bus?** **Ruled** in favor of starting to break up the
   over-siloed state management. **Not done** (§6.3) in either lane.
-- **OQ7 — Which overlay path wins?** Four separate paths move dispositions today —
-  arousal/intoxication state overlays, regard overlays, trait overlays, and condition mood
-  shifts — with **no declared composition order**, and every meter in §A adds a potential
-  fifth. **Ruled: these paths may need redesigning entirely so they compose more elegantly;
+- **OQ7 — Which overlay path wins?** Three separate paths move dispositions today —
+  arousal/intoxication state overlays, regard overlays, and trait overlays — with **no
+  declared composition order**, and every meter in §A adds a potential fourth. (A fourth
+  path, condition mood shifts, was deleted unused on 2026-08-07.) **Ruled: these paths may
+  need redesigning entirely so they compose more elegantly;
   a deeper look is still owed.** Unchanged, and the in-house precedent to reuse is still
   attribute provenance's source precedence — same shape, plus a total band-step budget so
   overlays cannot stack into a different person.

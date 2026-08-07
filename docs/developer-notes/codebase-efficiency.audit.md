@@ -565,6 +565,18 @@ present on this date.
   [dead-export-sweep.plan.md](dead-export-sweep.plan.md).
 - **F4's `unconsumed-character-prose.md`** — archived to `finished/` on
   2026-08-02. `docs/ui.md`'s `useDebouncedValue` claim (D8) is still wrong.
+- **E7's condition half — deleted 2026-08-07**, which **supersedes the "retain
+  and consolidate" ruling below**. `conditionMoodBaselineShift`,
+  `CONDITION_MOOD_BASELINE_SHIFTS`, and `CONDITION_BASELINE_SHIFT_CAP` went with
+  their tests: the retained half never had a consumer (its only one was the
+  session lane's `merge/phases/meters.ts`, deleted in R6, and `driftChatState`
+  never passed conditions in), so deleting honored the ruling's second clause —
+  no new behavior activated in a cleanup — while dropping code no lane called.
+  **The rest of E7 is still open**: `atmosphere.ts` and
+  `atmosphereMoodBaselineShift` remain dead and untouched. **E-K1 is not
+  mooted** — the live condition→mood vocabulary in `mood/projection.ts`
+  (`FLUSTERED_CONDITION_LABELS`, `TIPSY_CONDITION_LABELS`) survives, so the
+  consolidation now covers two sets rather than three.
 
 **Notable non-fixes worth stating explicitly**, because their plans are old
 enough to invite the assumption: A11's five recorder reads are still five
@@ -593,7 +605,8 @@ bundle reach.
 - **Travel duration (C19): retain `travel_minutes`.** It is reserved for the
   authored travel-duration plan; annotate rather than drop it.
 - **Condition mood shifts (E7/E-K1): retain and consolidate the vocabulary.** Do
-  not activate new behavior in a cleanup.
+  not activate new behavior in a cleanup. — **Superseded 2026-08-07: deleted
+  instead of retained**; see §Fixed since the audit.
 - **Client cache (D14): drop it.** No cache without a measured problem and
   invalidation contract.
 - **Body-modifier command (A17): caller plus integration test, or delete the

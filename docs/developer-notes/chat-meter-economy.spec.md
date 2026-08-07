@@ -338,8 +338,8 @@ Two properties fall out and are worth stating as invariants:
   satiation/hydration/bladder belong with a needs→initiative slice rather than as three
   more numbers.
 - **Phase meters modulate baselines, never values.** The precedent exists —
-  `personalizeMeters` shifts arousal's resting point by libido;
-  `conditionMoodBaselineShift` shifts mood's. A cycle is the same seam on a clock.
+  `personalizeMeters` shifts arousal's resting point by libido. A cycle is the same seam on
+  a clock.
 
 ## Chat-lane groundwork this plan inherits
 
@@ -373,13 +373,16 @@ recorded here in 2026-07-16 no longer describes anything that exists. What is le
 Not this plan's scope; recorded so they are not rediscovered. Each is small, and all were
 re-verified against the tree on 2026-08-07.
 
-- **`conditionMoodBaselineShift` is now dead code.** It is defined and tested in
-  `src/contracts/mood/events.ts` and has **no production caller anywhere** — its only
-  consumer was the deleted session lane, and `driftChatState` never called it. This plan's
-  drift rewrite is the natural place to give it one, or it should be deleted.
-- **Its table can never match anyway**: the shift table keys `flustered`, but the fluster
-  chip mints the condition label "Flushed" (`chat-state.ts:3307`), which normalizes to
-  `flushed` ⇒ contributes 0.
+- **Condition→mood-baseline does not exist.** `driftChatState` drifts to personalized
+  baselines with no condition input, and `conditionMoodBaselineShift` — the helper that
+  would have supplied one — was deleted as dead code on 2026-08-07. If this plan's drift
+  rewrite wants conditions to move the mood baseline, that is net-new work, not a wiring
+  task.
+- **The fluster chip's label misses every `flustered` key.** The chip mints the condition
+  label "Flushed" (`chat-state.ts:3307`), which normalizes to `flushed`. This still bites
+  **live** code: `mood/projection.ts` keys `FLUSTERED_CONDITION_LABELS` as
+  `flustered`/`bashful`, so `deriveEmotionLabel` never reads the chip's own condition as
+  flustered. Fix the key or the label; whichever, keep them in one vocabulary.
 - **An away primary desynchronizes on skip**: `time-skip/route.ts:139` skips members whose
   presence is not `present`, so an away primary's state is never advanced while the shared
   clock is, and the route returns the un-skipped snapshot. Lazy clock-keyed catch-up
