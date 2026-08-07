@@ -1,6 +1,6 @@
 # Image identity packs — lifecycle and authorization spec
 
-Parent spec: [image-identity-packs.spec.md](image-identity-packs.spec.md)
+Status: detail for [image-identity-packs.spec.md](image-identity-packs.spec.md)
 
 This document owns creation triggers, lazy backfill, staleness, copy/publish
 isolation, deletion, cleanup, authorization, privacy, user/admin routes, and

@@ -8,28 +8,31 @@ It is a fork of reverie — itself a ground-up rewrite of the original companion
 
 ## Reading order
 
-| Doc | What it covers |
-| --- | --- |
-| [getting-started.md](getting-started.md) | Setup, env vars, database, running dev/tests |
-| [architecture.md](architecture.md) | Stack, directory layout, module boundaries, data flow |
-| [resilience.md](resilience.md) | The error-handling philosophy every module must follow |
-| [contracts/](contracts/README.md) | Attribute registry, body model, meters, conditions — and how to extend them |
-| [database.md](database.md) | Drizzle schema, pgvector, migration workflow |
-| [character-chat/](character-chat/README.md) | The chat lane: exchange pipeline, prompt architecture, tracked state, supporting cast & narrator input, initiative, the ensemble, images, API |
-| [contracts/simulation.md](contracts/simulation.md) | Successor-engine contracts (design detail in `docs/developer-notes/engine.*`) |
-| [memory.md](memory.md) | Episodes, semantic facts + supersedence, fused retrieval — chat-scoped |
-| [streaming-api.md](streaming-api.md) | HTTP API surface (library, chat, auth, pagination) |
-| [auth.md](auth.md) | Accounts (Better Auth), session resolution, and the entity-visibility / copy-on-use authorization seam |
-| [images.md](images.md) | Avatar generation, reference editing, chat scene images, asset storage |
-| [image-models/](image-models/README.md) | Per-model Replicate API reference: reference-input field names, arity and caps, aspect handling, output shapes |
-| [authoring.md](authoring.md) | AI-first character forge and manual-override editors |
-| [ui.md](ui.md) | Pages, components, styling conventions |
-| [testing.md](testing.md) | Test strategy and conventions |
-| [deployment.md](deployment.md) | Hosting the dev build online: Fly.io (Dockerfile, fly.toml, pgvector, volume, push-to-deploy, migrations) |
-| [guide/](guide/README.md) | Task-oriented manual pages (creating characters, items, locations, social cards) |
+| Doc                                                | What it covers                                                                                                                                |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| [getting-started.md](getting-started.md)           | Setup, env vars, database, running dev/tests                                                                                                  |
+| [architecture.md](architecture.md)                 | Stack, directory layout, module boundaries, data flow                                                                                         |
+| [resilience.md](resilience.md)                     | The error-handling philosophy every module must follow                                                                                        |
+| [contracts/](contracts/README.md)                  | Attribute registry, body model, meters, conditions — and how to extend them                                                                   |
+| [database.md](database.md)                         | Drizzle schema, pgvector, migration workflow                                                                                                  |
+| [character-chat/](character-chat/README.md)        | The chat lane: exchange pipeline, prompt architecture, tracked state, supporting cast & narrator input, initiative, the ensemble, images, API |
+| [contracts/simulation.md](contracts/simulation.md) | Successor-engine contracts (design detail in `docs/developer-notes/engine.*`)                                                                 |
+| [memory.md](memory.md)                             | Episodes, semantic facts + supersedence, fused retrieval — chat-scoped                                                                        |
+| [streaming-api.md](streaming-api.md)               | HTTP API surface (library, chat, auth, pagination)                                                                                            |
+| [auth.md](auth.md)                                 | Accounts (Better Auth), session resolution, and the entity-visibility / copy-on-use authorization seam                                        |
+| [images.md](images.md)                             | Avatar generation, reference editing, chat scene images, asset storage                                                                        |
+| [image-models/](image-models/README.md)            | Per-model Replicate API reference: reference-input field names, arity and caps, aspect handling, output shapes                                |
+| [authoring.md](authoring.md)                       | AI-first character forge and manual-override editors                                                                                          |
+| [ui.md](ui.md)                                     | Pages, components, styling conventions                                                                                                        |
+| [testing.md](testing.md)                           | Test strategy and conventions                                                                                                                 |
+| [deployment.md](deployment.md)                     | Hosting the dev build online: Fly.io (Dockerfile, fly.toml, pgvector, volume, push-to-deploy, migrations)                                     |
+| [guide/](guide/README.md)                          | Task-oriented manual pages (creating characters, items, locations, social cards)                                                              |
 
 ## Documentation rules
 
+- **Invoke the `vesper-docs` skill before editing anything under `docs/`** (`.claude/skills/vesper-docs/`). It carries the procedure for both tiers, the canonical-owner rule, the conversation-residue guardrail, the table formatting rules, a validation checklist, and copyable templates.
+- **These docs are the reference tier: they say what is true now.** Present tense, no dates, no rollout plans, no history. Anything phrased "will", "planned", or "once we" belongs in the working tier (`docs/developer-notes/`), where plans are dated and carry a `Status:` line.
+- **Tables are formatted for the raw `.md`, not just the rendered page.** Every row on one physical line, no newlines inside cells, cells space-padded so the pipes align vertically, literal pipes escaped `\|`. Prefer 2–4 columns and short phrases. If several cells need long prose, it is not a table — use headings and bullets. Full rules: the skill, §"Table formatting".
 - One focused document per system. When a system changes, update its doc in the same change.
 - Documents describe **patterns and invariants** ("how to add an attribute group", "what a post-turn agent may not do"), not line-by-line code walkthroughs.
 - **Promote a doc to a folder when it outgrows one file.** A system doc starts as `docs/<system>.md`. When it would exceed ~400 lines, promote it to `docs/<system>/`: a `README.md` index (one-paragraph intro + a reading-order table linking the parts + any whole-system checklist) plus one file per sub-topic, named after the sub-topic — or, where the doc mirrors a code tree, after the code subfolder it covers (see `contracts/`, which mirrors `src/contracts/`). Keep each part well under ~400 lines; if a part outgrows that, it is itself a candidate for promotion. The folder's row in this table points at `docs/<system>/README.md`. On promotion, repoint active inbound links to the new part files; leave historical `finished/`/`phase-N` docs as-is.

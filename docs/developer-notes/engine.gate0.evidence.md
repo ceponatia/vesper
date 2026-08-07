@@ -1,15 +1,15 @@
 # Engine plan — Gate 0: establish trustworthy evidence
 
+Status: **ADVANCE — closed 2026-07-16.** See the exact evidence and bounded follow-ups in
+[gate0.closeout.md](gate0.closeout.md). This status permits Gate 1 only; no spike was
+promoted to production.
+
 Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
 gate — see the hub's gate index). Sequencing and current status live in
 [roadmap.md](roadmap.md) and the hub; normative contracts live in the
 [engine.spec.md](engine.spec.md) §-index.
 
 ## Gate 0 — establish trustworthy evidence
-
-Status: **ADVANCE — closed 2026-07-16.** See the exact evidence and bounded follow-ups in
-[gate0.closeout.md](gate0.closeout.md). This status permits Gate 1 only; no spike was
-promoted to production.
 
 Rough effort: **3–6 developer-days**, excluding the already queued meter plan.
 

@@ -1,7 +1,7 @@
 # Condition → attribute effects: the unwired remainder
 
-Status: **open remainder** (re-drafted 2026-08-02; the original 2026-06-15 analysis
-is mostly shipped via
+Status: draft — the open remainder of an otherwise-shipped slice (re-drafted
+2026-08-02; the original 2026-06-15 analysis is mostly shipped via
 [finished/character-chat-state-narration.spec.md](finished/character-chat-state-narration.spec.md)
 §2 — see git history for the original text). Supplement to
 [finished/character-schema-audit.md](finished/character-schema-audit.md) findings **B2**
@@ -105,11 +105,11 @@ resolution. B-i needs re-targeting, not re-deciding.
 
 Conditions in the chat lane today originate from exactly three places:
 
-| Origin | Site | Catalog-seeded? |
-| --- | --- | --- |
-| Catalog seed on the state-patch path | `chat-state.ts:3127` | — (it *is* the seed) |
-| API state PATCH (`conditions` field) | `app/api/chats/[chatId]/state/route.ts:72` | yes, via `:3127` |
-| Hardcoded `fluster` action chip | `chat-state.ts:3254-3261` | **no** (see §4b) |
+| Origin                               | Site                                       | Catalog-seeded?      |
+| ------------------------------------ | ------------------------------------------ | -------------------- |
+| Catalog seed on the state-patch path | `chat-state.ts:3127`                       | — (it *is* the seed) |
+| API state PATCH (`conditions` field) | `app/api/chats/[chatId]/state/route.ts:72` | yes, via `:3127`     |
+| Hardcoded `fluster` action chip      | `chat-state.ts:3254-3261`                  | **no** (see §4b)     |
 
 The state-tools "add condition" UI (`chat-state-tools.tsx:158`) constructs with
 `attributeEffects: []` but PATCHes through the route, so it inherits the seed.

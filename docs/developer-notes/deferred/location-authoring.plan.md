@@ -1,8 +1,14 @@
 # Location builder — authored locations beyond the entity library
 
-Status: draft (stub — parked 2026-07-23, owner request recorded alongside
-[travel-duration-authoring.plan.md](travel-duration-authoring.plan.md);
-promote per [CLAUDE.md](CLAUDE.md) before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Parked 2026-07-23, owner request recorded alongside
+[travel-duration-authoring.plan.md](travel-duration-authoring.plan.md); promote
+per [CLAUDE.md](CLAUDE.md) before building.
+
+Outcome (provisional): The owner — and eventually a player building their own
+world — can lay out a place, name the spots inside it, and say who lives there
+and what stands where, so that worlds get built through an authoring surface
+instead of being hand-written into seed code.
 
 ## What
 

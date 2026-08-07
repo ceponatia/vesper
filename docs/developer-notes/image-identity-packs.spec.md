@@ -1,6 +1,6 @@
 # Image identity packs — technical spec
 
-Plan: [image-identity-packs.plan.md](image-identity-packs.plan.md)
+Status: companion to [image-identity-packs.plan.md](image-identity-packs.plan.md)
 
 This hub indexes the technical contract for durable identity references. The
 system compiles a character's current canonical portrait into a versioned,

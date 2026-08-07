@@ -2,6 +2,11 @@
 
 Status: draft (sequenced after the measured client tranche; sequential suggestion writes are a settled invariant)
 
+Outcome: A developer can teach the library about a sixth kind of authored thing
+by adding one registry entry and re-exporting its routes, so that a fix to
+cloning, publishing or image generation stops having to be typed out five times
+and applied to only three.
+
 ## Why
 
 The library holds five kinds of authored thing — characters, locations, items,

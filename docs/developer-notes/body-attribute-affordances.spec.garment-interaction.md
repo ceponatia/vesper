@@ -386,12 +386,12 @@ no counterpart there and always survive.
 
 ### Deferred, and the diagnostics that hold the silence
 
-| Deferred | Why | Where the silence shows |
-| --- | --- | --- |
-| `garment.wind_or_motion_response` | no wind/motion owner (shared scene/body-relations owner) | not registered at all — no permanently-suppressed row per read |
-| `garment.pose_drape` | no pose owner | not registered |
-| `garment.wet_cling` **in production** | no fit and no pose ⇒ no contact | `affordance.input.unavailable` on the `contacts` dependency |
-| intimate garment cues | chat lane has no narrative-focus/consent owner | `intimate_gated` (consent) / `not_narrative_focus` (relevance) |
+| Deferred                              | Why                                                      | Where the silence shows                                        |
+| ------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
+| `garment.wind_or_motion_response`     | no wind/motion owner (shared scene/body-relations owner) | not registered at all — no permanently-suppressed row per read |
+| `garment.pose_drape`                  | no pose owner                                            | not registered                                                 |
+| `garment.wet_cling` **in production** | no fit and no pose ⇒ no contact                          | `affordance.input.unavailable` on the `contacts` dependency    |
+| intimate garment cues                 | chat lane has no narrative-focus/consent owner           | `intimate_gated` (consent) / `not_narrative_focus` (relevance) |
 
 `effectiveFlutterLoad` and `effectiveDrapeStiffness` are derived and
 fixture-tested anyway: the spec names them as shared mechanics, stiffness feeds

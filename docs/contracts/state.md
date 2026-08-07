@@ -2,8 +2,8 @@
 
 # Pinned state shapes
 
-The **binding** schemas behind the JSONB columns that survived the R6 session-lane retirement
-([database.md](../database.md)). They live in `contracts/world/` and `contracts/state/`, and each
+The **binding** schemas behind the JSONB columns in [database.md](../database.md).
+They live in `contracts/world/` and `contracts/state/`, and each
 exports an `empty*()` default used as the `parseOr` fallback. The character-chat lane's own tracked
 shapes (`character_chat_state`, the scenario, scene memory, plans) are covered by
 [../character-chat/state.md](../character-chat/state.md); the successor engine's shapes by
@@ -11,11 +11,11 @@ shapes (`character_chat_state`, the scenario, scene memory, plans) are covered b
 
 ## Where each shape is stored
 
-| Shape | Lives on | What it is |
-| --- | --- | --- |
-| `CharacterProfile` | `characters.profile` | The authored character. |
-| `PersonaProfile` | `personas.profile` | The player as a library entity (bio, body, wardrobe). |
-| `SceneGenState` | image-gen cadence state | Scene-image generation cadence + reference mode. |
+| Shape              | Lives on                | What it is                                            |
+| ------------------ | ----------------------- | ----------------------------------------------------- |
+| `CharacterProfile` | `characters.profile`    | The authored character.                               |
+| `PersonaProfile`   | `personas.profile`      | The player as a library entity (bio, body, wardrobe). |
+| `SceneGenState`    | image-gen cadence state | Scene-image generation cadence + reference mode.      |
 
 ## CharacterProfile
 

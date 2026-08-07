@@ -14,18 +14,20 @@ folder (index in its CLAUDE.md, which also keeps the stub-by-stub record of
 what has already graduated). Batch 1 came from the 2026-07-23 correctness /
 simulation-fidelity / resilience-perf review; batch 2 from the 2026-07-24
 product review of the successor front door, chat routes, exchange layer, and
-world surfaces — every claim code-verified before parking. **Owner process: we
-flesh these out one by one as we discuss — each stub graduates per
-deferred/CLAUDE.md to its own `<topic>.plan.md` (+ spec where warranted) and a
-roadmap line.** None are committed work until then. Group A is down to one
+world surfaces — every claim code-verified before parking. **Owner ruling
+(2026-07-23): these are fleshed out one at a time, on request. Each stub
+graduates per deferred/CLAUDE.md to its own `<topic>.plan.md` (+ spec where
+warranted) and a roadmap line.** None are committed work until then. Group A is
+down to one
 item, and groups C (hardening & perf) and E (lifecycle integrity) graduated in
 full — command-integrity, drain-hardening, sim-read-seam-guards, and
 successor-world-lifecycle all shipped 2026-07-23..27. Still parked:_
 
 - **A. Bugs first** — **A3** solo-reply regenerate 409
   ([deferred/solo-retake.plan.md](deferred/solo-retake.plan.md)).
-- **B. Living world** — seed the built-but-unseeded life — B8 graduated
-  2026-08-02 → [starter-world-seeds.plan.md](starter-world-seeds.plan.md);
+- **B. Living world** — seed the built-but-unseeded life — B8 graduated and
+  shipped 2026-08-02 →
+  [finished/starter-world-seeds.plan.md](finished/starter-world-seeds.plan.md);
   the primary's LOD
   ruling (at `exact` she is mechanically inert forever); remote text/voice when
   apart; successor NPC initiative; named daylight-band skips (the R5 leftover);
@@ -241,43 +243,49 @@ See [location-design-spec.phase3.md](finished/location-design-spec.phase3.md)
 
 ## Monorepo split (gated on a second deployable)
 
-_Update 2026-06-16._ Permanently deferred for now. I don't foresee a second deployable
-since this is one game. What I would like to know is if there are similar organization
-schemas for repos. I like the way a monorepo breaks domains up into packages, and
-having everything listed under src/ in this app has confused me a bit. If this is the
-optimal way for Claude & GPT to code, I am okay with it. If there is another system
-which could assist them in tracking the codebase better, let's look into that.
+**Owner ruling (2026-06-16): permanently deferred for now.** No second
+deployable is foreseen — this is one game.
 
-_Claude's note 2026-06-16:_ Agreed, no monorepo (no second deployable). On the real
-question — is flat `src/` optimal for AI agents, or is there a better scheme: the
-codebase is **already domain-segmented**, just folders instead of packages —
-`contracts/` (pure domain), `lib/` (pure utils), `server/{ai,db,engine,images,
-authoring,events}/` (each a domain behind a barrel), `components/`, `app/`. Those
-boundaries are real and **enforced** (ESLint `no-restricted-imports` + barrels + the
-`@/` alias) — "packages without the `package.json` tax." For Claude/GPT specifically,
-physical packages don't improve navigation: agents grep and jump to symbols (same in
-folders or packages), while packages _add_ indirection (cross-package builds, more
-config). What actually helps an agent track a codebase is (1) a crisp **module map**,
-(2) consistent **barrels** as each domain's public API, (3) a **boundary lint** so
-violations are mechanical — all of which already exist here. **Recommendation:** don't
-restructure; treat each `server/<domain>/` folder as an internal "package" (its barrel
-= its public surface, already the design) and make the map legible.
-[architecture.md](../architecture.md) already documents directory layout +
-boundaries; if `src/` still confuses you, the cheap win is a one-screen **domain map**
-(table: domain → folder → barrel → owns → may-import) at the top of that doc — I can
-write it. If a _specific_ split is what trips you up, point at it and I'll propose a
-targeted rename rather than a wholesale reshuffle.
+**Context.** The question behind the monorepo idea was never packaging for its
+own sake: a monorepo breaks domains up into packages legibly, and having
+everything listed under `src/` has been harder to hold in the head. The real
+question is whether a flat `src/` is the best scheme for the coding agents
+working in this repo, or whether some other organization scheme would help them
+track the codebase better. A flat `src/` is acceptable if it is the optimal
+shape for that; the trade is legibility, not packaging orthodoxy.
 
-_Raised 2026-06-14._ Evaluated converting the single Next.js app into a pnpm
-workspace. **Verdict: not yet** — Vesper was deliberately collapsed _from_ a
-12-package monorepo because every package had one consumer, and that still holds
-(one deployable). Boundaries are already clean and enforced by convention +
-barrels + the `@/` alias. Park behind a **trigger**: the first second consumer of
-the engine — most likely a phase-4 background **world-simulation / scheduled-
-arrival worker**. When it fires, do a small **4-package, consumer-driven** split
-(`core` / `engine` / `web` / `worker`), not the old 12-package shape. Interim
-action available now: an ESLint boundary rule + gating the one `process.env` read
-in `lib/log.ts`.
+**Assessment (2026-06-16).** The codebase is **already domain-segmented**, just
+folders instead of packages — `contracts/` (pure domain), `lib/` (pure utils),
+`server/{ai,db,engine,images,authoring,events}/` (each a domain behind a
+barrel), `components/`, `app/`. Those boundaries are real and **enforced**
+(ESLint `no-restricted-imports` + barrels + the `@/` alias) — packages without
+the `package.json` tax. Physical packages would not improve agent navigation:
+agents grep and jump to symbols, which works the same in folders or packages,
+while packages _add_ indirection (cross-package builds, more config). What
+actually helps an agent track a codebase is a crisp **module map**, consistent
+**barrels** as each domain's public API, and a **boundary lint** that makes
+violations mechanical — all three already exist here. The recommendation is
+therefore not to restructure: treat each `server/<domain>/` folder as an
+internal package whose barrel is its public surface, which is already the
+design, and make the map legible.
+
+**Cheapest available improvement.** [architecture.md](../architecture.md)
+already documents directory layout and boundaries. If `src/` still reads as
+confusing, the one-screen win is a **domain map** at the top of that doc naming,
+per domain: folder, barrel, what it owns, and what it may import. A specific
+folder split that trips a reader up is better answered with a targeted rename
+than a wholesale reshuffle.
+
+**Evaluation (2026-06-14) — verdict: not yet.** Converting the single Next.js
+app into a pnpm workspace was assessed and declined. Vesper was deliberately
+collapsed _from_ a 12-package monorepo because every package had one consumer,
+and that still holds (one deployable). Boundaries are already clean and enforced
+by convention + barrels + the `@/` alias. Park behind a **trigger**: the first
+second consumer of the engine — most likely a background **world-simulation /
+scheduled-arrival worker**. When it fires, do a small **4-package,
+consumer-driven** split (`core` / `engine` / `web` / `worker`), not the old
+12-package shape. Interim action available now: an ESLint boundary rule + gating
+the one `process.env` read in `lib/log.ts`.
 
 The full analysis doc (`monorepo-evaluation.md`, with the package outline and
 boundary-enforcement design) was retired 2026-07-13 — permanently deferred; the
@@ -298,31 +306,35 @@ See [presence-and-perception-spec.phase3.md](finished/presence-and-perception-sp
 
 ## Companion role as romance eligibility
 
-_Update 2026-06-16._ Let's think about whether there is any real value in doing
-this. My initial thought was that we would use Companion and NPC tiers to determine
-how much context to send to the narrator for those characters, but so far context
-window has not been an issue (current models are capable of handling a _lot_ of tokens).
-If there is no real benefit to this, perhaps we remove the tier and Companion systems
-entirely.
+**Owner ruling (2026-06-16): park — don't build, don't remove.** Keep the
+`tier` and `role` fields; do not build companion-as-romance-eligibility now.
 
-However, it is possible that in large worlds with many characters running in the background,
-this would become an issue and tiers / companion flags would be necessary.
+**Context (2026-06-16).** The original justification for Companion and NPC tiers
+was narrator context budget — how much context to send for each character — and
+that justification has not held up: context window has not been a problem, since
+current models handle a lot of tokens. The open doubt was therefore whether the
+tier and Companion systems carry any real value at all, or should be removed
+entirely. The counterweight: in large worlds with many characters running in the
+background, per-character cost could make tiers and companion flags necessary
+after all.
 
-_Claude's note 2026-06-16:_ Grounded check on what these actually do today: `tier`
+**Assessment (2026-06-16).** What these fields do today: `tier`
 (major/minor/extra) and `role` (companion/npc) are **stored and snapshotted but
-nothing branches on them at runtime** — the only consumers are `spawnTier` (companion
-`minor`→`major` bump) and the `MAJOR_TIER_SOFT_CAP` spawn/editor warning
-(`lib/cast-tiers.ts`). So you're right that context window isn't the justification, and
-it was never the real lever anyway. The lever these fields exist _for_ is **simulation
-cost**: the per-character post-turn agent fan-out + memory writes each turn, and (once
-it lands) offscreen simulation — compute/latency/token spend that scales with **cast
-size**, not context length. **Recommendation:** keep the fields (nearly free as data,
-and forward-looking per your schema preference) but **don't build
-companion-as-romance-eligibility now** — it would add the first runtime `role` branch
-for a speculative benefit. Revisit both together when offscreen sim or large background
-casts actually land and the per-character cost bites; that's when tiers earn their keep.
-If that moment never comes, deleting two inert fields later is trivial. Net: park,
-don't build, don't remove.
+nothing branches on them at runtime** — the only consumers are `spawnTier`
+(companion `minor`→`major` bump) and the `MAJOR_TIER_SOFT_CAP` spawn/editor
+warning (`lib/cast-tiers.ts`). Context window is not the justification and never
+was the real lever. The lever these fields exist _for_ is **simulation cost**:
+the per-character post-turn agent fan-out + memory writes each turn, and (once
+it lands) offscreen simulation — compute/latency/token spend that scales with
+**cast size**, not context length. The fields are nearly free as data and match
+the project's forward-looking schema preference, so keeping them costs little;
+building romance eligibility on `role` now would add the first runtime `role`
+branch for a speculative benefit. If offscreen sim or large background casts
+never land, deleting two inert fields later is trivial.
+
+**Revisit trigger.** Reopen both questions together when offscreen simulation or
+large background casts actually land and per-character cost bites — that is when
+tiers would earn their keep.
 
 _Raised 2026-06-13, brainstorm from the cast-tiers investigation._ Use the
 existing cast **`role`** field (not tier) to designate romance targets:
@@ -346,8 +358,8 @@ Note this gives `role` a concrete gameplay meaning. The cast-tiers spec today
 calls `role: companion | npc` "an authoring/POV distinction, not a simulation
 one" — this would make it the **first behavior to branch on `role` at runtime**
 (nothing branches on role _or_ tier today). Tradeoff to weigh: a non-companion
-you later want romanceable must be re-cast as a `companion` (or we add a
-separate `romanceable` flag); coupling to the existing role is cheapest and
+that later needs to be romanceable must be re-cast as a `companion`, or gain a
+separate `romanceable` flag; coupling to the existing role is cheapest and
 matches the framing.
 
 See [cast-tiers-and-affinity-spec.phase3.md](finished/cast-tiers-and-affinity-spec.phase3.md)
@@ -463,7 +475,17 @@ Not blocking — do it when perf becomes a question. From [ux-audit.plan.md](fin
 
 ## Old World-Model Plans from the Roadmap
 
-These items were in the roadmap and are holdovers from the world-model system which is being deprecated in favor of expanding and perfecting the character-chat system _first_ and then deciding if we want to incorporate that into a bigger world system. My current lean is we will eventually incorporate all desired features into character chat and character chat will become less 1-on-1 focused. We may want to branch to a different app route for that or it may make sense to keep everything in one chat system.
+These items were on the roadmap and are holdovers from the world-model system,
+deprecated in favor of expanding and perfecting the character-chat system
+_first_, and only then deciding whether to incorporate it into a bigger world
+system.
+
+**Owner lean (recorded with these demotions):** all desired features eventually
+land in character chat, and character chat becomes less 1-on-1 focused over
+time.
+
+**Undecided, owner's call at promotion:** whether that broader chat lives behind
+a different app route, or whether everything stays in one chat system.
 
 - **Visual world map** — [world-map.plan.md](finished/world-map.plan.md). Slice 1 (read-only
   force-directed graph) shipped 2026-06-18; slices 2–3 (editable layout, play-screen

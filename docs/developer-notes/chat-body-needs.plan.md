@@ -6,6 +6,10 @@ haven't touched yet… Hydration would work similarly… Bathroom use is another
 I'd like to incorporate… What other meters can you think of that would help create a
 hyper realistic living world?")
 
+Outcome: A player can watch a character get hungry, thirsty, or need a moment to
+herself and *do something about it* — suggest food, excuse herself — instead of a pip
+changing colour while she talks as though nothing were happening.
+
 Sequenced **after** [chat-meter-economy.plan.md](chat-meter-economy.plan.md), which is its
 load-bearing dependency: this plan is the second use of that plan's clock-keyed drift,
 rhythm `kind`s, derived-read seam, and reserve-meter shape. Building it first would mean

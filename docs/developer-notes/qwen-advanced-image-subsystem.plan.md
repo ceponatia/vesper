@@ -2,6 +2,11 @@
 
 Status: draft for owner review — revised 2026-08-06
 
+Outcome: The owner can run a portrait or scene through a controlled experiment —
+supplying a pose or depth guide, a face reference, and an optional style — and
+compare it side by side with the ordinary result, so that an advanced image
+technique reaches players only when the comparison shows it is better.
+
 This is a product plan rather than a technical specification. It is intentionally
 plain English so the direction can be reviewed and revised before implementation
 details are locked down.
@@ -24,8 +29,8 @@ Related work:
 Use a **Qwen-family subsystem** as Vesper's first advanced, model-specific image
 prototype.
 
-The original version of this plan centered too narrowly on Qwen Image Edit 2511.
-That model is useful for identity-preserving edits and LoRAs, but it does not by
+Qwen Image Edit 2511 on its own is too narrow a base for the prototype. That
+model is useful for identity-preserving edits and LoRAs, but it does not by
 itself test the technically intricate controls this prototype is meant to explore.
 
 The revised subsystem should combine several Qwen workflows, each used for the
@@ -641,7 +646,7 @@ image records.
 - making a separate provider client merely for the lab;
 - requiring a separate deployment before the Replicate-only prototype is proven.
 
-## Recommended defaults for our review
+## Recommended defaults
 
 - Build a Qwen-family subsystem, not a 2511-only subsystem.
 - Make Qwen Image Edit Plus controlled composition part of the initial prototype,
@@ -656,9 +661,9 @@ image records.
 - Write a technical specification only after this product direction is reviewed
   and settled.
 
-## Points to review before implementation
+## Open questions
 
-The main decisions for the next revision are:
+These decisions are unresolved and settle before implementation:
 
 - whether the first vertical slice should include both a controlled portrait and
   a controlled scene, or prove portraits first;

@@ -1,18 +1,18 @@
 # Engine plan — Gate 2: production identity, event kernel, and scheduler
 
-Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
-gate — see the hub's gate index). Sequencing and current status live in
-[roadmap.md](roadmap.md) and the hub; normative contracts live in the
-[engine.spec.md](engine.spec.md) §-index.
-
-## Gate 2 — production identity, event kernel, and scheduler
-
 Status: **ADVANCE — closed 2026-07-17.** E2.1–E2.5 shipped in sequence; E2.6 ran the
 required proofs (21/21 checks at the full synthetic-month profile — evidence and one
 accepted caveat about schedule-time trigger templates going stale under live load in
 [engine-gate2-soak.plan.md](engine-gate2-soak.plan.md) §Verdict) and the owner ruled
 advance. This status permits Gate 3 design; its build stays blocked on the 10 product
 rulings below.
+
+Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
+gate — see the hub's gate index). Sequencing and current status live in
+[roadmap.md](roadmap.md) and the hub; normative contracts live in the
+[engine.spec.md](engine.spec.md) §-index.
+
+## Gate 2 — production identity, event kernel, and scheduler
 
 Rough effort: **15–30 developer-days** after Gate 1.
 

@@ -2,6 +2,10 @@
 
 Status: active (started 2026-08-05)
 
+Outcome: The owner can add or swap the image model behind portraits, variants,
+and scenes from a settings page, so that trying a different model takes half a
+minute instead of a code change, a pull request, and a deploy.
+
 ## Why
 
 Every image in Vesper — a character's portrait, a variant of that portrait, a

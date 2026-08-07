@@ -1,7 +1,12 @@
 # The primary's LOD story — an owner ruling
 
-Status: draft (stub — successor-engine backlog item B9, parked 2026-07-23;
-promote per [CLAUDE.md](CLAUDE.md) before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Successor-engine backlog item B9, parked 2026-07-23; promote
+per [CLAUDE.md](CLAUDE.md) before building.
+
+Outcome (provisional): A player can watch the character they spend all their
+time with sleep, eat, and move through her own day, so that the one person
+always on screen stops being the only one the living world never touches.
 
 ## What
 

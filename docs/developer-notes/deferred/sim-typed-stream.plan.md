@@ -1,8 +1,14 @@
 # Typed successor reply stream — progress, world events, and real error codes
 
-Status: draft (stub — successor-engine backlog item F21, parked 2026-07-24 from
-the successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
-before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Successor-engine backlog item F21, parked 2026-07-24 from the
+successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
+before building.
+
+Outcome (provisional): A player can see what a world-chat reply is doing while
+they wait and read why it failed when it fails, so that a long pause stops
+looking like a frozen screen and different problems stop showing the same
+generic error.
 
 ## What
 

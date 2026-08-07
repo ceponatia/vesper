@@ -1,7 +1,7 @@
 # Clothing state graph and condition gradients
 
-Status: active — **slices 0–6 shipped 2026-07-27** (six Opus subagent builds,
-audit-first; every open question resolved, see §Open questions). Slices 0–4
+Status: active — **slices 0–6 shipped 2026-07-27** (built audit-first; every
+open question resolved, see §Open questions). Slices 0–4
 are the deterministic substrate (contracts, chat instances + migration 0090,
 presentation graph, condition gradients). Slice 5 is the grounded extraction
 lane: the archivist proposes typed operations over enumerated opaque handles
@@ -26,6 +26,10 @@ seam map and rulings live in
 the upstream wardrobe-truth prerequisite for the
 [body-attribute-affordances](body-attribute-affordances.plan.md) companion set,
 which promoted on 2026-07-28 after clothing slices 0–6 shipped.
+
+Outcome: A player can undo two buttons, roll one sleeve, or leave a jacket over
+a chair and have the story keep it that way for the rest of the conversation,
+so that a shirt the scene already opened is never quietly buttoned again.
 
 ## What
 
@@ -290,12 +294,12 @@ without becoming full graph nodes.
 
 Recommended v1 channels:
 
-| Channel | Direction | Dynamics | Why |
-| --- | --- | --- | --- |
-| `wetness` | dry → saturated | sources + analytical drying | visible; unlocks garment affordances |
-| `cleanliness` | soiled → clean | wear/exposure/clean sources; zero at rest | aligns with existing item contracts |
-| `crease_load` | smooth → deeply wrinkled | wear/pose/care; little automatic recovery | clothing-specific visual state |
-| `wear` | pristine → worn out | discrete use/damage/care | aligns with successor item condition |
+| Channel       | Direction                | Dynamics                                  | Why                                  |
+| ------------- | ------------------------ | ----------------------------------------- | ------------------------------------ |
+| `wetness`     | dry → saturated          | sources + analytical drying               | visible; unlocks garment affordances |
+| `cleanliness` | soiled → clean           | wear/exposure/clean sources; zero at rest | aligns with existing item contracts  |
+| `crease_load` | smooth → deeply wrinkled | wear/pose/care; little automatic recovery | clothing-specific visual state       |
+| `wear`        | pristine → worn out      | discrete use/damage/care                  | aligns with successor item condition |
 
 ```ts
 interface GarmentConditionState {
@@ -422,14 +426,14 @@ transient condition belongs primarily in per-scene prompts.
 
 ## Ownership boundaries
 
-| Owner | Owns | Does not own |
-| --- | --- | --- |
-| item/wardrobe | blueprint, instance, locus, presentation, gradients, deposits, damage | cling/drape observations; attention |
-| environment/events | rain, spills, contact, force, care/damage causes | graph patches |
-| garment affordances | effective mechanics and actual current effects | persistent wardrobe state |
-| coverage/perception | visibility and observer/channel gating | mutation |
-| cue ranker | relevance, novelty, repetition budget | truth or condition |
-| narrator/image | realization of selected semantic reads | new state |
+| Owner               | Owns                                                                  | Does not own                        |
+| ------------------- | --------------------------------------------------------------------- | ----------------------------------- |
+| item/wardrobe       | blueprint, instance, locus, presentation, gradients, deposits, damage | cling/drape observations; attention |
+| environment/events  | rain, spills, contact, force, care/damage causes                      | graph patches                       |
+| garment affordances | effective mechanics and actual current effects                        | persistent wardrobe state           |
+| coverage/perception | visibility and observer/channel gating                                | mutation                            |
+| cue ranker          | relevance, novelty, repetition budget                                 | truth or condition                  |
+| narrator/image      | realization of selected semantic reads                                | new state                           |
 
 This plan does not absorb the broader visual-attention or recognizable-feature
 memory work. It supplies garment observations to those consumers.

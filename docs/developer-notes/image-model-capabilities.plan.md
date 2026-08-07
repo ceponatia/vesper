@@ -2,6 +2,10 @@
 
 Status: active (started 2026-08-05)
 
+Outcome: The owner can pick a named, curated setup for each image model — a quick
+portrait, a 4K location, a scene that keeps the same character — so that one
+model can do several different jobs well without a code change.
+
 Content/tuning companion:
 [image-render-quality.plan.md](image-render-quality.plan.md) — per-model prompt
 dialects, negative-prompt banks, face-fidelity work, and trial protocol ride on

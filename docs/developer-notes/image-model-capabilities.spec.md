@@ -1,7 +1,7 @@
 # Image model capabilities — technical spec
 
-Technical companion to
-[image-model-capabilities.plan.md](image-model-capabilities.plan.md).
+Status: companion to
+[image-model-capabilities.plan.md](image-model-capabilities.plan.md)
 
 Related shipped foundation:
 [image-model-registry.plan.md](image-model-registry.plan.md) and

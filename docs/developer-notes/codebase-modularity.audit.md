@@ -15,35 +15,35 @@ Companion to [codebase-efficiency.audit.md](codebase-efficiency.audit.md) (2026-
 
 ### Top splits by context burned per read
 
-| # | File | Lines | Split into | Risk |
-|---|---|---|---|---|
-| 1 | `src/server/db/schema.ts` | 3,980 | 13-file `schema/` folder, cycle-safe | low, but human must run `db:generate` empty-diff check |
-| 2 | `src/server/engine/chat-pipeline.ts` | 3,617 | 5–6 files; previews first, `settle` last | medium (`settle` closes over ~30 vars) |
-| 3 | `src/server/images/identity-packs.ts` | 3,445 | 8 modules along its 16 existing banners | low-medium (module-load side effect) |
-| 4 | `src/server/engine/chat-state.ts` | 3,415 | 6 files by state family | medium |
-| 5 | `src/lib/simulation/bodies.ts` | 2,672 | 5 files (meter kernel is the reusable core) | low |
-| 6 | `src/server/engine/prompts/character-chat.ts` | 2,624 | 6 files; snapshot tests pin it | low |
-| 7 | `src/components/chat/chat-conversation.tsx` | 2,246 | 8 extractions → ~650 | medium (`runStream`/`stickRef`) |
-| 8 | `src/server/engine/chat-contact-adapter.ts` | 2,207 | 4 files; pure, 15 banners pre-drawn | low |
-| 9 | `src/server/engine/sim-exchange.ts` | 2,041 | 3 files | low-medium |
-| 10 | `src/server/images/prompts.ts` | 1,930 | 8 prompt-family files | low (cleanest split in repo) |
-| 11 | `src/lib/client/api.ts` | 1,864 | layered split + re-export barrel (66 importers) | low with barrel |
-| 12 | `src/server/authoring/character-forge.ts` | 1,569 | 5 files along its own banners | low |
+| File                                          | Lines | Split into                                      | Risk                                                   |
+| --------------------------------------------- | ----- | ----------------------------------------------- | ------------------------------------------------------ |
+| `src/server/db/schema.ts`                     | 3,980 | 13-file `schema/` folder, cycle-safe            | low, but human must run `db:generate` empty-diff check |
+| `src/server/engine/chat-pipeline.ts`          | 3,617 | 5–6 files; previews first, `settle` last        | medium (`settle` closes over ~30 vars)                 |
+| `src/server/images/identity-packs.ts`         | 3,445 | 8 modules along its 16 existing banners         | low-medium (module-load side effect)                   |
+| `src/server/engine/chat-state.ts`             | 3,415 | 6 files by state family                         | medium                                                 |
+| `src/lib/simulation/bodies.ts`                | 2,672 | 5 files (meter kernel is the reusable core)     | low                                                    |
+| `src/server/engine/prompts/character-chat.ts` | 2,624 | 6 files; snapshot tests pin it                  | low                                                    |
+| `src/components/chat/chat-conversation.tsx`   | 2,246 | 8 extractions → ~650                            | medium (`runStream`/`stickRef`)                        |
+| `src/server/engine/chat-contact-adapter.ts`   | 2,207 | 4 files; pure, 15 banners pre-drawn             | low                                                    |
+| `src/server/engine/sim-exchange.ts`           | 2,041 | 3 files                                         | low-medium                                             |
+| `src/server/images/prompts.ts`                | 1,930 | 8 prompt-family files                           | low (cleanest split in repo)                           |
+| `src/lib/client/api.ts`                       | 1,864 | layered split + re-export barrel (66 importers) | low with barrel                                        |
+| `src/server/authoring/character-forge.ts`     | 1,569 | 5 files along its own banners                   | low                                                    |
 
 (Plus `body-store` 1,546 / `activity-store` 1,532 / `household-store` 1,465 / `material-store` 1,402 — mostly resolved by the leaf-module extraction in §Engine-sim R4 — and `identity-pack-trial.ts` 1,525, `lib/simulation/households.ts` 1,539.)
 
 ### Top dedup clusters by net LOC
 
-| Cluster | ~LOC | Nature |
-|---|---|---|
-| Engine simulation store scaffolding (9 items, §Engine-sim) | 1,830 | `branchResolverView` ×64, command preamble ×46, `rejectedResult` ×15, cycle-driven copies |
-| Contracts envelope scaffolding (R1+R2+R6) | 600–750 | 49 command families + 64 events + 12 projection headers hand-typed |
-| `src/lib/simulation` kernel (R1–R5) | 700–800 | event envelope ×37, replay fold ×10, `hash.ts` copies ×18, rejection/meta types ×29 |
-| Components editor shell + primitives | ~500 | 5 copied editor pages (~90 lines each) + chip/segmented/list-editor |
-| Server-rest (memory, api, ai) | ~475 | library kind dispatch [known C6/C7], facts↔episodes retrieval, `errorText` ×10 [known C9] |
-| Engine root agent legs + ledgers | ~460 | 5 hand-rolled agent-leg scaffolds, classifier twins, roster copies |
-| `src/app` route bodies | ~290 | entity-kind route factories, library list/detail helpers, `withOwnedChat` adoption |
-| Images | ~130 | attribute-phrase loops (drift fix), upload merge |
+| Cluster                                                    | ~LOC    | Nature                                                                                    |
+| ---------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------- |
+| Engine simulation store scaffolding (9 items, §Engine-sim) | 1,830   | `branchResolverView` ×64, command preamble ×46, `rejectedResult` ×15, cycle-driven copies |
+| Contracts envelope scaffolding (R1+R2+R6)                  | 600–750 | 49 command families + 64 events + 12 projection headers hand-typed                        |
+| `src/lib/simulation` kernel (R1–R5)                        | 700–800 | event envelope ×37, replay fold ×10, `hash.ts` copies ×18, rejection/meta types ×29       |
+| Components editor shell + primitives                       | ~500    | 5 copied editor pages (~90 lines each) + chip/segmented/list-editor                       |
+| Server-rest (memory, api, ai)                              | ~475    | library kind dispatch [known C6/C7], facts↔episodes retrieval, `errorText` ×10 [known C9] |
+| Engine root agent legs + ledgers                           | ~460    | 5 hand-rolled agent-leg scaffolds, classifier twins, roster copies                        |
+| `src/app` route bodies                                     | ~290    | entity-kind route factories, library list/detail helpers, `withOwnedChat` adoption        |
+| Images                                                     | ~130    | attribute-phrase loops (drift fix), upload merge                                          |
 
 ### Correctness-flavored findings (drift already happened or is one edit away)
 

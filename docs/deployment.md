@@ -16,11 +16,11 @@ Machine with a persistent volume — so `auto_stop_machines` must be **off**.
 
 ## Files
 
-| File | Role |
-| --- | --- |
-| `Dockerfile` | App image (build + runtime). Keeps full deps so `pnpm db:migrate` works; no `pnpm prune`. |
-| `.dockerignore` | Keeps `node_modules`/`.next`/`.env`/`data` out of the build context. |
-| `fly.toml` | Machine + service config (managed in the Fly UI / repo — see recommended version below). |
+| File            | Role                                                                                      |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| `Dockerfile`    | App image (build + runtime). Keeps full deps so `pnpm db:migrate` works; no `pnpm prune`. |
+| `.dockerignore` | Keeps `node_modules`/`.next`/`.env`/`data` out of the build context.                      |
+| `fly.toml`      | Machine + service config (managed in the Fly UI / repo — see recommended version below).  |
 
 ## The Dockerfile (key choices)
 
@@ -132,10 +132,10 @@ the `drizzle/` files, and push; the server only ever runs the non-interactive
 Two long-lived branches on the **same** `origin` remote (`ceponatia/vesper`) —
 there is no second remote:
 
-| Branch | Role | How it updates |
-| --- | --- | --- |
+| Branch | Role              | How it updates                                                                                                                                             |
+| ------ | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `main` | **dev** (default) | Your normal workflow. Push here as always; deploying dev is a separate **manual** `fly deploy` after testing — pushing to GitHub does **not** auto-deploy. |
-| `prod` | **production** | **Protected.** No direct pushes — only fast-tested code arrives via a pull request from `main`. |
+| `prod` | **production**    | **Protected.** No direct pushes — only fast-tested code arrives via a pull request from `main`.                                                            |
 
 Day-to-day is unchanged: keep committing to and pushing `main`. `prod` only ever
 moves through a **promotion PR**.

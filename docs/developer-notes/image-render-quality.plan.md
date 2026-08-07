@@ -2,6 +2,10 @@
 
 Status: active (owner rulings settled 2026-08-05; first hardening slice implemented)
 
+Outcome: A player can generate a portrait or scene that still shows their own
+character, so that a new image stops coming back as a similar-looking stranger
+with malformed hands.
+
 Technical companion: [image-render-quality.spec.md](image-render-quality.spec.md)
 
 Sibling plans:
@@ -34,9 +38,9 @@ quality defaults, every model receives the same provider-neutral prose, and a
 canonical waist-up portrait is accepted as an identity reference without checking
 whether its face is large or sharp enough to carry identity.
 
-## Corrections to the original draft
+## Corrected assumptions
 
-The first draft had the right direction but overstated several facts.
+Four claims that must not be reintroduced, and what is true instead.
 
 **SDXL has finite CLIP context, but hosted wrappers are not all identical.** The
 SDXL text encoders use 77-position contexts. A particular Replicate cog may

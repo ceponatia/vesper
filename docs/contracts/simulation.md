@@ -155,7 +155,7 @@ affordance"):
   the same machinery `readSimChatPresence` uses); `destinations [{zoneId, label, mode,
   travelSeconds}]` (open, walkable links from the current zone, treated as **undirected**
   like the route planner, empty in transit); `held [{itemId, name}]`; `actions [{id, label,
-  durationSeconds, available, unavailableReason?}]` (world-ui.plan.md slice 3 — the branch's
+  durationSeconds, available, unavailableReason?}]` (the branch's
   **player-startable** action definitions; `available` is the `at_zone_kind` law evaluated
   against the player's current zone kind via the pure `buildWorldActions`, the same law
   `resolveStartActivity` enforces; a `consent_covered`-gated action is marked unavailable);
@@ -173,7 +173,7 @@ affordance"):
   player principal; a refusal returns the §14.4 PUBLIC face (code + public reason + legal
   alternatives), never a private cause.
   **`travel {toZoneId}`** is the skip-style composite (ruling 20) with a **graceful
-  departure** (world-ui.plan.md slice 4): if a scene stands, END it as a CHOICE first
+  departure**: if a scene stands, END it as a CHOICE first
   (`end_engagement`, reason `participant_choice` — the lawful two-step `advance_time`
   performs), so the move that follows fires **no** hard interrupt (spec §18.2: an ended
   scene holds no claim to interrupt). Then submit the player `move` and — on acceptance —
@@ -181,26 +181,26 @@ affordance"):
   `drainBranchTo` + `moveArrivalTarget` helpers (the same bounded `advanceBranchStoryTime`
   loop `advance_time` uses); the §17 arrival trigger fires inside the drain. The `traveled`
   world-beat is phrased with the parting (`parted`) when a scene was ended. An unexpected
-  end-engagement failure degrades to the old interrupt path (the accepted move still
+  end-engagement failure degrades to the interrupt path (the accepted move still
   interrupts) — travel is never blocked. Response `{status:"traveled", toStorySecond,
   arrived}`; a rejection returns the §14.4 shape at HTTP 200 (so the card can read
   `publicReason` + `legalAlternatives` instead of a flattened error body). Skip-style is
   loop sugar over the §17 events, never a bypass — the §17.1 lower-bound law still holds.
   **The natural-language twin** (an admitted "I walk to the town square", `sim-exchange.ts`)
   runs the SAME choreography (end-as-choice → move → drain → one parted beat) and then
-  renders the farewell + walk + arrival through the **solo cut** (a departure context in the
-  slice-0 dual-block prompt), closing ruling 20's parity clause. The pure decision
+  renders the farewell + walk + arrival through the **solo cut** (a departure context on the
+  dual-block solo prompt), satisfying ruling 20's parity clause. The pure decision
   (`planDepartureChoreography`, `lib/simulation/departure.ts`) is scene-stands × admitted-kind
   → steps; give/rest/none keep the co-present flow.
-  **`move_together {toZoneId}`** (command-integrity A4; was `travel_together`) is
-  **walk-with-me**, now **ONE atomic branch-locked command**: the player invites the
+  **`move_together {toZoneId}`** (command-integrity A4) is
+  **walk-with-me**, **ONE atomic branch-locked command**: the player invites the
   CO-PRESENT primary to travel together. The primary's acceptance is **NPC agency via a
   bounded deterministic policy** (`decideAccompany`, `lib/simulation/accompany.ts` — no model
   call, no §21.4 consent-ledger touch per §39 ruling 16): **accept unless** (a) a claim-holding
   activity occupies the primary's **body**, or (b) a **`firm`/`hard`** open commitment falls
   due before the walk's arrival + a 300 s buffer. `decideAccompany` re-runs **inside the locked
-  authority view** (`resolveMoveTogether`, `lib/simulation/move-together.ts`), closing the
-  read-vs-commit agency race the old pre-commit decision left open (§14.2). A decline returns an
+  authority view** (`resolveMoveTogether`, `lib/simulation/move-together.ts`), so there is no
+  read-vs-commit agency race (§14.2). A decline returns an
   honest §14.4 PUBLIC face — the SAME reason whether (a) or (b) blocks her, so the private cause
   never leaks. On **acceptance** the durable store (`submitDurableMoveTogether`) commits, in ONE
   transaction, an event batch: `engagement_ended` (when a scene stands, `participant_choice` —
@@ -213,19 +213,18 @@ affordance"):
   command, `runAccompanyTogether` (`sim-exchange.ts`) only settles time — drain to the ONE
   journey's arrival, the A7 `settleStrandedInTransit` net, ONE `together` world beat. Response
   `{status:"accompanied", toStorySecond, arrived}`; a decline / refusal returns the §14.4 shape
-  at 200 (`status:"rejected"`). **No stranding window:** the old three-transaction choreography
-  (scene-end, player move, primary move — with a mid-flight `traveled_alone` divergence) is
-  **deleted**; a whole-command failure commits nothing (both-or-neither), so a bare version
-  conflict degrades to an honest `rejected` (world unchanged, C15-noted), never a phantom solo
-  travel. **The natural-language twin** is an admitted
+  at 200 (`status:"rejected"`). **No stranding window:** the command is both-or-neither — a
+  whole-command failure commits nothing, so a bare version conflict degrades to an honest
+  `rejected` (world unchanged, C15-noted), never a phantom solo travel and never a pair split
+  mid-walk. **The natural-language twin** is an admitted
   **`accompany`** intent (input admission — first-person plural or invite phrasing "let's walk
   to the square" / "we head home" / "walk with me…" / "come with me…", over a known zone word,
   deterministic, checked before solo move): while co-present it runs the same choreography then
   reopens the scene at the destination and renders the co-present turn with a travel-context
   line (on accept) or the decline as a §14.4 failure presentation (on decline); while NOT
-  co-present it degrades to a plain solo move (inviting an ABSENT partner is the §14.2
-  remote-invite family, future work).
-  **`do_activity {actionDefinitionId}`** (world-ui.plan.md slice 3) is the analogous
+  co-present it degrades to a plain solo move — inviting an ABSENT partner (the §14.2
+  remote-invite family) is not supported.
+  **`do_activity {actionDefinitionId}`** is the analogous
   skip-style composite for an activity: submit the player's `start_activity`, then — on
   acceptance — drain the branch clock to the just-started activity's `expectedCompleteAt`
   (deterministic id via `deriveActivityId(branchId, commandId)`) through the same
@@ -233,7 +232,7 @@ affordance"):
   fires it — the route never submits `complete_activity`, and the activity never dangles
   active. A claim conflict (resting mid-scene) surfaces as the §14.4 face at 200. Response
   `{status:"performed", toStorySecond}`.
-  **`give_item {itemId}`** (world-ui.plan.md slice 3) hands the player's held item to the
+  **`give_item {itemId}`** hands the player's held item to the
   primary (player→primary held→held, the only legal transfer today). Giver/receiver
   co-location is enforced by the transfer resolver itself (§26.4 step 7 — the destination's
   root zone must equal the acting actor's zone), so an absent primary refuses
@@ -241,12 +240,12 @@ affordance"):
   affordance when the primary is not present. Returns the §14.4 face at 200 on rejection, or
   `{status:"gave"}` on success.
   On commit, `travel` / `advance_time` / `end_scene` / `give_item` / `do_activity` each write
-  a durable **world beat** to the chat transcript (a side effect, not part of the response —
-  world-ui.plan.md slices 2–3): an ordinary `role: "assistant"` message row marked
+  a durable **world beat** to the chat transcript (a side effect, not part of the response):
+  an ordinary `role: "assistant"` message row marked
   `meta.worldBeat = { kind }`, the phrased line on `content`, stamped through
   `formatSimLanding`. The beat kinds are `traveled` ("You walk to …", or "You take your
-  leave and walk to …" when a departure ended a standing scene — the `parted` flag, slice
-  4, or "You walk to … together." on a walk-with-me — the `together` flag, slice 5, which
+  leave and walk to …" when a departure ended a standing scene — the `parted` flag —
+  or "You walk to … together." on a walk-with-me — the `together` flag, which
   supersedes `parted`) · `time_skipped` · `scene_ended` · `gave_item` ("You hand {primary} {item}. ·
   <landing>") · `rested` ("You {label} a while. · <landing>", phrased generically from the
   action label). Best-effort (`writeWorldBeat`,
@@ -287,19 +286,13 @@ test/replay fixture; production persistence has crash atomicity, cross-process b
 locking, durable command results (E2.2), asynchronous rebuildable consumers (E2.3), and a
 durable trigger queue (E2.4).
 
-Deliberately absent, with owners:
+Deliberately absent:
 
-- **Analytical rate integration** inside advance (spec §12.2 steps 2 and 6). No continuous
-  rate exists until Gate 5 bodies; the drain loop is the seam it will slot into.
-- **Deterministic draw integration.** `deterministicDrawUnit` ships as a tested primitive
-  with no production consumer — `transfer_item` consumes no draws. The first real use is
-  Gate 3 lateness/travel, which must record stream, index, value, and derivation version on
-  the event that consumed it.
-- **The Gate 2 soak and verdict** are E2.6.
-- **Trigger cancellation.** No mutation path cancels a trigger yet; when one arrives it
-  must be an event effect exactly as creation is (a `trigger_cancelled` family), or fork
-  replay would resurrect cancelled alarms.
-- **Chat-lane retake/reach-back wiring onto `forkBranch`** is Gate 3+; E2.5 builds the
-  fork, not its UI.
-- **Movement, commitments, and live-scene arbitration** are Gate 3. A trigger must not set
-  location directly when they arrive.
+- **Trigger cancellation.** No mutation path cancels a trigger. A cancellation must be an
+  event effect exactly as creation is (a `trigger_cancelled` family) — anything else and
+  fork replay resurrects cancelled alarms.
+- **A trigger never sets location directly.** Movement is a journey plus its arrival
+  trigger; a scheduler outcome that wrote a locus would bypass the §17 laws.
+- **Deterministic draws are recorded, never re-rolled.** Any consumer of
+  `deterministicDrawUnit` records stream, index, value, and derivation version on the event
+  that consumed it, so replay reproduces the draw instead of drawing again.

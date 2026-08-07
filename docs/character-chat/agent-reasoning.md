@@ -6,12 +6,12 @@ The setting is operational experiment configuration, not fiction state. It is st
 
 ## Profiles
 
-| Profile | Reasoning-enabled helper legs |
-| --- | --- |
-| `off` — Current — Off | None. Existing reasoning-disabled behavior and budgets are preserved. |
-| `continuity` — Continuity | Continuity extraction, character notes, and each ensemble member's personal notes. |
-| `synthesis` — Synthesis | Continuity profile plus the detached meanwhile pass and location-sketch agent. |
-| `broad_post_turn` — Broad post-turn | Synthesis profile plus long-term memory extraction and the reaction pulse. |
+| Profile                             | Reasoning-enabled helper legs                                                      |
+| ----------------------------------- | ---------------------------------------------------------------------------------- |
+| `off` — Current — Off               | None. Existing reasoning-disabled behavior and budgets are preserved.              |
+| `continuity` — Continuity           | Continuity extraction, character notes, and each ensemble member's personal notes. |
+| `synthesis` — Synthesis             | Continuity profile plus the detached meanwhile pass and location-sketch agent.     |
+| `broad_post_turn` — Broad post-turn | Synthesis profile plus long-term memory extraction and the reaction pulse.         |
 
 The matrix is an allow-list in `src/lib/agent-reasoning.ts`. New or unknown helper legs fail closed to reasoning disabled. Intake, romantic-permission decisions, NPC scene decisions, and contact/authority-sensitive classifiers are deliberately outside the matrix and remain reasoning-off under every profile.
 
@@ -38,13 +38,13 @@ This distinction matters because a profile can be selected while a particular le
 
 ## Main implementation points
 
-| Concern | File |
-| --- | --- |
-| Profile IDs, allow-list, provider options, token and timeout rules | `src/lib/agent-reasoning.ts` |
-| Persisted column | `src/server/db/schema.ts` / `drizzle/0097_agent_reasoning_profiles.sql` |
-| Server-side profile lookup | `src/server/ai/agent-reasoning.ts` |
-| Owner-admin API | `src/app/api/admin/agent-reasoning/[chatId]/route.ts` |
-| Conversation-menu selector | `src/components/chat/agent-reasoning-select.tsx` |
-| Covered post-turn and detached agents | `src/server/engine/chat-memory.ts`, `chat-state.ts`, `chat-meanwhile.ts`, `chat-scene-sketch.ts` |
-| Success/failure attribution | `src/server/ai/agent-failures.ts`, `generate-checked.ts`, `generate-timeout.ts` |
-| Inspector display | `src/components/chat/chat-inspector-agent-health.tsx` |
+| Concern                                                            | File                                                                                             |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Profile IDs, allow-list, provider options, token and timeout rules | `src/lib/agent-reasoning.ts`                                                                     |
+| Persisted column                                                   | `src/server/db/schema.ts` / `drizzle/0097_agent_reasoning_profiles.sql`                          |
+| Server-side profile lookup                                         | `src/server/ai/agent-reasoning.ts`                                                               |
+| Owner-admin API                                                    | `src/app/api/admin/agent-reasoning/[chatId]/route.ts`                                            |
+| Conversation-menu selector                                         | `src/components/chat/agent-reasoning-select.tsx`                                                 |
+| Covered post-turn and detached agents                              | `src/server/engine/chat-memory.ts`, `chat-state.ts`, `chat-meanwhile.ts`, `chat-scene-sketch.ts` |
+| Success/failure attribution                                        | `src/server/ai/agent-failures.ts`, `generate-checked.ts`, `generate-timeout.ts`                  |
+| Inspector display                                                  | `src/components/chat/chat-inspector-agent-health.tsx`                                            |

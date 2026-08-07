@@ -1,6 +1,6 @@
 # Image identity packs — trial and promotion spec
 
-Parent spec: [image-identity-packs.spec.md](image-identity-packs.spec.md)
+Status: detail for [image-identity-packs.spec.md](image-identity-packs.spec.md)
 
 This document defines the controlled evidence required to promote a face-detail
 reference strategy or an identity-reference quality threshold. It is distinct

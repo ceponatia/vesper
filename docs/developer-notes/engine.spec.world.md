@@ -1,5 +1,7 @@
 # Engine spec — world: space, access, commitments, actions, journeys, engagements (§13–§18)
 
+Status: companion to [engine.spec.md](engine.spec.md) — §13–§18, world.
+
 Part of the [engine.spec.md](engine.spec.md) contract set (split 2026-07-21).
 Section numbering is GLOBAL across the engine.spec.* files — cite sections as
 "engine.spec §N" exactly as before; the hub's index maps every § to its file. The
@@ -268,17 +270,17 @@ pressure MUST not be repeated every turn unless its severity or assumptions chan
 
 ### 15.4 Commitment state transitions
 
-| From | Legal next states |
-| --- | --- |
-| planned | noticed, accepted, declined, cancelled, missed |
-| noticed | accepted, declined, cancelled, missed |
-| accepted | in_progress, cancelled, missed |
-| declined | cancelled, accepted if renegotiated |
-| in_progress | kept, late, missed, cancelled |
-| kept | terminal |
-| late | kept, missed, terminal consequence |
-| missed | terminal or explicitly repaired by a new commitment |
-| cancelled | terminal |
+| From        | Legal next states                                   |
+| ----------- | --------------------------------------------------- |
+| planned     | noticed, accepted, declined, cancelled, missed      |
+| noticed     | accepted, declined, cancelled, missed               |
+| accepted    | in_progress, cancelled, missed                      |
+| declined    | cancelled, accepted if renegotiated                 |
+| in_progress | kept, late, missed, cancelled                       |
+| kept        | terminal                                            |
+| late        | kept, missed, terminal consequence                  |
+| missed      | terminal or explicitly repaired by a new commitment |
+| cancelled   | terminal                                            |
 
 History is not rewritten when a commitment is repaired. Create a new commitment or
 explicit remediation event.
@@ -352,16 +354,16 @@ rather than silently reusing the first scope's coverage for every later one.
 
 ### 16.3 Activity transitions
 
-| From | Legal next phases |
-| --- | --- |
-| queued | preparing, active, cancelled, failed |
-| preparing | active, interrupted, cancelled, failed |
-| active | paused, interrupted, completed, failed, cancelled |
-| paused | active, interrupted, cancelled, failed |
-| interrupted | active, cancelled, failed |
-| completed | terminal |
-| failed | terminal |
-| cancelled | terminal |
+| From        | Legal next phases                                 |
+| ----------- | ------------------------------------------------- |
+| queued      | preparing, active, cancelled, failed              |
+| preparing   | active, interrupted, cancelled, failed            |
+| active      | paused, interrupted, completed, failed, cancelled |
+| paused      | active, interrupted, cancelled, failed            |
+| interrupted | active, cancelled, failed                         |
+| completed   | terminal                                          |
+| failed      | terminal                                          |
+| cancelled   | terminal                                          |
 
 Starting an activity atomically acquires its exclusive claims. Completion, failure, and
 cancellation release them. A stale or crashed worker MUST NOT leave claims orphaned;
@@ -371,16 +373,16 @@ claims are projected from activity state and repairable from events.
 
 Compatibility is channel- and action-specific:
 
-| Current activity | Co-present conversation | Text or call | Normal policy |
-| --- | --- | --- | --- |
-| walking | usually allowed with reduced attention | allowed | continue route |
-| cooking | allowed unless hazardous phase | usually allowed | may pause at boundary |
-| desk work | limited | limited | pressure depends on role |
-| driving | conversation with passenger may be limited | text forbidden; hands-free call policy-specific | safety dominates |
-| showering | only with legal access and consent | delivery may occur; response optional | privacy dominates |
-| toileting/changing | normally unavailable | delivery may occur; response optional | privacy dominates |
-| sleeping | unavailable until perceived wake cue | message may queue unread | sleep continues |
-| intimate activity | participants and consent only | interruption policy-specific | privacy and consent dominate |
+| Current activity   | Co-present conversation                    | Text or call                                    | Normal policy                |
+| ------------------ | ------------------------------------------ | ----------------------------------------------- | ---------------------------- |
+| walking            | usually allowed with reduced attention     | allowed                                         | continue route               |
+| cooking            | allowed unless hazardous phase             | usually allowed                                 | may pause at boundary        |
+| desk work          | limited                                    | limited                                         | pressure depends on role     |
+| driving            | conversation with passenger may be limited | text forbidden; hands-free call policy-specific | safety dominates             |
+| showering          | only with legal access and consent         | delivery may occur; response optional           | privacy dominates            |
+| toileting/changing | normally unavailable                       | delivery may occur; response optional           | privacy dominates            |
+| sleeping           | unavailable until perceived wake cue       | message may queue unread                        | sleep continues              |
+| intimate activity  | participants and consent only              | interruption policy-specific                    | privacy and consent dominate |
 
 “Message delivered” and “actor perceived message” are different events.
 
@@ -403,14 +405,14 @@ Compatibility is channel- and action-specific:
 
 ### 17.1 Journey transitions
 
-| From | Legal next states |
-| --- | --- |
-| planned | active, abandoned |
-| active | delayed, interrupted, arrived, abandoned |
-| delayed | active, interrupted, arrived, abandoned |
-| interrupted | active, abandoned |
-| arrived | terminal |
-| abandoned | terminal |
+| From        | Legal next states                        |
+| ----------- | ---------------------------------------- |
+| planned     | active, abandoned                        |
+| active      | delayed, interrupted, arrived, abandoned |
+| delayed     | active, interrupted, arrived, abandoned  |
+| interrupted | active, abandoned                        |
+| arrived     | terminal                                 |
+| abandoned   | terminal                                 |
 
 Journey progress SHOULD be analytical. Persist departure, link or mode changes when they
 matter, delay, interruption, and arrival—not a row per minute.
@@ -440,13 +442,13 @@ channel access and message delivery but not co-location.
 
 ### 18.2 Engagement transitions
 
-| From | Legal next states |
-| --- | --- |
-| opening | active, ended, interrupted |
-| active | winding_down, ended, interrupted |
-| winding_down | active, ended, interrupted |
-| interrupted | active, ended |
-| ended | terminal |
+| From         | Legal next states                |
+| ------------ | -------------------------------- |
+| opening      | active, ended, interrupted       |
+| active       | winding_down, ended, interrupted |
+| winding_down | active, ended, interrupted       |
+| interrupted  | active, ended                    |
+| ended        | terminal                         |
 
 Ending an Engagement releases its attention claims but does not move any participant.
 Winding down is a playable transition, not a promise that the NPC remains until the

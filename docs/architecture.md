@@ -2,18 +2,18 @@
 
 ## Stack
 
-| Layer | Choice | Notes |
-| --- | --- | --- |
-| Framework | Next.js 16 (App Router) + React 19 | Single app — no workspace packages |
-| Language | TypeScript, `strict` | Plain `.ts`/`.tsx`, ESM |
-| Database | Postgres 17 + pgvector | Local `vesper-postgres` container (port 5435), database `vesper_dev` |
-| ORM | Drizzle ORM + drizzle-kit | SQL migrations generated with `drizzle-kit generate`, applied with `pnpm db:migrate` (the drizzle-orm migrator in `scripts/db-migrate.ts`); never `drizzle-kit push` |
-| LLM | AI SDK 6 (`ai`) + `@openrouter/ai-sdk-provider` | `streamText` for narrative, `generateChecked` (structured output + repair) for agents |
-| Embeddings | OpenRouter `/embeddings` endpoint | 1536-dim, pgvector columns on owning tables |
-| Image gen | Venice/Qwen image API (text-to-image + reference edit) | Venice/Qwen end-to-end since 2026-06-19; see [images.md](images.md) |
-| Validation | Zod 4 | All registries, all JSONB boundaries, all API input |
-| Styling | Tailwind CSS 4 | Design tokens in `globals.css` `@theme` |
-| Tests | Vitest 4 | See [testing.md](testing.md) |
+| Layer      | Choice                                          | Notes                                                                                                                                                                |
+| ---------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Framework  | Next.js 16 (App Router) + React 19              | Single app — no workspace packages                                                                                                                                   |
+| Language   | TypeScript, `strict`                            | Plain `.ts`/`.tsx`, ESM                                                                                                                                              |
+| Database   | Postgres 17 + pgvector                          | Local `vesper-postgres` container (port 5435), database `vesper_dev`                                                                                                 |
+| ORM        | Drizzle ORM + drizzle-kit                       | SQL migrations generated with `drizzle-kit generate`, applied with `pnpm db:migrate` (the drizzle-orm migrator in `scripts/db-migrate.ts`); never `drizzle-kit push` |
+| LLM        | AI SDK 6 (`ai`) + `@openrouter/ai-sdk-provider` | `streamText` for narrative, `generateChecked` (structured output + repair) for agents                                                                                |
+| Embeddings | OpenRouter `/embeddings` endpoint               | 1536-dim, pgvector columns on owning tables                                                                                                                          |
+| Image gen  | Replicate (text-to-image + reference edit)      | One backend; the model list is data in `image_models` — see [images.md](images.md)                                                                                   |
+| Validation | Zod 4                                           | All registries, all JSONB boundaries, all API input                                                                                                                  |
+| Styling    | Tailwind CSS 4                                  | Design tokens in `globals.css` `@theme`                                                                                                                              |
+| Tests      | Vitest 4                                        | See [testing.md](testing.md)                                                                                                                                         |
 
 Why a single app instead of the old 12-package monorepo: every package served exactly one consumer. Module boundaries are kept as folders with barrel exports; the import graph below is enforced by an ESLint `no-restricted-imports` boundary rule (`eslint.config.mjs`) plus review, not workspace plumbing.
 
@@ -41,7 +41,7 @@ vesper/
       client/            #   client data layer (fetch wrappers, stream parser, hooks)
     server/
       db/                # drizzle schema, client, query helpers
-      ai/                # OpenRouter/Venice clients, embeddings, demo fallbacks
+      ai/                # OpenRouter (text) + Replicate (images) clients, embeddings, demo fallbacks
       api/               # route-handler support: request schemas, responders, library services
       engine/            # character-chat pipeline (chat-*) + the successor simulation engine (sim-* / simulation/)
       memory/            # fact supersedence, episodes, fused retrieval (chat-scoped)
@@ -73,7 +73,7 @@ Two lanes live under `server/engine`: the **character-chat** lane (`chat-*` file
 [character-chat/](character-chat/README.md)) and the **successor simulation engine**
 (`sim-*` files + `simulation/`, an event-sourced world model — contracts in
 [contracts/simulation.md](contracts/simulation.md), design in `docs/developer-notes/engine.*`).
-The original turn-based world/session lane was retired in the R6 rollout (2026-07-22).
+These are the only two lanes — there is no world/session lane.
 
 - `src/contracts` and `src/lib` are **pure**: no database, no fetch, no env reads. They must be importable from both server and client code. (Lint-enforced — see the boundary rule in `eslint.config.mjs`.)
 - Server modules export through their `index.ts` barrel; other modules import the barrel, not deep paths. (Lint-enforced.)

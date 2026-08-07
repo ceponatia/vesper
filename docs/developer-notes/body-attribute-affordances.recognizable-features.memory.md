@@ -297,16 +297,16 @@ this lane does not have.
 
 ### Calibration as shipped
 
-| Constant | Value |
-| --- | --- |
-| Salience mix | `0.55 × uniqueness + 0.45 × importance` (of visibility) |
-| Notice threshold | 3_500; 2_500 under deliberate inspection |
-| Freshness buckets | `recent` < 1_440 min · `familiar` ≤ 43_200 min · `long_absence` beyond |
-| Recognition floor | 2_500, after ≥ 3 notices, for `inherent`/`persistent` features |
-| Mention floor | 2_000 |
-| Novelty ladder | unseen 10_000 · changed 9_000 · long absence 7_000 · familiar 2_000 · recent 500 |
-| Mention cooldown | recovers linearly over 1_440 × `mentionCount` minutes |
-| Feature cap | 96 per (scope, observer, subject) |
+| Constant          | Value                                                                            |
+| ----------------- | -------------------------------------------------------------------------------- |
+| Salience mix      | `0.55 × uniqueness + 0.45 × importance` (of visibility)                          |
+| Notice threshold  | 3_500; 2_500 under deliberate inspection                                         |
+| Freshness buckets | `recent` < 1_440 min · `familiar` ≤ 43_200 min · `long_absence` beyond           |
+| Recognition floor | 2_500, after ≥ 3 notices, for `inherent`/`persistent` features                   |
+| Mention floor     | 2_000                                                                            |
+| Novelty ladder    | unseen 10_000 · changed 9_000 · long absence 7_000 · familiar 2_000 · recent 500 |
+| Mention cooldown  | recovers linearly over 1_440 × `mentionCount` minutes                            |
+| Feature cap       | 96 per (scope, observer, subject)                                                |
 
 The 0.35–0.40 ruling reads as 3_500 on the shared fixed-point scale, and the
 0.25 inspection relaxation as 2_500. Memory state parses through healing

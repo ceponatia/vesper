@@ -21,15 +21,15 @@ type MeterDefinition = {
 };
 ```
 
-| Field | Meaning |
-| --- | --- |
-| `id` | e.g. `hygiene`, `energy`, `arousal`, `stress`, `intoxication`, `mood`. |
-| `label` / `description` | Display text. |
-| `initial` | Starting value. |
-| `perHour` | Signed drift per game hour. |
-| `baseline` | The resting target. *Absent* ⇒ today's pole: `perHour < 0` ⇒ 0, else 1. |
-| `recoveryPerHour` | Rate of movement toward `baseline`. *Absent* ⇒ `|perHour|`. |
-| `thresholds` | Crossing one surfaces its `promptHint` to the narrator; `pipLabel` is the same band's short UI chip ("tipsy") — the chat status strip derives from it, so a band edit moves narration and UI together. |
+| Field                   | Meaning                                                                                                                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                    | e.g. `hygiene`, `energy`, `arousal`, `stress`, `intoxication`, `mood`.                                                                                                                                 |
+| `label` / `description` | Display text.                                                                                                                                                                                          |
+| `initial`               | Starting value.                                                                                                                                                                                        |
+| `perHour`               | Signed drift per game hour.                                                                                                                                                                            |
+| `baseline`              | The resting target. *Absent* ⇒ today's pole: `perHour < 0` ⇒ 0, else 1.                                                                                                                                |
+| `recoveryPerHour`       | Rate of movement toward `baseline`. *Absent* ⇒ `\|perHour\|`.                                                                                                                                          |
+| `thresholds`            | Crossing one surfaces its `promptHint` to the narrator; `pipLabel` is the same band's short UI chip ("tipsy") — the chat status strip derives from it, so a band edit moves narration and UI together. |
 
 **Drift.** On every clock advance, `applyMeterDrift` moves each value toward its baseline at `recoveryPerHour` — never overshooting, clamped to `[0, 1]` — and surfaces any crossed-threshold `promptHint`s to the narrator. A consumer may override or disable individual meters in its config (`meterOverrides`).
 
@@ -37,14 +37,14 @@ type MeterDefinition = {
 
 ### Starter meters
 
-| Meter | Behavior |
-| --- | --- |
-| `hygiene` | 1 → 0 at −0.04/h; thresholds prompt scent/grime hints. |
-| `energy` | 1 → 0 waking drain; restored by sleep. |
-| `stress` | 0-seeking. |
-| `arousal` | 0-seeking. |
-| `intoxication` | 0-seeking, fast decay. |
-| `mood` | Emotional valence — 0 low / 0.5 even / 1 bright; baseline 0.5, returns to an even keel. |
+| Meter          | Behavior                                                                                |
+| -------------- | --------------------------------------------------------------------------------------- |
+| `hygiene`      | 1 → 0 at −0.04/h; thresholds prompt scent/grime hints.                                  |
+| `energy`       | 1 → 0 waking drain; restored by sleep.                                                  |
+| `stress`       | 0-seeking.                                                                              |
+| `arousal`      | 0-seeking.                                                                              |
+| `intoxication` | 0-seeking, fast decay.                                                                  |
+| `mood`         | Emotional valence — 0 low / 0.5 even / 1 bright; baseline 0.5, returns to an even keel. |
 
 ### Mood
 

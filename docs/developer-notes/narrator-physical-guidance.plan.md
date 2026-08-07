@@ -16,6 +16,11 @@ results), slice 4 (change-gated positive detail), slice 5 (the two trials —
 after generalizing the committed summary format, see §Slice 5), slice 6
 (successor adapter).
 
+Outcome: A player can misstate what a character's body is doing — calling
+braided hair loose, or reaching for someone who is too far away — and still get
+a reply that stays true to the scene, so that the narration stops agreeing with
+a mistake the player just made.
+
 ## In one sentence
 
 Use committed physical truth primarily to prevent impossible or contradictory
@@ -207,13 +212,13 @@ fixed-point helpers, and diagnostics.
 The current message must first be classified using the chat lane's existing
 input modes:
 
-| Input form | Treatment |
-| --- | --- |
-| Character dialogue or ordinary conversational assertion | May be mistaken; eligible for high-confidence premise checking. |
-| Player-controlled action intent | Send through the applicable action/contact resolver; the outcome, not the requested result, reaches narration. |
-| Storyteller-authoritative narration | Treat as a proposed authoritative event/state change, not a false premise. Until a pre-narrator commit seam exists for that fact, exclude it from automatic correction. |
-| Out-of-character direction | Instruction to the narrator; not physical evidence by itself. |
-| Private thought | Not perceived by characters and not a physical-state write. |
+| Input form                                              | Treatment                                                                                                                                                               |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Character dialogue or ordinary conversational assertion | May be mistaken; eligible for high-confidence premise checking.                                                                                                         |
+| Player-controlled action intent                         | Send through the applicable action/contact resolver; the outcome, not the requested result, reaches narration.                                                          |
+| Storyteller-authoritative narration                     | Treat as a proposed authoritative event/state change, not a false premise. Until a pre-narrator commit seam exists for that fact, exclude it from automatic correction. |
+| Out-of-character direction                              | Instruction to the narrator; not physical evidence by itself.                                                                                                           |
+| Private thought                                         | Not perceived by characters and not a physical-state write.                                                                                                             |
 
 This prevents a stale pre-turn read from "correcting" a legitimate,
 author-authorized state change.

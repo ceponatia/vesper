@@ -1,6 +1,6 @@
 # Image identity packs — derivation and quality spec
 
-Parent spec: [image-identity-packs.spec.md](image-identity-packs.spec.md)
+Status: detail for [image-identity-packs.spec.md](image-identity-packs.spec.md)
 
 This document owns `ensureIdentityPack`, concurrency, detector interpretation,
 crop geometry, image encoding, intrinsic quality measurements, policy evaluation,

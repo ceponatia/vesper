@@ -1,6 +1,6 @@
 # Image model registry — spec
 
-Technical companion to [image-model-registry.plan.md](image-model-registry.plan.md).
+Status: companion to [image-model-registry.plan.md](image-model-registry.plan.md)
 
 ## Owner rulings (2026-08-05)
 

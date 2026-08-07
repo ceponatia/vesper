@@ -1,12 +1,5 @@
 # Engine plan — Gate 6: dual LOD and autonomous background life
 
-Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
-gate — see the hub's gate index). Sequencing and current status live in
-[roadmap.md](roadmap.md) and the hub; normative contracts live in the
-[engine.spec.md](engine.spec.md) §-index.
-
-## Gate 6 — dual LOD and autonomous background life
-
 Status: **CLOSED — 2026-07-21** (opened 2026-07-20 on the owner's go; E6.1–E6.5 all
 shipped within two days). Closed per the Gate 4/5 exit-scope precedent: the
 deterministic exit corpus plus the instrumented scaling proof (`test:engine-e6-5`,
@@ -18,6 +11,13 @@ opening: every product-flavored knob in this gate (LOD defaults, utility weights
 promotion sampling) lands as versioned world-type or registry data with documented
 defaults, per the ruling-14/15 precedent — tunable post-build, never a schema
 migration. The build order lives in §"Gate 6 build order" below.
+
+Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
+gate — see the hub's gate index). Sequencing and current status live in
+[roadmap.md](roadmap.md) and the hub; normative contracts live in the
+[engine.spec.md](engine.spec.md) §-index.
+
+## Gate 6 — dual LOD and autonomous background life
 
 Rough effort: **10–25 developer-days**.
 

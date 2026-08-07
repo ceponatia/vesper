@@ -2,6 +2,10 @@
 
 Status: draft (sequenced after sim-command-shell; snapshot expansion ruled out until measured)
 
+Outcome: A developer can enrol a simulated domain in fork rebuilding with a
+one-line data edit and see a test fail if they forget one, so that a forked
+world stops being able to come back quietly missing part of itself.
+
 ## Why
 
 Forking is the successor engine's honest answer to "what if this had gone

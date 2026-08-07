@@ -2,6 +2,10 @@
 
 Status: draft (unsafe temporary/stale files may go early; broad de-export work stays after consolidation)
 
+Outcome: A developer can ask "who calls this?" about any exported name and get a
+truthful answer, so that genuinely dead code — an entire command handler with no
+callers and no test — stops hiding among the 190 exports nobody uses.
+
 ## Why
 
 One thing here is visible to players: the site description that ships in the

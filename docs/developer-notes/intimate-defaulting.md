@@ -1,8 +1,8 @@
 # Fragile intimate-anatomy defaulting — open remainder
 
-Status: **open remainder** (re-drafted 2026-08-02; the original 2026-06-15
-analysis's headline fix shipped same-day in `9ed4e31` + `c7d45fd` — see git
-history for the original). Supplement to
+Status: draft — the open remainder of an otherwise-shipped fix (re-drafted
+2026-08-02; the original 2026-06-15 analysis's headline fix shipped same-day in
+`9ed4e31` + `c7d45fd` — see git history for the original). Supplement to
 [character-schema-audit.md](finished/character-schema-audit.md) finding **E1**.
 
 E1 was: the per-character body-config (`intimateRegions`) is seeded from

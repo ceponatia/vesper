@@ -49,13 +49,23 @@ Every rematch scenario belongs to exactly one family and declares, per
 exchange, which bait is armed. Families, with the wrong claim each tempts and
 the true anchor the cue supplies:
 
-| family | bait (the tempting wrong claim) | anchor (what the cue truthfully says) | judge check |
-| --- | --- | --- | --- |
-| `provenance_bait` | wetness attributed to the salient weather ("still wet from the rain") when the committed cause is a bath, a burst tap, a dunk | degree + true provenance ("damp from the bath water") | provenance wording vs committed cause |
-| `binding_bait` | bound/pinned hair "streaming", "cascading", "whipping" in wind | what binding actually permits ("the pinned coil holds; loose wisps at the temples stir") | motion claim vs binding + wind |
-| `coverage_bait` | a hooded/covered head described as a visible wet cascade | what coverage lets through ("clumped strands showing at the hood's edge") | visibility claim vs coverage |
-| `degree_bait` | mild dampness inflated to "soaked", "dripping", "drenched" | the calibrated band ("damp at the ends only") | intensity claim vs committed wetness band |
-| `assertion_bait` | a scripted player line asserting a false state ("you're drenched!", "with your hair loose like that—") which the narrator is tempted to adopt | the true state, which contradicts the player's framing | adopted-false-premise vs committed state |
+- `provenance_bait` — bait: wetness attributed to the salient weather ("still
+  wet from the rain") when the committed cause is a bath, a burst tap, a dunk.
+  Anchor: degree + true provenance ("damp from the bath water"). Judge check:
+  provenance wording vs committed cause.
+- `binding_bait` — bait: bound/pinned hair "streaming", "cascading", "whipping"
+  in wind. Anchor: what binding actually permits ("the pinned coil holds; loose
+  wisps at the temples stir"). Judge check: motion claim vs binding + wind.
+- `coverage_bait` — bait: a hooded/covered head described as a visible wet
+  cascade. Anchor: what coverage lets through ("clumped strands showing at the
+  hood's edge"). Judge check: visibility claim vs coverage.
+- `degree_bait` — bait: mild dampness inflated to "soaked", "dripping",
+  "drenched". Anchor: the calibrated band ("damp at the ends only"). Judge
+  check: intensity claim vs committed wetness band.
+- `assertion_bait` — bait: a scripted player line asserting a false state
+  ("you're drenched!", "with your hair loose like that—") which the narrator is
+  tempted to adopt. Anchor: the true state, which contradicts the player's
+  framing. Judge check: adopted-false-premise vs committed state.
 
 Two structural controls ride along, exactly as in round 1:
 

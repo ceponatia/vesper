@@ -1,9 +1,15 @@
 # Chat meter economy — the body on the story clock
 
-Status: **not started** (planned 2026-07-15 after the chat-clock-calendar time change: "hygiene
-never seems to decay, and arousal needs to reset after intercourse completes"; re-scoped
-2026-07-16 on the owner's OQ1–OQ3 rulings and the world-model deprecation license —
-rulings and rationale in [chat-meter-economy.spec.md](chat-meter-economy.spec.md))
+Status: next — not started (planned 2026-07-15 after the chat-clock-calendar time change:
+"hygiene never seems to decay, and arousal needs to reset after intercourse completes";
+re-scoped 2026-07-16 on the owner's OQ1–OQ3 rulings and the world-model deprecation
+license — rulings and rationale in
+[chat-meter-economy.spec.md](chat-meter-economy.spec.md))
+
+Outcome: A player can see a character's body keep time with the story rather than with
+the message count — she cools down after an intimate scene, feels it when it is past her
+own bedtime, and comes back from an overnight skip washed only if her own routine says
+she washed.
 
 ## Goal
 

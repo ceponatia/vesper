@@ -4,18 +4,57 @@ Vitest 4, one root config (`vitest.config.ts`) including `src/**/*.test.ts` and 
 
 ## Layers
 
-| Suite | Location | Covers | IO |
-| --- | --- | --- | --- |
-| contracts | `src/contracts/**/*.test.ts` | Registry invariants (unique ids, valid enums, alias fan-out — one alias may resolve to several attributes), parse/resolve round-trips, attribute precedence, condition logic, wardrobe visibility, chat scene-memory merge/switch (caps, dedupe oldest-out, current-place protection, degraded parse) | none |
-| lib | `src/lib/**/*.test.ts` | parseOr/parseOrNull, game-clock math, client API error envelope, chat SSE-stream parsing, **speaker segmenter edge cases** (`segmenter.ts` — dialogue tags + the chat lane's standalone-quote attribution), the successor `lib/simulation/*` pure rules (space, activities, commitments, engagements, perception, knowledge, bodies, LOD, …) | none |
-| engine unit | `src/server/engine/**/*.test.ts` | Demo-mode generators, chat prompt builders (structural assertions, not snapshots of full text), the chat extraction field library, chat one-turn reads (`chat-intent.ts` — scene movement, sense-targeted focus, reply-discipline gates: hook cadence + intimate check-in), the reply-stream watchdog (`withStreamTimeouts` — first-token/overall trip aborts + passes tokens through) and the bounded lock-wait (`acquireKeyedLockWithin` — acquires/waits/times-out, re-issuing its stop) behind the atomic rerun | none (fake rows) |
-| memory unit | `src/server/memory/**/*.test.ts` | Supersedence gating, fact lifecycle, fused retrieval merge/dedup, witness-eligibility filtering | mocked embeddings (deterministic vectors) |
-| server unit | `src/server/{api,authoring,images}/**/*.test.ts` | Rate limiting, error envelopes, body schemas; character-forge grounding (attributes, traits, outfits, drives, social cards) plus demo-mode forge runs; image prompt builders, monogram SVG, atomic webp writes | none |
-| api unit | `src/app/api/**/_shared/*.test.ts` | SSE framing, engine-error → HTTP status mapping, turn event streaming, status payloads | none |
-| components | `src/components/**/*.test.ts` | Pure logic extracted from components (draft merge/seed, attribute editor helpers, inline markup, message-markup span display + `commsLine` texted-line detection, chat reply segment→label mapping, focus-trap targeting, monogram initials) — no DOM rendering | none |
-| fixtures | `scripts/fixtures/harbor-house.test.ts` | The seed fixture validates against the contracts registries, so a vocabulary change that breaks the seed fails in tests, not at seed time | none |
-| db integration | `src/**/*.int.test.ts` (engine, memory, images) | The **successor simulation engine** (`server/engine/simulation/*.int.test.ts` — branch/command/event durability, idempotency, typed holdings, injected-crash atomicity, the scheduler, and the gate corpora E2–E6), the chat lane (`chat-*.int.test.ts` — extraction legs, wardrobe, state fidelity, memory-failure), the successor narrator (`sim-narrator.int.test.ts`), plus memory vector queries and image asset lifecycle | `DATABASE_URL` database (suites probe at collection and self-skip locally with a stderr warning if unreachable; CI applies migrations, runs the gate targets explicitly, and treats an unavailable or unmigrated database as failure) |
-| api | `src/app/api/**/*.int.test.ts` | Route handlers called directly with mocked auth (`vi.mock` of `server/auth`): validation, envelopes, the chat SSE event sequence in demo mode, the atomic chat **rerun** (stop→wait→acquire→transact: snips successors + reuses the guard row; stops an in-flight reply then succeeds; byte-identical transcript + 409 when the lock can't be re-acquired; 4xx on a non-user/missing/foreign target; snapshot rollback vs. the degraded `chat_state.rerun.no_rollback`), and the successor `/api/chats` sim routes | demo mode, `DATABASE_URL` database |
+Each layer names its file glob, what it covers, and the IO it needs.
+
+- **contracts** (`src/contracts/**/*.test.ts`) — registry invariants (unique ids, valid
+  enums, alias fan-out — one alias may resolve to several attributes), parse/resolve
+  round-trips, attribute precedence, condition logic, wardrobe visibility, chat
+  scene-memory merge/switch (caps, dedupe oldest-out, current-place protection, degraded
+  parse). No IO.
+- **lib** (`src/lib/**/*.test.ts`) — parseOr/parseOrNull, game-clock math, client API error
+  envelope, chat SSE-stream parsing, **speaker segmenter edge cases** (`segmenter.ts` —
+  dialogue tags + the chat lane's standalone-quote attribution), the successor
+  `lib/simulation/*` pure rules (space, activities, commitments, engagements, perception,
+  knowledge, bodies, LOD, …). No IO.
+- **engine unit** (`src/server/engine/**/*.test.ts`) — demo-mode generators, chat prompt
+  builders (structural assertions, not snapshots of full text), the chat extraction field
+  library, chat one-turn reads (`chat-intent.ts` — scene movement, sense-targeted focus,
+  reply-discipline gates: hook cadence + intimate check-in), the reply-stream watchdog
+  (`withStreamTimeouts` — first-token/overall trip aborts + passes tokens through) and the
+  bounded lock-wait (`acquireKeyedLockWithin` — acquires/waits/times-out, re-issuing its
+  stop) behind the atomic rerun. No IO (fake rows).
+- **memory unit** (`src/server/memory/**/*.test.ts`) — supersedence gating, fact lifecycle,
+  fused retrieval merge/dedup, witness-eligibility filtering. IO: mocked embeddings
+  (deterministic vectors).
+- **server unit** (`src/server/{api,authoring,images}/**/*.test.ts`) — rate limiting, error
+  envelopes, body schemas; character-forge grounding (attributes, traits, outfits, drives,
+  social cards) plus demo-mode forge runs; image prompt builders, monogram SVG, atomic webp
+  writes. No IO.
+- **api unit** (`src/app/api/**/_shared/*.test.ts`) — SSE framing, engine-error → HTTP
+  status mapping, turn event streaming, status payloads. No IO.
+- **components** (`src/components/**/*.test.ts`) — pure logic extracted from components
+  (draft merge/seed, attribute editor helpers, inline markup, message-markup span display +
+  `commsLine` texted-line detection, chat reply segment→label mapping, focus-trap
+  targeting, monogram initials) — no DOM rendering. No IO.
+- **fixtures** (`scripts/fixtures/harbor-house.test.ts`) — the seed fixture validates
+  against the contracts registries, so a vocabulary change that breaks the seed fails in
+  tests, not at seed time. No IO.
+- **db integration** (`src/**/*.int.test.ts` — engine, memory, images) — the **successor
+  simulation engine** (`server/engine/simulation/*.int.test.ts` — branch/command/event
+  durability, idempotency, typed holdings, injected-crash atomicity, the scheduler, and the
+  gate corpora E2–E6), the chat lane (`chat-*.int.test.ts` — extraction legs, wardrobe,
+  state fidelity, memory-failure), the successor narrator (`sim-narrator.int.test.ts`), plus
+  memory vector queries and image asset lifecycle. IO: a `DATABASE_URL` database — suites
+  probe at collection and self-skip locally with a stderr warning if unreachable; CI applies
+  migrations, runs the gate targets explicitly, and treats an unavailable or unmigrated
+  database as failure.
+- **api** (`src/app/api/**/*.int.test.ts`) — route handlers called directly with mocked auth
+  (`vi.mock` of `server/auth`): validation, envelopes, the chat SSE event sequence in demo
+  mode, the atomic chat **rerun** (stop→wait→acquire→transact: snips successors + reuses the
+  guard row; stops an in-flight reply then succeeds; byte-identical transcript + 409 when the
+  lock can't be re-acquired; 4xx on a non-user/missing/foreign target; snapshot rollback vs.
+  the degraded `chat_state.rerun.no_rollback`), and the successor `/api/chats` sim routes.
+  IO: demo mode, `DATABASE_URL` database.
 
 ## Shared test utilities
 
@@ -104,13 +143,12 @@ player fixture, which the simulation authorization seam refuses without this
 opt-in (deliberately — authorization tests leave it unset and keep proving that
 ordinary unanchored players fail). CI exports it for the `pnpm test:engine` step.
 
-A flagless run **fails fast at collection** instead of drowning you in denials
-(guard added 2026-07-27, after exactly that misread): each player-principal
-suite calls `requireLegacyUnanchoredEngineTestMode(suite)`
+A flagless run **fails fast at collection** instead of drowning you in denials:
+each player-principal suite calls `requireLegacyUnanchoredEngineTestMode(suite)`
 (`@/server/test-support`) right after its DB probe succeeds, and the guard
-throws a message naming the flag and this section — previously a plain local
-`pnpm test:int` reported ~120 opaque "expected accepted, got rejected" domain
-failures. An unreachable database still self-skips as before (the guard only
+throws a message naming the flag and this section — without it a flagless
+`pnpm test:int` reports ~120 opaque "expected accepted, got rejected" domain
+failures. An unreachable database still self-skips (the guard only
 fires when the suite would otherwise run), and `command-authz.int.test` never
 calls it, so denial coverage stays independent of the flag. A suite that
 submits `kind: "player"` commands against directly-seeded branches must call

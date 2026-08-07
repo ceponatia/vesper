@@ -1,5 +1,8 @@
 # Engine spec — simulation and inference LOD (§27–§28)
 
+Status: companion to [engine.spec.md](engine.spec.md) — §27–§28, simulation and inference
+LOD.
+
 Part of the [engine.spec.md](engine.spec.md) contract set (split 2026-07-21).
 Section numbering is GLOBAL across the engine.spec.* files — cite sections as
 "engine.spec §N" exactly as before; the hub's index maps every § to its file. The
@@ -9,12 +12,12 @@ normative-keyword rules (MUST/SHOULD/MAY) are defined in the hub.
 
 ### 27.1 Levels
 
-| Level | Resolution |
-| --- | --- |
-| exact | Explicit activities, claims, resources, routes, and observations |
-| event | Resolve named actors only at material transitions |
-| aggregate | Resolve population or institution flows and sampled outcomes |
-| dormant | Perform no work until an incoming dependency or promotion trigger |
+| Level     | Resolution                                                        |
+| --------- | ----------------------------------------------------------------- |
+| exact     | Explicit activities, claims, resources, routes, and observations  |
+| event     | Resolve named actors only at material transitions                 |
+| aggregate | Resolve population or institution flows and sampled outcomes      |
+| dormant   | Perform no work until an incoming dependency or promotion trigger |
 
 LOD is a performance choice, not permission to violate invariants.
 

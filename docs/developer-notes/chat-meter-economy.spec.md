@@ -1,8 +1,10 @@
 # Chat meter economy — spec
 
-Companion to [chat-meter-economy.plan.md](chat-meter-economy.plan.md) (read that first for
-the goal and the slices). Records the owner's rulings on OQ1–OQ3 (2026-07-16), the meter
-taxonomy they imply, and the world-model systems this work reuses or redesigns.
+Status: companion to [chat-meter-economy.plan.md](chat-meter-economy.plan.md)
+
+Read the plan first for the goal and the slices. This spec records the owner's rulings on
+OQ1–OQ3 (2026-07-16), the meter taxonomy they imply, and the world-model systems this work
+reuses or redesigns.
 
 The one-line frame: **a meter is physiological substrate on the story clock; the narrator
 never sees a meter, only a derived, perception-gated read of one.**
@@ -27,12 +29,12 @@ that the rule rather than the exception.
 
 **What the law forbids**, and what today violates it:
 
-| Registry hint (today)                                              | Verdict                                     |
-| ------------------------------------------------------------------ | ------------------------------------------- |
-| hygiene < 0.55 "faint sweat and warm skin" *at close range*         | ✅ body fact + a perceivability gate         |
-| energy < 0.45 "slower replies, longer blinks, yawns"                | ❌ behavior instruction — rewrite as a read  |
-| intoxication > 0.35 "warmer laughter, imprecise gestures"           | ❌ behavior instruction — rewrite as a read  |
-| arousal > 0.55 "flushed skin, shallow breath, lingering eye contact" | ⚠️ two body facts + one behavior; regrade   |
+| Registry hint (today)                                                | Verdict                                    |
+| -------------------------------------------------------------------- | ------------------------------------------ |
+| hygiene < 0.55 "faint sweat and warm skin" *at close range*          | ✅ body fact + a perceivability gate        |
+| energy < 0.45 "slower replies, longer blinks, yawns"                 | ❌ behavior instruction — rewrite as a read |
+| intoxication > 0.35 "warmer laughter, imprecise gestures"            | ❌ behavior instruction — rewrite as a read |
+| arousal > 0.55 "flushed skin, shallow breath, lingering eye contact" | ⚠️ two body facts + one behavior; regrade  |
 
 A read may still *describe* behavior ("she is fading") — the difference is that a read is
 derived from context and gated on perceivability, while a threshold hint is an
@@ -221,13 +223,13 @@ real scene hits it.
 The classes the six existing meters and the PM-notes meters fall into. A class fixes a
 meter's drift shape, its sources, and how it reaches behavior.
 
-| Class                | Shape                                     | Members (today → planned)                                             |
-| -------------------- | ----------------------------------------- | --------------------------------------------------------------------- |
-| **Reserve/appetite** | depletes → becomes a *need*               | `energy` → `satiation`, `hydration`, `desire`, social battery          |
-| **Load**             | fills from sources → decays to a baseline | `arousal`, `intoxication`, `stress` → `bladder`, pain/soreness         |
-| **Valence**          | an axis, not a resource; baseline-seeking | `mood`                                                                 |
-| **Rate**             | clock-keyed drain against a rhythm        | `hygiene`                                                              |
-| **Phase**            | a cyclic driver that modulates others     | *(none yet)* → hormonal phase, circadian (derived, never stored)       |
+| Class                | Shape                                     | Members (today → planned)                                        |
+| -------------------- | ----------------------------------------- | ---------------------------------------------------------------- |
+| **Reserve/appetite** | depletes → becomes a *need*               | `energy` → `satiation`, `hydration`, `desire`, social battery    |
+| **Load**             | fills from sources → decays to a baseline | `arousal`, `intoxication`, `stress` → `bladder`, pain/soreness   |
+| **Valence**          | an axis, not a resource; baseline-seeking | `mood`                                                           |
+| **Rate**             | clock-keyed drain against a rhythm        | `hygiene`                                                        |
+| **Phase**            | a cyclic driver that modulates others     | *(none yet)* → hormonal phase, circadian (derived, never stored) |
 
 Two properties fall out and are worth stating as invariants:
 

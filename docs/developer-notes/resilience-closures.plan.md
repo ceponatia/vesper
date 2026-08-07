@@ -2,6 +2,11 @@
 
 Status: next (queued after the active narrator-physical-guidance files are quiet; review rulings recorded 2026-07-30)
 
+Outcome: A player can forge a character or render a scene while the model
+provider is wedged and still get an answer inside a stated time budget, so that
+a hung provider produces a real message instead of a spinner that runs until the
+socket dies.
+
 ## Why
 
 [docs/resilience.md](../resilience.md) opens with a prime directive: an error may
@@ -61,8 +66,9 @@ file-and-line detail.
 - **B5** — Degraded fallbacks are hand-listed at four call sites instead of coming
   from constructors that live next to the schema.
 - **E3** — The garment-blueprint validator never runs on the path where blueprint
-  data actually enters the database, so its structural rules are unenforced —
-  wire it or delete it (owner ruling needed, OQ1).
+  data actually enters the database, so its structural rules are unenforced.
+  Owner ruling (2026-07-30): wire it, do not delete it — see Review rulings
+  below.
 
 ## Non-goals
 
@@ -117,12 +123,12 @@ Ordered; each lands on its own.
    same column differently. (B2)
 4. **Fallbacks move next to their schema.** Export the three missing degraded
    constructors and delete the hand-listed copies at the call sites. (B5)
-5. **Garment blueprint invariants — wire or delete.** Gated on OQ1. If wired,
-   preceded by a read-only census of live rows so we know what would newly
-   degrade; if deleted, the module and its test go together. (E3)
+5. **Garment blueprint invariants, wired.** Per the 2026-07-30 ruling the
+   validator is wired rather than deleted, preceded by a read-only census of live
+   rows so we know what would newly degrade. (E3)
 
-Slice 1 unblocks slice 2. Slices 3 and 4 are independent of both and of each
-other. Slice 5 is independent and blocked only on the ruling.
+Slice 1 unblocks slice 2. Slices 3, 4 and 5 are independent of both and of each
+other.
 
 ## Success criteria
 

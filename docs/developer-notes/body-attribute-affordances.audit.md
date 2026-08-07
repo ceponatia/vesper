@@ -12,22 +12,67 @@ state contract by parsing narrator prose or assigning an optimistic default.
 
 ## Capability matrix
 
-| Capability | Legacy character chat | Successor chat | Ruling |
-| --- | --- | --- | --- |
-| Canonical attributes and realized body locations | Present through shared contracts. | Present through shared contracts. | Safe foundation after attribute-specific vocabulary audits. |
-| Hair executable axes | `hair.length`, `hair.texture`, and entangled `hair.quality` exist; density, strand thickness, and structured arrangement do not. | Same shared definitions. | Split/add or conservatively quarantine before profile compilation. |
-| Garment structure and current state | Clothing-state slices 0–6 provide chat-scoped instances, part presentation, coverage, wetness/crease gradients, deposits, and damage. Cue flag remains default off. | Clothing-state Slice 7 adapter is not shipped. | Garment affordances may prove against legacy fixtures; no successor parity claim yet. |
-| Effective coverage | Structured chat garments produce computed coverage; the free-text bridge remains only for degraded legacy rows. | Existing worn-item reads are coarser; shared garment adapter pending. | Unknown coverage fails closed for hidden/intimate detail. |
-| Fine posture and articulation | No authoritative regional pose model. Scene/image posture is text. | No authoritative regional body pose model. | Missing; text is not an input. |
-| Body/body and body/surface contact | No typed active contact owner. | No typed regional contact owner. | Missing; reach or prior narration cannot manufacture contact. |
-| Support and clearance | No regional support/contact facts. | World space and zones exist, but not furniture/body support or appendage clearance. | Missing for support-, compression-, and clearance-dependent phenomena. |
-| Wind, precipitation, and body impulse | May appear in narration/conditions but has no normalized current-cut force read. | Lore/events may mention weather; no general normalized force read for these phenomena. | Missing unless a slice adds an authoritative adapter/owner. |
-| Hair/skin wetness and contamination | Coarse conditions may exist; there is no shared regional body-surface state. | Body meters/conditions exist, but no shared regional surface wetness/contamination read. | Missing for production surface phenomena. Synthetic fixtures remain valid. |
-| Physiology signs | Existing meter projections expose only a small witness-visible sign vocabulary. General physiology is deferred. | Same body-meter substrate; contact/exposure-specific signs are intentionally absent. | Consume only named existing signs; do not derive swelling, lubrication, sweat, or temperature locally. |
-| Persistent body marks and acquired topology | No lane-neutral located body-mark/anatomy-state store. | No general fine-detail anatomy delta store. | Missing; required before persistent marks or missing-digit recognition. |
-| Perception | Coverage plus a turn-level sensory allowance; no per-sense proximity/exposure mask. | Witness/channel/detail-tier observations and world perception are stronger. | Shared normalized perception may represent unsupported channels as unavailable, never permissive. |
-| Retake boundary | Pre-exchange scenario/state snapshots restore chat state. | Retake re-renders the same committed cut. | Adapters differ; shared output must be captured through the real lane boundary. |
-| Observer visual memory | General chat memory exists, not exact visual notice/mention records. | Observations are rebuildable, but no recognition projection exists. | New structured projection required; no RAG-only cooldown. |
+Each capability below records the legacy character-chat position, the successor
+chat position, and the ruling.
+
+- **Canonical attributes and realized body locations.** Legacy: present through
+  shared contracts. Successor: present through shared contracts. Ruling: safe
+  foundation after attribute-specific vocabulary audits.
+- **Hair executable axes.** Legacy: `hair.length`, `hair.texture`, and
+  entangled `hair.quality` exist; density, strand thickness, and structured
+  arrangement do not. Successor: same shared definitions. Ruling: split/add or
+  conservatively quarantine before profile compilation.
+- **Garment structure and current state.** Legacy: clothing-state slices 0–6
+  provide chat-scoped instances, part presentation, coverage, wetness/crease
+  gradients, deposits, and damage. Cue flag remains default off. Successor:
+  clothing-state Slice 7 adapter is not shipped. Ruling: garment affordances
+  may prove against legacy fixtures; no successor parity claim yet.
+- **Effective coverage.** Legacy: structured chat garments produce computed
+  coverage; the free-text bridge remains only for degraded legacy rows.
+  Successor: existing worn-item reads are coarser; shared garment adapter
+  pending. Ruling: unknown coverage fails closed for hidden/intimate detail.
+- **Fine posture and articulation.** Legacy: no authoritative regional pose
+  model. Scene/image posture is text. Successor: no authoritative regional body
+  pose model. Ruling: missing; text is not an input.
+- **Body/body and body/surface contact.** Legacy: no typed active contact
+  owner. Successor: no typed regional contact owner. Ruling: missing; reach or
+  prior narration cannot manufacture contact.
+- **Support and clearance.** Legacy: no regional support/contact facts.
+  Successor: world space and zones exist, but not furniture/body support or
+  appendage clearance. Ruling: missing for support-, compression-, and
+  clearance-dependent phenomena.
+- **Wind, precipitation, and body impulse.** Legacy: may appear in
+  narration/conditions but has no normalized current-cut force read. Successor:
+  lore/events may mention weather; no general normalized force read for these
+  phenomena. Ruling: missing unless a slice adds an authoritative
+  adapter/owner.
+- **Hair/skin wetness and contamination.** Legacy: coarse conditions may exist;
+  there is no shared regional body-surface state. Successor: body
+  meters/conditions exist, but no shared regional surface
+  wetness/contamination read. Ruling: missing for production surface
+  phenomena. Synthetic fixtures remain valid.
+- **Physiology signs.** Legacy: existing meter projections expose only a small
+  witness-visible sign vocabulary. General physiology is deferred. Successor:
+  same body-meter substrate; contact/exposure-specific signs are intentionally
+  absent. Ruling: consume only named existing signs; do not derive swelling,
+  lubrication, sweat, or temperature locally.
+- **Persistent body marks and acquired topology.** Legacy: no lane-neutral
+  located body-mark/anatomy-state store. Successor: no general fine-detail
+  anatomy delta store. Ruling: missing; required before persistent marks or
+  missing-digit recognition.
+- **Perception.** Legacy: coverage plus a turn-level sensory allowance; no
+  per-sense proximity/exposure mask. Successor: witness/channel/detail-tier
+  observations and world perception are stronger. Ruling: shared normalized
+  perception may represent unsupported channels as unavailable, never
+  permissive.
+- **Retake boundary.** Legacy: pre-exchange scenario/state snapshots restore
+  chat state. Successor: retake re-renders the same committed cut. Ruling:
+  adapters differ; shared output must be captured through the real lane
+  boundary.
+- **Observer visual memory.** Legacy: general chat memory exists, not exact
+  visual notice/mention records. Successor: observations are rebuildable, but
+  no recognition projection exists. Ruling: new structured projection required;
+  no RAG-only cooldown.
 
 ## Adapter result law
 
@@ -76,33 +121,73 @@ that adapter forks nothing.
 
 ### Capability → owner
 
-| Capability | Legacy owner (this release) | Successor | Ruling |
-| --- | --- | --- | --- |
-| Stable hair structure | Canonical attributes (`hair.length`, `hair.density`, `hair.strand_thickness`, `hair.texture`, `hair.condition`) via `resolveAttributes(profile.attributes, overlays)` | Same shared contracts (static) | Supported after the Slice 0 vocabulary split |
-| Structured arrangement | New `hair.arrangement` enum attribute (presentation, mutable); live updates arrive through the archivist `attributeChanges` lane, which already accepts mutable non-inherent attributes | Static authored value only | Supported (legacy); successor has no live update path |
-| Hair wetness | New per-character body-surface wetness state on `ChatState` (Slice 4): extraction-proposed, fixed-point, lazy drying on the story clock (garment-condition precedent). Review-round laws (2026-07-28): standing outdoor precipitation **holds** committed wetness (never raises it); a corrupt stored entry is **quarantined** and reads `invalid` — suppressing the domain, never reading as dry — and heals on the next authoritative write; invalid extraction proposals are dropped **and reported** (`chat_surface.proposal_invalid`), never repaired into valid magnitudes | None | Supported (legacy) after Slice 4; successor `unavailable` |
-| Wind / precipitation | New scene-level environment read on `ChatScenario` (Slice 4): extraction-proposed typed state | None | Supported (legacy) after Slice 4; successor `unavailable` |
-| Hair coverage (headwear) | `garmentEffectiveCoverage` + wardrobe `partVisibility` when the garment lane is armed. Review ruling (2026-07-28): opaque headwear maps to perception `hinted` (ordinary hoods/hats leave ends visible; mechanics still constrain via `coveredFraction`); `hidden` returns for headwear only once a finer coverage read can distinguish full concealment (wrapped headscarf, veil) | Coarser worn projection only | Supported (legacy); unknown coverage fails closed |
-| Hair ↔ skin contact | None | None | **Fixture-only** — no typed contact owner exists; reach never invents contact |
-| Body impulse events (shake/run/impact) | None | None | **Fixture-only** — no committed impulse owner |
+Each capability below records the legacy owner for this release, the successor
+position, and the ruling.
 
-> **Ruled 2026-07-28 (owner):** the missing pose/support/contact/impulse rows
-> above get ONE future owner — the shared scene/body-relations state
+- **Stable hair structure.** Legacy owner: canonical attributes
+  (`hair.length`, `hair.density`, `hair.strand_thickness`, `hair.texture`,
+  `hair.condition`) via `resolveAttributes(profile.attributes, overlays)`.
+  Successor: same shared contracts (static). Ruling: supported after the Slice
+  0 vocabulary split.
+- **Structured arrangement.** Legacy owner: new `hair.arrangement` enum
+  attribute (presentation, mutable); live updates arrive through the archivist
+  `attributeChanges` lane, which already accepts mutable non-inherent
+  attributes. Successor: static authored value only. Ruling: supported
+  (legacy); successor has no live update path.
+- **Hair wetness.** Legacy owner: new per-character body-surface wetness state
+  on `ChatState` (Slice 4): extraction-proposed, fixed-point, lazy drying on
+  the story clock (garment-condition precedent). Review-round laws
+  (2026-07-28): standing outdoor precipitation **holds** committed wetness
+  (never raises it); a corrupt stored entry is **quarantined** and reads
+  `invalid` — suppressing the domain, never reading as dry — and heals on the
+  next authoritative write; invalid extraction proposals are dropped **and
+  reported** (`chat_surface.proposal_invalid`), never repaired into valid
+  magnitudes. Successor: none. Ruling: supported (legacy) after Slice 4;
+  successor `unavailable`.
+- **Wind / precipitation.** Legacy owner: new scene-level environment read on
+  `ChatScenario` (Slice 4): extraction-proposed typed state. Successor: none.
+  Ruling: supported (legacy) after Slice 4; successor `unavailable`.
+- **Hair coverage (headwear).** Legacy owner: `garmentEffectiveCoverage` +
+  wardrobe `partVisibility` when the garment lane is armed. Review ruling
+  (2026-07-28): opaque headwear maps to perception `hinted` (ordinary
+  hoods/hats leave ends visible; mechanics still constrain via
+  `coveredFraction`); `hidden` returns for headwear only once a finer coverage
+  read can distinguish full concealment (wrapped headscarf, veil). Successor:
+  coarser worn projection only. Ruling: supported (legacy); unknown coverage
+  fails closed.
+- **Hair ↔ skin contact.** Legacy owner: none. Successor: none. Ruling:
+  **fixture-only** — no typed contact owner exists; reach never invents
+  contact.
+- **Body impulse events (shake/run/impact).** Legacy owner: none. Successor:
+  none. Ruling: **fixture-only** — no committed impulse owner.
+
+> **Ruled 2026-07-28 (owner):** the missing pose/support/contact/impulse
+> entries above get ONE future owner — the shared scene/body-relations state
 > (architecture spec §"Scene/body-relations owner"), shipped first in
 > character chat and restored with the scenario on retakes. Until it ships,
-> every ruling in this table stands unchanged.
-| Perception | Wardrobe visibility (`visible`/`hinted`/`hidden`) + turn-level sensory allowance | Witness/channel observations (unused this release) | Normalized perception marks unsupported channels `unavailable`, never permissive |
-| Retake boundary | `pre_exchange_state` / `pre_exchange_scenario` anchors; the read is a pure function of rolled-back committed state and its cue/repeat memory rides that state (garment `cueState` precedent), so a retake reproduces the identical read | Immutable narrative cut (deferred with the adapter) | Supported (legacy); successor deferred |
-| Recognition memory | — | — | Slice 7; outside this release (slices 0–5) |
+> every ruling in this list stands unchanged.
+
+- **Perception.** Legacy owner: wardrobe visibility
+  (`visible`/`hinted`/`hidden`) + turn-level sensory allowance. Successor:
+  witness/channel observations (unused this release). Ruling: normalized
+  perception marks unsupported channels `unavailable`, never permissive.
+- **Retake boundary.** Legacy owner: `pre_exchange_state` /
+  `pre_exchange_scenario` anchors; the read is a pure function of rolled-back
+  committed state and its cue/repeat memory rides that state (garment
+  `cueState` precedent), so a retake reproduces the identical read. Successor:
+  immutable narrative cut (deferred with the adapter). Ruling: supported
+  (legacy); successor deferred.
+- **Recognition memory.** Legacy owner: none. Successor: none. Ruling: slice 7;
+  outside this release (slices 0–5).
 
 ### Phenomenon → production status (first hair corpus)
 
-| Phenomenon | Requires | Production status |
-| --- | --- | --- |
-| `hair.wet_clumping` | structure + wetness (+ arrangement) | Production (legacy) once Slice 4 lands the wetness owner |
-| `hair.wind_or_motion_response` | mechanics + current wind or motion | Production (legacy) for **wind** via the environment read; body-motion/impulse input fixture-only |
-| `hair.strands_adhere_to_skin` | reach + asserted contact + wetness + exposure | **Fixture-only** (no contact owner) |
-| `hair.sheds_droplets` | retained water + committed impulse | **Fixture-only** (no impulse owner) |
+| Phenomenon                     | Requires                                      | Production status                                                                                 |
+| ------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `hair.wet_clumping`            | structure + wetness (+ arrangement)           | Production (legacy) once Slice 4 lands the wetness owner                                          |
+| `hair.wind_or_motion_response` | mechanics + current wind or motion            | Production (legacy) for **wind** via the environment read; body-motion/impulse input fixture-only |
+| `hair.strands_adhere_to_skin`  | reach + asserted contact + wetness + exposure | **Fixture-only** (no contact owner)                                                               |
+| `hair.sheds_droplets`          | retained water + committed impulse            | **Fixture-only** (no impulse owner)                                                               |
 
 ### Diagnostic convention for missing inputs
 

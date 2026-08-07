@@ -2,6 +2,10 @@
 
 Status: draft
 
+Outcome: The owner can lose control of the Neon database — a leaked backup, a stray
+branch, an insider, or a subpoena of the database alone — and nobody on the other end
+can read a word a player actually said.
+
 ## Goal & threat model
 
 Make the durable, user-linked record of what players actually said and did —

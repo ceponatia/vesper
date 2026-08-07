@@ -431,8 +431,8 @@ umbrella further down.)
 Unpromoted ideas live in [deferred.plan.md](deferred.plan.md): the
 **successor-engine improvement backlog**
 ([deferred/CLAUDE.md](deferred/CLAUDE.md) — the still-parked remainder of the
-2026-07-23/24 review batches, draft-plan stubs promoted one-by-one into real
-plans/specs as discussed),
+2026-07-23/24 review batches; draft-plan stubs graduate one at a time into real
+plans/specs, on the owner's go, never in bulk),
 the **body-affordance scene-image consumer** (Slice 8's 2026-07-29 follow-up,
 after the shared scene/body-relations owner or an explicitly scheduled narrow
 paired trial),

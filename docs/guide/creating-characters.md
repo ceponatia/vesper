@@ -15,7 +15,7 @@ On the character page, **Generate avatar** builds the canonical portrait from th
 
 ## Character chat
 
-Once a character is saved, the **Chat** tab lets you talk to them one-on-one — no world, no session, just a quick way to hear their voice and feel out their personality. **Scenario setup** sets the stage for the conversation: a short premise for the moment, what they're wearing (with an intimate-reveal toggle), and which social cards apply. (The **starting relationship** is no longer set here — it's a saved profile field on the character editor's **Chat defaults** card that applies to every conversation.) As you talk, the character's mood and how they're warming to you shift in response. When a moment is worth seeing, **Generate scene** paints an image from your recent exchange. Everything here stays in the chat — it never touches the character's saved bio or personality.
+Once a character is saved, the **Chat** tab lets you talk to them one-on-one — no world, no session, just a quick way to hear their voice and feel out their personality. **Scenario setup** sets the stage for the conversation: a short premise for the moment, what they're wearing (with an intimate-reveal toggle), and which social cards apply. (The **starting relationship** is set elsewhere — a saved profile field on the character editor's **Chat defaults** card that applies to every conversation.) As you talk, the character's mood and how they're warming to you shift in response. When a moment is worth seeing, **Generate scene** paints an image from your recent exchange. Everything here stays in the chat — it never touches the character's saved bio or personality.
 
 ## Manual editing
 

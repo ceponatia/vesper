@@ -2,6 +2,9 @@
 
 Status: next (queued after resilience closures and the cheap hot-path tranche; repeated timing baseline required)
 
+Outcome: A player can hit send and see the character start speaking sooner, and can send
+again the moment a reply finishes without being told a reply is still streaming.
+
 ## Why
 
 A player hits send, and then nothing happens for a moment — no text, just the

@@ -1,6 +1,6 @@
 # Image identity packs — render integration spec
 
-Parent spec: [image-identity-packs.spec.md](image-identity-packs.spec.md)
+Status: detail for [image-identity-packs.spec.md](image-identity-packs.spec.md)
 
 Trial protocol:
 [image-identity-packs.spec.trial.md](image-identity-packs.spec.trial.md)

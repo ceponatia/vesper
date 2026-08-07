@@ -111,12 +111,12 @@ part/coverage change.
 
 Perception gating is evaluated before cue ranking.
 
-| Channel | Minimum evidence |
-| --- | --- |
-| Visual | Unoccluded path, sufficient light/distance/orientation, exposure appropriate to region and viewer. |
-| Tactile | Actor is a participant in committed contact and material transmission is nonzero. |
-| Olfactory | Current contributor, exposure/permeability, proximity, and airflow. |
-| Gustatory | Direct qualifying oral contact, current contributor, and intimate policy pass where required. |
+| Channel   | Minimum evidence                                                                                   |
+| --------- | -------------------------------------------------------------------------------------------------- |
+| Visual    | Unoccluded path, sufficient light/distance/orientation, exposure appropriate to region and viewer. |
+| Tactile   | Actor is a participant in committed contact and material transmission is nonzero.                  |
+| Olfactory | Current contributor, exposure/permeability, proximity, and airflow.                                |
+| Gustatory | Direct qualifying oral contact, current contributor, and intimate policy pass where required.      |
 
 Intimate status is an additional hard gate, not a score. High salience,
 uniqueness, action relevance, or narrator focus cannot bypass it.

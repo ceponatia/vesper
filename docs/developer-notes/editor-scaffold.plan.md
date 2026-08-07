@@ -2,6 +2,10 @@
 
 Status: draft (ConfirmDialog is approved early; the full scaffold requires a second go/no-go after the defect fix)
 
+Outcome: A player can press Delete and then Cancel in any library editor and have
+the dialog stay put until the delete settles, so that backing out of a deletion
+stops quietly deleting the thing anyway.
+
 ## Why
 
 There is a real bug in here, and it is why this batch is worth scheduling rather

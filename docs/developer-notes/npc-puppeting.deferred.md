@@ -1,6 +1,6 @@
 # NPC puppeting — the full handling system (deferred)
 
-Status: **deferred** — parked detail for [deferred.plan.md](deferred.plan.md) §"NPC
+Status: parked detail for [deferred.plan.md](deferred.plan.md) §"NPC
 puppeting". The working v1 (the deflection directive) shipped with **personality Slice 2**
 (2026-06-18); this file records what a complete puppet-handling system would add, so the
 seams Slice 2 created are not mistaken for the whole feature.

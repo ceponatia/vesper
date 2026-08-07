@@ -1,7 +1,9 @@
 # Data lifecycle — 2026-07-29 orphaned-data audit (live Neon + Fly)
 
-Detail doc for [data-lifecycle.plan.md](data-lifecycle.plan.md). Snapshot of the
-live production audit that motivated the plan: every orphan class found in the
+Status: reference (audit run 2026-07-29) — detail for
+[data-lifecycle.plan.md](data-lifecycle.plan.md)
+
+Snapshot of the live production audit that motivated the plan: every orphan class found in the
 Neon `Vesper` database (project `round-sky-30947574`) and on the Fly volume
 (`vesper_data`, mounted at `/app/data`), with provenance traced to code.
 Numbers are the 2026-07-29 counts — they will drift; the *classes* and causes

@@ -2,6 +2,10 @@
 
 Status: draft (E13/E14 approved for the early hot-path tranche; the broad hygiene sweep stays late)
 
+Outcome: A developer can open `src/contracts` and find nothing that describes a
+system the app already deleted, so that adding a vocabulary item stays the
+one-file data edit it is advertised as instead of a hunt through dead seams.
+
 ## Why
 
 `src/contracts` is the pure heart of the domain: the registries and validation

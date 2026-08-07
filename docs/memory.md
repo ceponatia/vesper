@@ -4,7 +4,7 @@
 
 ## Memory keying — the chat memory group
 
-`facts` and `episodes` are keyed by a `MemoryScope` (`memory/scope.ts`), never a bare id. Since the R6 retirement of the session lane it is a **one-armed** discriminated union — `{ kind: "chat", groupId }` — kept a union so a future scope (library/global) is an additive arm, not a signature change:
+`facts` and `episodes` are keyed by a `MemoryScope` (`memory/scope.ts`), never a bare id. It is a **one-armed** discriminated union — `{ kind: "chat", groupId }` — kept a union so a second scope (library/global) is an additive arm, not a signature change:
 
 - **chat** — a chat **memory group** (character-chat-standalone.spec.md §1.3). Rows key on `chat_memory_group_id`. A group is carried by `chat_participants.memory_group_id`: conversations created as "continue our shared history" share the character's existing group (the relationship remembers across conversations), "fresh start / AU" conversations mint their own island — and in a group chat each participant keeps their own group.
 
@@ -32,13 +32,13 @@ Facts and episodes carry `witnessed_by` — in the chat lane, the character who 
 
 ### Fact channel — the RAG visibility fence
 
-Every fact carries a **`channel`** (text, default `perceived`; NOT a pg enum — forward-compatible-schema preference) recording *how the knowledge was established*, so the archivist's mind-reading backdoor stays closed: without it, a fact extracted from the player's private thoughts (*"she'd never talk to a dork like me"*) returns later in the narrator's "What you know … treat as true" block and the character "knows" something she never perceived (player-input-perception.plan.md slice 6). Vocabulary (`contracts/facts/taxonomy.ts`):
+Every fact carries a **`channel`** (text, default `perceived`; NOT a pg enum — forward-compatible-schema preference) recording *how the knowledge was established*, so the archivist's mind-reading backdoor stays closed: without it, a fact extracted from the player's private thoughts (*"she'd never talk to a dork like me"*) returns later in the narrator's "What you know … treat as true" block and the character "knows" something she never perceived. Vocabulary (`contracts/facts/taxonomy.ts`):
 
-| Channel | Established through | Reaches the narrator? |
-| --- | --- | --- |
-| `perceived` | Quoted speech / a visible action or expression the character saw or heard | **Yes** — renders as established knowledge, exactly as before |
-| `private` | The player's unspoken inner thoughts (a `*…*` span, or judged semantically) | **No** — excluded from narrator-bound retrieval entirely (owner ruling 2026-07-09: no intuition-grade "you sense…" framing) |
-| `ooc` | `((out-of-character))` direction — generally not stored at all | **No** — never enters in-world memory |
+| Channel     | Established through                                                         | Reaches the narrator?                                                                                                       |
+| ----------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `perceived` | Quoted speech / a visible action or expression the character saw or heard   | **Yes** — renders as established knowledge                                                                                  |
+| `private`   | The player's unspoken inner thoughts (a `*…*` span, or judged semantically) | **No** — excluded from narrator-bound retrieval entirely (owner ruling 2026-07-09: no intuition-grade "you sense…" framing) |
+| `ooc`       | `((out-of-character))` direction — generally not stored at all              | **No** — never enters in-world memory                                                                                       |
 
 - **Where the fence lives — retrieval, not render.** `queryFactCandidates` + `selectPinnedFacts` (`memory/facts.ts`) filter to `NARRATOR_VISIBLE_FACT_CHANNELS` (= `["perceived"]`) in SQL **before** the top-k `LIMIT`, so non-perceived facts never reach the narrator prompt **and** never eat a retrieval-cap slot. Narrator retrieval (`retrieveFactsFused` → `buildMemorySection`) inherits it. The **pulse and the dev inspector** read facts through other paths (`listFactsForScope`) and still see every channel — the inspector labels each fact with its channel.
 - **Filed by the memory scribe.** The extraction leg tags every fact's channel: quoted/visible ⇒ `perceived`, thought-derived ⇒ `private`, OOC ⇒ skip. When the player used sigils, a parser-derived hint rides along so the classification is deterministic; without sigils it judges semantically. The hint is `channelHint` (`prompts/notation.ts`, over the shared `@/lib/message-spans` parser), which the chat archivist (`prompts/chat-archivist.ts`) calls so it never clones the sigil parse.
@@ -52,7 +52,7 @@ Every fact carries a **`channel`** (text, default `perceived`; NOT a pg enum —
 
 The chat lane retrieves facts + episodes with **per-query embedding + reciprocal-rank fusion** (`retrieveFactsFused` / `retrieveEpisodesFused`; pure math in `memory/fusion.ts`): each query — the carried `memoryQueries` plus the player input — is embedded and retrieved independently, then candidates fuse by `Σ 1/(RRF_K + rank)` (`RRF_K` = 60), so appearing in several lists beats one slightly-better rank. The relevance floors apply to each hit's **best raw cosine** across queries, never the RRF number. Every fused hit carries its `sources` (which queries surfaced it) — threaded into `ChatMemoryTrace.retrievedDetail` for the inspector, and logged on the `retrieval` event. A query-embedding failure degrades with `memory.facts.embed_failed` / `memory.episodes.embed_failed` / `memory.queries.embed_failed` — facts to the pinned-only result, episodes to `[]`.
 
-**One embed per turn** (`memory/query-embeddings.ts`, chat-agent-improvements.plan.md slice 3). A turn's retrieval legs all search the SAME texts, but each used to batch-embed them itself: the fact leg, the episode leg, every ensemble member's pair of legs, and the memory-callback picker (whose anti-echo anchor IS the player's input) — 2–3 round-trips for one text set, on the **pre-reply** path the player actually waits on. Callers now embed the whole set once via `QueryEmbeddings.embed` (trimmed + deduped) and pass the cache to each leg; a leg given no cache still embeds its own, so one-off callers (the eval harness) are unchanged. The cache holds pgvector literals by query text — never a partial vector, so a failed embed simply yields "no vector" and each leg takes its existing degraded path.
+**One embed per turn** (`memory/query-embeddings.ts`). A turn's retrieval legs all search the SAME texts — the fact leg, the episode leg, every ensemble member's pair of legs, and the memory-callback picker (whose anti-echo anchor IS the player's input) — and this is the **pre-reply** path the player waits on, so embedding them per leg would cost 2–3 round-trips for one text set. Callers embed the whole set once via `QueryEmbeddings.embed` (trimmed + deduped) and pass the cache to each leg; a leg given no cache embeds its own, so one-off callers (the eval harness) need no cache. The cache holds pgvector literals by query text — never a partial vector, so a failed embed simply yields "no vector" and each leg takes its degraded path.
 
 ## Library search embeddings
 

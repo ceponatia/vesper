@@ -29,19 +29,19 @@ compile.
 
 ## What it owns
 
-| Fact | Shape | Notes |
-| --- | --- | --- |
-| Participant posture | `SceneFact<ScenePosture>` per participant | Five configurations. Absent ⇒ `unresolved`. |
-| Coarse facing | `SceneFacingRelation` per **ordered** pair | Directional: she may have her back to him while he faces her. |
-| Coarse proximity | `SceneProximityRelation` per **unordered** pair | Symmetric, stored once, so a pair cannot hold two distances. |
-| Support roles | **one** `SceneFact<SceneSupportRelation[]>` per participant | The whole set is one fact, so a clearing keeps a timestamp. |
-| Support surfaces | `SceneSupportSurface` per surface | Kind plus a height rung. |
-| Surface-height relations | derived | Posture × zone offset, plus the base rung of whatever the body rests on. |
-| Active-contact projection | `ContactLifecycleState`, **housed** | The contact core's own type, carried verbatim. |
-| Movement intents | `SceneMovementIntent` | Typed changes only; there is no prose case. |
-| NPC movement authority | `SCENE_CONTROL_ORIGINS` | The owner's actor-control ruling, as data. |
-| Retake / snapshot state | `SceneState` + `parseSceneState` | Versioned, serializable, replayable. |
-| Provenance | `SceneProvenance` on every fact | Five sources, none of which is narration. |
+| Fact                      | Shape                                                       | Notes                                                                    |
+| ------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Participant posture       | `SceneFact<ScenePosture>` per participant                   | Five configurations. Absent ⇒ `unresolved`.                              |
+| Coarse facing             | `SceneFacingRelation` per **ordered** pair                  | Directional: she may have her back to him while he faces her.            |
+| Coarse proximity          | `SceneProximityRelation` per **unordered** pair             | Symmetric, stored once, so a pair cannot hold two distances.             |
+| Support roles             | **one** `SceneFact<SceneSupportRelation[]>` per participant | The whole set is one fact, so a clearing keeps a timestamp.              |
+| Support surfaces          | `SceneSupportSurface` per surface                           | Kind plus a height rung.                                                 |
+| Surface-height relations  | derived                                                     | Posture × zone offset, plus the base rung of whatever the body rests on. |
+| Active-contact projection | `ContactLifecycleState`, **housed**                         | The contact core's own type, carried verbatim.                           |
+| Movement intents          | `SceneMovementIntent`                                       | Typed changes only; there is no prose case.                              |
+| NPC movement authority    | `SCENE_CONTROL_ORIGINS`                                     | The owner's actor-control ruling, as data.                               |
+| Retake / snapshot state   | `SceneState` + `parseSceneState`                            | Versioned, serializable, replayable.                                     |
+| Provenance                | `SceneProvenance` on every fact                             | Five sources, none of which is narration.                                |
 
 ## Vocabularies
 
@@ -52,17 +52,17 @@ member: an unstated fact is an **absent** fact, and the difference between
 "absent" and "unknown-as-a-value" is the difference between a read that falls
 silent and a read that travels.
 
-| Vocabulary | Members |
-| --- | --- |
-| `scenePostures` | `standing` · `sitting` · `kneeling` · `crouching` · `lying` |
-| `sceneFacings` | `toward` · `side_on` · `away` |
-| `sceneProximityBands` | `touching` · `close` · `near` · `distant` |
-| `sceneHeightRungs` | `ground` · `knee` · `hip` · `chest` · `head` · `overhead` (ordered, index 0–5) |
-| `sceneBodyZones` | `head` · `torso` · `arms` · `pelvis` · `legs` |
-| `sceneSupportRoles` | `borne_by` · `leaning_on` · `held_by` · `bearing` |
-| `sceneSupportKinds` | `ground` · `seat` · `bed` · `table` · `wall` · `prop` |
-| `sceneControlModes` | `player_controlled` · `npc_controlled` |
-| `sceneIntentOrigins` | `player` · `npc` · `simulation` |
+| Vocabulary               | Members                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| `scenePostures`          | `standing` · `sitting` · `kneeling` · `crouching` · `lying`                    |
+| `sceneFacings`           | `toward` · `side_on` · `away`                                                  |
+| `sceneProximityBands`    | `touching` · `close` · `near` · `distant`                                      |
+| `sceneHeightRungs`       | `ground` · `knee` · `hip` · `chest` · `head` · `overhead` (ordered, index 0–5) |
+| `sceneBodyZones`         | `head` · `torso` · `arms` · `pelvis` · `legs`                                  |
+| `sceneSupportRoles`      | `borne_by` · `leaning_on` · `held_by` · `bearing`                              |
+| `sceneSupportKinds`      | `ground` · `seat` · `bed` · `table` · `wall` · `prop`                          |
+| `sceneControlModes`      | `player_controlled` · `npc_controlled`                                         |
+| `sceneIntentOrigins`     | `player` · `npc` · `simulation`                                                |
 | `sceneProvenanceSources` | `authored` · `player_intent` · `npc_decision` · `simulation` · `scene_default` |
 
 **`leaning` is not a posture.** It is a statement about what carries the
@@ -84,13 +84,13 @@ Rungs are **relative to the surface the body is on**, so elevation composes:
 a woman sitting on a table gets the table's rung added to every entry in the
 `sitting` row. Sums clamp at `overhead` (5).
 
-| posture | legs | pelvis | torso | arms | head |
-| --- | --- | --- | --- | --- | --- |
-| standing | 1 | 2 | 3 | 2 | 4 |
-| sitting | 0 | 0 | 1 | 0 | 2 |
-| kneeling | 0 | 1 | 2 | 1 | 3 |
-| crouching | 0 | 1 | 1 | 1 | 2 |
-| lying | 0 | 0 | 0 | 0 | 0 |
+| posture   | legs | pelvis | torso | arms | head |
+| --------- | ---- | ------ | ----- | ---- | ---- |
+| standing  | 1    | 2      | 3     | 2    | 4    |
+| sitting   | 0    | 0      | 1     | 0    | 2    |
+| kneeling  | 0    | 1      | 2     | 1    | 3    |
+| crouching | 0    | 1      | 1     | 1    | 2    |
+| lying     | 0    | 0      | 0     | 0    | 0    |
 
 Reach span — how many rungs a zone crosses on its own, without the body
 changing posture: `arms` 2 · `legs` 1 · `head` 1 · `torso` 0 · `pelvis` 0.
@@ -153,16 +153,16 @@ Ordering runs last because it is the only check that consults the fact being
 replaced: an intent nobody was allowed to make is refused on that ground whether
 it was late or not.
 
-| Situation | Outcome |
-| --- | --- |
-| origin `player`, participant `npc_controlled` | **rejected** `npc_movement_requires_npc_authority` |
-| origin `npc`/`simulation`, participant `player_controlled` | **rejected** `player_movement_requires_player_authority` |
-| no control fact on the participant | **unresolved** `control_unresolved` + `scene.control_unavailable` (`warn`) |
-| participant not in the scene | **unresolved** `participant_absent` + `scene.intent_invalid` (`error`) |
-| unusable intent (blank id, negative story time, facing itself, unknown target, two `borne_by`, load-less relation, self-anchored support) | **unresolved** `intent_invalid` + `scene.intent_invalid` (`error`) |
-| older than the fact it targets | **superseded** `newer_fact_present` + `scene.intent_stale` (`warn`) |
-| restates the fact it targets | **superseded** `already_asserted`, no diagnostic |
-| origin permitted, nothing newer in the way | **committed**, fact stamped `SCENE_ORIGIN_PROVENANCE[origin]` |
+| Situation                                                                                                                                 | Outcome                                                                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| origin `player`, participant `npc_controlled`                                                                                             | **rejected** `npc_movement_requires_npc_authority`                         |
+| origin `npc`/`simulation`, participant `player_controlled`                                                                                | **rejected** `player_movement_requires_player_authority`                   |
+| no control fact on the participant                                                                                                        | **unresolved** `control_unresolved` + `scene.control_unavailable` (`warn`) |
+| participant not in the scene                                                                                                              | **unresolved** `participant_absent` + `scene.intent_invalid` (`error`)     |
+| unusable intent (blank id, negative story time, facing itself, unknown target, two `borne_by`, load-less relation, self-anchored support) | **unresolved** `intent_invalid` + `scene.intent_invalid` (`error`)         |
+| older than the fact it targets                                                                                                            | **superseded** `newer_fact_present` + `scene.intent_stale` (`warn`)        |
+| restates the fact it targets                                                                                                              | **superseded** `already_asserted`, no diagnostic                           |
+| origin permitted, nothing newer in the way                                                                                                | **committed**, fact stamped `SCENE_ORIGIN_PROVENANCE[origin]`              |
 
 There is no narrator origin to check for, which is the restrictive reading the
 owner chose. **Only the `committed` branch of `SceneIntentOutcome` carries a
@@ -186,13 +186,13 @@ weighed against the fact it would replace rather than landing on top of it.
 provenance of the fact that stands (`standing`) and — like every non-committed
 branch — no `state`.
 
-| The intent | Rule | Outcome |
-| --- | --- | --- |
-| restates the standing fact, at any story time | never writes | `already_asserted`, silent |
-| older than the standing fact | never overwrites | `newer_fact_present` + `scene.intent_stale` |
-| same story time, different value | writes | `committed` |
-| newer, different value | writes | `committed` |
-| targets a fact the scene does not hold yet | nothing to be late against | `committed` |
+| The intent                                    | Rule                       | Outcome                                     |
+| --------------------------------------------- | -------------------------- | ------------------------------------------- |
+| restates the standing fact, at any story time | never writes               | `already_asserted`, silent                  |
+| older than the standing fact                  | never overwrites           | `newer_fact_present` + `scene.intent_stale` |
+| same story time, different value              | writes                     | `committed`                                 |
+| newer, different value                        | writes                     | `committed`                                 |
+| targets a fact the scene does not hold yet    | nothing to be late against | `committed`                                 |
 
 **Restatement never writes**, because only the provenance would change, and
 re-stamping an unchanged fact is how a scene where nothing happened produces a
@@ -230,11 +230,11 @@ of the wall at minute 110" is a fact about minute 110, and an intent from minute
 
 Three states, and the difference between the first two is bookkeeping only:
 
-| `support` | Means | Reads answer |
-| --- | --- | --- |
-| absent | nobody ever said | `support_unknown` / `elevation_unknown` |
-| present, `[]` | somebody said "nothing", at time T | `support_unknown` / `elevation_unknown` |
-| present, relations | the stated set, at time T | the support and reach rules |
+| `support`          | Means                              | Reads answer                            |
+| ------------------ | ---------------------------------- | --------------------------------------- |
+| absent             | nobody ever said                   | `support_unknown` / `elevation_unknown` |
+| present, `[]`      | somebody said "nothing", at time T | `support_unknown` / `elevation_unknown` |
+| present, relations | the stated set, at time T          | the support and reach rules             |
 
 A stated-empty set is a **clearing, not a claim**: reading it as "every limb is
 free" would turn a bookkeeping fact into a physical one. Restoration preserves
@@ -287,14 +287,14 @@ not model where furniture is relative to a body that is not touching it, and
 Worked cases from the fixtures (both bodies standing on the floor, `close`,
 facing each other):
 
-| Attempt | Rungs | Answer |
-| --- | --- | --- |
-| hand → shoulder | 2 → 3, span 2 | `within_reach` |
+| Attempt                                         | Rungs                   | Answer                          |
+| ----------------------------------------------- | ----------------------- | ------------------------------- |
+| hand → shoulder                                 | 2 → 3, span 2           | `within_reach`                  |
 | hand → head, target standing on a table (`hip`) | 2 → 5 (clamped), span 2 | `within_reach_after_adjustment` |
-| foot → shoulder | 1 → 3, span 1 | `within_reach_after_adjustment` |
-| foot → head | 1 → 4, span 1 | `out_of_reach` |
-| hand → shoulder, source facing away | 2 → 3 | `within_reach_after_adjustment` |
-| foot → the floor it stands on | 1 → 0, span 1 | `in_contact` |
+| foot → shoulder                                 | 1 → 3, span 1           | `within_reach_after_adjustment` |
+| foot → head                                     | 1 → 4, span 1           | `out_of_reach`                  |
+| hand → shoulder, source facing away             | 2 → 3                   | `within_reach_after_adjustment` |
+| foot → the floor it stands on                   | 1 → 0, span 1           | `in_contact`                    |
 
 ## Support rule
 
@@ -302,12 +302,12 @@ facing each other):
 own `ContactSupportMobility` / `ContactSupportRole` vocabulary rather than a
 second one:
 
-| Zone appears in | mobility | supportRole |
-| --- | --- | --- |
-| a `borne_by` or `bearing` relation | `fixed` | `weight_bearing` |
-| a `leaning_on` or `held_by` relation | `limited` | `partial` |
-| no relation, but the set states others | `free` | `free` |
-| no support fact, or a stated-**empty** set | `unresolved` (`support_unknown`) | — |
+| Zone appears in                            | mobility                         | supportRole      |
+| ------------------------------------------ | -------------------------------- | ---------------- |
+| a `borne_by` or `bearing` relation         | `fixed`                          | `weight_bearing` |
+| a `leaning_on` or `held_by` relation       | `limited`                        | `partial`        |
+| no relation, but the set states others     | `free`                           | `free`           |
+| no support fact, or a stated-**empty** set | `unresolved` (`support_unknown`) | —                |
 
 "Nobody said what she is doing with her hands" is not "her hands are free", and
 the contact resolver is built to fall silent on the difference.
@@ -416,14 +416,14 @@ re-derived here, so a contact on an **object** needs only its source body.
 
 ## Degraded behaviour
 
-| Code | Severity | Cause |
-| --- | --- | --- |
-| `scene.intent_invalid` | `error` | A movement intent is unusable or names something absent. |
-| `scene.control_unavailable` | `warn` | Nobody stated who controls the body an intent moves. |
-| `scene.intent_stale` | `warn` | An intent arrived older than the fact it would have overwritten. |
-| `scene.relation_unavailable` | `warn` | A relation read could not answer; the reason rides `context.reason`. |
-| `scene.state_invalid` | `error`/`warn` | Stored state was unreadable or dangling in part (`error`, with `dropped` / `dangling` / `orphanedContacts`) or unreadable in whole/version (`warn`). |
-| `scene.state_contradictory` | `error` | Stored facts claimed one key twice; every claimant was dropped. |
+| Code                         | Severity       | Cause                                                                                                                                                |
+| ---------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scene.intent_invalid`       | `error`        | A movement intent is unusable or names something absent.                                                                                             |
+| `scene.control_unavailable`  | `warn`         | Nobody stated who controls the body an intent moves.                                                                                                 |
+| `scene.intent_stale`         | `warn`         | An intent arrived older than the fact it would have overwritten.                                                                                     |
+| `scene.relation_unavailable` | `warn`         | A relation read could not answer; the reason rides `context.reason`.                                                                                 |
+| `scene.state_invalid`        | `error`/`warn` | Stored state was unreadable or dangling in part (`error`, with `dropped` / `dangling` / `orphanedContacts`) or unreadable in whole/version (`warn`). |
+| `scene.state_contradictory`  | `error`        | Stored facts claimed one key twice; every claimant was dropped.                                                                                      |
 
 `SceneUnresolvedReason` is the read-side vocabulary: `participant_absent`,
 `zone_unknown`, `posture_unknown`, `elevation_unknown`, `elevation_ambiguous`,
@@ -433,17 +433,17 @@ or contradictory fact, so the gap is nameable rather than a shrug.
 
 ## File map
 
-| File | Responsibility |
-| --- | --- |
-| `vocabulary.ts` | The closed vocabularies, the posture/zone rung table, the reach spans, and the actor-control table. |
-| `provenance.ts` | `SceneProvenance`, `SceneFact`, `SceneEventRef`, the support id (reused `ContactEntityId`), evidence projection. |
-| `state.ts` | The five collections, canonical construction, keys, accessors, and the contact-projection door. |
-| `intents.ts` | `SceneMovementIntent`, the actor-control law, the ordering law, `commitSceneIntent`, `applySceneIntents`. |
-| `relations.ts` | `sceneBodyZoneOf`, `sceneReach`, `sceneSupportOf`, and the `sceneGeometryRead` / `sceneSupportRead` projections. |
-| `snapshot.ts` | Boundary schemas, the version and contradiction laws, referential integrity, `parseSceneState`. |
-| `diagnostics.ts` | The six codes this module emits. |
-| `test-support.ts` | `probe*` fixture builders. Deliberately **not** in the barrel. |
-| `scene.test.ts` | 82 cases: vocabularies, zones, reach, absent facts, support, provenance, actor control, the ordering law, snapshot/replay, stored contradictions, housing, contact integration, purity. |
+| File              | Responsibility                                                                                                                                                                          |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vocabulary.ts`   | The closed vocabularies, the posture/zone rung table, the reach spans, and the actor-control table.                                                                                     |
+| `provenance.ts`   | `SceneProvenance`, `SceneFact`, `SceneEventRef`, the support id (reused `ContactEntityId`), evidence projection.                                                                        |
+| `state.ts`        | The five collections, canonical construction, keys, accessors, and the contact-projection door.                                                                                         |
+| `intents.ts`      | `SceneMovementIntent`, the actor-control law, the ordering law, `commitSceneIntent`, `applySceneIntents`.                                                                               |
+| `relations.ts`    | `sceneBodyZoneOf`, `sceneReach`, `sceneSupportOf`, and the `sceneGeometryRead` / `sceneSupportRead` projections.                                                                        |
+| `snapshot.ts`     | Boundary schemas, the version and contradiction laws, referential integrity, `parseSceneState`.                                                                                         |
+| `diagnostics.ts`  | The six codes this module emits.                                                                                                                                                        |
+| `test-support.ts` | `probe*` fixture builders. Deliberately **not** in the barrel.                                                                                                                          |
+| `scene.test.ts`   | 82 cases: vocabularies, zones, reach, absent facts, support, provenance, actor control, the ordering law, snapshot/replay, stored contradictions, housing, contact integration, purity. |
 
 ## Public API
 

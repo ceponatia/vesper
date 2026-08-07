@@ -8,6 +8,10 @@ corpus characters, paid runs, the detector decision, threshold calibration,
 the repeat subset, and verdicts — does not exist yet and remains owner
 actions; slice 7 — production close-out — remains)
 
+Outcome: A player can recognize the same character's face in every image Vesper
+makes of them, so that a newly generated picture stops looking like a different
+person.
+
 Technical companion: [image-identity-packs.spec.md](image-identity-packs.spec.md)
 
 Related plans:
@@ -342,7 +346,7 @@ slice 5 as originally scoped is not end-to-end complete.
 
 ### Slice 6 — fixed identity-reference trial
 
-Run the agreed corpus against canonical-only, canonical-plus-face-detail, and any
+Run the fixed corpus against canonical-only, canonical-plus-face-detail, and any
 profile-specific reference strategies. Measure identity preference, edit fidelity,
 composition drift, failure rate, provider latency, and effective reference size.
 
@@ -364,9 +368,8 @@ face detector, more references than the model accepts, or a blocked pack
 refuses those cells up front with an explanation instead of quietly trimming
 them.
 
-Hardened the same day, before any money is spent. A review of the first build
-found ways the harness could have produced evidence that looked controlled but
-was not, and a correctness pass closed them. The trial now refuses any
+Hardened the same day, before any money is spent — the first build could have
+produced evidence that looked controlled but was not. The trial now refuses any
 model-and-profile pairing that could not run that job in production, and it
 proves what it claims: the settings a cell records are the settings actually
 sent, the exact provider version a cell names is the version that runs, and a

@@ -2,6 +2,10 @@
 
 Status: draft (sequenced after the approved near-term latency tranche; promote by domain-sized batches, not as one epic)
 
+Outcome: A developer can read one description of how a simulation command runs
+instead of four, so that a fix to that path stops silently skipping the two space
+commands and the scheduler command that never joined it.
+
 ## Why
 
 The simulation engine was built gate by gate (E3 → E6, shipped 07-16 → 07-22),

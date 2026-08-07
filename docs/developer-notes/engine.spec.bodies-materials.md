@@ -1,5 +1,7 @@
 # Engine spec — bodies and materials (§25–§26)
 
+Status: companion to [engine.spec.md](engine.spec.md) — §25–§26, bodies and materials.
+
 Part of the [engine.spec.md](engine.spec.md) contract set (split 2026-07-21).
 Section numbering is GLOBAL across the engine.spec.* files — cite sections as
 "engine.spec §N" exactly as before; the hub's index maps every § to its file. The

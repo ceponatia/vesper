@@ -1,8 +1,13 @@
 # Composer input edges — IME composition and per-chat drafts
 
-Status: draft (stub — successor-engine backlog item G26, parked 2026-07-24 from
-the successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
-before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Successor-engine backlog item G26, parked 2026-07-24 from the
+successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
+before building.
+
+Outcome (provisional): A player can type in Japanese, Chinese, or Korean and
+walk away from a half-written message, so that confirming a word stops sending
+the message early and leaving the page stops destroying the paragraph.
 
 ## What
 

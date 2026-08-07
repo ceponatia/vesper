@@ -1,7 +1,12 @@
 # Text and voice when apart — remote engagement channels
 
-Status: draft (stub — successor-engine backlog item B10, parked 2026-07-23;
-promote per [CLAUDE.md](CLAUDE.md) before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Successor-engine backlog item B10, parked 2026-07-23; promote
+per [CLAUDE.md](CLAUDE.md) before building.
+
+Outcome (provisional): A player can text or call a character while the two are
+apart, instead of only reading a vignette about her, so that the hours between
+meetings become time they can act in.
 
 ## What
 

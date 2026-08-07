@@ -1,9 +1,15 @@
 # Garment archetypes and reusable components
 
-Status: draft — parked 2026-07-30 after reconciling the clothing-archetype idea
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Parked 2026-07-30 after reconciling the clothing-archetype idea
 with the clothing state graph that shipped on 2026-07-27. This document replaces
 the stale pre-implementation proposal from PR 20. Do not build from this stub;
 promote it per [CLAUDE.md](CLAUDE.md) first.
+
+Outcome (provisional): The owner can pick "pullover hoodie", remove its pocket,
+and get a garment the game understands part by part, so that clothing detail
+stops living only in prose the game cannot check — and a hand in a pocket
+becomes something the story can verify rather than assert.
 
 Companion technical design:
 [clothing-archetypes-components.spec.md](clothing-archetypes-components.spec.md).
@@ -178,15 +184,15 @@ or persist it.
 
 ## Boundaries
 
-| Owner | Owns here | Does not own here |
-| --- | --- | --- |
-| category registry | broad editor bucket and legacy defaults | specific construction mechanics |
-| archetype/component compiler | reusable fragments, variants, constraints, blueprint compilation | live garment state |
-| clothing state graph | blueprint snapshots, instances, locus, presentation, condition, coverage | body pose/contact relations |
-| scene/body-relations owner | accepted pose, contact, grasp, and insertion relations | garment construction |
-| garment affordances | current physical effects derived from authoritative inputs | persistent state or occupancy |
-| perception/cue ranking | visibility, relevance, novelty, repetition budget | truth mutation |
-| narrator/image consumers | realization of selected semantic reads | raw graph interpretation |
+| Owner                        | Owns here                                                                | Does not own here               |
+| ---------------------------- | ------------------------------------------------------------------------ | ------------------------------- |
+| category registry            | broad editor bucket and legacy defaults                                  | specific construction mechanics |
+| archetype/component compiler | reusable fragments, variants, constraints, blueprint compilation         | live garment state              |
+| clothing state graph         | blueprint snapshots, instances, locus, presentation, condition, coverage | body pose/contact relations     |
+| scene/body-relations owner   | accepted pose, contact, grasp, and insertion relations                   | garment construction            |
+| garment affordances          | current physical effects derived from authoritative inputs               | persistent state or occupancy   |
+| perception/cue ranking       | visibility, relevance, novelty, repetition budget                        | truth mutation                  |
+| narrator/image consumers     | realization of selected semantic reads                                   | raw graph interpretation        |
 
 ## Likely slices
 

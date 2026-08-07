@@ -2,6 +2,11 @@
 
 Status: **fresh implementation plan, draft 2026-07-16**
 
+Outcome: A player can talk to characters who keep living their own lives between scenes
+— sleeping, eating, working, travelling, and hearing news from one another — so that a
+character who is across town arrives late instead of appearing on cue, and knows only
+what they actually saw or were told.
+
 Companion to [engine.spec.md](engine.spec.md). This plan replaces neither the queued
 character-chat plans nor their owner rulings. It turns the architectural conclusions in
 [world-engine-refactor.gpt.md](world-engine-refactor.gpt.md) into a gated delivery plan.
@@ -157,20 +162,20 @@ event-triggered promotion to higher detail. They should not pretend to be exact.
 
 The target consists of small services or packages with explicit authority:
 
-| Component | Owns | Does not own |
-| --- | --- | --- |
-| Command gateway | identity, authorization, idempotency, command admission | world outcomes |
-| Simulation kernel | validation, deterministic resolution, domain events | prose or vector recall |
-| Branch sequencer | one ordered stream per world branch | model calls |
-| Scheduler | due triggers and analytical integration | direct location changes |
-| Projections | current query state | historical authority |
-| Live-scene arbiter | pressure, legal outcomes, committed transitions | narration |
-| Perception and knowledge | observation, assertion, belief eligibility | physical truth |
-| Context compiler | one redacted NarrativeCut | creative prose |
-| Narrator | presentation of the committed cut | hard state mutation |
-| Memory indexer | searchable representations of eligible records | canon decisions |
-| Policy controller | cheap routine NPC choices | bypassing validators |
-| Deliberator | rare choice among legal candidates | inventing candidates or effects |
+| Component                | Owns                                                    | Does not own                    |
+| ------------------------ | ------------------------------------------------------- | ------------------------------- |
+| Command gateway          | identity, authorization, idempotency, command admission | world outcomes                  |
+| Simulation kernel        | validation, deterministic resolution, domain events     | prose or vector recall          |
+| Branch sequencer         | one ordered stream per world branch                     | model calls                     |
+| Scheduler                | due triggers and analytical integration                 | direct location changes         |
+| Projections              | current query state                                     | historical authority            |
+| Live-scene arbiter       | pressure, legal outcomes, committed transitions         | narration                       |
+| Perception and knowledge | observation, assertion, belief eligibility              | physical truth                  |
+| Context compiler         | one redacted NarrativeCut                               | creative prose                  |
+| Narrator                 | presentation of the committed cut                       | hard state mutation             |
+| Memory indexer           | searchable representations of eligible records          | canon decisions                 |
+| Policy controller        | cheap routine NPC choices                               | bypassing validators            |
+| Deliberator              | rare choice among legal candidates                      | inventing candidates or effects |
 
 The first implementation may run these components in one process. The boundaries are
 contracts and transaction seams, not a requirement for microservices.
@@ -192,16 +197,16 @@ Each gate lives in its own doc — plan detail, build order, and the shipped E-p
 histories. One line of status here; the full record is in the gate doc (and
 [roadmap.md](roadmap.md) stays the ordered index of what to build next).
 
-| Gate | Doc | Status |
-| --- | --- | --- |
-| 0 — establish trustworthy evidence | [engine.gate0.evidence.md](engine.gate0.evidence.md) | closed |
-| 1 — minimum authority seam | [engine.gate1.authority-seam.md](engine.gate1.authority-seam.md) | closed |
-| 2 — production identity, event kernel, scheduler | [engine.gate2.kernel.md](engine.gate2.kernel.md) | closed — advance, 2026-07-17 (E2.1–E2.6) |
-| 3 — space, action, schedules, live-scene arbitration | [engine.gate3.space-action.md](engine.gate3.space-action.md) | closed — advance, 2026-07-18 (E3.1–E3.5) |
-| 4 — perception, knowledge, narration, RAG | [engine.gate4.perception-narration.md](engine.gate4.perception-narration.md) | closed — 2026-07-19 (E4.1–E4.5) |
-| 5 — bodies, materials, households, relationships | [engine.gate5.bodies-materials.md](engine.gate5.bodies-materials.md) | closed — 2026-07-20 (E5.1–E5.6) |
-| 6 — dual LOD and autonomous background life | [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md) | closed — 2026-07-21 (E6.1–E6.5) |
-| 7 — optional institutions and macro simulation | [engine.gate7.institutions.md](engine.gate7.institutions.md) | post-foundation, not committed |
+| Gate                                                 | Doc                                                                          | Status                                   |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------- |
+| 0 — establish trustworthy evidence                   | [engine.gate0.evidence.md](engine.gate0.evidence.md)                         | closed                                   |
+| 1 — minimum authority seam                           | [engine.gate1.authority-seam.md](engine.gate1.authority-seam.md)             | closed                                   |
+| 2 — production identity, event kernel, scheduler     | [engine.gate2.kernel.md](engine.gate2.kernel.md)                             | closed — advance, 2026-07-17 (E2.1–E2.6) |
+| 3 — space, action, schedules, live-scene arbitration | [engine.gate3.space-action.md](engine.gate3.space-action.md)                 | closed — advance, 2026-07-18 (E3.1–E3.5) |
+| 4 — perception, knowledge, narration, RAG            | [engine.gate4.perception-narration.md](engine.gate4.perception-narration.md) | closed — 2026-07-19 (E4.1–E4.5)          |
+| 5 — bodies, materials, households, relationships     | [engine.gate5.bodies-materials.md](engine.gate5.bodies-materials.md)         | closed — 2026-07-20 (E5.1–E5.6)          |
+| 6 — dual LOD and autonomous background life          | [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md)                         | closed — 2026-07-21 (E6.1–E6.5)          |
+| 7 — optional institutions and macro simulation       | [engine.gate7.institutions.md](engine.gate7.institutions.md)                 | post-foundation, not committed           |
 
 ## One-developer dependency order
 
@@ -228,18 +233,18 @@ These are order-of-magnitude engineering estimates, not commitments. They assume
 developer familiar with the repository and exclude content, UI tooling, balancing,
 production polish, and broad migration.
 
-| Work | Rough effort | Confidence |
-| --- | ---: | --- |
-| Group-retake snapshot repair | 0.5–1.5 days | Medium |
-| Baseline transcript and performance harness | 1–2 days | Medium |
-| Each discriminating spike | 0.5–1 day | Medium |
-| Queued current-lane meter economy | 3–7 days | Low–medium |
-| Minimum authority seam | 5–10 days | Low |
-| Identity, kernel, scheduler, projections | 15–30 days | Low |
-| Space, action, schedule, resource, journey, access, live-scene layer | 15–35 days | Low |
-| Perspective ledger, NarrativeCut, and RAG eligibility | 10–25 days | Low |
-| Bodies, material life, relationships, and chat migration | 15–35 days | Very low |
-| Dual LOD and background autonomy | 10–25 days | Very low |
+| Work                                                                 | Rough effort | Confidence |
+| -------------------------------------------------------------------- | -----------: | ---------- |
+| Group-retake snapshot repair                                         | 0.5–1.5 days | Medium     |
+| Baseline transcript and performance harness                          | 1–2 days     | Medium     |
+| Each discriminating spike                                            | 0.5–1 day    | Medium     |
+| Queued current-lane meter economy                                    | 3–7 days     | Low–medium |
+| Minimum authority seam                                               | 5–10 days    | Low        |
+| Identity, kernel, scheduler, projections                             | 15–30 days   | Low        |
+| Space, action, schedule, resource, journey, access, live-scene layer | 15–35 days   | Low        |
+| Perspective ledger, NarrativeCut, and RAG eligibility                | 10–25 days   | Low        |
+| Bodies, material life, relationships, and chat migration             | 15–35 days   | Very low   |
+| Dual LOD and background autonomy                                     | 10–25 days   | Very low   |
 
 The north-star foundation remains plausibly **60–120+ focused developer-days**. Re-estimate
 after every gate. A second developer helps only after contracts stabilize; before then,
@@ -382,19 +387,19 @@ similarity to infer witness, truth, supersedence, or current validity.
 
 ## Major risks and mitigations
 
-| Risk | Mitigation |
-| --- | --- |
-| Event-sourcing scope expands without player value | Gate on one cheap seam and paired quality evaluation |
-| Narration becomes mechanical | Separate must-enact facts from creative licenses; score voice and chemistry |
-| World rules create excessive refusals | Return legal alternatives and public reasons, not a bare denial |
-| Scheduler creates hidden teleports | Schedule only evaluation triggers; movement requires action and journey events |
-| Privacy rules leak causes | Separate private cause from public failure presentation |
-| LLM choice destabilizes replay | Give it legal candidates, record selected result and model metadata, keep fallback |
-| Projection and event schemas drift | Version payloads, upcast, rebuild in CI, hash projections |
-| Too many agents increase latency | Deterministic policy by default; sparse deliberation only on measured ambiguity |
-| Text inference becomes permanent authority | Shadow, type new data, migrate, instrument, delete adapter |
-| TypeScript hot path becomes slow | Benchmark first; move only pure measured kernels |
-| Retakes corrupt state | Presentation rerender is state-free; alternative outcome is a branch |
+| Risk                                              | Mitigation                                                                         |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Event-sourcing scope expands without player value | Gate on one cheap seam and paired quality evaluation                               |
+| Narration becomes mechanical                      | Separate must-enact facts from creative licenses; score voice and chemistry        |
+| World rules create excessive refusals             | Return legal alternatives and public reasons, not a bare denial                    |
+| Scheduler creates hidden teleports                | Schedule only evaluation triggers; movement requires action and journey events     |
+| Privacy rules leak causes                         | Separate private cause from public failure presentation                            |
+| LLM choice destabilizes replay                    | Give it legal candidates, record selected result and model metadata, keep fallback |
+| Projection and event schemas drift                | Version payloads, upcast, rebuild in CI, hash projections                          |
+| Too many agents increase latency                  | Deterministic policy by default; sparse deliberation only on measured ambiguity    |
+| Text inference becomes permanent authority        | Shadow, type new data, migrate, instrument, delete adapter                         |
+| TypeScript hot path becomes slow                  | Benchmark first; move only pure measured kernels                                   |
+| Retakes corrupt state                             | Presentation rerender is state-free; alternative outcome is a branch               |
 
 ## Product rulings — RESOLVED 2026-07-17
 

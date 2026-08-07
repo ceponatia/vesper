@@ -25,14 +25,14 @@ type ActiveCondition = {
 };
 ```
 
-| Field | Meaning |
-| --- | --- |
-| `id` | Stable identifier — a random `newId()`, **never semantic**. |
-| `label` | Human-readable name, and the **canonical match key**: every vocabulary table (catalog effects, darkness sense effects, mood shifts/tints) matches on the normalized label via `conditionKey`, never on `id`. |
-| `severity` | `minor` / `moderate` / `severe` (optional). |
-| `startedAtMinutes` | When it began, on the game clock. |
-| `durationMinutes` | How long it lasts; the engine expires it. |
-| `source` | Where it came from — `narrative` / `item` / `environment` / `manual`, with an optional id. |
-| `attributeEffects` | Attribute values overlaid while active, written with `source: "condition"` and `sourceId` = the condition id. |
-| `senseEffects` | Per-sense `reduced` / `blocked` — reserved (a perception-impairment hint carried on the schema; the retired session perception matrix was its only consumer). |
-| `promptHint` | Optional phrasing hint for the narrator. |
+| Field              | Meaning                                                                                                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`               | Stable identifier — a random `newId()`, **never semantic**.                                                                                                                                                  |
+| `label`            | Human-readable name, and the **canonical match key**: every vocabulary table (catalog effects, darkness sense effects, mood shifts/tints) matches on the normalized label via `conditionKey`, never on `id`. |
+| `severity`         | `minor` / `moderate` / `severe` (optional).                                                                                                                                                                  |
+| `startedAtMinutes` | When it began, on the game clock.                                                                                                                                                                            |
+| `durationMinutes`  | How long it lasts; the engine expires it.                                                                                                                                                                    |
+| `source`           | Where it came from — `narrative` / `item` / `environment` / `manual`, with an optional id.                                                                                                                   |
+| `attributeEffects` | Attribute values overlaid while active, written with `source: "condition"` and `sourceId` = the condition id.                                                                                                |
+| `senseEffects`     | Per-sense `reduced` / `blocked` — reserved: a perception-impairment hint carried on the schema with no consumer.                                                                                             |
+| `promptHint`       | Optional phrasing hint for the narrator.                                                                                                                                                                     |
