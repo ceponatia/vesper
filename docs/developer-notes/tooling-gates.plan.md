@@ -2,6 +2,11 @@
 
 Status: draft (F2 shipped in 66ecd3b; eval-harness and targeted duplication work remain sequenced late)
 
+Outcome: A developer can take a green duplication and authorization gate run as
+evidence that no new copy-paste or unguarded route slipped in, so that the next
+pile of duplicated code is caught by a check on every change rather than by six
+agents reading code for an afternoon.
+
 ## Why
 
 The 2026-07-30 efficiency audit was found by six agents reading code for an afternoon.
@@ -41,10 +46,12 @@ close their database pool on exit, two leave a finished run hung on an open hand
   edit-and-save call (five copies). Normalize the two import styles
   (`../../../src/...` vs `@/...`), and move the scene-image output off `docs/`.
 - **F4 — doc drift found in passing.** `unconsumed-character-prose.md` describes the
-  deleted session lane and belongs in `finished/` or the bin. **Resolved 2026-08-02 —
-  archived to `finished/` during the docs sweep** (OQ3 answered: the live chat lane
-  consumes both `personality` and free-text `voice` in the persona prefix, so the doc's
-  reasoning no longer applies). The other two sites are
+  deleted session lane. **Resolved 2026-08-02 — archived to `finished/` during the docs
+  sweep.** The live chat lane consumes both `personality` and free-text `voice` in the
+  persona prefix (the `Personality:` / `Voice (how you sound):` blocks in
+  `src/server/engine/prompts/character-chat.ts`), so the doc's premise is drift; it was
+  kept in `finished/` rather than deleted because four archived docs already link it at
+  that path. The other two sites are
   **claimed elsewhere, not here**: `docs/ui.md:49` rides
   [editor-scaffold.plan.md](editor-scaffold.plan.md) (**D8**), `docs/database.md:24`
   rides [dead-export-sweep.plan.md](dead-export-sweep.plan.md) (**C19**).
@@ -94,9 +101,9 @@ global floor drop, count false positives against today's tree first, and fall ba
 second narrow invocation behind the same `pnpm jscpd` if per-folder budgets won't
 express cleanly.
 
-**Slice 4 — the drift this plan owns (F4).** ~~Resolve `unconsumed-character-prose.md` per
-OQ3~~ (done 2026-08-02 — archived, see F4 above); cross-reference the other two sites
-rather than fixing them twice.
+**Slice 4 — the drift this plan owns (F4).** `unconsumed-character-prose.md` was
+archived 2026-08-02 (see F4 above); cross-reference the other two sites rather than
+fixing them twice.
 
 ## Success criteria
 
@@ -128,10 +135,5 @@ rather than fixing them twice.
 
 - What targeted duplication-gate grain remains silent on the current tree while
   catching the known replay, editor, and script clones?
-- ~~Archive or delete `unconsumed-character-prose.md`?~~ **Resolved 2026-08-02:
-  archived to `finished/`.** The live chat lane consumes both fields (persona prefix
-  `Personality:` / `Voice (how you sound):` blocks in
-  `src/server/engine/prompts/character-chat.ts`), so the doc's premise is drift; kept in
-  `finished/` because four archived docs already link it at that path.
 - Does scene-image eval output move with its review index, or keep a documented
   `docs/` exception?

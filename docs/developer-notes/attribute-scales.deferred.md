@@ -1,6 +1,7 @@
 # Attribute scales — value relationships & composite body-types
 
-Status: **draft** — parked in [deferred.plan.md](deferred.plan.md); not committed
+Status: parked detail for [deferred.plan.md](deferred.plan.md) §"Attribute value
+relationships & composite body-types" — not committed
 work. Raised by the owner 2026-07-23 ("a way to tell the narrator the
 relationship between attribute values — the real difference between 'wiry' /
 'slim' / 'athletic' — otherwise the values are amorphous, interpreted by the LLM
@@ -95,13 +96,13 @@ musculature: sinewy — lean, wiry cord, no bulk        (authored gloss)
 ## Facet B — composite body-type fill (write-side)
 
 The owner's auto-fill idea: a root **"body type"** word fills the body fields.
-Concern: *"there'd be a lot of combinations to map."* **You never map
-combinations** — four moves collapse the explosion:
+Concern raised with it: *"there'd be a lot of combinations to map."* **Combinations
+are never mapped** — four moves collapse the explosion:
 
 1. **Sparse patches, not full vectors.** Each gestalt sets only its 2–3 *defining*
    axes and leaves the rest alone. `athletic = {musculature: defined, weight:
-   average}` — it does not pin frame, height, or hips. You map *words → a few
-   nudges*, not bodies.
+   average}` — it does not pin frame, height, or hips. The lexicon maps *words → a
+   few nudges*, not bodies.
 2. **Compose additively.** Author single words (`tall`, `athletic`, `curvy`) as
    separate sparse patches and merge (later overrides earlier). "tall athletic
    curvy" is three stacked patches, never its own entry → **O(words), not

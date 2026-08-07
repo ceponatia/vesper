@@ -1,18 +1,18 @@
 # Engine plan — Gate 3: space, action, schedules, and live-scene arbitration
 
-Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
-gate — see the hub's gate index). Sequencing and current status live in
-[roadmap.md](roadmap.md) and the hub; normative contracts live in the
-[engine.spec.md](engine.spec.md) §-index.
-
-## Gate 3 — space, action, schedules, and live-scene arbitration
-
 Status: **ADVANCE — closed 2026-07-18.** E3.1–E3.5 shipped in dependency order
 (2026-07-17/18, see §"Gate 3 build order"), the scenario corpus ran green (5 scenarios,
 zero model calls, 2 709 pure + 351 integration tests), and the owner ruled advance on
 2026-07-18. Open leftovers carried into later gates are recorded per-target in the build
 order below (interim witness rule → Gate 4; hazards/`journey_delayed`, trespass texture,
 route-uncertainty ruling 12 → travel polish; interpersonal consent → Gate 5).
+
+Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
+gate — see the hub's gate index). Sequencing and current status live in
+[roadmap.md](roadmap.md) and the hub; normative contracts live in the
+[engine.spec.md](engine.spec.md) §-index.
+
+## Gate 3 — space, action, schedules, and live-scene arbitration
 
 Rough effort: **15–35 developer-days**.
 

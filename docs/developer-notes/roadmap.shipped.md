@@ -5,6 +5,18 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Documentation standard — the `vesper-docs` skill and a conformance pass over
+  both tiers** — [skill](../../.claude/skills/vesper-docs/SKILL.md) — 2026-08-07
+  — one procedure for reference docs (`docs/`, present tense and dateless) and
+  working docs (`docs/developer-notes/`, dated and directional), adding the four
+  rules that lived nowhere: one canonical owner per fact, the `Outcome:` line
+  every plan now opens with, the conversation-residue guardrail, and a
+  pre-finish validation checklist. Copyable templates for plan, spec, trial,
+  audit, deferred stub, and reference doc ship beside it. The same change swept
+  every live document into conformance — Status and Outcome lines, the folder's
+  own no-tables rule enforced at last, residue rehomed as context, rulings, or
+  open questions — and recorded the archiving and canonical-owner conflicts the
+  sweep surfaced.
 - **Image identity packs — slice 6 harness: fixed identity-reference trial,
   built dark and hardened** —
   [image-identity-packs.plan.md](image-identity-packs.plan.md) ·

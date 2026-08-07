@@ -1,5 +1,6 @@
 # Visual state and attention — technical spec
-Plan: [visual-state.plan.md](visual-state.plan.md)
+
+Status: companion to [visual-state.plan.md](visual-state.plan.md)
 
 This spec defines the lane-neutral visual-state projection, source boundaries,
 visibility and attention reads, consumer digests, memory integration, and

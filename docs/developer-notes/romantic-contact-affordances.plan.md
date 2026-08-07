@@ -18,6 +18,11 @@ ruling on the measured cost and latency, and then turning any of it on. The
 item-5 `romantic_touch` permission owner was built 2026-08-04 behind
 `CHAT_ROMANTIC_PERMISSION` (off) — see item 5 below.
 
+Outcome: A player can touch a character during a chat and have the story keep
+track of that touch — where it lands, what clothing is in the way, and when it
+ends — so that a reply stops describing a bare shoulder that is still under a
+coat.
+
 Detailed shipped evidence lives in the
 [truth-source audit](romantic-contact-affordances.audit.md),
 [technical companions](#technical-companions),

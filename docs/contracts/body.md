@@ -14,21 +14,21 @@ The body model describes *where* things are on a character — the anatomy that 
 
 The **everyday humanoid tree** has five roots, at coverage-useful granularity (~32 nodes). The roots double as the coverage editor's column groups:
 
-| Root | Children |
-| --- | --- |
-| head | hair, face (→ eyes, nose, lips), ears |
-| torso | neck, shoulders, chest, back, waist |
-| arms | upper_arms, forearms, wrists, hands (→ fingers) |
-| pelvis | hips, groin, buttocks |
-| legs | thighs, calves, ankles, feet (→ toes, top of foot, sole, heel) |
+| Root   | Children                                                       |
+| ------ | -------------------------------------------------------------- |
+| head   | hair, face (→ eyes, nose, lips), ears                          |
+| torso  | neck, shoulders, chest, back, waist                            |
+| arms   | upper_arms, forearms, wrists, hands (→ fingers)                |
+| pelvis | hips, groin, buttocks                                          |
+| legs   | thighs, calves, ankles, feet (→ toes, top of foot, sole, heel) |
 
 **Additive feature locations** are default-absent and tagged with a `featureGroup`:
 
-| Feature | Hangs under | Note |
-| --- | --- | --- |
-| horns | head | |
-| wings | back | `back` already exists under torso |
-| tail | pelvis | attached near the pelvis, **not** `groin` — it is not genital anatomy |
+| Feature | Hangs under | Note                                                                  |
+| ------- | ----------- | --------------------------------------------------------------------- |
+| horns   | head        |                                                                       |
+| wings   | back        | `back` already exists under torso                                     |
+| tail    | pelvis      | attached near the pelvis, **not** `groin` — it is not genital anatomy |
 
 > ⚠️ **Beware bare parent ids in coverage data.** `arms` implies hands and fingers, `torso` implies the neck, and `legs` implies feet. Garments should always use the specific parts — a t-shirt is `torso`-parts + `upper_arms`, never `arms`.
 
@@ -42,14 +42,14 @@ Everything that targets the body — wardrobe coverage, exposure, attribute targ
 
 Explicit anatomy (`intimate.ts`) hangs off the everyday tree under `groin` / `pelvis` / `chest`:
 
-| Region | Parts |
-| --- | --- |
-| vulva | + labia, clitoris, vestibule, vagina, mons |
-| penis | |
-| testicles | |
-| anus | |
-| perineum | |
-| breasts | + nipples |
+| Region    | Parts                                      |
+| --------- | ------------------------------------------ |
+| vulva     | + labia, clitoris, vestibule, vagina, mons |
+| penis     |                                            |
+| testicles |                                            |
+| anus      |                                            |
+| perineum  |                                            |
+| breasts   | + nipples                                  |
 
 These are all `coverageRelevant: false` — a garment over `pelvis` / `chest` already covers them via `expand`, so they aren't garment slots of their own.
 
@@ -71,10 +71,10 @@ The full aionchat anatomy vocabulary that didn't port in T1 (buttocks, groin, ab
 
 A character's body-config is the set of intimate regions and additive features they actually have. Two profile fields hold it, both riding the profile JSONB (no migration):
 
-| Field | Holds | Default / absence behavior |
-| --- | --- | --- |
-| `CharacterProfile.intimateRegions` | Present intimate region groups, e.g. `["vulva", "breasts"]` | `[]` = no intimate anatomy (the engine's pre-existing behavior) |
-| `CharacterProfile.bodyFeatures` | Additive feature groups, e.g. `["wings", "horns", "tail"]` | *absent* ⇒ species `defaultFeatureGroups` seed it; `[]` ⇒ explicit per-character "none" |
+| Field                              | Holds                                                       | Default / absence behavior                                                              |
+| ---------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `CharacterProfile.intimateRegions` | Present intimate region groups, e.g. `["vulva", "breasts"]` | `[]` = no intimate anatomy (the engine's pre-existing behavior)                         |
+| `CharacterProfile.bodyFeatures`    | Additive feature groups, e.g. `["wings", "horns", "tail"]`  | *absent* ⇒ species `defaultFeatureGroups` seed it; `[]` ⇒ explicit per-character "none" |
 
 **How `intimateRegions` is seeded.** At forge time it's filled declaratively from the attribute values' `activatesGroups` (`seedBodyConfigFromAttributes`) — e.g. `identity.gender = "female"` seeds `["vulva", "breasts"]`. Because `identity.gender` is `coreVisual`, it is always present, so the seed is reliable. It is fully overridable in the editor — a **seed, never a lock** — so a "male" character can still be given a vulva. The body-config starts empty, so "deactivate X" is simply "no value activates X".
 
@@ -88,12 +88,12 @@ realizeBody({ bodyPlanId, speciesId, heritageId, intimateRegions, bodyFeatures }
 
 It applies four stages in order:
 
-| Stage | What it does |
-| --- | --- |
-| 1. Body plan | The superset of locations. |
-| 2. Species | `allowedBodyLocationIds` / `disallowedBodyLocationIds` + `defaultFeatureGroups` + attribute rules. |
+| Stage               | What it does                                                                                                                                                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Body plan        | The superset of locations.                                                                                                                                                                                                  |
+| 2. Species          | `allowedBodyLocationIds` / `disallowedBodyLocationIds` + `defaultFeatureGroups` + attribute rules.                                                                                                                          |
 | 3. Heritage/subtype | Refinement within the species — adds feature groups and overrides attribute rules per `attributeId`. Usually optional; a species may declare a degraded-safe `defaultHeritageId`. Never touches the body plan or locations. |
-| 4. Body-config | Which intimate groups and additive features are present. |
+| 4. Body-config      | Which intimate groups and additive features are present.                                                                                                                                                                    |
 
 **What it answers:**
 
@@ -102,11 +102,11 @@ It applies four stages in order:
 
 All three `AttributeRule` applicabilities are live:
 
-| Applicability | Effect |
-| --- | --- |
-| `forbidden` | Drops the attribute entirely. |
-| `required` / `optional` | Keeps the attribute. A `required` rule with a `defaultValue` is seeded at creation — e.g. an elf's `ears.shape` → `"pointed"`. |
-| `allowedValues` / `disallowedValues` | Narrows the value set per species. |
+| Applicability                        | Effect                                                                                                                         |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `forbidden`                          | Drops the attribute entirely.                                                                                                  |
+| `required` / `optional`              | Keeps the attribute. A `required` rule with a `defaultValue` is seeded at creation — e.g. an elf's `ears.shape` → `"pointed"`. |
+| `allowedValues` / `disallowedValues` | Narrows the value set per species.                                                                                             |
 
 **Consumers:** the attribute editor, the narrator impression block (exposure-gated), image-prompt assembly, and the forge attribute vocabulary — so stale or gated attribute values never surface and species traits hold.
 
@@ -120,13 +120,13 @@ Species live **one file per species** under `species/catalog/` — parity with a
 
 What ships:
 
-| Species | Default features |
-| --- | --- |
-| human | — (unmarked default) |
-| android | — (Synthetic default subtype; Organic explicit) |
-| succubus | wings, horns, tail |
-| faerie | wings |
-| elf, dwarf, gnome, orc, goblin | baseline humanoid records |
+| Species                        | Default features                                |
+| ------------------------------ | ----------------------------------------------- |
+| human                          | — (unmarked default)                            |
+| android                        | — (Synthetic default subtype; Organic explicit) |
+| succubus                       | wings, horns, tail                              |
+| faerie                         | wings                                           |
+| elf, dwarf, gnome, orc, goblin | baseline humanoid records                       |
 
 A further humanoid variant is a data add once its feature groups exist; true non-humanoid body plans stay future work.
 
@@ -134,11 +134,18 @@ A further humanoid variant is a data add once its feature groups exist; true non
 
 Each species carries three optional, **model-facing** notes — all empty by default, all distinct from the internal `description`. Each has one audience and one surfacing rule:
 
-| Note | Audience | Contents | Surfaced via | Feeds |
-| --- | --- | --- | --- | --- |
-| `appearance` | image | A generic, image-safe description of the species' default morphology (pointed ears, a greenish skin cast, wings/horns/tail, broad stature) — **not** any one character's specific attribute values. | `speciesForgeDescriptor` (forge), reading `species.appearance` directly — `speciesAppearancePhrase(speciesId)` is retained but **currently unused**. | The character forge's species-context prompt (`authoring/character-forge.ts`), which folds the generic look into the prompt to guide per-character attribute inference. **Not** sent to image prompts — those name the species via `speciesLabelPhrase` (name only) and let the character's feature attributes carry the morphology; `speciesAppearancePhrase` is kept for a possible re-enable. |
-| `lore` | narrator (**always**) | Cultural / identity backstory — temperament, standing, relations. | `speciesLorePhrase(speciesId)` | The narrator's canonical-facts block (`engine/scene.ts`). |
-| `intimacy` | narrator (**intimate-tier only**) | How that kind of being tends to read as a lover — innate temperament, instincts, quirks. Bare text (no `Label —` prefix). | `speciesIntimacyNote(speciesId, heritageId)` | The **exposure-gated** intimate-disposition block (`engine/scene.ts` `buildIntimateDispositionBlock`), appended with the per-character `profile.intimacy` and surfaced to the narrator **only when the turn's `ExposureMask` reaches the intimate tier on any axis** (appearance/touch/taste — ruled 2026-07-13). Zero tokens in every ordinary scene. See [intimacy-notes.spec.md](../developer-notes/intimacy-notes.spec.md). |
+- **`appearance`** — audience: image.
+  - *Contents:* A generic, image-safe description of the species' default morphology (pointed ears, a greenish skin cast, wings/horns/tail, broad stature) — **not** any one character's specific attribute values.
+  - *Surfaced via:* `speciesForgeDescriptor` (forge), reading `species.appearance` directly — `speciesAppearancePhrase(speciesId)` is retained but **currently unused**.
+  - *Feeds:* The character forge's species-context prompt (`authoring/character-forge.ts`), which folds the generic look into the prompt to guide per-character attribute inference. **Not** sent to image prompts — those name the species via `speciesLabelPhrase` (name only) and let the character's feature attributes carry the morphology; `speciesAppearancePhrase` is kept for a possible re-enable.
+- **`lore`** — audience: narrator (**always**).
+  - *Contents:* Cultural / identity backstory — temperament, standing, relations.
+  - *Surfaced via:* `speciesLorePhrase(speciesId)`.
+  - *Feeds:* The narrator's canonical-facts block (`engine/scene.ts`).
+- **`intimacy`** — audience: narrator (**intimate-tier only**).
+  - *Contents:* How that kind of being tends to read as a lover — innate temperament, instincts, quirks. Bare text (no `Label —` prefix).
+  - *Surfaced via:* `speciesIntimacyNote(speciesId, heritageId)`.
+  - *Feeds:* The **exposure-gated** intimate-disposition block (`engine/scene.ts` `buildIntimateDispositionBlock`), appended with the per-character `profile.intimacy` and surfaced to the narrator **only when the turn's `ExposureMask` reaches the intimate tier on any axis** (appearance/touch/taste — ruled 2026-07-13). Zero tokens in every ordinary scene. See [intimacy-notes.spec.md](../developer-notes/intimacy-notes.spec.md).
 
 The narrator's *physical* detail comes from per-character attributes (`buildGlanceImpressions`), so via `lore` it gets culture here, not looks. `appearance` and `lore` surface only for **non-human** casts (label-only when the field is unauthored); the unmarked `human` default surfaces nothing. `intimacy` is the odd one out on merge — it returns **bare** text and is gated by the exposure mask, not by presence alone; a human character with no species archetype still contributes its own `profile.intimacy` at the gate.
 
@@ -150,9 +157,9 @@ A species may also carry **`heritages`** — sub-groups within it (e.g. `dark_el
 - **overrides** the species attribute rule for any shared `attributeId` (last-wins),
 - carries its own `appearance` (**combined** with the species look), `lore` (**replaces** the species culture note, falling back to it when absent), and `intimacy` (**replaces** the species intimate-disposition note, falling back to it when absent — same rule as `lore`; the sprite/faerie pair is the worked example).
 
-The character stores an optional `profile.heritageId`. When absent or invalid, `realizeBody` composes the species' `defaultHeritageId` if one exists (otherwise the bare species); the phrase helpers take the stored id as a second argument, and the forge infers it (`inferHeritageFromText`, scoped to the resolved species — heritage names like "drow" also resolve the parent species). Heritage never changes the body plan, so structural non-humanoids stay future work.
+The character stores an optional `profile.heritageId`. When absent or invalid, `realizeBody` composes the species' `defaultHeritageId` if one exists (otherwise the bare species); the phrase helpers take the stored id as a second argument, and the forge infers it (`inferHeritageFromText`, scoped to the resolved species — heritage names like "drow" also resolve the parent species). Heritage never changes the body plan, so a heritage cannot make a structural non-humanoid.
 
-(`appliesToBodyPlans` / `excludesBodyPlans` on attributes — previously inert — are now consumed here.)
+(`appliesToBodyPlans` / `excludesBodyPlans` on attributes are consumed here.)
 
 ## Colloquial body references
 
@@ -165,10 +172,10 @@ It is **deterministic and pure** (not an attribute-fetch agent). A term resolves
 
 with a small synonym map for colloquialisms that match neither (`mouth` → lips + teeth, `figure` / `physique` → build).
 
-| Function | Returns |
-| --- | --- |
-| `resolveBodyTarget(term)` | The structural expansion. |
+| Function                               | Returns                                                                                                                                                                     |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolveBodyTarget(term)`              | The structural expansion.                                                                                                                                                   |
 | `expandBodyTarget(term, isApplicable)` | The expansion filtered through a character's realized body — pass `realizeBody(...).isAttributeApplicable`, so "chest" on a flat-chested character omits breast attributes. |
-| `detectBodyTargets(text)` | Scans free prose (whole-word, longest-phrase-first). |
+| `detectBodyTargets(text)`              | Scans free prose (whole-word, longest-phrase-first).                                                                                                                        |
 
 Consumers: the **chat lane's Sensory-focus block** (`buildSensoryFocusSection`, prompts/character-chat.ts — `expandBodyTarget` over the detected focus `region` surfaces the target's own attributes, sensory-grounding 2026-07-12; the resolver also handles **singular forms** of plural locations — "foot" → `feet` — for exactly this).

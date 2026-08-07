@@ -2,6 +2,10 @@
 
 Status: next (planned 2026-07-29 from the live orphaned-data audit; owner ruling same day)
 
+Outcome: The owner can delete a chat and have everything belonging to it actually go —
+its jobs, its telemetry, its provisioning records — while the images it produced stay in
+the Gallery on purpose rather than by accident.
+
 Companion detail: [data-lifecycle.audit.md](data-lifecycle.audit.md) — the
 2026-07-29 live Neon + Fly audit this plan answers (orphan inventory,
 provenance, verified-clean list).

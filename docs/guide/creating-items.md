@@ -22,11 +22,11 @@ Picking one of these categories reveals a **Type** select (nose ring, choker, ti
 
 ## Objects
 
-- **Subtype** (furniture, vehicle, weapon, tool, device, …) is vocabulary for future behavior. Holdable subtypes (tool, device, weapon…) can be carried in a hand — and still stored in containers.
+- **Subtype** (furniture, vehicle, weapon, tool, device, …) is vocabulary only — no subtype carries behavior of its own. Holdable subtypes (tool, device, weapon…) can be carried in a hand — and still stored in containers.
 
 ## Containers
 
-- **Capacity note** is free text for now; a quantified size/slot system is planned (see the phase-1 plan, T13).
+- **Capacity note** is free text — there is no quantified size/slot system, so nothing enforces what fits.
 
 ## Deleting & public items
 

@@ -1,8 +1,13 @@
 # Turn-time honesty — solo drains through the shared seam, beats that don't lie
 
-Status: draft (stub — successor-engine backlog item F23, parked 2026-07-24 from
-the successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
-before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Successor-engine backlog item F23, parked 2026-07-24 from the
+successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
+before building.
+
+Outcome (provisional): A player can trust that a line saying she arrived means
+she has arrived, so that the transcript stops narrating finished journeys and
+completed activities the world has not actually finished.
 
 ## What
 

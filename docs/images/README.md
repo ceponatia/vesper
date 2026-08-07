@@ -6,10 +6,10 @@ Run on 2026-08-04 against OpenRouter's dedicated Images API. This is a provider-
 
 OpenRouter did not return an image from either candidate. Both the explicit full-nude prompt and the narrower topless fine-art prompt were rejected by provider moderation.
 
-| Model | Explicit full nude | Topless fine art | Image saved |
-| --- | --- | --- | --- |
-| `black-forest-labs/flux.2-pro` | HTTP 400: `Request Moderated: Content Policy Violation` | HTTP 400: same rejection | No |
-| `x-ai/grok-imagine-image-quality` | HTTP 400: `Generated image rejected by content moderation` | HTTP 400: same rejection | No |
+| Model                             | Explicit full nude                                         | Topless fine art         | Image saved |
+| --------------------------------- | ---------------------------------------------------------- | ------------------------ | ----------- |
+| `black-forest-labs/flux.2-pro`    | HTTP 400: `Request Moderated: Content Policy Violation`    | HTTP 400: same rejection | No          |
+| `x-ai/grok-imagine-image-quality` | HTTP 400: `Generated image rejected by content moderation` | HTTP 400: same rejection | No          |
 
 FLUX.2 Pro was called with Black Forest Labs' least restrictive documented setting, `safety_tolerance: 5`. The requests used the valid deployed OpenRouter credential; the repository's local credential returned `401 User not found` and appears stale. Rejected requests returned no image data or usage record.
 

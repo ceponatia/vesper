@@ -1,5 +1,7 @@
 # deferred/ — plan stubs and drafts awaiting promotion
 
+Status: reference — folder rules and the stub index for the parking lot.
+
 This folder contains **plan stubs and drafts for later promotion into real
 plans on the roadmap**. Every file here is `Status: draft` — a placeholder
 capturing a parked idea's what/why plus the plan-template skeleton. Nothing
@@ -43,7 +45,7 @@ shipped. Groups: A bugs first · B living world · C hardening & perf.
 - A5 — graduated 2026-07-23 → [../drain-hardening.honesty.md](../finished/drain-hardening.honesty.md)
 - A6 — graduated 2026-07-23 → [../drain-hardening.backoff.md](../finished/drain-hardening.backoff.md)
 - A7 — graduated 2026-07-23 → [../drain-hardening.arrival.md](../finished/drain-hardening.arrival.md)
-- B8 — graduated 2026-08-02 → [../starter-world-seeds.plan.md](../starter-world-seeds.plan.md)
+- B8 — graduated + shipped 2026-08-02 → [../finished/starter-world-seeds.plan.md](../finished/starter-world-seeds.plan.md)
   (owner build request during the docs sweep; stub was discussion-complete)
 - B9 [primary-lod-ruling.plan.md](primary-lod-ruling.plan.md)
 - B10 [remote-channels.plan.md](remote-channels.plan.md)

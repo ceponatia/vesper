@@ -6,6 +6,10 @@ shipped provider and lineage foundation in
 [finished/scene-images.plan.md](finished/scene-images.plan.md) and the runtime
 documented in [../images.md](../images.md).
 
+Outcome: A player can see a scene image in which each character is posed and
+positioned the way the story just described and still looks like themselves, so
+that the picture stops contradicting the text it illustrates.
+
 The direction in one sentence:
 
 > Resolve one small, explicit 3D scene; derive pose and depth controls from it;
@@ -293,7 +297,7 @@ latency and clean provider fallback.
 - Model viewer limbs as a special rig/region, not an unbound extra person.
 
 Exit: no systematic swapping; pose, orientation, and required contact pass the
-agreed corpus, including mature-content and non-human-feature rows.
+fixed corpus, including mature-content and non-human-feature rows.
 
 ### Gate 4 — production operation
 
@@ -349,14 +353,14 @@ Motion gets a separate plan after Gate 3.
 
 ## Rough effort
 
-| Work | One-developer estimate |
-| --- | ---: |
-| Gate 0 evaluation/workflow spike | 3–8 days |
-| Contracts, resolver, renderer, inspector | 12–25 days |
-| Single-character integration | 5–10 days |
-| Two-character contact/identity | 10–25 days |
-| Production worker/operations | 7–15 days |
-| Narrator integration after engine prerequisite | 5–12 days |
+| Work                                           | One-developer estimate |
+| ---------------------------------------------- | ---------------------: |
+| Gate 0 evaluation/workflow spike               |               3–8 days |
+| Contracts, resolver, renderer, inspector       |             12–25 days |
+| Single-character integration                   |              5–10 days |
+| Two-character contact/identity                 |             10–25 days |
+| Production worker/operations                   |              7–15 days |
+| Narrator integration after engine prerequisite |              5–12 days |
 
 A useful single-character treatment is plausibly 20–40 focused days. Robust
 two-character production is more plausibly 40–80+ days; model evaluation, GPU
@@ -374,7 +378,7 @@ operation, and identity/contact repair dominate uncertainty.
 ## Definition of done
 
 - One versioned frame drives pose, depth, segmentation, masks, and preview.
-- Templates/IK cover the agreed set with typed failure.
+- Templates/IK cover the supported interaction set with typed failure.
 - Existing identity, wardrobe, POV, life-stage, and provenance invariants survive.
 - Structural rendering sits behind the existing provider ladder.
 - Accepted one- and two-person rows preserve character identity and binding.

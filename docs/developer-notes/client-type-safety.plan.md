@@ -2,6 +2,11 @@
 
 Status: draft (D10/D11/D12 sequenced after image consolidation; bundle work remains an experiment and D14 is dropped)
 
+Outcome: A developer can add a location size class by editing one file, and gets
+a compile error the moment a form sends a field the route will not accept, so
+that a dropdown short one option — or a "something went wrong" message in front
+of a player — stops being the way that mistake is discovered.
+
 ## Why
 
 The browser half of Vesper is where the repo's own rules reach last. Four

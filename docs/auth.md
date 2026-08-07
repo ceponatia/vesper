@@ -13,13 +13,13 @@ See also: [streaming-api.md §Auth](streaming-api.md) (HTTP surface),
 
 ## The module (`src/server/auth/`)
 
-| File | Role |
-| --- | --- |
-| `auth.ts` | The `betterAuth(...)` instance — Drizzle adapter, email+password, env-gated OAuth + magic-link, explicit session lifetime, `admin()` + `nextCookies()` plugins. **No `next/headers`** so scripts (the seed) can import it. |
-| `magic-link.ts` | Magic-link delivery policy: the transport registry (empty in v1), whether the plugin registers at all, and what a delivery attempt is allowed to log. |
-| `session.ts` | `getCurrentUser()` → `CurrentUser`, and the `Unauthenticated` sentinel. Lazily imports `next/headers`. |
-| `dev.ts` | Dev-only session minting: `devImpersonate`, `ensureDevCredential`, `DEV_PASSWORD`. |
-| `index.ts` | Barrel — the only thing the rest of the app imports. |
+| File            | Role                                                                                                                                                                                                                       |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth.ts`       | The `betterAuth(...)` instance — Drizzle adapter, email+password, env-gated OAuth + magic-link, explicit session lifetime, `admin()` + `nextCookies()` plugins. **No `next/headers`** so scripts (the seed) can import it. |
+| `magic-link.ts` | Magic-link delivery policy: the transport registry (empty in v1), whether the plugin registers at all, and what a delivery attempt is allowed to log.                                                                      |
+| `session.ts`    | `getCurrentUser()` → `CurrentUser`, and the `Unauthenticated` sentinel. Lazily imports `next/headers`.                                                                                                                     |
+| `dev.ts`        | Dev-only session minting: `devImpersonate`, `ensureDevCredential`, `DEV_PASSWORD`.                                                                                                                                         |
+| `index.ts`      | Barrel — the only thing the rest of the app imports.                                                                                                                                                                       |
 
 The route `src/app/api/auth/[...all]/route.ts` is just `toNextJsHandler(auth)`:
 Better Auth owns sign-in/up/out, OAuth callbacks, magic-link, `get-session`, and
@@ -38,22 +38,34 @@ client-id/secret env vars are set (none in the Fly deployment), so they're inert
 
 ### Before `ALLOW_SIGNUP=true`
 
-Today's posture is safe **because** sign-up is off and the app runs a single
+The posture is safe **because** sign-up is off and the app runs a single
 instance: the only accounts are seeded/approved ones. Opening self-service sign-up
-changes who can reach these surfaces, so this list is the gate — every item is
-done before `ALLOW_SIGNUP` flips to `true` for anything but a brief, supervised
-window ([security-authz.plan.md](developer-notes/security-authz.plan.md)
-slice 7 / finding S6).
+changes who can reach these surfaces, so this list is the gate on that flag — every
+item must hold before `ALLOW_SIGNUP` is `true` for anything but a brief, supervised
+window ([security-authz.plan.md](developer-notes/security-authz.plan.md) owns the
+work to close the open ones).
 
-| # | Requirement | Status |
-| --- | --- | --- |
-| 1 | **Required email verification** — `emailAndPassword.requireEmailVerification` + a real transport, so an address can't be claimed without proving control of it | **pending** (needs the same transport as magic link — plan OQ3) |
-| 2 | **Password policy** — minimum length/strength beyond Better Auth's default, and rejection of known-breached passwords | **pending** |
-| 3 | **Shared (cross-instance) rate limiting** on sign-in, password reset, and magic-link requests | **deferred** — `src/server/api/rate-limit.ts` is deliberately process-local; the 2026-06-23 ruling ([finished/security-hardening.plan.md](developer-notes/finished/security-hardening.plan.md)) keeps it that way until Vesper runs more than one instance. Re-open with the second instance, not with sign-up. |
-| 4 | **Admin MFA / WebAuthn** — a second factor on `role: "admin"` accounts (Better Auth `twoFactor` / `passkey` plugin) | **pending** |
-| 5 | **Revoke all sessions on credential change** — password reset/change invalidates every other `auth_sessions` row | **pending** |
-| 6 | **Explicit idle/absolute session lifetimes** | **done (2026-07-26)** — `auth.ts` sets `session.expiresIn` (7 days) and `session.updateAge` (1 day) rather than inheriting them; see below |
-| 7 | **Security events logged without tokens** | **done (2026-07-26)** for magic link (`auth.magic_link` never carries a url/token in production — see [Magic link](#magic-link-dev-only-until-a-transport-exists)); any new auth event re-checks the same rule |
+1. **Required email verification** — `emailAndPassword.requireEmailVerification` plus a
+   real transport, so an address can't be claimed without proving control of it.
+   **Not in place**: needs the same transport as magic link.
+2. **Password policy** — minimum length/strength beyond Better Auth's default, and
+   rejection of known-breached passwords. **Not in place.**
+3. **Shared (cross-instance) rate limiting** on sign-in, password reset, and magic-link
+   requests. **Not in place, by ruling**: `src/server/api/rate-limit.ts` is deliberately
+   process-local
+   ([finished/security-hardening.plan.md](developer-notes/finished/security-hardening.plan.md))
+   while Vesper runs a single instance. A second instance re-opens it, not sign-up.
+4. **Admin MFA / WebAuthn** — a second factor on `role: "admin"` accounts (Better Auth
+   `twoFactor` / `passkey` plugin). **Not in place.**
+5. **Revoke all sessions on credential change** — password reset/change invalidates every
+   other `auth_sessions` row. **Not in place.**
+6. **Explicit idle/absolute session lifetimes** — **in place**: `auth.ts` sets
+   `session.expiresIn` (7 days) and `session.updateAge` (1 day) rather than inheriting
+   them; see below.
+7. **Security events logged without tokens** — **in place** for magic link
+   (`auth.magic_link` never carries a url/token in production — see
+   [Magic link](#magic-link-dev-only-until-a-transport-exists)); any new auth event
+   re-checks the same rule.
 
 ### Session lifetime
 
@@ -130,11 +142,12 @@ things turn intimate.
 
 ## Sign-in methods
 
-| Method | v1 status |
-| --- | --- |
-| Email + password | Always on. |
-| Magic link | **Dev-only in v1** — no email transport is implemented, so the plugin registers in dev (and logs the link) but is **absent in production**, regardless of env. See [Magic link](#magic-link-dev-only-until-a-transport-exists) below. |
-| Social OAuth (Google/GitHub/Discord) | Env-gated: a provider is enabled only when **both** its `_CLIENT_ID` and `_CLIENT_SECRET` exist; absent ⇒ off (never a boot crash). |
+- **Email + password** — always on.
+- **Magic link** — **dev-only in v1**: no email transport is implemented, so the plugin
+  registers in dev (and logs the link) but is **absent in production**, regardless of env.
+  See [Magic link](#magic-link-dev-only-until-a-transport-exists) below.
+- **Social OAuth (Google/GitHub/Discord)** — env-gated: a provider is enabled only when
+  **both** its `_CLIENT_ID` and `_CLIENT_SECRET` exist; absent ⇒ off (never a boot crash).
 
 `GET /api/auth-config` reports the enabled methods so the sign-in UI
 (`/sign-in`, `src/components/auth/`) renders only buttons that work — including
@@ -144,7 +157,7 @@ the user + sign-out, or a sign-in link.
 ### Magic link (dev-only until a transport exists)
 
 A magic link **is a temporary password**, so it must never reach log retention
-([security-authz.plan.md](developer-notes/security-authz.plan.md) slice 1).
+([security-authz.plan.md](developer-notes/security-authz.plan.md)).
 `src/server/auth/magic-link.ts` owns the whole
 policy:
 
@@ -195,12 +208,12 @@ pin it with a router reservation or update `.env`.
 
 One module owns the asymmetry — **reads widen, writes stay strict**:
 
-| Operation | Rule |
-| --- | --- |
-| **Write** (PATCH / DELETE / mutating image-gen) | `ownerId = me` **only** — a non-owner write returns 404, never confirming the row exists. |
-| **List "my library"** | `ownerId = me` (any visibility). |
-| **Browse / preview** (read for copy) | `findViewable(kind, id, me)` = owner **OR** `visibility = 'public'`; a **foreign** viewer receives the allow-listed public representation, not the row (below). |
-| **Clone** to your library | read public source, deep-copy into a new owned row (`visibility='private'`, `clonedFromId=src`). |
+| Operation                                       | Rule                                                                                                                                                            |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Write** (PATCH / DELETE / mutating image-gen) | `ownerId = me` **only** — a non-owner write returns 404, never confirming the row exists.                                                                       |
+| **List "my library"**                           | `ownerId = me` (any visibility).                                                                                                                                |
+| **Browse / preview** (read for copy)            | `findViewable(kind, id, me)` = owner **OR** `visibility = 'public'`; a **foreign** viewer receives the allow-listed public representation, not the row (below). |
+| **Clone** to your library                       | read public source, deep-copy into a new owned row (`visibility='private'`, `clonedFromId=src`).                                                                |
 
 - **Shareable** entities (`characters`, `locations`, `items`, `social_cards`)
   carry a `visibility` column (`private` default | `public`). **Personas and
@@ -224,8 +237,7 @@ A foreign viewer never receives the persisted row. `server/api/visibility.ts`
 owns one **allow-list projection per kind** — `toPublicCharacter`,
 `toPublicLocation`, `toPublicItem`, `toPublicSocialCard` — and the four detail
 routes split on `mine` (`row.ownerId === user.id`): the owner keeps the full row
-because the edit surfaces need every column; everyone else gets the projection
-(security-authz.plan.md slice 4).
+because the edit surfaces need every column; everyone else gets the projection.
 
 - **Always excluded**: `ownerId` (the response carries the computed `mine` flag
   instead — a viewer never needs another account's id), `searchEmbedding` /
@@ -287,7 +299,7 @@ provenance), so a clone is fully self-contained. `images/:id/file` serves
 owner-only by default but widens to a **public-entity** image on the preview
 path (`isPublicEntityImage`) — and only when the image and the public entity it
 names **share an owner**, since the entity linkage is polymorphic metadata with
-no FK (security-authz.plan.md slice 3). Cache policy follows that split —
+no FK. Cache policy follows that split —
 `public` for public-entity images, `private` for owner-only (security Cluster I3).
 
 ### Publishing and cloning — what a copy carries
@@ -314,7 +326,7 @@ extracted to the pure `publish-disclosure.ts` beside it so a test
 2. **A confirmation step on character publish only** (`publishConfirmRequired`,
    private → public). It states all three facts: a copy takes the full profile
    including the private fields, its images are duplicated too, and unpublishing
-   later will not recall copies people already made. Cancel leaves it private.
+   later does not recall copies people already made. Cancel leaves it private.
 
 Everything else stays one click: **unpublishing** for every kind (it takes
 nothing away the author can't redo), and publishing a location, item, or social
@@ -332,20 +344,19 @@ whole profile, which is exactly what the disclosure says.
 `sim_worlds` / `sim_branches` deliberately carry **no owner column**, so the
 successor lane's only account boundary is the chat anchor:
 `character_chats.sim_branch_id` → `character_chats.owner_id`. The route gate
-(`requireSimChat`) enforces it at the edge, and — since
-security-authz.plan.md §Follow-ups item 1 — the **durable command layer proves
+(`requireSimChat`) enforces it at the edge, and the **durable command layer proves
 it again for itself**, so a new caller can't reach the world by supplying an
 envelope. `authorizeSimulationCommand`
 (`server/engine/simulation/command-authz.ts`) is called by all three command
-shells (`runSimulationCommand` plus space-store's and scheduler-store's older
+shells (`runSimulationCommand` plus space-store's and scheduler-store's
 inlined copies) **above** the idempotency read and the transaction that owns
 every write:
 
-| Principal kind | Rule |
-| --- | --- |
-| `player` | `principalId` must equal the owning chat's `owner_id`. It is the only kind minted from a player-supplied request, and its id is a `users.id`. |
-| `director`, `storyteller` | Pass. Their entry points are the admin sim routes (404 for a non-admin before an envelope exists) and world provisioning; an admin is allowed on any branch by construction. |
-| `npc_policy`, `npc_deliberator`, `system`, `migration` | Pass. Engine-internal — the arbiter, the scheduler drain, the world seeders — whose `principalId` is a fixed label (`sim-scheduler`), not an account. |
+| Principal kind                                         | Rule                                                                                                                                                                         |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `player`                                               | `principalId` must equal the owning chat's `owner_id`. It is the only kind minted from a player-supplied request, and its id is a `users.id`.                                |
+| `director`, `storyteller`                              | Pass. Their entry points are the admin sim routes (404 for a non-admin before an envelope exists) and world provisioning; an admin is allowed on any branch by construction. |
+| `npc_policy`, `npc_deliberator`, `system`, `migration` | Pass. Engine-internal — the arbiter, the scheduler drain, the world seeders — whose `principalId` is a fixed label (`sim-scheduler`), not an account.                        |
 
 - **A branch no chat points at is unanchored** and admits: a fixture branch, a
   fork not yet linked, or a world provisioned in the moments before its chat row
@@ -382,7 +393,7 @@ built-in dev secret), `BETTER_AUTH_URL` (app origin, OAuth callbacks + CSRF),
 the optional `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` pairs, the magic-link
 transport names `RESEND_API_KEY` / `SMTP_URL` (**reserved and inert** — no sender
 reads them in v1, and setting one enables nothing), and `DEV_PASSWORD`.
-Full table in [getting-started.md](getting-started.md).
+Every variable is listed in [getting-started.md](getting-started.md).
 
 ## Later (not v1)
 

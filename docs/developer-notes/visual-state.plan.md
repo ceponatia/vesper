@@ -2,6 +2,11 @@
 
 Status: next — planned 2026-08-05; no implementation has started
 
+Outcome: A player can watch a character's appearance carry forward — damp hair
+still damp, one sleeve still rolled, the jacket still on the chair — in both the
+writing and the pictures, so that details stop resetting between one moment and
+the next.
+
 Technical companion: [visual-state.spec.md](visual-state.spec.md)
 
 Related work:

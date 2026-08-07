@@ -1,6 +1,6 @@
 # Image identity packs — data and persistence spec
 
-Parent spec: [image-identity-packs.spec.md](image-identity-packs.spec.md)
+Status: detail for [image-identity-packs.spec.md](image-identity-packs.spec.md)
 
 This document owns the pure contract vocabulary, persistent pack model, hidden
 image asset, source identity, parsing behavior, and state machine.

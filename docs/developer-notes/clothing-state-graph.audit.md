@@ -13,16 +13,16 @@ the review evidence captured at parking time.
 
 ### 1.1 Chat wardrobe truth
 
-| Seam | Where | Current shape | Gap vs the plan |
-| --- | --- | --- | --- |
-| Stored worn state | `src/server/db/schema.ts:551,581`; `src/server/engine/chat-state.ts:773-802` | `worn_item_ids` (item-**definition** ids), `outfit_preset_id`, free-text `outfit` overlay, `outfit_exposed` bool — all per `(chat_id, character_id)` | No instance identity, no locus, no per-part state, no condition |
-| Player worn state | `src/contracts/players/chat-player-state.ts`; `chat-wardrobe.ts:145-154` | `ChatPlayerState{personaId, wornItemIds, seeded, outfitPresetId, overlay}` on `character_chats.player_state` (chat-wide) | Same gaps; note it is already chat-wide, not per-character |
-| The one read seam | `src/server/engine/chat-wardrobe.ts:104-137` (`resolveChatWardrobe`), `:182-208` (`resolvePlayerWardrobe`) | Loads defs → `wardrobeOutfitText` phrase + `exposedRegions` coverage + `wornItemIds` + overlay. Self-heals free-text → structured | Returns a **phrase + 4-region enum**; no garment/part handles, no observations |
-| Prompt consumer | `chat-pipeline.ts:989-992,1866`; `prompts/character-chat.ts:742-745,1315-1316,2386-2397` | `state.outfit` is the rendered phrase; one "You're wearing …" line + exposure tone-steer | No authoritative digest, no cue block, no repeat gating |
-| Scene image consumer | `src/app/api/chats/[chatId]/scene/queue.ts:97-158` | Passes `wardrobe.garments`, `wardrobe.exposure`, `playerWardrobe.exposure`, `lookKey` | Same phrase-level input |
-| State route | `src/app/api/chats/[chatId]/state/route.ts:70-75` (PATCH body), `:159-168` (GET) | `wornItemIds` (≤40) + `outfitPresetId` + `outfit` + `outfitExposed` patchable; GET returns `outfitLabel` | Needs an instance-addressed patch surface |
-| State-tools UI | `src/components/characters/chat-state-tools.tsx:103-104,168-169,372-382` → `chat-wardrobe-editor.tsx` (238 ll., `:57-123`) | Preset switcher + per-slot equip/remove over definition ids; slots bucketed by `definition.category` | No part/closure/roll/condition controls, no graph inspector |
-| Scenario modal | `src/components/characters/chat-scenario-modal.tsx:210-217` | Persona switch resets `playerState` to `{wornItemIds:[], seeded:false, …}` | A persona switch must also drop/retire that persona's garment instances |
+| Seam                 | Where                                                                                                                      | Current shape                                                                                                                                        | Gap vs the plan                                                                |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Stored worn state    | `src/server/db/schema.ts:551,581`; `src/server/engine/chat-state.ts:773-802`                                               | `worn_item_ids` (item-**definition** ids), `outfit_preset_id`, free-text `outfit` overlay, `outfit_exposed` bool — all per `(chat_id, character_id)` | No instance identity, no locus, no per-part state, no condition                |
+| Player worn state    | `src/contracts/players/chat-player-state.ts`; `chat-wardrobe.ts:145-154`                                                   | `ChatPlayerState{personaId, wornItemIds, seeded, outfitPresetId, overlay}` on `character_chats.player_state` (chat-wide)                             | Same gaps; note it is already chat-wide, not per-character                     |
+| The one read seam    | `src/server/engine/chat-wardrobe.ts:104-137` (`resolveChatWardrobe`), `:182-208` (`resolvePlayerWardrobe`)                 | Loads defs → `wardrobeOutfitText` phrase + `exposedRegions` coverage + `wornItemIds` + overlay. Self-heals free-text → structured                    | Returns a **phrase + 4-region enum**; no garment/part handles, no observations |
+| Prompt consumer      | `chat-pipeline.ts:989-992,1866`; `prompts/character-chat.ts:742-745,1315-1316,2386-2397`                                   | `state.outfit` is the rendered phrase; one "You're wearing …" line + exposure tone-steer                                                             | No authoritative digest, no cue block, no repeat gating                        |
+| Scene image consumer | `src/app/api/chats/[chatId]/scene/queue.ts:97-158`                                                                         | Passes `wardrobe.garments`, `wardrobe.exposure`, `playerWardrobe.exposure`, `lookKey`                                                                | Same phrase-level input                                                        |
+| State route          | `src/app/api/chats/[chatId]/state/route.ts:70-75` (PATCH body), `:159-168` (GET)                                           | `wornItemIds` (≤40) + `outfitPresetId` + `outfit` + `outfitExposed` patchable; GET returns `outfitLabel`                                             | Needs an instance-addressed patch surface                                      |
+| State-tools UI       | `src/components/characters/chat-state-tools.tsx:103-104,168-169,372-382` → `chat-wardrobe-editor.tsx` (238 ll., `:57-123`) | Preset switcher + per-slot equip/remove over definition ids; slots bucketed by `definition.category`                                                 | No part/closure/roll/condition controls, no graph inspector                    |
+| Scenario modal       | `src/components/characters/chat-scenario-modal.tsx:210-217`                                                                | Persona switch resets `playerState` to `{wornItemIds:[], seeded:false, …}`                                                                           | A persona switch must also drop/retire that persona's garment instances        |
 
 **How the continuity leg mutates the wardrobe today** — (1) the archivist emits
 `outfit{description, exposed, removed[], added[]}` + `playerOutfit{…}` as
@@ -46,15 +46,15 @@ list a **set**: a character cannot wear two copies of one definition.
 (`schema.ts:752-774`), loaded by `loadDefaultWardrobe`
 (`src/server/images/avatar.ts:122-160`).
 
-| Field | Line | Consumers |
-| --- | --- | --- |
-| `coverage: string[]` | `:28` | `exposedRegions`, `resolveWardrobeVisibility`, coverage editor, `isBelowWaist` |
-| `layer: 0..3` | `:62` | `resolveWardrobeVisibility` occlusion ordering |
-| `opacity: opaque\|sheer` | `:63` | occlusion (`hinted`) + `exposedRegions` (`sheer` region band) |
-| `category` | `:33` | authoring templates + wardrobe-editor slot bucketing. **Never prompt-bearing** |
-| `subtype` | `:41` | prompt-bearing label (`clothingSubtypeLabel`) |
-| `sensory.appearance` | `:64` | garment phrase parens, image prompts |
-| `fields: Record<string, unknown>` | `:73` | untyped extras escape hatch — the plan correctly refuses to use it |
+| Field                                                                           | Line     | Consumers                                                                                     |
+| ------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| `coverage: string[]`                                                            | `:28`    | `exposedRegions`, `resolveWardrobeVisibility`, coverage editor, `isBelowWaist`                |
+| `layer: 0..3`                                                                   | `:62`    | `resolveWardrobeVisibility` occlusion ordering                                                |
+| `opacity: opaque\|sheer`                                                        | `:63`    | occlusion (`hinted`) + `exposedRegions` (`sheer` region band)                                 |
+| `category`                                                                      | `:33`    | authoring templates + wardrobe-editor slot bucketing. **Never prompt-bearing**                |
+| `subtype`                                                                       | `:41`    | prompt-bearing label (`clothingSubtypeLabel`)                                                 |
+| `sensory.appearance`                                                            | `:64`    | garment phrase parens, image prompts                                                          |
+| `fields: Record<string, unknown>`                                               | `:73`    | untyped extras escape hatch — the plan correctly refuses to use it                            |
 | `itemInstanceStateSchema{condition, cleanliness, wetness, open, locked, notes}` | `:83-97` | **none — zero importers in the tree.** Exported via `contracts/index.ts:21`, imported nowhere |
 
 Category templates: `src/contracts/items/clothing-categories.ts:30-57` — 15
@@ -69,10 +69,10 @@ reach prompts). Body-location registry: `src/contracts/body/locations/`
 There is **no per-exchange row history anywhere**. Rollback is exactly two
 whole-value JSONB blobs, written and restored wholesale:
 
-| Half | Write | Read | Restore |
-| --- | --- | --- | --- |
+| Half          | Write                                                                                         | Read                                                                     | Restore                                                                            |
+| ------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
 | Per-character | `savePreExchangeSnapshot` `chat-state.ts:814-827` → `character_chat_state.pre_exchange_state` | `loadPreExchangeState` `:841-856` via `storedChatStateSchema` `:773-802` | `restoreOrDegrade` `chat-pipeline.ts:641-647`, roster-wide at `:769,781,1269,1408` |
-| Chat-wide | `savePreExchangeScenario` `chat-state.ts:641-648` → `character_chats.pre_exchange_scenario` | `loadPreExchangeScenario` `:667-675` | `rollbackScenario` `:662-664` (`{...anchor}`, minus `supportingCast`) |
+| Chat-wide     | `savePreExchangeScenario` `chat-state.ts:641-648` → `character_chats.pre_exchange_scenario`   | `loadPreExchangeScenario` `:667-675`                                     | `rollbackScenario` `:662-664` (`{...anchor}`, minus `supportingCast`)              |
 
 Properties a new garment store must inherit:
 
@@ -96,15 +96,15 @@ A field inside an existing blob needs none.
 
 ### 1.4 Successor item condition
 
-| Piece | Where | Pure & reusable as-is? |
-| --- | --- | --- |
-| §25 integration kernel | `src/lib/simulation/bodies.ts:249-261` (`MeterIntegrationView`), `:325` (`integrateMeterValue`), `:367` (`solveNextThresholdCrossing`), `modifiersLiveAt`, `thresholdCrossed` | **Yes.** Subject-agnostic — never reads an `actorId`. Fixed-point, analytic, no tick loop, never persists |
-| Item-condition kernel | `src/lib/simulation/material-condition.ts` (header `:60-73`; `meterViewOfItem:177`, `initialConditionMetersFor:455`, `buildWornWindowTransition:654`, `buildUseConditionDeltas:799`, `applyItemConditionEvent:990`, `replayItemConditionHistory:1125`) | **Partly.** The numerics are pure, but every entry point takes/returns `SimulationBranchEvent`, `ItemLocus`, branch ids and event envelopes |
-| Registry | `src/contracts/simulation/material-condition.ts:61-98` — `cleanliness` (rate, zero base rate, `grimy` @3000 falling) + `wear` (load, `driftLaw:"none"`, `worn_out` @8000 rising); version `item-condition-v1` `:39` | Registry-as-data; the *pattern* transfers. The registry itself is successor-scoped |
-| Sources | `:189-191` — `use \| clean \| adjustment` | Too narrow for wetness/deposits; extend, don't fork |
-| Events | `:289-361` — initialized / source_applied / modifier_applied / modifier_ended / threshold_crossed | Successor-only (envelopes carry branch + sequence) |
-| Tables | `schema.ts:1390-1428` `sim_items` (`conditionTracked:1413`), `:1438-1474` `sim_item_holdings` (one row per item; `locusKind held\|worn\|container\|zone\|gone`, free-text `slotKey`) | Successor-only; branch-scoped |
-| Chat surface | `src/server/engine/sim-surfaces.ts:413-450` `readSimChatOutfit` | Joins `sim_items.name` for `locusKind="worn"`, ordered by `slotKey`, `.join(", ")` — a bare name list, degrades to `null` |
+| Piece                  | Where                                                                                                                                                                                                                                                  | Pure & reusable as-is?                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| §25 integration kernel | `src/lib/simulation/bodies.ts:249-261` (`MeterIntegrationView`), `:325` (`integrateMeterValue`), `:367` (`solveNextThresholdCrossing`), `modifiersLiveAt`, `thresholdCrossed`                                                                          | **Yes.** Subject-agnostic — never reads an `actorId`. Fixed-point, analytic, no tick loop, never persists                                   |
+| Item-condition kernel  | `src/lib/simulation/material-condition.ts` (header `:60-73`; `meterViewOfItem:177`, `initialConditionMetersFor:455`, `buildWornWindowTransition:654`, `buildUseConditionDeltas:799`, `applyItemConditionEvent:990`, `replayItemConditionHistory:1125`) | **Partly.** The numerics are pure, but every entry point takes/returns `SimulationBranchEvent`, `ItemLocus`, branch ids and event envelopes |
+| Registry               | `src/contracts/simulation/material-condition.ts:61-98` — `cleanliness` (rate, zero base rate, `grimy` @3000 falling) + `wear` (load, `driftLaw:"none"`, `worn_out` @8000 rising); version `item-condition-v1` `:39`                                    | Registry-as-data; the *pattern* transfers. The registry itself is successor-scoped                                                          |
+| Sources                | `:189-191` — `use \| clean \| adjustment`                                                                                                                                                                                                              | Too narrow for wetness/deposits; extend, don't fork                                                                                         |
+| Events                 | `:289-361` — initialized / source_applied / modifier_applied / modifier_ended / threshold_crossed                                                                                                                                                      | Successor-only (envelopes carry branch + sequence)                                                                                          |
+| Tables                 | `schema.ts:1390-1428` `sim_items` (`conditionTracked:1413`), `:1438-1474` `sim_item_holdings` (one row per item; `locusKind held\|worn\|container\|zone\|gone`, free-text `slotKey`)                                                                   | Successor-only; branch-scoped                                                                                                               |
+| Chat surface           | `src/server/engine/sim-surfaces.ts:413-450` `readSimChatOutfit`                                                                                                                                                                                        | Joins `sim_items.name` for `locusKind="worn"`, ordered by `slotKey`, `.join(", ")` — a bare name list, degrades to `null`                   |
 
 **Reuse boundary for chat:** take `lib/simulation/bodies.ts`'s four numeric
 functions plus the `BodyMeterDefinition` registry *shape*. Do **not** import
@@ -114,15 +114,15 @@ which is why the chat lane must not build a second one.
 
 ### 1.5 Visibility / coverage / exposure
 
-| Piece | Where | Shape |
-| --- | --- | --- |
-| Coverage sets | `src/contracts/items/coverage.ts:28-33` `expandCoverage`, `:39-66` `toggleCoverage` | Exploded id sets; parent implies descendants; non-`coverageRelevant` ids never stored |
-| Occlusion | `src/contracts/items/visibility.ts:30-69` `resolveWardrobeVisibility` | Per body location, highest `layer` wins; below ⇒ `hidden`, or `hinted` if every item above is sheer. Keyed on `instanceId` |
-| Exposure | `:113-118` `EXPOSURE_REGION_LOCATIONS`, `:126-147` `exposedRegions` | 4 regions (torso/pelvis/legs/feet) × `covered\|sheer\|bare`. `FULLY_COVERED:74`, `intimateRegionsBare:82-84` |
-| Worn input | `src/server/images/prompts.ts:81-92` `AvatarWardrobeItem`, `:111-119` `toWornInputs` | **`instanceId` is the array index** (`String(index)`); callers look views back up by index (`prompts.ts:124`, `avatar.ts:179`) |
-| Phrase render | `src/server/images/avatar.ts:175-193` `wardrobeOutfitText` | Occlusion-filtered, subtype-led, description-primary |
-| Image prompts | `src/server/images/prompts.ts:210-216`, `:482`, `:515-519`; `character-scene.ts:163-181` | Consume `RegionExposure` + the occlusion-filtered garment list |
-| Intimacy gate | `src/contracts/turns/chat-intimacy.ts:40,63` | Reads `intimateRegionsBare(exposure)` |
+| Piece         | Where                                                                                    | Shape                                                                                                                          |
+| ------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Coverage sets | `src/contracts/items/coverage.ts:28-33` `expandCoverage`, `:39-66` `toggleCoverage`      | Exploded id sets; parent implies descendants; non-`coverageRelevant` ids never stored                                          |
+| Occlusion     | `src/contracts/items/visibility.ts:30-69` `resolveWardrobeVisibility`                    | Per body location, highest `layer` wins; below ⇒ `hidden`, or `hinted` if every item above is sheer. Keyed on `instanceId`     |
+| Exposure      | `:113-118` `EXPOSURE_REGION_LOCATIONS`, `:126-147` `exposedRegions`                      | 4 regions (torso/pelvis/legs/feet) × `covered\|sheer\|bare`. `FULLY_COVERED:74`, `intimateRegionsBare:82-84`                   |
+| Worn input    | `src/server/images/prompts.ts:81-92` `AvatarWardrobeItem`, `:111-119` `toWornInputs`     | **`instanceId` is the array index** (`String(index)`); callers look views back up by index (`prompts.ts:124`, `avatar.ts:179`) |
+| Phrase render | `src/server/images/avatar.ts:175-193` `wardrobeOutfitText`                               | Occlusion-filtered, subtype-led, description-primary                                                                           |
+| Image prompts | `src/server/images/prompts.ts:210-216`, `:482`, `:515-519`; `character-scene.ts:163-181` | Consume `RegionExposure` + the occlusion-filtered garment list                                                                 |
+| Intimacy gate | `src/contracts/turns/chat-intimacy.ts:40,63`                                             | Reads `intimateRegionsBare(exposure)`                                                                                          |
 
 Gap: coverage is **whole-garment**. There is no per-part coverage, and the
 resolver's identity slot is positional.
@@ -245,18 +245,18 @@ ids (`clothing-categories.ts:30-57`) rather than shipping a parallel vocabulary 
 persists `category` (`item.ts:33`) and the wardrobe editor buckets by it; a
 second template list would create two category truths and a mapping between them.
 
-| Category | Parts beyond root | Behaviors |
-| --- | --- | --- |
-| `top` | front_panel, back_panel, collar, sleeve_l/r (+cuff_l/r), hem, placket | `linear_front_closure`, `rollable_sleeve` ×2, `tuckable_hem` |
-| `outerwear` | same + lining | `linear_front_closure` or `zipper`, `rollable_sleeve` ×2 |
-| `dress` | bodice_front, bodice_back, collar, sleeve_l/r, skirt_panel, hem, back_closure | `zipper`, `rollable_sleeve` ×2, `hem_lift` |
-| `pants` | waistband, leg_l/r, cuff_l/r, fly | `zipper`, `rollable_sleeve` (as cuff roll) ×2 |
-| `shorts` | waistband, leg_l/r, hem | — |
-| `skirt` | waistband, panel, hem, closure | `zipper`, `hem_lift` |
-| `bra` | cup_l/r, band, strap_l/r, back_closure | `adjustable_strap` ×2, `fastener_series` |
-| `socks` | cuff | `rollable_sleeve` (cuff) |
-| `footwear` | upper, closure | `linear_front_closure` (laces) |
-| `underwear`, `gloves`, `headwear`, `eyewear`, `jewelry` | root only | — |
+| Category                                                | Parts beyond root                                                             | Behaviors                                                    |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `top`                                                   | front_panel, back_panel, collar, sleeve_l/r (+cuff_l/r), hem, placket         | `linear_front_closure`, `rollable_sleeve` ×2, `tuckable_hem` |
+| `outerwear`                                             | same + lining                                                                 | `linear_front_closure` or `zipper`, `rollable_sleeve` ×2     |
+| `dress`                                                 | bodice_front, bodice_back, collar, sleeve_l/r, skirt_panel, hem, back_closure | `zipper`, `rollable_sleeve` ×2, `hem_lift`                   |
+| `pants`                                                 | waistband, leg_l/r, cuff_l/r, fly                                             | `zipper`, `rollable_sleeve` (as cuff roll) ×2                |
+| `shorts`                                                | waistband, leg_l/r, hem                                                       | —                                                            |
+| `skirt`                                                 | waistband, panel, hem, closure                                                | `zipper`, `hem_lift`                                         |
+| `bra`                                                   | cup_l/r, band, strap_l/r, back_closure                                        | `adjustable_strap` ×2, `fastener_series`                     |
+| `socks`                                                 | cuff                                                                          | `rollable_sleeve` (cuff)                                     |
+| `footwear`                                              | upper, closure                                                                | `linear_front_closure` (laces)                               |
+| `underwear`, `gloves`, `headwear`, `eyewear`, `jewelry` | root only                                                                     | —                                                            |
 
 **Material registry: the plan's 7 + `unknown`** — `woven_cotton_linen`, `knit`,
 `silk_satin`, `denim`, `wool`, `leather`, `synthetic_shell`, `unknown`
@@ -280,14 +280,14 @@ decide exposure. Cross-garment exposure stays the existing occlusion pass
 coverage. That makes "two open collar buttons ≠ bare torso" structural, not a
 tuned constant.
 
-| Behavior | Channel | Legal on | Can subtract | Cannot produce |
-| --- | --- | --- | --- | --- |
-| `linear_front_closure` | `closure.fastener_series{count N, openIndexes[]}`, ordered top→bottom | placket / front panel of top, outerwear, dress, footwear (laces) | open fraction `k/N`: ≥0.5 drops `chest`; ≥0.8 drops `waist` | nothing at `k/N < 0.5` — two of six buttons is 0.33, an **observation only**. Never drops `back`, never doffs |
-| `zipper` | `closure.continuous{openness}` | outerwear, dress back, skirt, footwear | same thresholds as above, monotone in `openness`; a declared two-way zip reverses the order | `openness = 1` is *open*, never *removed* |
-| `rollable_sleeve` | `roll: FixedUnit` | sleeve_l/r, cuff, sock cuff (per side) | ≥0.35 drops `wrists`; ≥0.6 drops `forearms` | never drops `upper_arms` or `shoulders` — a rolled sleeve is not a missing sleeve. Asymmetry is native (one node per side) |
-| `adjustable_strap` | `displacement{kind:"off_shoulder", side}` | strap_l/r of bra, dress, top | that side's `shoulders` only | never drops `chest` — a fallen strap is not a bared breast; only a separate bodice displacement can do that |
-| `tuckable_hem` | `tuck: "out"\|"partial"\|"in"` | hem of top, dress | **nothing** — presentation/silhouette only | any coverage change at all |
-| `hem_lift` (skirt/dress) | `displacement{kind:"lifted", degree}` | hem of skirt, dress | `substantial` drops `thighs`; `extreme` additionally drops this garment's `pelvis` | never bares `groin` directly — it removes *this* garment's coverage and the occlusion pass decides whether an underlayer still covers it |
+| Behavior                 | Channel                                                               | Legal on                                                         | Can subtract                                                                                | Cannot produce                                                                                                                           |
+| ------------------------ | --------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `linear_front_closure`   | `closure.fastener_series{count N, openIndexes[]}`, ordered top→bottom | placket / front panel of top, outerwear, dress, footwear (laces) | open fraction `k/N`: ≥0.5 drops `chest`; ≥0.8 drops `waist`                                 | nothing at `k/N < 0.5` — two of six buttons is 0.33, an **observation only**. Never drops `back`, never doffs                            |
+| `zipper`                 | `closure.continuous{openness}`                                        | outerwear, dress back, skirt, footwear                           | same thresholds as above, monotone in `openness`; a declared two-way zip reverses the order | `openness = 1` is *open*, never *removed*                                                                                                |
+| `rollable_sleeve`        | `roll: FixedUnit`                                                     | sleeve_l/r, cuff, sock cuff (per side)                           | ≥0.35 drops `wrists`; ≥0.6 drops `forearms`                                                 | never drops `upper_arms` or `shoulders` — a rolled sleeve is not a missing sleeve. Asymmetry is native (one node per side)               |
+| `adjustable_strap`       | `displacement{kind:"off_shoulder", side}`                             | strap_l/r of bra, dress, top                                     | that side's `shoulders` only                                                                | never drops `chest` — a fallen strap is not a bared breast; only a separate bodice displacement can do that                              |
+| `tuckable_hem`           | `tuck: "out"\|"partial"\|"in"`                                        | hem of top, dress                                                | **nothing** — presentation/silhouette only                                                  | any coverage change at all                                                                                                               |
+| `hem_lift` (skirt/dress) | `displacement{kind:"lifted", degree}`                                 | hem of skirt, dress                                              | `substantial` drops `thighs`; `extreme` additionally drops this garment's `pelvis`          | never bares `groin` directly — it removes *this* garment's coverage and the occlusion pass decides whether an underlayer still covers it |
 
 Thresholds are band boundaries with hysteresis (plan §Condition vector); the
 model never sees them.
@@ -331,13 +331,13 @@ archivist outfit/attribute change (`chat-state.ts:2024-2026`, gated on
 
 **Recommend:**
 
-| Refreshes the `chat_look` anchor | Next scene prompt only |
-| --- | --- |
-| worn **instance** set changes (don/doff/transfer) | `crease_load` — any band |
-| structural presentation bands: closure `fastened\|partly_open\|open`, roll `down\|rolled`, tuck state, any `displacement` kind | `cleanliness` bands |
-| `wetness` crossing into `wet`/`soaked` (portrait-visible) | `wetness` `damp`, and every drying step |
-| a `deposit_visible` or `damage_visible` observation appearing/disappearing on a visible part | deposit **intensity** changes inside a band; deposit/damage on hidden parts |
-| appearance attribute overlays (unchanged) | regional overrides that don't change a whole-garment band |
+| Refreshes the `chat_look` anchor                                                                                               | Next scene prompt only                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| worn **instance** set changes (don/doff/transfer)                                                                              | `crease_load` — any band                                                    |
+| structural presentation bands: closure `fastened\|partly_open\|open`, roll `down\|rolled`, tuck state, any `displacement` kind | `cleanliness` bands                                                         |
+| `wetness` crossing into `wet`/`soaked` (portrait-visible)                                                                      | `wetness` `damp`, and every drying step                                     |
+| a `deposit_visible` or `damage_visible` observation appearing/disappearing on a visible part                                   | deposit **intensity** changes inside a band; deposit/damage on hidden parts |
+| appearance attribute overlays (unchanged)                                                                                      | regional overrides that don't change a whole-garment band                   |
 
 **And the trigger must widen, or none of this fires.** Gate (a) is
 proposal-shaped, so adding condition bands to the key alone does nothing — a band
@@ -358,30 +358,30 @@ portrait framing.
 
 Fixtures live beside the module under test; all are pure unless marked *(int)*.
 
-| # | Scenario | Operations / events exercised | Assertion that proves it | Owner |
-| --- | --- | --- | --- | --- |
-| F1 | Asymmetric sleeves | `set_roll{sleeve_left, substantial}` on a `top` blueprint | `sleeve_left.roll > 0`, `sleeve_right.roll == 0`; effective coverage drops `forearms` **left only**; one garment instance, not two | S3 |
-| F2 | Two collar buttons open | `set_closure{placket, fastener_series, open:[0,1]}` on N=6 | coverage unchanged (`chest` still covered); exactly one `closure_open` observation emitted; `exposedRegions.torso === "covered"` | S3 |
-| F3 | Placket past the threshold | same, `open:[0,1,2,3]` (k/N=0.67) | shirt's own `chest` coverage drops; with a camisole worn under it, `exposedRegions.torso` is still `covered` (occlusion decides) | S3 |
-| F4 | Removal to chair | `transfer{jacket, {kind:"scene", placeName:"the study", anchor:"over the desk chair"}}` | jacket contributes **zero** coverage; still exists at its locus; re-entering the place lists it; `wornItemIds` projection no longer contains it | S2 |
-| F5 | Duplicate copies | instantiate the same definition twice, doff one | two instances share one `blueprintHash`; distinct `id`s; doffing one leaves the other worn (impossible today — `chat-wardrobe.ts:117`) | S2 |
-| F6 | Library edit isolation | mint instance → edit the source `items` row's coverage → re-read | instance coverage unchanged; `blueprintHash` unchanged; diagnostic-free | S2 |
-| F7 | Cotton vs leather rain | `apply_condition{wetness, +substantial}` on a `woven_cotton_linen` shirt and a `leather` jacket, same source | cotton reaches a higher saturation and a lower `effectiveOpacity`; leather stays low-absorption; the two produce **different** observation kinds | S4 |
-| F8 | Local mud survives drying | `deposit{hem, mud, substantial}` then integrate 6h with no wetting source | whole-garment `wetness` band returns to `dry`; the hem deposit persists at full intensity; the whole-garment cleanliness band still reads soiled | S4 |
-| F9 | Regional cleaning | F8 then `clean{partIds:[hem], target: clean}` | hem deposit removed; base cleanliness untouched elsewhere; no new damage marks | S4 |
-| F10 | Washing (whole garment) | `clean{partIds:[], target: clean}` | all deposits removed, `cleanliness` at target, `crease_load` unchanged, `damageMarks` **retained** (a wash does not repair a tear) | S4 |
-| F11 | Drying is analytic | two integrations to the same story time via different intermediate reads | identical result (partition invariance — the §25 property); no persistence on read | S4 |
-| F12 | Hidden underlayers | camisole under a closed opaque shirt, `deposit{camisole, blood}` | camisole observations are suppressed (`visibility: hidden`); no cue emitted; the state is still stored and reappears when the shirt opens past F3's threshold | S3+S6 |
-| F13 | Retake exactness | mint + roll + wet + deposit, take another take *(int)* | post-rollback store deep-equals the pre-exchange store — instances, blueprint map, presentation, condition, `integratedAt`, and the observation repeat-key map | S2 *(int)* |
-| F14 | Retake with a missing anchor | delete one member's `pre_exchange_state`, retake *(int)* | garment store still restores atomically (it is chat-wide); `chat_state.snapshot.missing` diagnostic is emitted for the member; no garment duplicated or lost | S2 *(int)* |
-| F15 | Ambiguous part operation | extractor returns `set_roll{partId:"sleeve_middle"}` | operation dropped; `garment_op.part_unresolved` diagnostic; state byte-identical; turn does not fail | S5 |
-| F16 | Garment-scoped condition | extractor returns `apply_condition{partIds: [], wetness}` | applies to the root as a base-vector change (legal, not a fallback); no diagnostic | S5 |
-| F17 | Malformed store JSONB | corrupt `character_chats.garments` *(int)* | `parseOr` → empty store + `chat_garments.parse_failed`; the read seam degrades to the `wornItemIds` projection; turn completes | S2 *(int)* |
-| F18 | Image agreement | F3's state → narrator digest, exposure gate, and scene-image prompt | all three derive from one `EffectiveCoverageRead`; the image prompt's `RegionExposure` equals the gate's; no surface says "bare" while another says "covered" | S6 |
-| F19 | Look-anchor invalidation | drying step vs. doffing the jacket | drying does **not** change `chatLookKey` and does not enqueue; the doff does both | S6 |
-| F20 | Repeat gating | unchanged wardrobe across three exchanges, then one roll | exchanges 1–3 emit no fresh garment cue; the roll emits exactly one; its `repeatKey` band lands in the persisted map | S6 |
-| F21 | Ad-hoc minted garment (R2) | continuity introduces "a borrowed hoodie" | a real instance is minted from the `outerwear` template with conservative material; it can be doffed and left on a chair; it **cannot** change intimate coverage on its own | S2 |
-| F22 | Successor parity | same operations through the successor adapter *(int)* | `item-condition-v1` events replay to the same bands; fork/replay parity holds; `readSimChatOutfit` returns the shared digest, not a name join | S7 *(int)* |
+| #   | Scenario                     | Operations / events exercised                                                                                | Assertion that proves it                                                                                                                                                    | Owner      |
+| --- | ---------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| F1  | Asymmetric sleeves           | `set_roll{sleeve_left, substantial}` on a `top` blueprint                                                    | `sleeve_left.roll > 0`, `sleeve_right.roll == 0`; effective coverage drops `forearms` **left only**; one garment instance, not two                                          | S3         |
+| F2  | Two collar buttons open      | `set_closure{placket, fastener_series, open:[0,1]}` on N=6                                                   | coverage unchanged (`chest` still covered); exactly one `closure_open` observation emitted; `exposedRegions.torso === "covered"`                                            | S3         |
+| F3  | Placket past the threshold   | same, `open:[0,1,2,3]` (k/N=0.67)                                                                            | shirt's own `chest` coverage drops; with a camisole worn under it, `exposedRegions.torso` is still `covered` (occlusion decides)                                            | S3         |
+| F4  | Removal to chair             | `transfer{jacket, {kind:"scene", placeName:"the study", anchor:"over the desk chair"}}`                      | jacket contributes **zero** coverage; still exists at its locus; re-entering the place lists it; `wornItemIds` projection no longer contains it                             | S2         |
+| F5  | Duplicate copies             | instantiate the same definition twice, doff one                                                              | two instances share one `blueprintHash`; distinct `id`s; doffing one leaves the other worn (impossible today — `chat-wardrobe.ts:117`)                                      | S2         |
+| F6  | Library edit isolation       | mint instance → edit the source `items` row's coverage → re-read                                             | instance coverage unchanged; `blueprintHash` unchanged; diagnostic-free                                                                                                     | S2         |
+| F7  | Cotton vs leather rain       | `apply_condition{wetness, +substantial}` on a `woven_cotton_linen` shirt and a `leather` jacket, same source | cotton reaches a higher saturation and a lower `effectiveOpacity`; leather stays low-absorption; the two produce **different** observation kinds                            | S4         |
+| F8  | Local mud survives drying    | `deposit{hem, mud, substantial}` then integrate 6h with no wetting source                                    | whole-garment `wetness` band returns to `dry`; the hem deposit persists at full intensity; the whole-garment cleanliness band still reads soiled                            | S4         |
+| F9  | Regional cleaning            | F8 then `clean{partIds:[hem], target: clean}`                                                                | hem deposit removed; base cleanliness untouched elsewhere; no new damage marks                                                                                              | S4         |
+| F10 | Washing (whole garment)      | `clean{partIds:[], target: clean}`                                                                           | all deposits removed, `cleanliness` at target, `crease_load` unchanged, `damageMarks` **retained** (a wash does not repair a tear)                                          | S4         |
+| F11 | Drying is analytic           | two integrations to the same story time via different intermediate reads                                     | identical result (partition invariance — the §25 property); no persistence on read                                                                                          | S4         |
+| F12 | Hidden underlayers           | camisole under a closed opaque shirt, `deposit{camisole, blood}`                                             | camisole observations are suppressed (`visibility: hidden`); no cue emitted; the state is still stored and reappears when the shirt opens past F3's threshold               | S3+S6      |
+| F13 | Retake exactness             | mint + roll + wet + deposit, take another take *(int)*                                                       | post-rollback store deep-equals the pre-exchange store — instances, blueprint map, presentation, condition, `integratedAt`, and the observation repeat-key map              | S2 *(int)* |
+| F14 | Retake with a missing anchor | delete one member's `pre_exchange_state`, retake *(int)*                                                     | garment store still restores atomically (it is chat-wide); `chat_state.snapshot.missing` diagnostic is emitted for the member; no garment duplicated or lost                | S2 *(int)* |
+| F15 | Ambiguous part operation     | extractor returns `set_roll{partId:"sleeve_middle"}`                                                         | operation dropped; `garment_op.part_unresolved` diagnostic; state byte-identical; turn does not fail                                                                        | S5         |
+| F16 | Garment-scoped condition     | extractor returns `apply_condition{partIds: [], wetness}`                                                    | applies to the root as a base-vector change (legal, not a fallback); no diagnostic                                                                                          | S5         |
+| F17 | Malformed store JSONB        | corrupt `character_chats.garments` *(int)*                                                                   | `parseOr` → empty store + `chat_garments.parse_failed`; the read seam degrades to the `wornItemIds` projection; turn completes                                              | S2 *(int)* |
+| F18 | Image agreement              | F3's state → narrator digest, exposure gate, and scene-image prompt                                          | all three derive from one `EffectiveCoverageRead`; the image prompt's `RegionExposure` equals the gate's; no surface says "bare" while another says "covered"               | S6         |
+| F19 | Look-anchor invalidation     | drying step vs. doffing the jacket                                                                           | drying does **not** change `chatLookKey` and does not enqueue; the doff does both                                                                                           | S6         |
+| F20 | Repeat gating                | unchanged wardrobe across three exchanges, then one roll                                                     | exchanges 1–3 emit no fresh garment cue; the roll emits exactly one; its `repeatKey` band lands in the persisted map                                                        | S6         |
+| F21 | Ad-hoc minted garment (R2)   | continuity introduces "a borrowed hoodie"                                                                    | a real instance is minted from the `outerwear` template with conservative material; it can be doffed and left on a chair; it **cannot** change intimate coverage on its own | S2         |
+| F22 | Successor parity             | same operations through the successor adapter *(int)*                                                        | `item-condition-v1` events replay to the same bands; fork/replay parity holds; `readSimChatOutfit` returns the shared digest, not a name join                               | S7 *(int)* |
 
 ---
 

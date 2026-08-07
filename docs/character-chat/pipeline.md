@@ -337,11 +337,11 @@ then one guarded state write:
   other and with the pulse — same post-flush slot, so the split costs two extra small calls
   and **no perceived latency**, while each leg holds 3–5 assignments instead of thirteen:
 
-  | Leg | Fields | Diagnostic prefix |
-  | --- | --- | --- |
-  | **memory scribe** | `episodeSummary`, `facts`, `memoryQueries` | `chat_memory_scribe.*` |
-  | **continuity tracker** | `scene`, `outfit`, `playerOutfit`, `attributeChanges`, `presence`, `cast` | `chat_continuity.*` |
-  | **character tracker** | `openLoops`, `plans`, `driveUpdates`, `voiceExemplar`, `characterSlip`, `traitShifts` | `chat_character_notes.*` |
+  | Leg                    | Fields                                                                                | Diagnostic prefix        |
+  | ---------------------- | ------------------------------------------------------------------------------------- | ------------------------ |
+  | **memory scribe**      | `episodeSummary`, `facts`, `memoryQueries`                                            | `chat_memory_scribe.*`   |
+  | **continuity tracker** | `scene`, `outfit`, `playerOutfit`, `attributeChanges`, `presence`, `cast`             | `chat_continuity.*`      |
+  | **character tracker**  | `openLoops`, `plans`, `driveUpdates`, `voiceExemplar`, `characterSlip`, `traitShifts` | `chat_character_notes.*` |
 
   All three sheets are **composed from the field library** (`prompts/chat-extractors.ts` —
   slice 1a: one module per field owning its instruction, context block, rules, and example
@@ -518,13 +518,16 @@ Adding a failure class = a literal in the contract + a copy entry in the client 
 
 ## Jobs
 
-| Type | Path | Recovery |
-| --- | --- | --- |
-| `chat_summary` | engine queue (`enqueueChatSummary`), detached; folds the oldest verbatim exchanges into the rolling summary, serialized per chat via `withKeyedLock` | heartbeated while running; a dead row is failed by the detached-job sweep |
-| `chat_scene_sketch` | engine queue (`enqueueChatSceneSketch`), detached; expands a just-introduced place into a visual sketch on `scene_memory` ([state.md](state.md) §Scene memory step 4) — write is an optimistic CAS, never the exchange lock; one live job per chat | same detached sweep; a lost CAS or failed run simply re-fires while the place's sketch stays absent |
-| `chat_look_image` | engine queue (`enqueueChatLookImage`, fired by the finalizer on an outfit/appearance change), detached; mints the outfit-true look anchor ([images.md](images.md) §Scene reference anchors) — image-active chats only, keep-latest | same sweep; a failed mint leaves renders on the avatar and the next change re-fires |
-| `chat_place_image` | engine queue (`enqueueChatPlaceImage`, fired lazily by `queueChatScene` on the first render in a sketched place), detached; CAS-writes `ScenePlace.imageId` | same sweep; a lost CAS / failed render re-fires on the next render there |
-| `chat_scene_image` | api-side `startJob` via the shared `queueChatScene` (`chats/[chatId]/scene/queue.ts`) — manual POST **and** the auto big-moment hook; one live render per chat (check-then-insert dedupe); anchored at queue time (manual = newest assistant line, auto = the exchange's reply) | `sweepDetachedApiJobs` (`engine/recovery.ts`) fails any detached running job whose heartbeat is older than `API_JOB_STALE_MS` |
+- **`chat_summary`** — engine queue (`enqueueChatSummary`), detached; folds the oldest verbatim exchanges into the rolling summary, serialized per chat via `withKeyedLock`.
+  Recovery: heartbeated while running; a dead row is failed by the detached-job sweep.
+- **`chat_scene_sketch`** — engine queue (`enqueueChatSceneSketch`), detached; expands a just-introduced place into a visual sketch on `scene_memory` ([state.md](state.md) §Scene memory step 4) — write is an optimistic CAS, never the exchange lock; one live job per chat.
+  Recovery: same detached sweep; a lost CAS or failed run simply re-fires while the place's sketch stays absent.
+- **`chat_look_image`** — engine queue (`enqueueChatLookImage`, fired by the finalizer on an outfit/appearance change), detached; mints the outfit-true look anchor ([images.md](images.md) §Scene reference anchors) — image-active chats only, keep-latest.
+  Recovery: same sweep; a failed mint leaves renders on the avatar and the next change re-fires.
+- **`chat_place_image`** — engine queue (`enqueueChatPlaceImage`, fired lazily by `queueChatScene` on the first render in a sketched place), detached; CAS-writes `ScenePlace.imageId`.
+  Recovery: same sweep; a lost CAS / failed render re-fires on the next render there.
+- **`chat_scene_image`** — api-side `startJob` via the shared `queueChatScene` (`chats/[chatId]/scene/queue.ts`) — manual POST **and** the auto big-moment hook; one live render per chat (check-then-insert dedupe); anchored at queue time (manual = newest assistant line, auto = the exchange's reply).
+  Recovery: `sweepDetachedApiJobs` (`engine/recovery.ts`) fails any detached running job whose heartbeat is older than `API_JOB_STALE_MS`.
 
 
 ## Persistence guards

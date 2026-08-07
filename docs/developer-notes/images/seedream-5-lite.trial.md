@@ -1,6 +1,6 @@
 # Seedream 5 Lite — live trial
 
-Status: **passed — 2026-08-05**
+Status: closed — passed 2026-08-05
 
 ## Decision
 

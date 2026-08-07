@@ -359,21 +359,47 @@ temperature owner exists in either lane.
 
 ### File map
 
-| File | Responsibility |
-| --- | --- |
-| `topology.ts` | The 16 surface ids and the tree. Each node carries its exact `bodyLocationId`; the wardrobe-slot `coverageLocationId` an observation reports is DERIVED from it at module load by walking the registry to the nearest `coverageRelevant` ancestor. `FootLocusRef` (surface + side + digit); detail-token resolution. Also the domain's own side vocabulary — `footSides` / `footSideSchema` (`left \| right`) and `footSideOf`, the one narrowing from the contact core's wider list. |
-| `attribute-maps.ts` | Three axes — `feet.arch` → `archGroundContact`, `feet.nails` → `nailEdgeProminence`/`nailSurfaceSmoothness`, `feet.toes` → `interdigitalDepth`. |
-| `profile.ts` | `FootSurfaceStructuralProfile`; four seeds + sparse child modifiers; each axis applied at exactly ONE surface, with descendants inheriting the result; `footTextureBandOf`. |
-| `condition.ts` | `FootSurfaceConditionRead`, the per-side coarse read and its dry-versus-wetting refinement, the `footConditionSetSchema` one-answer-per-foot rule, `distributeFootCondition`, `footRetentionWeight`, `footConditionForSide`, `unknownFootCondition`, `footSubstanceIsWetting`. |
-| `friction.ts` | Five calibrated per-substance curves, `footFrictionMultiplier`, `dominantFootSubstance`, `footEffectiveFriction`, `footGlideResponseOf`. |
-| `footwear.ts` | Sock/shoe part vocabulary → contained surfaces; `compileFootwearContact` → `ContactMaterialLayerRead`s; duplicate-`layerId` canonicalization + `FootwearAnomalyRead`; the six invariants as reads. |
-| `support.ts` | Per-foot `FootSupportRead` / `FootArticulationRead` and their one-entry-per-side set schemas, `footMovementRestrictionOf`, `selectFootArticulation`, `footInterdigitalClosure`, and `footPoseClosureAt` — the domain's single rule for what a committed pose does to the toe spaces at one locus. |
-| `mechanics.ts` | Per-FOOT blocks of per-surface effective compliance/friction/texture; `effectiveFriction` is absent exactly when moisture is. |
-| `frame.ts` | `FootContactRead` — the projection of a slice-1 `CommittedContactRead` onto this subject's foot — plus state/context/frame. |
-| `phenomena/` | `bands.ts` (suppression codes, repeat keys) + five phenomena. |
-| `domain.ts` | `readInputs` (six adapter-law inputs), `footAffordanceDomain`. **Not registered in `domains.ts`.** |
-| `fixtures.ts` | The calibration fixture and nine further cases (eight of which commit a contact through the real slice-1 gate; `rigidBootHiddenToes` and `noCommittedContact` deliberately supply none). **Not in the barrel.** |
-| `*.test.ts` | 8 files / 206 cases: topology, profile, condition, friction, footwear, support, phenomena, end-to-end. |
+- `topology.ts` — the 16 surface ids and the tree. Each node carries its exact
+  `bodyLocationId`; the wardrobe-slot `coverageLocationId` an observation
+  reports is DERIVED from it at module load by walking the registry to the
+  nearest `coverageRelevant` ancestor. `FootLocusRef` (surface + side + digit);
+  detail-token resolution. Also the domain's own side vocabulary — `footSides`
+  / `footSideSchema` (`left | right`) and `footSideOf`, the one narrowing from
+  the contact core's wider list.
+- `attribute-maps.ts` — three axes: `feet.arch` → `archGroundContact`,
+  `feet.nails` → `nailEdgeProminence`/`nailSurfaceSmoothness`, `feet.toes` →
+  `interdigitalDepth`.
+- `profile.ts` — `FootSurfaceStructuralProfile`; four seeds + sparse child
+  modifiers; each axis applied at exactly ONE surface, with descendants
+  inheriting the result; `footTextureBandOf`.
+- `condition.ts` — `FootSurfaceConditionRead`, the per-side coarse read and its
+  dry-versus-wetting refinement, the `footConditionSetSchema`
+  one-answer-per-foot rule, `distributeFootCondition`, `footRetentionWeight`,
+  `footConditionForSide`, `unknownFootCondition`, `footSubstanceIsWetting`.
+- `friction.ts` — five calibrated per-substance curves,
+  `footFrictionMultiplier`, `dominantFootSubstance`, `footEffectiveFriction`,
+  `footGlideResponseOf`.
+- `footwear.ts` — sock/shoe part vocabulary → contained surfaces;
+  `compileFootwearContact` → `ContactMaterialLayerRead`s; duplicate-`layerId`
+  canonicalization + `FootwearAnomalyRead`; the six invariants as reads.
+- `support.ts` — per-foot `FootSupportRead` / `FootArticulationRead` and their
+  one-entry-per-side set schemas, `footMovementRestrictionOf`,
+  `selectFootArticulation`, `footInterdigitalClosure`, and `footPoseClosureAt`
+  — the domain's single rule for what a committed pose does to the toe spaces
+  at one locus.
+- `mechanics.ts` — per-FOOT blocks of per-surface effective
+  compliance/friction/texture; `effectiveFriction` is absent exactly when
+  moisture is.
+- `frame.ts` — `FootContactRead`, the projection of a slice-1
+  `CommittedContactRead` onto this subject's foot, plus state/context/frame.
+- `phenomena/` — `bands.ts` (suppression codes, repeat keys) + five phenomena.
+- `domain.ts` — `readInputs` (six adapter-law inputs), `footAffordanceDomain`.
+  **Not registered in `domains.ts`.**
+- `fixtures.ts` — the calibration fixture and nine further cases (eight of
+  which commit a contact through the real slice-1 gate; `rigidBootHiddenToes`
+  and `noCommittedContact` deliberately supply none). **Not in the barrel.**
+- `*.test.ts` — 8 files / 206 cases: topology, profile, condition, friction,
+  footwear, support, phenomena, end-to-end.
 
 ### Registry additions
 
@@ -381,11 +407,11 @@ temperature owner exists in either lane.
 all `coverageRelevant: false` — contact loci, not garment slots, exactly as the
 intimate subtree is modelled:
 
-| Id | Parent | Why not a wardrobe slot |
-| --- | --- | --- |
-| `foot_arch` | `sole` | No footwear covers an arch without covering the sole. |
+| Id             | Parent | Why not a wardrobe slot                                                                  |
+| -------------- | ------ | ---------------------------------------------------------------------------------------- |
+| `foot_arch`    | `sole` | No footwear covers an arch without covering the sole.                                    |
 | `ball_of_foot` | `sole` | Same, and a coverage editor carving the ball out would produce a hole that cannot exist. |
-| `toenails` | `toes` | Nail polish is not a garment. |
+| `toenails`     | `toes` | Nail polish is not a garment.                                                            |
 
 They ride `expand`, so `expandCoverage(["sole"])` — the exploded set every
 coverage consumer tests membership against — contains the arch and the ball. The
@@ -422,44 +448,304 @@ chose. Tests import the module directly.
 
 ### Deltas from the draft above — this section is the authority
 
-| Draft | As built | Why |
-| --- | --- | --- |
-| `FootSurfaceConditionRead` carries `temperatureBand` | Removed | No temperature owner exists in either lane. Garment's rule applies: an input no phenomenon reads is an invitation to read it, and a channel that cannot be filled is a channel that gets guessed. |
-| …carries `pressureMarks` and `coveredDuration` | Removed | Their only consumer is `foot.pressure_mark_surface_state`, which is slice 4. The vocabulary having no mark member is what makes inventing one impossible. |
-| `FootSupportRead` declares its own `supportRole` / `mobility` enums | Reuses the contact core's `ContactSupportRole` / `ContactSupportMobility` | Slice 1 lifted them **from this spec** on the grounds that they were already the general answer. Re-declaring them here would create the second definition that move existed to prevent. |
-| `FootwearContactRead.coveringLayers: GarmentLayerRead[]` | `ContactMaterialLayerRead[]` | Slice-1 as-built naming; and the core deals in layers, not garments. |
-| `FootwearContactRead` has no filter register | Adds `surfacesByLayer` and `filterTagByLayer` | `ribbed_sock_filtered` needs to know which layer is outermost **over one surface**. Without a per-layer surface map the tag would describe the stack rather than the place. |
-| A phenomenon reads a per-surface condition | Phenomena read `mechanics` only; the distribution happens in `deriveMechanics` | Retention and airflow are profile terms, and the staged pipeline hands the profile to exactly one stage. Two copies of "how wet is the arch" would eventually disagree. |
-| `foot.contact_pressure` emits a band unconditionally | Absent committed pressure ⇒ **silence** | Slice 1 made `pressure` optional precisely so a contact nobody measured is not a `trace` press. An absent *area* only drops its tag; "how hard" is answerable without "how much of". |
-| Texture example tag `rougher_heel` | `rougher_heel_pad` | One rule — `<comparative>_<surfaceId>` — instead of a per-surface alias table. `smooth_dorsal_surface`, `soft_arch`, and `firmer_ball` match the draft verbatim. |
-| `foot.articulation_observation` sits with the contact-gated phenomena | Requires committed **pose**; contact is an optional input | A pose is true whether or not anyone is touching (a toe movement inside a rigid boot is real in an empty room), and the draft's own test-property list excludes articulation from "no committed contact yields no … observation". Contact rides along only as a possible *restriction*. |
-| `foot.glide_response` "requires current sliding motion" | Also requires a **known** moisture at every locus on the path | Unknown is not dry. A path with one unreadable surface suppresses rather than reporting the dry number for it. |
-| — | Glide reports ONE locus, chosen in two steps: a qualifying CATCH anywhere on the path wins; otherwise the grippiest locus does | Choosing the grippiest locus first and only then asking whether it catches loses a real heel snag the moment something else out-frictions it — grit on an arch beats a callused heel and the snag vanishes. Ties break on path order in both steps, so the pick is deterministic. |
-| — | `slippery` is gated on the film REDUCING friction, not on a film being present | Presence alone let a tack-phase film — which raises drag — unlock the slipperiest bands: a dry pedicured toenail read `smooth_glide` and the same nail under a draggier film of water read `grip_breaks`. The gate is now a floor on the friction rather than a relabel of the band, so the mapping is monotone: more friction is never a slipperier answer. |
-| — | Texture will not make a bare-skin claim at a locus the wardrobe says is covered | The contact's `directSkinContact` is lane-authored, and consulting it alone meant footwear could not stop a bare-skin read at all: a contact asserting direct skin through a sock reported the bare intensity band. Two owners must agree, and the conservative half wins. |
-| — | Observations report the nearest **coverage-relevant** locus (`sole`, `heel`, `toes`, …), never the new non-slot ids | Perception exposure is built from coverage; an observation keyed to a non-slot locus reads `unknown` and fails closed for every observer. The fine surface id rides the tags and the repeat key. |
-| — | `softness = baseSoftness × (1 − callus)` | Makes "increasing callus never increases softness" structural rather than a property of the numbers. |
-| — | Five substance curves are three-point piecewise-linear with a **declared** `tackPeakAt` / `saturationAt` | The spec demands per-substance calibration and a declared transition point. Water, sweat, and a wet garment rise above ×1 before falling; oil declares `tackPeakAt: 0` and never rises. Integer floor interpolation keeps the falling limb monotone on the integers, not merely on the reals. |
-| — | Several contributors resolve by **largest deviation from dry**, never by product | Multiplying two films would reintroduce the global "wetter is slipperier" rule these curves exist to refuse. |
-| — | `foot.nail_contact` is included, with two bands and no magnitude | It was cheap once `feet.nails` was already an axis. It has no vocabulary a scratch could hide in. |
-| — | `feet.size` and `feet.smell` are **not** axes | `feet.size` maps to nothing this domain calculates (contact area belongs to the contact, not the foot); `feet.smell` is a permanent authored label, which is what the plan forbids scent from being. |
-| `FootSurfaceStructuralProfile extends RegionalStructuralProfile` with a `domain: "foot"` tag | A standalone interface; no base type, no tag | `RegionalStructuralProfile` was never built — no shared regional base exists anywhere in `affordances/core`, and inventing one for a single client is the duplication the architecture spec forbids. The `domain` tag is redundant: a profile only ever reaches its own domain's stages. Five fields were ADDED — `bodyLocationId`, `coverageLocationId`, `structureKind`, `pressureExposure`, `nailEdgeProminence` — because the registry pointers, the keratin exception, the ball-versus-arch rule, and the nail phenomenon each need a term the draft did not name. |
-| `FootSupportRead { footId, evidence }` | `{ side, supportRole, mobility, supportSurfaceId?, evidence }`, and `FootArticulationRead` gains `side` too | `footId` had no producer and no id space. `side` reuses the contact core's `ContactSurfaceSide`, which contact reads already carry, so a support read and the locus it is about are keyed the same way. Without it "left trapped, right free" was unrepresentable and one subject-wide pose read could describe the foot nobody was touching. Both arrive as LISTS on the frame; `selectFootArticulation` picks the one an observation is about. |
-| `FootwearContactRead.closureState: GarmentClosureRead` | A local `footwearClosureStates` enum with an `unknown` member, plus an `evidence` field on the read | There is no `GarmentClosureRead` in the wardrobe to reuse — `garment-instance.ts` models closures as per-part fastener state, which is a finer thing than "is this shoe done up". The local enum is the coarse answer this domain needs. `unknown` is a first-class member because a heel slip is a positive claim and an unreadable closure must not be called loose. `evidence` matches every other read in the layer. |
-| `FootSurfaceConditionRead` field names | `moistureContributors: FootSurfaceSubstanceRead[]`, `residues: FootSurfaceResidueRead[]` | The draft's `SurfaceSubstanceRead` / `SurfaceResidueRead` / `BodySurfaceMarkRead` / `CleanlinessBand` are unprefixed generic nouns that would go through `export *` in `affordances/index.ts`. Slice 1 prefixed its own for the same reason; a bare `SurfaceResidueRead` in a shared barrel is a collision waiting for the intimate domain. |
-| — | The coarse condition read REFUSES a stated `moisture: 0` carrying water, sweat, or a wet garment | The two channels could tell different stories: `{ moisture: 0, contributors: [oil] }` gave texture a dry surface and glide a `slippery` one. Wetting kinds now fail the schema (⇒ `invalid`, ⇒ suppression), and product kinds — which legitimately sit on dry skin — raise the regional `moisture` to the film they represent, so both channels read the same surface. |
-| — | The interdigital spaces respond to CURRENT articulation | The spec makes retention/airflow move *"when current articulation closes the space"*, which cannot live beside stable `feet.toes`. `footRetentionWeight` takes a closure of `-1/0/+1` derived from the committed toe pose, and texture suppresses outright at `interdigital_spaces` when the pose has the toes pressed together (fixture-matrix row 13). Since the hardening pass each foot uses ITS OWN pose (see the per-side row below); only a locus that names no side still needs the two feet to agree. |
-| — | Shared: `readAdapterInput` moved into `affordances/core` | Hair and garment already carried byte-identical copies of the adapter-law narrowing; a third would have been a copy-paste of a law. Domain-neutral, so the core's neutrality test is unaffected. |
-| `foot.articulation_observation` emits the pose whatever is worn | **(hardening, 2026-07-30)** The pose-DETAIL tags (`toes_*`, `arch_*`) are gated per surface on `footwearHidesDeformation`; a dropped detail is marked with `pose_hidden_by_footwear`; the `restricted_by_*` tag always stays | `footwearHidesDeformation` had no phenomenon consumer, and the core perception filter is sight-only over an observation's `sourceLocationId` — so a visible booted foot leaked the toe position the boot physically hides. Gating the two detail tags rather than suppressing the observation is the smallest honest fix: what a boot hides is the movement, not the boot. The gate is per surface (`toes` for the toe pose, `arch` for the arch pose), so a rigid shoe with an open toe box keeps the toes and drops the arch, and the marker tag keeps "nothing to see" distinguishable from "cannot be seen". Deformation transmission answers for touch as well as sight, so the rule survives slice 3's per-observation channel filter unchanged. |
-| The coarse condition read is subject-wide | **(hardening, 2026-07-30)** `FootCoarseConditionRead` carries an optional `side`; the payload is a SET (`footConditionSetSchema`, at most one entry per foot plus one side-less entry); `FootEffectiveMechanics` became per-foot blocks (`feet: FootSideEffectiveMechanics[]`) and `footSurfaceMechanics(mechanics, surfaceId, side?)` looks up by side | Support, articulation, and every contact read were already per side; the condition read was the one that was not, so a soaked left sole beside a dry right one was unrepresentable. A repeated side FAILS the schema (⇒ `invalid` ⇒ suppression) rather than being merged: two answers for one foot is the same contradiction the dry-while-wet refinement already refuses. A foot the owner never mentioned reads UNKNOWN — the lookup falls back to the side-less block, never to the other foot. The side-less block always exists, so an unsided locus stays readable. |
-| The interdigital closure needs both feet to agree | **(hardening, 2026-07-30)** Per-side blocks use their own foot's closure; only the side-less block keeps an agreement rule (renamed `undistinguishedInterdigitalClosure`), and that rule requires **two DISTINCT feet supplied and agreeing** — zero poses, one pose, and disagreement are all the structural-neutral `0` | With per-side conditions the agreement rule stopped being a workaround for a missing model and became the answer to a narrower question. A block is built for every foot the lane named in EITHER the condition set or the pose set, so a curled left foot and a spread right one under one shared condition now read differently between the toes. For a locus that names no side there is still no foot to pick. The **one-pose case was a residual defect the owner caught the same day**: the first cut treated a single supplied foot as vacuous "agreement", but one left foot says nothing whatever about the right one and an unsided locus may well BE the right one — spending the left foot's curl on it was picking a foot in disguise. Two agreeing feet survive because the answer is then the same whichever foot the locus turns out to be: a deduction, not a guess. |
-| The support and articulation payload arrays say "one entry per foot" in prose | **(hardening, 2026-07-30)** `footSupportSetSchema` / `footArticulationSetSchema` (`support.ts`) enforce it — at most one entry per side, capped at the side count (`footSides.length` since the 2026-07-31 row below); `domain.ts` parses through them | Both sets are keyed by side, so two entries for one foot are two owners telling different stories about one thing: "the left foot is trapped" beside "the left foot is free" has no correct resolution, and neither does a foot that is both curled and spread. The arrays permitted it, so whichever consumer looked first (`footReadForSide` takes the first match) silently won. A repeated side now fails the schema ⇒ `invalid` ⇒ the read carries no value at all, which is the same law the condition set already follows and the same reason: repairing a contradiction means choosing which half to believe. `articulation` is a REQUIRED dependency, so an invalid pose set suppresses `foot.articulation_observation` with `affordance.input.invalid` and the core's standard diagnostic; `support` is optional, which at the time meant nothing was suppressed over it — since the pre-slice-3 core law change (see the optional-invalid row below) an invalid support set suppresses the dependent phenomenon too, so the contradiction can neither become a `restricted_by_support` nobody asserted nor an `unrestricted` nobody asserted. |
-| `compileFootwearContact` unions duplicate `layerId` rows silently | **(hardening, 2026-07-30)** Duplicates are canonicalized into ONE item by a stated rule per field, and the repair is reported as a `FootwearAnomalyRead` on the read, which `deriveMechanics` files as a `foot.footwear.anomaly` `warn` | A silent union let the compile decide by arrival order — an adapter returning the same cut twice in a different order produced two different filter registers — while dropping the read would make a shod foot read bare, the one direction this layer must never fail in. Rules: restrictive terms (`compression`, `rigidity`, `ankleRestriction`) and `effectiveFriction` take the max; `toeBoxVolume`, `permeability`, `tactileTransmission`, `shapeTransmission` take the min; `parts` union so no surface loses its cover; `visibleThrough` ANDs; `closureState` reuses `aggregateClosure`; `order` takes the innermost and `kind` the most enclosing; and `filterTag` survives only if every row agrees, collapsing to `unknown` otherwise — two answers to "what does a toucher meet here" is not evidence for either. The anomaly rides the READ rather than a sink because the compile runs inside `readInputs`, which by the adapter result law returns a value and not a log; `deriveMechanics` is the next stage that owns a `diagnostics` array, the same channel a provisional axis uses. |
-| A blank axis suppresses the whole foot domain ("compile every surface, or none at all") | **(pre-slice-3, 2026-07-30)** `compileFootProfile` compiles the surfaces it CAN establish and omits only each missing axis's own: no `feet.arch` ⇒ the arch subtree (`arch`, `medial_arch`, `lateral_arch`); no `feet.nails` ⇒ the toenail; no `feet.toes` ⇒ the interdigital spaces. Heel, ball, sole, edges, dorsal, toe tops/pads, and the ankle are seed-and-modifier structure and always compile. A read at an omitted surface suppresses downstream with `surface_unprofiled`; `foot.contact_pressure` consults no `feet.*` attribute and reads on any committed pressure | The all-or-nothing gate made a single unauthored field silence facts the profile could establish — a known contact pressure vanished because toenail upkeep was blank. Suppression now has exactly the width of the gap. Invalid stays invalid (`affordance.input.invalid` for authored-but-unmapped vocabulary, `unavailable` for unset), and the compiler NEVER substitutes a registry default — baselines are materialized into stored profiles at grounding time (`materializeDefault`, docs/contracts/attributes.md), never at read time. |
-| — | **(pre-slice-3, 2026-07-30, core)** The phenomenon dependency law: required ⇒ must be `supported`; optional + `unavailable` ⇒ the resolver runs; optional + `invalid` ⇒ suppressed with `affordance.input.invalid` and the standard diagnostic (`unmetDependencies`, `affordances/core/registry.ts`) | Optional used to mean "ignored entirely", which laundered corruption into absence: an unparseable "trapped" support let articulation read unrestricted, an invalid wind read as still air for hair's wind-motion. Absence degrades by design; a corrupt ANSWER being treated as no answer is the confusion the adapter result law exists to prevent. Audited across hair (`wind`, `motion`, `contamination`, `events`), garment (no optional dependencies), and foot (`condition`, `footwear`, `articulation`, `support`, `contact`). |
-| The four foot fields are authored or absent | **(pre-slice-3, 2026-07-30, registry)** `feet.size`, `feet.arch`, `feet.nails`, `feet.toes` carry `defaultValue` + `materializeDefault`: every stored body (characters AND personas; blank, forged, imported, cloned, PATCHed) grounds the missing ones as `source: "creation"` rows with sourceId `registry-default:feet:v1`; `scripts/backfill-registry-defaults.ts` fills existing rows. `feet.smell` is deliberately NOT flagged | Slice 3's reads should not hinge on an author having thought about feet, but a default must stay a stored, editable, overridable FACT — not a compiler fallback ("invalid values remain invalid") and never a manufactured moisture, scent, product, residue, or contact. Registry detail: docs/contracts/attributes.md §materializeDefault. |
-| The unsided two-feet rule is private to `mechanics.ts` | **(owner review, 2026-07-31)** It moved to `support.ts` as `footPoseClosureAt(articulations, side)` — the ONE rule every consumer asks: a sided locus uses its own foot, an unsided locus (absent side, or the core's `center`, which names no foot) uses a modifier only when TWO DISTINCT FEET AGREE, everything else is the structural-neutral `0`. Both mechanics blocks and `foot.surface_texture_contact` now go through it, and it also returns the deciding toe pose — only when every deciding foot names the same one | The mechanics half was corrected on 2026-07-30 (row above); the texture resolver, which could not reach a private helper, kept its own `footReadForSide(…) ?? articulations[0]` fallback. That is the same inference wearing a different coat: one curled LEFT foot suppressed the between-toes observation for a space that names no side and may well be the right foot's. A rule with two implementations has two answers, so the fix is one exported rule rather than a second copy of the corrected logic. The pose detail is dropped when two agreeing feet close the spaces through different poses (`curled` and `flexed` both close), because naming one would describe a foot that may not be the one being touched. |
-| The three foot-owned participant reads key `side` to the contact core's `ContactSurfaceSide` | **(owner review, 2026-07-31)** Support, articulation, and condition use the foot-local `footSideSchema` (`left \| right`) instead. Absent still means undistinguished; a `center` side — or any unrecognized one — FAILS the schema, so the whole payload degrades `invalid` at the trust boundary and every dependent phenomenon is suppressed with `affordance.input.invalid` plus the standard diagnostic. `FootLocusRef.side` deliberately keeps the SHARED vocabulary (it is a projection of a committed contact), and `footSideOf` is the single narrowing: a `center` locus lands on the undistinguished block, exactly where an absent side does | The shared list carries `center` because a back, a chest, and a mouth have middles. A foot does not, so a "center foot" is not a coarser answer but a wrong one — and it was reachable: three payloads could describe one, `deriveFootMechanics` would have built it a third block, and the two-distinct-feet agreement rule counted DISTINCT SIDES, so a `center` entry beside a `left` one could have passed for two feet and moved an unsided locus. Failing the schema is the same law the repeated-side and dry-while-wet contradictions already follow: nobody meant it, and repairing it means choosing what to believe. The agreement rule is now additionally walked over `footSides` itself, so it can only ever count a left and a right. |
+- **`FootSurfaceConditionRead` carries `temperatureBand`** → Removed. *Why:* No
+  temperature owner exists in either lane. Garment's rule applies: an input no
+  phenomenon reads is an invitation to read it, and a channel that cannot be
+  filled is a channel that gets guessed.
+- **…carries `pressureMarks` and `coveredDuration`** → Removed. *Why:* Their
+  only consumer is `foot.pressure_mark_surface_state`, which is slice 4. The
+  vocabulary having no mark member is what makes inventing one impossible.
+- **`FootSupportRead` declares its own `supportRole` / `mobility` enums** →
+  Reuses the contact core's `ContactSupportRole` / `ContactSupportMobility`.
+  *Why:* Slice 1 lifted them **from this spec** on the grounds that they were
+  already the general answer. Re-declaring them here would create the second
+  definition that move existed to prevent.
+- **`FootwearContactRead.coveringLayers: GarmentLayerRead[]`** →
+  `ContactMaterialLayerRead[]`. *Why:* Slice-1 as-built naming; and the core
+  deals in layers, not garments.
+- **`FootwearContactRead` has no filter register** → Adds `surfacesByLayer` and
+  `filterTagByLayer`. *Why:* `ribbed_sock_filtered` needs to know which layer
+  is outermost **over one surface**. Without a per-layer surface map the tag
+  would describe the stack rather than the place.
+- **A phenomenon reads a per-surface condition** → Phenomena read `mechanics`
+  only; the distribution happens in `deriveMechanics`. *Why:* Retention and
+  airflow are profile terms, and the staged pipeline hands the profile to
+  exactly one stage. Two copies of "how wet is the arch" would eventually
+  disagree.
+- **`foot.contact_pressure` emits a band unconditionally** → Absent committed
+  pressure ⇒ **silence**. *Why:* Slice 1 made `pressure` optional precisely so
+  a contact nobody measured is not a `trace` press. An absent *area* only drops
+  its tag; "how hard" is answerable without "how much of".
+- **Texture example tag `rougher_heel`** → `rougher_heel_pad`. *Why:* One rule
+  — `<comparative>_<surfaceId>` — instead of a per-surface alias table.
+  `smooth_dorsal_surface`, `soft_arch`, and `firmer_ball` match the draft
+  verbatim.
+- **`foot.articulation_observation` sits with the contact-gated phenomena** →
+  Requires committed **pose**; contact is an optional input. *Why:* A pose is
+  true whether or not anyone is touching (a toe movement inside a rigid boot is
+  real in an empty room), and the draft's own test-property list excludes
+  articulation from "no committed contact yields no … observation". Contact
+  rides along only as a possible *restriction*.
+- **`foot.glide_response` "requires current sliding motion"** → Also requires a
+  **known** moisture at every locus on the path. *Why:* Unknown is not dry. A
+  path with one unreadable surface suppresses rather than reporting the dry
+  number for it.
+- **Not in the draft** → Glide reports ONE locus, chosen in two steps: a
+  qualifying CATCH anywhere on the path wins; otherwise the grippiest locus
+  does. *Why:* Choosing the grippiest locus first and only then asking whether
+  it catches loses a real heel snag the moment something else out-frictions it
+  — grit on an arch beats a callused heel and the snag vanishes. Ties break on
+  path order in both steps, so the pick is deterministic.
+- **Not in the draft** → `slippery` is gated on the film REDUCING friction, not
+  on a film being present. *Why:* Presence alone let a tack-phase film — which
+  raises drag — unlock the slipperiest bands: a dry pedicured toenail read
+  `smooth_glide` and the same nail under a draggier film of water read
+  `grip_breaks`. The gate is now a floor on the friction rather than a relabel
+  of the band, so the mapping is monotone: more friction is never a slipperier
+  answer.
+- **Not in the draft** → Texture will not make a bare-skin claim at a locus the
+  wardrobe says is covered. *Why:* The contact's `directSkinContact` is
+  lane-authored, and consulting it alone meant footwear could not stop a
+  bare-skin read at all: a contact asserting direct skin through a sock
+  reported the bare intensity band. Two owners must agree, and the conservative
+  half wins.
+- **Not in the draft** → Observations report the nearest **coverage-relevant**
+  locus (`sole`, `heel`, `toes`, …), never the new non-slot ids. *Why:*
+  Perception exposure is built from coverage; an observation keyed to a
+  non-slot locus reads `unknown` and fails closed for every observer. The fine
+  surface id rides the tags and the repeat key.
+- **Not in the draft** → `softness = baseSoftness × (1 − callus)`. *Why:* Makes
+  "increasing callus never increases softness" structural rather than a
+  property of the numbers.
+- **Not in the draft** → Five substance curves are three-point piecewise-linear
+  with a **declared** `tackPeakAt` / `saturationAt`. *Why:* The spec demands
+  per-substance calibration and a declared transition point. Water, sweat, and
+  a wet garment rise above ×1 before falling; oil declares `tackPeakAt: 0` and
+  never rises. Integer floor interpolation keeps the falling limb monotone on
+  the integers, not merely on the reals.
+- **Not in the draft** → Several contributors resolve by **largest deviation
+  from dry**, never by product. *Why:* Multiplying two films would reintroduce
+  the global "wetter is slipperier" rule these curves exist to refuse.
+- **Not in the draft** → `foot.nail_contact` is included, with two bands and no
+  magnitude. *Why:* It was cheap once `feet.nails` was already an axis. It has
+  no vocabulary a scratch could hide in.
+- **Not in the draft** → `feet.size` and `feet.smell` are **not** axes. *Why:*
+  `feet.size` maps to nothing this domain calculates (contact area belongs to
+  the contact, not the foot); `feet.smell` is a permanent authored label, which
+  is what the plan forbids scent from being.
+- **`FootSurfaceStructuralProfile extends RegionalStructuralProfile` with a
+  `domain: "foot"` tag** → A standalone interface; no base type, no tag. *Why:*
+  `RegionalStructuralProfile` was never built — no shared regional base exists
+  anywhere in `affordances/core`, and inventing one for a single client is the
+  duplication the architecture spec forbids. The `domain` tag is redundant: a
+  profile only ever reaches its own domain's stages. Five fields were ADDED —
+  `bodyLocationId`, `coverageLocationId`, `structureKind`, `pressureExposure`,
+  `nailEdgeProminence` — because the registry pointers, the keratin exception,
+  the ball-versus-arch rule, and the nail phenomenon each need a term the draft
+  did not name.
+- **`FootSupportRead { footId, evidence }`** → `{ side, supportRole, mobility,
+  supportSurfaceId?, evidence }`, and `FootArticulationRead` gains `side` too.
+  *Why:* `footId` had no producer and no id space. `side` reuses the contact
+  core's `ContactSurfaceSide`, which contact reads already carry, so a support
+  read and the locus it is about are keyed the same way. Without it "left
+  trapped, right free" was unrepresentable and one subject-wide pose read could
+  describe the foot nobody was touching. Both arrive as LISTS on the frame;
+  `selectFootArticulation` picks the one an observation is about.
+- **`FootwearContactRead.closureState: GarmentClosureRead`** → A local
+  `footwearClosureStates` enum with an `unknown` member, plus an `evidence`
+  field on the read. *Why:* There is no `GarmentClosureRead` in the wardrobe to
+  reuse — `garment-instance.ts` models closures as per-part fastener state,
+  which is a finer thing than "is this shoe done up". The local enum is the
+  coarse answer this domain needs. `unknown` is a first-class member because a
+  heel slip is a positive claim and an unreadable closure must not be called
+  loose. `evidence` matches every other read in the layer.
+- **`FootSurfaceConditionRead` field names** → `moistureContributors:
+  FootSurfaceSubstanceRead[]`, `residues: FootSurfaceResidueRead[]`. *Why:* The
+  draft's `SurfaceSubstanceRead` / `SurfaceResidueRead` / `BodySurfaceMarkRead`
+  / `CleanlinessBand` are unprefixed generic nouns that would go through
+  `export *` in `affordances/index.ts`. Slice 1 prefixed its own for the same
+  reason; a bare `SurfaceResidueRead` in a shared barrel is a collision waiting
+  for the intimate domain.
+- **Not in the draft** → The coarse condition read REFUSES a stated `moisture:
+  0` carrying water, sweat, or a wet garment. *Why:* The two channels could
+  tell different stories: `{ moisture: 0, contributors: [oil] }` gave texture a
+  dry surface and glide a `slippery` one. Wetting kinds now fail the schema (⇒
+  `invalid`, ⇒ suppression), and product kinds — which legitimately sit on dry
+  skin — raise the regional `moisture` to the film they represent, so both
+  channels read the same surface.
+- **Not in the draft** → The interdigital spaces respond to CURRENT
+  articulation. *Why:* The spec makes retention/airflow move *"when current
+  articulation closes the space"*, which cannot live beside stable `feet.toes`.
+  `footRetentionWeight` takes a closure of `-1/0/+1` derived from the committed
+  toe pose, and texture suppresses outright at `interdigital_spaces` when the
+  pose has the toes pressed together (fixture-matrix row 13). Since the
+  hardening pass each foot uses ITS OWN pose (see the per-side row below); only
+  a locus that names no side still needs the two feet to agree.
+- **Not in the draft** → Shared: `readAdapterInput` moved into
+  `affordances/core`. *Why:* Hair and garment already carried byte-identical
+  copies of the adapter-law narrowing; a third would have been a copy-paste of
+  a law. Domain-neutral, so the core's neutrality test is unaffected.
+- **`foot.articulation_observation` emits the pose whatever is worn** →
+  **(hardening, 2026-07-30)** The pose-DETAIL tags (`toes_*`, `arch_*`) are
+  gated per surface on `footwearHidesDeformation`; a dropped detail is marked
+  with `pose_hidden_by_footwear`; the `restricted_by_*` tag always stays.
+  *Why:* `footwearHidesDeformation` had no phenomenon consumer, and the core
+  perception filter is sight-only over an observation's `sourceLocationId` — so
+  a visible booted foot leaked the toe position the boot physically hides.
+  Gating the two detail tags rather than suppressing the observation is the
+  smallest honest fix: what a boot hides is the movement, not the boot. The
+  gate is per surface (`toes` for the toe pose, `arch` for the arch pose), so a
+  rigid shoe with an open toe box keeps the toes and drops the arch, and the
+  marker tag keeps "nothing to see" distinguishable from "cannot be seen".
+  Deformation transmission answers for touch as well as sight, so the rule
+  survives slice 3's per-observation channel filter unchanged.
+- **The coarse condition read is subject-wide** → **(hardening, 2026-07-30)**
+  `FootCoarseConditionRead` carries an optional `side`; the payload is a SET
+  (`footConditionSetSchema`, at most one entry per foot plus one side-less
+  entry); `FootEffectiveMechanics` became per-foot blocks (`feet:
+  FootSideEffectiveMechanics[]`) and `footSurfaceMechanics(mechanics,
+  surfaceId, side?)` looks up by side. *Why:* Support, articulation, and every
+  contact read were already per side; the condition read was the one that was
+  not, so a soaked left sole beside a dry right one was unrepresentable. A
+  repeated side FAILS the schema (⇒ `invalid` ⇒ suppression) rather than being
+  merged: two answers for one foot is the same contradiction the dry-while-wet
+  refinement already refuses. A foot the owner never mentioned reads UNKNOWN —
+  the lookup falls back to the side-less block, never to the other foot. The
+  side-less block always exists, so an unsided locus stays readable.
+- **The interdigital closure needs both feet to agree** → **(hardening,
+  2026-07-30)** Per-side blocks use their own foot's closure; only the
+  side-less block keeps an agreement rule (renamed
+  `undistinguishedInterdigitalClosure`), and that rule requires **two DISTINCT
+  feet supplied and agreeing** — zero poses, one pose, and disagreement are all
+  the structural-neutral `0`. *Why:* With per-side conditions the agreement
+  rule stopped being a workaround for a missing model and became the answer to
+  a narrower question. A block is built for every foot the lane named in EITHER
+  the condition set or the pose set, so a curled left foot and a spread right
+  one under one shared condition now read differently between the toes. For a
+  locus that names no side there is still no foot to pick. The **one-pose case
+  was a residual defect the owner caught the same day**: the first cut treated
+  a single supplied foot as vacuous "agreement", but one left foot says nothing
+  whatever about the right one and an unsided locus may well BE the right one —
+  spending the left foot's curl on it was picking a foot in disguise. Two
+  agreeing feet survive because the answer is then the same whichever foot the
+  locus turns out to be: a deduction, not a guess.
+- **The support and articulation payload arrays say "one entry per foot" in
+  prose** → **(hardening, 2026-07-30)** `footSupportSetSchema` /
+  `footArticulationSetSchema` (`support.ts`) enforce it — at most one entry per
+  side, capped at the side count (`footSides.length` since the 2026-07-31 row
+  below); `domain.ts` parses through them. *Why:* Both sets are keyed by side,
+  so two entries for one foot are two owners telling different stories about
+  one thing: "the left foot is trapped" beside "the left foot is free" has no
+  correct resolution, and neither does a foot that is both curled and spread.
+  The arrays permitted it, so whichever consumer looked first
+  (`footReadForSide` takes the first match) silently won. A repeated side now
+  fails the schema ⇒ `invalid` ⇒ the read carries no value at all, which is the
+  same law the condition set already follows and the same reason: repairing a
+  contradiction means choosing which half to believe. `articulation` is a
+  REQUIRED dependency, so an invalid pose set suppresses
+  `foot.articulation_observation` with `affordance.input.invalid` and the
+  core's standard diagnostic; `support` is optional, which at the time meant
+  nothing was suppressed over it — since the pre-slice-3 core law change (see
+  the optional-invalid row below) an invalid support set suppresses the
+  dependent phenomenon too, so the contradiction can neither become a
+  `restricted_by_support` nobody asserted nor an `unrestricted` nobody
+  asserted.
+- **`compileFootwearContact` unions duplicate `layerId` rows silently** →
+  **(hardening, 2026-07-30)** Duplicates are canonicalized into ONE item by a
+  stated rule per field, and the repair is reported as a `FootwearAnomalyRead`
+  on the read, which `deriveMechanics` files as a `foot.footwear.anomaly`
+  `warn`. *Why:* A silent union let the compile decide by arrival order — an
+  adapter returning the same cut twice in a different order produced two
+  different filter registers — while dropping the read would make a shod foot
+  read bare, the one direction this layer must never fail in. Rules:
+  restrictive terms (`compression`, `rigidity`, `ankleRestriction`) and
+  `effectiveFriction` take the max; `toeBoxVolume`, `permeability`,
+  `tactileTransmission`, `shapeTransmission` take the min; `parts` union so no
+  surface loses its cover; `visibleThrough` ANDs; `closureState` reuses
+  `aggregateClosure`; `order` takes the innermost and `kind` the most
+  enclosing; and `filterTag` survives only if every row agrees, collapsing to
+  `unknown` otherwise — two answers to "what does a toucher meet here" is not
+  evidence for either. The anomaly rides the READ rather than a sink because
+  the compile runs inside `readInputs`, which by the adapter result law returns
+  a value and not a log; `deriveMechanics` is the next stage that owns a
+  `diagnostics` array, the same channel a provisional axis uses.
+- **A blank axis suppresses the whole foot domain ("compile every surface, or
+  none at all")** → **(pre-slice-3, 2026-07-30)** `compileFootProfile` compiles
+  the surfaces it CAN establish and omits only each missing axis's own: no
+  `feet.arch` ⇒ the arch subtree (`arch`, `medial_arch`, `lateral_arch`); no
+  `feet.nails` ⇒ the toenail; no `feet.toes` ⇒ the interdigital spaces. Heel,
+  ball, sole, edges, dorsal, toe tops/pads, and the ankle are seed-and-modifier
+  structure and always compile. A read at an omitted surface suppresses
+  downstream with `surface_unprofiled`; `foot.contact_pressure` consults no
+  `feet.*` attribute and reads on any committed pressure. *Why:* The
+  all-or-nothing gate made a single unauthored field silence facts the profile
+  could establish — a known contact pressure vanished because toenail upkeep
+  was blank. Suppression now has exactly the width of the gap. Invalid stays
+  invalid (`affordance.input.invalid` for authored-but-unmapped vocabulary,
+  `unavailable` for unset), and the compiler NEVER substitutes a registry
+  default — baselines are materialized into stored profiles at grounding time
+  (`materializeDefault`, docs/contracts/attributes.md), never at read time.
+- **Not in the draft** → **(pre-slice-3, 2026-07-30, core)** The phenomenon
+  dependency law: required ⇒ must be `supported`; optional + `unavailable` ⇒
+  the resolver runs; optional + `invalid` ⇒ suppressed with
+  `affordance.input.invalid` and the standard diagnostic (`unmetDependencies`,
+  `affordances/core/registry.ts`). *Why:* Optional used to mean "ignored
+  entirely", which laundered corruption into absence: an unparseable "trapped"
+  support let articulation read unrestricted, an invalid wind read as still air
+  for hair's wind-motion. Absence degrades by design; a corrupt ANSWER being
+  treated as no answer is the confusion the adapter result law exists to
+  prevent. Audited across hair (`wind`, `motion`, `contamination`, `events`),
+  garment (no optional dependencies), and foot (`condition`, `footwear`,
+  `articulation`, `support`, `contact`).
+- **The four foot fields are authored or absent** → **(pre-slice-3, 2026-07-30,
+  registry)** `feet.size`, `feet.arch`, `feet.nails`, `feet.toes` carry
+  `defaultValue` + `materializeDefault`: every stored body (characters AND
+  personas; blank, forged, imported, cloned, PATCHed) grounds the missing ones
+  as `source: "creation"` rows with sourceId `registry-default:feet:v1`;
+  `scripts/backfill-registry-defaults.ts` fills existing rows. `feet.smell` is
+  deliberately NOT flagged. *Why:* Slice 3's reads should not hinge on an
+  author having thought about feet, but a default must stay a stored, editable,
+  overridable FACT — not a compiler fallback ("invalid values remain invalid")
+  and never a manufactured moisture, scent, product, residue, or contact.
+  Registry detail: docs/contracts/attributes.md §materializeDefault.
+- **The unsided two-feet rule is private to `mechanics.ts`** → **(owner review,
+  2026-07-31)** It moved to `support.ts` as `footPoseClosureAt(articulations,
+  side)` — the ONE rule every consumer asks: a sided locus uses its own foot,
+  an unsided locus (absent side, or the core's `center`, which names no foot)
+  uses a modifier only when TWO DISTINCT FEET AGREE, everything else is the
+  structural-neutral `0`. Both mechanics blocks and
+  `foot.surface_texture_contact` now go through it, and it also returns the
+  deciding toe pose — only when every deciding foot names the same one. *Why:*
+  The mechanics half was corrected on 2026-07-30 (row above); the texture
+  resolver, which could not reach a private helper, kept its own
+  `footReadForSide(…) ?? articulations[0]` fallback. That is the same inference
+  wearing a different coat: one curled LEFT foot suppressed the between-toes
+  observation for a space that names no side and may well be the right foot's.
+  A rule with two implementations has two answers, so the fix is one exported
+  rule rather than a second copy of the corrected logic. The pose detail is
+  dropped when two agreeing feet close the spaces through different poses
+  (`curled` and `flexed` both close), because naming one would describe a foot
+  that may not be the one being touched.
+- **The three foot-owned participant reads key `side` to the contact core's
+  `ContactSurfaceSide`** → **(owner review, 2026-07-31)** Support,
+  articulation, and condition use the foot-local `footSideSchema` (`left |
+  right`) instead. Absent still means undistinguished; a `center` side — or any
+  unrecognized one — FAILS the schema, so the whole payload degrades `invalid`
+  at the trust boundary and every dependent phenomenon is suppressed with
+  `affordance.input.invalid` plus the standard diagnostic. `FootLocusRef.side`
+  deliberately keeps the SHARED vocabulary (it is a projection of a committed
+  contact), and `footSideOf` is the single narrowing: a `center` locus lands on
+  the undistinguished block, exactly where an absent side does. *Why:* The
+  shared list carries `center` because a back, a chest, and a mouth have
+  middles. A foot does not, so a "center foot" is not a coarser answer but a
+  wrong one — and it was reachable: three payloads could describe one,
+  `deriveFootMechanics` would have built it a third block, and the
+  two-distinct-feet agreement rule counted DISTINCT SIDES, so a `center` entry
+  beside a `left` one could have passed for two feet and moved an unsided
+  locus. Failing the schema is the same law the repeated-side and dry-while-wet
+  contradictions already follow: nobody meant it, and repairing it means
+  choosing what to believe. The agreement rule is now additionally walked over
+  `footSides` itself, so it can only ever count a left and a right.
 
 ### Domain registration: deferred to slice 3, deliberately
 

@@ -177,12 +177,12 @@ and records a bounded reason; no gate repairs it.
 4. **Decision-congruent.** A bounded verifier proves every proposed field, not
    merely that some action happened. It returns one unique action span.
 
-| Candidate | Congruence that must be proven |
-| --- | --- |
-| approach | completed nearer movement by `actorRef`, relative to `counterpartRef`, supporting the exact `band`; `facing: toward` needs independent forward/toward evidence |
-| depart | completed whole-body movement away by `actorRef`, relative to `counterpartRef`, supporting `near` versus `distant` |
-| start | completed hand contact by `actorRef` on `targetRef`, exact gesture and canonical target location, with language that creates rather than merely considers contact |
-| update | completed modulation by `actorRef` of the exact active contact behind `contactRef`, supporting the new gesture and that contact's counterpart/location |
+| Candidate | Congruence that must be proven                                                                                                                                    |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| approach  | completed nearer movement by `actorRef`, relative to `counterpartRef`, supporting the exact `band`; `facing: toward` needs independent forward/toward evidence    |
+| depart    | completed whole-body movement away by `actorRef`, relative to `counterpartRef`, supporting `near` versus `distant`                                                |
+| start     | completed hand contact by `actorRef` on `targetRef`, exact gesture and canonical target location, with language that creates rather than merely considers contact |
+| update    | completed modulation by `actorRef` of the exact active contact behind `contactRef`, supporting the new gesture and that contact's counterpart/location            |
 
 Assistant-narration `you/your` resolves only to `player`. Other pronouns may
 resolve only when the candidate plus the live contact/roster leaves exactly one
@@ -426,14 +426,14 @@ envelope records.
 Movement and empty outcomes need durable identity. Add
 `chat_npc_scene_decisions`, one row per assistant message:
 
-| Column | Contract |
-| --- | --- |
-| `chat_id`, `assistant_message_id` | FKs with cascade; unique together; assistant message is the retake guard |
-| `reply_hash`, `digest_hash` | hashes of exact persisted reply bytes and the classifier digest |
-| `schema_version`, `mode`, `story_minute` | replay/version boundary and `shadow` versus `authority` |
-| `status` | `trigger_miss`, `degraded`, or `evaluated`—all are durable tombstones |
-| `base_scene_hash`, `result_scene_hash` | exact pre/post projection fingerprints |
-| `payload` | bounded parsed-slot outcomes, grounded spans/hashes, gate reasons, normalized ordered actions, resolver outcomes, contact-row references, model/latency telemetry |
+| Column                                   | Contract                                                                                                                                                          |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chat_id`, `assistant_message_id`        | FKs with cascade; unique together; assistant message is the retake guard                                                                                          |
+| `reply_hash`, `digest_hash`              | hashes of exact persisted reply bytes and the classifier digest                                                                                                   |
+| `schema_version`, `mode`, `story_minute` | replay/version boundary and `shadow` versus `authority`                                                                                                           |
+| `status`                                 | `trigger_miss`, `degraded`, or `evaluated`—all are durable tombstones                                                                                             |
+| `base_scene_hash`, `result_scene_hash`   | exact pre/post projection fingerprints                                                                                                                            |
+| `payload`                                | bounded parsed-slot outcomes, grounded spans/hashes, gate reasons, normalized ordered actions, resolver outcomes, contact-row references, model/latency telemetry |
 
 Do not add a best-effort `lastSceneDecisionTrace` field to the chat. The
 envelope is the trace; the dev inspector reads the newest non-pruned envelope.

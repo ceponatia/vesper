@@ -1,8 +1,14 @@
 # ChatConversation decomposition — an explicit exchange state machine
 
-Status: draft (stub — successor-engine backlog item G25, parked 2026-07-24 from
-the successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
-before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Successor-engine backlog item G25, parked 2026-07-24 from the
+successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
+before building.
+
+Outcome (provisional): A developer can change one part of the chat screen — the
+composer, the transcript, the world panel — without reading the rest of it, so
+that adding a chat feature stops requiring a tour of a two-thousand-line file
+and stops leaving one chat's leftovers on screen in the next.
 
 ## What
 

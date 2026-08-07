@@ -1,7 +1,13 @@
 # Physiology simulation — triggered body responses as background processes
 
-Status: draft (stub — parked 2026-07-23, owner request; promote per
-[CLAUDE.md](CLAUDE.md) before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Parked 2026-07-23, owner request; promote per
+[CLAUDE.md](CLAUDE.md) before building.
+
+Outcome (provisional): A player can watch a character's body respond
+consistently to what is happening to her — blushing, shivering, arousal that
+builds and fades on its own — so that the prose and the scene image stop
+describing a different body from one turn to the next.
 
 ## What
 

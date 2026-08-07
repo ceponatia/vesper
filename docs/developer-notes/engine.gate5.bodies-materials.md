@@ -1,12 +1,5 @@
 # Engine plan — Gate 5: bodies, materials, households, and relationships
 
-Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
-gate — see the hub's gate index). Sequencing and current status live in
-[roadmap.md](roadmap.md) and the hub; normative contracts live in the
-[engine.spec.md](engine.spec.md) §-index.
-
-## Gate 5 — bodies, materials, households, and relationships
-
 Status: **CLOSED — 2026-07-20** (opened 2026-07-19; both opening rulings resolved by
 the owner the same day: ruling 15 — v1 body meters = **full chat parity**, with
 [chat-meter-economy.spec.md](chat-meter-economy.spec.md) OQ1–OQ3 as the normative
@@ -18,6 +11,13 @@ the green deterministic exit corpus closes the gate per the Gate 4 exit-scope
 precedent** (any live-model quality check rides
 [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs). Opening Gate 6
 is an owner call, as every gate opening has been.
+
+Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
+gate — see the hub's gate index). Sequencing and current status live in
+[roadmap.md](roadmap.md) and the hub; normative contracts live in the
+[engine.spec.md](engine.spec.md) §-index.
+
+## Gate 5 — bodies, materials, households, and relationships
 
 Rough effort: **15–35 developer-days**.
 

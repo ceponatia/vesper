@@ -22,21 +22,21 @@ type ItemDefinition = {
 };
 ```
 
-| Field | Meaning |
-| --- | --- |
-| `kind` | `clothing`, `object`, or `container`. Embedded in item rows / instance snapshots, not self-identified. |
-| `name` / `description` | Display text. |
-| `coverage` | Body-location ids the garment covers (clothing only). |
-| `category` | Clothing only: the coverage-template id this item started from. **Editor display only** — never serialized into gameplay prompts (see [Clothing categories](#clothing-categories)). |
-| `subtype` | Objects: the object-subtype id (see [Object subtypes](#object-subtypes)). Clothing: the accessory-type id for subtyped categories (see [Clothing subtypes](#clothing-subtypes)) — **prompt-bearing**, unlike `category`. |
-| `wearer` | Clothing only: wearer-target id — `feminine`/`masculine`/`unisex` (see [Wearer](#wearer)). Absent = unspecified, matched as unisex. |
-| `color` | Primary color: `family`/`accent` are color-family ids, `shade` is free text (see [Color](#color)). Any kind may carry one; clothing is the primary surface. |
-| `layer` | `0` underwear → `3` outerwear. |
-| `opacity` | `opaque` or `sheer`. |
-| `sensory` | Optional `appearance` / `scent` / `tactile` notes. |
-| `attentionHint` | `absorbing` / `faces_away` / `outward` — reserved perception hint (consumed by the retired session attention model). |
-| `fields` | Kind-specific extras (capacity, wearable container, …). |
-| `tags` | Free-form labels. |
+| Field                  | Meaning                                                                                                                                                                                                                  |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `kind`                 | `clothing`, `object`, or `container`. Embedded in item rows / instance snapshots, not self-identified.                                                                                                                   |
+| `name` / `description` | Display text.                                                                                                                                                                                                            |
+| `coverage`             | Body-location ids the garment covers (clothing only).                                                                                                                                                                    |
+| `category`             | Clothing only: the coverage-template id this item started from. **Editor display only** — never serialized into gameplay prompts (see [Clothing categories](#clothing-categories)).                                      |
+| `subtype`              | Objects: the object-subtype id (see [Object subtypes](#object-subtypes)). Clothing: the accessory-type id for subtyped categories (see [Clothing subtypes](#clothing-subtypes)) — **prompt-bearing**, unlike `category`. |
+| `wearer`               | Clothing only: wearer-target id — `feminine`/`masculine`/`unisex` (see [Wearer](#wearer)). Absent = unspecified, matched as unisex.                                                                                      |
+| `color`                | Primary color: `family`/`accent` are color-family ids, `shade` is free text (see [Color](#color)). Any kind may carry one; clothing is the primary surface.                                                              |
+| `layer`                | `0` underwear → `3` outerwear.                                                                                                                                                                                           |
+| `opacity`              | `opaque` or `sheer`.                                                                                                                                                                                                     |
+| `sensory`              | Optional `appearance` / `scent` / `tactile` notes.                                                                                                                                                                       |
+| `attentionHint`        | `absorbing` / `faces_away` / `outward` — reserved perception hint; no lane reads it.                                                                                                                                     |
+| `fields`               | Kind-specific extras (capacity, wearable container, …).                                                                                                                                                                  |
+| `tags`                 | Free-form labels.                                                                                                                                                                                                        |
 
 ## Visibility
 
@@ -44,11 +44,11 @@ An instance's placement is **exactly one of**: worn by a participant · held by 
 
 The **visibility rule** (which replaces the old occlusion stack depths) is per body location:
 
-| State | When |
-| --- | --- |
-| visible | The highest-layer item covering that location. |
-| hidden | Any item beneath a covering one. |
-| hinted | A hidden item where *everything* above it is sheer. |
+| State   | When                                                |
+| ------- | --------------------------------------------------- |
+| visible | The highest-layer item covering that location.      |
+| hidden  | Any item beneath a covering one.                    |
+| hinted  | A hidden item where *everything* above it is sheer. |
 
 Implemented once in `items/visibility.ts` (`resolveWardrobeVisibility` for the occlusion rule;
 `exposedRegions` → `RegionExposure` for per-region bare/sheer/covered, plus the shared
@@ -174,7 +174,7 @@ through the described gown.
   deliberately NOT `negationCarryWords` — "without a shirt but jeans" has to keep
   the jeans. With **no negation anywhere to except from**, an exception flips the
   other way and becomes the denial itself ("jeans, excluding a bra", "everything
-  except a bra" — which used to emit an opaque chest row over a bared one), and it
+  except a bra" — bare chest, not an opaque chest row), and it
   carries like any other ("excluding a bra or panties" denies both). **"Anywhere"
   reaches back a noun**: a garment denied one step earlier is still something to
   except from, so "not wearing underwear except a bra" cancels that denial and
@@ -305,11 +305,11 @@ Picking one pre-fills coverage + layer in the item editor, and the forges may em
 
 Templates deliberately avoid parent ids that over-imply:
 
-| Template | Uses | Avoids (and why) |
-| --- | --- | --- |
-| top | torso-parts + `upper_arms` | `arms` — would cover hands |
-| pants | `pelvis` + leg parts | `legs` — would cover feet |
-| headwear | `hair` | `head` |
+| Template | Uses                       | Avoids (and why)           |
+| -------- | -------------------------- | -------------------------- |
+| top      | torso-parts + `upper_arms` | `arms` — would cover hands |
+| pants    | `pelvis` + leg parts       | `legs` — would cover feet  |
+| headwear | `hair`                     | `head`                     |
 
 Expanding the set is a one-file data edit.
 
@@ -334,9 +334,9 @@ Extending a vocabulary is a one-line edit in that category's file; adding a voca
 
 > furniture · vehicle · weapon · tool · device · book · food · beverage · decoration · instrument
 
-The only capability so far is **`holdable`** — the item *can* be carried in a hand. Holdable is a capability, never a slot binding: where a holdable item currently sits (a hand, a container, a location) is runtime state, so holdables stay container-storable by construction.
+The only capability a subtype carries is **`holdable`** — the item *can* be carried in a hand. Holdable is a capability, never a slot binding: where a holdable item sits (a hand, a container, a location) is runtime state, so holdables stay container-storable by construction.
 
-Subtype *behavior* (vehicles moving characters, weapons in combat) is future work — each behavior gets its own design doc before any engine code, and the planned first is hand-equippable items.
+No subtype carries behavior beyond that: a vehicle does not move characters and a weapon does not fight. Adding subtype behavior means a design doc per behavior before any engine code.
 
 ## Wearer
 

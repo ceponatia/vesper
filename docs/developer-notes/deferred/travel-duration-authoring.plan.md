@@ -1,17 +1,21 @@
 # Travel distances & durations as authored world configuration
 
-Status: draft (stub — parked 2026-07-23 from an owner ruling recorded during
-[../drain-hardening.arrival.md](../drain-hardening.arrival.md)'s
-flesh-out (then backlog item A7); promote per [CLAUDE.md](CLAUDE.md) before
-building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Parked 2026-07-23 from an owner ruling recorded during
+[../drain-hardening.arrival.md](../drain-hardening.arrival.md)'s flesh-out
+(then backlog item A7); promote per [CLAUDE.md](CLAUDE.md) before building.
+
+Outcome (provisional): The owner can state how long the trip between two places
+takes and how much that varies, so that a world can have journeys that run late
+instead of every route arriving at exactly its earliest possible moment.
 
 ## What
 
 Owner direction (2026-07-23): world setup needs a system to **define distances
 and travel time lengths between locations** as part of configuring a world.
-Worlds come from two sources — bespoke worlds we develop for players to use,
-and worlds players build themselves (considerable effort on their part) — and
-both author route durations through this system. Today durations are engine
+Worlds come from two sources — bespoke first-party worlds built for players to
+use, and worlds players build themselves (considerable effort on their part)
+— and both author route durations through this system. Today durations are engine
 seed data only: links carry `minimumDurationSeconds`, and `planRoute` hardcodes
 `uncertaintySeconds: 0` at plan time (`space.ts:204-211`), so no world can yet
 declare a duration range.

@@ -1,8 +1,13 @@
 # Worlds page → operational dashboard
 
-Status: draft (stub — successor-engine backlog item G24, parked 2026-07-24 from
-the successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
-before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Successor-engine backlog item G24, parked 2026-07-24 from the
+successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
+before building.
+
+Outcome (provisional): A player can open the Worlds page and tell at a glance
+which worlds are playable, where each one left off, and which are broken, so
+that the front door stops mixing dead links in with live stories.
 
 ## What
 

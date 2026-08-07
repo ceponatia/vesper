@@ -1,7 +1,13 @@
 # World engine refactor — a simulated world under the chat lane
 
-Status: **partly superseded** — engine.plan.md was built from this plan but may not cover
-100% of what this contains. This will be sorted out after the engine plan is shipped.
+Status: draft (partly superseded) — [engine.plan.md](engine.plan.md) was built from this
+document but does not cover all of it. The remainder is uncommitted; reconciling the two
+waits until the engine plan ships.
+
+Outcome: A developer can tell, for any proposed world-simulation feature, whether it is
+free to compute from the story clock or costs a model call on the turn, so that the next
+ten features get scheduled by what they actually cost rather than by how appealing they
+sound.
 
 A brainstorming superset, not a build queue. Everything here is a
 candidate to tune, cut, or promote into its own `<topic>.plan.md`. Nothing in this doc is
@@ -102,18 +108,41 @@ The scoring below is deliberately blunt: if a thing can be T0, it is a bug to ma
 
 Terse, so the catalog doesn't re-invent it. Detail lives in the linked docs.
 
-| Layer            | What exists                                                                                                                                                                                                                                                                                 | Where                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| **Clock**        | `clock_minutes` (per-exchange tick **1 min**), `calendar_start` (`Date.UTC`-backed, real months/leap years, author-editable), `timeOfDayFor`, `SCHEDULE_DAY_PARTS` as the one time vocabulary, skips as the primary time mover (`moments` 30 / `hours` 180 / `overnight` 540 / `days` 4320) | `contracts/turns/chat-clock.ts`, `lib/clock.ts`                    |
-| **Meters**       | Six (`hygiene`, `energy`, `stress`, `arousal`, `intoxication`, `mood`), all 0–1, `perHour` drift, optional `baseline`/`recoveryPerHour`, threshold `promptHint`/`pipLabel`; `personalizeMeters` couples traits → baselines                                                                  | `contracts/meters/registry.ts`                                     |
-| **Rhythm**       | `profile.schedule` — day-part rows, custom windows, weekday masks; `formatScheduleRhythm`, `groundSchedule`, `rhythmOutfitPatch` (auto-dress on skips)                                                                                                                                      | `contracts/world/profile.ts`                                       |
-| **Body**         | 48-node location tree with `expand()`, realized bodies (plan → species → heritage → body-config), coverage sets stored exploded, `exposedRegions` computed from worn items                                                                                                                  | `contracts/body/`, `contracts/items/visibility.ts`                 |
-| **Conditions**   | Free-label instances, self-expiring on the story clock, `upsertCondition` dedupes; three small label-keyed effect tables                                                                                                                                                                    | `contracts/conditions/`                                            |
-| **Relationship** | `familiarity` (0–100, ratchets, never down) × `regard` (−100..100, volatile); `attraction` reserved as a third axis                                                                                                                                                                         | `contracts/relationships/bands.ts`                                 |
-| **Mind**         | `drives` (≤3, secrecy + reveal band, ships a scoped lie license), `plans` (`derivePlanSalience`, `advancePlans`, deterministic `missed`), `open_loops`, `mind_note`, `feeling`                                                                                                              | `contracts/turns/chat-plans.ts`, `contracts/personality/drives.ts` |
-| **Off-screen**   | `chat_meanwhile` detached job — the lane's world tick; cumulative 1440-minute gate; ≤3 developments; `whereabouts` (a phrase, ≤120 chars); per-member fact routing so members know _different things_                                                                                       | `engine/chat-meanwhile.ts`                                         |
-| **Perception**   | Session lane: 4-axis `ExposureMask`, attention × salience witness matrix, `darknessVerdict`, proximity. Chat lane: `exposedRegions` + `deriveChatSensoryAllowance` + regex focus reads                                                                                                      | `contracts/perception/`, `engine/chat-intent.ts`                   |
-| **Agents**       | Pre-reply: none (regex only) + one embed. Settle: pulse ‖ [memory scribe ‖ continuity tracker ‖ character tracker]. Detached: summary fold, scene sketch, meanwhile                                                                                                                         | `docs/character-chat/pipeline.md`                                  |
+- **Clock** — `clock_minutes` (per-exchange tick **1 min**), `calendar_start`
+  (`Date.UTC`-backed, real months/leap years, author-editable), `timeOfDayFor`,
+  `SCHEDULE_DAY_PARTS` as the one time vocabulary, skips as the primary time mover
+  (`moments` 30 / `hours` 180 / `overnight` 540 / `days` 4320). Where:
+  `contracts/turns/chat-clock.ts`, `lib/clock.ts`.
+- **Meters** — six (`hygiene`, `energy`, `stress`, `arousal`, `intoxication`, `mood`),
+  all 0–1, `perHour` drift, optional `baseline`/`recoveryPerHour`, threshold
+  `promptHint`/`pipLabel`; `personalizeMeters` couples traits → baselines. Where:
+  `contracts/meters/registry.ts`.
+- **Rhythm** — `profile.schedule`: day-part rows, custom windows, weekday masks;
+  `formatScheduleRhythm`, `groundSchedule`, `rhythmOutfitPatch` (auto-dress on skips).
+  Where: `contracts/world/profile.ts`.
+- **Body** — 48-node location tree with `expand()`, realized bodies (plan → species →
+  heritage → body-config), coverage sets stored exploded, `exposedRegions` computed from
+  worn items. Where: `contracts/body/`, `contracts/items/visibility.ts`.
+- **Conditions** — free-label instances, self-expiring on the story clock,
+  `upsertCondition` dedupes; three small label-keyed effect tables. Where:
+  `contracts/conditions/`.
+- **Relationship** — `familiarity` (0–100, ratchets, never down) × `regard` (−100..100,
+  volatile); `attraction` reserved as a third axis. Where:
+  `contracts/relationships/bands.ts`.
+- **Mind** — `drives` (≤3, secrecy + reveal band, ships a scoped lie license), `plans`
+  (`derivePlanSalience`, `advancePlans`, deterministic `missed`), `open_loops`,
+  `mind_note`, `feeling`. Where: `contracts/turns/chat-plans.ts`,
+  `contracts/personality/drives.ts`.
+- **Off-screen** — the `chat_meanwhile` detached job, the lane's world tick; cumulative
+  1440-minute gate; ≤3 developments; `whereabouts` (a phrase, ≤120 chars); per-member
+  fact routing so members know _different things_. Where: `engine/chat-meanwhile.ts`.
+- **Perception** — session lane: 4-axis `ExposureMask`, attention × salience witness
+  matrix, `darknessVerdict`, proximity. Chat lane: `exposedRegions` +
+  `deriveChatSensoryAllowance` + regex focus reads. Where: `contracts/perception/`,
+  `engine/chat-intent.ts`.
+- **Agents** — pre-reply: none (regex only) + one embed. Settle: pulse ‖ [memory scribe ‖
+  continuity tracker ‖ character tracker]. Detached: summary fold, scene sketch,
+  meanwhile. Where: `docs/character-chat/pipeline.md`.
 
 **The load-bearing observation:** `profile.schedule` is quietly the world-sim spine. Six
 shipped or planned consumers already key off it (initiative cue, `rhythmOutfitPatch`,
@@ -187,23 +216,63 @@ thing it plugs into — an idea with no seam is a red flag, not a feature.
 
 ### §A — Physiology (the body)
 
-| #    | Candidate                                                                           | Tier | Shape     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ---- | ----------------------------------------------------------------------------------- | ---- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A.1  | **energy** — `reserve × exp(−t/τ)` minus circadian pressure, read bidirectionally   | T1   | reserve   | **Planned** (meter-economy §2). τ=16h, sleep restores linearly (the asymmetry _is_ the debt mechanic). The template for every reserve below.                                                                                                                                                                                                                                                                                          |
-| A.2  | **satiation**                                                                       | T1   | reserve   | **Planned** (body-needs §2). Zero at _her_ mealtime, not a global hour.                                                                                                                                                                                                                                                                                                                                                               |
-| A.3  | **hydration**                                                                       | T1   | reserve   | **Planned** (body-needs §3). Drains ~2× satiation; arousal and exertion drain it faster.                                                                                                                                                                                                                                                                                                                                              |
-| A.4  | **bladder**                                                                         | T1   | load      | **Planned** (body-needs §4), with an honest open question about whether it survives contact with a romance scene (OQ-A).                                                                                                                                                                                                                                                                                                              |
-| A.5  | **desire** — days without intimacy raise the _arousal baseline_ and feed initiative | T1   | reserve   | **Named in three docs, scheduled in none.** It is the load-bearing unblocker: arousal's −0.30/h is knowingly wrong ("honest value is nearer −0.50/h") purely because arousal is doing desire's job. Rides the `personalizeMeters` baseline seam. The most on-brand meter available and the clearest unowned item in the corpus. **Promote it.**                                                                                       |
-| A.6  | **exertion / breath** — fast load, τ in minutes                                     | T1   | load      | Fills from physical beats (stairs, a run, sex), decays in minutes. Feeds hydration drain, arousal signs (breathlessness is already in the arousal hint), and energy cost. The spec's OQ2 explicitly wants "**exertion → energy** so an intimate scene actually costs something." Cheap, and it gives physical scenes a body.                                                                                                          |
-| A.7  | **warmth / body temperature**                                                       | T1   | load      | **The physiology↔environment bridge, and the best-value new meter in this doc.** Driven by `ambientTemp × exposedRegions` — and _the gate is already built_ (`resolveChatWardrobe`). Crossing bands mints `shivering` / `overheated` conditions. This is what makes weather matter to a body instead of being scenery.                                                                                                                |
-| A.8  | **social battery**                                                                  | T1   | reserve   | `social.extraversion` sets τ (the `personalizeMeters` seam again). Explains why someone wants to _leave_ — which the ensemble lane badly needs and currently has no honest reason for.                                                                                                                                                                                                                                                |
-| A.9  | **caffeine**                                                                        | T1   | load      | Suppresses circadian pressure without restoring reserve — i.e. it lies to the read, which is exactly what caffeine does. Falls out of A.1 nearly free. Fun, low priority.                                                                                                                                                                                                                                                             |
-| A.10 | **worn scent (perfume)**                                                            | T1   | load      | Distinct from `hygiene`. Applied by an action/item, decays over hours. Sensory-grounding's leftovers explicitly want "hair scent distinct from perfume, breath, skin warmth." An item-conferred load meter that a sense-gated read consumes.                                                                                                                                                                                          |
-| A.11 | **hair-wet / makeup**                                                               | T1   | condition | Not meters — conditions with durations, which the machinery already self-expires. Wet hair after a shower (~45 min). Makeup degrades with time, crying, sweat, sex. Very romance-lane, nearly free, high felt-realism per unit of effort.                                                                                                                                                                                             |
-| A.12 | **player body (minimal)**                                                           | T1   | —         | The asymmetry from §4.7. A minimal set (intoxication, energy, arousal?) driven by declared actions and chips. **Product call:** is the player's body the sim's to model or the player's to declare? A middle path: the sim tracks only what the player _did_ (the `drink` chip already implies it) and never contradicts them.                                                                                                        |
-| A.13 | **illness with a course**                                                           | T1   | condition | **A genuinely good pure-code sim.** `deriveIllnessRisk` from sleep debt + stress + hydration + cold exposure + season; a **seeded** roll at a skip crossing (seed = chatId + clockMinutes ⇒ deterministic and replayable, matching the house style of `scheduleJitter` and `world-graph-layout`) mints an `unwell` condition with a multi-day course. She gets sick _because_ she's been running on 4h sleep in the rain. Zero calls. |
-| A.14 | **injury / soreness**                                                               | T1   | condition | Healing courses on the clock. Body-needs already rules soreness is "probably conditions, not a meter" — agreed.                                                                                                                                                                                                                                                                                                                       |
-| A.15 | **hormonal phase**                                                                  | T2   | phase     | The "hyper realistic" ask. Modulates baselines, never values (the invariant). **Deliberately parked** as a product-judgment call — and note the taxonomy is very good at saying what a meter _is_ and has no rule for what a meter _should be_ in a romance product. Same bucket: fertility, pregnancy arcs. Needs an owner ruling before design, not after.                                                                          |
+- **A.1 · energy** — `reserve × exp(−t/τ)` minus circadian pressure, read
+  bidirectionally. T1, reserve. **Planned** (meter-economy §2). τ=16h, sleep restores
+  linearly (the asymmetry _is_ the debt mechanic). The template for every reserve below.
+- **A.2 · satiation** — T1, reserve. **Planned** (body-needs §2). Zero at _her_ mealtime,
+  not a global hour.
+- **A.3 · hydration** — T1, reserve. **Planned** (body-needs §3). Drains ~2× satiation;
+  arousal and exertion drain it faster.
+- **A.4 · bladder** — T1, load. **Planned** (body-needs §4), with an honest open question
+  about whether it survives contact with a romance scene (OQ-A).
+- **A.5 · desire** — days without intimacy raise the _arousal baseline_ and feed
+  initiative. T1, reserve. **Named in three docs, scheduled in none.** It is the
+  load-bearing unblocker: arousal's −0.30/h is knowingly wrong ("honest value is nearer
+  −0.50/h") purely because arousal is doing desire's job. Rides the `personalizeMeters`
+  baseline seam. The most on-brand meter available and the clearest unowned item in the
+  corpus. **Promote it.**
+- **A.6 · exertion / breath** — fast load, τ in minutes. T1, load. Fills from physical
+  beats (stairs, a run, sex), decays in minutes. Feeds hydration drain, arousal signs
+  (breathlessness is already in the arousal hint), and energy cost. The spec's OQ2
+  explicitly wants "**exertion → energy** so an intimate scene actually costs something."
+  Cheap, and it gives physical scenes a body.
+- **A.7 · warmth / body temperature** — T1, load. **The physiology↔environment bridge,
+  and the best-value new meter in this doc.** Driven by `ambientTemp × exposedRegions` —
+  and _the gate is already built_ (`resolveChatWardrobe`). Crossing bands mints
+  `shivering` / `overheated` conditions. This is what makes weather matter to a body
+  instead of being scenery.
+- **A.8 · social battery** — T1, reserve. `social.extraversion` sets τ (the
+  `personalizeMeters` seam again). Explains why someone wants to _leave_ — which the
+  ensemble lane badly needs and currently has no honest reason for.
+- **A.9 · caffeine** — T1, load. Suppresses circadian pressure without restoring reserve
+  — i.e. it lies to the read, which is exactly what caffeine does. Falls out of A.1
+  nearly free. Fun, low priority.
+- **A.10 · worn scent (perfume)** — T1, load. Distinct from `hygiene`. Applied by an
+  action/item, decays over hours. Sensory-grounding's leftovers explicitly want "hair
+  scent distinct from perfume, breath, skin warmth." An item-conferred load meter that a
+  sense-gated read consumes.
+- **A.11 · hair-wet / makeup** — T1, condition. Not meters — conditions with durations,
+  which the machinery already self-expires. Wet hair after a shower (~45 min). Makeup
+  degrades with time, crying, sweat, sex. Very romance-lane, nearly free, high
+  felt-realism per unit of effort.
+- **A.12 · player body (minimal)** — T1, no shape yet. The asymmetry from §4.7. A minimal
+  set (intoxication, energy, arousal?) driven by declared actions and chips. **Product
+  call:** is the player's body the sim's to model or the player's to declare? A middle
+  path: the sim tracks only what the player _did_ (the `drink` chip already implies it)
+  and never contradicts them.
+- **A.13 · illness with a course** — T1, condition. **A genuinely good pure-code sim.**
+  `deriveIllnessRisk` from sleep debt + stress + hydration + cold exposure + season; a
+  **seeded** roll at a skip crossing (seed = chatId + clockMinutes ⇒ deterministic and
+  replayable, matching the house style of `scheduleJitter` and `world-graph-layout`)
+  mints an `unwell` condition with a multi-day course. She gets sick _because_ she's been
+  running on 4h sleep in the rain. Zero calls.
+- **A.14 · injury / soreness** — T1, condition. Healing courses on the clock. Body-needs
+  already rules soreness is "probably conditions, not a meter" — agreed.
+- **A.15 · hormonal phase** — T2, phase. The "hyper realistic" ask. Modulates baselines,
+  never values (the invariant). **Deliberately parked** as a product-judgment call — and
+  note the taxonomy is very good at saying what a meter _is_ and has no rule for what a
+  meter _should be_ in a romance product. Same bucket: fertility, pregnancy arcs. Needs
+  an owner ruling before design, not after.
 
 **Rejected as over-modeling:** blood sugar (folds into satiation), grooming-as-a-meter and
 hangover-as-a-meter (already rejected in body-needs — conditions and attributes cover
@@ -215,19 +284,40 @@ them), garment-level laundry state (a whole second wear economy for a detail pro
 has no weather, no temperature, no season, no ambient anything. The session lane has
 `atmosphere` (`resolveAtmosphere`, `atmosphereMoodBaselineShift`) with no chat twin.
 
-| #    | Candidate                                                    | Tier   | Notes                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ---- | ------------------------------------------------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| B.1  | **`deriveWeather(seed, climate, clockMinutes)`**             | **T0** | Pure, seeded, clock-keyed → `{ tempC, precip, wind, cloud, band }`. Layered value noise: a daily cycle + synoptic fronts (~3–7 day period) + a seasonal envelope. **No storage, no tick, consistent under any skip, identical on replay, queryable at any past or future moment for free.** An authored `climate` on the chat/world picks the envelope. This single function is the entire weather system. |
-| B.2  | **`deriveSeason(calendarStart, clockMinutes)`**              | **T0** | Free from the real calendar. Feeds B.1's envelope, daylight, wardrobe, food, holidays, mood baseline.                                                                                                                                                                                                                                                                                                      |
-| B.3  | **`deriveDaylight(calendarStart, clockMinutes, latitude?)`** | **T0** | Real sunrise/sunset — a ~20-line solar approximation, or a sinusoid if that's too much. Feeds a light level → the **existing** `darknessVerdict` machinery → perception gating → intimacy staging. `lib/clock.ts`'s `daylightBand` already exists session-side.                                                                                                                                            |
-| B.4  | **ambient temperature**                                      | **T0** | `f(weather, season, timeOfDay, indoor)`. The input to A.7.                                                                                                                                                                                                                                                                                                                                                 |
-| B.5  | **lunar phase**                                              | **T0** | Free from the calendar. Matters for some species, tides, and atmosphere. Cheap enough that the only question is whether anything reads it.                                                                                                                                                                                                                                                                 |
-| B.6  | **holidays & calendar events**                               | T0     | Authored per world; the calendar already resolves real dates. Feeds plans, rhythm exceptions (she's off work), mood, gift beats.                                                                                                                                                                                                                                                                           |
-| B.7  | **`weatherOutfitPatch`**                                     | T1     | The deterministic sibling of the shipped `rhythmOutfitPatch`, same crossed-slot pattern: **she dresses for the weather.** Rain, cold, heat. One of the highest realism-per-line ideas here — and it composes with rhythm (work clothes _and_ a coat).                                                                                                                                                      |
-| B.8  | **atmosphere, ported to chat**                               | T1     | `atmosphereMoodBaselineShift` exists and is session-only. Weather → mood baseline is the same shape. Note the shift must be **standing** (a drift target), never a per-turn impulse — the existing constant caps at ±0.2.                                                                                                                                                                                  |
-| B.9  | **weather → plans**                                          | T1     | Rain cancels the pier. `derivePlanSalience` already computes due-ness; a due outdoor plan in a storm is a _beat_, not a failure. Feeds the pulse as context (T2), never a deterministic cancel.                                                                                                                                                                                                            |
-| B.10 | **weather/season → off-screen life**                         | T2     | One line in the meanwhile dossier. She had a week of rain. Zero new calls.                                                                                                                                                                                                                                                                                                                                 |
-| B.11 | **place properties: noise, crowding, air**                   | T1     | Needs §D. Feeds stress, social battery, and the perception gate.                                                                                                                                                                                                                                                                                                                                           |
+- **B.1 · `deriveWeather(seed, climate, clockMinutes)`** — **T0**. Pure, seeded,
+  clock-keyed → `{ tempC, precip, wind, cloud, band }`. Layered value noise: a daily
+  cycle + synoptic fronts (~3–7 day period) + a seasonal envelope. **No storage, no tick,
+  consistent under any skip, identical on replay, queryable at any past or future moment
+  for free.** An authored `climate` on the chat/world picks the envelope. This single
+  function is the entire weather system.
+- **B.2 · `deriveSeason(calendarStart, clockMinutes)`** — **T0**. Free from the real
+  calendar. Feeds B.1's envelope, daylight, wardrobe, food, holidays, mood baseline.
+- **B.3 · `deriveDaylight(calendarStart, clockMinutes, latitude?)`** — **T0**. Real
+  sunrise/sunset — a ~20-line solar approximation, or a sinusoid if that's too much.
+  Feeds a light level → the **existing** `darknessVerdict` machinery → perception gating
+  → intimacy staging. `lib/clock.ts`'s `daylightBand` already exists session-side.
+- **B.4 · ambient temperature** — **T0**. `f(weather, season, timeOfDay, indoor)`. The
+  input to A.7.
+- **B.5 · lunar phase** — **T0**. Free from the calendar. Matters for some species,
+  tides, and atmosphere. Cheap enough that the only question is whether anything reads
+  it.
+- **B.6 · holidays & calendar events** — T0. Authored per world; the calendar already
+  resolves real dates. Feeds plans, rhythm exceptions (she's off work), mood, gift beats.
+- **B.7 · `weatherOutfitPatch`** — T1. The deterministic sibling of the shipped
+  `rhythmOutfitPatch`, same crossed-slot pattern: **she dresses for the weather.** Rain,
+  cold, heat. One of the highest realism-per-line ideas here — and it composes with
+  rhythm (work clothes _and_ a coat).
+- **B.8 · atmosphere, ported to chat** — T1. `atmosphereMoodBaselineShift` exists and is
+  session-only. Weather → mood baseline is the same shape. Note the shift must be
+  **standing** (a drift target), never a per-turn impulse — the existing constant caps at
+  ±0.2.
+- **B.9 · weather → plans** — T1. Rain cancels the pier. `derivePlanSalience` already
+  computes due-ness; a due outdoor plan in a storm is a _beat_, not a failure. Feeds the
+  pulse as context (T2), never a deterministic cancel.
+- **B.10 · weather/season → off-screen life** — T2. One line in the meanwhile dossier.
+  She had a week of rain. Zero new calls.
+- **B.11 · place properties: noise, crowding, air** — T1. Needs §D. Feeds stress, social
+  battery, and the perception gate.
 
 **Why this is the right shape:** an environmental "meter" is not a character meter and must
 not enter `meterDefinitions`. The body **stores** (it has hysteresis — she stays cold after
@@ -236,13 +326,24 @@ honest.
 
 ### §C — Time, rhythm, calendar
 
-| #   | Candidate                                        | Tier | Notes                                                                                                                                                                                                                                                                                                                                                                       |
-| --- | ------------------------------------------------ | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C.1 | **`ScheduleEntry.activity.kind`**                | T0   | The one enabler. `sleep`\|`wash`\|`meal`\|`work`\|`leisure` + `inferScheduleKind`. jsonb ⇒ **no migration**. Everything in §A and half of §B depends on it.                                                                                                                                                                                                                 |
-| C.2 | **`deriveRhythmPressure(profile, kind, clock)`** | T0   | **One** circadian curve serving sleep, meals, and later desire. Body-needs says it plainly: _"If this plan writes a second circadian curve by hand, that is the bug."_ Also resolves C8 in the corpus (the proliferation of time granularities) by making the continuous curve the _derived_ layer under the four `SCHEDULE_DAY_PARTS`, not a fifth vocabulary beside them. |
-| C.3 | **`rhythmBodyPatch`**                            | T1   | **Planned** (meter-economy §4). Credits only rhythm slots the skipped window crossed. Overnight → 8am past a 7am `wash` row = slept _and_ showered; → 6am = slept, not showered.                                                                                                                                                                                            |
-| C.4 | **weekly / seasonal rhythm**                     | T0   | Weekday masks exist. Weekends, seasonal schedule shifts.                                                                                                                                                                                                                                                                                                                    |
-| C.5 | **aging + birthdays**                            | T0   | The clock runs; nobody ages. Add `profile.birthday` (month/day) → `deriveAge` from `calendar_start`. **A birthday is a calendar event she knows about and can be hurt if the player forgets** — plan-shaped, milestone-shaped, and almost free. Strong romance beat for a tiny field.                                                                                       |
+- **C.1 · `ScheduleEntry.activity.kind`** — T0. The one enabler.
+  `sleep`\|`wash`\|`meal`\|`work`\|`leisure` + `inferScheduleKind`. jsonb ⇒ **no
+  migration**. Everything in §A and half of §B depends on it.
+- **C.2 · `deriveRhythmPressure(profile, kind, clock)`** — T0. **One** circadian curve
+  serving sleep, meals, and later desire. Body-needs says it plainly: _"If this plan
+  writes a second circadian curve by hand, that is the bug."_ Also resolves C8 in the
+  corpus (the proliferation of time granularities) by making the continuous curve the
+  _derived_ layer under the four `SCHEDULE_DAY_PARTS`, not a fifth vocabulary beside
+  them.
+- **C.3 · `rhythmBodyPatch`** — T1. **Planned** (meter-economy §4). Credits only rhythm
+  slots the skipped window crossed. Overnight → 8am past a 7am `wash` row = slept _and_
+  showered; → 6am = slept, not showered.
+- **C.4 · weekly / seasonal rhythm** — T0. Weekday masks exist. Weekends, seasonal
+  schedule shifts.
+- **C.5 · aging + birthdays** — T0. The clock runs; nobody ages. Add `profile.birthday`
+  (month/day) → `deriveAge` from `calendar_start`. **A birthday is a calendar event she
+  knows about and can be hurt if the player forgets** — plan-shaped, milestone-shaped,
+  and almost free. Strong romance beat for a tiny field.
 
 ### §D — Space (places without a map)
 
@@ -255,55 +356,109 @@ honest.
 `scene_memory` already stores places and connections (migration 0030). They carry no
 properties. Proposal: **places as inert property bags.**
 
-| #   | Candidate                                                        | Tier  | Notes                                                                                                                                                                                                                                                                                          |
-| --- | ---------------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D.1 | **`{ indoor, privacy, noise, shelter }` on scene-memory places** | T1/T2 | jsonb ⇒ no migration. `indoor` gates weather exposure (the hook §B needs). The continuity tracker already reads the scene — this is one more field on a leg that runs (T2). **No graph, no pathfinding, no travel time, no movement authority.** The narrator still imagines and moves freely. |
-| D.2 | **`privacy` → the escalation gate**                              | T1    | **The romance-lane payoff, and it's missing today.** The escalation floor is keyed to regard only — a crowded café and a locked bedroom are mechanically identical. Privacy is exactly the environmental factor this product wants and it costs one field.                                     |
-| D.3 | **`SceneFrame`**                                                 | T1    | See §6.4 — the composed read `{ indoor, privacy, proximity, intimate, temp, light, noise }`. Resolves corpus tension C6 (chat has no `ExposureMask`, which blocks `deriveArousalSigns` and the intimacy-notes chat port).                                                                      |
-| D.4 | **proximity within a scene**                                     | T2    | Across the room vs. in her lap. The session lane has `proximity.ts`; chat has nothing. Feeds `SceneFrame` and intimacy staging. A continuity-tracker field, not a system.                                                                                                                      |
-| D.5 | **chat story map (places graph, read-only)**                     | T4/UI | Already parked in `deferred.plan.md` as "garnish." `lib/world-graph-layout.ts` + `world-map-graph.tsx` were written generically and would just work. Agreed: garnish. Listed for completeness.                                                                                                 |
-| D.6 | **travel time / pathfinding / movement authority**               | —     | **Do not build.** This is the thing that broke. Skips are the time mover; the plan arrival/exit license is the one principled don't-teleport exception and it is _granted by a commitment, not computed from a path_. That design is correct — leave it.                                       |
+- **D.1 · `{ indoor, privacy, noise, shelter }` on scene-memory places** — T1/T2. jsonb ⇒
+  no migration. `indoor` gates weather exposure (the hook §B needs). The continuity
+  tracker already reads the scene — this is one more field on a leg that runs (T2). **No
+  graph, no pathfinding, no travel time, no movement authority.** The narrator still
+  imagines and moves freely.
+- **D.2 · `privacy` → the escalation gate** — T1. **The romance-lane payoff, and it's
+  missing today.** The escalation floor is keyed to regard only — a crowded café and a
+  locked bedroom are mechanically identical. Privacy is exactly the environmental factor
+  this product wants and it costs one field.
+- **D.3 · `SceneFrame`** — T1. See §6.4 — the composed read
+  `{ indoor, privacy, proximity, intimate, temp, light, noise }`. Resolves corpus tension
+  C6 (chat has no `ExposureMask`, which blocks `deriveArousalSigns` and the
+  intimacy-notes chat port).
+- **D.4 · proximity within a scene** — T2. Across the room vs. in her lap. The session
+  lane has `proximity.ts`; chat has nothing. Feeds `SceneFrame` and intimacy staging. A
+  continuity-tracker field, not a system.
+- **D.5 · chat story map (places graph, read-only)** — T4/UI. Already parked in
+  `deferred.plan.md` as "garnish." `lib/world-graph-layout.ts` + `world-map-graph.tsx`
+  were written generically and would just work. Agreed: garnish. Listed for
+  completeness.
+- **D.6 · travel time / pathfinding / movement authority** — no tier. **Do not build.**
+  This is the thing that broke. Skips are the time mover; the plan arrival/exit license
+  is the one principled don't-teleport exception and it is _granted by a commitment, not
+  computed from a path_. That design is correct — leave it.
 
 ### §E — Social
 
-| #   | Candidate                                  | Tier   | Notes                                                                                                                                                                                                                                                                                                                               |
-| --- | ------------------------------------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E.1 | **`attraction` — the reserved third axis** | T1/T2  | Already a reserved record field (a record addition, never a migration). Familiarity ratchets, regard is volatile, attraction is… unbuilt. In a romance product this is a conspicuous gap and the cheapest axis anyone will ever add.                                                                                                |
-| E.2 | **jealousy / audience effects**            | **T2** | Affection toward X in front of Y should move Y. A pulse field — the pulse already sees the exchange and proposes regard deltas. **Zero new calls, high drama yield, ensemble-lane native.** Probably the best value/cost ratio in this section.                                                                                     |
-| E.3 | **knowledge propagation (gossip)**         | **T4** | Facts already route per-member so members know _different things_ (offscreen-life ruling C). Gossip = a meanwhile development that **copies a fact into another member's memory group** with a `heardFrom` tag. Real information spread, riding the job that already runs. Fold it into the meanwhile pass; do not build a sibling. |
-| E.4 | **belief vs. truth**                       | T1     | `facts.canon = false` (belief-only, a told lie) **already exists and is underused**. Drives already ship a scoped lie license. Wire the two: she believes X, X is false, the divergence persists and can be discovered. The column is sitting there.                                                                                |
-| E.5 | **NPC↔NPC relationship state**             | T2     | Ruling D (matrix never machine-edited) is right for _authored canon_ but caps how much NPC social life can actually change — today it can only accrete facts. A **derived** relationship read over accumulated NPC↔NPC facts respects the ruling and still lets things move.                                                        |
-| E.6 | **reputation**                             | T2     | What the wider cast believes about the player. A derived read over facts tagged by subject, not a new store.                                                                                                                                                                                                                        |
-| E.7 | **cast promotion (supporting → roster)**   | T3     | Deferred in two docs; the meanwhile pass explicitly never promotes. A living world needs the path. Blocked on §6.6 (LOD), not on this doc.                                                                                                                                                                                          |
-| E.8 | **group dynamics**                         | T2     | Who's talking to whom; who's been quiet. `ensembleQuietThreshold` and `quiet_exchanges` exist.                                                                                                                                                                                                                                      |
+- **E.1 · `attraction` — the reserved third axis** — T1/T2. Already a reserved record
+  field (a record addition, never a migration). Familiarity ratchets, regard is volatile,
+  attraction is… unbuilt. In a romance product this is a conspicuous gap and the cheapest
+  axis anyone will ever add.
+- **E.2 · jealousy / audience effects** — **T2**. Affection toward X in front of Y should
+  move Y. A pulse field — the pulse already sees the exchange and proposes regard deltas.
+  **Zero new calls, high drama yield, ensemble-lane native.** Probably the best
+  value/cost ratio in this section.
+- **E.3 · knowledge propagation (gossip)** — **T4**. Facts already route per-member so
+  members know _different things_ (offscreen-life ruling C). Gossip = a meanwhile
+  development that **copies a fact into another member's memory group** with a `heardFrom`
+  tag. Real information spread, riding the job that already runs. Fold it into the
+  meanwhile pass; do not build a sibling.
+- **E.4 · belief vs. truth** — T1. `facts.canon = false` (belief-only, a told lie)
+  **already exists and is underused**. Drives already ship a scoped lie license. Wire the
+  two: she believes X, X is false, the divergence persists and can be discovered. The
+  column is sitting there.
+- **E.5 · NPC↔NPC relationship state** — T2. Ruling D (matrix never machine-edited) is
+  right for _authored canon_ but caps how much NPC social life can actually change —
+  today it can only accrete facts. A **derived** relationship read over accumulated
+  NPC↔NPC facts respects the ruling and still lets things move.
+- **E.6 · reputation** — T2. What the wider cast believes about the player. A derived
+  read over facts tagged by subject, not a new store.
+- **E.7 · cast promotion (supporting → roster)** — T3. Deferred in two docs; the
+  meanwhile pass explicitly never promotes. A living world needs the path. Blocked on
+  §6.6 (LOD), not on this doc.
+- **E.8 · group dynamics** — T2. Who's talking to whom; who's been quiet.
+  `ensembleQuietThreshold` and `quiet_exchanges` exist.
 
 ### §F — Mind & motivation
 
-| #   | Candidate                        | Tier   | Notes                                                                                                                                                                                                                                                                                 |
-| --- | -------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F.1 | **The salience bus**             | **T0** | See §6.3. The corpus's clearest unowned seam (tension C5): `buildInitiativeCue` has accreted five input classes with **no priority model and no budget owner**. Every idea in this doc wants to push a want into it. **This is the prerequisite for the catalog, not an item in it.** |
-| F.2 | **needs → wants**                | T0     | **Planned** (body-needs §4): a deficit read going negative emits `{ kind, urgency, want }` — _"the sign is the gate, so 'she is overdue for X' needs no per-meter threshold table."_ Elegant; generalize it to every reserve.                                                         |
-| F.3 | **attention / what she noticed** | T2     | The session lane has the attention × salience witness matrix; chat has regex focus reads. Not obviously needed at 1-on-1; needed at N characters.                                                                                                                                     |
-| F.4 | **theory of mind**               | T2     | What she thinks _the player_ feels. A pulse field at most. Easy to over-build; the narrator already does this implicitly and probably better.                                                                                                                                         |
-| F.5 | **anticipation / dread**         | T0     | Falls out of `derivePlanSalience`'s `imminent` — an approaching plan she _doesn't_ want is dread. Free.                                                                                                                                                                               |
+- **F.1 · the salience bus** — **T0**. See §6.3. The corpus's clearest unowned seam
+  (tension C5): `buildInitiativeCue` has accreted five input classes with **no priority
+  model and no budget owner**. Every idea in this doc wants to push a want into it.
+  **This is the prerequisite for the catalog, not an item in it.**
+- **F.2 · needs → wants** — T0. **Planned** (body-needs §4): a deficit read going negative
+  emits `{ kind, urgency, want }` — _"the sign is the gate, so 'she is overdue for X'
+  needs no per-meter threshold table."_ Elegant; generalize it to every reserve.
+- **F.3 · attention / what she noticed** — T2. The session lane has the attention ×
+  salience witness matrix; chat has regex focus reads. Not obviously needed at 1-on-1;
+  needed at N characters.
+- **F.4 · theory of mind** — T2. What she thinks _the player_ feels. A pulse field at
+  most. Easy to over-build; the narrator already does this implicitly and probably
+  better.
+- **F.5 · anticipation / dread** — T0. Falls out of `derivePlanSalience`'s `imminent` —
+  an approaching plan she _doesn't_ want is dread. Free.
 
 ### §G — Objects & means
 
-| #   | Candidate                        | Tier   | Notes                                                                                                                                                                                                                         |
-| --- | -------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| G.1 | **`means` as an authored band**  | **T0** | Broke / getting by / comfortable / wealthy, as an authored attribute the narrator respects. **90% of the value of an economy for 1% of the cost**, and no transaction ledger to keep consistent. Strongly preferred over G.2. |
-| G.2 | **money & transactions**         | T3+    | Parked. A ledger every agent can desync. Ask what beat needs it that G.1 can't serve.                                                                                                                                         |
-| G.3 | **item acquisition during play** | T2     | Parked in `deferred.plan.md`: _"characters acquire items in play (purchases, gifts) that become owned at acquisition time — a second provenance path the items model doesn't have yet."_                                      |
-| G.4 | **gifts**                        | T1     | A fact + an item + a milestone. Romance-lane native. Composes with G.1 (what she can afford), B.6 (holidays), C.5 (birthdays).                                                                                                |
-| G.5 | **consumables**                  | T1     | The `drink` chip consumes nothing from nowhere. Minor; only worth it if G.3 lands.                                                                                                                                            |
+- **G.1 · `means` as an authored band** — **T0**. Broke / getting by / comfortable /
+  wealthy, as an authored attribute the narrator respects. **90% of the value of an
+  economy for 1% of the cost**, and no transaction ledger to keep consistent. Strongly
+  preferred over G.2.
+- **G.2 · money & transactions** — T3+. Parked. A ledger every agent can desync. Ask what
+  beat needs it that G.1 can't serve.
+- **G.3 · item acquisition during play** — T2. Parked in `deferred.plan.md`:
+  _"characters acquire items in play (purchases, gifts) that become owned at acquisition
+  time — a second provenance path the items model doesn't have yet."_
+- **G.4 · gifts** — T1. A fact + an item + a milestone. Romance-lane native. Composes
+  with G.1 (what she can afford), B.6 (holidays), C.5 (birthdays).
+- **G.5 · consumables** — T1. The `drink` chip consumes nothing from nowhere. Minor; only
+  worth it if G.3 lands.
 
 ### §H — Life & continuity
 
-| #   | Candidate                 | Tier | Notes                                                                                                                                                                                                                                                                                                                                                                       |
-| --- | ------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| H.1 | **cross-chat continuity** | T?   | **The largest unscoped question in the corpus.** Everything keys to `(chatId)`; a character in two conversations has two lives, two bodies, two clocks. If chat becomes "less 1-on-1 focused," this stops being theoretical. Needs an owner ruling on the _product_ question (is a character one person or one per conversation?) before any design. Flagged, not proposed. |
-| H.2 | **long arcs**             | T4   | Life events over story-months. The meanwhile pass is the vehicle; nothing new needed.                                                                                                                                                                                                                                                                                       |
-| H.3 | **session-lane fate**     | —    | Not deleted, not maintained, not planned. "Batch 2 & 4 (session-side remainder)" sits in Next with no plans — and §C of it would port chat improvements _into_ the deprecated lane. Out of scope here; worth an explicit ruling somewhere.                                                                                                                                  |
+- **H.1 · cross-chat continuity** — tier unknown. **The largest unscoped question in the
+  corpus.** Everything keys to `(chatId)`; a character in two conversations has two
+  lives, two bodies, two clocks. If chat becomes "less 1-on-1 focused," this stops being
+  theoretical. Needs an owner ruling on the _product_ question (is a character one person
+  or one per conversation?) before any design. Flagged, not proposed.
+- **H.2 · long arcs** — T4. Life events over story-months. The meanwhile pass is the
+  vehicle; nothing new needed.
+- **H.3 · session-lane fate** — no tier. Not deleted, not maintained, not planned. "Batch
+  2 & 4 (session-side remainder)" sits in Next with no plans — and §C of it would port
+  chat improvements _into_ the deprecated lane. Out of scope here; worth an explicit
+  ruling somewhere.
 
 ---
 
@@ -439,31 +594,53 @@ should be derived instead.
   have one body and one clock, or two lives? Everything keys to `(chatId)` today. The
   answer gates cross-chat continuity, and "chat becomes less 1-on-1" makes it urgent. **A
   product ruling, not a design one.**
-  - It will be many worlds so we should try to do one or more of the following things, whichever is a better design:
-    - 1 Keep characters as isolated entities and put as much world-related design on sessions so characters can be used in many worlds.
-    - 2 Allow worlds to have different lore and gameplay mechanics but the core simulation mechanics stay the same.
-    - 3 Require characters to be associated with a world _type_ on creation. There can be template types and users can create their own. Characters are nested in those worlds so their attributes align with the world's settings
+  - Owner ruling (2026-07-16): it will be many worlds. Pursue one or more of the
+    following, whichever proves the better design:
+    1. Keep characters as isolated entities and put as much world-related design on
+       sessions, so characters can be used in many worlds.
+    2. Allow worlds to have different lore and gameplay mechanics while the core
+       simulation mechanics stay the same.
+    3. Require characters to be associated with a world _type_ on creation. There can be
+       template types and users can create their own; characters are nested in those
+       worlds so their attributes align with the world's settings.
 - **OQ2 — Do places get properties?** (§D) The narrow challenge to "no location model." The
   claim is that properties ≠ navigation and only navigation broke. If that's accepted, §B
   has a hook and D.2's privacy gate lands cheaply. If not, the environmental layer has
   nowhere to attach and §B shrinks to weather-as-mood-tint.
-  - We will bring back locations but they'll be simpler. It was quite tedious and messy the old way, but I still like the ability to build rich locations with furniture, linked characters as owners or inhabitants, inclusion in routines, mapping between locations, etc. Whatever we design will have to be able to be procedurally generated in the game as well but with strong guardrails to reduce false positives and prevent worlds with hundreds of duplicate or erroneous locations that are never used or confuse the game logic.
+  - Owner ruling (2026-07-16): locations come back, but simpler. The old way was tedious
+    and messy; what is worth keeping is the ability to build rich locations — furniture,
+    linked characters as owners or inhabitants, inclusion in routines, mapping between
+    locations. Whatever is designed must also be procedurally generable in-game, with
+    strong guardrails to reduce false positives and to prevent worlds with hundreds of
+    duplicate or erroneous locations that are never used or that confuse the game logic.
 - **OQ3 — Where's the ceiling on realism?** (A.4, A.15) Bladder, hormonal phase, fertility.
   The taxonomy says what a meter _is_; nothing says what a meter _should be_ in a romance
   product. Body-needs already frames it honestly: _"A romance scene interrupted by a
   bathroom beat is either charming or fatal, and nobody knows which until it is played."_
   Needs a rule, not case-by-case rulings.
-  - There's no ceiling. We should order things as most useful to the game and develop those first but leave room to implement more niche and advanced systems as development continues. To your example about a romance scene being interrupted by a bathroom beat, we would allow some degree of _sway_ within these systems so if an npc is doing something it finds important (such as making love) they can hold off on eating, sleeping, etc. (to a degree. An exhausted person probably wouldn't want to have sex).
+  - Owner ruling (2026-07-16): there is no ceiling. Order the work most-useful-to-the-game
+    first, but leave room to implement more niche and advanced systems as development
+    continues. On the romance scene interrupted by a bathroom beat: allow some degree of
+    _sway_ within these systems, so an NPC doing something it finds important (such as
+    making love) can hold off on eating, sleeping and so on — to a degree; an exhausted
+    person probably wouldn't want to have sex.
 - **OQ4 — Does the player have a body?** (A.12, §4.7) Sim-tracked or player-declared?
-- Yes. This was modelled in the world sessions but we simplified it while testing character chat. I think we're ready to think about starting to bring this back and fleshing it out. The character must abide by most of the same rules as npcs but their initial contracts are simpler because we don't need to store personality and demeanor fields, since the player will be acting out the player character.
+  - Owner ruling (2026-07-16): yes. It was modelled in the world sessions and simplified
+    while testing character chat; it is close to time to bring it back and flesh it out.
+    The player character must abide by most of the same rules as NPCs, but its initial
+    contracts are simpler because personality and demeanor fields need not be stored —
+    the player acts the player character out.
 - **OQ5 — Does `desire` get scheduled?** (A.5) Arousal is knowingly mistuned until it lands,
   and it currently sits in no plan's slices. Either schedule it or accept the compromise
   permanently and say so.
-  - Yes it should get scheduled but we're still at a brainstorming phase, so slot it in where you think is logical and we'll move it if needed.
+  - Owner ruling (2026-07-16): yes, `desire` gets scheduled. This doc is still at the
+    brainstorming phase, so slot it wherever is logical; it can be moved later.
 - **OQ6 — What arbitrates the salience bus?** (6.3) Urgency alone, or a kind priority? And
   does a need _interrupt_ or only _color_? Body-needs OQ-B says "settle on the first
   playtest, not in this doc" — agreed, but the bus has to exist to be playtested.
-  - GPT recommends we start breaking up the state management system as it is too siloed and I tend to agree. We will review its recommendations soon.
+  - Owner ruling (2026-07-16): agrees with the GPT design review's recommendation to
+    start breaking up the state management system, which is too siloed. Those
+    recommendations are still to be reviewed in full.
 - **OQ7 — Which overlay path wins?** Four separate paths move dispositions today
   (`stateDispositionOverlays` for arousal/intoxication, `regardDispositionOverlays`,
   `applyChatTraitOverlays`, `conditionMoodBaselineShift`) with **no declared composition
@@ -472,7 +649,8 @@ should be derived instead.
   potential fifth. In-house precedent to reuse: attribute provenance already has
   `SOURCE_PRECEDENCE` + `resolveProvenance`. Same shape, plus a total band-step budget so
   overlays can't stack into a different person.
-  - We may need to redesign these paths entirely so they function more elegantly, we'll take a deeper look at this soon.
+  - Owner ruling (2026-07-16): these paths may need redesigning entirely so they compose
+    more elegantly. A deeper look is still owed.
 
 ---
 

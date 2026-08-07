@@ -47,21 +47,36 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 > OpenRouter's advertised params don't guarantee behavior) — **test with it before
 > promoting it to a tool/agent role.** Context 131K, $3/$6 per 1M in/out.
 
-| Var | Default | Purpose |
-| --- | --- | --- |
-| `DATABASE_URL` | `postgresql://vesper:vesper_dev_password@localhost:5435/vesper_dev` | App database |
-| `OPENROUTER_API_KEY` | — | All text models + embeddings. Leave unset to run in demo mode (deterministic narrative, placeholder images) |
-| `REPLICATE_API_TOKEN` | — | **The image backend.** Every image — avatars, portrait variants, chat scenes, item/location shots — renders through Replicate ([images.md](images.md) §Providers). Absent outside demo mode ⇒ every render fails the row with `REPLICATE_API_TOKEN not configured` |
-| `REPLICATE_PREDICTION_TIMEOUT_MS` | `300000` (5m) | Prediction deadline — clamped to 30s–30m, sent as Replicate's `Cancel-After` **and** used as this client's poll cutoff, so both expire together |
-| `REPLICATE_SAFE_MODE` | `false` | Replicate safety-checker toggle; only sent to models whose schema declares the input |
-| `BETTER_AUTH_SECRET` | — | **Required.** Signs sessions/cookies ([auth.md](auth.md)); `openssl rand -base64 32` |
-| `BETTER_AUTH_URL` | `http://localhost:3200` | App origin (OAuth callbacks + CSRF origin check) |
-| `GOOGLE_/GITHUB_/DISCORD_CLIENT_ID`+`_SECRET` | — | OAuth providers — a provider is enabled only when **both** are set; absent ⇒ off |
-| `ALLOW_SIGNUP` | `false` (off) | Sign-up gate — email/OAuth/magic-link registration is disabled unless `true` ([auth.md](auth.md) §Sign-up control) |
-| `BETTER_AUTH_TRUSTED_ORIGINS` | — | Comma-separated extra allowed origins (CSRF); needed for LAN dev, e.g. `http://<lan-ip>:3200` |
-| `RESEND_API_KEY` / `SMTP_URL` | — | Names **reserved** for a future magic-link email sender. **Inert in v1** — no code reads them and setting one enables nothing ([auth.md](auth.md) §Magic link) |
-| `DEV_PASSWORD` | `vesper-dev-password` | Dev/QA: password the seed sets on the Player + uxtest admin for `POST /api/dev/impersonate` (local dev only — the endpoint 404s on the production Fly build) |
-| `LOG_LEVEL` | `info` | Logger |
+- **`DATABASE_URL`** — app database. Default
+  `postgresql://vesper:vesper_dev_password@localhost:5435/vesper_dev`.
+- **`OPENROUTER_API_KEY`** — all text models + embeddings; no default. Leave it unset to
+  run in demo mode (deterministic narrative, placeholder images).
+- **`REPLICATE_API_TOKEN`** — **the image backend**; no default. Every image (avatars,
+  portrait variants, chat scenes, item/location shots) renders through Replicate
+  ([images.md](images.md) §Providers). Absent outside demo mode ⇒ every render fails the
+  row with `REPLICATE_API_TOKEN not configured`.
+- **`REPLICATE_PREDICTION_TIMEOUT_MS`** — prediction deadline; default `300000` (5m),
+  clamped to 30s–30m. Sent as Replicate's `Cancel-After` **and** used as this client's poll
+  cutoff, so both expire together.
+- **`REPLICATE_SAFE_MODE`** — Replicate safety-checker toggle; default `false`. Only sent to
+  models whose schema declares the input.
+- **`BETTER_AUTH_SECRET`** — **required**, no default. Signs sessions/cookies
+  ([auth.md](auth.md)); generate with `openssl rand -base64 32`.
+- **`BETTER_AUTH_URL`** — app origin (OAuth callbacks + CSRF origin check). Default
+  `http://localhost:3200`.
+- **`GOOGLE_/GITHUB_/DISCORD_CLIENT_ID`** + **`_SECRET`** — OAuth providers; no default. A
+  provider is enabled only when **both** are set; absent ⇒ off.
+- **`ALLOW_SIGNUP`** — sign-up gate; default `false` (off). Email/OAuth/magic-link
+  registration is disabled unless `true` ([auth.md](auth.md) §Sign-up control).
+- **`BETTER_AUTH_TRUSTED_ORIGINS`** — comma-separated extra allowed origins (CSRF); no
+  default. Needed for LAN dev, e.g. `http://<lan-ip>:3200`.
+- **`RESEND_API_KEY`** / **`SMTP_URL`** — names **reserved** for a future magic-link email
+  sender; no default. **Inert in v1** — no code reads them and setting one enables nothing
+  ([auth.md](auth.md) §Magic link).
+- **`DEV_PASSWORD`** — dev/QA password the seed sets on the Player + uxtest admin for
+  `POST /api/dev/impersonate`; default `vesper-dev-password`. Local dev only — the endpoint
+  404s on the production Fly build.
+- **`LOG_LEVEL`** — logger level; default `info`.
 
 > Magic-link sign-in has no implemented email transport in v1, so it is
 > **dev-only**: locally the link is written to the server console (grep

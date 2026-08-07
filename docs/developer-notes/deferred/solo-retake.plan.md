@@ -1,7 +1,13 @@
 # Regenerate for solo replies
 
-Status: draft (stub — successor-engine backlog item A3, parked 2026-07-23;
-promote per [CLAUDE.md](CLAUDE.md) before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Successor-engine backlog item A3, parked 2026-07-23; promote
+per [CLAUDE.md](CLAUDE.md) before building.
+
+Outcome (provisional): A player can regenerate a reply written while the
+character is away and get that reply re-rendered, so that Regenerate stops
+refusing — or quietly rewriting a different message — whenever the two are
+apart.
 
 ## What
 

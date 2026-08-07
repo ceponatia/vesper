@@ -1,7 +1,12 @@
 # Named daylight-band skips
 
-Status: draft (stub — successor-engine backlog item B12, parked 2026-07-23;
-promote per [CLAUDE.md](CLAUDE.md) before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Successor-engine backlog item B12, parked 2026-07-23; promote
+per [CLAUDE.md](CLAUDE.md) before building.
+
+Outcome (provisional): A player can jump to "next morning" or "later" with one
+tap instead of entering a number of minutes, so that skipping ahead lands on
+the time of day they pictured.
 
 ## What
 

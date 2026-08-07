@@ -1,5 +1,7 @@
 # Engine spec — kernel: identity, time, commands, events, persistence, scheduler (§1–§12)
 
+Status: companion to [engine.spec.md](engine.spec.md) — §1–§12, kernel.
+
 Part of the [engine.spec.md](engine.spec.md) contract set (split 2026-07-21).
 Section numbering is GLOBAL across the engine.spec.* files — cite sections as
 "engine.spec §N" exactly as before; the hub's index maps every § to its file. The
@@ -24,26 +26,26 @@ ontology of human behavior.
 
 ## 2. Terms
 
-| Term | Meaning |
-| --- | --- |
-| World type | Authored rules, packages, calendars, content constraints, and defaults |
-| World | One instantiated setting shared by one or more timelines |
-| Branch | One ordered, causally isolated timeline of a world |
-| Story time | Simulated time advanced only by committed game operations |
-| Sequence | Total event order within a branch |
-| Command | An authorized request to attempt a state transition |
-| Domain event | An immutable fact that the engine resolved as having occurred |
-| Scheduled trigger | A durable request to evaluate something at a future story time |
-| Projection | Rebuildable current state derived from events |
-| Viewpoint | Actor or authorized observer for whom context is compiled |
-| Observation | Evidence available to a viewpoint through a channel |
-| Assertion | A proposition claimed by a source; not necessarily true |
-| Belief | A holder's confidence in an assertion or proposition |
-| Engagement | A conversation or interaction that claims attention and may be physical or remote |
-| NarrativeCut | Immutable, perspective-safe input describing one committed presentation interval |
-| Armed effect | A bounded semantic effect that commits only if narration actually enacts it |
-| Soft canon | Scoped, revisable detail admitted without changing hard physical state |
-| LOD | Level of detail for simulation work or inference attention |
+| Term              | Meaning                                                                           |
+| ----------------- | --------------------------------------------------------------------------------- |
+| World type        | Authored rules, packages, calendars, content constraints, and defaults            |
+| World             | One instantiated setting shared by one or more timelines                          |
+| Branch            | One ordered, causally isolated timeline of a world                                |
+| Story time        | Simulated time advanced only by committed game operations                         |
+| Sequence          | Total event order within a branch                                                 |
+| Command           | An authorized request to attempt a state transition                               |
+| Domain event      | An immutable fact that the engine resolved as having occurred                     |
+| Scheduled trigger | A durable request to evaluate something at a future story time                    |
+| Projection        | Rebuildable current state derived from events                                     |
+| Viewpoint         | Actor or authorized observer for whom context is compiled                         |
+| Observation       | Evidence available to a viewpoint through a channel                               |
+| Assertion         | A proposition claimed by a source; not necessarily true                           |
+| Belief            | A holder's confidence in an assertion or proposition                              |
+| Engagement        | A conversation or interaction that claims attention and may be physical or remote |
+| NarrativeCut      | Immutable, perspective-safe input describing one committed presentation interval  |
+| Armed effect      | A bounded semantic effect that commits only if narration actually enacts it       |
+| Soft canon        | Scoped, revisable detail admitted without changing hard physical state            |
+| LOD               | Level of detail for simulation work or inference attention                        |
 
 ## 3. Non-negotiable invariants
 
@@ -105,46 +107,46 @@ ontology of human behavior.
 The initial deployment MAY be a modular monolith. These boundaries are about ownership,
 not network calls.
 
-| Component | Required responsibility |
-| --- | --- |
-| Command gateway | Authenticate principal, validate envelope, enforce idempotency and controller grants |
-| Branch sequencer | Serialize accepted operations per branch and assign sequence numbers |
-| Pure kernel | Validate domain preconditions and resolve commands into events |
-| Scheduler | Evaluate durable triggers and analytically advance story time |
-| Core projector | Update invariant-critical query state in the command transaction |
-| Async projector | Build search, analytics, summaries, and embeddings through the outbox |
-| Live-scene arbiter | Reconcile an engagement with due and upcoming world pressure |
-| NPC policy | Choose routine legal actions deterministically |
-| Deliberator | Rarely choose among a bounded legal candidate set |
-| Perception engine | Compute observation eligibility and evidence |
-| Knowledge ledger | Store assertions, beliefs, provenance, contradictions, and supersedence |
-| Context compiler | Produce one redacted NarrativeCut |
-| Narrator | Render prose from that cut |
-| Presentation auditor | Flag impossible or leaked claims; never mutate truth |
-| Memory indexer | Represent eligible records for semantic recall |
+| Component            | Required responsibility                                                              |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| Command gateway      | Authenticate principal, validate envelope, enforce idempotency and controller grants |
+| Branch sequencer     | Serialize accepted operations per branch and assign sequence numbers                 |
+| Pure kernel          | Validate domain preconditions and resolve commands into events                       |
+| Scheduler            | Evaluate durable triggers and analytically advance story time                        |
+| Core projector       | Update invariant-critical query state in the command transaction                     |
+| Async projector      | Build search, analytics, summaries, and embeddings through the outbox                |
+| Live-scene arbiter   | Reconcile an engagement with due and upcoming world pressure                         |
+| NPC policy           | Choose routine legal actions deterministically                                       |
+| Deliberator          | Rarely choose among a bounded legal candidate set                                    |
+| Perception engine    | Compute observation eligibility and evidence                                         |
+| Knowledge ledger     | Store assertions, beliefs, provenance, contradictions, and supersedence              |
+| Context compiler     | Produce one redacted NarrativeCut                                                    |
+| Narrator             | Render prose from that cut                                                           |
+| Presentation auditor | Flag impossible or leaked claims; never mutate truth                                 |
+| Memory indexer       | Represent eligible records for semantic recall                                       |
 
 ## 5. Identity model
 
 All identities MUST be opaque, stable, and independent of display names.
 
-| Identity | Purpose |
-| --- | --- |
-| WorldTypeId | Versioned package and authored-rule selection |
-| WorldId | Instantiated setting |
-| WorldBranchId | Causally isolated timeline |
-| CharacterTemplateId | Reusable authored character definition |
-| WorldCharacterId | One instantiated character body and life in one world |
-| PlayerCharacterId | A WorldCharacter role controlled by a player principal |
-| LocationId | Stable place |
-| ZoneId | Sub-area with its own access, privacy, and occupancy |
-| LinkId | Traversable connection between zones or locations |
-| ItemId | Stable material object or fungible lot |
-| ActionDefinitionId | Versioned action contract |
-| ActivityInstanceId | One attempted action over time |
-| CommitmentId | One obligation, promise, appointment, reservation, or routine |
-| JourneyId | One in-transit movement |
-| EngagementId | One conversation or interaction |
-| EventId | Globally unique event identifier |
+| Identity            | Purpose                                                       |
+| ------------------- | ------------------------------------------------------------- |
+| WorldTypeId         | Versioned package and authored-rule selection                 |
+| WorldId             | Instantiated setting                                          |
+| WorldBranchId       | Causally isolated timeline                                    |
+| CharacterTemplateId | Reusable authored character definition                        |
+| WorldCharacterId    | One instantiated character body and life in one world         |
+| PlayerCharacterId   | A WorldCharacter role controlled by a player principal        |
+| LocationId          | Stable place                                                  |
+| ZoneId              | Sub-area with its own access, privacy, and occupancy          |
+| LinkId              | Traversable connection between zones or locations             |
+| ItemId              | Stable material object or fungible lot                        |
+| ActionDefinitionId  | Versioned action contract                                     |
+| ActivityInstanceId  | One attempted action over time                                |
+| CommitmentId        | One obligation, promise, appointment, reservation, or routine |
+| JourneyId           | One in-transit movement                                       |
+| EngagementId        | One conversation or interaction                               |
+| EventId             | Globally unique event identifier                              |
 
 Every branch-scoped mutable row MUST include WorldBranchId. An entity display name MUST
 NOT be used as a foreign key, route target, access target, or memory-eligibility key.
@@ -231,15 +233,15 @@ The causing event MUST then record the relevant result, inputs, and derivation v
 
 Every command has a principal and capability set.
 
-| Principal kind | Normal authority |
-| --- | --- |
-| player | Controlled player actors and explicit player-owned UI operations |
-| npc_policy | One NPC actor under deterministic policy |
-| npc_deliberator | Selection among candidate IDs already legal for one NPC |
-| system | Due triggers, mechanical consequences, projection repair |
-| director | Future pressures, opportunities, casting proposals |
-| storyteller | Explicit world-type-defined privileged operations |
-| migration | Versioned, audited data conversion |
+| Principal kind  | Normal authority                                                 |
+| --------------- | ---------------------------------------------------------------- |
+| player          | Controlled player actors and explicit player-owned UI operations |
+| npc_policy      | One NPC actor under deterministic policy                         |
+| npc_deliberator | Selection among candidate IDs already legal for one NPC          |
+| system          | Due triggers, mechanical consequences, projection repair         |
+| director        | Future pressures, opportunities, casting proposals               |
+| storyteller     | Explicit world-type-defined privileged operations                |
+| migration       | Versioned, audited data conversion                               |
 
 Controller grants MUST be checked independently of narrative viewpoint. Seeing an NPC,
 loving an NPC, or authoring the character does not by itself grant moment-to-moment
@@ -337,20 +339,20 @@ sequence, payload, ruleset version, and recorded deterministic inputs.
 
 The first event catalog SHOULD include:
 
-| Family | Examples |
-| --- | --- |
-| world | WorldCreated, BranchForked, RulesetAdopted |
-| identity | CharacterInstantiated, ItemInstantiated, LocationInstantiated |
-| commitment | CommitmentCreated, CommitmentUpdated, PressureRaised, CommitmentKept, CommitmentLate, CommitmentMissed, CommitmentCancelled |
-| activity | ActivityQueued, ActivityStarted, ActivityPaused, ActivityInterrupted, ActivityResumed, ActivityCompleted, ActivityFailed, ActivityCancelled |
-| movement | JourneyPlanned, ActorDeparted, JourneyDelayed, JourneyInterrupted, ActorArrived, JourneyAbandoned |
-| access | AccessGranted, AccessRevoked, EntryAttempted, EntryDenied, ZoneEntered, ZoneLeft |
-| engagement | EngagementOpened, EngagementWindingDown, EngagementInterrupted, EngagementEnded, PressureAcknowledged |
-| material | ItemTransferred, ItemConsumed, ResourceReserved, ResourceReleased, ItemDamaged |
-| body | BodyThresholdCrossed, ConditionAcquired, ConditionChanged, ConditionResolved, BodySourceApplied |
-| knowledge | ObservationRecorded, AssertionMade, DisclosureMade, BeliefUpdated, AssertionContradicted, AssertionSuperseded |
-| relationship | RelationshipEntryAuthored, RelationshipChangeRecorded, ConsentEscalationResolved |
-| privileged | StorytellerRelocation, StorytellerRetcon, MigrationApplied |
+| Family       | Examples                                                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| world        | WorldCreated, BranchForked, RulesetAdopted                                                                                                  |
+| identity     | CharacterInstantiated, ItemInstantiated, LocationInstantiated                                                                               |
+| commitment   | CommitmentCreated, CommitmentUpdated, PressureRaised, CommitmentKept, CommitmentLate, CommitmentMissed, CommitmentCancelled                 |
+| activity     | ActivityQueued, ActivityStarted, ActivityPaused, ActivityInterrupted, ActivityResumed, ActivityCompleted, ActivityFailed, ActivityCancelled |
+| movement     | JourneyPlanned, ActorDeparted, JourneyDelayed, JourneyInterrupted, ActorArrived, JourneyAbandoned                                           |
+| access       | AccessGranted, AccessRevoked, EntryAttempted, EntryDenied, ZoneEntered, ZoneLeft                                                            |
+| engagement   | EngagementOpened, EngagementWindingDown, EngagementInterrupted, EngagementEnded, PressureAcknowledged                                       |
+| material     | ItemTransferred, ItemConsumed, ResourceReserved, ResourceReleased, ItemDamaged                                                              |
+| body         | BodyThresholdCrossed, ConditionAcquired, ConditionChanged, ConditionResolved, BodySourceApplied                                             |
+| knowledge    | ObservationRecorded, AssertionMade, DisclosureMade, BeliefUpdated, AssertionContradicted, AssertionSuperseded                               |
+| relationship | RelationshipEntryAuthored, RelationshipChangeRecorded, ConsentEscalationResolved                                                            |
+| privileged   | StorytellerRelocation, StorytellerRetcon, MigrationApplied                                                                                  |
 
 Names may change, but distinct causal concepts MUST NOT be collapsed into a generic
 StateChanged event.
@@ -388,15 +390,15 @@ PostgreSQL remains a suitable first authority store.
 
 ### 10.1 Authority tables
 
-| Table | Key fields and purpose |
-| --- | --- |
-| sim_worlds | world ID, world type, seed, ruleset version, status |
-| sim_branches | branch ID, world ID, parent branch, fork sequence, head sequence, version, story second |
-| sim_commands | envelope, idempotency key, status, result or rejection |
-| sim_events | branch sequence, envelope columns, schema-versioned payload |
-| sim_scheduled_triggers | due story second, priority, kind, target, payload, state, unique logical key |
-| sim_outbox | sequence range, consumer kind, payload, attempts, next retry |
-| sim_snapshots | branch, sequence, projection kind, schema version, checksum, payload |
+| Table                  | Key fields and purpose                                                                  |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| sim_worlds             | world ID, world type, seed, ruleset version, status                                     |
+| sim_branches           | branch ID, world ID, parent branch, fork sequence, head sequence, version, story second |
+| sim_commands           | envelope, idempotency key, status, result or rejection                                  |
+| sim_events             | branch sequence, envelope columns, schema-versioned payload                             |
+| sim_scheduled_triggers | due story second, priority, kind, target, payload, state, unique logical key            |
+| sim_outbox             | sequence range, consumer kind, payload, attempts, next retry                            |
+| sim_snapshots          | branch, sequence, projection kind, schema version, checksum, payload                    |
 
 The database MUST enforce uniqueness for:
 

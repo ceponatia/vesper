@@ -85,18 +85,35 @@ Full design, flags and decision rule: `scripts/eval/affordance-cues/README.md`.
 
 ## Scenario matrix
 
-| id | character | hair | wet | covering | air | expectation |
-| --- | --- | --- | --- | --- | --- | --- |
-| `rain-arrival-loose` | Wren (dense/thick/wavy) | loose | soaked → damp, cause rain | none | outdoor breeze → indoors | clumping, rain provenance, then a band change |
-| `hooded-downpour-braid` | Wren | braid | soaked, cause rain | opaque hood | gusting → indoors | bound-mass clumping; wind suppressed by binding |
-| `clifftop-wind-dry` | Ilse (sparse/fine/straight) | loose | dry | none | breeze → gusting → indoors | whole-hair motion, rising a band, then silence |
-| `bun-in-gale` | Wren | bun | soaked → damp, cause splash | none | gusting → indoors | clumping; wind suppressed by pinning |
-| `bath-immersion-still` | Wren | loose | soaked → damp, cause immersion | none | indoors, still | clumping with **no** rain clause |
-| `soaked-and-windy` | Wren | loose | soaked → damp, cause rain | none | outdoor strong wind | water weight must beat the wind |
-| `sheer-scarf-splash` | Wren | loose | soaked → damp, cause splash | sheer scarf | indoors, still | clumping through partial coverage |
-| `damp-ends-in-gust` | Ilse | loose | damp, cause rain | none | gusting → indoors | motion on damp (not saturated) hair |
-| `silent-dry-still-loose` | Wren | loose | dry | none | indoors, still | **silence control** |
-| `silent-dry-still-braid` | Ilse | braid | dry | none | outdoors, dead calm | **silence control** |
+Ten scenarios. Character, hair arrangement, and committed wetness:
+
+| id                       | character                   | hair  | wet                            |
+| ------------------------ | --------------------------- | ----- | ------------------------------ |
+| `rain-arrival-loose`     | Wren (dense/thick/wavy)     | loose | soaked → damp, cause rain      |
+| `hooded-downpour-braid`  | Wren                        | braid | soaked, cause rain             |
+| `clifftop-wind-dry`      | Ilse (sparse/fine/straight) | loose | dry                            |
+| `bun-in-gale`            | Wren                        | bun   | soaked → damp, cause splash    |
+| `bath-immersion-still`   | Wren                        | loose | soaked → damp, cause immersion |
+| `soaked-and-windy`       | Wren                        | loose | soaked → damp, cause rain      |
+| `sheer-scarf-splash`     | Wren                        | loose | soaked → damp, cause splash    |
+| `damp-ends-in-gust`      | Ilse                        | loose | damp, cause rain               |
+| `silent-dry-still-loose` | Wren                        | loose | dry                            |
+| `silent-dry-still-braid` | Ilse                        | braid | dry                            |
+
+Head covering, air condition, and what the cue is expected to do:
+
+| id                       | covering    | air                        | expectation                                     |
+| ------------------------ | ----------- | -------------------------- | ----------------------------------------------- |
+| `rain-arrival-loose`     | none        | outdoor breeze → indoors   | clumping, rain provenance, then a band change   |
+| `hooded-downpour-braid`  | opaque hood | gusting → indoors          | bound-mass clumping; wind suppressed by binding |
+| `clifftop-wind-dry`      | none        | breeze → gusting → indoors | whole-hair motion, rising a band, then silence  |
+| `bun-in-gale`            | none        | gusting → indoors          | clumping; wind suppressed by pinning            |
+| `bath-immersion-still`   | none        | indoors, still             | clumping with **no** rain clause                |
+| `soaked-and-windy`       | none        | outdoor strong wind        | water weight must beat the wind                 |
+| `sheer-scarf-splash`     | sheer scarf | indoors, still             | clumping through partial coverage               |
+| `damp-ends-in-gust`      | none        | gusting → indoors          | motion on damp (not saturated) hair             |
+| `silent-dry-still-loose` | none        | indoors, still             | **silence control**                             |
+| `silent-dry-still-braid` | none        | outdoors, dead calm        | **silence control**                             |
 
 ## Deterministic results
 
@@ -175,24 +192,24 @@ exchanges carry no feature signal by construction:
 > The rounds below predate it, which is why their numbers exist only as this
 > transcription.
 
-| measure (per exchange unless noted) | cues | control |
-| --- | --- | --- |
-| contradictions | **0.13** | **0.13** |
-| repetitions | 0.08 | 0.00 |
-| static restatements | 0.13 | 0.08 |
-| specificity (1–5) | **4.38** | 4.00 |
-| naturalness (1–5) | 4.63 | 4.63 |
-| hair mentions | 1.00 | 0.71 |
-| judge preference — cue scenarios only | 4 | 4 (0 ties) |
-| judge preference — incl. the 2 silence controls | 4 | **6** |
+| measure (per exchange unless noted)             | cues     | control    |
+| ----------------------------------------------- | -------- | ---------- |
+| contradictions                                  | **0.13** | **0.13**   |
+| repetitions                                     | 0.08     | 0.00       |
+| static restatements                             | 0.13     | 0.08       |
+| specificity (1–5)                               | **4.38** | 4.00       |
+| naturalness (1–5)                               | 4.63     | 4.63       |
+| hair mentions                                   | 1.00     | 0.71       |
+| judge preference — cue scenarios only           | 4        | 4 (0 ties) |
+| judge preference — incl. the 2 silence controls | 4        | **6**      |
 
 The silence controls — where both arms received byte-identical prompts, so any
 preference is pure label/sampling noise — went 2–0 to "control", which is the
 noise floor — and both of the "6"'s extra control picks came from exactly
 those two scenarios, so among scenarios where the arms actually differed the
-preference was a dead 4–4 tie. (The round-1 runner pooled the buckets; the
-rematch runner reports them separately. Flagged by an automated PR review,
-corrected here — the pooled figure overstated the control lean.)
+preference was a dead 4–4 tie. The round-1 runner pooled the two buckets, which
+overstated the control lean; the rematch runner reports them separately, as the
+figures above do.
 
 Against the decision rule (§Re-running it): contradictions were **not** lower
 and repetition **was** higher — the rule fails on both clauses. The specificity
@@ -223,11 +240,11 @@ matrix usually does — carry both of these at once:
 
 Cross-tab over the 30 exchanges:
 
-| allowance | cue offered | no cue |
-| --- | --- | --- |
-| `none` | **11** | 6 |
-| `visual_accent` | 1 | 7 |
-| `close_range_hook` | 2 | 3 |
+| allowance          | cue offered | no cue |
+| ------------------ | ----------- | ------ |
+| `none`             | **11**      | 6      |
+| `visual_accent`    | 1           | 7      |
+| `close_range_hook` | 2           | 3      |
 
 **11 of the 14 cue-bearing exchanges (79%) carry an allowance of `none`.** The
 exact ratio is partly a fixture artifact — cues fire when state changes, which in
@@ -256,12 +273,12 @@ offered physical cue as an exception when one is present.
 Kept as the record of the first attempt; the live half ran the next day on a
 replaced key — see §Live results.
 
-| step | status |
-| --- | --- |
-| Fixture matrix, reads, cue projection, prompts | complete, all self-checks pass |
-| 60 paired narrator generations | **not run** — provider auth failed |
-| 10 blinded judge calls | **not run** |
-| Contradiction / repetition / specificity / naturalness numbers | **absent** |
+| step                                                           | status                             |
+| -------------------------------------------------------------- | ---------------------------------- |
+| Fixture matrix, reads, cue projection, prompts                 | complete, all self-checks pass     |
+| 60 paired narrator generations                                 | **not run** — provider auth failed |
+| 10 blinded judge calls                                         | **not run**                        |
+| Contradiction / repetition / specificity / naturalness numbers | **absent**                         |
 
 The key in `.env` (73 chars, `sk-or-v1-…`, file last written 2026-06-23) returns
 `401 User not found` from OpenRouter's own key-introspection endpoint, which means
@@ -293,8 +310,9 @@ pnpm eval:affordance-cues
 The runner refuses to spend if any self-check fails or the key is rejected. Read
 the decision rule in `scripts/eval/affordance-cues/README.md` before interpreting
 the output; the headline test is **contradictions per exchange, lower in the cue
-arm, with repetition not higher**. Fill in the numbers here and the recommendation
-above becomes a real ruling.
+arm, with repetition not higher**. The campaign reached its terminal verdict on
+2026-07-29, so a further run is new design work rather than a continuation of
+this trial.
 
 ## Rematch log
 

@@ -1,5 +1,7 @@
 # Engine spec — operations: branching, boundaries, resilience, testing, rulings (§29–§40)
 
+Status: companion to [engine.spec.md](engine.spec.md) — §29–§40, operations.
+
 Part of the [engine.spec.md](engine.spec.md) contract set (split 2026-07-21).
 Section numbering is GLOBAL across the engine.spec.* files — cite sections as
 "engine.spec §N" exactly as before; the hub's index maps every § to its file. The
@@ -63,15 +65,15 @@ meter” without a privileged migration/storyteller capability.
 
 A recommended TypeScript organization:
 
-| Package | Contents |
-| --- | --- |
-| engine-contracts | Branded IDs, schemas, commands, events, projection views |
-| engine-kernel | Pure validators, resolvers, rates, routes, policies |
-| engine-runtime | Transactions, sequencer, scheduler, outbox |
-| engine-projections | Core and async projectors, replay |
-| engine-knowledge | Observation, assertion, belief, relationship, eligibility |
-| engine-narrative | NarrativeCut compiler, ArmedEffect, auditor |
-| engine-adapters | Current chat, authored schedule, legacy import |
+| Package            | Contents                                                  |
+| ------------------ | --------------------------------------------------------- |
+| engine-contracts   | Branded IDs, schemas, commands, events, projection views  |
+| engine-kernel      | Pure validators, resolvers, rates, routes, policies       |
+| engine-runtime     | Transactions, sequencer, scheduler, outbox                |
+| engine-projections | Core and async projectors, replay                         |
+| engine-knowledge   | Observation, assertion, belief, relationship, eligibility |
+| engine-narrative   | NarrativeCut compiler, ArmedEffect, auditor               |
+| engine-adapters    | Current chat, authored schedule, legacy import            |
 
 The pure kernel MUST have no database, network, file, process clock, model, or global
 random dependency.
@@ -248,20 +250,20 @@ boundaries.
 
 ### 36.4 Live-scene scenario tests
 
-| Scenario | Required result |
-| --- | --- |
-| 4pm shift | advance warning, decision, departure, travel, arrival or explicit consequence |
-| player asks NPC to stay | NPC choice changes; commitment and travel time remain |
-| sleep | actor unavailable until a legal wake cue or choice |
-| shower | no teleport or private-cause leak; channel behavior follows policy |
-| summon attempt | request is routed to NPC controller; no instant co-location |
-| doorstep and barge-in | exterior arrival, separate entry check, explicit trespass if allowed |
-| competing chats | one physical body reservation wins; other request gets legal alternative |
-| route delay | arrival time changes through a causal event |
-| impossible narrator prose | auditor rejects or rerenders; projection remains correct |
-| rerender | prose may differ; all state and memory hashes remain equal |
-| retake | child branch differs; parent remains unchanged |
-| viewpoint pair | observer recalls material event; non-observer cannot |
+| Scenario                  | Required result                                                               |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| 4pm shift                 | advance warning, decision, departure, travel, arrival or explicit consequence |
+| player asks NPC to stay   | NPC choice changes; commitment and travel time remain                         |
+| sleep                     | actor unavailable until a legal wake cue or choice                            |
+| shower                    | no teleport or private-cause leak; channel behavior follows policy            |
+| summon attempt            | request is routed to NPC controller; no instant co-location                   |
+| doorstep and barge-in     | exterior arrival, separate entry check, explicit trespass if allowed          |
+| competing chats           | one physical body reservation wins; other request gets legal alternative      |
+| route delay               | arrival time changes through a causal event                                   |
+| impossible narrator prose | auditor rejects or rerenders; projection remains correct                      |
+| rerender                  | prose may differ; all state and memory hashes remain equal                    |
+| retake                    | child branch differs; parent remains unchanged                                |
+| viewpoint pair            | observer recalls material event; non-observer cannot                          |
 
 ### 36.5 Quality evaluation
 

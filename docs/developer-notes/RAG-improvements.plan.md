@@ -11,8 +11,12 @@ this doc's original framing: initial impressions on the seven RAG ideas in
 [user-guidance/ideas.md](user-guidance/ideas.md) §RAG, **re-grounded against the
 codebase 2026-06-19** (the code moved a lot after the first draft — see the
 "What changed since first draft" callout). Nothing else here is settled; this doc
-captures where each idea touches the code, whether I agree, rough size,
+captures where each idea touches the code, an assessment of it, rough size,
 dependencies, and the open questions to resolve before any of it becomes a spec.
+
+Outcome: A player can rely on a character recalling what is relevant to the scene
+in front of them instead of stray details about people who are not there, so that
+replies stop dragging in facts nobody mentioned.
 
 Source of truth for current behaviour: [memory.md](../memory.md). Code lives in
 `src/server/memory/` (retrieval legs, lore gating, facts),
@@ -131,8 +135,9 @@ idea's work, not a freebie. Note also the inclusion channel is **three strands**
 how it interacts with the episode strand and the ≤8 cap, not just facts in
 isolation.
 
-The user's sub-note — `isPresent` should drive *many* prompt injections, and
-non-present NPCs act via a **separate async, non-turn-blocking pipeline** —
+The sub-note attached to this idea in [user-guidance/ideas.md](user-guidance/ideas.md)
+— `isPresent` should drive *many* prompt injections, and non-present NPCs act via a
+**separate async, non-turn-blocking pipeline** —
 belongs with [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md)
 and [offscreen-simulation-spec.phase3.md](finished/offscreen-simulation-spec.phase3.md),
 not the retrieval layer. Keep this idea scoped to "presence as a retrieval/inclusion
@@ -177,7 +182,8 @@ is really idea #5 (witnessedBy + subjectId surfaced to retrieval), tracked there
 - **Size:** medium, self-contained (smaller now that logging exists). **Pairs
   with:** #1, measured by #6.
 - **Open question:** RRF `k` constant, and whether fusion is per-leg or across
-  legs (I lean per-leg — episodes/facts/lore stay separate channels downstream).
+  legs (per-leg is the working preference — episodes/facts/lore stay separate
+  channels downstream).
 
 ### 3. Centralize lore gating — agree, do first (wider surface, cheaper fix)
 
@@ -237,13 +243,13 @@ retrieval-layer hooks to keep in view so #1/#2 don't paint us into a corner:
   to gate against** until the write-side (told-lie / belief facts) lands, presumably
   with phase 6. Don't build the canon gate before there's canon-false data.
 
-I'd **not** re-plan the ledger here — just note that #2's provenance logging and
-#1's presence signal are the natural on-ramps, and defer the consumer to phase 6.
+The ledger is **not** re-planned here: #2's provenance logging and #1's presence
+signal are the natural on-ramps, and the consumer stays deferred to phase 6.
 
 ### 6. Retrieval evaluation harness — strong agree, arguably do first (still greenfield)
 
 Without this, every threshold/fusion change in #1, #2, #4 is "vibes in a trench
-coat" (the idea's own phrase, and it's right). The re-grounding confirms **no
+coat" (the idea's own phrase). The re-grounding confirms **no
 retrieval eval harness exists** — no precision@k / recall@k, no score-distribution
 code, no `*.fixture.json` anywhere (the `scripts/eval/`, `data/eval/`,
 `docs/scene-image-eval/` dirs are scene-**image** eval, unrelated). Existing
@@ -309,15 +315,19 @@ blocker the first draft hung step 3 on. Concrete first steps:
 
 ## Suggested sequencing
 
-| Order | Idea | Why here |
-| --- | --- | --- |
-| 1 | **#3** centralize lore gating | cheap, removes drift, clears scene/presence code before #1/#2 touch it; pipeline already builds the `SceneContext` |
-| 2 | **#6** eval harness | foundation — makes #1/#2/#4 measurable instead of vibes; can build in parallel |
-| 3 | **#2** per-query + RRF + provenance | high value, self-contained; provenance plumbing already exists, so re-scoped to split + fuse + per-query attribution |
-| 4 | **#1** measured fact relevance (+ presence) | floor + present/named escape hatches; tuned via #6; surfacing `subjectId` from retrieval is part of the work |
-| 5 | **#4** subjectId supersedence | independent correctness fix |
-| 6 | **#5** witness-gating + canon channel | retrieval hooks only; consumer owned by phase 6 (not started); canon gate waits on a canon-false producer |
-| 7 | **#7** RAG-as-history | north star; step 1 rides on #1 + threading the proximity graph into retrieval; rest gated on phase 6 |
+1. **#3 centralize lore gating** — cheap, removes drift, clears scene/presence code
+   before #1/#2 touch it; the pipeline already builds the `SceneContext`.
+2. **#6 eval harness** — foundation: makes #1/#2/#4 measurable instead of vibes; can
+   build in parallel.
+3. **#2 per-query + RRF + provenance** — high value, self-contained; provenance
+   plumbing already exists, so re-scoped to split + fuse + per-query attribution.
+4. **#1 measured fact relevance (+ presence)** — floor + present/named escape hatches;
+   tuned via #6; surfacing `subjectId` from retrieval is part of the work.
+5. **#4 subjectId supersedence** — independent correctness fix.
+6. **#5 witness-gating + canon channel** — retrieval hooks only; consumer owned by
+   phase 6 (not started); canon gate waits on a canon-false producer.
+7. **#7 RAG-as-history** — north star; step 1 rides on #1 + threading the proximity
+   graph into retrieval; rest gated on phase 6.
 
 ## Cross-references / where things already live
 

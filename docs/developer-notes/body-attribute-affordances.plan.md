@@ -37,6 +37,11 @@ live. The rejected positive projection's replacement is planned separately in
 constraints, premise corrections, and resolved action outcomes ship
 independently from any later change-gated positive detail.
 
+Outcome: A player can see a character's body, hair, and clothing described in a
+way that matches the rain, the outfit, and the pose already established in the
+scene, so that damp strands only cling to a neck when the character actually
+got wet.
+
 ## In one sentence
 
 Turn stable appearance details and trustworthy live state into a few grounded
@@ -80,16 +85,33 @@ description.
 Promotion does not make every required source fact available. The first slice
 must preserve this distinction:
 
-| Area | Current position |
-| --- | --- |
-| Stable appearance | Canonical attributes, body locations, body configuration, and provenance already exist. Some vocabularies still mix several physical ideas in one value and need cleanup before calculation. |
-| Clothing | Legacy character chat has structured garment instances, coverage, presentation, wetness, and local garment marks. Its narrator cues are still behind a tuning flag. The successor clothing adapter and affordance integration remain unfinished. |
-| Pose and contact | Neither chat lane currently owns dependable body-region pose, support, or surface-contact truth. Free-text narration and image-pose text are not authoritative substitutes. |
-| Weather and force | Current wind, precipitation, impulses, and body motion are not yet available as one dependable cross-lane read. A phenomenon that lacks its actual cause must remain silent. |
-| Physiology and body surfaces | The general physiology system is still deferred. There is no complete shared source yet for regional sweat, piloerection, vascular changes, body-surface residue, or persistent pressure marks. |
-| Perception | Successor observations provide a stronger witness/channel model. Legacy chat has coverage and a turn-level sensory allowance, but no full per-sense exposure or proximity model. |
-| Retakes | Both lanes support retakes, but through different state/cut mechanisms. The new read must be captured through each lane's real rollback boundary. |
-| Recognition memory | Shipped for legacy chat (slice 7): observer-specific notice and mention history, scoped to the memory group and retake-safe. It stays silent in production until something asserts exposure for uncovered skin. |
+- **Stable appearance.** Canonical attributes, body locations, body
+  configuration, and provenance already exist. Some vocabularies still mix
+  several physical ideas in one value and need cleanup before calculation.
+- **Clothing.** Legacy character chat has structured garment instances,
+  coverage, presentation, wetness, and local garment marks. Its narrator cues
+  are still behind a tuning flag. The successor clothing adapter and affordance
+  integration remain unfinished.
+- **Pose and contact.** Neither chat lane currently owns dependable body-region
+  pose, support, or surface-contact truth. Free-text narration and image-pose
+  text are not authoritative substitutes.
+- **Weather and force.** Current wind, precipitation, impulses, and body motion
+  are not yet available as one dependable cross-lane read. A phenomenon that
+  lacks its actual cause must remain silent.
+- **Physiology and body surfaces.** The general physiology system is still
+  deferred. There is no complete shared source yet for regional sweat,
+  piloerection, vascular changes, body-surface residue, or persistent pressure
+  marks.
+- **Perception.** Successor observations provide a stronger witness/channel
+  model. Legacy chat has coverage and a turn-level sensory allowance, but no
+  full per-sense exposure or proximity model.
+- **Retakes.** Both lanes support retakes, but through different state/cut
+  mechanisms. The new read must be captured through each lane's real rollback
+  boundary.
+- **Recognition memory.** Shipped for legacy chat (slice 7): observer-specific
+  notice and mention history, scoped to the memory group and retake-safe. It
+  stays silent in production until something asserts exposure for uncovered
+  skin.
 
 A missing owner is real work or a reason to defer that phenomenon. It is never
 permission to infer state from genre, narrator prose, or what would make the

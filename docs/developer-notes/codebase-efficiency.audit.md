@@ -1,7 +1,9 @@
 # Codebase efficiency audit — shared abstractions, dead code, hot paths
 
-**Date:** 2026-07-30 · **Findings record, not a plan.** Plans and specs will be
-derived from this doc (likely several — see §Proposed batches at the end); when
+Status: reference (audit run 2026-07-30)
+
+**Findings record, not a plan.** Plans and specs will be derived from this doc
+(likely several — see §Proposed batches at the end); when
 one is created it gets its own `<topic>.plan.md` + roadmap line and should cite
 finding ids from here. Eleven draft plans now exist; the reviewed near-term tranche is queued in `roadmap.md`, while the larger consolidations remain selective drafts.
 
@@ -563,16 +565,25 @@ bundle reach.
 
 ### Scope corrections
 
-| Plan | Reviewed boundary |
-| --- | --- |
-| Resilience closures | Harness only targeted non-streaming structured/background LLM legs; do not force streaming narration or image providers through it. |
-| Sim command shell | Split the wide migration by domain; take A11 early; defer A13's counter/migration; corpus proof is mandatory. |
-| Fork registry | Registering an implemented domain becomes data; implementing a domain does not. Composite last-touch keys are required. |
-| Chat latency | Repeated baseline before changes; deterministic B14 persistence/rollback tests in addition to manual Fly checks. |
-| Library registry | Registry simplifies dispatch and route coverage, not the whole product surface for a new kind. |
-| Client safety | D10/D11/D12 approved. D13 begins with the Next 16 bundle analyzer; reachable LOC is not shipped bytes. |
-| Contracts hygiene | E13/E14 move early; E10 migrates incrementally; E5 joins the dead-export pass. |
-| Tooling | F2 already shipped; tighten clone detection by targeted path rather than a global token-floor drop. |
+The reviewed boundary for each derived plan:
+
+- **Resilience closures** — the harness covers only targeted non-streaming
+  structured/background LLM legs; do not force streaming narration or image
+  providers through it.
+- **Sim command shell** — split the wide migration by domain; take A11 early;
+  defer A13's counter/migration; corpus proof is mandatory.
+- **Fork registry** — registering an implemented domain becomes data;
+  implementing a domain does not. Composite last-touch keys are required.
+- **Chat latency** — repeated baseline before changes; deterministic B14
+  persistence/rollback tests in addition to manual Fly checks.
+- **Library registry** — the registry simplifies dispatch and route coverage,
+  not the whole product surface for a new kind.
+- **Client safety** — D10/D11/D12 approved. D13 begins with the Next 16 bundle
+  analyzer; reachable LOC is not shipped bytes.
+- **Contracts hygiene** — E13/E14 move early; E10 migrates incrementally; E5
+  joins the dead-export pass.
+- **Tooling** — F2 already shipped; tighten clone detection by targeted path
+  rather than a global token-floor drop.
 
 ### Reviewed execution sequence
 

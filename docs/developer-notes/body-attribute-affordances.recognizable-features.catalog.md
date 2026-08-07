@@ -15,27 +15,27 @@ representable without prose parsing.
 
 ## Candidate families
 
-| Family | Examples | Primary owner |
-| --- | --- | --- |
-| Facial geometry | crooked/asymmetric nose, cleft chin, uneven jaw, prominent brow, one dimple, facial asymmetry | canonical attributes |
-| Eyes | complete or sectoral heterochromia, limbal ring, pupil mismatch, cloudy eye, unusual iris flecks, one drooping lid | attributes; injury for acquired damage |
-| Brows | eyebrow notch, missing patch, joined brows, one naturally raised brow, scar through brow | attributes or located fact |
-| Teeth and mouth | front gap, chipped tooth, missing tooth, gold tooth, sharp canine, crooked smile line, lip scar | attributes; anatomy/dental event; located fact |
-| Ears | one torn lobe, ear notch, uneven points, cauliflower ear, stretched piercing holes | anatomy or located fact |
-| Hairline and growth | widow's peak, cowlick, white forelock, premature streak, bald patch, unusually dense sideburn, single stubborn curl | attributes/presentation; condition for temporary loss |
-| Pigmentation | shoulder freckles, beauty mark, mole constellation, birthmark, vitiligo patch, port-wine stain, sun spots, albinism patch | located appearance facts |
-| Skin texture | acne scarring, weathered cheeks, rough knuckles, callused palms, stretch marks, scales, unusually smooth scar tissue | attributes or located facts |
-| Scars | linear cut, burn scar, surgical scar, bite mark, claw marks, ritual scarification, puncture, eyebrow scar | located facts with event provenance |
-| Temporary marks | bruise, black eye, hickey, rash, sunburn, pressure line, ring indentation, paint, soot, blood, mud | body condition/contamination |
-| Hands and digits | missing ring finger, extra digit, fused fingers, crooked healed finger, tremor, stained fingertips, bitten nails | anatomy; condition; attributes |
-| Feet and toes | missing toe, overlapping toes, webbing, old ankle scar, unusual arch, dancer's calluses | anatomy, attributes, located facts |
-| Limbs | prosthetic limb, shortened limb, healed fracture angle, bowed leg, one shoulder lower | anatomy or persistent body state |
-| Torso | shoulder freckle field, collarbone birthmark, chest scar, stretch marks, surgical seam, asymmetrical rib contour | located facts/anatomy |
-| Tattoos and modification | sleeve tattoo, tiny ankle symbol, brand, ritual ink, scarification, subdermal implant, piercing holes | located facts; jewelry remains wardrobe |
-| Supernatural morphology | chipped horn, mismatched horn curve, torn wing edge, translucent wing spot, tail kink, missing scales, glowing rune, bioluminescent freckles | anatomy, morphology attributes, located facts |
-| Acquired story consequences | stitches becoming a scar, magical corruption vein, regrown limb with color mismatch, curse mark, healed bite, removed-tattoo trace | evented condition → persistent fact/topology |
-| Signature presentation | glasses, ribbon, makeup motif, favorite coat, habitual braid, prosthetic cover, recurring jewelry | wardrobe/presentation |
-| Recognizable motion | head tilt, shoulder roll, hand tremor, distinctive gait, tail-tip twitch, wing carriage | movement/behavior; later visual-memory extension |
+| Family                      | Examples                                                                                                                                     | Primary owner                                         |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Facial geometry             | crooked/asymmetric nose, cleft chin, uneven jaw, prominent brow, one dimple, facial asymmetry                                                | canonical attributes                                  |
+| Eyes                        | complete or sectoral heterochromia, limbal ring, pupil mismatch, cloudy eye, unusual iris flecks, one drooping lid                           | attributes; injury for acquired damage                |
+| Brows                       | eyebrow notch, missing patch, joined brows, one naturally raised brow, scar through brow                                                     | attributes or located fact                            |
+| Teeth and mouth             | front gap, chipped tooth, missing tooth, gold tooth, sharp canine, crooked smile line, lip scar                                              | attributes; anatomy/dental event; located fact        |
+| Ears                        | one torn lobe, ear notch, uneven points, cauliflower ear, stretched piercing holes                                                           | anatomy or located fact                               |
+| Hairline and growth         | widow's peak, cowlick, white forelock, premature streak, bald patch, unusually dense sideburn, single stubborn curl                          | attributes/presentation; condition for temporary loss |
+| Pigmentation                | shoulder freckles, beauty mark, mole constellation, birthmark, vitiligo patch, port-wine stain, sun spots, albinism patch                    | located appearance facts                              |
+| Skin texture                | acne scarring, weathered cheeks, rough knuckles, callused palms, stretch marks, scales, unusually smooth scar tissue                         | attributes or located facts                           |
+| Scars                       | linear cut, burn scar, surgical scar, bite mark, claw marks, ritual scarification, puncture, eyebrow scar                                    | located facts with event provenance                   |
+| Temporary marks             | bruise, black eye, hickey, rash, sunburn, pressure line, ring indentation, paint, soot, blood, mud                                           | body condition/contamination                          |
+| Hands and digits            | missing ring finger, extra digit, fused fingers, crooked healed finger, tremor, stained fingertips, bitten nails                             | anatomy; condition; attributes                        |
+| Feet and toes               | missing toe, overlapping toes, webbing, old ankle scar, unusual arch, dancer's calluses                                                      | anatomy, attributes, located facts                    |
+| Limbs                       | prosthetic limb, shortened limb, healed fracture angle, bowed leg, one shoulder lower                                                        | anatomy or persistent body state                      |
+| Torso                       | shoulder freckle field, collarbone birthmark, chest scar, stretch marks, surgical seam, asymmetrical rib contour                             | located facts/anatomy                                 |
+| Tattoos and modification    | sleeve tattoo, tiny ankle symbol, brand, ritual ink, scarification, subdermal implant, piercing holes                                        | located facts; jewelry remains wardrobe               |
+| Supernatural morphology     | chipped horn, mismatched horn curve, torn wing edge, translucent wing spot, tail kink, missing scales, glowing rune, bioluminescent freckles | anatomy, morphology attributes, located facts         |
+| Acquired story consequences | stitches becoming a scar, magical corruption vein, regrown limb with color mismatch, curse mark, healed bite, removed-tattoo trace           | evented condition → persistent fact/topology          |
+| Signature presentation      | glasses, ribbon, makeup motif, favorite coat, habitual braid, prosthetic cover, recurring jewelry                                            | wardrobe/presentation                                 |
+| Recognizable motion         | head tilt, shoulder roll, hand tremor, distinctive gait, tail-tip twitch, wing carriage                                                      | movement/behavior; later visual-memory extension      |
 
 ## Useful constellations
 

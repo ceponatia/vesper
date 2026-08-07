@@ -1,8 +1,13 @@
 # Stop for successor replies — thread an AbortSignal through the turn
 
-Status: draft (stub — successor-engine backlog item D18, parked 2026-07-24 from
-the successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
-before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Successor-engine backlog item D18, parked 2026-07-24 from the
+successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
+before building.
+
+Outcome (provisional): A player can press Stop partway through a slow world-chat
+reply and have it actually stop, so that the button does something on exactly
+the turns long enough to make them reach for it.
 
 ## What
 

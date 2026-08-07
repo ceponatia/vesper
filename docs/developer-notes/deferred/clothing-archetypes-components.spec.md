@@ -1,7 +1,8 @@
 # Garment archetypes and reusable components — technical specification
 
-Status: draft companion to
-[clothing-archetypes-components.plan.md](clothing-archetypes-components.plan.md).
+Status: **draft** — companion to
+[clothing-archetypes-components.plan.md](clothing-archetypes-components.plan.md),
+parked in [../deferred.plan.md](../deferred.plan.md); not committed work.
 Promote and re-audit before implementation. This document replaces the stale
 pre-implementation component proposal from PR 20.
 
@@ -64,17 +65,17 @@ This specification extends those contracts; it does not replace them.
 
 Keep each level distinct:
 
-| Level | Purpose | Runtime mutable? |
-| --- | --- | --- |
-| category | existing broad editor bucket and legacy default | no |
-| archetype | recognizable construction grammar such as tee or pullover hoodie | no |
-| component template | reusable graph fragment such as a hood, long sleeves, or kangaroo pocket | no |
-| construction recipe | one item definition's archetype, component choices, materials, fit, and overrides | authoring only |
-| compiled blueprint | normalized mechanical graph snapshotted by instances | no |
-| garment instance | one copy with locus, presentation, and condition | yes |
-| body-garment relation | current hand insertion, grasp, contact, or pose relation | yes, outside wardrobe |
-| derived effect | current sag, tension, drape, motion, opacity, or visibility result | derived only |
-| selected observation | perception-safe, ranked semantic cue | derived/captured by existing owners |
+| Level                 | Purpose                                                                           | Runtime mutable?                    |
+| --------------------- | --------------------------------------------------------------------------------- | ----------------------------------- |
+| category              | existing broad editor bucket and legacy default                                   | no                                  |
+| archetype             | recognizable construction grammar such as tee or pullover hoodie                  | no                                  |
+| component template    | reusable graph fragment such as a hood, long sleeves, or kangaroo pocket          | no                                  |
+| construction recipe   | one item definition's archetype, component choices, materials, fit, and overrides | authoring only                      |
+| compiled blueprint    | normalized mechanical graph snapshotted by instances                              | no                                  |
+| garment instance      | one copy with locus, presentation, and condition                                  | yes                                 |
+| body-garment relation | current hand insertion, grasp, contact, or pose relation                          | yes, outside wardrobe               |
+| derived effect        | current sag, tension, drape, motion, opacity, or visibility result                | derived only                        |
+| selected observation  | perception-safe, ranked semantic cue                                              | derived/captured by existing owners |
 
 ## 4. Core design rulings
 
@@ -430,16 +431,28 @@ subtract or restore body locations.
 
 ## 9. Initial archetype grammar
 
-Start with a deliberately narrow upper-body proof:
+Start with a deliberately narrow upper-body proof. Category and upper
+construction first:
 
-| Archetype | Existing category | Default sleeves | Neck/collar | Closure | Pocket | Common options |
-| --- | --- | --- | --- | --- | --- | --- |
-| `tee` | `top` | short | neck opening; no collar | none | none | graphic, chest pocket, long sleeves |
-| `polo` | `top` | short | collar | short button placket | optional chest pocket | embroidery, long sleeves |
-| `pullover_sweater` | `top` | long | neck opening | none | none | ribbed cuffs/hem, graphic, quarter zip |
-| `cardigan` | `top` or ruled `outerwear` mapping | long | optional collar | full buttons or zipper | optional front pockets | belt, embroidery |
-| `pullover_hoodie` | `top` or ruled `outerwear` mapping | long | hood + hood opening | none | one kangaroo compartment | drawstrings, graphic, no pocket |
-| `zip_hoodie` | `outerwear` | long | hood + hood opening | full front zipper | two front compartments | drawstrings, graphic, no pockets |
+| Archetype          | Existing category                  | Default sleeves | Neck/collar             |
+| ------------------ | ---------------------------------- | --------------- | ----------------------- |
+| `tee`              | `top`                              | short           | neck opening; no collar |
+| `polo`             | `top`                              | short           | collar                  |
+| `pullover_sweater` | `top`                              | long            | neck opening            |
+| `cardigan`         | `top` or ruled `outerwear` mapping | long            | optional collar         |
+| `pullover_hoodie`  | `top` or ruled `outerwear` mapping | long            | hood + hood opening     |
+| `zip_hoodie`       | `outerwear`                        | long            | hood + hood opening     |
+
+Closure, pocket, and common options for the same rows:
+
+| Archetype          | Closure                | Pocket                   | Common options                         |
+| ------------------ | ---------------------- | ------------------------ | -------------------------------------- |
+| `tee`              | none                   | none                     | graphic, chest pocket, long sleeves    |
+| `polo`             | short button placket   | optional chest pocket    | embroidery, long sleeves               |
+| `pullover_sweater` | none                   | none                     | ribbed cuffs/hem, graphic, quarter zip |
+| `cardigan`         | full buttons or zipper | optional front pockets   | belt, embroidery                       |
+| `pullover_hoodie`  | none                   | one kangaroo compartment | drawstrings, graphic, no pocket        |
+| `zip_hoodie`       | full front zipper      | two front compartments   | drawstrings, graphic, no pockets       |
 
 The `cardigan` and `pullover_hoodie` category mapping must be resolved during
 promotion against actual editor layering expectations. Do not add a new category

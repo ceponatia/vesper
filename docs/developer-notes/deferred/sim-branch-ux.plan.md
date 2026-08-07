@@ -1,8 +1,13 @@
 # Branch, fork & replay UX — honest history operations for sim chats
 
-Status: draft (stub — successor-engine backlog item D19, parked 2026-07-24 from
-the successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
-before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Successor-engine backlog item D19, parked 2026-07-24 from the
+successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
+before building.
+
+Outcome (provisional): A player can rerun or edit an earlier turn and have the
+story split into a second version from that point, so that revisiting a moment
+stops silently contradicting everything that happened after it.
 
 ## What
 

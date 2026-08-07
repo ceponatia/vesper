@@ -1,8 +1,13 @@
 # Memory-index drain off the reply-critical path
 
-Status: draft (stub — successor-engine backlog item G27, parked 2026-07-24 from
-the successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
-before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Successor-engine backlog item G27, parked 2026-07-24 from the
+successor engine & chat-UI product review; promote per [CLAUDE.md](CLAUDE.md)
+before building.
+
+Outcome (provisional): A player can send a message in one world chat without
+waiting on filing work left over from a different chat, so that how long a
+reply takes stops depending on what they happened to do somewhere else.
 
 ## What
 

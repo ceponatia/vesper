@@ -3,6 +3,10 @@
 Status: **draft** — research plan written 2026-07-20 from an owner ask; vocabulary and
 sequencing await owner review.
 
+Outcome: The owner can author a character the app neither prettifies nor leaves blank —
+a plain, weathered, or unattractive face renders as one, and her mealtimes, birthday,
+money, and stated boundaries are recorded instead of invented at play time.
+
 Two threads with one theme: the authored character schema should describe **the person
 the owner imagined**, not the person our defaults assume. Thread 1 is the direct ask —
 the portrait studio can only make beautiful people, and fixing that needs *descriptive*
@@ -56,19 +60,26 @@ Proposed definition shape:
   overall read on every image when unset — this is exactly the cross-scene-drift tier),
   `identityAnchor: true` (see "the anchor move" below).
 - **Vocabulary** (ascending, snake_case; owner review expected — the *bands* matter
-  more than the labels):
+  more than the labels). Each entry is *value* — narrator gloss (sketch) / image phrase
+  (sketch):
 
-  | value | narrator gloss (sketch) | image phrase (sketch) |
-  | --- | --- | --- |
-  | `grotesque` | features that unsettle at first glance | heavily asymmetric, misshapen features; an unsettling, deliberately ugly countenance — not stylized, not beautified |
-  | `ugly` | plainly unattractive | unattractive face, pronounced asymmetry, irregular coarse features; an ugly person rendered honestly, no beautification |
-  | `homely` | unpretty in an ordinary, human way | homely, unglamorous face; irregular features; candid and unretouched |
-  | `plain` | forgettable; attracts no second look | plain, unremarkable face; everyday features; unretouched candid look |
-  | `average` | neither plain nor pretty | ordinary face, natural unretouched skin |
-  | `pleasant` | mildly attractive, approachable | pleasant, approachable face; softly attractive features |
-  | `attractive` | conventionally good-looking | attractive, well-proportioned features |
-  | `beautiful` | genuinely beautiful | beautiful, harmonious features; photogenic |
-  | `stunning` | arresting; turns heads | strikingly beautiful, arresting symmetry, magazine-quality beauty portrait |
+  - **`grotesque`** — features that unsettle at first glance / heavily asymmetric,
+    misshapen features; an unsettling, deliberately ugly countenance — not stylized,
+    not beautified.
+  - **`ugly`** — plainly unattractive / unattractive face, pronounced asymmetry,
+    irregular coarse features; an ugly person rendered honestly, no beautification.
+  - **`homely`** — unpretty in an ordinary, human way / homely, unglamorous face;
+    irregular features; candid and unretouched.
+  - **`plain`** — forgettable; attracts no second look / plain, unremarkable face;
+    everyday features; unretouched candid look.
+  - **`average`** — neither plain nor pretty / ordinary face, natural unretouched skin.
+  - **`pleasant`** — mildly attractive, approachable / pleasant, approachable face;
+    softly attractive features.
+  - **`attractive`** — conventionally good-looking / attractive, well-proportioned
+    features.
+  - **`beautiful`** — genuinely beautiful / beautiful, harmonious features; photogenic.
+  - **`stunning`** — arresting; turns heads / strikingly beautiful, arresting symmetry,
+    magazine-quality beauty portrait.
 
 - `defaultValue`: **`beautiful`** (proposed — preserves today's de-facto output for
   blank creations; owner may prefer `attractive`). No `autoDefaultExcludes` needed:

@@ -1,6 +1,6 @@
 # Image render quality — technical spec
 
-Plan: [image-render-quality.plan.md](image-render-quality.plan.md)
+Status: companion to [image-render-quality.plan.md](image-render-quality.plan.md)
 
 Machinery this rides on:
 [image-model-capabilities.spec.md](image-model-capabilities.spec.md) (profiles,

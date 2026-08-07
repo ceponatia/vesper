@@ -1,7 +1,12 @@
 # Successor NPC initiative — she reaches out first
 
-Status: draft (stub — successor-engine backlog item B11, parked 2026-07-23;
-promote per [CLAUDE.md](CLAUDE.md) before building)
+Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
+committed work. Successor-engine backlog item B11, parked 2026-07-23; promote
+per [CLAUDE.md](CLAUDE.md) before building.
+
+Outcome (provisional): A player can be contacted first — a plan proposed, a
+follow-up sent — without having typed anything, so that the character reads as
+someone with her own day rather than something waiting for input.
 
 ## What
 

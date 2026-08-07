@@ -1,5 +1,9 @@
 # Affectionate-contact trial — evidence appendix
 
+Status: evidence appendix for
+[romantic-contact-affordances.trial.md](romantic-contact-affordances.trial.md)
+(trial closed — passed 2026-08-01; appendix amended 2026-08-01, rev 3)
+
 Companion to [the trial report](romantic-contact-affordances.trial.md). This
 document is the auditable record: every original A/B scenario and every rerun,
 with full untruncated ids, verbatim transcripts, ledger rows, scene
@@ -15,25 +19,25 @@ skip; the first subsequent exchange writes the ending — see §Rerun B — S5).
 
 ## Shared configuration
 
-| Item | Value |
-| --- | --- |
-| App | `vesper` on Fly.io, `https://vesper.fly.dev` |
-| Database | Neon project `round-sky-30947574` (production) |
-| Account | dedicated QA account `uxtest-main@vesper.local` (`uxtestmaina1b2c3d4e5f6g7`) |
-| Character | Sabrina Vale, id `wdijgtnp5dnosx3or16wwsvv` — every chat fresh-start (`memory: "fresh"`), 1-on-1 |
-| Model | chat default: `z-ai/glm-5.2` via OpenRouter (per-model reasoning `effort: low`), temperature = the narrative default |
-| Flags | `CHAT_CONTACT_ACTIONS` / `CHAT_PHYSICAL_CONSTRAINTS` — exact values per section below; **both off outside the labeled windows and returned to off after the runs** |
-| Player wording | player lines sent via `POST /api/chats/:id {kind:"send"}`; the reply is the streamed text verbatim; timestamps are client wall-clock UTC around each stream |
+| Item           | Value                                                                                                                                                              |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| App            | `vesper` on Fly.io, `https://vesper.fly.dev`                                                                                                                       |
+| Database       | Neon project `round-sky-30947574` (production)                                                                                                                     |
+| Account        | dedicated QA account `uxtest-main@vesper.local` (`uxtestmaina1b2c3d4e5f6g7`)                                                                                       |
+| Character      | Sabrina Vale, id `wdijgtnp5dnosx3or16wwsvv` — every chat fresh-start (`memory: "fresh"`), 1-on-1                                                                   |
+| Model          | chat default: `z-ai/glm-5.2` via OpenRouter (per-model reasoning `effort: low`), temperature = the narrative default                                               |
+| Flags          | `CHAT_CONTACT_ACTIONS` / `CHAT_PHYSICAL_CONSTRAINTS` — exact values per section below; **both off outside the labeled windows and returned to off after the runs** |
+| Player wording | player lines sent via `POST /api/chats/:id {kind:"send"}`; the reply is the streamed text verbatim; timestamps are client wall-clock UTC around each stream        |
 
 **Deployments.**
 
-| Window | Fly release | Git commit | Notes |
-| --- | --- | --- | --- |
-| Original trial (2026-07-31 19:20–19:57Z) | v13x (pre-1.2 build) | `875ddb7` lineage (item 1.1 build) | both flags ON for the window |
-| Rerun flag-off baselines (23:12–23:14Z) | v139 | `7eb1ea1` (item 1.2) | flags off |
-| Rerun flag-on attempt 1 (23:15–23:16Z) | v140 (same image as v139) | `7eb1ea1` | flags ON via secrets |
-| Rerun flag-on attempts 2+ (23:27–23:38Z) | v141 | `370d583` (item 1.2 + wardrobe restatement guard) | flags ON |
-| After the window | v142 | `370d583` | flags unset (off) |
+| Window                                   | Fly release               | Git commit                                        | Notes                        |
+| ---------------------------------------- | ------------------------- | ------------------------------------------------- | ---------------------------- |
+| Original trial (2026-07-31 19:20–19:57Z) | v13x (pre-1.2 build)      | `875ddb7` lineage (item 1.1 build)                | both flags ON for the window |
+| Rerun flag-off baselines (23:12–23:14Z)  | v139                      | `7eb1ea1` (item 1.2)                              | flags off                    |
+| Rerun flag-on attempt 1 (23:15–23:16Z)   | v140 (same image as v139) | `7eb1ea1`                                         | flags ON via secrets         |
+| Rerun flag-on attempts 2+ (23:27–23:38Z) | v141                      | `370d583` (item 1.2 + wardrobe restatement guard) | flags ON                     |
+| After the window                         | v142                      | `370d583`                                         | flags unset (off)            |
 
 **Disclosed setup change for the rerun.** The rerun requirements name a
 *modeled dressed* target. The original trial's Sabrina had **no modeled
@@ -54,14 +58,14 @@ per-scenario on COHERENCE / CONTINUITY / NATURALNESS / NON-INTRUSION (1–5).
 
 ### Chat ids (full)
 
-| Scenario | Config A chat | Config B chat |
-| --- | --- | --- |
+| Scenario                  | Config A chat              | Config B chat              |
+| ------------------------- | -------------------------- | -------------------------- |
 | S1 approach/touch/release | `z0tlhojudqzlcqwri7po75gn` | `j7w7q40vnhk08zwzb15bilqi` |
-| S2 move-away | `zamcimg2wks0a5bo283mgcec` | `whbzjjehvfu5cgqfo6rzmp8g` |
-| S3 unreachable | `lqxpkkby2ednq5fmww0oh09n` | `i5tsnhquv8c3oo4nqsr1p24d` |
-| S4 romantic veto | `drlq19sbofw802ieht87j076` | `s846492ywx34w11kg88bargb` |
-| S5 skip | `es2qpgedogfxs5pvo1mfl4nx` | `rtrev99vg7geetv802j70bc6` |
-| S6 object movement | `txixuysqd17l85rx7cu4xxgd` | `syyaiqp2dwmbwgtpret85jof` |
+| S2 move-away              | `zamcimg2wks0a5bo283mgcec` | `whbzjjehvfu5cgqfo6rzmp8g` |
+| S3 unreachable            | `lqxpkkby2ednq5fmww0oh09n` | `i5tsnhquv8c3oo4nqsr1p24d` |
+| S4 romantic veto          | `drlq19sbofw802ieht87j076` | `s846492ywx34w11kg88bargb` |
+| S5 skip                   | `es2qpgedogfxs5pvo1mfl4nx` | `rtrev99vg7geetv802j70bc6` |
+| S6 object movement        | `txixuysqd17l85rx7cu4xxgd` | `syyaiqp2dwmbwgtpret85jof` |
 
 ### What the original state actually said (correction to the report's premise)
 
@@ -123,10 +127,10 @@ the prose had already shed two beats earlier). Scores C4 / Ct3 / N5 / NI5.
 
 **B-S1 ledger rows** (`chat_contact_events`, complete):
 
-| guard | event_ref | seq | kind | contact_id | reason | story_minute | payload highlights |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `m5klutduf30i5sko42jxhn5j` | `contact:m5klutduf30i5sko42jxhn5j` | 0 | contact_started | `body␟player␟hands␟␟␞body␟wdijgtnp5dnosx3or16wwsvv␟shoulders␟␟␝contact:m5klutduf30i5sko42jxhn5j` | — | 2 | affectionate rest, pressure light, `materialBetween: []`, `directSkinContact: true` (the state said nothing was worn), actorControl allowed, policy not_required |
-| `myp9c520wfy09lris5mdra46` | `contact:myp9c520wfy09lris5mdra46` | 0 | contact_ended | same contact id | withdrawn | 4 | endedByEventRef = the release exchange's own ref |
+| guard                      | event_ref                          | seq | kind            | contact_id                                                                                       | reason    | story_minute | payload highlights                                                                                                                                               |
+| -------------------------- | ---------------------------------- | --- | --------------- | ------------------------------------------------------------------------------------------------ | --------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `m5klutduf30i5sko42jxhn5j` | `contact:m5klutduf30i5sko42jxhn5j` | 0   | contact_started | `body␟player␟hands␟␟␞body␟wdijgtnp5dnosx3or16wwsvv␟shoulders␟␟␝contact:m5klutduf30i5sko42jxhn5j` | —         | 2            | affectionate rest, pressure light, `materialBetween: []`, `directSkinContact: true` (the state said nothing was worn), actorControl allowed, policy not_required |
+| `myp9c520wfy09lris5mdra46` | `contact:myp9c520wfy09lris5mdra46` | 0   | contact_ended   | same contact id                                                                                  | withdrawn | 4            | endedByEventRef = the release exchange's own ref                                                                                                                 |
 
 Scores C5 / Ct5 / N5 / NI5 — held across an unrelated beat ("still under your
 hand"), clean state-aligned release, no resurrection.
@@ -256,10 +260,10 @@ Double teleport; held-touch continuity vanished silently. C2/Ct3.
 
 **B-S6 ledger rows** (complete):
 
-| guard | event_ref | seq | kind | reason | story_minute |
-| --- | --- | --- | --- | --- | --- |
-| `v128hcbpx09rq1mhagemendp` | `contact:v128hcbpx09rq1mhagemendp` | 0 | contact_started | — | 2 |
-| `xdame1lrkhcowsm0ovj42b3t` | `contact:xdame1lrkhcowsm0ovj42b3t` | 0 | contact_ended | scene_changed | 3 |
+| guard                      | event_ref                          | seq | kind            | reason        | story_minute |
+| -------------------------- | ---------------------------------- | --- | --------------- | ------------- | ------------ |
+| `v128hcbpx09rq1mhagemendp` | `contact:v128hcbpx09rq1mhagemendp` | 0   | contact_started | —             | 2            |
+| `xdame1lrkhcowsm0ovj42b3t` | `contact:xdame1lrkhcowsm0ovj42b3t` | 0   | contact_ended   | scene_changed | 3            |
 
 State-level win (the held touch ended durably through the place change);
 prose-level failure (the invented desk scene still rendered). Partial.
@@ -275,17 +279,17 @@ results; extra attempts are labeled.
 
 ### Rerun chat ids (full)
 
-| Run | Flags | Chat id |
-| --- | --- | --- |
-| Rerun A — S2 | off | `f9ec0k1fn7lp3fkbiey6at6z` |
-| Rerun A — S5 | off | `vibrhbd7g8pe5j8g4e0jream` |
-| Rerun A — S3 | off | `hl8250gr81qd13aktazzd7xd` |
-| Rerun B — S2 attempt 1 | on | `pdgfkcouaaviu2vyuuesfwgl` |
-| Rerun B — S2 attempt 2 | on | `aqs0qog98ycgp3tzmp5komak` |
-| Rerun B — S5 | on | `bhv7n9chmz2xxf4wahhabi68` |
-| Rerun B — S3 attempt 1 | on | `lt22r1baj1xr8a6wt9au72o3` |
-| Rerun B — S3 attempt 2 (guidance capture) | on | `amwqncnhb7yr3k12aao4j8bk` |
-| Rerun B — NPC withdrawal attempts 1–3 | on | `ymhtiw6s0bz2xtt6uk8krpym`, `vj9923yvisr8cvpj3pbbjj0o`, `w6hsm91sxoo7je4brf2jwgjh` |
+| Run                                       | Flags | Chat id                                                                            |
+| ----------------------------------------- | ----- | ---------------------------------------------------------------------------------- |
+| Rerun A — S2                              | off   | `f9ec0k1fn7lp3fkbiey6at6z`                                                         |
+| Rerun A — S5                              | off   | `vibrhbd7g8pe5j8g4e0jream`                                                         |
+| Rerun A — S3                              | off   | `hl8250gr81qd13aktazzd7xd`                                                         |
+| Rerun B — S2 attempt 1                    | on    | `pdgfkcouaaviu2vyuuesfwgl`                                                         |
+| Rerun B — S2 attempt 2                    | on    | `aqs0qog98ycgp3tzmp5komak`                                                         |
+| Rerun B — S5                              | on    | `bhv7n9chmz2xxf4wahhabi68`                                                         |
+| Rerun B — S3 attempt 1                    | on    | `lt22r1baj1xr8a6wt9au72o3`                                                         |
+| Rerun B — S3 attempt 2 (guidance capture) | on    | `amwqncnhb7yr3k12aao4j8bk`                                                         |
+| Rerun B — NPC withdrawal attempts 1–3     | on    | `ymhtiw6s0bz2xtt6uk8krpym`, `vj9923yvisr8cvpj3pbbjj0o`, `w6hsm91sxoo7je4brf2jwgjh` |
 
 ### Rerun A (flag-off baselines, v139)
 
@@ -368,10 +372,10 @@ send).
 
 **Ledger rows (complete):**
 
-| guard | event_ref | seq | kind | reason | story_minute | payload (decisive fields) |
-| --- | --- | --- | --- | --- | --- | --- |
-| `hfd48gsby9ts24716zvm26lk` | `contact:hfd48gsby9ts24716zvm26lk` | 0 | contact_started | — | 2 | `materialBetween: [{layerId: "osj9y0tvpcplggns5vljdgev:root", order: 0, tactileTransmission: 6000, thermalTransmission: 4000, moistureTransmission: 0, visibleThrough: false, evidence: [{kind: "coverage", ref: "coverage:shoulders", detail: "opaque"}]}]` — **the cloth layer, from the CURRENT cut with no persisted capture and no settle wait** |
-| `f1nzendkis4xwq42ixgp4zoe` | `contact:f1nzendkis4xwq42ixgp4zoe` | 0 | contact_ended | **separated** | 3 | same contact id; endedBy the step-back exchange's ref |
+| guard                      | event_ref                          | seq | kind            | reason        | story_minute | payload (decisive fields)                                                                                                                                                                                                                                                                                                                             |
+| -------------------------- | ---------------------------------- | --- | --------------- | ------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hfd48gsby9ts24716zvm26lk` | `contact:hfd48gsby9ts24716zvm26lk` | 0   | contact_started | —             | 2            | `materialBetween: [{layerId: "osj9y0tvpcplggns5vljdgev:root", order: 0, tactileTransmission: 6000, thermalTransmission: 4000, moistureTransmission: 0, visibleThrough: false, evidence: [{kind: "coverage", ref: "coverage:shoulders", detail: "opaque"}]}]` — **the cloth layer, from the CURRENT cut with no persisted capture and no settle wait** |
+| `f1nzendkis4xwq42ixgp4zoe` | `contact:f1nzendkis4xwq42ixgp4zoe` | 0   | contact_ended   | **separated** | 3            | same contact id; endedBy the step-back exchange's ref                                                                                                                                                                                                                                                                                                 |
 
 **Scene projection after:** `contacts: []`; proximity `player ↔ Sabrina =
 near`, provenance evidence `chat.contact.departure` (storyTime 3); facing
