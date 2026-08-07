@@ -5,9 +5,10 @@ import { imageIdentityPackTrialRefusalCodeSchema, type ImageIdentityPackTrialCel
 import { adminIdentityPacksApi, identityPackTrialRefusal } from "@/lib/client/api";
 import {
   identityPackTrialRefusalCopy,
-  identityReferenceStrategyLabel,
+  trialArmStrategyLabel,
   trialCellStatusChip,
   trialCountsLine,
+  trialPackVariantLabel,
   trialRunStatusChip,
 } from "@/components/characters/identity-pack-copy";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -140,7 +141,15 @@ export function IdentityTrialRunDetail({ runId, onBack }: { runId: string; onBac
         </p>
       </header>
 
-      {run.counts.planned > 0 ? (
+      {/*
+        Claimed cells keep the control on screen, not just planned ones. A pass
+        that died mid-batch leaves its cells `running` with nothing planned
+        behind them, and returning those abandoned claims to the grid is
+        something only an execution pass does — hiding Execute here would wedge
+        such a run permanently, unreviewable and unrulable. A pass that finds
+        nothing to claim costs nothing, so the affordance is safe to offer.
+      */}
+      {run.counts.planned + run.counts.running > 0 ? (
         <section className="mb-6 rounded-card border border-ink-600 bg-ink-850 p-4">
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex items-center gap-2 text-sm text-paper-300">
@@ -165,6 +174,13 @@ export function IdentityTrialRunDetail({ runId, onBack }: { runId: string; onBac
               runs.
             </p>
           </div>
+          {run.counts.running > 0 ? (
+            <p className="mt-2 text-[11px] text-accent-300">
+              {run.counts.running} cell(s) are claimed by an execution pass — those renders may already have been paid
+              for, so nothing resets them on sight. If no pass is live, execute again once the claim ages out and it
+              returns them to the grid.
+            </p>
+          ) : null}
         </section>
       ) : null}
 
@@ -226,9 +242,21 @@ function CellList({ cells }: { cells: ImageIdentityPackTrialCellWire[] }) {
             <div className="flex flex-wrap items-center gap-2">
               <code className="text-[11px] break-all text-paper-400">{cell.cellKey}</code>
               <Tag tone={chip.tone}>{chip.label}</Tag>
-              {cell.spec ? <Tag>{identityReferenceStrategyLabel(cell.spec.identityStrategy)}</Tag> : null}
+              {cell.spec ? <Tag>{trialArmStrategyLabel(cell.spec.identityStrategy)}</Tag> : null}
+              {/* Only the non-default variants are named: every run has a
+                  `current` arm, so labelling it on every cell would be noise. */}
+              {cell.spec !== null && cell.spec.packVariantKey !== "current" ? (
+                <span className="text-[11px] text-paper-500">{trialPackVariantLabel(cell.spec.packVariantKey)}</span>
+              ) : null}
             </div>
             {explanation ? <p className="mt-1 text-[11px] text-paper-500">{explanation}</p> : null}
+            {/* The provider's own handle on this render — the one identifier that
+                lets a cell be traced in the provider dashboard after the fact. */}
+            {cell.result?.providerPredictionId ? (
+              <p className="mt-1 text-[11px] text-paper-600">
+                prediction <code className="break-all">{cell.result.providerPredictionId}</code>
+              </p>
+            ) : null}
           </div>
         );
       })}

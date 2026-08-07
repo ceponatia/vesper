@@ -77,6 +77,15 @@ export function withReviewedImageQuality(model: ImageModel): ImageModel {
  * and say what should remain unchanged. Existing prompt builders still emit the
  * provider-neutral legacy lock, so rewrite only that exact sentence at the
  * model boundary. Other models and custom prompts remain byte-identical.
+ *
+ * The rewrite is IDEMPOTENT, and that is load-bearing rather than incidental:
+ * `compileProfileRenderPlan` hashes the prepared prompt and `renderWithModel`
+ * prepares again on the way out, so a second pass that changed the text would
+ * make every identity-trial cell refuse `cell_conflict` against its own compiled
+ * prompt. `replaceAll` rather than `replace` is what makes the claim TRUE: a
+ * prompt that somehow carried the legacy sentence twice kept its second copy
+ * under `replace`, and the next pass would rewrite that one instead — the same
+ * function returning two different strings for one input.
  */
 export function preparePromptForImageModel(
   model: Pick<ImageModel, "slug">,
@@ -86,5 +95,5 @@ export function preparePromptForImageModel(
   if (baseImageModelSlug(model.slug) !== "qwen/qwen-image-edit-2511") return prompt;
   if (referenceCount <= 0 || !prompt.includes(LEGACY_PORTRAIT_IDENTITY_LOCK)) return prompt;
   const lock = referenceCount === 1 ? QWEN_SINGLE_REFERENCE_IDENTITY_LOCK : QWEN_MULTI_REFERENCE_IDENTITY_LOCK;
-  return prompt.replace(LEGACY_PORTRAIT_IDENTITY_LOCK, lock);
+  return prompt.replaceAll(LEGACY_PORTRAIT_IDENTITY_LOCK, lock);
 }

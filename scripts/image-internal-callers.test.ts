@@ -21,9 +21,21 @@ const INTERNAL_NAMES = new Set(["saveImageBuffer", "deleteChatUploads", "deleteC
  * locally from bytes this app already stored — so it mints the hidden crop row
  * with `createImageAsset` and writes that exact id, having already re-authorized
  * the character and re-verified the source hash.
+ *
+ * Re-reviewed 2026-08-06 (identity-pack trial correctness pass): the trial
+ * service also joins the "minted the row it writes" class — it has imported
+ * `saveImageBuffer` since the slice-6 harness landed, and this census should
+ * have been extended then. It cannot ride `runImagePipeline` because a trial
+ * output's fate is decided AFTER storage by the durable-claim settlement CAS:
+ * a settle that loses the claim race must discard the just-stored hidden
+ * image rather than attach it, and the pipeline shell has no
+ * store-then-maybe-discard arm. The service mints the hidden
+ * `identity_trial_output` row with `createImageAsset`, writes that exact id,
+ * and every read/write is owner-scoped through the run row.
  */
 const APPROVED: Readonly<Record<string, readonly string[]>> = {
   saveImageBuffer: [
+    "src/server/images/identity-pack-trial.ts",
     "src/server/images/identity-packs.ts",
     "src/server/images/internal.ts",
     "src/server/images/route-safe.ts",

@@ -5,6 +5,30 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Image identity packs — slice 6 harness: fixed identity-reference trial,
+  built dark and hardened** —
+  [image-identity-packs.plan.md](image-identity-packs.plan.md) ·
+  [trial spec](image-identity-packs.spec.trial.md) — 2026-08-06 — the admin
+  trial runner (runs/cells/grades/verdicts tables, budget-charged bounded
+  execution, hidden `identity_trial_output` assets, blinded pairwise review,
+  per-(profile, strategy) verdicts), then a pre-spend correctness pass over
+  the PR 60 build: planning reuses production profile eligibility
+  (`imageProfileOffered`) and refuses unpinnable provider versions; execution
+  runs the compiled profile (mapped control defaults, fail-closed provider
+  overrides, negative prompt, per-profile timeout) at the exact pinned
+  Replicate version with numbered multi-reference role prompts, under durable
+  cross-process cell claims (planned → running CAS before budget charge,
+  token-guarded settles, stale-claim recovery, orphan-output cleanup,
+  terminal settlement for malformed cells); verdicts are normalized
+  conflict-upserted rows gated on review completeness with an explicit
+  recorded override; and the pack-variant axis (pinned revisions + no-pack
+  baseline) completes the spec's comparison matrix with
+  comparison-group-adjacent execution ordering. **The trial evidence — corpus,
+  paid runs, detector decision, thresholds, repeat subset, verdicts — does
+  not exist yet**; that remainder plus slices 5B and 7 stay in
+  [roadmap.md](roadmap.md) under Active. No paid cell has run;
+  `IMAGE_IDENTITY_PACK_REFERENCES` stays off.
+
 - **Image identity packs — slices 1–4 and 5A: durable owner-scoped face
   references** —
   [image-identity-packs.plan.md](image-identity-packs.plan.md) ·

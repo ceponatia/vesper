@@ -31,6 +31,7 @@ import { simulationTriggerKinds, type SimulationTrigger } from "@/contracts/simu
 import type { HouseholdStockAccessPolicy, RestockFunding } from "@/contracts/simulation/households";
 import type { RelationshipLedgerPayload } from "@/contracts/simulation/social";
 import {
+  identityReferenceStrategies,
   imageAspectModes,
   imageEditKinds,
   imageIdentityCropMethods,
@@ -43,6 +44,9 @@ import {
   imageReferenceTransports,
   sceneReferenceSources,
   sceneVisualReferenceKinds,
+  trialCellStatuses,
+  trialRunStatuses,
+  trialVerdicts,
 } from "@/contracts";
 import { principalKinds } from "@/contracts/simulation/envelopes";
 import { itemGoneBases } from "@/contracts/simulation/materials";
@@ -1676,9 +1680,17 @@ export const imageIdentityPacks = pgTable(
  * one bounded, owner-scoped comparison of reference strategies across a fixed
  * character/profile/fixture grid. The validated create-request is snapshotted
  * into `config_json` so a later registry or profile edit can never change what
- * a finished run claims it tested. Verdicts live on the run row as a validated
- * jsonb array rather than a fourth table: they are small, run-scoped, and only
- * ever read alongside the run.
+ * a finished run claims it tested.
+ *
+ * Verdicts are NOT stored here. They used to be one jsonb array on this row,
+ * which made every ruling a read-modify-write of the whole ledger: two admins
+ * ruling on two different (profile, strategy) slots at once silently lost one
+ * of the two verdicts. They live in `image_identity_pack_trial_verdicts`, one
+ * row per ruling, upserted under a unique key that cannot lose a write.
+ *
+ * The status enum comes from the contract vocabulary (`imageIdentityPacks`'s
+ * precedent) rather than being restated inline: a lifecycle position the parser
+ * knows and the column rejects is a write that fails at 3am.
  */
 export const imageIdentityPackTrialRuns = pgTable(
   "image_identity_pack_trial_runs",
@@ -1688,11 +1700,9 @@ export const imageIdentityPackTrialRuns = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     label: text("label").notNull(),
-    status: text("status", { enum: ["draft", "running", "review", "complete"] }).notNull().default("draft"),
+    status: text("status", { enum: trialRunStatuses }).notNull().default("draft"),
     /** The validated create-run request snapshot (contracts/images/identity-pack-trial.ts). */
     configJson: jsonb("config_json").notNull(),
-    /** Validated array of trial verdicts — one per (profile, strategy) slot, upserted. */
-    verdictsJson: jsonb("verdicts_json").notNull().default([]),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1706,18 +1716,39 @@ export const imageIdentityPackTrialRuns = pgTable(
  * contract-validated jsonb, read back through the `readJsonColumn` pattern.
  * The output image is a `set null` safety net like the pack's crop pointer —
  * a deleted output makes the cell unreviewable, not invalid.
+ *
+ * `claim_token` / `claimed_at` are the DURABLE EXECUTION CLAIM. A pass takes a
+ * cell by compare-and-set from `planned` to `running`, stamping both; it settles
+ * by compare-and-set from `running` AND the same token to a terminal status. The
+ * in-process execution lock cannot serialize two machines, and a claim held only
+ * in memory dies with the process that took it — so without these columns a
+ * restart mid-pass leaves the cell `planned` and the next pass pays the provider
+ * a second time for one cell's evidence. A claim left behind by a dead worker is
+ * recoverable only after a bounded interval, never by resetting the cell on
+ * sight: `running` records "this render may already have been paid for".
  */
 export const imageIdentityPackTrialCells = pgTable(
   "image_identity_pack_trial_cells",
   {
     id: id(),
     runId: text("run_id").notNull(),
-    /** Deterministic `characterId:profileId:strategy:fixtureId` plan key. */
+    /**
+     * Deterministic `characterId:profileId:fixtureId:strategy:variantKey` plan
+     * key (`trialCellKey` in the lib). Plain ascending order over this column is
+     * the execution order, and the component order is load-bearing: it keeps
+     * every arm of one (character, profile, fixture) comparison group adjacent,
+     * so unseeded paired renders happen as close together as practical.
+     */
     cellKey: text("cell_key").notNull(),
-    status: text("status", { enum: ["planned", "rendered", "failed", "refused"] }).notNull().default("planned"),
+    status: text("status", { enum: trialCellStatuses }).notNull().default("planned"),
     specJson: jsonb("spec_json").notNull(),
     resultJson: jsonb("result_json"),
     outputImageId: text("output_image_id").references(() => images.id, { onDelete: "set null" }),
+    /** The claiming pass's token — null on every cell no pass has taken. */
+    claimToken: text("claim_token"),
+    /** When the claim was stamped, so a stale claim can be aged out on a clock
+     * rather than on a guess about which worker is alive. */
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1733,6 +1764,10 @@ export const imageIdentityPackTrialCells = pgTable(
     // The composite unique's LEADING column doubles as the per-run lookup index
     // (the house ruling recorded on `personas`).
     uniqueIndex("image_identity_pack_trial_cells_run_cell_key_unique").on(t.runId, t.cellKey),
+    // The execute path's hot filter: "which cells of this run are still
+    // planned?" runs on every pass and again after it settles, and the
+    // cell-key unique above cannot serve it (status is not in that index).
+    index("image_identity_pack_trial_cells_run_status_idx").on(t.runId, t.status),
   ],
 );
 
@@ -1782,6 +1817,76 @@ export const imageIdentityPackTrialGrades = pgTable(
       foreignColumns: [users.id],
     }),
     uniqueIndex("image_identity_pack_trial_grades_run_pair_unique").on(t.runId, t.pairId),
+  ],
+);
+
+/**
+ * One authoritative ruling per (run, profile, strategy)
+ * (image-identity-packs.spec.trial.md §"Version promotion").
+ *
+ * This table replaces the run row's `verdicts_json` array, and the reason is
+ * lost updates: recording a verdict there meant reading the whole array,
+ * filtering out the slot being ruled, appending the new entry and writing the
+ * array back. Two admins ruling on two DIFFERENT slots concurrently both read
+ * the same array and the second write erased the first — a promotion decision
+ * silently vanishing, in the one ledger the whole blinded procedure exists to
+ * produce. One row per ruling under the unique below makes each ruling its own
+ * write, and revision is an upsert on that key rather than a rewrite of
+ * everybody else's.
+ *
+ * `override_incomplete_review` records that the admin ruled BEFORE every
+ * reviewable pair was graded (`review_incomplete` otherwise refuses the
+ * verdict). It is stored on the ruling rather than inferred later because
+ * whether the evidence was complete AT DECISION TIME is unrecoverable once more
+ * grades arrive, and a promotion made on half the pairs must stay
+ * distinguishable from one made on all of them.
+ *
+ * The decider FK carries no cascade for the same reason as
+ * `image_identity_packs.reviewed_by_user_id`: an audit trail that erases itself
+ * when the decider's account goes is not one. It is `not null` — a ruling with
+ * no actor is not an audit record — which is the one place this diverges from
+ * the grades table's nullable reviewer column.
+ */
+export const imageIdentityPackTrialVerdicts = pgTable(
+  "image_identity_pack_trial_verdicts",
+  {
+    // No `$defaultFn`: the service supplies `newId()` explicitly, because the
+    // upsert's insert half must name the id it would use even when the conflict
+    // arm wins and that id is discarded.
+    id: text("id").primaryKey(),
+    runId: text("run_id").notNull(),
+    profileId: text("profile_id").notNull(),
+    identityStrategy: text("identity_strategy", { enum: identityReferenceStrategies }).notNull(),
+    verdict: text("verdict", { enum: trialVerdicts }).notNull(),
+    /** Required: a promotion with no stated reason is indistinguishable from a
+     * mistake six months later. */
+    reason: text("reason").notNull(),
+    /** The identity-pack policy version in force when the ruling was made. */
+    policyVersion: text("policy_version").notNull(),
+    overrideIncompleteReview: boolean("override_incomplete_review").notNull().default(false),
+    decidedByUserId: text("decided_by_user_id").notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // Named short — see the cells table: the auto-generated names would exceed
+    // Postgres's 63-char identifier cap.
+    foreignKey({
+      name: "image_identity_pack_trial_verdicts_run_fk",
+      columns: [t.runId],
+      foreignColumns: [imageIdentityPackTrialRuns.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "image_identity_pack_trial_verdicts_decider_fk",
+      columns: [t.decidedByUserId],
+      foreignColumns: [users.id],
+    }),
+    // The upsert target, and the guarantee the service is allowed to assume
+    // rather than re-check: one ruling per slot, revised in place, never
+    // duplicated by a concurrent submission. Its LEADING column doubles as the
+    // per-run lookup index (the house ruling recorded on `personas`).
+    uniqueIndex("image_identity_pack_trial_verdicts_run_combo_unique").on(t.runId, t.profileId, t.identityStrategy),
   ],
 );
 

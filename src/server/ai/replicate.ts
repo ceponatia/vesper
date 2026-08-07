@@ -5,8 +5,20 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 const REPLICATE_BASE = "https://api.replicate.com/v1";
 const DEFAULT_PREDICTION_TIMEOUT_MS = 5 * 60_000;
 const POLL_INTERVAL_MS = 1_500;
-const REQUEST_TIMEOUT_MS = 75_000;
-const OUTPUT_TIMEOUT_MS = 60_000;
+
+/**
+ * The per-HTTP-call deadline every Replicate request carries, and the separate
+ * one the output download gets.
+ *
+ * Both are EXPORTED because they are the only honest way to size how long one
+ * render may legitimately take end to end. The identity trial's stale-claim
+ * window has to exceed a whole render — prediction budget plus the reference
+ * uploads, the settling poll, and the output fetch around it — and a window
+ * derived from a hand-copied "about a minute" would silently stop covering the
+ * real thing the first time either number moved.
+ */
+export const REQUEST_TIMEOUT_MS = 75_000;
+export const OUTPUT_TIMEOUT_MS = 60_000;
 
 export const REPLICATE_DEFAULT_IMAGE_MODEL = "qwen/qwen-image-2512";
 export const REPLICATE_DEFAULT_EDIT_MODEL = "qwen/qwen-image-edit-2511";
@@ -20,8 +32,16 @@ export function hasReplicate(): boolean {
  * the env flag so the safe default reads the same way it does everywhere else.
  * Only ever applied to models whose schema HAS the input (see
  * `buildRegistryModelInput`).
+ *
+ * Exported because the value is ENV-OWNED and resolved at send time, which means
+ * a stored `extraInput.disable_safety_checker` is a placeholder rather than a
+ * fact. Anything that fingerprints what a render sends has to ask this function
+ * the same question the payload builder asks — otherwise the fingerprint
+ * describes the stored placeholder while the provider receives the env's answer,
+ * and an operator flipping `REPLICATE_SAFE_MODE` between two arms of a
+ * comparison changes provider enforcement with nothing to show for it.
  */
-function disableSafetyChecker(): boolean {
+export function disableSafetyChecker(): boolean {
   return process.env.REPLICATE_SAFE_MODE !== "true";
 }
 
@@ -29,7 +49,27 @@ export interface ReplicateImageResult {
   ok: boolean;
   image?: Buffer;
   error?: string;
+  /**
+   * The provider's prediction id, present on EVERY outcome from the moment one
+   * exists — success, provider failure, timeout, poll error alike — because it
+   * is the only handle that ties a stored render back to the provider's own
+   * record of it. Absent only when the POST itself never produced a prediction
+   * (transport failure, a non-2xx create), where there is genuinely no id and
+   * inventing one would be worse than admitting none.
+   */
   predictionId?: string;
+  /**
+   * The version Replicate says it ACTUALLY ran, echoed off the prediction body.
+   *
+   * A pinned request states what should run; only this states what did. The two
+   * can differ — a bare `owner/name` slug resolves `latest_version` server-side,
+   * and a pinned id can be re-pointed by the provider — and a controlled
+   * comparison that cannot tell those apart is grading whatever Replicate
+   * shipped that hour under a pin's name. Absent when the response carries no
+   * `version` field, which is the honest answer rather than echoing the request
+   * back as if it were confirmation.
+   */
+  executedVersionId?: string;
 }
 
 export interface RegistryModelRequest {
@@ -42,6 +82,99 @@ export interface RegistryModelRequest {
    * its own default.
    */
   aspect?: string | null;
+  /**
+   * Already-mapped provider fields — the caller's resolved controls and
+   * validated overrides, keyed by this version's real input names
+   * (`mapImageRenderControls` / `validateProviderOverrides`). Merged LAST, per
+   * the capabilities spec's merge order, so a profile's guidance beats the
+   * model row's `extraInput` constant.
+   *
+   * It is deliberately opaque here: this module does not know a control from a
+   * constant, and adding a second place that reasons about control names is how
+   * the two would drift. What it DOES enforce is that the overlay cannot touch
+   * the fields the render path owns ({@link reservedImageInputFields}).
+   */
+  controlInput?: Record<string, unknown>;
+  /**
+   * This run's prediction budget, overriding the env/default for BOTH the poll
+   * deadline and Replicate's `Cancel-After`. A profile's `timeoutMs` arrives
+   * here; anything out of the sane 30s–30m band is clamped rather than honored,
+   * because a caller asking for a 12-hour prediction is a bug, not a budget.
+   */
+  timeoutMs?: number;
+  /**
+   * Execute EXACTLY this provider version, whatever the slug says. A controlled
+   * comparison cannot run against a floating `latest_version`, so the identity
+   * trial pins the probed version id here and the prediction goes to
+   * `/predictions` carrying it even for a bare `owner/name` slug.
+   */
+  versionId?: string;
+}
+
+/**
+ * The input fields the render path owns, which nothing merged later may write.
+ *
+ * This is the one spelling of that set, shared by the `controlInput` overlay
+ * below and by the images layer's `providerOverrides` validation — two copies
+ * would be two answers to "may a profile redirect the prompt?", and the copy
+ * nobody edits is the one that eventually says yes.
+ *
+ * `prompt`, the reference field and the aspect key are structural: they are
+ * what {@link buildRegistryModelInput} writes, and an override reaching one of
+ * them would send the render somewhere the caller did not compile. `version` is
+ * never an input key at all, but naming it here keeps a stored profile from
+ * looking like it can repin the model. `disable_safety_checker` is the safety
+ * enforcement the env owns; a database row must not be able to flip it.
+ */
+export function reservedImageInputFields(model: ImageModel): string[] {
+  const fields = new Set<string>([
+    "prompt",
+    model.referenceField,
+    model.aspectMode === "size" ? "size" : "aspect_ratio",
+    "version",
+    "disable_safety_checker",
+  ]);
+  const probedPromptField = model.advancedCapabilities.prompt?.field;
+  if (probedPromptField) fields.add(probedPromptField);
+  return [...fields];
+}
+
+/**
+ * Merge already-mapped provider fields onto a built payload, skipping anything
+ * reserved.
+ *
+ * Build-then-overlay rather than overlay-then-build: the reserved keys must be
+ * the ones the BUILDER produced, so a collision is detectable. A collision is
+ * reported rather than swallowed — an operator who wrote `prompt` into a
+ * profile's overrides needs told that it did nothing, not left to wonder why
+ * their prompt text never appeared.
+ */
+export function overlayControlInput(
+  built: Record<string, unknown>,
+  controlInput: Record<string, unknown> | undefined,
+  model: ImageModel,
+  sink?: DiagnosticSink,
+): Record<string, unknown> {
+  if (!controlInput) return built;
+  const reserved = new Set(reservedImageInputFields(model));
+  const merged = { ...built };
+  const refused: string[] = [];
+  for (const [field, value] of Object.entries(controlInput)) {
+    if (reserved.has(field)) {
+      refused.push(field);
+      continue;
+    }
+    merged[field] = value;
+  }
+  if (refused.length > 0) {
+    sink?.push(
+      diag("warn", "image_model.reserved_field_ignored", "control input tried to write a render-path field", {
+        path: "image_models",
+        context: { slug: model.slug, fields: refused.sort() },
+      }),
+    );
+  }
+  return merged;
 }
 
 /**
@@ -121,6 +254,13 @@ const DATA_URL_BUDGET_BYTES = 6 * 1024 * 1024;
  *
  * References are trimmed through `fitReferences` rather than a fixed cap, so a
  * single-reference model stops being handed three and silently ignoring two.
+ *
+ * The payload is BUILT and then overlaid: `buildRegistryModelInput` owns the
+ * prompt, references, aspect and per-model constants, and `request.controlInput`
+ * merges over the result minus the reserved fields
+ * ({@link reservedImageInputFields}). That order is the capabilities spec's — a
+ * later layer wins — while keeping the render path's own fields unreachable
+ * from a stored profile row.
  */
 export async function runRegistryImageModel(
   model: ImageModel,
@@ -145,7 +285,13 @@ export async function runRegistryImageModel(
     }
     return await runReplicateImageModel(
       model.slug,
-      buildRegistryModelInput(model, request.prompt, inlined.map(referenceDataUrl), request.aspect),
+      overlayControlInput(
+        buildRegistryModelInput(model, request.prompt, inlined.map(referenceDataUrl), request.aspect),
+        request.controlInput,
+        model,
+        sink,
+      ),
+      request,
     );
   }
 
@@ -158,7 +304,13 @@ export async function runRegistryImageModel(
     }
     return await runReplicateImageModel(
       model.slug,
-      buildRegistryModelInput(model, request.prompt, uploads.map((file) => file.url), request.aspect),
+      overlayControlInput(
+        buildRegistryModelInput(model, request.prompt, uploads.map((file) => file.url), request.aspect),
+        request.controlInput,
+        model,
+        sink,
+      ),
+      request,
     );
   } finally {
     await Promise.allSettled(uploads.map((file) => deleteReplicateFile(file.id)));
@@ -188,6 +340,13 @@ export function unwrapReplicateImage(result: ReplicateImageResult, fallback: str
 const predictionSchema = z.object({
   id: z.string().min(1),
   status: z.string(),
+  /**
+   * The version Replicate resolved for this prediction. Optional because the
+   * model-endpoint form (`/models/owner/name/predictions`) has been observed
+   * without it, and a missing echo must degrade to "unconfirmed" rather than
+   * failing the parse of an otherwise perfectly good prediction.
+   */
+  version: z.string().optional(),
   output: z.unknown().optional().nullable(),
   error: z.unknown().optional().nullable(),
 });
@@ -206,17 +365,28 @@ interface ReplicateFile {
 
 type UploadResult = { ok: true; file: ReplicateFile } | { ok: false; error: string };
 
-async function runReplicateImageModel(model: string, input: Record<string, unknown>): Promise<ReplicateImageResult> {
-  // One parse for both deadlines: the provider-side `Cancel-After` and this
-  // client's poll cutoff must agree, or raising the env var only lengthens the
+/**
+ * The prediction shell. `request` supplies only the two run-shaping fields it
+ * owns (`timeoutMs`, `versionId`) — the payload is already built and merged by
+ * the caller, so nothing here can change WHAT is sent, only where and for how
+ * long.
+ */
+async function runReplicateImageModel(
+  model: string,
+  input: Record<string, unknown>,
+  request: Pick<RegistryModelRequest, "timeoutMs" | "versionId">,
+): Promise<ReplicateImageResult> {
+  // One resolution for both deadlines: the provider-side `Cancel-After` and this
+  // client's poll cutoff must agree, or raising the budget only lengthens the
   // polling while Replicate still kills the prediction at the old bound.
-  const timeoutMs = predictionTimeoutMs();
+  const timeoutMs = predictionTimeoutMs(request.timeoutMs);
   let prediction: ReplicatePrediction;
   try {
-    // A pinned `owner/name:version` posts to the version-agnostic
-    // `/predictions` endpoint carrying the version id; a bare `owner/name`
-    // posts to the model's own endpoint and takes whatever `latest_version` is.
-    const target = replicatePredictionTarget(model);
+    // An explicit `versionId` pins the run outright. Otherwise a pinned
+    // `owner/name:version` posts to the version-agnostic `/predictions`
+    // endpoint carrying the version id, and a bare `owner/name` posts to the
+    // model's own endpoint and takes whatever `latest_version` is.
+    const target = replicatePredictionTarget(model, request.versionId);
     const response = await replicateApiFetch(target.path, {
       method: "POST",
       headers: {
@@ -252,20 +422,25 @@ async function runReplicateImageModel(model: string, input: Record<string, unkno
     }
   }
 
+  // The provenance the SETTLED prediction carries. Spread rather than assigned
+  // so a response without a `version` echo reports no field at all instead of an
+  // explicit undefined — absent means "the provider did not say", which is a
+  // different fact from "it ran an empty version".
+  const provenance = {
+    predictionId: prediction.id,
+    ...(prediction.version ? { executedVersionId: prediction.version } : {}),
+  };
+
   if (prediction.status !== "succeeded" && outputUrl(prediction.output) === null) {
-    return {
-      ok: false,
-      predictionId: prediction.id,
-      error: `replicate ${prediction.status}: ${predictionError(prediction.error)}`,
-    };
+    return { ok: false, ...provenance, error: `replicate ${prediction.status}: ${predictionError(prediction.error)}` };
   }
 
   const url = outputUrl(prediction.output);
-  if (!url) return { ok: false, predictionId: prediction.id, error: "replicate returned no image" };
+  if (!url) return { ok: false, ...provenance, error: "replicate returned no image" };
   try {
-    return { ok: true, predictionId: prediction.id, image: await downloadReplicateOutput(url) };
+    return { ok: true, ...provenance, image: await downloadReplicateOutput(url) };
   } catch (err) {
-    return { ok: false, predictionId: prediction.id, error: errorText(err) };
+    return { ok: false, ...provenance, error: errorText(err) };
   }
 }
 
@@ -328,20 +503,28 @@ function allowedOutputHost(hostname: string): boolean {
 }
 
 /**
- * Resolve a registry slug to the endpoint that runs it. Two forms are accepted:
- * `owner/name` (runs whatever Replicate currently calls `latest_version`) and
- * `owner/name:version` (pinned — posts the version id to `/predictions`, which
- * is the only endpoint that accepts one).
+ * Resolve a registry slug to the endpoint that runs it. Three forms are
+ * accepted: `owner/name` (runs whatever Replicate currently calls
+ * `latest_version`), `owner/name:version` (pinned in the slug), and either of
+ * those plus an EXPLICIT `versionId` from the caller.
  *
  * Pinning matters more here than it looks: Replicate can change a model's input
  * schema underneath a bare slug, which is exactly the failure the registry's
- * stored capability columns would not notice.
+ * stored capability columns would not notice. `/predictions` is the only
+ * endpoint that accepts a version, so any pin routes there.
+ *
+ * An explicit `versionId` WINS over a slug pin. It is the caller stating what it
+ * verified and hashed — the identity trial refuses to plan a cell at all when
+ * the probed and slug-pinned versions disagree (`pinnedImageModelVersion`), so
+ * a conflict cannot reach here from that path, and any other caller passing one
+ * is asserting the same thing.
  */
-export function replicatePredictionTarget(model: string): { path: string; version?: string } {
+export function replicatePredictionTarget(model: string, versionId?: string): { path: string; version?: string } {
   const [path, version, ...rest] = model.split(":");
   if (rest.length > 0) throw new Error(`invalid Replicate model id: ${model}`);
   const [owner, name, extra] = (path ?? "").split("/");
   if (!owner || !name || extra) throw new Error(`invalid Replicate model id: ${model}`);
+  if (versionId) return { path: "/predictions", version: versionId };
   if (version) return { path: "/predictions", version };
   return { path: `/models/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/predictions` };
 }
@@ -373,7 +556,20 @@ function predictionError(error: unknown): string {
   }
 }
 
-function predictionTimeoutMs(): number {
+/**
+ * The prediction budget, in the capabilities spec's order: the request's own
+ * value (a profile's `timeoutMs`), then `REPLICATE_PREDICTION_TIMEOUT_MS`, then
+ * the five-minute default.
+ *
+ * A requested value is CLAMPED into the sane band rather than rejected — the
+ * caller asked for a budget and deserves the nearest one it may have — while an
+ * env value below the floor still falls through to the default, which is the
+ * behavior operators have today and the one the existing tests pin.
+ */
+function predictionTimeoutMs(requested?: number): number {
+  if (requested !== undefined && Number.isFinite(requested)) {
+    return Math.min(Math.max(requested, 30_000), 30 * 60_000);
+  }
   const parsed = Number(process.env.REPLICATE_PREDICTION_TIMEOUT_MS);
   return Number.isFinite(parsed) && parsed >= 30_000 ? Math.min(parsed, 30 * 60_000) : DEFAULT_PREDICTION_TIMEOUT_MS;
 }

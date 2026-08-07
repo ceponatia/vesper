@@ -57,6 +57,10 @@ const ready = await probeIntegrationDb("trial-routes.int.test", "image_identity_
 
 const MODEL_ID = "imgmdltrialroutesaaaaaa";
 const PROFILE_ID = "imgprftrialroutesaaaaaa";
+/** An offered GENERATE profile — the only shape the no-pack baseline plans on
+ * (an edit profile with zero references has nothing to edit). */
+const GENERATE_PROFILE_ID = "imgprftrialroutesgenaaa";
+const PROFILE_IDS = [PROFILE_ID, GENERATE_PROFILE_ID];
 
 let temp: TempDataRoot | undefined;
 let ownerId = "";
@@ -75,7 +79,7 @@ beforeAll(async () => {
 
   // Registry rows are global (outside purgeOwnerRows), so plant delete-first
   // with this suite's own ids, exactly like the service's int suite.
-  await db().delete(imageModelProfiles).where(inArray(imageModelProfiles.id, [PROFILE_ID]));
+  await db().delete(imageModelProfiles).where(inArray(imageModelProfiles.id, PROFILE_IDS));
   await db().delete(imageModels).where(inArray(imageModels.id, [MODEL_ID]));
   await db()
     .insert(imageModels)
@@ -85,19 +89,42 @@ beforeAll(async () => {
       label: "Trial Routes Fixture",
       canGenerate: true,
       canEdit: true,
+      // `for_variant` defaults to FALSE, and planning now asks the same
+      // `imageProfileOffered` question production selection asks — so a fixture
+      // model the operator never enabled for the variant surface plans nothing
+      // (`profile_ineligible`, reason `legacy_surface_excluded`).
+      forVariant: true,
       maxReferences: 4,
+      // A controlled trial refuses to plan a cell whose provider version cannot
+      // be pinned (`version_unpinned`), so an unprobed fixture would plan nothing.
+      probedVersionId: "trialroutesversionaaaaaa",
     });
-  await db().insert(imageModelProfiles).values({
-    id: PROFILE_ID,
-    imageModelId: MODEL_ID,
-    key: "trial-routes",
-    label: "Trial Routes",
-    task: "variant",
-    operation: "edit",
-    promptStrategy: "instruction_edit",
-    isDefault: false,
-    sort: 960,
-  });
+  await db()
+    .insert(imageModelProfiles)
+    .values([
+      {
+        id: PROFILE_ID,
+        imageModelId: MODEL_ID,
+        key: "trial-routes",
+        label: "Trial Routes",
+        task: "variant",
+        operation: "edit",
+        promptStrategy: "instruction_edit",
+        isDefault: false,
+        sort: 960,
+      },
+      {
+        id: GENERATE_PROFILE_ID,
+        imageModelId: MODEL_ID,
+        key: "trial-routes-generate",
+        label: "Trial Routes Generate",
+        task: "variant",
+        operation: "generate",
+        promptStrategy: "text_to_image_description",
+        isDefault: false,
+        sort: 961,
+      },
+    ]);
 
   const [character] = await db()
     .insert(characters)
@@ -123,7 +150,7 @@ afterEach(() => {
 
 afterAll(async () => {
   if (ready) {
-    await db().delete(imageModelProfiles).where(inArray(imageModelProfiles.id, [PROFILE_ID]));
+    await db().delete(imageModelProfiles).where(inArray(imageModelProfiles.id, PROFILE_IDS));
     await db().delete(imageModels).where(inArray(imageModels.id, [MODEL_ID]));
   }
   await temp?.cleanup();
@@ -226,6 +253,73 @@ describe.skipIf(!ready)("trial admin routes", () => {
     expect((await expectJson<{ error: { code: string } }>(res, 400)).error.code).toBe("fixture_unknown");
   });
 
+  it("refuses the whole run when a revision selector names a character outside it, recording nothing", async () => {
+    const label = "stranded revision arm";
+    const res = await trialCreate(
+      apiRequest(trialPath(), {
+        body: {
+          ...createBody(),
+          label,
+          packVariants: [
+            { source: "current" },
+            { source: "revision", characterId: "chrnotinthisrunaaaaaaaaa", revision: 2 },
+          ],
+        },
+      }),
+      routeCtx(),
+    );
+    // A revision selector is character-scoped, so one naming a character the run
+    // does not include would generate no cells at all — a configuration error the
+    // planner refuses whole rather than dropping in silence.
+    expect((await expectJson<{ error: { code: string } }>(res, 400)).error.code).toBe("pack_revision_unavailable");
+
+    const listBody = await expectJson<{ runs: ImageIdentityPackTrialRunSummary[] }>(
+      await trialList(apiRequest(trialPath()), routeCtx()),
+      200,
+    );
+    expect(listBody.runs.some((run) => run.label === label)).toBe(false);
+  });
+
+  it("plans the no-pack baseline beside a pack arm and reads it back with a null strategy", async () => {
+    const created = await expectJson<{ runId: string; counts: TrialCellCounts }>(
+      await trialCreate(
+        apiRequest(trialPath(), {
+          body: {
+            ...createBody(),
+            label: "baseline arm",
+            // Generate-operation profile: an edit profile with zero references has
+            // nothing to edit, and its baseline cell would record refused instead.
+            profileIds: [GENERATE_PROFILE_ID],
+            strategies: ["canonical_only"],
+            packVariants: [{ source: "current" }, { source: "none" }],
+          },
+        }),
+        routeCtx(),
+      ),
+      200,
+    );
+    expect(created.counts.planned).toBe(2);
+
+    const detail = await expectJson<ImageIdentityPackTrialRunDetail>(
+      await trialDetail(apiRequest(trialPath(`/${created.runId}`)), runCtx(created.runId)),
+      200,
+    );
+    const baseline = detail.cells.find((cell) => cell.spec?.packVariantKey === "none");
+    // The baseline crosses the wire as the control arm it is: no strategy, no
+    // pack identity, no references — not as a cell whose spec failed to load.
+    expect(baseline?.spec).toMatchObject({
+      identityStrategy: null,
+      referenceSource: "none",
+      packId: null,
+      packRevision: null,
+      orderedReferenceRoles: [],
+    });
+    expect(detail.cells.find((cell) => cell.spec?.packVariantKey === "current")?.spec).toMatchObject({
+      identityStrategy: "canonical_only",
+      referenceSource: "pack",
+    });
+  });
+
   it("executes the planned cells through the renderer seam and settles the run into review", async () => {
     const runId = await createdRunId();
     const pass = await executeRun(runId);
@@ -238,7 +332,7 @@ describe.skipIf(!ready)("trial admin routes", () => {
       await trialDetail(apiRequest(trialPath(`/${runId}`)), runCtx(runId)),
       200,
     );
-    expect(detail.run.counts).toEqual({ planned: 0, rendered: 2, failed: 0, refused: 0 });
+    expect(detail.run.counts).toEqual({ planned: 0, running: 0, rendered: 2, failed: 0, refused: 0 });
     for (const cell of detail.cells) expect(cell.outputImageId).not.toBeNull();
   });
 
@@ -249,6 +343,9 @@ describe.skipIf(!ready)("trial admin routes", () => {
     const pair = await nextPairOf(runId);
     expect(pair).not.toBeNull();
     if (!pair) return;
+    // The grade below is submitted BEFORE any verdict on purpose: the service's
+    // review-completeness gate refuses a ruling over an ungraded pair, so this
+    // flow only reaches the verdict handlers because its evidence is complete.
     // Blinded means blinded: image ids and the shared prompt context, and not
     // one strategy-, pack-, or crop-shaped field beside them.
     expect(Object.keys(pair).sort()).toEqual(["leftImageId", "pairId", "promptFixtureId", "rightImageId", "task"]);
@@ -273,9 +370,13 @@ describe.skipIf(!ready)("trial admin routes", () => {
     // The verdict-slot list rides the summary wire: one entry per rendered
     // (profile, strategy), independent of whether a comparison exists for it.
     expect(summary.renderedCombos).toEqual([
-      { profileId: PROFILE_ID, identityStrategy: "canonical_only", renderedCells: 1 },
-      { profileId: PROFILE_ID, identityStrategy: "face_detail_only", renderedCells: 1 },
+      { profileId: PROFILE_ID, identityStrategy: "canonical_only", renderedCells: 1, totalPairs: 1, gradedPairs: 1 },
+      { profileId: PROFILE_ID, identityStrategy: "face_detail_only", renderedCells: 1, totalPairs: 1, gradedPairs: 1 },
     ]);
+    // Intact evidence, so nothing on this wire asks for an override. The field
+    // has to travel even at zero: the client decides whether to OFFER the
+    // override from it, and an absent field would parse as an absent decision.
+    expect(summary.degradedCells).toBe(0);
     const comparison = summary.comparisons[0];
     if (!comparison) return;
     expect(comparison.gradedPairs).toBe(1);
@@ -315,6 +416,68 @@ describe.skipIf(!ready)("trial admin routes", () => {
     expect(second.verdicts).toHaveLength(2);
   });
 
+  it("refuses a verdict as review_incomplete while the run has not been executed", async () => {
+    const runId = await createdRunId();
+
+    const res = await trialVerdict(
+      apiRequest(trialPath(`/${runId}/verdict`), {
+        body: {
+          profileId: PROFILE_ID,
+          identityStrategy: "canonical_only",
+          verdict: "promoted",
+          reason: "ruling before any render",
+        },
+      }),
+      runCtx(runId),
+    );
+    // The same 400 envelope every other trial refusal uses, carrying the stable
+    // code — the client tells "not yet reviewable" from "unknown combo" by code.
+    expect((await expectJson<{ error: { code: string } }>(res, 400)).error.code).toBe("review_incomplete");
+
+    const summary = await expectJson<ImageIdentityPackTrialSummaryWire>(
+      await trialSummary(apiRequest(trialPath(`/${runId}/summary`)), runCtx(runId)),
+      200,
+    );
+    expect(summary.verdicts).toEqual([]);
+  });
+
+  it("refuses a verdict over an ungraded pair and accepts it with an explicit override", async () => {
+    const runId = await createdRunId();
+    await executeRun(runId);
+
+    const body = {
+      profileId: PROFILE_ID,
+      identityStrategy: "canonical_only",
+      verdict: "promoted",
+      reason: "ruling before the pair is graded",
+    };
+    const refused = await trialVerdict(apiRequest(trialPath(`/${runId}/verdict`), { body }), runCtx(runId));
+    expect((await expectJson<{ error: { code: string } }>(refused, 400)).error.code).toBe("review_incomplete");
+
+    const overridden = await expectJson<{ runStatus: TrialRunStatus; verdicts: TrialVerdict[] }>(
+      await trialVerdict(
+        apiRequest(trialPath(`/${runId}/verdict`), { body: { ...body, overrideIncompleteReview: true } }),
+        runCtx(runId),
+      ),
+      200,
+    );
+    // The override is echoed on the ruling the route hands straight back, so the
+    // summary screen shows the decision was made on partial evidence.
+    expect(overridden.verdicts).toHaveLength(1);
+    expect(overridden.verdicts[0]?.overrideIncompleteReview).toBe(true);
+    // One slot ruled, one pair ungraded: the run does not complete.
+    expect(overridden.runStatus).toBe("review");
+
+    // And it is PERSISTED, not just echoed: whether the evidence was complete at
+    // decision time is unrecoverable once the missing grades arrive, so a later
+    // read of the ledger has to carry the flag too.
+    const summary = await expectJson<ImageIdentityPackTrialSummaryWire>(
+      await trialSummary(apiRequest(trialPath(`/${runId}/summary`)), runCtx(runId)),
+      200,
+    );
+    expect(summary.verdicts.map((verdict) => verdict.overrideIncompleteReview)).toEqual([true]);
+  });
+
   it("answers 200 with the cells settled failed when the renderer throws mid-batch", async () => {
     const runId = await createdRunId();
     setTrialRendererForTesting(() => Promise.reject(new Error("provider exploded")));
@@ -330,7 +493,7 @@ describe.skipIf(!ready)("trial admin routes", () => {
       await trialDetail(apiRequest(trialPath(`/${runId}`)), runCtx(runId)),
       200,
     );
-    expect(detail.run.counts).toEqual({ planned: 0, rendered: 0, failed: 2, refused: 0 });
+    expect(detail.run.counts).toEqual({ planned: 0, running: 0, rendered: 0, failed: 2, refused: 0 });
     for (const cell of detail.cells) expect(cell.result?.failureCode).toBe("other");
   });
 
