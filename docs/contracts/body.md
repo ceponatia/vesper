@@ -76,7 +76,19 @@ A character's body-config is the set of intimate regions and additive features t
 | `CharacterProfile.intimateRegions` | Present intimate region groups, e.g. `["vulva", "breasts"]` | `[]` = no intimate anatomy (the engine's pre-existing behavior)                         |
 | `CharacterProfile.bodyFeatures`    | Additive feature groups, e.g. `["wings", "horns", "tail"]`  | *absent* ⇒ species `defaultFeatureGroups` seed it; `[]` ⇒ explicit per-character "none" |
 
-**How `intimateRegions` is seeded.** At forge time it's filled declaratively from the attribute values' `activatesGroups` (`seedBodyConfigFromAttributes`) — e.g. `identity.gender = "female"` seeds `["vulva", "breasts"]`. Because `identity.gender` is `coreVisual`, it is always present, so the seed is reliable. It is fully overridable in the editor — a **seed, never a lock** — so a "male" character can still be given a vulva. The body-config starts empty, so "deactivate X" is simply "no value activates X".
+**How `intimateRegions` is seeded.** It's filled declaratively from the attribute values' `activatesGroups` (`seedBodyConfigFromAttributes`) — e.g. `identity.gender = "female"` seeds `["vulva", "breasts"]`. Because `identity.gender` is `coreVisual`, it is always present, so the seed is reliable. It is fully overridable in the editor — a **seed, never a lock** — so a "male" character can still be given a vulva. The body-config starts empty, so "deactivate X" is simply "no value activates X".
+
+Three paths seed it, and each seeds **once, at creation** — nothing re-derives the body-config afterwards, so an author who changes gender in the editor changes the anatomy toggles themselves:
+
+| Path                          | Seeds when                                          |
+| ----------------------------- | --------------------------------------------------- |
+| Character forge               | Always, from the grounded draft's attribute values   |
+| `POST /api/characters`        | The incoming profile carries no attributes at all    |
+| `POST /api/personas`          | The incoming profile carries no body-config          |
+
+The persona gate is the body-config rather than the whole profile because a persona has no forge and no clone: its only non-blank creator is an API client, and one sending `identity.gender` with no anatomy wants the anatomy that gender activates (`seedNewPersonaProfile`, `contracts/players/persona-profile.ts`). A supplied config always wins on every path.
+
+**A seed never writes an empty `bodyFeatures`.** Per the table above, absent means "use the species and heritage defaults" while `[]` is an explicit "none" — so a seed that activates no feature group leaves the field alone rather than writing `[]`, which would strip a succubus of its wings, horns, and tail.
 
 ## The realized body
 

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { realizeBody } from "../species/realize";
 import { emptyCharacterProfile } from "../world/profile";
-import { emptyPersonaProfile, personaProfileSchema, personaToCharacterProfile } from "./persona-profile";
+import {
+  emptyPersonaProfile,
+  personaProfileSchema,
+  personaToCharacterProfile,
+  seedNewPersonaProfile,
+} from "./persona-profile";
 
 describe("personaProfileSchema", () => {
   it("parses empty to a default human body with no wardrobe (degraded-safe)", () => {
@@ -44,6 +50,69 @@ describe("personaProfileSchema", () => {
     expect(parsed.intimateRegions).toEqual(["penis"]);
   });
 
+});
+
+describe("seedNewPersonaProfile (create-time body seeding — intimate-defaulting.md §3b)", () => {
+  const attributeIds = (profile: { attributes: readonly { id: string }[] }) => profile.attributes.map((a) => a.id);
+  const valueOf = (profile: { attributes: readonly { id: string; value: unknown }[] }, id: string) =>
+    profile.attributes.find((a) => a.id === id)?.value;
+
+  it("gives a blank persona the curated defaults AND the anatomy its gender activates", () => {
+    // The library's New button posts `{title, name}` with no profile at all, so this
+    // is the shape every persona a player actually creates arrives in.
+    const seeded = seedNewPersonaProfile(emptyPersonaProfile());
+    expect(valueOf(seeded, "identity.gender")).toBe("female");
+    expect(seeded.intimateRegions).toEqual(["vulva", "breasts"]);
+  });
+
+  it("seeds anatomy from an authored gender even when the profile is NOT blank", () => {
+    // The character route's blank guard would skip this; a persona has no forge and no
+    // clone, so a non-blank create is an API client that wants its gender honoured.
+    const seeded = seedNewPersonaProfile(
+      personaProfileSchema.parse({ attributes: [{ id: "identity.gender", value: "male", source: "manual" }] }),
+    );
+    expect(seeded.intimateRegions).toEqual(["penis", "testicles"]);
+    // Still not blank, so the curated core-visual fills stay out — only the
+    // persisted-baseline facts land around the authored value.
+    expect(attributeIds(seeded)).not.toContain("identity.apparent_age");
+    expect(attributeIds(seeded)).toContain("feet.arch");
+  });
+
+  it("never overwrites a body-config the caller supplied", () => {
+    const seeded = seedNewPersonaProfile(personaProfileSchema.parse({ intimateRegions: ["penis"] }));
+    expect(seeded.intimateRegions).toEqual(["penis"]);
+    // The curated fills still run (the profile is attribute-blank) — only the config is left alone.
+    expect(valueOf(seeded, "identity.gender")).toBe("female");
+  });
+
+  it("leaves bodyFeatures ABSENT when nothing activates one — `[]` would suppress the species defaults", () => {
+    // realizeBody reads omitted as "species/heritage defaults" and provided-including-[]
+    // as an explicit override, so an empty seed must not be written.
+    const succubus = seedNewPersonaProfile(personaProfileSchema.parse({ speciesId: "succubus" }));
+    expect(succubus.bodyFeatures).toBeUndefined();
+    expect(realizeBody(succubus).bodyFeatures.size).toBeGreaterThan(0);
+  });
+
+  it("materializes the persisted-baseline facts against the seeded body", () => {
+    const seeded = seedNewPersonaProfile(emptyPersonaProfile());
+    expect(valueOf(seeded, "feet.arch")).toBeDefined();
+    expect(seeded.attributes.find((a) => a.id === "feet.arch")?.sourceId).toBe("registry-default:feet:v1");
+  });
+
+  it("survives the adapter, so the realized player body gates intimate attributes ON", () => {
+    // The whole point of §3b: every character-shaped consumer reads the persona through
+    // this adapter, and an unseeded persona left them all with no intimate anatomy.
+    const profile = personaToCharacterProfile(seedNewPersonaProfile(emptyPersonaProfile()));
+    expect(profile.intimateRegions).toEqual(["vulva", "breasts"]);
+    expect(realizeBody(profile).hasIntimateRegion("vulva")).toBe(true);
+    // The pre-fix state, for contrast: an unseeded persona realized no intimate anatomy.
+    expect(realizeBody(personaToCharacterProfile(emptyPersonaProfile())).hasIntimateRegion("vulva")).toBe(false);
+  });
+
+  it("is idempotent — re-seeding an already-seeded persona changes nothing", () => {
+    const once = seedNewPersonaProfile(emptyPersonaProfile());
+    expect(seedNewPersonaProfile(once)).toEqual(once);
+  });
 });
 
 describe("personaToCharacterProfile (the one adapter)", () => {

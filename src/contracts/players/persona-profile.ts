@@ -1,6 +1,9 @@
 import { z } from "zod";
+import { seedRegistryDefaultValues } from "../attributes";
 import { attributeValueSchema } from "../attributes/value";
 import { DEFAULT_BODY_PLAN_ID } from "../body/plans";
+import { materializeBodyDefaults } from "../species/materialize";
+import { seedBodyConfigFromAttributes } from "../species/seed";
 import { characterProfileSchema, outfitPresetSchema, type CharacterProfile } from "../world/profile";
 
 /**
@@ -64,6 +67,59 @@ export type PersonaProfile = z.infer<typeof personaProfileSchema>;
 /** The empty persona profile — a fresh persona with a default human body and no wardrobe. */
 export function emptyPersonaProfile(): PersonaProfile {
   return personaProfileSchema.parse({});
+}
+
+/**
+ * Ground a NEWLY-CREATED persona's body — the single seeding step `POST /api/personas`
+ * runs, mirroring what `POST /api/characters` does for a character. Three fills, in
+ * order, every one of them fill-only (anything the caller supplied wins):
+ *
+ * 1. **Curated core-visual defaults** (`seedRegistryDefaultValues`) on a truly blank
+ *    body, so a persona born from the library's New button has a usable look — and,
+ *    load-bearingly, an `identity.gender` for step 2 to seed *from*. The library
+ *    creates every persona with `{title, name}` and no profile, so this is the case
+ *    that matters in practice.
+ * 2. **The body-config those attribute values activate**
+ *    (`seedBodyConfigFromAttributes`) — gender `female` ⇒ `["vulva","breasts"]`.
+ * 3. **The persisted-baseline facts** (`materializeBodyDefaults`) against the
+ *    *post-seed* body, so the freshly seeded anatomy gates them.
+ *
+ * Step 2 is gated on the **body-config being empty**, not on the whole profile being
+ * blank the way `characters/route.ts` gates it. That gate exists to let authored
+ * character bodies — forge drafts, clones — through untouched, and those already carry
+ * a seeded config from `character-forge.ts`. A persona has neither a forge nor a clone,
+ * so its only non-blank creator is an API client, and one that sends `identity.gender`
+ * with no anatomy wants the anatomy that gender activates. A supplied config always
+ * wins; re-deriving one after creation (including one the author deliberately emptied)
+ * needs the provenance flag that `docs/developer-notes/intimate-defaulting.md` §1 owns
+ * and is deliberately not done here.
+ *
+ * Before this existed a persona was born at the schema default `intimateRegions: []`
+ * and stayed there forever, so every character-shaped consumer reached through
+ * {@link personaToCharacterProfile} — the realized-body filter, attribute gating, the
+ * scene image queue — saw a player body with no intimate anatomy at all. That is audit
+ * finding E1 re-occurring on the player's own avatar (intimate-defaulting.md §3b).
+ */
+export function seedNewPersonaProfile(profile: PersonaProfile): PersonaProfile {
+  const attributes =
+    profile.attributes.length === 0 ? seedRegistryDefaultValues(profile.attributes) : profile.attributes;
+  const authoredConfig = profile.intimateRegions.length > 0 || (profile.bodyFeatures?.length ?? 0) > 0;
+  const seededConfig = authoredConfig ? undefined : seedBodyConfigFromAttributes(attributes);
+  const body: PersonaProfile = {
+    ...profile,
+    attributes,
+    ...(seededConfig
+      ? {
+          intimateRegions: seededConfig.intimateRegions,
+          // An empty feature seed must leave `bodyFeatures` ABSENT rather than write
+          // `[]`: `realizeBody` reads omitted as "use the species/heritage defaults"
+          // and provided-including-`[]` as an explicit override, so writing the empty
+          // seed would strip a succubus persona of its species feature groups.
+          ...(seededConfig.bodyFeatures.length > 0 ? { bodyFeatures: seededConfig.bodyFeatures } : {}),
+        }
+      : {}),
+  };
+  return { ...body, attributes: materializeBodyDefaults(attributes, body) };
 }
 
 /**
