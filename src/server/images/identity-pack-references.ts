@@ -73,7 +73,7 @@ export interface EvaluateIdentityPackForProfileInput {
   sink?: DiagnosticSink;
 }
 
-interface RolePlanEntry {
+export interface RolePlanEntry {
   role: IdentityReferenceRole;
   required: boolean;
 }
@@ -241,8 +241,16 @@ export function evaluateIdentityPackContractForProfile(
  * sole identity in that strategy, so it is necessarily required. This is what
  * makes "a profile never ejects one character's identity to fit another
  * character's face crop" mechanically true rather than a convention.
+ *
+ * Exported READ-ONLY, for the identity trial. A trial cell needs to know what a
+ * strategy PROMISED as well as what the evaluation delivered: an optional role
+ * that was omitted is a degraded-but-fine render in production and a degenerate
+ * comparison arm in a trial (it duplicates a shorter strategy under a longer
+ * name). The trial refuses such a cell; it does not, and must not, change this
+ * plan — production evaluation semantics are exactly what the harness is
+ * measuring, so a trial-shaped edit here would make it measure itself.
  */
-function identityRolePlan(strategy: IdentityReferenceStrategy): RolePlanEntry[] {
+export function identityRolePlan(strategy: IdentityReferenceStrategy): RolePlanEntry[] {
   switch (strategy) {
     case "canonical_only":
       return [{ role: "canonical_identity", required: true }];

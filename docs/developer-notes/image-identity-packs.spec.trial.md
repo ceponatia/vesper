@@ -308,8 +308,19 @@ and the deliberate v1 limitations.
   id or the slug's own `:version` suffix; a model with neither (or with both
   disagreeing) refuses `version_unpinned` — the old `"unprobed"` floor let a
   cell claim a pin it did not have. Execution posts that exact version to
-  Replicate (`POST /predictions {version, input}`) and re-checks the pin
-  first; drift is `cell_conflict`.
+  Replicate (`POST /predictions {version, input}`), re-checks the pin first,
+  and compares the prediction's own version echo after the render (a mismatch
+  settles `failed`/`version_mismatch`); planning-time drift is
+  `cell_conflict`. **Operator note:** the seeded built-in models carry no
+  probed version, so a fresh registry plans nothing until each model is
+  re-probed once (the admin model page's reprobe action) — that is a
+  deliberate refusal, not a bug.
+- **Two-role strategies refuse when the face detail cannot resolve.** A
+  `canonical_then_face_detail` cell whose pack cannot supply the face-detail
+  role would render byte-identically to `canonical_only`; it refuses
+  `profile_ineligible` instead of silently becoming a degenerate duplicate
+  arm, and the pairing rule independently refuses to pair two arms whose
+  compiled role lists are identical.
 - **Pack variants are the second comparison axis** (`packVariants` on the
   create request, at most 4): `current` pins whatever revision is current at
   planning; `revision` pins one named revision of one character
@@ -379,10 +390,16 @@ and the deliberate v1 limitations.
 ### Blinding, grading, verdicts, and completion
 
 - Pairs differ in exactly ONE identity-reference variable within
-  (character, fixture, profile): same variant/different strategy, same
-  strategy/different variant, or pack-vs-baseline. A pair differing in both
-  is a confound and is never built. Left/right blinding is unchanged
-  (derived parity, persisted on the grade row at submission).
+  (character, fixture, profile): same variant/different strategy, or same
+  strategy/different variant. A pair differing in both is a confound and is
+  never built; cross-variant pairs additionally require the SAME source
+  content hash (a revision pinned from before a portrait change compares a
+  different photograph, not a different crop, and does not pair), and two
+  arms whose compiled role lists are identical never pair. The no-pack
+  baseline is the one deliberate exception: it pairs against each pack arm
+  of its group as a labeled baseline comparison — the bucket names the exact
+  pack arm, so nothing aggregates across arms. Left/right blinding is
+  unchanged (derived parity, persisted on the grade row at submission).
 - Verdicts are per (profile, strategy) rows. Recording one requires the run
   to be in `review` (or revising while `complete`), no cell `planned` or
   `running`, and — unless the submission carries an explicit
@@ -393,7 +410,14 @@ and the deliberate v1 limitations.
   combination has a ruling AND every reviewable pair is graded. Verdict slots
   report their pair coverage (`totalPairs`/`gradedPairs`), so a ruling whose
   counterpart cells all failed is visibly a ruling without pairwise evidence.
-  The no-pack baseline is evidence, not a verdict slot.
+  The no-pack baseline is evidence, not a verdict slot. Degraded evidence
+  wedges rather than completes: a rendered cell whose output image is gone or
+  whose stored spec no longer parses keeps the run in `review` (and makes
+  verdicts review-incomplete, override-able but recorded) — completion is the
+  claim that the blinded procedure ran, and evidence that no longer exists
+  cannot support it. Grading the final pair settles the run without needing
+  another verdict write. Same-slot verdict revisions are last-write-wins on
+  the one ledger row.
 
 ### Recorded v1 limitations
 
@@ -411,6 +435,18 @@ and the deliberate v1 limitations.
   (an owner privacy decision) — the variant axis can express them, but
   detector-method revisions refuse `detector_unavailable` rather than faking
   a method.
+- **No profile-level face-detail-only support signal exists yet.** The
+  reviewed `referencePolicy.allowedRoles` floor is honored where a policy is
+  reviewed (a profile whose policy excludes identity references refuses), but
+  nothing distinguishes "this profile's prompt strategy supports a
+  face-detail-only reference" — that gating belongs to the capabilities
+  plan's strategy threading. Until then the run author chooses strategies
+  deliberately on this admin-only surface.
+- **The no-pack baseline currently has no runnable profile.** It requires a
+  `generate`-operation identity-critical profile, and every seeded
+  variant/scene/chat_look profile is `edit`-operation; the admin creates a
+  generate-operation profile when the baseline arm is wanted. The refusal
+  message says exactly that.
 - **`IMAGE_IDENTITY_PACK_REFERENCES` stays off and untouched.** The
   integration spec explicitly allows packs to be created, inspected, and
   trialed while the flag is off; the trial does not gate on it.

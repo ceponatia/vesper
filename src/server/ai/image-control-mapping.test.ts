@@ -4,7 +4,7 @@ import {
   imageModelAdvancedCapabilitiesSchema,
   type ImageModelAdvancedCapabilities,
 } from "@/contracts";
-import { mapImageRenderControls, validateProviderOverrides } from "./image-control-mapping";
+import { filterReservedInputFields, mapImageRenderControls, validateProviderOverrides } from "./image-control-mapping";
 
 /**
  * The control mapper's whole contract is "never guess a field". These cases are
@@ -131,6 +131,37 @@ describe("mapImageRenderControls", () => {
   it("sends nothing for an empty control set", () => {
     const mapped = mapImageRenderControls({ controls: {}, capabilities: capabilities() });
     expect(mapped).toEqual({ input: {}, applied: {}, dropped: [] });
+  });
+});
+
+describe("filterReservedInputFields", () => {
+  it("drops a MAPPED control that landed on a render-path field, with the reason recorded", () => {
+    // The case that motivates this: a size-mode model's shape key is `size`, and
+    // `resolutionTier` is commonly probed as `size` too. The mapper cannot know —
+    // it sees bindings, not the model row — so the collision is caught here,
+    // before the value enters a payload the caller is about to fingerprint.
+    const mapped = mapImageRenderControls({
+      controls: { resolution: "2K", guidance: 5 },
+      capabilities: capabilities(),
+    });
+    const filtered = filterReservedInputFields(mapped.input, ["prompt", "image", "size", "version"]);
+    expect(filtered.input).toEqual({ guidance_scale: 5 });
+    expect(filtered.dropped).toEqual([{ control: "size", reason: "reserved" }]);
+  });
+
+  it("passes an uncontested payload through and reports nothing", () => {
+    const filtered = filterReservedInputFields({ guidance_scale: 5 }, ["prompt", "image", "aspect_ratio"]);
+    expect(filtered).toEqual({ input: { guidance_scale: 5 }, dropped: [] });
+  });
+
+  it("orders its output by field name so two identical payloads hash identically", () => {
+    // Same reason `validateProviderOverrides` sorts: the resolved controls are
+    // fingerprinted for drift detection, and an order that depended on the
+    // mapper's traversal would make an unchanged profile look moved.
+    const one = filterReservedInputFields({ b: 2, a: 1 }, []);
+    const two = filterReservedInputFields({ a: 1, b: 2 }, []);
+    expect(Object.keys(one.input)).toEqual(["a", "b"]);
+    expect(Object.keys(two.input)).toEqual(["a", "b"]);
   });
 });
 

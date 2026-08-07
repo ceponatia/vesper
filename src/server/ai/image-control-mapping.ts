@@ -34,7 +34,16 @@ import type { ImageInputBinding, ImageModelAdvancedCapabilities, ImageRenderCont
 
 /** One control that did not reach the payload, and why. */
 export interface DroppedImageControl {
-  /** The NORMALIZED control name (`guidance`), never the provider field. */
+  /**
+   * WHAT was dropped, named in the vocabulary the caller supplied it in: the
+   * NORMALIZED control name (`guidance`) when a normalized control was mapped,
+   * and the PROVIDER FIELD name when the thing dropped was itself a provider key
+   * — a `providerOverrides` entry, or a mapped value refused for colliding with
+   * a reserved field ({@link filterReservedInputFields}). Naming an override's
+   * normalized control would be a fabrication (it has none), and naming a
+   * reserved collision's normalized control would hide WHICH provider key
+   * collided, which is the only actionable half of that report.
+   */
   control: string;
   reason: DroppedImageControlReason;
 }
@@ -49,8 +58,9 @@ export interface DroppedImageControl {
  *   capability slices and faking one here would send a field nobody probed.
  * - `unknown_field` — a provider override naming a key outside the version's
  *   probed `knownInputFields`.
- * - `reserved` — a provider override naming a field the render path owns
- *   (prompt, references, aspect, version, safety enforcement).
+ * - `reserved` — a field the render path owns (prompt, references, aspect,
+ *   version, safety enforcement), named by a provider override OR landed on by
+ *   a mapped control whose probed binding happens to point at it.
  */
 export type DroppedImageControlReason = "no_binding" | "invalid" | "unsupported" | "unknown_field" | "reserved";
 
@@ -163,6 +173,42 @@ function withinRange(binding: ImageInputBinding, value: number): boolean {
   if (binding.minimum !== undefined && value < binding.minimum) return false;
   if (binding.maximum !== undefined && value > binding.maximum) return false;
   return true;
+}
+
+export interface FilteredImageInputFields {
+  input: Record<string, unknown>;
+  dropped: DroppedImageControl[];
+}
+
+/**
+ * Remove the render-path-owned fields from an already provider-shaped payload,
+ * recording each removal.
+ *
+ * This is the gap `validateProviderOverrides` does not close. Overrides are the
+ * obvious way a stored row reaches a reserved field, but they are not the only
+ * one: a MAPPED control lands on whatever field the version's probe declared for
+ * it, and those declarations genuinely collide — a model whose shape input is
+ * `size` reserves that key, while `resolutionTier` is commonly probed as `size`
+ * too. Left unfiltered, the mapped value would travel to the provider, be
+ * discarded by the render path's own overlay, and appear in the trial's
+ * `controlInput` hash as a control that was sent when it never was.
+ *
+ * Dropping it HERE, before it enters the payload a comparison fingerprints, is
+ * what keeps "what is hashed is what is sent" true. The alternative — letting
+ * the transport silently discard it — produces two arms whose recorded
+ * configurations differ and whose actual renders do not.
+ */
+export function filterReservedInputFields(
+  input: Record<string, unknown>,
+  reservedFields: readonly string[],
+): FilteredImageInputFields {
+  const reserved = new Set(reservedFields);
+  const result: FilteredImageInputFields = { input: {}, dropped: [] };
+  for (const field of Object.keys(input).sort()) {
+    if (reserved.has(field)) result.dropped.push({ control: field, reason: "reserved" });
+    else result.input[field] = input[field];
+  }
+  return result;
 }
 
 export interface ValidatedProviderOverrides {

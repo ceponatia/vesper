@@ -47,7 +47,7 @@ import {
   type TrialPairableCell,
 } from "@/lib/images/identity-pack-trial";
 import { newId } from "@/lib/ids";
-import { classifyImageFailure } from "../ai";
+import { classifyImageFailure, OUTPUT_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from "../ai";
 import {
   db,
   imageIdentityPackTrialCells,
@@ -72,11 +72,13 @@ import {
 import {
   evaluateIdentityPackContractForProfile,
   evaluateIdentityPackForProfile,
+  identityRolePlan,
 } from "./identity-pack-references";
 import { loadImageModels, renderWithModel, type RenderWithModelResult } from "./models";
 import { loadImageModelProfiles } from "./model-profiles";
 import {
   compileProfileRenderPlan,
+  MAX_TRIAL_PREDICTION_MS,
   pinnedImageModelVersion,
   profileRenderControlsHash,
   sha256Hex,
@@ -100,11 +102,15 @@ import {
  *    that does not exist (`ensureIdentityPack`'s owner-rooted source
  *    resolution), so its cells are recorded `refused` and nothing about the
  *    foreign character leaks.
- * 2. **A cell is CLAIMED before it is rendered, and settles once.** A pass moves
- *    the cell from `planned` to `running` with its own token in the database
- *    before the provider is called, and every settle is a compare-and-set
- *    against that exact claim. The in-process lock cannot see a second machine
- *    or survive a restart; this can. `failed` and `refused` remain terminal — a
+ * 2. **A cell is CLAIMED before it is rendered, RE-ASSERTED as the render
+ *    starts, and settles once.** A pass moves the cell from `planned` to
+ *    `running` with its own token in the database before the provider is called;
+ *    each cell then re-stamps that claim immediately before its own provider
+ *    call, so the staleness clock measures one render rather than a cell's
+ *    position in the batch, and a claim already lost costs zero provider calls
+ *    instead of one deleted image. Every settle is a compare-and-set against
+ *    that exact claim. The in-process lock cannot see a second machine or
+ *    survive a restart; this can. `failed` and `refused` remain terminal — a
  *    rerun is a NEW run, never a retry.
  * 3. **The daily render budget is charged INSIDE the execution lock, through
  *    the caller's injected `chargeBudget`** — sized to exactly the cells this
@@ -231,6 +237,7 @@ function refusal(
 function trialResult(partial: Partial<ImageIdentityPackTrialResult>): ImageIdentityPackTrialResult {
   return {
     providerPredictionId: null,
+    providerVersionId: null,
     outputImageId: null,
     latencyMs: null,
     moderationOutcome: null,
@@ -351,6 +358,12 @@ export async function readTrialVerdicts(runId: string): Promise<TrialVerdict[]> 
  *   a set of opinions, not a trial: `complete` is the claim that the blinded
  *   procedure actually ran, so both halves of the evidence must be in.
  *
+ * Both facts are additionally FALSE while any rendered cell is degraded — its
+ * image gone or its spec unreadable — because each of them is otherwise
+ * satisfiable by evidence disappearing. A run with no pairs left to grade and a
+ * run whose pairs were all graded look identical from here; only the degraded
+ * count tells them apart.
+ *
  * The coverage fact must still be TRUE of something — a run with no rendered
  * cell at all stays in `review` as the record of a trial nothing came of, rather
  * than claiming completion vacuously.
@@ -397,6 +410,22 @@ function verdictComboKey(profileId: string, strategy: IdentityReferenceStrategy)
  */
 type RenderedComboTally = Omit<TrialRenderedCombo, "totalPairs" | "gradedPairs">;
 
+interface RenderedTrialCombos {
+  combos: RenderedComboTally[];
+  /**
+   * Rendered rows whose spec is UNREADABLE, so nothing can say which verdict
+   * slot they belong to.
+   *
+   * Such a row is not "one fewer combo" — it is a combo of unknown identity, and
+   * treating it as absent would silently delete a verdict slot the run was
+   * supposed to be ruled on. Completion therefore refuses while any exist: a run
+   * with an unaccountable rendered cell wedges loudly in `review` (the parse
+   * failure already fires its own warn) rather than claiming every combination
+   * was ruled when one of them could not even be named.
+   */
+  degraded: number;
+}
+
 /**
  * Every (profile, strategy) with at least one rendered cell, in cell-key order.
  * The ONE derivation shared by run completion ({@link verdictsCoverRenderedCombos})
@@ -405,27 +434,33 @@ type RenderedComboTally = Omit<TrialRenderedCombo, "totalPairs" | "gradedPairs">
  * counterpart cell (no pair, so no comparison) wedges in `review` with no slot
  * to rule it through.
  *
- * A null-strategy cell — the no-pack baseline — is deliberately SKIPPED. It is
- * evidence, not a verdict slot: a verdict rules on a (profile, strategy), and
- * the baseline has no strategy to promote or reject. Counting it would create a
- * slot nothing can ever fill and wedge the run short of `complete`.
+ * A null-strategy cell — the no-pack baseline — is deliberately SKIPPED, and is
+ * NOT degraded. It is evidence, not a verdict slot: a verdict rules on a
+ * (profile, strategy), and the baseline has no strategy to promote or reject.
+ * Counting it would create a slot nothing can ever fill and wedge the run short
+ * of `complete`.
  */
 function renderedTrialCombos(
   rows: readonly IdentityPackTrialCellRow[],
   sink: DiagnosticSink | undefined,
-): RenderedComboTally[] {
+): RenderedTrialCombos {
   const combos = new Map<string, RenderedComboTally>();
+  let degraded = 0;
   for (const row of rows) {
     if (row.status !== "rendered") continue;
     const spec = readTrialCellSpec(row, sink);
-    if (!spec || spec.identityStrategy === null) continue;
+    if (!spec) {
+      degraded += 1;
+      continue;
+    }
+    if (spec.identityStrategy === null) continue;
     const strategy = spec.identityStrategy;
     const key = verdictComboKey(spec.profileId, strategy);
     const existing = combos.get(key);
     if (existing) existing.renderedCells += 1;
     else combos.set(key, { profileId: spec.profileId, identityStrategy: strategy, renderedCells: 1 });
   }
-  return [...combos.values()];
+  return { combos: [...combos.values()], degraded };
 }
 
 function verdictsCoverRenderedCombos(
@@ -433,8 +468,11 @@ function verdictsCoverRenderedCombos(
   verdicts: readonly TrialVerdict[],
   sink: DiagnosticSink | undefined,
 ): boolean {
-  const combos = renderedTrialCombos(rows, sink);
-  if (combos.length === 0) return false;
+  const { combos, degraded } = renderedTrialCombos(rows, sink);
+  // A rendered cell nothing can name is a verdict slot nothing can rule. Reading
+  // past it would let a run complete over a combination that was never ruled
+  // because it could no longer be identified.
+  if (degraded > 0 || combos.length === 0) return false;
   const ruled = new Set(verdicts.map((verdict) => verdictComboKey(verdict.profileId, verdict.identityStrategy)));
   return combos.every((combo) => ruled.has(verdictComboKey(combo.profileId, combo.identityStrategy)));
 }
@@ -458,12 +496,17 @@ async function settleTrialRunStatus(
 ): Promise<TrialRunStatus> {
   const rows = await trialCellRows(runId);
   const counts = countTrialCells(rows);
-  const { pairable } = reviewableTrialCells(rows, sink);
+  const { pairable, degraded } = reviewableTrialCells(rows, sink);
   const [graded, verdicts] = await Promise.all([gradedPairIds(runId), readTrialVerdicts(runId)]);
   const next = nextTrialRunStatus(current, {
     executing,
     unexecutedRemaining: counts.planned + counts.running,
-    allReviewablePairsGraded: pairTrialCells(pairable).every((pair) => graded.has(pair.pairId)),
+    // Degraded rendered evidence blocks completion as hard as an ungraded pair,
+    // and for the same reason: `complete` asserts the blinded procedure RAN over
+    // this run's evidence. A rendered cell whose image or spec has vanished
+    // takes its pairs with it, so "every pair is graded" becomes vacuously true
+    // exactly when the thing it certifies stopped being checkable.
+    allReviewablePairsGraded: degraded === 0 && pairTrialCells(pairable).every((pair) => graded.has(pair.pairId)),
     verdictsCoverEveryRenderedCombo: verdictsCoverRenderedCombos(rows, verdicts, sink),
   });
   if (next !== current) {
@@ -874,6 +917,45 @@ async function resolveTrialCellVariant(
 }
 
 /**
+ * Why this evaluated arm would be a DUPLICATE of a shorter one, or null when it
+ * is a real comparison.
+ *
+ * `identityRolePlan` marks `face_detail` optional in both two-role strategies.
+ * A pack whose face crop is unusable therefore evaluates `eligible` for
+ * `canonical_then_face_detail` with a warning and a candidate list of just the
+ * canonical portrait — which is byte-for-byte what `canonical_only` sends. That
+ * is the RIGHT answer for a production render (a slightly weaker likeness beats
+ * no image) and the wrong one for a trial: the grid would render the same
+ * request twice, pair the two, and report whatever the model did differently
+ * between them as an effect of reference ordering.
+ *
+ * So the trial refuses the cell instead of letting a degenerate arm into the
+ * grid — a refusal of the CELL, never a change to the evaluation. Production's
+ * interpretation of eligibility is exactly what the harness exists to measure,
+ * and editing `identityRolePlan` to suit the harness would make it measure
+ * itself. The refusal is also cheap in the right way: it happens at planning, so
+ * the arm costs nothing and reads back with its reason attached.
+ */
+function degenerateArmRefusal(
+  strategy: IdentityReferenceStrategy,
+  roles: readonly IdentityReferenceRole[],
+): string | null {
+  const missing = identityRolePlan(strategy)
+    .map((entry) => entry.role)
+    .filter((role) => !roles.includes(role));
+  if (missing.length === 0) return null;
+  // Only `face_detail` is ever optional, and a missing REQUIRED role already
+  // refused inside the evaluation — so in practice this names the face crop and
+  // the surviving arm is `canonical_only`. The general spelling is here so a
+  // future role plan cannot make the message quietly untrue.
+  const surviving = roles.length === 1 && roles[0] === "canonical_identity" ? "canonical_only" : "a shorter arm";
+  return (
+    `the ${missing.join(", ").replaceAll("_", "-")} reference is unavailable for this pack; ` +
+    `the cell would duplicate ${surviving}`
+  );
+}
+
+/**
  * Resolve one planned cell to a full spec, or to the refusal that stops it
  * (spec.trial.md §"Trial manifest"). The order is the design's: profile, then
  * the fixture's task, then production offerability, then the version pin, then
@@ -896,6 +978,19 @@ async function resolveTrialCellVariant(
  *   an identity-critical task. Restating any of them here would let trial
  *   eligibility drift from production eligibility, which is the one thing this
  *   harness cannot afford.
+ *
+ * Two further gates keep the grid from grading arms that are not comparisons at
+ * all, and they sit either side of the pack resolution because that is where
+ * their evidence arrives:
+ *
+ * - **The reference-policy floor**, just before the variant resolves. A profile
+ *   whose reviewed policy allows roles but not `identity` would never be handed
+ *   an identity reference in production; an empty policy is the unreviewed
+ *   default and stays permissive.
+ * - **Degenerate arms** ({@link degenerateArmRefusal}), just after the
+ *   evaluation. An arm whose optional role was dropped sends exactly what a
+ *   shorter strategy sends, and pairing two identical requests measures provider
+ *   noise under a strategy's name.
  *
  * The control COMPILE sits between the evaluation and the capacity check. It is
  * not a gate — compiling cannot refuse, only record what would be dropped — so
@@ -972,6 +1067,27 @@ async function resolveTrialCell(
   }
   const versionFields = { modelVersion };
 
+  // The reference-policy floor, and the LAST gate that can be answered from the
+  // profile row alone. A profile whose reviewed policy names allowed roles and
+  // omits `identity` is one production would never hand an identity reference
+  // to, so a trial cell that sent one would be grading a configuration the
+  // render path cannot produce. An EMPTY `allowedRoles` is the seeded default —
+  // "nobody has reviewed a policy for this profile yet" — and stays permissive,
+  // because reading "nothing recorded" as "nothing allowed" would refuse all 17
+  // seeded profiles and empty the grid. The no-pack baseline sends no references
+  // at all and is untouched either way.
+  if (planFields.referenceSource === "pack") {
+    const allowedRoles = profile.referencePolicy.allowedRoles;
+    if (allowedRoles.length > 0 && !allowedRoles.includes("identity")) {
+      return {
+        status: "refused",
+        code: "profile_ineligible",
+        message: `the profile's reference policy does not allow identity references (allows ${allowedRoles.join(", ")})`,
+        spec: { ...planFields, ...profileFields, ...versionFields },
+      };
+    }
+  }
+
   const variant = await resolveTrialCellVariant(resolution, plan, profile);
   if (!variant.ok) {
     return {
@@ -982,6 +1098,19 @@ async function resolveTrialCell(
     };
   }
   const roles = variant.evaluation.orderedReferenceRoles;
+
+  // The evaluation is production's, and production's answer to a missing
+  // OPTIONAL role is "render anyway with a warning" — right for a portrait, and
+  // a fabricated experiment for a grid. See {@link degenerateArmRefusal}.
+  const degenerate = plan.identityStrategy === null ? null : degenerateArmRefusal(plan.identityStrategy, roles);
+  if (degenerate !== null) {
+    return {
+      status: "refused",
+      code: "profile_ineligible",
+      message: degenerate,
+      spec: { ...planFields, ...profileFields, ...versionFields, ...variant.pack, ...variant.evaluation },
+    };
+  }
 
   // Compile what this cell WOULD send, with the roles now known: the exact
   // prompt text (numbered role bindings and model dialect included), the
@@ -1259,21 +1388,49 @@ export async function getIdentityPackTrialRunDetail(
 const EXECUTE_DEFAULT_MAX_RENDERS = 5;
 const EXECUTE_MAX_RENDERS_CAP = 20;
 
-/** The one diagnostic code the render path emits when a reference is dropped in
- * transport (`runRegistryImageModel`'s `data_url` inline-byte budget). Spelled
- * here so the trim watch in {@link executeOneTrialCell} cannot drift from it. */
+/**
+ * The two render-path diagnostics that mean "the provider did not receive what
+ * this cell compiled". Spelled here so the watches in
+ * {@link executeOneTrialCell} cannot drift from the codes the transport emits.
+ *
+ * - `image_model.references_trimmed` — a reference was dropped against
+ *   `runRegistryImageModel`'s `data_url` inline-byte budget.
+ * - `image_model.reserved_field_ignored` — a control field collided with one the
+ *   render path owns and was discarded by `overlayControlInput`. The compile step
+ *   filters those out beforehand, so reaching this means the two disagreed —
+ *   which is exactly when a cell must not be trusted.
+ */
 const REFERENCES_TRIMMED_DIAGNOSTIC = "image_model.references_trimmed";
+const RESERVED_FIELD_IGNORED_DIAGNOSTIC = "image_model.reserved_field_ignored";
 
 /**
  * How long a claim may sit before a later pass may take it back.
  *
- * It must EXCEED the longest render a cell can legitimately be waiting on, or
- * recovery would hand a still-running render to a second worker and pay twice
- * for one cell. A profile's `timeoutMs` is capped at 15 minutes by the contract
- * (and Replicate's own `Cancel-After` carries the same budget), so 20 minutes is
- * that ceiling plus enough margin for upload, download and storage around it.
+ * It must EXCEED the longest ONE RENDER can legitimately take — not the longest
+ * a queued cell can wait, because {@link executeOneTrialCell} re-stamps
+ * `claimed_at` immediately before it calls the provider. Staleness therefore
+ * measures a single render's span, never a cell's position in a 20-cell batch;
+ * without that heartbeat this window would have to cover the whole batch, and a
+ * 20-render pass would age its own tail claims into recovery while they queued.
+ *
+ * Derived rather than guessed, from the four things that actually elapse:
+ *
+ *     900_000  the prediction budget ceiling (MAX_TRIAL_PREDICTION_MS, itself
+ *              `imageModelProfileSchema.timeoutMs`'s `.max(900_000)` bound, and
+ *              what Replicate's own `Cancel-After` carries)
+ *   + 300_000  4 × REQUEST_TIMEOUT_MS — three reference uploads plus the poll GET
+ *              that observes the settled prediction
+ *   +  60_000  OUTPUT_TIMEOUT_MS — downloading the produced image
+ *   + 300_000  margin for storage, retries and clock skew between two machines
+ *   ---------
+ *   1_560_000  (26 minutes)
+ *
+ * Recovering too early hands a live render to a second worker and pays twice;
+ * never recovering wedges a run short of `review` forever. Sizing it off the
+ * real bounds is what keeps that trade an engineering decision rather than a
+ * number that silently stopped covering the thing it was chosen for.
  */
-const STALE_CLAIM_MS = 20 * 60_000;
+export const STALE_CLAIM_MS = MAX_TRIAL_PREDICTION_MS + 4 * REQUEST_TIMEOUT_MS + OUTPUT_TIMEOUT_MS + 5 * 60_000;
 
 /**
  * Exactly what the profile compiled, handed to the renderer.
@@ -1291,8 +1448,13 @@ export interface TrialCellRenderInput {
   references: Buffer[];
   /** Mapped controls plus validated overrides, keyed by real provider fields. */
   controlInput: Record<string, unknown>;
-  /** The profile's prediction budget; null uses the env/default. */
-  timeoutMs: number | null;
+  /**
+   * The resolved prediction budget — a NUMBER, always. A trial cell never leaves
+   * its deadline to `REPLICATE_PREDICTION_TIMEOUT_MS`: an env-resolved budget is
+   * one the cell cannot record, cannot hash, and cannot bound, and the
+   * stale-claim window above is sized against this being a real ceiling.
+   */
+  timeoutMs: number;
   /** The pinned provider version this cell must execute. */
   versionId: string | null;
 }
@@ -1377,7 +1539,10 @@ export type ExecuteIdentityPackTrialCellsResult<TReject> =
  * - The DURABLE CLAIM inside the pass is the cross-process one. Cells move to
  *   `running` with a token in the database BEFORE the provider is called, so a
  *   second machine — or this machine after a restart — sees the claim rather
- *   than a `planned` cell it is free to re-render.
+ *   than a `planned` cell it is free to re-render. The claim is taken for the
+ *   whole batch at once and RE-ASSERTED per cell as its render begins, which is
+ *   what keeps a lost race free (no provider call) and keeps a queued cell from
+ *   aging past the stale window while cells ahead of it render.
  *
  * Null when the run is not this owner's.
  *
@@ -1467,10 +1632,19 @@ async function runTrialExecutionPass<TReject>(
   // A row this pass picked but did not claim was taken by another machine
   // between the select and the update. That is the durable claim working, not an
   // error: proceed with what this pass actually holds.
+  //
+  // Every claimed cell is settled or admitted HERE, before the charge, and both
+  // gates are free. A malformed spec is one; a spec that parses but names a
+  // fixture, model or profile that no longer exists is the other, and it is the
+  // registry maps loaded just above that make it answerable this early. A cell
+  // that cannot reach a provider must never be billed for the attempt — the
+  // post-charge re-checks in `executeOneTrialCell` still run, because a row can
+  // vanish between these two moments, but a run left stale by a deleted profile
+  // no longer burns a budget unit per cell per pass to rediscover it.
   const executed: ExecutedTrialCell[] = [];
   const valid: ClaimedTrialCell[] = [];
   for (const cell of claimed) {
-    const read = readClaimedTrialSpec(cell);
+    const read = readRunnableTrialSpec(cell, context);
     if (read.ok) {
       valid.push({ cell, spec: read.spec });
       continue;
@@ -1481,29 +1655,49 @@ async function runTrialExecutionPass<TReject>(
 
   // Charge for exactly the cells this pass will attempt, and only once they are
   // claimed: a pass with nothing to run costs nothing (reviewing a finished grid
-  // must keep working after the daily budget is spent), and a malformed cell —
+  // must keep working after the daily budget is spent), and an unrunnable cell —
   // settled terminally above, never sent anywhere — is never billed. Charged
   // slots are a reservation: a cell that then conflicts or fails mid-batch does
   // not refund its unit, deliberately, because the pass was admitted at this size.
   if (valid.length > 0) {
-    const rejected = await input.chargeBudget(valid.length);
+    const claimedIds = valid.map((entry) => entry.cell.id);
+    let rejected: TReject | null;
+    try {
+      rejected = await input.chargeBudget(claimedIds.length);
+    } catch (error) {
+      // A guard that THREW decided nothing, and its claims are as unspent as a
+      // refusal's. Leaving them `running` would wedge the grid for the whole
+      // stale window over a fault that never touched a provider, so they go back
+      // before the throw continues to the caller.
+      await releaseTrialClaims(claimedIds, claimToken);
+      throw error;
+    }
     if (rejected !== null) {
       // Hand the claims back immediately. A refused pass that left its cells
       // `running` would wedge them until the stale window elapsed, turning a
-      // budget refusal into twenty minutes of a frozen grid.
-      await releaseTrialClaims(valid.map((entry) => entry.cell.id), claimToken);
+      // budget refusal into half an hour of a frozen grid.
+      await releaseTrialClaims(claimedIds, claimToken);
       sink?.push(
         diag("warn", imageIdentityPackTrialDiagnosticCode("budget_refused"), "the render budget refused this pass", {
-          context: { runId, cells: valid.length },
+          context: { runId, cells: claimedIds.length },
         }),
       );
       return { ok: false, budgetRejected: rejected };
     }
   }
 
-  for (const entry of valid) {
+  for (const [index, entry] of valid.entries()) {
     const status = await executeTrialCellContained(entry.cell, entry.spec, context);
-    if (status === null) break; // the containment settle itself failed; stop the pass
+    if (status === null) {
+      // The containment settle itself failed, so this pass stops. The cells it
+      // has not REACHED were charged but never sent anywhere, and returning an
+      // untouched claim costs nothing — so they go back to `planned` rather than
+      // waiting out the stale window. Their charge stays spent: a charged slot is
+      // a reservation for a pass admitted at that size, exactly as for a cell that
+      // conflicted mid-batch.
+      await releaseTrialClaims(valid.slice(index + 1).map((remaining) => remaining.cell.id), claimToken);
+      break;
+    }
     executed.push({ cellId: entry.cell.id, cellKey: entry.cell.cellKey, status });
   }
 
@@ -1529,6 +1723,11 @@ interface ClaimedTrialCell {
  * another writer won those, which is the whole point. Nothing is rendered before
  * this write lands, so a crash between claim and provider call costs a cell's
  * evidence but never a double charge.
+ *
+ * The clock stamped here dates the CLAIM; it is deliberately re-stamped per cell
+ * at {@link beatTrialClaim} when that cell's render actually starts, because a
+ * batch's last cell may sit here for the length of nineteen renders and none of
+ * that waiting is evidence the worker died.
  */
 async function claimTrialCells(
   runId: string,
@@ -1550,8 +1749,14 @@ async function claimTrialCells(
 
 /**
  * Hand claims back to `planned`, token-guarded so a pass can only release its
- * OWN. Used for the budget refusal, where nothing was rendered and nothing was
- * charged — the one case where returning a claim cannot cost a second payment.
+ * OWN.
+ *
+ * Every caller shares one precondition: the cells being released were NEVER
+ * SENT ANYWHERE. That is what makes returning them free of the double-pay risk
+ * recovery carries — there is no in-flight render to collide with. Three cases
+ * qualify: a budget guard that refused, a budget guard that threw, and the cells
+ * a pass never reached because its containment settle failed. A cell whose
+ * provider call has begun is never released; it settles, or it goes stale.
  */
 async function releaseTrialClaims(cellIds: readonly string[], claimToken: string): Promise<void> {
   if (cellIds.length === 0) return;
@@ -1568,6 +1773,44 @@ async function releaseTrialClaims(cellIds: readonly string[], claimToken: string
 }
 
 /**
+ * Re-stamp this pass's claim on ONE cell, immediately before its provider call,
+ * and report whether the pass still holds it.
+ *
+ * Two jobs, both about money:
+ *
+ * 1. **It resets the stale clock per render.** Without it, `claimed_at` dates
+ *    the moment a whole batch was claimed, so the twentieth cell of a 20-render
+ *    pass could pass {@link STALE_CLAIM_MS} while queueing and be handed to a
+ *    second worker that then pays for it again. With it, the clock starts when
+ *    the render does.
+ * 2. **It caps a lost race at ZERO provider calls.** The compare-and-set is the
+ *    same one every settle uses, so a claim taken over between the batch claim
+ *    and this cell's turn is discovered HERE — before the spend — rather than
+ *    afterwards, when the only remedy left is deleting an image somebody already
+ *    paid for.
+ */
+async function beatTrialClaim(cell: IdentityPackTrialCellRow, context: ExecuteCellContext): Promise<boolean> {
+  const beat = await db()
+    .update(imageIdentityPackTrialCells)
+    .set({ claimedAt: new Date() })
+    .where(
+      and(
+        eq(imageIdentityPackTrialCells.id, cell.id),
+        eq(imageIdentityPackTrialCells.status, "running"),
+        eq(imageIdentityPackTrialCells.claimToken, context.claimToken),
+      ),
+    )
+    .returning({ id: imageIdentityPackTrialCells.id });
+  if (beat.length > 0) return true;
+  context.sink?.push(
+    diag("warn", "images.identity_pack.trial.cell_degraded", "the claim was taken over before the render started", {
+      context: { runId: context.runId, cellId: cell.id, cellKey: cell.cellKey },
+    }),
+  );
+  return false;
+}
+
+/**
  * Return claims abandoned by a dead worker to the grid.
  *
  * The trade this makes is real and worth stating: a claim older than
@@ -1577,6 +1820,14 @@ async function releaseTrialClaims(cellIds: readonly string[], claimToken: string
  * wedges its run short of `review` and can never be graded or ruled on — so
  * recovery happens, on a clock long enough that no live render can be inside it,
  * and loudly enough that an operator sees it happened.
+ *
+ * `claimed_at` is a HEARTBEAT, not a queue timestamp: {@link executeOneTrialCell}
+ * re-stamps it immediately before the provider call, so what this cutoff
+ * measures is "how long has this cell been RENDERING", not "how long since the
+ * pass that owns it started". That distinction is what lets the window be sized
+ * against one render (see {@link STALE_CLAIM_MS}) instead of against a full
+ * 20-cell batch, and it is why a cell waiting its turn behind nineteen others
+ * cannot age itself into recovery while the pass holding it is perfectly alive.
  *
  * A `running` row with NO `claimed_at` is deliberately not recovered: it records
  * a claim nothing can date, and resetting an undateable claim on sight is
@@ -1648,6 +1899,49 @@ function readClaimedTrialSpec(cell: IdentityPackTrialCellRow): ClaimedTrialSpecR
   return { ok: true, spec: parsed.data };
 }
 
+/**
+ * One claimed cell's spec AND whether anything it names still exists — the whole
+ * pre-charge judgment, in the one shape the loop settles on.
+ *
+ * The composition matters more than either half. `readClaimedTrialSpec` catches
+ * a spec nothing can read; {@link unreachableClaimedTrialCell} catches a spec
+ * that reads perfectly and names a fixture, model or profile that is gone. Both
+ * are cells no provider will ever see, and both used to be discovered AFTER the
+ * budget charge — so a run whose profile an admin deleted paid a unit per cell
+ * per pass to keep rediscovering it.
+ */
+function readRunnableTrialSpec(cell: IdentityPackTrialCellRow, context: ExecuteCellContext): ClaimedTrialSpecRead {
+  const read = readClaimedTrialSpec(cell);
+  if (!read.ok) return read;
+  const unreachable = unreachableClaimedTrialCell(read.spec, context);
+  return unreachable === null ? read : { ok: false, ...unreachable };
+}
+
+/**
+ * Why this cell could never reach a provider, or null when it can.
+ *
+ * The three lookups are exactly the ones {@link executeOneTrialCell} performs
+ * after the charge, asked here against the SAME maps that pass already loaded.
+ * The post-charge copies stay — a registry row can be deleted between these two
+ * moments, and the executor must still refuse rather than dereference nothing —
+ * so this is a cheaper first answer to the same question, never a replacement
+ * for it. The codes and messages match their post-charge counterparts on
+ * purpose: an operator reading a refused cell should not be able to tell which
+ * of the two noticed.
+ */
+function unreachableClaimedTrialCell(
+  spec: ImageIdentityPackTrialCellSpec,
+  context: ExecuteCellContext,
+): { code: ImageIdentityPackTrialRefusalCode; message: string } | null {
+  if (!trialPromptFixtureById(spec.promptFixtureId)) {
+    return { code: "fixture_unknown", message: "the cell's prompt fixture is no longer checked in" };
+  }
+  if (!context.modelsBySlug.has(spec.modelSlug) || !context.profilesById.has(spec.profileId)) {
+    return { code: "cell_conflict", message: "the pinned model or profile is no longer registered" };
+  }
+  return null;
+}
+
 interface ExecuteCellContext {
   runId: string;
   ownerId: string;
@@ -1660,30 +1954,61 @@ interface ExecuteCellContext {
 }
 
 /**
+ * Where a cell records the output it has already stored, so the containment
+ * catch can settle WITH it.
+ *
+ * A mutable holder rather than a return value because the point is to survive a
+ * THROW: `executeOneTrialCell` writes `imageId` the moment `saveImageBuffer`
+ * reports ready, and anything that throws after that — a failing settle, a bug
+ * in the audit checks — leaves the id readable to the catch below. Without it a
+ * throw between store and settle produced a `ready`, owner-scoped, hidden image
+ * that no cell pointed at, which means the run's delete sweep (it walks cell
+ * pointers) could never find it and nothing in the app could either.
+ */
+interface StoredTrialOutput {
+  imageId: string | null;
+}
+
+/**
  * One cell with its exceptions contained. A throw out of
  * {@link executeOneTrialCell} — a DB error storing the output, a bug — may land
  * AFTER provider spend, and letting it abort the batch would 500 the route and
  * leave the cell `planned`, so the next execute would re-render it: double
  * provider spend for one cell's evidence. Instead the thrown cell settles
- * `failed` through the same claim CAS every other settle uses, and the batch
- * continues. Only a failure of that settle itself stops the pass (`null`) — at
- * that point nothing can be recorded, and continuing would repeat the same write
- * failure cell after cell. The claims this pass still holds on cells it never
- * reached stay `running` and return to the grid through stale recovery: writing
- * more rows to a database that just refused a write is not a recovery plan.
+ * `failed` through the same claim CAS every other settle uses, CARRYING whatever
+ * output was already stored, and the batch continues.
+ *
+ * Settling with the stored id is what keeps the bytes accounted for: the cell
+ * owns them, the run's delete sweep reaches them, and an operator can look at
+ * the image a failed cell paid for. `failed` cells never pair, so an image that
+ * arrived through a broken path still cannot enter the comparison grid.
+ *
+ * Only a failure of that settle itself stops the pass (`null`) — at that point
+ * nothing can be recorded, and continuing would repeat the same write failure
+ * cell after cell. The caller returns this pass's UNREACHED claims to the grid;
+ * this cell's own claim stays `running` and waits out stale recovery, because
+ * writing more rows to a database that just refused a write is not a recovery
+ * plan.
  */
 async function executeTrialCellContained(
   cell: IdentityPackTrialCellRow,
   spec: ImageIdentityPackTrialCellSpec,
   context: ExecuteCellContext,
 ): Promise<ExecutedTrialCell["status"] | null> {
+  const stored: StoredTrialOutput = { imageId: null };
   try {
-    return await executeOneTrialCell(cell, spec, context);
+    return await executeOneTrialCell(cell, spec, context, stored);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     context.sink?.push(
       diag("warn", "images.identity_pack.trial.cell_degraded", "cell execution threw; settling the cell failed", {
-        context: { runId: context.runId, cellId: cell.id, cellKey: cell.cellKey, error: message.slice(0, 300) },
+        context: {
+          runId: context.runId,
+          cellId: cell.id,
+          cellKey: cell.cellKey,
+          outputImageId: stored.imageId,
+          error: message.slice(0, 300),
+        },
       }),
     );
     try {
@@ -1691,13 +2016,17 @@ async function executeTrialCellContained(
         cell,
         context,
         "failed",
-        trialResult({ failureCode: "other", failureMessage: message.slice(0, 2000) }),
-        null,
+        trialResult({
+          outputImageId: stored.imageId,
+          failureCode: "other",
+          failureMessage: message.slice(0, 2000),
+        }),
+        stored.imageId,
       );
     } catch {
       context.sink?.push(
         diag("error", "images.identity_pack.trial.cell_degraded", "could not settle a thrown cell; stopping this pass", {
-          context: { runId: context.runId, cellId: cell.id, cellKey: cell.cellKey },
+          context: { runId: context.runId, cellId: cell.id, cellKey: cell.cellKey, outputImageId: stored.imageId },
         }),
       );
       return null;
@@ -1754,11 +2083,17 @@ async function settleTrialCell(
 /**
  * Remove a stored output whose settle lost the claim race.
  *
- * One helper rather than a check at each settle site: the rendered path and the
- * references-trimmed path both carry an output image, and a cleanup written
- * twice is a cleanup that eventually exists in only one of them. Best-effort by
- * design — a failed delete leaves a hidden row the image sweep can still
- * reconcile, and throwing here would turn a lost race into a failed pass.
+ * One helper rather than a check at each settle site: several post-render paths
+ * carry an output image, and a cleanup written once per site is a cleanup that
+ * eventually exists at only some of them.
+ *
+ * Best-effort, and the cost of "best" failing is worth stating plainly: nothing
+ * reconciles a leftover. A `ready` `identity_trial_output` whose delete failed
+ * is a hidden row no cell points at, so the run's delete sweep (which walks cell
+ * pointers) will never reach it and the Gallery cannot show it — it survives
+ * until the CHARACTER is deleted and the owner-scoped image cascade takes it.
+ * That is a small, bounded leak; throwing here instead would turn a lost claim
+ * race into a failed pass, which is worse and far more likely.
  */
 async function discardOrphanedTrialOutput(
   outputImageId: string | null,
@@ -1881,14 +2216,26 @@ async function resolveTrialCellPack(
  * comparison that can no longer be run AS PLANNED, and running some other
  * comparison under its name would poison the whole grid's evidence.
  *
+ * Anything the PROVIDER did differently from what was compiled is `failed` with
+ * the output kept ({@link postRenderAuditFailure}): a trimmed reference, a
+ * discarded control field, a version that is not the pinned one. The image is
+ * real and auditable, and a failed cell never pairs, so it cannot enter the
+ * comparison grid it does not belong in.
+ *
  * The spec arrives already parsed. The pass parsed it once at the claim boundary
  * — a cell whose spec does not parse never reaches here, it settles terminally
  * and free — so there is no second interpretation of the same JSON to drift.
+ *
+ * `stored` is the containment wrapper's holder: the output id is written into it
+ * the instant the bytes land, so a throw anywhere after that still settles a
+ * cell that OWNS its image rather than orphaning it (see
+ * {@link executeTrialCellContained}).
  */
 async function executeOneTrialCell(
   cell: IdentityPackTrialCellRow,
   spec: ImageIdentityPackTrialCellSpec,
   context: ExecuteCellContext,
+  stored: StoredTrialOutput,
 ): Promise<ExecutedTrialCell["status"]> {
   const { ownerId, runId, sink } = context;
 
@@ -1950,12 +2297,22 @@ async function executeOneTrialCell(
     }
   }
 
+  // THE LAST FREE MOMENT. Everything above this line is a read; everything below
+  // it costs money. Re-asserting the claim here both restarts the stale clock for
+  // this render (so a queued cell cannot age itself into recovery) and caps a
+  // claim this pass has already lost at ZERO provider calls — the cheapest
+  // possible outcome for a race, versus discovering it at the settle and having
+  // to delete an image somebody paid for.
+  if (!(await beatTrialClaim(cell, context))) return "skipped";
+
   // Tee the renderer's diagnostics through a local collector: the plan-time
   // capacity check makes `fitReferences` a no-op here, but the `data_url`
   // transport can still drop a reference against its inline byte budget
-  // (`withinDataUrlBudget`), and that trim surfaces ONLY as a warn diagnostic —
-  // a cell rendered from fewer references than its spec names is not the
-  // comparison the grid claims, so the trim has to be observed, not assumed.
+  // (`withinDataUrlBudget`), and the control overlay can still refuse a field
+  // that collided with one the render path owns. Both surface ONLY as warn
+  // diagnostics — a cell rendered from fewer references, or fewer controls, than
+  // its spec names is not the comparison the grid claims, so they have to be
+  // observed, not assumed.
   const renderDiagnostics = new DiagnosticCollector();
   const startedMs = Date.now();
   const rendered = await context.render(
@@ -1972,18 +2329,23 @@ async function executeOneTrialCell(
     sink ? teeSink(sink, renderDiagnostics) : renderDiagnostics,
   );
   const latencyMs = Date.now() - startedMs;
-  // The provider's own handle on this attempt, recorded on every outcome below.
-  // `moderationOutcome` and `postCrop` stay null throughout: the Replicate
-  // adapter exposes neither a moderation verdict nor a post-download crop
-  // rectangle, and a fabricated value in a provenance field is worse than an
-  // honest absence.
-  const providerPredictionId = rendered.predictionId ?? null;
+  // The provider's own handles on this attempt, recorded on every outcome below.
+  // `providerVersionId` is what Replicate says it RAN, as against `modelVersion`,
+  // which is what the cell asked for; null means it echoed nothing, never "it
+  // matched". `moderationOutcome` and `postCrop` stay null throughout: the
+  // Replicate adapter exposes neither a moderation verdict nor a post-download
+  // crop rectangle, and a fabricated value in a provenance field is worse than
+  // an honest absence.
+  const provenance = {
+    providerPredictionId: rendered.predictionId ?? null,
+    providerVersionId: rendered.executedVersionId ?? null,
+  };
 
   if (!rendered.ok || !rendered.image) {
     const message = rendered.error ?? `${model.slug} returned no image`;
     sink?.push(
       diag("warn", imageIdentityPackTrialDiagnosticCode("provider_failed"), message.slice(0, 300), {
-        context: { runId, cellId: cell.id, cellKey: cell.cellKey, providerPredictionId },
+        context: { runId, cellId: cell.id, cellKey: cell.cellKey, ...provenance },
       }),
     );
     return settleTrialCell(
@@ -1991,7 +2353,7 @@ async function executeOneTrialCell(
       context,
       "failed",
       trialResult({
-        providerPredictionId,
+        ...provenance,
         failureCode: classifyImageFailure(message),
         failureMessage: message.slice(0, 2000),
         latencyMs,
@@ -2023,7 +2385,7 @@ async function executeOneTrialCell(
       context,
       "failed",
       trialResult({
-        providerPredictionId,
+        ...provenance,
         failureCode: classifyImageFailure(message),
         failureMessage: message,
         latencyMs,
@@ -2031,35 +2393,91 @@ async function executeOneTrialCell(
       null,
     );
   }
+  // The bytes exist and this cell owns them, from HERE — before any step that
+  // could throw. If one does, the containment catch settles the cell carrying
+  // this id, so the image stays owned, auditable and reachable by the run's
+  // delete sweep instead of becoming a hidden row nothing points at.
+  stored.imageId = saved.id;
 
   const meta = imageMeta(saved.meta);
   const measured = {
-    providerPredictionId,
+    ...provenance,
     outputImageId: saved.id,
     latencyMs,
     finalWidthPx: metaDimension(meta, "width"),
     finalHeightPx: metaDimension(meta, "height"),
   };
 
-  // A trimmed render is a FAILED cell that keeps its output: the image exists
-  // and is auditable (why did the provider get fewer references?), but it was
-  // made from fewer references than the spec names, so letting it into pairing
-  // would grade a comparison nobody planned. Failed cells never pair.
-  const trimmed = renderDiagnostics.items.find((diagnostic) => diagnostic.code === REFERENCES_TRIMMED_DIAGNOSTIC);
-  if (trimmed) {
-    const message =
-      `a planned reference was dropped in transport (${trimmed.code}): ` +
-      `planned roles ${spec.orderedReferenceRoles.join(", ")} — ${trimmed.message}`;
+  // A render the provider did not make as compiled is a FAILED cell that KEEPS
+  // its output: the image exists and is auditable (why did the provider get
+  // fewer references? which version actually ran?), but it is not the comparison
+  // the grid claims, and failed cells never pair.
+  const audit = postRenderAuditFailure(spec, renderDiagnostics, provenance.providerVersionId);
+  if (audit !== null) {
     return settleTrialCell(
       cell,
       context,
       "failed",
-      trialResult({ ...measured, failureCode: "references_trimmed", failureMessage: message.slice(0, 2000) }),
+      trialResult({ ...measured, failureCode: audit.code, failureMessage: audit.message.slice(0, 2000) }),
       saved.id,
     );
   }
 
   return settleTrialCell(cell, context, "rendered", trialResult(measured), saved.id);
+}
+
+/**
+ * Why a produced image is not the evidence this cell promised, or null when it
+ * is.
+ *
+ * Three different ways a render can succeed and still be worthless as a
+ * comparison, all discovered only AFTER the provider answered — which is why
+ * each one keeps the image (it was paid for, and an operator investigating
+ * needs to see it) and settles the cell `failed` rather than `rendered`:
+ *
+ * - `references_trimmed` — the `data_url` transport dropped a reference against
+ *   its inline byte budget, so the render used fewer references than its spec
+ *   names.
+ * - `controls_trimmed` — the transport refused a control field for colliding
+ *   with one the render path owns. `compileProfileRenderPlan` filters those
+ *   before they enter the payload, so reaching this means the compile step and
+ *   the transport disagree about what is reserved; a cell whose controls were
+ *   silently narrowed in transit is not the configuration the hash records.
+ * - `version_mismatch` — Replicate echoed a version that is not the pinned one.
+ *   The whole reason a trial pins a version is that "whatever ran that hour" is
+ *   not a controlled comparison; an echo that disagrees says plainly that
+ *   something else ran. A MISSING echo is not a mismatch — the provider simply
+ *   did not say, and refusing on silence would fail every cell against a model
+ *   endpoint that omits the field.
+ */
+function postRenderAuditFailure(
+  spec: ImageIdentityPackTrialCellSpec,
+  renderDiagnostics: DiagnosticCollector,
+  providerVersionId: string | null,
+): { code: string; message: string } | null {
+  const trimmed = renderDiagnostics.items.find((entry) => entry.code === REFERENCES_TRIMMED_DIAGNOSTIC);
+  if (trimmed) {
+    return {
+      code: "references_trimmed",
+      message:
+        `a planned reference was dropped in transport (${trimmed.code}): ` +
+        `planned roles ${spec.orderedReferenceRoles.join(", ")} — ${trimmed.message}`,
+    };
+  }
+  const narrowed = renderDiagnostics.items.find((entry) => entry.code === RESERVED_FIELD_IGNORED_DIAGNOSTIC);
+  if (narrowed) {
+    return {
+      code: "controls_trimmed",
+      message: `a compiled control field was refused in transport (${narrowed.code}): ${narrowed.message}`,
+    };
+  }
+  if (providerVersionId !== null && providerVersionId !== spec.modelVersion) {
+    return {
+      code: "version_mismatch",
+      message: `the provider ran version ${providerVersionId}, not the pinned ${spec.modelVersion}`,
+    };
+  }
+  return null;
 }
 
 /* ------------------------------------------------------------------------ *
@@ -2069,13 +2487,26 @@ async function executeOneTrialCell(
 interface ReviewableTrialCells {
   pairable: TrialPairableCell[];
   outputImageIdByCellId: Map<string, string>;
+  /**
+   * How many `rendered` rows were SKIPPED because their evidence is gone — a
+   * null output pointer (the FK set-null safety net fired) or a spec that no
+   * longer parses.
+   *
+   * It is counted rather than swallowed because it is the difference between
+   * "every reviewable pair is graded" and "every pair we can still SEE is
+   * graded". Those read identically at the review screen and mean opposite
+   * things at a verdict: the second is a run whose blinded procedure cannot be
+   * completed, and a `complete` stamped over it would be a claim about evidence
+   * nobody can produce.
+   */
+  degraded: number;
 }
 
 /**
  * The rendered cells a pair may be built from. A rendered cell whose output
  * image is gone (the FK set-null safety net) or whose spec no longer parses is
- * skipped with a warn: it is a hole in the evidence, not a reason to fail the
- * review queue.
+ * skipped with a warn AND counted: it is a hole in the evidence, not a reason to
+ * fail the review queue, but also not something completion may step over.
  */
 function reviewableTrialCells(
   rows: readonly IdentityPackTrialCellRow[],
@@ -2083,10 +2514,12 @@ function reviewableTrialCells(
 ): ReviewableTrialCells {
   const pairable: TrialPairableCell[] = [];
   const outputImageIdByCellId = new Map<string, string>();
+  let degraded = 0;
   for (const row of rows) {
     if (row.status !== "rendered") continue;
     const spec = readTrialCellSpec(row, sink);
     if (!spec || row.outputImageId === null) {
+      degraded += 1;
       sink?.push(
         diag("warn", "images.identity_pack.trial.cell_degraded", "rendered cell is unreviewable; skipped from pairing", {
           context: { cellId: row.id, cellKey: row.cellKey, missing: spec ? "output_image" : "spec" },
@@ -2105,9 +2538,14 @@ function reviewableTrialCells(
       identityStrategy: spec.identityStrategy,
       packVariantKey: spec.packVariantKey,
       referenceSource: spec.referenceSource,
+      // The two facts the pairing rule needs to tell a real comparison from two
+      // labels on one render: what this cell actually SENT, and which photograph
+      // it was derived from.
+      orderedReferenceRoles: spec.orderedReferenceRoles,
+      sourceContentHash: spec.sourceContentHash,
     });
   }
-  return { pairable, outputImageIdByCellId };
+  return { pairable, outputImageIdByCellId, degraded };
 }
 
 async function gradedPairIds(runId: string): Promise<Set<string>> {
@@ -2162,7 +2600,7 @@ export interface SubmitTrialPairGradeInput {
 }
 
 export type SubmitTrialPairGradeResult =
-  | { ok: true; leftIsA: boolean }
+  | { ok: true; leftIsA: boolean; runStatus: TrialRunStatus }
   | { ok: false; refusal: IdentityPackTrialRefusal };
 
 /**
@@ -2172,6 +2610,22 @@ export type SubmitTrialPairGradeResult =
  * `(run, pair)` unique via `onConflictDoNothing`: a duplicate is a loud
  * `grade_conflict`, never a silent averaging of two opinions. Null when the run
  * — or the named pair — does not exist for this owner.
+ *
+ * **The run's status is re-settled after a successful insert, and returned.**
+ * Grading is one of exactly two writes that can complete a run — the other is a
+ * verdict — because `complete` needs full verdict coverage AND every reviewable
+ * pair graded. Without this, a run whose slots were all ruled early (through the
+ * explicit override) stayed in `review` after its final grade landed, and only
+ * an unrelated later verdict write would notice. Status is derived at WRITE
+ * time in this module; a write that changes one of its inputs has to settle it.
+ *
+ * A grade is accepted on a `complete` run, deliberately and narrowly: the pair
+ * must ALREADY exist, since pairs are derived from rendered cells and a complete
+ * run has none left to settle. No NEW pair can appear on one either — with the
+ * degraded-evidence gates, evidence can only be LOST after completion, and
+ * losing it blocks a future completion rather than manufacturing a pair. So this
+ * path is for a slot that was legitimately gradable all along, and the re-settle
+ * keeps the status consistent with the evidence either way.
  */
 export async function submitTrialPairGrade(input: SubmitTrialPairGradeInput): Promise<SubmitTrialPairGradeResult | null> {
   const { runId, ownerId, request, sink } = input;
@@ -2210,7 +2664,8 @@ export async function submitTrialPairGrade(input: SubmitTrialPairGradeInput): Pr
       refusal: refusal("grade_conflict", "this pair already has a grade", sink, { runId, pairId: pair.pairId }),
     };
   }
-  return { ok: true, leftIsA };
+  const runStatus = await settleTrialRunStatus(runId, run.status, false, sink);
+  return { ok: true, leftIsA, runStatus };
 }
 
 /* ------------------------------------------------------------------------ *
@@ -2249,8 +2704,12 @@ export async function identityPackTrialSummary(
 
   return {
     comparisons: aggregateTrialGrades(pairs, grades),
+    // Only the NAMEABLE combos ride the wire. A rendered row whose spec no longer
+    // parses has no slot to offer — it is counted where it matters (it blocks
+    // completion, `verdictsCoverRenderedCombos`) rather than fabricated into a
+    // verdict slot the reviewer could not act on.
     renderedCombos: withComboPairCounts(
-      renderedTrialCombos(rows, sink),
+      renderedTrialCombos(rows, sink).combos,
       pairs,
       new Set(grades.map((record) => record.pairId)),
     ),
@@ -2270,7 +2729,7 @@ export async function identityPackTrialSummary(
 function withComboPairCounts(
   combos: readonly RenderedComboTally[],
   pairs: readonly TrialCellPair[],
-  gradedPairIds: ReadonlySet<string>,
+  gradedPairIdSet: ReadonlySet<string>,
 ): TrialRenderedCombo[] {
   return combos.map((combo): TrialRenderedCombo => {
     const involved = pairs.filter(
@@ -2281,7 +2740,7 @@ function withComboPairCounts(
     return {
       ...combo,
       totalPairs: involved.length,
-      gradedPairs: involved.filter((pair) => gradedPairIds.has(pair.pairId)).length,
+      gradedPairs: involved.filter((pair) => gradedPairIdSet.has(pair.pairId)).length,
     };
   });
 }
@@ -2369,16 +2828,28 @@ function trialRunPositionBlocker(status: TrialRunStatus, counts: TrialCellCounts
  *    the run carries. A typo'd profile id would otherwise record a verdict
  *    nothing can surface, and enough of them would push the summary past its
  *    64-verdict wire cap.
- * 3. **Evidence** — `review_incomplete` while reviewable pairs are ungraded,
- *    unless the caller passes `overrideIncompleteReview`. This is the gate the
- *    whole blinded procedure exists to enforce: a ruling recorded over unseen
- *    comparisons is exactly the failure mode the grades were collected to
- *    prevent. The override is honored, and RECORDED on the row.
+ * 3. **Evidence** — `review_incomplete` while reviewable pairs are ungraded OR
+ *    any rendered cell's evidence has been lost, unless the caller passes
+ *    `overrideIncompleteReview`. This is the gate the whole blinded procedure
+ *    exists to enforce: a ruling recorded over unseen comparisons is exactly the
+ *    failure mode the grades were collected to prevent, and a ruling recorded
+ *    over comparisons that no longer EXIST is the same failure wearing a full
+ *    grade count. The override is honored, and RECORDED on the row.
  *
  * The write itself is a single-row upsert on `(run, profile, strategy)`, not a
  * rewrite of a verdict array. That is what makes two admins ruling on two
  * different slots at the same moment safe: each write touches only its own
  * ruling, so neither can erase the other.
+ *
+ * On ONE slot, though, the ledger is deliberately LAST-WRITE-WINS and keeps no
+ * history. A revision replaces the whole row in place — verdict, reason, actor,
+ * timestamp and override flag together — so the previous ruling is gone, not
+ * superseded, and two admins ruling the same (profile, strategy) at the same
+ * moment leave whichever landed last with no trace that the other happened. That
+ * is the intended shape: this table answers "what is the current ruling on this
+ * combination?", and the revision path exists precisely so a first mistake is not
+ * permanent. A run needing an audit trail of who changed their mind and when
+ * would need an append-only ledger, which this is not.
  */
 export async function recordTrialVerdict(input: RecordTrialVerdictInput): Promise<RecordTrialVerdictResult | null> {
   const { runId, ownerId, sink } = input;
@@ -2409,18 +2880,25 @@ export async function recordTrialVerdict(input: RecordTrialVerdictInput): Promis
     };
   }
 
-  const { pairable } = reviewableTrialCells(rows, sink);
+  const { pairable, degraded } = reviewableTrialCells(rows, sink);
   const graded = await gradedPairIds(runId);
   const ungradedPairs = pairTrialCells(pairable).filter((pair) => !graded.has(pair.pairId)).length;
   const overrideRequested = input.overrideIncompleteReview === true;
-  if (ungradedPairs > 0 && !overrideRequested) {
+  // Two ways the evidence can be short of complete, and they are the same fact
+  // to a ruling: a pair nobody has graded, and a rendered cell whose image or
+  // spec has vanished (taking its pairs with it, so "0 ungraded" would otherwise
+  // read as full evidence precisely when there is less of it).
+  const incompleteEvidence: string[] = [];
+  if (ungradedPairs > 0) incompleteEvidence.push(`${ungradedPairs} reviewable pair(s) are still ungraded`);
+  if (degraded > 0) incompleteEvidence.push(`${degraded} rendered cell(s) no longer carry reviewable evidence`);
+  if (incompleteEvidence.length > 0 && !overrideRequested) {
     return {
       ok: false,
       refusal: refusal(
         "review_incomplete",
-        `${ungradedPairs} reviewable pair(s) are still ungraded; grade them or rule with an explicit override`,
+        `${incompleteEvidence.join("; ")} — complete the evidence or rule with an explicit override`,
         sink,
-        { runId, ungradedPairs },
+        { runId, ungradedPairs, degradedCells: degraded },
       ),
     };
   }
@@ -2429,7 +2907,7 @@ export async function recordTrialVerdict(input: RecordTrialVerdictInput): Promis
   // evidence. Stamping it on a fully graded run would claim the evidence was
   // incomplete when it was not — a fabricated fact in the one field that exists
   // to keep partial-evidence promotions honest.
-  const overrodeIncompleteReview = overrideRequested && ungradedPairs > 0;
+  const overrodeIncompleteReview = overrideRequested && incompleteEvidence.length > 0;
   const decidedAt = new Date();
   await db()
     .insert(imageIdentityPackTrialVerdicts)

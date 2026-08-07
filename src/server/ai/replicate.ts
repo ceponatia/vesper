@@ -5,8 +5,20 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 const REPLICATE_BASE = "https://api.replicate.com/v1";
 const DEFAULT_PREDICTION_TIMEOUT_MS = 5 * 60_000;
 const POLL_INTERVAL_MS = 1_500;
-const REQUEST_TIMEOUT_MS = 75_000;
-const OUTPUT_TIMEOUT_MS = 60_000;
+
+/**
+ * The per-HTTP-call deadline every Replicate request carries, and the separate
+ * one the output download gets.
+ *
+ * Both are EXPORTED because they are the only honest way to size how long one
+ * render may legitimately take end to end. The identity trial's stale-claim
+ * window has to exceed a whole render — prediction budget plus the reference
+ * uploads, the settling poll, and the output fetch around it — and a window
+ * derived from a hand-copied "about a minute" would silently stop covering the
+ * real thing the first time either number moved.
+ */
+export const REQUEST_TIMEOUT_MS = 75_000;
+export const OUTPUT_TIMEOUT_MS = 60_000;
 
 export const REPLICATE_DEFAULT_IMAGE_MODEL = "qwen/qwen-image-2512";
 export const REPLICATE_DEFAULT_EDIT_MODEL = "qwen/qwen-image-edit-2511";
@@ -20,8 +32,16 @@ export function hasReplicate(): boolean {
  * the env flag so the safe default reads the same way it does everywhere else.
  * Only ever applied to models whose schema HAS the input (see
  * `buildRegistryModelInput`).
+ *
+ * Exported because the value is ENV-OWNED and resolved at send time, which means
+ * a stored `extraInput.disable_safety_checker` is a placeholder rather than a
+ * fact. Anything that fingerprints what a render sends has to ask this function
+ * the same question the payload builder asks — otherwise the fingerprint
+ * describes the stored placeholder while the provider receives the env's answer,
+ * and an operator flipping `REPLICATE_SAFE_MODE` between two arms of a
+ * comparison changes provider enforcement with nothing to show for it.
  */
-function disableSafetyChecker(): boolean {
+export function disableSafetyChecker(): boolean {
   return process.env.REPLICATE_SAFE_MODE !== "true";
 }
 
@@ -38,6 +58,18 @@ export interface ReplicateImageResult {
    * inventing one would be worse than admitting none.
    */
   predictionId?: string;
+  /**
+   * The version Replicate says it ACTUALLY ran, echoed off the prediction body.
+   *
+   * A pinned request states what should run; only this states what did. The two
+   * can differ — a bare `owner/name` slug resolves `latest_version` server-side,
+   * and a pinned id can be re-pointed by the provider — and a controlled
+   * comparison that cannot tell those apart is grading whatever Replicate
+   * shipped that hour under a pin's name. Absent when the response carries no
+   * `version` field, which is the honest answer rather than echoing the request
+   * back as if it were confirmation.
+   */
+  executedVersionId?: string;
 }
 
 export interface RegistryModelRequest {
@@ -308,6 +340,13 @@ export function unwrapReplicateImage(result: ReplicateImageResult, fallback: str
 const predictionSchema = z.object({
   id: z.string().min(1),
   status: z.string(),
+  /**
+   * The version Replicate resolved for this prediction. Optional because the
+   * model-endpoint form (`/models/owner/name/predictions`) has been observed
+   * without it, and a missing echo must degrade to "unconfirmed" rather than
+   * failing the parse of an otherwise perfectly good prediction.
+   */
+  version: z.string().optional(),
   output: z.unknown().optional().nullable(),
   error: z.unknown().optional().nullable(),
 });
@@ -383,20 +422,25 @@ async function runReplicateImageModel(
     }
   }
 
+  // The provenance the SETTLED prediction carries. Spread rather than assigned
+  // so a response without a `version` echo reports no field at all instead of an
+  // explicit undefined — absent means "the provider did not say", which is a
+  // different fact from "it ran an empty version".
+  const provenance = {
+    predictionId: prediction.id,
+    ...(prediction.version ? { executedVersionId: prediction.version } : {}),
+  };
+
   if (prediction.status !== "succeeded" && outputUrl(prediction.output) === null) {
-    return {
-      ok: false,
-      predictionId: prediction.id,
-      error: `replicate ${prediction.status}: ${predictionError(prediction.error)}`,
-    };
+    return { ok: false, ...provenance, error: `replicate ${prediction.status}: ${predictionError(prediction.error)}` };
   }
 
   const url = outputUrl(prediction.output);
-  if (!url) return { ok: false, predictionId: prediction.id, error: "replicate returned no image" };
+  if (!url) return { ok: false, ...provenance, error: "replicate returned no image" };
   try {
-    return { ok: true, predictionId: prediction.id, image: await downloadReplicateOutput(url) };
+    return { ok: true, ...provenance, image: await downloadReplicateOutput(url) };
   } catch (err) {
-    return { ok: false, predictionId: prediction.id, error: errorText(err) };
+    return { ok: false, ...provenance, error: errorText(err) };
   }
 }
 
