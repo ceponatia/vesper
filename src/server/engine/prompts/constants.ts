@@ -285,6 +285,12 @@ export const NPC_SCENE_AUTHORITY_KINDS = ["movement", "start", "update"] as cons
 export type NpcSceneAuthorityKind = (typeof NPC_SCENE_AUTHORITY_KINDS)[number];
 
 /**
+ * The safe first rollout increment. Unset configuration must never silently
+ * grant a wider authority surface than the operator explicitly selected.
+ */
+export const DEFAULT_NPC_SCENE_AUTHORITY_KINDS = ["movement"] as const satisfies readonly NpcSceneAuthorityKind[];
+
+/**
  * The AUTHORITY SCOPE knob — which kinds `CHAT_NPC_SCENE_DECISIONS=on` may
  * actually execute, read from `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS` as a
  * comma-separated subset of `movement,start,update`.
@@ -292,13 +298,15 @@ export type NpcSceneAuthorityKind = (typeof NPC_SCENE_AUTHORITY_KINDS)[number];
  * **Why a scope list instead of three more flags.** The spec stages authority in
  * three increments, but one branch builds them all: a second and third boolean
  * would multiply the flag matrix (and every combination of it that a test must
- * pin) for what is really one ordered rollout dial. Unset or blank ⇒ all three
- * (the fully-enabled end state), so nothing has to be set to run the finished
- * feature; unknown tokens are ignored rather than failing the leg, because a
- * typo in an env var must never cost a settled reply (docs/resilience.md §2).
- * A NONBLANK value naming no known kind therefore grants nothing — the owner
- * asked for a scope, and "none of the kinds I recognize" is the conservative
- * reading of an unrecognized one.
+ * pin) for what is really one ordered rollout dial. Unset or blank ⇒ movement
+ * only, the first reviewed increment. Later increments require an explicit
+ * `movement,start` and then `movement,start,update`; a deployment can therefore
+ * never skip the staged rollout merely because the scope secret was forgotten.
+ * Unknown tokens are ignored rather than failing the leg, because a typo in an
+ * env var must never cost a settled reply (docs/resilience.md §2). A NONBLANK
+ * value naming no known kind therefore grants nothing — the owner asked for a
+ * scope, and "none of the kinds I recognize" is the conservative reading of an
+ * unrecognized one.
  *
  * It gates EXECUTION ONLY, and only in authority mode. Classification, the four
  * admission gates, presence precedence, chronology planning, and the envelope's
@@ -310,7 +318,7 @@ export type NpcSceneAuthorityKind = (typeof NPC_SCENE_AUTHORITY_KINDS)[number];
  */
 export function chatNpcSceneAuthorityKinds(): ReadonlySet<NpcSceneAuthorityKind> {
   const raw = (process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS ?? "").trim();
-  if (raw.length === 0) return new Set(NPC_SCENE_AUTHORITY_KINDS);
+  if (raw.length === 0) return new Set(DEFAULT_NPC_SCENE_AUTHORITY_KINDS);
   const selected = new Set<NpcSceneAuthorityKind>();
   for (const token of raw.split(",")) {
     const normalized = token.trim().toLowerCase();
