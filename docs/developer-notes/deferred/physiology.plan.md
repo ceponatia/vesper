@@ -63,9 +63,10 @@ invention:
   ([../../contracts/meters.md](../../contracts/meters.md) §Mood): events apply
   one-time impulses, standing influences shift baselines. Physiology triggers
   are the same two shapes aimed at body responses instead of mood.
-- **Modulation seams exist** — `personalizeMeters`,
-  `conditionMoodBaselineShift`: how traits/conditions shift baselines without
-  touching values. A future hormonal-phase driver composes here.
+- **Modulation seams exist** — `personalizeMeters`: how traits shift baselines
+  without touching values. A future hormonal-phase driver composes here. (The
+  condition-keyed twin, `conditionMoodBaselineShift`, was deleted unused on
+  2026-08-07; conditions reach mood only through `deriveEmotionLabel` today.)
 - **Consumers exist** — the chat state strip (`chatStateSnapshot`), the
   planned `deriveArousalSigns` read, the state-aware scene-image slice
   (chat state folded into image prompts), and the needs→initiative channel

@@ -449,6 +449,14 @@ external importer files — the busiest folders). The real orphans:
   (`atmosphereMoodBaselineShift`, `CONDITION_MOOD_BASELINE_SHIFTS`, etc.).
   **Interacts with prior-art E-K1** (fold condition vocab into the catalog) —
   deleting may moot it; decide together. S/low.
+  - **Partly executed 2026-08-07** (supersedes the settled ruling below): the
+    condition half — `conditionMoodBaselineShift`,
+    `CONDITION_MOOD_BASELINE_SHIFTS`, `CONDITION_BASELINE_SHIFT_CAP` — was
+    deleted with its tests. `atmosphere.ts` and `atmosphereMoodBaselineShift`
+    remain dead and untouched; the rest of E7 is still open. The surviving
+    condition→mood vocabulary is `mood/projection.ts`
+    (`FLUSTERED_CONDITION_LABELS`, `TIPSY_CONDITION_LABELS`), which is live, so
+    **E-K1 is not mooted** — it now consolidates two sets, not three.
 - **E8 · ~850 lines of test fixtures ship in the public `@/contracts` surface**
   [WIP] — 4 `fixtures.ts` barrel re-exports (appearance-features, recognition,
   garment, hair) reaching 73 client barrel-importers. Drop the barrel lines;
@@ -521,7 +529,7 @@ barrel-excluded.
 From [finished/codebase-review.md](finished/codebase-review.md) §E unless
 noted; deferred stubs in [deferred/CLAUDE.md](deferred/CLAUDE.md):
 
-- **E-K1** condition vocab split (`mood/events.ts:120` vs `conditions/catalog.ts`) — interacts with E7.
+- **E-K1** condition vocab split (`mood/projection.ts` `FLUSTERED_/TIPSY_CONDITION_LABELS` vs `conditions/catalog.ts`) — interacts with E7; the `mood/events.ts` third set was deleted 2026-08-07.
 - **E-K2** concept sets outside the registry (`TOUCH_CONCEPTS`, `SURPRISE_CONCEPTS`, `FLIRT_CONCEPTS`).
 - **E-K3** `modulates` inert on 8+ trait definitions — wire-or-delete.
 - **E-K4** still dead: `MoodEvent`, `dispositionTagIds`, `resolveLexicon` (test-only), `CHAT_PULSE_EVERY_N` (all re-confirmed in §B/§E). Now **live** (don't delete): `expandBodyTarget`, `conceptIdsInFamily`.
@@ -553,6 +561,13 @@ bundle reach.
   authored travel-duration plan; annotate rather than drop it.
 - **Condition mood shifts (E7/E-K1): retain and consolidate the vocabulary.** Do
   not activate new behavior in a cleanup.
+  - **Superseded 2026-08-07 — delete instead of retain.** The retained half never
+    had a consumer: its only one was the session lane's `merge/phases/meters.ts`,
+    deleted in R6, and `driftChatState` never passed conditions in. Deleting it
+    honors the ruling's second clause (no new behavior activated in a cleanup)
+    while dropping code no lane called. The vocabulary is *not* lost — the live
+    condition→emotion sets in `mood/projection.ts` survive and remain E-K1's
+    consolidation target.
 - **Client cache (D14): drop it.** No cache without a measured problem and
   invalidation contract.
 - **Body-modifier command (A17): caller plus integration test, or delete the

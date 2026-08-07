@@ -157,7 +157,7 @@ The taxonomy answers "what else" better than a list does — a meter earns its p
   wearing. Cold hands, huddling, a borrowed jacket.
 - **Hormonal phase** *(phase)* — the "hyper realistic" ask, and the taxonomy's only phase
   meter: a slow cycle modulating libido/mood baselines and pain. Baselines, never values —
-  the `conditionMoodBaselineShift` seam is the precedent. Real product-judgment call before
+  the `personalizeMeters` seam is the precedent. Real product-judgment call before
   building; parked here deliberately.
 - **Soreness/pain** *(load)* — after intimacy, workouts, injury. Probably **conditions, not a
   meter** (the catalog already exists) unless something needs to read a gradient.

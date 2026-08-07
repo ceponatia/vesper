@@ -239,8 +239,8 @@ Two properties fall out and are worth stating as invariants:
   satiation/hydration/bladder belong with a needs→initiative slice rather than as three
   more numbers.
 - **Phase meters modulate baselines, never values.** The precedent exists —
-  `personalizeMeters` shifts arousal's resting point by libido; `conditionMoodBaselineShift`
-  shifts mood's. A cycle is the same seam on a clock.
+  `personalizeMeters` shifts arousal's resting point by libido. A cycle is the same seam on
+  a clock.
 
 ## World-model systems: reuse and redesign
 
@@ -264,10 +264,12 @@ available to take rather than parallel (owner, 2026-07-16). What this work claim
 - **`scheduleEntryAt` — move to contracts.** It is a pure helper marooned in
   `engine/merge/phases/schedule.ts` (the session lane); the chat lane already reaches across
   the boundary for it via `rhythmOutfitPatch`. Its home is beside the schema.
-- **`merge/phases/meters.ts` — take the pattern, not the code.** It already does what chat
-  should: `perHour` over *real* elapsed minutes, plus action `meterEffects`, plus
-  `conditionMoodBaselineShift`. That last one is wired **only** session-side —
-  `driftChatState` ignores condition mood shifts entirely, a gap this plan closes.
+- **`merge/phases/meters.ts` — take the pattern, not the code.** It already did what chat
+  should: `perHour` over *real* elapsed minutes, plus action `meterEffects`, plus a
+  condition→mood-baseline shift. The file went with the session lane in R6, and its unused
+  contract half (`conditionMoodBaselineShift` + `CONDITION_MOOD_BASELINE_SHIFTS`) was deleted
+  2026-08-07 — so condition→mood-baseline is now **unbuilt**, not merely unwired. If this
+  plan's drift rewrite wants it, it writes it fresh against the condition catalog.
 - **The plan's Constraint #1 is void.** "`meterDefinitions` is shared with the session lane
   … do **not** fix chat by inflating `perHour`" was the reason for the exchange-keyed drift
   table. There is no parity left to protect, so rates get honest values in the registry —
@@ -285,11 +287,15 @@ available to take rather than parallel (owner, 2026-07-16). What this work claim
 
 Not this plan's scope; recorded so they are not rediscovered. Each is small.
 
-- **`conditionMoodBaselineShift` never fires in chat** (`chat-state.ts:853-866` drifts to
-  personalized baselines with no condition input) — closed by this plan's drift rewrite.
-- **Its table can never match anyway**: `CONDITION_MOOD_BASELINE_SHIFTS` keys `flustered`,
-  but the fluster chip mints label `"Flushed"` → `conditionKey` = `"flushed"` ⇒ contributes
-  0 even session-side.
+- **Condition→mood-baseline does not exist.** `driftChatState` drifts to personalized
+  baselines with no condition input, and the helper that would have supplied one was deleted
+  as dead code (2026-08-07). If this plan's drift rewrite wants conditions to move the mood
+  baseline, that is new work, not a wiring task.
+- **The fluster chip's label misses every `flustered` key** — `chat-state.ts:3307` mints
+  `label: "Flushed"` → `conditionKey` = `"flushed"`. This still bites **live** code:
+  `mood/projection.ts` `FLUSTERED_CONDITION_LABELS` keys `flustered`/`bashful`, so
+  `deriveEmotionLabel` never reads the chip's own condition as flustered. Fix the key or the
+  label; whichever, keep them in one vocabulary.
 - **An away primary desynchronizes on skip**: `time-skip/route.ts:115` `continue`s on
   `presence !== "present"`, so an away primary's state is never skipped while the shared
   clock advances, and the route returns the un-skipped snapshot. The drift rewrite's lazy

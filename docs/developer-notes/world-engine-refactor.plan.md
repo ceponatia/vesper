@@ -641,12 +641,12 @@ should be derived instead.
   - Owner ruling (2026-07-16): agrees with the GPT design review's recommendation to
     start breaking up the state management system, which is too siloed. Those
     recommendations are still to be reviewed in full.
-- **OQ7 — Which overlay path wins?** Four separate paths move dispositions today
+- **OQ7 — Which overlay path wins?** Three separate paths move dispositions today
   (`stateDispositionOverlays` for arousal/intoxication, `regardDispositionOverlays`,
-  `applyChatTraitOverlays`, `conditionMoodBaselineShift`) with **no declared composition
-  order** — and two shipped fixes (fidelity's one-band clamp, meter-economy's arousal
-  re-scope) are both chipping at it from different sides. Every meter in §A adds a
-  potential fifth. In-house precedent to reuse: attribute provenance already has
+  `applyChatTraitOverlays`) with **no declared composition order** — and two shipped fixes
+  (fidelity's one-band clamp, meter-economy's arousal re-scope) are both chipping at it from
+  different sides. Every meter in §A adds a potential fourth. In-house precedent to reuse:
+  attribute provenance already has
   `SOURCE_PRECEDENCE` + `resolveProvenance`. Same shape, plus a total band-step budget so
   overlays can't stack into a different person.
   - Owner ruling (2026-07-16): these paths may need redesigning entirely so they compose

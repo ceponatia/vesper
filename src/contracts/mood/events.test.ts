@@ -1,24 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ActiveCondition } from "../conditions/condition";
 import type { TraitValue } from "../personality/traits/value";
-import {
-  atmosphereMoodBaselineShift,
-  conditionMoodBaselineShift,
-  CONDITION_BASELINE_SHIFT_CAP,
-  isTouchConcept,
-  resolveTouchWelcomeness,
-  touchMoodDeltas,
-} from "./events";
+import { atmosphereMoodBaselineShift, isTouchConcept, resolveTouchWelcomeness, touchMoodDeltas } from "./events";
 
-// Realistic shape: conditions get a random id app-wide (the merge assigns `newId()`);
-// the semantic word lives only in `label`. Matching must key on the label, never the id.
-let condSeq = 0;
-const cond = (label: string): ActiveCondition => ({
-  id: `c_${++condSeq}k9x2m`,
-  label,
-  startedAtMinutes: 0,
-  attributeEffects: [],
-});
 const trait = (id: string, value: number): TraitValue => ({ id, value, source: "creation" });
 
 describe("isTouchConcept", () => {
@@ -75,26 +58,6 @@ describe("touchMoodDeltas", () => {
     const plain = touchMoodDeltas("welcome", { intimate: false, traits: [] });
     const intimate = touchMoodDeltas("welcome", { intimate: true, traits: [] });
     expect(intimate.mood).toBeGreaterThan(plain.mood);
-  });
-});
-
-describe("conditionMoodBaselineShift", () => {
-  it("lifts for tipsy, drops for hurt, ignores unknown labels", () => {
-    expect(conditionMoodBaselineShift([cond("tipsy")])).toBeGreaterThan(0);
-    expect(conditionMoodBaselineShift([cond("hurt")])).toBeLessThan(0);
-    expect(conditionMoodBaselineShift([cond("whistling")])).toBe(0);
-  });
-
-  it("matches on the normalized label, never the random id", () => {
-    // Regression: production conditions carry `newId()`-style ids — the shift
-    // must still fire, and label matching is case/space-insensitive.
-    expect(conditionMoodBaselineShift([cond(" Tipsy ")])).toBeGreaterThan(0);
-    expect(conditionMoodBaselineShift([{ ...cond("tipsy"), id: "tipsy" }])).toBeGreaterThan(0);
-  });
-
-  it("clamps the summed shift", () => {
-    const many = [cond("hurt"), cond("sick"), cond("heartbroken"), cond("exhausted")];
-    expect(conditionMoodBaselineShift(many)).toBe(-CONDITION_BASELINE_SHIFT_CAP);
   });
 });
 
