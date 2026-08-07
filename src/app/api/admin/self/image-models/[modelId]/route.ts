@@ -15,9 +15,9 @@ type Params = { modelId: string };
  * them (owner ruling 4: the database is the single source of truth, so there is
  * no privileged second list hiding in the code).
  *
- * Deleting a model in use is deliberately allowed and needs no cascade: stored
- * picks are plain ids, and `resolveSurfaceModel` degrades an unknown one to the
- * surface default at render time.
+ * Deleting a model in use is deliberately allowed: stored picks are plain ids,
+ * and `resolveImageProfile` degrades an unknown one to the task's default at
+ * render time. Its profiles go with it on the row's delete cascade.
  */
 
 const patchSchema = z.object({

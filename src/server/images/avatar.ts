@@ -5,8 +5,9 @@ import { isDemoMode } from "../ai";
 import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
 import { parseOr } from "@/lib/parse";
-import { outfitItems, type ImageModel } from "@/contracts";
-import { renderWithModel, resolveSurfaceModel } from "./models";
+import { outfitItems, IMAGE_TARGET_ASPECT, type ResolvedImageProfile } from "@/contracts";
+import { resolveImageProfileForTask } from "./model-profiles";
+import { renderImageIntent } from "./render-intent";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { resolveGarmentVisibility } from "@/contracts/items/visibility";
@@ -38,14 +39,15 @@ export interface GenerateAvatarInput {
  * (3:4), or monogram in demo mode, through the shared reserve/save/fail
  * lifecycle.
  *
- * The model is resolved BEFORE the pipeline reserves a row so the row's meta can
- * record which model produced it. A pick that is no longer offered degrades to
- * the portrait default rather than failing (owner ruling 5).
+ * The profile is resolved BEFORE the pipeline reserves a row so the row's meta
+ * can record which model produced it. A pick that is no longer offered degrades
+ * to the portrait task's default rather than failing (owner ruling 5).
  */
 export async function generateAvatar(input: GenerateAvatarInput): Promise<string> {
   const style = input.style ?? "realistic";
   const demo = isDemoMode();
-  const model = demo ? null : await resolveSurfaceModel("portrait", input.modelId, input.sink);
+  const resolved = demo ? null : await resolveImageProfileForTask("portrait", input.modelId, input.sink);
+  const model = resolved?.model ?? null;
   const [character] = await db().select().from(characters).where(eq(characters.id, input.characterId)).limit(1);
   const profile = parseOr(
     characterProfileSchema,
@@ -74,7 +76,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
     produce: async () => ({
       ok: true,
       image:
-        demo || !model ? monogramSvg(character?.name ?? "") : await generateAvatarBuffer(prompt, model, input.sink),
+        demo || !resolved ? monogramSvg(character?.name ?? "") : await generateAvatarBuffer(prompt, resolved, input.sink),
     }),
     onReady: async (asset) => {
       await db().update(characters).set({ avatarImageId: asset.id }).where(eq(characters.id, input.characterId));
@@ -197,9 +199,17 @@ export async function defaultOutfitPhrase(
   return wardrobeOutfitText(await loadDefaultWardrobe(ownerId, itemIds, sink));
 }
 
-async function generateAvatarBuffer(prompt: string, model: ImageModel, sink?: DiagnosticSink): Promise<Buffer> {
-  const result = await renderWithModel({ model, prompt }, sink);
-  if (!result.ok || !result.image) throw new Error(result.error ?? `${model.slug} returned no image`);
+/** Text-to-image at Vesper's 3:4, with no references — the simplest intent there is. */
+async function generateAvatarBuffer(
+  prompt: string,
+  profile: ResolvedImageProfile,
+  sink?: DiagnosticSink,
+): Promise<Buffer> {
+  const result = await renderImageIntent(
+    { profile, prompt, references: [], target: { aspectRatio: IMAGE_TARGET_ASPECT } },
+    sink,
+  );
+  if (!result.ok || !result.image) throw new Error(result.error ?? `${profile.model.slug} returned no image`);
   return result.image;
 }
 

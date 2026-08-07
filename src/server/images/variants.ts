@@ -1,9 +1,10 @@
 import { and, eq } from "drizzle-orm";
-import { characterProfileSchema, emptyCharacterProfile, resolveAttributes } from "@/contracts";
+import { characterProfileSchema, emptyCharacterProfile, resolveAttributes, IMAGE_TARGET_ASPECT } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { characters, db, images } from "../db";
 import { isDemoMode } from "../ai";
-import { renderWithModel, resolveSurfaceModel } from "./models";
+import { resolveImageProfileForTask } from "./model-profiles";
+import { renderImageIntent } from "./render-intent";
 import { logEvent } from "../events";
 import { log } from "@/server/log";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
@@ -42,7 +43,8 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
   // The New Variant section now has its OWN model picker (image-model-registry):
   // before the registry, only one provider model could edit, so this lane had no
   // choice to make and silently used it.
-  const model = demo ? null : await resolveSurfaceModel("variant", input.modelId, input.sink);
+  const resolved = demo ? null : await resolveImageProfileForTask("variant", input.modelId, input.sink);
+  const model = resolved?.model ?? null;
   const [character] = await db().select().from(characters).where(eq(characters.id, input.characterId)).limit(1);
   const profile = parseOr(
     characterProfileSchema,
@@ -76,10 +78,22 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       if (demo) return { ok: true, image: monogramSvg(`${character?.name ?? ""} ${input.kind}`) };
       // Preconditions this lane can't satisfy, not generations that failed: no diagnostic.
       if (!reference) return { ok: false, error: "no ready canonical avatar to use as reference" };
-      if (!model) return { ok: false, error: "no image model is registered for portrait variants" };
-      const edit = await renderWithModel({ model, prompt, references: [reference.buffer] }, input.sink);
+      if (!resolved) return { ok: false, error: "no image model is registered for portrait variants" };
+      const edit = await renderImageIntent(
+        {
+          profile: resolved,
+          prompt,
+          // The canonical portrait, which this lane always re-rolls from rather
+          // than chaining edits — the identity the variant instruction modifies.
+          references: [
+            { role: "identity", required: true, buffer: reference.buffer, sourceImageId: reference.row.id },
+          ],
+          target: { aspectRatio: IMAGE_TARGET_ASPECT },
+        },
+        input.sink,
+      );
       if (!edit.ok || !edit.image) {
-        const error = edit.error ?? `${model.slug} returned no image`;
+        const error = edit.error ?? `${resolved.model.slug} returned no image`;
         input.sink?.push(
           diag("warn", "images.variant.generate_failed", error.slice(0, 300), {
             context: { characterId: input.characterId, imageId: asset.id },

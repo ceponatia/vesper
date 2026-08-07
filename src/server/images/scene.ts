@@ -12,11 +12,11 @@ import {
   type SceneAttemptId,
   type SceneRenderRequest,
 } from "../ai";
-import { renderWithModel } from "./models";
+import { renderImageIntent, type ImageRenderReference } from "./render-intent";
 import { log } from "@/server/log";
 import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
-import type { ImageModel } from "@/contracts";
-import type { SceneVisualReference } from "@/contracts/images/scene-reference";
+import { IMAGE_TARGET_ASPECT, type ImageReferenceRole, type ResolvedImageProfile } from "@/contracts";
+import type { SceneVisualReference, SceneVisualReferenceKind } from "@/contracts/images/scene-reference";
 import type { SceneGenState, SceneReferenceMode } from "@/contracts/state/scene-gen";
 import { imageMeta, runImagePipeline, type ImageEntityKind } from "./assets";
 import { monogramSvg } from "./monogram";
@@ -93,8 +93,8 @@ export interface RenderResolvedSceneInput {
   referenceBuffers: Map<string, Buffer>;
   linkage: SceneAssetLinkage;
   mode?: SceneReferenceMode;
-  /** The resolved registry model for this render; null when none is registered. */
-  model?: ImageModel | null;
+  /** The resolved scene profile and its model; null when none is offered. */
+  profile?: ResolvedImageProfile | null;
   framing?: "pov" | "selfie";
   flavor?: string;
   logResult: (imageId: string, status: string, startedMs: number) => void;
@@ -114,17 +114,31 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   const mode = input.mode ?? "single";
   const collected = new DiagnosticCollector();
   const sink: DiagnosticSink = input.sink ? teeSink(input.sink, collected) : collected;
-  const model = input.model ?? null;
+  const profile = input.profile ?? null;
+  const model = profile?.model ?? null;
   const request: SceneRenderRequest = { references, demo, mode, model };
   const chain = routeSceneAttempts(request);
 
+  // Ordered reference SPECS, not bare buffers: the chain's rungs send different
+  // subsets, and a subset of anonymous buffers cannot say whether the one it
+  // kept is the character or the room. The role travels with the bytes from here
+  // on, which is what lets the render intent report a dropped location instead
+  // of "reference 2".
   const imageRefs = references.filter((reference) => Boolean(reference.imageId));
-  const orderedBuffers = imageRefs.flatMap((reference) => {
+  const orderedReferences = imageRefs.flatMap((reference): ImageRenderReference[] => {
     const buffer = reference.imageId ? input.referenceBuffers.get(reference.imageId) : undefined;
-    return buffer ? [buffer] : [];
+    if (!buffer) return [];
+    return [
+      {
+        role: sceneReferenceRole(reference.kind),
+        buffer,
+        ...(reference.imageId ? { sourceImageId: reference.imageId } : {}),
+        ...(reference.name ? { name: reference.name } : {}),
+      },
+    ];
   });
-  const primaryBuffer = orderedBuffers[0] ?? null;
-  const multiBuffers = orderedBuffers.slice(0, 3);
+  const primaryReference = orderedReferences[0] ?? null;
+  const multiReferences = orderedReferences.slice(0, 3);
 
   const anchorRef = imageRefs[0];
   const allowIntimate = anchorRef?.allowForIntimate ?? false;
@@ -138,7 +152,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     ? buildSceneRenderPrompt(plan, { referenceName: anchorRef.name, allowIntimate, framing })
     : textPrompt;
   const multiPrompt =
-    multiBuffers.length >= 2
+    multiReferences.length >= 2
       ? buildSceneRenderPrompt(plan, {
           allowIntimate: multiAllowIntimate,
           multiReferences: imageRefs.slice(0, 3).map((reference) => ({
@@ -168,10 +182,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
 
   const ctx: SceneAttemptContext = {
     promptFor,
-    primaryBuffer,
-    multiBuffers,
+    primaryReference,
+    multiReferences,
     focalName: plan.focal?.name ?? "Scene",
-    model,
+    profile,
     sink,
   };
 
@@ -215,11 +229,35 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
 
 interface SceneAttemptContext {
   promptFor: (id: SceneAttemptId) => string;
-  primaryBuffer: Buffer | null;
-  multiBuffers: Buffer[];
+  primaryReference: ImageRenderReference | null;
+  multiReferences: ImageRenderReference[];
   focalName: string;
-  model: ImageModel | null;
+  profile: ResolvedImageProfile | null;
   sink?: DiagnosticSink;
+}
+
+/**
+ * The render-intent role one scene reference plays.
+ *
+ * The scene vocabulary predates the profile layer's and is narrower in one place
+ * and wider in another, so the mapping is written out rather than assumed:
+ * `character` is the identity anchor the edit must preserve, and `layout` has no
+ * counterpart of its own — it is a spatial control image, which is what the
+ * `control` role reserves. Only `character` and `location` are produced today.
+ */
+function sceneReferenceRole(kind: SceneVisualReferenceKind): ImageReferenceRole {
+  switch (kind) {
+    case "character":
+      return "identity";
+    case "location":
+      return "location";
+    case "style":
+      return "style";
+    case "pose":
+      return "pose";
+    case "layout":
+      return "control";
+  }
 }
 
 export interface SceneRenderOutcome {
@@ -291,22 +329,27 @@ export async function executeSceneChain(
  */
 async function runSceneProvider(id: SceneAttemptId, ctx: SceneAttemptContext): Promise<ProviderRenderResult> {
   if (id === "demo") return { ok: true, image: monogramSvg(ctx.focalName || "Scene") };
-  if (!ctx.model) return { ok: false, failure: { reason: "other", message: "no image model is registered" } };
+  if (!ctx.profile) return { ok: false, failure: { reason: "other", message: "no image model is registered" } };
 
-  const wanted = attemptReferenceCount(id, ctx.model);
+  const wanted = attemptReferenceCount(id, ctx.profile.model);
   const references =
     id === "multi_edit"
-      ? ctx.multiBuffers.slice(0, wanted)
-      : id === "edit" && ctx.primaryBuffer
-        ? [ctx.primaryBuffer]
+      ? ctx.multiReferences.slice(0, wanted)
+      : id === "edit" && ctx.primaryReference
+        ? [ctx.primaryReference]
         : [];
 
-  const result = await renderWithModel(
-    { model: ctx.model, prompt: ctx.promptFor(id), references },
+  const result = await renderImageIntent(
+    {
+      profile: ctx.profile,
+      prompt: ctx.promptFor(id),
+      references,
+      target: { aspectRatio: IMAGE_TARGET_ASPECT },
+    },
     ctx.sink,
   );
   if (result.ok && result.image) return { ok: true, image: result.image };
-  const message = result.error ?? `${ctx.model.slug} returned no image`;
+  const message = result.error ?? `${ctx.profile.model.slug} returned no image`;
   return { ok: false, failure: { reason: classifyImageFailure(message), message } };
 }
 

@@ -85,7 +85,7 @@ function plan(modelOver: Record<string, unknown> = {}, profileOver: Record<strin
     profile: profile(profileOver),
     basePrompt: "change the outfit",
     baseNegativePrompt: null,
-    referenceRoles: ["canonical_identity"],
+    references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
   });
 }
 
@@ -175,7 +175,7 @@ describe("the prompt-strategy dispatch", () => {
       profile: profile({ promptStrategy }),
       basePrompt: "change the outfit",
       baseNegativePrompt: null,
-      referenceRoles: roles,
+      references: { vocabulary: "identity_pack", roles },
     });
   }
 
@@ -238,7 +238,7 @@ describe("compileProfileRenderPlan", () => {
       profile: profile(),
       basePrompt: "change the outfit",
       baseNegativePrompt: null,
-      referenceRoles: ["face_detail", "canonical_identity"],
+      references: { vocabulary: "identity_pack", roles: ["face_detail", "canonical_identity"] },
     });
     expect(compiled.finalPrompt.startsWith("Image 1: a close facial-detail reference")).toBe(true);
     expect(compiled.finalPrompt.endsWith("change the outfit")).toBe(true);
@@ -257,7 +257,7 @@ describe("compileProfileRenderPlan", () => {
       profile: profile({ controlDefaults: { negativePrompt: "profile default", seedPolicy: "random" } }),
       basePrompt: "p",
       baseNegativePrompt: "fixture negative",
-      referenceRoles: [],
+      references: { vocabulary: "identity_pack", roles: [] },
     });
     expect(compiled.negativePrompt).toBe("fixture negative");
     expect(compiled.controlInput).toEqual({ negative_prompt: "fixture negative" });
@@ -322,7 +322,7 @@ describe("compileProfileRenderPlan", () => {
       profile: { ...profile(), timeoutMs: 30 * 60_000 },
       basePrompt: "p",
       baseNegativePrompt: null,
-      referenceRoles: [],
+      references: { vocabulary: "identity_pack", roles: [] },
     });
     expect(overLong.timeoutMs).toBe(MAX_TRIAL_PREDICTION_MS);
   });
