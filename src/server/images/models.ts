@@ -158,6 +158,12 @@ export interface RenderWithModelResult {
    * the provider's own record of it.
    */
   predictionId?: string;
+  /**
+   * The version the provider says it ACTUALLY ran, when it echoes one. Passed
+   * through untouched from `ReplicateImageResult`, where the reason it exists is
+   * recorded: a pin states intent, and only this states outcome.
+   */
+  executedVersionId?: string;
 }
 
 /**
@@ -213,8 +219,12 @@ export async function renderWithModel(
     sink,
   );
   // Spread rather than assigned, so a run the provider never got a prediction id
-  // for reports no field at all instead of an explicit undefined.
-  const provenance = result.predictionId ? { predictionId: result.predictionId } : {};
+  // (or never echoed a version) for reports no field at all instead of an
+  // explicit undefined.
+  const provenance = {
+    ...(result.predictionId ? { predictionId: result.predictionId } : {}),
+    ...(result.executedVersionId ? { executedVersionId: result.executedVersionId } : {}),
+  };
   if (!result.ok || !result.image) {
     return { ok: false, ...provenance, error: result.error ?? `${model.slug} returned no image` };
   }

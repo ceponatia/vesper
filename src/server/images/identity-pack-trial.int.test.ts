@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { diag, DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   imageIdentityPackTrialResultSchema,
@@ -26,6 +26,7 @@ import {
 import {
   characters,
   db,
+  imageIdentityPacks,
   imageIdentityPackTrialCells,
   imageIdentityPackTrialGrades,
   imageIdentityPackTrialRuns,
@@ -47,6 +48,7 @@ import {
   recordTrialVerdict,
   runTrialExecutionPassForTesting,
   setTrialRendererForTesting,
+  STALE_CLAIM_MS,
   submitTrialPairGrade,
   trialPairLeftIsA,
   type IdentityPackTrialCellRow,
@@ -54,6 +56,7 @@ import {
   type TrialCellRenderer,
   type TrialCellRenderInput,
 } from "./identity-pack-trial";
+import { TRIAL_FALLBACK_PREDICTION_MS } from "./render-profile";
 
 /**
  * The trial service end to end against DATABASE_URL and a sandboxed DATA_ROOT
@@ -91,6 +94,14 @@ const SURFACE_OFF_MODEL_ID = "imgmdltrialsurfaceaaaaaa";
 const SURFACE_OFF_PROFILE_ID = "imgprftrialsurfaceaaaaaa";
 /** An OFFERED generate profile — the only shape the no-pack baseline accepts. */
 const GENERATE_PROFILE_ID = "imgprftrialgenerateaaaaa";
+/**
+ * A generate profile whose REVIEWED reference policy allows roles but not
+ * `identity`. Production would never hand it an identity reference, so its
+ * pack-source cells must refuse — while its no-pack baseline, which sends no
+ * references at all, is untouched. Generate so both arms are expressible on one
+ * profile.
+ */
+const POLICY_OFF_PROFILE_ID = "imgprftrialpolicyoffaaaa";
 const FIXTURE_MODEL_IDS = [
   TRIAL_MODEL_ID,
   TIGHT_MODEL_ID,
@@ -108,6 +119,7 @@ const FIXTURE_PROFILE_IDS = [
   NO_GENERATE_PROFILE_ID,
   SURFACE_OFF_PROFILE_ID,
   GENERATE_PROFILE_ID,
+  POLICY_OFF_PROFILE_ID,
 ];
 
 /**
@@ -279,6 +291,21 @@ beforeAll(async () => {
       promptStrategy: "text_to_image_description",
       isDefault: false,
       sort: 953,
+    },
+    {
+      id: POLICY_OFF_PROFILE_ID,
+      imageModelId: TRIAL_MODEL_ID,
+      key: "trial-policy-off",
+      label: "Trial Policy Off",
+      task: "variant",
+      operation: "generate",
+      promptStrategy: "text_to_image_description",
+      // A REVIEWED policy that names roles and omits identity — as against the
+      // seeded `'{}'::jsonb`, which means "nobody has reviewed one" and stays
+      // permissive.
+      referencePolicy: { allowedRoles: ["location"], requiredRoles: [], roleOrder: ["location"] },
+      isDefault: false,
+      sort: 958,
     },
     ineligibleProfile(WEAK_PROFILE_ID, WEAK_MODEL_ID, "trial-weak", "edit", 954),
     ineligibleProfile(IMG2IMG_PROFILE_ID, IMG2IMG_MODEL_ID, "trial-img2img", "edit", 955),
@@ -612,7 +639,15 @@ describe.skipIf(!ready)("trial run creation", () => {
         // empty and nothing was dropped.
         packVariantKey: "current",
         referenceSource: "pack",
-        resolvedControls: { operation: "edit", timeoutMs: null, controlInput: {}, droppedControls: [] },
+        // The timeout is the RESOLVED number, not the profile's null: a cell
+        // records the budget it will actually run under, never "whatever the
+        // machine's env said that day".
+        resolvedControls: {
+          operation: "edit",
+          timeoutMs: TRIAL_FALLBACK_PREDICTION_MS,
+          controlInput: {},
+          droppedControls: [],
+        },
       });
       expect(cell.spec?.sourceContentHash).toMatch(/^[0-9a-f]{64}$/);
       expect(cell.spec?.positivePromptHash).toMatch(/^[0-9a-f]{64}$/);
@@ -794,6 +829,83 @@ describe.skipIf(!ready)("planning eligibility", () => {
     expect(ineligibleReason(await refusedCell({ profileIds: [SURFACE_OFF_PROFILE_ID] }))).toContain(
       "legacy_surface_excluded",
     );
+  });
+
+  it("refuses an identity-reference cell on a profile whose reviewed policy forbids identity", async () => {
+    // Production would never hand this profile an identity reference, so a cell
+    // that sent one would be grading a configuration the render path cannot
+    // produce.
+    const reason = ineligibleReason(await refusedCell({ profileIds: [POLICY_OFF_PROFILE_ID] }));
+    expect(reason).toContain("reference policy does not allow identity references");
+
+    // The same profile's NO-PACK baseline is untouched: it sends no references
+    // at all, so there is no policy question to answer.
+    const baseline = await createIdentityPackTrialRun({
+      ownerId,
+      request: trialRequest({
+        label: "policy-off baseline",
+        profileIds: [POLICY_OFF_PROFILE_ID],
+        strategies: ["canonical_only"],
+        packVariants: [{ source: "none" }],
+      }),
+    });
+    expect(baseline.ok).toBe(true);
+    if (!baseline.ok) return;
+    expect(baseline.counts).toEqual({ planned: 1, running: 0, rendered: 0, failed: 0, refused: 0 });
+
+    // And an EMPTY policy — the seeded default, "nobody reviewed one" — stays
+    // permissive. Reading "nothing recorded" as "nothing allowed" would refuse
+    // every seeded profile and quietly empty the grid.
+    const permissive = await createIdentityPackTrialRun({
+      ownerId,
+      request: trialRequest({ label: "unreviewed policy", strategies: ["canonical_only"] }),
+    });
+    expect(permissive.ok).toBe(true);
+    if (!permissive.ok) return;
+    expect(permissive.counts.planned).toBe(1);
+  });
+
+  it("refuses an arm whose optional role the pack cannot supply, rather than duplicating a shorter one", async () => {
+    // `identityRolePlan` marks `face_detail` optional, so production evaluates a
+    // face-crop-less pack as ELIGIBLE for `canonical_then_face_detail` and sends
+    // the canonical portrait alone — exactly what `canonical_only` sends. Right
+    // for a render, fatal for a grid: the two arms would pair and the model's
+    // own run-to-run drift would be reported as an effect of reference ordering.
+    const subject = await seedTrialCharacter("No Face Crop Subject");
+    const ensured = await ensureIdentityPack({
+      ownerId,
+      characterId: subject.characterId,
+      purpose: "admin_trial",
+    });
+    expect(ensured.status).toBe("ready");
+    // Drop the face crop the way the FK's `on delete set null` would, then pin
+    // the revision — the pinned arm is strictly read-only, so nothing re-derives
+    // it underneath the assertion.
+    await db()
+      .update(imageIdentityPacks)
+      .set({ faceCropImageId: null })
+      .where(eq(imageIdentityPacks.characterId, subject.characterId));
+
+    const result = await createIdentityPackTrialRun({
+      ownerId,
+      request: trialRequest({
+        label: "degenerate arm run",
+        characterIds: [subject.characterId],
+        strategies: ["canonical_only", "canonical_then_face_detail"],
+        packVariants: [{ source: "revision", characterId: subject.characterId, revision: 1 }],
+      }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The single-role arm is a real comparison and still plans; only the arm
+    // that would have duplicated it refuses.
+    expect(result.counts).toEqual({ planned: 1, running: 0, rendered: 0, failed: 0, refused: 1 });
+    const rows = await cellRows(result.runId);
+    const refused = rows.find((row) => row.status === "refused");
+    expect(refused && storedResult(refused).failureCode).toBe("profile_ineligible");
+    expect(refused && storedResult(refused).failureMessage).toContain("would duplicate canonical_only");
+    const planned = rows.find((row) => row.status === "planned");
+    expect((planned?.specJson as ImageIdentityPackTrialCellSpec | undefined)?.identityStrategy).toBe("canonical_only");
   });
 
   it("still plans every combination production would offer", async () => {
@@ -1361,6 +1473,93 @@ describe.skipIf(!ready)("trial execution", () => {
     expect((await nextUnreviewedTrialPair(runId, ownerId))?.pair).toBeNull();
   });
 
+  it("fails a cell whose controls were narrowed in transport, keeping the output for audit", async () => {
+    // `compileProfileRenderPlan` filters reserved fields out before they enter
+    // the payload, so this diagnostic reaching the sink means the compile step
+    // and the transport disagree about what is reserved. A cell whose controls
+    // were silently narrowed on the way out is not the configuration its hash
+    // records, so it must not join the grid.
+    const runId = await createdRunId({ label: "narrowed controls run", strategies: ["canonical_only"] });
+    setTrialRendererForTesting(async (input, sink) => {
+      sink?.push(
+        diag("warn", "image_model.reserved_field_ignored", "control input tried to write a render-path field", {
+          path: "image_models",
+          context: { slug: input.model.slug, fields: ["size"] },
+        }),
+      );
+      return { ok: true, image: await testPngBuffer(96, 128) };
+    });
+
+    const result = await executeIdentityPackTrialCells({ runId, ownerId, chargeBudget: admitCharge });
+    expect(result?.ok).toBe(true);
+    if (!result?.ok) return;
+    expect(result.executed.map((cell) => cell.status)).toEqual(["failed"]);
+
+    const [cell] = await cellRows(runId);
+    expect(cell?.resultJson).toMatchObject({ failureCode: "controls_trimmed" });
+    // Auditable but unpairable — the same shape the trimmed-references case takes.
+    expect(cell?.outputImageId).not.toBeNull();
+    expect((await nextUnreviewedTrialPair(runId, ownerId))?.pair).toBeNull();
+  });
+
+  it("records the version the provider says it ran, and fails the cell when it is not the pinned one", async () => {
+    // A pin states intent; the echo states outcome. Recording only the pin would
+    // let a provider-side re-point pass the execute-time re-check untouched —
+    // the cell would claim evidence for a version that never ran.
+    const runId = await createdRunId({ label: "version echo run", strategies: ["canonical_only"] });
+    setTrialRendererForTesting(async () => ({
+      ok: true,
+      image: await testPngBuffer(96, 128),
+      predictionId: "pred-echo",
+      executedVersionId: TRIAL_MODEL_VERSION,
+    }));
+    const matched = await executeIdentityPackTrialCells({ runId, ownerId, chargeBudget: admitCharge });
+    expect(matched?.ok).toBe(true);
+    if (!matched?.ok) return;
+    expect(matched.executed.map((cell) => cell.status)).toEqual(["rendered"]);
+    expect((await cellRows(runId))[0]?.resultJson).toMatchObject({
+      providerVersionId: TRIAL_MODEL_VERSION,
+      failureCode: null,
+    });
+
+    const mismatchedRunId = await createdRunId({ label: "version mismatch run", strategies: ["canonical_only"] });
+    setTrialRendererForTesting(async () => ({
+      ok: true,
+      image: await testPngBuffer(96, 128),
+      executedVersionId: "trialversionsomethingels",
+    }));
+    const mismatched = await executeIdentityPackTrialCells({
+      runId: mismatchedRunId,
+      ownerId,
+      chargeBudget: admitCharge,
+    });
+    expect(mismatched?.ok).toBe(true);
+    if (!mismatched?.ok) return;
+    expect(mismatched.executed.map((cell) => cell.status)).toEqual(["failed"]);
+    const [mismatchedCell] = await cellRows(mismatchedRunId);
+    expect(mismatchedCell?.resultJson).toMatchObject({
+      failureCode: "version_mismatch",
+      providerVersionId: "trialversionsomethingels",
+    });
+    // Kept for audit, and unpairable: the image was paid for and an operator
+    // investigating a re-pinned model needs to see it.
+    expect(mismatchedCell?.outputImageId).not.toBeNull();
+    expect((await nextUnreviewedTrialPair(mismatchedRunId, ownerId))?.pair).toBeNull();
+  });
+
+  it("treats a SILENT provider as no evidence of a mismatch", async () => {
+    // Most model-endpoint responses carry no `version` at all. Refusing on
+    // silence would fail every cell against those, so absence is absence —
+    // never a disagreement.
+    const runId = await createdRunId({ label: "version silent run", strategies: ["canonical_only"] });
+    setTrialRendererForTesting(async () => ({ ok: true, image: await testPngBuffer(96, 128) }));
+    const result = await executeIdentityPackTrialCells({ runId, ownerId, chargeBudget: admitCharge });
+    expect(result?.ok).toBe(true);
+    if (!result?.ok) return;
+    expect(result.executed.map((cell) => cell.status)).toEqual(["rendered"]);
+    expect((await cellRows(runId))[0]?.resultJson).toMatchObject({ providerVersionId: null, failureCode: null });
+  });
+
   it("contains a thrown render inside its cell and continues the batch", async () => {
     const runId = await createdRunId({ label: "throwing run" });
     let renders = 0;
@@ -1382,6 +1581,9 @@ describe.skipIf(!ready)("trial execution", () => {
     const cells = await cellRows(runId);
     expect(cells.map((cell) => cell.status)).toEqual(["failed", "rendered"]);
     expect(cells[0]?.resultJson).toMatchObject({ failureCode: "other", failureMessage: "socket hang up" });
+    // Nothing was stored before this throw, so the settle carries no output —
+    // the null arm of the stored-output holder.
+    expect(cells[0]?.outputImageId).toBeNull();
     // Settled means settled: a fresh pass finds nothing planned to re-render.
     const again = await executeIdentityPackTrialCells({ runId, ownerId, chargeBudget: admitCharge });
     expect(again?.ok).toBe(true);
@@ -1588,9 +1790,16 @@ describe.skipIf(!ready)("durable execution claims", () => {
   it("recovers a claim a dead pass left behind, and leaves a live one alone", async () => {
     const runId = await createdRunId({ label: "stale claim run", strategies: ["canonical_only"] });
     const [stale] = await cellRows(runId);
+    // Dated past the window rather than at a hand-picked "long ago": the window
+    // is DERIVED from the render budget and the per-call deadlines, so a literal
+    // here would silently stop being stale the next time one of them moved.
     await db()
       .update(imageIdentityPackTrialCells)
-      .set({ status: "running", claimToken: "dead-worker", claimedAt: new Date(Date.now() - 21 * 60_000) })
+      .set({
+        status: "running",
+        claimToken: "dead-worker",
+        claimedAt: new Date(Date.now() - STALE_CLAIM_MS - 60_000),
+      })
       .where(eq(imageIdentityPackTrialCells.id, stale?.id ?? ""));
 
     const { renderer, calls } = countingRenderer();
@@ -1607,7 +1816,9 @@ describe.skipIf(!ready)("durable execution claims", () => {
 
     // A claim inside the window is NOT taken back: `running` records "this
     // render may already have been paid for", and resetting it on sight is the
-    // double-spend the column exists to prevent.
+    // double-spend the column exists to prevent. The heartbeat is what makes
+    // "inside the window" mean "rendering right now" rather than "queued behind
+    // nineteen other cells".
     const liveRunId = await createdRunId({ label: "live claim run", strategies: ["canonical_only"] });
     const [live] = await cellRows(liveRunId);
     await db()
@@ -1662,6 +1873,204 @@ describe.skipIf(!ready)("durable execution claims", () => {
     expect(outputs).toEqual([]);
     // The cell still belongs to the thief; this pass settled nothing.
     expect((await cellRows(runId))[0]?.status).toBe("running");
+  });
+
+  it("spends NOTHING on a cell whose claim was taken over between the batch claim and its turn", async () => {
+    // The heartbeat's cheap half. A 20-cell pass claims everything up front, so
+    // the last cell's claim can be stolen while the first nineteen render. The
+    // re-assert immediately before the provider call turns that into zero
+    // provider calls, instead of one paid render whose settle then loses and has
+    // to delete the image it just bought.
+    const runId = await createdRunId({ label: "stolen mid-batch run" });
+    const { renderer, calls } = countingRenderer();
+    setTrialRendererForTesting(async (input, sink) => {
+      // While the FIRST cell renders, a second machine takes over everything
+      // this pass still holds — which is the second cell.
+      await db()
+        .update(imageIdentityPackTrialCells)
+        .set({ claimToken: "taken-by-another-pass" })
+        .where(and(eq(imageIdentityPackTrialCells.runId, runId), eq(imageIdentityPackTrialCells.status, "running")));
+      return renderer(input, sink);
+    });
+
+    const sink = new DiagnosticCollector();
+    const result = await executeIdentityPackTrialCells({ runId, ownerId, maxRenders: 5, chargeBudget: admitCharge, sink });
+    expect(result?.ok).toBe(true);
+    if (!result?.ok) return;
+    // The first cell's own settle also loses (its token was rewritten too), so
+    // both report `skipped` — but only ONE of them ever reached a provider.
+    expect(result.executed.map((cell) => cell.status)).toEqual(["skipped", "skipped"]);
+    expect(calls()).toBe(1);
+    // The second cell was stopped BEFORE the provider, not after — that
+    // difference is the entire saving.
+    expect(sink.items.map((entry) => entry.message)).toContain("the claim was taken over before the render started");
+    // Both cells still belong to the thief; this pass settled nothing.
+    expect((await cellRows(runId)).map((cell) => cell.status)).toEqual(["running", "running"]);
+  });
+
+  it("settles a throw AFTER storage with the image it had already stored", async () => {
+    // The gap this closes: a throw between "bytes written" and "cell settled"
+    // used to settle `failed` with a NULL output, leaving a ready, owner-scoped,
+    // hidden image no cell pointed at — unreachable by the run's delete sweep
+    // (it walks cell pointers) and invisible everywhere else.
+    //
+    // The fault is injected at the DATABASE because that is precisely what the
+    // containment exists for: the render succeeds, its bytes land, and the write
+    // that records the outcome fails. `NOT VALID` so the CHECK judges only new
+    // writes — this table is full of `rendered` rows from earlier cases.
+    const subject = await seedTrialCharacter("Post-Store Throw Subject");
+    const runId = await createdRunId({
+      label: "post-store throw run",
+      characterIds: [subject.characterId],
+      strategies: ["canonical_only"],
+    });
+    await db().execute(sql`alter table image_identity_pack_trial_cells drop constraint if exists trial_int_no_rendered`);
+    setTrialRendererForTesting(async () => {
+      await db().execute(
+        sql`alter table image_identity_pack_trial_cells add constraint trial_int_no_rendered check (status <> 'rendered') not valid`,
+      );
+      return { ok: true, image: await testPngBuffer(96, 128) };
+    });
+
+    const sink = new DiagnosticCollector();
+    try {
+      const result = await executeIdentityPackTrialCells({ runId, ownerId, chargeBudget: admitCharge, sink });
+      expect(result?.ok).toBe(true);
+      if (!result?.ok) return;
+      // The `rendered` settle threw; the containment's `failed` settle is allowed.
+      expect(result.executed.map((cell) => cell.status)).toEqual(["failed"]);
+    } finally {
+      await db().execute(
+        sql`alter table image_identity_pack_trial_cells drop constraint if exists trial_int_no_rendered`,
+      );
+    }
+    expect(sink.items.map((entry) => entry.code)).toContain("images.identity_pack.trial.cell_degraded");
+
+    const [cell] = await cellRows(runId);
+    expect(cell?.status).toBe("failed");
+    // THE POINT: the cell owns the image it paid for, on the row AND in the
+    // stored result, so the two cannot drift.
+    expect(cell?.outputImageId).not.toBeNull();
+    expect(cell && storedResult(cell).outputImageId).toBe(cell?.outputImageId);
+    const outputs = await outputImageRows(runId);
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]?.status).toBe("ready");
+    // …and because the cell points at it, the run's delete sweep reaches it.
+    expect(await deleteIdentityPackTrialRun(runId, ownerId)).toEqual({ deleted: true, outputImagesRemoved: 1 });
+  });
+
+  it("hands its claims back when the budget guard THROWS", async () => {
+    // A guard that threw decided nothing and spent nothing, so its claims are as
+    // unspent as a refusal's. Left `running` they would freeze the grid for the
+    // whole stale window over a fault that never touched a provider.
+    const runId = await createdRunId({ label: "budget throw run" });
+    const { renderer, calls } = countingRenderer();
+    setTrialRendererForTesting(renderer);
+
+    await expect(
+      executeIdentityPackTrialCells({
+        runId,
+        ownerId,
+        chargeBudget: () => Promise.reject(new Error("budget service unreachable")),
+      }),
+    ).rejects.toThrow("budget service unreachable");
+
+    expect(calls()).toBe(0);
+    // Claimed, then handed straight back — not left `running` for the window.
+    expect((await cellRows(runId)).map((cell) => cell.status)).toEqual(["planned", "planned"]);
+    // Immediately retryable, because nothing was charged and nothing was sent.
+    setTrialRendererForTesting(countingRenderer().renderer);
+    const retried = await executeIdentityPackTrialCells({ runId, ownerId, chargeBudget: admitCharge });
+    expect(retried?.ok).toBe(true);
+    if (!retried?.ok) return;
+    expect(retried.executed.map((cell) => cell.status)).toEqual(["rendered", "rendered"]);
+  });
+
+  it("returns the claims it never reached when a containment settle fails", async () => {
+    // When the settle machinery itself fails the pass stops — continuing would
+    // repeat the same write failure cell after cell. But the cells it never
+    // TOUCHED were charged and never sent anywhere, so handing them back is
+    // free, and leaving them `running` would freeze that part of the grid for
+    // the whole stale window. Their charge stays spent: a charged slot is a
+    // reservation for a pass admitted at that size, exactly as for a cell that
+    // conflicted mid-batch.
+    const runId = await createdRunId({ label: "settle failure run" });
+    await db().execute(sql`alter table image_identity_pack_trial_cells drop constraint if exists trial_int_no_failed`);
+    setTrialRendererForTesting(async () => {
+      // Make the containment's OWN settle impossible, then throw into it.
+      await db().execute(
+        sql`alter table image_identity_pack_trial_cells add constraint trial_int_no_failed check (status <> 'failed') not valid`,
+      );
+      throw new Error("socket hang up");
+    });
+
+    const sink = new DiagnosticCollector();
+    const { chargeBudget, charges } = recordingCharge();
+    try {
+      const result = await executeIdentityPackTrialCells({ runId, ownerId, maxRenders: 5, chargeBudget, sink });
+      expect(result?.ok).toBe(true);
+      if (!result?.ok) return;
+      // Nothing could be recorded, so the pass reports no outcomes at all.
+      expect(result.executed).toEqual([]);
+    } finally {
+      await db().execute(sql`alter table image_identity_pack_trial_cells drop constraint if exists trial_int_no_failed`);
+    }
+    expect(charges).toEqual([2]);
+    expect(sink.items.map((entry) => entry.code)).toContain("images.identity_pack.trial.cell_degraded");
+
+    const rows = await cellRows(runId);
+    // The cell whose settle failed keeps its claim and waits out stale recovery:
+    // writing more rows to a database that just refused a write is not a
+    // recovery plan, and that render may already have been paid for.
+    expect(rows[0]?.status).toBe("running");
+    // The cell this pass never reached goes straight back to the grid.
+    expect(rows[1]?.status).toBe("planned");
+    expect(rows[1]?.claimToken).toBeNull();
+  });
+
+  it("settles an unreachable cell terminally and free, BEFORE the budget is charged", async () => {
+    // A cell naming a fixture, model or profile that no longer exists can never
+    // reach a provider. Discovered after the charge, a run left stale by a
+    // deleted profile burned a budget unit per cell per pass to keep
+    // rediscovering it.
+    const runId = await createdRunId({ label: "unreachable cell run", strategies: ["canonical_only"] });
+    const validSpec = await storedSpec(runId);
+    await db()
+      .insert(imageIdentityPackTrialCells)
+      .values([
+        {
+          runId,
+          cellKey: "zzz-unknown-fixture",
+          status: "planned",
+          specJson: { ...validSpec, id: "unreachablefixturecella", promptFixtureId: "variant_wardrobe_v999" },
+        },
+        {
+          runId,
+          cellKey: "zzz-unknown-profile",
+          status: "planned",
+          specJson: { ...validSpec, id: "unreachableprofilecella", profileId: "imgprfneverregisteredaa" },
+        },
+      ]);
+
+    const { renderer, calls } = countingRenderer();
+    setTrialRendererForTesting(renderer);
+    const { chargeBudget, charges } = recordingCharge();
+    const result = await executeIdentityPackTrialCells({ runId, ownerId, maxRenders: 5, chargeBudget });
+    expect(result?.ok).toBe(true);
+    if (!result?.ok) return;
+
+    // Charged for the ONE cell that could actually run.
+    expect(charges).toEqual([1]);
+    expect(calls()).toBe(1);
+    const rows = await cellRows(runId);
+    expect(rows.find((row) => row.cellKey === "zzz-unknown-fixture")).toMatchObject({
+      status: "refused",
+      resultJson: { failureCode: "fixture_unknown", outputImageId: null },
+    });
+    expect(rows.find((row) => row.cellKey === "zzz-unknown-profile")).toMatchObject({
+      status: "refused",
+      resultJson: { failureCode: "cell_conflict", outputImageId: null },
+    });
   });
 
   it("settles a malformed cell terminally and free, and never asks a provider about it", async () => {
@@ -2031,9 +2440,13 @@ describe.skipIf(!ready)("verdict gating and the normalized verdict ledger", () =
     expect((await runRow(runId))?.status).toBe("review");
     expect(await verdictRows(runId)).toHaveLength(2);
 
-    // Grading the last pair supplies the missing half. Status is settled by
-    // WRITES, so the next ruling is what closes the run.
+    // Grading the last pair supplies the missing half — and CLOSES the run then
+    // and there, because status is settled by writes and a grade is one of the
+    // two writes that can complete a run.
     expect(await gradeEveryPair(runId)).toBe(1);
+    expect((await runRow(runId))?.status).toBe("complete");
+
+    // A ruling on a complete run is the revision path, and it keeps it complete.
     const revised = await recordTrialVerdict(verdictInput(runId, "canonical_only", { verdict: "promoted" }));
     expect(revised).toMatchObject({ ok: true, runStatus: "complete" });
     expect((await runRow(runId))?.status).toBe("complete");
@@ -2063,6 +2476,102 @@ describe.skipIf(!ready)("verdict gating and the normalized verdict ledger", () =
     if (!second?.ok) return;
     expect(second.verdicts).toHaveLength(2);
     expect(second.verdicts.every((entry) => !entry.overrideIncompleteReview)).toBe(true);
+  });
+
+  it("completes the run on the LAST GRADE, not only on the next verdict write", async () => {
+    // Status is derived at WRITE time, and grading is one of exactly two writes
+    // that can complete a run. Before this, a run ruled entirely through
+    // overrides sat in `review` after its final grade landed, and only an
+    // unrelated later verdict noticed — so "complete" lagged the evidence.
+    const runId = await reviewedRun("grade completes run");
+    for (const strategy of ["canonical_only", "face_detail_only"] as const) {
+      const ruled = await recordTrialVerdict(verdictInput(runId, strategy, { overrideIncompleteReview: true }));
+      expect(ruled).toMatchObject({ ok: true, runStatus: "review" });
+    }
+    expect((await runRow(runId))?.status).toBe("review");
+
+    const pair = (await nextUnreviewedTrialPair(runId, ownerId))?.pair;
+    expect(pair).not.toBeNull();
+    if (!pair) return;
+    const graded = await submitTrialPairGrade({
+      runId,
+      ownerId,
+      request: {
+        pairId: pair.pairId,
+        grades: gradesFavoringLeft(),
+        catastrophicLeft: [],
+        catastrophicRight: [],
+        notes: null,
+      },
+    });
+    // The grade itself reports the settled status, and the row agrees — with no
+    // further verdict write anywhere.
+    expect(graded).toMatchObject({ ok: true, runStatus: "complete" });
+    expect((await runRow(runId))?.status).toBe("complete");
+    expect(await verdictRows(runId)).toHaveLength(2);
+  });
+
+  it("refuses to complete or rule a run whose rendered evidence has gone missing", async () => {
+    // "Every reviewable pair is graded" becomes vacuously TRUE exactly when the
+    // pairs stop existing. A rendered cell whose output row vanished takes its
+    // pairs with it, so completion has to count the hole rather than read past
+    // it — `complete` is the claim that the blinded procedure ran over THIS
+    // run's evidence.
+    const runId = await reviewedRun("degraded evidence run");
+    expect(await gradeEveryPair(runId)).toBe(1);
+    const [first] = await cellRows(runId);
+    await db()
+      .update(imageIdentityPackTrialCells)
+      .set({ outputImageId: null })
+      .where(eq(imageIdentityPackTrialCells.id, first?.id ?? ""));
+
+    const refused = await recordTrialVerdict(verdictInput(runId, "canonical_only"));
+    expect(refused?.ok).toBe(false);
+    if (!refused || refused.ok) return;
+    expect(refused.refusal.code).toBe("review_incomplete");
+    expect(refused.refusal.message).toContain("no longer carry reviewable evidence");
+
+    // The override still carries it — and is RECORDED, because the evidence
+    // genuinely was incomplete. That is the whole job of the flag.
+    const overridden = await recordTrialVerdict(
+      verdictInput(runId, "canonical_only", { overrideIncompleteReview: true }),
+    );
+    expect(overridden?.ok).toBe(true);
+    if (!overridden?.ok) return;
+    expect(overridden.verdicts[0]?.overrideIncompleteReview).toBe(true);
+    // And even fully ruled, the run does not claim completion over a hole.
+    const last = await recordTrialVerdict(
+      verdictInput(runId, "face_detail_only", { overrideIncompleteReview: true }),
+    );
+    expect(last).toMatchObject({ ok: true, runStatus: "review" });
+    expect((await runRow(runId))?.status).toBe("review");
+  });
+
+  it("refuses to complete a run whose rendered cell's spec can no longer be read", async () => {
+    // A rendered row nothing can parse is not one fewer combo — it is a combo of
+    // UNKNOWN identity, and reading it as absent would silently delete a verdict
+    // slot the run was supposed to be ruled on.
+    const runId = await reviewedRun("corrupt spec run");
+    expect(await gradeEveryPair(runId)).toBe(1);
+    const [first] = await cellRows(runId);
+    await db()
+      .update(imageIdentityPackTrialCells)
+      .set({ specJson: { nope: true } })
+      .where(eq(imageIdentityPackTrialCells.id, first?.id ?? ""));
+
+    const sink = new DiagnosticCollector();
+    // The surviving slot is still nameable and still rulable…
+    const ruled = await recordTrialVerdict(
+      verdictInput(runId, "face_detail_only", { overrideIncompleteReview: true, sink }),
+    );
+    expect(ruled).toMatchObject({ ok: true, runStatus: "review" });
+    // …but the unreadable one keeps the run out of `complete`, loudly.
+    expect((await runRow(runId))?.status).toBe("review");
+    expect(sink.items.map((entry) => entry.code)).toContain("images.identity_pack.trial.cell_degraded");
+    // And it is not offered as a verdict slot either — a slot nobody can name is
+    // a slot nobody can act on.
+    const summary = await identityPackTrialSummary(runId, ownerId);
+    expect(summary?.renderedCombos.map((combo) => combo.identityStrategy)).toEqual(["face_detail_only"]);
   });
 
   it("records concurrent rulings on different combos and keeps one row per combo under a same-combo race", async () => {

@@ -134,7 +134,14 @@ export function trialPackVariantKey(selector: TrialPackVariantSelector): string 
  */
 export const trialResolvedControlsSchema = z.object({
   operation: imageProfileOperationSchema,
-  /** Null means "no per-profile budget" — the env/default timeout applies. */
+  /**
+   * The RESOLVED prediction budget this cell was compiled to run under — always
+   * a number on anything planned by a current build (`compileProfileRenderPlan`
+   * substitutes its fallback and clamps to the profile ceiling, so an env value
+   * can never widen a cell's budget). Nullable only because rows planned BEFORE
+   * that fix stored the profile's own `timeoutMs`, and null there meant "the
+   * env/default applied, whatever it was that day".
+   */
   timeoutMs: z.number().int().min(1).nullable(),
   /** The provider-shaped control payload, already mapped to this version's field names. */
   controlInput: z.record(z.string(), z.unknown()),
@@ -289,6 +296,18 @@ export const trialCellComboSchema = z.object({
  */
 export const imageIdentityPackTrialResultSchema = z.object({
   providerPredictionId: z.string().min(1).nullable(),
+  /**
+   * The version the PROVIDER says it ran, echoed back off the prediction —
+   * distinct from `spec.modelVersion`, which is what the cell asked for. Null
+   * means the provider echoed nothing (or the cell never reached one), never
+   * "it matched": a cell whose echo disagrees with its pin settles `failed` with
+   * `version_mismatch` rather than joining the grid, because Replicate having
+   * run something else makes the image evidence for a comparison nobody planned.
+   *
+   * Defaulted so results stored before the echo existed parse as what they are —
+   * outcomes recorded when nothing was asking the provider to confirm itself.
+   */
+  providerVersionId: z.string().min(1).nullable().default(null),
   outputImageId: z.string().min(1).nullable(),
   latencyMs: z.number().int().min(0).nullable(),
   moderationOutcome: z.string().max(200).nullable(),

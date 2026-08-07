@@ -387,7 +387,11 @@ reproducible.
 
 The trial itself has not run. No corpus characters exist yet, no paid renders
 have happened, no thresholds are calibrated, no detector is chosen, and no
-verdict is recorded — those are owner actions on top of this harness.
+verdict is recorded — those are owner actions on top of this harness. One
+small setup step is also the owner's: each image model must be re-probed once
+on the admin models page so it carries a pinned provider version — a
+controlled trial refuses to plan cells against a model whose exact version it
+cannot pin.
 Reference sending stays off throughout: the integration rules deliberately
 allow packs to be trialed while it is off.
 

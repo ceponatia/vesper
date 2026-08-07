@@ -1,17 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   imageModelProfileSchema,
   imageModelSchema,
   type ImageModel,
   type ImageModelProfile,
 } from "@/contracts";
+import { OUTPUT_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from "../ai/replicate";
+import { STALE_CLAIM_MS } from "./identity-pack-trial";
 import { preparePromptForImageModel } from "./quality-presets";
 import {
   compileProfileRenderPlan,
+  MAX_TRIAL_PREDICTION_MS,
   pinnedImageModelVersion,
   profileRenderControlsHash,
   sha256Hex,
   stableJson,
+  TRIAL_FALLBACK_PREDICTION_MS,
 } from "./render-profile";
 
 /**
@@ -77,6 +81,13 @@ function hashOf(compiled: ReturnType<typeof plan>): string {
   });
 }
 
+// `REPLICATE_SAFE_MODE` decides the value of a declared safety toggle at send
+// time, so the cases below set it and MUST put it back: a leaked env var would
+// silently change what every later case in this process compiles.
+afterEach(() => {
+  delete process.env.REPLICATE_SAFE_MODE;
+});
+
 describe("pinnedImageModelVersion", () => {
   it("prefers the probed version and falls back to the slug's own pin", () => {
     expect(pinnedImageModelVersion(model())).toBe("version-probed");
@@ -95,6 +106,34 @@ describe("pinnedImageModelVersion", () => {
     // picking either would be a coin flip recorded as a pin.
     expect(pinnedImageModelVersion(model({ probedVersionId: "a", slug: "owner/name:b" }))).toBeNull();
     expect(pinnedImageModelVersion(model({ probedVersionId: "a", slug: "owner/name:a" }))).toBe("a");
+  });
+
+  it("treats a blank probe or a bare trailing colon as no pin at all", () => {
+    // A whitespace `probed_version_id` and an `owner/name:` slug are both
+    // "nothing pins this row" wearing a non-null value. Left untrimmed, a cell
+    // would pin `" "`, post an empty version to the provider, and then re-check
+    // successfully against its own blank.
+    expect(pinnedImageModelVersion(model({ probedVersionId: "   ", slug: "owner/name" }))).toBeNull();
+    expect(pinnedImageModelVersion(model({ probedVersionId: null, slug: "owner/name:" }))).toBeNull();
+    expect(pinnedImageModelVersion(model({ probedVersionId: "  v9 ", slug: "owner/name" }))).toBe("v9");
+    // A blank on one side is absent, so the other side simply wins — it is not
+    // a disagreement between two pins.
+    expect(pinnedImageModelVersion(model({ probedVersionId: " ", slug: "owner/name:v9" }))).toBe("v9");
+  });
+});
+
+describe("the trial's stale-claim window", () => {
+  it("exceeds everything one render can legitimately spend", () => {
+    // The window's whole job is to be longer than a single render — the
+    // prediction ceiling, the reference uploads and settling poll, and the
+    // output download — so recovery can never hand a LIVE render to a second
+    // worker and pay for it twice. Derived rather than guessed, and asserted
+    // here so a change to any of its inputs has to face this inequality.
+    const oneRenderMs = MAX_TRIAL_PREDICTION_MS + 4 * REQUEST_TIMEOUT_MS + OUTPUT_TIMEOUT_MS;
+    expect(STALE_CLAIM_MS).toBeGreaterThan(oneRenderMs);
+    // A single render is all it must cover: the claim is re-stamped when each
+    // cell's render STARTS, so a cell queued behind nineteen others is not aging.
+    expect(STALE_CLAIM_MS).toBeLessThan(2 * oneRenderMs);
   });
 });
 
@@ -179,6 +218,79 @@ describe("compileProfileRenderPlan", () => {
     expect(compiled.versionId).toBe("version-probed");
   });
 
+  it("resolves a profile with no timeout to an explicit budget instead of deferring to the env", () => {
+    // `timeoutMs: null` used to reach the renderer as "ask
+    // REPLICATE_PREDICTION_TIMEOUT_MS", which can be set to half an hour — so a
+    // cell's real deadline was unrecorded, unhashed, and unbounded, and the
+    // stale-claim window had nothing firm to be sized against.
+    const compiled = plan();
+    expect(compiled.timeoutMs).toBe(TRIAL_FALLBACK_PREDICTION_MS);
+    expect(compiled.resolvedControls.timeoutMs).toBe(TRIAL_FALLBACK_PREDICTION_MS);
+    // And the profile ceiling is a hard clamp, whatever a row claims.
+    const overLong = compileProfileRenderPlan({
+      model: model(),
+      profile: { ...profile(), timeoutMs: 30 * 60_000 },
+      basePrompt: "p",
+      baseNegativePrompt: null,
+      referenceRoles: [],
+    });
+    expect(overLong.timeoutMs).toBe(MAX_TRIAL_PREDICTION_MS);
+  });
+
+  it("drops a mapped control whose probed binding collides with a render-path field", () => {
+    // A size-mode model's shape key IS `size`, and `resolutionTier` is commonly
+    // probed as `size` too. Left alone, the mapped value travels, the transport
+    // discards it, and the hash claims a control was sent that never was.
+    const compiled = plan(
+      {
+        aspectMode: "size",
+        advancedCapabilities: {
+          controls: {
+            resolutionTier: { field: "size", type: "enum", enumValues: ["1K", "2K"] },
+            guidance: { field: "guidance_scale", type: "number", minimum: 0, maximum: 20 },
+          },
+          knownInputFields: ["size", "guidance_scale"],
+        },
+      },
+      { controlDefaults: { resolution: "2K", guidance: 6, seedPolicy: "random" } },
+    );
+    // The colliding field never enters the payload; the innocent one does.
+    expect(compiled.controlInput).toEqual({ guidance_scale: 6 });
+    expect(compiled.resolvedControls.droppedControls).toEqual([{ control: "size", reason: "reserved" }]);
+  });
+
+  it("never sends an output count, whatever the profile stores", () => {
+    // The trial is a single-image path: a profile asking for four outputs would
+    // bill four and grade one. The request is RECORDED as a drop rather than
+    // reinterpreted as 1, because "this profile wanted a set" is a real
+    // difference between two configurations.
+    const compiled = plan(
+      {
+        advancedCapabilities: {
+          controls: { outputCount: { field: "num_outputs", type: "integer", minimum: 1, maximum: 4 } },
+          knownInputFields: ["num_outputs"],
+        },
+      },
+      { controlDefaults: { outputCount: 4, seedPolicy: "random" } },
+    );
+    expect(compiled.controlInput).toEqual({});
+    expect(compiled.resolvedControls.droppedControls).toEqual([
+      { control: "outputCount", reason: "single_image_path" },
+    ]);
+  });
+
+  it("reports an extraInput negative prompt as sent, and a deliberately empty one as absent", () => {
+    // `buildRegistryModelInput` copies `extraInput` constants into the payload
+    // verbatim, so a row carrying `negative_prompt` sends it with no binding and
+    // no control involved. Reporting null claimed nothing was sent while
+    // something was.
+    expect(plan({ extraInput: { negative_prompt: "grainy, watermark" } }).negativePrompt).toBe("grainy, watermark");
+    // The reviewed-quality rows clear their wrapper's boilerplate to `""`. That
+    // is "deliberately no negative", and it stays null.
+    expect(plan({ extraInput: { negative_prompt: "" } }).negativePrompt).toBeNull();
+    expect(plan().negativePrompt).toBeNull();
+  });
+
   it("compiles against the reviewed-quality model, not the raw row", () => {
     // Qwen Edit's provider default optimizes speed where fidelity matters; the
     // reviewed seam corrects it, and the plan must describe the corrected model.
@@ -238,6 +350,28 @@ describe("profileRenderControlsHash", () => {
         orderedReferenceRoles: ["face_detail", "canonical_identity"],
       }),
     ).not.toBe(base);
+  });
+
+  it("moves when the env flips the safety enforcement the render will run under", () => {
+    // `disable_safety_checker` is resolved from REPLICATE_SAFE_MODE at send
+    // time, so hashing the STORED value fingerprinted a placeholder. An operator
+    // flipping the env between planning a grid and executing it changed provider
+    // enforcement for every cell, with matching hashes to say nothing happened —
+    // and two arms of one comparison could run under different enforcement.
+    delete process.env.REPLICATE_SAFE_MODE;
+    const withToggle = { extraInput: { disable_safety_checker: true } };
+    const permissive = hashOf(plan(withToggle));
+    expect(plan(withToggle).effectiveModel.extraInput).toEqual({ disable_safety_checker: true });
+
+    process.env.REPLICATE_SAFE_MODE = "true";
+    expect(plan(withToggle).effectiveModel.extraInput).toEqual({ disable_safety_checker: false });
+    expect(hashOf(plan(withToggle))).not.toBe(permissive);
+
+    // The key is never INTRODUCED — a model whose schema does not declare the
+    // input must not be handed one, so its hash cannot move with the env either.
+    const unaffected = hashOf(plan());
+    delete process.env.REPLICATE_SAFE_MODE;
+    expect(hashOf(plan())).toBe(unaffected);
   });
 
   it("ignores display-only edits", () => {

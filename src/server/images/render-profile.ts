@@ -9,7 +9,13 @@ import {
   type TrialResolvedControls,
 } from "@/contracts";
 import { compileIdentityReferencePrompt } from "@/lib/images/identity-reference-prompt";
-import { mapImageRenderControls, reservedImageInputFields, validateProviderOverrides } from "../ai";
+import {
+  disableSafetyChecker,
+  filterReservedInputFields,
+  mapImageRenderControls,
+  reservedImageInputFields,
+  validateProviderOverrides,
+} from "../ai";
 import { preparePromptForImageModel, withReviewedImageQuality } from "./quality-presets";
 
 /**
@@ -71,6 +77,34 @@ export function sha256Hex(text: string): string {
 }
 
 /**
+ * The prediction budget a compiled plan falls back to when its profile declares
+ * none — the same five minutes `predictionTimeoutMs` defaults to, restated here
+ * on purpose.
+ *
+ * The point is not the number, it is that a compiled plan ALWAYS carries one.
+ * `timeoutMs: null` reaching the renderer means "whatever the environment says",
+ * and `REPLICATE_PREDICTION_TIMEOUT_MS` can be set to half an hour — so a run
+ * whose cells were planned under one deployment could execute under a budget
+ * nobody recorded, and the stale-claim window that has to outlast a render would
+ * be sized against a bound the env could widen underneath it.
+ */
+export const TRIAL_FALLBACK_PREDICTION_MS = 5 * 60_000;
+
+/**
+ * The longest prediction budget a compiled plan may carry: `imageModelProfiles`'
+ * own ceiling (`imageModelProfileSchema.timeoutMs` is `.min(30_000).max(900_000)`,
+ * matching the table's check constraint), restated as a clamp rather than
+ * assumed.
+ *
+ * A stored row cannot exceed it today; the clamp is here so that stays true of
+ * the PLAN even if a row ever arrived from somewhere the schema did not judge,
+ * because everything downstream — the trial's stale-claim window above all —
+ * treats this as the hard upper bound on how long one render can legitimately
+ * take.
+ */
+export const MAX_TRIAL_PREDICTION_MS = 900_000;
+
+/**
  * The exact provider version this model row runs, or null when nothing can say.
  *
  * Prefers the probed version id, then a version pinned in the slug itself. When
@@ -85,14 +119,24 @@ export function sha256Hex(text: string): string {
  * ordinary render happily follows the floating latest, because a portrait that
  * came out well is still a portrait, whereas a comparison run against two
  * different versions is not a comparison.
+ *
+ * Both candidates are TRIMMED before they are judged, and blank counts as
+ * absent. `"owner/name:"` and a `probed_version_id` an admin form saved as
+ * whitespace are both "nothing pins this row" wearing a non-null value, and a
+ * cell that pinned `" "` would post an empty `version` to the provider and then
+ * re-check successfully against its own blank.
  */
 export function pinnedImageModelVersion(model: ImageModel): string | null {
-  const slugPin = model.slug.split(":")[1] ?? null;
-  const pinned = slugPin !== null && slugPin.length > 0 ? slugPin : null;
-  if (model.probedVersionId !== null && pinned !== null) {
-    return model.probedVersionId === pinned ? pinned : null;
-  }
-  return model.probedVersionId ?? pinned;
+  const probed = nonBlank(model.probedVersionId);
+  const pinned = nonBlank(model.slug.split(":")[1]);
+  if (probed !== null && pinned !== null) return probed === pinned ? pinned : null;
+  return probed ?? pinned;
+}
+
+/** A trimmed value, or null when it was absent or all whitespace. */
+function nonBlank(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 export interface CompileProfileRenderPlanInput {
@@ -116,10 +160,14 @@ export interface ProfileRenderPlan {
   /** The final prompt text, role preamble and model-dialect rewrite included. */
   finalPrompt: string;
   /**
-   * The negative text that WILL be sent, or null. Null covers both "no negative
-   * was configured" and "this version exposes no negative-prompt field", because
-   * from the render's point of view those are the same fact: nothing goes. The
-   * distinction survives in `resolvedControls.droppedControls`.
+   * The negative text that WILL be sent, or null — counting BOTH routes it can
+   * travel: a mapped control/override on the version's negative binding, and the
+   * model row's own `extraInput` constant, which the payload builder copies
+   * through with no binding involved ({@link resolvedNegativePrompt}). Null
+   * covers "no negative was configured", "this version exposes no
+   * negative-prompt field", and the reviewed-quality rows' deliberate `""`,
+   * because from the render's point of view those are one fact: nothing goes.
+   * Which of them applied survives in `resolvedControls.droppedControls`.
    */
   negativePrompt: string | null;
   /** The aspect value `chooseAspect` will pick, or null when the model offers none. */
@@ -128,8 +176,15 @@ export interface ProfileRenderPlan {
   controlInput: Record<string, unknown>;
   /** The auditable record of the above, drops included. */
   resolvedControls: TrialResolvedControls;
-  /** The profile's prediction budget; null uses the env/default. */
-  timeoutMs: number | null;
+  /**
+   * The prediction budget this plan WILL be run under — always a number, never
+   * "ask the environment". The profile's own `timeoutMs` when it has one,
+   * {@link TRIAL_FALLBACK_PREDICTION_MS} when it does not, clamped to
+   * {@link MAX_TRIAL_PREDICTION_MS}. Being explicit is the whole point: an
+   * env-resolved budget is a budget the compiled plan cannot state, cannot hash,
+   * and cannot be bounded by.
+   */
+  timeoutMs: number;
   /** The pinned provider version, or null when this row has none. */
   versionId: string | null;
 }
@@ -151,7 +206,7 @@ export interface ProfileRenderPlan {
  */
 export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): ProfileRenderPlan {
   const { model, profile, basePrompt, baseNegativePrompt, referenceRoles } = input;
-  const effectiveModel = withReviewedImageQuality(model);
+  const effectiveModel = withResolvedSafetyChecker(withReviewedImageQuality(model));
   const rolePrompt = compileIdentityReferencePrompt({ basePrompt, roles: referenceRoles });
   const finalPrompt = preparePromptForImageModel(effectiveModel, rolePrompt, referenceRoles.length);
 
@@ -168,7 +223,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     ...(defaults.guidance !== undefined ? { guidance: defaults.guidance } : {}),
     ...(defaults.steps !== undefined ? { steps: defaults.steps } : {}),
     ...(defaults.editStrength !== undefined ? { editStrength: defaults.editStrength } : {}),
-    ...(defaults.outputCount !== undefined ? { outputCount: defaults.outputCount } : {}),
+    // `outputCount` is deliberately NOT here — see the drop recorded below.
     ...(defaults.coherentSet !== undefined ? { coherentSet: defaults.coherentSet } : {}),
     ...(defaults.thinkingMode !== undefined ? { thinkingMode: defaults.thinkingMode } : {}),
     ...(defaults.resolution !== undefined ? { resolution: defaults.resolution } : {}),
@@ -177,46 +232,111 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     ...(defaults.lora !== undefined ? { lora: defaults.lora } : {}),
   };
 
+  const reservedFields = reservedImageInputFields(effectiveModel);
   const mapped = mapImageRenderControls({ controls, capabilities: effectiveModel.advancedCapabilities });
+  // A mapped control can land on a reserved field — `resolutionTier` is commonly
+  // probed as `size`, which IS the shape key on a size-mode model — and the
+  // transport would then discard it on the way out. Filtering here rather than
+  // letting that happen is what keeps the recorded payload equal to the sent
+  // one; a control the hash claims was sent and the provider never saw is the
+  // exact drift this compile step exists to make impossible.
+  const sendableMapped = filterReservedInputFields(mapped.input, reservedFields);
   const overrides = validateProviderOverrides(
     profile.providerOverrides,
     effectiveModel.advancedCapabilities.knownInputFields,
-    reservedImageInputFields(effectiveModel),
+    reservedFields,
   );
   // Overrides merge LAST, per the spec's "a later layer wins". They therefore
   // may also replace a mapped control's value, which is why the reported
   // negative below is read back out of the FINAL payload rather than from the
   // mapping step: a hash that described the pre-override text would be a hash of
   // something the provider never saw.
-  const controlInput = { ...mapped.input, ...overrides.input };
-  const negativeField = effectiveModel.advancedCapabilities.controls.negativePrompt?.field;
-  const sentNegative = negativeField === undefined ? undefined : controlInput[negativeField];
+  const controlInput = { ...sendableMapped.input, ...overrides.input };
 
   // Typed as the contract's own list rather than the mapper's narrower union:
-  // the seed note below is this layer's fact, not one the mapper can produce.
-  const droppedControls: TrialResolvedControls["droppedControls"] = [...mapped.dropped, ...overrides.dropped];
+  // the notes below are this layer's facts, not ones the mapper can produce.
+  const droppedControls: TrialResolvedControls["droppedControls"] = [
+    ...mapped.dropped,
+    ...sendableMapped.dropped,
+    ...overrides.dropped,
+  ];
+  if (defaults.outputCount !== undefined) {
+    // This compile step serves the SINGLE-IMAGE path. A profile asking for four
+    // outputs would be billed for four and graded on one, so the count never
+    // travels — and the request is recorded as a drop rather than silently
+    // reinterpreted as 1, because "this profile wanted a set" is a real
+    // difference between two configurations and the hash must carry it.
+    droppedControls.push({ control: "outputCount", reason: "single_image_path" });
+  }
   if (defaults.seedPolicy !== "random") {
     // Only a non-default policy is worth recording: `random` is what sending no
     // seed key already does at every provider, so it drops nothing.
     droppedControls.push({ control: "seedPolicy", reason: "no_seed_transport" });
   }
 
+  const timeoutMs = Math.min(profile.timeoutMs ?? TRIAL_FALLBACK_PREDICTION_MS, MAX_TRIAL_PREDICTION_MS);
   return {
     effectiveModel,
     finalPrompt,
-    // The negative text only counts as "will be sent" if a real field carries it.
-    negativePrompt: typeof sentNegative === "string" ? sentNegative : null,
+    negativePrompt: resolvedNegativePrompt(effectiveModel, controlInput),
     aspectValue: chooseAspect(effectiveModel).value,
     controlInput,
     resolvedControls: {
       operation: profile.operation,
-      timeoutMs: profile.timeoutMs,
+      // The RESOLVED budget, not the profile's wish: this column answers "what
+      // was this cell run under?", and a null there answered "look at whatever
+      // env the machine had at the time", which is not an answer.
+      timeoutMs,
       controlInput,
       droppedControls,
     },
-    timeoutMs: profile.timeoutMs,
+    timeoutMs,
     versionId: pinnedImageModelVersion(model),
   };
+}
+
+/**
+ * The negative text that will ACTUALLY accompany this render, or null.
+ *
+ * Two ways a negative reaches a provider, and both count. The ordinary one is a
+ * mapped control or an override written to the version's `negativePrompt`
+ * binding, read back out of the FINAL payload so an override that replaced the
+ * mapped value is the text reported. The second is the model row's own
+ * `extraInput`: `buildRegistryModelInput` copies those constants into the
+ * payload verbatim, so a row carrying `negative_prompt: "blurry"` sends it with
+ * no binding and no control involved. Reporting null there claimed no negative
+ * was sent while one was — the reviewed-quality rows that set it to `""` are the
+ * case that keeps this honest in the other direction, since an empty string is
+ * "deliberately no negative" and stays null.
+ */
+function resolvedNegativePrompt(model: ImageModel, controlInput: Record<string, unknown>): string | null {
+  const negativeField = model.advancedCapabilities.controls.negativePrompt?.field;
+  const sent = negativeField === undefined ? undefined : controlInput[negativeField];
+  if (typeof sent === "string") return sent;
+  const constant = model.extraInput["negative_prompt"];
+  return typeof constant === "string" && constant.length > 0 ? constant : null;
+}
+
+/**
+ * Resolve the env-owned safety toggle into the model's own `extraInput`, so the
+ * effective model describes what the provider will be sent rather than what the
+ * row happens to store.
+ *
+ * `buildRegistryModelInput` overrides this key's VALUE from
+ * `REPLICATE_SAFE_MODE` at send time and never introduces the key. Hashing the
+ * stored value therefore fingerprinted a placeholder: an operator flipping the
+ * env between planning a grid and executing it changed provider enforcement for
+ * every cell, with two arms of one comparison potentially running under
+ * different enforcement and matching hashes to say nothing happened. Resolving
+ * it here makes that flip a `cell_conflict` — loud, and refusing to spend —
+ * which is the only honest outcome for a comparison whose safety posture moved.
+ *
+ * The key is never ADDED, exactly as at the payload builder: a model whose
+ * schema does not declare the input must not be handed one.
+ */
+function withResolvedSafetyChecker(model: ImageModel): ImageModel {
+  if (!("disable_safety_checker" in model.extraInput)) return model;
+  return { ...model, extraInput: { ...model.extraInput, disable_safety_checker: disableSafetyChecker() } };
 }
 
 export interface ProfileRenderControlsHashInput {
@@ -242,6 +362,20 @@ export interface ProfileRenderControlsHashInput {
  * Display-only fields (labels, sort order, `enabled`) are deliberately absent: a
  * renamed profile is the same experiment, and invalidating a grid over a label
  * edit would train operators to ignore `cell_conflict`.
+ *
+ * What this hash describes is the MERGE INPUTS, not the post-merge payload, and
+ * the distinction is worth stating because `buildRegistryModelInput` applies
+ * `extraInput` AFTER the aspect key: a model whose `extraInput` carries `size`
+ * or `aspect_ratio` overrides the `aspectValue` recorded here, so the two fields
+ * below can disagree with what finally travels. That is safe rather than
+ * sloppy — both are hashed, so any drift in either still moves the fingerprint —
+ * and the alternative (hashing a payload this function would have to rebuild)
+ * would be a second construction of the provider input, which is precisely the
+ * duplication "what is hashed is what is sent" exists to remove.
+ *
+ * `extraInput`'s `disable_safety_checker` is the ENV-RESOLVED value by the time
+ * a plan reaches here ({@link compileProfileRenderPlan}), so this hash tracks the
+ * enforcement that will actually apply rather than the row's placeholder.
  */
 export function profileRenderControlsHash(plan: ProfileRenderPlan, extra: ProfileRenderControlsHashInput): string {
   const model = plan.effectiveModel;

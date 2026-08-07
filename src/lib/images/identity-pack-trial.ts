@@ -1,5 +1,6 @@
 import {
   identityReferenceStrategies,
+  type IdentityReferenceRole,
   type IdentityReferenceStrategy,
 } from "@/contracts/images/identity-pack";
 import {
@@ -271,6 +272,17 @@ export interface TrialPairableCell {
   identityStrategy: IdentityReferenceStrategy | null;
   packVariantKey: string;
   referenceSource: "pack" | "none";
+  /**
+   * The roles this cell ACTUALLY sent, in send order — the evaluation's answer,
+   * not the strategy's wish. Two strategies can evaluate to the same list (a
+   * pack whose face crop is unusable makes `canonical_then_face_detail` send
+   * exactly what `canonical_only` sends), and a pair of those is two names for
+   * one render. The planner refuses to create such a cell; this is what lets the
+   * pairing rule refuse the rows that already exist.
+   */
+  orderedReferenceRoles: readonly IdentityReferenceRole[];
+  /** The source photograph the pack was derived from; null on the baseline. */
+  sourceContentHash: string | null;
 }
 
 /**
@@ -299,16 +311,35 @@ export interface TrialCellPair {
 
 /**
  * Whether two cells of one group form an INTERPRETABLE comparison: they must
- * differ in exactly one identity-reference variable.
+ * differ in exactly one identity-reference variable, AND the difference must be
+ * one that reached the provider.
  *
  * With two axes (strategy and pack variant), the naive "any two different cells"
  * rule produces pairs that differ in both — a grade on such a pair cannot be
  * attributed to either change, so it is a confound wearing the costume of
  * evidence. The parity test below reads as: same strategy XOR same variant.
  *
- * The no-pack baseline is the deliberate exception. It differs from every pack
- * cell in the only way it can (references vs no references), so it pairs against
- * all of them; two baselines are the same arm and never pair.
+ * Two further guards exist because a cell's LABEL and the render it actually
+ * made can come apart, and a pair that differs only in label is worse than no
+ * evidence — it is noise reported as a strategy effect:
+ *
+ * - **Same variant, identical role list.** `canonical_then_face_detail` against
+ *   a pack whose face crop is unusable evaluates to the canonical portrait
+ *   alone, which is byte-for-byte what `canonical_only` sends. The planner now
+ *   refuses to create that cell, so this guard is for rows planned before it —
+ *   defence for stored data, not a second implementation of the rule.
+ * - **Different variants, different source photographs.** The variant axis
+ *   exists to compare CROPS of one photograph (heuristic vs manual, old revision
+ *   vs new). Two revisions derived from different sources are two different
+ *   subjects' images; grading them measures the photographs, not the derivation.
+ *   Pack-source cells always carry the hash by contract
+ *   (`imageIdentityPackTrialCellSpecSchema`'s cross-field rule), so this compares
+ *   two real values rather than two absences.
+ *
+ * The no-pack baseline is the deliberate exception to all of it. It differs from
+ * every pack cell in the only way it can (references vs no references), so it
+ * pairs against all of them regardless of roles or source; two baselines are the
+ * same arm and never pair.
  */
 function comparableTrialCells(a: TrialPairableCell, b: TrialPairableCell): boolean {
   const baselineA = a.referenceSource === "none";
@@ -316,7 +347,16 @@ function comparableTrialCells(a: TrialPairableCell, b: TrialPairableCell): boole
   if (baselineA || baselineB) return baselineA !== baselineB;
   const sameStrategy = a.identityStrategy === b.identityStrategy;
   const sameVariant = a.packVariantKey === b.packVariantKey;
-  return sameStrategy !== sameVariant;
+  if (sameStrategy === sameVariant) return false;
+  if (sameVariant) return !sameRoleList(a.orderedReferenceRoles, b.orderedReferenceRoles);
+  return a.sourceContentHash === b.sourceContentHash;
+}
+
+/** Role lists are ORDERED — `canonical_then_face_detail` and its reverse send
+ * the same two roles and are genuinely different arms — so this compares
+ * sequences, never sets. */
+function sameRoleList(a: readonly IdentityReferenceRole[], b: readonly IdentityReferenceRole[]): boolean {
+  return a.length === b.length && a.every((role, index) => role === b[index]);
 }
 
 /**

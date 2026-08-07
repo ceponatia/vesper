@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { IdentityReferenceRole, IdentityReferenceStrategy } from "@/contracts/images/identity-pack";
 import {
   perTrialGradeDimension,
   TRIAL_MAX_CELLS,
@@ -34,7 +35,30 @@ function planInput(overrides: Partial<TrialCellPlanInput> = {}): TrialCellPlanIn
   };
 }
 
+/** The source hash every pack cell shares by default — the pack-variant axis
+ * compares CROPS of one photograph, so two arms only differ here when a case is
+ * deliberately about two different sources. */
+const SOURCE_HASH = "a".repeat(64);
+
+/**
+ * What each strategy sends when the pack can supply every role it names,
+ * mirroring `identityRolePlan` in `src/server/images/identity-pack-references.ts`
+ * (restated because that module is server-side and these are pure tests).
+ *
+ * The fixture derives roles from the strategy so a case that varies the strategy
+ * gets a genuinely different render by default — which is what the arms it is
+ * asserting about are supposed to be. A case about a DEGENERATE arm overrides
+ * the roles explicitly, and that override is the whole point of it.
+ */
+const ROLES_BY_STRATEGY: Record<IdentityReferenceStrategy, IdentityReferenceRole[]> = {
+  canonical_only: ["canonical_identity"],
+  face_detail_only: ["face_detail"],
+  canonical_then_face_detail: ["canonical_identity", "face_detail"],
+  face_detail_then_canonical: ["face_detail", "canonical_identity"],
+};
+
 function cell(id: string, overrides: Partial<TrialPairableCell> = {}): TrialPairableCell {
+  const identityStrategy = overrides.identityStrategy === undefined ? "canonical_only" : overrides.identityStrategy;
   return {
     id,
     status: "rendered",
@@ -42,16 +66,25 @@ function cell(id: string, overrides: Partial<TrialPairableCell> = {}): TrialPair
     profileId: "profile_1",
     promptFixtureId: "variant_wardrobe_v1",
     task: "variant",
-    identityStrategy: "canonical_only",
+    identityStrategy,
     packVariantKey: "current",
     referenceSource: "pack",
+    orderedReferenceRoles: identityStrategy === null ? [] : ROLES_BY_STRATEGY[identityStrategy],
+    sourceContentHash: SOURCE_HASH,
     ...overrides,
   };
 }
 
 /** The no-pack baseline arm: no strategy, no references, its own variant key. */
 function baselineCell(id: string, overrides: Partial<TrialPairableCell> = {}): TrialPairableCell {
-  return cell(id, { identityStrategy: null, packVariantKey: "none", referenceSource: "none", ...overrides });
+  return cell(id, {
+    identityStrategy: null,
+    packVariantKey: "none",
+    referenceSource: "none",
+    orderedReferenceRoles: [],
+    sourceContentHash: null,
+    ...overrides,
+  });
 }
 
 function gradesFixture(overrides: Partial<TrialPairGrades> = {}): TrialPairGrades {
@@ -439,6 +472,56 @@ describe("pairing", () => {
 
   it("never pairs two baselines with each other — they are the same arm", () => {
     expect(pairTrialCells([baselineCell("base_1"), baselineCell("base_2")])).toEqual([]);
+  });
+
+  it("refuses two strategies of one variant that evaluated to the SAME role list", () => {
+    // A pack whose face crop is unusable makes `canonical_then_face_detail` send
+    // exactly what `canonical_only` sends. The planner refuses to create such a
+    // cell now; this is the guard for rows that already exist. Grading the pair
+    // would report provider noise between two identical requests as an effect of
+    // reference ordering.
+    const degenerate = pairTrialCells([
+      cell("d_canon"),
+      cell("d_both", {
+        identityStrategy: "canonical_then_face_detail",
+        orderedReferenceRoles: ["canonical_identity"],
+      }),
+    ]);
+    expect(degenerate).toEqual([]);
+
+    // Both list ORDERS, because the two ordering strategies are the case the
+    // guard must not swallow: same roles, different order, genuinely different
+    // renders — and they still pair.
+    const ordered = pairTrialCells([
+      cell("o_forward", { identityStrategy: "canonical_then_face_detail" }),
+      cell("o_reverse", { identityStrategy: "face_detail_then_canonical" }),
+    ]);
+    expect(ordered).toHaveLength(1);
+    expect(ordered[0]).toMatchObject({
+      strategyA: "canonical_then_face_detail",
+      strategyB: "face_detail_then_canonical",
+    });
+  });
+
+  it("refuses two pack variants derived from DIFFERENT source photographs", () => {
+    // The variant axis compares crops of ONE photograph (heuristic vs manual,
+    // old revision vs new). Two revisions off different sources are two different
+    // pictures, and a grade on them measures the photography, not the derivation.
+    const crossSource = pairTrialCells([
+      cell("s_current"),
+      cell("s_revision", { packVariantKey: REV_KEY, sourceContentHash: "b".repeat(64) }),
+    ]);
+    expect(crossSource).toEqual([]);
+
+    // Same source, different crops — the comparison the axis exists for.
+    const sameSource = pairTrialCells([cell("c_current"), cell("c_revision", { packVariantKey: REV_KEY })]);
+    expect(sameSource).toHaveLength(1);
+    expect(sameSource[0]).toMatchObject({ variantKeyA: "current", variantKeyB: REV_KEY });
+
+    // The baseline is exempt: it has no source at all, and "references vs no
+    // references" is the one comparison it can make.
+    const againstBaseline = pairTrialCells([cell("b_pack"), baselineCell("b_base")]);
+    expect(againstBaseline).toHaveLength(1);
   });
 });
 

@@ -111,6 +111,19 @@ describe("preparePromptForImageModel", () => {
     expect(prepared.length).toBeLessThanOrEqual(prompt.length);
   });
 
+  it("rewrites EVERY copy of the legacy lock, so the rewrite is genuinely idempotent", () => {
+    // The idempotency claim is load-bearing: `compileProfileRenderPlan` hashes
+    // the prepared prompt and `renderWithModel` prepares again on the way out,
+    // so a second pass that changed the text would make every identity-trial
+    // cell refuse `cell_conflict` against its own compiled prompt. Under
+    // `replace` a doubled lock kept its second copy, and the next pass rewrote
+    // THAT one — the same function returning two different strings for one input.
+    const doubled = `${LEGACY_LOCK} Then: ${LEGACY_LOCK} Change the setting.`;
+    const once = preparePromptForImageModel(model("qwen/qwen-image-edit-2511"), doubled, 1);
+    expect(once).not.toContain(LEGACY_LOCK);
+    expect(preparePromptForImageModel(model("qwen/qwen-image-edit-2511"), once, 1)).toBe(once);
+  });
+
   it("does not rewrite another model or an unreferenced/custom Qwen prompt", () => {
     const prompt = `${LEGACY_LOCK} Change the setting.`;
     expect(preparePromptForImageModel(model("bytedance/seedream-4.5"), prompt, 1)).toBe(prompt);

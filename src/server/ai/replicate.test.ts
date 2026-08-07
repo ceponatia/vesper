@@ -3,14 +3,18 @@ import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@/contract
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   buildRegistryModelInput,
+  disableSafetyChecker,
   overlayControlInput,
+  OUTPUT_TIMEOUT_MS,
   referenceDataUrl,
   replicatePredictionTarget,
+  REQUEST_TIMEOUT_MS,
   reservedImageInputFields,
   runRegistryImageModel,
   unwrapReplicateImage,
   withinDataUrlBudget,
   type RegistryModelRequest,
+  type ReplicateImageResult,
 } from "./replicate";
 
 const originalToken = process.env.REPLICATE_API_TOKEN;
@@ -82,6 +86,25 @@ async function predictionRequest(over: Partial<RegistryModelRequest> = {}): Prom
   return (await predictionCall(over))?.init;
 }
 
+/** Run one generation against a scripted prediction body — the seam for asserting
+ * what the adapter reads back OFF the provider's own response. A `succeeded`
+ * body is given an output URL unless the case supplies its own. */
+async function runWithPrediction(prediction: Record<string, unknown>): Promise<ReplicateImageResult> {
+  const body =
+    prediction.status === "succeeded" && !("output" in prediction)
+      ? { ...prediction, output: ["https://replicate.delivery/o.webp"] }
+      : prediction;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/predictions")) return Response.json(body);
+      return new Response(Buffer.from("image-bytes"), { status: 200 });
+    }),
+  );
+  return runRegistryImageModel(model(), { prompt: "portrait", aspect: "3:4" });
+}
+
 describe("buildRegistryModelInput", () => {
   it("omits the reference key entirely when there are no references", () => {
     // An absent key and an empty array are not the same to every backend, and a
@@ -138,10 +161,15 @@ describe("buildRegistryModelInput", () => {
     // added unconditionally.
     const withToggle = buildRegistryModelInput(model({ extraInput: { disable_safety_checker: true } }), "p", [], null);
     expect(withToggle.disable_safety_checker).toBe(true);
+    // The exported resolver is the SAME answer the builder writes. Anything that
+    // fingerprints what a render sends has to be able to ask it, or the
+    // fingerprint describes the stored placeholder instead of the env's value.
+    expect(withToggle.disable_safety_checker).toBe(disableSafetyChecker());
 
     process.env.REPLICATE_SAFE_MODE = "true";
     const safe = buildRegistryModelInput(model({ extraInput: { disable_safety_checker: true } }), "p", [], null);
     expect(safe.disable_safety_checker).toBe(false);
+    expect(disableSafetyChecker()).toBe(false);
 
     const without = buildRegistryModelInput(model({ extraInput: {} }), "p", [], null);
     expect("disable_safety_checker" in without).toBe(false);
@@ -155,6 +183,16 @@ describe("buildRegistryModelInput", () => {
       "3:4",
     );
     expect(input).toMatchObject({ size: "2K", max_images: 1, sequential_image_generation: "disabled" });
+  });
+});
+
+describe("per-call deadlines", () => {
+  it("exports the two request budgets callers have to reason about", () => {
+    // Exported so the identity trial can size its stale-claim window off the
+    // real numbers rather than a hand-copied approximation that stops matching
+    // the first time either moves. Sanity rails, not a restatement.
+    expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(30_000);
+    expect(OUTPUT_TIMEOUT_MS).toBeGreaterThan(30_000);
   });
 });
 
@@ -469,6 +507,27 @@ describe("runRegistryImageModel", () => {
     const call = await predictionCall({ controlInput: { guidance_scale: 6, prompt: "hijacked" } });
     const body = JSON.parse(String(call?.init?.body)) as { input: Record<string, unknown> };
     expect(body.input).toMatchObject({ prompt: "portrait", guidance_scale: 6 });
+  });
+
+  it("reports the version the provider says it RAN, and stays silent when it says nothing", async () => {
+    // A pin states intent; only the echo states outcome. A bare slug resolves
+    // `latest_version` server-side and a pinned id can be re-pointed, so a
+    // controlled comparison that cannot tell those apart is grading whatever
+    // shipped that hour under a pin's name.
+    const echoed = await runWithPrediction({ id: "pred-v", status: "succeeded", version: "version-actually-ran" });
+    expect(echoed).toMatchObject({ ok: true, predictionId: "pred-v", executedVersionId: "version-actually-ran" });
+
+    // No echo means "the provider did not say", which must not become a field —
+    // a caller comparing against a pin has to be able to see the difference
+    // between disagreement and silence.
+    const silent = await runWithPrediction({ id: "pred-s", status: "succeeded" });
+    expect(silent.ok).toBe(true);
+    expect("executedVersionId" in silent).toBe(false);
+
+    // And it rides a FAILED prediction too: which version produced a failure is
+    // exactly what an operator needs when the pin is under suspicion.
+    const failed = await runWithPrediction({ id: "pred-f", status: "failed", output: null, version: "version-bad" });
+    expect(failed).toMatchObject({ ok: false, predictionId: "pred-f", executedVersionId: "version-bad" });
   });
 
   it("unwraps bytes and preserves provider error text", () => {
