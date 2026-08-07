@@ -63,10 +63,9 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   the shadow measurement.** It costs one classifier call per qualifying reply,
   needs no code, and every later item waits on the window it opens — so starting
   it early costs nothing and blocks nothing.
-  **Rollout hazard:** `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS` grants *all three*
-  authority kinds when unset. It must be narrowed **before**
-  `CHAT_NPC_SCENE_DECISIONS` is turned on, or the staged rollout the spec mandates
-  is skipped in one step.
+  `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS` now grants **movement only** when
+  unset, so turning `CHAT_NPC_SCENE_DECISIONS` on cannot skip the staged rollout;
+  contact starts and updates each need an explicit widening of the scope list.
 
 - **Constraint-first narrator physical guidance** —
   [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md) ·
