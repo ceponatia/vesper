@@ -5,6 +5,22 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Image model capabilities — slice 2: the shared render intent** —
+  [image-model-capabilities.plan.md](image-model-capabilities.plan.md) ·
+  [spec](image-model-capabilities.spec.md) — 2026-08-07 — all seven render lanes
+  now resolve a task profile and describe the render as one normalized intent
+  whose references carry a role, rather than a model plus an anonymous buffer
+  list where a reference's meaning was its position. Payload-neutral by
+  construction — the production prompt strategies add nothing to each lane's own
+  text, the seeded profiles' controls are inert, and neither a version pin nor a
+  forced prediction budget is inherited from the compile step, so production
+  keeps following each model's floating latest under the environment's budget.
+  New and deliberate: a profile's required reference roles are enforced before
+  any provider work, against the references that survive capacity. The
+  model-level resolvers were deleted rather than left beside the profile layer.
+  Opens the gate the identity-pack render slice and the visual-state plan were
+  both waiting on. Slices 3–9 remain queued.
+
 - **Persona body-config seeding — a new persona is born with anatomy** —
   [intimate-defaulting.md](intimate-defaulting.md) §3b — 2026-08-07 — personas
   were created with `intimateRegions: []` and stayed that way forever, so the

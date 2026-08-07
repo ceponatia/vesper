@@ -17,15 +17,16 @@ progress) · **shipped — <date>** · **parked**.
 
 - **Image model capabilities — profiles, shared controls, and richer workflows** —
   [plan](image-model-capabilities.plan.md) ·
-  [spec](image-model-capabilities.spec.md) — task profiles beneath each model and
-  one normalized render intent shared by every image lane; **slice 2 is the
-  highest-leverage unblocked work in the repo — four plans wait on it.**
+  [spec](image-model-capabilities.spec.md) — task profiles beneath each model,
+  now reached by every render through the shared intent (slice 2, shipped);
+  remaining are role-aware transport, reproducibility, version promotion, LoRAs,
+  curated profiles and image sets.
 
 - **Image identity packs — durable owner-scoped face references** —
   [plan](image-identity-packs.plan.md) · [spec](image-identity-packs.spec.md) —
   each character's canonical portrait compiled into a revisioned pack; dark
   behind `IMAGE_IDENTITY_PACK_REFERENCES` until the paid trial runs, then
-  render-lane consumption (needs capabilities slice 2).
+  render-lane consumption, which the shared render intent has now unblocked.
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
@@ -42,9 +43,9 @@ progress) · **shipped — <date>** · **parked**.
 ## Next (queued, in dependency order)
 
 **Unblocked today — only scheduling gates these:** data lifecycle, capabilities
-slice 2, visual state slices 0–5, the shadow-measurement enable, resilience
-closures, `ConfirmDialog`, clothing slice 7, and wiring the affordance layer to
-the scene owner.
+slice 3, visual state, the shadow-measurement enable, resilience closures,
+`ConfirmDialog`, clothing slice 7, and wiring the affordance layer to the scene
+owner.
 
 - **Data lifecycle — chat-scoped deletion, retention sweeps, intentional image
   orphans** — [plan](data-lifecycle.plan.md) · [audit](data-lifecycle.audit.md) —
@@ -55,13 +56,13 @@ the scene owner.
   [spec](visual-state.spec.md) — one lane-neutral projection over the existing
   appearance, wardrobe, body-condition and scene owners, keeping identity,
   presentation, current state and body language separate for narrator, image and
-  inspector digests.
+  inspector digests; its image slice is unblocked now that references carry roles.
 
 - **Image render quality — per-model prompts, negative steering, and face
   fidelity** — [plan](image-render-quality.plan.md) ·
   [spec](image-render-quality.spec.md) — the content and tuning companion to the
-  capabilities plan; everything past slice 1 waits on capabilities slice 2, a
-  paid tuning trial, and the face-repair model decision.
+  capabilities plan; past slice 1 it needs the control transports of capabilities
+  slices 3–4, a paid tuning trial, and the face-repair model decision.
 
 - **Body-attribute visual affordances — remainder** —
   [plan](body-attribute-affordances.plan.md) — `chat-affordances.ts` still
@@ -109,8 +110,8 @@ the scene owner.
 - **Qwen advanced image subsystem — controlled composition experiments** —
   [plan](qwen-advanced-image-subsystem.plan.md) — an admin-only lab comparing
   control-mapped Qwen edits blind against ordinary output; blocked on
-  capabilities slices 2, 3 and 9, and its LoRA stage should fold into
-  capabilities slice 6 rather than be built twice.
+  capabilities slices 3 and 9, and its LoRA stage should fold into capabilities
+  slice 6 rather than be built twice.
 
 - **RAG improvements — remainder** — [plan](RAG-improvements.plan.md) — the
   presence half of the relevance floor, witness gating on a real viewpoint, and
