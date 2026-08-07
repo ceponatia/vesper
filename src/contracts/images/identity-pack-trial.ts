@@ -715,5 +715,18 @@ export const imageIdentityPackTrialSummarySchema = z.object({
   comparisons: z.array(trialStrategyComparisonSchema).max(TRIAL_MAX_CELLS),
   renderedCombos: z.array(trialRenderedComboSchema).max(TRIAL_MAX_CELLS),
   verdicts: z.array(trialVerdictSchema).max(64),
+  /**
+   * How many `rendered` cells no longer carry evidence a review can be built
+   * from — the output image row is gone (the FK set-null safety net fired) or the
+   * stored spec no longer parses.
+   *
+   * ANY nonzero value makes the run review-incomplete server-side: the verdict
+   * gate refuses without `overrideIncompleteReview`, and completion refuses
+   * outright. It rides the wire because degradation can REMOVE the affected pair
+   * entirely — and a client counting only ungraded pairs then reports a complete
+   * review while the server correctly refuses one, leaving the operator with a
+   * refusal, no explanation, and no override to tick.
+   */
+  degradedCells: z.number().int().min(0),
 });
 export type ImageIdentityPackTrialSummaryWire = z.infer<typeof imageIdentityPackTrialSummarySchema>;

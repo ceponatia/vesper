@@ -102,16 +102,18 @@ import {
  *    that does not exist (`ensureIdentityPack`'s owner-rooted source
  *    resolution), so its cells are recorded `refused` and nothing about the
  *    foreign character leaks.
- * 2. **A cell is CLAIMED before it is rendered, RE-ASSERTED as the render
- *    starts, and settles once.** A pass moves the cell from `planned` to
- *    `running` with its own token in the database before the provider is called;
- *    each cell then re-stamps that claim immediately before its own provider
- *    call, so the staleness clock measures one render rather than a cell's
- *    position in the batch, and a claim already lost costs zero provider calls
- *    instead of one deleted image. Every settle is a compare-and-set against
- *    that exact claim. The in-process lock cannot see a second machine or
- *    survive a restart; this can. `failed` and `refused` remain terminal — a
- *    rerun is a NEW run, never a retry.
+ * 2. **A cell is CLAIMED before it is rendered, the WHOLE REMAINING QUEUE is
+ *    re-asserted at every cell boundary, and each cell settles once.** A pass
+ *    moves its cells from `planned` to `running` with its own token in the
+ *    database before the provider is called; at each boundary it then re-stamps
+ *    that claim on every cell it has not yet attempted, head included. Staleness
+ *    therefore measures how long a pass has been SILENT — one cell span at
+ *    most — rather than a cell's position in the batch, so a live pass's queued
+ *    claims can never look abandoned, and a claim already lost costs zero
+ *    provider calls instead of one deleted image. Every settle is a
+ *    compare-and-set against that exact claim. The in-process lock cannot see a
+ *    second machine or survive a restart; this can. `failed` and `refused` remain
+ *    terminal — a rerun is a NEW run, never a retry.
  * 3. **The daily render budget is charged INSIDE the execution lock, through
  *    the caller's injected `chargeBudget`** — sized to exactly the cells this
  *    pass CLAIMED and can honestly execute, after `run_locked` can no longer
@@ -992,11 +994,20 @@ function degenerateArmRefusal(
  *   shorter strategy sends, and pairing two identical requests measures provider
  *   noise under a strategy's name.
  *
- * The control COMPILE sits between the evaluation and the capacity check. It is
- * not a gate — compiling cannot refuse, only record what would be dropped — so
- * its position changes no refusal ordering; running it before the last gate is
- * what lets a `capacity_exceeded` cell keep a fully parseable spec, which is the
- * one refusal that has resolved everything and should read back complete.
+ * The control COMPILE sits between the evaluation and the capacity check, and it
+ * is the LAST gate. Running it before the capacity check is what lets a
+ * `capacity_exceeded` cell keep a fully parseable spec — the one refusal that has
+ * resolved everything and should read back complete.
+ *
+ * It refuses on exactly one thing: a `promptStrategy` the identity-reference path
+ * cannot execute (`text_repair`, `example_transform`, `style_render`,
+ * `coherent_set` — see {@link compileProfileRenderPlan}). The refusal is
+ * `profile_ineligible` and names the strategy, because that is what it is: a
+ * profile configured for a job this harness has no vocabulary for. The check is
+ * NOT hoisted up beside the profile-row gates even though the profile row alone
+ * answers it — a second copy of "which strategies are executable?" living here
+ * would be free to drift from the dispatch that actually compiles them, and the
+ * cell would then be planned against a prompt nobody can produce.
  */
 async function resolveTrialCell(
   resolution: TrialPlanResolution,
@@ -1112,22 +1123,31 @@ async function resolveTrialCell(
     };
   }
 
-  // Compile what this cell WOULD send, with the roles now known: the exact
-  // prompt text (numbered role bindings and model dialect included), the
-  // negative that survives to a real provider field, and the resolved control
-  // payload with every drop recorded. These are the facts the execute-time
-  // re-check recomputes — the planner and the executor call the same compiler,
-  // so a mismatch means the world moved, never that the two disagreed. The
-  // baseline compiles with an EMPTY role list, which is what leaves its prompt
-  // as the fixture wrote it: the control arm must not differ from the pack arms
-  // by any text the harness itself added.
-  const renderPlan = compileProfileRenderPlan({
+  // Compile what this cell WOULD send, with the roles now known: the profile's
+  // prompt strategy applied to the fixture text (numbered role bindings and
+  // model dialect included), the negative that survives to a real provider
+  // field, and the resolved control payload with every drop recorded. These are
+  // the facts the execute-time re-check recomputes — the planner and the
+  // executor call the same compiler, so a mismatch means the world moved, never
+  // that the two disagreed. The baseline compiles with an EMPTY role list, which
+  // is what leaves its prompt as the fixture wrote it: the control arm must not
+  // differ from the pack arms by any text the harness itself added.
+  const compiled = compileProfileRenderPlan({
     model,
     profile,
     basePrompt: fixture.prompt,
     baseNegativePrompt: fixture.negativePrompt,
     referenceRoles: roles,
   });
+  if (!compiled.ok) {
+    return {
+      status: "refused",
+      code: "profile_ineligible",
+      message: `prompt strategy ${compiled.promptStrategy} is not executable by the identity trial`,
+      spec: { ...planFields, ...profileFields, ...versionFields, ...variant.pack, ...variant.evaluation },
+    };
+  }
+  const renderPlan = compiled.plan;
   const controlFields = {
     ...trialCellCompiledIdentity(renderPlan, profile, roles),
     resolvedControls: renderPlan.resolvedControls,
@@ -1406,12 +1426,14 @@ const RESERVED_FIELD_IGNORED_DIAGNOSTIC = "image_model.reserved_field_ignored";
 /**
  * How long a claim may sit before a later pass may take it back.
  *
- * It must EXCEED the longest ONE RENDER can legitimately take — not the longest
- * a queued cell can wait, because {@link executeOneTrialCell} re-stamps
- * `claimed_at` immediately before it calls the provider. Staleness therefore
- * measures a single render's span, never a cell's position in a 20-cell batch;
- * without that heartbeat this window would have to cover the whole batch, and a
- * 20-render pass would age its own tail claims into recovery while they queued.
+ * It must EXCEED the longest ONE CELL SPAN can legitimately take — a render plus
+ * its settle — and NOT the longest a queued cell can wait, because
+ * {@link beatTrialQueueClaims} re-stamps `claimed_at` on the pass's WHOLE
+ * REMAINING QUEUE at every cell boundary. A queued claim is therefore never
+ * older than the cell currently in flight, whatever its position in a 20-cell
+ * batch; without that heartbeat this window would have to cover an entire batch,
+ * and a 20-render pass would age its own tail claims into recovery while they
+ * queued — while it was still alive, still rendering, and about to pay for them.
  *
  * Derived rather than guessed, from the four things that actually elapse:
  *
@@ -1421,7 +1443,9 @@ const RESERVED_FIELD_IGNORED_DIAGNOSTIC = "image_model.reserved_field_ignored";
  *   + 300_000  4 × REQUEST_TIMEOUT_MS — three reference uploads plus the poll GET
  *              that observes the settled prediction
  *   +  60_000  OUTPUT_TIMEOUT_MS — downloading the produced image
- *   + 300_000  margin for storage, retries and clock skew between two machines
+ *   + 300_000  margin for the rest of one cell span — storing the output, the
+ *              settle write, the next cell's pack resolution and reference
+ *              reads — plus retries and clock skew between two machines
  *   ---------
  *   1_560_000  (26 minutes)
  *
@@ -1540,9 +1564,10 @@ export type ExecuteIdentityPackTrialCellsResult<TReject> =
  *   `running` with a token in the database BEFORE the provider is called, so a
  *   second machine — or this machine after a restart — sees the claim rather
  *   than a `planned` cell it is free to re-render. The claim is taken for the
- *   whole batch at once and RE-ASSERTED per cell as its render begins, which is
- *   what keeps a lost race free (no provider call) and keeps a queued cell from
- *   aging past the stale window while cells ahead of it render.
+ *   whole batch at once and RE-ASSERTED over the whole remaining queue at every
+ *   cell boundary, which is what keeps a lost race free (no provider call) and
+ *   keeps a queued cell from aging past the stale window while cells ahead of it
+ *   render — the claims of a LIVE pass are never older than its current cell.
  *
  * Null when the run is not this owner's.
  *
@@ -1686,8 +1711,30 @@ async function runTrialExecutionPass<TReject>(
     }
   }
 
-  for (const [index, entry] of valid.entries()) {
-    const status = await executeTrialCellContained(entry.cell, entry.spec, context);
+  // The execution queue, drained head-first with a WHOLE-QUEUE heartbeat at
+  // every cell boundary ({@link beatTrialQueueClaims}). The queue is a mutable
+  // list rather than an index walk because the heartbeat can remove entries: a
+  // cell whose claim was taken over while it waited is dropped here and settled
+  // by nobody, since another worker now owns it.
+  let queue = valid;
+  while (queue.length > 0) {
+    const held = await beatTrialQueueClaims(queue, context);
+    const holding: ClaimedTrialCell[] = [];
+    for (const entry of queue) {
+      if (held.has(entry.cell.id)) {
+        holding.push(entry);
+        continue;
+      }
+      // Zero provider calls for it, and no settle either — the row belongs to
+      // whoever took it, and writing an outcome onto it would overwrite theirs.
+      executed.push({ cellId: entry.cell.id, cellKey: entry.cell.cellKey, status: "skipped" });
+    }
+    queue = holding;
+    const head = queue.shift();
+    // Even the head lost its claim, so this pass holds nothing at all.
+    if (head === undefined) break;
+
+    const status = await executeTrialCellContained(head.cell, head.spec, context);
     if (status === null) {
       // The containment settle itself failed, so this pass stops. The cells it
       // has not REACHED were charged but never sent anywhere, and returning an
@@ -1695,10 +1742,10 @@ async function runTrialExecutionPass<TReject>(
       // waiting out the stale window. Their charge stays spent: a charged slot is
       // a reservation for a pass admitted at that size, exactly as for a cell that
       // conflicted mid-batch.
-      await releaseTrialClaims(valid.slice(index + 1).map((remaining) => remaining.cell.id), claimToken);
+      await releaseTrialClaims(queue.map((remaining) => remaining.cell.id), claimToken);
       break;
     }
-    executed.push({ cellId: entry.cell.id, cellKey: entry.cell.cellKey, status });
+    executed.push({ cellId: head.cell.id, cellKey: head.cell.cellKey, status });
   }
 
   const runStatus = await settleTrialRunStatus(runId, run.status, true, sink);
@@ -1724,10 +1771,11 @@ interface ClaimedTrialCell {
  * this write lands, so a crash between claim and provider call costs a cell's
  * evidence but never a double charge.
  *
- * The clock stamped here dates the CLAIM; it is deliberately re-stamped per cell
- * at {@link beatTrialClaim} when that cell's render actually starts, because a
- * batch's last cell may sit here for the length of nineteen renders and none of
- * that waiting is evidence the worker died.
+ * The clock stamped here dates the CLAIM, and it is the only stamp a cell would
+ * ever carry if nothing re-stamped it — which is why {@link beatTrialQueueClaims}
+ * re-stamps the pass's whole remaining queue at every cell boundary. A batch's
+ * last cell may sit here for the length of nineteen renders, and none of that
+ * waiting is evidence the worker died.
  */
 async function claimTrialCells(
   runId: string,
@@ -1773,41 +1821,60 @@ async function releaseTrialClaims(cellIds: readonly string[], claimToken: string
 }
 
 /**
- * Re-stamp this pass's claim on ONE cell, immediately before its provider call,
- * and report whether the pass still holds it.
+ * Re-stamp this pass's claim on the WHOLE REMAINING QUEUE — the cell about to
+ * render and every cell still waiting behind it — and report which ids the pass
+ * still holds.
  *
- * Two jobs, both about money:
+ * Called at every cell boundary, and that scope is the correctness property.
+ * The pass claims and charges its whole batch up front, so a per-cell heartbeat
+ * left cell 10's `claimed_at` dated at batch start while cells 1–9 rendered: it
+ * could age past {@link STALE_CLAIM_MS} purely by QUEUE POSITION, be recovered by
+ * another worker, and be paid for twice while this pass was perfectly alive. With
+ * the queue-wide beat, a queued claim's age is bounded by ONE cell span (the
+ * previous render plus its settle), which the stale window already exceeds with
+ * margin — so staleness measures pass DEATH, never queue depth.
  *
- * 1. **It resets the stale clock per render.** Without it, `claimed_at` dates
- *    the moment a whole batch was claimed, so the twentieth cell of a 20-render
- *    pass could pass {@link STALE_CLAIM_MS} while queueing and be handed to a
- *    second worker that then pays for it again. With it, the clock starts when
- *    the render does.
- * 2. **It caps a lost race at ZERO provider calls.** The compare-and-set is the
- *    same one every settle uses, so a claim taken over between the batch claim
- *    and this cell's turn is discovered HERE — before the spend — rather than
- *    afterwards, when the only remedy left is deleting an image somebody already
- *    paid for.
+ * Two further jobs, both about money:
+ *
+ * - **The head cell must be in the returned set to render.** The compare-and-set
+ *   is the same one every settle uses, so a claim already taken over costs ZERO
+ *   provider calls instead of one paid render whose settle then loses and has to
+ *   delete the image it just bought. Only the head's own pre-render reads — its
+ *   pack resolution and reference bytes — separate this beat from the spend, and
+ *   a claim lost inside that gap is caught at the settle as it always was.
+ * - **A queued cell that lost its claim is dropped, not settled.** Another worker
+ *   owns that row now; writing an outcome onto it would overwrite theirs.
+ *
+ * Every cell whose claim is gone gets its own warn, because a live pass losing
+ * claims is either a second worker racing it or a stale recovery that fired too
+ * early — both worth seeing.
  */
-async function beatTrialClaim(cell: IdentityPackTrialCellRow, context: ExecuteCellContext): Promise<boolean> {
+async function beatTrialQueueClaims(
+  queue: readonly ClaimedTrialCell[],
+  context: ExecuteCellContext,
+): Promise<Set<string>> {
   const beat = await db()
     .update(imageIdentityPackTrialCells)
     .set({ claimedAt: new Date() })
     .where(
       and(
-        eq(imageIdentityPackTrialCells.id, cell.id),
+        eq(imageIdentityPackTrialCells.runId, context.runId),
+        inArray(imageIdentityPackTrialCells.id, queue.map((entry) => entry.cell.id)),
         eq(imageIdentityPackTrialCells.status, "running"),
         eq(imageIdentityPackTrialCells.claimToken, context.claimToken),
       ),
     )
     .returning({ id: imageIdentityPackTrialCells.id });
-  if (beat.length > 0) return true;
-  context.sink?.push(
-    diag("warn", "images.identity_pack.trial.cell_degraded", "the claim was taken over before the render started", {
-      context: { runId: context.runId, cellId: cell.id, cellKey: cell.cellKey },
-    }),
-  );
-  return false;
+  const held = new Set(beat.map((row) => row.id));
+  for (const entry of queue) {
+    if (held.has(entry.cell.id)) continue;
+    context.sink?.push(
+      diag("warn", "images.identity_pack.trial.cell_degraded", "the claim was taken over before the render started", {
+        context: { runId: context.runId, cellId: entry.cell.id, cellKey: entry.cell.cellKey },
+      }),
+    );
+  }
+  return held;
 }
 
 /**
@@ -1821,13 +1888,14 @@ async function beatTrialClaim(cell: IdentityPackTrialCellRow, context: ExecuteCe
  * recovery happens, on a clock long enough that no live render can be inside it,
  * and loudly enough that an operator sees it happened.
  *
- * `claimed_at` is a HEARTBEAT, not a queue timestamp: {@link executeOneTrialCell}
- * re-stamps it immediately before the provider call, so what this cutoff
- * measures is "how long has this cell been RENDERING", not "how long since the
- * pass that owns it started". That distinction is what lets the window be sized
- * against one render (see {@link STALE_CLAIM_MS}) instead of against a full
- * 20-cell batch, and it is why a cell waiting its turn behind nineteen others
- * cannot age itself into recovery while the pass holding it is perfectly alive.
+ * `claimed_at` is a HEARTBEAT, not a queue timestamp: {@link beatTrialQueueClaims}
+ * re-stamps it on the owning pass's WHOLE REMAINING QUEUE at every cell boundary,
+ * so what this cutoff measures is "how long has the pass holding this cell been
+ * silent", not "how long since that pass started". That distinction is what lets
+ * the window be sized against one cell span (see {@link STALE_CLAIM_MS}) instead
+ * of against a full 20-cell batch, and it is why a cell waiting its turn behind
+ * nineteen others cannot age itself into recovery while the pass holding it is
+ * perfectly alive.
  *
  * A `running` row with NO `claimed_at` is deliberately not recovered: it records
  * a claim nothing can date, and resetting an undateable claim on sight is
@@ -2262,13 +2330,27 @@ async function executeOneTrialCell(
   // negative, and any registry or profile edit that would change what is sent.
   // A cell pinned a configuration; running a different one under its name
   // poisons the grid's evidence, so every difference is a conflict.
-  const plan = compileProfileRenderPlan({
+  const recompiled = compileProfileRenderPlan({
     model,
     profile,
     basePrompt: fixture.prompt,
     baseNegativePrompt: fixture.negativePrompt,
     referenceRoles: spec.orderedReferenceRoles,
   });
+  if (!recompiled.ok) {
+    // Planning refuses an unexecutable prompt strategy outright, so a cell that
+    // reaches execution and meets one did not come from a planner that allowed
+    // it — the PROFILE ROW moved under the cell (its strategy was edited after
+    // the grid was planned). That is a conflict, not an ineligibility: the cell
+    // pinned a comparison whose configuration no longer exists.
+    return refuseTrialCell(
+      cell,
+      context,
+      "cell_conflict",
+      `the profile's prompt strategy changed to ${recompiled.promptStrategy}, which the identity trial cannot execute`,
+    );
+  }
+  const plan = recompiled.plan;
   const compiled = trialCellCompiledIdentity(plan, profile, spec.orderedReferenceRoles);
   if (compiled.positivePromptHash !== spec.positivePromptHash) {
     return refuseTrialCell(cell, context, "cell_conflict", "the compiled prompt text changed since planning");
@@ -2297,13 +2379,13 @@ async function executeOneTrialCell(
     }
   }
 
-  // THE LAST FREE MOMENT. Everything above this line is a read; everything below
-  // it costs money. Re-asserting the claim here both restarts the stale clock for
-  // this render (so a queued cell cannot age itself into recovery) and caps a
-  // claim this pass has already lost at ZERO provider calls — the cheapest
-  // possible outcome for a race, versus discovering it at the settle and having
-  // to delete an image somebody paid for.
-  if (!(await beatTrialClaim(cell, context))) return "skipped";
+  // Everything above this line is a read; everything below it costs money. The
+  // claim was re-asserted at this cell's queue boundary
+  // ({@link beatTrialQueueClaims}) and the pass would not have reached here
+  // without holding it, so a race lost before now cost ZERO provider calls. Only
+  // the bounded reads between that boundary and this point — the pack resolution
+  // and the reference bytes — sit inside the gap, which is what the stale
+  // window's margin exists to cover.
 
   // Tee the renderer's diagnostics through a local collector: the plan-time
   // capacity check makes `fitReferences` a no-op here, but the `data_url`
@@ -2680,6 +2762,13 @@ export async function submitTrialPairGrade(input: SubmitTrialPairGradeInput): Pr
  * grades from the rows, math from the pure lib. `renderedCombos` rides along
  * because it is the verdict-slot list: comparisons alone cannot carry a
  * strategy whose counterpart cells all failed.
+ *
+ * `degradedCells` rides along for the mirror-image reason: it is the ONLY signal
+ * on this wire for evidence that has been LOST. Everything else here counts what
+ * survives, so a run whose degradation deleted the affected pair outright reads
+ * as fully graded — exactly when {@link recordTrialVerdict} will refuse it
+ * `review_incomplete`. The client needs the number to offer the override the
+ * server is about to demand.
  */
 export async function identityPackTrialSummary(
   runId: string,
@@ -2689,7 +2778,7 @@ export async function identityPackTrialSummary(
   const run = await ownedTrialRun(runId, ownerId);
   if (!run) return null;
   const rows = await trialCellRows(runId);
-  const { pairable } = reviewableTrialCells(rows, sink);
+  const { pairable, degraded } = reviewableTrialCells(rows, sink);
   const pairs: TrialCellPair[] = pairTrialCells(pairable);
 
   const gradeRows = await db()
@@ -2714,6 +2803,18 @@ export async function identityPackTrialSummary(
       new Set(grades.map((record) => record.pairId)),
     ),
     verdicts: await readTrialVerdicts(runId),
+    // THE SAME NUMBER the verdict gate refuses on — `reviewableTrialCells`'
+    // `degraded`, read from the same call that produced the pairs above, not
+    // re-derived. Two derivations of "is this run's evidence intact?" would be
+    // free to disagree, and the disagreement would surface as the UI insisting
+    // review is complete while the server refuses the ruling.
+    //
+    // It also covers `renderedTrialCombos`' own degraded count, which completion
+    // consults separately ({@link verdictsCoverRenderedCombos}): that one counts
+    // rendered rows with an UNREADABLE SPEC, a strict subset of the rows counted
+    // here (unreadable spec OR missing output image). So zero here is zero there,
+    // and one number is the honest wire shape for one condition.
+    degradedCells: degraded,
   };
 }
 
@@ -2888,6 +2989,12 @@ export async function recordTrialVerdict(input: RecordTrialVerdictInput): Promis
   // to a ruling: a pair nobody has graded, and a rendered cell whose image or
   // spec has vanished (taking its pairs with it, so "0 ungraded" would otherwise
   // read as full evidence precisely when there is less of it).
+  //
+  // `degraded` here and the summary wire's `degradedCells` are the SAME number
+  // from the SAME derivation ({@link identityPackTrialSummary}) — deliberately,
+  // because the client decides whether to offer the override from the wire and
+  // this decides whether to demand it. A second derivation on either side would
+  // let the UI report a complete review over evidence this gate refuses.
   const incompleteEvidence: string[] = [];
   if (ungradedPairs > 0) incompleteEvidence.push(`${ungradedPairs} reviewable pair(s) are still ungraded`);
   if (degraded > 0) incompleteEvidence.push(`${degraded} rendered cell(s) no longer carry reviewable evidence`);

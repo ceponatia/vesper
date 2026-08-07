@@ -67,21 +67,30 @@ function verdictSlots(combos: readonly TrialRenderedCombo[]): VerdictSlotKey[] {
 }
 
 /**
- * Whether ANY reviewable pair in this run is still ungraded — the condition the
- * server's `review_incomplete` gate refuses on.
+ * Whether this run's evidence is short of what the server's `review_incomplete`
+ * gate demands — BOTH of the two ways it can be.
  *
- * It is deliberately run-wide rather than per-slot: the gate is run-wide, so a
- * slot whose own pairs are all graded is still refused while another slot's are
- * not, and an override checkbox that appeared only on the incomplete slot would
- * leave the reviewer unable to record the ruling the server actually blocked.
- * Both wire lists are read because either can carry a pair the other does not —
- * a combo with no comparison still reports its own pair counts.
+ * The first is an ungraded reviewable pair. It is deliberately run-wide rather
+ * than per-slot: the gate is run-wide, so a slot whose own pairs are all graded
+ * is still refused while another slot's are not, and an override checkbox that
+ * appeared only on the incomplete slot would leave the reviewer unable to record
+ * the ruling the server actually blocked. Both wire lists are read because either
+ * can carry a pair the other does not — a combo with no comparison still reports
+ * its own pair counts.
+ *
+ * The second is `degradedCells`, and it exists because the first CANNOT see it.
+ * A rendered cell that lost its output image or its stored spec takes its pairs
+ * out of the wire entirely, so every surviving pair reads as graded — a complete
+ * review, right up until the server refuses the ruling. Counting the hole is the
+ * only way the client's answer can match the gate's.
  */
 function reviewIsIncomplete(
   comparisons: readonly TrialStrategyComparison[],
   combos: readonly TrialRenderedCombo[],
+  degradedCells: number,
 ): boolean {
   return (
+    degradedCells > 0 ||
     comparisons.some((comparison) => comparison.gradedPairs < comparison.totalPairs) ||
     combos.some((combo) => combo.gradedPairs < combo.totalPairs)
   );
@@ -97,8 +106,8 @@ export function IdentityTrialSummary({ runId, onChanged }: { runId: string; onCh
     return <Skeleton className="h-48 w-full" />;
   }
 
-  const { comparisons, renderedCombos, verdicts } = summary.data;
-  const reviewIncomplete = reviewIsIncomplete(comparisons, renderedCombos);
+  const { comparisons, renderedCombos, verdicts, degradedCells } = summary.data;
+  const reviewIncomplete = reviewIsIncomplete(comparisons, renderedCombos, degradedCells);
   if (renderedCombos.length === 0) {
     return (
       <p className="text-sm text-paper-500">
@@ -138,6 +147,18 @@ export function IdentityTrialSummary({ runId, onChanged }: { runId: string; onCh
           One ruling per profile and strategy, with a required reason. The run completes when every combination in the
           rendered cells is ruled AND every reviewable pair is graded.
         </p>
+        {/* The one signal on this wire for evidence that is GONE rather than
+            merely ungraded. Without it the operator meets a refusal with no
+            explanation, because the pairs the lost cell belonged to have already
+            disappeared from every count above. */}
+        {degradedCells > 0 ? (
+          <p className="mb-3 text-[11px] text-accent-300">
+            {degradedCells === 1
+              ? "1 rendered cell lost its review evidence"
+              : `${degradedCells} rendered cells lost their review evidence`}{" "}
+            — verdicts require the explicit override.
+          </p>
+        ) : null}
         <div className="flex flex-col gap-3">
           {verdictSlots(renderedCombos).map((slot) => {
             const recorded =
@@ -222,8 +243,9 @@ function VerdictSlot({
 }: {
   runId: string;
   slot: VerdictSlotKey;
-  /** Reviewable pairs are still ungraded somewhere in the run — the server will
-   * refuse `review_incomplete` unless the ruling carries an explicit override. */
+  /** Somewhere in this run a reviewable pair is ungraded, or a rendered cell has
+   * lost its evidence — the server will refuse `review_incomplete` unless the
+   * ruling carries an explicit override. */
   reviewIncomplete: boolean;
   recorded: TrialVerdict | null;
   onRecorded: () => void;
@@ -337,8 +359,8 @@ function VerdictSlot({
               <span>
                 Record without complete review
                 <span className="mt-0.5 block text-[11px] text-paper-500">
-                  Pairs in this run are still ungraded. The ruling is stored marked as decided on incomplete evidence,
-                  permanently.
+                  This run&rsquo;s evidence is incomplete — pairs still ungraded, or rendered cells whose evidence is
+                  gone. The ruling is stored marked as decided on incomplete evidence, permanently.
                 </span>
               </span>
             </label>

@@ -115,6 +115,30 @@ describe("compileIdentityReferencePrompt", () => {
     );
   });
 
+  it("binds a lone reference only when the caller asks for it by name", () => {
+    // `multi_reference_compose` is the one strategy whose defining semantic is
+    // naming EACH reference, so it must produce different text than the default
+    // at a single reference — otherwise it is `instruction_edit` under a second
+    // name, and a profile could claim a different configuration while sending
+    // byte-identical bytes. Zero references stays a no-op either way: there is
+    // nothing to name, and the no-pack baseline must not pick up text the
+    // harness invented.
+    const named = compileIdentityReferencePrompt({
+      basePrompt: BASE,
+      roles: ["canonical_identity"],
+      nameEveryReference: true,
+    });
+    expect(named).toBe(["Image 1: the canonical identity reference for the subject.", "", BASE].join("\n"));
+    expect(named).not.toBe(compileIdentityReferencePrompt({ basePrompt: BASE, roles: ["canonical_identity"] }));
+    expect(compileIdentityReferencePrompt({ basePrompt: BASE, roles: [], nameEveryReference: true })).toBe(BASE);
+    // At two references the flag changes nothing — the bindings were already
+    // emitted, so the two strategies differ only where they must.
+    const roles: IdentityReferenceRole[] = ["canonical_identity", "face_detail"];
+    expect(compileIdentityReferencePrompt({ basePrompt: BASE, roles, nameEveryReference: true })).toBe(
+      compileIdentityReferencePrompt({ basePrompt: BASE, roles }),
+    );
+  });
+
   it("is deterministic — the same input compiles to the same string", () => {
     const once = compileIdentityReferencePrompt({ basePrompt: BASE, roles: ["face_detail", "canonical_identity"] });
     const twice = compileIdentityReferencePrompt({ basePrompt: BASE, roles: ["face_detail", "canonical_identity"] });

@@ -321,6 +321,20 @@ and the deliberate v1 limitations.
   `profile_ineligible` instead of silently becoming a degenerate duplicate
   arm, and the pairing rule independently refuses to pair two arms whose
   compiled role lists are identical.
+- **The profile's `promptStrategy` is EXECUTED, or the cell fails closed.**
+  The compile step dispatches on it through an exhaustive switch — the seed
+  of the code registry image-model-capabilities.spec.md §"Prompt strategies"
+  calls for. `instruction_edit` and `text_to_image_description` add the
+  numbered bindings only when two or more references need disambiguating;
+  `multi_reference_compose` names every reference from one upward, which is
+  what makes it a genuinely different compiled prompt rather than the same
+  text under a second name. `text_repair`, `example_transform`,
+  `style_render` and `coherent_set` refuse: each needs a contract the
+  identity-reference vocabulary does not carry (a text region and its
+  replacement, a before/after role pair, style and LoRA language, the ordered
+  image-set path). Planning records `profile_ineligible` naming the strategy
+  and spends nothing; meeting one at execution means the profile row moved
+  under the cell, so that is `cell_conflict`.
 - **Pack variants are the second comparison axis** (`packVariants` on the
   create request, at most 4): `current` pins whatever revision is current at
   planning; `revision` pins one named revision of one character
@@ -342,9 +356,11 @@ and the deliberate v1 limitations.
   records the provider-shaped payload AND `droppedControls` with reasons, so
   nothing enters `resolvedControlsHash` that execution does not send.
   `positivePromptHash`/`negativePromptHash` hash the final compiled text —
-  multi-reference cells get numbered role bindings through the shared
-  compiler ("Image 1: the canonical identity reference…"), strategy-ordered
-  to match send order exactly; single-reference cells stay the bare fixture.
+  numbered role bindings come from the shared compiler ("Image 1: the
+  canonical identity reference…"), strategy-ordered to match send order
+  exactly. Which cells get them is the prompt strategy's decision (above):
+  two or more references always, a single reference only under
+  `multi_reference_compose`, and the zero-reference baseline never.
 
 ### Execution: durable claims and settlement
 
@@ -370,8 +386,19 @@ and the deliberate v1 limitations.
   spot (`images.identity_pack.trial.output_orphaned`), because nothing would
   ever reference it again. Claim columns stay on terminal rows as the audit
   trail.
-- Stale claims (a dead worker's cells) are recovered to `planned` after 20
-  minutes — longer than the 15-minute profile-timeout ceiling — with a loud
+- **The claim is a heartbeat over the WHOLE REMAINING QUEUE, re-stamped at
+  every cell boundary** — the head cell plus every cell still waiting behind
+  it. A pass claims and charges its whole batch up front, so without this a
+  queued cell wore the batch-start timestamp and could age into recovery on
+  QUEUE POSITION alone, while the pass holding it was alive and about to
+  render it. With it, a live pass's oldest claim is one cell span old, so
+  staleness measures pass death rather than queue depth. A queued cell the
+  heartbeat does not get back has been taken over: it is recorded `skipped`
+  with zero provider calls and never settled, because the row belongs to
+  whoever took it.
+- Stale claims (a dead worker's cells) are recovered to `planned` after 26
+  minutes — the 15-minute profile-timeout ceiling plus the per-call deadlines,
+  the output download, and margin for the rest of one cell span — with a loud
   diagnostic; recovery can pay a second time for a render whose result died
   with its process, which is the stated trade against wedging the run.
 - Before rendering, each cell re-verifies its pinned world: compiled positive
@@ -415,9 +442,14 @@ and the deliberate v1 limitations.
   whose stored spec no longer parses keeps the run in `review` (and makes
   verdicts review-incomplete, override-able but recorded) — completion is the
   claim that the blinded procedure ran, and evidence that no longer exists
-  cannot support it. Grading the final pair settles the run without needing
-  another verdict write. Same-slot verdict revisions are last-write-wins on
-  the one ledger row.
+  cannot support it. The summary wire carries that count as `degradedCells`,
+  read from the SAME derivation the verdict gate refuses on, because
+  degradation REMOVES the affected pair: every count the client can still see
+  reads complete precisely when the server will refuse, so the client needs
+  the number to offer the override rather than surface a bare refusal.
+  Grading the final pair settles the run without needing another verdict
+  write. Same-slot verdict revisions are last-write-wins on the one ledger
+  row.
 
 ### Recorded v1 limitations
 

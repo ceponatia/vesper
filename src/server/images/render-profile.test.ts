@@ -2,8 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   imageModelProfileSchema,
   imageModelSchema,
+  imagePromptStrategies,
+  type IdentityReferenceRole,
   type ImageModel,
   type ImageModelProfile,
+  type ImagePromptStrategy,
 } from "@/contracts";
 import { OUTPUT_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from "../ai/replicate";
 import { STALE_CLAIM_MS } from "./identity-pack-trial";
@@ -16,6 +19,8 @@ import {
   sha256Hex,
   stableJson,
   TRIAL_FALLBACK_PREDICTION_MS,
+  type CompileProfileRenderPlanInput,
+  type ProfileRenderPlan,
 } from "./render-profile";
 
 /**
@@ -62,8 +67,20 @@ function profile(over: Record<string, unknown> = {}): ImageModelProfile {
   });
 }
 
-function plan(modelOver: Record<string, unknown> = {}, profileOver: Record<string, unknown> = {}) {
-  return compileProfileRenderPlan({
+/**
+ * Compile and UNWRAP. Every case that reaches for a plan uses one of the prompt
+ * strategies this path can execute, so a refusal here is a broken fixture rather
+ * than an outcome under test — throwing reports it at the line that caused it
+ * instead of as a confusing property access on a refusal object.
+ */
+function compiledPlan(input: CompileProfileRenderPlanInput): ProfileRenderPlan {
+  const result = compileProfileRenderPlan(input);
+  if (!result.ok) throw new Error(`[render-profile] unexpected refusal: ${result.reason} (${result.promptStrategy})`);
+  return result.plan;
+}
+
+function plan(modelOver: Record<string, unknown> = {}, profileOver: Record<string, unknown> = {}): ProfileRenderPlan {
+  return compiledPlan({
     model: model(modelOver),
     profile: profile(profileOver),
     basePrompt: "change the outfit",
@@ -72,7 +89,7 @@ function plan(modelOver: Record<string, unknown> = {}, profileOver: Record<strin
   });
 }
 
-function hashOf(compiled: ReturnType<typeof plan>): string {
+function hashOf(compiled: ProfileRenderPlan): string {
   return profileRenderControlsHash(compiled, {
     profileId: "profile-1",
     profileKey: "compile-fixture",
@@ -123,17 +140,90 @@ describe("pinnedImageModelVersion", () => {
 });
 
 describe("the trial's stale-claim window", () => {
-  it("exceeds everything one render can legitimately spend", () => {
-    // The window's whole job is to be longer than a single render — the
+  it("exceeds everything one cell span can legitimately spend", () => {
+    // The window's whole job is to be longer than a single CELL SPAN — the
     // prediction ceiling, the reference uploads and settling poll, and the
     // output download — so recovery can never hand a LIVE render to a second
     // worker and pay for it twice. Derived rather than guessed, and asserted
     // here so a change to any of its inputs has to face this inequality.
     const oneRenderMs = MAX_TRIAL_PREDICTION_MS + 4 * REQUEST_TIMEOUT_MS + OUTPUT_TIMEOUT_MS;
     expect(STALE_CLAIM_MS).toBeGreaterThan(oneRenderMs);
-    // A single render is all it must cover: the claim is re-stamped when each
-    // cell's render STARTS, so a cell queued behind nineteen others is not aging.
+    // One span is all it must cover — and that is a fact about the HEARTBEAT,
+    // not about queue depth. Every cell boundary re-stamps `claimed_at` on the
+    // pass's whole remaining queue, so the oldest claim a live pass can hold is
+    // the one it stamped at the start of the cell now in flight. A cell queued
+    // behind nineteen others is exactly as fresh as the cell rendering ahead of
+    // it, which is why this bound does not have to scale with `maxRenders`.
     expect(STALE_CLAIM_MS).toBeLessThan(2 * oneRenderMs);
+  });
+});
+
+describe("the prompt-strategy dispatch", () => {
+  /** The three the identity-reference path can honestly compile. Everything else
+   * in `imagePromptStrategies` must fail closed, and the partition below is what
+   * makes an eighth strategy a failing test until somebody decides which side it
+   * is on. */
+  const EXECUTABLE: readonly ImagePromptStrategy[] = [
+    "instruction_edit",
+    "text_to_image_description",
+    "multi_reference_compose",
+  ];
+
+  function compileWith(promptStrategy: ImagePromptStrategy, roles: readonly IdentityReferenceRole[]) {
+    return compileProfileRenderPlan({
+      model: model(),
+      profile: profile({ promptStrategy }),
+      basePrompt: "change the outfit",
+      baseNegativePrompt: null,
+      referenceRoles: roles,
+    });
+  }
+
+  it("makes multi_reference_compose send different text than instruction_edit at ONE reference", () => {
+    // THE BUG THIS CLOSES: `promptStrategy` was hashed into
+    // `resolvedControlsHash` but never consulted, so two profiles differing only
+    // in strategy fingerprinted differently and sent byte-identical prompts —
+    // the hash asserted a difference nothing downstream made. The strategy's
+    // defining semantic is that it NAMES each reference, so at one reference it
+    // must diverge or it is `instruction_edit` under a second name.
+    const edit = compileWith("instruction_edit", ["canonical_identity"]);
+    const compose = compileWith("multi_reference_compose", ["canonical_identity"]);
+    expect(edit.ok && compose.ok).toBe(true);
+    if (!edit.ok || !compose.ok) return;
+
+    expect(edit.plan.finalPrompt).toBe("change the outfit");
+    expect(compose.plan.finalPrompt).toBe(
+      "Image 1: the canonical identity reference for the subject.\n\nchange the outfit",
+    );
+    // The positive-prompt hash is what a trial cell pins, so a divergent prompt
+    // has to be a divergent fingerprint too.
+    expect(sha256Hex(compose.plan.finalPrompt)).not.toBe(sha256Hex(edit.plan.finalPrompt));
+  });
+
+  it("leaves the zero-reference baseline alone under every executable strategy", () => {
+    // The control arm must not differ from the pack arms by any text the harness
+    // itself added — with nothing to name, naming is a no-op.
+    for (const promptStrategy of EXECUTABLE) {
+      const compiled = compileWith(promptStrategy, []);
+      expect(compiled.ok).toBe(true);
+      if (!compiled.ok) continue;
+      expect(compiled.plan.finalPrompt).toBe("change the outfit");
+    }
+  });
+
+  it("compiles the executable strategies and fails closed on every other one", () => {
+    for (const promptStrategy of imagePromptStrategies) {
+      const compiled = compileWith(promptStrategy, ["canonical_identity"]);
+      if (EXECUTABLE.includes(promptStrategy)) {
+        expect(compiled.ok).toBe(true);
+        continue;
+      }
+      // `text_repair`, `example_transform`, `style_render` and `coherent_set`
+      // each need a contract the identity-reference vocabulary does not carry.
+      // A typed refusal — never a throw, and never a prompt that is not the
+      // strategy it claims to be.
+      expect(compiled).toEqual({ ok: false, reason: "unsupported_prompt_strategy", promptStrategy });
+    }
   });
 });
 
@@ -143,7 +233,7 @@ describe("compileProfileRenderPlan", () => {
   });
 
   it("prefixes numbered role bindings when more than one reference is sent", () => {
-    const compiled = compileProfileRenderPlan({
+    const compiled = compiledPlan({
       model: model(),
       profile: profile(),
       basePrompt: "change the outfit",
@@ -162,7 +252,7 @@ describe("compileProfileRenderPlan", () => {
   });
 
   it("prefers the caller's negative prompt over the profile default", () => {
-    const compiled = compileProfileRenderPlan({
+    const compiled = compiledPlan({
       model: model(),
       profile: profile({ controlDefaults: { negativePrompt: "profile default", seedPolicy: "random" } }),
       basePrompt: "p",
@@ -227,7 +317,7 @@ describe("compileProfileRenderPlan", () => {
     expect(compiled.timeoutMs).toBe(TRIAL_FALLBACK_PREDICTION_MS);
     expect(compiled.resolvedControls.timeoutMs).toBe(TRIAL_FALLBACK_PREDICTION_MS);
     // And the profile ceiling is a hard clamp, whatever a row claims.
-    const overLong = compileProfileRenderPlan({
+    const overLong = compiledPlan({
       model: model(),
       profile: { ...profile(), timeoutMs: 30 * 60_000 },
       basePrompt: "p",

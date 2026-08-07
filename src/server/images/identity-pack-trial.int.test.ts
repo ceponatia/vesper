@@ -102,6 +102,14 @@ const GENERATE_PROFILE_ID = "imgprftrialgenerateaaaaa";
  * profile.
  */
 const POLICY_OFF_PROFILE_ID = "imgprftrialpolicyoffaaaa";
+/**
+ * The harness profile with ONE field changed: a `promptStrategy` the
+ * identity-reference path has no vocabulary to compile (`text_repair` needs a
+ * text region and its replacement). Cloned rather than hand-written so the
+ * refusal it earns can only be about the strategy — every other field that
+ * decides a gate is byte-identical to a profile that plans.
+ */
+const TEXT_REPAIR_PROFILE_ID = "imgprftrialtextrepairaaa";
 const FIXTURE_MODEL_IDS = [
   TRIAL_MODEL_ID,
   TIGHT_MODEL_ID,
@@ -120,6 +128,7 @@ const FIXTURE_PROFILE_IDS = [
   SURFACE_OFF_PROFILE_ID,
   GENERATE_PROFILE_ID,
   POLICY_OFF_PROFILE_ID,
+  TEXT_REPAIR_PROFILE_ID,
 ];
 
 /**
@@ -307,6 +316,19 @@ beforeAll(async () => {
       isDefault: false,
       sort: 958,
     },
+    {
+      // The harness profile verbatim, save for the prompt strategy — so the only
+      // thing its cells can refuse for is the strategy itself.
+      id: TEXT_REPAIR_PROFILE_ID,
+      imageModelId: TRIAL_MODEL_ID,
+      key: "trial-text-repair",
+      label: "Trial Text Repair",
+      task: "variant",
+      operation: "edit",
+      promptStrategy: "text_repair",
+      isDefault: false,
+      sort: 959,
+    },
     ineligibleProfile(WEAK_PROFILE_ID, WEAK_MODEL_ID, "trial-weak", "edit", 954),
     ineligibleProfile(IMG2IMG_PROFILE_ID, IMG2IMG_MODEL_ID, "trial-img2img", "edit", 955),
     // Same img2img model, asked for the text-only path it does not have.
@@ -425,6 +447,21 @@ async function cellRows(runId: string): Promise<IdentityPackTrialCellRow[]> {
     .from(imageIdentityPackTrialCells)
     .where(eq(imageIdentityPackTrialCells.runId, runId))
     .orderBy(asc(imageIdentityPackTrialCells.cellKey));
+}
+
+/**
+ * Every cell's claim stamp in milliseconds, keyed by cell id — null where no
+ * claim is stamped. Read as a NUMBER so two observations can be compared for
+ * ADVANCE, which is the only way to see a heartbeat: the column always holds
+ * some timestamp while a cell is claimed, so the question is never "is it set?"
+ * but "did it move since the last cell boundary?".
+ */
+async function claimStamps(runId: string): Promise<Map<string, number | null>> {
+  const rows = await db()
+    .select({ id: imageIdentityPackTrialCells.id, claimedAt: imageIdentityPackTrialCells.claimedAt })
+    .from(imageIdentityPackTrialCells)
+    .where(eq(imageIdentityPackTrialCells.runId, runId));
+  return new Map(rows.map((row) => [row.id, row.claimedAt === null ? null : row.claimedAt.getTime()]));
 }
 
 async function outputImageRows(runId: string): Promise<ImageRow[]> {
@@ -863,6 +900,16 @@ describe.skipIf(!ready)("planning eligibility", () => {
     expect(permissive.ok).toBe(true);
     if (!permissive.ok) return;
     expect(permissive.counts.planned).toBe(1);
+  });
+
+  it("refuses a cell whose profile declares a prompt strategy the trial cannot execute", async () => {
+    // `promptStrategy` used to be hashed and never consulted, so a `text_repair`
+    // profile planned, rendered and was graded — under a prompt compiled by the
+    // instruction-edit path, which is not the strategy the profile claims. The
+    // compile now fails closed, and the cell records WHICH strategy stopped it so
+    // an operator is not left comparing profile rows to guess.
+    const reason = ineligibleReason(await refusedCell({ profileIds: [TEXT_REPAIR_PROFILE_ID] }));
+    expect(reason).toContain("prompt strategy text_repair is not executable by the identity trial");
   });
 
   it("refuses an arm whose optional role the pack cannot supply, rather than duplicating a shorter one", async () => {
@@ -1816,9 +1863,10 @@ describe.skipIf(!ready)("durable execution claims", () => {
 
     // A claim inside the window is NOT taken back: `running` records "this
     // render may already have been paid for", and resetting it on sight is the
-    // double-spend the column exists to prevent. The heartbeat is what makes
-    // "inside the window" mean "rendering right now" rather than "queued behind
-    // nineteen other cells".
+    // double-spend the column exists to prevent. The queue-wide heartbeat is what
+    // makes "inside the window" mean "the pass holding this cell spoke within the
+    // last cell span" rather than "this cell has not waited long behind nineteen
+    // others" — a live pass's whole queue stays fresh, not just its head.
     const liveRunId = await createdRunId({ label: "live claim run", strategies: ["canonical_only"] });
     const [live] = await cellRows(liveRunId);
     await db()
@@ -1878,9 +1926,9 @@ describe.skipIf(!ready)("durable execution claims", () => {
   it("spends NOTHING on a cell whose claim was taken over between the batch claim and its turn", async () => {
     // The heartbeat's cheap half. A 20-cell pass claims everything up front, so
     // the last cell's claim can be stolen while the first nineteen render. The
-    // re-assert immediately before the provider call turns that into zero
-    // provider calls, instead of one paid render whose settle then loses and has
-    // to delete the image it just bought.
+    // boundary heartbeat discovers that BEFORE the stolen cell's own render, so
+    // the theft costs zero provider calls instead of one paid render whose settle
+    // then loses and has to delete the image it just bought.
     const runId = await createdRunId({ label: "stolen mid-batch run" });
     const { renderer, calls } = countingRenderer();
     setTrialRendererForTesting(async (input, sink) => {
@@ -1907,6 +1955,189 @@ describe.skipIf(!ready)("durable execution claims", () => {
     // Both cells still belong to the thief; this pass settled nothing.
     expect((await cellRows(runId)).map((cell) => cell.status)).toEqual(["running", "running"]);
   });
+
+  /** Three plannable arms of one comparison group — the smallest run with a real
+   * QUEUE behind the head cell, which is the whole subject of the three cases
+   * below. */
+  const THREE_ARMS = ["canonical_only", "face_detail_only", "canonical_then_face_detail"] as const;
+
+  it("leaves a LIVE pass's queued claims alone however long the cell ahead of them takes", async () => {
+    // THE BUG THIS CLOSES: the pass claims and charges its whole batch up front,
+    // but only the cell reaching its own render used to be re-stamped. Cell 10
+    // therefore sat behind nine renders wearing the BATCH-START timestamp, could
+    // age past STALE_CLAIM_MS on queue position alone, and be recovered and
+    // re-charged by a second worker while the pass holding it was alive, well,
+    // and about to render it.
+    const runId = await createdRunId({ label: "live batch theft run", strategies: [...THREE_ARMS] });
+    expect(await cellRows(runId)).toHaveLength(3);
+
+    const gate = gatedRenderer();
+    setTrialRendererForTesting(gate.renderer);
+    const worker = recordingCharge();
+    const passA = runTrialExecutionPassForTesting({ runId, ownerId, maxRenders: 5, chargeBudget: worker.chargeBudget });
+
+    // Park worker A inside cell 1's provider call: cells 2 and 3 are claimed,
+    // charged, and queued — the exact state a second worker must not touch.
+    for (let attempt = 0; attempt < 300 && !gate.entered(); attempt += 1) await sleep(10);
+    expect(gate.entered()).toBe(true);
+
+    const contender = recordingCharge();
+    const sink = new DiagnosticCollector();
+    const passB = await runTrialExecutionPassForTesting({
+      runId,
+      ownerId,
+      maxRenders: 5,
+      chargeBudget: contender.chargeBudget,
+      sink,
+    });
+    expect(passB?.ok).toBe(true);
+    if (!passB?.ok) return;
+    // Recovered nothing, claimed nothing, rendered nothing, charged nothing.
+    expect(passB.executed).toEqual([]);
+    expect(contender.charges).toEqual([]);
+    expect(sink.items.map((entry) => entry.code)).not.toContain("images.identity_pack.trial.claim_recovered");
+    expect(gate.calls()).toBe(1);
+
+    gate.release();
+    const finished = await passA;
+    expect(finished?.ok).toBe(true);
+    if (!finished?.ok) return;
+    expect(finished.executed.map((cell) => cell.status)).toEqual(["rendered", "rendered", "rendered"]);
+    // One render and one output per cell, charged once for the batch A claimed.
+    expect(gate.calls()).toBe(3);
+    expect(worker.charges).toEqual([3]);
+    expect(await outputImageRows(runId)).toHaveLength(3);
+    expect((await cellRows(runId)).map((cell) => cell.status)).toEqual(["rendered", "rendered", "rendered"]);
+    // Explicit budget: three renders plus a contending pass and a gate poll is
+    // more than the 5s default allows for, and a timeout here would read as a
+    // concurrency bug rather than a slow box.
+  }, 20_000);
+
+  it("re-stamps the WHOLE remaining queue at every cell boundary", async () => {
+    const runId = await createdRunId({ label: "queue heartbeat run", strategies: [...THREE_ARMS] });
+    // Snapshot every cell's claim stamp from INSIDE each render, so snapshot N is
+    // the state during cell N's provider call — that is, immediately after the
+    // boundary heartbeat that admitted it.
+    const snapshots: Map<string, number | null>[] = [];
+    setTrialRendererForTesting(async () => {
+      snapshots.push(await claimStamps(runId));
+      // Millisecond separation on purpose: two heartbeats inside one clock tick
+      // would stamp equal timestamps and make an advance that DID happen
+      // indistinguishable from one that did not.
+      await sleep(5);
+      return { ok: true, image: await testPngBuffer(96, 128) };
+    });
+
+    const result = await executeIdentityPackTrialCells({ runId, ownerId, maxRenders: 5, chargeBudget: admitCharge });
+    expect(result?.ok).toBe(true);
+    expect(snapshots).toHaveLength(3);
+    const [duringFirst, duringSecond] = snapshots;
+    if (!duringFirst || !duringSecond) return;
+
+    // The two cells still QUEUED while cell 1 rendered changed in no way between
+    // the two observations except that a cell boundary passed — and their claims
+    // are fresher for it. Counted as a SET rather than read positionally: the
+    // point is that the boundary re-stamped the WHOLE remaining queue, and the
+    // one cell that kept its old stamp is the settled head, whose claim columns
+    // stay frozen on the terminal row as the audit trail.
+    const advanced = [...duringSecond.entries()].filter(([id, after]) => {
+      const before = duringFirst.get(id);
+      return typeof before === "number" && typeof after === "number" && after > before;
+    });
+    expect(advanced).toHaveLength(2);
+    // Nothing went backwards either — a stamp that regressed would mean a claim
+    // aging while its pass ran, which is the whole failure being fixed.
+    for (const [id, before] of duringFirst) {
+      const after = duringSecond.get(id);
+      if (typeof before !== "number" || typeof after !== "number") continue;
+      expect(after).toBeGreaterThanOrEqual(before);
+    }
+  }, 20_000);
+
+  it("skips its remaining queue WITHOUT rendering when a recovery takes the claims", async () => {
+    // The takeover arm of the same mechanism. Ageing a live pass's claims past
+    // the window is pathological — the heartbeat exists so it cannot happen —
+    // but recovery must still be survivable, and what makes it survivable is that
+    // the robbed pass discovers the loss at a BOUNDARY rather than at a settle:
+    // its tail costs zero provider calls instead of a paid render per cell.
+    const subject = await seedTrialCharacter("Lost Queue Subject");
+    const runId = await createdRunId({
+      label: "lost queue run",
+      characterIds: [subject.characterId],
+      strategies: [...THREE_ARMS],
+    });
+
+    const gate = gatedRenderer();
+    setTrialRendererForTesting(gate.renderer);
+    const robbed = recordingCharge();
+    const sinkA = new DiagnosticCollector();
+    const passA = runTrialExecutionPassForTesting({
+      runId,
+      ownerId,
+      maxRenders: 5,
+      chargeBudget: robbed.chargeBudget,
+      sink: sinkA,
+    });
+    for (let attempt = 0; attempt < 300 && !gate.entered(); attempt += 1) await sleep(10);
+    expect(gate.entered()).toBe(true);
+
+    // Age EVERY claim A holds past the window, simulating a pass so delayed that
+    // recovery is entitled to conclude it died.
+    await db()
+      .update(imageIdentityPackTrialCells)
+      .set({ claimedAt: new Date(Date.now() - STALE_CLAIM_MS - 60_000) })
+      .where(and(eq(imageIdentityPackTrialCells.runId, runId), eq(imageIdentityPackTrialCells.status, "running")));
+
+    const { renderer, calls } = countingRenderer();
+    setTrialRendererForTesting(renderer);
+    const heir = recordingCharge();
+    const sinkB = new DiagnosticCollector();
+    const passB = await runTrialExecutionPassForTesting({
+      runId,
+      ownerId,
+      maxRenders: 5,
+      chargeBudget: heir.chargeBudget,
+      sink: sinkB,
+    });
+    expect(passB?.ok).toBe(true);
+    if (!passB?.ok) return;
+    expect(passB.executed.map((cell) => cell.status)).toEqual(["rendered", "rendered", "rendered"]);
+    expect(sinkB.items.map((entry) => entry.code)).toContain("images.identity_pack.trial.claim_recovered");
+    expect(calls()).toBe(3);
+
+    gate.release();
+    const finished = await passA;
+    expect(finished?.ok).toBe(true);
+    if (!finished?.ok) return;
+    // A's head cell was already re-rendered by B, so its settle loses and its
+    // stored output is discarded — the documented dead-worker trade, paid once.
+    // Its TAIL never reaches a provider: the boundary heartbeat returns no ids,
+    // so both queued cells are recorded skipped for free.
+    expect(finished.executed.map((cell) => cell.status)).toEqual(["skipped", "skipped", "skipped"]);
+    expect(gate.calls()).toBe(1);
+    expect(sinkA.items.map((entry) => entry.message)).toContain("the claim was taken over before the render started");
+    // Both passes were admitted at three cells and neither refunds — the charge
+    // is a reservation, and recovery paying twice is exactly the trade it makes.
+    expect(robbed.charges).toEqual([3]);
+    expect(heir.charges).toEqual([3]);
+
+    // Exactly one surviving output per cell: B's three, with A's orphan deleted.
+    // A fresh character scopes this to THIS run's outputs.
+    const outputs = await db()
+      .select({ id: images.id })
+      .from(images)
+      .where(
+        and(
+          eq(images.ownerId, ownerId),
+          eq(images.kind, "identity_trial_output"),
+          eq(images.entityId, subject.characterId),
+        ),
+      );
+    expect(outputs).toHaveLength(3);
+    expect(await outputImageRows(runId)).toHaveLength(3);
+    // Nothing left holding a claim, so the run is reviewable rather than wedged.
+    expect((await cellRows(runId)).map((row) => row.status)).toEqual(["rendered", "rendered", "rendered"]);
+  }, 20_000);
 
   it("settles a throw AFTER storage with the image it had already stored", async () => {
     // The gap this closes: a throw between "bytes written" and "cell settled"
@@ -2519,11 +2750,22 @@ describe.skipIf(!ready)("verdict gating and the normalized verdict ledger", () =
     // run's evidence.
     const runId = await reviewedRun("degraded evidence run");
     expect(await gradeEveryPair(runId)).toBe(1);
+    expect((await identityPackTrialSummary(runId, ownerId))?.degradedCells).toBe(0);
+
     const [first] = await cellRows(runId);
     await db()
       .update(imageIdentityPackTrialCells)
       .set({ outputImageId: null })
       .where(eq(imageIdentityPackTrialCells.id, first?.id ?? ""));
+
+    // The wire carries the hole, as the SAME number this gate refuses on. It has
+    // to: losing the cell REMOVED its pair, so every count the client can still
+    // see reads complete — which is exactly when the server refuses, and exactly
+    // when the operator needs the override offered rather than a bare refusal.
+    const degradedSummary = await identityPackTrialSummary(runId, ownerId);
+    expect(degradedSummary?.degradedCells).toBe(1);
+    expect(degradedSummary?.comparisons.every((entry) => entry.gradedPairs === entry.totalPairs)).toBe(true);
+    expect(degradedSummary?.renderedCombos.every((entry) => entry.gradedPairs === entry.totalPairs)).toBe(true);
 
     const refused = await recordTrialVerdict(verdictInput(runId, "canonical_only"));
     expect(refused?.ok).toBe(false);

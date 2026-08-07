@@ -373,6 +373,10 @@ describe.skipIf(!ready)("trial admin routes", () => {
       { profileId: PROFILE_ID, identityStrategy: "canonical_only", renderedCells: 1, totalPairs: 1, gradedPairs: 1 },
       { profileId: PROFILE_ID, identityStrategy: "face_detail_only", renderedCells: 1, totalPairs: 1, gradedPairs: 1 },
     ]);
+    // Intact evidence, so nothing on this wire asks for an override. The field
+    // has to travel even at zero: the client decides whether to OFFER the
+    // override from it, and an absent field would parse as an absent decision.
+    expect(summary.degradedCells).toBe(0);
     const comparison = summary.comparisons[0];
     if (!comparison) return;
     expect(comparison.gradedPairs).toBe(1);
