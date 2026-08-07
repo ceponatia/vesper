@@ -61,9 +61,15 @@ This file states the folder's local rules; the skill states how to apply them.
   message identifiers, timestamps, logs, diagnostic names, internal state,
   implementation references, and detailed verification history in a matching
   evidence appendix.
-- **Markdown files in this folder and its subfolders must not contain tables.**
-  Use short sections and lists instead. When editing an existing Markdown file
-  that contains a table, convert the table as part of that edit.
+- **Tables are allowed, but they are read in the raw `.md` far more often than
+  in a renderer — format them for the source file.** Every row on exactly one
+  physical line, never a newline inside a cell, cells padded with spaces so the
+  pipes line up vertically, separator row at the same widths, literal pipes
+  escaped as `\|`. Prefer 2–4 columns and short phrases (~50–70 characters a
+  cell); join multiple short items in one cell with `<br>`, never a bullet list
+  or a code block. **If several cells need long prose, it is not a table** —
+  use headings and bullets. Any table you touch gets brought into this shape as
+  part of the edit. Full rules: the `vesper-docs` skill, §"Table formatting".
 
 ## Ship close-out: move shipped docs to finished/
 
