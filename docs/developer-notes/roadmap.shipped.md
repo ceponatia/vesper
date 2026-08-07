@@ -5,6 +5,20 @@ The shipped-work record, split out of `roadmap.md` to keep that index short
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Persona body-config seeding — a new persona is born with anatomy** —
+  [intimate-defaulting.md](intimate-defaulting.md) §3b — 2026-08-07 — personas
+  were created with `intimateRegions: []` and stayed that way forever, so the
+  player's own body reached the realized-body filter, attribute gating, prompt
+  builders, and the scene image queue with no intimate anatomy at all — audit
+  finding E1, live, on the player's avatar. `POST /api/personas` now grounds a
+  new persona the way character creation does, via one pure
+  `seedNewPersonaProfile`: curated core-visual defaults on a blank body, the
+  body-config those attribute values activate, then the persisted-baseline
+  facts. Pre-2026-08-07 persona rows are not backfilled (§2's `[]` is ambiguous
+  by construction; the provenance flag in §1 is the prerequisite). Same change
+  closed the missing `excludeFromPrompts` guard on the two scene-appearance
+  loops in `server/images/prompts.ts` (latent, not leaking) — modularity audit
+  finding 1.
 - **Documentation standard — the `vesper-docs` skill and a conformance pass over
   both tiers** — [skill](../../.claude/skills/vesper-docs/SKILL.md) — 2026-08-07
   — one procedure for reference docs (`docs/`, present tense and dateless) and

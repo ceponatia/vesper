@@ -1033,6 +1033,7 @@ export function intimateSceneAppearance(
   for (const value of attributes) {
     const def = attributeRegistry.byId(value.id);
     if (!def || !isIntimateAttribute(def)) continue;
+    if (def.excludeFromPrompts) continue; // tracked but not wired into prompts yet (e.g. identity.natal_sex)
     if (!intimateAttrRendersExposed(def, exposure)) continue; // only an exposed, visual region surfaces
     const formatted = formatAttribute(def, value.value);
     if (formatted) parts.push(formatted);
@@ -1104,6 +1105,7 @@ export function sceneRevealAppearance(
   for (const value of attributes) {
     const def = attributeRegistry.byId(value.id);
     if (!def) continue;
+    if (def.excludeFromPrompts) continue; // tracked but not wired into prompts yet (e.g. identity.natal_sex)
     const intimate = isIntimateAttribute(def);
     if (intimate !== opts.intimate) continue;
     if (realizedBody && !realizedBody.isAttributeApplicable(def)) continue;

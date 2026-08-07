@@ -791,6 +791,33 @@ describe("sceneRevealAppearance (shape reads through clothing; skin needs exposu
   });
 });
 
+describe("excludeFromPrompts holds on the scene-appearance builders", () => {
+  // Written registry-first rather than against a single fixture id. Today the only
+  // definition carrying the flag is `identity.natal_sex`, whose `identity` category can
+  // reach neither the intimate loop nor the lower-body loop — so for those two this
+  // passes without exercising the guard. That is the point: the day an intimate or
+  // lower-body attribute is marked `excludeFromPrompts`, this fails instead of silently
+  // shipping it to an image model.
+  const excluded = attributeRegistry.definitions.filter((def) => def.excludeFromPrompts);
+  const bare = { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" } as const;
+  const probe = (def: AttributeDefinition): AttributeValue =>
+    attr(def.id, def.allowedValues?.[0] ?? "probe", "base");
+
+  it("has at least one flagged definition, so the sweep below is not empty", () => {
+    expect(excluded.map((def) => def.id)).toContain("identity.natal_sex");
+  });
+
+  it("keeps every flagged definition out of both scene-appearance lines", () => {
+    const profile = makeProfile({ intimateRegions: ["breasts", "vulva", "penis", "testicles"] });
+    for (const def of excluded) {
+      const attrs = [probe(def)];
+      expect(intimateSceneAppearance(attrs, bare)).not.toContain(def.label);
+      expect(sceneRevealAppearance(attrs, bare, profile, { intimate: true })).not.toContain(def.label);
+      expect(sceneRevealAppearance(attrs, bare, profile, { intimate: false })).not.toContain(def.label);
+    }
+  });
+});
+
 describe("buildSceneRenderPrompt — subject body line (the waist-up portrait's blind spot)", () => {
   const plan = {
     ...emptySceneRenderPlan(),

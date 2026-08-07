@@ -1,8 +1,9 @@
 # Fragile intimate-anatomy defaulting — open remainder
 
 Status: draft — the open remainder of an otherwise-shipped fix (re-drafted
-2026-08-02; the original 2026-06-15 analysis's headline fix shipped same-day in
-`9ed4e31` + `c7d45fd` — see git history for the original). Supplement to
+2026-08-02; §3b shipped 2026-08-07; the original 2026-06-15 analysis's headline
+fix shipped same-day in `9ed4e31` + `c7d45fd` — see git history for the
+original). Supplement to
 [character-schema-audit.md](finished/character-schema-audit.md) finding **E1**.
 
 E1 was: the per-character body-config (`intimateRegions`) is seeded from
@@ -10,12 +11,12 @@ E1 was: the per-character body-config (`intimateRegions`) is seeded from
 prompt silently yielded a character with **no intimate anatomy** — and the empty
 default was indistinguishable from a deliberate authorial choice.
 
-The forge half of that is fixed. What survives is everything the original doc
-filed under B, C, and D: **the body-config still records no provenance, still
-never re-derives, and is still seeded on exactly one code path out of four.**
-The most consequential of those — personas get no seeding at all — was not in
-the original analysis's scope and is the live re-occurrence of the E1 failure
-mode on the player's own body.
+The forge half of that is fixed, and so is the persona half (§3b, 2026-08-07):
+personas had no seeding at all, which was the live re-occurrence of the E1
+failure mode on the player's own body. What survives is what the original doc
+filed under B, C, and D: **the body-config still records no provenance and still
+never re-derives**, so it can go stale the moment an author changes gender, and
+a character create that arrives *with* attributes is still not seeded.
 
 ## What shipped (evidence)
 
@@ -98,11 +99,12 @@ Since **every** gender value activates anatomy, a stored `intimateRegions: []`
 on a character or persona that *has* a gender can only mean one of:
 
 1. the author deliberately cleared it (a valid, intended outcome), or
-2. the record arrived by a path that never seeded (§3).
+2. the record arrived by a path that never seeded (§3), or was created before
+   its path started seeding.
 
-Case 2 is now the overwhelmingly likely reading, and it is exactly the E1 bug.
-But `[]` is still `[]` — the schema default, the empty author choice, and the
-skipped-seeding bug are one value. No diagnostic can fire, no migration can
+Case 2 is still the likely reading on any stored row, and it is exactly the E1
+bug. But `[]` is still `[]` — the schema default, the empty author choice, and
+the skipped-seeding bug are one value. No diagnostic can fire, no migration can
 backfill, and no UI can explain itself, because the information needed to tell
 them apart was never recorded. This is the same missing bit as §1; §1 wants it
 for re-derivation, §2 wants it for diagnosis.
@@ -110,8 +112,8 @@ for re-derivation, §2 wants it for diagnosis.
 ## 3. The unseeded paths (Proposal C, re-scoped)
 
 C's diagnostic is moot where the original doc aimed it — the forge always
-resolves a gender now. It is not moot on two live paths that reach the same end
-state.
+resolves a gender now. It was not moot on two live paths that reached the same
+end state; §3b is fixed, §3a stands.
 
 ### 3a. Character creates that arrive with attributes
 
@@ -135,43 +137,80 @@ scoped to non-blank creates: *gender present, activatesGroups would have seeded
 something, stored config is empty* → emit. The expensive-but-correct fix is B's
 provenance, which makes the same condition decidable rather than heuristic.
 
-### 3b. Personas have no seeding at all — the E1 failure mode, live, on the player side
+### 3b. Personas had no seeding at all — FIXED 2026-08-07
 
-**This is the gap worth fixing first.** The persona create route
-(`src/app/api/personas/route.ts:51-54`) builds its profile with
-`materializeBodyDefaults` and nothing else:
+**This was the gap worth fixing first, and it is closed.** Before the fix, the
+persona create route built its profile with `materializeBodyDefaults` and
+nothing else. `seedBodyConfigFromAttributes` was never called on the persona
+path, and neither was `seedRegistryDefaultValues`. So a persona was born with
+`intimateRegions` at its schema default `[]` and it stayed `[]` no matter what
+gender the player set, forever, unless the player found the Body tab and
+toggled regions by hand — the persona PATCH did not fix it later (§1).
 
-```ts
-const profile = {
-  ...body.value.profile,
-  attributes: materializeBodyDefaults(body.value.profile.attributes, body.value.profile),
-};
-```
+The blast radius was not persona-local. `personaToCharacterProfile` copies
+`intimateRegions` straight across, so every character-shaped consumer — the
+realized-body filter, attribute gating, prompt builders, the scene image queue —
+saw a player body with no intimate anatomy. For a romance-first engine that is
+the original E1 complaint word for word, except it landed on the player's own
+avatar rather than an NPC, in the half of the scene the player is most likely to
+notice.
 
-`seedBodyConfigFromAttributes` is never called — the only call sites in the
-codebase are `character-forge.ts:1024` and `characters/route.ts:82`.
-`seedRegistryDefaultValues` is likewise character-only (`characters/route.ts:81`).
-So a persona is born with `intimateRegions` at its schema default `[]`
-(`persona-profile.ts:61`), and it stays `[]` no matter what gender the player
-sets, forever, unless the player finds the body tab and toggles regions by hand.
-The persona PATCH does not fix it later (§1).
+**What shipped.** `seedNewPersonaProfile` in
+`src/contracts/players/persona-profile.ts` — one pure function that grounds a
+newly-created persona's body in three fill-only steps, called from
+`POST /api/personas`:
 
-The blast radius is not persona-local. `personaToCharacterProfile`
-(`persona-profile.ts:103-117`) copies `intimateRegions` straight across at
-`:112`, so every character-shaped consumer — the realized-body filter, attribute
-gating, prompt builders — sees a player body with no intimate anatomy. For a
-romance-first engine that is the original E1 complaint word for word, except it
-lands on the player's own avatar rather than an NPC, in the half of the scene
-the player is most likely to notice.
+1. **Curated core-visual defaults** (`seedRegistryDefaultValues`) on a truly
+   blank body, so a persona has an `identity.gender` for step 2 to seed *from*.
+   This step is load-bearing, not cosmetic: the library's New button posts
+   `{title, name}` with no profile at all, so without it the shipped fix would
+   have seeded nothing on the only path players use.
+2. **The body-config those attribute values activate**
+   (`seedBodyConfigFromAttributes`) — gender `female` ⇒ `["vulva","breasts"]`.
+3. **The persisted-baseline facts** (`materializeBodyDefaults`) against the
+   post-seed body, so the freshly seeded anatomy gates them. This step is the
+   pre-existing behavior, now running after the seed rather than instead of it.
 
-Personas run the same attribute registry and the same `AttributePicker`
-(`persona-editor.tsx:224-230`), so `identity.gender` and its `activatesGroups`
-are already available; nothing about the seed is character-specific. The fix is
-to call `seedBodyConfigFromAttributes` on persona create the way
-`characters/route.ts:82` does — plus, ideally, the registry-default seed, so a
-blank persona is born with a gender to seed *from*. Both are small. The reason
-they are missing is that the 2026-06-15 analysis, and the fix it drove, were
-character-only.
+Tests are pure (`src/contracts/players/persona-profile.test.ts`), so CI runs
+them, with route-level coverage alongside the other persona CRUD cases in
+`src/app/api/library-routes.int.test.ts`.
+
+**Owner-facing consequence:** a new persona is now born looking like a new
+character — female, mid-twenties, with the anatomy that gender implies — instead
+of anatomically blank. Everything remains one toggle away in the Body tab.
+
+**Two decisions worth carrying forward.**
+
+*The seed gate is the body-config, not the whole profile.* The character route
+gates both seeds on the profile being blank (§3a), because its non-blank callers
+are forge drafts and clones — authored bodies that already carry a seeded config
+from `character-forge.ts`. A persona has neither a forge nor a clone, so its
+only non-blank creator is an API client, and one that sends `identity.gender`
+with no anatomy wants the anatomy that gender activates. So the persona path
+seeds the body-config whenever the incoming config is empty, and the curated
+core-visual fill still follows the character route's blank gate. A supplied
+config always wins. The consequence is that an explicit `intimateRegions: []`
+in a create payload is *not* distinguishable from an absent one and gets
+seeded — that is §2's overload, and deciding it needs §1's provenance flag.
+
+*An empty feature seed must leave `bodyFeatures` absent, not `[]`.* `realizeBody`
+reads an omitted `bodyFeatures` as "use the species and heritage defaults" and a
+provided one — including `[]` — as an explicit per-body override. Since
+`identity.gender` is still the only definition declaring `activatesGroups` and
+it activates only intimate regions, the feature seed is always empty today, so
+writing it would silently strip a succubus persona of its wings, horns, and
+tail. `seedNewPersonaProfile` writes `bodyFeatures` only when the seed produced
+one. **The character create route has the same latent hazard and was left
+unchanged** — it is unreachable there today (a blank character create always
+carries the default `human` species), and changing that route means reopening
+§3a rather than making a drive-by edit.
+
+**Existing persona rows were not backfilled.** Every persona created before
+2026-08-07 still carries `intimateRegions: []`, and by §2 that value is
+ambiguous by construction — a backfill cannot tell a pre-fix row from a
+deliberate authorial empty. Owners can fix one in the editor's Body tab today;
+doing it automatically is the same decision as the third open question below and
+waits on the same provenance flag.
 
 ## 4. Proposal D's design question is still unanswered — and now cheap to answer
 
@@ -218,21 +257,27 @@ none of this (verified — it covers facial realism and engine-shaped contracts)
 
 ## Recommended order
 
-Persona seeding (§3b) first: smallest diff, live player-facing gap, no design
-question attached. Then the provenance flag (§1/§2), which is the one missing
-bit that unblocks re-derivation, the non-blank-create diagnostic, and any future
-backfill. The C diagnostic for non-blank creates (§3a) is worth doing standalone
-only if provenance slips. §4 is a discussion, not a queue item.
+Persona seeding (§3b) was first and shipped 2026-08-07: smallest diff, live
+player-facing gap, no design question attached. Next is the provenance flag
+(§1/§2), which is the one missing bit that unblocks re-derivation, the
+non-blank-create diagnostic, and any backfill — including the pre-2026-08-07
+persona rows §3b deliberately left alone. The C diagnostic for non-blank creates
+(§3a) is worth doing standalone only if provenance slips. §4 is a discussion,
+not a queue item.
 
 ## Test plan
 
-- **Persona create** — a persona created with `identity.gender = "female"` and
-  no explicit body-config lands with `intimateRegions: ["vulva","breasts"]`; a
-  blank persona create gets the registry gender default and the anatomy it
-  activates; an explicit `intimateRegions: []` in the create payload survives.
-- **Persona parity** — `personaToCharacterProfile` of a seeded persona yields a
-  character profile whose realized body gates intimate attributes on, matching
-  an equivalently-configured character.
+- **Persona create** — DONE 2026-08-07. A persona created with
+  `identity.gender = "female"` and no explicit body-config lands with
+  `intimateRegions: ["vulva","breasts"]`; a blank persona create gets the
+  registry gender default and the anatomy it activates; a supplied non-empty
+  config survives untouched. The one bullet this pass did **not** deliver is an
+  explicit `intimateRegions: []` surviving — zod's `.default([])` makes absent
+  and explicitly-empty the same value, so honouring it needs §1's provenance
+  flag (§3b records the ruling).
+- **Persona parity** — DONE 2026-08-07. `personaToCharacterProfile` of a seeded
+  persona yields a character profile whose realized body gates intimate
+  attributes on, matching an equivalently-configured character.
 - **Re-seed with provenance (§1)** — editing gender `female`→`male` on an
   untouched (`auto`) body-config re-seeds to `["penis","testicles"]`; the same
   edit on an author-toggled (`overridden`) config leaves it alone; the flag
@@ -246,19 +291,15 @@ only if provenance slips. §4 is a discussion, not a queue item.
 
 ## Open questions
 
-- **Where does the persona seed run?** Mirroring `characters/route.ts:80-82` in
-  `personas/route.ts` is the direct fix, but a shared create-time helper over
-  both bodies would stop the two paths drifting a third time. Also: should
-  persona create get `seedRegistryDefaultValues` too, or is an attribute-less
-  persona a deliberate state?
 - **Provenance shape.** A sibling field (`intimateRegionsSource: "auto" |
   "overridden"`) or a wrapper object? A sibling migrates cleanly (absent ⇒ treat
   as `overridden`, i.e. fail-safe against clobbering existing records) but adds a
   field to two schemas. Decide before anything else in §1 can be built.
 - **Backfill.** Existing records with gender set and `intimateRegions: []` are
-  ambiguous by construction (§2). Leave them alone, flag them for the author, or
-  treat pre-provenance empties as `auto` and re-derive? The first is safest, the
-  third is what most of those records actually want.
+  ambiguous by construction (§2) — this now includes every persona created
+  before 2026-08-07, which §3b left untouched. Leave them alone, flag them for
+  the author, or treat pre-provenance empties as `auto` and re-derive? The first
+  is safest, the third is what most of those records actually want.
 - **Should any attribute besides gender declare `activatesGroups`?** (§4) —
   answerable per-attribute now that it is data.
 - **Should the model propose `intimateRegions` directly?** (§4) — still a
