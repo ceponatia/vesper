@@ -1079,9 +1079,22 @@ export const adminIdentityPacksApi = {
     grade: (runId: string, body: ImageIdentityPackTrialGradeRequest) =>
       apiPost(z.object({ recorded: z.boolean() }), `${TRIAL_API_ROOT}/${runId}/review`, body),
     summary: (runId: string) => apiGet(imageIdentityPackTrialSummarySchema, `${TRIAL_API_ROOT}/${runId}/summary`),
+    /**
+     * `overrideIncompleteReview` is optional and never defaulted here: its
+     * ABSENCE is what tells the server "I expect complete evidence", so a caller
+     * that has not thought about the gate cannot bypass it by omission. The
+     * server records the flag on the ruling, and the verdict list it hands back
+     * echoes it.
+     */
     verdict: (
       runId: string,
-      body: { profileId: string; identityStrategy: IdentityReferenceStrategy; verdict: TrialVerdictValue; reason: string },
+      body: {
+        profileId: string;
+        identityStrategy: IdentityReferenceStrategy;
+        verdict: TrialVerdictValue;
+        reason: string;
+        overrideIncompleteReview?: boolean;
+      },
     ) =>
       apiPost(
         z.object({ runStatus: trialRunStatusSchema, verdicts: arrayOf(trialVerdictSchema) }),

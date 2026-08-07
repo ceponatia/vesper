@@ -5,6 +5,7 @@ export * from "./identity-pack-references";
 export * from "./identity-pack-trial";
 export * from "./models";
 export * from "./model-profiles";
+export * from "./render-profile";
 export * from "./route-safe";
 export * from "./chat-look";
 export * from "./monogram";

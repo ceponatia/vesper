@@ -13,9 +13,10 @@ import { createIdentityPackTrialRun, listIdentityPackTrialRuns } from "@/server/
  * records those cells refused exactly as it would a character that does not
  * exist.
  *
- * Planning spends nothing — a create refusal (unknown corpus, unknown fixture,
- * a grid past the cell ceiling) is a 400 describing the configuration, and a
- * planned run sits in `draft` until an execute click charges the render budget.
+ * Planning spends nothing — a create refusal (unknown corpus, unknown fixture, a
+ * pack-revision selector naming a character the run does not include, a grid past
+ * the cell ceiling) is a 400 describing the configuration, and a planned run sits
+ * in `draft` until an execute click charges the render budget.
  * The response is the run id and its per-status cell counts; per-cell detail is
  * the run-detail route's job.
  */

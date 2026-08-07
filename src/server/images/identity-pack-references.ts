@@ -73,7 +73,7 @@ export interface EvaluateIdentityPackForProfileInput {
   sink?: DiagnosticSink;
 }
 
-interface RolePlanEntry {
+export interface RolePlanEntry {
   role: IdentityReferenceRole;
   required: boolean;
 }
@@ -82,9 +82,11 @@ interface RolePlanEntry {
  * Resolve a character's identity references for one profile.
  *
  * The pack is ensured first (bounded local derivation, no provider call), then
- * judged against the profile's facts. The same revision may be eligible for one
- * profile and ineligible for another — that is the point of separating intrinsic
- * measurement from profile evaluation — and nothing here mutates the pack.
+ * judged against the profile's facts by
+ * {@link evaluateIdentityPackContractForProfile}. The same revision may be
+ * eligible for one profile and ineligible for another — that is the point of
+ * separating intrinsic measurement from profile evaluation — and nothing here
+ * mutates the pack.
  */
 export async function evaluateIdentityPackForProfile(
   input: EvaluateIdentityPackForProfileInput,
@@ -97,12 +99,95 @@ export async function evaluateIdentityPackForProfile(
     return ineligible(ensured.code, `images.identity_pack.${ensured.code}`, sink, characterId);
   }
 
+  return evaluateIdentityPackContractForProfile({
+    pack: ensured.pack,
+    strategy: input.strategy,
+    profilePolicy: input.profilePolicy,
+    effectiveReferenceSize: input.effectiveReferenceSize,
+    sink,
+  });
+}
+
+export interface EvaluateIdentityPackContractInput {
+  /** An already-resolved pack — the character's current revision, or a pinned
+   * historical one the caller obtained by an owner-rooted read. */
+  pack: ImageIdentityPackV1;
+  /** The pinned profile's declared strategy — never inferred from a provider schema. */
+  strategy: IdentityReferenceStrategy;
+  profilePolicy?: IdentityPackProfilePolicy;
+  /** As on {@link EvaluateIdentityPackForProfileInput}: null/omitted keeps the
+   * evaluation conservative rather than assuming the uploaded size is seen. */
+  effectiveReferenceSize?: { widthPx: number; heightPx: number } | null;
+  /**
+   * Judge a RETIRED-but-derived revision (`superseded`/`stale`) under today's
+   * policy instead of letting it skip the projection. Trial-only, and off by
+   * default — see {@link readyForRetiredJudgment} for why the flag has to exist
+   * and why no production path may set it.
+   */
+  treatRetiredRevisionAsReady?: boolean;
+  sink?: DiagnosticSink;
+}
+
+/**
+ * A retired-but-derived revision, restamped `ready` for the length of ONE policy
+ * judgment.
+ *
+ * `projectIdentityPackPolicy` re-judges only `ready` rows — deliberately, because
+ * a `failed`/`unusable` revision has no crop bytes to hand anybody and the only
+ * honest way to accept it would be to derive it again. `superseded` and `stale`
+ * are caught by that rule INCIDENTALLY rather than by design: their derivation
+ * finished and their crop bytes exist, they are simply no longer the character's
+ * current pack. Left unstamped they would skip the projection entirely, and the
+ * trial's pinned-revision arm would grade an old revision on the verdict an OLD
+ * policy recorded — the one thing the projection exists to prevent.
+ *
+ * Only those two statuses are restamped. `pending` never finished and
+ * `failed`/`unusable` have nothing to send, so claiming any of them is ready
+ * would be a lie the projection cannot catch. The restamp lives for one call and
+ * never reaches storage: this is a read-path judgment, and the row keeps the
+ * status its own lifecycle gave it.
+ */
+function readyForRetiredJudgment(pack: ImageIdentityPackV1): ImageIdentityPackV1 {
+  if (pack.status !== "superseded" && pack.status !== "stale") return pack;
+  return { ...pack, status: "ready" };
+}
+
+/**
+ * The eligibility judgment itself, over a pack the caller already has.
+ *
+ * This is the whole of {@link evaluateIdentityPackForProfile} minus the ensure —
+ * the policy projection and the role walk, unchanged — and it is exported for
+ * ONE reason: the trial's pinned-revision comparison arms must evaluate a
+ * HISTORICAL revision, and the only honest way to do that is to run the same
+ * interpretation of eligibility the render path runs. A trial-local copy of "may
+ * this role be sent?" would drift from this one, and then the trial would be
+ * measuring its own rules rather than the system's.
+ *
+ * It does no IO and takes no owner: authorization happened when the caller
+ * obtained the pack (`ensureIdentityPack` for the current revision,
+ * `getIdentityPackRevisionForTrial` for a pinned one), and re-deciding it here
+ * from a pack alone would be exactly the bare-pack-id authorization the pack
+ * system forbids.
+ */
+export function evaluateIdentityPackContractForProfile(
+  input: EvaluateIdentityPackContractInput,
+): EvaluateIdentityPackResult {
+  const { sink } = input;
+  const characterId = input.pack.characterId;
+
   // The third read seam re-judges the pack under the policy in force as well.
   // `ensureIdentityPack` already projects what it returns, so this is normally a
   // no-op — it is here so the render seam's guarantee is its own rather than an
   // inherited property of one caller's internals, and the projection is
-  // idempotent by construction (it restamps the version it judged under).
-  const projection = projectIdentityPackPolicy(ensured.pack, sink);
+  // idempotent by construction (it restamps the version it judged under). For a
+  // PINNED revision it is not a no-op at all: an old revision was judged under
+  // an old policy, and this is where today's policy gets its say — which is
+  // exactly what `treatRetiredRevisionAsReady` is for, since a retired revision
+  // would otherwise walk past the projection untouched.
+  const projection = projectIdentityPackPolicy(
+    input.treatRetiredRevisionAsReady ? readyForRetiredJudgment(input.pack) : input.pack,
+    sink,
+  );
   if (projection.blockedBy !== null) {
     return ineligible(projection.blockedBy, `images.identity_pack.${projection.blockedBy}`, sink, characterId);
   }
@@ -156,8 +241,16 @@ export async function evaluateIdentityPackForProfile(
  * sole identity in that strategy, so it is necessarily required. This is what
  * makes "a profile never ejects one character's identity to fit another
  * character's face crop" mechanically true rather than a convention.
+ *
+ * Exported READ-ONLY, for the identity trial. A trial cell needs to know what a
+ * strategy PROMISED as well as what the evaluation delivered: an optional role
+ * that was omitted is a degraded-but-fine render in production and a degenerate
+ * comparison arm in a trial (it duplicates a shorter strategy under a longer
+ * name). The trial refuses such a cell; it does not, and must not, change this
+ * plan — production evaluation semantics are exactly what the harness is
+ * measuring, so a trial-shaped edit here would make it measure itself.
  */
-function identityRolePlan(strategy: IdentityReferenceStrategy): RolePlanEntry[] {
+export function identityRolePlan(strategy: IdentityReferenceStrategy): RolePlanEntry[] {
   switch (strategy) {
     case "canonical_only":
       return [{ role: "canonical_identity", required: true }];

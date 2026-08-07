@@ -1,12 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@/contracts";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   buildRegistryModelInput,
+  disableSafetyChecker,
+  overlayControlInput,
+  OUTPUT_TIMEOUT_MS,
   referenceDataUrl,
   replicatePredictionTarget,
+  REQUEST_TIMEOUT_MS,
+  reservedImageInputFields,
   runRegistryImageModel,
   unwrapReplicateImage,
   withinDataUrlBudget,
+  type RegistryModelRequest,
+  type ReplicateImageResult,
 } from "./replicate";
 
 const originalToken = process.env.REPLICATE_API_TOKEN;
@@ -54,8 +62,10 @@ const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
   ...overrides,
 });
 
-/** Capture the prediction POST for one succeeded-immediately generation. */
-async function predictionRequest(): Promise<RequestInit | undefined> {
+/** Capture the prediction POST (url + init) for one succeeded-immediately generation. */
+async function predictionCall(
+  over: Partial<RegistryModelRequest> = {},
+): Promise<{ url: string; init?: RequestInit } | undefined> {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   vi.stubGlobal(
     "fetch",
@@ -68,8 +78,31 @@ async function predictionRequest(): Promise<RequestInit | undefined> {
       return new Response(Buffer.from("image-bytes"), { status: 200 });
     }),
   );
-  await runRegistryImageModel(model(), { prompt: "portrait", aspect: "3:4" });
-  return calls[0]?.init;
+  await runRegistryImageModel(model(), { prompt: "portrait", aspect: "3:4", ...over });
+  return calls[0];
+}
+
+async function predictionRequest(over: Partial<RegistryModelRequest> = {}): Promise<RequestInit | undefined> {
+  return (await predictionCall(over))?.init;
+}
+
+/** Run one generation against a scripted prediction body — the seam for asserting
+ * what the adapter reads back OFF the provider's own response. A `succeeded`
+ * body is given an output URL unless the case supplies its own. */
+async function runWithPrediction(prediction: Record<string, unknown>): Promise<ReplicateImageResult> {
+  const body =
+    prediction.status === "succeeded" && !("output" in prediction)
+      ? { ...prediction, output: ["https://replicate.delivery/o.webp"] }
+      : prediction;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/predictions")) return Response.json(body);
+      return new Response(Buffer.from("image-bytes"), { status: 200 });
+    }),
+  );
+  return runRegistryImageModel(model(), { prompt: "portrait", aspect: "3:4" });
 }
 
 describe("buildRegistryModelInput", () => {
@@ -128,10 +161,15 @@ describe("buildRegistryModelInput", () => {
     // added unconditionally.
     const withToggle = buildRegistryModelInput(model({ extraInput: { disable_safety_checker: true } }), "p", [], null);
     expect(withToggle.disable_safety_checker).toBe(true);
+    // The exported resolver is the SAME answer the builder writes. Anything that
+    // fingerprints what a render sends has to be able to ask it, or the
+    // fingerprint describes the stored placeholder instead of the env's value.
+    expect(withToggle.disable_safety_checker).toBe(disableSafetyChecker());
 
     process.env.REPLICATE_SAFE_MODE = "true";
     const safe = buildRegistryModelInput(model({ extraInput: { disable_safety_checker: true } }), "p", [], null);
     expect(safe.disable_safety_checker).toBe(false);
+    expect(disableSafetyChecker()).toBe(false);
 
     const without = buildRegistryModelInput(model({ extraInput: {} }), "p", [], null);
     expect("disable_safety_checker" in without).toBe(false);
@@ -145,6 +183,55 @@ describe("buildRegistryModelInput", () => {
       "3:4",
     );
     expect(input).toMatchObject({ size: "2K", max_images: 1, sequential_image_generation: "disabled" });
+  });
+});
+
+describe("per-call deadlines", () => {
+  it("exports the two request budgets callers have to reason about", () => {
+    // Exported so the identity trial can size its stale-claim window off the
+    // real numbers rather than a hand-copied approximation that stops matching
+    // the first time either moves. Sanity rails, not a restatement.
+    expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(30_000);
+    expect(OUTPUT_TIMEOUT_MS).toBeGreaterThan(30_000);
+  });
+});
+
+describe("control input overlay", () => {
+  it("merges mapped fields over the built payload, later winning", () => {
+    // The capabilities spec's merge order: model `extraInput` first, the
+    // profile's resolved controls after it.
+    const built = buildRegistryModelInput(model({ extraInput: { guidance_scale: 3 } }), "p", [], "3:4");
+    const merged = overlayControlInput(built, { guidance_scale: 7, negative_prompt: "blurry" }, model());
+    expect(merged).toMatchObject({ prompt: "p", aspect_ratio: "3:4", guidance_scale: 7, negative_prompt: "blurry" });
+  });
+
+  it("refuses to let control input rewrite the prompt, reference, or aspect field", () => {
+    // A stored profile row must not be able to redirect where the prompt goes.
+    const target = model({ referenceField: "image_input", referenceArity: "array" });
+    const built = buildRegistryModelInput(target, "the real prompt", ["u1"], "3:4");
+    const sink = new DiagnosticCollector();
+    const merged = overlayControlInput(
+      built,
+      { prompt: "hijacked", image_input: ["evil"], aspect_ratio: "16:9", guidance_scale: 4 },
+      target,
+      sink,
+    );
+    expect(merged).toMatchObject({ prompt: "the real prompt", image_input: ["u1"], aspect_ratio: "3:4", guidance_scale: 4 });
+    expect(sink.items.map((entry) => entry.code)).toEqual(["image_model.reserved_field_ignored"]);
+  });
+
+  it("returns the built payload untouched when there is no control input", () => {
+    const built = buildRegistryModelInput(model(), "p", [], null);
+    expect(overlayControlInput(built, undefined, model())).toBe(built);
+  });
+
+  it("names the aspect key each model actually writes as reserved", () => {
+    expect(reservedImageInputFields(model())).toContain("aspect_ratio");
+    expect(reservedImageInputFields(model({ aspectMode: "size" }))).toContain("size");
+    // Safety enforcement and the version pin are the render path's, not a profile's.
+    expect(reservedImageInputFields(model())).toEqual(
+      expect.arrayContaining(["prompt", "image", "version", "disable_safety_checker"]),
+    );
   });
 });
 
@@ -189,10 +276,27 @@ describe("replicatePredictionTarget", () => {
     });
   });
 
+  it("routes a BARE slug with an explicit version to /predictions carrying it", () => {
+    // The controlled-trial case: a bare slug would otherwise run whatever
+    // `latest_version` is that hour, which is not a comparison.
+    expect(replicatePredictionTarget("qwen/qwen-image-2512", "v-probed")).toEqual({
+      path: "/predictions",
+      version: "v-probed",
+    });
+  });
+
+  it("lets an explicit version win over one pinned in the slug", () => {
+    expect(replicatePredictionTarget("qwen/qwen-image-2512:slugpin", "explicit")).toEqual({
+      path: "/predictions",
+      version: "explicit",
+    });
+  });
+
   it("rejects malformed slugs", () => {
     expect(() => replicatePredictionTarget("qwen")).toThrow(/invalid Replicate model id/);
     expect(() => replicatePredictionTarget("a/b/c")).toThrow(/invalid Replicate model id/);
     expect(() => replicatePredictionTarget("a/b:c:d")).toThrow(/invalid Replicate model id/);
+    expect(() => replicatePredictionTarget("qwen", "explicit")).toThrow(/invalid Replicate model id/);
   });
 });
 
@@ -378,6 +482,52 @@ describe("runRegistryImageModel", () => {
 
     process.env.REPLICATE_PREDICTION_TIMEOUT_MS = "not-a-number";
     expect(await predictionRequest()).toMatchObject({ headers: { "Cancel-After": "300s" } });
+  });
+
+  it("prefers the request's own prediction budget over the env value", async () => {
+    // The capabilities spec's order: profile timeout, then env, then default.
+    process.env.REPLICATE_PREDICTION_TIMEOUT_MS = "600000";
+    expect(await predictionRequest({ timeoutMs: 90_000 })).toMatchObject({ headers: { "Cancel-After": "90s" } });
+  });
+
+  it("clamps a request budget outside the sane band", async () => {
+    expect(await predictionRequest({ timeoutMs: 1_000 })).toMatchObject({ headers: { "Cancel-After": "30s" } });
+    expect(await predictionRequest({ timeoutMs: 99_999_999 })).toMatchObject({ headers: { "Cancel-After": "1800s" } });
+  });
+
+  it("posts an explicitly pinned version to /predictions even for a bare slug", async () => {
+    const call = await predictionCall({ versionId: "version-abc" });
+    expect(call?.url).toBe("https://api.replicate.com/v1/predictions");
+    const body = JSON.parse(String(call?.init?.body)) as { version?: string; input: Record<string, unknown> };
+    expect(body.version).toBe("version-abc");
+    expect(body.input).toMatchObject({ prompt: "portrait" });
+  });
+
+  it("merges control input into the posted payload without touching the prompt", async () => {
+    const call = await predictionCall({ controlInput: { guidance_scale: 6, prompt: "hijacked" } });
+    const body = JSON.parse(String(call?.init?.body)) as { input: Record<string, unknown> };
+    expect(body.input).toMatchObject({ prompt: "portrait", guidance_scale: 6 });
+  });
+
+  it("reports the version the provider says it RAN, and stays silent when it says nothing", async () => {
+    // A pin states intent; only the echo states outcome. A bare slug resolves
+    // `latest_version` server-side and a pinned id can be re-pointed, so a
+    // controlled comparison that cannot tell those apart is grading whatever
+    // shipped that hour under a pin's name.
+    const echoed = await runWithPrediction({ id: "pred-v", status: "succeeded", version: "version-actually-ran" });
+    expect(echoed).toMatchObject({ ok: true, predictionId: "pred-v", executedVersionId: "version-actually-ran" });
+
+    // No echo means "the provider did not say", which must not become a field —
+    // a caller comparing against a pin has to be able to see the difference
+    // between disagreement and silence.
+    const silent = await runWithPrediction({ id: "pred-s", status: "succeeded" });
+    expect(silent.ok).toBe(true);
+    expect("executedVersionId" in silent).toBe(false);
+
+    // And it rides a FAILED prediction too: which version produced a failure is
+    // exactly what an operator needs when the pin is under suspicion.
+    const failed = await runWithPrediction({ id: "pred-f", status: "failed", output: null, version: "version-bad" });
+    expect(failed).toMatchObject({ ok: false, predictionId: "pred-f", executedVersionId: "version-bad" });
   });
 
   it("unwraps bytes and preserves provider error text", () => {

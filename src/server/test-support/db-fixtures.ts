@@ -7,6 +7,7 @@ import {
   imageIdentityPacks,
   imageIdentityPackTrialGrades,
   imageIdentityPackTrialRuns,
+  imageIdentityPackTrialVerdicts,
   images,
   items,
   jobs,
@@ -92,11 +93,13 @@ export async function seedTestUsers(prefix: string, count: number): Promise<Seed
  *      explicit: that FK has no cascade (an audit trail must not erase itself), so
  *      a pack an admin suite REVIEWED on another owner's character would survive
  *      the subquery and then block the `users` delete outright.
- *      `imageIdentityPackTrialGrades` / `imageIdentityPackTrialRuns` join for the
- *      same reviewer trap: grades carry the identical no-cascade
- *      `reviewed_by_user_id`, so one graded on another owner's run must go
- *      before `users`; runs (which cascade cells and grades) are listed so the
- *      teardown reads as the full table list even though `owner_id` cascades.
+ *      `imageIdentityPackTrialGrades` / `imageIdentityPackTrialVerdicts` /
+ *      `imageIdentityPackTrialRuns` join for the same reviewer trap: grades
+ *      carry the identical no-cascade `reviewed_by_user_id` and verdicts the
+ *      identical no-cascade `decided_by_user_id`, so one recorded on another
+ *      owner's run must go before `users`; runs (which cascade cells, grades and
+ *      verdicts) are listed so the teardown reads as the full table list even
+ *      though `owner_id` cascades.
  *   4. Library tables (`personas`, `socialCards`, `items`, `locationLinks`,
  *      `locations`). Links are deleted explicitly even though `locations`
  *      cascades them: `location_links.owner_id` is its own column, so a link
@@ -133,6 +136,9 @@ export async function purgeOwnerRows(ownerIds: string[]): Promise<void> {
   await db()
     .delete(imageIdentityPackTrialGrades)
     .where(inArray(imageIdentityPackTrialGrades.reviewedByUserId, owners));
+  await db()
+    .delete(imageIdentityPackTrialVerdicts)
+    .where(inArray(imageIdentityPackTrialVerdicts.decidedByUserId, owners));
   await db().delete(imageIdentityPackTrialRuns).where(inArray(imageIdentityPackTrialRuns.ownerId, owners));
   await db().delete(characters).where(inArray(characters.ownerId, owners));
   await db().delete(personas).where(inArray(personas.ownerId, owners));

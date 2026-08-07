@@ -14,7 +14,9 @@ import { adminIdentityPacksApi, identityPackTrialRefusal } from "@/lib/client/ap
 import {
   identityPackTrialRefusalCopy,
   identityReferenceStrategyLabel,
+  trialArmStrategyLabel,
   trialGradeDimensionLabel,
+  trialPackVariantLabel,
   trialVerdictLabel,
 } from "@/components/characters/identity-pack-copy";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -23,6 +25,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
@@ -35,10 +38,13 @@ import { useToast } from "@/components/ui/toast";
  * `renderedCombos`), each requiring a reason.
  */
 
-/** One (profile, strategy) the rendered cells put in play — the unit a verdict rules on. */
+/** One (profile, strategy) the rendered cells put in play — the unit a verdict
+ * rules on, carrying the pairwise evidence behind it. */
 interface VerdictSlotKey {
   profileId: string;
   strategy: IdentityReferenceStrategy;
+  totalPairs: number;
+  gradedPairs: number;
 }
 
 /**
@@ -46,16 +52,47 @@ interface VerdictSlotKey {
  * strategy whose every counterpart cell failed has evidence but no pair, so it
  * appears in no comparison — yet the run cannot complete until it is ruled.
  * Deriving slots from comparisons made `complete` unreachable for such a run.
+ *
+ * The pair counts ride along from the same wire field, so the slot can say how
+ * much evidence stands behind the ruling it is asking for instead of the
+ * reviewer having to notice an absence in the list above.
  */
 function verdictSlots(combos: readonly TrialRenderedCombo[]): VerdictSlotKey[] {
-  return combos.map((combo) => ({ profileId: combo.profileId, strategy: combo.identityStrategy }));
+  return combos.map((combo) => ({
+    profileId: combo.profileId,
+    strategy: combo.identityStrategy,
+    totalPairs: combo.totalPairs,
+    gradedPairs: combo.gradedPairs,
+  }));
 }
 
-function hasComparison(comparisons: readonly TrialStrategyComparison[], slot: VerdictSlotKey): boolean {
-  return comparisons.some(
-    (comparison) =>
-      comparison.profileId === slot.profileId &&
-      (comparison.strategyA === slot.strategy || comparison.strategyB === slot.strategy),
+/**
+ * Whether this run's evidence is short of what the server's `review_incomplete`
+ * gate demands — BOTH of the two ways it can be.
+ *
+ * The first is an ungraded reviewable pair. It is deliberately run-wide rather
+ * than per-slot: the gate is run-wide, so a slot whose own pairs are all graded
+ * is still refused while another slot's are not, and an override checkbox that
+ * appeared only on the incomplete slot would leave the reviewer unable to record
+ * the ruling the server actually blocked. Both wire lists are read because either
+ * can carry a pair the other does not — a combo with no comparison still reports
+ * its own pair counts.
+ *
+ * The second is `degradedCells`, and it exists because the first CANNOT see it.
+ * A rendered cell that lost its output image or its stored spec takes its pairs
+ * out of the wire entirely, so every surviving pair reads as graded — a complete
+ * review, right up until the server refuses the ruling. Counting the hole is the
+ * only way the client's answer can match the gate's.
+ */
+function reviewIsIncomplete(
+  comparisons: readonly TrialStrategyComparison[],
+  combos: readonly TrialRenderedCombo[],
+  degradedCells: number,
+): boolean {
+  return (
+    degradedCells > 0 ||
+    comparisons.some((comparison) => comparison.gradedPairs < comparison.totalPairs) ||
+    combos.some((combo) => combo.gradedPairs < combo.totalPairs)
   );
 }
 
@@ -69,7 +106,8 @@ export function IdentityTrialSummary({ runId, onChanged }: { runId: string; onCh
     return <Skeleton className="h-48 w-full" />;
   }
 
-  const { comparisons, renderedCombos, verdicts } = summary.data;
+  const { comparisons, renderedCombos, verdicts, degradedCells } = summary.data;
+  const reviewIncomplete = reviewIsIncomplete(comparisons, renderedCombos, degradedCells);
   if (renderedCombos.length === 0) {
     return (
       <p className="text-sm text-paper-500">
@@ -90,7 +128,13 @@ export function IdentityTrialSummary({ runId, onChanged }: { runId: string; onCh
         <div className="flex flex-col gap-3">
           {comparisons.map((comparison) => (
             <ComparisonCard
-              key={`${comparison.profileId}:${comparison.strategyA}:${comparison.strategyB}`}
+              key={[
+                comparison.profileId,
+                comparison.strategyA,
+                comparison.variantKeyA,
+                comparison.strategyB,
+                comparison.variantKeyB,
+              ].join("|")}
               comparison={comparison}
             />
           ))}
@@ -101,8 +145,20 @@ export function IdentityTrialSummary({ runId, onChanged }: { runId: string; onCh
         <h2 className="mb-2 text-xs font-medium tracking-wide text-paper-400 uppercase">Verdicts</h2>
         <p className="mb-3 text-[11px] text-paper-500">
           One ruling per profile and strategy, with a required reason. The run completes when every combination in the
-          rendered cells is ruled.
+          rendered cells is ruled AND every reviewable pair is graded.
         </p>
+        {/* The one signal on this wire for evidence that is GONE rather than
+            merely ungraded. Without it the operator meets a refusal with no
+            explanation, because the pairs the lost cell belonged to have already
+            disappeared from every count above. */}
+        {degradedCells > 0 ? (
+          <p className="mb-3 text-[11px] text-accent-300">
+            {degradedCells === 1
+              ? "1 rendered cell lost its review evidence"
+              : `${degradedCells} rendered cells lost their review evidence`}{" "}
+            — verdicts require the explicit override.
+          </p>
+        ) : null}
         <div className="flex flex-col gap-3">
           {verdictSlots(renderedCombos).map((slot) => {
             const recorded =
@@ -117,8 +173,8 @@ export function IdentityTrialSummary({ runId, onChanged }: { runId: string; onCh
                 key={`${slot.profileId}:${slot.strategy}:${recorded?.decidedAt ?? "new"}`}
                 runId={runId}
                 slot={slot}
+                reviewIncomplete={reviewIncomplete}
                 recorded={recorded}
-                comparisonRendered={hasComparison(comparisons, slot)}
                 onRecorded={() => {
                   summary.reload({ silent: true });
                   onChanged?.();
@@ -133,8 +189,16 @@ export function IdentityTrialSummary({ runId, onChanged }: { runId: string; onCh
 }
 
 function ComparisonCard({ comparison }: { comparison: TrialStrategyComparison }) {
-  const labelA = identityReferenceStrategyLabel(comparison.strategyA);
-  const labelB = identityReferenceStrategyLabel(comparison.strategyB);
+  const labelA = trialArmStrategyLabel(comparison.strategyA);
+  const labelB = trialArmStrategyLabel(comparison.strategyB);
+  // The variant labels keep the character and revision a `rev:…` key names
+  // verbatim ({@link trialPackVariantLabel}) — two arms of the same run differ
+  // only in those, so anything that abbreviated them would make two arms read as
+  // one. A shared variant is printed once: repeating it either side of a "vs"
+  // would suggest the comparison varies on an axis it holds constant.
+  const variantA = trialPackVariantLabel(comparison.variantKeyA);
+  const variantB = trialPackVariantLabel(comparison.variantKeyB);
+  const variants = variantA === variantB ? variantA : `${variantA} vs ${variantB}`;
   return (
     <div className="rounded-card border border-ink-600 bg-ink-850 p-4">
       <div className="flex flex-wrap items-baseline gap-2">
@@ -142,6 +206,7 @@ function ComparisonCard({ comparison }: { comparison: TrialStrategyComparison })
           {labelA} vs {labelB}
         </h3>
         <code className="text-[11px] text-paper-500">{comparison.profileId}</code>
+        <span className="text-[11px] text-paper-500">{variants}</span>
       </div>
       <p className="mt-1 text-[11px] text-paper-500">
         {comparison.gradedPairs} of {comparison.totalPairs} pair(s) graded · overall {comparison.overall.winsA}–
@@ -172,21 +237,24 @@ function ComparisonCard({ comparison }: { comparison: TrialStrategyComparison })
 function VerdictSlot({
   runId,
   slot,
+  reviewIncomplete,
   recorded,
-  comparisonRendered,
   onRecorded,
 }: {
   runId: string;
   slot: VerdictSlotKey;
+  /** Somewhere in this run a reviewable pair is ungraded, or a rendered cell has
+   * lost its evidence — the server will refuse `review_incomplete` unless the
+   * ruling carries an explicit override. */
+  reviewIncomplete: boolean;
   recorded: TrialVerdict | null;
-  /** False when this combo rendered cells but no counterpart pair exists to compare against. */
-  comparisonRendered: boolean;
   onRecorded: () => void;
 }) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [verdict, setVerdict] = useState<TrialVerdictValue>(recorded?.verdict ?? "retained_current");
   const [reason, setReason] = useState("");
+  const [override, setOverride] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -196,6 +264,10 @@ function VerdictSlot({
       identityStrategy: slot.strategy,
       verdict,
       reason: reason.trim(),
+      // Sent only when the reviewer ticked it. The absence of the flag is what
+      // tells the server "I expect complete evidence", so a default-false that
+      // always travelled would be the same request wearing a louder name.
+      overrideIncompleteReview: override ? true : undefined,
     });
     setSaving(false);
     if (!result.ok) {
@@ -210,6 +282,7 @@ function VerdictSlot({
     toast.push({ title: "Verdict recorded", tone: "success" });
     setEditing(false);
     setReason("");
+    setOverride(false);
     onRecorded();
   };
 
@@ -229,14 +302,23 @@ function VerdictSlot({
         ) : null}
       </div>
 
-      {!comparisonRendered ? (
-        <p className="mt-1 text-[11px] text-paper-500">No pairwise comparison rendered for this combination.</p>
-      ) : null}
+      <p className="mt-1 text-[11px] text-paper-500">
+        {slot.totalPairs === 0
+          ? "No pairwise comparison rendered for this combination — this ruling has no pairwise evidence."
+          : `${slot.gradedPairs} of ${slot.totalPairs} pair(s) graded for this combination.`}
+      </p>
 
       {recorded !== null && !editing ? (
-        <p className="mt-2 text-xs text-paper-400">
+        <p className="mt-2 flex flex-wrap items-baseline gap-x-1 text-xs text-paper-400">
           <span className="text-paper-200">{trialVerdictLabel(recorded.verdict)}</span> — {recorded.reason}
-          <span className="ml-1 text-paper-600">({new Date(recorded.decidedAt).toLocaleString()})</span>
+          <span className="text-paper-600">({new Date(recorded.decidedAt).toLocaleString()})</span>
+          {/* The stored flag, not a live re-derivation: whether the evidence was
+              complete AT DECISION TIME is unrecoverable once more grades land. */}
+          {recorded.overrideIncompleteReview ? (
+            <Tag tone="accent" title="Recorded before every reviewable pair was graded.">
+              incomplete review
+            </Tag>
+          ) : null}
         </p>
       ) : null}
 
@@ -266,6 +348,23 @@ function VerdictSlot({
           <Field label="Reason" hint="Required — a ruling with no stated reason is indistinguishable from a mistake later.">
             {(id) => <Textarea id={id} rows={2} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={2000} />}
           </Field>
+          {reviewIncomplete ? (
+            <label className="flex items-start gap-2 text-xs text-paper-300">
+              <input
+                type="checkbox"
+                checked={override}
+                onChange={() => setOverride((on) => !on)}
+                className="mt-0.5 accent-accent-500"
+              />
+              <span>
+                Record without complete review
+                <span className="mt-0.5 block text-[11px] text-paper-500">
+                  This run&rsquo;s evidence is incomplete — pairs still ungraded, or rendered cells whose evidence is
+                  gone. The ruling is stored marked as decided on incomplete evidence, permanently.
+                </span>
+              </span>
+            </label>
+          ) : null}
         </div>
       ) : null}
     </div>

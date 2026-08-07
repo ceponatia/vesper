@@ -5,6 +5,7 @@ import {
   imageModelProfileListSchema,
   imageModelProfileSchema,
   imageProfileCandidates,
+  imageProfileOffered,
   isImageIdentityCriticalTask,
   legacySurfaceForImageTask,
   profileEligibility,
@@ -243,6 +244,62 @@ const sceneCompose4k = profile({ id: "prf-scene-compose-4k", key: "scene-4k", im
 const sceneRemix = profile({ id: "prf-scene-remix", imageModelId: "mdl-remix", sort: 50 });
 // Deliberately not in sort order — the join is what imposes it.
 const allProfiles = [sceneRemix, sceneCompose4k, sceneCompose, sceneDefault];
+
+describe("imageProfileOffered", () => {
+  it("names the switch, the legacy surface, and the structural gate separately", () => {
+    expect(imageProfileOffered(sceneDefault, editModel)).toEqual({ ok: true });
+    expect(imageProfileOffered(profile({ ...sceneDefault, enabled: false }), editModel)).toEqual({
+      ok: false,
+      reason: "disabled",
+    });
+    expect(imageProfileOffered(sceneCompose, model({ ...composeModel, forScene: false }))).toEqual({
+      ok: false,
+      reason: "legacy_surface_excluded",
+    });
+    // The structural half is `profileEligibility`'s verdict, passed through
+    // verbatim — the trial planner reads the reason, not just the boolean.
+    expect(imageProfileOffered(sceneRemix, remixModel)).toEqual({ ok: false, reason: "identity_too_weak" });
+  });
+
+  it("is the SAME judgment the candidate join applies, once the join's own task filter is accounted for", () => {
+    // Trial eligibility must be unable to drift from production eligibility, so
+    // every profile the join keeps is one this predicate offers, and vice versa.
+    //
+    // The equivalence is only over ONE task, and that has to be spelled out
+    // rather than relied on: `imageProfileCandidates` additionally filters by
+    // task, which `imageProfileOffered` does not judge at all. With every fixture
+    // sharing a task the two agreed by accident, and the case would have kept
+    // passing if offerability had silently started answering a task question.
+    const sceneProfiles = allProfiles.filter((candidate) => candidate.task === "scene");
+    const offeredHere = sceneProfiles.filter((candidate) => {
+      const owner = allModels.find((m) => m.id === candidate.imageModelId);
+      return owner !== undefined && imageProfileOffered(candidate, owner).ok;
+    });
+    const joined = imageProfileCandidates(allProfiles, allModels, "scene");
+    expect(new Set(offeredHere.map((p) => p.id))).toEqual(new Set(joined.map((c) => c.profile.id)));
+  });
+
+  it("offers a profile for ANOTHER task, which only the join's task filter excludes", () => {
+    // The other half of the same fact, and the reason the filter above is
+    // explicit: this profile is perfectly offerable — its model is fine, its
+    // ratings are fine — and it is absent from a scene join purely because it
+    // answers a different job. An assertion that read its absence as
+    // "unofferable" would be reading the wrong gate.
+    const variantProfile = profile({
+      id: "prf-variant-edit",
+      imageModelId: "mdl-edit",
+      key: "variant-standard",
+      task: "variant",
+    });
+    expect(imageProfileOffered(variantProfile, editModel)).toEqual({ ok: true });
+    const joined = imageProfileCandidates([...allProfiles, variantProfile], allModels, "scene");
+    expect(joined.map((candidate) => candidate.profile.id)).not.toContain("prf-variant-edit");
+    // And it IS offered for its own task, so nothing about it is disabled.
+    expect(imageProfileCandidates([variantProfile], allModels, "variant").map((c) => c.profile.id)).toEqual([
+      "prf-variant-edit",
+    ]);
+  });
+});
 
 describe("imageProfileCandidates", () => {
   it("joins each profile to its model and returns them in sort order", () => {
