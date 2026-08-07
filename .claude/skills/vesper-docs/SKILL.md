@@ -47,9 +47,8 @@ line, the residue guardrail, and the validation checklist.
 7. **Prefer deletion to preservation.** Superseded docs get removed or archived,
    not annotated. This repo does not keep a legacy tier — `finished/` is
    completed work, not an attic for the outdated.
-8. **Markdown tables are banned in `docs/developer-notes/` and its subfolders.**
-   Use short sections and lists. Converting any table you touch is part of the
-   edit. (Tables are fine in the reference tier and are used there.)
+8. **Tables follow the formatting rules or become lists.** See
+   [Table formatting](#table-formatting). Both tiers, no exceptions.
 9. **Reference docs carry no dates, no slice numbers, and no future tense.** If
    you are writing "will", "planned", or "once we", you are writing a plan and
    it belongs in the working tier.
@@ -140,6 +139,49 @@ Non-plan docs do not carry an Outcome line. They carry a Status line saying what
 they are: `Status: companion to <plan>`, `Status: detail for <plan>`,
 `Status: reference (audit run <date>)`, `Status: closed — <verdict> <date>`.
 
+One `.plan.md` is deliberately exempt: `deferred.plan.md` is the parking-lot
+index, not a plan, and carries `Status: parking lot` with no Outcome line. Its
+individual stubs under `deferred/` each carry an `Outcome (provisional):` line.
+
+## Table formatting
+
+A Markdown table is read far more often in the raw `.md` file than in a
+renderer. A table whose source is a ragged wall of pipes is worse than no table
+at all — that is the problem these rules exist to solve. **Optimize for the raw
+file, not the rendered output.**
+
+Structure — decide whether it should be a table at all:
+
+- Prefer **2–4 columns**. Split a very wide table into several narrower ones.
+- Keep cells short — **roughly 50–70 characters** is a useful soft limit.
+- Prefer short phrases over sentences inside cells.
+- **If several cells need long prose, do not use a table.** Use headings and
+  bullets. This is the common case in plans and specs, and a list is the right
+  answer there — do not force the content into a grid.
+- No paragraphs, bullet lists, or multi-line code blocks inside a cell. If a
+  cell needs several short items, join them with `<br>`.
+
+Source formatting — non-negotiable once you have a table:
+
+- Every row is **exactly one physical line**. Never wrap a row across lines.
+- Never insert a newline inside a cell.
+- **Pad cells with spaces so the pipes align vertically** in the raw file.
+- The separator row uses the same column widths as the rest.
+- Escape a literal pipe inside cell content as `\|`.
+
+Aligned, so the source reads as a grid:
+
+```markdown
+| Gate | Status              | Owns                          |
+| ---- | ------------------- | ----------------------------- |
+| 5    | CLOSED — 2026-07-20 | Bodies, materials             |
+| 6    | CLOSED — 2026-07-21 | Dual level of detail          |
+| 7    | draft               | Institutions — not committed  |
+```
+
+Any table you touch gets brought into this shape as part of the edit — the same
+way a table you touch used to get converted to a list.
+
 ## The residue guardrail
 
 Before finishing any document, search it for conversation that leaked into the
@@ -217,7 +259,9 @@ do not need CI (root `CLAUDE.md`). Validate by hand before finishing:
   pointing at files you moved.
 - `roadmap.md` links resolve and its statuses match each plan's `Status:` line.
 - Every live plan has a Status line and an Outcome line.
-- No Markdown tables anywhere under `docs/developer-notes/`.
+- Every table you touched obeys [Table formatting](#table-formatting): pipes
+  aligned in the raw source, one physical line per row, no newlines in cells,
+  2–4 columns, short cells — or it is a list instead.
 - No residue phrases (see the guardrail) in any plan or trial body.
 - Reference docs you touched stay present-tense and dateless.
 - Any doc that would exceed ~400 lines is split (reference tier: promote to a
