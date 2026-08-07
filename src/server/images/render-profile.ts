@@ -142,7 +142,7 @@ function nonBlank(value: string | null | undefined): string | null {
 export interface CompileProfileRenderPlanInput {
   model: ImageModel;
   profile: ImageModelProfile;
-  /** The lane's or fixture's prompt, BEFORE reference-role compilation. */
+  /** The lane's or fixture's prompt, BEFORE the profile's prompt strategy compiles it. */
   basePrompt: string;
   /** The caller's negative prompt; null falls back to the profile's default. */
   baseNegativePrompt: string | null;
@@ -157,7 +157,7 @@ export interface CompileProfileRenderPlanInput {
 export interface ProfileRenderPlan {
   /** The model AFTER the reviewed-quality seam — what the provider really sees. */
   effectiveModel: ImageModel;
-  /** The final prompt text, role preamble and model-dialect rewrite included. */
+  /** The final prompt text, strategy-compiled preamble and model-dialect rewrite included. */
   finalPrompt: string;
   /**
    * The negative text that WILL be sent, or null — counting BOTH routes it can
@@ -190,12 +190,86 @@ export interface ProfileRenderPlan {
 }
 
 /**
+ * A compiled plan, or the typed refusal that says this profile's declared prompt
+ * strategy cannot be executed on the identity-reference path at all.
+ *
+ * A refusal rather than a throw because both callers have somewhere honest to
+ * put it: the trial planner records the cell `profile_ineligible` and spends
+ * nothing, and the execute-time recompile records `cell_conflict`. An exception
+ * would have made "this profile is configured for a job this path cannot do" —
+ * an ordinary, expected configuration state — indistinguishable from a bug.
+ */
+export type CompileProfileRenderPlanResult =
+  | { ok: true; plan: ProfileRenderPlan }
+  | { ok: false; reason: "unsupported_prompt_strategy"; promptStrategy: ImagePromptStrategy };
+
+/** A strategy's compiled prompt text, or its refusal to compile one at all. */
+type StrategyPromptCompile = { ok: true; prompt: string } | { ok: false };
+
+/**
+ * THE prompt-strategy dispatch — the seed of the code registry the capabilities
+ * spec calls for (image-model-capabilities.spec.md §"Prompt strategies": "an
+ * enum resolved through a code registry", never prompt logic stored in a row).
+ *
+ * It is a switch, not a registry framework, and deliberately so: three of the
+ * seven strategies have an implementation here, four have none, and a framework
+ * built around one honest arm and four empty ones would advertise a generality
+ * that does not exist. The switch is EXHAUSTIVE over
+ * {@link ImagePromptStrategy}, which is what makes an eighth strategy a compile
+ * error here rather than a silent fall-through to whatever the last arm did.
+ *
+ * Why the arms land where they do:
+ *
+ * - `instruction_edit` / `text_to_image_description` name no references
+ *   themselves; the numbered binding is added only when two or more references
+ *   need disambiguating, which is the historical behavior every lane already
+ *   renders under.
+ * - `multi_reference_compose` explicitly names the purpose and order of EACH
+ *   reference, so it binds from ONE reference upward. That is what makes the
+ *   strategy genuinely change the compiled text relative to `instruction_edit`
+ *   at a single reference — before this dispatch existed, `promptStrategy` was
+ *   hashed but never consulted, so two profiles differing only in strategy
+ *   claimed different configurations and sent identical prompts.
+ * - `text_repair`, `example_transform`, `style_render` and `coherent_set` REFUSE.
+ *   Each needs a contract the identity-reference vocabulary does not carry — a
+ *   text region and its replacement, a before/after role pair, curated style and
+ *   LoRA language, the ordered image-set path — and compiling one of them out of
+ *   an identity fixture would produce a prompt that is not the strategy it
+ *   claims to be. Failing closed keeps an unexecutable configuration out of a
+ *   grid instead of grading a made-up one.
+ */
+function compilePromptForStrategy(
+  strategy: ImagePromptStrategy,
+  basePrompt: string,
+  roles: readonly IdentityReferenceRole[],
+): StrategyPromptCompile {
+  switch (strategy) {
+    case "instruction_edit":
+    case "text_to_image_description":
+      return { ok: true, prompt: compileIdentityReferencePrompt({ basePrompt, roles }) };
+    case "multi_reference_compose":
+      return { ok: true, prompt: compileIdentityReferencePrompt({ basePrompt, roles, nameEveryReference: true }) };
+    case "text_repair":
+    case "example_transform":
+    case "style_render":
+    case "coherent_set":
+      return { ok: false };
+  }
+}
+
+/**
  * Compile one profile against one model and prompt.
  *
  * The pipeline mirrors the spec's resolution order for the steps a single-image
- * render needs: reviewed-quality model, role-compiled prompt, model-dialect
+ * render needs: reviewed-quality model, strategy-compiled prompt, model-dialect
  * prompt preparation, negative resolution, control mapping, override
  * validation, aspect choice, version pin.
+ *
+ * The FIRST step is the profile's declared `promptStrategy`
+ * ({@link compilePromptForStrategy}), and it is the one step that can refuse.
+ * That ordering is the point: a strategy this path cannot execute must stop the
+ * compile before anything downstream produces controls, hashes, or a plan that
+ * a caller could mistake for a runnable one.
  *
  * `preparePromptForImageModel` runs HERE and again inside `renderWithModel`.
  * That is deliberate and safe: the rewrite is idempotent (it replaces the legacy
@@ -204,11 +278,14 @@ export interface ProfileRenderPlan {
  * receives. Relying on that property beats adding a "already prepared" flag
  * whose two code paths would need keeping honest forever.
  */
-export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): ProfileRenderPlan {
+export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): CompileProfileRenderPlanResult {
   const { model, profile, basePrompt, baseNegativePrompt, referenceRoles } = input;
+  const strategyPrompt = compilePromptForStrategy(profile.promptStrategy, basePrompt, referenceRoles);
+  if (!strategyPrompt.ok) {
+    return { ok: false, reason: "unsupported_prompt_strategy", promptStrategy: profile.promptStrategy };
+  }
   const effectiveModel = withResolvedSafetyChecker(withReviewedImageQuality(model));
-  const rolePrompt = compileIdentityReferencePrompt({ basePrompt, roles: referenceRoles });
-  const finalPrompt = preparePromptForImageModel(effectiveModel, rolePrompt, referenceRoles.length);
+  const finalPrompt = preparePromptForImageModel(effectiveModel, strategyPrompt.prompt, referenceRoles.length);
 
   const defaults = profile.controlDefaults;
   const negative = baseNegativePrompt ?? defaults.negativePrompt ?? null;
@@ -276,22 +353,25 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
 
   const timeoutMs = Math.min(profile.timeoutMs ?? TRIAL_FALLBACK_PREDICTION_MS, MAX_TRIAL_PREDICTION_MS);
   return {
-    effectiveModel,
-    finalPrompt,
-    negativePrompt: resolvedNegativePrompt(effectiveModel, controlInput),
-    aspectValue: chooseAspect(effectiveModel).value,
-    controlInput,
-    resolvedControls: {
-      operation: profile.operation,
-      // The RESOLVED budget, not the profile's wish: this column answers "what
-      // was this cell run under?", and a null there answered "look at whatever
-      // env the machine had at the time", which is not an answer.
-      timeoutMs,
+    ok: true,
+    plan: {
+      effectiveModel,
+      finalPrompt,
+      negativePrompt: resolvedNegativePrompt(effectiveModel, controlInput),
+      aspectValue: chooseAspect(effectiveModel).value,
       controlInput,
-      droppedControls,
+      resolvedControls: {
+        operation: profile.operation,
+        // The RESOLVED budget, not the profile's wish: this column answers "what
+        // was this cell run under?", and a null there answered "look at whatever
+        // env the machine had at the time", which is not an answer.
+        timeoutMs,
+        controlInput,
+        droppedControls,
+      },
+      timeoutMs,
+      versionId: pinnedImageModelVersion(model),
     },
-    timeoutMs,
-    versionId: pinnedImageModelVersion(model),
   };
 }
 
@@ -358,6 +438,13 @@ export interface ProfileRenderControlsHashInput {
  * which is why the input is the PLAN rather than the rows: a field that reaches
  * the provider without reaching this hash is a change a pinned comparison cannot
  * detect.
+ *
+ * `promptStrategy` earns its place under the FIRST rule, and only since
+ * {@link compilePromptForStrategy} shipped: the strategy now decides how the
+ * references are named in the compiled text, or refuses the compile outright. It
+ * was hashed before that dispatch existed too, and that was the bug — two
+ * profiles differing only in strategy fingerprinted differently while sending
+ * identical prompts, so the hash asserted a difference nothing downstream made.
  *
  * Display-only fields (labels, sort order, `enabled`) are deliberately absent: a
  * renamed profile is the same experiment, and invalidating a grid over a label

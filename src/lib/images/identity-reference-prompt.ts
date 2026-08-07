@@ -63,21 +63,39 @@ export interface CompileIdentityReferencePromptInput {
   basePrompt: string;
   /** Roles in SEND order — the same order the reference images are transported in. */
   roles: readonly IdentityReferenceRole[];
+  /**
+   * Bind a SINGLE reference by name too, rather than only disambiguating two or
+   * more.
+   *
+   * Off by default for the reason the compiler's own doc gives: with one image
+   * there is nothing to disambiguate. It exists for exactly one caller — the
+   * `multi_reference_compose` prompt strategy, whose defining semantic is that it
+   * explicitly names the purpose and order of EACH reference
+   * (image-model-capabilities.spec.md §"Prompt strategies"). A strategy that
+   * emitted nothing at one reference would be `instruction_edit` wearing a second
+   * name, so a profile could claim a different configuration while sending
+   * byte-identical text — which is precisely the drift the strategy enum exists
+   * to make visible.
+   */
+  nameEveryReference?: boolean;
 }
 
 /**
  * The final prompt text for a render, with numbered role bindings prefixed when
- * more than one reference is sent.
+ * the references need naming.
  *
- * Zero or one reference returns `basePrompt` UNCHANGED. That is not an
- * optimization: with a single image there is nothing to disambiguate, and
+ * Zero references always returns `basePrompt` UNCHANGED — there is nothing to
+ * bind — and so does ONE reference unless the caller asks for
+ * {@link CompileIdentityReferencePromptInput.nameEveryReference}. That default is
+ * not an optimization: with a single image there is nothing to disambiguate, and
  * prefixing "Image 1: …" onto every single-reference render would rewrite the
  * prompt of every existing lane, changing renders that are working today for no
- * measurable gain. Single-reference cells stay exactly as simple as they are.
+ * measurable gain. Single-reference cells stay exactly as simple as they are
+ * unless a strategy's whole point is to name them.
  */
 export function compileIdentityReferencePrompt(input: CompileIdentityReferencePromptInput): string {
-  const { basePrompt, roles } = input;
-  if (roles.length < 2) return basePrompt;
+  const { basePrompt, roles, nameEveryReference = false } = input;
+  if (roles.length < (nameEveryReference ? 1 : 2)) return basePrompt;
 
   const lines = roles.map((role, index) => identityReferenceRoleBinding(role, index + 1));
   if (roles.includes("canonical_identity") && roles.includes("face_detail")) {
